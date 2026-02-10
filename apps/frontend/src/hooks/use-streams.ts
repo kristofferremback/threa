@@ -3,7 +3,7 @@ import { useSocket, useStreamService } from "@/contexts"
 import { debugBootstrap } from "@/lib/bootstrap-debug"
 import { getQueryLoadState, isTerminalBootstrapError } from "@/lib/query-load-state"
 import { db } from "@/db"
-import { joinRoomWithAck } from "@/lib/socket-room"
+import { joinRoomBestEffort } from "@/lib/socket-room"
 import type { Stream, StreamType } from "@threa/types"
 import type { CreateStreamInput, UpdateStreamInput } from "@/api"
 import { workspaceKeys } from "./use-workspaces"
@@ -74,14 +74,7 @@ export function useStreamBootstrap(workspaceId: string, streamId: string, option
         debugBootstrap("Stream bootstrap missing socket", { workspaceId, streamId })
         throw new Error("Socket not available for stream subscription")
       }
-      try {
-        await joinRoomWithAck(socket, `ws:${workspaceId}:stream:${streamId}`)
-      } catch (error) {
-        console.error(
-          `[StreamBootstrap] Failed to receive join ack for ws:${workspaceId}:stream:${streamId}; continuing with bootstrap fetch`,
-          error
-        )
-      }
+      await joinRoomBestEffort(socket, `ws:${workspaceId}:stream:${streamId}`, "StreamBootstrap")
 
       const bootstrap = await streamService.bootstrap(workspaceId, streamId)
       debugBootstrap("Stream bootstrap fetch success", {

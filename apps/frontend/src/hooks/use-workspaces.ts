@@ -4,7 +4,7 @@ import { useSocket, useWorkspaceService } from "@/contexts"
 import { debugBootstrap } from "@/lib/bootstrap-debug"
 import { getQueryLoadState, isTerminalBootstrapError } from "@/lib/query-load-state"
 import { db } from "@/db"
-import { joinRoomWithAck } from "@/lib/socket-room"
+import { joinRoomBestEffort } from "@/lib/socket-room"
 import type { Workspace } from "@threa/types"
 
 // Query keys for cache management
@@ -74,14 +74,7 @@ export function useWorkspaceBootstrap(workspaceId: string) {
         debugBootstrap("Workspace bootstrap missing socket", { workspaceId })
         throw new Error("Socket not available for workspace subscription")
       }
-      try {
-        await joinRoomWithAck(socket, `ws:${workspaceId}`)
-      } catch (error) {
-        console.error(
-          `[WorkspaceBootstrap] Failed to receive join ack for ws:${workspaceId}; continuing with bootstrap fetch`,
-          error
-        )
-      }
+      await joinRoomBestEffort(socket, `ws:${workspaceId}`, "WorkspaceBootstrap")
 
       const bootstrap = await workspaceService.bootstrap(workspaceId)
       debugBootstrap("Workspace bootstrap fetch success", {

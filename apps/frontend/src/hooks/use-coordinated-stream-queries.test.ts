@@ -5,9 +5,9 @@ import { createElement, type ReactNode } from "react"
 import { useCoordinatedStreamQueries } from "./use-coordinated-stream-queries"
 import { QUERY_LOAD_STATE } from "@/lib/query-load-state"
 
-const { mockBootstrap, mockJoinRoomWithAck } = vi.hoisted(() => ({
+const { mockBootstrap, mockJoinRoomBestEffort } = vi.hoisted(() => ({
   mockBootstrap: vi.fn(),
-  mockJoinRoomWithAck: vi.fn(),
+  mockJoinRoomBestEffort: vi.fn(),
 }))
 
 vi.mock("@/contexts", () => ({
@@ -25,7 +25,7 @@ vi.mock("@/db", () => ({
 }))
 
 vi.mock("@/lib/socket-room", () => ({
-  joinRoomWithAck: mockJoinRoomWithAck,
+  joinRoomBestEffort: mockJoinRoomBestEffort,
 }))
 
 function createTestQueryClient() {
@@ -45,7 +45,7 @@ function createWrapper(queryClient: QueryClient) {
 describe("useCoordinatedStreamQueries", () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockJoinRoomWithAck.mockResolvedValue(undefined)
+    mockJoinRoomBestEffort.mockResolvedValue(undefined)
   })
 
   it("should filter out draft IDs and not fetch them", async () => {
@@ -70,8 +70,16 @@ describe("useCoordinatedStreamQueries", () => {
     expect(mockBootstrap).toHaveBeenCalledWith("workspace_1", "stream_456")
     expect(mockBootstrap).not.toHaveBeenCalledWith("workspace_1", "draft_abc")
     expect(mockBootstrap).not.toHaveBeenCalledWith("workspace_1", "draft_xyz")
-    expect(mockJoinRoomWithAck).toHaveBeenCalledWith(expect.any(Object), "ws:workspace_1:stream:stream_123")
-    expect(mockJoinRoomWithAck).toHaveBeenCalledWith(expect.any(Object), "ws:workspace_1:stream:stream_456")
+    expect(mockJoinRoomBestEffort).toHaveBeenCalledWith(
+      expect.any(Object),
+      "ws:workspace_1:stream:stream_123",
+      "CoordinatedStreamBootstrap"
+    )
+    expect(mockJoinRoomBestEffort).toHaveBeenCalledWith(
+      expect.any(Object),
+      "ws:workspace_1:stream:stream_456",
+      "CoordinatedStreamBootstrap"
+    )
   })
 
   it("should return isLoading=true while queries are pending", () => {
@@ -123,24 +131,6 @@ describe("useCoordinatedStreamQueries", () => {
 
     expect(result.current.loadState).toBe(QUERY_LOAD_STATE.READY)
     expect(result.current.errors).toHaveLength(1)
-  })
-
-  it("should continue to bootstrap fetch when join ack fails", async () => {
-    const queryClient = createTestQueryClient()
-    mockJoinRoomWithAck.mockRejectedValueOnce(new Error("join timeout"))
-    mockBootstrap.mockResolvedValue({
-      stream: { id: "stream_123" },
-      events: [],
-      membership: null,
-    })
-
-    renderHook(() => useCoordinatedStreamQueries("workspace_1", ["stream_123"]), {
-      wrapper: createWrapper(queryClient),
-    })
-
-    await waitFor(() => {
-      expect(mockBootstrap).toHaveBeenCalledWith("workspace_1", "stream_123")
-    })
   })
 
   it("should return isLoading=false immediately when streamIds is empty", () => {

@@ -10,7 +10,7 @@ import {
   type QueryLoadState,
 } from "@/lib/query-load-state"
 import { db } from "@/db"
-import { joinRoomWithAck } from "@/lib/socket-room"
+import { joinRoomBestEffort } from "@/lib/socket-room"
 import { streamKeys } from "./use-streams"
 import type { Socket } from "socket.io-client"
 
@@ -37,14 +37,7 @@ function aggregateQueryLoadState(states: QueryLoadState[]): QueryLoadState {
 function createBootstrapQueryFn(streamService: StreamService, socket: Socket, workspaceId: string, streamId: string) {
   return async () => {
     debugBootstrap("Coordinated stream bootstrap queryFn start", { workspaceId, streamId })
-    try {
-      await joinRoomWithAck(socket, `ws:${workspaceId}:stream:${streamId}`)
-    } catch (error) {
-      console.error(
-        `[CoordinatedStreamBootstrap] Failed to receive join ack for ws:${workspaceId}:stream:${streamId}; continuing with bootstrap fetch`,
-        error
-      )
-    }
+    await joinRoomBestEffort(socket, `ws:${workspaceId}:stream:${streamId}`, "CoordinatedStreamBootstrap")
 
     const bootstrap = await streamService.bootstrap(workspaceId, streamId)
     debugBootstrap("Coordinated stream bootstrap fetch success", {

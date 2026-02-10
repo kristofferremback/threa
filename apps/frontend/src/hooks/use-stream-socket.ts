@@ -2,7 +2,7 @@ import { useEffect } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { useSocket, useSocketReconnectCount } from "@/contexts"
 import { db } from "@/db"
-import { joinRoomWithAck } from "@/lib/socket-room"
+import { joinRoomFireAndForget } from "@/lib/socket-room"
 import { streamKeys } from "./use-streams"
 import { workspaceKeys } from "./use-workspaces"
 import type { StreamEvent, Stream, WorkspaceBootstrap, LastMessagePreview } from "@threa/types"
@@ -94,10 +94,7 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
     const abortController = new AbortController()
 
     // Subscribe FIRST (before any fetches happen)
-    void joinRoomWithAck(socket, room, { signal: abortController.signal }).catch((error) => {
-      if (abortController.signal.aborted) return
-      console.error(`[StreamSocket] Failed to join room ${room}`, error)
-    })
+    joinRoomFireAndForget(socket, room, abortController.signal, "StreamSocket")
 
     const handleMessageCreated = async (payload: MessageEventPayload) => {
       if (payload.streamId !== streamId) return

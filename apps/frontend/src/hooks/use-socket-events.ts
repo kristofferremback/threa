@@ -5,7 +5,7 @@ import { useSocket, useSocketReconnectCount } from "@/contexts"
 import { useAuth } from "@/auth"
 import { debugBootstrap } from "@/lib/bootstrap-debug"
 import { db } from "@/db"
-import { joinRoomWithAck } from "@/lib/socket-room"
+import { joinRoomFireAndForget } from "@/lib/socket-room"
 import { streamKeys } from "./use-streams"
 import { workspaceKeys } from "./use-workspaces"
 import type {
@@ -129,12 +129,7 @@ export function useSocketEvents(workspaceId: string) {
     const ids = memberStreamIdsKey.split(",").filter(Boolean)
     debugBootstrap("Socket events joining member stream rooms", { workspaceId, streamIds: ids })
     for (const id of ids) {
-      void joinRoomWithAck(socket, `ws:${workspaceId}:stream:${id}`, { signal: abortController.signal }).catch(
-        (error) => {
-          if (abortController.signal.aborted) return
-          console.error(`[SocketEvents] Failed to join stream room ws:${workspaceId}:stream:${id}`, error)
-        }
-      )
+      joinRoomFireAndForget(socket, `ws:${workspaceId}:stream:${id}`, abortController.signal, "SocketEvents")
     }
 
     return () => {
@@ -152,10 +147,7 @@ export function useSocketEvents(workspaceId: string) {
 
     // Join workspace room to receive stream metadata events
     debugBootstrap("Socket events joining workspace room", { workspaceId })
-    void joinRoomWithAck(socket, `ws:${workspaceId}`, { signal: abortController.signal }).catch((error) => {
-      if (abortController.signal.aborted) return
-      console.error(`[SocketEvents] Failed to join workspace room ws:${workspaceId}`, error)
-    })
+    joinRoomFireAndForget(socket, `ws:${workspaceId}`, abortController.signal, "SocketEvents")
 
     // Handle stream created
     socket.on("stream:created", (payload: StreamPayload) => {

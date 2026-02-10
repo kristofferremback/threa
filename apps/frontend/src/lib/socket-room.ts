@@ -175,6 +175,29 @@ export async function joinRoomWithAck(socket: Socket, room: string, options?: Jo
   }
 }
 
+/**
+ * Await join, log and swallow failures. For queryFn where the bootstrap fetch
+ * should proceed even if the room subscription fails.
+ */
+export async function joinRoomBestEffort(socket: Socket, room: string, context: string): Promise<void> {
+  try {
+    await joinRoomWithAck(socket, room)
+  } catch (error) {
+    console.error(`[${context}] Failed to receive join ack for ${room}; continuing with bootstrap fetch`, error)
+  }
+}
+
+/**
+ * Fire-and-forget join with abort signal. For useEffect where cleanup should
+ * cancel any pending join. Non-abort errors are logged.
+ */
+export function joinRoomFireAndForget(socket: Socket, room: string, signal: AbortSignal, context: string): void {
+  void joinRoomWithAck(socket, room, { signal }).catch((error) => {
+    if (signal.aborted) return
+    console.error(`[${context}] Failed to join room ${room}`, error)
+  })
+}
+
 function raceAbortSignal(promise: Promise<void>, signal: AbortSignal, room: string): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     let settled = false
