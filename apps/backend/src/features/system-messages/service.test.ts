@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, mock, spyOn } from "bun:test"
 import { AuthorTypes, CompanionModes, StreamTypes, Visibilities } from "@threa/types"
 import { StreamRepository } from "../streams"
+import { InvitationRepository } from "../invitations"
 import { MemberRepository } from "../workspaces"
+import { UserRepository } from "../../auth/user-repository"
 import { SystemMessageService } from "./service"
 import type { Stream } from "../streams"
 
@@ -88,6 +90,7 @@ describe("SystemMessageService", () => {
           locale: null,
           name: "Alice",
           email: "alice@test.com",
+          setupCompleted: true,
           joinedAt: new Date(),
         },
       ])
@@ -127,6 +130,7 @@ describe("SystemMessageService", () => {
           locale: null,
           name: "Alice",
           email: "alice@test.com",
+          setupCompleted: true,
           joinedAt: new Date(),
         },
         {
@@ -139,6 +143,7 @@ describe("SystemMessageService", () => {
           locale: null,
           name: "Bob",
           email: "bob@test.com",
+          setupCompleted: true,
           joinedAt: new Date(),
         },
       ])
@@ -173,6 +178,7 @@ describe("SystemMessageService", () => {
           locale: null,
           name: "Alice",
           email: "alice@test.com",
+          setupCompleted: true,
           joinedAt: new Date(),
         },
         {
@@ -185,6 +191,7 @@ describe("SystemMessageService", () => {
           locale: null,
           name: "Bob",
           email: "bob@test.com",
+          setupCompleted: true,
           joinedAt: new Date(),
         },
       ])
@@ -211,6 +218,7 @@ describe("SystemMessageService", () => {
           locale: null,
           name: "Alice",
           email: "alice@test.com",
+          setupCompleted: true,
           joinedAt: new Date(),
         },
         {
@@ -223,6 +231,7 @@ describe("SystemMessageService", () => {
           locale: null,
           name: "Bob",
           email: "bob@test.com",
+          setupCompleted: true,
           joinedAt: new Date(),
         },
       ])
@@ -252,6 +261,7 @@ describe("SystemMessageService", () => {
           locale: null,
           name: "Alice",
           email: "alice@test.com",
+          setupCompleted: true,
           joinedAt: new Date(),
         },
         {
@@ -264,6 +274,7 @@ describe("SystemMessageService", () => {
           locale: null,
           name: "Bob",
           email: "bob@test.com",
+          setupCompleted: true,
           joinedAt: new Date(),
         },
       ])
@@ -277,6 +288,106 @@ describe("SystemMessageService", () => {
 
       expect(createMessage).toHaveBeenCalledTimes(2)
       expect(createMessage).toHaveBeenCalledWith(expect.objectContaining({ streamId: streamB.id }))
+    })
+  })
+
+  describe("sendInvitationAccepted", () => {
+    const INVITER_ID = MEMBER_A
+    const INVITEE_USER_ID = `usr_${crypto.randomUUID().replace(/-/g, "").slice(0, 26)}`
+    const INVITATION_ID = `inv_${crypto.randomUUID().replace(/-/g, "").slice(0, 26)}`
+
+    it("should notify the inviter with the accepting user's name", async () => {
+      const inviterStream = fakeStream({ createdBy: INVITER_ID })
+
+      spyOn(InvitationRepository, "findById").mockResolvedValue({
+        id: INVITATION_ID,
+        workspaceId: WORKSPACE_ID,
+        email: "newuser@test.com",
+        role: "member",
+        invitedBy: INVITER_ID,
+        workosInvitationId: null,
+        status: "accepted",
+        createdAt: new Date(),
+        expiresAt: new Date(),
+        acceptedAt: new Date(),
+        revokedAt: null,
+      })
+
+      spyOn(UserRepository, "findById").mockResolvedValue({
+        id: INVITEE_USER_ID,
+        email: "newuser@test.com",
+        name: "New User",
+        workosUserId: "wos_123",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+
+      spyOn(StreamRepository, "findByTypeAndOwner").mockResolvedValue(inviterStream)
+
+      const { service, createMessage } = createService()
+      await service.sendInvitationAccepted({
+        workspaceId: WORKSPACE_ID,
+        invitationId: INVITATION_ID,
+        email: "newuser@test.com",
+        userId: INVITEE_USER_ID,
+      })
+
+      expect(createMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          workspaceId: WORKSPACE_ID,
+          streamId: inviterStream.id,
+          content: "**New User** accepted your invitation and joined the workspace.",
+        })
+      )
+    })
+
+    it("should fall back to email when user has no name", async () => {
+      const inviterStream = fakeStream({ createdBy: INVITER_ID })
+
+      spyOn(InvitationRepository, "findById").mockResolvedValue({
+        id: INVITATION_ID,
+        workspaceId: WORKSPACE_ID,
+        email: "anonymous@test.com",
+        role: "member",
+        invitedBy: INVITER_ID,
+        workosInvitationId: null,
+        status: "accepted",
+        createdAt: new Date(),
+        expiresAt: new Date(),
+        acceptedAt: new Date(),
+        revokedAt: null,
+      })
+
+      spyOn(UserRepository, "findById").mockResolvedValue(null)
+      spyOn(StreamRepository, "findByTypeAndOwner").mockResolvedValue(inviterStream)
+
+      const { service, createMessage } = createService()
+      await service.sendInvitationAccepted({
+        workspaceId: WORKSPACE_ID,
+        invitationId: INVITATION_ID,
+        email: "anonymous@test.com",
+        userId: INVITEE_USER_ID,
+      })
+
+      expect(createMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: "**anonymous@test.com** accepted your invitation and joined the workspace.",
+        })
+      )
+    })
+
+    it("should skip notification when invitation is not found", async () => {
+      spyOn(InvitationRepository, "findById").mockResolvedValue(null)
+
+      const { service, createMessage } = createService()
+      await service.sendInvitationAccepted({
+        workspaceId: WORKSPACE_ID,
+        invitationId: "inv_nonexistent",
+        email: "test@test.com",
+        userId: INVITEE_USER_ID,
+      })
+
+      expect(createMessage).not.toHaveBeenCalled()
     })
   })
 })
