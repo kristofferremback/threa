@@ -23,7 +23,7 @@
     "test": "bun run --cwd apps/backend test",
     "test:unit": "bun run --cwd apps/backend test:unit",
     "test:e2e": "bun run --cwd apps/backend test:e2e",
-    "test:browser": "bunx playwright test",
+    "test:browser": "bun scripts/test-silent.ts browser",
     "test:browser:ui": "bunx playwright test --ui",
     "test:browser:headed": "bunx playwright test --headed",
     "test:browser:backend": "FAST_SHUTDOWN=true bun apps/backend/src/index.ts",

@@ -7,9 +7,9 @@
     "start": "bun src/index.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.tests.json",
     "test": "bun run test:unit && bun run test:e2e",
-    "test:unit": "bun test src/",
-    "test:integration": "bun test --preload ./tests/setup.ts tests/integration/critical/",
-    "test:e2e": "bun test --preload ./tests/setup.ts tests/e2e/",
+    "test:unit": "bun ../../scripts/test-silent.ts backend-unit",
+    "test:integration": "bun ../../scripts/test-silent.ts backend-integration",
+    "test:e2e": "bun ../../scripts/test-silent.ts backend-e2e",
     "test:watch": "bun test --watch src/",
     "eval": "bun run evals/run.ts",
     "lint": "eslint src/"
