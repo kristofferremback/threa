@@ -21,6 +21,7 @@ import {
   updateMessage,
   deleteMessage,
   getMemberId,
+  getBootstrap,
   joinWorkspace,
   joinRoom,
 } from "../client"
@@ -167,6 +168,27 @@ describe("Real-time Events", () => {
     test("should allow joining stream room when member", async () => {
       const stream = await createScratchpad(client, workspaceId)
       await joinRoom(socket, `ws:${workspaceId}:stream:${stream.id}`)
+    })
+
+    test("should allow joining public stream room when workspace member but not stream member", async () => {
+      const stream = await createChannel(client, workspaceId, `public-room-${Date.now()}`, "public")
+
+      const otherClient = new TestClient()
+      await loginAs(otherClient, `public-room-member-${Date.now()}@example.com`, "Public Room Member")
+      await joinWorkspace(otherClient, workspaceId, "member")
+
+      // HTTP bootstrap already uses validateStreamAccess, so this should succeed.
+      const bootstrap = await getBootstrap(otherClient, workspaceId, stream.id)
+      expect(bootstrap.stream.id).toBe(stream.id)
+
+      const otherSocket = createSocket(otherClient)
+      await connectSocket(otherSocket)
+
+      try {
+        await joinRoom(otherSocket, `ws:${workspaceId}:stream:${stream.id}`)
+      } finally {
+        otherSocket.disconnect()
+      }
     })
   })
 
