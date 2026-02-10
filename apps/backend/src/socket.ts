@@ -7,7 +7,7 @@ import type { WorkspaceService } from "./features/workspaces"
 import type { UserSocketRegistry } from "./lib/user-socket-registry"
 import { AgentSessionRepository } from "./features/agents"
 import { MemberRepository } from "./features/workspaces"
-import { StreamNotFoundError } from "./lib/errors"
+import { HttpError } from "./lib/errors"
 import { logger } from "./lib/logger"
 import { wsConnectionsActive, wsConnectionDuration, wsMessagesTotal } from "./lib/observability"
 
@@ -34,6 +34,10 @@ function normalizeRoomPattern(room: string): string {
 function extractWorkspaceId(room: string): string {
   const match = room.match(/^ws:([^:]+)/)
   return match ? match[1] : "-"
+}
+
+function isJoinAccessError(error: unknown): boolean {
+  return error instanceof HttpError && (error.status === 403 || error.status === 404)
 }
 
 /**
@@ -145,7 +149,7 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
         try {
           await streamService.validateStreamAccess(streamId, wsId, member.id)
         } catch (error) {
-          if (!(error instanceof StreamNotFoundError)) {
+          if (!isJoinAccessError(error)) {
             throw error
           }
           socket.emit("error", { message: "Not authorized to join this stream" })
@@ -187,7 +191,7 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
         try {
           await streamService.validateStreamAccess(session.streamId, wsId, member.id)
         } catch (error) {
-          if (!(error instanceof StreamNotFoundError)) {
+          if (!isJoinAccessError(error)) {
             throw error
           }
           socket.emit("error", { message: "Not authorized to join this session" })

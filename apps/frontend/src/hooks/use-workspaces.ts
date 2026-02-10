@@ -1,9 +1,8 @@
 import { useCallback } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useSocket, useWorkspaceService } from "@/contexts"
-import { ApiError } from "@/api/client"
 import { debugBootstrap } from "@/lib/bootstrap-debug"
-import { getQueryLoadState } from "@/lib/query-load-state"
+import { getQueryLoadState, isTerminalBootstrapError } from "@/lib/query-load-state"
 import { db } from "@/db"
 import { joinRoomWithAck } from "@/lib/socket-room"
 import type { Workspace } from "@threa/types"
@@ -16,10 +15,6 @@ export const workspaceKeys = {
   details: () => [...workspaceKeys.all, "detail"] as const,
   detail: (id: string) => [...workspaceKeys.details(), id] as const,
   bootstrap: (id: string) => [...workspaceKeys.all, "bootstrap", id] as const,
-}
-
-function isTerminalBootstrapError(error: unknown): boolean {
-  return ApiError.isApiError(error) && (error.status === 403 || error.status === 404)
 }
 
 export function useWorkspaces() {

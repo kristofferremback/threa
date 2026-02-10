@@ -1,8 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useSocket, useStreamService } from "@/contexts"
-import { ApiError } from "@/api/client"
 import { debugBootstrap } from "@/lib/bootstrap-debug"
-import { getQueryLoadState } from "@/lib/query-load-state"
+import { getQueryLoadState, isTerminalBootstrapError } from "@/lib/query-load-state"
 import { db } from "@/db"
 import { joinRoomWithAck } from "@/lib/socket-room"
 import type { Stream, StreamType } from "@threa/types"
@@ -20,10 +19,6 @@ export const streamKeys = {
   bootstrap: (workspaceId: string, streamId: string) =>
     [...streamKeys.all, "bootstrap", workspaceId, streamId] as const,
   events: (workspaceId: string, streamId: string) => [...streamKeys.all, "events", workspaceId, streamId] as const,
-}
-
-function isTerminalBootstrapError(error: unknown): boolean {
-  return ApiError.isApiError(error) && (error.status === 403 || error.status === 404)
 }
 
 export function useStreams(workspaceId: string, filters?: { type?: StreamType }) {
