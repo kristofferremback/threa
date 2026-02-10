@@ -17,7 +17,7 @@ interface WorkspaceMemberRow {
   user_id: string
   role: string
   slug: string
-  display_name: string
+  name: string
   timezone: string | null
   locale: string | null
   setup_completed: boolean
@@ -72,7 +72,7 @@ function mapRowToMember(row: WorkspaceMemberRow): WorkspaceMember {
     userId: row.user_id,
     role: row.role as WorkspaceMember["role"],
     slug: row.slug,
-    name: row.display_name,
+    name: row.name,
     timezone: row.timezone,
     locale: row.locale,
     setupCompleted: row.setup_completed,
@@ -132,9 +132,9 @@ export const WorkspaceRepository = {
     }
   ): Promise<WorkspaceMember> {
     const result = await db.query<WorkspaceMemberRow>(sql`
-      INSERT INTO workspace_members (id, workspace_id, user_id, role, slug, display_name, timezone, locale, setup_completed)
+      INSERT INTO workspace_members (id, workspace_id, user_id, role, slug, name, timezone, locale, setup_completed)
       VALUES (${params.id}, ${params.workspaceId}, ${params.userId}, ${params.role ?? "member"}, ${params.slug}, ${params.name}, ${params.timezone ?? null}, ${params.locale ?? null}, ${params.setupCompleted ?? true})
-      RETURNING id, workspace_id, user_id, role, slug, display_name, timezone, locale, setup_completed, joined_at
+      RETURNING id, workspace_id, user_id, role, slug, name, timezone, locale, setup_completed, joined_at
     `)
     return mapRowToMember(result.rows[0])
   },
@@ -155,7 +155,7 @@ export const WorkspaceRepository = {
 
   async listMembers(db: Querier, workspaceId: string): Promise<WorkspaceMember[]> {
     const result = await db.query<WorkspaceMemberRow>(sql`
-      SELECT id, workspace_id, user_id, role, slug, display_name, timezone, locale, setup_completed, joined_at
+      SELECT id, workspace_id, user_id, role, slug, name, timezone, locale, setup_completed, joined_at
       FROM workspace_members
       WHERE workspace_id = ${workspaceId}
       ORDER BY joined_at
@@ -215,7 +215,7 @@ export const WorkspaceRepository = {
       values.push(params.slug)
     }
     if (params.name !== undefined) {
-      sets.push(`display_name = $${paramIndex++}`)
+      sets.push(`name = $${paramIndex++}`)
       values.push(params.name)
     }
     if (params.timezone !== undefined) {
@@ -241,7 +241,7 @@ export const WorkspaceRepository = {
     const query = `
       UPDATE workspace_members SET ${sets.join(", ")}
       ${whereClause}
-      RETURNING id, workspace_id, user_id, role, slug, display_name, timezone, locale, setup_completed, joined_at
+      RETURNING id, workspace_id, user_id, role, slug, name, timezone, locale, setup_completed, joined_at
     `
     const result = await db.query<WorkspaceMemberRow>(query, values)
     return result.rows[0] ? mapRowToMember(result.rows[0]) : null
@@ -263,7 +263,7 @@ export const WorkspaceRepository = {
 
   async findMemberByUserId(db: Querier, workspaceId: string, userId: string): Promise<WorkspaceMember | null> {
     const result = await db.query<WorkspaceMemberRow>(sql`
-      SELECT id, workspace_id, user_id, role, slug, display_name, timezone, locale, setup_completed, joined_at
+      SELECT id, workspace_id, user_id, role, slug, name, timezone, locale, setup_completed, joined_at
       FROM workspace_members
       WHERE workspace_id = ${workspaceId} AND user_id = ${userId}
     `)

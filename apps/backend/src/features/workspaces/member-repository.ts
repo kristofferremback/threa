@@ -7,7 +7,7 @@ interface MemberRow {
   user_id: string
   role: string
   slug: string
-  display_name: string
+  name: string
   timezone: string | null
   locale: string | null
   setup_completed: boolean
@@ -39,7 +39,7 @@ export interface InsertMemberParams {
 
 const SELECT_FIELDS = `
   wm.id, wm.workspace_id, wm.user_id, wm.role, wm.slug,
-  wm.display_name, wm.timezone, wm.locale, wm.setup_completed, u.email, wm.joined_at
+  wm.name, wm.timezone, wm.locale, wm.setup_completed, u.email, wm.joined_at
 `
 
 function mapRowToMember(row: MemberRow): Member {
@@ -49,7 +49,7 @@ function mapRowToMember(row: MemberRow): Member {
     userId: row.user_id,
     role: row.role as Member["role"],
     slug: row.slug,
-    name: row.display_name,
+    name: row.name,
     timezone: row.timezone,
     locale: row.locale,
     setupCompleted: row.setup_completed,
@@ -176,7 +176,7 @@ export const MemberRepository = {
     const result = await db.query<MemberRow>(sql`
       SELECT DISTINCT ${sql.raw(SELECT_FIELDS)},
         GREATEST(
-          similarity(wm.display_name, ${query}),
+          similarity(wm.name, ${query}),
           similarity(u.email, ${query}),
           similarity(wm.slug, ${query})
         ) AS sim_score
@@ -184,14 +184,14 @@ export const MemberRepository = {
       JOIN users u ON u.id = wm.user_id
       WHERE wm.workspace_id = ${workspaceId}
         AND (
-          wm.display_name % ${query}
+          wm.name % ${query}
           OR u.email % ${query}
           OR wm.slug % ${query}
-          OR wm.display_name ILIKE ${pattern}
+          OR wm.name ILIKE ${pattern}
           OR u.email ILIKE ${pattern}
           OR wm.slug ILIKE ${pattern}
         )
-      ORDER BY sim_score DESC, wm.display_name
+      ORDER BY sim_score DESC, wm.name
       LIMIT ${limit}
     `)
     return result.rows.map(mapRowToMember)
