@@ -544,11 +544,6 @@ export async function startServer(): Promise<ServerInstance> {
     })
   })
 
-  // Backfill system streams for existing members (idempotent, non-blocking)
-  notificationService.backfillSystemStreams().catch((err) => {
-    logger.error({ err }, "System stream backfill failed")
-  })
-
   const stop = async () => {
     // In fast shutdown mode, skip graceful shutdown for immediate termination
     if (config.fastShutdown) {
