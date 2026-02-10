@@ -63,14 +63,16 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
   const loadingIndicatorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hideIndicatorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const { isLoading: workspaceLoading } = useWorkspaceBootstrap(workspaceId)
+  const workspaceQuery = useWorkspaceBootstrap(workspaceId)
   const { isLoading: streamsLoading, results } = useCoordinatedStreamQueries(workspaceId, streamIds)
+  const workspaceLoading = Boolean(workspaceQuery.isLoading || workspaceQuery.isPending)
 
   const isLoading = workspaceLoading || streamsLoading
 
   debugBootstrap("Coordinated loading state", {
     workspaceId,
     streamIds,
+    workspacePending: workspaceQuery.isPending,
     workspaceLoading,
     streamsLoading,
     isLoading,

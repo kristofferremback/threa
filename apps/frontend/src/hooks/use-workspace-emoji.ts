@@ -26,6 +26,9 @@ export function useWorkspaceEmoji(workspaceId: string): WorkspaceEmojiData {
   const { data: bootstrap } = useQuery({
     queryKey: workspaceKeys.bootstrap(workspaceId),
     queryFn: () => queryClient.getQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId)) ?? null,
+    // Cache-only observer: never run this queryFn.
+    // Running it before the real bootstrap query can seed `null` as fresh data and block initial bootstrap.
+    enabled: false,
     // Don't refetch - we just want to subscribe to cache updates
     staleTime: Infinity,
     refetchOnMount: false,

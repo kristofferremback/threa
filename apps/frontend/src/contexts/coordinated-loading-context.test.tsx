@@ -8,12 +8,14 @@ import {
 } from "./coordinated-loading-context"
 
 let mockWorkspaceLoading = true
+let mockWorkspacePending = true
 let mockStreamsLoading = true
 let mockStreamResults: Array<{ isLoading: boolean; isError: boolean; error: Error | null }> = []
 
 vi.mock("@/hooks/use-workspaces", () => ({
   useWorkspaceBootstrap: () => ({
     isLoading: mockWorkspaceLoading,
+    isPending: mockWorkspacePending,
     data: null,
     error: null,
   }),
@@ -46,6 +48,7 @@ describe("CoordinatedLoadingProvider", () => {
   beforeEach(() => {
     vi.useFakeTimers()
     mockWorkspaceLoading = true
+    mockWorkspacePending = true
     mockStreamsLoading = true
     mockStreamResults = []
   })
@@ -96,6 +99,7 @@ describe("CoordinatedLoadingProvider", () => {
 
     // Simulate loading complete
     mockWorkspaceLoading = false
+    mockWorkspacePending = false
     mockStreamsLoading = false
 
     rerender(
@@ -122,6 +126,7 @@ describe("CoordinatedLoadingProvider", () => {
 
     // Simulate loading complete
     mockWorkspaceLoading = false
+    mockWorkspacePending = false
     mockStreamsLoading = false
 
     rerender(
@@ -135,6 +140,7 @@ describe("CoordinatedLoadingProvider", () => {
 
   it("should be phase='ready' immediately when no data to load", () => {
     mockWorkspaceLoading = false
+    mockWorkspacePending = false
     mockStreamsLoading = false
 
     render(
@@ -160,6 +166,7 @@ describe("CoordinatedLoadingProvider", () => {
 
   it("should report stream state as 'loading' after initial load completes", () => {
     mockWorkspaceLoading = false
+    mockWorkspacePending = false
     mockStreamsLoading = false
     mockStreamResults = [{ isLoading: true, isError: false, error: null }]
 
@@ -181,6 +188,20 @@ describe("CoordinatedLoadingProvider", () => {
     // After initial load, stream reports its actual loading state
     expect(screen.getByTestId("phase").textContent).toBe("ready")
     expect(screen.getByTestId("stream-state").textContent).toBe("loading")
+  })
+
+  it("should remain in loading phase while workspace query is pending", () => {
+    mockWorkspaceLoading = false
+    mockWorkspacePending = true
+    mockStreamsLoading = false
+
+    render(
+      <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
+        <TestConsumer />
+      </CoordinatedLoadingProvider>
+    )
+
+    expect(screen.getByTestId("phase").textContent).toBe("loading")
   })
 })
 
@@ -227,6 +248,7 @@ describe("CoordinatedLoadingGate", () => {
 
   it("should render children during 'ready' phase", () => {
     mockWorkspaceLoading = false
+    mockWorkspacePending = false
     mockStreamsLoading = false
 
     render(
@@ -252,6 +274,7 @@ describe("CoordinatedLoadingGate", () => {
     expect(screen.queryByTestId("content")).not.toBeInTheDocument()
 
     mockWorkspaceLoading = false
+    mockWorkspacePending = false
     mockStreamsLoading = false
 
     rerender(
@@ -311,6 +334,7 @@ describe("MainContentGate", () => {
 
   it("should show children during 'ready' phase", () => {
     mockWorkspaceLoading = false
+    mockWorkspacePending = false
     mockStreamsLoading = false
 
     render(
@@ -338,6 +362,7 @@ describe("MainContentGate", () => {
     expect(screen.queryByTestId("content")).not.toBeInTheDocument()
 
     mockWorkspaceLoading = false
+    mockWorkspacePending = false
     mockStreamsLoading = false
 
     rerender(

@@ -111,9 +111,9 @@ export function useCoordinatedStreamQueries(workspaceId: string, streamIds: stri
 
   const results = useQueries({ queries })
 
-  // A query is considered "loading" only if it's fetching AND hasn't errored.
+  // Treat pending queries as loading as well (e.g. disabled until socket exists).
   // Errored queries should not block the UI - let components handle the error.
-  const isLoading = results.some((r) => r.isLoading && !r.isError)
+  const isLoading = results.some((r) => (r.isLoading || r.isPending) && !r.isError)
   const isError = results.some((r) => r.isError)
   const errors = results.filter((r) => r.error).map((r) => r.error)
 
