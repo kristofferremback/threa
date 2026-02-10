@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useMemo, useRef, type R
 import { useWorkspaceBootstrap } from "@/hooks/use-workspaces"
 import { useCoordinatedStreamQueries } from "@/hooks/use-coordinated-stream-queries"
 import { debugBootstrap } from "@/lib/bootstrap-debug"
+import { getQueryLoadState, isQueryLoadStateLoading } from "@/lib/query-load-state"
 import { StreamContentSkeleton } from "@/components/loading"
 import { ApiError } from "@/api/client"
 
@@ -64,15 +65,19 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
   const hideIndicatorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const workspaceQuery = useWorkspaceBootstrap(workspaceId)
-  const { isLoading: streamsLoading, results } = useCoordinatedStreamQueries(workspaceId, streamIds)
-  const workspaceLoading = Boolean(workspaceQuery.isLoading || workspaceQuery.isPending)
+  const workspaceLoadState =
+    workspaceQuery.loadState ?? getQueryLoadState(workspaceQuery.status, workspaceQuery.fetchStatus)
+  const { loadState: streamsLoadState, results } = useCoordinatedStreamQueries(workspaceId, streamIds)
+  const workspaceLoading = isQueryLoadStateLoading(workspaceLoadState)
+  const streamsLoading = isQueryLoadStateLoading(streamsLoadState)
 
   const isLoading = workspaceLoading || streamsLoading
 
   debugBootstrap("Coordinated loading state", {
     workspaceId,
     streamIds,
-    workspacePending: workspaceQuery.isPending,
+    workspaceLoadState,
+    streamsLoadState,
     workspaceLoading,
     streamsLoading,
     isLoading,
@@ -158,8 +163,9 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
     results.forEach((result, index) => {
       const streamId = serverStreamIds[index]
       if (streamId) {
+        const loadState = getQueryLoadState(result.status, result.fetchStatus)
         map.set(streamId, {
-          isLoading: result.isLoading && !result.isError,
+          isLoading: isQueryLoadStateLoading(loadState) && !result.isError,
           error: result.error ?? null,
         })
       }

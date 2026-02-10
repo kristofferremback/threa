@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useSocket, useStreamService } from "@/contexts"
 import { ApiError } from "@/api/client"
 import { debugBootstrap } from "@/lib/bootstrap-debug"
+import { getQueryLoadState } from "@/lib/query-load-state"
 import { db } from "@/db"
 import { joinRoomWithAck } from "@/lib/socket-room"
 import type { Stream, StreamType } from "@threa/types"
@@ -124,11 +125,14 @@ export function useStreamBootstrap(workspaceId: string, streamId: string, option
     structuralSharing: false,
   })
 
+  const loadState = getQueryLoadState(query.status, query.fetchStatus)
+
   debugBootstrap("Stream bootstrap observer state", {
     workspaceId,
     streamId,
     enabled: (options?.enabled ?? true) && !!workspaceId && !!streamId && !!socket && !hasTerminalError,
     hasTerminalError,
+    loadState,
     status: query.status,
     fetchStatus: query.fetchStatus,
     isPending: query.isPending,
@@ -136,7 +140,7 @@ export function useStreamBootstrap(workspaceId: string, streamId: string, option
     isError: query.isError,
   })
 
-  return query
+  return { ...query, loadState }
 }
 
 export function useCreateStream(workspaceId: string) {

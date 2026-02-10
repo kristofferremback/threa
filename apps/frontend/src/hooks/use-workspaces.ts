@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useSocket, useWorkspaceService } from "@/contexts"
 import { ApiError } from "@/api/client"
 import { debugBootstrap } from "@/lib/bootstrap-debug"
+import { getQueryLoadState } from "@/lib/query-load-state"
 import { db } from "@/db"
 import { joinRoomWithAck } from "@/lib/socket-room"
 import type { Workspace } from "@threa/types"
@@ -132,10 +133,13 @@ export function useWorkspaceBootstrap(workspaceId: string) {
     refetchOnReconnect: false,
   })
 
+  const loadState = getQueryLoadState(query.status, query.fetchStatus)
+
   debugBootstrap("Workspace bootstrap observer state", {
     workspaceId,
     enabled: !!workspaceId && !!socket && !hasTerminalError,
     hasTerminalError,
+    loadState,
     status: query.status,
     fetchStatus: query.fetchStatus,
     isPending: query.isPending,
@@ -148,7 +152,7 @@ export function useWorkspaceBootstrap(workspaceId: string) {
     queryClient.resetQueries({ queryKey: workspaceKeys.bootstrap(workspaceId) })
   }, [queryClient, workspaceId])
 
-  return { ...query, retryBootstrap }
+  return { ...query, loadState, retryBootstrap }
 }
 
 export function useCreateWorkspace() {

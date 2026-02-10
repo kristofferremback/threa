@@ -3,6 +3,7 @@ import { renderHook, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { createElement, type ReactNode } from "react"
 import { useCoordinatedStreamQueries } from "./use-coordinated-stream-queries"
+import { QUERY_LOAD_STATE } from "@/lib/query-load-state"
 
 const { mockBootstrap, mockJoinRoomWithAck } = vi.hoisted(() => ({
   mockBootstrap: vi.fn(),
@@ -82,6 +83,7 @@ describe("useCoordinatedStreamQueries", () => {
     })
 
     expect(result.current.isLoading).toBe(true)
+    expect(result.current.loadState).toBe(QUERY_LOAD_STATE.FETCHING)
     expect(result.current.isError).toBe(false)
   })
 
@@ -101,6 +103,7 @@ describe("useCoordinatedStreamQueries", () => {
       expect(result.current.isLoading).toBe(false)
     })
 
+    expect(result.current.loadState).toBe(QUERY_LOAD_STATE.READY)
     expect(result.current.isError).toBe(false)
   })
 
@@ -118,6 +121,7 @@ describe("useCoordinatedStreamQueries", () => {
       expect(result.current.isError).toBe(true)
     })
 
+    expect(result.current.loadState).toBe(QUERY_LOAD_STATE.READY)
     expect(result.current.errors).toHaveLength(1)
   })
 
@@ -147,6 +151,7 @@ describe("useCoordinatedStreamQueries", () => {
     })
 
     expect(result.current.isLoading).toBe(false)
+    expect(result.current.loadState).toBe(QUERY_LOAD_STATE.READY)
     expect(mockBootstrap).not.toHaveBeenCalled()
   })
 
@@ -158,6 +163,7 @@ describe("useCoordinatedStreamQueries", () => {
     })
 
     expect(result.current.isLoading).toBe(false)
+    expect(result.current.loadState).toBe(QUERY_LOAD_STATE.READY)
     expect(mockBootstrap).not.toHaveBeenCalled()
   })
 

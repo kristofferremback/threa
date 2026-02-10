@@ -3,6 +3,12 @@ import { useQueries, useQueryClient } from "@tanstack/react-query"
 import { useSocket, useStreamService, type StreamService } from "@/contexts"
 import { ApiError } from "@/api/client"
 import { debugBootstrap } from "@/lib/bootstrap-debug"
+import {
+  QUERY_LOAD_STATE,
+  getQueryLoadState,
+  isQueryLoadStateLoading,
+  type QueryLoadState,
+} from "@/lib/query-load-state"
 import { db } from "@/db"
 import { joinRoomWithAck } from "@/lib/socket-room"
 import { streamKeys } from "./use-streams"
@@ -19,6 +25,16 @@ function isTerminalBootstrapError(error: unknown): boolean {
 
 async function queryFnWithoutSocket() {
   throw new Error("Socket not available for stream subscription")
+}
+
+function aggregateQueryLoadState(states: QueryLoadState[]): QueryLoadState {
+  if (states.length === 0) return QUERY_LOAD_STATE.READY
+
+  const nonErrorStates = states.filter((state) => state !== QUERY_LOAD_STATE.ERROR)
+  if (nonErrorStates.some((state) => state === QUERY_LOAD_STATE.FETCHING)) return QUERY_LOAD_STATE.FETCHING
+  if (nonErrorStates.some((state) => state === QUERY_LOAD_STATE.PENDING)) return QUERY_LOAD_STATE.PENDING
+  if (nonErrorStates.length === 0) return QUERY_LOAD_STATE.ERROR
+  return QUERY_LOAD_STATE.READY
 }
 
 // Create a stable query function factory
@@ -110,10 +126,11 @@ export function useCoordinatedStreamQueries(workspaceId: string, streamIds: stri
   )
 
   const results = useQueries({ queries })
+  const queryLoadStates = results.map((result) => getQueryLoadState(result.status, result.fetchStatus))
+  const loadState = aggregateQueryLoadState(queryLoadStates)
 
-  // Treat pending queries as loading as well (e.g. disabled until socket exists).
-  // Errored queries should not block the UI - let components handle the error.
-  const isLoading = results.some((r) => (r.isLoading || r.isPending) && !r.isError)
+  // Backwards-compatible boolean while call sites migrate to `loadState`.
+  const isLoading = isQueryLoadStateLoading(loadState)
   const isError = results.some((r) => r.isError)
   const errors = results.filter((r) => r.error).map((r) => r.error)
 
@@ -122,6 +139,7 @@ export function useCoordinatedStreamQueries(workspaceId: string, streamIds: stri
     streamIds,
     serverStreamIds,
     hasSocket: !!socket,
+    loadState,
     isLoading,
     isError,
     errorCount: errors.length,
@@ -129,6 +147,7 @@ export function useCoordinatedStreamQueries(workspaceId: string, streamIds: stri
 
   return {
     results,
+    loadState,
     isLoading,
     isError,
     errors,

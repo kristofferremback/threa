@@ -6,16 +6,36 @@ import {
   MainContentGate,
   useCoordinatedLoading,
 } from "./coordinated-loading-context"
+import { QUERY_LOAD_STATE, isQueryLoadStateLoading, type QueryLoadState } from "@/lib/query-load-state"
 
-let mockWorkspaceLoading = true
-let mockWorkspacePending = true
-let mockStreamsLoading = true
-let mockStreamResults: Array<{ isLoading: boolean; isError: boolean; error: Error | null }> = []
+let mockWorkspaceLoadState: QueryLoadState = QUERY_LOAD_STATE.PENDING
+let mockStreamsLoadState: QueryLoadState = QUERY_LOAD_STATE.PENDING
+let mockStreamResults: Array<{
+  status: "pending" | "success" | "error"
+  fetchStatus: "idle" | "fetching" | "paused"
+  isLoading: boolean
+  isError: boolean
+  error: Error | null
+}> = []
+
+function statusFromLoadState(state: QueryLoadState): "pending" | "success" | "error" {
+  if (state === QUERY_LOAD_STATE.ERROR) return "error"
+  if (state === QUERY_LOAD_STATE.READY) return "success"
+  return "pending"
+}
+
+function fetchStatusFromLoadState(state: QueryLoadState): "idle" | "fetching" | "paused" {
+  if (state === QUERY_LOAD_STATE.FETCHING) return "fetching"
+  return "idle"
+}
 
 vi.mock("@/hooks/use-workspaces", () => ({
   useWorkspaceBootstrap: () => ({
-    isLoading: mockWorkspaceLoading,
-    isPending: mockWorkspacePending,
+    loadState: mockWorkspaceLoadState,
+    status: statusFromLoadState(mockWorkspaceLoadState),
+    fetchStatus: fetchStatusFromLoadState(mockWorkspaceLoadState),
+    isLoading: mockWorkspaceLoadState === QUERY_LOAD_STATE.FETCHING,
+    isPending: mockWorkspaceLoadState === QUERY_LOAD_STATE.PENDING,
     data: null,
     error: null,
   }),
@@ -23,7 +43,8 @@ vi.mock("@/hooks/use-workspaces", () => ({
 
 vi.mock("@/hooks/use-coordinated-stream-queries", () => ({
   useCoordinatedStreamQueries: () => ({
-    isLoading: mockStreamsLoading,
+    loadState: mockStreamsLoadState,
+    isLoading: isQueryLoadStateLoading(mockStreamsLoadState),
     isError: false,
     errors: [],
     results: mockStreamResults,
@@ -47,9 +68,8 @@ function TestConsumer() {
 describe("CoordinatedLoadingProvider", () => {
   beforeEach(() => {
     vi.useFakeTimers()
-    mockWorkspaceLoading = true
-    mockWorkspacePending = true
-    mockStreamsLoading = true
+    mockWorkspaceLoadState = QUERY_LOAD_STATE.PENDING
+    mockStreamsLoadState = QUERY_LOAD_STATE.PENDING
     mockStreamResults = []
   })
 
@@ -98,9 +118,8 @@ describe("CoordinatedLoadingProvider", () => {
     })
 
     // Simulate loading complete
-    mockWorkspaceLoading = false
-    mockWorkspacePending = false
-    mockStreamsLoading = false
+    mockWorkspaceLoadState = QUERY_LOAD_STATE.READY
+    mockStreamsLoadState = QUERY_LOAD_STATE.READY
 
     rerender(
       <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
@@ -125,9 +144,8 @@ describe("CoordinatedLoadingProvider", () => {
     expect(screen.getByTestId("phase").textContent).toBe("skeleton")
 
     // Simulate loading complete
-    mockWorkspaceLoading = false
-    mockWorkspacePending = false
-    mockStreamsLoading = false
+    mockWorkspaceLoadState = QUERY_LOAD_STATE.READY
+    mockStreamsLoadState = QUERY_LOAD_STATE.READY
 
     rerender(
       <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
@@ -139,9 +157,8 @@ describe("CoordinatedLoadingProvider", () => {
   })
 
   it("should be phase='ready' immediately when no data to load", () => {
-    mockWorkspaceLoading = false
-    mockWorkspacePending = false
-    mockStreamsLoading = false
+    mockWorkspaceLoadState = QUERY_LOAD_STATE.READY
+    mockStreamsLoadState = QUERY_LOAD_STATE.READY
 
     render(
       <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={[]}>
@@ -153,7 +170,7 @@ describe("CoordinatedLoadingProvider", () => {
   })
 
   it("should report stream state as 'idle' during initial load", () => {
-    mockStreamResults = [{ isLoading: true, isError: false, error: null }]
+    mockStreamResults = [{ status: "pending", fetchStatus: "fetching", isLoading: true, isError: false, error: null }]
 
     render(
       <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
@@ -165,10 +182,9 @@ describe("CoordinatedLoadingProvider", () => {
   })
 
   it("should report stream state as 'loading' after initial load completes", () => {
-    mockWorkspaceLoading = false
-    mockWorkspacePending = false
-    mockStreamsLoading = false
-    mockStreamResults = [{ isLoading: true, isError: false, error: null }]
+    mockWorkspaceLoadState = QUERY_LOAD_STATE.READY
+    mockStreamsLoadState = QUERY_LOAD_STATE.READY
+    mockStreamResults = [{ status: "pending", fetchStatus: "fetching", isLoading: true, isError: false, error: null }]
 
     const { rerender } = render(
       <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
@@ -177,7 +193,7 @@ describe("CoordinatedLoadingProvider", () => {
     )
 
     // Now simulate stream starts loading again after initial load
-    mockStreamsLoading = true
+    mockStreamsLoadState = QUERY_LOAD_STATE.FETCHING
 
     rerender(
       <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
@@ -191,9 +207,8 @@ describe("CoordinatedLoadingProvider", () => {
   })
 
   it("should remain in loading phase while workspace query is pending", () => {
-    mockWorkspaceLoading = false
-    mockWorkspacePending = true
-    mockStreamsLoading = false
+    mockWorkspaceLoadState = QUERY_LOAD_STATE.PENDING
+    mockStreamsLoadState = QUERY_LOAD_STATE.READY
 
     render(
       <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
@@ -208,8 +223,8 @@ describe("CoordinatedLoadingProvider", () => {
 describe("CoordinatedLoadingGate", () => {
   beforeEach(() => {
     vi.useFakeTimers()
-    mockWorkspaceLoading = true
-    mockStreamsLoading = true
+    mockWorkspaceLoadState = QUERY_LOAD_STATE.PENDING
+    mockStreamsLoadState = QUERY_LOAD_STATE.PENDING
     mockStreamResults = []
   })
 
@@ -247,9 +262,8 @@ describe("CoordinatedLoadingGate", () => {
   })
 
   it("should render children during 'ready' phase", () => {
-    mockWorkspaceLoading = false
-    mockWorkspacePending = false
-    mockStreamsLoading = false
+    mockWorkspaceLoadState = QUERY_LOAD_STATE.READY
+    mockStreamsLoadState = QUERY_LOAD_STATE.READY
 
     render(
       <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={[]}>
@@ -273,9 +287,8 @@ describe("CoordinatedLoadingGate", () => {
 
     expect(screen.queryByTestId("content")).not.toBeInTheDocument()
 
-    mockWorkspaceLoading = false
-    mockWorkspacePending = false
-    mockStreamsLoading = false
+    mockWorkspaceLoadState = QUERY_LOAD_STATE.READY
+    mockStreamsLoadState = QUERY_LOAD_STATE.READY
 
     rerender(
       <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
@@ -292,8 +305,8 @@ describe("CoordinatedLoadingGate", () => {
 describe("MainContentGate", () => {
   beforeEach(() => {
     vi.useFakeTimers()
-    mockWorkspaceLoading = true
-    mockStreamsLoading = true
+    mockWorkspaceLoadState = QUERY_LOAD_STATE.PENDING
+    mockStreamsLoadState = QUERY_LOAD_STATE.PENDING
     mockStreamResults = []
   })
 
@@ -333,9 +346,8 @@ describe("MainContentGate", () => {
   })
 
   it("should show children during 'ready' phase", () => {
-    mockWorkspaceLoading = false
-    mockWorkspacePending = false
-    mockStreamsLoading = false
+    mockWorkspaceLoadState = QUERY_LOAD_STATE.READY
+    mockStreamsLoadState = QUERY_LOAD_STATE.READY
 
     render(
       <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={[]}>
@@ -361,9 +373,8 @@ describe("MainContentGate", () => {
     expect(screen.getByTestId("stream-content-skeleton")).toBeInTheDocument()
     expect(screen.queryByTestId("content")).not.toBeInTheDocument()
 
-    mockWorkspaceLoading = false
-    mockWorkspacePending = false
-    mockStreamsLoading = false
+    mockWorkspaceLoadState = QUERY_LOAD_STATE.READY
+    mockStreamsLoadState = QUERY_LOAD_STATE.READY
 
     rerender(
       <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
