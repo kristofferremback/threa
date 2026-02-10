@@ -66,6 +66,7 @@ import {
   COMPANION_SUMMARY_TEMPERATURE,
 } from "./features/agents"
 import { EmojiUsageHandler } from "./features/emoji"
+import { NotificationService, NotificationOutboxHandler } from "./features/notifications"
 import { AttachmentUploadedHandler } from "./features/attachments"
 import { AICostService, AIBudgetService } from "./features/ai-usage"
 import { CommandRegistry, SimulateCommand, createCommandWorker, CommandHandler } from "./features/commands"
@@ -105,6 +106,7 @@ import { AttachmentRepository } from "./features/attachments"
 import { ulid } from "ulid"
 import { loadConfig } from "./lib/env"
 import { createCorsOriginChecker } from "./lib/cors"
+import type { AuthorType } from "@threa/types"
 import { parseMarkdown } from "@threa/prosemirror"
 import { normalizeMessage, toEmoji } from "./features/emoji"
 import { logger } from "./lib/logger"
@@ -242,7 +244,7 @@ export async function startServer(): Promise<ServerInstance> {
     workspaceId: string
     streamId: string
     authorId: string
-    authorType: "member" | "persona"
+    authorType: AuthorType
     content: string
     sources?: { title: string; url: string }[]
     sessionId?: string
@@ -496,6 +498,8 @@ export async function startServer(): Promise<ServerInstance> {
   const commandHandler = new CommandHandler(pool, jobQueue)
   const mentionInvokeHandler = new MentionInvokeHandler(pool, jobQueue)
   const attachmentUploadedHandler = new AttachmentUploadedHandler(pool, jobQueue)
+  const notificationService = new NotificationService({ pool, createMessage })
+  const notificationOutboxHandler = new NotificationOutboxHandler(pool, notificationService)
   const outboxHandlers = [
     broadcastHandler,
     companionHandler,
@@ -507,6 +511,7 @@ export async function startServer(): Promise<ServerInstance> {
     commandHandler,
     mentionInvokeHandler,
     attachmentUploadedHandler,
+    notificationOutboxHandler,
   ]
 
   // Ensure listeners exist in database, then register all handlers

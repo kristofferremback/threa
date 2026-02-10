@@ -1,6 +1,6 @@
 import type { Querier } from "../../db"
 import { sql } from "../../db"
-import type { StreamType, Visibility, CompanionMode } from "@threa/types"
+import type { AuthorType, StreamType, Visibility, CompanionMode } from "@threa/types"
 import { parseArchiveStatusFilter, type ArchiveStatus } from "../../lib/sql-filters"
 
 export type { StreamType, Visibility, CompanionMode, ArchiveStatus }
@@ -74,7 +74,7 @@ export interface UpdateStreamParams {
 /** Preview of the last message in a stream for sidebar display */
 export interface LastMessagePreview {
   authorId: string
-  authorType: "member" | "persona"
+  authorType: AuthorType
   content: any // ProseMirror JSONContent
   createdAt: Date
 }
@@ -120,7 +120,7 @@ function mapRowToStreamWithPreview(row: StreamWithPreviewRow): StreamWithPreview
     row.last_message_author_id && row.last_message_content && row.last_message_at
       ? {
           authorId: row.last_message_author_id,
-          authorType: row.last_message_author_type as "member" | "persona",
+          authorType: row.last_message_author_type as AuthorType,
           content: row.last_message_content,
           createdAt: row.last_message_at,
         }
@@ -460,6 +460,20 @@ export const StreamRepository = {
       WHERE workspace_id = ${workspaceId} AND slug = ${slug}
     `)
     return result.rows.length > 0
+  },
+
+  async findByTypeAndOwner(
+    db: Querier,
+    workspaceId: string,
+    type: StreamType,
+    createdBy: string
+  ): Promise<Stream | null> {
+    const result = await db.query<StreamRow>(sql`
+      SELECT ${sql.raw(SELECT_FIELDS)} FROM streams
+      WHERE workspace_id = ${workspaceId} AND type = ${type} AND created_by = ${createdBy}
+      LIMIT 1
+    `)
+    return result.rows[0] ? mapRowToStream(result.rows[0]) : null
   },
 
   async findByParentMessage(db: Querier, parentStreamId: string, parentMessageId: string): Promise<Stream | null> {

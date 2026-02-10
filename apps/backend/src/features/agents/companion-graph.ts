@@ -4,7 +4,7 @@ import type { ChatOpenAI } from "@langchain/openai"
 import type { BaseMessage } from "@langchain/core/messages"
 import type { StructuredToolInterface } from "@langchain/core/tools"
 import type { RunnableConfig } from "@langchain/core/runnables"
-import { AgentToolNames, type SourceItem, type AgentStepType, type TraceSource } from "@threa/types"
+import { AgentToolNames, type AuthorType, type SourceItem, type AgentStepType, type TraceSource } from "@threa/types"
 import { logger } from "../../lib/logger"
 import type { SendMessageInputWithSources, SendMessageResult } from "./tools"
 import { isMultimodalToolResult } from "./tools"
@@ -249,7 +249,7 @@ export interface NewMessageInfo {
   content: string
   authorId: string
   authorName: string
-  authorType: "member" | "persona"
+  authorType: AuthorType
   createdAt: string
 }
 

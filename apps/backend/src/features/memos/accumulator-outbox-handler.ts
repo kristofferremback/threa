@@ -141,6 +141,8 @@ export class MemoAccumulatorHandler implements OutboxHandler {
         return
       }
 
+      if (stream.type === StreamTypes.SYSTEM) return
+
       const topLevelStreamId = stream.type === StreamTypes.THREAD ? (stream.rootStreamId ?? streamId) : streamId
 
       await PendingItemRepository.queue(client, [

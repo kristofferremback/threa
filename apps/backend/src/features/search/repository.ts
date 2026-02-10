@@ -1,6 +1,6 @@
 import type { Querier } from "../../db"
 import { sql } from "../../db"
-import { Visibilities, type StreamType } from "@threa/types"
+import { Visibilities, type AuthorType, type StreamType } from "@threa/types"
 import { parseArchiveStatusFilter, type ArchiveStatus } from "../../lib/sql-filters"
 import type { AgentAccessSpec } from "../agents"
 
@@ -17,7 +17,7 @@ export interface SearchResult {
   streamId: string
   content: string
   authorId: string
-  authorType: "member" | "persona"
+  authorType: AuthorType
   createdAt: Date
   rank: number
 }
@@ -38,7 +38,7 @@ function mapRowToSearchResult(row: SearchResultRow): SearchResult {
     streamId: row.stream_id,
     content: row.content_markdown,
     authorId: row.author_id,
-    authorType: row.author_type as "member" | "persona",
+    authorType: row.author_type as AuthorType,
     createdAt: row.created_at,
     rank: row.rank,
   }

@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { FileText, Hash, MessageSquare, Plus, X, Archive } from "lucide-react"
+import { Bell, FileText, Hash, MessageSquare, Plus, X, Archive } from "lucide-react"
 import { StreamTypes } from "@threa/types"
 import type { Stream, StreamType } from "@threa/types"
 import { streamsApi } from "@/api"
@@ -22,6 +22,7 @@ const STREAM_ICONS: Record<StreamType, React.ComponentType<{ className?: string 
   [StreamTypes.CHANNEL]: Hash,
   [StreamTypes.DM]: MessageSquare,
   [StreamTypes.THREAD]: MessageSquare,
+  [StreamTypes.SYSTEM]: Bell,
 }
 
 const FILTER_TYPES: { type: FilterType; label: string; icon: React.ReactNode }[] = [

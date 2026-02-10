@@ -10,7 +10,13 @@ import { StreamPersonaParticipantRepository } from "../agents"
 import { eventId, messageId } from "../../lib/id"
 import { serializeBigInt } from "../../lib/serialization"
 import { messagesTotal } from "../../lib/observability"
-import { AttachmentSafetyStatuses, type EventType, type SourceItem, type JSONContent } from "@threa/types"
+import {
+  AttachmentSafetyStatuses,
+  type AuthorType,
+  type EventType,
+  type SourceItem,
+  type JSONContent,
+} from "@threa/types"
 
 // Event payloads
 export interface AttachmentSummary {
@@ -55,7 +61,7 @@ export interface CreateMessageParams {
   workspaceId: string
   streamId: string
   authorId: string
-  authorType: "member" | "persona"
+  authorType: AuthorType
   contentJson: JSONContent
   contentMarkdown: string
   attachmentIds?: string[]

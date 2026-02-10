@@ -137,6 +137,14 @@ describe("useActors", () => {
 
       expect(result.current.getActorName("persona_unknown", "persona")).toBe("AI Companion")
     })
+
+    it("should return 'Threa' for system actor type", () => {
+      const { result } = renderHook(() => useActors(workspaceId), {
+        wrapper: createTestWrapper(queryClient),
+      })
+
+      expect(result.current.getActorName("system", "system")).toBe("Threa")
+    })
   })
 
   describe("getActorInitials", () => {
@@ -218,6 +226,14 @@ describe("useActors", () => {
 
       expect(result.current.getActorInitials("ab_12345678", "member")).toBe("AB")
     })
+
+    it("should return 'T' for system actor type", () => {
+      const { result } = renderHook(() => useActors(workspaceId), {
+        wrapper: createTestWrapper(queryClient),
+      })
+
+      expect(result.current.getActorInitials("system", "system")).toBe("T")
+    })
   })
 
   describe("getUser", () => {
@@ -283,6 +299,16 @@ describe("useActors", () => {
       })
 
       expect(result.current.getPersona("persona_nonexistent")).toBeUndefined()
+    })
+  })
+
+  describe("getActorAvatar", () => {
+    it("should return fallback 'T' with no slug for system actor type", () => {
+      const { result } = renderHook(() => useActors(workspaceId), {
+        wrapper: createTestWrapper(queryClient),
+      })
+
+      expect(result.current.getActorAvatar("system", "system")).toEqual({ fallback: "T" })
     })
   })
 })

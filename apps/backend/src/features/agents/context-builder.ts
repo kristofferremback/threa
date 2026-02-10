@@ -424,7 +424,11 @@ async function resolveParticipantsWithTimezones(
 /**
  * Resolve author name for a message.
  */
-async function resolveAuthorName(db: Querier, authorId: string, authorType: "member" | "persona"): Promise<string> {
+async function resolveAuthorName(db: Querier, authorId: string, authorType: string): Promise<string> {
+  if (authorType === "system") {
+    return "System"
+  }
+
   if (authorType === "member") {
     const member = await MemberRepository.findById(db, authorId)
     return member?.name ?? "Unknown"

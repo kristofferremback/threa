@@ -9,7 +9,7 @@ import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/comp
 import { RelativeTime } from "@/components/relative-time"
 import { useConversationService } from "@/contexts"
 import { useActors } from "@/hooks"
-import type { ConversationWithStaleness, Message } from "@threa/types"
+import type { AuthorType, ConversationWithStaleness, Message } from "@threa/types"
 
 interface ConversationItemProps {
   workspaceId: string
@@ -127,7 +127,7 @@ function ConversationMessages({ workspaceId, conversationId, onMessageClick }: C
 interface MessagePreviewProps {
   message: Message
   workspaceId: string
-  getActorName: (actorId: string | null, actorType: "member" | "persona" | null) => string
+  getActorName: (actorId: string | null, actorType: AuthorType | null) => string
   onMessageClick?: () => void
 }
 

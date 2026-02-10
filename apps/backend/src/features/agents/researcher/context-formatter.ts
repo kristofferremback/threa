@@ -1,3 +1,4 @@
+import type { AuthorType } from "@threa/types"
 import type { Querier } from "../../../db"
 import { MemberRepository } from "../../workspaces"
 import { StreamRepository } from "../../streams"
@@ -26,7 +27,7 @@ export interface EnrichedMessageResult {
   streamId: string
   content: string
   authorId: string
-  authorType: "member" | "persona"
+  authorType: AuthorType
   authorName: string
   streamName: string
   streamType: string
@@ -137,7 +138,7 @@ export interface RawMessageSearchResult {
   streamId: string
   content: string
   authorId: string
-  authorType: "member" | "persona"
+  authorType: AuthorType
   createdAt: Date
 }
 

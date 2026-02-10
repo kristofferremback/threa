@@ -66,6 +66,7 @@ function MessageLayout({
   containerRef,
 }: MessageLayoutProps) {
   const isPersona = event.actorType === "persona"
+  const isSystem = event.actorType === "system"
 
   return (
     <div
@@ -75,6 +76,9 @@ function MessageLayout({
         // AI/Persona messages get full-width gradient with gold accent
         isPersona &&
           "bg-gradient-to-r from-primary/[0.06] to-transparent -mx-6 px-6 py-4 shadow-[inset_3px_0_0_hsl(var(--primary))]",
+        // System messages get a subtle info-toned accent
+        isSystem &&
+          "bg-gradient-to-r from-blue-500/[0.04] to-transparent -mx-6 px-6 py-4 shadow-[inset_3px_0_0_hsl(210_100%_55%)]",
         isHighlighted && "animate-highlight-flash",
         containerClassName
       )}
@@ -83,12 +87,16 @@ function MessageLayout({
         <PersonaAvatar slug={personaSlug} fallback={actorInitials} size="md" className="message-avatar" />
       ) : (
         <Avatar className="message-avatar h-9 w-9 rounded-[10px] shrink-0">
-          <AvatarFallback className="bg-muted text-foreground">{actorInitials}</AvatarFallback>
+          <AvatarFallback className={cn("text-foreground", isSystem ? "bg-blue-500/10 text-blue-500" : "bg-muted")}>
+            {actorInitials}
+          </AvatarFallback>
         </Avatar>
       )}
       <div className="message-content flex-1 min-w-0">
         <div className="flex items-baseline gap-2 mb-1">
-          <span className={cn("font-semibold text-sm", isPersona && "text-primary")}>{actorName}</span>
+          <span className={cn("font-semibold text-sm", isPersona && "text-primary", isSystem && "text-blue-500")}>
+            {actorName}
+          </span>
           {statusIndicator}
           {actions}
         </div>

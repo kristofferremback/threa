@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from "dexie"
-import type { EventType, JSONContent } from "@threa/types"
+import type { AuthorType, EventType, JSONContent, StreamType } from "@threa/types"
 
 // Cached entity types - mirror backend domain types
 
@@ -27,7 +27,7 @@ export interface CachedWorkspaceMember {
 export interface CachedStream {
   id: string
   workspaceId: string
-  type: "scratchpad" | "channel" | "dm" | "thread"
+  type: StreamType
   displayName: string | null
   slug: string | null
   description: string | null
@@ -51,7 +51,7 @@ export interface CachedEvent {
   eventType: EventType
   payload: unknown
   actorId: string | null
-  actorType: "member" | "persona" | null
+  actorType: AuthorType | null
   createdAt: string
   // Optimistic sending state (for message_created events)
   _clientId?: string

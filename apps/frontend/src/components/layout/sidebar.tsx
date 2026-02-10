@@ -13,6 +13,7 @@ import {
   MessageSquareText,
   Plus,
   ChevronRight,
+  Bell,
 } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
@@ -42,7 +43,7 @@ import {
 import { useQuickSwitcher, useCoordinatedLoading, useSidebar, type ViewMode } from "@/contexts"
 import { UnreadBadge } from "@/components/unread-badge"
 import { RelativeTime } from "@/components/relative-time"
-import { StreamTypes, AuthorTypes, type StreamWithPreview } from "@threa/types"
+import { StreamTypes, AuthorTypes, type AuthorType, type StreamWithPreview } from "@threa/types"
 import { useQueryClient } from "@tanstack/react-query"
 import { ThemeDropdown } from "@/components/theme-dropdown"
 import { ThreaLogo } from "@/components/threa-logo"
@@ -306,7 +307,7 @@ function StreamItemAvatar({ icon, className, badge }: StreamItemAvatarProps) {
 
 interface StreamItemPreviewProps {
   preview: StreamWithPreview["lastMessagePreview"]
-  getActorName: (actorId: string | null, actorType: "member" | "persona" | null) => string
+  getActorName: (actorId: string | null, actorType: AuthorType | null) => string
   compact: boolean
   showPreviewOnHover: boolean
 }
@@ -699,6 +700,12 @@ function StreamItem({
       return {
         icon: <FileEdit className="h-3.5 w-3.5" />,
         className: "bg-primary/10 text-primary",
+      }
+    }
+    if (stream.type === StreamTypes.SYSTEM) {
+      return {
+        icon: <Bell className="h-3.5 w-3.5" />,
+        className: "bg-blue-500/10 text-blue-500",
       }
     }
     if (stream.type === StreamTypes.THREAD) {
@@ -1148,7 +1155,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
       } else if (stream.type === StreamTypes.DM) {
         dms.push(stream)
       }
-      // Note: threads are not shown in All view
+      // Note: threads and system streams are not shown in All view
     }
 
     // Sort each section using configured sort types
