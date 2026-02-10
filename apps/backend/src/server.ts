@@ -66,7 +66,7 @@ import {
   COMPANION_SUMMARY_TEMPERATURE,
 } from "./features/agents"
 import { EmojiUsageHandler } from "./features/emoji"
-import { NotificationService, NotificationOutboxHandler } from "./features/notifications"
+import { SystemMessageService, SystemMessageOutboxHandler } from "./features/system-messages"
 import { AttachmentUploadedHandler } from "./features/attachments"
 import { AICostService, AIBudgetService } from "./features/ai-usage"
 import { CommandRegistry, SimulateCommand, createCommandWorker, CommandHandler } from "./features/commands"
@@ -263,7 +263,7 @@ export async function startServer(): Promise<ServerInstance> {
   }
   const createThread = (params: Parameters<typeof streamService.createThread>[0]) => streamService.createThread(params)
 
-  const notificationService = new NotificationService({ pool, createMessage })
+  const systemMessageService = new SystemMessageService({ pool, createMessage })
   const workspaceService = new WorkspaceService({ pool })
 
   // Simulation agent - needed for SimulateCommand
@@ -500,7 +500,7 @@ export async function startServer(): Promise<ServerInstance> {
   const commandHandler = new CommandHandler(pool, jobQueue)
   const mentionInvokeHandler = new MentionInvokeHandler(pool, jobQueue)
   const attachmentUploadedHandler = new AttachmentUploadedHandler(pool, jobQueue)
-  const notificationOutboxHandler = new NotificationOutboxHandler(pool, notificationService)
+  const systemMessageOutboxHandler = new SystemMessageOutboxHandler(pool, systemMessageService)
   const outboxHandlers = [
     broadcastHandler,
     companionHandler,
@@ -512,7 +512,7 @@ export async function startServer(): Promise<ServerInstance> {
     commandHandler,
     mentionInvokeHandler,
     attachmentUploadedHandler,
-    notificationOutboxHandler,
+    systemMessageOutboxHandler,
   ]
 
   // Ensure listeners exist in database, then register all handlers

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, mock, spyOn } from "bun:test"
 import { AuthorTypes, CompanionModes, StreamTypes, Visibilities } from "@threa/types"
 import { StreamRepository } from "../streams"
 import { MemberRepository } from "../workspaces"
-import { NotificationService } from "./service"
+import { SystemMessageService } from "./service"
 import type { Stream } from "../streams"
 
 const WORKSPACE_ID = `ws_${crypto.randomUUID().replace(/-/g, "").slice(0, 26)}`
@@ -14,7 +14,7 @@ function fakeStream(overrides: Partial<Stream> = {}): Stream {
     id: `stream_${crypto.randomUUID().replace(/-/g, "").slice(0, 26)}`,
     workspaceId: WORKSPACE_ID,
     type: StreamTypes.SYSTEM,
-    displayName: "System",
+    displayName: "Threa",
     slug: null,
     description: null,
     visibility: Visibilities.PRIVATE,
@@ -36,12 +36,12 @@ function createService() {
   const createMessage = mock(async () => ({}) as any)
 
   return {
-    service: new NotificationService({ pool: {} as any, createMessage }),
+    service: new SystemMessageService({ pool: {} as any, createMessage }),
     createMessage,
   }
 }
 
-describe("NotificationService", () => {
+describe("SystemMessageService", () => {
   afterEach(() => {
     mock.restore()
   })

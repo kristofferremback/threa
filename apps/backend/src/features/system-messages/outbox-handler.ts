@@ -5,7 +5,7 @@ import { logger } from "../../lib/logger"
 import { CursorLock, ensureListenerFromLatest, type ProcessResult } from "../../lib/cursor-lock"
 import { DebounceWithMaxWait } from "../../lib/debounce"
 import type { OutboxHandler } from "../../lib/outbox"
-import type { NotificationService } from "./service"
+import type { SystemMessageService } from "./service"
 
 const DEFAULT_CONFIG = {
   batchSize: 100,
@@ -18,21 +18,21 @@ const DEFAULT_CONFIG = {
 }
 
 /**
- * Handler that converts system-level outbox events into user-visible notifications.
- * Listens for events like budget:alert and posts messages to each member's system stream.
+ * Converts outbox events into system messages posted to each member's system stream.
+ * Listens for events like budget:alert and formats them as messages.
  */
-export class NotificationOutboxHandler implements OutboxHandler {
-  readonly listenerId = "notifications"
+export class SystemMessageOutboxHandler implements OutboxHandler {
+  readonly listenerId = "system-messages"
 
   private readonly db: Pool
-  private readonly notificationService: NotificationService
+  private readonly systemMessageService: SystemMessageService
   private readonly cursorLock: CursorLock
   private readonly debouncer: DebounceWithMaxWait
   private readonly batchSize: number
 
-  constructor(db: Pool, notificationService: NotificationService) {
+  constructor(db: Pool, systemMessageService: SystemMessageService) {
     this.db = db
-    this.notificationService = notificationService
+    this.systemMessageService = systemMessageService
     this.batchSize = DEFAULT_CONFIG.batchSize
 
     this.cursorLock = new CursorLock({
@@ -49,7 +49,7 @@ export class NotificationOutboxHandler implements OutboxHandler {
       () => this.processEvents(),
       DEFAULT_CONFIG.debounceMs,
       DEFAULT_CONFIG.maxWaitMs,
-      (err) => logger.error({ err, listenerId: this.listenerId }, "NotificationOutboxHandler debouncer error")
+      (err) => logger.error({ err, listenerId: this.listenerId }, "SystemMessageOutboxHandler debouncer error")
     )
   }
 
@@ -94,7 +94,7 @@ export class NotificationOutboxHandler implements OutboxHandler {
   }
 
   private async handleBudgetAlert(payload: BudgetAlertOutboxPayload): Promise<void> {
-    await this.notificationService.sendBudgetAlert(payload)
+    await this.systemMessageService.sendBudgetAlert(payload)
 
     logger.info(
       {

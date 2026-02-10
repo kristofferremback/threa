@@ -56,6 +56,8 @@ function getStreamTypeLabel(type: StreamType): string {
       return "Channel"
     case StreamTypes.DM:
       return "Direct Message"
+    case StreamTypes.SYSTEM:
+      return "System"
     case StreamTypes.THREAD:
       return "Thread"
     default:
@@ -131,7 +133,11 @@ export function useStreamItems(context: ModeContext): ModeResult {
     ]
 
     let filteredStreams = allStreams.filter(
-      (s) => s.type === StreamTypes.SCRATCHPAD || s.type === StreamTypes.CHANNEL || s.type === StreamTypes.DM
+      (s) =>
+        s.type === StreamTypes.SCRATCHPAD ||
+        s.type === StreamTypes.CHANNEL ||
+        s.type === StreamTypes.DM ||
+        s.type === StreamTypes.SYSTEM
     )
 
     // Apply type filters

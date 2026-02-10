@@ -8,7 +8,7 @@ SELECT
   'stream_' || replace(gen_random_uuid()::text, '-', ''),
   wm.workspace_id,
   'system',
-  'System',
+  'Threa',
   'private',
   'off',
   wm.id

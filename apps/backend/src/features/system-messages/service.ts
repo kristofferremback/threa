@@ -17,7 +17,7 @@ interface CreateMessageFn {
   }): Promise<Message>
 }
 
-export class NotificationService {
+export class SystemMessageService {
   private pool: Pool
   private createMessage: CreateMessageFn
 

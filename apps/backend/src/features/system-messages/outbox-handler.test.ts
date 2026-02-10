@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, mock, spyOn } from "bun:test"
 import { OutboxRepository } from "../../lib/outbox"
 import * as cursorLockModule from "../../lib/cursor-lock"
-import { NotificationOutboxHandler } from "./outbox-handler"
-import type { NotificationService } from "./service"
+import { SystemMessageOutboxHandler } from "./outbox-handler"
+import type { SystemMessageService } from "./service"
 import type { ProcessResult } from "../../lib/cursor-lock"
 
 function makeFakeCursorLock(onRun?: (result: ProcessResult) => void) {
@@ -20,21 +20,21 @@ function mockCursorLock(onRun?: (result: ProcessResult) => void) {
 }
 
 function createHandler() {
-  const notificationService = {
+  const systemMessageService = {
     notifyWorkspace: mock(async () => {}),
     notifyMember: mock(async () => {}),
     sendBudgetAlert: mock(async () => {}),
     findSystemStream: mock(async () => null),
-  } as unknown as NotificationService
+  } as unknown as SystemMessageService
 
   mockCursorLock()
 
-  const handler = new NotificationOutboxHandler({} as any, notificationService)
+  const handler = new SystemMessageOutboxHandler({} as any, systemMessageService)
 
-  return { handler, notificationService }
+  return { handler, systemMessageService }
 }
 
-describe("NotificationOutboxHandler", () => {
+describe("SystemMessageOutboxHandler", () => {
   afterEach(() => {
     mock.restore()
   })
@@ -53,14 +53,14 @@ describe("NotificationOutboxHandler", () => {
       { id: 1n, eventType: "budget:alert", payload, createdAt: new Date() },
     ] as any)
 
-    const { handler, notificationService } = createHandler()
+    const { handler, systemMessageService } = createHandler()
     handler.handle()
 
     // Let the debouncer fire
     await new Promise((r) => setTimeout(r, 300))
 
     expect(fetchSpy).toHaveBeenCalled()
-    expect(notificationService.sendBudgetAlert).toHaveBeenCalledWith(payload)
+    expect(systemMessageService.sendBudgetAlert).toHaveBeenCalledWith(payload)
   })
 
   it("should skip non-matching event types and advance cursor", async () => {
@@ -69,13 +69,13 @@ describe("NotificationOutboxHandler", () => {
       { id: 2n, eventType: "stream:created", payload: {}, createdAt: new Date() },
     ] as any)
 
-    const { handler, notificationService } = createHandler()
+    const { handler, systemMessageService } = createHandler()
     handler.handle()
 
     await new Promise((r) => setTimeout(r, 300))
 
-    expect(notificationService.sendBudgetAlert).not.toHaveBeenCalled()
-    expect(notificationService.notifyWorkspace).not.toHaveBeenCalled()
+    expect(systemMessageService.sendBudgetAlert).not.toHaveBeenCalled()
+    expect(systemMessageService.notifyWorkspace).not.toHaveBeenCalled()
   })
 
   it("should return no_events when batch is empty", async () => {
@@ -86,11 +86,11 @@ describe("NotificationOutboxHandler", () => {
       result = r
     })
 
-    const notificationService = {
+    const systemMessageService = {
       notifyWorkspace: mock(async () => {}),
       sendBudgetAlert: mock(async () => {}),
-    } as unknown as NotificationService
-    const handler = new NotificationOutboxHandler({} as any, notificationService)
+    } as unknown as SystemMessageService
+    const handler = new SystemMessageOutboxHandler({} as any, systemMessageService)
     handler.handle()
 
     await new Promise((r) => setTimeout(r, 300))

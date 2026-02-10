@@ -1066,31 +1066,21 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   const draftCount = allDrafts.length
   const isDraftsPage = splat === "drafts" || window.location.pathname.endsWith("/drafts")
 
-  // System notification stream — shown as an ever-present quick link
-  const systemStream = useMemo(
-    () => bootstrap?.streams?.find((s) => s.type === StreamTypes.SYSTEM) ?? null,
-    [bootstrap?.streams]
-  )
-  const systemUnreadCount = systemStream ? getUnreadCount(systemStream.id) : 0
-
   // Process streams into enriched data with urgency and section
-  // System streams are excluded — they're shown as an ever-present quick link instead
   const processedStreams = useMemo(() => {
     if (!bootstrap?.streams) return []
 
-    return bootstrap.streams
-      .filter((s) => s.type !== StreamTypes.SYSTEM)
-      .map((stream): StreamItemData => {
-        const unreadCount = getUnreadCount(stream.id)
-        const urgency = calculateUrgency(stream, unreadCount)
-        const section = categorizeStream(stream, unreadCount, urgency)
+    return bootstrap.streams.map((stream): StreamItemData => {
+      const unreadCount = getUnreadCount(stream.id)
+      const urgency = calculateUrgency(stream, unreadCount)
+      const section = categorizeStream(stream, unreadCount, urgency)
 
-        return {
-          ...stream,
-          urgency,
-          section,
-        }
-      })
+      return {
+        ...stream,
+        urgency,
+        section,
+      }
+    })
   }, [bootstrap?.streams, getUnreadCount])
 
   // Organize streams by section
@@ -1162,10 +1152,10 @@ export function Sidebar({ workspaceId }: SidebarProps) {
         scratchpads.push(stream)
       } else if (stream.type === StreamTypes.CHANNEL) {
         channels.push(stream)
-      } else if (stream.type === StreamTypes.DM) {
+      } else if (stream.type === StreamTypes.DM || stream.type === StreamTypes.SYSTEM) {
         dms.push(stream)
       }
-      // Note: threads and system streams are not shown in All view
+      // Note: threads are not shown in All view
     }
 
     // Sort each section using configured sort types
@@ -1294,21 +1284,6 @@ export function Sidebar({ workspaceId }: SidebarProps) {
             <MessageSquareText className="h-4 w-4" />
             Threads
           </Link>
-          {systemStream && (
-            <Link
-              to={`/w/${workspaceId}/s/${systemStream.id}`}
-              className={cn(
-                "flex items-center gap-2.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
-                activeStreamId === systemStream.id ? "bg-primary/10" : "hover:bg-muted/50",
-                activeStreamId !== systemStream.id && systemUnreadCount > 0 && "text-foreground",
-                activeStreamId !== systemStream.id && systemUnreadCount === 0 && "text-muted-foreground"
-              )}
-            >
-              <Bell className="h-4 w-4" />
-              Notifications
-              <UnreadBadge count={systemUnreadCount} className="ml-auto" />
-            </Link>
-          )}
         </div>
       }
       streamList={

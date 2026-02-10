@@ -479,7 +479,7 @@ export const StreamRepository = {
         ${params.id},
         ${params.workspaceId},
         ${"system"},
-        ${"System"},
+        ${"Threa"},
         ${"private"},
         ${"off"},
         ${params.createdBy}
