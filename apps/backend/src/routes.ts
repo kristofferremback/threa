@@ -128,6 +128,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
       userService,
       workspaceService,
       streamService,
+      invitationService,
     })
 
     app.get("/test-auth-login", authStub.getLoginPage)

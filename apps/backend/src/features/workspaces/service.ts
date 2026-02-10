@@ -68,6 +68,7 @@ export class WorkspaceService {
         workspaceId: id,
         userId: params.createdBy,
         slug: memberSlug,
+        name: user?.name ?? "",
         role: "owner",
       })
 
@@ -97,6 +98,7 @@ export class WorkspaceService {
         workspaceId,
         userId,
         slug: memberSlug,
+        name: user?.name ?? "",
         role,
       })
 
@@ -155,7 +157,7 @@ export class WorkspaceService {
   async completeMemberSetup(
     memberId: string,
     workspaceId: string,
-    params: { slug?: string; timezone: string; locale: string }
+    params: { name?: string; slug?: string; timezone: string; locale: string }
   ): Promise<WorkspaceMember> {
     return withTransaction(this.pool, async (client) => {
       const member = await WorkspaceRepository.findMemberByUserId(
@@ -198,6 +200,7 @@ export class WorkspaceService {
 
       const updated = await WorkspaceRepository.updateMember(client, memberId, {
         slug,
+        name: params.name,
         timezone: params.timezone,
         locale: params.locale,
         setupCompleted: true,

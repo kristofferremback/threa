@@ -25,10 +25,10 @@ interface MemberWithDisplay {
   userId: string
   role: string
   slug: string
+  name: string
   timezone: string | null
   locale: string | null
   setupCompleted: boolean
-  name: string
   email: string
   joinedAt: string
 }
@@ -270,43 +270,29 @@ export function useSocketEvents(workspaceId: string) {
                 userId: member.userId,
                 role: member.role as WorkspaceMember["role"],
                 slug: member.slug,
+                name: member.name,
                 timezone: member.timezone,
                 locale: member.locale,
+                setupCompleted: member.setupCompleted,
                 joinedAt: member.joinedAt,
               },
             ]
 
-        const users = bootstrap.users || []
-        const user: User = {
-          id: member.userId,
-          email: member.email,
-          name: member.name,
-          workosUserId: null,
-          createdAt: member.joinedAt,
-          updatedAt: member.joinedAt,
-        }
-        const updatedUsers = users.some((u) => u.id === member.userId) ? users : [...users, user]
-
-        return { ...bootstrap, members: updatedMembers, users: updatedUsers }
+        return { ...bootstrap, members: updatedMembers }
       })
 
-      // Cache member and user to IndexedDB
+      // Cache member to IndexedDB
       db.workspaceMembers.put({
         id: member.id,
         workspaceId: member.workspaceId,
         userId: member.userId,
         role: member.role as "owner" | "admin" | "member",
         slug: member.slug,
+        name: member.name,
         timezone: member.timezone,
         locale: member.locale,
         setupCompleted: member.setupCompleted,
         joinedAt: member.joinedAt,
-        _cachedAt: now,
-      })
-      db.users.put({
-        id: member.userId,
-        email: member.email,
-        name: member.name,
         _cachedAt: now,
       })
     })
@@ -346,6 +332,7 @@ export function useSocketEvents(workspaceId: string) {
                 userId: member.userId,
                 role: member.role as WorkspaceMember["role"],
                 slug: member.slug,
+                name: member.name,
                 timezone: member.timezone,
                 locale: member.locale,
                 setupCompleted: member.setupCompleted,
@@ -354,11 +341,7 @@ export function useSocketEvents(workspaceId: string) {
             : m
         )
 
-        const updatedUsers = bootstrap.users?.map((u) =>
-          u.id === member.userId ? { ...u, name: member.name, email: member.email } : u
-        )
-
-        return { ...bootstrap, members: updatedMembers, users: updatedUsers }
+        return { ...bootstrap, members: updatedMembers }
       })
 
       // Update IndexedDB
@@ -368,16 +351,11 @@ export function useSocketEvents(workspaceId: string) {
         userId: member.userId,
         role: member.role as "owner" | "admin" | "member",
         slug: member.slug,
+        name: member.name,
         timezone: member.timezone,
         locale: member.locale,
         setupCompleted: member.setupCompleted,
         joinedAt: member.joinedAt,
-        _cachedAt: now,
-      })
-      db.users.put({
-        id: member.userId,
-        email: member.email,
-        name: member.name,
         _cachedAt: now,
       })
     })

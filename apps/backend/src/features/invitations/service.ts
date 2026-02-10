@@ -145,6 +145,7 @@ export class InvitationService {
         workspaceId: invitation.workspaceId,
         userId,
         slug: memberSlug,
+        name: user?.name ?? "",
         role: invitation.role,
         setupCompleted: false,
       })

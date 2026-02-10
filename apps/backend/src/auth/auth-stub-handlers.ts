@@ -3,6 +3,7 @@ import type { StubAuthService } from "./auth-service.stub"
 import type { UserService } from "./user-service"
 import type { WorkspaceService } from "../features/workspaces"
 import type { StreamService } from "../features/streams"
+import type { InvitationService } from "../features/invitations"
 import { renderLoginPage } from "./auth-stub-login-page"
 import { decodeAndSanitizeRedirectState } from "./redirect"
 
@@ -11,6 +12,7 @@ interface Dependencies {
   userService: UserService
   workspaceService: WorkspaceService
   streamService: StreamService
+  invitationService: InvitationService
 }
 
 interface AuthStubHandlers {
@@ -22,7 +24,7 @@ interface AuthStubHandlers {
 }
 
 export function createAuthStubHandlers(deps: Dependencies): AuthStubHandlers {
-  const { authStubService, userService, workspaceService, streamService } = deps
+  const { authStubService, userService, workspaceService, streamService, invitationService } = deps
 
   const getLoginPage: RequestHandler = (req, res) => {
     const state = (req.query.state as string) || ""
@@ -32,7 +34,10 @@ export function createAuthStubHandlers(deps: Dependencies): AuthStubHandlers {
   const handleLogin: RequestHandler = async (req, res) => {
     const { email, name, state } = req.body as { email?: string; name?: string; state?: string }
 
-    const { session } = await authStubService.devLogin(userService, { email, name })
+    const { user, session } = await authStubService.devLogin(userService, { email, name })
+
+    // Auto-accept pending invitations (mirrors real WorkOS callback flow)
+    const acceptedWorkspaceIds = await invitationService.acceptPendingForEmail(email || "test@example.com", user.id)
 
     res.cookie("wos_session", session, {
       httpOnly: true,
@@ -40,6 +45,11 @@ export function createAuthStubHandlers(deps: Dependencies): AuthStubHandlers {
       sameSite: "lax",
       path: "/",
     })
+
+    // If user was accepted into exactly one workspace, redirect to setup
+    if (acceptedWorkspaceIds.length === 1) {
+      return res.redirect(`/w/${acceptedWorkspaceIds[0]}/setup`)
+    }
 
     const redirectTo = decodeAndSanitizeRedirectState(state)
     res.redirect(redirectTo)

@@ -162,6 +162,7 @@ export interface SendInvitationsResponse {
 }
 
 export interface CompleteMemberSetupInput {
+  name?: string
   slug?: string
   timezone: string
   locale: string

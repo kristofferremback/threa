@@ -12,6 +12,7 @@ const createWorkspaceSchema = z.object({
 })
 
 const completeMemberSetupSchema = z.object({
+  name: z.string().min(1, "name is required").optional(),
   slug: z.string().optional(),
   timezone: z.string().min(1, "timezone is required"),
   locale: z.string().min(1, "locale is required"),

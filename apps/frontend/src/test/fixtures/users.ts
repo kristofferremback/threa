@@ -24,6 +24,7 @@ export function createMockMember(
     workspaceId: "workspace_1",
     role: "member",
     slug: overrides.userId.replace("user_", ""),
+    name: "Test Member",
     timezone: null,
     locale: null,
     setupCompleted: true,

@@ -13,6 +13,7 @@ export function MemberSetupPage() {
   const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone
   const browserLocale = navigator.language
 
+  const [name, setName] = useState("")
   const [slug, setSlug] = useState("")
   const [timezone, setTimezone] = useState(browserTimezone)
   const [locale, setLocale] = useState(browserLocale)
@@ -20,6 +21,7 @@ export function MemberSetupPage() {
   const setupMutation = useMutation({
     mutationFn: () =>
       workspacesApi.completeMemberSetup(workspaceId!, {
+        name: name || undefined,
         slug: slug || undefined,
         timezone,
         locale,
@@ -40,6 +42,17 @@ export function MemberSetupPage() {
         </div>
 
         <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="name">Display name</Label>
+            <Input
+              id="name"
+              placeholder="e.g. Kristoffer Remback"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">How others will see you in this workspace.</p>
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="slug">Display slug</Label>
             <Input

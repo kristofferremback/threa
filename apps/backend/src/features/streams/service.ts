@@ -242,7 +242,7 @@ export class StreamService {
         // Channels use slug as display name, no separate displayName field
         slug: params.slug,
         description: params.description,
-        visibility: params.visibility ?? Visibilities.PRIVATE,
+        visibility: params.visibility ?? Visibilities.PUBLIC,
         createdBy: params.createdBy,
       })
 

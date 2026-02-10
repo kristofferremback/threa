@@ -61,6 +61,7 @@ export interface WorkspaceMember {
   userId: string
   role: WorkspaceMemberRole
   slug: string
+  name: string
   timezone: string | null
   locale: string | null
   setupCompleted: boolean

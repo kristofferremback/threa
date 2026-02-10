@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge"
 import { invitationsApi } from "@/api/invitations"
 import { workspaceKeys } from "@/hooks/use-workspaces"
 import { InviteDialog } from "./invite-dialog"
-import type { WorkspaceMember, WorkspaceInvitation, User } from "@threa/types"
+import type { WorkspaceMember, WorkspaceInvitation } from "@threa/types"
 
 interface MembersTabProps {
   workspaceId: string
@@ -17,12 +17,10 @@ export function MembersTab({ workspaceId }: MembersTabProps) {
 
   const bootstrapData = queryClient.getQueryData<{
     members: WorkspaceMember[]
-    users: User[]
     invitations?: WorkspaceInvitation[]
   }>(workspaceKeys.bootstrap(workspaceId))
 
   const members = bootstrapData?.members ?? []
-  const users = bootstrapData?.users ?? []
 
   const invitationsQuery = useQuery({
     queryKey: ["invitations", workspaceId],
@@ -39,11 +37,6 @@ export function MembersTab({ workspaceId }: MembersTabProps) {
     onSuccess: () => invitationsQuery.refetch(),
   })
 
-  const getUserName = (userId: string) => {
-    const user = users.find((u) => u.id === userId)
-    return user?.name ?? "Unknown"
-  }
-
   const pendingInvitations = (invitationsQuery.data ?? []).filter((i) => i.status === "pending")
 
   return (
@@ -59,7 +52,7 @@ export function MembersTab({ workspaceId }: MembersTabProps) {
         {members.map((member) => (
           <div key={member.id} className="flex items-center justify-between rounded-md border px-3 py-2">
             <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">{getUserName(member.userId)}</span>
+              <span className="text-sm font-medium">{member.name || member.slug}</span>
               <span className="text-xs text-muted-foreground">@{member.slug}</span>
             </div>
             <Badge variant={member.role === "owner" ? "default" : "secondary"}>{member.role}</Badge>
