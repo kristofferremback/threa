@@ -20,6 +20,7 @@ export interface CachedWorkspaceMember {
   slug: string
   timezone: string | null
   locale: string | null
+  setupCompleted: boolean
   joinedAt: string
   _cachedAt: number
 }
@@ -189,6 +190,14 @@ class ThreaDatabase extends Dexie {
       })
       .upgrade((tx) => {
         return Promise.all([tx.table("workspaceMembers").clear(), tx.table("users").clear()])
+      })
+
+    // v8: Added setupCompleted to workspace members for invitation flow.
+    // Clear members cache to re-fetch with new shape.
+    this.version(8)
+      .stores({})
+      .upgrade((tx) => {
+        return tx.table("workspaceMembers").clear()
       })
   }
 }

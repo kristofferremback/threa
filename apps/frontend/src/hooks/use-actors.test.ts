@@ -33,6 +33,7 @@ function createMember(overrides: Partial<WorkspaceMember> = {}): WorkspaceMember
     slug: "test-user",
     timezone: null,
     locale: null,
+    setupCompleted: true,
     joinedAt: "2024-01-01T00:00:00.000Z",
     ...overrides,
   }

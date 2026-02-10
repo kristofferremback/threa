@@ -27,6 +27,7 @@ import {
 } from "@/hooks"
 import { QuickSwitcher, type QuickSwitcherMode } from "@/components/quick-switcher"
 import { SettingsDialog } from "@/components/settings"
+import { WorkspaceSettingsDialog } from "@/components/workspace-settings/workspace-settings-dialog"
 import { TraceDialog } from "@/components/trace"
 import { ApiError } from "@/api/client"
 
@@ -150,6 +151,7 @@ export function WorkspaceLayout() {
                         initialMode={switcherMode}
                       />
                       <SettingsDialog />
+                      <WorkspaceSettingsDialog workspaceId={workspaceId} />
                       <TraceDialogContainer />
                       <Toaster />
                     </TraceProvider>

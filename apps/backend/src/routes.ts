@@ -16,6 +16,7 @@ import { createConversationHandlers } from "./features/conversations"
 import { createCommandHandlers } from "./features/commands"
 import { createUserPreferencesHandlers } from "./features/user-preferences"
 import { createAIUsageHandlers } from "./features/ai-usage"
+import { createInvitationHandlers } from "./features/invitations"
 import { createDebugHandlers } from "./handlers/debug-handlers"
 import { createAuthStubHandlers } from "./auth/auth-stub-handlers"
 import { createAgentSessionHandlers } from "./features/agents"
@@ -29,6 +30,7 @@ import type { EventService } from "./features/messaging"
 import type { AttachmentService } from "./features/attachments"
 import type { SearchService } from "./features/search"
 import type { ConversationService } from "./features/conversations"
+import type { InvitationService } from "./features/invitations"
 import type { S3Config } from "./lib/env"
 import type { CommandRegistry } from "./features/commands"
 import type { UserPreferencesService } from "./features/user-preferences"
@@ -47,6 +49,7 @@ interface Dependencies {
   searchService: SearchService
   conversationService: ConversationService
   userPreferencesService: UserPreferencesService
+  invitationService: InvitationService
   s3Config: S3Config
   commandRegistry: CommandRegistry
   rateLimiterConfig: RateLimiterConfig
@@ -66,6 +69,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     searchService,
     conversationService,
     userPreferencesService,
+    invitationService,
     s3Config,
     commandRegistry,
     rateLimiterConfig,
@@ -81,11 +85,12 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const rateLimits = createRateLimiters(rateLimiterConfig)
   const opsAccess = createOpsAccessMiddleware()
 
-  const authHandlers = createAuthHandlers({ authService, userService })
+  const authHandlers = createAuthHandlers({ authService, userService, invitationService })
   const workspace = createWorkspaceHandlers({
     workspaceService,
     streamService,
     userPreferencesService,
+    invitationService,
     commandRegistry,
   })
   const stream = createStreamHandlers({ streamService, eventService })
@@ -98,6 +103,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const preferences = createUserPreferencesHandlers({ userPreferencesService })
   const aiUsage = createAIUsageHandlers({ pool })
   const debug = createDebugHandlers({ pool, poolMonitor })
+  const invitation = createInvitationHandlers({ invitationService })
   const agentSession = createAgentSessionHandlers({ pool })
 
   // Ops endpoints - registered before rate limiter so probes aren't throttled
@@ -186,6 +192,25 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   // Commands
   app.post("/api/workspaces/:workspaceId/commands/dispatch", ...authed, rateLimits.commandDispatch, command.dispatch)
   app.get("/api/workspaces/:workspaceId/commands", ...authed, command.list)
+
+  // Invitations (admin+ only)
+  app.get("/api/workspaces/:workspaceId/invitations", ...authed, requireRole("admin"), invitation.list)
+  app.post("/api/workspaces/:workspaceId/invitations", ...authed, requireRole("admin"), invitation.send)
+  app.post(
+    "/api/workspaces/:workspaceId/invitations/:invitationId/revoke",
+    ...authed,
+    requireRole("admin"),
+    invitation.revoke
+  )
+  app.post(
+    "/api/workspaces/:workspaceId/invitations/:invitationId/resend",
+    ...authed,
+    requireRole("admin"),
+    invitation.resend
+  )
+
+  // Member setup (any authenticated member)
+  app.post("/api/workspaces/:workspaceId/setup", ...authed, workspace.completeMemberSetup)
 
   // AI Usage and Budget
   app.get("/api/workspaces/:workspaceId/ai-usage", ...authed, aiUsage.getUsage)

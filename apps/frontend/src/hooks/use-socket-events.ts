@@ -27,6 +27,7 @@ interface MemberWithDisplay {
   slug: string
   timezone: string | null
   locale: string | null
+  setupCompleted: boolean
   name: string
   email: string
   joinedAt: string
@@ -298,6 +299,7 @@ export function useSocketEvents(workspaceId: string) {
         slug: member.slug,
         timezone: member.timezone,
         locale: member.locale,
+        setupCompleted: member.setupCompleted,
         joinedAt: member.joinedAt,
         _cachedAt: now,
       })
@@ -346,6 +348,7 @@ export function useSocketEvents(workspaceId: string) {
                 slug: member.slug,
                 timezone: member.timezone,
                 locale: member.locale,
+                setupCompleted: member.setupCompleted,
                 joinedAt: member.joinedAt,
               }
             : m
@@ -367,6 +370,7 @@ export function useSocketEvents(workspaceId: string) {
         slug: member.slug,
         timezone: member.timezone,
         locale: member.locale,
+        setupCompleted: member.setupCompleted,
         joinedAt: member.joinedAt,
         _cachedAt: now,
       })

@@ -8,8 +8,15 @@ import { EmojiUsageRepository } from "../emoji"
 import { UserRepository, User } from "../../auth/user-repository"
 import { PersonaRepository, type Persona } from "../agents"
 import { workspaceId, memberId as generateMemberId, streamId } from "../../lib/id"
-import { generateUniqueSlug } from "../../lib/slug"
+import { generateSlug, generateUniqueSlug } from "../../lib/slug"
 import { serializeBigInt } from "../../lib/serialization"
+import { HttpError } from "../../lib/errors"
+import type { WorkosOrgService } from "../../auth/workos-org-service"
+
+function deriveSlugFromEmail(email: string): string {
+  const prefix = email.split("@")[0]
+  return generateSlug(prefix)
+}
 
 export interface CreateWorkspaceParams {
   name: string
@@ -17,7 +24,13 @@ export interface CreateWorkspaceParams {
 }
 
 export class WorkspaceService {
-  constructor(private pool: Pool) {}
+  private pool: Pool
+  private workosOrgService: WorkosOrgService | null
+
+  constructor(pool: Pool, workosOrgService?: WorkosOrgService) {
+    this.pool = pool
+    this.workosOrgService = workosOrgService ?? null
+  }
 
   async getWorkspaceById(id: string): Promise<Workspace | null> {
     return WorkspaceRepository.findById(this.pool, id)
@@ -137,5 +150,89 @@ export class WorkspaceService {
 
   async getEmojiWeights(workspaceId: string, memberId: string): Promise<Record<string, number>> {
     return EmojiUsageRepository.getWeights(this.pool, workspaceId, memberId)
+  }
+
+  async completeMemberSetup(
+    memberId: string,
+    workspaceId: string,
+    params: { slug?: string; timezone: string; locale: string }
+  ): Promise<WorkspaceMember> {
+    return withTransaction(this.pool, async (client) => {
+      const member = await WorkspaceRepository.findMemberByUserId(
+        client,
+        workspaceId,
+        // memberId is actually the member ID, look up via member table
+        (await MemberRepository.findById(client, memberId))?.userId ?? ""
+      )
+
+      if (!member) {
+        throw new HttpError("Member not found", { status: 404, code: "MEMBER_NOT_FOUND" })
+      }
+
+      if (member.setupCompleted) {
+        throw new HttpError("Member setup already completed", { status: 400, code: "SETUP_ALREADY_COMPLETED" })
+      }
+
+      // Determine slug
+      let slug: string
+      const shouldEnforceEmailSlug = await this.shouldEnforceEmailSlug(workspaceId, member.userId)
+
+      if (shouldEnforceEmailSlug) {
+        const user = await UserRepository.findById(client, member.userId)
+        if (!user) throw new HttpError("User not found", { status: 404, code: "USER_NOT_FOUND" })
+        slug = deriveSlugFromEmail(user.email)
+      } else if (params.slug) {
+        slug = generateSlug(params.slug)
+      } else {
+        const user = await UserRepository.findById(client, member.userId)
+        slug = user
+          ? await generateUniqueSlug(user.name, (s) => WorkspaceRepository.memberSlugExists(client, workspaceId, s))
+          : `member-${generateMemberId().slice(7, 15)}`
+      }
+
+      // Ensure slug uniqueness
+      const slugExists = await WorkspaceRepository.memberSlugExists(client, workspaceId, slug)
+      if (slugExists && slug !== member.slug) {
+        slug = await generateUniqueSlug(slug, (s) => WorkspaceRepository.memberSlugExists(client, workspaceId, s))
+      }
+
+      const updated = await WorkspaceRepository.updateMember(client, memberId, {
+        slug,
+        timezone: params.timezone,
+        locale: params.locale,
+        setupCompleted: true,
+      })
+
+      if (!updated) {
+        throw new HttpError("Failed to update member", { status: 500, code: "UPDATE_FAILED" })
+      }
+
+      // Look up full member (with name/email from user join) for outbox event
+      const fullMember = await MemberRepository.findById(client, memberId)
+      if (fullMember) {
+        await OutboxRepository.insert(client, "member:updated", {
+          workspaceId,
+          member: serializeBigInt(fullMember),
+        })
+      }
+
+      return updated
+    })
+  }
+
+  private async shouldEnforceEmailSlug(workspaceId: string, userId: string): Promise<boolean> {
+    if (!this.workosOrgService) return false
+
+    const orgId = await WorkspaceRepository.getWorkosOrganizationId(this.pool, workspaceId)
+    if (!orgId) return false
+
+    const org = await this.workosOrgService.getOrganization(orgId)
+    if (!org || org.domains.length === 0) return false
+
+    const user = await UserRepository.findById(this.pool, userId)
+    if (!user) return false
+
+    const emailDomain = user.email.split("@")[1]?.toLowerCase()
+    return org.domains.some((d) => d.toLowerCase() === emailDomain)
   }
 }

@@ -16,6 +16,7 @@ import type {
   AuthorType,
   EventType,
   WorkspaceMemberRole,
+  InvitationStatus,
   PersonaManagedBy,
   PersonaStatus,
   StorageProvider,
@@ -62,7 +63,20 @@ export interface WorkspaceMember {
   slug: string
   timezone: string | null
   locale: string | null
+  setupCompleted: boolean
   joinedAt: string
+}
+
+export interface WorkspaceInvitation {
+  id: string
+  workspaceId: string
+  email: string
+  role: WorkspaceMemberRole
+  invitedBy: string
+  status: InvitationStatus
+  createdAt: string
+  expiresAt: string
+  acceptedAt: string | null
 }
 
 export interface Stream {

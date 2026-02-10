@@ -26,6 +26,7 @@ export function createMockMember(
     slug: overrides.userId.replace("user_", ""),
     timezone: null,
     locale: null,
+    setupCompleted: true,
     joinedAt: "2025-01-01T00:00:00Z",
     ...overrides,
   }

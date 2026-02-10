@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback, type ReactNode } from "react"
-import { Link, useParams, useNavigate } from "react-router-dom"
+import { Link, useParams, useNavigate, useSearchParams } from "react-router-dom"
 import {
   MoreHorizontal,
   Pencil,
@@ -7,6 +7,7 @@ import {
   Search as SearchIcon,
   FileEdit,
   DollarSign,
+  Settings,
   RefreshCw,
   Hash,
   User,
@@ -1037,6 +1038,45 @@ function StreamListSkeleton() {
 }
 
 // ============================================================================
+// Footer Component
+// ============================================================================
+
+function SidebarFooter({ workspaceId }: { workspaceId: string }) {
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  const openWorkspaceSettings = () => {
+    const newParams = new URLSearchParams(searchParams)
+    newParams.set("ws-settings", "members")
+    setSearchParams(newParams, { replace: true })
+  }
+
+  return (
+    <div className="space-y-1">
+      <button
+        onClick={openWorkspaceSettings}
+        className={cn(
+          "w-full flex items-center gap-2.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
+          "hover:bg-muted/50 text-muted-foreground"
+        )}
+      >
+        <Settings className="h-4 w-4" />
+        Settings
+      </button>
+      <Link
+        to={`/w/${workspaceId}/admin/ai-usage`}
+        className={cn(
+          "flex items-center gap-2.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
+          "hover:bg-muted/50 text-muted-foreground"
+        )}
+      >
+        <DollarSign className="h-4 w-4" />
+        AI Usage
+      </Link>
+    </div>
+  )
+}
+
+// ============================================================================
 // Main Sidebar Component
 // ============================================================================
 
@@ -1410,18 +1450,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
           </div>
         </ScrollArea>
       }
-      footer={
-        <Link
-          to={`/w/${workspaceId}/admin/ai-usage`}
-          className={cn(
-            "flex items-center gap-2.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
-            "hover:bg-muted/50 text-muted-foreground"
-          )}
-        >
-          <DollarSign className="h-4 w-4" />
-          AI Usage
-        </Link>
-      }
+      footer={<SidebarFooter workspaceId={workspaceId} />}
     />
   )
 }

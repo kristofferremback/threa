@@ -41,6 +41,8 @@ export type OutboxEventType =
   | "agent_session:failed"
   | "user_preferences:updated"
   | "budget:alert"
+  | "invitation:sent"
+  | "invitation:accepted"
 
 /** Events that are scoped to a stream (have streamId) */
 export type StreamScopedEventType =
@@ -240,6 +242,19 @@ export interface UserPreferencesUpdatedOutboxPayload extends WorkspaceScopedPayl
   preferences: UserPreferences
 }
 
+// Invitation event payloads
+export interface InvitationSentOutboxPayload extends WorkspaceScopedPayload {
+  invitationId: string
+  email: string
+  role: string
+}
+
+export interface InvitationAcceptedOutboxPayload extends WorkspaceScopedPayload {
+  invitationId: string
+  email: string
+  userId: string
+}
+
 // Budget alert event payload
 export interface BudgetAlertOutboxPayload extends WorkspaceScopedPayload {
   alertType: string
@@ -283,6 +298,8 @@ export interface OutboxEventPayloadMap {
   "agent_session:failed": AgentSessionFailedOutboxPayload
   "user_preferences:updated": UserPreferencesUpdatedOutboxPayload
   "budget:alert": BudgetAlertOutboxPayload
+  "invitation:sent": InvitationSentOutboxPayload
+  "invitation:accepted": InvitationAcceptedOutboxPayload
 }
 
 export type OutboxEventPayload<T extends OutboxEventType> = OutboxEventPayloadMap[T]

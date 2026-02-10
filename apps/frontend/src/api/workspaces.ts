@@ -1,5 +1,11 @@
 import { api } from "./client"
-import type { Workspace, WorkspaceBootstrap, CreateWorkspaceInput } from "@threa/types"
+import type {
+  Workspace,
+  WorkspaceBootstrap,
+  WorkspaceMember,
+  CreateWorkspaceInput,
+  CompleteMemberSetupInput,
+} from "@threa/types"
 
 export type { WorkspaceBootstrap, CreateWorkspaceInput }
 
@@ -27,5 +33,10 @@ export const workspacesApi = {
   async markAllAsRead(workspaceId: string): Promise<string[]> {
     const res = await api.post<{ updatedStreamIds: string[] }>(`/api/workspaces/${workspaceId}/streams/read-all`)
     return res.updatedStreamIds
+  },
+
+  async completeMemberSetup(workspaceId: string, data: CompleteMemberSetupInput): Promise<WorkspaceMember> {
+    const res = await api.post<{ member: WorkspaceMember }>(`/api/workspaces/${workspaceId}/setup`, data)
+    return res.member
   },
 }

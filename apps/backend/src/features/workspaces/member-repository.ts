@@ -9,6 +9,7 @@ interface MemberRow {
   slug: string
   timezone: string | null
   locale: string | null
+  setup_completed: boolean
   name: string
   email: string
   joined_at: Date
@@ -22,6 +23,7 @@ export interface Member {
   slug: string
   timezone: string | null
   locale: string | null
+  setupCompleted: boolean
   name: string
   email: string
   joinedAt: Date
@@ -37,7 +39,7 @@ export interface InsertMemberParams {
 
 const SELECT_FIELDS = `
   wm.id, wm.workspace_id, wm.user_id, wm.role, wm.slug,
-  wm.timezone, wm.locale, u.name, u.email, wm.joined_at
+  wm.timezone, wm.locale, wm.setup_completed, u.name, u.email, wm.joined_at
 `
 
 function mapRowToMember(row: MemberRow): Member {
@@ -49,6 +51,7 @@ function mapRowToMember(row: MemberRow): Member {
     slug: row.slug,
     timezone: row.timezone,
     locale: row.locale,
+    setupCompleted: row.setup_completed,
     name: row.name,
     email: row.email,
     joinedAt: row.joined_at,
