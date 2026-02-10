@@ -155,7 +155,8 @@ const booleanOptionsByRunner: Record<Runner, Set<string>> = {
 function usage(): number {
   console.error(
     "Usage: bun scripts/test-silent.ts <backend-unit|backend-integration|backend-e2e|frontend|browser> [args...]\n" +
-      "  Add --verbose to bypass silent mode and stream all test logs."
+      "  Add --verbose to bypass silent mode and stream all test logs.\n" +
+      "  CI runs are automatically verbose."
   )
   return 1
 }
@@ -654,7 +655,7 @@ async function main(): Promise<number> {
   const config = modeConfigs[mode]
   const extraArgs = process.argv.slice(3)
   const verboseAliases = new Set(["--verbose", "--show-all-logs", "--show-all-output"])
-  const forceVerbose = extraArgs.some((arg) => verboseAliases.has(arg))
+  const forceVerbose = extraArgs.some((arg) => verboseAliases.has(arg)) || !!process.env.CI
   const filteredArgs = extraArgs.filter((arg) => !verboseAliases.has(arg))
 
   if (forceVerbose) {
