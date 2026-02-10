@@ -645,7 +645,7 @@ threa-bak/
    - StreamService (CRUD only)
    - EventService (messages, edits)
    - MembershipService (join/leave/roles)
-   - NotificationService
+   - SystemMessageService
    - ThreadService
 2. Each service <500 lines rule
 

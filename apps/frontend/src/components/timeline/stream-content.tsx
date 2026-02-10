@@ -65,6 +65,7 @@ export function StreamContent({
   const stream = streamFromProps ?? bootstrap?.stream
   const isThread = stream?.type === StreamTypes.THREAD
   const isArchived = stream?.archivedAt != null
+  const isSystem = stream?.type === StreamTypes.SYSTEM
   const parentStreamId = stream?.parentStreamId
   const parentMessageId = stream?.parentMessageId
 
@@ -174,9 +175,13 @@ export function StreamContent({
         workspaceId={workspaceId}
         streamId={streamId}
         streamName={stream?.displayName ?? undefined}
-        disabled={isArchived}
+        disabled={isArchived || isSystem}
         disabledReason={
-          isArchived ? "This thread has been sealed in the labyrinth. It can be read but not extended." : undefined
+          isSystem
+            ? "System notifications are read-only."
+            : isArchived
+              ? "This thread has been sealed in the labyrinth. It can be read but not extended."
+              : undefined
         }
         autoFocus={autoFocus}
       />

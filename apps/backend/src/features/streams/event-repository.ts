@@ -1,6 +1,6 @@
 import type { Querier } from "../../db"
 import { sql } from "../../db"
-import { COMMAND_EVENT_TYPES, type EventType } from "@threa/types"
+import { COMMAND_EVENT_TYPES, type AuthorType, type EventType } from "@threa/types"
 
 // Internal row type (snake_case, not exported)
 interface StreamEventRow {
@@ -21,7 +21,7 @@ export interface StreamEvent {
   eventType: EventType
   payload: unknown
   actorId: string | null
-  actorType: "member" | "persona" | null
+  actorType: AuthorType | null
   createdAt: Date
 }
 
@@ -31,7 +31,7 @@ export interface InsertEventParams {
   eventType: EventType
   payload: unknown
   actorId?: string
-  actorType?: "member" | "persona"
+  actorType?: AuthorType
 }
 
 function mapRowToEvent(row: StreamEventRow): StreamEvent {
@@ -42,7 +42,7 @@ function mapRowToEvent(row: StreamEventRow): StreamEvent {
     eventType: row.event_type as EventType,
     payload: row.payload,
     actorId: row.actor_id,
-    actorType: row.actor_type as "member" | "persona" | null,
+    actorType: row.actor_type as AuthorType | null,
     createdAt: row.created_at,
   }
 }

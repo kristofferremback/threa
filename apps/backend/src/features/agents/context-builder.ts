@@ -1,5 +1,6 @@
 import type { Querier } from "../../db"
 import type {
+  AuthorType,
   StreamType,
   UserPreferences,
   ExtractionContentType,
@@ -424,7 +425,11 @@ async function resolveParticipantsWithTimezones(
 /**
  * Resolve author name for a message.
  */
-async function resolveAuthorName(db: Querier, authorId: string, authorType: "member" | "persona"): Promise<string> {
+async function resolveAuthorName(db: Querier, authorId: string, authorType: AuthorType): Promise<string> {
+  if (authorType === "system") {
+    return "Threa"
+  }
+
   if (authorType === "member") {
     const member = await MemberRepository.findById(db, authorId)
     return member?.name ?? "Unknown"

@@ -74,6 +74,8 @@ export function useActors(workspaceId: string): ActorLookup {
     (actorId: string | null, actorType: AuthorType | null): string => {
       if (!actorId) return "Unknown"
 
+      if (actorType === "system") return "Threa"
+
       if (actorType === "persona") {
         const persona = getPersona(actorId)
         return persona?.name ?? "AI Companion"
@@ -90,6 +92,8 @@ export function useActors(workspaceId: string): ActorLookup {
   const getActorInitials = useCallback(
     (actorId: string | null, actorType: AuthorType | null): string => {
       if (!actorId) return "?"
+
+      if (actorType === "system") return "T"
 
       if (actorType === "persona") {
         const persona = getPersona(actorId)
@@ -127,6 +131,8 @@ export function useActors(workspaceId: string): ActorLookup {
   const getActorAvatar = useCallback(
     (actorId: string | null, actorType: AuthorType | null): ActorAvatarInfo => {
       const fallback = getActorInitials(actorId, actorType)
+
+      if (actorType === "system") return { fallback }
 
       if (actorType === "persona" && actorId) {
         const persona = getPersona(actorId)

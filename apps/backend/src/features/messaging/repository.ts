@@ -1,6 +1,6 @@
 import type { Querier } from "../../db"
 import { sql } from "../../db"
-import type { JSONContent } from "@threa/types"
+import type { AuthorType, JSONContent } from "@threa/types"
 
 // Internal row type (snake_case, not exported)
 interface MessageRow {
@@ -29,7 +29,7 @@ export interface Message {
   streamId: string
   sequence: bigint
   authorId: string
-  authorType: "member" | "persona"
+  authorType: AuthorType
   contentJson: JSONContent
   contentMarkdown: string
   replyCount: number
@@ -44,7 +44,7 @@ export interface InsertMessageParams {
   streamId: string
   sequence: bigint
   authorId: string
-  authorType: "member" | "persona"
+  authorType: AuthorType
   contentJson: JSONContent
   contentMarkdown: string
 }
@@ -55,7 +55,7 @@ function mapRowToMessage(row: MessageRow, reactions: Record<string, string[]> = 
     streamId: row.stream_id,
     sequence: BigInt(row.sequence),
     authorId: row.author_id,
-    authorType: row.author_type as "member" | "persona",
+    authorType: row.author_type as AuthorType,
     contentJson: row.content_json,
     contentMarkdown: row.content_markdown,
     replyCount: row.reply_count,

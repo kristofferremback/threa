@@ -66,6 +66,7 @@ import {
   COMPANION_SUMMARY_TEMPERATURE,
 } from "./features/agents"
 import { EmojiUsageHandler } from "./features/emoji"
+import { SystemMessageService, SystemMessageOutboxHandler } from "./features/system-messages"
 import { AttachmentUploadedHandler } from "./features/attachments"
 import { AICostService, AIBudgetService } from "./features/ai-usage"
 import { CommandRegistry, SimulateCommand, createCommandWorker, CommandHandler } from "./features/commands"
@@ -105,6 +106,7 @@ import { AttachmentRepository } from "./features/attachments"
 import { ulid } from "ulid"
 import { loadConfig } from "./lib/env"
 import { createCorsOriginChecker } from "./lib/cors"
+import type { AuthorType } from "@threa/types"
 import { parseMarkdown } from "@threa/prosemirror"
 import { normalizeMessage, toEmoji } from "./features/emoji"
 import { logger } from "./lib/logger"
@@ -168,7 +170,6 @@ export async function startServer(): Promise<ServerInstance> {
   const checkpointer = await createPostgresCheckpointer(pool)
 
   const userService = new UserService(pool)
-  const workspaceService = new WorkspaceService(pool)
   const streamService = new StreamService(pool)
   const eventService = new EventService(pool)
   const authService = config.useStubAuth ? new StubAuthService() : new WorkosAuthService(config.workos)
@@ -242,7 +243,7 @@ export async function startServer(): Promise<ServerInstance> {
     workspaceId: string
     streamId: string
     authorId: string
-    authorType: "member" | "persona"
+    authorType: AuthorType
     content: string
     sources?: { title: string; url: string }[]
     sessionId?: string
@@ -261,6 +262,9 @@ export async function startServer(): Promise<ServerInstance> {
     })
   }
   const createThread = (params: Parameters<typeof streamService.createThread>[0]) => streamService.createThread(params)
+
+  const systemMessageService = new SystemMessageService({ pool, createMessage })
+  const workspaceService = new WorkspaceService(pool)
 
   // Simulation agent - needed for SimulateCommand
   const simulationAgent = config.useStubAI
@@ -496,6 +500,7 @@ export async function startServer(): Promise<ServerInstance> {
   const commandHandler = new CommandHandler(pool, jobQueue)
   const mentionInvokeHandler = new MentionInvokeHandler(pool, jobQueue)
   const attachmentUploadedHandler = new AttachmentUploadedHandler(pool, jobQueue)
+  const systemMessageOutboxHandler = new SystemMessageOutboxHandler(pool, systemMessageService)
   const outboxHandlers = [
     broadcastHandler,
     companionHandler,
@@ -507,6 +512,7 @@ export async function startServer(): Promise<ServerInstance> {
     commandHandler,
     mentionInvokeHandler,
     attachmentUploadedHandler,
+    systemMessageOutboxHandler,
   ]
 
   // Ensure listeners exist in database, then register all handlers

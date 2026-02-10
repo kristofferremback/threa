@@ -13,6 +13,7 @@ import {
   MessageSquareText,
   Plus,
   ChevronRight,
+  Bell,
 } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
@@ -42,7 +43,7 @@ import {
 import { useQuickSwitcher, useCoordinatedLoading, useSidebar, type ViewMode } from "@/contexts"
 import { UnreadBadge } from "@/components/unread-badge"
 import { RelativeTime } from "@/components/relative-time"
-import { StreamTypes, AuthorTypes, type StreamWithPreview } from "@threa/types"
+import { StreamTypes, AuthorTypes, type AuthorType, type StreamWithPreview } from "@threa/types"
 import { useQueryClient } from "@tanstack/react-query"
 import { ThemeDropdown } from "@/components/theme-dropdown"
 import { ThreaLogo } from "@/components/threa-logo"
@@ -306,7 +307,7 @@ function StreamItemAvatar({ icon, className, badge }: StreamItemAvatarProps) {
 
 interface StreamItemPreviewProps {
   preview: StreamWithPreview["lastMessagePreview"]
-  getActorName: (actorId: string | null, actorType: "member" | "persona" | null) => string
+  getActorName: (actorId: string | null, actorType: AuthorType | null) => string
   compact: boolean
   showPreviewOnHover: boolean
 }
@@ -701,6 +702,12 @@ function StreamItem({
         className: "bg-primary/10 text-primary",
       }
     }
+    if (stream.type === StreamTypes.SYSTEM) {
+      return {
+        icon: <Bell className="h-3.5 w-3.5" />,
+        className: "bg-blue-500/10 text-blue-500",
+      }
+    }
     if (stream.type === StreamTypes.THREAD) {
       return {
         icon: <MessageSquareText className="h-3.5 w-3.5" />,
@@ -1076,6 +1083,9 @@ export function Sidebar({ workspaceId }: SidebarProps) {
     })
   }, [bootstrap?.streams, getUnreadCount])
 
+  // System streams are auto-created infrastructure — don't count toward "has content"
+  const hasUserStreams = processedStreams.some((s) => s.type !== StreamTypes.SYSTEM)
+
   // Organize streams by section
   const streamsBySection = useMemo(() => {
     const important: StreamItemData[] = []
@@ -1145,7 +1155,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
         scratchpads.push(stream)
       } else if (stream.type === StreamTypes.CHANNEL) {
         channels.push(stream)
-      } else if (stream.type === StreamTypes.DM) {
+      } else if (stream.type === StreamTypes.DM || stream.type === StreamTypes.SYSTEM) {
         dms.push(stream)
       }
       // Note: threads are not shown in All view
@@ -1250,7 +1260,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
           workspaceName={bootstrap?.workspace.name ?? "Loading..."}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
-          hideViewToggle={processedStreams.length === 0}
+          hideViewToggle={!hasUserStreams}
         />
       }
       quickLinks={
@@ -1286,7 +1296,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
               <p className="px-2 py-4 text-xs text-muted-foreground text-center">Loading...</p>
             ) : error ? (
               <p className="px-2 py-4 text-xs text-destructive text-center">Failed to load</p>
-            ) : processedStreams.length === 0 ? (
+            ) : !hasUserStreams ? (
               /* Empty state - shown in both views when no streams */
               <div className="px-4 py-8 text-center">
                 <p className="text-sm text-muted-foreground mb-4">No streams yet</p>

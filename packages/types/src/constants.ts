@@ -1,5 +1,5 @@
 // Stream types
-export const STREAM_TYPES = ["scratchpad", "channel", "dm", "thread"] as const
+export const STREAM_TYPES = ["scratchpad", "channel", "dm", "thread", "system"] as const
 export type StreamType = (typeof STREAM_TYPES)[number]
 
 export const StreamTypes = {
@@ -7,6 +7,7 @@ export const StreamTypes = {
   CHANNEL: "channel",
   DM: "dm",
   THREAD: "thread",
+  SYSTEM: "system",
 } as const satisfies Record<string, StreamType>
 
 // Visibility
@@ -32,12 +33,13 @@ export const CONTENT_FORMATS = ["plaintext", "markdown"] as const
 export type ContentFormat = (typeof CONTENT_FORMATS)[number]
 
 // Author types
-export const AUTHOR_TYPES = ["member", "persona"] as const
+export const AUTHOR_TYPES = ["member", "persona", "system"] as const
 export type AuthorType = (typeof AUTHOR_TYPES)[number]
 
 export const AuthorTypes = {
   MEMBER: "member",
   PERSONA: "persona",
+  SYSTEM: "system",
 } as const satisfies Record<string, AuthorType>
 
 // Event types

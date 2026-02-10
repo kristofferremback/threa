@@ -98,6 +98,11 @@ export class EmbeddingHandler implements OutboxHandler {
             continue
           }
 
+          if (payload.event.actorType === "system") {
+            lastProcessedId = event.id
+            continue
+          }
+
           logger.debug({ messageId: payload.event.payload.messageId }, "Embedding job dispatched")
 
           await this.jobQueue.send(JobQueues.EMBEDDING_GENERATE, {

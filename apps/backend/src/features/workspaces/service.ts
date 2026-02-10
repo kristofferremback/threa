@@ -3,10 +3,11 @@ import { withTransaction } from "../../db"
 import { WorkspaceRepository, Workspace, WorkspaceMember } from "./repository"
 import { MemberRepository, Member } from "./member-repository"
 import { OutboxRepository } from "../../lib/outbox"
+import { StreamRepository, StreamMemberRepository } from "../streams"
 import { EmojiUsageRepository } from "../emoji"
 import { UserRepository, User } from "../../auth/user-repository"
 import { PersonaRepository, type Persona } from "../agents"
-import { workspaceId, memberId as generateMemberId } from "../../lib/id"
+import { workspaceId, memberId as generateMemberId, streamId } from "../../lib/id"
 import { generateUniqueSlug } from "../../lib/slug"
 import { serializeBigInt } from "../../lib/serialization"
 
@@ -35,7 +36,7 @@ export class WorkspaceService {
       const id = workspaceId()
       const slug = await generateUniqueSlug(params.name, (slug) => WorkspaceRepository.slugExists(client, slug))
 
-      const workspace = await WorkspaceRepository.insert(client, {
+      const ws = await WorkspaceRepository.insert(client, {
         id,
         name: params.name,
         slug,
@@ -48,15 +49,22 @@ export class WorkspaceService {
         ? await generateUniqueSlug(user.name, (s) => WorkspaceRepository.memberSlugExists(client, id, s))
         : `member-${generateMemberId().slice(7, 15)}`
 
+      const mId = generateMemberId()
       await WorkspaceRepository.addMember(client, {
-        id: generateMemberId(),
+        id: mId,
         workspaceId: id,
         userId: params.createdBy,
         slug: memberSlug,
         role: "owner",
       })
 
-      return workspace
+      // System stream created atomically with member — no upsert needed
+      const sId = streamId()
+      const stream = await StreamRepository.insertSystemStream(client, { id: sId, workspaceId: id, createdBy: mId })
+      await StreamMemberRepository.insert(client, sId, mId)
+      await OutboxRepository.insert(client, "stream:created", { workspaceId: id, streamId: sId, stream })
+
+      return ws
     })
   }
 
@@ -71,7 +79,7 @@ export class WorkspaceService {
         ? await generateUniqueSlug(user.name, (s) => WorkspaceRepository.memberSlugExists(client, workspaceId, s))
         : `member-${generateMemberId().slice(7, 15)}`
 
-      const member = await WorkspaceRepository.addMember(client, {
+      const m = await WorkspaceRepository.addMember(client, {
         id: generateMemberId(),
         workspaceId,
         userId,
@@ -80,7 +88,7 @@ export class WorkspaceService {
       })
 
       // Look up full member for outbox event
-      const fullMember = await MemberRepository.findById(client, member.id)
+      const fullMember = await MemberRepository.findById(client, m.id)
       if (fullMember) {
         await OutboxRepository.insert(client, "workspace_member:added", {
           workspaceId,
@@ -88,7 +96,13 @@ export class WorkspaceService {
         })
       }
 
-      return member
+      // System stream created atomically with member — no upsert needed
+      const sId = streamId()
+      const stream = await StreamRepository.insertSystemStream(client, { id: sId, workspaceId, createdBy: m.id })
+      await StreamMemberRepository.insert(client, sId, m.id)
+      await OutboxRepository.insert(client, "stream:created", { workspaceId, streamId: sId, stream })
+
+      return m
     })
   }
 

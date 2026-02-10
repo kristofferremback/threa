@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { FileText, Hash, MessageSquare, Plus, X, Archive } from "lucide-react"
+import { Bell, FileText, Hash, MessageSquare, Plus, X, Archive } from "lucide-react"
 import { StreamTypes } from "@threa/types"
 import type { Stream, StreamType } from "@threa/types"
 import { streamsApi } from "@/api"
@@ -22,6 +22,7 @@ const STREAM_ICONS: Record<StreamType, React.ComponentType<{ className?: string 
   [StreamTypes.CHANNEL]: Hash,
   [StreamTypes.DM]: MessageSquare,
   [StreamTypes.THREAD]: MessageSquare,
+  [StreamTypes.SYSTEM]: Bell,
 }
 
 const FILTER_TYPES: { type: FilterType; label: string; icon: React.ReactNode }[] = [
@@ -55,6 +56,8 @@ function getStreamTypeLabel(type: StreamType): string {
       return "Channel"
     case StreamTypes.DM:
       return "Direct Message"
+    case StreamTypes.SYSTEM:
+      return "System"
     case StreamTypes.THREAD:
       return "Thread"
     default:
@@ -130,7 +133,11 @@ export function useStreamItems(context: ModeContext): ModeResult {
     ]
 
     let filteredStreams = allStreams.filter(
-      (s) => s.type === StreamTypes.SCRATCHPAD || s.type === StreamTypes.CHANNEL || s.type === StreamTypes.DM
+      (s) =>
+        s.type === StreamTypes.SCRATCHPAD ||
+        s.type === StreamTypes.CHANNEL ||
+        s.type === StreamTypes.DM ||
+        s.type === StreamTypes.SYSTEM
     )
 
     // Apply type filters
