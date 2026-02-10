@@ -1,5 +1,5 @@
 import type { NavigateFunction } from "react-router-dom"
-import type { Stream } from "@threa/types"
+import type { Stream, StreamMember } from "@threa/types"
 
 export interface QuickSwitcherItem {
   id: string
@@ -24,6 +24,7 @@ export interface ModeContext {
   navigate: NavigateFunction
   closeDialog: () => void
   streams: Stream[]
+  streamMemberships: StreamMember[]
 }
 
 export interface ModeResult {

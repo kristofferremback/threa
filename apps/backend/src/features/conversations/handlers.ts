@@ -29,19 +29,8 @@ export function createConversationHandlers({ conversationService, streamService 
         })
       }
 
-      // Validate stream exists, belongs to workspace, and user has access
-      const [stream, isMember] = await Promise.all([
-        streamService.getStreamById(streamId),
-        streamService.isMember(streamId, memberId),
-      ])
-
-      if (!stream || stream.workspaceId !== workspaceId) {
-        return res.status(404).json({ error: "Stream not found" })
-      }
-
-      if (!isMember) {
-        return res.status(403).json({ error: "Not a member of this stream" })
-      }
+      // validateStreamAccess handles public visibility + thread root membership
+      await streamService.validateStreamAccess(streamId, workspaceId, memberId)
 
       const conversations = await conversationService.listByStream(streamId, result.data)
       res.json({ conversations })
@@ -57,11 +46,8 @@ export function createConversationHandlers({ conversationService, streamService 
         return res.status(404).json({ error: "Conversation not found" })
       }
 
-      // Validate user has access to the conversation's stream
-      const isMember = await streamService.isMember(conversation.streamId, memberId)
-      if (!isMember) {
-        return res.status(403).json({ error: "Not a member of this stream" })
-      }
+      // validateStreamAccess handles public visibility + thread root membership
+      await streamService.validateStreamAccess(conversation.streamId, workspaceId, memberId)
 
       res.json({ conversation })
     },
@@ -76,11 +62,8 @@ export function createConversationHandlers({ conversationService, streamService 
         return res.status(404).json({ error: "Conversation not found" })
       }
 
-      // Validate user has access to the conversation's stream
-      const isMember = await streamService.isMember(conversation.streamId, memberId)
-      if (!isMember) {
-        return res.status(403).json({ error: "Not a member of this stream" })
-      }
+      // validateStreamAccess handles public visibility + thread root membership
+      await streamService.validateStreamAccess(conversation.streamId, workspaceId, memberId)
 
       const messages = await conversationService.getMessages(conversationId)
       res.json({ messages })

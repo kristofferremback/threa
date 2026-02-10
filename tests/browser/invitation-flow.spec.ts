@@ -8,7 +8,9 @@ import { test, expect } from "@playwright/test"
  * 2. User A invites User B by email via workspace settings
  * 3. User B signs in — auto-accepted into workspace, redirected to setup
  * 4. User B completes member setup (name, slug, timezone, locale)
- * 5. User B sees the workspace with the public channel
+ * 5. User B does NOT see the public channel in sidebar (not a member yet)
+ * 6. User B finds it via quick switcher (shows "Not joined"), navigates to it
+ * 7. User B sees join bar, clicks "Join Channel", channel appears in sidebar
  */
 
 test.describe("Invitation Flow", () => {
@@ -100,11 +102,40 @@ test.describe("Invitation Flow", () => {
     await expect(pageB.getByText(workspaceName)).toBeVisible({ timeout: 10000 })
     await expect(pageB.getByText("Select a stream from the sidebar")).toBeVisible()
 
-    // Switch to All view to see all streams (Smart view may collapse sections)
+    // Switch to All view to see all streams
     await pageB.getByRole("button", { name: "All" }).click()
 
-    // The public channel should be visible in the sidebar
-    await expect(pageB.getByText(`#${channelName}`)).toBeVisible({ timeout: 5000 })
+    // Public channel should NOT be in sidebar (User B is not a member)
+    await expect(pageB.getByText(`#${channelName}`)).not.toBeVisible()
+
+    // ──── User B: Find channel via quick switcher and join ────
+
+    // Open quick switcher (Cmd+K)
+    await pageB.keyboard.press("Meta+k")
+    await expect(pageB.getByRole("dialog")).toBeVisible()
+
+    // Search for the channel
+    await pageB.getByLabel("Quick switcher input").fill(channelName)
+
+    // Should show "Not joined" indicator
+    await expect(pageB.getByText("Not joined")).toBeVisible({ timeout: 5000 })
+
+    // Select the channel to navigate to it
+    await pageB.keyboard.press("Enter")
+
+    // Should see the join bar instead of message input
+    await expect(pageB.getByRole("button", { name: "Join Channel" })).toBeVisible({ timeout: 5000 })
+
+    // Click join
+    await pageB.getByRole("button", { name: "Join Channel" }).click()
+
+    // After joining, message input should appear (join bar gone)
+    await expect(pageB.getByRole("button", { name: "Join Channel" })).not.toBeVisible({ timeout: 5000 })
+
+    // Channel should now appear in the sidebar
+    // Use the sidebar area specifically to avoid matching the header
+    const sidebar = pageB.locator("nav, [class*='sidebar']").first()
+    await expect(pageB.getByText(`#${channelName}`).first()).toBeVisible({ timeout: 5000 })
 
     await contextB.close()
   })

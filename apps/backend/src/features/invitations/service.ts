@@ -7,6 +7,7 @@ import { OutboxRepository } from "../../lib/outbox"
 import { invitationId } from "../../lib/id"
 import { memberId as generateMemberId } from "../../lib/id"
 import { generateUniqueSlug } from "../../lib/slug"
+import { serializeBigInt } from "../../lib/serialization"
 import { logger } from "../../lib/logger"
 import type { WorkosOrgService } from "../../auth/workos-org-service"
 import type { InvitationStatus } from "@threa/types"
@@ -140,7 +141,7 @@ export class InvitationService {
           )
         : `member-${generateMemberId().slice(7, 15)}`
 
-      await WorkspaceRepository.addMember(client, {
+      const member = await WorkspaceRepository.addMember(client, {
         id: generateMemberId(),
         workspaceId: invitation.workspaceId,
         userId,
@@ -149,6 +150,15 @@ export class InvitationService {
         role: invitation.role,
         setupCompleted: false,
       })
+
+      // Notify existing members so their caches update with the new member's info
+      const fullMember = await MemberRepository.findById(client, member.id)
+      if (fullMember) {
+        await OutboxRepository.insert(client, "workspace_member:added", {
+          workspaceId: invitation.workspaceId,
+          member: serializeBigInt(fullMember),
+        })
+      }
 
       await OutboxRepository.insert(client, "invitation:accepted", {
         workspaceId: invitation.workspaceId,

@@ -1,0 +1,114 @@
+import { describe, test, expect, mock, beforeEach } from "bun:test"
+import { createConversationHandlers } from "./handlers"
+import { StreamNotFoundError } from "../../lib/errors"
+
+function mockReq(overrides: Record<string, unknown> = {}) {
+  return {
+    member: { id: "member_1" },
+    workspaceId: "ws_1",
+    params: { streamId: "stream_1" },
+    query: {},
+    ...overrides,
+  } as never
+}
+
+function mockRes() {
+  const res = {
+    statusCode: 200,
+    body: null as unknown,
+    status(code: number) {
+      res.statusCode = code
+      return res
+    },
+    json(data: unknown) {
+      res.body = data
+      return res
+    },
+  }
+  return res as never
+}
+
+describe("Conversation Handlers", () => {
+  const mockValidateStreamAccess = mock(() => Promise.resolve({ id: "stream_1", workspaceId: "ws_1" }))
+  const mockListByStream = mock(() => Promise.resolve([] as Record<string, unknown>[]))
+  const mockGetById = mock(() => Promise.resolve(null as Record<string, unknown> | null))
+  const mockGetMessages = mock(() => Promise.resolve([] as Record<string, unknown>[]))
+
+  const handlers = createConversationHandlers({
+    conversationService: {
+      listByStream: mockListByStream,
+      getById: mockGetById,
+      getMessages: mockGetMessages,
+    } as never,
+    streamService: {
+      validateStreamAccess: mockValidateStreamAccess,
+    } as never,
+  })
+
+  beforeEach(() => {
+    mockValidateStreamAccess.mockReset()
+    mockListByStream.mockReset()
+    mockGetById.mockReset()
+    mockGetMessages.mockReset()
+
+    mockValidateStreamAccess.mockResolvedValue({ id: "stream_1", workspaceId: "ws_1" })
+    mockListByStream.mockResolvedValue([])
+    mockGetById.mockResolvedValue({
+      id: "conv_1",
+      streamId: "stream_1",
+      workspaceId: "ws_1",
+    })
+    mockGetMessages.mockResolvedValue([])
+  })
+
+  describe("listByStream", () => {
+    test("should call validateStreamAccess with correct params", async () => {
+      const res = mockRes()
+      await handlers.listByStream(mockReq(), res)
+
+      expect(mockValidateStreamAccess).toHaveBeenCalledWith("stream_1", "ws_1", "member_1")
+    })
+
+    test("should return conversations when access is valid", async () => {
+      const conversations = [{ id: "conv_1" }]
+      mockListByStream.mockResolvedValue(conversations)
+      const res = mockRes()
+
+      await handlers.listByStream(mockReq(), res)
+
+      expect((res as unknown as { body: unknown }).body).toEqual({ conversations })
+    })
+
+    test("should propagate StreamNotFoundError for unauthorized access", async () => {
+      mockValidateStreamAccess.mockRejectedValue(new StreamNotFoundError())
+
+      await expect(handlers.listByStream(mockReq(), mockRes())).rejects.toThrow("Stream not found")
+    })
+  })
+
+  describe("getById", () => {
+    test("should call validateStreamAccess for conversation's stream", async () => {
+      const res = mockRes()
+      await handlers.getById(mockReq({ params: { conversationId: "conv_1" } }), res)
+
+      expect(mockValidateStreamAccess).toHaveBeenCalledWith("stream_1", "ws_1", "member_1")
+    })
+
+    test("should propagate StreamNotFoundError for unauthorized access", async () => {
+      mockValidateStreamAccess.mockRejectedValue(new StreamNotFoundError())
+
+      await expect(handlers.getById(mockReq({ params: { conversationId: "conv_1" } }), mockRes())).rejects.toThrow(
+        "Stream not found"
+      )
+    })
+  })
+
+  describe("getMessages", () => {
+    test("should call validateStreamAccess for conversation's stream", async () => {
+      const res = mockRes()
+      await handlers.getMessages(mockReq({ params: { conversationId: "conv_1" } }), res)
+
+      expect(mockValidateStreamAccess).toHaveBeenCalledWith("stream_1", "ws_1", "member_1")
+    })
+  })
+})

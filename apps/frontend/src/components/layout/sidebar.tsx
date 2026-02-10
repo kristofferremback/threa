@@ -1106,22 +1106,36 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   const draftCount = allDrafts.length
   const isDraftsPage = splat === "drafts" || window.location.pathname.endsWith("/drafts")
 
+  // Build set of streams the user is a member of (for filtering public channels)
+  const memberStreamIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const m of bootstrap?.streamMemberships ?? []) ids.add(m.streamId)
+    return ids
+  }, [bootstrap?.streamMemberships])
+
   // Process streams into enriched data with urgency and section
   const processedStreams = useMemo(() => {
     if (!bootstrap?.streams) return []
 
-    return bootstrap.streams.map((stream): StreamItemData => {
-      const unreadCount = getUnreadCount(stream.id)
-      const urgency = calculateUrgency(stream, unreadCount)
-      const section = categorizeStream(stream, unreadCount, urgency)
+    return bootstrap.streams
+      .filter((stream) => {
+        // Non-public streams always appear (bootstrap only includes them if user has access)
+        if (stream.visibility !== "public") return true
+        // Public channels: only show if user is a member
+        return memberStreamIds.has(stream.id)
+      })
+      .map((stream): StreamItemData => {
+        const unreadCount = getUnreadCount(stream.id)
+        const urgency = calculateUrgency(stream, unreadCount)
+        const section = categorizeStream(stream, unreadCount, urgency)
 
-      return {
-        ...stream,
-        urgency,
-        section,
-      }
-    })
-  }, [bootstrap?.streams, getUnreadCount])
+        return {
+          ...stream,
+          urgency,
+          section,
+        }
+      })
+  }, [bootstrap?.streams, memberStreamIds, getUnreadCount])
 
   // System streams are auto-created infrastructure — don't count toward "has content"
   const hasUserStreams = processedStreams.some((s) => s.type !== StreamTypes.SYSTEM)

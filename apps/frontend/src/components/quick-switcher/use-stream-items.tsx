@@ -66,7 +66,21 @@ function getStreamTypeLabel(type: StreamType): string {
 }
 
 export function useStreamItems(context: ModeContext): ModeResult {
-  const { streams: activeStreams, query, onQueryChange, workspaceId, navigate, closeDialog } = context
+  const {
+    streams: activeStreams,
+    streamMemberships,
+    query,
+    onQueryChange,
+    workspaceId,
+    navigate,
+    closeDialog,
+  } = context
+
+  const memberStreamIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const m of streamMemberships) ids.add(m.streamId)
+    return ids
+  }, [streamMemberships])
 
   // Local state for the "Add filter" flow
   const [addingFilter, setAddingFilter] = useState<FilterType | null>(null)
@@ -164,7 +178,8 @@ export function useStreamItems(context: ModeContext): ModeResult {
         const href = `/w/${workspaceId}/s/${stream.id}`
         const isArchived = stream.archivedAt != null
         const typeLabel = getStreamTypeLabel(stream.type)
-        const description = isArchived ? `${typeLabel} • Archived` : typeLabel
+        const notJoined = !memberStreamIds.has(stream.id) && stream.visibility === "public"
+        const description = isArchived ? `${typeLabel} · Archived` : notJoined ? `${typeLabel} · Not joined` : typeLabel
         return {
           id: stream.id,
           label: getStreamDisplayName(stream),
@@ -184,6 +199,7 @@ export function useStreamItems(context: ModeContext): ModeResult {
     showActive,
     showArchived,
     typeFilters,
+    memberStreamIds,
     workspaceId,
     navigate,
     closeDialog,

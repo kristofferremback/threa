@@ -1,6 +1,7 @@
-import { useMemo, useEffect } from "react"
+import { useMemo, useEffect, useCallback } from "react"
 import { useSearchParams } from "react-router-dom"
 import { MessageSquare } from "lucide-react"
+import { useQueryClient } from "@tanstack/react-query"
 import {
   useEvents,
   useStreamSocket,
@@ -9,14 +10,24 @@ import {
   useAutoMarkAsRead,
   useUnreadDivider,
   useAgentActivity,
+  streamKeys,
+  workspaceKeys,
 } from "@/hooks"
 import { useSocket } from "@/contexts"
 import { useUser } from "@/auth"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
 import { ErrorView } from "@/components/error-view"
-import { StreamTypes, type Stream } from "@threa/types"
+import {
+  StreamTypes,
+  Visibilities,
+  type Stream,
+  type StreamMember,
+  type WorkspaceBootstrap,
+  type StreamBootstrap,
+} from "@threa/types"
 import { EventList } from "./event-list"
 import { MessageInput } from "./message-input"
+import { JoinChannelBar } from "./join-channel-bar"
 import { ThreadParentMessage } from "../thread/thread-parent-message"
 
 interface StreamContentProps {
@@ -120,6 +131,31 @@ export function StreamContent({
     highlightMessageId,
   })
 
+  const queryClient = useQueryClient()
+  const isPublicChannel = stream?.type === StreamTypes.CHANNEL && stream?.visibility === Visibilities.PUBLIC
+  const isMember = !!bootstrap?.membership
+
+  const handleJoined = useCallback(
+    (membership: StreamMember) => {
+      // Update stream bootstrap cache — set membership so join bar disappears
+      queryClient.setQueryData(streamKeys.bootstrap(workspaceId, streamId), (old: unknown) => {
+        if (!old || typeof old !== "object") return old
+        return { ...(old as StreamBootstrap), membership }
+      })
+
+      // Update workspace bootstrap cache — append to streamMemberships so sidebar shows the channel
+      queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), (old: unknown) => {
+        if (!old || typeof old !== "object") return old
+        const ws = old as WorkspaceBootstrap
+        return {
+          ...ws,
+          streamMemberships: [...ws.streamMemberships, membership],
+        }
+      })
+    },
+    [queryClient, workspaceId, streamId]
+  )
+
   if (error && !isDraft) {
     return (
       <ErrorView
@@ -171,20 +207,29 @@ export function StreamContent({
           />
         )}
       </div>
-      <MessageInput
-        workspaceId={workspaceId}
-        streamId={streamId}
-        streamName={stream?.displayName ?? undefined}
-        disabled={isArchived || isSystem}
-        disabledReason={
-          isSystem
-            ? "System notifications are read-only."
-            : isArchived
-              ? "This thread has been sealed in the labyrinth. It can be read but not extended."
-              : undefined
-        }
-        autoFocus={autoFocus}
-      />
+      {!isMember && isPublicChannel ? (
+        <JoinChannelBar
+          workspaceId={workspaceId}
+          streamId={streamId}
+          channelName={stream?.slug ?? stream?.displayName ?? ""}
+          onJoined={handleJoined}
+        />
+      ) : (
+        <MessageInput
+          workspaceId={workspaceId}
+          streamId={streamId}
+          streamName={stream?.displayName ?? undefined}
+          disabled={isArchived || isSystem}
+          disabledReason={
+            isSystem
+              ? "System notifications are read-only."
+              : isArchived
+                ? "This thread has been sealed in the labyrinth. It can be read but not extended."
+                : undefined
+          }
+          autoFocus={autoFocus}
+        />
+      )}
     </div>
   )
 }
