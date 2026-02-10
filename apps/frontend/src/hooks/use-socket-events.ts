@@ -153,15 +153,35 @@ export function useSocketEvents(workspaceId: string) {
     // Handle stream created
     socket.on("stream:created", (payload: StreamPayload) => {
       // Add to workspace bootstrap cache (sidebar)
-      queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), (old: unknown) => {
-        if (!old || typeof old !== "object") return old
-        const bootstrap = old as { streams?: Stream[] }
-        if (!bootstrap.streams) return old
+      queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
+        if (!old) return old
         // Only add if not already present (avoid duplicates from own actions)
-        if (bootstrap.streams.some((s) => s.id === payload.stream.id)) return old
+        if (old.streams.some((s) => s.id === payload.stream.id)) return old
+
+        // If the current user created this stream, also add their membership
+        // so the sidebar filter shows it (handles multi-tab / multi-device)
+        const currentMember = user && old.members?.find((m: WorkspaceMember) => m.userId === user.id)
+        const isCreator = currentMember && payload.stream.createdBy === currentMember.id
+        const newMemberships = isCreator
+          ? [
+              ...old.streamMemberships,
+              {
+                streamId: payload.stream.id,
+                memberId: currentMember.id,
+                pinned: false,
+                pinnedAt: null,
+                muted: false,
+                lastReadEventId: null,
+                lastReadAt: null,
+                joinedAt: payload.stream.createdAt,
+              },
+            ]
+          : old.streamMemberships
+
         return {
-          ...bootstrap,
-          streams: [...bootstrap.streams, payload.stream],
+          ...old,
+          streams: [...old.streams, { ...payload.stream, lastMessagePreview: null }],
+          streamMemberships: newMemberships,
         }
       })
 
