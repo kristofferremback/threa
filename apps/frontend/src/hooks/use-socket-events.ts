@@ -103,8 +103,11 @@ export function useSocketEvents(workspaceId: string) {
   // Subscribe to stream memberships so we can join/leave stream rooms reactively
   const { data: memberStreamIds } = useQuery({
     queryKey: workspaceKeys.bootstrap(workspaceId),
-    select: (data: WorkspaceBootstrap) => data.streamMemberships?.map((m: StreamMember) => m.streamId) ?? [],
-    enabled: false, // don't refetch — just read from cache set by useWorkspaceBootstrap
+    // Cache-only observer: we subscribe to bootstrap cache updates without triggering fetches.
+    // queryFn must still be present because this observer shares the bootstrap query key.
+    queryFn: () => queryClient.getQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId)) ?? null,
+    select: (data: WorkspaceBootstrap | null) => data?.streamMemberships?.map((m: StreamMember) => m.streamId) ?? [],
+    enabled: false,
   })
 
   // Stable serialization for dependency tracking
