@@ -1,6 +1,8 @@
 import { createContext, useContext, useState, useEffect, useMemo, useRef, type ReactNode } from "react"
 import { useWorkspaceBootstrap } from "@/hooks/use-workspaces"
 import { useCoordinatedStreamQueries } from "@/hooks/use-coordinated-stream-queries"
+import { debugBootstrap } from "@/lib/bootstrap-debug"
+import { getQueryLoadState, isQueryLoadStateLoading } from "@/lib/query-load-state"
 import { StreamContentSkeleton } from "@/components/loading"
 import { ApiError } from "@/api/client"
 
@@ -62,10 +64,27 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
   const loadingIndicatorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hideIndicatorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const { isLoading: workspaceLoading } = useWorkspaceBootstrap(workspaceId)
-  const { isLoading: streamsLoading, results } = useCoordinatedStreamQueries(workspaceId, streamIds)
+  const workspaceQuery = useWorkspaceBootstrap(workspaceId)
+  const workspaceLoadState =
+    workspaceQuery.loadState ?? getQueryLoadState(workspaceQuery.status, workspaceQuery.fetchStatus)
+  const { loadState: streamsLoadState, results } = useCoordinatedStreamQueries(workspaceId, streamIds)
+  const workspaceLoading = isQueryLoadStateLoading(workspaceLoadState)
+  const streamsLoading = isQueryLoadStateLoading(streamsLoadState)
 
   const isLoading = workspaceLoading || streamsLoading
+
+  debugBootstrap("Coordinated loading state", {
+    workspaceId,
+    streamIds,
+    workspaceLoadState,
+    streamsLoadState,
+    workspaceLoading,
+    streamsLoading,
+    isLoading,
+    isReady,
+    showSkeleton,
+    showLoadingIndicator,
+  })
 
   // Compute phase from state
   const phase = useMemo<CoordinatedPhase>(() => {
@@ -144,8 +163,9 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
     results.forEach((result, index) => {
       const streamId = serverStreamIds[index]
       if (streamId) {
+        const loadState = getQueryLoadState(result.status, result.fetchStatus)
         map.set(streamId, {
-          isLoading: result.isLoading && !result.isError,
+          isLoading: isQueryLoadStateLoading(loadState) && !result.isError,
           error: result.error ?? null,
         })
       }

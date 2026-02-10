@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest"
-import { renderHook } from "@testing-library/react"
+import { act, renderHook, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { createElement, type ReactNode } from "react"
 import { useWorkspaceEmoji } from "./use-workspace-emoji"
@@ -21,6 +21,34 @@ describe("useWorkspaceEmoji", () => {
       defaultOptions: {
         queries: { retry: false },
       },
+    })
+  })
+
+  describe("cache subscription", () => {
+    it("should not initialize workspace bootstrap cache when empty", () => {
+      renderHook(() => useWorkspaceEmoji(workspaceId), {
+        wrapper: createTestWrapper(queryClient),
+      })
+
+      expect(queryClient.getQueryData(workspaceKeys.bootstrap(workspaceId))).toBeUndefined()
+    })
+
+    it("should update when bootstrap data is populated after mount", async () => {
+      const { result } = renderHook(() => useWorkspaceEmoji(workspaceId), {
+        wrapper: createTestWrapper(queryClient),
+      })
+
+      expect(result.current.toEmoji("thumbsup")).toBeNull()
+
+      act(() => {
+        queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), {
+          emojis: [{ shortcode: "thumbsup", emoji: "👍", type: "native", group: "people", order: 0, aliases: [] }],
+        })
+      })
+
+      await waitFor(() => {
+        expect(result.current.toEmoji("thumbsup")).toBe("👍")
+      })
     })
   })
 

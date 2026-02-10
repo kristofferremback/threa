@@ -1,7 +1,10 @@
 import { useCallback } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { useWorkspaceService } from "@/contexts"
+import { useSocket, useWorkspaceService } from "@/contexts"
+import { debugBootstrap } from "@/lib/bootstrap-debug"
+import { getQueryLoadState, isTerminalBootstrapError } from "@/lib/query-load-state"
 import { db } from "@/db"
+import { joinRoomBestEffort } from "@/lib/socket-room"
 import type { Workspace } from "@threa/types"
 
 // Query keys for cache management
@@ -54,18 +57,31 @@ export function useWorkspace(workspaceId: string) {
 }
 
 export function useWorkspaceBootstrap(workspaceId: string) {
+  const socket = useSocket()
   const workspaceService = useWorkspaceService()
   const queryClient = useQueryClient()
 
   // Check if this query has already errored - don't re-enable if so
   // This prevents continuous refetching when the server is down
   const existingQueryState = queryClient.getQueryState(workspaceKeys.bootstrap(workspaceId))
-  const hasExistingError = existingQueryState?.status === "error"
+  const hasTerminalError = existingQueryState?.status === "error" && isTerminalBootstrapError(existingQueryState.error)
 
   const query = useQuery({
     queryKey: workspaceKeys.bootstrap(workspaceId),
     queryFn: async () => {
+      debugBootstrap("Workspace bootstrap queryFn start", { workspaceId, hasSocket: !!socket })
+      if (!socket) {
+        debugBootstrap("Workspace bootstrap missing socket", { workspaceId })
+        throw new Error("Socket not available for workspace subscription")
+      }
+      await joinRoomBestEffort(socket, `ws:${workspaceId}`, "WorkspaceBootstrap")
+
       const bootstrap = await workspaceService.bootstrap(workspaceId)
+      debugBootstrap("Workspace bootstrap fetch success", {
+        workspaceId,
+        streamCount: bootstrap.streams.length,
+        memberCount: bootstrap.members.length,
+      })
       const now = Date.now()
 
       // Cache all data to IndexedDB
@@ -93,8 +109,9 @@ export function useWorkspaceBootstrap(workspaceId: string) {
 
       return bootstrap
     },
-    // Don't enable if the query has already errored to prevent continuous refetch loops
-    enabled: !!workspaceId && !hasExistingError,
+    // Keep terminal auth/not-found errors disabled to avoid loops.
+    // Non-terminal errors can recover automatically on future attempts.
+    enabled: !!workspaceId && !!socket && !hasTerminalError,
     // Prevent automatic refetching - socket events handle updates
     staleTime: Infinity,
     gcTime: Infinity,
@@ -104,12 +121,26 @@ export function useWorkspaceBootstrap(workspaceId: string) {
     refetchOnReconnect: false,
   })
 
+  const loadState = getQueryLoadState(query.status, query.fetchStatus)
+
+  debugBootstrap("Workspace bootstrap observer state", {
+    workspaceId,
+    enabled: !!workspaceId && !!socket && !hasTerminalError,
+    hasTerminalError,
+    loadState,
+    status: query.status,
+    fetchStatus: query.fetchStatus,
+    isPending: query.isPending,
+    isLoading: query.isLoading,
+    isError: query.isError,
+  })
+
   // Manual retry that resets error state first
   const retryBootstrap = useCallback(() => {
     queryClient.resetQueries({ queryKey: workspaceKeys.bootstrap(workspaceId) })
   }, [queryClient, workspaceId])
 
-  return { ...query, retryBootstrap }
+  return { ...query, loadState, retryBootstrap }
 }
 
 export function useCreateWorkspace() {

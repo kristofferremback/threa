@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useSocket } from "@/contexts"
 import { agentSessionsApi } from "@/api"
+import { debugBootstrap } from "@/lib/bootstrap-debug"
+import { joinRoomWithAck } from "@/lib/socket-room"
 import type {
   AgentSessionStep,
   AgentSession,
@@ -44,15 +46,31 @@ export function useAgentTrace(workspaceId: string, sessionId: string): UseAgentT
   const [terminalStatus, setTerminalStatus] = useState<"completed" | "failed" | null>(null)
   // Track if socket is subscribed (enables query after subscription)
   const [isSubscribed, setIsSubscribed] = useState(false)
+  const [isSubscribing, setIsSubscribing] = useState(false)
+  const [subscriptionError, setSubscriptionError] = useState<Error | null>(null)
 
   // Bootstrap: single fetch for historical data. Real-time updates come via socket.
   // IMPORTANT: Only fetch AFTER socket subscription is confirmed to avoid race conditions
-  const { data, isLoading, error } = useQuery({
+  const {
+    data,
+    isLoading: isQueryLoading,
+    error: queryError,
+  } = useQuery({
     queryKey: ["agent-session", workspaceId, sessionId],
     queryFn: () => agentSessionsApi.getSession(workspaceId, sessionId),
     enabled: !!workspaceId && !!sessionId && isSubscribed,
     // Always refetch when modal opens - don't serve stale data from a previous view
     staleTime: 0,
+  })
+
+  debugBootstrap("Agent trace observer state", {
+    workspaceId,
+    sessionId,
+    hasSocket: !!socket,
+    isSubscribed,
+    isSubscribing,
+    queryLoading: isQueryLoading,
+    hasQueryError: !!queryError,
   })
 
   const handleStepStarted = useCallback(
@@ -116,15 +134,15 @@ export function useAgentTrace(workspaceId: string, sessionId: string): UseAgentT
     if (!socket || !workspaceId || !sessionId) return
 
     const room = `ws:${workspaceId}:agent_session:${sessionId}`
+    const abortController = new AbortController()
 
     // Reset state for new session
     setRealtimeSteps(new Map())
     setStreamingContent({})
     setTerminalStatus(null)
     setIsSubscribed(false)
-
-    // Subscribe to session room FIRST
-    socket.emit("join", room)
+    setIsSubscribing(true)
+    setSubscriptionError(null)
 
     // Set up event listeners
     socket.on("agent_session:step:started", handleStepStarted)
@@ -133,13 +151,29 @@ export function useAgentTrace(workspaceId: string, sessionId: string): UseAgentT
     socket.on("agent_session:completed", handleCompleted)
     socket.on("agent_session:failed", handleFailed)
 
-    // Mark as subscribed after a microtask to ensure join is queued
-    // This enables the query to fetch AFTER subscription is established
-    queueMicrotask(() => {
-      setIsSubscribed(true)
-    })
+    // Subscribe to session room FIRST and only fetch bootstrap after join ack.
+    debugBootstrap("Agent trace joining session room", { workspaceId, sessionId, room })
+    void joinRoomWithAck(socket, room, { signal: abortController.signal })
+      .then(() => {
+        setIsSubscribed(true)
+      })
+      .catch((error: unknown) => {
+        if (abortController.signal.aborted) return
+        const joinError = error instanceof Error ? error : new Error("Failed to subscribe to session room")
+        console.error(
+          `[AgentTrace] Failed to receive join ack for ${room}; continuing with bootstrap fetch and realtime listeners`,
+          joinError
+        )
+        setSubscriptionError(joinError)
+        setIsSubscribed(true)
+      })
+      .finally(() => {
+        if (abortController.signal.aborted) return
+        setIsSubscribing(false)
+      })
 
     return () => {
+      abortController.abort()
       setIsSubscribed(false)
       socket.emit("leave", room)
       socket.off("agent_session:step:started", handleStepStarted)
@@ -171,8 +205,8 @@ export function useAgentTrace(workspaceId: string, sessionId: string): UseAgentT
     session: data?.session ?? null,
     persona: data?.persona ?? null,
     status,
-    isLoading,
-    error: error as Error | null,
+    isLoading: isSubscribing || isQueryLoading,
+    error: (queryError as Error | null) ?? (data ? null : subscriptionError),
   }
 }
 

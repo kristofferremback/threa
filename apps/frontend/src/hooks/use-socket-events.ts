@@ -3,7 +3,9 @@ import { useQueryClient, useQuery } from "@tanstack/react-query"
 import { useParams } from "react-router-dom"
 import { useSocket, useSocketReconnectCount } from "@/contexts"
 import { useAuth } from "@/auth"
+import { debugBootstrap } from "@/lib/bootstrap-debug"
 import { db } from "@/db"
+import { joinRoomFireAndForget } from "@/lib/socket-room"
 import { streamKeys } from "./use-streams"
 import { workspaceKeys } from "./use-workspaces"
 import type {
@@ -102,8 +104,17 @@ export function useSocketEvents(workspaceId: string) {
   // Subscribe to stream memberships so we can join/leave stream rooms reactively
   const { data: memberStreamIds } = useQuery({
     queryKey: workspaceKeys.bootstrap(workspaceId),
-    select: (data: WorkspaceBootstrap) => data.streamMemberships?.map((m: StreamMember) => m.streamId) ?? [],
-    enabled: false, // don't refetch — just read from cache set by useWorkspaceBootstrap
+    // Cache-only observer: we subscribe to bootstrap cache updates without triggering fetches.
+    // queryFn must still be present because this observer shares the bootstrap query key.
+    queryFn: () => queryClient.getQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId)) ?? null,
+    select: (data: WorkspaceBootstrap | null) => data?.streamMemberships?.map((m: StreamMember) => m.streamId) ?? [],
+    enabled: false,
+  })
+
+  debugBootstrap("Socket events cache observer state", {
+    workspaceId,
+    hasSocket: !!socket,
+    memberStreamIds,
   })
 
   // Stable serialization for dependency tracking
@@ -114,12 +125,15 @@ export function useSocketEvents(workspaceId: string) {
   useEffect(() => {
     if (!socket || !workspaceId || !memberStreamIdsKey) return
 
+    const abortController = new AbortController()
     const ids = memberStreamIdsKey.split(",").filter(Boolean)
+    debugBootstrap("Socket events joining member stream rooms", { workspaceId, streamIds: ids })
     for (const id of ids) {
-      socket.emit("join", `ws:${workspaceId}:stream:${id}`)
+      joinRoomFireAndForget(socket, `ws:${workspaceId}:stream:${id}`, abortController.signal, "SocketEvents")
     }
 
     return () => {
+      abortController.abort()
       for (const id of ids) {
         socket.emit("leave", `ws:${workspaceId}:stream:${id}`)
       }
@@ -129,8 +143,11 @@ export function useSocketEvents(workspaceId: string) {
   useEffect(() => {
     if (!socket || !workspaceId) return
 
+    const abortController = new AbortController()
+
     // Join workspace room to receive stream metadata events
-    socket.emit("join", `ws:${workspaceId}`)
+    debugBootstrap("Socket events joining workspace room", { workspaceId })
+    joinRoomFireAndForget(socket, `ws:${workspaceId}`, abortController.signal, "SocketEvents")
 
     // Handle stream created
     socket.on("stream:created", (payload: StreamPayload) => {
@@ -496,6 +513,7 @@ export function useSocketEvents(workspaceId: string) {
     })
 
     return () => {
+      abortController.abort()
       socket.emit("leave", `ws:${workspaceId}`)
       socket.off("stream:created")
       socket.off("stream:updated")

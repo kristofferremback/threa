@@ -1,18 +1,50 @@
 import { useMemo } from "react"
 import { useQueries, useQueryClient } from "@tanstack/react-query"
-import { useStreamService, type StreamService } from "@/contexts"
+import { useSocket, useStreamService, type StreamService } from "@/contexts"
+import { debugBootstrap } from "@/lib/bootstrap-debug"
+import {
+  QUERY_LOAD_STATE,
+  getQueryLoadState,
+  isQueryLoadStateLoading,
+  isTerminalBootstrapError,
+  type QueryLoadState,
+} from "@/lib/query-load-state"
 import { db } from "@/db"
+import { joinRoomBestEffort } from "@/lib/socket-room"
 import { streamKeys } from "./use-streams"
+import type { Socket } from "socket.io-client"
 
 function isDraftId(id: string): boolean {
   // Draft scratchpads use "draft_xxx" format, draft thread panels use "draft:xxx:xxx" format
   return id.startsWith("draft_") || id.startsWith("draft:")
 }
 
+async function queryFnWithoutSocket() {
+  throw new Error("Socket not available for stream subscription")
+}
+
+function aggregateQueryLoadState(states: QueryLoadState[]): QueryLoadState {
+  if (states.length === 0) return QUERY_LOAD_STATE.READY
+
+  const nonErrorStates = states.filter((state) => state !== QUERY_LOAD_STATE.ERROR)
+  if (nonErrorStates.some((state) => state === QUERY_LOAD_STATE.FETCHING)) return QUERY_LOAD_STATE.FETCHING
+  if (nonErrorStates.some((state) => state === QUERY_LOAD_STATE.PENDING)) return QUERY_LOAD_STATE.PENDING
+  if (nonErrorStates.length === 0) return QUERY_LOAD_STATE.ERROR
+  return QUERY_LOAD_STATE.READY
+}
+
 // Create a stable query function factory
-function createBootstrapQueryFn(streamService: StreamService, workspaceId: string, streamId: string) {
+function createBootstrapQueryFn(streamService: StreamService, socket: Socket, workspaceId: string, streamId: string) {
   return async () => {
+    debugBootstrap("Coordinated stream bootstrap queryFn start", { workspaceId, streamId })
+    await joinRoomBestEffort(socket, `ws:${workspaceId}:stream:${streamId}`, "CoordinatedStreamBootstrap")
+
     const bootstrap = await streamService.bootstrap(workspaceId, streamId)
+    debugBootstrap("Coordinated stream bootstrap fetch success", {
+      workspaceId,
+      streamId,
+      eventCount: bootstrap.events.length,
+    })
     const now = Date.now()
 
     // Cache stream and events to IndexedDB (same as useStreamBootstrap)
@@ -36,6 +68,7 @@ function createBootstrapQueryFn(streamService: StreamService, workspaceId: strin
  * Filters out draft IDs since they're local IndexedDB data.
  */
 export function useCoordinatedStreamQueries(workspaceId: string, streamIds: string[]) {
+  const socket = useSocket()
   const streamService = useStreamService()
   const queryClient = useQueryClient()
 
@@ -51,7 +84,7 @@ export function useCoordinatedStreamQueries(workspaceId: string, streamIds: stri
     const errored = new Set<string>()
     for (const streamId of serverStreamIds) {
       const state = queryClient.getQueryState(streamKeys.bootstrap(workspaceId, streamId))
-      if (state?.status === "error") {
+      if (state?.status === "error" && isTerminalBootstrapError(state.error)) {
         errored.add(streamId)
       }
     }
@@ -63,9 +96,9 @@ export function useCoordinatedStreamQueries(workspaceId: string, streamIds: stri
     () =>
       serverStreamIds.map((streamId) => ({
         queryKey: streamKeys.bootstrap(workspaceId, streamId),
-        queryFn: createBootstrapQueryFn(streamService, workspaceId, streamId),
+        queryFn: socket ? createBootstrapQueryFn(streamService, socket, workspaceId, streamId) : queryFnWithoutSocket,
         // Don't enable queries that have already errored to prevent continuous refetch loops
-        enabled: !!workspaceId && !erroredStreamIds.has(streamId),
+        enabled: !!workspaceId && !!socket && !erroredStreamIds.has(streamId),
         staleTime: Infinity, // Never consider data stale
         gcTime: Infinity, // Never garbage collect
         // Prevent ALL automatic refetching
@@ -78,19 +111,32 @@ export function useCoordinatedStreamQueries(workspaceId: string, streamIds: stri
         // sharing can cause stale references. Worth the extra re-renders for correctness.
         structuralSharing: false,
       })),
-    [serverStreamIds, workspaceId, streamService, erroredStreamIds]
+    [serverStreamIds, workspaceId, streamService, socket, erroredStreamIds]
   )
 
   const results = useQueries({ queries })
+  const queryLoadStates = results.map((result) => getQueryLoadState(result.status, result.fetchStatus))
+  const loadState = aggregateQueryLoadState(queryLoadStates)
 
-  // A query is considered "loading" only if it's fetching AND hasn't errored.
-  // Errored queries should not block the UI - let components handle the error.
-  const isLoading = results.some((r) => r.isLoading && !r.isError)
+  // Backwards-compatible boolean while call sites migrate to `loadState`.
+  const isLoading = isQueryLoadStateLoading(loadState)
   const isError = results.some((r) => r.isError)
   const errors = results.filter((r) => r.error).map((r) => r.error)
 
+  debugBootstrap("Coordinated stream observer state", {
+    workspaceId,
+    streamIds,
+    serverStreamIds,
+    hasSocket: !!socket,
+    loadState,
+    isLoading,
+    isError,
+    errorCount: errors.length,
+  })
+
   return {
     results,
+    loadState,
     isLoading,
     isError,
     errors,

@@ -2,6 +2,7 @@ import { useEffect } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { useSocket, useSocketReconnectCount } from "@/contexts"
 import { db } from "@/db"
+import { joinRoomFireAndForget } from "@/lib/socket-room"
 import { streamKeys } from "./use-streams"
 import { workspaceKeys } from "./use-workspaces"
 import type { StreamEvent, Stream, WorkspaceBootstrap, LastMessagePreview } from "@threa/types"
@@ -77,10 +78,8 @@ interface StreamBootstrap {
  * Hook to handle real-time message/reaction events for a specific stream.
  * Joins the stream room and listens for events, updating React Query cache and IndexedDB.
  *
- * Pattern: Subscribe-then-bootstrap
- * 1. Join stream room (subscribe)
- * 2. useEvents fetches bootstrap data
- * 3. This hook receives real-time updates
+ * Bootstrap hooks also use join ack via joinRoomWithAck before fetching.
+ * This hook keeps the room subscription active for realtime updates.
  */
 export function useStreamSocket(workspaceId: string, streamId: string, options?: { enabled?: boolean }) {
   const shouldSubscribe = options?.enabled ?? true
@@ -92,9 +91,10 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
     if (!socket || !workspaceId || !streamId || !shouldSubscribe) return
 
     const room = `ws:${workspaceId}:stream:${streamId}`
+    const abortController = new AbortController()
 
     // Subscribe FIRST (before any fetches happen)
-    socket.emit("join", room)
+    joinRoomFireAndForget(socket, room, abortController.signal, "StreamSocket")
 
     const handleMessageCreated = async (payload: MessageEventPayload) => {
       if (payload.streamId !== streamId) return
@@ -371,6 +371,7 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
     socket.on("agent_session:failed", handleAgentSessionEvent)
 
     return () => {
+      abortController.abort()
       socket.emit("leave", room)
       socket.off("message:created", handleMessageCreated)
       socket.off("message:edited", handleMessageEdited)

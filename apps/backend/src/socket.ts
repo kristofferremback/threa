@@ -7,6 +7,7 @@ import type { WorkspaceService } from "./features/workspaces"
 import type { UserSocketRegistry } from "./lib/user-socket-registry"
 import { AgentSessionRepository } from "./features/agents"
 import { MemberRepository } from "./features/workspaces"
+import { HttpError } from "./lib/errors"
 import { logger } from "./lib/logger"
 import { wsConnectionsActive, wsConnectionDuration, wsMessagesTotal } from "./lib/observability"
 
@@ -33,6 +34,10 @@ function normalizeRoomPattern(room: string): string {
 function extractWorkspaceId(room: string): string {
   const match = room.match(/^ws:([^:]+)/)
   return match ? match[1] : "-"
+}
+
+function isJoinAccessError(error: unknown): boolean {
+  return error instanceof HttpError && (error.status === 403 || error.status === 404)
 }
 
 /**
@@ -133,9 +138,20 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
       const streamMatch = room.match(/^ws:([^:]+):stream:(.+)$/)
       if (streamMatch) {
         const [, wsId, streamId] = streamMatch
-        // Resolve user → member for stream membership check
+        // Resolve user -> member for stream access validation
         const member = await MemberRepository.findByUserIdInWorkspace(pool, wsId, userId)
-        if (!member || !(await streamService.isMember(streamId, member.id))) {
+        if (!member) {
+          socket.emit("error", { message: "Not authorized to join this stream" })
+          wsMessagesTotal.inc({ workspace_id: wsId, direction: "sent", event_type: "error", room_pattern: roomPattern })
+          callback?.({ ok: false, error: "Not authorized to join this stream" })
+          return
+        }
+        try {
+          await streamService.validateStreamAccess(streamId, wsId, member.id)
+        } catch (error) {
+          if (!isJoinAccessError(error)) {
+            logger.error({ error, userId, room, wsId, streamId }, "Unexpected error during stream room join")
+          }
           socket.emit("error", { message: "Not authorized to join this stream" })
           wsMessagesTotal.inc({ workspace_id: wsId, direction: "sent", event_type: "error", room_pattern: roomPattern })
           callback?.({ ok: false, error: "Not authorized to join this stream" })
@@ -164,9 +180,23 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
           callback?.({ ok: false, error: "Session not found" })
           return
         }
-        // Resolve user → member for stream membership check
+        // Resolve user -> member for stream access validation
         const member = await MemberRepository.findByUserIdInWorkspace(pool, wsId, userId)
-        if (!member || !(await streamService.isMember(session.streamId, member.id))) {
+        if (!member) {
+          socket.emit("error", { message: "Not authorized to join this session" })
+          wsMessagesTotal.inc({ workspace_id: wsId, direction: "sent", event_type: "error", room_pattern: roomPattern })
+          callback?.({ ok: false, error: "Not authorized to join this session" })
+          return
+        }
+        try {
+          await streamService.validateStreamAccess(session.streamId, wsId, member.id)
+        } catch (error) {
+          if (!isJoinAccessError(error)) {
+            logger.error(
+              { error, userId, room, wsId, streamId: session.streamId },
+              "Unexpected error during agent session room join"
+            )
+          }
           socket.emit("error", { message: "Not authorized to join this session" })
           wsMessagesTotal.inc({ workspace_id: wsId, direction: "sent", event_type: "error", room_pattern: roomPattern })
           callback?.({ ok: false, error: "Not authorized to join this session" })

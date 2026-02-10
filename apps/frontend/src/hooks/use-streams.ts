@@ -1,6 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { useStreamService } from "@/contexts"
+import { useSocket, useStreamService } from "@/contexts"
+import { debugBootstrap } from "@/lib/bootstrap-debug"
+import { getQueryLoadState, isTerminalBootstrapError } from "@/lib/query-load-state"
 import { db } from "@/db"
+import { joinRoomBestEffort } from "@/lib/socket-room"
 import type { Stream, StreamType } from "@threa/types"
 import type { CreateStreamInput, UpdateStreamInput } from "@/api"
 import { workspaceKeys } from "./use-workspaces"
@@ -54,18 +57,31 @@ export function useStream(workspaceId: string, streamId: string) {
 }
 
 export function useStreamBootstrap(workspaceId: string, streamId: string, options?: { enabled?: boolean }) {
+  const socket = useSocket()
   const streamService = useStreamService()
   const queryClient = useQueryClient()
 
   // Check if this query has already errored - don't re-enable if so
   // This prevents continuous refetching when a stream doesn't exist
   const existingQueryState = queryClient.getQueryState(streamKeys.bootstrap(workspaceId, streamId))
-  const hasExistingError = existingQueryState?.status === "error"
+  const hasTerminalError = existingQueryState?.status === "error" && isTerminalBootstrapError(existingQueryState.error)
 
-  return useQuery({
+  const query = useQuery({
     queryKey: streamKeys.bootstrap(workspaceId, streamId),
     queryFn: async () => {
+      debugBootstrap("Stream bootstrap queryFn start", { workspaceId, streamId, hasSocket: !!socket })
+      if (!socket) {
+        debugBootstrap("Stream bootstrap missing socket", { workspaceId, streamId })
+        throw new Error("Socket not available for stream subscription")
+      }
+      await joinRoomBestEffort(socket, `ws:${workspaceId}:stream:${streamId}`, "StreamBootstrap")
+
       const bootstrap = await streamService.bootstrap(workspaceId, streamId)
+      debugBootstrap("Stream bootstrap fetch success", {
+        workspaceId,
+        streamId,
+        eventCount: bootstrap.events.length,
+      })
       const now = Date.now()
 
       // Cache stream and events to IndexedDB
@@ -82,8 +98,9 @@ export function useStreamBootstrap(workspaceId: string, streamId: string, option
 
       return bootstrap
     },
-    // Don't enable if the query has already errored to prevent continuous refetch loops
-    enabled: (options?.enabled ?? true) && !!workspaceId && !!streamId && !hasExistingError,
+    // Keep terminal auth/not-found errors disabled to avoid loops.
+    // Non-terminal errors can recover automatically on future attempts.
+    enabled: (options?.enabled ?? true) && !!workspaceId && !!streamId && !!socket && !hasTerminalError,
     // Match coordinated loading options to share cache correctly and prevent
     // multiple observers from conflicting. Coordinated loading handles initial
     // fetch, and socket events handle updates.
@@ -95,6 +112,23 @@ export function useStreamBootstrap(workspaceId: string, streamId: string, option
     refetchOnReconnect: false,
     structuralSharing: false,
   })
+
+  const loadState = getQueryLoadState(query.status, query.fetchStatus)
+
+  debugBootstrap("Stream bootstrap observer state", {
+    workspaceId,
+    streamId,
+    enabled: (options?.enabled ?? true) && !!workspaceId && !!streamId && !!socket && !hasTerminalError,
+    hasTerminalError,
+    loadState,
+    status: query.status,
+    fetchStatus: query.fetchStatus,
+    isPending: query.isPending,
+    isLoading: query.isLoading,
+    isError: query.isError,
+  })
+
+  return { ...query, loadState }
 }
 
 export function useCreateStream(workspaceId: string) {

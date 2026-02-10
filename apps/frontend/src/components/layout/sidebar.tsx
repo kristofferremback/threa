@@ -828,7 +828,8 @@ function ScratchpadItem({
   const [editValue, setEditValue] = useState("")
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const name = stream?.displayName || "New scratchpad"
+  const currentDisplayName = stream?.displayName ?? streamWithPreview.displayName ?? null
+  const name = currentDisplayName || "New scratchpad"
   const preview = streamWithPreview.lastMessagePreview
 
   useUrgencyTracking(itemRef, streamWithPreview.id, streamWithPreview.urgency, scrollContainerRef)
@@ -841,14 +842,14 @@ function ScratchpadItem({
   }, [isEditing])
 
   const handleStartRename = () => {
-    setEditValue(stream?.displayName || "")
+    setEditValue(currentDisplayName || "")
     setIsEditing(true)
   }
 
   const handleSaveRename = async () => {
     const trimmed = editValue.trim()
     setIsEditing(false)
-    if (!trimmed || trimmed === stream?.displayName) return
+    if (!trimmed || trimmed === currentDisplayName) return
     await rename(trimmed)
   }
 
