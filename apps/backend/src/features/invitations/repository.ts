@@ -135,15 +135,16 @@ export const InvitationRepository = {
     db: Querier,
     id: string,
     status: InvitationStatus,
-    extra?: { acceptedAt?: Date; revokedAt?: Date; workosInvitationId?: string }
+    extra?: { acceptedAt?: Date; revokedAt?: Date; notExpiredAt?: Date }
   ): Promise<boolean> {
-    // Uses WHERE status = 'pending' per INV-20 to prevent race conditions
+    const notExpiredAt = extra?.notExpiredAt ?? null
     const result = await db.query(sql`
       UPDATE workspace_invitations
       SET status = ${status},
           accepted_at = COALESCE(${extra?.acceptedAt ?? null}, accepted_at),
           revoked_at = COALESCE(${extra?.revokedAt ?? null}, revoked_at)
       WHERE id = ${id} AND status = 'pending'
+        AND (${notExpiredAt}::timestamptz IS NULL OR expires_at > ${notExpiredAt})
     `)
     return (result.rowCount ?? 0) > 0
   },

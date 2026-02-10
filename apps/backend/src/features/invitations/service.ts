@@ -124,9 +124,10 @@ export class InvitationService {
 
   async acceptInvitation(invitationId: string, userId: string): Promise<string | null> {
     return withTransaction(this.pool, async (client) => {
-      // Atomic update with WHERE status = 'pending' AND expires_at > NOW()
+      const now = new Date()
       const updated = await InvitationRepository.updateStatus(client, invitationId, "accepted", {
-        acceptedAt: new Date(),
+        acceptedAt: now,
+        notExpiredAt: now,
       })
 
       if (!updated) {
