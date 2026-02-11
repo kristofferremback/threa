@@ -16,6 +16,11 @@ const MINIO_PORT = isCI ? 9000 : 9002
  * Same logic as setup-worktree.ts for consistency.
  */
 function deriveTestDatabaseName(): string {
+  const explicitName = process.env.PLAYWRIGHT_TEST_DB_NAME?.trim()
+  if (explicitName) {
+    return explicitName
+  }
+
   const cwd = process.cwd()
   const dirName = path.basename(cwd)
   const sanitized = dirName
