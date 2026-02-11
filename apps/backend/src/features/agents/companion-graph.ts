@@ -6,9 +6,8 @@ import type { StructuredToolInterface } from "@langchain/core/tools"
 import type { RunnableConfig } from "@langchain/core/runnables"
 import { AgentToolNames, type AuthorType, type SourceItem, type AgentStepType, type TraceSource } from "@threa/types"
 import { logger } from "../../lib/logger"
-import type { SendMessageInputWithSources, SendMessageResult } from "./tools"
+import type { SendMessageInputWithSources, SendMessageResult, WorkspaceResearchToolResult } from "./tools"
 import { isMultimodalToolResult } from "./tools"
-import type { ResearcherResult } from "./researcher"
 import { protectToolOutputBlocks, protectToolOutputText, type MultimodalContentBlock } from "./tool-trust-boundary"
 
 /**
@@ -24,7 +23,9 @@ export interface RecordStepParams {
 }
 
 const MAX_ITERATIONS = 20
-const MAX_MESSAGES = 5
+const WORKSPACE_RESEARCH_TOOL_NAME = "workspace_research"
+const ENSURE_RESPONSE_FALLBACK_MESSAGE =
+  "I am sorry, I could not complete a proper response yet. Please send one more message and I will retry."
 
 /**
  * Maximum context size in characters for messages sent to the model.
@@ -264,8 +265,6 @@ export interface CompanionGraphCallbacks {
   updateLastSeenSequence: (sessionId: string, sequence: bigint) => Promise<void>
   /** Send a message with optional sources (used by ensure_response node) */
   sendMessageWithSources: (input: SendMessageInputWithSources) => Promise<SendMessageResult>
-  /** Run the researcher to retrieve workspace knowledge (optional - if not provided, research is skipped) */
-  runResearcher?: () => Promise<ResearcherResult>
   /** Record a step in the agent trace (optional - if not provided, steps are not recorded) */
   recordStep?: (params: RecordStepParams) => Promise<void>
   /** Await attachment processing for messages (optional - for multi-modal support) */
@@ -345,7 +344,7 @@ export const CompanionState = Annotation.Root({
     reducer: (_, next) => next,
   }),
 
-  // Retrieved context from researcher (injected into system prompt)
+  // Retrieved context from workspace_research tool (injected into system prompt)
   retrievedContext: Annotation<string | null>({
     default: () => null,
     reducer: (_, next) => next,
@@ -371,85 +370,6 @@ function getCallbacks(config: RunnableConfig): CompanionGraphCallbacks {
     throw new Error("CompanionGraphCallbacks must be provided in config.configurable.callbacks")
   }
   return callbacks
-}
-
-/**
- * Create the research node that retrieves workspace knowledge.
- * This node runs at the start of the graph to gather context before the agent responds.
- */
-function createResearchNode() {
-  return async (state: CompanionStateType, config: RunnableConfig): Promise<Partial<CompanionStateType>> => {
-    const callbacks = getCallbacks(config)
-
-    // Skip if no researcher callback provided
-    if (!callbacks.runResearcher) {
-      logger.info("Research node skipped - no researcher callback")
-      return {}
-    }
-
-    logger.info("Research node starting")
-
-    try {
-      const startTime = Date.now()
-      const result = await callbacks.runResearcher()
-      const durationMs = Date.now() - startTime
-
-      logger.debug(
-        {
-          shouldSearch: result.shouldSearch,
-          memoCount: result.memos.length,
-          messageCount: result.messages.length,
-          sourceCount: result.sources.length,
-        },
-        "Research node completed"
-      )
-
-      // Record the workspace search step with enriched source metadata
-      if (callbacks.recordStep && (result.memos.length > 0 || result.messages.length > 0)) {
-        const traceSources: TraceSource[] = [
-          ...result.memos.map((m) => ({
-            type: "workspace_memo" as const,
-            title: m.memo.title,
-            snippet: m.memo.abstract.slice(0, 200),
-            streamId: m.sourceStream?.id,
-            streamName: m.sourceStream?.name ?? undefined,
-          })),
-          ...result.messages.map((m) => ({
-            type: "workspace_message" as const,
-            title: `${m.authorName} in ${m.streamName}`,
-            snippet: m.content.slice(0, 200),
-            streamId: m.streamId,
-            messageId: m.id,
-            authorName: m.authorName,
-            timestamp: m.createdAt.toISOString(),
-          })),
-        ]
-
-        await callbacks.recordStep({
-          stepType: "workspace_search",
-          content: JSON.stringify({ memoCount: result.memos.length, messageCount: result.messages.length }),
-          durationMs,
-          sources: traceSources,
-        })
-      }
-
-      // If researcher found sources, add them to the initial sources
-      const newSources: SourceItem[] = result.sources.map((s) => ({
-        title: s.title,
-        url: s.url,
-        type: s.type,
-        snippet: s.snippet,
-      }))
-
-      return {
-        retrievedContext: result.retrievedContext,
-        sources: [...state.sources, ...newSources],
-      }
-    } catch (error) {
-      logger.warn({ error }, "Research node failed, continuing without workspace context")
-      return {}
-    }
-  }
 }
 
 /**
@@ -736,6 +656,8 @@ function getToolStepType(toolName: string): AgentStepType {
   switch (toolName) {
     case AgentToolNames.READ_URL:
       return "visit_page"
+    case WORKSPACE_RESEARCH_TOOL_NAME:
+      return "workspace_search"
     case AgentToolNames.SEARCH_MESSAGES:
     case AgentToolNames.SEARCH_STREAMS:
     case AgentToolNames.SEARCH_USERS:
@@ -801,6 +723,40 @@ function extractSourcesFromWebSearch(resultJson: string): SourceItem[] {
   return []
 }
 
+function parseWorkspaceResearchResult(resultJson: string): WorkspaceResearchToolResult | null {
+  try {
+    const parsed = JSON.parse(resultJson) as Partial<WorkspaceResearchToolResult>
+    if (!parsed || typeof parsed !== "object") return null
+
+    return {
+      shouldSearch: parsed.shouldSearch === true,
+      retrievedContext: typeof parsed.retrievedContext === "string" ? parsed.retrievedContext : null,
+      sources: Array.isArray(parsed.sources) ? parsed.sources : [],
+      memoCount: typeof parsed.memoCount === "number" ? parsed.memoCount : 0,
+      messageCount: typeof parsed.messageCount === "number" ? parsed.messageCount : 0,
+      attachmentCount: typeof parsed.attachmentCount === "number" ? parsed.attachmentCount : 0,
+    }
+  } catch {
+    return null
+  }
+}
+
+function mergeSourceItems(existing: SourceItem[], incoming: SourceItem[]): SourceItem[] {
+  if (incoming.length === 0) return existing
+
+  const merged: SourceItem[] = [...existing]
+  const seen = new Set(merged.map((source) => `${source.url}|${source.title}`))
+
+  for (const source of incoming) {
+    const key = `${source.url}|${source.title}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    merged.push(source)
+  }
+
+  return merged
+}
+
 /**
  * Create the tools node that executes tool calls.
  *
@@ -808,7 +764,7 @@ function extractSourcesFromWebSearch(resultJson: string): SourceItem[] {
  * This enables the prep-then-send pattern where we can reconsider
  * the message if new user messages arrive before we commit.
  *
- * Uses sendMessageWithSources callback for send_message to attach sources from web_search.
+ * Sources collected from web_search and workspace_research are attached to send_message.
  */
 function createToolsNode(tools: StructuredToolInterface[]) {
   const toolMap = new Map(tools.map((t) => [t.name, t]))
@@ -830,6 +786,7 @@ function createToolsNode(tools: StructuredToolInterface[]) {
 
     const toolMessages: ToolMessage[] = []
     let collectedSources: SourceItem[] = [...state.sources] // Start with any existing sources
+    let retrievedContext: string | null = state.retrievedContext
     const pendingMessages: PendingMessage[] = []
 
     const callbacks = getCallbacks(_config)
@@ -845,7 +802,7 @@ function createToolsNode(tools: StructuredToolInterface[]) {
 
         // Extract sources from web_search results
         const sources = extractSourcesFromWebSearch(resultStr)
-        collectedSources = [...collectedSources, ...sources]
+        collectedSources = mergeSourceItems(collectedSources, sources)
 
         // Record the web search step
         if (callbacks.recordStep) {
@@ -900,6 +857,67 @@ function createToolsNode(tools: StructuredToolInterface[]) {
       try {
         const result = await tool.invoke(toolCall.args)
         const durationMs = Date.now() - startTime
+
+        if (toolCall.name === WORKSPACE_RESEARCH_TOOL_NAME) {
+          const resultStr = typeof result === "string" ? result : JSON.stringify(result)
+          const parsed = parseWorkspaceResearchResult(resultStr)
+
+          if (!parsed) {
+            throw new Error("workspace_research returned malformed JSON")
+          }
+
+          const workspaceSources: SourceItem[] = parsed.sources
+            .filter((source) => source.title && source.url)
+            .map((source) => ({
+              title: source.title,
+              url: source.url,
+              type: source.type,
+              snippet: source.snippet,
+            }))
+          if (workspaceSources.length > 0) {
+            collectedSources = mergeSourceItems(collectedSources, workspaceSources)
+          }
+
+          if (parsed.retrievedContext?.trim()) {
+            retrievedContext = parsed.retrievedContext.trim()
+          }
+
+          if (callbacks.recordStep) {
+            await callbacks.recordStep({
+              stepType: "workspace_search",
+              content: JSON.stringify({
+                shouldSearch: parsed.shouldSearch,
+                memoCount: parsed.memoCount,
+                messageCount: parsed.messageCount,
+                attachmentCount: parsed.attachmentCount,
+              }),
+              durationMs,
+              sources: workspaceSources.map((source) => ({
+                type: "workspace",
+                title: source.title,
+                url: source.url,
+                snippet: source.snippet,
+              })),
+            })
+          }
+
+          toolMessages.push(
+            new ToolMessage({
+              tool_call_id: toolCall.id!,
+              content: protectToolOutputText(
+                JSON.stringify({
+                  status: "ok",
+                  contextAdded: Boolean(parsed.retrievedContext?.trim()),
+                  sourceCount: workspaceSources.length,
+                  memoCount: parsed.memoCount,
+                  messageCount: parsed.messageCount,
+                  attachmentCount: parsed.attachmentCount,
+                })
+              ),
+            })
+          )
+          continue
+        }
 
         // Check if this is a multimodal result (e.g., from load_attachment)
         // Multimodal results have content blocks that vision models can see
@@ -1003,6 +1021,7 @@ function createToolsNode(tools: StructuredToolInterface[]) {
     return {
       messages: toolMessages,
       sources: collectedSources,
+      retrievedContext,
       pendingMessages,
     }
   }
@@ -1106,18 +1125,30 @@ function createSynthesizeNode(_model: ChatOpenAI) {
     logger.debug("Synthesize node triggered")
 
     // Extract sources from search results
-    const sources = extractSearchSources(state.messages)
+    const webSources = extractSearchSources(state.messages)
 
-    logger.debug({ sourceCount: sources.length, sources }, "Extracted sources for synthesis")
+    logger.debug({ sourceCount: webSources.length, sources: webSources }, "Extracted sources for synthesis")
 
-    if (sources.length === 0) {
-      logger.debug("No sources found")
-      return { sources: [] }
+    if (webSources.length === 0) {
+      logger.debug("No web sources found, preserving existing sources")
+      return { sources: state.sources }
     }
 
-    logger.info({ sourceCount: sources.length }, "Sources extracted and stored in state")
+    const mergedSources = mergeSourceItems(
+      state.sources,
+      webSources.map((source) => ({
+        title: source.title,
+        url: source.url,
+        type: "web" as const,
+      }))
+    )
 
-    return { sources }
+    logger.info(
+      { sourceCount: mergedSources.length, webSourceCount: webSources.length },
+      "Sources merged and stored in state"
+    )
+
+    return { sources: mergedSources }
   }
 }
 
@@ -1173,20 +1204,20 @@ function createEnsureResponseNode() {
       }
     }
 
-    // No response content to send - edge case, nothing we can do
-    if (!state.finalResponse?.trim()) {
-      logger.warn("No final response to send")
-      return { pendingMessages: [] }
+    const contentToSend = state.finalResponse?.trim() ? state.finalResponse : ENSURE_RESPONSE_FALLBACK_MESSAGE
+    const isFallbackSend = !state.finalResponse?.trim()
+    if (isFallbackSend) {
+      logger.warn("No final response to send, using fallback message")
     }
 
     // Send the final response with sources via callback
     logger.debug(
-      { contentLength: state.finalResponse.length, sourceCount: state.sources.length },
+      { contentLength: contentToSend.length, sourceCount: state.sources.length, isFallbackSend },
       "Sending final response via sendMessageWithSources"
     )
 
     const result = await callbacks.sendMessageWithSources({
-      content: state.finalResponse,
+      content: contentToSend,
       sources: state.sources.length > 0 ? state.sources : undefined,
     })
 
@@ -1194,7 +1225,7 @@ function createEnsureResponseNode() {
     if (callbacks.recordStep) {
       await callbacks.recordStep({
         stepType: "message_sent",
-        content: state.finalResponse,
+        content: contentToSend,
         messageId: result.messageId,
         sources:
           state.sources.length > 0
@@ -1208,7 +1239,10 @@ function createEnsureResponseNode() {
       })
     }
 
-    logger.info({ messageId: result.messageId, sourceCount: state.sources.length }, "ensure_response sent message")
+    logger.info(
+      { messageId: result.messageId, sourceCount: state.sources.length, isFallbackSend },
+      "ensure_response sent message"
+    )
 
     return {
       messagesSent: currentMessagesSent + 1,
@@ -1221,12 +1255,12 @@ function createEnsureResponseNode() {
  * Create the companion agent graph.
  *
  * Graph structure:
- *   START → research → agent → (has tool calls?)
- *                                → yes → tools → finalize_or_reconsider → agent (loop)
- *                                → no → check_final_messages → (new messages?)
- *                                                               → yes → agent
- *                                                               → (used web_search?) → yes → synthesize → ensure_response → END
- *                                                                                    → no → ensure_response → END
+ *   START → agent → (has tool calls?)
+ *                    → yes → tools → finalize_or_reconsider → agent (loop)
+ *                    → no → check_final_messages → (new messages?)
+ *                                                 → yes → agent
+ *                                                 → (used web_search?) → yes → synthesize → ensure_response → END
+ *                                                                      → no → ensure_response → END
  *
  * CRITICAL: Tool calls are ALWAYS executed before checking for new messages.
  * This prevents tool calls from being dropped when users send additional messages
@@ -1238,21 +1272,19 @@ function createEnsureResponseNode() {
  * - If new messages arrived: gives the agent a chance to reconsider its response
  * This mimics human reconsideration behavior when new context arrives.
  *
- * The research node retrieves workspace knowledge before the agent responds.
+ * Workspace knowledge retrieval is on-demand via the workspace_research tool.
  * The synthesize node formats responses with proper source citations when web search was used.
  * The ensure_response node guarantees we always send at least one message.
  */
 export function createCompanionGraph(model: ChatOpenAI, tools: StructuredToolInterface[] = []) {
   const graph = new StateGraph(CompanionState)
-    .addNode("research", createResearchNode())
     .addNode("agent", createAgentNode(model, tools))
     .addNode("finalize_or_reconsider", createFinalizeOrReconsiderNode())
     .addNode("check_final_messages", createCheckNewMessagesNode()) // Same logic, different routing
     .addNode("tools", createToolsNode(tools))
     .addNode("synthesize", createSynthesizeNode(model))
     .addNode("ensure_response", createEnsureResponseNode())
-    .addEdge("__start__", "research")
-    .addEdge("research", "agent")
+    .addEdge("__start__", "agent")
     .addConditionalEdges("agent", routeAfterAgent)
     // Tools execute, then finalize_or_reconsider handles pending messages and new context
     .addConditionalEdges("tools", routeAfterTools)

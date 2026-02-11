@@ -229,8 +229,6 @@ The response should clearly match the ${expectedTone} tone definition.`,
 
 /**
  * Evaluates whether web search was used when expected.
- * Note: Currently the eval setup doesn't include web_search tool.
- * This evaluator documents the expected behavior for future implementation.
  */
 export const webSearchUsageEvaluator: Evaluator<CompanionOutput, CompanionExpected> = {
   name: "web-search-usage",
@@ -243,15 +241,11 @@ export const webSearchUsageEvaluator: Evaluator<CompanionOutput, CompanionExpect
     // Check if web_search was called in toolCalls
     const usedWebSearch = output.toolCalls?.some((tc) => tc.name === "web_search") ?? false
 
-    // Note: Currently the eval setup doesn't include web_search tool
-    // So this will always fail when shouldUseWebSearch is expected
-    // This is intentional - it documents expected behavior
-
     return {
       name: "web-search-usage",
       score: usedWebSearch ? 1 : 0,
       passed: usedWebSearch,
-      details: usedWebSearch ? undefined : "Expected web search but it was not used (tool not available in eval)",
+      details: usedWebSearch ? undefined : "Expected web search but it was not used",
     }
   },
 }

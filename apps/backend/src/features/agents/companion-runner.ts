@@ -21,6 +21,7 @@ import {
   createLoadPdfSectionTool,
   createLoadFileSectionTool,
   createLoadExcelSectionTool,
+  createWorkspaceResearchTool,
   isToolEnabled,
   type SendMessageInput,
   type SendMessageInputWithSources,
@@ -79,7 +80,7 @@ export interface GenerateResponseParams {
   workspaceId: string
   /** Member ID who invoked this response - for cost attribution to the human member */
   invokingMemberId?: string
-  /** Callback to run the researcher for workspace knowledge retrieval */
+  /** Callback used by the on-demand workspace_research tool */
   runResearcher?: () => Promise<import("./researcher").ResearcherResult>
 }
 
@@ -203,6 +204,12 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
     // Create tools array based on persona's enabled tools
     const tools: StructuredToolInterface[] = [sendMessageTool]
 
+    // Add GAM workspace research tool when researcher is available.
+    // This makes research on-demand instead of mandatory on every invocation.
+    if (runResearcher) {
+      tools.push(createWorkspaceResearchTool({ runResearcher }))
+    }
+
     if (tavilyApiKey && isToolEnabled(enabledTools, AgentToolNames.WEB_SEARCH)) {
       tools.push(createWebSearchTool({ tavilyApiKey }))
     }
@@ -275,7 +282,6 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
         messagesSentCount++
         return result
       },
-      runResearcher,
       recordStep: callbacks.recordStep,
       awaitAttachmentProcessing: callbacks.awaitAttachmentProcessing,
     }
@@ -356,8 +362,13 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
     // Get final usage for logging
     const usage = ai.costTracker.getCapturedUsage()
 
-    // Update tracked count from result
-    messagesSentCount = result.messagesSent ?? 0
+    // Update tracked count from result while preserving callback-observed sends.
+    // The callback count is the source of truth for "did we actually send".
+    messagesSentCount = Math.max(messagesSentCount, result.messagesSent ?? 0)
+
+    if (messagesSentCount === 0 || sentMessageIds.length === 0) {
+      throw new Error("Companion graph completed without sending any message")
+    }
 
     const response = result.finalResponse ?? ""
 
