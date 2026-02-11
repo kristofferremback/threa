@@ -87,6 +87,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
 
   const authHandlers = createAuthHandlers({ authService, userService, invitationService })
   const workspace = createWorkspaceHandlers({
+    pool,
     workspaceService,
     streamService,
     userPreferencesService,
@@ -212,6 +213,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   )
 
   // Member setup (any authenticated member)
+  app.get("/api/workspaces/:workspaceId/slug-available", ...authed, workspace.checkSlugAvailability)
   app.post("/api/workspaces/:workspaceId/setup", ...authed, workspace.completeMemberSetup)
 
   // AI Usage and Budget

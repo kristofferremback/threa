@@ -1,22 +1,99 @@
-import { useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { useMutation } from "@tanstack/react-query"
+import { CheckCircle2, XCircle, Loader2 } from "lucide-react"
+import limax from "limax"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { TimezonePicker } from "@/components/ui/timezone-picker"
+import { LocalePicker } from "@/components/ui/locale-picker"
+import { useUser } from "@/auth"
 import { workspacesApi } from "@/api/workspaces"
+
+function generateSlug(name: string): string {
+  return limax(name, { tone: false }).slice(0, 50)
+}
+
+type SlugStatus = "idle" | "checking" | "available" | "taken"
 
 export function MemberSetupPage() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const navigate = useNavigate()
+  const user = useUser()
 
   const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone
   const browserLocale = navigator.language
 
-  const [name, setName] = useState("")
-  const [slug, setSlug] = useState("")
+  const [name, setName] = useState(() => user?.name ?? "")
+  const [slug, setSlug] = useState(() => generateSlug(user?.name ?? ""))
+  const [slugManuallyEdited, setSlugManuallyEdited] = useState(false)
+  const [slugStatus, setSlugStatus] = useState<SlugStatus>("idle")
   const [timezone, setTimezone] = useState(browserTimezone)
   const [locale, setLocale] = useState(browserLocale)
+
+  const slugCheckTimer = useRef<ReturnType<typeof setTimeout>>(null)
+  const slugCheckAbort = useRef<AbortController>(null)
+
+  const checkSlug = useCallback(
+    (slugToCheck: string) => {
+      if (!workspaceId || slugToCheck.length === 0) {
+        setSlugStatus("idle")
+        return
+      }
+
+      slugCheckAbort.current?.abort()
+      const controller = new AbortController()
+      slugCheckAbort.current = controller
+
+      setSlugStatus("checking")
+
+      workspacesApi
+        .checkSlugAvailable(workspaceId, slugToCheck)
+        .then((available) => {
+          if (controller.signal.aborted) return
+          setSlugStatus(available ? "available" : "taken")
+        })
+        .catch(() => {
+          if (controller.signal.aborted) return
+          setSlugStatus("idle")
+        })
+    },
+    [workspaceId]
+  )
+
+  const debouncedCheckSlug = useCallback(
+    (slugToCheck: string) => {
+      if (slugCheckTimer.current) clearTimeout(slugCheckTimer.current)
+      slugCheckTimer.current = setTimeout(() => checkSlug(slugToCheck), 500)
+    },
+    [checkSlug]
+  )
+
+  function handleNameChange(newName: string) {
+    setName(newName)
+    if (!slugManuallyEdited) {
+      const derived = generateSlug(newName)
+      setSlug(derived)
+      debouncedCheckSlug(derived)
+    }
+  }
+
+  function handleSlugChange(newSlug: string) {
+    setSlugManuallyEdited(true)
+    setSlug(newSlug)
+    debouncedCheckSlug(newSlug)
+  }
+
+  // Check initial slug on mount
+  useEffect(() => {
+    if (slug.length > 0) {
+      debouncedCheckSlug(slug)
+    }
+    return () => {
+      if (slugCheckTimer.current) clearTimeout(slugCheckTimer.current)
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const setupMutation = useMutation({
     mutationFn: () =>
@@ -33,6 +110,8 @@ export function MemberSetupPage() {
 
   if (!workspaceId) return null
 
+  const canSubmit = slugStatus !== "taken" && slugStatus !== "checking" && !setupMutation.isPending
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-background">
       <div className="w-full max-w-md space-y-6 p-6">
@@ -48,32 +127,45 @@ export function MemberSetupPage() {
               id="name"
               placeholder="e.g. Kristoffer Remback"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => handleNameChange(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">How others will see you in this workspace.</p>
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="slug">Display slug</Label>
-            <Input
-              id="slug"
-              placeholder="e.g. kristoffer-remback"
-              value={slug}
-              onChange={(e) => setSlug(e.target.value)}
-            />
-            <p className="text-xs text-muted-foreground">
-              Used for @mentions. Leave blank to auto-generate from your name.
-            </p>
+            <div className="relative">
+              <Input
+                id="slug"
+                placeholder="e.g. kristoffer-remback"
+                value={slug}
+                onChange={(e) => handleSlugChange(e.target.value)}
+                className="pr-8"
+              />
+              <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                {slugStatus === "checking" && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                {slugStatus === "available" && <CheckCircle2 className="h-4 w-4 text-green-500" />}
+                {slugStatus === "taken" && <XCircle className="h-4 w-4 text-destructive" />}
+              </div>
+            </div>
+            {slugStatus === "taken" && (
+              <p className="text-xs text-destructive">This slug is already taken in this workspace.</p>
+            )}
+            {slugStatus !== "taken" && (
+              <p className="text-xs text-muted-foreground">
+                Used for @mentions. Leave blank to auto-generate from your name.
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="timezone">Timezone</Label>
-            <Input id="timezone" value={timezone} onChange={(e) => setTimezone(e.target.value)} />
+            <Label>Timezone</Label>
+            <TimezonePicker value={timezone} onChange={setTimezone} />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="locale">Locale</Label>
-            <Input id="locale" value={locale} onChange={(e) => setLocale(e.target.value)} />
+            <Label>Locale</Label>
+            <LocalePicker value={locale} onChange={setLocale} />
           </div>
 
           {setupMutation.isError && (
@@ -82,7 +174,7 @@ export function MemberSetupPage() {
             </p>
           )}
 
-          <Button className="w-full" onClick={() => setupMutation.mutate()} disabled={setupMutation.isPending}>
+          <Button className="w-full" onClick={() => setupMutation.mutate()} disabled={!canSubmit}>
             {setupMutation.isPending ? "Setting up..." : "Complete Setup"}
           </Button>
         </div>

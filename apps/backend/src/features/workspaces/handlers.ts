@@ -1,11 +1,13 @@
 import { z } from "zod"
 import type { Request, Response } from "express"
+import type { Pool } from "pg"
 import type { WorkspaceService } from "./service"
 import type { StreamService } from "../streams"
 import type { UserPreferencesService } from "../user-preferences"
 import type { InvitationService } from "../invitations"
 import type { CommandRegistry } from "../commands"
 import { getEmojiList } from "../emoji"
+import { WorkspaceRepository } from "./repository"
 
 const createWorkspaceSchema = z.object({
   name: z.string().min(1, "name is required"),
@@ -21,6 +23,7 @@ const completeMemberSetupSchema = z.object({
 export { createWorkspaceSchema }
 
 interface Dependencies {
+  pool: Pool
   workspaceService: WorkspaceService
   streamService: StreamService
   userPreferencesService: UserPreferencesService
@@ -29,6 +32,7 @@ interface Dependencies {
 }
 
 export function createWorkspaceHandlers({
+  pool,
   workspaceService,
   streamService,
   userPreferencesService,
@@ -166,6 +170,18 @@ export function createWorkspaceHandlers({
       const member = await workspaceService.completeMemberSetup(memberId, workspaceId, result.data)
 
       res.json({ member })
+    },
+
+    async checkSlugAvailability(req: Request, res: Response) {
+      const workspaceId = req.workspaceId!
+      const slug = req.query.slug
+
+      if (typeof slug !== "string" || slug.length === 0) {
+        return res.status(400).json({ error: "slug query parameter is required" })
+      }
+
+      const exists = await WorkspaceRepository.memberSlugExists(pool, workspaceId, slug)
+      res.json({ available: !exists })
     },
   }
 }

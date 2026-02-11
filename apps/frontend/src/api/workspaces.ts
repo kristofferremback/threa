@@ -39,4 +39,11 @@ export const workspacesApi = {
     const res = await api.post<{ member: WorkspaceMember }>(`/api/workspaces/${workspaceId}/setup`, data)
     return res.member
   },
+
+  async checkSlugAvailable(workspaceId: string, slug: string): Promise<boolean> {
+    const res = await api.get<{ available: boolean }>(
+      `/api/workspaces/${workspaceId}/slug-available?slug=${encodeURIComponent(slug)}`
+    )
+    return res.available
+  },
 }
