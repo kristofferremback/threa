@@ -243,6 +243,9 @@ async function runPermutation<TInput, TOutput, TExpected>(
     userId: fixture.userId,
     permutation,
     usage: usageAccumulator,
+    credentials: {
+      tavilyApiKey: process.env.TAVILY_API_KEY,
+    },
     componentOverrides: options.componentOverrides,
     configResolver,
   }

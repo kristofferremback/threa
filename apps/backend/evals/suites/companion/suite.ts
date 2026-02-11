@@ -72,7 +72,6 @@ import { personaId as generatePersonaId, streamId as generateStreamId } from "..
 
 /** The production Ariadne system persona ID */
 const ARIADNE_PERSONA_ID = "persona_system_ariadne"
-const EVAL_TAVILY_API_KEY = process.env.TAVILY_API_KEY
 
 /**
  * Get model configuration from context.
@@ -252,7 +251,7 @@ async function runCompanionTask(input: CompanionInput, ctx: EvalContext): Promis
   }
 
   try {
-    if (!EVAL_TAVILY_API_KEY) {
+    if (!ctx.credentials.tavilyApiKey) {
       throw new Error("TAVILY_API_KEY is required for companion evals to run with full web_search tool access")
     }
 
@@ -278,7 +277,7 @@ async function runCompanionTask(input: CompanionInput, ctx: EvalContext): Promis
     const responseGenerator = new LangGraphResponseGenerator({
       ai: ctx.ai,
       checkpointer,
-      tavilyApiKey: EVAL_TAVILY_API_KEY,
+      tavilyApiKey: ctx.credentials.tavilyApiKey,
       costRecorder: undefined,
     })
 

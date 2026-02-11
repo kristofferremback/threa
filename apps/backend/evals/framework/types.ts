@@ -61,6 +61,10 @@ export interface EvalContext {
   permutation: EvalPermutation
   /** Usage accumulator for tracking AI costs - call recordUsage() after AI calls */
   usage: UsageAccumulator
+  /** Eval credentials sourced by the runner from environment/config */
+  credentials: {
+    tavilyApiKey?: string
+  }
   /** Component-specific overrides from config file */
   componentOverrides?: ComponentOverrides
   /**
