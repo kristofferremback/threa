@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test"
+import { loginAndCreateWorkspace } from "./helpers"
 
 /**
  * Emoji shortcut E2E tests.
@@ -11,27 +12,9 @@ import { test, expect } from "@playwright/test"
  */
 
 test.describe("Emoji Shortcuts", () => {
-  const testId = Date.now().toString(36)
-
   // Helper to set up a workspace with an editor ready
   async function setupWorkspaceWithEditor(page: import("@playwright/test").Page) {
-    // Login as Alice
-    await page.goto("/login")
-    await page.getByRole("button", { name: "Sign in with WorkOS" }).click()
-    await page.getByRole("button", { name: /Alice Anderson/ }).click()
-
-    // Wait for workspace page
-    await expect(page.getByText(/Welcome|Select a stream/)).toBeVisible()
-
-    // Create workspace if needed
-    const workspaceInput = page.getByPlaceholder("New workspace name")
-    if (await workspaceInput.isVisible()) {
-      await workspaceInput.fill(`Emoji Test ${testId}`)
-      await page.getByRole("button", { name: "Create Workspace" }).click()
-    }
-
-    // Wait for sidebar (empty state shows buttons, populated state shows headings)
-    await expect(page.getByRole("button", { name: "+ New Scratchpad" })).toBeVisible()
+    await loginAndCreateWorkspace(page, "emoji")
 
     // Create a scratchpad to get an editor
     await page.getByRole("button", { name: "+ New Scratchpad" }).click()

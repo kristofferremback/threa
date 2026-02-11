@@ -78,10 +78,10 @@ if (!process.env.PLAYWRIGHT_PORTS_LOGGED) {
 export default defineConfig({
   testDir: "./tests/browser",
   globalSetup: "./tests/browser/global-setup.ts",
-  fullyParallel: false, // Run tests sequentially to avoid DB conflicts
+  fullyParallel: true, // Each test creates unique user + workspace — safe to parallelize
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: 1, // Single worker for sequential execution
+  workers: process.env.CI ? 4 : undefined, // CI: 4 parallel workers; local: auto (half CPU cores)
   reporter: process.env.CI ? [["github"], ["line"], ["html", { open: "never" }]] : "list",
   timeout: 30000, // 30s per test
 

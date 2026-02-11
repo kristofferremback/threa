@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test"
+import { loginAndCreateWorkspace } from "./helpers"
 
 /**
  * Tests for configurable message send mode feature.
@@ -11,8 +12,7 @@ import { test, expect } from "@playwright/test"
  */
 
 test.describe("Message Send Mode", () => {
-  const testId = Date.now().toString(36)
-  const workspaceName = `SendMode Test ${testId}`
+  let testId: string
 
   /**
    * Helper to open settings dialog via keyboard shortcut.
@@ -47,23 +47,8 @@ test.describe("Message Send Mode", () => {
   }
 
   test.beforeEach(async ({ page }) => {
-    // Login as Alice
-    await page.goto("/login")
-    await page.getByRole("button", { name: "Sign in with WorkOS" }).click()
-    await page.getByRole("button", { name: /Alice Anderson/ }).click()
-
-    // Wait for workspace page
-    await expect(page.getByText(/Welcome|Select a stream/)).toBeVisible()
-
-    // Create workspace if needed
-    const workspaceInput = page.getByPlaceholder("New workspace name")
-    if (await workspaceInput.isVisible()) {
-      await workspaceInput.fill(workspaceName)
-      await page.getByRole("button", { name: "Create Workspace" }).click()
-    }
-
-    // Wait for sidebar to be visible
-    await expect(page.getByRole("button", { name: "+ New Scratchpad" })).toBeVisible()
+    const result = await loginAndCreateWorkspace(page, "sendmode")
+    testId = result.testId
   })
 
   test.describe("default enter mode", () => {

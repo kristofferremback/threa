@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test"
+import { loginAndCreateWorkspace, createChannel, switchToAllView } from "./helpers"
 
 /**
  * Sidebar real-time update E2E tests.
@@ -10,60 +11,9 @@ import { test, expect } from "@playwright/test"
  */
 
 test.describe("Sidebar Updates", () => {
-  const testId = Date.now().toString(36)
-
-  // Helper to login and get to workspace
-  async function loginAsAlice(page: import("@playwright/test").Page) {
-    await page.goto("/login")
-    await page.getByRole("button", { name: "Sign in with WorkOS" }).click()
-    await page.getByRole("button", { name: /Alice Anderson/ }).click()
-    await expect(page.getByText(/Welcome|Select a stream/)).toBeVisible()
-
-    // Create workspace if needed
-    const workspaceInput = page.getByPlaceholder("New workspace name")
-    if (await workspaceInput.isVisible()) {
-      await workspaceInput.fill(`Sidebar Test ${testId}`)
-      await page.getByRole("button", { name: "Create Workspace" }).click()
-    }
-
-    // Wait for sidebar - the "+ New Scratchpad" button is always visible
-    await expect(page.getByRole("button", { name: "+ New Scratchpad" })).toBeVisible()
-  }
-
-  // Helper to switch to All view mode and wait for it to work
-  async function switchToAllView(page: import("@playwright/test").Page) {
-    // Wait for the "All" button to exist (may not exist in empty state)
-    const allButton = page.getByRole("button", { name: "All" })
-    await allButton.waitFor({ state: "visible", timeout: 3000 }).catch(() => {
-      // Empty state - no view toggle, nothing to do
-    })
-
-    // If button exists and we're not already in All view, click it
-    if (await allButton.isVisible()) {
-      await allButton.click()
-      // Wait for Channels section header (appears only in All view)
-      await expect(page.getByRole("heading", { name: "Channels", level: 3 })).toBeVisible({ timeout: 5000 })
-    }
-  }
-
-  // Helper to create a channel
-  async function createChannel(page: import("@playwright/test").Page, channelName: string) {
-    page.once("dialog", async (dialog) => {
-      await dialog.accept(channelName)
-    })
-    await page.getByRole("button", { name: "+ New Channel" }).click()
-
-    // Creating a channel navigates us to it - wait for it to load
-    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
-
-    // Now switch to All view to see the channel in sidebar
-    await switchToAllView(page)
-    await expect(page.getByRole("link", { name: `#${channelName}` })).toBeVisible({ timeout: 5000 })
-  }
-
   test.describe("Bug 1: Message preview in sidebar", () => {
     test("sidebar should show preview of last message sent in channel", async ({ page }) => {
-      await loginAsAlice(page)
+      const { testId } = await loginAndCreateWorkspace(page, "sidebar-msg")
 
       // Create a channel
       const channelName = `preview-${testId}`
@@ -99,7 +49,7 @@ test.describe("Sidebar Updates", () => {
 
   test.describe("Bug 2: Stream name updates in sidebar", () => {
     test("sidebar should update when scratchpad is auto-named", async ({ page }) => {
-      await loginAsAlice(page)
+      const { testId } = await loginAndCreateWorkspace(page, "sidebar-name")
 
       // Create a scratchpad
       await page.getByRole("button", { name: "+ New Scratchpad" }).click()
@@ -136,7 +86,7 @@ test.describe("Sidebar Updates", () => {
 
   test.describe("Bug 3: Urgency should be tied to read state", () => {
     test("urgency indicator should clear after viewing stream", async ({ page }) => {
-      await loginAsAlice(page)
+      const { testId } = await loginAndCreateWorkspace(page, "sidebar-urgency")
 
       // Create a channel
       const channelName = `urgency-${testId}`
@@ -177,7 +127,7 @@ test.describe("Sidebar Updates", () => {
       // Increase timeout for AI response
       test.setTimeout(60000)
 
-      await loginAsAlice(page)
+      const { testId } = await loginAndCreateWorkspace(page, "sidebar-ai")
 
       // Create a scratchpad (companion mode is on by default for scratchpads)
       await page.getByRole("button", { name: "+ New Scratchpad" }).click()

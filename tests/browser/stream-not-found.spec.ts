@@ -1,4 +1,5 @@
 import { test, expect, type Request } from "@playwright/test"
+import { loginAndCreateWorkspace } from "./helpers"
 
 /**
  * Tests for 404 stream handling.
@@ -9,8 +10,6 @@ import { test, expect, type Request } from "@playwright/test"
  */
 
 test.describe("Stream Not Found", () => {
-  const testId = Date.now().toString(36)
-
   test("should show error page for non-existent stream without continuous requests", async ({ page }) => {
     // Track all bootstrap requests
     const bootstrapRequests: Request[] = []
@@ -26,23 +25,7 @@ test.describe("Stream Not Found", () => {
       }
     })
 
-    // Login as Alice
-    await page.goto("/login")
-    await page.getByRole("button", { name: "Sign in with WorkOS" }).click()
-    await page.getByRole("button", { name: /Alice Anderson/ }).click()
-
-    // Wait for workspace page
-    await expect(page.getByText(/Welcome|Select a stream/)).toBeVisible()
-
-    // Create workspace if needed
-    const workspaceInput = page.getByPlaceholder("New workspace name")
-    if (await workspaceInput.isVisible()) {
-      await workspaceInput.fill(`404 Test ${testId}`)
-      await page.getByRole("button", { name: "Create Workspace" }).click()
-    }
-
-    // Wait for sidebar to be visible (we're in a workspace)
-    await expect(page.getByRole("button", { name: "+ New Scratchpad" })).toBeVisible()
+    await loginAndCreateWorkspace(page, "notfound")
 
     // Get the current URL to extract workspaceId
     const url = page.url()
@@ -86,23 +69,9 @@ test.describe("Stream Not Found", () => {
       }
     })
 
-    // Login as Alice
-    await page.goto("/login")
-    await page.getByRole("button", { name: "Sign in with WorkOS" }).click()
-    await page.getByRole("button", { name: /Alice Anderson/ }).click()
+    await loginAndCreateWorkspace(page, "panel-notfound")
 
-    // Wait for workspace page
-    await expect(page.getByText(/Welcome|Select a stream/)).toBeVisible()
-
-    // Create workspace if needed
-    const workspaceInput = page.getByPlaceholder("New workspace name")
-    if (await workspaceInput.isVisible()) {
-      await workspaceInput.fill(`Panel 404 Test ${testId}`)
-      await page.getByRole("button", { name: "Create Workspace" }).click()
-    }
-
-    // Wait for sidebar and create a scratchpad
-    await expect(page.getByRole("button", { name: "+ New Scratchpad" })).toBeVisible()
+    // Create a scratchpad
     await page.getByRole("button", { name: "+ New Scratchpad" }).click()
 
     // Wait for scratchpad to load
