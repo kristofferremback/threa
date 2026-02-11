@@ -5,7 +5,7 @@ import type { AI } from "../../../lib/ai/ai"
 import type { ConfigResolver, ResearcherConfig } from "../../../lib/ai/config-resolver"
 import { COMPONENT_PATHS } from "../../../lib/ai/config-resolver"
 import type { EmbeddingServiceLike } from "../../memos"
-import type { Message } from "../../messaging"
+import { MessageRepository, type Message } from "../../messaging"
 import { MemoRepository, type MemoSearchResult } from "../../memos"
 import { SearchRepository } from "../../search"
 import { StreamRepository } from "../../streams"
@@ -106,6 +106,57 @@ const evaluationSchema = z.object({
 })
 
 type SearchQuery = NonNullable<z.infer<typeof decisionWithQueriesSchema>["queries"]>[number]
+
+const EXPLICIT_MEMORY_RECALL_PATTERNS = [
+  /\b(do you remember|remember|recall|remind me)\b/i,
+  /\b(what did we|did we|have we|who owns|who owned|where did we|when did we)\b/i,
+  /\b(we decided|we agreed|we chose|as discussed|from earlier|from before)\b/i,
+  /\b(previous|earlier|again|last time|last meeting|yesterday)\b/i,
+]
+
+function hasExplicitMemoryRecallIntent(message: string): boolean {
+  const text = message.trim()
+  if (!text) {
+    return false
+  }
+  return EXPLICIT_MEMORY_RECALL_PATTERNS.some((pattern) => pattern.test(text))
+}
+
+function buildFallbackRecallQueries(message: string): SearchQuery[] {
+  const trimmed = message.trim()
+  if (!trimmed) {
+    return []
+  }
+
+  return [
+    {
+      target: "memos",
+      type: "semantic",
+      query: trimmed,
+    },
+    {
+      target: "messages",
+      type: "semantic",
+      query: trimmed,
+    },
+  ]
+}
+
+function appendRecallBaselineQueries(existing: SearchQuery[], message: string): SearchQuery[] {
+  const merged: SearchQuery[] = [...existing]
+  const seen = new Set(merged.map((query) => `${query.target}|${query.type}|${query.query}`))
+
+  for (const query of buildFallbackRecallQueries(message)) {
+    const key = `${query.target}|${query.type}|${query.query}`
+    if (seen.has(key)) {
+      continue
+    }
+    seen.add(key)
+    merged.push(query)
+  }
+
+  return merged
+}
 
 /**
  * Researcher that retrieves relevant workspace knowledge before the main agent responds.
@@ -236,22 +287,44 @@ export class Researcher {
 
     // Step 1: Decide if search is needed AND generate queries in one call (AI, no DB)
     const contextSummary = this.buildContextSummary(triggerMessage, conversationHistory)
+    const explicitMemoryRecallIntent = hasExplicitMemoryRecallIntent(triggerMessage.contentMarkdown)
     const decision = await this.decideAndGenerateQueries({
       contextSummary,
       config,
       workspaceId,
       messageId: triggerMessage.id,
     })
+    const shouldSearch = decision.needsSearch || explicitMemoryRecallIntent
 
-    if (!decision.needsSearch || !decision.queries?.length) {
+    let initialQueries: SearchQuery[] = []
+    if (decision.queries?.length) {
+      initialQueries = decision.queries
+    } else if (explicitMemoryRecallIntent) {
+      initialQueries = buildFallbackRecallQueries(triggerMessage.contentMarkdown)
+    }
+
+    if (!shouldSearch || initialQueries.length === 0) {
       logger.debug(
-        { messageId: triggerMessage.id, reasoning: decision.reasoning },
+        {
+          messageId: triggerMessage.id,
+          reasoning: decision.reasoning,
+          explicitMemoryRecallIntent,
+        },
         "Researcher decided no search needed"
       )
       return this.emptyResult()
     }
 
-    const initialQueries = decision.queries
+    if (explicitMemoryRecallIntent) {
+      initialQueries = appendRecallBaselineQueries(initialQueries, triggerMessage.contentMarkdown)
+    }
+
+    if (!decision.needsSearch && explicitMemoryRecallIntent) {
+      logger.info(
+        { messageId: triggerMessage.id, reasoning: decision.reasoning },
+        "Researcher overriding no-search decision due to explicit memory recall intent"
+      )
+    }
 
     // Execute searches and collect results
     let allMemos: EnrichedMemoResult[] = []
@@ -266,7 +339,8 @@ export class Researcher {
       workspaceId,
       accessibleStreamIds,
       embeddingService,
-      invokingMemberId
+      invokingMemberId,
+      explicitMemoryRecallIntent
     )
     allMemos = [...allMemos, ...initialResults.memos]
     allMessages = [...allMessages, ...initialResults.messages]
@@ -303,7 +377,8 @@ export class Researcher {
         workspaceId,
         accessibleStreamIds,
         embeddingService,
-        invokingMemberId
+        invokingMemberId,
+        explicitMemoryRecallIntent
       )
 
       // Deduplicate results
@@ -482,7 +557,8 @@ Each query must have:
     workspaceId: string,
     accessibleStreamIds: string[],
     embeddingService: EmbeddingServiceLike,
-    invokingMemberId: string
+    invokingMemberId: string,
+    includeSurroundingContext: boolean
   ): Promise<{
     memos: EnrichedMemoResult[]
     messages: EnrichedMessageResult[]
@@ -507,7 +583,13 @@ Each query must have:
             },
           }
         } else if (query.target === "messages") {
-          const messageResults = await this.searchMessages(pool, query, workspaceId, accessibleStreamIds)
+          const messageResults = await this.searchMessages(
+            pool,
+            query,
+            workspaceId,
+            accessibleStreamIds,
+            includeSurroundingContext
+          )
           return {
             type: "messages" as const,
             memos: [] as EnrichedMemoResult[],
@@ -620,7 +702,8 @@ Each query must have:
     pool: Pool,
     query: SearchQuery,
     workspaceId: string,
-    accessibleStreamIds: string[]
+    accessibleStreamIds: string[],
+    includeSurroundingContext: boolean
   ): Promise<EnrichedMessageResult[]> {
     const { embeddingService } = this.deps
 
@@ -647,7 +730,7 @@ Each query must have:
         const normalizedQuery = searchQuery.trim()
         const hasQuery = normalizedQuery.length > 0
         const hasEmbedding = embedding.length > 0
-        const results =
+        const searchResults =
           !hasQuery || !hasEmbedding
             ? await SearchRepository.fullTextSearch(client, {
                 query: normalizedQuery,
@@ -664,8 +747,56 @@ Each query must have:
                 semanticDistanceThreshold: SEMANTIC_DISTANCE_THRESHOLD,
               })
 
+        const rawResults = [...searchResults]
+        if (includeSurroundingContext && searchResults.length > 0) {
+          const surroundingBatches = await Promise.all(
+            searchResults
+              .slice(0, 3)
+              .map((result) => MessageRepository.findSurrounding(client, result.id, result.streamId, 1, 1))
+          )
+
+          for (const surrounding of surroundingBatches) {
+            for (const message of surrounding) {
+              rawResults.push({
+                id: message.id,
+                streamId: message.streamId,
+                content: message.contentMarkdown,
+                authorId: message.authorId,
+                authorType: message.authorType,
+                createdAt: message.createdAt,
+                rank: 0,
+              })
+            }
+          }
+
+          const topStreamIds = [...new Set(searchResults.slice(0, 2).map((result) => result.streamId))]
+          const recentMessagesByStream = await Promise.all(
+            topStreamIds.map((streamId) => MessageRepository.list(client, streamId, { limit: 5 }))
+          )
+          for (const streamMessages of recentMessagesByStream) {
+            for (const message of streamMessages) {
+              rawResults.push({
+                id: message.id,
+                streamId: message.streamId,
+                content: message.contentMarkdown,
+                authorId: message.authorId,
+                authorType: message.authorType,
+                createdAt: message.createdAt,
+                rank: 0,
+              })
+            }
+          }
+        }
+
+        const dedupedResultsById = new Map<string, (typeof rawResults)[number]>()
+        for (const result of rawResults) {
+          if (!dedupedResultsById.has(result.id)) {
+            dedupedResultsById.set(result.id, result)
+          }
+        }
+
         // Enrich results with author names and stream names
-        return enrichMessageSearchResults(client, results)
+        return enrichMessageSearchResults(client, [...dedupedResultsById.values()])
       })
     } catch (error) {
       logger.warn({ error, query: query.query }, "Message search failed")

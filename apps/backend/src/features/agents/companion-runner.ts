@@ -34,12 +34,13 @@ import {
   type LoadFileSectionCallbacks,
   type LoadExcelSectionCallbacks,
 } from "./tools"
-import { AgentToolNames, type SourceItem } from "@threa/types"
+import { AgentToolNames, type SourceItem, type StreamType, type TraceSource } from "@threa/types"
 import type { AI, CostRecorder } from "../../lib/ai/ai"
 import { getCostTrackingCallbacks } from "../../lib/ai/ai"
 import { getDebugCallbacks } from "../../lib/ai/debug-callback"
 import { logger } from "../../lib/logger"
 import { getLangfuseCallbacks } from "../../lib/langfuse"
+import { shouldEagerlyPrefetchWorkspaceResearch } from "./workspace-research-eagerness"
 
 // Re-export for consumers
 export type { RecordStepParams, NewMessageInfo }
@@ -53,6 +54,46 @@ type TextContentBlock = { type: "text"; text: string }
 type ImageContentBlock = { type: "image_url"; image_url: { url: string } }
 type ContentBlock = TextContentBlock | ImageContentBlock
 type MessageContent = string | ContentBlock[]
+
+function contentToPlainText(content: MessageContent): string {
+  if (typeof content === "string") {
+    return content
+  }
+
+  const textParts = content
+    .filter((block): block is TextContentBlock => block.type === "text")
+    .map((block) => block.text)
+    .filter((text) => text.trim().length > 0)
+
+  return textParts.join("\n").trim()
+}
+
+function getLatestUserMessageText(messages: GenerateResponseParams["messages"]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i]
+    if (message.role !== "user") {
+      continue
+    }
+
+    const text = contentToPlainText(message.content)
+    if (text.trim().length > 0) {
+      return text.trim()
+    }
+  }
+
+  return ""
+}
+
+function toSourceItems(
+  sources: Array<{ title: string; url: string; type: "web" | "workspace"; snippet?: string }>
+): SourceItem[] {
+  return sources.map((source) => ({
+    title: source.title,
+    url: source.url,
+    type: source.type,
+    snippet: source.snippet,
+  }))
+}
 
 /**
  * Parameters for generating a response.
@@ -82,6 +123,8 @@ export interface GenerateResponseParams {
   invokingMemberId?: string
   /** Callback used by the on-demand workspace_research tool */
   runResearcher?: () => Promise<import("./researcher").ResearcherResult>
+  /** Stream type for workspace research eagerness heuristics */
+  streamType?: StreamType
 }
 
 /**
@@ -165,6 +208,7 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
       workspaceId,
       invokingMemberId,
       runResearcher,
+      streamType,
     } = params
 
     logger.debug(
@@ -265,6 +309,73 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
       "Tools configured for session"
     )
 
+    let initialSources: SourceItem[] = []
+    let initialRetrievedContext: string | null = null
+
+    const latestUserMessageText = getLatestUserMessageText(messages)
+    const shouldPrefetchWorkspaceResearch =
+      runResearcher != null &&
+      shouldEagerlyPrefetchWorkspaceResearch({
+        streamType,
+        latestUserMessage: latestUserMessageText,
+      })
+
+    if (shouldPrefetchWorkspaceResearch && runResearcher) {
+      const startTime = Date.now()
+      try {
+        const prefetchResult = await runResearcher()
+        const durationMs = Date.now() - startTime
+        const prefetchedSources = toSourceItems(prefetchResult.sources)
+
+        initialSources = prefetchedSources
+        initialRetrievedContext = prefetchResult.retrievedContext?.trim()
+          ? prefetchResult.retrievedContext.trim()
+          : null
+
+        logger.info(
+          {
+            streamId,
+            sessionId,
+            shouldSearch: prefetchResult.shouldSearch,
+            sourceCount: prefetchedSources.length,
+            memoCount: prefetchResult.memos.length,
+            messageCount: prefetchResult.messages.length,
+            attachmentCount: prefetchResult.attachments?.length ?? 0,
+          },
+          "Eager workspace memory check completed"
+        )
+
+        if (callbacks.recordStep) {
+          await callbacks.recordStep({
+            stepType: "workspace_search",
+            content: JSON.stringify({
+              mode: "prefetch",
+              shouldSearch: prefetchResult.shouldSearch,
+              sourceCount: prefetchedSources.length,
+              memoCount: prefetchResult.memos.length,
+              messageCount: prefetchResult.messages.length,
+              attachmentCount: prefetchResult.attachments?.length ?? 0,
+            }),
+            durationMs,
+            sources: prefetchedSources.map((source) => ({
+              type: (source.type ?? "workspace") as TraceSource["type"],
+              title: source.title,
+              url: source.url,
+              snippet: source.snippet,
+            })),
+          })
+        }
+      } catch (error) {
+        logger.warn({ error, streamId, sessionId }, "Eager workspace memory check failed; continuing without prefetch")
+        if (callbacks.recordStep) {
+          await callbacks.recordStep({
+            stepType: "tool_error",
+            content: `workspace_research prefetch failed: ${String(error)}`,
+          })
+        }
+      }
+    }
+
     // Create and compile graph with checkpointer
     const graph = createCompanionGraph(model, tools)
     const compiledGraph = graph.compile({ checkpointer })
@@ -306,8 +417,8 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
             iteration: 0,
             messagesSent: 0,
             hasNewMessages: false,
-            sources: [],
-            retrievedContext: null,
+            sources: initialSources,
+            retrievedContext: initialRetrievedContext,
           },
           {
             runName: "companion-agent",

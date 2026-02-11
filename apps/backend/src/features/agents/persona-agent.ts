@@ -1110,6 +1110,7 @@ export class PersonaAgent {
             workspaceId, // For cost tracking
             invokingMemberId, // For cost attribution to the human user
             runResearcher,
+            streamType: context.streamType,
           },
           callbacks
         )
@@ -1261,6 +1262,7 @@ When to use workspace_research:
 - When you need additional background from past workspace conversations
 - Before answering if you are unsure whether prior context exists
 - When the user asks about previous decisions, conversations, or shared files
+- For scratchpad planning/problem-solving prompts, prefer checking memory early before finalizing your answer
 
 After calling it:
 - Incorporate the retrieved context naturally into your response
