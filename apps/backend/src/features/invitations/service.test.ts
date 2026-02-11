@@ -184,6 +184,102 @@ describe("InvitationService.sendInvitations", () => {
   })
 })
 
+describe("InvitationService.acceptPendingForEmail", () => {
+  let service: InvitationService
+
+  const pendingInvitations = [
+    { id: "inv_1", workspaceId: "ws_1", email: "test@example.com", role: "member", status: "pending" },
+    { id: "inv_2", workspaceId: "ws_2", email: "test@example.com", role: "admin", status: "pending" },
+  ]
+
+  const mockFindPendingByEmail = spyOn(InvitationRepository, "findPendingByEmail")
+  const mockUpdateStatus = spyOn(InvitationRepository, "updateStatus")
+  const mockFindInvitationById = spyOn(InvitationRepository, "findById")
+  const mockIsMember = spyOn(WorkspaceRepository, "isMember")
+  const mockInsertOutbox = spyOn(OutboxRepository, "insert")
+  const mockLoggerError = spyOn(logger, "error")
+
+  const mockClient = { query: mock<(text: string) => Promise<{ rows: never[]; rowCount: number }>>() }
+  const mockWithTransaction = spyOn(db, "withTransaction").mockImplementation((_pool, fn) => fn(mockClient as never))
+
+  const mockCreateMember = mock<() => Promise<{ id: string; workspaceId: string }>>()
+
+  beforeEach(() => {
+    mockClient.query.mockReset().mockResolvedValue({ rows: [] as never[], rowCount: 0 })
+    mockWithTransaction.mockReset().mockImplementation((_pool, fn) => fn(mockClient as never))
+    mockFindPendingByEmail.mockReset().mockResolvedValue(pendingInvitations as never)
+    mockUpdateStatus.mockReset().mockResolvedValue(true)
+    mockFindInvitationById.mockReset().mockImplementation((_db, id) => {
+      const inv = pendingInvitations.find((i) => i.id === id)
+      return Promise.resolve(inv ? (inv as never) : null)
+    })
+    mockIsMember.mockReset().mockResolvedValue(false)
+    mockInsertOutbox
+      .mockReset()
+      .mockResolvedValue({ id: 1n, eventType: "test", payload: {}, createdAt: new Date() } as never)
+    mockLoggerError.mockReset()
+    mockCreateMember.mockReset().mockResolvedValue({ id: "member_new", workspaceId: "ws_1" })
+
+    service = new InvitationService(
+      {} as never,
+      {} as never,
+      {
+        createMemberInTransaction: mockCreateMember,
+      } as never
+    )
+  })
+
+  test("should return structured result with accepted workspace IDs", async () => {
+    const result = await service.acceptPendingForEmail("test@example.com", "user_1")
+
+    expect(result.accepted).toEqual(["ws_1", "ws_2"])
+    expect(result.failed).toEqual([])
+  })
+
+  test("should return empty results when no pending invitations", async () => {
+    mockFindPendingByEmail.mockResolvedValue([])
+
+    const result = await service.acceptPendingForEmail("test@example.com", "user_1")
+
+    expect(result.accepted).toEqual([])
+    expect(result.failed).toEqual([])
+  })
+
+  test("should use a single transaction for all invitations", async () => {
+    await service.acceptPendingForEmail("test@example.com", "user_1")
+
+    // withTransaction called once for 2 invitations (batched)
+    expect(mockWithTransaction).toHaveBeenCalledTimes(1)
+  })
+
+  test("should capture failed invitations without aborting others", async () => {
+    mockCreateMember
+      .mockResolvedValueOnce({ id: "member_1", workspaceId: "ws_1" })
+      .mockRejectedValueOnce(new Error("DB constraint violation"))
+
+    const result = await service.acceptPendingForEmail("test@example.com", "user_1")
+
+    expect(result.accepted).toEqual(["ws_1"])
+    expect(result.failed).toHaveLength(1)
+    expect(result.failed[0]).toMatchObject({
+      invitationId: "inv_2",
+      email: "test@example.com",
+      error: "DB constraint violation",
+    })
+    expect(mockLoggerError).toHaveBeenCalled()
+  })
+
+  test("should use savepoints for per-invitation error isolation", async () => {
+    await service.acceptPendingForEmail("test@example.com", "user_1")
+
+    const savepointCalls = mockClient.query.mock.calls.filter(
+      (call) => typeof call[0] === "string" && call[0].includes("SAVEPOINT")
+    )
+    // 2 invitations: SAVEPOINT + RELEASE for each
+    expect(savepointCalls).toHaveLength(4)
+  })
+})
+
 describe("InvitationService.revokeInvitation", () => {
   let service: InvitationService
   let mockWorkosOrgService: { revokeInvitation: ReturnType<typeof mock> }

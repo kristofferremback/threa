@@ -87,7 +87,6 @@ export function registerRoutes(app: Express, deps: Dependencies) {
 
   const authHandlers = createAuthHandlers({ authService, userService, invitationService })
   const workspace = createWorkspaceHandlers({
-    pool,
     workspaceService,
     streamService,
     userPreferencesService,

@@ -37,7 +37,10 @@ export function createAuthStubHandlers(deps: Dependencies): AuthStubHandlers {
     const { user, session } = await authStubService.devLogin(userService, { email, name })
 
     // Auto-accept pending invitations (mirrors real WorkOS callback flow)
-    const acceptedWorkspaceIds = await invitationService.acceptPendingForEmail(email || "test@example.com", user.id)
+    const { accepted: acceptedWorkspaceIds } = await invitationService.acceptPendingForEmail(
+      email || "test@example.com",
+      user.id
+    )
 
     res.cookie("wos_session", session, {
       httpOnly: true,

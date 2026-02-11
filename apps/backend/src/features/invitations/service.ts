@@ -1,5 +1,5 @@
 import { Pool } from "pg"
-import { withTransaction } from "../../db"
+import { withTransaction, type Querier } from "../../db"
 import { InvitationRepository, type Invitation } from "./repository"
 import { WorkspaceRepository, type WorkspaceService } from "../workspaces"
 import { MemberRepository } from "../workspaces"
@@ -27,6 +27,11 @@ interface SendInvitationsParams {
 interface SendResult {
   sent: Invitation[]
   skipped: Array<{ email: string; reason: InvitationSkipReason }>
+}
+
+export interface AcceptPendingResult {
+  accepted: string[] // workspace IDs
+  failed: Array<{ invitationId: string; email: string; error: string }>
 }
 
 export class InvitationService {
@@ -153,57 +158,81 @@ export class InvitationService {
 
   async acceptInvitation(invitationId: string, userId: string): Promise<string | null> {
     return withTransaction(this.pool, async (client) => {
-      const now = new Date()
-      const updated = await InvitationRepository.updateStatus(client, invitationId, "accepted", {
-        acceptedAt: now,
-        notExpiredAt: now,
-      })
-
-      if (!updated) {
-        return null // Already accepted, expired, or revoked
-      }
-
-      const invitation = await InvitationRepository.findById(client, invitationId)
-      if (!invitation) return null
-
-      // Check if already a member (race condition safety)
-      const isMember = await WorkspaceRepository.isMember(client, invitation.workspaceId, userId)
-      if (isMember) return invitation.workspaceId
-
-      await this.workspaceService.createMemberInTransaction(client, {
-        workspaceId: invitation.workspaceId,
-        userId,
-        role: invitation.role,
-        setupCompleted: false,
-      })
-
-      await OutboxRepository.insert(client, "invitation:accepted", {
-        workspaceId: invitation.workspaceId,
-        invitationId: invitation.id,
-        email: invitation.email,
-        userId,
-      })
-
-      return invitation.workspaceId
+      return this.acceptInvitationInTransaction(client, invitationId, userId)
     })
   }
 
-  async acceptPendingForEmail(email: string, userId: string): Promise<string[]> {
-    const pending = await InvitationRepository.findPendingByEmail(this.pool, email.toLowerCase())
-    const acceptedWorkspaceIds: string[] = []
+  private async acceptInvitationInTransaction(
+    client: Querier,
+    invitationId: string,
+    userId: string
+  ): Promise<string | null> {
+    const now = new Date()
+    const updated = await InvitationRepository.updateStatus(client, invitationId, "accepted", {
+      acceptedAt: now,
+      notExpiredAt: now,
+    })
 
-    for (const invitation of pending) {
-      try {
-        const wsId = await this.acceptInvitation(invitation.id, userId)
-        if (wsId) {
-          acceptedWorkspaceIds.push(wsId)
-        }
-      } catch (err) {
-        logger.error({ err, invitationId: invitation.id, email }, "Failed to accept invitation")
-      }
+    if (!updated) {
+      return null // Already accepted, expired, or revoked
     }
 
-    return acceptedWorkspaceIds
+    const invitation = await InvitationRepository.findById(client, invitationId)
+    if (!invitation) return null
+
+    // Check if already a member (race condition safety)
+    const isMember = await WorkspaceRepository.isMember(client, invitation.workspaceId, userId)
+    if (isMember) return invitation.workspaceId
+
+    await this.workspaceService.createMemberInTransaction(client, {
+      workspaceId: invitation.workspaceId,
+      userId,
+      role: invitation.role,
+      setupCompleted: false,
+    })
+
+    await OutboxRepository.insert(client, "invitation:accepted", {
+      workspaceId: invitation.workspaceId,
+      invitationId: invitation.id,
+      email: invitation.email,
+      userId,
+    })
+
+    return invitation.workspaceId
+  }
+
+  async acceptPendingForEmail(email: string, userId: string): Promise<AcceptPendingResult> {
+    const pending = await InvitationRepository.findPendingByEmail(this.pool, email.toLowerCase())
+    if (pending.length === 0) return { accepted: [], failed: [] }
+
+    return withTransaction(this.pool, async (client) => {
+      const accepted: string[] = []
+      const failed: AcceptPendingResult["failed"] = []
+
+      for (const invitation of pending) {
+        try {
+          // Savepoint allows partial success: if one invitation fails,
+          // we rollback just that one and continue with the rest
+          await client.query("SAVEPOINT accept_inv")
+          const wsId = await this.acceptInvitationInTransaction(client, invitation.id, userId)
+          await client.query("RELEASE SAVEPOINT accept_inv")
+
+          if (wsId) {
+            accepted.push(wsId)
+          }
+        } catch (err) {
+          await client.query("ROLLBACK TO SAVEPOINT accept_inv")
+          logger.error({ err, invitationId: invitation.id, email }, "Failed to accept invitation")
+          failed.push({
+            invitationId: invitation.id,
+            email: invitation.email,
+            error: err instanceof Error ? err.message : String(err),
+          })
+        }
+      }
+
+      return { accepted, failed }
+    })
   }
 
   async revokeInvitation(invitationId: string, workspaceId: string): Promise<boolean> {

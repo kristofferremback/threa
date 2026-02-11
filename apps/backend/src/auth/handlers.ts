@@ -4,6 +4,7 @@ import type { UserService } from "./user-service"
 import type { InvitationService } from "../features/invitations"
 import { SESSION_COOKIE_CONFIG } from "../lib/cookies"
 import { decodeAndSanitizeRedirectState } from "./redirect"
+import { logger } from "../lib/logger"
 
 const SESSION_COOKIE_NAME = "wos_session"
 
@@ -42,7 +43,17 @@ export function createAuthHandlers({ authService, userService, invitationService
       })
 
       // Auto-accept any pending invitations for this email
-      const acceptedWorkspaceIds = await invitationService.acceptPendingForEmail(result.user.email, user.id)
+      const { accepted: acceptedWorkspaceIds, failed } = await invitationService.acceptPendingForEmail(
+        result.user.email,
+        user.id
+      )
+
+      if (failed.length > 0) {
+        logger.warn(
+          { userId: user.id, email: result.user.email, failedCount: failed.length },
+          "Some invitations failed to auto-accept during login"
+        )
+      }
 
       res.cookie(SESSION_COOKIE_NAME, result.sealedSession, SESSION_COOKIE_CONFIG)
 

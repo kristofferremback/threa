@@ -148,6 +148,11 @@ export class WorkspaceService {
     return EmojiUsageRepository.getWeights(this.pool, workspaceId, memberId)
   }
 
+  async isSlugAvailable(workspaceId: string, slug: string): Promise<boolean> {
+    const exists = await WorkspaceRepository.memberSlugExists(this.pool, workspaceId, slug)
+    return !exists
+  }
+
   async completeMemberSetup(
     memberId: string,
     workspaceId: string,
@@ -176,6 +181,12 @@ export class WorkspaceService {
 
     // Phase 3: Transaction with re-check via WHERE guard on setup_completed
     return withTransaction(this.pool, async (client) => {
+      // Re-read member inside transaction to get fresh slug (Phase 1 value may be stale)
+      const currentMember = await MemberRepository.findById(client, memberId)
+      if (!currentMember || currentMember.setupCompleted) {
+        throw new HttpError("Member setup already completed", { status: 400, code: "SETUP_ALREADY_COMPLETED" })
+      }
+
       let slug: string
 
       if (enforceEmailSlug) {
@@ -187,7 +198,7 @@ export class WorkspaceService {
       }
 
       const slugExists = await WorkspaceRepository.memberSlugExists(client, workspaceId, slug)
-      if (slugExists && slug !== member.slug) {
+      if (slugExists && slug !== currentMember.slug) {
         slug = await generateUniqueSlug(slug, (s) => WorkspaceRepository.memberSlugExists(client, workspaceId, s))
       }
 
