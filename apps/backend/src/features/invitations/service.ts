@@ -1,13 +1,11 @@
 import { Pool } from "pg"
-import { withTransaction, withClient, sql } from "../../db"
+import { withTransaction } from "../../db"
 import { InvitationRepository, type Invitation } from "./repository"
-import { WorkspaceRepository, MemberRepository } from "../workspaces"
+import { WorkspaceRepository, type WorkspaceService } from "../workspaces"
+import { MemberRepository } from "../workspaces"
 import { UserRepository } from "../../auth/user-repository"
 import { OutboxRepository } from "../../lib/outbox"
 import { invitationId } from "../../lib/id"
-import { memberId as generateMemberId } from "../../lib/id"
-import { generateUniqueSlug } from "../../lib/slug"
-import { serializeBigInt } from "../../lib/serialization"
 import { logger } from "../../lib/logger"
 import type { WorkosOrgService } from "../../auth/workos-org-service"
 import type { InvitationSkipReason, InvitationStatus } from "@threa/types"
@@ -29,14 +27,14 @@ interface SendResult {
 export class InvitationService {
   constructor(
     private pool: Pool,
-    private workosOrgService: WorkosOrgService
+    private workosOrgService: WorkosOrgService,
+    private workspaceService: WorkspaceService
   ) {}
 
   async sendInvitations(params: SendInvitationsParams): Promise<SendResult> {
     const { workspaceId, invitedBy, role } = params
     const emails = params.emails.map((e) => e.toLowerCase().trim())
 
-    const sent: Invitation[] = []
     const skipped: SendResult["skipped"] = []
 
     // Ensure workspace has a WorkOS organization (lazy creation)
@@ -64,23 +62,30 @@ export class InvitationService {
     )
     const pendingEmails = new Set(pendingInvitations.map((inv) => inv.email))
 
+    // Build list of emails to send (filter skipped)
+    const emailsToSend: string[] = []
     for (const email of emails) {
       const user = usersByEmail.get(email)
       if (user && memberUserIds.has(user.id)) {
         skipped.push({ email, reason: "already_member" })
         continue
       }
-
       if (pendingEmails.has(email)) {
         skipped.push({ email, reason: "pending_invitation" })
         continue
       }
+      emailsToSend.push(email)
+    }
 
-      // Phase 1: Insert local invitation record
-      const id = invitationId()
-      const expiresAt = new Date(Date.now() + INVITATION_EXPIRY_MS)
+    if (emailsToSend.length === 0) return { sent: [], skipped }
 
-      const invitation = await withTransaction(this.pool, async (client) => {
+    // Phase 1: Single transaction — all invitation inserts + outbox events
+    const sent = await withTransaction(this.pool, async (client) => {
+      const invitations: Invitation[] = []
+      for (const email of emailsToSend) {
+        const id = invitationId()
+        const expiresAt = new Date(Date.now() + INVITATION_EXPIRY_MS)
+
         const inv = await InvitationRepository.insert(client, {
           id,
           workspaceId,
@@ -97,26 +102,35 @@ export class InvitationService {
           role,
         })
 
-        return inv
-      })
+        invitations.push(inv)
+      }
+      return invitations
+    })
 
-      // Phase 2: Send via WorkOS (no DB connection held)
-      if (orgId && inviterWorkosUserId) {
-        try {
-          const workosResult = await this.workosOrgService.sendInvitation({
-            organizationId: orgId,
-            email,
-            inviterUserId: inviterWorkosUserId,
+    // Phase 2: Parallel WorkOS API calls (no DB connection held)
+    if (orgId && inviterWorkosUserId) {
+      const results = await Promise.allSettled(
+        sent.map((inv) =>
+          this.workosOrgService.sendInvitation({
+            organizationId: orgId!,
+            email: inv.email,
+            inviterUserId: inviterWorkosUserId!,
           })
+        )
+      )
 
-          // Phase 3: Update with WorkOS invitation ID
-          await InvitationRepository.setWorkosInvitationId(this.pool, id, workosResult.id)
-        } catch (error) {
-          logger.error({ err: error, email, invitationId: id }, "Failed to send WorkOS invitation")
+      // Phase 3: Update WorkOS IDs for successful sends
+      for (let i = 0; i < results.length; i++) {
+        const result = results[i]
+        if (result.status === "fulfilled") {
+          await InvitationRepository.setWorkosInvitationId(this.pool, sent[i].id, result.value.id)
+        } else {
+          logger.error(
+            { err: result.reason, email: sent[i].email, invitationId: sent[i].id },
+            "Failed to send WorkOS invitation"
+          )
         }
       }
-
-      sent.push(invitation)
     }
 
     return { sent, skipped }
@@ -141,32 +155,12 @@ export class InvitationService {
       const isMember = await WorkspaceRepository.isMember(client, invitation.workspaceId, userId)
       if (isMember) return invitation.workspaceId
 
-      // Create workspace member with setup_completed = false
-      const user = await UserRepository.findById(client, userId)
-      const memberSlug = user
-        ? await generateUniqueSlug(user.name, (s) =>
-            WorkspaceRepository.memberSlugExists(client, invitation.workspaceId, s)
-          )
-        : `member-${generateMemberId().slice(7, 15)}`
-
-      const member = await WorkspaceRepository.addMember(client, {
-        id: generateMemberId(),
+      await this.workspaceService.createMemberInTransaction(client, {
         workspaceId: invitation.workspaceId,
         userId,
-        slug: memberSlug,
-        name: user?.name ?? "",
         role: invitation.role,
         setupCompleted: false,
       })
-
-      // Notify existing members so their caches update with the new member's info
-      const fullMember = await MemberRepository.findById(client, member.id)
-      if (fullMember) {
-        await OutboxRepository.insert(client, "workspace_member:added", {
-          workspaceId: invitation.workspaceId,
-          member: serializeBigInt(fullMember),
-        })
-      }
 
       await OutboxRepository.insert(client, "invitation:accepted", {
         workspaceId: invitation.workspaceId,
@@ -250,32 +244,25 @@ export class InvitationService {
   }
 
   private async ensureWorkosOrganization(workspaceId: string): Promise<string | null> {
+    // Phase 1: Check existing (no connection held after query)
     const existingOrgId = await WorkspaceRepository.getWorkosOrganizationId(this.pool, workspaceId)
     if (existingOrgId) return existingOrgId
 
-    // Advisory lock serializes concurrent org creation per workspace.
-    // Holds one connection during the WorkOS API call (~sub-second, one-time per workspace).
-    return withClient(this.pool, async (client) => {
-      const lockKey = `threa_ensure_workos_org_${workspaceId}`
-      await client.query(sql`SELECT pg_advisory_lock(hashtext(${lockKey}))`)
+    // Phase 2: Fetch workspace + call WorkOS API (no connection held)
+    const workspace = await WorkspaceRepository.findById(this.pool, workspaceId)
+    if (!workspace) return null
 
-      try {
-        // Re-check after acquiring lock — concurrent caller may have created it
-        const orgId = await WorkspaceRepository.getWorkosOrganizationId(client, workspaceId)
-        if (orgId) return orgId
+    try {
+      const org = await this.workosOrgService.createOrganization(workspace.name)
 
-        const workspace = await WorkspaceRepository.findById(client, workspaceId)
-        if (!workspace) return null
+      // Phase 3: Save with optimistic guard — setWorkosOrganizationId uses
+      // WHERE workos_organization_id IS NULL, so concurrent losers no-op
+      await WorkspaceRepository.setWorkosOrganizationId(this.pool, workspaceId, org.id)
+    } catch (error) {
+      logger.error({ err: error, workspaceId }, "Failed to create WorkOS organization")
+    }
 
-        const org = await this.workosOrgService.createOrganization(workspace.name)
-        await WorkspaceRepository.setWorkosOrganizationId(client, workspaceId, org.id)
-        return org.id
-      } catch (error) {
-        logger.error({ err: error, workspaceId }, "Failed to create WorkOS organization")
-        return null
-      } finally {
-        await client.query(sql`SELECT pg_advisory_unlock(hashtext(${lockKey}))`)
-      }
-    })
+    // Re-read to get the winning org ID (handles race where another caller saved first)
+    return WorkspaceRepository.getWorkosOrganizationId(this.pool, workspaceId)
   }
 }

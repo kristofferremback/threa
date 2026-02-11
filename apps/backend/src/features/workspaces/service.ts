@@ -1,5 +1,5 @@
 import { Pool } from "pg"
-import { withTransaction, withClient } from "../../db"
+import { withTransaction, withClient, type Querier } from "../../db"
 import { WorkspaceRepository, Workspace, WorkspaceMember } from "./repository"
 import { MemberRepository, Member } from "./member-repository"
 import { OutboxRepository } from "../../lib/outbox"
@@ -56,69 +56,63 @@ export class WorkspaceService {
         createdBy: params.createdBy,
       })
 
-      // Add creator as owner — generate member ID and slug
-      const user = await UserRepository.findById(client, params.createdBy)
-      const memberSlug = user
-        ? await generateUniqueSlug(user.name, (s) => WorkspaceRepository.memberSlugExists(client, id, s))
-        : `member-${generateMemberId().slice(7, 15)}`
-
-      const mId = generateMemberId()
-      await WorkspaceRepository.addMember(client, {
-        id: mId,
+      await this.createMemberInTransaction(client, {
         workspaceId: id,
         userId: params.createdBy,
-        slug: memberSlug,
-        name: user?.name ?? "",
         role: "owner",
       })
-
-      // System stream created atomically with member — no upsert needed
-      const sId = streamId()
-      const stream = await StreamRepository.insertSystemStream(client, { id: sId, workspaceId: id, createdBy: mId })
-      await StreamMemberRepository.insert(client, sId, mId)
-      await OutboxRepository.insert(client, "stream:created", { workspaceId: id, streamId: sId, stream })
 
       return ws
     })
   }
 
-  async addMember(
-    workspaceId: string,
-    userId: string,
-    role: WorkspaceMember["role"] = "member"
-  ): Promise<WorkspaceMember> {
+  async addMember(wsId: string, userId: string, role: WorkspaceMember["role"] = "member"): Promise<WorkspaceMember> {
     return withTransaction(this.pool, async (client) => {
-      const user = await UserRepository.findById(client, userId)
-      const memberSlug = user
-        ? await generateUniqueSlug(user.name, (s) => WorkspaceRepository.memberSlugExists(client, workspaceId, s))
-        : `member-${generateMemberId().slice(7, 15)}`
-
-      const m = await WorkspaceRepository.addMember(client, {
-        id: generateMemberId(),
-        workspaceId,
-        userId,
-        slug: memberSlug,
-        name: user?.name ?? "",
-        role,
-      })
-
-      // Look up full member for outbox event
-      const fullMember = await MemberRepository.findById(client, m.id)
-      if (fullMember) {
-        await OutboxRepository.insert(client, "workspace_member:added", {
-          workspaceId,
-          member: serializeBigInt(fullMember),
-        })
-      }
-
-      // System stream created atomically with member — no upsert needed
-      const sId = streamId()
-      const stream = await StreamRepository.insertSystemStream(client, { id: sId, workspaceId, createdBy: m.id })
-      await StreamMemberRepository.insert(client, sId, m.id)
-      await OutboxRepository.insert(client, "stream:created", { workspaceId, streamId: sId, stream })
-
-      return m
+      return this.createMemberInTransaction(client, { workspaceId: wsId, userId, role })
     })
+  }
+
+  async createMemberInTransaction(
+    client: Querier,
+    params: { workspaceId: string; userId: string; role: WorkspaceMember["role"]; setupCompleted?: boolean }
+  ): Promise<WorkspaceMember> {
+    const user = await UserRepository.findById(client, params.userId)
+    const memberSlug = user
+      ? await generateUniqueSlug(user.name, (s) => WorkspaceRepository.memberSlugExists(client, params.workspaceId, s))
+      : `member-${generateMemberId().slice(7, 15)}`
+
+    const m = await WorkspaceRepository.addMember(client, {
+      id: generateMemberId(),
+      workspaceId: params.workspaceId,
+      userId: params.userId,
+      slug: memberSlug,
+      name: user?.name ?? "",
+      role: params.role,
+      setupCompleted: params.setupCompleted,
+    })
+
+    const fullMember = await MemberRepository.findById(client, m.id)
+    if (fullMember) {
+      await OutboxRepository.insert(client, "workspace_member:added", {
+        workspaceId: params.workspaceId,
+        member: serializeBigInt(fullMember),
+      })
+    }
+
+    const sId = streamId()
+    const stream = await StreamRepository.insertSystemStream(client, {
+      id: sId,
+      workspaceId: params.workspaceId,
+      createdBy: m.id,
+    })
+    await StreamMemberRepository.insert(client, sId, m.id)
+    await OutboxRepository.insert(client, "stream:created", {
+      workspaceId: params.workspaceId,
+      streamId: sId,
+      stream,
+    })
+
+    return m
   }
 
   async removeMember(workspaceId: string, memberId: string): Promise<void> {
