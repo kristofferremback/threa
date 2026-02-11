@@ -86,18 +86,21 @@ function getModelConfig(ctx: EvalContext): { model: string; temperature: number 
   }
 }
 
+const STREAM_TYPE_TO_DB_STREAM_TYPE: Record<
+  CompanionInput["streamType"],
+  (typeof StreamTypes)[keyof typeof StreamTypes]
+> = {
+  scratchpad: StreamTypes.SCRATCHPAD,
+  channel: StreamTypes.CHANNEL,
+  thread: StreamTypes.THREAD,
+  dm: StreamTypes.DM,
+  system: StreamTypes.SYSTEM,
+}
+
 function mapStreamTypeToDbStreamType(
   streamType: CompanionInput["streamType"]
 ): (typeof StreamTypes)[keyof typeof StreamTypes] {
-  return streamType === "scratchpad"
-    ? StreamTypes.SCRATCHPAD
-    : streamType === "channel"
-      ? StreamTypes.CHANNEL
-      : streamType === "thread"
-        ? StreamTypes.THREAD
-        : streamType === "dm"
-          ? StreamTypes.DM
-          : StreamTypes.SCRATCHPAD
+  return STREAM_TYPE_TO_DB_STREAM_TYPE[streamType]
 }
 
 /**
