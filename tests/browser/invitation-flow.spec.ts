@@ -100,11 +100,8 @@ test.describe("Invitation Flow", () => {
 
     // Should land in the workspace — sidebar shows workspace name
     await expect(pageB.getByText(workspaceName)).toBeVisible({ timeout: 10000 })
-    await expect(pageB.getByText("Select a stream from the sidebar")).toBeVisible()
 
-    // Switch to All view to see all streams
-    await pageB.getByRole("button", { name: "All" }).click()
-
+    // User B starts with no streams — empty state is shown, view toggle is hidden.
     // Public channel should NOT be in sidebar (User B is not a member)
     await expect(pageB.getByText(`#${channelName}`)).not.toBeVisible()
 

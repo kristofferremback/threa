@@ -19,7 +19,6 @@ import type { ConfigResolver, ComponentConfig } from "../../../lib/ai/config-res
 import { NoObjectGeneratedError } from "ai"
 
 // Mock generateObject function
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const mockGenerateObject = mock(
   async (): Promise<{ value: any; response: any; usage: any }> => ({
     value: { conversationId: null, confidence: 0.5 },

@@ -93,7 +93,7 @@ export function MemberSetupPage() {
     return () => {
       if (slugCheckTimer.current) clearTimeout(slugCheckTimer.current)
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
 
   const setupMutation = useMutation({
     mutationFn: () =>

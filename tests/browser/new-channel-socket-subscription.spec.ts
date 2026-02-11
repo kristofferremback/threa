@@ -70,8 +70,11 @@ test.describe("New Channel Socket Subscription", () => {
     await userA.page.getByRole("button", { name: "Send" }).click()
     await expect(userA.page.getByRole("main").getByText("Anyone here?")).toBeVisible({ timeout: 5000 })
 
-    // Navigate away to a scratchpad (User A is no longer viewing the channel)
-    await userA.page.getByRole("button", { name: "+ New Scratchpad" }).click()
+    // Navigate away to a scratchpad via quick switcher (User A is no longer viewing the channel)
+    await userA.page.keyboard.press("Meta+k")
+    await expect(userA.page.getByRole("dialog")).toBeVisible()
+    await userA.page.keyboard.type("> New Scratchpad")
+    await userA.page.keyboard.press("Enter")
     await expect(userA.page.getByRole("main").getByText(/Type a message|No messages yet/)).toBeVisible({
       timeout: 5000,
     })
@@ -91,7 +94,7 @@ test.describe("New Channel Socket Subscription", () => {
 
     // Navigate to workspace so workspace member middleware picks up
     await userB.page.goto(`/w/${workspaceId}`)
-    await expect(userB.page.getByRole("button", { name: "+ New Scratchpad" })).toBeVisible({ timeout: 10000 })
+    await expect(userB.page.getByText("Select a stream from the sidebar")).toBeVisible({ timeout: 10000 })
 
     // Join the channel via dev endpoint
     const joinStreamRes = await userB.page.request.post(`/api/dev/workspaces/${workspaceId}/streams/${streamId}/join`)
@@ -164,8 +167,11 @@ test.describe("New Channel Socket Subscription", () => {
     const streamMatch = userA.page.url().match(/\/s\/([^/?]+)/)
     const streamId = streamMatch![1]
 
-    // Navigate away
-    await userA.page.getByRole("button", { name: "+ New Scratchpad" }).click()
+    // Navigate away via quick switcher
+    await userA.page.keyboard.press("Meta+k")
+    await expect(userA.page.getByRole("dialog")).toBeVisible()
+    await userA.page.keyboard.type("> New Scratchpad")
+    await userA.page.keyboard.press("Enter")
     await expect(userA.page.getByRole("main").getByText(/Type a message|No messages yet/)).toBeVisible({
       timeout: 5000,
     })
@@ -178,7 +184,7 @@ test.describe("New Channel Socket Subscription", () => {
       data: { role: "member" },
     })
     await userB.page.goto(`/w/${workspaceId}`)
-    await expect(userB.page.getByRole("button", { name: "+ New Scratchpad" })).toBeVisible({ timeout: 10000 })
+    await expect(userB.page.getByText("Select a stream from the sidebar")).toBeVisible({ timeout: 10000 })
 
     await userB.page.request.post(`/api/dev/workspaces/${workspaceId}/streams/${streamId}/join`)
 

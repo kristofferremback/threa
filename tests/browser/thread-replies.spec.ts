@@ -84,8 +84,8 @@ test.describe("Thread Replies", () => {
     // Send the reply
     await page.keyboard.press("Meta+Enter")
 
-    // Verify the reply appears in the thread panel
-    await expect(page.getByText(replyMessage)).toBeVisible({ timeout: 5000 })
+    // Verify the reply appears in the thread panel (scope to panel to avoid sidebar match)
+    await expect(page.getByTestId("panel").getByText(replyMessage)).toBeVisible({ timeout: 5000 })
 
     // Verify author name appears with the reply (use last instance since it's in the panel)
     await expect(page.getByText(testName).last()).toBeVisible()
@@ -124,8 +124,8 @@ test.describe("Thread Replies", () => {
     await page.keyboard.type(`Reply one ${testId}`)
     await page.keyboard.press("Meta+Enter")
 
-    // Wait for reply to be sent
-    await expect(page.getByText(`Reply one ${testId}`)).toBeVisible({ timeout: 5000 })
+    // Wait for reply to be sent (scope to panel to avoid sidebar match)
+    await expect(page.getByTestId("panel").getByText(`Reply one ${testId}`)).toBeVisible({ timeout: 5000 })
 
     // Close the thread panel to see the main stream
     await page.keyboard.press("Escape")
@@ -172,7 +172,7 @@ test.describe("Thread Replies", () => {
     await page.keyboard.type(reply1)
     await page.keyboard.press("Meta+Enter")
 
-    await expect(page.getByText(reply1)).toBeVisible({ timeout: 5000 })
+    await expect(page.getByTestId("panel").getByText(reply1)).toBeVisible({ timeout: 5000 })
 
     // After first reply, panel transitions from draft to real thread
     // Wait for the transition by checking the "Start a new thread" text disappears
@@ -185,7 +185,7 @@ test.describe("Thread Replies", () => {
     await page.keyboard.type(reply2)
     await page.keyboard.press("Meta+Enter")
 
-    await expect(page.getByText(reply2)).toBeVisible({ timeout: 5000 })
+    await expect(page.getByTestId("panel").getByText(reply2)).toBeVisible({ timeout: 5000 })
 
     // Send third reply
     await threadEditor2.click()
@@ -193,7 +193,7 @@ test.describe("Thread Replies", () => {
     await page.keyboard.type(reply3)
     await page.keyboard.press("Meta+Enter")
 
-    await expect(page.getByText(reply3)).toBeVisible({ timeout: 5000 })
+    await expect(page.getByTestId("panel").getByText(reply3)).toBeVisible({ timeout: 5000 })
 
     // All three replies were successfully sent and appeared
     // (verified by the toBeVisible checks after each send above)
@@ -242,7 +242,7 @@ test.describe("Thread Replies", () => {
     await page.keyboard.type(reply1)
     await page.keyboard.press("Meta+Enter")
 
-    await expect(page.getByText(reply1).first()).toBeVisible({ timeout: 5000 })
+    await expect(page.getByTestId("panel").getByText(reply1)).toBeVisible({ timeout: 5000 })
 
     // Close the thread panel
     await page.keyboard.press("Escape")
@@ -257,7 +257,7 @@ test.describe("Thread Replies", () => {
     await threadIndicator.click()
 
     // Thread should reopen with existing reply visible
-    await expect(page.getByText(reply1).first()).toBeVisible({ timeout: 3000 })
+    await expect(page.getByTestId("panel").getByText(reply1)).toBeVisible({ timeout: 3000 })
 
     // Send another reply
     await threadEditor.click()
@@ -265,11 +265,11 @@ test.describe("Thread Replies", () => {
     await page.keyboard.type(reply2)
     await page.keyboard.press("Meta+Enter")
 
-    await expect(page.getByText(reply2).first()).toBeVisible({ timeout: 5000 })
+    await expect(page.getByTestId("panel").getByText(reply2)).toBeVisible({ timeout: 5000 })
 
     // Both replies should be visible
-    await expect(page.getByText(reply1).first()).toBeVisible()
-    await expect(page.getByText(reply2).first()).toBeVisible()
+    await expect(page.getByTestId("panel").getByText(reply1)).toBeVisible()
+    await expect(page.getByTestId("panel").getByText(reply2)).toBeVisible()
 
     // Close and verify reply count updated to 2
     await page.keyboard.press("Escape")
