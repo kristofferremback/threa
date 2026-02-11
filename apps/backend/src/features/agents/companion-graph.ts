@@ -4,11 +4,20 @@ import type { ChatOpenAI } from "@langchain/openai"
 import type { BaseMessage } from "@langchain/core/messages"
 import type { StructuredToolInterface } from "@langchain/core/tools"
 import type { RunnableConfig } from "@langchain/core/runnables"
-import { AgentToolNames, type AuthorType, type SourceItem, type AgentStepType, type TraceSource } from "@threa/types"
+import {
+  AgentToolNames,
+  type AuthorType,
+  type SourceItem,
+  type AgentStepType,
+  type TraceSource,
+  type StreamType,
+} from "@threa/types"
 import { logger } from "../../lib/logger"
 import type { SendMessageInputWithSources, SendMessageResult, WorkspaceResearchToolResult } from "./tools"
 import { isMultimodalToolResult } from "./tools"
+import type { ResearcherResult } from "./researcher"
 import { protectToolOutputBlocks, protectToolOutputText, type MultimodalContentBlock } from "./tool-trust-boundary"
+import { shouldEagerlyPrefetchWorkspaceResearch } from "./workspace-research-eagerness"
 
 /**
  * Parameters for recording a step in the agent trace.
@@ -265,6 +274,8 @@ export interface CompanionGraphCallbacks {
   updateLastSeenSequence: (sessionId: string, sequence: bigint) => Promise<void>
   /** Send a message with optional sources (used by ensure_response node) */
   sendMessageWithSources: (input: SendMessageInputWithSources) => Promise<SendMessageResult>
+  /** Run workspace research for eager prefetch and tool-backed research */
+  runWorkspaceResearch?: () => Promise<ResearcherResult>
   /** Record a step in the agent trace (optional - if not provided, steps are not recorded) */
   recordStep?: (params: RecordStepParams) => Promise<void>
   /** Await attachment processing for messages (optional - for multi-modal support) */
@@ -311,6 +322,14 @@ export const CompanionState = Annotation.Root({
   streamId: Annotation<string>(),
   sessionId: Annotation<string>(),
   personaId: Annotation<string>(),
+  streamType: Annotation<StreamType | undefined>({
+    default: () => undefined,
+    reducer: (_, next) => next,
+  }),
+  latestUserMessage: Annotation<string>({
+    default: () => "",
+    reducer: (_, next) => next,
+  }),
   lastProcessedSequence: Annotation<bigint>({
     default: () => BigInt(0),
     reducer: (_, next) => next,
@@ -755,6 +774,98 @@ function mergeSourceItems(existing: SourceItem[], incoming: SourceItem[]): Sourc
   }
 
   return merged
+}
+
+function toSourceItems(
+  sources: Array<{ title: string; url: string; type: "web" | "workspace"; snippet?: string }>
+): SourceItem[] {
+  return sources
+    .filter((source) => source.title && source.url)
+    .map((source) => ({
+      title: source.title,
+      url: source.url,
+      type: source.type,
+      snippet: source.snippet,
+    }))
+}
+
+function createPrefetchWorkspaceResearchNode() {
+  return async (state: CompanionStateType, config: RunnableConfig): Promise<Partial<CompanionStateType>> => {
+    const callbacks = getCallbacks(config)
+    if (!callbacks.runWorkspaceResearch) {
+      return {}
+    }
+
+    const shouldPrefetch = shouldEagerlyPrefetchWorkspaceResearch({
+      streamType: state.streamType,
+      latestUserMessage: state.latestUserMessage,
+    })
+    if (!shouldPrefetch) {
+      return {}
+    }
+
+    const startTime = Date.now()
+    try {
+      const researchResult = await callbacks.runWorkspaceResearch()
+      const durationMs = Date.now() - startTime
+      const prefetchedSources = toSourceItems(researchResult.sources)
+      const mergedSources = mergeSourceItems(state.sources, prefetchedSources)
+      const retrievedContext = researchResult.retrievedContext?.trim()
+        ? researchResult.retrievedContext.trim()
+        : state.retrievedContext
+
+      logger.info(
+        {
+          streamId: state.streamId,
+          sessionId: state.sessionId,
+          shouldSearch: researchResult.shouldSearch,
+          sourceCount: prefetchedSources.length,
+          memoCount: researchResult.memos.length,
+          messageCount: researchResult.messages.length,
+          attachmentCount: researchResult.attachments?.length ?? 0,
+        },
+        "Eager workspace memory check completed"
+      )
+
+      if (callbacks.recordStep) {
+        await callbacks.recordStep({
+          stepType: "workspace_search",
+          content: JSON.stringify({
+            mode: "prefetch",
+            shouldSearch: researchResult.shouldSearch,
+            sourceCount: prefetchedSources.length,
+            memoCount: researchResult.memos.length,
+            messageCount: researchResult.messages.length,
+            attachmentCount: researchResult.attachments?.length ?? 0,
+          }),
+          durationMs,
+          sources: prefetchedSources.map((source) => ({
+            type: (source.type ?? "workspace") as TraceSource["type"],
+            title: source.title,
+            url: source.url,
+            snippet: source.snippet,
+          })),
+        })
+      }
+
+      return {
+        sources: mergedSources,
+        retrievedContext,
+      }
+    } catch (error) {
+      logger.warn(
+        { error, streamId: state.streamId, sessionId: state.sessionId },
+        "Eager workspace memory check failed; continuing without prefetch"
+      )
+      if (callbacks.recordStep) {
+        await callbacks.recordStep({
+          stepType: "tool_error",
+          content: `workspace_research prefetch failed: ${String(error)}`,
+        })
+      }
+      return {}
+    }
+  }
 }
 
 /**
@@ -1255,12 +1366,12 @@ function createEnsureResponseNode() {
  * Create the companion agent graph.
  *
  * Graph structure:
- *   START → agent → (has tool calls?)
- *                    → yes → tools → finalize_or_reconsider → agent (loop)
- *                    → no → check_final_messages → (new messages?)
- *                                                 → yes → agent
- *                                                 → (used web_search?) → yes → synthesize → ensure_response → END
- *                                                                      → no → ensure_response → END
+ *   START → prefetch_workspace_research → agent → (has tool calls?)
+ *                                         → yes → tools → finalize_or_reconsider → agent (loop)
+ *                                         → no → check_final_messages → (new messages?)
+ *                                                                      → yes → agent
+ *                                                                      → (used web_search?) → yes → synthesize → ensure_response → END
+ *                                                                                           → no → ensure_response → END
  *
  * CRITICAL: Tool calls are ALWAYS executed before checking for new messages.
  * This prevents tool calls from being dropped when users send additional messages
@@ -1272,19 +1383,22 @@ function createEnsureResponseNode() {
  * - If new messages arrived: gives the agent a chance to reconsider its response
  * This mimics human reconsideration behavior when new context arrives.
  *
- * Workspace knowledge retrieval is on-demand via the workspace_research tool.
+ * Workspace knowledge retrieval runs as an eager graph prefetch when heuristics indicate
+ * it should happen, while remaining available on-demand via the workspace_research tool.
  * The synthesize node formats responses with proper source citations when web search was used.
  * The ensure_response node guarantees we always send at least one message.
  */
 export function createCompanionGraph(model: ChatOpenAI, tools: StructuredToolInterface[] = []) {
   const graph = new StateGraph(CompanionState)
+    .addNode("prefetch_workspace_research", createPrefetchWorkspaceResearchNode())
     .addNode("agent", createAgentNode(model, tools))
     .addNode("finalize_or_reconsider", createFinalizeOrReconsiderNode())
     .addNode("check_final_messages", createCheckNewMessagesNode()) // Same logic, different routing
     .addNode("tools", createToolsNode(tools))
     .addNode("synthesize", createSynthesizeNode(model))
     .addNode("ensure_response", createEnsureResponseNode())
-    .addEdge("__start__", "agent")
+    .addEdge("__start__", "prefetch_workspace_research")
+    .addEdge("prefetch_workspace_research", "agent")
     .addConditionalEdges("agent", routeAfterAgent)
     // Tools execute, then finalize_or_reconsider handles pending messages and new context
     .addConditionalEdges("tools", routeAfterTools)

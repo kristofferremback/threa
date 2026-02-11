@@ -34,13 +34,12 @@ import {
   type LoadFileSectionCallbacks,
   type LoadExcelSectionCallbacks,
 } from "./tools"
-import { AgentToolNames, type SourceItem, type StreamType, type TraceSource } from "@threa/types"
+import { AgentToolNames, type StreamType } from "@threa/types"
 import type { AI, CostRecorder } from "../../lib/ai/ai"
 import { getCostTrackingCallbacks } from "../../lib/ai/ai"
 import { getDebugCallbacks } from "../../lib/ai/debug-callback"
 import { logger } from "../../lib/logger"
 import { getLangfuseCallbacks } from "../../lib/langfuse"
-import { shouldEagerlyPrefetchWorkspaceResearch } from "./workspace-research-eagerness"
 
 // Re-export for consumers
 export type { RecordStepParams, NewMessageInfo }
@@ -82,17 +81,6 @@ function getLatestUserMessageText(messages: GenerateResponseParams["messages"]):
   }
 
   return ""
-}
-
-function toSourceItems(
-  sources: Array<{ title: string; url: string; type: "web" | "workspace"; snippet?: string }>
-): SourceItem[] {
-  return sources.map((source) => ({
-    title: source.title,
-    url: source.url,
-    type: source.type,
-    snippet: source.snippet,
-  }))
 }
 
 /**
@@ -309,72 +297,7 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
       "Tools configured for session"
     )
 
-    let initialSources: SourceItem[] = []
-    let initialRetrievedContext: string | null = null
-
     const latestUserMessageText = getLatestUserMessageText(messages)
-    const shouldPrefetchWorkspaceResearch =
-      runResearcher != null &&
-      shouldEagerlyPrefetchWorkspaceResearch({
-        streamType,
-        latestUserMessage: latestUserMessageText,
-      })
-
-    if (shouldPrefetchWorkspaceResearch && runResearcher) {
-      const startTime = Date.now()
-      try {
-        const prefetchResult = await runResearcher()
-        const durationMs = Date.now() - startTime
-        const prefetchedSources = toSourceItems(prefetchResult.sources)
-
-        initialSources = prefetchedSources
-        initialRetrievedContext = prefetchResult.retrievedContext?.trim()
-          ? prefetchResult.retrievedContext.trim()
-          : null
-
-        logger.info(
-          {
-            streamId,
-            sessionId,
-            shouldSearch: prefetchResult.shouldSearch,
-            sourceCount: prefetchedSources.length,
-            memoCount: prefetchResult.memos.length,
-            messageCount: prefetchResult.messages.length,
-            attachmentCount: prefetchResult.attachments?.length ?? 0,
-          },
-          "Eager workspace memory check completed"
-        )
-
-        if (callbacks.recordStep) {
-          await callbacks.recordStep({
-            stepType: "workspace_search",
-            content: JSON.stringify({
-              mode: "prefetch",
-              shouldSearch: prefetchResult.shouldSearch,
-              sourceCount: prefetchedSources.length,
-              memoCount: prefetchResult.memos.length,
-              messageCount: prefetchResult.messages.length,
-              attachmentCount: prefetchResult.attachments?.length ?? 0,
-            }),
-            durationMs,
-            sources: prefetchedSources.map((source) => ({
-              type: (source.type ?? "workspace") as TraceSource["type"],
-              title: source.title,
-              url: source.url,
-              snippet: source.snippet,
-            })),
-          })
-        }
-      } catch (error) {
-        logger.warn({ error, streamId, sessionId }, "Eager workspace memory check failed; continuing without prefetch")
-        if (callbacks.recordStep) {
-          await callbacks.recordStep({
-            stepType: "tool_error",
-            content: `workspace_research prefetch failed: ${String(error)}`,
-          })
-        }
-      }
-    }
 
     // Create and compile graph with checkpointer
     const graph = createCompanionGraph(model, tools)
@@ -393,6 +316,7 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
         messagesSentCount++
         return result
       },
+      runWorkspaceResearch: runResearcher,
       recordStep: callbacks.recordStep,
       awaitAttachmentProcessing: callbacks.awaitAttachmentProcessing,
     }
@@ -417,8 +341,10 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
             iteration: 0,
             messagesSent: 0,
             hasNewMessages: false,
-            sources: initialSources,
-            retrievedContext: initialRetrievedContext,
+            sources: [],
+            retrievedContext: null,
+            streamType,
+            latestUserMessage: latestUserMessageText,
           },
           {
             runName: "companion-agent",
