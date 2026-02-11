@@ -3,10 +3,18 @@ import { logger } from "../lib/logger"
 import type { WorkosOrgService } from "./workos-org-service"
 
 export class StubWorkosOrgService implements WorkosOrgService {
-  async createOrganization(name: string): Promise<{ id: string }> {
+  private orgsByExternalId = new Map<string, string>()
+
+  async createOrganization(params: { name: string; externalId: string }): Promise<{ id: string }> {
     const id = `org_stub_${ulid()}`
-    logger.info({ orgId: id, name }, "Stub: Created organization")
+    this.orgsByExternalId.set(params.externalId, id)
+    logger.info({ orgId: id, name: params.name, externalId: params.externalId }, "Stub: Created organization")
     return { id }
+  }
+
+  async getOrganizationByExternalId(externalId: string): Promise<{ id: string } | null> {
+    const id = this.orgsByExternalId.get(externalId)
+    return id ? { id } : null
   }
 
   async sendInvitation(params: {

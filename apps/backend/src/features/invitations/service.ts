@@ -244,18 +244,25 @@ export class InvitationService {
   }
 
   private async ensureWorkosOrganization(workspaceId: string): Promise<string | null> {
-    // Phase 1: Check existing (no connection held after query)
+    // Phase 1: Check local DB (no connection held after query)
     const existingOrgId = await WorkspaceRepository.getWorkosOrganizationId(this.pool, workspaceId)
     if (existingOrgId) return existingOrgId
 
-    // Phase 2: Fetch workspace + call WorkOS API (no connection held)
+    // Phase 2: Check WorkOS by external ID — survives local DB wipes
+    const existingOrg = await this.workosOrgService.getOrganizationByExternalId(workspaceId)
+    if (existingOrg) {
+      await WorkspaceRepository.setWorkosOrganizationId(this.pool, workspaceId, existingOrg.id)
+      return existingOrg.id
+    }
+
+    // Phase 3: Create new org in WorkOS (no connection held)
     const workspace = await WorkspaceRepository.findById(this.pool, workspaceId)
     if (!workspace) return null
 
     try {
-      const org = await this.workosOrgService.createOrganization(workspace.name)
+      const org = await this.workosOrgService.createOrganization({ name: workspace.name, externalId: workspaceId })
 
-      // Phase 3: Save with optimistic guard — setWorkosOrganizationId uses
+      // Save with optimistic guard — setWorkosOrganizationId uses
       // WHERE workos_organization_id IS NULL, so concurrent losers no-op
       await WorkspaceRepository.setWorkosOrganizationId(this.pool, workspaceId, org.id)
     } catch (error) {

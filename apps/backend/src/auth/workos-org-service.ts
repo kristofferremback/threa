@@ -3,7 +3,8 @@ import { logger } from "../lib/logger"
 import type { WorkosConfig } from "../lib/env"
 
 export interface WorkosOrgService {
-  createOrganization(name: string): Promise<{ id: string }>
+  createOrganization(params: { name: string; externalId: string }): Promise<{ id: string }>
+  getOrganizationByExternalId(externalId: string): Promise<{ id: string } | null>
   sendInvitation(params: {
     organizationId: string
     email: string
@@ -20,12 +21,22 @@ export class WorkosOrgServiceImpl implements WorkosOrgService {
     this.workos = new WorkOS(config.apiKey, { clientId: config.clientId })
   }
 
-  async createOrganization(name: string): Promise<{ id: string }> {
+  async createOrganization(params: { name: string; externalId: string }): Promise<{ id: string }> {
     const org = await this.workos.organizations.createOrganization({
-      name,
+      name: params.name,
+      externalId: params.externalId,
     })
-    logger.info({ orgId: org.id }, "Created WorkOS organization")
+    logger.info({ orgId: org.id, externalId: params.externalId }, "Created WorkOS organization")
     return { id: org.id }
+  }
+
+  async getOrganizationByExternalId(externalId: string): Promise<{ id: string } | null> {
+    try {
+      const org = await this.workos.organizations.getOrganizationByExternalId(externalId)
+      return { id: org.id }
+    } catch {
+      return null
+    }
   }
 
   async sendInvitation(params: {
