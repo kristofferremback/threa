@@ -19,6 +19,7 @@ import { STREAM_NAMING_MODEL_ID, STREAM_NAMING_TEMPERATURE } from "../../feature
 import { MEMO_MODEL_ID, MEMO_TEMPERATURES } from "../../features/memos"
 import {
   RESEARCHER_MODEL_ID,
+  RESEARCHER_TEMPERATURE,
   RESEARCHER_MAX_ITERATIONS,
   RESEARCHER_MAX_RESULTS_PER_SEARCH,
   COMPANION_MODEL_ID,
@@ -65,6 +66,7 @@ function buildDefaultConfigs(): Map<string, ComponentConfig> {
 
   configs.set(COMPONENT_PATHS.COMPANION_RESEARCHER, {
     modelId: RESEARCHER_MODEL_ID,
+    temperature: RESEARCHER_TEMPERATURE,
     maxIterations: RESEARCHER_MAX_ITERATIONS,
     maxResultsPerSearch: RESEARCHER_MAX_RESULTS_PER_SEARCH,
   })

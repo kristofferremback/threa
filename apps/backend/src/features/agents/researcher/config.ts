@@ -7,6 +7,8 @@
 
 /** Model for researcher decisions - use fast model for structured output */
 export const RESEARCHER_MODEL_ID = "openrouter:openai/gpt-oss-120b"
+/** Lower temperature to reduce decision variance in retrieval planning */
+export const RESEARCHER_TEMPERATURE = 0.1
 
 /** Maximum iterations for additional search queries */
 export const RESEARCHER_MAX_ITERATIONS = 5

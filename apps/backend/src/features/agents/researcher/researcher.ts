@@ -1,3 +1,4 @@
+import { Annotation, END, StateGraph } from "@langchain/langgraph"
 import type { Pool } from "pg"
 import { z } from "zod"
 import { withClient } from "../../../db"
@@ -106,25 +107,77 @@ const evaluationSchema = z.object({
 })
 
 type SearchQuery = NonNullable<z.infer<typeof decisionWithQueriesSchema>["queries"]>[number]
+type ResearcherSearchPhase = "initial" | "additional"
 
-function buildBaselineQueries(message: string): SearchQuery[] {
+function buildQueryVariants(message: string): string[] {
   const trimmed = message.trim()
   if (!trimmed) {
     return []
   }
 
-  return [
+  const variants: string[] = [trimmed]
+  const seen = new Set([trimmed.toLowerCase()])
+  const tokens = trimmed.match(/[\p{L}\p{N}]+/gu) ?? []
+  const significantTokens = tokens.filter((token) => token.length >= 4)
+
+  const candidateVariants: string[] = []
+  if (significantTokens.length >= 2) {
+    candidateVariants.push(significantTokens.slice(-2).join(" "))
+    candidateVariants.push(significantTokens.slice(0, 2).join(" "))
+    candidateVariants.push(significantTokens.slice(0, 6).join(" "))
+    candidateVariants.push(significantTokens.slice(-6).join(" "))
+  }
+  if (tokens.length >= 2) {
+    candidateVariants.push(tokens.slice(-4).join(" "))
+  }
+
+  for (const candidate of candidateVariants) {
+    const normalized = candidate.trim()
+    if (!normalized) continue
+    const key = normalized.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    variants.push(normalized)
+  }
+
+  return variants
+}
+
+function buildBaselineQueries(message: string): SearchQuery[] {
+  const variants = buildQueryVariants(message)
+  if (variants.length === 0) {
+    return []
+  }
+  const primaryQuery = variants[0]
+  const additionalQueries = variants.slice(1, 5)
+
+  const baselineQueries: SearchQuery[] = [
     {
       target: "memos",
       type: "semantic",
-      query: trimmed,
+      query: primaryQuery,
     },
     {
       target: "messages",
       type: "semantic",
-      query: trimmed,
+      query: primaryQuery,
+    },
+    {
+      target: "messages",
+      type: "exact",
+      query: primaryQuery,
     },
   ]
+
+  for (const query of additionalQueries) {
+    baselineQueries.push({
+      target: "messages",
+      type: "exact",
+      query,
+    })
+  }
+
+  return baselineQueries
 }
 
 function appendBaselineQueries(existing: SearchQuery[], message: string): SearchQuery[] {
@@ -138,6 +191,102 @@ function appendBaselineQueries(existing: SearchQuery[], message: string): Search
     }
     seen.add(key)
     merged.push(query)
+  }
+
+  return merged
+}
+
+const ResearcherLoopState = Annotation.Root({
+  contextSummary: Annotation<string>(),
+  config: Annotation<ResearcherConfig>(),
+  workspaceId: Annotation<string>(),
+  messageId: Annotation<string>(),
+  triggerMessageText: Annotation<string>(),
+  maxIterations: Annotation<number>(),
+  shouldSearch: Annotation<boolean>({
+    default: () => false,
+    reducer: (_, next) => next,
+  }),
+  decisionReasoning: Annotation<string | null>({
+    default: () => null,
+    reducer: (_, next) => next,
+  }),
+  pendingQueries: Annotation<SearchQuery[]>({
+    default: () => [],
+    reducer: (_, next) => next,
+  }),
+  searchPhase: Annotation<ResearcherSearchPhase>({
+    default: () => "initial",
+    reducer: (_, next) => next,
+  }),
+  iteration: Annotation<number>({
+    default: () => 0,
+    reducer: (_, next) => next,
+  }),
+  done: Annotation<boolean>({
+    default: () => false,
+    reducer: (_, next) => next,
+  }),
+  allMemos: Annotation<EnrichedMemoResult[]>({
+    default: () => [],
+    reducer: (_, next) => next,
+  }),
+  allMessages: Annotation<EnrichedMessageResult[]>({
+    default: () => [],
+    reducer: (_, next) => next,
+  }),
+  allAttachments: Annotation<EnrichedAttachmentResult[]>({
+    default: () => [],
+    reducer: (_, next) => next,
+  }),
+  searchesPerformed: Annotation<ResearcherCachedResult["searchesPerformed"]>({
+    default: () => [],
+    reducer: (_, next) => next,
+  }),
+})
+
+type ResearcherLoopStateType = typeof ResearcherLoopState.State
+
+function mergeMemoResults(existing: EnrichedMemoResult[], incoming: EnrichedMemoResult[]): EnrichedMemoResult[] {
+  const merged = [...existing]
+  const seen = new Set(existing.map((memo) => memo.memo.id))
+
+  for (const memo of incoming) {
+    if (seen.has(memo.memo.id)) continue
+    seen.add(memo.memo.id)
+    merged.push(memo)
+  }
+
+  return merged
+}
+
+function mergeMessageResults(
+  existing: EnrichedMessageResult[],
+  incoming: EnrichedMessageResult[]
+): EnrichedMessageResult[] {
+  const merged = [...existing]
+  const seen = new Set(existing.map((message) => message.id))
+
+  for (const message of incoming) {
+    if (seen.has(message.id)) continue
+    seen.add(message.id)
+    merged.push(message)
+  }
+
+  return merged
+}
+
+function mergeAttachmentResults(
+  existing: EnrichedAttachmentResult[],
+  incoming: EnrichedAttachmentResult[]
+): EnrichedAttachmentResult[] {
+  const merged = [...existing]
+  const seen = new Set(existing.map((attachment) => attachment.id))
+
+  for (const attachment of incoming) {
+    if (seen.has(attachment.id)) continue
+    seen.add(attachment.id)
+    merged.push(attachment)
   }
 
   return merged
@@ -264,142 +413,221 @@ export class Researcher {
     accessSpec: AgentAccessSpec,
     accessibleStreamIds: string[]
   ): Promise<ResearcherResult> {
-    const { ai, configResolver, embeddingService } = this.deps
+    const { configResolver, embeddingService } = this.deps
     const { workspaceId, triggerMessage, conversationHistory, invokingMemberId } = input
 
     // Resolve config for researcher
     const config = (await configResolver.resolve(COMPONENT_PATHS.COMPANION_RESEARCHER)) as ResearcherConfig
 
-    // Step 1: Decide if search is needed AND generate queries in one call (AI, no DB)
     const contextSummary = this.buildContextSummary(triggerMessage, conversationHistory)
-    const decision = await this.decideAndGenerateQueries({
+    const maxIterations = config.maxIterations ?? RESEARCHER_MAX_ITERATIONS
+
+    const decideNode = async (state: ResearcherLoopStateType): Promise<Partial<ResearcherLoopStateType>> => {
+      const decision = await this.decideAndGenerateQueries({
+        contextSummary: state.contextSummary,
+        config: state.config,
+        workspaceId: state.workspaceId,
+        messageId: state.messageId,
+      })
+      const shouldSearch = decision.needsSearch
+
+      let initialQueries: SearchQuery[] = decision.queries?.length ? decision.queries : []
+      if (!shouldSearch && decision.reasoning === "Decision failed") {
+        initialQueries = buildBaselineQueries(state.triggerMessageText)
+        if (initialQueries.length > 0) {
+          logger.warn(
+            { messageId: state.messageId },
+            "Researcher decision failed; falling back to baseline retrieval queries"
+          )
+        }
+      }
+      if (shouldSearch && initialQueries.length === 0) {
+        initialQueries = buildBaselineQueries(state.triggerMessageText)
+        logger.info(
+          { messageId: state.messageId, reasoning: decision.reasoning },
+          "Researcher generated baseline queries because model did not return any queries"
+        )
+      }
+      const effectiveShouldSearch = shouldSearch || initialQueries.length > 0
+
+      if (!effectiveShouldSearch || initialQueries.length === 0) {
+        logger.debug(
+          {
+            messageId: state.messageId,
+            reasoning: decision.reasoning,
+          },
+          "Researcher decided no search needed"
+        )
+        return {
+          shouldSearch: false,
+          decisionReasoning: decision.reasoning,
+          done: true,
+          pendingQueries: [],
+        }
+      }
+
+      return {
+        shouldSearch: effectiveShouldSearch,
+        decisionReasoning: decision.reasoning,
+        done: false,
+        pendingQueries: appendBaselineQueries(initialQueries, state.triggerMessageText),
+        searchPhase: "initial",
+      }
+    }
+
+    const executeQueriesNode = async (state: ResearcherLoopStateType): Promise<Partial<ResearcherLoopStateType>> => {
+      if (state.pendingQueries.length === 0) {
+        logger.warn({ messageId: state.messageId }, "Researcher execute node ran without pending queries")
+        return { done: true }
+      }
+
+      const searchResults = await this.executeQueries(
+        pool,
+        state.pendingQueries,
+        state.workspaceId,
+        accessibleStreamIds,
+        embeddingService,
+        invokingMemberId,
+        true,
+        new Set([triggerMessage.id])
+      )
+
+      return {
+        allMemos: mergeMemoResults(state.allMemos, searchResults.memos),
+        allMessages: mergeMessageResults(state.allMessages, searchResults.messages),
+        allAttachments: mergeAttachmentResults(state.allAttachments, searchResults.attachments),
+        searchesPerformed: [...state.searchesPerformed, ...searchResults.searches],
+        pendingQueries: [],
+        iteration: state.searchPhase === "additional" ? state.iteration + 1 : state.iteration,
+      }
+    }
+
+    const evaluateNode = async (state: ResearcherLoopStateType): Promise<Partial<ResearcherLoopStateType>> => {
+      if (!state.shouldSearch) {
+        return { done: true }
+      }
+
+      if (state.iteration >= state.maxIterations) {
+        logger.debug(
+          {
+            messageId: state.messageId,
+            iteration: state.iteration,
+            maxIterations: state.maxIterations,
+          },
+          "Researcher reached max iterations"
+        )
+        return { done: true }
+      }
+
+      const evaluation = await this.evaluateResults(
+        state.contextSummary,
+        state.allMemos,
+        state.allMessages,
+        state.allAttachments,
+        state.config,
+        state.workspaceId,
+        state.messageId
+      )
+      const hasAnyResults = state.allMemos.length > 0 || state.allMessages.length > 0 || state.allAttachments.length > 0
+      if (evaluation.reasoning === "Evaluation failed" && !hasAnyResults) {
+        const fallbackQueries = buildBaselineQueries(state.triggerMessageText)
+        if (fallbackQueries.length > 0) {
+          logger.warn(
+            { messageId: state.messageId, iteration: state.iteration },
+            "Researcher evaluation failed with no results; retrying with baseline queries"
+          )
+          return {
+            done: false,
+            decisionReasoning: evaluation.reasoning,
+            searchPhase: "additional",
+            pendingQueries: fallbackQueries,
+          }
+        }
+      }
+
+      if (evaluation.sufficient || !evaluation.additionalQueries?.length) {
+        logger.debug(
+          {
+            messageId: state.messageId,
+            iteration: state.iteration,
+            reasoning: evaluation.reasoning,
+          },
+          "Researcher found sufficient results"
+        )
+        return { done: true, decisionReasoning: evaluation.reasoning }
+      }
+
+      return {
+        done: false,
+        decisionReasoning: evaluation.reasoning,
+        searchPhase: "additional",
+        pendingQueries: evaluation.additionalQueries,
+      }
+    }
+
+    const routeAfterDecide = (state: ResearcherLoopStateType): "execute_queries" | "finalize" => {
+      return state.done ? "finalize" : "execute_queries"
+    }
+
+    const routeAfterEvaluate = (state: ResearcherLoopStateType): "execute_queries" | "finalize" => {
+      return state.done ? "finalize" : "execute_queries"
+    }
+
+    const loopGraph = new StateGraph(ResearcherLoopState)
+      .addNode("decide", decideNode)
+      .addNode("execute_queries", executeQueriesNode)
+      .addNode("evaluate", evaluateNode)
+      .addNode("finalize", async () => ({}))
+      .addEdge("__start__", "decide")
+      .addConditionalEdges("decide", routeAfterDecide)
+      .addEdge("execute_queries", "evaluate")
+      .addConditionalEdges("evaluate", routeAfterEvaluate)
+      .addEdge("finalize", END)
+      .compile()
+
+    const finalState = await loopGraph.invoke({
       contextSummary,
       config,
       workspaceId,
       messageId: triggerMessage.id,
-    })
-    const shouldSearch = decision.needsSearch
+      triggerMessageText: triggerMessage.contentMarkdown,
+      maxIterations,
+      shouldSearch: false,
+      decisionReasoning: null,
+      pendingQueries: [],
+      searchPhase: "initial",
+      iteration: 0,
+      done: false,
+      allMemos: [],
+      allMessages: [],
+      allAttachments: [],
+      searchesPerformed: [],
+    } satisfies Partial<ResearcherLoopStateType>)
 
-    let initialQueries: SearchQuery[] = decision.queries?.length ? decision.queries : []
-    if (shouldSearch && initialQueries.length === 0) {
-      initialQueries = buildBaselineQueries(triggerMessage.contentMarkdown)
-      logger.info(
-        { messageId: triggerMessage.id, reasoning: decision.reasoning },
-        "Researcher generated baseline queries because model did not return any queries"
-      )
-    }
-
-    if (!shouldSearch || initialQueries.length === 0) {
-      logger.debug(
-        {
-          messageId: triggerMessage.id,
-          reasoning: decision.reasoning,
-        },
-        "Researcher decided no search needed"
-      )
+    if (!finalState.shouldSearch) {
       return this.emptyResult()
     }
 
-    initialQueries = appendBaselineQueries(initialQueries, triggerMessage.contentMarkdown)
-
-    // Execute searches and collect results
-    let allMemos: EnrichedMemoResult[] = []
-    let allMessages: EnrichedMessageResult[] = []
-    let allAttachments: EnrichedAttachmentResult[] = []
-    const searchesPerformed: ResearcherCachedResult["searchesPerformed"] = []
-
-    // Execute initial queries (uses pool.query for DB operations, fast ~50-100ms)
-    const initialResults = await this.executeQueries(
-      pool,
-      initialQueries,
-      workspaceId,
-      accessibleStreamIds,
-      embeddingService,
-      invokingMemberId,
-      true
+    const sources = this.buildSources(
+      finalState.allMemos,
+      finalState.allMessages,
+      finalState.allAttachments,
+      workspaceId
     )
-    allMemos = [...allMemos, ...initialResults.memos]
-    allMessages = [...allMessages, ...initialResults.messages]
-    allAttachments = [...allAttachments, ...initialResults.attachments]
-    searchesPerformed.push(...initialResults.searches)
-
-    // Step 3: Iterative evaluation - let the researcher decide if more searches are needed
-    const maxIterations = config.maxIterations ?? RESEARCHER_MAX_ITERATIONS
-    let iteration = 0
-    while (iteration < maxIterations) {
-      // AI evaluation (no DB, 1-5 seconds)
-      const evaluation = await this.evaluateResults(
-        contextSummary,
-        allMemos,
-        allMessages,
-        allAttachments,
-        config,
-        workspaceId,
-        triggerMessage.id
-      )
-
-      if (evaluation.sufficient || !evaluation.additionalQueries?.length) {
-        logger.debug(
-          { messageId: triggerMessage.id, iterations: iteration + 1, reasoning: evaluation.reasoning },
-          "Researcher found sufficient results"
-        )
-        break
-      }
-
-      // Execute additional queries (uses pool.query, fast ~50-100ms)
-      const additionalResults = await this.executeQueries(
-        pool,
-        evaluation.additionalQueries,
-        workspaceId,
-        accessibleStreamIds,
-        embeddingService,
-        invokingMemberId,
-        true
-      )
-
-      // Deduplicate results
-      const existingMemoIds = new Set(allMemos.map((m) => m.memo.id))
-      const existingMessageIds = new Set(allMessages.map((m) => m.id))
-      const existingAttachmentIds = new Set(allAttachments.map((a) => a.id))
-
-      for (const memo of additionalResults.memos) {
-        if (!existingMemoIds.has(memo.memo.id)) {
-          allMemos.push(memo)
-          existingMemoIds.add(memo.memo.id)
-        }
-      }
-
-      for (const msg of additionalResults.messages) {
-        if (!existingMessageIds.has(msg.id)) {
-          allMessages.push(msg)
-          existingMessageIds.add(msg.id)
-        }
-      }
-
-      for (const att of additionalResults.attachments) {
-        if (!existingAttachmentIds.has(att.id)) {
-          allAttachments.push(att)
-          existingAttachmentIds.add(att.id)
-        }
-      }
-
-      searchesPerformed.push(...additionalResults.searches)
-      iteration++
-    }
-
-    // Build sources for citation
-    const sources = this.buildSources(allMemos, allMessages, allAttachments, workspaceId)
-
-    // Format retrieved context for system prompt
-    const retrievedContext = formatRetrievedContext(allMemos, allMessages, allAttachments)
+    const retrievedContext = formatRetrievedContext(
+      finalState.allMemos,
+      finalState.allMessages,
+      finalState.allAttachments
+    )
 
     logger.info(
       {
         messageId: triggerMessage.id,
-        memoCount: allMemos.length,
-        messageCount: allMessages.length,
-        attachmentCount: allAttachments.length,
-        searchCount: searchesPerformed.length,
+        memoCount: finalState.allMemos.length,
+        messageCount: finalState.allMessages.length,
+        attachmentCount: finalState.allAttachments.length,
+        searchCount: finalState.searchesPerformed.length,
+        accessSpecType: accessSpec.type,
       },
       "Researcher completed"
     )
@@ -408,9 +636,9 @@ export class Researcher {
       retrievedContext,
       sources,
       shouldSearch: true,
-      memos: allMemos,
-      messages: allMessages,
-      attachments: allAttachments,
+      memos: finalState.allMemos,
+      messages: finalState.allMessages,
+      attachments: finalState.allAttachments,
     }
   }
 
@@ -534,7 +762,8 @@ Each query must have:
     accessibleStreamIds: string[],
     embeddingService: EmbeddingServiceLike,
     invokingMemberId: string,
-    includeSurroundingContext: boolean
+    includeSurroundingContext: boolean,
+    excludedMessageIds: Set<string>
   ): Promise<{
     memos: EnrichedMemoResult[]
     messages: EnrichedMessageResult[]
@@ -564,7 +793,8 @@ Each query must have:
             query,
             workspaceId,
             accessibleStreamIds,
-            includeSurroundingContext
+            includeSurroundingContext,
+            excludedMessageIds
           )
           return {
             type: "messages" as const,
@@ -609,6 +839,19 @@ Each query must have:
       searches.push(result.search)
     }
 
+    logger.debug(
+      {
+        queryCount: searches.length,
+        searches: searches.map((search) => ({
+          target: search.target,
+          type: search.type,
+          query: search.query,
+          resultCount: search.resultCount,
+        })),
+      },
+      "Researcher query batch completed"
+    )
+
     return { memos, messages, attachments, searches }
   }
 
@@ -631,13 +874,22 @@ Each query must have:
           functionId: "researcher-memo-semantic-search",
         })
         // DB search (single query, INV-30)
-        const results = await MemoRepository.semanticSearch(pool, {
+        const semanticResults = await MemoRepository.semanticSearch(pool, {
           workspaceId,
           embedding,
           streamIds: accessibleStreamIds,
           limit: RESEARCHER_MAX_RESULTS_PER_SEARCH,
           semanticDistanceThreshold: SEMANTIC_DISTANCE_THRESHOLD,
         })
+        const results =
+          semanticResults.length > 0
+            ? semanticResults
+            : await MemoRepository.fullTextSearch(pool, {
+                workspaceId,
+                query: query.query,
+                streamIds: accessibleStreamIds,
+                limit: RESEARCHER_MAX_RESULTS_PER_SEARCH,
+              })
 
         return results.map((r) => ({
           memo: r.memo,
@@ -679,7 +931,8 @@ Each query must have:
     query: SearchQuery,
     workspaceId: string,
     accessibleStreamIds: string[],
-    includeSurroundingContext: boolean
+    includeSurroundingContext: boolean,
+    excludedMessageIds: Set<string>
   ): Promise<EnrichedMessageResult[]> {
     const { embeddingService } = this.deps
 
@@ -706,7 +959,7 @@ Each query must have:
         const normalizedQuery = searchQuery.trim()
         const hasQuery = normalizedQuery.length > 0
         const hasEmbedding = embedding.length > 0
-        const searchResults =
+        const primaryResults =
           !hasQuery || !hasEmbedding
             ? await SearchRepository.fullTextSearch(client, {
                 query: normalizedQuery,
@@ -722,17 +975,30 @@ Each query must have:
                 limit: RESEARCHER_MAX_RESULTS_PER_SEARCH,
                 semanticDistanceThreshold: SEMANTIC_DISTANCE_THRESHOLD,
               })
+        const searchResults =
+          hasQuery && hasEmbedding && primaryResults.length === 0
+            ? await SearchRepository.fullTextSearch(client, {
+                query: normalizedQuery,
+                streamIds: accessibleStreamIds,
+                filters,
+                limit: RESEARCHER_MAX_RESULTS_PER_SEARCH,
+              })
+            : primaryResults
 
-        const rawResults = [...searchResults]
-        if (includeSurroundingContext && searchResults.length > 0) {
+        const filteredSearchResults = searchResults.filter((result) => !excludedMessageIds.has(result.id))
+        const rawResults = [...filteredSearchResults]
+        if (includeSurroundingContext && filteredSearchResults.length > 0) {
           const surroundingBatches = await Promise.all(
-            searchResults
+            filteredSearchResults
               .slice(0, 3)
               .map((result) => MessageRepository.findSurrounding(client, result.id, result.streamId, 1, 1))
           )
 
           for (const surrounding of surroundingBatches) {
             for (const message of surrounding) {
+              if (excludedMessageIds.has(message.id)) {
+                continue
+              }
               rawResults.push({
                 id: message.id,
                 streamId: message.streamId,
@@ -745,12 +1011,15 @@ Each query must have:
             }
           }
 
-          const topStreamIds = [...new Set(searchResults.slice(0, 2).map((result) => result.streamId))]
+          const topStreamIds = [...new Set(filteredSearchResults.slice(0, 2).map((result) => result.streamId))]
           const recentMessagesByStream = await Promise.all(
             topStreamIds.map((streamId) => MessageRepository.list(client, streamId, { limit: 5 }))
           )
           for (const streamMessages of recentMessagesByStream) {
             for (const message of streamMessages) {
+              if (excludedMessageIds.has(message.id)) {
+                continue
+              }
               rawResults.push({
                 id: message.id,
                 streamId: message.streamId,
@@ -766,6 +1035,9 @@ Each query must have:
 
         const dedupedResultsById = new Map<string, (typeof rawResults)[number]>()
         for (const result of rawResults) {
+          if (excludedMessageIds.has(result.id)) {
+            continue
+          }
           if (!dedupedResultsById.has(result.id)) {
             dedupedResultsById.set(result.id, result)
           }
