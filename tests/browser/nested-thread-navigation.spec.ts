@@ -186,7 +186,7 @@ test.describe("Nested Thread Navigation", () => {
     await threadIndicator.click()
 
     // Thread should reopen and show the threadReply
-    await expect(page.getByText(threadReply).first()).toBeVisible({ timeout: 3000 })
+    await expect(page.getByTestId("panel").getByText(threadReply)).toBeVisible({ timeout: 3000 })
 
     // CRITICAL: The threadReply message should show as having a nested thread (1 reply)
     // This is the bug - it doesn't show the reply indicator after reopening
@@ -222,7 +222,7 @@ test.describe("Nested Thread Navigation", () => {
     const level1Message = `Level 1 ${testId}`
     await page.keyboard.type(level1Message)
     await page.keyboard.press("Meta+Enter")
-    await expect(page.getByText(level1Message)).toBeVisible({ timeout: 5000 })
+    await expect(page.getByTestId("panel").getByText(level1Message)).toBeVisible({ timeout: 5000 })
     await expect(page.getByText(/Start a new thread/)).not.toBeVisible({ timeout: 3000 })
 
     // Create nested thread
@@ -236,7 +236,7 @@ test.describe("Nested Thread Navigation", () => {
     const level2Message = `Level 2 ${testId}`
     await page.keyboard.type(level2Message)
     await page.keyboard.press("Meta+Enter")
-    await expect(page.getByText(level2Message)).toBeVisible({ timeout: 5000 })
+    await expect(page.getByTestId("panel").getByText(level2Message)).toBeVisible({ timeout: 5000 })
 
     // Navigate back via breadcrumb
     const breadcrumb = page.locator("nav[aria-label='breadcrumb'] a").first()
@@ -249,7 +249,7 @@ test.describe("Nested Thread Navigation", () => {
 
     // Navigate forward again by clicking the reply count
     await level1InPanel.getByText(/1 reply/i).click()
-    await expect(page.getByText(level2Message)).toBeVisible({ timeout: 3000 })
+    await expect(page.getByTestId("panel").getByText(level2Message)).toBeVisible({ timeout: 3000 })
 
     // Navigate back again
     await breadcrumb.click()
