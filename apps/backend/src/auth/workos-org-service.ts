@@ -2,6 +2,19 @@ import { WorkOS } from "@workos-inc/node"
 import { logger } from "../lib/logger"
 import type { WorkosConfig } from "../lib/env"
 
+/**
+ * Extract error code from WorkOS SDK exceptions.
+ * Duck-typed to handle both BadRequestException (.code) and GenericServerException (.rawData.code).
+ */
+export function getWorkosErrorCode(error: unknown): string | null {
+  if (!error || typeof error !== "object") return null
+  if ("code" in error && typeof error.code === "string") return error.code
+  if ("rawData" in error && error.rawData && typeof error.rawData === "object" && "code" in error.rawData) {
+    return typeof error.rawData.code === "string" ? error.rawData.code : null
+  }
+  return null
+}
+
 export interface WorkosOrgService {
   createOrganization(params: { name: string; externalId: string }): Promise<{ id: string }>
   getOrganizationByExternalId(externalId: string): Promise<{ id: string } | null>

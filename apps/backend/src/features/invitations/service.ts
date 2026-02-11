@@ -7,10 +7,15 @@ import { UserRepository } from "../../auth/user-repository"
 import { OutboxRepository } from "../../lib/outbox"
 import { invitationId } from "../../lib/id"
 import { logger } from "../../lib/logger"
-import type { WorkosOrgService } from "../../auth/workos-org-service"
+import { getWorkosErrorCode, type WorkosOrgService } from "../../auth/workos-org-service"
 import type { InvitationSkipReason, InvitationStatus } from "@threa/types"
 
 const INVITATION_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
+
+const WORKOS_ERROR_CODES = {
+  USER_ALREADY_MEMBER: "user_already_organization_member",
+  INVITE_NOT_PENDING: "invite_not_pending",
+} as const
 
 interface SendInvitationsParams {
   workspaceId: string
@@ -125,10 +130,20 @@ export class InvitationService {
         if (result.status === "fulfilled") {
           await InvitationRepository.setWorkosInvitationId(this.pool, sent[i].id, result.value.id)
         } else {
-          logger.error(
-            { err: result.reason, email: sent[i].email, invitationId: sent[i].id },
-            "Failed to send WorkOS invitation"
-          )
+          const errorCode = getWorkosErrorCode(result.reason)
+          const isKnownStateConflict = errorCode === WORKOS_ERROR_CODES.USER_ALREADY_MEMBER
+
+          if (isKnownStateConflict) {
+            logger.warn(
+              { errorCode, email: sent[i].email, invitationId: sent[i].id },
+              "WorkOS state conflict when sending invitation (user already member)"
+            )
+          } else {
+            logger.error(
+              { err: result.reason, email: sent[i].email, invitationId: sent[i].id },
+              "Failed to send WorkOS invitation"
+            )
+          }
         }
       }
     }
@@ -211,7 +226,17 @@ export class InvitationService {
       try {
         await this.workosOrgService.revokeInvitation(invitation.workosInvitationId)
       } catch (error) {
-        logger.error({ err: error, invitationId }, "Failed to revoke WorkOS invitation")
+        const errorCode = getWorkosErrorCode(error)
+        const isKnownStateConflict = errorCode === WORKOS_ERROR_CODES.INVITE_NOT_PENDING
+
+        if (isKnownStateConflict) {
+          logger.warn(
+            { errorCode, invitationId },
+            "WorkOS state conflict when revoking invitation (invite not pending)"
+          )
+        } else {
+          logger.error({ err: error, invitationId }, "Failed to revoke WorkOS invitation")
+        }
       }
     }
 
