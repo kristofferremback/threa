@@ -34,7 +34,7 @@ import {
   type LoadFileSectionCallbacks,
   type LoadExcelSectionCallbacks,
 } from "./tools"
-import { AgentToolNames, type StreamType } from "@threa/types"
+import { AgentToolNames } from "@threa/types"
 import type { AI, CostRecorder } from "../../lib/ai/ai"
 import { getCostTrackingCallbacks } from "../../lib/ai/ai"
 import { getDebugCallbacks } from "../../lib/ai/debug-callback"
@@ -53,35 +53,6 @@ type TextContentBlock = { type: "text"; text: string }
 type ImageContentBlock = { type: "image_url"; image_url: { url: string } }
 type ContentBlock = TextContentBlock | ImageContentBlock
 type MessageContent = string | ContentBlock[]
-
-function contentToPlainText(content: MessageContent): string {
-  if (typeof content === "string") {
-    return content
-  }
-
-  const textParts = content
-    .filter((block): block is TextContentBlock => block.type === "text")
-    .map((block) => block.text)
-    .filter((text) => text.trim().length > 0)
-
-  return textParts.join("\n").trim()
-}
-
-function getLatestUserMessageText(messages: GenerateResponseParams["messages"]): string {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const message = messages[i]
-    if (message.role !== "user") {
-      continue
-    }
-
-    const text = contentToPlainText(message.content)
-    if (text.trim().length > 0) {
-      return text.trim()
-    }
-  }
-
-  return ""
-}
 
 /**
  * Parameters for generating a response.
@@ -111,8 +82,6 @@ export interface GenerateResponseParams {
   invokingMemberId?: string
   /** Callback used by the on-demand workspace_research tool */
   runResearcher?: () => Promise<import("./researcher").ResearcherResult>
-  /** Stream type for workspace research eagerness heuristics */
-  streamType?: StreamType
 }
 
 /**
@@ -196,7 +165,6 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
       workspaceId,
       invokingMemberId,
       runResearcher,
-      streamType,
     } = params
 
     logger.debug(
@@ -297,8 +265,6 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
       "Tools configured for session"
     )
 
-    const latestUserMessageText = getLatestUserMessageText(messages)
-
     // Create and compile graph with checkpointer
     const graph = createCompanionGraph(model, tools)
     const compiledGraph = graph.compile({ checkpointer })
@@ -316,7 +282,6 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
         messagesSentCount++
         return result
       },
-      runWorkspaceResearch: runResearcher,
       recordStep: callbacks.recordStep,
       awaitAttachmentProcessing: callbacks.awaitAttachmentProcessing,
     }
@@ -343,8 +308,6 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
             hasNewMessages: false,
             sources: [],
             retrievedContext: null,
-            streamType,
-            latestUserMessage: latestUserMessageText,
           },
           {
             runName: "companion-agent",

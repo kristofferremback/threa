@@ -107,22 +107,7 @@ const evaluationSchema = z.object({
 
 type SearchQuery = NonNullable<z.infer<typeof decisionWithQueriesSchema>["queries"]>[number]
 
-const EXPLICIT_MEMORY_RECALL_PATTERNS = [
-  /\b(do you remember|remember|recall|remind me)\b/i,
-  /\b(what did we|did we|have we|who owns|who owned|where did we|when did we)\b/i,
-  /\b(we decided|we agreed|we chose|as discussed|from earlier|from before)\b/i,
-  /\b(previous|earlier|again|last time|last meeting|yesterday)\b/i,
-]
-
-function hasExplicitMemoryRecallIntent(message: string): boolean {
-  const text = message.trim()
-  if (!text) {
-    return false
-  }
-  return EXPLICIT_MEMORY_RECALL_PATTERNS.some((pattern) => pattern.test(text))
-}
-
-function buildFallbackRecallQueries(message: string): SearchQuery[] {
+function buildBaselineQueries(message: string): SearchQuery[] {
   const trimmed = message.trim()
   if (!trimmed) {
     return []
@@ -142,11 +127,11 @@ function buildFallbackRecallQueries(message: string): SearchQuery[] {
   ]
 }
 
-function appendRecallBaselineQueries(existing: SearchQuery[], message: string): SearchQuery[] {
+function appendBaselineQueries(existing: SearchQuery[], message: string): SearchQuery[] {
   const merged: SearchQuery[] = [...existing]
   const seen = new Set(merged.map((query) => `${query.target}|${query.type}|${query.query}`))
 
-  for (const query of buildFallbackRecallQueries(message)) {
+  for (const query of buildBaselineQueries(message)) {
     const key = `${query.target}|${query.type}|${query.query}`
     if (seen.has(key)) {
       continue
@@ -287,20 +272,21 @@ export class Researcher {
 
     // Step 1: Decide if search is needed AND generate queries in one call (AI, no DB)
     const contextSummary = this.buildContextSummary(triggerMessage, conversationHistory)
-    const explicitMemoryRecallIntent = hasExplicitMemoryRecallIntent(triggerMessage.contentMarkdown)
     const decision = await this.decideAndGenerateQueries({
       contextSummary,
       config,
       workspaceId,
       messageId: triggerMessage.id,
     })
-    const shouldSearch = decision.needsSearch || explicitMemoryRecallIntent
+    const shouldSearch = decision.needsSearch
 
-    let initialQueries: SearchQuery[] = []
-    if (decision.queries?.length) {
-      initialQueries = decision.queries
-    } else if (explicitMemoryRecallIntent) {
-      initialQueries = buildFallbackRecallQueries(triggerMessage.contentMarkdown)
+    let initialQueries: SearchQuery[] = decision.queries?.length ? decision.queries : []
+    if (shouldSearch && initialQueries.length === 0) {
+      initialQueries = buildBaselineQueries(triggerMessage.contentMarkdown)
+      logger.info(
+        { messageId: triggerMessage.id, reasoning: decision.reasoning },
+        "Researcher generated baseline queries because model did not return any queries"
+      )
     }
 
     if (!shouldSearch || initialQueries.length === 0) {
@@ -308,23 +294,13 @@ export class Researcher {
         {
           messageId: triggerMessage.id,
           reasoning: decision.reasoning,
-          explicitMemoryRecallIntent,
         },
         "Researcher decided no search needed"
       )
       return this.emptyResult()
     }
 
-    if (explicitMemoryRecallIntent) {
-      initialQueries = appendRecallBaselineQueries(initialQueries, triggerMessage.contentMarkdown)
-    }
-
-    if (!decision.needsSearch && explicitMemoryRecallIntent) {
-      logger.info(
-        { messageId: triggerMessage.id, reasoning: decision.reasoning },
-        "Researcher overriding no-search decision due to explicit memory recall intent"
-      )
-    }
+    initialQueries = appendBaselineQueries(initialQueries, triggerMessage.contentMarkdown)
 
     // Execute searches and collect results
     let allMemos: EnrichedMemoResult[] = []
@@ -340,7 +316,7 @@ export class Researcher {
       accessibleStreamIds,
       embeddingService,
       invokingMemberId,
-      explicitMemoryRecallIntent
+      true
     )
     allMemos = [...allMemos, ...initialResults.memos]
     allMessages = [...allMessages, ...initialResults.messages]
@@ -378,7 +354,7 @@ export class Researcher {
         accessibleStreamIds,
         embeddingService,
         invokingMemberId,
-        explicitMemoryRecallIntent
+        true
       )
 
       // Deduplicate results

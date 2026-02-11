@@ -4,20 +4,11 @@ import type { ChatOpenAI } from "@langchain/openai"
 import type { BaseMessage } from "@langchain/core/messages"
 import type { StructuredToolInterface } from "@langchain/core/tools"
 import type { RunnableConfig } from "@langchain/core/runnables"
-import {
-  AgentToolNames,
-  type AuthorType,
-  type SourceItem,
-  type AgentStepType,
-  type TraceSource,
-  type StreamType,
-} from "@threa/types"
+import { AgentToolNames, type AuthorType, type SourceItem, type AgentStepType, type TraceSource } from "@threa/types"
 import { logger } from "../../lib/logger"
 import type { SendMessageInputWithSources, SendMessageResult, WorkspaceResearchToolResult } from "./tools"
 import { isMultimodalToolResult } from "./tools"
-import type { ResearcherResult } from "./researcher"
 import { protectToolOutputBlocks, protectToolOutputText, type MultimodalContentBlock } from "./tool-trust-boundary"
-import { shouldEagerlyPrefetchWorkspaceResearch } from "./workspace-research-eagerness"
 
 /**
  * Parameters for recording a step in the agent trace.
@@ -274,8 +265,6 @@ export interface CompanionGraphCallbacks {
   updateLastSeenSequence: (sessionId: string, sequence: bigint) => Promise<void>
   /** Send a message with optional sources (used by ensure_response node) */
   sendMessageWithSources: (input: SendMessageInputWithSources) => Promise<SendMessageResult>
-  /** Run workspace research for eager prefetch and tool-backed research */
-  runWorkspaceResearch?: () => Promise<ResearcherResult>
   /** Record a step in the agent trace (optional - if not provided, steps are not recorded) */
   recordStep?: (params: RecordStepParams) => Promise<void>
   /** Await attachment processing for messages (optional - for multi-modal support) */
@@ -322,14 +311,6 @@ export const CompanionState = Annotation.Root({
   streamId: Annotation<string>(),
   sessionId: Annotation<string>(),
   personaId: Annotation<string>(),
-  streamType: Annotation<StreamType | undefined>({
-    default: () => undefined,
-    reducer: (_, next) => next,
-  }),
-  latestUserMessage: Annotation<string>({
-    default: () => "",
-    reducer: (_, next) => next,
-  }),
   lastProcessedSequence: Annotation<bigint>({
     default: () => BigInt(0),
     reducer: (_, next) => next,
@@ -789,54 +770,53 @@ function toSourceItems(
     }))
 }
 
-function createPrefetchWorkspaceResearchNode() {
+function createPrefetchWorkspaceResearchNode(tools: StructuredToolInterface[]) {
+  const workspaceResearchTool = tools.find((tool) => tool.name === WORKSPACE_RESEARCH_TOOL_NAME)
+
   return async (state: CompanionStateType, config: RunnableConfig): Promise<Partial<CompanionStateType>> => {
+    if (!workspaceResearchTool) {
+      return {}
+    }
+
     const callbacks = getCallbacks(config)
-    if (!callbacks.runWorkspaceResearch) {
-      return {}
-    }
-
-    const shouldPrefetch = shouldEagerlyPrefetchWorkspaceResearch({
-      streamType: state.streamType,
-      latestUserMessage: state.latestUserMessage,
-    })
-    if (!shouldPrefetch) {
-      return {}
-    }
-
     const startTime = Date.now()
     try {
-      const researchResult = await callbacks.runWorkspaceResearch()
+      const result = await workspaceResearchTool.invoke({
+        reason: "Initial workspace memory prefetch before composing a response",
+      })
       const durationMs = Date.now() - startTime
-      const prefetchedSources = toSourceItems(researchResult.sources)
+      const resultStr = typeof result === "string" ? result : JSON.stringify(result)
+      const parsed = parseWorkspaceResearchResult(resultStr)
+      if (!parsed) {
+        throw new Error("workspace_research returned malformed JSON during prefetch")
+      }
+      const prefetchedSources = toSourceItems(parsed.sources)
       const mergedSources = mergeSourceItems(state.sources, prefetchedSources)
-      const retrievedContext = researchResult.retrievedContext?.trim()
-        ? researchResult.retrievedContext.trim()
-        : state.retrievedContext
+      const retrievedContext = parsed.retrievedContext?.trim() ? parsed.retrievedContext.trim() : state.retrievedContext
 
       logger.info(
         {
           streamId: state.streamId,
           sessionId: state.sessionId,
-          shouldSearch: researchResult.shouldSearch,
+          shouldSearch: parsed.shouldSearch,
           sourceCount: prefetchedSources.length,
-          memoCount: researchResult.memos.length,
-          messageCount: researchResult.messages.length,
-          attachmentCount: researchResult.attachments?.length ?? 0,
+          memoCount: parsed.memoCount,
+          messageCount: parsed.messageCount,
+          attachmentCount: parsed.attachmentCount,
         },
-        "Eager workspace memory check completed"
+        "Workspace research prefetch completed"
       )
 
       if (callbacks.recordStep) {
         await callbacks.recordStep({
           stepType: "workspace_search",
           content: JSON.stringify({
-            mode: "prefetch",
-            shouldSearch: researchResult.shouldSearch,
+            mode: "entrypoint_prefetch",
+            shouldSearch: parsed.shouldSearch,
             sourceCount: prefetchedSources.length,
-            memoCount: researchResult.memos.length,
-            messageCount: researchResult.messages.length,
-            attachmentCount: researchResult.attachments?.length ?? 0,
+            memoCount: parsed.memoCount,
+            messageCount: parsed.messageCount,
+            attachmentCount: parsed.attachmentCount,
           }),
           durationMs,
           sources: prefetchedSources.map((source) => ({
@@ -855,7 +835,7 @@ function createPrefetchWorkspaceResearchNode() {
     } catch (error) {
       logger.warn(
         { error, streamId: state.streamId, sessionId: state.sessionId },
-        "Eager workspace memory check failed; continuing without prefetch"
+        "Workspace research prefetch failed; continuing without prefetch"
       )
       if (callbacks.recordStep) {
         await callbacks.recordStep({
@@ -977,14 +957,7 @@ function createToolsNode(tools: StructuredToolInterface[]) {
             throw new Error("workspace_research returned malformed JSON")
           }
 
-          const workspaceSources: SourceItem[] = parsed.sources
-            .filter((source) => source.title && source.url)
-            .map((source) => ({
-              title: source.title,
-              url: source.url,
-              type: source.type,
-              snippet: source.snippet,
-            }))
+          const workspaceSources = toSourceItems(parsed.sources)
           if (workspaceSources.length > 0) {
             collectedSources = mergeSourceItems(collectedSources, workspaceSources)
           }
@@ -1383,14 +1356,14 @@ function createEnsureResponseNode() {
  * - If new messages arrived: gives the agent a chance to reconsider its response
  * This mimics human reconsideration behavior when new context arrives.
  *
- * Workspace knowledge retrieval runs as an eager graph prefetch when heuristics indicate
- * it should happen, while remaining available on-demand via the workspace_research tool.
+ * Workspace knowledge retrieval runs as an entrypoint graph prefetch by invoking the
+ * workspace_research tool directly, while remaining available on-demand in later turns.
  * The synthesize node formats responses with proper source citations when web search was used.
  * The ensure_response node guarantees we always send at least one message.
  */
 export function createCompanionGraph(model: ChatOpenAI, tools: StructuredToolInterface[] = []) {
   const graph = new StateGraph(CompanionState)
-    .addNode("prefetch_workspace_research", createPrefetchWorkspaceResearchNode())
+    .addNode("prefetch_workspace_research", createPrefetchWorkspaceResearchNode(tools))
     .addNode("agent", createAgentNode(model, tools))
     .addNode("finalize_or_reconsider", createFinalizeOrReconsiderNode())
     .addNode("check_final_messages", createCheckNewMessagesNode()) // Same logic, different routing

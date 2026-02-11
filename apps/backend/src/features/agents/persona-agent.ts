@@ -1110,7 +1110,6 @@ export class PersonaAgent {
             workspaceId, // For cost tracking
             invokingMemberId, // For cost attribution to the human user
             runResearcher,
-            streamType: context.streamType,
           },
           callbacks
         )

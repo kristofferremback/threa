@@ -29,7 +29,7 @@ Guidelines:
 - Use "semantic" search for concepts, topics, intent
 - Use "exact" search for error messages, IDs, specific phrases, quoted text
 - Generate 1-3 focused queries per step
-- Be eager for memory recall prompts ("remember", "what did we decide", "who owns", "again"): prefer searching rather than skipping
+- Be eager for requests that depend on prior workspace decisions, ownership, or historical context: prefer searching rather than skipping
 - If uncertain whether prior workspace context exists, search once and validate with results
 
 Skip search entirely when:
