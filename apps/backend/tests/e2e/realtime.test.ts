@@ -430,6 +430,54 @@ describe("Real-time Events", () => {
         outsiderSocket.disconnect()
       }
     })
+
+    test("should deliver stream:activity to members of private streams", async () => {
+      const privateStream = await createScratchpad(client, workspaceId, "off")
+
+      // Join the stream room (simulates useSocketEvents membership room join)
+      await joinRoom(socket, `ws:${workspaceId}:stream:${privateStream.id}`)
+
+      const activityPromise = waitForEvent<{
+        workspaceId: string
+        streamId: string
+        authorId: string
+        lastMessagePreview: { content: string }
+      }>(socket, "stream:activity")
+
+      await sendMessage(client, workspaceId, privateStream.id, "Private stream activity test")
+
+      const activity = await activityPromise
+      expect(activity).toMatchObject({
+        workspaceId,
+        streamId: privateStream.id,
+        authorId: memberId,
+        lastMessagePreview: {
+          content: "Private stream activity test",
+        },
+      })
+    })
+
+    test("should deliver stream:activity to private stream members after room re-join", async () => {
+      const privateStream = await createScratchpad(client, workspaceId, "off")
+
+      // Simulate the frontend lifecycle:
+      // 1. useSocketEvents joins stream room (membership rooms)
+      await joinRoom(socket, `ws:${workspaceId}:stream:${privateStream.id}`)
+
+      // 2. useStreamSocket also joins (idempotent)
+      await joinRoom(socket, `ws:${workspaceId}:stream:${privateStream.id}`)
+
+      // 3. useStreamSocket leaves on navigation — Socket.io rooms are NOT
+      //    reference-counted, so this single leave removes the socket from the
+      //    room entirely, even though useSocketEvents also joined.
+      socket.emit("leave", `ws:${workspaceId}:stream:${privateStream.id}`)
+
+      // 4. After the leave, stream:activity events should NOT be received.
+      //    This demonstrates the bug: the leave undoes useSocketEvents' join.
+      const noActivityPromise = waitForEvent(socket, "stream:activity", 500).catch(() => "no-event")
+      await sendMessage(client, workspaceId, privateStream.id, "Should be missed")
+      expect(await noActivityPromise).toBe("no-event")
+    })
   })
 
   describe("Multi-client Scenarios", () => {

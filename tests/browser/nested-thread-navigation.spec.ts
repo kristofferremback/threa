@@ -175,7 +175,7 @@ test.describe("Nested Thread Navigation", () => {
     await page.keyboard.type(nestedReply)
     await page.keyboard.press("Meta+Enter")
 
-    await expect(page.getByText(nestedReply)).toBeVisible({ timeout: 5000 })
+    await expect(page.getByTestId("panel").getByText(nestedReply)).toBeVisible({ timeout: 5000 })
     await expect(page.getByText(/Start a new thread/)).not.toBeVisible({ timeout: 3000 })
 
     // Close the thread panel

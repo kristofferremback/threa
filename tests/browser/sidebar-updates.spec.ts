@@ -121,7 +121,43 @@ test.describe("Sidebar Updates", () => {
     })
   })
 
-  test.describe("Bug 4: Stream content should update when navigating back", () => {
+  test.describe("Bug 4: Sidebar should update when agent responds while navigated away", () => {
+    test("should show unread badge in sidebar when agent responds in scratchpad", async ({ page }) => {
+      test.setTimeout(60000)
+
+      const { testId } = await loginAndCreateWorkspace(page, "sidebar-unread")
+
+      // Create a scratchpad (companion mode on by default — agent will respond)
+      await page.getByRole("button", { name: "+ New Scratchpad" }).click()
+      await expect(page.getByText(/Type a message|No messages yet/)).toBeVisible({ timeout: 5000 })
+
+      // Send a message that triggers the companion
+      const userMessage = `Sidebar unread check ${testId}`
+      await page.locator("[contenteditable='true']").click()
+      await page.keyboard.type(userMessage)
+      await page.getByRole("button", { name: "Send" }).click()
+      await expect(page.getByRole("main").getByText(userMessage)).toBeVisible({ timeout: 5000 })
+
+      // Wait for the URL to settle (draft_xxx → stream_xxx after backend creates stream)
+      await page.waitForURL(/\/s\/stream_/, { timeout: 10000 })
+      const streamId = page.url().match(/\/s\/([^/]+)/)?.[1]
+      expect(streamId).toBeTruthy()
+
+      // Navigate away immediately — the agent will respond while we're away
+      await page.getByRole("link", { name: "Drafts" }).click()
+      await expect(page.getByRole("heading", { name: "Drafts", level: 1 })).toBeVisible({ timeout: 5000 })
+
+      // The sidebar should show an unread badge on the scratchpad WITHOUT refreshing.
+      // The companion responds asynchronously; poll until the badge appears.
+      const scratchpadLink = page.locator(`a[href*="/s/${streamId}"]`).first()
+      await expect(scratchpadLink).toBeVisible({ timeout: 10000 })
+
+      const unreadBadge = scratchpadLink.locator("span.rounded-full.bg-primary")
+      await expect(unreadBadge).toBeVisible({ timeout: 30000 })
+    })
+  })
+
+  test.describe("Bug 5: Stream content should update when navigating back", () => {
     test("scratchpad content should appear without refresh after navigating back", async ({ page }) => {
       test.setTimeout(60000)
 

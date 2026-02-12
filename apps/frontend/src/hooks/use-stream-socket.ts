@@ -400,7 +400,11 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
 
     return () => {
       abortController.abort()
-      socket.emit("leave", room)
+      // Do NOT leave the room here. Socket.io rooms are not reference-counted:
+      // a single leave undoes ALL joins. useSocketEvents also joins this room
+      // for stream:activity delivery — leaving here would break sidebar updates.
+      // Room lifecycle is managed by useSocketEvents (member streams) and
+      // cleaned up on socket disconnect.
       socket.off("message:created", handleMessageCreated)
       socket.off("message:edited", handleMessageEdited)
       socket.off("message:deleted", handleMessageDeleted)
