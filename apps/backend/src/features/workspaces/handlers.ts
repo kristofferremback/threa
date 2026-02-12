@@ -4,6 +4,7 @@ import type { WorkspaceService } from "./service"
 import type { StreamService } from "../streams"
 import type { UserPreferencesService } from "../user-preferences"
 import type { InvitationService } from "../invitations"
+import type { ActivityService } from "../activity"
 import type { CommandRegistry } from "../commands"
 import { getEmojiList } from "../emoji"
 
@@ -25,6 +26,7 @@ interface Dependencies {
   streamService: StreamService
   userPreferencesService: UserPreferencesService
   invitationService: InvitationService
+  activityService?: ActivityService
   commandRegistry: CommandRegistry
 }
 
@@ -33,6 +35,7 @@ export function createWorkspaceHandlers({
   streamService,
   userPreferencesService,
   invitationService,
+  activityService,
   commandRegistry,
 }: Dependencies) {
   return {
@@ -106,12 +109,22 @@ export function createWorkspaceHandlers({
       ])
 
       // Calculate unread counts for all streams based on memberships
-      const unreadCountsMap = await streamService.getUnreadCounts(
-        streamMemberships.map((m) => ({ streamId: m.streamId, lastReadEventId: m.lastReadEventId }))
-      )
+      const [unreadCountsMap, activityCounts] = await Promise.all([
+        streamService.getUnreadCounts(
+          streamMemberships.map((m) => ({ streamId: m.streamId, lastReadEventId: m.lastReadEventId }))
+        ),
+        activityService?.getUnreadCounts(memberId, workspaceId),
+      ])
       const unreadCounts: Record<string, number> = {}
       for (const [streamId, count] of unreadCountsMap) {
         unreadCounts[streamId] = count
+      }
+
+      const mentionCounts: Record<string, number> = {}
+      if (activityCounts) {
+        for (const [streamId, count] of activityCounts.byStream) {
+          mentionCounts[streamId] = count
+        }
       }
 
       const commands = commandRegistry.getCommandNames().map((name) => {
@@ -136,6 +149,8 @@ export function createWorkspaceHandlers({
           emojiWeights,
           commands,
           unreadCounts,
+          mentionCounts,
+          unreadActivityCount: activityCounts?.total ?? 0,
           userPreferences,
           invitations,
         },
@@ -147,6 +162,9 @@ export function createWorkspaceHandlers({
       const workspaceId = req.workspaceId!
 
       const updatedStreamIds = await streamService.markAllAsRead(workspaceId, memberId)
+
+      // Clear all mention badges
+      await activityService?.markAllAsRead(memberId, workspaceId)
 
       res.json({ updatedStreamIds })
     },

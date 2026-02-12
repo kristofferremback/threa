@@ -2,6 +2,7 @@ import { z } from "zod"
 import type { Request, Response } from "express"
 import type { StreamService } from "./service"
 import type { EventService, MessageCreatedPayload } from "../messaging"
+import type { ActivityService } from "../activity"
 import type { StreamEvent } from "./event-repository"
 import type { EventType } from "@threa/types"
 import { serializeBigInt } from "../../lib/serialization"
@@ -60,13 +61,14 @@ export { createStreamSchema, updateStreamSchema, updateCompanionModeSchema, pinS
 interface Dependencies {
   streamService: StreamService
   eventService: EventService
+  activityService?: ActivityService
 }
 
 function serializeEvent(event: StreamEvent) {
   return serializeBigInt(event)
 }
 
-export function createStreamHandlers({ streamService, eventService }: Dependencies) {
+export function createStreamHandlers({ streamService, eventService, activityService }: Dependencies) {
   return {
     async list(req: Request, res: Response) {
       const memberId = req.member!.id
@@ -271,6 +273,9 @@ export function createStreamHandlers({ streamService, eventService }: Dependenci
       if (!membership) {
         return res.status(404).json({ error: "Not a member of this stream" })
       }
+
+      // Clear mention badges for this stream
+      await activityService?.markStreamActivityAsRead(memberId, streamId)
 
       res.json({ membership })
     },

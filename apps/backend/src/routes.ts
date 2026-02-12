@@ -17,6 +17,7 @@ import { createCommandHandlers } from "./features/commands"
 import { createUserPreferencesHandlers } from "./features/user-preferences"
 import { createAIUsageHandlers } from "./features/ai-usage"
 import { createInvitationHandlers } from "./features/invitations"
+import { createActivityHandlers } from "./features/activity"
 import { createDebugHandlers } from "./handlers/debug-handlers"
 import { createAuthStubHandlers } from "./auth/auth-stub-handlers"
 import { createAgentSessionHandlers } from "./features/agents"
@@ -31,6 +32,7 @@ import type { AttachmentService } from "./features/attachments"
 import type { SearchService } from "./features/search"
 import type { ConversationService } from "./features/conversations"
 import type { InvitationService } from "./features/invitations"
+import type { ActivityService } from "./features/activity"
 import type { S3Config } from "./lib/env"
 import type { CommandRegistry } from "./features/commands"
 import type { UserPreferencesService } from "./features/user-preferences"
@@ -50,6 +52,7 @@ interface Dependencies {
   conversationService: ConversationService
   userPreferencesService: UserPreferencesService
   invitationService: InvitationService
+  activityService: ActivityService
   s3Config: S3Config
   commandRegistry: CommandRegistry
   rateLimiterConfig: RateLimiterConfig
@@ -70,6 +73,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     conversationService,
     userPreferencesService,
     invitationService,
+    activityService,
     s3Config,
     commandRegistry,
     rateLimiterConfig,
@@ -91,9 +95,10 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     streamService,
     userPreferencesService,
     invitationService,
+    activityService,
     commandRegistry,
   })
-  const stream = createStreamHandlers({ streamService, eventService })
+  const stream = createStreamHandlers({ streamService, eventService, activityService })
   const message = createMessageHandlers({ pool, eventService, streamService, commandRegistry })
   const attachment = createAttachmentHandlers({ attachmentService, streamService })
   const search = createSearchHandlers({ searchService })
@@ -104,6 +109,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const aiUsage = createAIUsageHandlers({ pool })
   const debug = createDebugHandlers({ pool, poolMonitor })
   const invitation = createInvitationHandlers({ invitationService })
+  const activity = createActivityHandlers({ activityService })
   const agentSession = createAgentSessionHandlers({ pool })
 
   // Ops endpoints - registered before rate limiter so probes aren't throttled
@@ -220,6 +226,11 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/workspaces/:workspaceId/ai-usage/recent", ...authed, aiUsage.getRecentUsage)
   app.get("/api/workspaces/:workspaceId/ai-budget", ...authed, aiUsage.getBudget)
   app.put("/api/workspaces/:workspaceId/ai-budget", ...authed, requireRole("admin"), aiUsage.updateBudget)
+
+  // Activity feed
+  app.get("/api/workspaces/:workspaceId/activity", ...authed, activity.list)
+  app.post("/api/workspaces/:workspaceId/activity/read", ...authed, activity.markAllAsRead)
+  app.post("/api/workspaces/:workspaceId/activity/:id/read", ...authed, activity.markOneAsRead)
 
   // Agent Sessions (trace viewing)
   app.get("/api/workspaces/:workspaceId/agent-sessions/:sessionId", ...authed, agentSession.getSession)

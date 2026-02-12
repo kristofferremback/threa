@@ -102,6 +102,32 @@ export class StreamService {
     })
   }
 
+  /**
+   * Non-throwing access check — same rules as validateStreamAccess but returns boolean.
+   * Used in hot paths (activity feed) where exception-as-control-flow is expensive.
+   */
+  async hasAccess(streamId: string, workspaceId: string, memberId: string): Promise<boolean> {
+    return withClient(this.pool, async (client) => {
+      const stream = await StreamRepository.findById(client, streamId)
+      if (!stream || stream.workspaceId !== workspaceId) return false
+
+      if (stream.rootStreamId) {
+        const rootStream = await StreamRepository.findById(client, stream.rootStreamId)
+        if (!rootStream) return false
+
+        if (rootStream.visibility !== Visibilities.PUBLIC) {
+          return StreamMemberRepository.isMember(client, stream.rootStreamId, memberId)
+        }
+        return true
+      }
+
+      if (stream.visibility !== Visibilities.PUBLIC) {
+        return StreamMemberRepository.isMember(client, streamId, memberId)
+      }
+      return true
+    })
+  }
+
   async getScratchpadsByMember(workspaceId: string, memberId: string): Promise<Stream[]> {
     return withClient(this.pool, async (client) => {
       const memberships = await StreamMemberRepository.list(client, { memberId })

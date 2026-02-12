@@ -70,6 +70,7 @@ import {
 } from "./features/agents"
 import { EmojiUsageHandler } from "./features/emoji"
 import { SystemMessageService, SystemMessageOutboxHandler } from "./features/system-messages"
+import { ActivityService, ActivityFeedHandler } from "./features/activity"
 import { AttachmentUploadedHandler } from "./features/attachments"
 import { AICostService, AIBudgetService } from "./features/ai-usage"
 import { CommandRegistry, SimulateCommand, createCommandWorker, CommandHandler } from "./features/commands"
@@ -269,6 +270,7 @@ export async function startServer(): Promise<ServerInstance> {
   }
   const createThread = (params: Parameters<typeof streamService.createThread>[0]) => streamService.createThread(params)
 
+  const activityService = new ActivityService({ pool, streamService })
   const systemMessageService = new SystemMessageService({ pool, createMessage })
 
   // Simulation agent - needed for SimulateCommand
@@ -309,6 +311,7 @@ export async function startServer(): Promise<ServerInstance> {
     conversationService,
     userPreferencesService,
     invitationService,
+    activityService,
     s3Config: config.s3,
     commandRegistry,
     rateLimiterConfig: config.rateLimits,
@@ -507,6 +510,7 @@ export async function startServer(): Promise<ServerInstance> {
   const mentionInvokeHandler = new MentionInvokeHandler(pool, jobQueue)
   const attachmentUploadedHandler = new AttachmentUploadedHandler(pool, jobQueue)
   const systemMessageOutboxHandler = new SystemMessageOutboxHandler(pool, systemMessageService)
+  const activityFeedHandler = new ActivityFeedHandler(pool, activityService)
   const outboxHandlers = [
     broadcastHandler,
     companionHandler,
@@ -519,6 +523,7 @@ export async function startServer(): Promise<ServerInstance> {
     mentionInvokeHandler,
     attachmentUploadedHandler,
     systemMessageOutboxHandler,
+    activityFeedHandler,
   ]
 
   // Ensure listeners exist in database, then register all handlers

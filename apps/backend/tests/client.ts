@@ -575,6 +575,8 @@ export interface WorkspaceBootstrapData {
   personas: Persona[]
   emojis: EmojiEntry[]
   emojiWeights: Record<string, number>
+  mentionCounts: Record<string, number>
+  unreadActivityCount: number
 }
 
 export async function getWorkspaceBootstrap(client: TestClient, workspaceId: string): Promise<WorkspaceBootstrapData> {

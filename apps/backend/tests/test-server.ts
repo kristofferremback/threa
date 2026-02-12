@@ -112,7 +112,8 @@ async function cleanupStaleData(): Promise<void> {
         queue_messages,
         queue_tokens,
         schedules,
-        schedule_ticks
+        schedule_ticks,
+        member_activity
       CASCADE
     `)
   } catch {
