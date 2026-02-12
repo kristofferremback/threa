@@ -152,38 +152,53 @@ export function useSocketEvents(workspaceId: string) {
 
     // Handle stream created
     socket.on("stream:created", (payload: StreamPayload) => {
+      let shouldJoinStreamRoom = false
+
       // Add to workspace bootstrap cache (sidebar)
       queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
         if (!old) return old
-        // Only add if not already present (avoid duplicates from own actions)
-        if (old.streams.some((s) => s.id === payload.stream.id)) return old
 
-        // If the current user created this stream, also add their membership
-        // so the sidebar filter shows it (handles multi-tab / multi-device)
+        const streamExists = old.streams.some((s) => s.id === payload.stream.id)
         const currentMember = user && old.members?.find((m: WorkspaceMember) => m.userId === user.id)
-        const isCreator = currentMember && payload.stream.createdBy === currentMember.id
-        const newMemberships = isCreator
-          ? [
-              ...old.streamMemberships,
-              {
-                streamId: payload.stream.id,
-                memberId: currentMember.id,
-                pinned: false,
-                pinnedAt: null,
-                muted: false,
-                lastReadEventId: null,
-                lastReadAt: null,
-                joinedAt: payload.stream.createdAt,
-              },
-            ]
-          : old.streamMemberships
+        const isCreator = Boolean(currentMember && payload.stream.createdBy === currentMember.id)
+        const hasMembership = old.streamMemberships.some((m: StreamMember) => m.streamId === payload.stream.id)
+        const shouldAddMembership = isCreator && !hasMembership
+
+        // Ensure creators are subscribed immediately for follow-up stream activity
+        // (prevents missing early stream:activity events after channel creation).
+        shouldJoinStreamRoom = hasMembership || shouldAddMembership
+
+        if (streamExists && !shouldAddMembership) return old
 
         return {
           ...old,
-          streams: [...old.streams, { ...payload.stream, lastMessagePreview: null }],
-          streamMemberships: newMemberships,
+          streams: streamExists ? old.streams : [...old.streams, { ...payload.stream, lastMessagePreview: null }],
+          streamMemberships: shouldAddMembership
+            ? [
+                ...old.streamMemberships,
+                {
+                  streamId: payload.stream.id,
+                  memberId: payload.stream.createdBy,
+                  pinned: false,
+                  pinnedAt: null,
+                  muted: false,
+                  lastReadEventId: null,
+                  lastReadAt: null,
+                  joinedAt: payload.stream.createdAt,
+                },
+              ]
+            : old.streamMemberships,
         }
       })
+
+      if (shouldJoinStreamRoom) {
+        joinRoomFireAndForget(
+          socket,
+          `ws:${workspaceId}:stream:${payload.stream.id}`,
+          abortController.signal,
+          "SocketEvents"
+        )
+      }
 
       // Cache to IndexedDB
       db.streams.put({ ...payload.stream, _cachedAt: Date.now() })

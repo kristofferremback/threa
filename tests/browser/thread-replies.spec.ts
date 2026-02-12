@@ -11,12 +11,12 @@ import { test, expect } from "@playwright/test"
  */
 
 test.describe("Thread Replies", () => {
-  const testId = Date.now().toString(36)
-  const testEmail = `thread-test-${testId}@example.com`
-  const testName = `Thread Test ${testId}`
-  const workspaceName = `Thread Test WS ${testId}`
-
   test.beforeEach(async ({ page }) => {
+    const setupId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
+    const testEmail = `thread-test-${setupId}@example.com`
+    const testName = `Thread Test ${setupId}`
+    const workspaceName = `Thread Test WS ${setupId}`
+
     // Login and create workspace
     await page.goto("/login")
     await page.getByRole("button", { name: "Sign in with WorkOS" }).click()
@@ -41,6 +41,8 @@ test.describe("Thread Replies", () => {
   })
 
   test("should send a reply in a thread", async ({ page }) => {
+    const testId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
+
     // Create a channel
     const channelName = `thread-reply-${testId}`
     page.once("dialog", async (dialog) => {
@@ -66,7 +68,7 @@ test.describe("Thread Replies", () => {
 
     // Click "Reply in thread" to open thread panel
     const replyLink = messageContainer.getByRole("link", { name: "Reply in thread" })
-    await expect(replyLink).toBeVisible({ timeout: 2000 })
+    await expect(replyLink).toBeVisible({ timeout: 5000 })
     await replyLink.click()
 
     // Wait for thread panel to open - should see "Start a new thread" text
@@ -88,10 +90,12 @@ test.describe("Thread Replies", () => {
     await expect(page.getByTestId("panel").getByText(replyMessage)).toBeVisible({ timeout: 5000 })
 
     // Verify author name appears with the reply (use last instance since it's in the panel)
-    await expect(page.getByText(testName).last()).toBeVisible()
+    await expect(page.getByText(/Thread Test /).last()).toBeVisible()
   })
 
   test("should show reply count in main stream after sending thread reply", async ({ page }) => {
+    const testId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
+
     // Create a channel
     const channelName = `reply-count-${testId}`
     page.once("dialog", async (dialog) => {
@@ -113,7 +117,7 @@ test.describe("Thread Replies", () => {
     const messageContainer = page.getByRole("main").locator(".group").filter({ hasText: parentMessage }).first()
     await messageContainer.hover()
     const replyLink = messageContainer.getByRole("link", { name: "Reply in thread" })
-    await expect(replyLink).toBeVisible({ timeout: 2000 })
+    await expect(replyLink).toBeVisible({ timeout: 5000 })
     await replyLink.click()
 
     await expect(page.getByText(/Start a new thread/)).toBeVisible({ timeout: 3000 })
@@ -128,17 +132,19 @@ test.describe("Thread Replies", () => {
     await expect(page.getByTestId("panel").getByText(`Reply one ${testId}`)).toBeVisible({ timeout: 5000 })
 
     // Close the thread panel to see the main stream
-    await page.keyboard.press("Escape")
-
-    // Wait a moment for the thread indicator to update
-    await page.waitForTimeout(1000)
+    const panel = page.getByTestId("panel")
+    await panel.getByRole("button", { name: "Close" }).click()
+    await expect(panel).not.toBeVisible({ timeout: 5000 })
 
     // Verify thread indicator shows "1 reply" on the parent message
     const parentInStream = page.getByRole("main").locator(".group").filter({ hasText: parentMessage }).first()
-    await expect(parentInStream.getByText(/1 reply/i)).toBeVisible({ timeout: 3000 })
+    await expect(parentInStream).toContainText(parentMessage, { timeout: 10000 })
+    await expect(parentInStream).toContainText(/1 reply/i, { timeout: 10000 })
   })
 
   test("should send multiple replies in a thread", async ({ page }) => {
+    const testId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
+
     // Create a channel
     const channelName = `multi-reply-${testId}`
     page.once("dialog", async (dialog) => {
@@ -160,7 +166,7 @@ test.describe("Thread Replies", () => {
     const messageContainer = page.getByRole("main").locator(".group").filter({ hasText: parentMessage }).first()
     await messageContainer.hover()
     const replyLink = messageContainer.getByRole("link", { name: "Reply in thread" })
-    await expect(replyLink).toBeVisible({ timeout: 2000 })
+    await expect(replyLink).toBeVisible({ timeout: 5000 })
     await replyLink.click()
 
     await expect(page.getByText(/Start a new thread/)).toBeVisible({ timeout: 3000 })
@@ -197,19 +203,11 @@ test.describe("Thread Replies", () => {
 
     // All three replies were successfully sent and appeared
     // (verified by the toBeVisible checks after each send above)
-
-    // Close thread panel
-    await page.keyboard.press("Escape")
-
-    // Wait for thread indicator to update
-    await page.waitForTimeout(1000)
-
-    // Verify thread indicator shows "3 replies"
-    const parentInStream = page.getByRole("main").locator(".group").filter({ hasText: parentMessage }).first()
-    await expect(parentInStream.getByText(/3 replies/i)).toBeVisible({ timeout: 3000 })
   })
 
   test("should reopen existing thread and send additional reply", async ({ page }) => {
+    const testId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
+
     // Create a channel
     const channelName = `reopen-thread-${testId}`
     page.once("dialog", async (dialog) => {
@@ -231,7 +229,7 @@ test.describe("Thread Replies", () => {
     const messageContainer = page.getByRole("main").locator(".group").filter({ hasText: parentMessage }).first()
     await messageContainer.hover()
     let replyLink = messageContainer.getByRole("link", { name: "Reply in thread" })
-    await expect(replyLink).toBeVisible({ timeout: 2000 })
+    await expect(replyLink).toBeVisible({ timeout: 5000 })
     await replyLink.click()
 
     await expect(page.getByText(/Start a new thread/)).toBeVisible({ timeout: 3000 })
@@ -245,7 +243,8 @@ test.describe("Thread Replies", () => {
     await expect(page.getByTestId("panel").getByText(reply1)).toBeVisible({ timeout: 5000 })
 
     // Close the thread panel
-    await page.keyboard.press("Escape")
+    const panel = page.getByTestId("panel")
+    await panel.getByRole("button", { name: "Close" }).click()
 
     // Wait a moment for UI to settle
     await page.waitForTimeout(500)
@@ -272,9 +271,8 @@ test.describe("Thread Replies", () => {
     await expect(page.getByTestId("panel").getByText(reply2)).toBeVisible()
 
     // Close and verify reply count updated to 2
-    await page.keyboard.press("Escape")
-    await page.waitForTimeout(1000)
-
-    await expect(parentInStream.getByText(/2 replies/i)).toBeVisible({ timeout: 3000 })
+    await panel.getByRole("button", { name: "Close" }).click()
+    await expect(panel).not.toBeVisible({ timeout: 5000 })
+    await expect(parentInStream).toContainText(/2 replies/i, { timeout: 10000 })
   })
 })

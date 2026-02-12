@@ -342,10 +342,16 @@ test.describe("Message Send Mode", () => {
       await page.keyboard.type(" message")
 
       // Try to send
+      await expect(editor).toBeFocused()
+      await expect(editor).toContainText("message")
+      const messageBeforeSend = ((await editor.textContent()) ?? "").replace(/\s+/g, " ").trim()
+      expect(messageBeforeSend.length).toBeGreaterThan(0)
       await page.keyboard.press("Enter")
 
-      // Message should be sent
-      await expect(page.locator("p").filter({ hasText: "Focus test message" }).first()).toBeVisible({ timeout: 5000 })
+      // Message should be sent (exact pre-send editor content)
+      await expect(page.getByRole("main").locator("p").filter({ hasText: messageBeforeSend }).first()).toBeVisible({
+        timeout: 10000,
+      })
     })
 
     test("should send after clearing and retyping content", async ({ page }) => {

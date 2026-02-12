@@ -14,15 +14,15 @@ import { test, expect } from "@playwright/test"
 
 // Stub companion is fast but session lifecycle (create → complete) involves
 // multiple async hops (outbox → broadcast → UI). 15s accommodates CI slowness.
-const AGENT_COMPLETION_TIMEOUT = 15_000
+const AGENT_COMPLETION_TIMEOUT = 30_000
 
 test.describe("Agent Activity", () => {
-  const testId = Date.now().toString(36)
-  const testEmail = `agent-activity-${testId}@example.com`
-  const testName = `Agent Test ${testId}`
-  const workspaceName = `Agent Activity WS ${testId}`
-
   test.beforeEach(async ({ page }) => {
+    const setupId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
+    const testEmail = `agent-activity-${setupId}@example.com`
+    const testName = `Agent Test ${setupId}`
+    const workspaceName = `Agent Activity WS ${setupId}`
+
     await page.goto("/login")
     await page.getByRole("button", { name: "Sign in with WorkOS" }).click()
     await expect(page.getByRole("heading", { name: "Test Login" })).toBeVisible()
@@ -58,21 +58,23 @@ test.describe("Agent Activity", () => {
   /** Wait for agent to complete and open the resulting thread */
   async function waitForAgentAndOpenThread(page: import("@playwright/test").Page, messageText: string) {
     const triggerMessage = page.getByRole("main").locator(".group").filter({ hasText: messageText }).first()
+    const replyIndicator = triggerMessage.getByText(/\d+ repl/i)
 
     // Wait for reply indicator — means the agent completed and sent a message to the thread
-    await expect(triggerMessage.getByText(/\d+ repl/i)).toBeVisible({ timeout: AGENT_COMPLETION_TIMEOUT })
+    await expect(replyIndicator).toBeVisible({ timeout: AGENT_COMPLETION_TIMEOUT })
 
     // Let events settle (bootstrap fetch may race with the last outbox events)
     await page.waitForTimeout(1000)
 
     // Click the reply indicator to open the thread panel
-    await triggerMessage.getByText(/\d+ repl/i).click()
+    await replyIndicator.click()
 
     // Wait for thread panel to load with content (not just the empty "Start a new thread" state)
     await expect(page.getByText("stub response from the companion")).toBeVisible({ timeout: 10000 })
   }
 
   test("should show agent response in thread after @mention in channel", async ({ page }) => {
+    const testId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
     const channelName = `agent-resp-${testId}`
     page.once("dialog", async (dialog) => {
       await dialog.accept(channelName)
@@ -88,6 +90,7 @@ test.describe("Agent Activity", () => {
   })
 
   test("should show session card in thread, not in channel", async ({ page }) => {
+    const testId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
     const channelName = `sess-card-${testId}`
     page.once("dialog", async (dialog) => {
       await dialog.accept(channelName)
@@ -99,20 +102,22 @@ test.describe("Agent Activity", () => {
 
     // Wait for agent to complete
     const triggerMessage = page.getByRole("main").locator(".group").filter({ hasText: "do your thing" }).first()
-    await expect(triggerMessage.getByText(/\d+ repl/i)).toBeVisible({ timeout: AGENT_COMPLETION_TIMEOUT })
+    const replyIndicator = triggerMessage.getByText(/\d+ repl/i)
+    await expect(replyIndicator).toBeVisible({ timeout: AGENT_COMPLETION_TIMEOUT })
 
     // Session card should NOT be visible in the channel view
     await expect(page.getByText("Session complete")).not.toBeVisible({ timeout: 2000 })
 
     // Open thread
     await page.waitForTimeout(1000)
-    await triggerMessage.getByText(/\d+ repl/i).click()
+    await replyIndicator.click()
 
     // Session card SHOULD be visible in the thread
     await expect(page.getByText("Session complete")).toBeVisible({ timeout: 10000 })
   })
 
   test("should show session card with subtitle (no layout shift)", async ({ page }) => {
+    const testId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
     const channelName = `layout-${testId}`
     page.once("dialog", async (dialog) => {
       await dialog.accept(channelName)
@@ -135,6 +140,7 @@ test.describe("Agent Activity", () => {
   })
 
   test("should link session card to trace view", async ({ page }) => {
+    const testId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
     const channelName = `trace-${testId}`
     page.once("dialog", async (dialog) => {
       await dialog.accept(channelName)

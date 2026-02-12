@@ -132,12 +132,19 @@ export function useStreamBootstrap(workspaceId: string, streamId: string, option
 }
 
 export function useCreateStream(workspaceId: string) {
+  const socket = useSocket()
   const streamService = useStreamService()
   const queryClient = useQueryClient()
 
   return useMutation({
     mutationFn: (data: CreateStreamInput) => streamService.create(workspaceId, data),
     onSuccess: (newStream) => {
+      if (socket) {
+        // Subscribe immediately so early stream:activity updates are not missed
+        // while the workspace bootstrap membership observer catches up.
+        void joinRoomBestEffort(socket, `ws:${workspaceId}:stream:${newStream.id}`, "CreateStream")
+      }
+
       // Update workspace bootstrap cache so sidebar shows the new stream immediately
       queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
         if (!old) return old
