@@ -107,7 +107,7 @@ export function useStreamBootstrap(workspaceId: string, streamId: string, option
     staleTime: Infinity,
     gcTime: Infinity,
     retry: false,
-    refetchOnMount: false,
+    refetchOnMount: true,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     structuralSharing: false,

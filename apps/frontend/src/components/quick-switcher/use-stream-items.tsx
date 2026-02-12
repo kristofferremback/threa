@@ -179,7 +179,9 @@ export function useStreamItems(context: ModeContext): ModeResult {
         const isArchived = stream.archivedAt != null
         const typeLabel = getStreamTypeLabel(stream.type)
         const notJoined = !memberStreamIds.has(stream.id) && stream.visibility === "public"
-        const description = isArchived ? `${typeLabel} · Archived` : notJoined ? `${typeLabel} · Not joined` : typeLabel
+        let description = typeLabel
+        if (isArchived) description = `${typeLabel} · Archived`
+        else if (notJoined) description = `${typeLabel} · Not joined`
         return {
           id: stream.id,
           label: getStreamDisplayName(stream),

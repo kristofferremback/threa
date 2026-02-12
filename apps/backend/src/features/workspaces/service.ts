@@ -10,7 +10,7 @@ import { PersonaRepository, type Persona } from "../agents"
 import { workspaceId, memberId as generateMemberId, streamId } from "../../lib/id"
 import { generateSlug, generateUniqueSlug } from "../../lib/slug"
 import { serializeBigInt } from "../../lib/serialization"
-import { HttpError } from "../../lib/errors"
+import { HttpError, isUniqueViolation } from "../../lib/errors"
 import type { WorkosOrgService } from "../../auth/workos-org-service"
 
 function deriveSlugFromEmail(email: string): string {
@@ -177,56 +177,70 @@ export class WorkspaceService {
     })
 
     // Phase 2: External API call — no DB connection held
-    const enforceEmailSlug = await this.shouldEnforceEmailSlug(orgId, user)
+    const preferEmailSlug = await this.shouldPreferEmailSlug(orgId, user)
 
-    // Phase 3: Transaction with re-check via WHERE guard on setup_completed
-    return withTransaction(this.pool, async (client) => {
-      // Re-read member inside transaction to get fresh slug (Phase 1 value may be stale)
-      const currentMember = await MemberRepository.findById(client, memberId)
-      if (!currentMember || currentMember.setupCompleted) {
-        throw new HttpError("Member setup already completed", { status: 400, code: "SETUP_ALREADY_COMPLETED" })
-      }
+    // Phase 3: Transaction with retry on slug collision.
+    // generateUniqueSlug checks availability within the transaction, but a concurrent
+    // transaction can claim the same slug before our COMMIT. The UNIQUE constraint
+    // catches this — retry with a fresh check so the next attempt sees the committed slug.
+    const MAX_SLUG_ATTEMPTS = 3
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await withTransaction(this.pool, async (client) => {
+          // Re-read member inside transaction to get fresh slug (Phase 1 value may be stale)
+          const currentMember = await MemberRepository.findById(client, memberId)
+          if (!currentMember || currentMember.setupCompleted) {
+            throw new HttpError("Member setup already completed", { status: 400, code: "SETUP_ALREADY_COMPLETED" })
+          }
 
-      let slug: string
+          let slug: string
 
-      if (enforceEmailSlug) {
-        slug = deriveSlugFromEmail(user.email)
-      } else if (params.slug) {
-        slug = generateSlug(params.slug)
-      } else {
-        slug = await generateUniqueSlug(user.name, (s) => WorkspaceRepository.memberSlugExists(client, workspaceId, s))
-      }
+          if (preferEmailSlug) {
+            slug = deriveSlugFromEmail(user.email)
+          } else if (params.slug) {
+            slug = generateSlug(params.slug)
+          } else {
+            slug = await generateUniqueSlug(user.name, (s) =>
+              WorkspaceRepository.memberSlugExists(client, workspaceId, s)
+            )
+          }
 
-      const slugExists = await WorkspaceRepository.memberSlugExists(client, workspaceId, slug)
-      if (slugExists && slug !== currentMember.slug) {
-        slug = await generateUniqueSlug(slug, (s) => WorkspaceRepository.memberSlugExists(client, workspaceId, s))
-      }
+          const slugExists = await WorkspaceRepository.memberSlugExists(client, workspaceId, slug)
+          if (slugExists && slug !== currentMember.slug) {
+            slug = await generateUniqueSlug(slug, (s) => WorkspaceRepository.memberSlugExists(client, workspaceId, s))
+          }
 
-      const updated = await WorkspaceRepository.updateMember(client, memberId, {
-        slug,
-        name: params.name,
-        timezone: params.timezone,
-        locale: params.locale,
-        setupCompleted: true,
-      })
+          const updated = await WorkspaceRepository.updateMember(client, memberId, {
+            slug,
+            name: params.name,
+            timezone: params.timezone,
+            locale: params.locale,
+            setupCompleted: true,
+          })
 
-      if (!updated) {
-        throw new HttpError("Member setup already completed", { status: 400, code: "SETUP_ALREADY_COMPLETED" })
-      }
+          if (!updated) {
+            throw new HttpError("Member setup already completed", { status: 400, code: "SETUP_ALREADY_COMPLETED" })
+          }
 
-      const fullMember = await MemberRepository.findById(client, memberId)
-      if (fullMember) {
-        await OutboxRepository.insert(client, "member:updated", {
-          workspaceId,
-          member: serializeBigInt(fullMember),
+          const fullMember = await MemberRepository.findById(client, memberId)
+          if (fullMember) {
+            await OutboxRepository.insert(client, "member:updated", {
+              workspaceId,
+              member: serializeBigInt(fullMember),
+            })
+          }
+
+          return updated
         })
+      } catch (error) {
+        if (attempt >= MAX_SLUG_ATTEMPTS || !isUniqueViolation(error, "workspace_members_ws_slug_key")) {
+          throw error
+        }
       }
-
-      return updated
-    })
+    }
   }
 
-  private async shouldEnforceEmailSlug(orgId: string | null, user: User): Promise<boolean> {
+  private async shouldPreferEmailSlug(orgId: string | null, user: User): Promise<boolean> {
     if (!this.workosOrgService || !orgId) return false
 
     const org = await this.workosOrgService.getOrganization(orgId)

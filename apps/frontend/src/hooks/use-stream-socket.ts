@@ -96,6 +96,15 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
     // Subscribe FIRST (before any fetches happen)
     joinRoomFireAndForget(socket, room, abortController.signal, "StreamSocket")
 
+    // Ensure bootstrap data is fresh after (re-)subscribing to the room.
+    // Skips first mount (no cached data yet — bootstrap queryFn handles that).
+    const existingState = queryClient.getQueryState(streamKeys.bootstrap(workspaceId, streamId))
+    if (existingState?.status === "success") {
+      queryClient.invalidateQueries({
+        queryKey: streamKeys.bootstrap(workspaceId, streamId),
+      })
+    }
+
     const handleMessageCreated = async (payload: MessageEventPayload) => {
       if (payload.streamId !== streamId) return
 

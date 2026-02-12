@@ -139,7 +139,7 @@ export function useSocketEvents(workspaceId: string) {
         socket.emit("leave", `ws:${workspaceId}:stream:${id}`)
       }
     }
-  }, [socket, workspaceId, memberStreamIdsKey])
+  }, [socket, workspaceId, memberStreamIdsKey, reconnectCount])
 
   useEffect(() => {
     if (!socket || !workspaceId) return
