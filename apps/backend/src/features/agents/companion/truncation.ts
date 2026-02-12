@@ -1,4 +1,4 @@
-import type { CoreMessage } from "ai"
+import type { ModelMessage } from "ai"
 import { logger } from "../../../lib/logger"
 
 /**
@@ -16,9 +16,9 @@ export const MAX_MESSAGE_CHARS = 400_000
 const MAX_SINGLE_MESSAGE_CHARS = 50_000
 
 /**
- * Get the character length of a CoreMessage's content.
+ * Get the character length of a ModelMessage's content.
  */
-function getMessageLength(message: CoreMessage): number {
+function getMessageLength(message: ModelMessage): number {
   if (message.role === "tool") {
     // Tool messages have ToolContent = Array<ToolResultPart>
     // Each ToolResultPart has output: { type: 'text' | 'json', value: string | JSONValue }
@@ -46,7 +46,7 @@ function getMessageLength(message: CoreMessage): number {
  * Truncate a single message's content if it exceeds the limit.
  * Returns a new message with truncated content, or the original if no truncation needed.
  */
-function truncateSingleMessage(message: CoreMessage, maxChars: number): CoreMessage {
+function truncateSingleMessage(message: ModelMessage, maxChars: number): ModelMessage {
   const length = getMessageLength(message)
   if (length <= maxChars) return message
 
@@ -78,7 +78,7 @@ function truncateSingleMessage(message: CoreMessage, maxChars: number): CoreMess
 
   if (typeof content === "string") {
     const truncated = content.slice(0, maxChars) + "\n\n[... content truncated due to length ...]"
-    return { ...message, content: truncated } as CoreMessage
+    return { ...message, content: truncated } as ModelMessage
   }
 
   if (Array.isArray(content)) {
@@ -104,7 +104,7 @@ function truncateSingleMessage(message: CoreMessage, maxChars: number): CoreMess
       if (remainingChars === 0) break
     }
 
-    return { ...message, content: truncatedParts } as CoreMessage
+    return { ...message, content: truncatedParts } as ModelMessage
   }
 
   return message
@@ -121,7 +121,7 @@ function truncateSingleMessage(message: CoreMessage, maxChars: number): CoreMess
  * 4. Otherwise, keep the most recent messages that fit
  * 5. Always keep at least the last message for context
  */
-export function truncateMessages(messages: CoreMessage[], maxChars: number): CoreMessage[] {
+export function truncateMessages(messages: ModelMessage[], maxChars: number): ModelMessage[] {
   if (messages.length === 0) return messages
 
   // First pass: truncate any oversized individual messages
@@ -142,7 +142,7 @@ export function truncateMessages(messages: CoreMessage[], maxChars: number): Cor
   )
 
   // Build from the end, keeping messages until we hit the limit
-  const kept: CoreMessage[] = []
+  const kept: ModelMessage[] = []
   let keptLength = 0
 
   // Walk backwards through messages

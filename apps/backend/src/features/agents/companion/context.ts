@@ -1,5 +1,5 @@
 import type { Pool } from "pg"
-import type { CoreMessage } from "ai"
+import type { ModelMessage } from "ai"
 import type { UserPreferences } from "@threa/types"
 import { AgentTriggers, StreamTypes, AuthorTypes } from "@threa/types"
 import type { UserPreferencesService } from "../../user-preferences"
@@ -34,7 +34,7 @@ export interface ContextParams {
 
 export interface AgentContext {
   systemPrompt: string
-  messages: CoreMessage[]
+  messages: ModelMessage[]
   triggerMessage: Message | null
   invokingMemberId: string | undefined
   preferences: UserPreferences | undefined
@@ -46,7 +46,7 @@ export interface AgentContext {
 /**
  * Assemble all context the companion agent needs before entering the agent loop.
  * Fetches trigger message, builds stream context, resolves author names,
- * creates system prompt, and formats messages as CoreMessage[].
+ * creates system prompt, and formats messages as ModelMessage[].
  */
 export async function buildAgentContext(deps: ContextDeps, params: ContextParams): Promise<AgentContext> {
   const { db, userPreferencesService, conversationSummaryService } = deps

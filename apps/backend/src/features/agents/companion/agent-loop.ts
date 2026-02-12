@@ -1,5 +1,5 @@
 import { generateText } from "ai"
-import type { LanguageModel, CoreMessage, Tool, ToolCallPart, ToolResultPart } from "ai"
+import type { LanguageModel, ModelMessage, Tool, ToolCallPart, ToolResultPart } from "ai"
 import type { SourceItem, AgentStepType, TraceSource, AuthorType } from "@threa/types"
 import { AgentToolNames } from "@threa/types"
 import { logger } from "../../../lib/logger"
@@ -38,7 +38,7 @@ export interface RecordStepParams {
 export interface AgentLoopInput {
   model: LanguageModel
   systemPrompt: string
-  messages: CoreMessage[]
+  messages: ModelMessage[]
   tools: Record<string, Tool<any, any>>
   streamId: string
   sessionId: string
@@ -88,7 +88,7 @@ function toDefinitions(tools: Record<string, Tool<any, any>>): Record<string, To
 async function callToolExecute(tool: Tool<any, any>, args: unknown, toolCallId: string): Promise<unknown> {
   const t = tool as Tool<any, any> & { execute?: (args: unknown, opts: unknown) => Promise<unknown> }
   if (!t.execute) throw new Error("Tool has no execute handler")
-  return t.execute(args, { toolCallId, messages: [] as CoreMessage[] })
+  return t.execute(args, { toolCallId, messages: [] as ModelMessage[] })
 }
 
 function getToolStepType(toolName: string): AgentStepType {
@@ -214,7 +214,7 @@ interface ToolExecContext {
 
 interface ToolExecResult {
   resultParts: ToolResultPart[]
-  extraMessages: CoreMessage[]
+  extraMessages: ModelMessage[]
   pendingMessages: PendingMessage[]
   sources: SourceItem[]
   retrievedContext: string | null
@@ -225,7 +225,7 @@ async function executeToolCalls(
   ctx: ToolExecContext
 ): Promise<ToolExecResult> {
   const resultParts: ToolResultPart[] = []
-  const extraMessages: CoreMessage[] = []
+  const extraMessages: ModelMessage[] = []
   const pendingMessages: PendingMessage[] = []
   let { sources, retrievedContext } = ctx
 
@@ -409,7 +409,7 @@ async function injectNewMessages(
   newMessages: NewMessageInfo[],
   state: { lastProcessedSequence: bigint; sessionId: string },
   callbacks: AgentLoopCallbacks
-): Promise<{ maxSequence: bigint; userMessages: CoreMessage[] }> {
+): Promise<{ maxSequence: bigint; userMessages: ModelMessage[] }> {
   await callbacks.awaitAttachmentProcessing(newMessages.map((m) => m.messageId))
 
   const maxSequence = newMessages.reduce((max, m) => (m.sequence > max ? m.sequence : max), state.lastProcessedSequence)
@@ -441,7 +441,7 @@ async function injectNewMessages(
 export async function runAgentLoop(input: AgentLoopInput, callbacks: AgentLoopCallbacks): Promise<AgentLoopResult> {
   const { model, systemPrompt, tools, streamId, sessionId, personaId, telemetry } = input
   let lastProcessedSequence = input.lastProcessedSequence
-  const conversation: CoreMessage[] = [...input.messages]
+  const conversation: ModelMessage[] = [...input.messages]
   const toolDefinitions = toDefinitions(tools)
   const sentMessageIds: string[] = []
   let messagesSent = 0
