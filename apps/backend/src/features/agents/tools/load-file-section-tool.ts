@@ -1,4 +1,4 @@
-import { DynamicStructuredTool } from "@langchain/core/tools"
+import { tool } from "ai"
 import { z } from "zod"
 import { logger } from "../../../lib/logger"
 
@@ -49,8 +49,7 @@ export interface LoadFileSectionCallbacks {
  * line ranges before calling this tool.
  */
 export function createLoadFileSectionTool(callbacks: LoadFileSectionCallbacks) {
-  return new DynamicStructuredTool({
-    name: "load_file_section",
+  return tool({
     description: `Load specific lines from a large text file. Only use this when:
 - The file is large (>32KB) and injection strategy is "summary" (full content not in context)
 - You need to read specific sections based on the section metadata
@@ -59,8 +58,8 @@ export function createLoadFileSectionTool(callbacks: LoadFileSectionCallbacks) {
 The attachment extraction includes textMetadata.sections with line ranges. Use that to determine which lines to load.
 
 For small/medium files (<32KB), full content is already available in fullText - don't use this tool.`,
-    schema: LoadFileSectionSchema,
-    func: async (input: LoadFileSectionInput) => {
+    inputSchema: LoadFileSectionSchema,
+    execute: async (input) => {
       try {
         const result = await callbacks.loadFileSection(input)
 

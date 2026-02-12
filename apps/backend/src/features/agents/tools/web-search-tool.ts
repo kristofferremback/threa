@@ -1,4 +1,4 @@
-import { DynamicStructuredTool } from "@langchain/core/tools"
+import { tool } from "ai"
 import { z } from "zod"
 import { logger } from "../../../lib/logger"
 
@@ -63,12 +63,11 @@ function redactQuery(query: string): string {
 export function createWebSearchTool(params: CreateWebSearchToolParams) {
   const { tavilyApiKey, maxResults = 5 } = params
 
-  return new DynamicStructuredTool({
-    name: "web_search",
+  return tool({
     description:
       "Search the web for current information. Returns relevant results with titles, URLs, and content snippets. Use this when you need up-to-date information or facts not in your training data.",
-    schema: WebSearchSchema,
-    func: async (input: WebSearchInput) => {
+    inputSchema: WebSearchSchema,
+    execute: async (input) => {
       const controller = new AbortController()
       const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
       const sanitizedQuery = redactQuery(input.query)

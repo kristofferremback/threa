@@ -48,7 +48,6 @@ import {
   PersonaAgent,
   type PersonaAgentInput,
   type PersonaAgentDeps,
-  LangGraphResponseGenerator,
   Researcher,
   PersonaRepository,
   TraceEmitter,
@@ -60,7 +59,6 @@ import { UserPreferencesService } from "../../../src/features/user-preferences"
 import { EmbeddingService } from "../../../src/features/memos"
 import { StreamRepository, StreamMemberRepository } from "../../../src/features/streams"
 import { MessageRepository } from "../../../src/features/messaging"
-import { createPostgresCheckpointer } from "../../../src/lib/ai"
 import { createModelRegistry } from "../../../src/lib/ai/model-registry"
 import type { StorageProvider } from "../../../src/lib/storage/s3-client"
 import { EventService } from "../../../src/features/messaging"
@@ -260,7 +258,6 @@ async function runCompanionTask(input: CompanionInput, ctx: EvalContext): Promis
     let createdThreadId: string | undefined
 
     // Create dependencies for PersonaAgent
-    const checkpointer = await createPostgresCheckpointer(ctx.pool)
     const embeddingService = new EmbeddingService({ ai: ctx.ai })
     const userPreferencesService = new UserPreferencesService(ctx.pool)
     const researcher = new Researcher({
@@ -272,13 +269,6 @@ async function runCompanionTask(input: CompanionInput, ctx: EvalContext): Promis
     const searchService = new SearchService({
       pool: ctx.pool,
       embeddingService,
-    })
-
-    const responseGenerator = new LangGraphResponseGenerator({
-      ai: ctx.ai,
-      checkpointer,
-      tavilyApiKey: ctx.credentials.tavilyApiKey,
-      costRecorder: undefined,
     })
 
     // Stub Socket.io server for tracing - evals don't need real-time updates
@@ -334,14 +324,15 @@ async function runCompanionTask(input: CompanionInput, ctx: EvalContext): Promis
     })
     const personaAgent = new PersonaAgent({
       pool: ctx.pool,
+      ai: ctx.ai,
       traceEmitter,
-      responseGenerator,
       userPreferencesService,
       researcher,
       searchService,
       conversationSummaryService,
       storage: stubStorage,
       modelRegistry: createModelRegistry(),
+      tavilyApiKey: ctx.credentials.tavilyApiKey,
       createMessage,
       createThread,
     })

@@ -1,6 +1,8 @@
 import { describe, expect, test, mock } from "bun:test"
 import { createWorkspaceResearchTool } from "./workspace-research-tool"
 
+const toolOpts = { toolCallId: "test", messages: [] as any[] }
+
 describe("workspace_research tool", () => {
   test("should return structured workspace research results", async () => {
     const runResearcher = mock(async () => ({
@@ -26,8 +28,8 @@ describe("workspace_research tool", () => {
     }))
 
     const tool = createWorkspaceResearchTool({ runResearcher })
-    const rawResult = await tool.invoke({ reason: "Need prior context" })
-    const result = JSON.parse(rawResult as string)
+    const rawResult = (await tool.execute!({}, toolOpts)) as string
+    const result = JSON.parse(rawResult)
 
     expect(runResearcher).toHaveBeenCalledTimes(1)
     expect(result).toMatchObject({

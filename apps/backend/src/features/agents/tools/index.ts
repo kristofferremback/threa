@@ -62,6 +62,7 @@ export {
 export {
   createWorkspaceResearchTool,
   type WorkspaceResearchInput,
+  type WorkspaceResearchCallbacks,
   type WorkspaceResearchToolResult,
 } from "./workspace-research-tool"
 

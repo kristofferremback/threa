@@ -1,30 +1,20 @@
+import type { CoreMessage } from "ai"
 import { AuthorTypes, StreamTypes, type ChartData, type DiagramData, type TableData } from "@threa/types"
 import { formatDate, formatTime, getDateKey } from "../../../../lib/temporal"
 import type { AttachmentContext, MessageWithAttachments, StreamContext } from "../../context-builder"
 
 /**
- * Formatted message for LLM consumption.
- */
-export interface FormattedMessage {
-  role: "user" | "assistant"
-  content: string
-}
-
-/**
  * Format messages for the LLM with timestamps and author names.
  * Includes date boundaries when messages cross dates.
  *
- * Returns messages in standard { role, content } format with enriched content:
+ * Returns CoreMessage[] with enriched content:
  * - User messages: `(14:30) [@name] content`
  * - Assistant messages: content only (no timestamp to avoid model mimicking)
  *
  * Attachments are included as text descriptions (captions/summaries).
  * Actual images are loaded on-demand via the load_attachment tool.
  */
-export function formatMessagesWithTemporal(
-  messages: MessageWithAttachments[],
-  context: StreamContext
-): FormattedMessage[] {
+export function formatMessagesWithTemporal(messages: MessageWithAttachments[], context: StreamContext): CoreMessage[] {
   const temporal = context.temporal
   if (!temporal) {
     // No temporal context - return messages with original content + attachment context
@@ -42,7 +32,7 @@ export function formatMessagesWithTemporal(
     }
   }
 
-  const result: FormattedMessage[] = []
+  const result: CoreMessage[] = []
   let currentDateKey: string | null = null
 
   for (const msg of messages) {

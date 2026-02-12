@@ -1,0 +1,628 @@
+import { generateText } from "ai"
+import type { LanguageModel, CoreMessage, Tool, ToolCallPart, ToolResultPart } from "ai"
+import type { SourceItem, AgentStepType, TraceSource, AuthorType } from "@threa/types"
+import { AgentToolNames } from "@threa/types"
+import { logger } from "../../../lib/logger"
+import { protectToolOutputText } from "../tool-trust-boundary"
+import { isMultimodalToolResult } from "../tools"
+import { MAX_MESSAGE_CHARS, truncateMessages } from "./truncation"
+import { extractSourcesFromWebSearch, parseWorkspaceResearchResult, mergeSourceItems, toSourceItems } from "./sources"
+
+const MAX_ITERATIONS = 20
+const WORKSPACE_RESEARCH_TOOL = "workspace_research"
+const FALLBACK_RESPONSE =
+  "I am sorry, I could not complete a proper response yet. Please send one more message and I will retry."
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface NewMessageInfo {
+  sequence: bigint
+  messageId: string
+  content: string
+  authorId: string
+  authorName: string
+  authorType: AuthorType
+  createdAt: string
+}
+
+export interface RecordStepParams {
+  stepType: AgentStepType
+  content?: string
+  sources?: TraceSource[]
+  messageId?: string
+  durationMs?: number
+}
+
+export interface AgentLoopInput {
+  model: LanguageModel
+  systemPrompt: string
+  messages: CoreMessage[]
+  tools: Record<string, Tool<any, any>>
+  streamId: string
+  sessionId: string
+  personaId: string
+  lastProcessedSequence: bigint
+  telemetry?: { functionId: string; metadata?: Record<string, string | number | boolean> }
+}
+
+export interface AgentLoopCallbacks {
+  sendMessage: (input: { content: string; sources?: SourceItem[] }) => Promise<{ messageId: string }>
+  checkNewMessages: (streamId: string, sinceSequence: bigint, excludeAuthorId: string) => Promise<NewMessageInfo[]>
+  updateLastSeenSequence: (sessionId: string, sequence: bigint) => Promise<void>
+  recordStep: (params: RecordStepParams) => Promise<void>
+  awaitAttachmentProcessing: (messageIds: string[]) => Promise<void>
+}
+
+export interface AgentLoopResult {
+  messagesSent: number
+  sentMessageIds: string[]
+  lastProcessedSequence: bigint
+  sources: SourceItem[]
+}
+
+interface PendingMessage {
+  content: string
+  sources?: SourceItem[]
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Strip execute handlers from tools so generateText returns tool calls
+ * without auto-executing them. The agent loop executes tools manually
+ * to apply trust boundary, extract sources, and record trace steps.
+ */
+function toDefinitions(tools: Record<string, Tool<any, any>>): Record<string, Tool<any, any>> {
+  const defs: Record<string, Tool<any, any>> = {}
+  for (const [name, t] of Object.entries(tools)) {
+    const { execute: _, ...def } = t as Tool<any, any> & { execute?: unknown }
+    defs[name] = def
+  }
+  return defs
+}
+
+async function callToolExecute(tool: Tool<any, any>, args: unknown, toolCallId: string): Promise<unknown> {
+  const t = tool as Tool<any, any> & { execute?: (args: unknown, opts: unknown) => Promise<unknown> }
+  if (!t.execute) throw new Error("Tool has no execute handler")
+  return t.execute(args, { toolCallId, messages: [] as CoreMessage[] })
+}
+
+function getToolStepType(toolName: string): AgentStepType {
+  switch (toolName) {
+    case AgentToolNames.READ_URL:
+      return "visit_page"
+    case WORKSPACE_RESEARCH_TOOL:
+    case AgentToolNames.SEARCH_MESSAGES:
+    case AgentToolNames.SEARCH_STREAMS:
+    case AgentToolNames.SEARCH_USERS:
+    case AgentToolNames.GET_STREAM_MESSAGES:
+      return "workspace_search"
+    default:
+      return "tool_call"
+  }
+}
+
+function formatToolStep(
+  toolName: string,
+  args: Record<string, unknown>,
+  resultStr: string
+): { content: string; sources?: TraceSource[] } {
+  switch (toolName) {
+    case AgentToolNames.READ_URL: {
+      const url = String(args.url ?? "")
+      try {
+        const parsed = JSON.parse(resultStr)
+        if (parsed.title && parsed.title !== "Untitled") {
+          return {
+            content: JSON.stringify({ url, title: parsed.title }),
+            sources: [{ type: "web", title: parsed.title, url, domain: new URL(url).hostname }],
+          }
+        }
+      } catch {
+        /* not valid JSON */
+      }
+      return { content: JSON.stringify({ url }) }
+    }
+    case AgentToolNames.SEARCH_MESSAGES:
+      return { content: JSON.stringify({ tool: toolName, query: args.query ?? "", stream: args.stream ?? null }) }
+    case AgentToolNames.SEARCH_STREAMS:
+    case AgentToolNames.SEARCH_USERS:
+      return { content: JSON.stringify({ tool: toolName, query: args.query ?? "" }) }
+    case AgentToolNames.GET_STREAM_MESSAGES:
+      return { content: JSON.stringify({ tool: toolName, stream: args.stream ?? null }) }
+    default:
+      return { content: JSON.stringify({ tool: toolName, args }) }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Workspace research prefetch
+// ---------------------------------------------------------------------------
+
+async function prefetchWorkspaceResearch(
+  tool: Tool<any, any>,
+  state: { sources: SourceItem[]; retrievedContext: string | null },
+  callbacks: Pick<AgentLoopCallbacks, "recordStep">
+): Promise<{ sources: SourceItem[]; retrievedContext: string | null }> {
+  const startTime = Date.now()
+  try {
+    const rawResult = await callToolExecute(tool, { reason: "Initial workspace memory prefetch" }, "prefetch")
+    const durationMs = Date.now() - startTime
+    const resultStr = typeof rawResult === "string" ? rawResult : JSON.stringify(rawResult)
+    const parsed = parseWorkspaceResearchResult(resultStr)
+    if (!parsed) throw new Error("workspace_research returned malformed JSON during prefetch")
+
+    const prefetchedSources = toSourceItems(parsed.sources)
+    const mergedSources = mergeSourceItems(state.sources, prefetchedSources)
+    const retrievedContext = parsed.retrievedContext?.trim() || state.retrievedContext
+
+    logger.info(
+      {
+        shouldSearch: parsed.shouldSearch,
+        sourceCount: prefetchedSources.length,
+        memoCount: parsed.memoCount,
+        messageCount: parsed.messageCount,
+        attachmentCount: parsed.attachmentCount,
+      },
+      "Workspace research prefetch completed"
+    )
+
+    await callbacks.recordStep({
+      stepType: "workspace_search",
+      content: JSON.stringify({
+        mode: "entrypoint_prefetch",
+        shouldSearch: parsed.shouldSearch,
+        sourceCount: prefetchedSources.length,
+        memoCount: parsed.memoCount,
+        messageCount: parsed.messageCount,
+        attachmentCount: parsed.attachmentCount,
+      }),
+      durationMs,
+      sources: prefetchedSources.map((s) => ({
+        type: (s.type ?? "workspace") as TraceSource["type"],
+        title: s.title,
+        url: s.url,
+        snippet: s.snippet,
+      })),
+    })
+
+    return { sources: mergedSources, retrievedContext }
+  } catch (error) {
+    logger.warn({ error }, "Workspace research prefetch failed; continuing without prefetch")
+    await callbacks.recordStep({
+      stepType: "tool_error",
+      content: `workspace_research prefetch failed: ${String(error)}`,
+    })
+    return state
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tool execution
+// ---------------------------------------------------------------------------
+
+interface ToolExecContext {
+  tools: Record<string, Tool<any, any>>
+  callbacks: AgentLoopCallbacks
+  sources: SourceItem[]
+  retrievedContext: string | null
+}
+
+interface ToolExecResult {
+  resultParts: ToolResultPart[]
+  extraMessages: CoreMessage[]
+  pendingMessages: PendingMessage[]
+  sources: SourceItem[]
+  retrievedContext: string | null
+}
+
+async function executeToolCalls(
+  toolCalls: Array<{ toolCallId: string; toolName: string; input: unknown }>,
+  ctx: ToolExecContext
+): Promise<ToolExecResult> {
+  const resultParts: ToolResultPart[] = []
+  const extraMessages: CoreMessage[] = []
+  const pendingMessages: PendingMessage[] = []
+  let { sources, retrievedContext } = ctx
+
+  // Order: web_search first (collect sources), then others, then send_message (staged)
+  const webSearchCalls = toolCalls.filter((tc) => tc.toolName === AgentToolNames.WEB_SEARCH)
+  const sendMessageCalls = toolCalls.filter((tc) => tc.toolName === AgentToolNames.SEND_MESSAGE)
+  const otherCalls = toolCalls.filter(
+    (tc) => tc.toolName !== AgentToolNames.WEB_SEARCH && tc.toolName !== AgentToolNames.SEND_MESSAGE
+  )
+
+  for (const tc of webSearchCalls) {
+    const startTime = Date.now()
+    try {
+      const rawResult = await callToolExecute(ctx.tools[tc.toolName], tc.input, tc.toolCallId)
+      const durationMs = Date.now() - startTime
+      const resultStr = typeof rawResult === "string" ? rawResult : JSON.stringify(rawResult)
+
+      const webSources = extractSourcesFromWebSearch(resultStr)
+      sources = mergeSourceItems(sources, webSources)
+
+      await ctx.callbacks.recordStep({
+        stepType: "web_search",
+        content: (tc.input as { query?: string }).query,
+        durationMs,
+        sources: webSources.map((s) => ({ title: s.title, url: s.url, type: "web" as const })),
+      })
+
+      resultParts.push(makeToolResult(tc, protectToolOutputText(resultStr)))
+    } catch (error) {
+      await ctx.callbacks.recordStep({
+        stepType: "tool_error",
+        content: `web_search failed: ${String(error)}`,
+        durationMs: Date.now() - startTime,
+      })
+      resultParts.push(makeToolResult(tc, JSON.stringify({ error: String(error) })))
+    }
+  }
+
+  for (const tc of otherCalls) {
+    const tool = ctx.tools[tc.toolName]
+    if (!tool || !("execute" in tool)) {
+      await ctx.callbacks.recordStep({ stepType: "tool_error", content: `Unknown tool: ${tc.toolName}` })
+      resultParts.push(makeToolResult(tc, JSON.stringify({ error: `Unknown tool: ${tc.toolName}` })))
+      continue
+    }
+
+    const startTime = Date.now()
+    try {
+      const rawResult = await callToolExecute(tool, tc.input, tc.toolCallId)
+      const durationMs = Date.now() - startTime
+
+      if (tc.toolName === WORKSPACE_RESEARCH_TOOL) {
+        const resultStr = typeof rawResult === "string" ? rawResult : JSON.stringify(rawResult)
+        const parsed = parseWorkspaceResearchResult(resultStr)
+        if (!parsed) throw new Error("workspace_research returned malformed JSON")
+
+        const workspaceSources = toSourceItems(parsed.sources)
+        if (workspaceSources.length > 0) sources = mergeSourceItems(sources, workspaceSources)
+        if (parsed.retrievedContext?.trim()) retrievedContext = parsed.retrievedContext.trim()
+
+        await ctx.callbacks.recordStep({
+          stepType: "workspace_search",
+          content: JSON.stringify({
+            shouldSearch: parsed.shouldSearch,
+            memoCount: parsed.memoCount,
+            messageCount: parsed.messageCount,
+            attachmentCount: parsed.attachmentCount,
+          }),
+          durationMs,
+          sources: workspaceSources.map((s) => ({
+            type: "workspace" as const,
+            title: s.title,
+            url: s.url,
+            snippet: s.snippet,
+          })),
+        })
+
+        // Return summary to model; full context goes in system prompt
+        resultParts.push(
+          makeToolResult(
+            tc,
+            protectToolOutputText(
+              JSON.stringify({
+                status: "ok",
+                contextAdded: Boolean(parsed.retrievedContext?.trim()),
+                sourceCount: workspaceSources.length,
+                memoCount: parsed.memoCount,
+                messageCount: parsed.messageCount,
+                attachmentCount: parsed.attachmentCount,
+              })
+            )
+          )
+        )
+        continue
+      }
+
+      if (isMultimodalToolResult(rawResult)) {
+        const textContent = rawResult.content
+          .filter((block: { type: string }): block is { type: "text"; text: string } => block.type === "text")
+          .map((block: { text: string }) => block.text)
+          .join("\n")
+
+        await ctx.callbacks.recordStep({
+          stepType: getToolStepType(tc.toolName),
+          content: textContent,
+          durationMs,
+        })
+
+        resultParts.push(makeToolResult(tc, protectToolOutputText(textContent)))
+
+        // Inject images as user message for vision models
+        const imageBlocks = rawResult.content.filter(
+          (block: { type: string }): block is { type: "image_url"; image_url: { url: string } } =>
+            block.type === "image_url"
+        )
+        if (imageBlocks.length > 0) {
+          extraMessages.push({
+            role: "user",
+            content: imageBlocks.map((block: { image_url: { url: string } }) => ({
+              type: "image" as const,
+              image: block.image_url.url,
+            })),
+          })
+        }
+      } else {
+        const resultStr = typeof rawResult === "string" ? rawResult : JSON.stringify(rawResult)
+        const { content, sources: stepSources } = formatToolStep(
+          tc.toolName,
+          tc.input as Record<string, unknown>,
+          resultStr
+        )
+        await ctx.callbacks.recordStep({
+          stepType: getToolStepType(tc.toolName),
+          content,
+          sources: stepSources,
+          durationMs,
+        })
+        resultParts.push(makeToolResult(tc, protectToolOutputText(resultStr)))
+      }
+    } catch (error) {
+      await ctx.callbacks.recordStep({
+        stepType: "tool_error",
+        content: `${tc.toolName} failed: ${String(error)}`,
+        durationMs: Date.now() - startTime,
+      })
+      resultParts.push(makeToolResult(tc, JSON.stringify({ error: String(error) })))
+    }
+  }
+
+  // Stage send_message calls (prep-then-send)
+  for (const tc of sendMessageCalls) {
+    pendingMessages.push({
+      content: (tc.input as { content: string }).content,
+      sources: sources.length > 0 ? [...sources] : undefined,
+    })
+    resultParts.push(
+      makeToolResult(
+        tc,
+        JSON.stringify({ status: "pending", message: "Message staged. Will be sent after checking for new context." })
+      )
+    )
+  }
+
+  return { resultParts, extraMessages, pendingMessages, sources, retrievedContext }
+}
+
+function makeToolResult(tc: { toolCallId: string; toolName: string }, value: string): ToolResultPart {
+  return {
+    type: "tool-result",
+    toolCallId: tc.toolCallId,
+    toolName: tc.toolName,
+    output: { type: "text", value },
+  }
+}
+
+// ---------------------------------------------------------------------------
+// New message handling
+// ---------------------------------------------------------------------------
+
+async function injectNewMessages(
+  newMessages: NewMessageInfo[],
+  state: { lastProcessedSequence: bigint; sessionId: string },
+  callbacks: AgentLoopCallbacks
+): Promise<{ maxSequence: bigint; userMessages: CoreMessage[] }> {
+  await callbacks.awaitAttachmentProcessing(newMessages.map((m) => m.messageId))
+
+  const maxSequence = newMessages.reduce((max, m) => (m.sequence > max ? m.sequence : max), state.lastProcessedSequence)
+  await callbacks.updateLastSeenSequence(state.sessionId, maxSequence)
+
+  await callbacks.recordStep({
+    stepType: "context_received",
+    content: JSON.stringify({
+      messages: newMessages.map((m) => ({
+        messageId: m.messageId,
+        authorName: m.authorName,
+        authorType: m.authorType,
+        createdAt: m.createdAt,
+        content: m.content.slice(0, 300),
+      })),
+    }),
+  })
+
+  return {
+    maxSequence,
+    userMessages: newMessages.map((m) => ({ role: "user" as const, content: m.content })),
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Main loop
+// ---------------------------------------------------------------------------
+
+export async function runAgentLoop(input: AgentLoopInput, callbacks: AgentLoopCallbacks): Promise<AgentLoopResult> {
+  const { model, systemPrompt, tools, streamId, sessionId, personaId, telemetry } = input
+  let lastProcessedSequence = input.lastProcessedSequence
+  const conversation: CoreMessage[] = [...input.messages]
+  const toolDefinitions = toDefinitions(tools)
+  const sentMessageIds: string[] = []
+  let messagesSent = 0
+  let sources: SourceItem[] = []
+  let retrievedContext: string | null = null
+
+  // Prefetch workspace research before the loop starts
+  if (tools[WORKSPACE_RESEARCH_TOOL]) {
+    const prefetched = await prefetchWorkspaceResearch(
+      tools[WORKSPACE_RESEARCH_TOOL],
+      { sources, retrievedContext },
+      callbacks
+    )
+    sources = prefetched.sources
+    retrievedContext = prefetched.retrievedContext
+  }
+
+  for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
+    const fullSystemPrompt = retrievedContext ? `${systemPrompt}\n\n${retrievedContext}` : systemPrompt
+    const truncatedMessages = truncateMessages(conversation, MAX_MESSAGE_CHARS)
+
+    const startTime = Date.now()
+    const result = await generateText({
+      model,
+      system: fullSystemPrompt,
+      messages: truncatedMessages,
+      tools: toolDefinitions,
+      experimental_telemetry: telemetry
+        ? { isEnabled: true, functionId: telemetry.functionId, metadata: telemetry.metadata }
+        : undefined,
+    })
+    const durationMs = Date.now() - startTime
+
+    // Record thinking step
+    if (result.text.trim() || result.toolCalls.length > 0) {
+      const thinkingContent = result.text.trim()
+        ? result.text
+        : JSON.stringify({ toolPlan: result.toolCalls.map((tc) => tc.toolName) })
+      await callbacks.recordStep({ stepType: "thinking", content: thinkingContent, durationMs })
+    }
+
+    // No tool calls: check for final new messages, then done
+    if (result.toolCalls.length === 0) {
+      const newMessages = await callbacks.checkNewMessages(streamId, lastProcessedSequence, personaId)
+      if (newMessages.length > 0) {
+        const { maxSequence, userMessages } = await injectNewMessages(
+          newMessages,
+          { lastProcessedSequence, sessionId },
+          callbacks
+        )
+        lastProcessedSequence = maxSequence
+        conversation.push(...userMessages)
+        continue
+      }
+      break
+    }
+
+    // Add assistant message (with tool calls) to conversation
+    const assistantMsg = result.response.messages[0]
+    if (assistantMsg) {
+      conversation.push(assistantMsg)
+    }
+
+    // Execute tools
+    const execResult = await executeToolCalls(
+      result.toolCalls.map((tc) => ({ toolCallId: tc.toolCallId, toolName: tc.toolName, input: tc.input })),
+      { tools, callbacks, sources, retrievedContext }
+    )
+    sources = execResult.sources
+    retrievedContext = execResult.retrievedContext
+
+    // Add tool results and extra messages to conversation
+    if (execResult.resultParts.length > 0) {
+      conversation.push({ role: "tool", content: execResult.resultParts })
+    }
+    conversation.push(...execResult.extraMessages)
+
+    // --- Finalize or reconsider ---
+    const newMessages = await callbacks.checkNewMessages(streamId, lastProcessedSequence, personaId)
+
+    if (execResult.pendingMessages.length > 0) {
+      if (newMessages.length === 0) {
+        // Commit pending messages
+        for (const pending of execResult.pendingMessages) {
+          const sendResult = await callbacks.sendMessage(pending)
+          sentMessageIds.push(sendResult.messageId)
+          messagesSent++
+          await callbacks.recordStep({
+            stepType: "message_sent",
+            content: pending.content,
+            messageId: sendResult.messageId,
+            sources: pending.sources?.map((s) => ({
+              type: (s.type ?? "web") as TraceSource["type"],
+              title: s.title,
+              url: s.url,
+              snippet: s.snippet,
+            })),
+          })
+        }
+      } else {
+        // Reconsider: new messages arrived while response was pending
+        const { maxSequence, userMessages } = await injectNewMessages(
+          newMessages,
+          { lastProcessedSequence, sessionId },
+          callbacks
+        )
+        lastProcessedSequence = maxSequence
+
+        const pendingContents = execResult.pendingMessages.map((p) => p.content).join("\n---\n")
+        await callbacks.recordStep({
+          stepType: "reconsidering",
+          content: JSON.stringify({
+            draftResponse: pendingContents,
+            newMessages: newMessages.map((m) => ({
+              messageId: m.messageId,
+              authorName: m.authorName,
+              authorType: m.authorType,
+              createdAt: m.createdAt,
+              content: m.content.slice(0, 300),
+            })),
+          }),
+        })
+
+        conversation.push(...userMessages)
+        conversation.push({
+          role: "system",
+          content:
+            `[New context arrived while you were responding]\n\n` +
+            `Your draft response${execResult.pendingMessages.length > 1 ? "s were" : " was"}:\n"${pendingContents}"\n\n` +
+            `Please respond to all messages, incorporating the new context. ` +
+            `You may send the same response${execResult.pendingMessages.length > 1 ? "s" : ""} if still appropriate, or revise based on the new information.`,
+        })
+      }
+    } else if (newMessages.length > 0) {
+      // No pending messages but new context arrived
+      const { maxSequence, userMessages } = await injectNewMessages(
+        newMessages,
+        { lastProcessedSequence, sessionId },
+        callbacks
+      )
+      lastProcessedSequence = maxSequence
+      conversation.push(...userMessages)
+    }
+  }
+
+  // Ensure at least one message was sent
+  if (messagesSent === 0) {
+    const lastAssistant = [...conversation].reverse().find((m) => m.role === "assistant")
+    let finalText: string | undefined
+    if (lastAssistant && typeof lastAssistant.content === "string") {
+      finalText = lastAssistant.content
+    } else if (lastAssistant && Array.isArray(lastAssistant.content)) {
+      finalText = (lastAssistant.content as Array<{ type: string; text?: string }>)
+        .filter((p) => p.type === "text" && p.text)
+        .map((p) => p.text!)
+        .join("")
+    }
+
+    const contentToSend = finalText?.trim() || FALLBACK_RESPONSE
+    const sendResult = await callbacks.sendMessage({
+      content: contentToSend,
+      sources: sources.length > 0 ? sources : undefined,
+    })
+    sentMessageIds.push(sendResult.messageId)
+    messagesSent++
+
+    await callbacks.recordStep({
+      stepType: "message_sent",
+      content: contentToSend,
+      messageId: sendResult.messageId,
+      sources:
+        sources.length > 0
+          ? sources.map((s) => ({
+              type: (s.type ?? "web") as TraceSource["type"],
+              title: s.title,
+              url: s.url,
+              snippet: s.snippet,
+            }))
+          : undefined,
+    })
+  }
+
+  return { messagesSent, sentMessageIds, lastProcessedSequence, sources }
+}

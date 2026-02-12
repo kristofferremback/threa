@@ -1,4 +1,4 @@
-import { DynamicStructuredTool } from "@langchain/core/tools"
+import { tool } from "ai"
 import { z } from "zod"
 import type { ResearcherResult } from "../researcher"
 
@@ -17,7 +17,7 @@ export interface WorkspaceResearchToolResult {
   attachmentCount: number
 }
 
-export interface CreateWorkspaceResearchToolParams {
+export interface WorkspaceResearchCallbacks {
   runResearcher: () => Promise<ResearcherResult>
 }
 
@@ -26,15 +26,14 @@ export interface CreateWorkspaceResearchToolParams {
  * The main companion agent can call this tool when it needs additional
  * workspace memory context before composing or revising a response.
  */
-export function createWorkspaceResearchTool(params: CreateWorkspaceResearchToolParams) {
-  const { runResearcher } = params
+export function createWorkspaceResearchTool(callbacks: WorkspaceResearchCallbacks) {
+  const { runResearcher } = callbacks
 
-  return new DynamicStructuredTool({
-    name: "workspace_research",
+  return tool({
     description:
       "Retrieve relevant workspace memory (messages, memos, attachments) for the current conversation when you need additional context.",
-    schema: WorkspaceResearchSchema,
-    func: async () => {
+    inputSchema: WorkspaceResearchSchema,
+    execute: async () => {
       const result = await runResearcher()
 
       const payload: WorkspaceResearchToolResult = {

@@ -4,20 +4,35 @@ export { createAgentSessionHandlers } from "./session-handlers"
 // Services & Agents
 export { PersonaAgent } from "./persona-agent"
 export type { PersonaAgentDeps, PersonaAgentInput, PersonaAgentResult, WithSessionResult } from "./persona-agent"
-export { withSession } from "./persona-agent"
 
 export { SimulationAgent } from "./simulation-agent"
 export type { SimulationAgentDeps, SimulationAgentInput, SimulationAgentResult } from "./simulation-agent"
 export { StubSimulationAgent } from "./simulation-agent.stub"
 
-export { LangGraphResponseGenerator, StubResponseGenerator } from "./companion-runner"
+// Companion agent modules
+export {
+  runAgentLoop,
+  buildAgentContext,
+  buildToolSet,
+  withCompanionSession,
+  truncateMessages,
+  MAX_MESSAGE_CHARS,
+  extractSourcesFromWebSearch,
+  parseWorkspaceResearchResult,
+  mergeSourceItems,
+  toSourceItems,
+} from "./companion"
 export type {
-  ResponseGenerator,
-  GenerateResponseParams,
-  GenerateResponseResult,
-  ResponseGeneratorCallbacks,
-} from "./companion-runner"
-export type { RecordStepParams, NewMessageInfo } from "./companion-runner"
+  AgentLoopInput,
+  AgentLoopCallbacks,
+  AgentLoopResult,
+  RecordStepParams,
+  NewMessageInfo,
+  ContextDeps,
+  ContextParams,
+  AgentContext,
+  ToolSetConfig,
+} from "./companion"
 
 export { TraceEmitter, SessionTrace, ActiveStep } from "./trace-emitter"
 
@@ -80,10 +95,6 @@ export type {
   BuildStreamContextOptions,
   EnrichAttachmentsOptions,
 } from "./context-builder"
-
-// Companion graph
-export { createCompanionGraph, toLangChainMessages, CompanionState } from "./companion-graph"
-export type { CompanionGraphCallbacks, CompanionStateType, PendingMessage } from "./companion-graph"
 
 // Simulation graph
 export { createSimulationGraph, SimulationState, TurnDecisionSchema } from "./simulation-graph"

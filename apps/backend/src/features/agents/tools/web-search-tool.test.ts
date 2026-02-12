@@ -1,6 +1,8 @@
 import { describe, it, expect, mock, afterEach } from "bun:test"
 import { createWebSearchTool } from "./web-search-tool"
 
+const toolOpts = { toolCallId: "test", messages: [] as any[] }
+
 describe("web-search-tool", () => {
   const originalFetch = globalThis.fetch
 
@@ -27,7 +29,7 @@ describe("web-search-tool", () => {
     ) as unknown as typeof fetch
 
     const tool = createWebSearchTool({ tavilyApiKey: "test-api-key" })
-    const result = await tool.invoke({ query: "test query" })
+    const result = (await tool.execute!({ query: "test query" }, toolOpts)) as string
     const parsed = JSON.parse(result)
 
     expect(parsed.query).toBe("test query")
@@ -49,7 +51,7 @@ describe("web-search-tool", () => {
     }) as unknown as typeof fetch
 
     const tool = createWebSearchTool({ tavilyApiKey: "test-api-key" })
-    await tool.invoke({ query: "test query" })
+    await tool.execute!({ query: "test query" }, toolOpts)
 
     expect(capturedRequest).not.toBeNull()
     expect(capturedRequest!.url).toBe("https://api.tavily.com/search")
@@ -75,7 +77,7 @@ describe("web-search-tool", () => {
     ) as unknown as typeof fetch
 
     const tool = createWebSearchTool({ tavilyApiKey: "invalid-key" })
-    const result = await tool.invoke({ query: "test" })
+    const result = (await tool.execute!({ query: "test" }, toolOpts)) as string
     const parsed = JSON.parse(result)
 
     expect(parsed.error).toContain("Search failed: 401")
@@ -86,7 +88,7 @@ describe("web-search-tool", () => {
     globalThis.fetch = mock(() => Promise.reject(new Error("Network error"))) as unknown as typeof fetch
 
     const tool = createWebSearchTool({ tavilyApiKey: "test-key" })
-    const result = await tool.invoke({ query: "test" })
+    const result = (await tool.execute!({ query: "test" }, toolOpts)) as string
     const parsed = JSON.parse(result)
 
     expect(parsed.error).toContain("Network error")
@@ -104,7 +106,7 @@ describe("web-search-tool", () => {
     }) as unknown as typeof fetch
 
     const tool = createWebSearchTool({ tavilyApiKey: "test-key", maxResults: 10 })
-    await tool.invoke({ query: "test" })
+    await tool.execute!({ query: "test" }, toolOpts)
 
     expect(capturedBody).not.toBeNull()
     expect(capturedBody!.max_results).toBe(10)
@@ -117,7 +119,7 @@ describe("web-search-tool", () => {
     globalThis.fetch = mock(() => Promise.reject(abortError)) as unknown as typeof fetch
 
     const tool = createWebSearchTool({ tavilyApiKey: "test-key" })
-    const result = await tool.invoke({ query: "test" })
+    const result = (await tool.execute!({ query: "test" }, toolOpts)) as string
     const parsed = JSON.parse(result)
 
     expect(parsed.error).toContain("timed out")

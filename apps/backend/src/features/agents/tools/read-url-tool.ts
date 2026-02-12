@@ -1,4 +1,4 @@
-import { DynamicStructuredTool } from "@langchain/core/tools"
+import { tool } from "ai"
 import { z } from "zod"
 import * as dns from "dns/promises"
 import * as ipaddr from "ipaddr.js"
@@ -202,12 +202,11 @@ async function fetchWithRedirectValidation(
  * - Manual redirect following with validation
  */
 export function createReadUrlTool() {
-  return new DynamicStructuredTool({
-    name: "read_url",
+  return tool({
     description:
       "Fetch and read the full content of a web page. Use this after web_search when you need more detail than the snippet provides, or when the user shares a specific URL to analyze.",
-    schema: ReadUrlSchema,
-    func: async (input: ReadUrlInput) => {
+    inputSchema: ReadUrlSchema,
+    execute: async (input) => {
       // Validate URL before fetching
       const validationError = await validateUrlWithDns(input.url)
       if (validationError) {

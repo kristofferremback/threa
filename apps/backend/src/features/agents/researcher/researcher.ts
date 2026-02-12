@@ -1,4 +1,3 @@
-import { Annotation, END, StateGraph } from "@langchain/langgraph"
 import type { Pool } from "pg"
 import { z } from "zod"
 import { withClient } from "../../../db"
@@ -108,58 +107,6 @@ const evaluationSchema = z.object({
 })
 
 type SearchQuery = NonNullable<z.infer<typeof decisionWithQueriesSchema>["queries"]>[number]
-type ResearcherSearchPhase = "initial" | "additional"
-
-const ResearcherLoopState = Annotation.Root({
-  contextSummary: Annotation<string>(),
-  config: Annotation<ResearcherConfig>(),
-  workspaceId: Annotation<string>(),
-  messageId: Annotation<string>(),
-  triggerMessageText: Annotation<string>(),
-  maxIterations: Annotation<number>(),
-  shouldSearch: Annotation<boolean>({
-    default: () => false,
-    reducer: (_, next) => next,
-  }),
-  decisionReasoning: Annotation<string | null>({
-    default: () => null,
-    reducer: (_, next) => next,
-  }),
-  pendingQueries: Annotation<SearchQuery[]>({
-    default: () => [],
-    reducer: (_, next) => next,
-  }),
-  searchPhase: Annotation<ResearcherSearchPhase>({
-    default: () => "initial",
-    reducer: (_, next) => next,
-  }),
-  iteration: Annotation<number>({
-    default: () => 0,
-    reducer: (_, next) => next,
-  }),
-  done: Annotation<boolean>({
-    default: () => false,
-    reducer: (_, next) => next,
-  }),
-  allMemos: Annotation<EnrichedMemoResult[]>({
-    default: () => [],
-    reducer: (_, next) => next,
-  }),
-  allMessages: Annotation<EnrichedMessageResult[]>({
-    default: () => [],
-    reducer: (_, next) => next,
-  }),
-  allAttachments: Annotation<EnrichedAttachmentResult[]>({
-    default: () => [],
-    reducer: (_, next) => next,
-  }),
-  searchesPerformed: Annotation<ResearcherCachedResult["searchesPerformed"]>({
-    default: () => [],
-    reducer: (_, next) => next,
-  }),
-})
-
-type ResearcherLoopStateType = typeof ResearcherLoopState.State
 
 function mergeMemoResults(existing: EnrichedMemoResult[], incoming: EnrichedMemoResult[]): EnrichedMemoResult[] {
   const merged = [...existing]
@@ -335,212 +282,125 @@ export class Researcher {
 
     const contextSummary = this.buildContextSummary(triggerMessage, conversationHistory)
     const maxIterations = config.maxIterations ?? RESEARCHER_MAX_ITERATIONS
+    const messageId = triggerMessage.id
+    const triggerMessageText = triggerMessage.contentMarkdown
+    const excludedMessageIds = new Set([messageId])
 
-    const decideNode = async (state: ResearcherLoopStateType): Promise<Partial<ResearcherLoopStateType>> => {
-      const decision = await this.decideAndGenerateQueries({
-        contextSummary: state.contextSummary,
-        config: state.config,
-        workspaceId: state.workspaceId,
-        messageId: state.messageId,
-      })
-      const shouldSearch = decision.needsSearch
+    // ── Step 1: Decide whether to search and generate initial queries ──
 
-      let initialQueries: SearchQuery[] = decision.queries?.length ? decision.queries : []
-      if (!shouldSearch && decision.reasoning === "Decision failed") {
-        initialQueries = buildBaselineQueries(state.triggerMessageText)
-        if (initialQueries.length > 0) {
-          logger.warn(
-            { messageId: state.messageId },
-            "Researcher decision failed; falling back to baseline retrieval queries"
-          )
-        }
-      }
-      if (shouldSearch && initialQueries.length === 0) {
-        initialQueries = buildBaselineQueries(state.triggerMessageText)
-        logger.info(
-          { messageId: state.messageId, reasoning: decision.reasoning },
-          "Researcher generated baseline queries because model did not return any queries"
-        )
-      }
-      const effectiveShouldSearch = shouldSearch || initialQueries.length > 0
+    const decision = await this.decideAndGenerateQueries({
+      contextSummary,
+      config,
+      workspaceId,
+      messageId,
+    })
 
-      if (!effectiveShouldSearch || initialQueries.length === 0) {
-        logger.debug(
-          {
-            messageId: state.messageId,
-            reasoning: decision.reasoning,
-          },
-          "Researcher decided no search needed"
-        )
-        return {
-          shouldSearch: false,
-          decisionReasoning: decision.reasoning,
-          done: true,
-          pendingQueries: [],
-        }
-      }
+    let initialQueries: SearchQuery[] = decision.queries?.length ? decision.queries : []
 
-      return {
-        shouldSearch: effectiveShouldSearch,
-        decisionReasoning: decision.reasoning,
-        done: false,
-        pendingQueries: appendBaselineQueries(initialQueries, state.triggerMessageText),
-        searchPhase: "initial",
+    if (!decision.needsSearch && decision.reasoning === "Decision failed") {
+      initialQueries = buildBaselineQueries(triggerMessageText)
+      if (initialQueries.length > 0) {
+        logger.warn({ messageId }, "Researcher decision failed; falling back to baseline retrieval queries")
       }
     }
+    if (decision.needsSearch && initialQueries.length === 0) {
+      initialQueries = buildBaselineQueries(triggerMessageText)
+      logger.info(
+        { messageId, reasoning: decision.reasoning },
+        "Researcher generated baseline queries because model did not return any queries"
+      )
+    }
 
-    const executeQueriesNode = async (state: ResearcherLoopStateType): Promise<Partial<ResearcherLoopStateType>> => {
-      if (state.pendingQueries.length === 0) {
-        logger.warn({ messageId: state.messageId }, "Researcher execute node ran without pending queries")
-        return { done: true }
+    const shouldSearch = decision.needsSearch || initialQueries.length > 0
+
+    if (!shouldSearch || initialQueries.length === 0) {
+      logger.debug({ messageId, reasoning: decision.reasoning }, "Researcher decided no search needed")
+      return this.emptyResult()
+    }
+
+    // ── Step 2: Search → evaluate loop ──
+
+    let allMemos: EnrichedMemoResult[] = []
+    let allMessages: EnrichedMessageResult[] = []
+    let allAttachments: EnrichedAttachmentResult[] = []
+    let pendingQueries: SearchQuery[] = appendBaselineQueries(initialQueries, triggerMessageText)
+    let iteration = 0
+
+    while (iteration < maxIterations) {
+      // Execute pending queries
+      if (pendingQueries.length === 0) {
+        logger.warn({ messageId }, "Researcher loop iteration with no pending queries")
+        break
       }
 
       const searchResults = await this.executeQueries(
         pool,
-        state.pendingQueries,
-        state.workspaceId,
+        pendingQueries,
+        workspaceId,
         accessibleStreamIds,
         embeddingService,
         invokingMemberId,
         true,
-        new Set([triggerMessage.id])
+        excludedMessageIds
       )
 
-      return {
-        allMemos: mergeMemoResults(state.allMemos, searchResults.memos),
-        allMessages: mergeMessageResults(state.allMessages, searchResults.messages),
-        allAttachments: mergeAttachmentResults(state.allAttachments, searchResults.attachments),
-        searchesPerformed: [...state.searchesPerformed, ...searchResults.searches],
-        pendingQueries: [],
-        iteration: state.searchPhase === "additional" ? state.iteration + 1 : state.iteration,
-      }
-    }
+      allMemos = mergeMemoResults(allMemos, searchResults.memos)
+      allMessages = mergeMessageResults(allMessages, searchResults.messages)
+      allAttachments = mergeAttachmentResults(allAttachments, searchResults.attachments)
 
-    const evaluateNode = async (state: ResearcherLoopStateType): Promise<Partial<ResearcherLoopStateType>> => {
-      if (!state.shouldSearch) {
-        return { done: true }
-      }
-
-      if (state.iteration >= state.maxIterations) {
-        logger.debug(
-          {
-            messageId: state.messageId,
-            iteration: state.iteration,
-            maxIterations: state.maxIterations,
-          },
-          "Researcher reached max iterations"
-        )
-        return { done: true }
-      }
-
+      // Evaluate results
       const evaluation = await this.evaluateResults(
-        state.contextSummary,
-        state.allMemos,
-        state.allMessages,
-        state.allAttachments,
-        state.config,
-        state.workspaceId,
-        state.messageId
+        contextSummary,
+        allMemos,
+        allMessages,
+        allAttachments,
+        config,
+        workspaceId,
+        messageId
       )
-      const hasAnyResults = state.allMemos.length > 0 || state.allMessages.length > 0 || state.allAttachments.length > 0
+
+      const hasAnyResults = allMemos.length > 0 || allMessages.length > 0 || allAttachments.length > 0
+
+      // On evaluation failure with no results, try baseline queries once
       if (evaluation.reasoning === "Evaluation failed" && !hasAnyResults) {
-        const fallbackQueries = buildBaselineQueries(state.triggerMessageText)
+        const fallbackQueries = buildBaselineQueries(triggerMessageText)
         if (fallbackQueries.length > 0) {
           logger.warn(
-            { messageId: state.messageId, iteration: state.iteration },
+            { messageId, iteration },
             "Researcher evaluation failed with no results; retrying with baseline queries"
           )
-          return {
-            done: false,
-            decisionReasoning: evaluation.reasoning,
-            searchPhase: "additional",
-            pendingQueries: fallbackQueries,
-          }
+          pendingQueries = fallbackQueries
+          iteration++
+          continue
         }
       }
 
       if (evaluation.sufficient || !evaluation.additionalQueries?.length) {
-        logger.debug(
-          {
-            messageId: state.messageId,
-            iteration: state.iteration,
-            reasoning: evaluation.reasoning,
-          },
-          "Researcher found sufficient results"
-        )
-        return { done: true, decisionReasoning: evaluation.reasoning }
+        logger.debug({ messageId, iteration, reasoning: evaluation.reasoning }, "Researcher found sufficient results")
+        break
       }
 
-      return {
-        done: false,
-        decisionReasoning: evaluation.reasoning,
-        searchPhase: "additional",
-        pendingQueries: evaluation.additionalQueries,
-      }
+      // Continue with additional queries
+      pendingQueries = evaluation.additionalQueries
+      iteration++
     }
 
-    const routeAfterDecide = (state: ResearcherLoopStateType): "execute_queries" | "finalize" => {
-      return state.done ? "finalize" : "execute_queries"
+    if (iteration >= maxIterations) {
+      logger.debug({ messageId, iteration, maxIterations }, "Researcher reached max iterations")
     }
 
-    const routeAfterEvaluate = (state: ResearcherLoopStateType): "execute_queries" | "finalize" => {
-      return state.done ? "finalize" : "execute_queries"
-    }
+    // ── Step 3: Build result ──
 
-    const loopGraph = new StateGraph(ResearcherLoopState)
-      .addNode("decide", decideNode)
-      .addNode("execute_queries", executeQueriesNode)
-      .addNode("evaluate", evaluateNode)
-      .addNode("finalize", async () => ({}))
-      .addEdge("__start__", "decide")
-      .addConditionalEdges("decide", routeAfterDecide)
-      .addEdge("execute_queries", "evaluate")
-      .addConditionalEdges("evaluate", routeAfterEvaluate)
-      .addEdge("finalize", END)
-      .compile()
-
-    const finalState = await loopGraph.invoke({
-      contextSummary,
-      config,
-      workspaceId,
-      messageId: triggerMessage.id,
-      triggerMessageText: triggerMessage.contentMarkdown,
-      maxIterations,
-      shouldSearch: false,
-      decisionReasoning: null,
-      pendingQueries: [],
-      searchPhase: "initial",
-      iteration: 0,
-      done: false,
-      allMemos: [],
-      allMessages: [],
-      allAttachments: [],
-      searchesPerformed: [],
-    } satisfies Partial<ResearcherLoopStateType>)
-
-    if (!finalState.shouldSearch) {
-      return this.emptyResult()
-    }
-
-    const sources = this.buildSources(
-      finalState.allMemos,
-      finalState.allMessages,
-      finalState.allAttachments,
-      workspaceId
-    )
-    const retrievedContext = formatRetrievedContext(
-      finalState.allMemos,
-      finalState.allMessages,
-      finalState.allAttachments
-    )
+    const sources = this.buildSources(allMemos, allMessages, allAttachments, workspaceId)
+    const retrievedContext = formatRetrievedContext(allMemos, allMessages, allAttachments)
 
     logger.info(
       {
-        messageId: triggerMessage.id,
-        memoCount: finalState.allMemos.length,
-        messageCount: finalState.allMessages.length,
-        attachmentCount: finalState.allAttachments.length,
-        searchCount: finalState.searchesPerformed.length,
+        messageId,
+        memoCount: allMemos.length,
+        messageCount: allMessages.length,
+        attachmentCount: allAttachments.length,
+        iterations: iteration,
         accessSpecType: accessSpec.type,
       },
       "Researcher completed"
@@ -550,9 +410,9 @@ export class Researcher {
       retrievedContext,
       sources,
       shouldSearch: true,
-      memos: finalState.allMemos,
-      messages: finalState.allMessages,
-      attachments: finalState.allAttachments,
+      memos: allMemos,
+      messages: allMessages,
+      attachments: allAttachments,
     }
   }
 
@@ -612,7 +472,6 @@ Guidelines for search:
 
   /**
    * Evaluate if current results are sufficient.
-   * Uses LangChain's structured output for proper trace integration.
    */
   private async evaluateResults(
     contextSummary: string,

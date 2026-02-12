@@ -1,4 +1,4 @@
-import { DynamicStructuredTool } from "@langchain/core/tools"
+import { tool } from "ai"
 import { z } from "zod"
 import { logger } from "../../../lib/logger"
 import { EXCEL_MAX_ROWS_PER_REQUEST } from "../../attachments"
@@ -67,8 +67,7 @@ export interface LoadExcelSectionCallbacks {
  * sheets and row ranges before calling this tool.
  */
 export function createLoadExcelSectionTool(callbacks: LoadExcelSectionCallbacks) {
-  return new DynamicStructuredTool({
-    name: "load_excel_section",
+  return tool({
     description: `Load specific rows from a sheet in a large Excel workbook. Only use this when:
 - The workbook is large (>20K cells) and injection strategy is "summary" (full content not in context)
 - You need to read specific rows from a particular sheet
@@ -77,8 +76,8 @@ export function createLoadExcelSectionTool(callbacks: LoadExcelSectionCallbacks)
 The attachment extraction includes excelMetadata.sheets with sheet names, row counts, headers, and sample rows. Use that to determine which sheet and rows to load.
 
 For small/medium workbooks (<20K cells), full content is already available in fullText - don't use this tool.`,
-    schema: LoadExcelSectionSchema,
-    func: async (input: LoadExcelSectionInput) => {
+    inputSchema: LoadExcelSectionSchema,
+    execute: async (input) => {
       try {
         const result = await callbacks.loadExcelSection(input)
 

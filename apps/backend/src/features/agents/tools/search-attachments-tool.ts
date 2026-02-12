@@ -1,4 +1,4 @@
-import { DynamicStructuredTool } from "@langchain/core/tools"
+import { tool } from "ai"
 import { z } from "zod"
 import { logger } from "../../../lib/logger"
 
@@ -34,16 +34,15 @@ const MAX_RESULTS = 20
  * Creates a search_attachments tool for finding attachments in the workspace.
  */
 export function createSearchAttachmentsTool(callbacks: SearchAttachmentsCallbacks) {
-  return new DynamicStructuredTool({
-    name: "search_attachments",
+  return tool({
     description: `Search for attachments (images, documents, files) in the workspace. Use this to find:
 - Images or screenshots shared in conversations
 - Documents uploaded to streams
 - Files matching a specific name or content description
 
 The search matches against filenames and extracted content summaries.`,
-    schema: SearchAttachmentsSchema,
-    func: async (input: SearchAttachmentsInput) => {
+    inputSchema: SearchAttachmentsSchema,
+    execute: async (input) => {
       try {
         const limit = Math.min(input.limit ?? 10, MAX_RESULTS)
         const results = await callbacks.searchAttachments({ ...input, limit })

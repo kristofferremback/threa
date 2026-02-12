@@ -1,6 +1,5 @@
-import { ToolMessage, type BaseMessage } from "@langchain/core/messages"
 import type { SourceItem } from "@threa/types"
-import type { WorkspaceResearchToolResult } from "../../tools"
+import type { WorkspaceResearchToolResult } from "../tools"
 
 /**
  * Extract sources from a web_search tool result.
@@ -64,33 +63,4 @@ export function toSourceItems(
       type: source.type,
       snippet: source.snippet,
     }))
-}
-
-/**
- * Extract sources from web_search tool results in the message history.
- */
-export function extractSearchSources(messages: BaseMessage[]): Array<{ title: string; url: string }> {
-  const sources: Array<{ title: string; url: string }> = []
-  const seenUrls = new Set<string>()
-
-  for (const msg of messages) {
-    // Type guards work on deserialized messages and provide proper TypeScript narrowing
-    if (!ToolMessage.isInstance(msg)) continue
-
-    try {
-      const content = JSON.parse(msg.content as string)
-      if (content.results && Array.isArray(content.results)) {
-        for (const result of content.results) {
-          if (result.title && result.url && !seenUrls.has(result.url)) {
-            seenUrls.add(result.url)
-            sources.push({ title: result.title, url: result.url })
-          }
-        }
-      }
-    } catch {
-      // Not JSON or not a search result, skip
-    }
-  }
-
-  return sources
 }
