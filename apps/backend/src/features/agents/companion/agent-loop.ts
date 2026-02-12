@@ -497,6 +497,7 @@ export async function runAgentLoop(input: AgentLoopInput, callbacks: AgentLoopCa
   let sources: SourceItem[] = []
   let retrievedContext: string | null = null
   let textOnlyRedirects = 0
+  let lastAssistantText: string | undefined
 
   // Prefetch workspace research before the loop starts
   if (tools[WORKSPACE_RESEARCH_TOOL]) {
@@ -540,6 +541,10 @@ export async function runAgentLoop(input: AgentLoopInput, callbacks: AgentLoopCa
     // ── Text-only response (no tool calls) ──
     // The model wrote its answer as plain text instead of calling send_message.
     if (result.toolCalls.length === 0) {
+      // Track the best text we've seen (the redirect attempt may return empty)
+      const currentText = extractAssistantText(result)
+      if (currentText) lastAssistantText = currentText
+
       // Check for new messages
       const newMessages = await callbacks.checkNewMessages(streamId, lastProcessedSequence, personaId)
       if (newMessages.length > 0) {
@@ -565,12 +570,11 @@ export async function runAgentLoop(input: AgentLoopInput, callbacks: AgentLoopCa
         continue
       }
 
-      // Model won't call send_message — extract its text and send directly
-      const textToSend = extractAssistantText(result)
-      if (textToSend) {
-        logger.warn({ sessionId, streamId }, "Model refused to call send_message; sending text-only response directly")
-        const sendResult = await commitMessage(callbacks, { content: textToSend, sources }, sentMessageIds)
-        messagesSent += sendResult.count
+      // Model won't call send_message — send the best text we captured directly
+      if (lastAssistantText) {
+        logger.warn({ sessionId, streamId }, "Model refused to call send_message; sending text response directly")
+        const committed = await commitMessage(callbacks, { content: lastAssistantText, sources }, sentMessageIds)
+        messagesSent += committed.count
       }
       break
     }
