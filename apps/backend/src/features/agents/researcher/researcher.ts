@@ -7,10 +7,10 @@ import type { ConfigResolver, ResearcherConfig } from "../../../lib/ai/config-re
 import { COMPONENT_PATHS } from "../../../lib/ai/config-resolver"
 import type { EmbeddingServiceLike } from "../../memos"
 import { MessageRepository, type Message } from "../../messaging"
-import { MemoRepository, type MemoSearchResult } from "../../memos"
+import { MemoRepository } from "../../memos"
 import { SearchRepository } from "../../search"
 import { StreamRepository } from "../../streams"
-import { AttachmentRepository, type AttachmentWithExtraction } from "../../attachments"
+import { AttachmentRepository } from "../../attachments"
 import { ResearcherCache, type ResearcherCachedResult } from "./cache"
 import { computeAgentAccessSpec, type AgentAccessSpec } from "./access-spec"
 import {
@@ -23,6 +23,7 @@ import {
 import { logger } from "../../../lib/logger"
 import { SEMANTIC_DISTANCE_THRESHOLD } from "../../search"
 import { RESEARCHER_MAX_ITERATIONS, RESEARCHER_MAX_RESULTS_PER_SEARCH, RESEARCHER_SYSTEM_PROMPT } from "./config"
+import { appendBaselineQueries, buildBaselineQueries } from "./query/baseline-queries"
 
 /**
  * Source item for citation - extended to support workspace sources.
@@ -108,93 +109,6 @@ const evaluationSchema = z.object({
 
 type SearchQuery = NonNullable<z.infer<typeof decisionWithQueriesSchema>["queries"]>[number]
 type ResearcherSearchPhase = "initial" | "additional"
-
-function buildQueryVariants(message: string): string[] {
-  const trimmed = message.trim()
-  if (!trimmed) {
-    return []
-  }
-
-  const variants: string[] = [trimmed]
-  const seen = new Set([trimmed.toLowerCase()])
-  const tokens = trimmed.match(/[\p{L}\p{N}]+/gu) ?? []
-  const significantTokens = tokens.filter((token) => token.length >= 4)
-
-  const candidateVariants: string[] = []
-  if (significantTokens.length >= 2) {
-    candidateVariants.push(significantTokens.slice(-2).join(" "))
-    candidateVariants.push(significantTokens.slice(0, 2).join(" "))
-    candidateVariants.push(significantTokens.slice(0, 6).join(" "))
-    candidateVariants.push(significantTokens.slice(-6).join(" "))
-  }
-  if (tokens.length >= 2) {
-    candidateVariants.push(tokens.slice(-4).join(" "))
-  }
-
-  for (const candidate of candidateVariants) {
-    const normalized = candidate.trim()
-    if (!normalized) continue
-    const key = normalized.toLowerCase()
-    if (seen.has(key)) continue
-    seen.add(key)
-    variants.push(normalized)
-  }
-
-  return variants
-}
-
-function buildBaselineQueries(message: string): SearchQuery[] {
-  const variants = buildQueryVariants(message)
-  if (variants.length === 0) {
-    return []
-  }
-  const primaryQuery = variants[0]
-  const additionalQueries = variants.slice(1, 5)
-
-  const baselineQueries: SearchQuery[] = [
-    {
-      target: "memos",
-      type: "semantic",
-      query: primaryQuery,
-    },
-    {
-      target: "messages",
-      type: "semantic",
-      query: primaryQuery,
-    },
-    {
-      target: "messages",
-      type: "exact",
-      query: primaryQuery,
-    },
-  ]
-
-  for (const query of additionalQueries) {
-    baselineQueries.push({
-      target: "messages",
-      type: "exact",
-      query,
-    })
-  }
-
-  return baselineQueries
-}
-
-function appendBaselineQueries(existing: SearchQuery[], message: string): SearchQuery[] {
-  const merged: SearchQuery[] = [...existing]
-  const seen = new Set(merged.map((query) => `${query.target}|${query.type}|${query.query}`))
-
-  for (const query of buildBaselineQueries(message)) {
-    const key = `${query.target}|${query.type}|${query.query}`
-    if (seen.has(key)) {
-      continue
-    }
-    seen.add(key)
-    merged.push(query)
-  }
-
-  return merged
-}
 
 const ResearcherLoopState = Annotation.Root({
   contextSummary: Annotation<string>(),
