@@ -1,24 +1,23 @@
 import { tool } from "ai"
 import { z } from "zod"
-import type { ResearcherResult } from "../researcher"
+import type { WorkspaceAgentResult } from "../researcher"
 
 const WorkspaceResearchSchema = z.object({
-  reason: z.string().optional().describe("Optional reason for why additional workspace context is needed"),
+  query: z.string().describe("What information you need from the workspace"),
 })
 
 export type WorkspaceResearchInput = z.infer<typeof WorkspaceResearchSchema>
 
 export interface WorkspaceResearchToolResult {
-  shouldSearch: boolean
   retrievedContext: string | null
-  sources: ResearcherResult["sources"]
+  sources: WorkspaceAgentResult["sources"]
   memoCount: number
   messageCount: number
   attachmentCount: number
 }
 
 export interface WorkspaceResearchCallbacks {
-  runResearcher: () => Promise<ResearcherResult>
+  runWorkspaceAgent: (query: string) => Promise<WorkspaceAgentResult>
 }
 
 /**
@@ -27,17 +26,16 @@ export interface WorkspaceResearchCallbacks {
  * workspace memory context before composing or revising a response.
  */
 export function createWorkspaceResearchTool(callbacks: WorkspaceResearchCallbacks) {
-  const { runResearcher } = callbacks
+  const { runWorkspaceAgent } = callbacks
 
   return tool({
     description:
       "Retrieve relevant workspace memory (messages, memos, attachments) for the current conversation when you need additional context.",
     inputSchema: WorkspaceResearchSchema,
-    execute: async () => {
-      const result = await runResearcher()
+    execute: async (input) => {
+      const result = await runWorkspaceAgent(input.query)
 
       const payload: WorkspaceResearchToolResult = {
-        shouldSearch: result.shouldSearch,
         retrievedContext: result.retrievedContext,
         sources: result.sources,
         memoCount: result.memos.length,

@@ -2,11 +2,14 @@ import { generateText } from "ai"
 import type { LanguageModel, ModelMessage, Tool, ToolCallPart, ToolResultPart } from "ai"
 import type { SourceItem, AgentStepType, TraceSource, AuthorType } from "@threa/types"
 import { AgentToolNames } from "@threa/types"
+import { trace, SpanStatusCode } from "@opentelemetry/api"
 import { logger } from "../../../lib/logger"
 import { protectToolOutputText } from "../tool-trust-boundary"
 import { isMultimodalToolResult } from "../tools"
 import { MAX_MESSAGE_CHARS, truncateMessages } from "./truncation"
 import { extractSourcesFromWebSearch, parseWorkspaceResearchResult, mergeSourceItems, toSourceItems } from "./sources"
+
+const tracer = trace.getTracer("companion-agent")
 
 const MAX_ITERATIONS = 20
 const WORKSPACE_RESEARCH_TOOL = "workspace_research"
@@ -56,6 +59,7 @@ export interface AgentLoopCallbacks {
 export interface AgentLoopResult {
   messagesSent: number
   sentMessageIds: string[]
+  sentContents: string[]
   lastProcessedSequence: bigint
   sources: SourceItem[]
 }
@@ -138,68 +142,6 @@ function formatToolStep(
 }
 
 // ---------------------------------------------------------------------------
-// Workspace research prefetch
-// ---------------------------------------------------------------------------
-
-async function prefetchWorkspaceResearch(
-  tool: Tool<any, any>,
-  state: { sources: SourceItem[]; retrievedContext: string | null },
-  callbacks: Pick<AgentLoopCallbacks, "recordStep">
-): Promise<{ sources: SourceItem[]; retrievedContext: string | null }> {
-  const startTime = Date.now()
-  try {
-    const rawResult = await callToolExecute(tool, { reason: "Initial workspace memory prefetch" }, "prefetch")
-    const durationMs = Date.now() - startTime
-    const resultStr = typeof rawResult === "string" ? rawResult : JSON.stringify(rawResult)
-    const parsed = parseWorkspaceResearchResult(resultStr)
-    if (!parsed) throw new Error("workspace_research returned malformed JSON during prefetch")
-
-    const prefetchedSources = toSourceItems(parsed.sources)
-    const mergedSources = mergeSourceItems(state.sources, prefetchedSources)
-    const retrievedContext = parsed.retrievedContext?.trim() || state.retrievedContext
-
-    logger.info(
-      {
-        shouldSearch: parsed.shouldSearch,
-        sourceCount: prefetchedSources.length,
-        memoCount: parsed.memoCount,
-        messageCount: parsed.messageCount,
-        attachmentCount: parsed.attachmentCount,
-      },
-      "Workspace research prefetch completed"
-    )
-
-    await callbacks.recordStep({
-      stepType: "workspace_search",
-      content: JSON.stringify({
-        mode: "entrypoint_prefetch",
-        shouldSearch: parsed.shouldSearch,
-        sourceCount: prefetchedSources.length,
-        memoCount: parsed.memoCount,
-        messageCount: parsed.messageCount,
-        attachmentCount: parsed.attachmentCount,
-      }),
-      durationMs,
-      sources: prefetchedSources.map((s) => ({
-        type: (s.type ?? "workspace") as TraceSource["type"],
-        title: s.title,
-        url: s.url,
-        snippet: s.snippet,
-      })),
-    })
-
-    return { sources: mergedSources, retrievedContext }
-  } catch (error) {
-    logger.warn({ error }, "Workspace research prefetch failed; continuing without prefetch")
-    await callbacks.recordStep({
-      stepType: "tool_error",
-      content: `workspace_research prefetch failed: ${String(error)}`,
-    })
-    return state
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Tool execution
 // ---------------------------------------------------------------------------
 
@@ -235,31 +177,40 @@ async function executeToolCalls(
   )
 
   for (const tc of webSearchCalls) {
-    const startTime = Date.now()
-    try {
-      const rawResult = await callToolExecute(ctx.tools[tc.toolName], tc.input, tc.toolCallId)
-      const durationMs = Date.now() - startTime
-      const resultStr = typeof rawResult === "string" ? rawResult : JSON.stringify(rawResult)
+    await tracer.startActiveSpan(`tool:${tc.toolName}`, async (toolSpan) => {
+      toolSpan.setAttribute("input.value", JSON.stringify(tc.input))
+      const startTime = Date.now()
+      try {
+        const rawResult = await callToolExecute(ctx.tools[tc.toolName], tc.input, tc.toolCallId)
+        const durationMs = Date.now() - startTime
+        const resultStr = typeof rawResult === "string" ? rawResult : JSON.stringify(rawResult)
 
-      const webSources = extractSourcesFromWebSearch(resultStr)
-      sources = mergeSourceItems(sources, webSources)
+        const webSources = extractSourcesFromWebSearch(resultStr)
+        sources = mergeSourceItems(sources, webSources)
 
-      await ctx.callbacks.recordStep({
-        stepType: "web_search",
-        content: (tc.input as { query?: string }).query,
-        durationMs,
-        sources: webSources.map((s) => ({ title: s.title, url: s.url, type: "web" as const })),
-      })
+        await ctx.callbacks.recordStep({
+          stepType: "web_search",
+          content: (tc.input as { query?: string }).query,
+          durationMs,
+          sources: webSources.map((s) => ({ title: s.title, url: s.url, type: "web" as const })),
+        })
 
-      resultParts.push(makeToolResult(tc, protectToolOutputText(resultStr)))
-    } catch (error) {
-      await ctx.callbacks.recordStep({
-        stepType: "tool_error",
-        content: `web_search failed: ${String(error)}`,
-        durationMs: Date.now() - startTime,
-      })
-      resultParts.push(makeToolResult(tc, JSON.stringify({ error: String(error) })))
-    }
+        resultParts.push(makeToolResult(tc, protectToolOutputText(resultStr)))
+        toolSpan.setAttribute("output.value", resultStr)
+        toolSpan.setStatus({ code: SpanStatusCode.OK })
+      } catch (error) {
+        toolSpan.setAttribute("output.value", JSON.stringify({ error: String(error) }))
+        await ctx.callbacks.recordStep({
+          stepType: "tool_error",
+          content: `web_search failed: ${String(error)}`,
+          durationMs: Date.now() - startTime,
+        })
+        resultParts.push(makeToolResult(tc, JSON.stringify({ error: String(error) })))
+        toolSpan.setStatus({ code: SpanStatusCode.ERROR, message: String(error) })
+      } finally {
+        toolSpan.end()
+      }
+    })
   }
 
   for (const tc of otherCalls) {
@@ -270,107 +221,113 @@ async function executeToolCalls(
       continue
     }
 
-    const startTime = Date.now()
-    try {
-      const rawResult = await callToolExecute(tool, tc.input, tc.toolCallId)
-      const durationMs = Date.now() - startTime
-
-      if (tc.toolName === WORKSPACE_RESEARCH_TOOL) {
+    await tracer.startActiveSpan(`tool:${tc.toolName}`, async (toolSpan) => {
+      toolSpan.setAttribute("input.value", JSON.stringify(tc.input))
+      const startTime = Date.now()
+      try {
+        const rawResult = await callToolExecute(tool, tc.input, tc.toolCallId)
+        const durationMs = Date.now() - startTime
         const resultStr = typeof rawResult === "string" ? rawResult : JSON.stringify(rawResult)
-        const parsed = parseWorkspaceResearchResult(resultStr)
-        if (!parsed) throw new Error("workspace_research returned malformed JSON")
+        toolSpan.setAttribute("output.value", resultStr)
 
-        const workspaceSources = toSourceItems(parsed.sources)
-        if (workspaceSources.length > 0) sources = mergeSourceItems(sources, workspaceSources)
-        if (parsed.retrievedContext?.trim()) retrievedContext = parsed.retrievedContext.trim()
+        if (tc.toolName === WORKSPACE_RESEARCH_TOOL) {
+          const parsed = parseWorkspaceResearchResult(resultStr)
+          if (!parsed) throw new Error("workspace_research returned malformed JSON")
 
-        await ctx.callbacks.recordStep({
-          stepType: "workspace_search",
-          content: JSON.stringify({
-            shouldSearch: parsed.shouldSearch,
-            memoCount: parsed.memoCount,
-            messageCount: parsed.messageCount,
-            attachmentCount: parsed.attachmentCount,
-          }),
-          durationMs,
-          sources: workspaceSources.map((s) => ({
-            type: "workspace" as const,
-            title: s.title,
-            url: s.url,
-            snippet: s.snippet,
-          })),
-        })
+          const workspaceSources = toSourceItems(parsed.sources)
+          if (workspaceSources.length > 0) sources = mergeSourceItems(sources, workspaceSources)
+          if (parsed.retrievedContext?.trim()) retrievedContext = parsed.retrievedContext.trim()
 
-        // Return summary to model; full context goes in system prompt
-        resultParts.push(
-          makeToolResult(
-            tc,
-            protectToolOutputText(
-              JSON.stringify({
-                status: "ok",
-                contextAdded: Boolean(parsed.retrievedContext?.trim()),
-                sourceCount: workspaceSources.length,
-                memoCount: parsed.memoCount,
-                messageCount: parsed.messageCount,
-                attachmentCount: parsed.attachmentCount,
-              })
-            )
-          )
-        )
-        continue
-      }
-
-      if (isMultimodalToolResult(rawResult)) {
-        const textContent = rawResult.content
-          .filter((block: { type: string }): block is { type: "text"; text: string } => block.type === "text")
-          .map((block: { text: string }) => block.text)
-          .join("\n")
-
-        await ctx.callbacks.recordStep({
-          stepType: getToolStepType(tc.toolName),
-          content: textContent,
-          durationMs,
-        })
-
-        resultParts.push(makeToolResult(tc, protectToolOutputText(textContent)))
-
-        // Inject images as user message for vision models
-        const imageBlocks = rawResult.content.filter(
-          (block: { type: string }): block is { type: "image_url"; image_url: { url: string } } =>
-            block.type === "image_url"
-        )
-        if (imageBlocks.length > 0) {
-          extraMessages.push({
-            role: "user",
-            content: imageBlocks.map((block: { image_url: { url: string } }) => ({
-              type: "image" as const,
-              image: block.image_url.url,
+          await ctx.callbacks.recordStep({
+            stepType: "workspace_search",
+            content: JSON.stringify({
+              memoCount: parsed.memoCount,
+              messageCount: parsed.messageCount,
+              attachmentCount: parsed.attachmentCount,
+            }),
+            durationMs,
+            sources: workspaceSources.map((s) => ({
+              type: "workspace" as const,
+              title: s.title,
+              url: s.url,
+              snippet: s.snippet,
             })),
           })
+
+          resultParts.push(
+            makeToolResult(
+              tc,
+              protectToolOutputText(
+                JSON.stringify({
+                  status: "ok",
+                  contextAdded: Boolean(parsed.retrievedContext?.trim()),
+                  sourceCount: workspaceSources.length,
+                  memoCount: parsed.memoCount,
+                  messageCount: parsed.messageCount,
+                  attachmentCount: parsed.attachmentCount,
+                })
+              )
+            )
+          )
+          toolSpan.setStatus({ code: SpanStatusCode.OK })
+          return
         }
-      } else {
-        const resultStr = typeof rawResult === "string" ? rawResult : JSON.stringify(rawResult)
-        const { content, sources: stepSources } = formatToolStep(
-          tc.toolName,
-          tc.input as Record<string, unknown>,
-          resultStr
-        )
+
+        if (isMultimodalToolResult(rawResult)) {
+          const textContent = rawResult.content
+            .filter((block: { type: string }): block is { type: "text"; text: string } => block.type === "text")
+            .map((block: { text: string }) => block.text)
+            .join("\n")
+
+          await ctx.callbacks.recordStep({
+            stepType: getToolStepType(tc.toolName),
+            content: textContent,
+            durationMs,
+          })
+
+          resultParts.push(makeToolResult(tc, protectToolOutputText(textContent)))
+
+          const imageBlocks = rawResult.content.filter(
+            (block: { type: string }): block is { type: "image_url"; image_url: { url: string } } =>
+              block.type === "image_url"
+          )
+          if (imageBlocks.length > 0) {
+            extraMessages.push({
+              role: "user",
+              content: imageBlocks.map((block: { image_url: { url: string } }) => ({
+                type: "image" as const,
+                image: block.image_url.url,
+              })),
+            })
+          }
+        } else {
+          const { content, sources: stepSources } = formatToolStep(
+            tc.toolName,
+            tc.input as Record<string, unknown>,
+            resultStr
+          )
+          await ctx.callbacks.recordStep({
+            stepType: getToolStepType(tc.toolName),
+            content,
+            sources: stepSources,
+            durationMs,
+          })
+          resultParts.push(makeToolResult(tc, protectToolOutputText(resultStr)))
+        }
+        toolSpan.setStatus({ code: SpanStatusCode.OK })
+      } catch (error) {
+        toolSpan.setAttribute("output.value", JSON.stringify({ error: String(error) }))
         await ctx.callbacks.recordStep({
-          stepType: getToolStepType(tc.toolName),
-          content,
-          sources: stepSources,
-          durationMs,
+          stepType: "tool_error",
+          content: `${tc.toolName} failed: ${String(error)}`,
+          durationMs: Date.now() - startTime,
         })
-        resultParts.push(makeToolResult(tc, protectToolOutputText(resultStr)))
+        resultParts.push(makeToolResult(tc, JSON.stringify({ error: String(error) })))
+        toolSpan.setStatus({ code: SpanStatusCode.ERROR, message: String(error) })
+      } finally {
+        toolSpan.end()
       }
-    } catch (error) {
-      await ctx.callbacks.recordStep({
-        stepType: "tool_error",
-        content: `${tc.toolName} failed: ${String(error)}`,
-        durationMs: Date.now() - startTime,
-      })
-      resultParts.push(makeToolResult(tc, JSON.stringify({ error: String(error) })))
-    }
+    })
   }
 
   // Stage send_message calls (prep-then-send)
@@ -458,13 +415,14 @@ function extractAssistantText(result: { text: string; response: { messages: Mode
 async function commitMessage(
   callbacks: AgentLoopCallbacks,
   pending: { content: string; sources: SourceItem[] },
-  sentMessageIds: string[]
+  sent: { ids: string[]; contents: string[] }
 ): Promise<{ count: number }> {
   const sendResult = await callbacks.sendMessage({
     content: pending.content,
     sources: pending.sources.length > 0 ? pending.sources : undefined,
   })
-  sentMessageIds.push(sendResult.messageId)
+  sent.ids.push(sendResult.messageId)
+  sent.contents.push(pending.content)
   await callbacks.recordStep({
     stepType: "message_sent",
     content: pending.content,
@@ -487,27 +445,64 @@ async function commitMessage(
 // ---------------------------------------------------------------------------
 
 export async function runAgentLoop(input: AgentLoopInput, callbacks: AgentLoopCallbacks): Promise<AgentLoopResult> {
+  return tracer.startActiveSpan(
+    "companion-session",
+    {
+      attributes: {
+        "langfuse.session.id": input.sessionId,
+        "session.id": input.sessionId,
+        "stream.id": input.streamId,
+        "persona.id": input.personaId,
+        ...(input.telemetry?.metadata ?? {}),
+      },
+    },
+    async (rootSpan) => {
+      const lastUserMsg = [...input.messages].reverse().find((m) => m.role === "user")
+      const inputSummary = lastUserMsg
+        ? typeof lastUserMsg.content === "string"
+          ? lastUserMsg.content
+          : JSON.stringify(lastUserMsg.content)
+        : undefined
+      if (inputSummary) {
+        rootSpan.setAttribute("langfuse.observation.input", inputSummary)
+      }
+
+      try {
+        const result = await runLoop(input, callbacks)
+        rootSpan.setAttributes({
+          "session.messages_sent": result.messagesSent,
+          "session.source_count": result.sources.length,
+          "langfuse.observation.output": result.sentContents.at(-1) ?? "",
+        })
+        rootSpan.setStatus({ code: SpanStatusCode.OK })
+        return result
+      } catch (error) {
+        rootSpan.setAttributes({
+          "langfuse.observation.output": JSON.stringify({ error: String(error) }),
+        })
+        rootSpan.setStatus({
+          code: SpanStatusCode.ERROR,
+          message: String(error),
+        })
+        throw error
+      } finally {
+        rootSpan.end()
+      }
+    }
+  )
+}
+
+async function runLoop(input: AgentLoopInput, callbacks: AgentLoopCallbacks): Promise<AgentLoopResult> {
   const { model, systemPrompt, tools, streamId, sessionId, personaId, telemetry } = input
   let lastProcessedSequence = input.lastProcessedSequence
   const conversation: ModelMessage[] = [...input.messages]
   const toolDefinitions = toDefinitions(tools)
-  const sentMessageIds: string[] = []
+  const sent = { ids: [] as string[], contents: [] as string[] }
   let messagesSent = 0
   let sources: SourceItem[] = []
   let retrievedContext: string | null = null
   let lastAssistantText: string | undefined
   let hasTextReconsidered = false
-
-  // Prefetch workspace research before the loop starts
-  if (tools[WORKSPACE_RESEARCH_TOOL]) {
-    const prefetched = await prefetchWorkspaceResearch(
-      tools[WORKSPACE_RESEARCH_TOOL],
-      { sources, retrievedContext },
-      callbacks
-    )
-    sources = prefetched.sources
-    retrievedContext = prefetched.retrievedContext
-  }
 
   for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
     const fullSystemPrompt = retrievedContext ? `${systemPrompt}\n\n${retrievedContext}` : systemPrompt
@@ -571,7 +566,7 @@ export async function runAgentLoop(input: AgentLoopInput, callbacks: AgentLoopCa
 
       // Commit the best text we have
       if (lastAssistantText) {
-        const committed = await commitMessage(callbacks, { content: lastAssistantText, sources }, sentMessageIds)
+        const committed = await commitMessage(callbacks, { content: lastAssistantText, sources }, sent)
         messagesSent += committed.count
       }
       break
@@ -603,7 +598,7 @@ export async function runAgentLoop(input: AgentLoopInput, callbacks: AgentLoopCa
           const committed = await commitMessage(
             callbacks,
             { content: pending.content, sources: pending.sources ?? [] },
-            sentMessageIds
+            sent
           )
           messagesSent += committed.count
         }
@@ -662,5 +657,5 @@ export async function runAgentLoop(input: AgentLoopInput, callbacks: AgentLoopCa
     throw new Error("Agent loop completed without sending a message")
   }
 
-  return { messagesSent, sentMessageIds, lastProcessedSequence, sources }
+  return { messagesSent, sentMessageIds: sent.ids, sentContents: sent.contents, lastProcessedSequence, sources }
 }

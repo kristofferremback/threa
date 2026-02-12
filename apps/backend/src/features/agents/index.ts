@@ -105,23 +105,18 @@ export { protectToolOutputText, protectToolOutputBlocks } from "./tool-trust-bou
 export type { MultimodalContentBlock } from "./tool-trust-boundary"
 
 // Sub-barrels
-export { Researcher } from "./researcher"
-export type { ResearcherResult, ResearcherInput, ResearcherDeps, WorkspaceSourceItem } from "./researcher"
-export { computeAgentAccessSpec, ResearcherCache } from "./researcher"
-export type {
-  AgentAccessSpec,
-  ComputeAccessSpecParams,
-  ResearcherCacheEntry,
-  ResearcherCachedResult,
-} from "./researcher"
+export { WorkspaceAgent } from "./researcher"
+export type { WorkspaceAgentResult, WorkspaceAgentInput, WorkspaceAgentDeps, WorkspaceSourceItem } from "./researcher"
+export { computeAgentAccessSpec } from "./researcher"
+export type { AgentAccessSpec, ComputeAccessSpecParams } from "./researcher"
 
 // Config (exported for static-config-resolver)
 export { COMPANION_MODEL_ID, COMPANION_TEMPERATURE } from "./companion/config"
 export { COMPANION_SUMMARY_MODEL_ID, COMPANION_SUMMARY_TEMPERATURE } from "./companion/config"
 export {
-  RESEARCHER_MODEL_ID,
-  RESEARCHER_TEMPERATURE,
-  RESEARCHER_MAX_ITERATIONS,
-  RESEARCHER_MAX_RESULTS_PER_SEARCH,
-  RESEARCHER_SYSTEM_PROMPT,
+  WORKSPACE_AGENT_MODEL_ID,
+  WORKSPACE_AGENT_TEMPERATURE,
+  WORKSPACE_AGENT_MAX_ITERATIONS,
+  WORKSPACE_AGENT_MAX_RESULTS_PER_SEARCH,
+  WORKSPACE_AGENT_SYSTEM_PROMPT,
 } from "./researcher/config"

@@ -29,7 +29,7 @@ import {
 export interface ToolSetConfig {
   enabledTools: string[] | null
   tavilyApiKey?: string
-  runResearcher?: WorkspaceResearchCallbacks["runResearcher"]
+  runWorkspaceAgent?: WorkspaceResearchCallbacks["runWorkspaceAgent"]
   search?: SearchToolsCallbacks
   attachments?: {
     search: SearchAttachmentsCallbacks
@@ -47,13 +47,13 @@ export interface ToolSetConfig {
  * The send_message tool has no execute handler — the agent loop intercepts it.
  */
 export function buildToolSet(config: ToolSetConfig): Record<string, Tool<any, any>> {
-  const { enabledTools, tavilyApiKey, runResearcher, search, attachments } = config
+  const { enabledTools, tavilyApiKey, runWorkspaceAgent, search, attachments } = config
   const tools: Record<string, Tool<any, any>> = {}
 
   tools[AgentToolNames.SEND_MESSAGE] = createSendMessageTool()
 
-  if (runResearcher) {
-    tools["workspace_research"] = createWorkspaceResearchTool({ runResearcher })
+  if (runWorkspaceAgent) {
+    tools["workspace_research"] = createWorkspaceResearchTool({ runWorkspaceAgent })
   }
 
   if (tavilyApiKey && isToolEnabled(enabledTools, AgentToolNames.WEB_SEARCH)) {

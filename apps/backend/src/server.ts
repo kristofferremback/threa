@@ -55,7 +55,7 @@ import {
   MentionInvokeHandler,
   createOrphanSessionCleanup,
   createPersonaAgentWorker,
-  Researcher,
+  WorkspaceAgent,
   createSimulationWorker,
   PersonaAgent,
   TraceEmitter,
@@ -332,8 +332,8 @@ export async function startServer(): Promise<ServerInstance> {
 
   const serverId = `server_${ulid()}`
 
-  // Create researcher for workspace knowledge retrieval
-  const researcher = new Researcher({ pool, ai, configResolver, embeddingService })
+  // Create workspace agent for on-demand workspace knowledge retrieval
+  const workspaceAgent = new WorkspaceAgent({ pool, ai, configResolver, embeddingService })
 
   const traceEmitter = new TraceEmitter({ io, pool })
   const conversationSummaryService = new ConversationSummaryService({
@@ -346,7 +346,7 @@ export async function startServer(): Promise<ServerInstance> {
     ai,
     traceEmitter,
     userPreferencesService,
-    researcher,
+    workspaceAgent,
     searchService,
     conversationSummaryService,
     storage,

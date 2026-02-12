@@ -19,7 +19,12 @@ import { SearchRepository } from "../search"
 import type { ConversationSummaryService } from "./conversation-summary-service"
 import type { StorageProvider } from "../../lib/storage/s3-client"
 import type { ModelRegistry } from "../../lib/ai/model-registry"
-import { Researcher, type ResearcherResult, computeAgentAccessSpec, enrichMessageSearchResults } from "./researcher"
+import {
+  WorkspaceAgent,
+  type WorkspaceAgentResult,
+  computeAgentAccessSpec,
+  enrichMessageSearchResults,
+} from "./researcher"
 import { resolveStreamIdentifier } from "./tools/identifier-resolver"
 import { awaitAttachmentProcessing } from "../attachments"
 import { logger } from "../../lib/logger"
@@ -54,7 +59,7 @@ export interface PersonaAgentDeps {
   ai: AI
   traceEmitter: TraceEmitter
   userPreferencesService: UserPreferencesService
-  researcher: Researcher
+  workspaceAgent: WorkspaceAgent
   searchService: SearchService
   conversationSummaryService: ConversationSummaryService
   storage: StorageProvider
@@ -117,7 +122,7 @@ export class PersonaAgent {
       ai,
       traceEmitter,
       userPreferencesService,
-      researcher,
+      workspaceAgent,
       searchService,
       conversationSummaryService,
       storage,
@@ -234,16 +239,15 @@ export class PersonaAgent {
           await step.complete({})
         }
 
-        // Build researcher callback for on-demand workspace research
-        let runResearcher: (() => Promise<ResearcherResult>) | undefined
+        // Build workspace agent callback for on-demand workspace research
+        let runWorkspaceAgent: ((query: string) => Promise<WorkspaceAgentResult>) | undefined
         if (agentContext.triggerMessage && agentContext.invokingMemberId) {
-          const capturedTriggerMessage = agentContext.triggerMessage
           const capturedInvokingMemberId = agentContext.invokingMemberId
-          runResearcher = () =>
-            researcher.research({
+          runWorkspaceAgent = (query: string) =>
+            workspaceAgent.search({
               workspaceId,
               streamId,
-              triggerMessage: capturedTriggerMessage,
+              query,
               conversationHistory: agentContext.streamContext.conversationHistory,
               invokingMemberId: capturedInvokingMemberId,
               dmParticipantIds: agentContext.dmParticipantIds,
@@ -281,7 +285,7 @@ export class PersonaAgent {
         const tools = buildToolSet({
           enabledTools: persona.enabledTools,
           tavilyApiKey,
-          runResearcher,
+          runWorkspaceAgent,
           search: searchCallbacks,
           attachments: attachmentCallbacks,
         })
@@ -311,7 +315,7 @@ export class PersonaAgent {
             personaId: persona.id,
             lastProcessedSequence: session.lastSeenSequence ?? initialSequence,
             telemetry: {
-              functionId: "companion-response",
+              functionId: "generate",
               metadata: {
                 model_id: parsed.modelId,
                 model_provider: parsed.modelProvider,

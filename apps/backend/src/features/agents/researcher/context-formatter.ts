@@ -144,7 +144,7 @@ export interface RawMessageSearchResult {
 
 /**
  * Enrich raw message search results with author names and stream names.
- * This is a shared utility used by both the Researcher and PersonaAgent search callbacks.
+ * This is a shared utility used by both the WorkspaceAgent and PersonaAgent search callbacks.
  */
 export async function enrichMessageSearchResults(
   db: Querier,

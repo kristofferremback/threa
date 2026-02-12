@@ -24,7 +24,6 @@ export function parseWorkspaceResearchResult(resultJson: string): WorkspaceResea
     if (!parsed || typeof parsed !== "object") return null
 
     return {
-      shouldSearch: parsed.shouldSearch === true,
       retrievedContext: typeof parsed.retrievedContext === "string" ? parsed.retrievedContext : null,
       sources: Array.isArray(parsed.sources) ? parsed.sources : [],
       memoCount: typeof parsed.memoCount === "number" ? parsed.memoCount : 0,

@@ -43,7 +43,7 @@ import {
   PersonaAgent,
   type PersonaAgentInput,
   type PersonaAgentDeps,
-  Researcher,
+  WorkspaceAgent,
   PersonaRepository,
   TraceEmitter,
   ConversationSummaryService,
@@ -263,7 +263,7 @@ async function runVisionTask(input: MultimodalVisionInput, ctx: EvalContext): Pr
     // Create dependencies for PersonaAgent
     const embeddingService = new EmbeddingService({ ai: ctx.ai })
     const userPreferencesService = new UserPreferencesService(ctx.pool)
-    const researcher = new Researcher({
+    const workspaceAgent = new WorkspaceAgent({
       pool: ctx.pool,
       ai: ctx.ai,
       configResolver: ctx.configResolver,
@@ -326,7 +326,7 @@ async function runVisionTask(input: MultimodalVisionInput, ctx: EvalContext): Pr
       ai: ctx.ai,
       traceEmitter,
       userPreferencesService,
-      researcher,
+      workspaceAgent,
       searchService,
       conversationSummaryService,
       storage: mockStorage,

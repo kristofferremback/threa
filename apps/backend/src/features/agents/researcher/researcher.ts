@@ -10,7 +10,6 @@ import { MemoRepository } from "../../memos"
 import { SearchRepository } from "../../search"
 import { StreamRepository } from "../../streams"
 import { AttachmentRepository } from "../../attachments"
-import { ResearcherCache, type ResearcherCachedResult } from "./cache"
 import { computeAgentAccessSpec, type AgentAccessSpec } from "./access-spec"
 import {
   formatRetrievedContext,
@@ -21,7 +20,11 @@ import {
 } from "./context-formatter"
 import { logger } from "../../../lib/logger"
 import { SEMANTIC_DISTANCE_THRESHOLD } from "../../search"
-import { RESEARCHER_MAX_ITERATIONS, RESEARCHER_MAX_RESULTS_PER_SEARCH, RESEARCHER_SYSTEM_PROMPT } from "./config"
+import {
+  WORKSPACE_AGENT_MAX_ITERATIONS,
+  WORKSPACE_AGENT_MAX_RESULTS_PER_SEARCH,
+  WORKSPACE_AGENT_SYSTEM_PROMPT,
+} from "./config"
 import { appendBaselineQueries, buildBaselineQueries } from "./query/baseline-queries"
 
 /**
@@ -35,15 +38,13 @@ export interface WorkspaceSourceItem {
 }
 
 /**
- * Result from running the researcher.
+ * Result from running the workspace agent.
  */
-export interface ResearcherResult {
+export interface WorkspaceAgentResult {
   /** Formatted context to inject into system prompt */
   retrievedContext: string | null
   /** Sources for citation in the final message */
   sources: WorkspaceSourceItem[]
-  /** Whether the researcher decided to search */
-  shouldSearch: boolean
   /** Memos found (for debugging/logging) */
   memos: EnrichedMemoResult[]
   /** Messages found (for debugging/logging) */
@@ -53,12 +54,13 @@ export interface ResearcherResult {
 }
 
 /**
- * Input for running the researcher.
+ * Input for running the workspace agent.
  */
-export interface ResearcherInput {
+export interface WorkspaceAgentInput {
   workspaceId: string
   streamId: string
-  triggerMessage: Message
+  /** What the main agent wants to find */
+  query: string
   conversationHistory: Message[]
   invokingMemberId: string
   /** For DMs: all participant member IDs */
@@ -66,29 +68,25 @@ export interface ResearcherInput {
 }
 
 /**
- * Dependencies for the Researcher.
+ * Dependencies for the WorkspaceAgent.
  */
-export interface ResearcherDeps {
+export interface WorkspaceAgentDeps {
   pool: Pool
   ai: AI
   configResolver: ConfigResolver
   embeddingService: EmbeddingServiceLike
 }
 
-// Schema for combined decision + queries (single LLM call)
-const decisionWithQueriesSchema = z.object({
-  needsSearch: z.boolean(),
+// Schema for retrieval planning (always generates queries, no needsSearch gate)
+const retrievalPlanSchema = z.object({
   reasoning: z.string(),
-  queries: z
-    .array(
-      z.object({
-        target: z.enum(["memos", "messages", "attachments"]),
-        type: z.enum(["semantic", "exact"]),
-        query: z.string(),
-      })
-    )
-    .nullable()
-    .describe("Search queries to execute if needsSearch is true, null otherwise"),
+  queries: z.array(
+    z.object({
+      target: z.enum(["memos", "messages", "attachments"]),
+      type: z.enum(["semantic", "exact"]),
+      query: z.string(),
+    })
+  ),
 })
 
 // Schema for evaluation after seeing results
@@ -106,7 +104,7 @@ const evaluationSchema = z.object({
   reasoning: z.string(),
 })
 
-type SearchQuery = NonNullable<z.infer<typeof decisionWithQueriesSchema>["queries"]>[number]
+type SearchQuery = z.infer<typeof retrievalPlanSchema>["queries"][number]
 
 function mergeMemoResults(existing: EnrichedMemoResult[], incoming: EnrichedMemoResult[]): EnrichedMemoResult[] {
   const merged = [...existing]
@@ -154,47 +152,34 @@ function mergeAttachmentResults(
 }
 
 /**
- * Researcher that retrieves relevant workspace knowledge before the main agent responds.
+ * Workspace retrieval subagent that searches workspace knowledge on demand.
  *
- * Implements the GAM (General Agentic Memory) pattern:
- * - Lightweight decision about whether to search
- * - Targeted retrieval from memos (summarized) and messages (raw)
- * - Formatted context injection into system prompt
+ * Pure retrieval — the main agent decides *when* to call this. When called,
+ * it always searches. Implements the GAM pattern:
+ * plan retrieval → execute → evaluate → iterate.
  */
-export class Researcher {
-  constructor(private readonly deps: ResearcherDeps) {}
+export class WorkspaceAgent {
+  constructor(private readonly deps: WorkspaceAgentDeps) {}
 
   /**
-   * Run the researcher for a trigger message.
-   * Returns cached result if available, otherwise runs the full decision loop.
-   */
-  /**
-   * Research entry point.
+   * Search entry point.
    *
    * IMPORTANT: Uses three-phase pattern (INV-41) to avoid holding database
    * connections during AI calls (which can take 10-30+ seconds total):
    *
    * Phase 1: Fetch all setup data with withClient (~100-200ms)
-   * Phase 2: AI decision loop with no connection held (10-30+ seconds)
+   * Phase 2: AI search loop with no connection held (10-30+ seconds)
    *          Uses pool.query for individual DB operations (fast)
-   * Phase 3: Save cache result with withClient (~50ms)
    */
-  async research(input: ResearcherInput): Promise<ResearcherResult> {
+  async search(input: WorkspaceAgentInput): Promise<WorkspaceAgentResult> {
     const { pool } = this.deps
-    const { workspaceId, streamId, triggerMessage, invokingMemberId, dmParticipantIds } = input
+    const { workspaceId, streamId, invokingMemberId, dmParticipantIds } = input
 
     // Phase 1: Fetch all setup data with withClient (no transaction, fast reads ~100-200ms)
     const fetchedData = await withClient(pool, async (client) => {
-      // Check cache first
-      const cached = await ResearcherCache.findByMessage(client, triggerMessage.id)
-      if (cached) {
-        return { cached: cached.result, stream: null, accessSpec: null, accessibleStreamIds: null }
-      }
-
-      // Compute access spec for this invocation context
       const stream = await StreamRepository.findById(client, streamId)
       if (!stream) {
-        return { cached: null, stream: null, accessSpec: null, accessibleStreamIds: null }
+        return { stream: null, accessSpec: null, accessibleStreamIds: null }
       }
 
       const accessSpec = await computeAgentAccessSpec(client, {
@@ -213,108 +198,85 @@ export class Researcher {
         workspaceId
       )
 
-      return { cached: null, stream, accessSpec: effectiveAccessSpec, accessibleStreamIds }
+      return { stream, accessSpec: effectiveAccessSpec, accessibleStreamIds }
     })
-
-    // Return cached result if available
-    if (fetchedData.cached) {
-      logger.debug({ messageId: triggerMessage.id }, "Researcher cache hit")
-      return this.cachedResultToResearcherResult(fetchedData.cached)
-    }
 
     // Return empty if stream not found
     if (!fetchedData.stream || !fetchedData.accessSpec || !fetchedData.accessibleStreamIds) {
-      logger.warn({ streamId }, "Stream not found for researcher")
+      logger.warn({ streamId }, "Stream not found for workspace agent")
       return this.emptyResult()
     }
 
     logger.info(
       {
-        messageId: triggerMessage.id,
+        query: input.query,
         accessSpecType: fetchedData.accessSpec.type,
         accessibleStreamCount: fetchedData.accessibleStreamIds.length,
         accessibleStreamIds: fetchedData.accessibleStreamIds.slice(0, 10),
       },
-      "Researcher computed access"
+      "Workspace agent computed access"
     )
 
     if (fetchedData.accessibleStreamIds.length === 0) {
       logger.warn(
-        { messageId: triggerMessage.id, accessSpec: fetchedData.accessSpec },
-        "No accessible streams for researcher"
+        { query: input.query, accessSpec: fetchedData.accessSpec },
+        "No accessible streams for workspace agent"
       )
       return this.emptyResult()
     }
 
-    // Phase 2: Run decision loop (AI calls + DB queries, no connection held, 10-30+ seconds)
-    // Uses pool.query for individual DB operations (fast, ~10-50ms each)
-    const result = await this.runDecisionLoop(pool, input, fetchedData.accessSpec, fetchedData.accessibleStreamIds)
-
-    // Phase 3: Save cache result (single query, INV-30)
-    await ResearcherCache.set(pool, {
-      workspaceId,
-      messageId: triggerMessage.id,
-      streamId,
-      accessSpec: fetchedData.accessSpec!,
-      result: this.toResearcherCachedResult(result),
-    })
-
-    return result
+    // Phase 2: Run search loop (AI calls + DB queries, no connection held, 10-30+ seconds)
+    return this.runSearchLoop(pool, input, fetchedData.accessSpec, fetchedData.accessibleStreamIds)
   }
 
   /**
-   * Main decision loop: decide → search → evaluate → maybe search more.
+   * Main search loop: plan retrieval → search → evaluate → maybe search more.
    *
    * Uses pool.query for individual DB operations instead of holding a connection
    * through the entire loop (which includes AI calls taking 10-30+ seconds).
    */
-  private async runDecisionLoop(
+  private async runSearchLoop(
     pool: Pool,
-    input: ResearcherInput,
+    input: WorkspaceAgentInput,
     accessSpec: AgentAccessSpec,
     accessibleStreamIds: string[]
-  ): Promise<ResearcherResult> {
+  ): Promise<WorkspaceAgentResult> {
     const { configResolver, embeddingService } = this.deps
-    const { workspaceId, triggerMessage, conversationHistory, invokingMemberId } = input
+    const { workspaceId, query, conversationHistory, invokingMemberId } = input
 
-    // Resolve config for researcher
+    // Resolve config for workspace agent
     const config = (await configResolver.resolve(COMPONENT_PATHS.COMPANION_RESEARCHER)) as ResearcherConfig
 
-    const contextSummary = this.buildContextSummary(triggerMessage, conversationHistory)
-    const maxIterations = config.maxIterations ?? RESEARCHER_MAX_ITERATIONS
-    const messageId = triggerMessage.id
-    const triggerMessageText = triggerMessage.contentMarkdown
-    const excludedMessageIds = new Set([messageId])
+    const contextSummary = this.buildContextSummary(query, conversationHistory)
+    const maxIterations = config.maxIterations ?? WORKSPACE_AGENT_MAX_ITERATIONS
+    const excludedMessageIds = new Set<string>()
 
-    // ── Step 1: Decide whether to search and generate initial queries ──
+    // ── Step 1: Plan retrieval queries ──
 
-    const decision = await this.decideAndGenerateQueries({
+    const plan = await this.planRetrieval({
       contextSummary,
       config,
       workspaceId,
-      messageId,
+      query,
     })
 
-    let initialQueries: SearchQuery[] = decision.queries?.length ? decision.queries : []
+    let initialQueries: SearchQuery[] = plan.queries.length > 0 ? plan.queries : []
 
-    if (!decision.needsSearch && decision.reasoning === "Decision failed") {
-      initialQueries = buildBaselineQueries(triggerMessageText)
-      if (initialQueries.length > 0) {
-        logger.warn({ messageId }, "Researcher decision failed; falling back to baseline retrieval queries")
+    // Fall back to baseline queries if LLM planning failed or returned empty
+    if (plan.reasoning === "Planning failed" || initialQueries.length === 0) {
+      initialQueries = buildBaselineQueries(query)
+      if (initialQueries.length > 0 && plan.reasoning === "Planning failed") {
+        logger.warn({ query }, "Workspace agent planning failed; falling back to baseline retrieval queries")
+      } else if (initialQueries.length > 0) {
+        logger.info(
+          { query, reasoning: plan.reasoning },
+          "Workspace agent generated baseline queries because model did not return any queries"
+        )
       }
     }
-    if (decision.needsSearch && initialQueries.length === 0) {
-      initialQueries = buildBaselineQueries(triggerMessageText)
-      logger.info(
-        { messageId, reasoning: decision.reasoning },
-        "Researcher generated baseline queries because model did not return any queries"
-      )
-    }
 
-    const shouldSearch = decision.needsSearch || initialQueries.length > 0
-
-    if (!shouldSearch || initialQueries.length === 0) {
-      logger.debug({ messageId, reasoning: decision.reasoning }, "Researcher decided no search needed")
+    if (initialQueries.length === 0) {
+      logger.debug({ query, reasoning: plan.reasoning }, "Workspace agent could not generate any queries")
       return this.emptyResult()
     }
 
@@ -323,13 +285,13 @@ export class Researcher {
     let allMemos: EnrichedMemoResult[] = []
     let allMessages: EnrichedMessageResult[] = []
     let allAttachments: EnrichedAttachmentResult[] = []
-    let pendingQueries: SearchQuery[] = appendBaselineQueries(initialQueries, triggerMessageText)
+    let pendingQueries: SearchQuery[] = appendBaselineQueries(initialQueries, query)
     let iteration = 0
 
     while (iteration < maxIterations) {
       // Execute pending queries
       if (pendingQueries.length === 0) {
-        logger.warn({ messageId }, "Researcher loop iteration with no pending queries")
+        logger.warn({ query }, "Workspace agent loop iteration with no pending queries")
         break
       }
 
@@ -356,18 +318,18 @@ export class Researcher {
         allAttachments,
         config,
         workspaceId,
-        messageId
+        query
       )
 
       const hasAnyResults = allMemos.length > 0 || allMessages.length > 0 || allAttachments.length > 0
 
       // On evaluation failure with no results, try baseline queries once
       if (evaluation.reasoning === "Evaluation failed" && !hasAnyResults) {
-        const fallbackQueries = buildBaselineQueries(triggerMessageText)
+        const fallbackQueries = buildBaselineQueries(query)
         if (fallbackQueries.length > 0) {
           logger.warn(
-            { messageId, iteration },
-            "Researcher evaluation failed with no results; retrying with baseline queries"
+            { query, iteration },
+            "Workspace agent evaluation failed with no results; retrying with baseline queries"
           )
           pendingQueries = fallbackQueries
           iteration++
@@ -376,7 +338,7 @@ export class Researcher {
       }
 
       if (evaluation.sufficient || !evaluation.additionalQueries?.length) {
-        logger.debug({ messageId, iteration, reasoning: evaluation.reasoning }, "Researcher found sufficient results")
+        logger.debug({ query, iteration, reasoning: evaluation.reasoning }, "Workspace agent found sufficient results")
         break
       }
 
@@ -386,7 +348,7 @@ export class Researcher {
     }
 
     if (iteration >= maxIterations) {
-      logger.debug({ messageId, iteration, maxIterations }, "Researcher reached max iterations")
+      logger.debug({ query, iteration, maxIterations }, "Workspace agent reached max iterations")
     }
 
     // ── Step 3: Build result ──
@@ -396,20 +358,19 @@ export class Researcher {
 
     logger.info(
       {
-        messageId,
+        query,
         memoCount: allMemos.length,
         messageCount: allMessages.length,
         attachmentCount: allAttachments.length,
         iterations: iteration,
         accessSpecType: accessSpec.type,
       },
-      "Researcher completed"
+      "Workspace agent completed"
     )
 
     return {
       retrievedContext,
       sources,
-      shouldSearch: true,
       memos: allMemos,
       messages: allMessages,
       attachments: allAttachments,
@@ -417,33 +378,35 @@ export class Researcher {
   }
 
   /**
-   * Combined decision + query generation in a single LLM call.
-   * Saves one round-trip compared to separate decide + generateQueries calls.
+   * Plan retrieval queries for the given query.
+   * Always generates queries — no boolean gate.
    */
-  private async decideAndGenerateQueries(params: {
+  private async planRetrieval(params: {
     contextSummary: string
     config: ResearcherConfig
     workspaceId: string
-    messageId: string
-  }): Promise<z.infer<typeof decisionWithQueriesSchema>> {
+    query: string
+  }): Promise<z.infer<typeof retrievalPlanSchema>> {
     const { ai } = this.deps
-    const { contextSummary, config, workspaceId, messageId } = params
+    const { contextSummary, config, workspaceId, query } = params
     try {
       const { value } = await ai.generateObject({
         model: config.modelId,
-        schema: decisionWithQueriesSchema,
+        schema: retrievalPlanSchema,
         messages: [
-          { role: "system", content: RESEARCHER_SYSTEM_PROMPT },
+          { role: "system", content: WORKSPACE_AGENT_SYSTEM_PROMPT },
           {
             role: "user",
-            content: `Analyze this message and decide if workspace search would help answer it.
+            content: `Break down this query into targeted search queries to find relevant workspace knowledge.
+
+## Query
+${query}
 
 ${contextSummary}
 
 Respond with:
-- needsSearch: true/false
-- reasoning: brief explanation of your decision
-- queries: array of search queries (or null if needsSearch is false)
+- reasoning: brief explanation of your retrieval strategy
+- queries: array of search queries to execute
 
 Each query must have:
 - target: "memos" | "messages" | "attachments"
@@ -459,14 +422,14 @@ Guidelines for search:
           },
         ],
         temperature: config.temperature,
-        telemetry: { functionId: "researcher-decide-and-query", metadata: { messageId } },
+        telemetry: { functionId: "workspace-agent-plan-retrieval", metadata: { query } },
         context: { workspaceId, origin: "system" },
       })
 
       return value
     } catch (error) {
-      logger.warn({ error }, "Researcher decision failed, defaulting to no search")
-      return { needsSearch: false, reasoning: "Decision failed", queries: null }
+      logger.warn({ error }, "Workspace agent retrieval planning failed, falling back to baseline")
+      return { reasoning: "Planning failed", queries: [] }
     }
   }
 
@@ -480,7 +443,7 @@ Guidelines for search:
     attachments: EnrichedAttachmentResult[],
     config: ResearcherConfig,
     workspaceId: string,
-    messageId: string
+    query: string
   ): Promise<z.infer<typeof evaluationSchema>> {
     const { ai } = this.deps
     const resultsText = this.formatResultsForEvaluation(memos, messages, attachments)
@@ -490,10 +453,13 @@ Guidelines for search:
         model: config.modelId,
         schema: evaluationSchema,
         messages: [
-          { role: "system", content: RESEARCHER_SYSTEM_PROMPT },
+          { role: "system", content: WORKSPACE_AGENT_SYSTEM_PROMPT },
           {
             role: "user",
-            content: `Evaluate if these search results are sufficient to help answer the user's question.
+            content: `Evaluate if these search results are sufficient to answer the query.
+
+## Query
+${query}
 
 ${contextSummary}
 
@@ -513,13 +479,13 @@ Each query must have:
           },
         ],
         temperature: config.temperature,
-        telemetry: { functionId: "researcher-evaluate", metadata: { messageId } },
+        telemetry: { functionId: "workspace-agent-evaluate", metadata: { query } },
         context: { workspaceId, origin: "system" },
       })
 
       return value
     } catch (error) {
-      logger.warn({ error }, "Researcher evaluation failed, treating as sufficient")
+      logger.warn({ error }, "Workspace agent evaluation failed, treating as sufficient")
       return { sufficient: true, additionalQueries: null, reasoning: "Evaluation failed" }
     }
   }
@@ -541,7 +507,6 @@ Each query must have:
     memos: EnrichedMemoResult[]
     messages: EnrichedMessageResult[]
     attachments: EnrichedAttachmentResult[]
-    searches: ResearcherCachedResult["searchesPerformed"]
   }> {
     // Execute all queries in parallel
     const results = await Promise.all(
@@ -603,7 +568,7 @@ Each query must have:
     const memos: EnrichedMemoResult[] = []
     const messages: EnrichedMessageResult[] = []
     const attachments: EnrichedAttachmentResult[] = []
-    const searches: ResearcherCachedResult["searchesPerformed"] = []
+    const searches: Array<{ target: string; type: string; query: string; resultCount: number }> = []
 
     for (const result of results) {
       memos.push(...result.memos)
@@ -622,10 +587,10 @@ Each query must have:
           resultCount: search.resultCount,
         })),
       },
-      "Researcher query batch completed"
+      "Workspace agent query batch completed"
     )
 
-    return { memos, messages, attachments, searches }
+    return { memos, messages, attachments }
   }
 
   /**
@@ -644,14 +609,14 @@ Each query must have:
       try {
         const embedding = await embeddingService.embed(query.query, {
           workspaceId,
-          functionId: "researcher-memo-semantic-search",
+          functionId: "workspace-agent-memo-semantic-search",
         })
         // DB search (single query, INV-30)
         const semanticResults = await MemoRepository.semanticSearch(pool, {
           workspaceId,
           embedding,
           streamIds: accessibleStreamIds,
-          limit: RESEARCHER_MAX_RESULTS_PER_SEARCH,
+          limit: WORKSPACE_AGENT_MAX_RESULTS_PER_SEARCH,
           semanticDistanceThreshold: SEMANTIC_DISTANCE_THRESHOLD,
         })
         const results =
@@ -661,7 +626,7 @@ Each query must have:
                 workspaceId,
                 query: query.query,
                 streamIds: accessibleStreamIds,
-                limit: RESEARCHER_MAX_RESULTS_PER_SEARCH,
+                limit: WORKSPACE_AGENT_MAX_RESULTS_PER_SEARCH,
               })
 
         return results.map((r) => ({
@@ -681,7 +646,7 @@ Each query must have:
         workspaceId,
         query: query.query,
         streamIds: accessibleStreamIds,
-        limit: RESEARCHER_MAX_RESULTS_PER_SEARCH,
+        limit: WORKSPACE_AGENT_MAX_RESULTS_PER_SEARCH,
       })
 
       return results.map((r) => ({
@@ -719,7 +684,7 @@ Each query must have:
         try {
           embedding = await embeddingService.embed(searchQuery, {
             workspaceId,
-            functionId: "researcher-message-semantic-search",
+            functionId: "workspace-agent-message-semantic-search",
           })
         } catch (error) {
           logger.warn({ error }, "Failed to generate embedding, falling back to keyword-only search")
@@ -738,14 +703,14 @@ Each query must have:
                 query: normalizedQuery,
                 streamIds: accessibleStreamIds,
                 filters,
-                limit: RESEARCHER_MAX_RESULTS_PER_SEARCH,
+                limit: WORKSPACE_AGENT_MAX_RESULTS_PER_SEARCH,
               })
             : await SearchRepository.hybridSearch(client, {
                 query: normalizedQuery,
                 embedding,
                 streamIds: accessibleStreamIds,
                 filters,
-                limit: RESEARCHER_MAX_RESULTS_PER_SEARCH,
+                limit: WORKSPACE_AGENT_MAX_RESULTS_PER_SEARCH,
                 semanticDistanceThreshold: SEMANTIC_DISTANCE_THRESHOLD,
               })
         const searchResults =
@@ -754,7 +719,7 @@ Each query must have:
                 query: normalizedQuery,
                 streamIds: accessibleStreamIds,
                 filters,
-                limit: RESEARCHER_MAX_RESULTS_PER_SEARCH,
+                limit: WORKSPACE_AGENT_MAX_RESULTS_PER_SEARCH,
               })
             : primaryResults
 
@@ -840,7 +805,7 @@ Each query must have:
         workspaceId,
         streamIds: accessibleStreamIds,
         query: query.query,
-        limit: RESEARCHER_MAX_RESULTS_PER_SEARCH,
+        limit: WORKSPACE_AGENT_MAX_RESULTS_PER_SEARCH,
       })
 
       return results.map((r) => ({
@@ -902,16 +867,13 @@ Each query must have:
   }
 
   /**
-   * Build context summary for the researcher.
+   * Build context summary for the workspace agent.
    */
-  private buildContextSummary(triggerMessage: Message, conversationHistory: Message[]): string {
+  private buildContextSummary(query: string, conversationHistory: Message[]): string {
     const recentMessages = conversationHistory.slice(-5)
     const historyText = recentMessages.map((m) => `${m.authorType}: ${m.contentMarkdown}`).join("\n")
 
-    return `## Current Message
-${triggerMessage.contentMarkdown}
-
-## Recent Conversation
+    return `## Recent Conversation
 ${historyText || "No recent messages."}`
   }
 
@@ -951,39 +913,12 @@ ${historyText || "No recent messages."}`
   }
 
   /**
-   * Convert cached result back to ResearcherResult.
+   * Empty result when no queries could be generated.
    */
-  private cachedResultToResearcherResult(cached: ResearcherCachedResult): ResearcherResult {
-    return {
-      retrievedContext: cached.retrievedContext,
-      sources: cached.sources,
-      shouldSearch: cached.shouldSearch,
-      memos: [], // We don't cache the full enriched results
-      messages: [],
-      attachments: [],
-    }
-  }
-
-  /**
-   * Convert ResearcherResult to cacheable format.
-   */
-  private toResearcherCachedResult(result: ResearcherResult): ResearcherCachedResult {
-    return {
-      shouldSearch: result.shouldSearch,
-      retrievedContext: result.retrievedContext,
-      sources: result.sources,
-      searchesPerformed: [], // Could track this if needed
-    }
-  }
-
-  /**
-   * Empty result when no search is performed.
-   */
-  private emptyResult(): ResearcherResult {
+  private emptyResult(): WorkspaceAgentResult {
     return {
       retrievedContext: null,
       sources: [],
-      shouldSearch: false,
       memos: [],
       messages: [],
       attachments: [],

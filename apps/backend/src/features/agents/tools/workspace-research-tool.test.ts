@@ -4,9 +4,8 @@ import { createWorkspaceResearchTool } from "./workspace-research-tool"
 const toolOpts = { toolCallId: "test", messages: [] as any[] }
 
 describe("workspace_research tool", () => {
-  test("should return structured workspace research results", async () => {
-    const runResearcher = mock(async () => ({
-      shouldSearch: true,
+  test("should pass query to workspace agent and return structured results", async () => {
+    const runWorkspaceAgent = mock(async () => ({
       retrievedContext: "## Retrieved Knowledge\nUseful workspace details.",
       sources: [
         {
@@ -27,13 +26,13 @@ describe("workspace_research tool", () => {
       attachments: [],
     }))
 
-    const tool = createWorkspaceResearchTool({ runResearcher })
-    const rawResult = (await tool.execute!({}, toolOpts)) as string
+    const tool = createWorkspaceResearchTool({ runWorkspaceAgent })
+    const rawResult = (await tool.execute!({ query: "What were the design decisions?" }, toolOpts)) as string
     const result = JSON.parse(rawResult)
 
-    expect(runResearcher).toHaveBeenCalledTimes(1)
+    expect(runWorkspaceAgent).toHaveBeenCalledTimes(1)
+    expect(runWorkspaceAgent).toHaveBeenCalledWith("What were the design decisions?")
     expect(result).toMatchObject({
-      shouldSearch: true,
       retrievedContext: "## Retrieved Knowledge\nUseful workspace details.",
       memoCount: 1,
       messageCount: 0,
