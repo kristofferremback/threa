@@ -54,10 +54,10 @@ ${rollingConversationSummary.trim()}`
 
 ## Responding to Messages
 
-You have a \`send_message\` tool to send messages to the conversation. Use this tool when you want to respond.
+You have a \`send_message\` tool to send messages to the conversation.
 
 Key behaviors:
-- Call send_message to send a response. You can call it multiple times for multi-part responses.
+- Call send_message to deliver your response. You can call it multiple times for multi-part responses.
 - If you have nothing to add (e.g., the question was already answered), simply don't call send_message.
 - If new messages arrive while you're processing, you'll see them and can incorporate them in your response.
 - Be helpful, concise, and conversational.`

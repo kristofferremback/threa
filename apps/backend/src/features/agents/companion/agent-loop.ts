@@ -9,7 +9,6 @@ import { MAX_MESSAGE_CHARS, truncateMessages } from "./truncation"
 import { extractSourcesFromWebSearch, parseWorkspaceResearchResult, mergeSourceItems, toSourceItems } from "./sources"
 
 const MAX_ITERATIONS = 20
-const MAX_TEXT_ONLY_REDIRECTS = 1
 const WORKSPACE_RESEARCH_TOOL = "workspace_research"
 
 // ---------------------------------------------------------------------------
@@ -496,8 +495,8 @@ export async function runAgentLoop(input: AgentLoopInput, callbacks: AgentLoopCa
   let messagesSent = 0
   let sources: SourceItem[] = []
   let retrievedContext: string | null = null
-  let textOnlyRedirects = 0
   let lastAssistantText: string | undefined
+  let hasTextReconsidered = false
 
   // Prefetch workspace research before the loop starts
   if (tools[WORKSPACE_RESEARCH_TOOL]) {
@@ -539,13 +538,13 @@ export async function runAgentLoop(input: AgentLoopInput, callbacks: AgentLoopCa
     if (assistantMsg) conversation.push(assistantMsg)
 
     // ── Text-only response (no tool calls) ──
-    // The model wrote its answer as plain text instead of calling send_message.
+    // Model wrote its answer as plain text instead of calling send_message.
+    // This is normal — accept the text as the response.
     if (result.toolCalls.length === 0) {
-      // Track the best text we've seen (the redirect attempt may return empty)
       const currentText = extractAssistantText(result)
       if (currentText) lastAssistantText = currentText
 
-      // Check for new messages
+      // Check for new messages that arrived during processing
       const newMessages = await callbacks.checkNewMessages(streamId, lastProcessedSequence, personaId)
       if (newMessages.length > 0) {
         const { maxSequence, userMessages } = await injectNewMessages(
@@ -555,30 +554,28 @@ export async function runAgentLoop(input: AgentLoopInput, callbacks: AgentLoopCa
         )
         lastProcessedSequence = maxSequence
         conversation.push(...userMessages)
+
+        // New context arrived — reconsider once with the draft + new messages
+        if (!hasTextReconsidered && lastAssistantText) {
+          hasTextReconsidered = true
+          conversation.push({
+            role: "system",
+            content:
+              `[New context arrived while you were responding]\n\n` +
+              `Your draft response was:\n"${lastAssistantText}"\n\n` +
+              `Please incorporate the new messages and respond.`,
+          })
+          continue
+        }
       }
 
-      // Give the model one chance to use the tool, then extract and send directly
-      if (textOnlyRedirects < MAX_TEXT_ONLY_REDIRECTS) {
-        textOnlyRedirects++
-        conversation.push({
-          role: "system",
-          content:
-            `You composed a response but did not call send_message. ` +
-            `You MUST call the send_message tool to deliver your response to the user. ` +
-            `Use the text you just wrote as the content argument.`,
-        })
-        continue
-      }
-
-      // Model won't call send_message — send the best text we captured directly
+      // Commit the best text we have
       if (lastAssistantText) {
-        logger.warn({ sessionId, streamId }, "Model refused to call send_message; sending text response directly")
         const committed = await commitMessage(callbacks, { content: lastAssistantText, sources }, sentMessageIds)
         messagesSent += committed.count
       }
       break
     }
-    textOnlyRedirects = 0 // Reset on successful tool use
 
     // ── Tool calls present ──
 
@@ -660,7 +657,7 @@ export async function runAgentLoop(input: AgentLoopInput, callbacks: AgentLoopCa
   if (messagesSent === 0) {
     logger.error(
       { sessionId, streamId, iterations: MAX_ITERATIONS },
-      "Agent loop exhausted iterations without calling send_message"
+      "Agent loop exhausted iterations without sending a message"
     )
     throw new Error("Agent loop completed without sending a message")
   }
