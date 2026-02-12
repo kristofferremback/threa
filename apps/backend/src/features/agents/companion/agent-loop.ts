@@ -10,8 +10,6 @@ import { extractSourcesFromWebSearch, parseWorkspaceResearchResult, mergeSourceI
 
 const MAX_ITERATIONS = 20
 const WORKSPACE_RESEARCH_TOOL = "workspace_research"
-const FALLBACK_RESPONSE =
-  "I am sorry, I could not complete a proper response yet. Please send one more message and I will retry."
 
 // ---------------------------------------------------------------------------
 // Types
@@ -483,12 +481,15 @@ export async function runAgentLoop(input: AgentLoopInput, callbacks: AgentLoopCa
       await callbacks.recordStep({ stepType: "thinking", content: thinkingContent, durationMs })
     }
 
-    // No tool calls: the model produced a text-only response.
-    // Push assistant message so fallback path can extract it.
-    if (result.toolCalls.length === 0) {
-      const assistantMsg = result.response.messages[0]
-      if (assistantMsg) conversation.push(assistantMsg)
+    // Add assistant message to conversation history
+    const assistantMsg = result.response.messages[0]
+    if (assistantMsg) conversation.push(assistantMsg)
 
+    // ── Text-only response (no tool calls) ──
+    // The model wrote its answer as plain text instead of calling send_message.
+    // Redirect it: inject the text as context and ask it to use the tool.
+    if (result.toolCalls.length === 0) {
+      // Still check for new messages first
       const newMessages = await callbacks.checkNewMessages(streamId, lastProcessedSequence, personaId)
       if (newMessages.length > 0) {
         const { maxSequence, userMessages } = await injectNewMessages(
@@ -498,16 +499,19 @@ export async function runAgentLoop(input: AgentLoopInput, callbacks: AgentLoopCa
         )
         lastProcessedSequence = maxSequence
         conversation.push(...userMessages)
-        continue
       }
-      break
+
+      conversation.push({
+        role: "system",
+        content:
+          `You composed a response but did not call send_message. ` +
+          `You MUST call the send_message tool to deliver your response to the user. ` +
+          `Use the text you just wrote as the content argument.`,
+      })
+      continue
     }
 
-    // Add assistant message (with tool calls) to conversation
-    const assistantMsg = result.response.messages[0]
-    if (assistantMsg) {
-      conversation.push(assistantMsg)
-    }
+    // ── Tool calls present ──
 
     // Execute tools
     const execResult = await executeToolCalls(
@@ -528,7 +532,7 @@ export async function runAgentLoop(input: AgentLoopInput, callbacks: AgentLoopCa
 
     if (execResult.pendingMessages.length > 0) {
       if (newMessages.length === 0) {
-        // Commit pending messages
+        // Commit pending messages — this is the loop's exit condition
         for (const pending of execResult.pendingMessages) {
           const sendResult = await callbacks.sendMessage(pending)
           sentMessageIds.push(sendResult.messageId)
@@ -545,6 +549,7 @@ export async function runAgentLoop(input: AgentLoopInput, callbacks: AgentLoopCa
             })),
           })
         }
+        break
       } else {
         // Reconsider: new messages arrived while response was pending
         const { maxSequence, userMessages } = await injectNewMessages(
@@ -591,41 +596,12 @@ export async function runAgentLoop(input: AgentLoopInput, callbacks: AgentLoopCa
     }
   }
 
-  // Ensure at least one message was sent
   if (messagesSent === 0) {
-    const lastAssistant = [...conversation].reverse().find((m) => m.role === "assistant")
-    let finalText: string | undefined
-    if (lastAssistant && typeof lastAssistant.content === "string") {
-      finalText = lastAssistant.content
-    } else if (lastAssistant && Array.isArray(lastAssistant.content)) {
-      finalText = (lastAssistant.content as Array<{ type: string; text?: string }>)
-        .filter((p) => p.type === "text" && p.text)
-        .map((p) => p.text!)
-        .join("")
-    }
-
-    const contentToSend = finalText?.trim() || FALLBACK_RESPONSE
-    const sendResult = await callbacks.sendMessage({
-      content: contentToSend,
-      sources: sources.length > 0 ? sources : undefined,
-    })
-    sentMessageIds.push(sendResult.messageId)
-    messagesSent++
-
-    await callbacks.recordStep({
-      stepType: "message_sent",
-      content: contentToSend,
-      messageId: sendResult.messageId,
-      sources:
-        sources.length > 0
-          ? sources.map((s) => ({
-              type: (s.type ?? "web") as TraceSource["type"],
-              title: s.title,
-              url: s.url,
-              snippet: s.snippet,
-            }))
-          : undefined,
-    })
+    logger.error(
+      { sessionId, streamId, iterations: MAX_ITERATIONS },
+      "Agent loop exhausted iterations without calling send_message"
+    )
+    throw new Error("Agent loop completed without sending a message")
   }
 
   return { messagesSent, sentMessageIds, lastProcessedSequence, sources }
