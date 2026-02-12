@@ -71,6 +71,13 @@ export const streamsApi = {
     return res.events
   },
 
+  async join(workspaceId: string, streamId: string): Promise<StreamMember> {
+    const res = await api.post<{ data: { membership: StreamMember } }>(
+      `/api/workspaces/${workspaceId}/streams/${streamId}/join`
+    )
+    return res.data.membership
+  },
+
   async markAsRead(workspaceId: string, streamId: string, lastEventId: string): Promise<StreamMember> {
     const res = await api.post<{ membership: StreamMember }>(
       `/api/workspaces/${workspaceId}/streams/${streamId}/read`,

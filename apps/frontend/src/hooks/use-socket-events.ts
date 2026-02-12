@@ -25,9 +25,10 @@ interface MemberWithDisplay {
   userId: string
   role: string
   slug: string
+  name: string
   timezone: string | null
   locale: string | null
-  name: string
+  setupCompleted: boolean
   email: string
   joinedAt: string
 }
@@ -138,7 +139,7 @@ export function useSocketEvents(workspaceId: string) {
         socket.emit("leave", `ws:${workspaceId}:stream:${id}`)
       }
     }
-  }, [socket, workspaceId, memberStreamIdsKey])
+  }, [socket, workspaceId, memberStreamIdsKey, reconnectCount])
 
   useEffect(() => {
     if (!socket || !workspaceId) return
@@ -151,18 +152,53 @@ export function useSocketEvents(workspaceId: string) {
 
     // Handle stream created
     socket.on("stream:created", (payload: StreamPayload) => {
+      let shouldJoinStreamRoom = false
+
       // Add to workspace bootstrap cache (sidebar)
-      queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), (old: unknown) => {
-        if (!old || typeof old !== "object") return old
-        const bootstrap = old as { streams?: Stream[] }
-        if (!bootstrap.streams) return old
-        // Only add if not already present (avoid duplicates from own actions)
-        if (bootstrap.streams.some((s) => s.id === payload.stream.id)) return old
+      queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
+        if (!old) return old
+
+        const streamExists = old.streams.some((s) => s.id === payload.stream.id)
+        const currentMember = user && old.members?.find((m: WorkspaceMember) => m.userId === user.id)
+        const isCreator = Boolean(currentMember && payload.stream.createdBy === currentMember.id)
+        const hasMembership = old.streamMemberships.some((m: StreamMember) => m.streamId === payload.stream.id)
+        const shouldAddMembership = isCreator && !hasMembership
+
+        // Ensure creators are subscribed immediately for follow-up stream activity
+        // (prevents missing early stream:activity events after channel creation).
+        shouldJoinStreamRoom = hasMembership || shouldAddMembership
+
+        if (streamExists && !shouldAddMembership) return old
+
         return {
-          ...bootstrap,
-          streams: [...bootstrap.streams, payload.stream],
+          ...old,
+          streams: streamExists ? old.streams : [...old.streams, { ...payload.stream, lastMessagePreview: null }],
+          streamMemberships: shouldAddMembership
+            ? [
+                ...old.streamMemberships,
+                {
+                  streamId: payload.stream.id,
+                  memberId: payload.stream.createdBy,
+                  pinned: false,
+                  pinnedAt: null,
+                  muted: false,
+                  lastReadEventId: null,
+                  lastReadAt: null,
+                  joinedAt: payload.stream.createdAt,
+                },
+              ]
+            : old.streamMemberships,
         }
       })
+
+      if (shouldJoinStreamRoom) {
+        joinRoomFireAndForget(
+          socket,
+          `ws:${workspaceId}:stream:${payload.stream.id}`,
+          abortController.signal,
+          "SocketEvents"
+        )
+      }
 
       // Cache to IndexedDB
       db.streams.put({ ...payload.stream, _cachedAt: Date.now() })
@@ -269,42 +305,29 @@ export function useSocketEvents(workspaceId: string) {
                 userId: member.userId,
                 role: member.role as WorkspaceMember["role"],
                 slug: member.slug,
+                name: member.name,
                 timezone: member.timezone,
                 locale: member.locale,
+                setupCompleted: member.setupCompleted,
                 joinedAt: member.joinedAt,
               },
             ]
 
-        const users = bootstrap.users || []
-        const user: User = {
-          id: member.userId,
-          email: member.email,
-          name: member.name,
-          workosUserId: null,
-          createdAt: member.joinedAt,
-          updatedAt: member.joinedAt,
-        }
-        const updatedUsers = users.some((u) => u.id === member.userId) ? users : [...users, user]
-
-        return { ...bootstrap, members: updatedMembers, users: updatedUsers }
+        return { ...bootstrap, members: updatedMembers }
       })
 
-      // Cache member and user to IndexedDB
+      // Cache member to IndexedDB
       db.workspaceMembers.put({
         id: member.id,
         workspaceId: member.workspaceId,
         userId: member.userId,
         role: member.role as "owner" | "admin" | "member",
         slug: member.slug,
+        name: member.name,
         timezone: member.timezone,
         locale: member.locale,
+        setupCompleted: member.setupCompleted,
         joinedAt: member.joinedAt,
-        _cachedAt: now,
-      })
-      db.users.put({
-        id: member.userId,
-        email: member.email,
-        name: member.name,
         _cachedAt: now,
       })
     })
@@ -344,18 +367,16 @@ export function useSocketEvents(workspaceId: string) {
                 userId: member.userId,
                 role: member.role as WorkspaceMember["role"],
                 slug: member.slug,
+                name: member.name,
                 timezone: member.timezone,
                 locale: member.locale,
+                setupCompleted: member.setupCompleted,
                 joinedAt: member.joinedAt,
               }
             : m
         )
 
-        const updatedUsers = bootstrap.users?.map((u) =>
-          u.id === member.userId ? { ...u, name: member.name, email: member.email } : u
-        )
-
-        return { ...bootstrap, members: updatedMembers, users: updatedUsers }
+        return { ...bootstrap, members: updatedMembers }
       })
 
       // Update IndexedDB
@@ -365,15 +386,11 @@ export function useSocketEvents(workspaceId: string) {
         userId: member.userId,
         role: member.role as "owner" | "admin" | "member",
         slug: member.slug,
+        name: member.name,
         timezone: member.timezone,
         locale: member.locale,
+        setupCompleted: member.setupCompleted,
         joinedAt: member.joinedAt,
-        _cachedAt: now,
-      })
-      db.users.put({
-        id: member.userId,
-        email: member.email,
-        name: member.name,
         _cachedAt: now,
       })
     })

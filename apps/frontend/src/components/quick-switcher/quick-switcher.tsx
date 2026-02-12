@@ -87,6 +87,7 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
   }, [mode])
 
   const streams = useMemo(() => bootstrap?.streams ?? [], [bootstrap?.streams])
+  const streamMemberships = useMemo(() => bootstrap?.streamMemberships ?? [], [bootstrap?.streamMemberships])
 
   const inputRef = useRef<HTMLInputElement>(null)
   const richInputRef = useRef<RichInputRef>(null)
@@ -144,6 +145,7 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
     navigate,
     closeDialog: handleClose,
     streams,
+    streamMemberships,
   })
 
   const commandResult = useCommandItems({
@@ -164,6 +166,7 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
     closeDialog: handleClose,
     navigate,
     streams,
+    streamMemberships,
   })
 
   // Select the current mode's result

@@ -3,11 +3,19 @@ import type { Request, Response } from "express"
 import type { WorkspaceService } from "./service"
 import type { StreamService } from "../streams"
 import type { UserPreferencesService } from "../user-preferences"
+import type { InvitationService } from "../invitations"
 import type { CommandRegistry } from "../commands"
 import { getEmojiList } from "../emoji"
 
 const createWorkspaceSchema = z.object({
   name: z.string().min(1, "name is required"),
+})
+
+const completeMemberSetupSchema = z.object({
+  name: z.string().min(1, "name is required").optional(),
+  slug: z.string().optional(),
+  timezone: z.string().min(1, "timezone is required"),
+  locale: z.string().min(1, "locale is required"),
 })
 
 export { createWorkspaceSchema }
@@ -16,6 +24,7 @@ interface Dependencies {
   workspaceService: WorkspaceService
   streamService: StreamService
   userPreferencesService: UserPreferencesService
+  invitationService: InvitationService
   commandRegistry: CommandRegistry
 }
 
@@ -23,6 +32,7 @@ export function createWorkspaceHandlers({
   workspaceService,
   streamService,
   userPreferencesService,
+  invitationService,
   commandRegistry,
 }: Dependencies) {
   return {
@@ -109,6 +119,11 @@ export function createWorkspaceHandlers({
         return { name, description: cmd.description }
       })
 
+      // Include invitations for admin+ members
+      const memberRole = req.member!.role
+      const isAdmin = memberRole === "admin" || memberRole === "owner"
+      const invitations = isAdmin ? await invitationService.listInvitations(workspaceId) : undefined
+
       res.json({
         data: {
           workspace,
@@ -122,6 +137,7 @@ export function createWorkspaceHandlers({
           commands,
           unreadCounts,
           userPreferences,
+          invitations,
         },
       })
     },
@@ -133,6 +149,35 @@ export function createWorkspaceHandlers({
       const updatedStreamIds = await streamService.markAllAsRead(workspaceId, memberId)
 
       res.json({ updatedStreamIds })
+    },
+
+    async completeMemberSetup(req: Request, res: Response) {
+      const memberId = req.member!.id
+      const workspaceId = req.workspaceId!
+
+      const result = completeMemberSetupSchema.safeParse(req.body)
+      if (!result.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: z.flattenError(result.error).fieldErrors,
+        })
+      }
+
+      const member = await workspaceService.completeMemberSetup(memberId, workspaceId, result.data)
+
+      res.json({ member })
+    },
+
+    async checkSlugAvailability(req: Request, res: Response) {
+      const workspaceId = req.workspaceId!
+      const slug = req.query.slug
+
+      if (typeof slug !== "string" || slug.length === 0) {
+        return res.status(400).json({ error: "slug query parameter is required" })
+      }
+
+      const available = await workspaceService.isSlugAvailable(workspaceId, slug)
+      res.json({ available })
     },
   }
 }

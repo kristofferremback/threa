@@ -9,9 +9,7 @@ const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB
 
 // Extend Express.Multer.File to include multer-s3 properties
 declare global {
-  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
-    // eslint-disable-next-line @typescript-eslint/no-namespace
     namespace Multer {
       interface File {
         bucket?: string

@@ -72,6 +72,16 @@ export const UserRepository = {
     return result.rows.map(mapRowToUser)
   },
 
+  async findByEmails(db: Querier, emails: string[]): Promise<User[]> {
+    if (emails.length === 0) return []
+
+    const result = await db.query<UserRow>(sql`
+      SELECT id, email, name, workos_user_id, created_at, updated_at
+      FROM users WHERE email = ANY(${emails})
+    `)
+    return result.rows.map(mapRowToUser)
+  },
+
   async insert(db: Querier, params: InsertUserParams): Promise<User> {
     const result = await db.query<UserRow>(sql`
       INSERT INTO users (id, email, name, workos_user_id)

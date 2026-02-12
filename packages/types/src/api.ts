@@ -13,6 +13,7 @@ import type {
   StreamMember,
   Workspace,
   WorkspaceMember,
+  WorkspaceInvitation,
   User,
   Persona,
 } from "./domain"
@@ -143,6 +144,30 @@ export interface WorkspaceBootstrap {
   commands: CommandInfo[]
   unreadCounts: Record<string, number>
   userPreferences: UserPreferences
+  invitations?: WorkspaceInvitation[]
+}
+
+// ============================================================================
+// Invitations API
+// ============================================================================
+
+export interface SendInvitationsInput {
+  emails: string[]
+  role?: "admin" | "member"
+}
+
+export type InvitationSkipReason = "already_member" | "pending_invitation"
+
+export interface SendInvitationsResponse {
+  sent: WorkspaceInvitation[]
+  skipped: Array<{ email: string; reason: InvitationSkipReason }>
+}
+
+export interface CompleteMemberSetupInput {
+  name?: string
+  slug?: string
+  timezone: string
+  locale: string
 }
 
 // ============================================================================

@@ -61,6 +61,11 @@ function getContainerNames(): { postgres: string; minio: string } {
  * Same logic as playwright.config.ts and setup-worktree.ts for consistency.
  */
 function deriveTestDatabaseName(): string {
+  const explicitName = process.env.PLAYWRIGHT_TEST_DB_NAME?.trim()
+  if (explicitName) {
+    return explicitName
+  }
+
   const cwd = process.cwd()
   const dirName = path.basename(cwd)
   const sanitized = dirName

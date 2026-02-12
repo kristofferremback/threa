@@ -45,4 +45,5 @@ export {
   type StreamsReadAllOutboxPayload,
   type UserPreferencesUpdatedOutboxPayload,
   type BudgetAlertOutboxPayload,
+  type InvitationAcceptedOutboxPayload,
 } from "./repository"

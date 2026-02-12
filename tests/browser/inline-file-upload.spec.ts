@@ -13,11 +13,6 @@ import * as fs from "fs"
  */
 
 test.describe("Inline File Uploads", () => {
-  const testId = Date.now().toString(36)
-  const testEmail = `upload-test-${testId}@example.com`
-  const testName = `Upload Test ${testId}`
-  const workspaceName = `Upload Test WS ${testId}`
-
   // Helper to create a test image as a buffer
   function createTestImage(): Buffer {
     // 1x1 red PNG
@@ -31,6 +26,11 @@ test.describe("Inline File Uploads", () => {
   }
 
   test.beforeEach(async ({ page }) => {
+    const testId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
+    const testEmail = `upload-test-${testId}@example.com`
+    const testName = `Upload Test ${testId}`
+    const workspaceName = `Upload Test WS ${testId}`
+
     // Login and create workspace
     await page.goto("/login")
     await page.getByRole("button", { name: "Sign in with WorkOS" }).click()
@@ -228,14 +228,21 @@ test.describe("Inline File Uploads", () => {
     const imageLink = page.locator(".markdown-content button:has-text('Image #1')")
     await expect(imageLink).toBeVisible({ timeout: 10000 })
 
+    // Wait until attachment metadata is hydrated in the rendered message.
+    // Inline link click depends on attachment context, which can lag briefly in CI.
+    const attachmentPill = page.locator("button:has(img[alt='pasted-image-1.png'])")
+    await expect(attachmentPill).toBeVisible({ timeout: 10000 })
+
     // Small delay to ensure React handlers are attached
     await page.waitForTimeout(100)
 
     // Click on the image link
     await imageLink.click()
 
-    // Lightbox dialog should open
-    await expect(page.locator("[role='dialog'] img")).toBeVisible({ timeout: 5000 })
+    // Lightbox dialog should open and render the selected image
+    const dialog = page.getByRole("dialog")
+    await expect(dialog).toBeVisible({ timeout: 10000 })
+    await expect(dialog.locator("img[alt='pasted-image-1.png']")).toBeVisible({ timeout: 10000 })
   })
 
   test("should highlight attachment pill when hovering inline reference", async ({ page }) => {

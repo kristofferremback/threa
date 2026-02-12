@@ -1,7 +1,9 @@
 import type { Pool } from "pg"
 import { StreamRepository, type Stream } from "../streams"
-import type { BudgetAlertOutboxPayload } from "../../lib/outbox"
+import { InvitationRepository } from "../invitations"
+import type { BudgetAlertOutboxPayload, InvitationAcceptedOutboxPayload } from "../../lib/outbox"
 import { MemberRepository } from "../workspaces"
+import { UserRepository } from "../../auth/user-repository"
 import { StreamTypes, AuthorTypes } from "@threa/types"
 import type { AuthorType } from "@threa/types"
 import type { Message } from "../messaging"
@@ -57,6 +59,22 @@ export class SystemMessageService {
     const { workspaceId, percentUsed, budgetUsd, currentUsageUsd } = alert
     const content = `**Budget alert** — AI usage has reached ${percentUsed}% of your $${budgetUsd}/month budget ($${currentUsageUsd.toFixed(2)} spent).`
     await this.notifyOwners(workspaceId, content)
+  }
+
+  async sendInvitationAccepted(payload: InvitationAcceptedOutboxPayload): Promise<void> {
+    const { workspaceId, invitationId, userId } = payload
+
+    const invitation = await InvitationRepository.findById(this.pool, invitationId)
+    if (!invitation) {
+      logger.warn({ invitationId }, "Invitation not found for accepted notification")
+      return
+    }
+
+    const user = await UserRepository.findById(this.pool, userId)
+    const name = user?.name || invitation.email
+
+    const content = `**${name}** accepted your invitation and joined the workspace.`
+    await this.notifyMember(workspaceId, invitation.invitedBy, content)
   }
 
   async notifyOwners(workspaceId: string, contentMarkdown: string): Promise<void> {

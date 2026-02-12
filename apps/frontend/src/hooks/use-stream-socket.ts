@@ -96,6 +96,15 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
     // Subscribe FIRST (before any fetches happen)
     joinRoomFireAndForget(socket, room, abortController.signal, "StreamSocket")
 
+    // Ensure bootstrap data is fresh after (re-)subscribing to the room.
+    // Skips first mount (no cached data yet — bootstrap queryFn handles that).
+    const existingState = queryClient.getQueryState(streamKeys.bootstrap(workspaceId, streamId))
+    if (existingState?.status === "success") {
+      queryClient.invalidateQueries({
+        queryKey: streamKeys.bootstrap(workspaceId, streamId),
+      })
+    }
+
     const handleMessageCreated = async (payload: MessageEventPayload) => {
       if (payload.streamId !== streamId) return
 
@@ -338,6 +347,24 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
       await db.events.put({ ...payload.event, _cachedAt: Date.now() })
     }
 
+    // Handle member_joined events (stream-scoped, visible to all stream viewers)
+    const handleMemberJoined = async (payload: AgentSessionEventPayload) => {
+      if (payload.streamId !== streamId) return
+
+      queryClient.setQueryData(streamKeys.bootstrap(workspaceId, streamId), (old: unknown) => {
+        if (!old || typeof old !== "object") return old
+        const bootstrap = old as StreamBootstrap
+        if (bootstrap.events.some((e) => e.id === payload.event.id)) return old
+        return {
+          ...bootstrap,
+          events: [...bootstrap.events, payload.event],
+          latestSequence: payload.event.sequence,
+        }
+      })
+
+      await db.events.put({ ...payload.event, _cachedAt: Date.now() })
+    }
+
     // Handle agent session events (stream-scoped, visible to all members)
     const handleAgentSessionEvent = async (payload: AgentSessionEventPayload) => {
       if (payload.streamId !== streamId) return
@@ -363,6 +390,7 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
     socket.on("reaction:removed", handleReactionRemoved)
     socket.on("stream:created", handleStreamCreated)
     socket.on("message:updated", handleMessageUpdated)
+    socket.on("stream:member_joined", handleMemberJoined)
     socket.on("command:dispatched", handleCommandDispatched)
     socket.on("command:completed", handleCommandCompleted)
     socket.on("command:failed", handleCommandFailed)
@@ -372,7 +400,11 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
 
     return () => {
       abortController.abort()
-      socket.emit("leave", room)
+      // Do NOT leave the room here. Socket.io rooms are not reference-counted:
+      // a single leave undoes ALL joins. useSocketEvents also joins this room
+      // for stream:activity delivery — leaving here would break sidebar updates.
+      // Room lifecycle is managed by useSocketEvents (member streams) and
+      // cleaned up on socket disconnect.
       socket.off("message:created", handleMessageCreated)
       socket.off("message:edited", handleMessageEdited)
       socket.off("message:deleted", handleMessageDeleted)
@@ -380,6 +412,7 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
       socket.off("reaction:removed", handleReactionRemoved)
       socket.off("stream:created", handleStreamCreated)
       socket.off("message:updated", handleMessageUpdated)
+      socket.off("stream:member_joined", handleMemberJoined)
       socket.off("command:dispatched", handleCommandDispatched)
       socket.off("command:completed", handleCommandCompleted)
       socket.off("command:failed", handleCommandFailed)

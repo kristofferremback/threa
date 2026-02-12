@@ -305,6 +305,15 @@ export function createStreamHandlers({ streamService, eventService }: Dependenci
       res.json({ stream: unarchived })
     },
 
+    async join(req: Request, res: Response) {
+      const memberId = req.member!.id
+      const workspaceId = req.workspaceId!
+      const { streamId } = req.params
+
+      const membership = await streamService.joinPublicChannel(streamId, workspaceId, memberId)
+      res.json({ data: { membership } })
+    },
+
     async bootstrap(req: Request, res: Response) {
       const memberId = req.member!.id
       const workspaceId = req.workspaceId!

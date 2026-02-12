@@ -198,6 +198,8 @@ Invariants are constraints that must hold across the entire codebase. Reference 
 
 **INV-52: Feature Barrel Imports** — Features export their public API through `index.ts` barrels. Other features import only from the barrel (`features/x`), never from internals (`features/x/some-file`). `lib/` never imports from `features/`. Enforced by ESLint (`apps/backend/eslint.config.js`).
 
+**INV-53: Subscribe+Bootstrap Pairing** — Every socket room subscribe MUST be paired with a bootstrap fetch. No gaps allowed. When re-subscribing (navigation back, socket reconnect), invalidate bootstrap to fill the event gap. See `docs/frontend/subscribe-then-bootstrap.md`.
+
 When introducing a new invariant:
 
 1. Document here with next available ID

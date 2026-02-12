@@ -31,8 +31,10 @@ function createMember(overrides: Partial<WorkspaceMember> = {}): WorkspaceMember
     userId: "usr_123",
     role: "member",
     slug: "test-user",
+    name: "Test User",
     timezone: null,
     locale: null,
+    setupCompleted: true,
     joinedAt: "2024-01-01T00:00:00.000Z",
     ...overrides,
   }
@@ -80,9 +82,9 @@ describe("useActors", () => {
       expect(result.current.getActorName(null, null)).toBe("Unknown")
     })
 
-    it("should return user name when found in cache", () => {
+    it("should return member display name when found in cache", () => {
       const bootstrap: Partial<WorkspaceBootstrap> = {
-        members: [createMember({ id: "mem_123", userId: "usr_123" })],
+        members: [createMember({ id: "mem_123", userId: "usr_123", name: "John Doe" })],
         users: [createUser({ id: "usr_123", name: "John Doe", email: "john@example.com" })],
         personas: [],
       }
@@ -156,9 +158,9 @@ describe("useActors", () => {
       expect(result.current.getActorInitials(null, null)).toBe("?")
     })
 
-    it("should return initials from user name", () => {
+    it("should return initials from member display name", () => {
       const bootstrap: Partial<WorkspaceBootstrap> = {
-        members: [createMember({ id: "mem_123", userId: "usr_123" })],
+        members: [createMember({ id: "mem_123", userId: "usr_123", name: "John Doe" })],
         users: [createUser({ id: "usr_123", name: "John Doe", email: "john@example.com" })],
         personas: [],
       }

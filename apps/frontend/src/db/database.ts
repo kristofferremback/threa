@@ -18,8 +18,10 @@ export interface CachedWorkspaceMember {
   userId: string
   role: "owner" | "admin" | "member"
   slug: string
+  name: string
   timezone: string | null
   locale: string | null
+  setupCompleted: boolean
   joinedAt: string
   _cachedAt: number
 }
@@ -189,6 +191,22 @@ class ThreaDatabase extends Dexie {
       })
       .upgrade((tx) => {
         return Promise.all([tx.table("workspaceMembers").clear(), tx.table("users").clear()])
+      })
+
+    // v8: Added setupCompleted to workspace members for invitation flow.
+    // Clear members cache to re-fetch with new shape.
+    this.version(8)
+      .stores({})
+      .upgrade((tx) => {
+        return tx.table("workspaceMembers").clear()
+      })
+
+    // v9: Added name to workspace members (workspace-scoped display name).
+    // Clear members cache to re-fetch with new shape.
+    this.version(9)
+      .stores({})
+      .upgrade((tx) => {
+        return tx.table("workspaceMembers").clear()
       })
   }
 }

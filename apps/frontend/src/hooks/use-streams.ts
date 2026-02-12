@@ -4,7 +4,7 @@ import { debugBootstrap } from "@/lib/bootstrap-debug"
 import { getQueryLoadState, isTerminalBootstrapError } from "@/lib/query-load-state"
 import { db } from "@/db"
 import { joinRoomBestEffort } from "@/lib/socket-room"
-import type { Stream, StreamType } from "@threa/types"
+import type { Stream, StreamMember, StreamType, WorkspaceBootstrap } from "@threa/types"
 import type { CreateStreamInput, UpdateStreamInput } from "@/api"
 import { workspaceKeys } from "./use-workspaces"
 
@@ -107,7 +107,7 @@ export function useStreamBootstrap(workspaceId: string, streamId: string, option
     staleTime: Infinity,
     gcTime: Infinity,
     retry: false,
-    refetchOnMount: false,
+    refetchOnMount: true,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     structuralSharing: false,
@@ -132,12 +132,42 @@ export function useStreamBootstrap(workspaceId: string, streamId: string, option
 }
 
 export function useCreateStream(workspaceId: string) {
+  const socket = useSocket()
   const streamService = useStreamService()
   const queryClient = useQueryClient()
 
   return useMutation({
     mutationFn: (data: CreateStreamInput) => streamService.create(workspaceId, data),
     onSuccess: (newStream) => {
+      if (socket) {
+        // Subscribe immediately so early stream:activity updates are not missed
+        // while the workspace bootstrap membership observer catches up.
+        void joinRoomBestEffort(socket, `ws:${workspaceId}:stream:${newStream.id}`, "CreateStream")
+      }
+
+      // Update workspace bootstrap cache so sidebar shows the new stream immediately
+      queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
+        if (!old) return old
+        if (old.streams.some((s) => s.id === newStream.id)) return old
+
+        const membership: StreamMember = {
+          streamId: newStream.id,
+          memberId: newStream.createdBy,
+          pinned: false,
+          pinnedAt: null,
+          muted: false,
+          lastReadEventId: null,
+          lastReadAt: null,
+          joinedAt: newStream.createdAt,
+        }
+
+        return {
+          ...old,
+          streams: [...old.streams, { ...newStream, lastMessagePreview: null }],
+          streamMemberships: [...old.streamMemberships, membership],
+        }
+      })
+
       // Invalidate stream lists to refetch
       queryClient.invalidateQueries({ queryKey: streamKeys.lists() })
 

@@ -24,6 +24,7 @@ function createHandler() {
     notifyOwners: mock(async () => {}),
     notifyMember: mock(async () => {}),
     sendBudgetAlert: mock(async () => {}),
+    sendInvitationAccepted: mock(async () => {}),
     findSystemStream: mock(async () => null),
   } as unknown as SystemMessageService
 
@@ -61,6 +62,26 @@ describe("SystemMessageOutboxHandler", () => {
 
     expect(fetchSpy).toHaveBeenCalled()
     expect(systemMessageService.sendBudgetAlert).toHaveBeenCalledWith(payload)
+  })
+
+  it("should delegate invitation:accepted events to sendInvitationAccepted", async () => {
+    const payload = {
+      workspaceId: "ws_test",
+      invitationId: "inv_123",
+      email: "new@test.com",
+      userId: "usr_456",
+    }
+
+    spyOn(OutboxRepository, "fetchAfterId").mockResolvedValue([
+      { id: 1n, eventType: "invitation:accepted", payload, createdAt: new Date() },
+    ] as any)
+
+    const { handler, systemMessageService } = createHandler()
+    handler.handle()
+
+    await new Promise((r) => setTimeout(r, 300))
+
+    expect(systemMessageService.sendInvitationAccepted).toHaveBeenCalledWith(payload)
   })
 
   it("should skip non-matching event types and advance cursor", async () => {

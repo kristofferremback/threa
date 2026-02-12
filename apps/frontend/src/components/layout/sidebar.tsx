@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback, type ReactNode } from "react"
-import { Link, useParams, useNavigate } from "react-router-dom"
+import { Link, useParams, useNavigate, useSearchParams } from "react-router-dom"
 import {
   MoreHorizontal,
   Pencil,
@@ -7,6 +7,7 @@ import {
   Search as SearchIcon,
   FileEdit,
   DollarSign,
+  Settings,
   RefreshCw,
   Hash,
   User,
@@ -1037,6 +1038,45 @@ function StreamListSkeleton() {
 }
 
 // ============================================================================
+// Footer Component
+// ============================================================================
+
+function SidebarFooter({ workspaceId }: { workspaceId: string }) {
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  const openWorkspaceSettings = () => {
+    const newParams = new URLSearchParams(searchParams)
+    newParams.set("ws-settings", "members")
+    setSearchParams(newParams, { replace: true })
+  }
+
+  return (
+    <div className="space-y-1">
+      <button
+        onClick={openWorkspaceSettings}
+        className={cn(
+          "w-full flex items-center gap-2.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
+          "hover:bg-muted/50 text-muted-foreground"
+        )}
+      >
+        <Settings className="h-4 w-4" />
+        Settings
+      </button>
+      <Link
+        to={`/w/${workspaceId}/admin/ai-usage`}
+        className={cn(
+          "flex items-center gap-2.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
+          "hover:bg-muted/50 text-muted-foreground"
+        )}
+      >
+        <DollarSign className="h-4 w-4" />
+        AI Usage
+      </Link>
+    </div>
+  )
+}
+
+// ============================================================================
 // Main Sidebar Component
 // ============================================================================
 
@@ -1066,22 +1106,36 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   const draftCount = allDrafts.length
   const isDraftsPage = splat === "drafts" || window.location.pathname.endsWith("/drafts")
 
+  // Build set of streams the user is a member of (for filtering public channels)
+  const memberStreamIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const m of bootstrap?.streamMemberships ?? []) ids.add(m.streamId)
+    return ids
+  }, [bootstrap?.streamMemberships])
+
   // Process streams into enriched data with urgency and section
   const processedStreams = useMemo(() => {
     if (!bootstrap?.streams) return []
 
-    return bootstrap.streams.map((stream): StreamItemData => {
-      const unreadCount = getUnreadCount(stream.id)
-      const urgency = calculateUrgency(stream, unreadCount)
-      const section = categorizeStream(stream, unreadCount, urgency)
+    return bootstrap.streams
+      .filter((stream) => {
+        // Non-public streams always appear (bootstrap only includes them if user has access)
+        if (stream.visibility !== "public") return true
+        // Public channels: only show if user is a member
+        return memberStreamIds.has(stream.id)
+      })
+      .map((stream): StreamItemData => {
+        const unreadCount = getUnreadCount(stream.id)
+        const urgency = calculateUrgency(stream, unreadCount)
+        const section = categorizeStream(stream, unreadCount, urgency)
 
-      return {
-        ...stream,
-        urgency,
-        section,
-      }
-    })
-  }, [bootstrap?.streams, getUnreadCount])
+        return {
+          ...stream,
+          urgency,
+          section,
+        }
+      })
+  }, [bootstrap?.streams, memberStreamIds, getUnreadCount])
 
   // System streams are auto-created infrastructure — don't count toward "has content"
   const hasUserStreams = processedStreams.some((s) => s.type !== StreamTypes.SYSTEM)
@@ -1410,18 +1464,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
           </div>
         </ScrollArea>
       }
-      footer={
-        <Link
-          to={`/w/${workspaceId}/admin/ai-usage`}
-          className={cn(
-            "flex items-center gap-2.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
-            "hover:bg-muted/50 text-muted-foreground"
-          )}
-        >
-          <DollarSign className="h-4 w-4" />
-          AI Usage
-        </Link>
-      }
+      footer={<SidebarFooter workspaceId={workspaceId} />}
     />
   )
 }

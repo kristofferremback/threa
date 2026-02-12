@@ -1,7 +1,7 @@
 import { DynamicStructuredTool } from "@langchain/core/tools"
 import { z } from "zod"
 import { logger } from "../../../lib/logger"
-import { EXCEL_MAX_ROWS_PER_REQUEST } from "../../attachments/excel/config"
+import { EXCEL_MAX_ROWS_PER_REQUEST } from "../../attachments"
 
 const LoadExcelSectionSchema = z
   .object({

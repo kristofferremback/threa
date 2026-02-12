@@ -1,22 +1,7 @@
-import { expect, test, type Browser, type BrowserContext, type Page, type Request } from "@playwright/test"
-
-async function loginAs(browser: Browser, email: string, name: string) {
-  const context = await browser.newContext()
-  const page = await context.newPage()
-
-  await page.goto("/login")
-  await page.getByRole("button", { name: "Sign in with WorkOS" }).click()
-  await page.getByLabel("Email").fill(email)
-  await page.getByLabel("Name").fill(name)
-  await page.getByRole("button", { name: "Sign In" }).click()
-  await expect(page.getByText(/Welcome|Select a stream/)).toBeVisible()
-
-  return { context, page }
-}
+import { expect, test, type BrowserContext, type Page, type Request } from "@playwright/test"
+import { loginAndCreateWorkspace, loginInNewContext } from "./helpers"
 
 test.describe("Subscribe Then Bootstrap", () => {
-  const testId = Date.now().toString(36)
-
   test("should request workspace and stream bootstrap during normal navigation", async ({ page }) => {
     const bootstrapRequests: Request[] = []
     page.on("request", (request) => {
@@ -25,19 +10,7 @@ test.describe("Subscribe Then Bootstrap", () => {
       }
     })
 
-    await page.goto("/login")
-    await page.getByRole("button", { name: "Sign in with WorkOS" }).click()
-    await page.getByRole("button", { name: /Alice Anderson/ }).click()
-
-    await expect(page.getByText(/Welcome|Select a stream/)).toBeVisible()
-
-    const workspaceInput = page.getByPlaceholder("New workspace name")
-    if (await workspaceInput.isVisible()) {
-      await workspaceInput.fill(`Bootstrap Test ${testId}`)
-      await page.getByRole("button", { name: "Create Workspace" }).click()
-    }
-
-    await expect(page.getByRole("button", { name: "+ New Scratchpad" })).toBeVisible({ timeout: 10000 })
+    const { testId } = await loginAndCreateWorkspace(page, "bootstrap")
 
     const workspaceMatch = page.url().match(/\/w\/([^/]+)/)
     expect(workspaceMatch).toBeTruthy()
@@ -81,7 +54,8 @@ test.describe("Subscribe Then Bootstrap", () => {
   })
 
   test("should bootstrap public stream for workspace member who is not stream member", async ({ browser }) => {
-    const owner = await loginAs(browser, `owner-${testId}@example.com`, `Owner ${testId}`)
+    const testId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
+    const owner = await loginInNewContext(browser, `owner-${testId}@example.com`, `Owner ${testId}`)
 
     let memberContext: { context: BrowserContext; page: Page } | undefined
 
@@ -109,7 +83,7 @@ test.describe("Subscribe Then Bootstrap", () => {
       const streamBody = (await createStreamResponse.json()) as { stream: { id: string } }
       const streamId = streamBody.stream.id
 
-      memberContext = await loginAs(browser, `member-${testId}@example.com`, `Member ${testId}`)
+      memberContext = await loginInNewContext(browser, `member-${testId}@example.com`, `Member ${testId}`)
 
       const joinWorkspaceResponse = await memberContext.page.request.post(`/api/dev/workspaces/${workspaceId}/join`, {
         data: { role: "member" },

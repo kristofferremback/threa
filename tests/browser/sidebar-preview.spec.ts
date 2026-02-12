@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test"
+import { loginAndCreateWorkspace, createChannel } from "./helpers"
 
 /**
  * Tests that the sidebar preview mode works like Notion's sidebar:
@@ -9,42 +10,6 @@ import { test, expect } from "@playwright/test"
  */
 
 test.describe("Sidebar Preview Behavior", () => {
-  const testId = Date.now().toString(36)
-
-  async function loginAsAlice(page: import("@playwright/test").Page) {
-    await page.goto("/login")
-    await page.getByRole("button", { name: "Sign in with WorkOS" }).click()
-    await page.getByRole("button", { name: /Alice Anderson/ }).click()
-    await expect(page.getByText(/Welcome|Select a stream/)).toBeVisible()
-
-    const workspaceInput = page.getByPlaceholder("New workspace name")
-    if (await workspaceInput.isVisible()) {
-      await workspaceInput.fill(`Sidebar Preview ${testId}`)
-      await page.getByRole("button", { name: "Create Workspace" }).click()
-    }
-
-    await expect(page.getByRole("button", { name: "+ New Scratchpad" })).toBeVisible({ timeout: 10000 })
-  }
-
-  async function switchToAllView(page: import("@playwright/test").Page) {
-    const allButton = page.getByRole("button", { name: "All" })
-    await allButton.waitFor({ state: "visible", timeout: 3000 }).catch(() => {})
-    if (await allButton.isVisible()) {
-      await allButton.click()
-      await expect(page.getByRole("heading", { name: "Channels", level: 3 })).toBeVisible({ timeout: 5000 })
-    }
-  }
-
-  async function createChannel(page: import("@playwright/test").Page, channelName: string) {
-    page.once("dialog", async (dialog) => {
-      await dialog.accept(channelName)
-    })
-    await page.getByRole("button", { name: "+ New Channel" }).click()
-    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
-    await switchToAllView(page)
-    await expect(page.getByRole("link", { name: `#${channelName}` })).toBeVisible({ timeout: 5000 })
-  }
-
   /** Hover near the left edge to trigger sidebar preview from collapsed state */
   async function hoverToPreview(page: import("@playwright/test").Page) {
     const viewport = page.viewportSize()!
@@ -58,7 +23,7 @@ test.describe("Sidebar Preview Behavior", () => {
   }
 
   test("should not pin sidebar when clicking a channel in preview mode", async ({ page }) => {
-    await loginAsAlice(page)
+    const { testId } = await loginAndCreateWorkspace(page, "sidebar-preview")
 
     const sidebar = page.getByRole("navigation", { name: "Sidebar navigation" })
 
@@ -92,7 +57,7 @@ test.describe("Sidebar Preview Behavior", () => {
   })
 
   test("topbar pin button should still pin the sidebar", async ({ page }) => {
-    await loginAsAlice(page)
+    await loginAndCreateWorkspace(page, "sidebar-pin")
 
     const sidebar = page.getByRole("navigation", { name: "Sidebar navigation" })
 

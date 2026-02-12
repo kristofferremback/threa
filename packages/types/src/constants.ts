@@ -72,6 +72,17 @@ export type CommandEventType = (typeof COMMAND_EVENT_TYPES)[number]
 export const WORKSPACE_MEMBER_ROLES = ["owner", "admin", "member"] as const
 export type WorkspaceMemberRole = (typeof WORKSPACE_MEMBER_ROLES)[number]
 
+// Invitation statuses
+export const INVITATION_STATUSES = ["pending", "accepted", "expired", "revoked"] as const
+export type InvitationStatus = (typeof INVITATION_STATUSES)[number]
+
+export const InvitationStatuses = {
+  PENDING: "pending",
+  ACCEPTED: "accepted",
+  EXPIRED: "expired",
+  REVOKED: "revoked",
+} as const satisfies Record<string, InvitationStatus>
+
 // Persona managed by
 export const PERSONA_MANAGED_BY = ["system", "workspace"] as const
 export type PersonaManagedBy = (typeof PERSONA_MANAGED_BY)[number]

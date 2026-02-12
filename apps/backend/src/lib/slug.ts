@@ -1,11 +1,9 @@
+import limax from "limax"
+
 const MAX_SLUG_LENGTH = 50
 
 export function generateSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, MAX_SLUG_LENGTH)
+  return limax(name, { tone: false }).slice(0, MAX_SLUG_LENGTH)
 }
 
 export async function generateUniqueSlug(

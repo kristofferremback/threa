@@ -71,7 +71,7 @@ test.describe("Thread Breadcrumbs", () => {
     const level1Reply = `Level 1 reply ${testId}`
     await page.keyboard.type(level1Reply)
     await page.keyboard.press("Meta+Enter")
-    await expect(page.getByText(level1Reply)).toBeVisible({ timeout: 5000 })
+    await expect(page.getByTestId("panel").getByText(level1Reply)).toBeVisible({ timeout: 5000 })
     await expect(page.getByText(/Start a new thread/)).not.toBeVisible({ timeout: 3000 })
 
     // After thread creation, breadcrumbs should still show the channel
@@ -93,7 +93,7 @@ test.describe("Thread Breadcrumbs", () => {
     const level2Reply = `Level 2 reply ${testId}`
     await page.keyboard.type(level2Reply)
     await page.keyboard.press("Meta+Enter")
-    await expect(page.getByText(level2Reply)).toBeVisible({ timeout: 5000 })
+    await expect(page.getByTestId("panel").getByText(level2Reply)).toBeVisible({ timeout: 5000 })
     await expect(page.getByText(/Start a new thread/)).not.toBeVisible({ timeout: 3000 })
 
     // Navigate to the channel by clicking its breadcrumb link.
@@ -142,7 +142,7 @@ test.describe("Thread Breadcrumbs", () => {
     await threadEditor.click()
     await page.keyboard.type(`Thread reply ${testId}`)
     await page.keyboard.press("Meta+Enter")
-    await expect(page.getByText(`Thread reply ${testId}`)).toBeVisible({ timeout: 5000 })
+    await expect(page.getByTestId("panel").getByText(`Thread reply ${testId}`)).toBeVisible({ timeout: 5000 })
     await expect(page.getByText(/Start a new thread/)).not.toBeVisible({ timeout: 3000 })
 
     // Reload to ensure workspace bootstrap reflects the new thread in sidebar

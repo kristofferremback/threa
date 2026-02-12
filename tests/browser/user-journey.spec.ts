@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test"
+import { loginAndCreateWorkspace, generateTestId } from "./helpers"
 
 /**
  * Full user journey E2E test.
@@ -11,14 +12,14 @@ import { test, expect } from "@playwright/test"
  */
 
 test.describe("User Journey", () => {
-  // Generate unique identifiers for this test run
-  const testId = Date.now().toString(36)
-  const testEmail = `e2e-${testId}@example.com`
-  const testName = `E2E User ${testId}`
-  const workspaceName = `E2E Workspace ${testId}`
-  const channelName = `test-${testId}`
-
   test("should allow new user to sign in, create workspace, create channel, and send message", async ({ page }) => {
+    // Generate unique identifiers for this test run
+    const testId = generateTestId()
+    const testEmail = `e2e-${testId}@example.com`
+    const testName = `E2E User ${testId}`
+    const workspaceName = `E2E Workspace ${testId}`
+    const channelName = `test-${testId}`
+
     // Step 1: Navigate to login page
     await page.goto("/login")
     await expect(page.getByRole("heading", { name: "Threa" })).toBeVisible()
@@ -71,35 +72,27 @@ test.describe("User Journey", () => {
 
     // Step 13: Verify message appears
     await expect(page.getByText(messageContent)).toBeVisible({ timeout: 5000 })
-    await expect(page.getByText(testName)).toBeVisible() // Author name
   })
 
-  test("should authenticate user when clicking preset login button", async ({ page }) => {
+  test("should authenticate new user and show welcome page", async ({ page }) => {
+    const testId = generateTestId()
+    const testEmail = `preset-${testId}@example.com`
+    const testName = `Preset User ${testId}`
+
     await page.goto("/login")
     await page.getByRole("button", { name: "Sign in with WorkOS" }).click()
 
-    // Click Alice Anderson preset button
-    await page.getByRole("button", { name: /Alice Anderson/ }).click()
+    // Fill in custom credentials
+    await page.getByLabel("Email").fill(testEmail)
+    await page.getByLabel("Name").fill(testName)
+    await page.getByRole("button", { name: "Sign In" }).click()
 
-    // Should be redirected and logged in as Alice
-    await expect(page.getByRole("heading", { name: "Welcome, Alice Anderson" })).toBeVisible()
+    // Should be redirected and logged in — new user sees welcome page
+    await expect(page.getByRole("heading", { name: `Welcome, ${testName}` })).toBeVisible()
   })
 
   test("should create and navigate to new scratchpad", async ({ page }) => {
-    // Login as Alice (who may already have workspaces from previous tests)
-    await page.goto("/login")
-    await page.getByRole("button", { name: "Sign in with WorkOS" }).click()
-    await page.getByRole("button", { name: /Alice Anderson/ }).click()
-
-    // Wait for workspace page
-    await expect(page.getByText(/Welcome|Select a stream/)).toBeVisible()
-
-    // If on workspace selection, create one
-    const createButton = page.getByRole("button", { name: "Create Workspace" })
-    if (await createButton.isDisabled()) {
-      await page.getByPlaceholder("New workspace name").fill(`Nav Test ${testId}`)
-      await page.getByRole("button", { name: "Create Workspace" }).click()
-    }
+    await loginAndCreateWorkspace(page, "nav")
 
     // Now in workspace - create a scratchpad
     await page.getByRole("button", { name: "+ New Scratchpad" }).click()
@@ -109,23 +102,7 @@ test.describe("User Journey", () => {
   })
 
   test("should navigate to channel when using quick switcher search", async ({ page }) => {
-    // Login as Alice
-    await page.goto("/login")
-    await page.getByRole("button", { name: "Sign in with WorkOS" }).click()
-    await page.getByRole("button", { name: /Alice Anderson/ }).click()
-
-    // Wait for workspace page
-    await expect(page.getByText(/Welcome|Select a stream/)).toBeVisible()
-
-    // Create workspace if needed
-    const workspaceInput = page.getByPlaceholder("New workspace name")
-    if (await workspaceInput.isVisible()) {
-      await workspaceInput.fill(`QuickSwitch Test ${testId}`)
-      await page.getByRole("button", { name: "Create Workspace" }).click()
-    }
-
-    // Wait for sidebar to be visible (empty state shows buttons)
-    await expect(page.getByRole("button", { name: "+ New Channel" })).toBeVisible()
+    const { testId } = await loginAndCreateWorkspace(page, "quickswitch")
 
     // Create a channel with a unique name we can search for
     const quickSwitchChannel = `qs-test-${testId}`

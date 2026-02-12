@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test"
+import { loginAndCreateWorkspace } from "./helpers"
 
 /**
  * Tests for Linear-style rich text editing.
@@ -14,27 +15,8 @@ import { test, expect } from "@playwright/test"
  */
 
 test.describe("Rich Text Editing", () => {
-  const testId = Date.now().toString(36)
-  const workspaceName = `RichText Test ${testId}`
-
   test.beforeEach(async ({ page }) => {
-    // Login as Alice
-    await page.goto("/login")
-    await page.getByRole("button", { name: "Sign in with WorkOS" }).click()
-    await page.getByRole("button", { name: /Alice Anderson/ }).click()
-
-    // Wait for workspace page
-    await expect(page.getByText(/Welcome|Select a stream/)).toBeVisible()
-
-    // Create workspace if needed
-    const workspaceInput = page.getByPlaceholder("New workspace name")
-    if (await workspaceInput.isVisible()) {
-      await workspaceInput.fill(workspaceName)
-      await page.getByRole("button", { name: "Create Workspace" }).click()
-    }
-
-    // Wait for sidebar to be visible
-    await expect(page.getByRole("button", { name: "+ New Scratchpad" })).toBeVisible()
+    await loginAndCreateWorkspace(page, "richtext")
 
     // Create a scratchpad for testing
     await page.getByRole("button", { name: "+ New Scratchpad" }).click()

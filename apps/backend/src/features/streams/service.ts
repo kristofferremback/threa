@@ -7,7 +7,7 @@ import { StreamEventRepository } from "./event-repository"
 import { MessageRepository } from "../messaging"
 import { OutboxRepository } from "../../lib/outbox"
 import { streamId, eventId } from "../../lib/id"
-import { DuplicateSlugError, StreamNotFoundError, MessageNotFoundError } from "../../lib/errors"
+import { DuplicateSlugError, HttpError, StreamNotFoundError, MessageNotFoundError } from "../../lib/errors"
 import { StreamTypes, Visibilities, CompanionModes, type StreamType, type CompanionMode } from "@threa/types"
 import { streamTypeSchema, visibilitySchema, companionModeSchema } from "../../lib/schemas"
 
@@ -242,7 +242,7 @@ export class StreamService {
         // Channels use slug as display name, no separate displayName field
         slug: params.slug,
         description: params.description,
-        visibility: params.visibility ?? Visibilities.PRIVATE,
+        visibility: params.visibility ?? Visibilities.PUBLIC,
         createdBy: params.createdBy,
       })
 
@@ -419,6 +419,40 @@ export class StreamService {
     return StreamRepository.update(this.pool, streamId, {
       displayName,
       displayNameGeneratedAt: markAsGenerated ? new Date() : undefined,
+    })
+  }
+
+  async joinPublicChannel(streamId: string, workspaceId: string, memberId: string): Promise<StreamMember> {
+    return withTransaction(this.pool, async (client) => {
+      const stream = await StreamRepository.findById(client, streamId)
+
+      if (!stream || stream.workspaceId !== workspaceId) {
+        throw new StreamNotFoundError()
+      }
+
+      if (stream.type !== StreamTypes.CHANNEL || stream.visibility !== Visibilities.PUBLIC) {
+        throw new HttpError("Can only join public channels", { status: 403, code: "NOT_PUBLIC_CHANNEL" })
+      }
+
+      const membership = await StreamMemberRepository.insert(client, streamId, memberId)
+
+      const evtId = eventId()
+      const event = await StreamEventRepository.insert(client, {
+        id: evtId,
+        streamId,
+        eventType: "member_joined",
+        payload: {},
+        actorId: memberId,
+        actorType: "member",
+      })
+
+      await OutboxRepository.insert(client, "stream:member_joined", {
+        workspaceId,
+        streamId,
+        event,
+      })
+
+      return membership
     })
   }
 

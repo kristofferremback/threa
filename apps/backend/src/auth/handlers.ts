@@ -1,17 +1,20 @@
 import type { Request, Response } from "express"
 import type { AuthService } from "./auth-service"
 import type { UserService } from "./user-service"
+import type { InvitationService } from "../features/invitations"
 import { SESSION_COOKIE_CONFIG } from "../lib/cookies"
 import { decodeAndSanitizeRedirectState } from "./redirect"
+import { logger } from "../lib/logger"
 
 const SESSION_COOKIE_NAME = "wos_session"
 
 interface Dependencies {
   authService: AuthService
   userService: UserService
+  invitationService: InvitationService
 }
 
-export function createAuthHandlers({ authService, userService }: Dependencies) {
+export function createAuthHandlers({ authService, userService, invitationService }: Dependencies) {
   return {
     async login(req: Request, res: Response) {
       const redirectTo = req.query.redirect_to as string | undefined
@@ -33,13 +36,31 @@ export function createAuthHandlers({ authService, userService }: Dependencies) {
         return res.status(401).json({ error: "Authentication failed" })
       }
 
-      await userService.ensureUser({
+      const user = await userService.ensureUser({
         email: result.user.email,
         name: [result.user.firstName, result.user.lastName].filter(Boolean).join(" ") || result.user.email,
         workosUserId: result.user.id,
       })
 
+      // Auto-accept any pending invitations for this email
+      const { accepted: acceptedWorkspaceIds, failed } = await invitationService.acceptPendingForEmail(
+        result.user.email,
+        user.id
+      )
+
+      if (failed.length > 0) {
+        logger.warn(
+          { userId: user.id, email: result.user.email, failedCount: failed.length },
+          "Some invitations failed to auto-accept during login"
+        )
+      }
+
       res.cookie(SESSION_COOKIE_NAME, result.sealedSession, SESSION_COOKIE_CONFIG)
+
+      // If user was accepted into exactly one workspace, redirect to setup
+      if (acceptedWorkspaceIds.length === 1) {
+        return res.redirect(`/w/${acceptedWorkspaceIds[0]}/setup`)
+      }
 
       const redirectTo = decodeAndSanitizeRedirectState(state)
 

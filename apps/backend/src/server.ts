@@ -12,6 +12,9 @@ import { WorkosAuthService } from "./auth/auth-service"
 import { StubAuthService } from "./auth/auth-service.stub"
 import { UserService } from "./auth/user-service"
 import { WorkspaceService } from "./features/workspaces"
+import { InvitationService } from "./features/invitations"
+import { WorkosOrgServiceImpl } from "./auth/workos-org-service"
+import { StubWorkosOrgService } from "./auth/workos-org-service.stub"
 import {
   StreamService,
   StreamNamingService,
@@ -170,9 +173,12 @@ export async function startServer(): Promise<ServerInstance> {
   const checkpointer = await createPostgresCheckpointer(pool)
 
   const userService = new UserService(pool)
+  const workosOrgService = config.useStubAuth ? new StubWorkosOrgService() : new WorkosOrgServiceImpl(config.workos)
+  const workspaceService = new WorkspaceService(pool, workosOrgService)
   const streamService = new StreamService(pool)
   const eventService = new EventService(pool)
   const authService = config.useStubAuth ? new StubAuthService() : new WorkosAuthService(config.workos)
+  const invitationService = new InvitationService(pool, workosOrgService, workspaceService)
 
   // Storage and attachment service
   const storage = createS3Storage(config.s3)
@@ -264,7 +270,6 @@ export async function startServer(): Promise<ServerInstance> {
   const createThread = (params: Parameters<typeof streamService.createThread>[0]) => streamService.createThread(params)
 
   const systemMessageService = new SystemMessageService({ pool, createMessage })
-  const workspaceService = new WorkspaceService(pool)
 
   // Simulation agent - needed for SimulateCommand
   const simulationAgent = config.useStubAI
@@ -303,6 +308,7 @@ export async function startServer(): Promise<ServerInstance> {
     searchService,
     conversationService,
     userPreferencesService,
+    invitationService,
     s3Config: config.s3,
     commandRegistry,
     rateLimiterConfig: config.rateLimits,

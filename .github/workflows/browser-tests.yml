@@ -59,17 +59,54 @@ jobs:
       - name: Install dependencies
         run: bun install
 
+      - name: Get Playwright version
+        id: playwright-version
+        run: echo "version=$(bun run --bun playwright --version)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-browsers-${{ steps.playwright-version.outputs.version }}-chromium
+
       - name: Install Playwright browsers
-        run: bunx playwright install --with-deps chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: bun run --bun playwright install chromium
+
+      - name: Install Playwright system dependencies
+        run: bun run --bun playwright install-deps chromium
+
+      - name: Derive browser test database name
+        run: |
+          repo_name="$(basename "$GITHUB_WORKSPACE")"
+          sanitized_repo_name="$(
+            echo "$repo_name" \
+              | tr '[:upper:]' '[:lower:]' \
+              | sed -E 's/[^a-z0-9]/_/g; s/_+/_/g; s/^_+//; s/_+$//'
+          )"
+          db_name="${sanitized_repo_name:-threa}_browser_test"
+          echo "PLAYWRIGHT_TEST_DB_NAME=$db_name" >> "$GITHUB_ENV"
+          echo "Using browser test database: $db_name"
 
       - name: Create test database
         run: |
-          PGPASSWORD=threa psql -h localhost -p 5454 -U threa -d postgres -c "CREATE DATABASE threa_browser_test"
+          exists="$(
+            PGPASSWORD=threa psql -h localhost -p 5454 -U threa -d postgres -tAc \
+              "SELECT 1 FROM pg_database WHERE datname='${PLAYWRIGHT_TEST_DB_NAME}'"
+          )"
+          if [ "$exists" != "1" ]; then
+            PGPASSWORD=threa psql -h localhost -p 5454 -U threa -d postgres -c \
+              "CREATE DATABASE ${PLAYWRIGHT_TEST_DB_NAME}"
+          else
+            echo "Database already exists: ${PLAYWRIGHT_TEST_DB_NAME}"
+          fi
 
       - name: Run browser tests
         run: bun run test:browser
         env:
           CI: true
+          PLAYWRIGHT_TEST_DB_NAME: ${{ env.PLAYWRIGHT_TEST_DB_NAME }}
 
       - name: Upload Playwright report
         uses: actions/upload-artifact@v4

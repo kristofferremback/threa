@@ -21,17 +21,11 @@ interface ActorLookup {
 
 /**
  * Resolve display name for a member ID.
- * Looks up the member's userId, then finds the user's name.
+ * Uses the workspace-scoped name stored on the member record.
  */
-function resolveMemberName(
-  memberId: string,
-  members: WorkspaceMember[] | undefined,
-  users: User[] | undefined
-): string | undefined {
+function resolveMemberName(memberId: string, members: WorkspaceMember[] | undefined): string | undefined {
   const member = members?.find((m) => m.id === memberId)
-  if (!member) return undefined
-  const user = users?.find((u) => u.id === member.userId)
-  return user?.name
+  return member?.name || undefined
 }
 
 /**
@@ -81,9 +75,9 @@ export function useActors(workspaceId: string): ActorLookup {
         return persona?.name ?? "AI Companion"
       }
 
-      // actorType === "member" — resolve member → user for display name
+      // actorType === "member" — resolve workspace-scoped name
       const bootstrap = getBootstrapData()
-      const name = resolveMemberName(actorId, bootstrap?.members, bootstrap?.users)
+      const name = resolveMemberName(actorId, bootstrap?.members)
       return name ?? actorId.substring(0, 8)
     },
     [getBootstrapData, getPersona]
@@ -113,7 +107,7 @@ export function useActors(workspaceId: string): ActorLookup {
       }
 
       const bootstrap = getBootstrapData()
-      const name = resolveMemberName(actorId, bootstrap?.members, bootstrap?.users)
+      const name = resolveMemberName(actorId, bootstrap?.members)
       if (name) {
         const words = name.split(" ")
         return words

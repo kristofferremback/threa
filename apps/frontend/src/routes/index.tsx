@@ -6,6 +6,7 @@ import { StreamPage } from "@/pages/stream"
 import { DraftsPage } from "@/pages/drafts"
 import { ThreadsPage } from "@/pages/threads"
 import { AIUsageAdminPage } from "@/pages/ai-usage-admin"
+import { MemberSetupPage } from "@/pages/member-setup"
 import { ErrorBoundary } from "@/components/error-boundary"
 
 export const router = createBrowserRouter([
@@ -44,6 +45,10 @@ export const router = createBrowserRouter([
       {
         path: "s/:streamId",
         element: <StreamPage />,
+      },
+      {
+        path: "setup",
+        element: <MemberSetupPage />,
       },
       {
         path: "admin/ai-usage",

@@ -1,6 +1,6 @@
 import type { Pool } from "pg"
 import { OutboxRepository } from "../../lib/outbox"
-import type { BudgetAlertOutboxPayload } from "../../lib/outbox"
+import type { BudgetAlertOutboxPayload, InvitationAcceptedOutboxPayload } from "../../lib/outbox"
 import { logger } from "../../lib/logger"
 import { CursorLock, ensureListenerFromLatest, type ProcessResult } from "../../lib/cursor-lock"
 import { DebounceWithMaxWait } from "../../lib/debounce"
@@ -75,6 +75,8 @@ export class SystemMessageOutboxHandler implements OutboxHandler {
         for (const event of events) {
           if (event.eventType === "budget:alert") {
             await this.handleBudgetAlert(event.payload as BudgetAlertOutboxPayload)
+          } else if (event.eventType === "invitation:accepted") {
+            await this.handleInvitationAccepted(event.payload as InvitationAcceptedOutboxPayload)
           }
 
           lastProcessedId = event.id
@@ -104,6 +106,19 @@ export class SystemMessageOutboxHandler implements OutboxHandler {
         currentUsageUsd: payload.currentUsageUsd,
       },
       "Budget alert notification sent to workspace"
+    )
+  }
+
+  private async handleInvitationAccepted(payload: InvitationAcceptedOutboxPayload): Promise<void> {
+    await this.systemMessageService.sendInvitationAccepted(payload)
+
+    logger.info(
+      {
+        workspaceId: payload.workspaceId,
+        invitationId: payload.invitationId,
+        userId: payload.userId,
+      },
+      "Invitation accepted notification sent to inviter"
     )
   }
 }

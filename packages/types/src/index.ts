@@ -30,6 +30,10 @@ export {
   // Workspace roles
   WORKSPACE_MEMBER_ROLES,
   type WorkspaceMemberRole,
+  // Invitation statuses
+  INVITATION_STATUSES,
+  type InvitationStatus,
+  InvitationStatuses,
   // Persona
   PERSONA_MANAGED_BY,
   type PersonaManagedBy,
@@ -116,6 +120,7 @@ export type {
   User,
   Workspace,
   WorkspaceMember,
+  WorkspaceInvitation,
   Stream,
   LastMessagePreview,
   StreamWithPreview,
@@ -180,6 +185,11 @@ export type {
   // Workspaces
   CreateWorkspaceInput,
   WorkspaceBootstrap,
+  // Invitations
+  SendInvitationsInput,
+  SendInvitationsResponse,
+  InvitationSkipReason,
+  CompleteMemberSetupInput,
   // Emojis
   EmojiEntry,
   // Commands

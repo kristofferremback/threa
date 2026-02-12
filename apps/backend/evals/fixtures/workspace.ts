@@ -57,6 +57,7 @@ export async function createWorkspaceFixture(pool: Pool): Promise<WorkspaceFixtu
       workspaceId: workspace.id,
       userId: user.id,
       slug: `eval-user-${timestamp}`,
+      name: user.name,
       role: "owner",
     })
 
@@ -107,6 +108,7 @@ export async function createAdditionalUser(
       workspaceId,
       userId: user.id,
       slug: `eval-user-${timestamp}`,
+      name: user.name,
       role: "member",
     })
 
