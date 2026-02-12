@@ -483,8 +483,12 @@ export async function runAgentLoop(input: AgentLoopInput, callbacks: AgentLoopCa
       await callbacks.recordStep({ stepType: "thinking", content: thinkingContent, durationMs })
     }
 
-    // No tool calls: check for final new messages, then done
+    // No tool calls: the model produced a text-only response.
+    // Push assistant message so fallback path can extract it.
     if (result.toolCalls.length === 0) {
+      const assistantMsg = result.response.messages[0]
+      if (assistantMsg) conversation.push(assistantMsg)
+
       const newMessages = await callbacks.checkNewMessages(streamId, lastProcessedSequence, personaId)
       if (newMessages.length > 0) {
         const { maxSequence, userMessages } = await injectNewMessages(
