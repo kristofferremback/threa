@@ -9,6 +9,7 @@ import { MAX_MESSAGE_CHARS, truncateMessages } from "./truncation"
 import { extractSourcesFromWebSearch, parseWorkspaceResearchResult, mergeSourceItems, toSourceItems } from "./sources"
 
 const MAX_ITERATIONS = 20
+const MAX_TEXT_ONLY_REDIRECTS = 1
 const WORKSPACE_RESEARCH_TOOL = "workspace_research"
 
 // ---------------------------------------------------------------------------
@@ -433,6 +434,56 @@ async function injectNewMessages(
 }
 
 // ---------------------------------------------------------------------------
+// Response extraction & commit
+// ---------------------------------------------------------------------------
+
+/** Extract usable text from a generateText result (assistant content). */
+function extractAssistantText(result: { text: string; response: { messages: ModelMessage[] } }): string | undefined {
+  if (result.text.trim()) return result.text.trim()
+
+  const assistantMsg = result.response.messages[0]
+  if (!assistantMsg || assistantMsg.role !== "assistant") return undefined
+
+  if (typeof assistantMsg.content === "string") return assistantMsg.content.trim() || undefined
+  if (Array.isArray(assistantMsg.content)) {
+    const text = (assistantMsg.content as Array<{ type: string; text?: string }>)
+      .filter((p) => p.type === "text" && p.text)
+      .map((p) => p.text!)
+      .join("")
+    return text.trim() || undefined
+  }
+  return undefined
+}
+
+/** Commit a message through the callback and record the trace step. */
+async function commitMessage(
+  callbacks: AgentLoopCallbacks,
+  pending: { content: string; sources: SourceItem[] },
+  sentMessageIds: string[]
+): Promise<{ count: number }> {
+  const sendResult = await callbacks.sendMessage({
+    content: pending.content,
+    sources: pending.sources.length > 0 ? pending.sources : undefined,
+  })
+  sentMessageIds.push(sendResult.messageId)
+  await callbacks.recordStep({
+    stepType: "message_sent",
+    content: pending.content,
+    messageId: sendResult.messageId,
+    sources:
+      pending.sources.length > 0
+        ? pending.sources.map((s) => ({
+            type: (s.type ?? "web") as TraceSource["type"],
+            title: s.title,
+            url: s.url,
+            snippet: s.snippet,
+          }))
+        : undefined,
+  })
+  return { count: 1 }
+}
+
+// ---------------------------------------------------------------------------
 // Main loop
 // ---------------------------------------------------------------------------
 
@@ -445,6 +496,7 @@ export async function runAgentLoop(input: AgentLoopInput, callbacks: AgentLoopCa
   let messagesSent = 0
   let sources: SourceItem[] = []
   let retrievedContext: string | null = null
+  let textOnlyRedirects = 0
 
   // Prefetch workspace research before the loop starts
   if (tools[WORKSPACE_RESEARCH_TOOL]) {
@@ -487,9 +539,8 @@ export async function runAgentLoop(input: AgentLoopInput, callbacks: AgentLoopCa
 
     // ── Text-only response (no tool calls) ──
     // The model wrote its answer as plain text instead of calling send_message.
-    // Redirect it: inject the text as context and ask it to use the tool.
     if (result.toolCalls.length === 0) {
-      // Still check for new messages first
+      // Check for new messages
       const newMessages = await callbacks.checkNewMessages(streamId, lastProcessedSequence, personaId)
       if (newMessages.length > 0) {
         const { maxSequence, userMessages } = await injectNewMessages(
@@ -501,15 +552,29 @@ export async function runAgentLoop(input: AgentLoopInput, callbacks: AgentLoopCa
         conversation.push(...userMessages)
       }
 
-      conversation.push({
-        role: "system",
-        content:
-          `You composed a response but did not call send_message. ` +
-          `You MUST call the send_message tool to deliver your response to the user. ` +
-          `Use the text you just wrote as the content argument.`,
-      })
-      continue
+      // Give the model one chance to use the tool, then extract and send directly
+      if (textOnlyRedirects < MAX_TEXT_ONLY_REDIRECTS) {
+        textOnlyRedirects++
+        conversation.push({
+          role: "system",
+          content:
+            `You composed a response but did not call send_message. ` +
+            `You MUST call the send_message tool to deliver your response to the user. ` +
+            `Use the text you just wrote as the content argument.`,
+        })
+        continue
+      }
+
+      // Model won't call send_message — extract its text and send directly
+      const textToSend = extractAssistantText(result)
+      if (textToSend) {
+        logger.warn({ sessionId, streamId }, "Model refused to call send_message; sending text-only response directly")
+        const sendResult = await commitMessage(callbacks, { content: textToSend, sources }, sentMessageIds)
+        messagesSent += sendResult.count
+      }
+      break
     }
+    textOnlyRedirects = 0 // Reset on successful tool use
 
     // ── Tool calls present ──
 
@@ -532,22 +597,14 @@ export async function runAgentLoop(input: AgentLoopInput, callbacks: AgentLoopCa
 
     if (execResult.pendingMessages.length > 0) {
       if (newMessages.length === 0) {
-        // Commit pending messages — this is the loop's exit condition
+        // Commit pending messages — this is the loop's primary exit condition
         for (const pending of execResult.pendingMessages) {
-          const sendResult = await callbacks.sendMessage(pending)
-          sentMessageIds.push(sendResult.messageId)
-          messagesSent++
-          await callbacks.recordStep({
-            stepType: "message_sent",
-            content: pending.content,
-            messageId: sendResult.messageId,
-            sources: pending.sources?.map((s) => ({
-              type: (s.type ?? "web") as TraceSource["type"],
-              title: s.title,
-              url: s.url,
-              snippet: s.snippet,
-            })),
-          })
+          const committed = await commitMessage(
+            callbacks,
+            { content: pending.content, sources: pending.sources ?? [] },
+            sentMessageIds
+          )
+          messagesSent += committed.count
         }
         break
       } else {
