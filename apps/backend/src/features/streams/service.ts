@@ -65,66 +65,38 @@ export class StreamService {
   }
 
   async validateStreamAccess(streamId: string, workspaceId: string, memberId: string): Promise<Stream> {
+    const stream = await this.checkAccess(streamId, workspaceId, memberId)
+    if (!stream) throw new StreamNotFoundError()
+    return stream
+  }
+
+  async hasAccess(streamId: string, workspaceId: string, memberId: string): Promise<boolean> {
+    return (await this.checkAccess(streamId, workspaceId, memberId)) !== null
+  }
+
+  private async checkAccess(streamId: string, workspaceId: string, memberId: string): Promise<Stream | null> {
     return withClient(this.pool, async (client) => {
       const stream = await StreamRepository.findById(client, streamId)
+      if (!stream || stream.workspaceId !== workspaceId) return null
 
-      if (!stream || stream.workspaceId !== workspaceId) {
-        throw new StreamNotFoundError()
-      }
-
-      // For threads, check access to root stream instead of direct membership
       if (stream.rootStreamId) {
         const rootStream = await StreamRepository.findById(client, stream.rootStreamId)
-        if (!rootStream) {
-          throw new StreamNotFoundError()
-        }
+        if (!rootStream) return null
 
-        // Check root stream access: public streams are accessible to all, private require membership
         if (rootStream.visibility !== Visibilities.PUBLIC) {
           const isRootMember = await StreamMemberRepository.isMember(client, stream.rootStreamId, memberId)
-          if (!isRootMember) {
-            throw new StreamNotFoundError()
-          }
+          if (!isRootMember) return null
         }
 
         return stream
       }
 
-      // Non-thread streams: check direct visibility/membership
       if (stream.visibility !== Visibilities.PUBLIC) {
         const isMember = await StreamMemberRepository.isMember(client, streamId, memberId)
-        if (!isMember) {
-          throw new StreamNotFoundError()
-        }
+        if (!isMember) return null
       }
 
       return stream
-    })
-  }
-
-  /**
-   * Non-throwing access check — same rules as validateStreamAccess but returns boolean.
-   * Used in hot paths (activity feed) where exception-as-control-flow is expensive.
-   */
-  async hasAccess(streamId: string, workspaceId: string, memberId: string): Promise<boolean> {
-    return withClient(this.pool, async (client) => {
-      const stream = await StreamRepository.findById(client, streamId)
-      if (!stream || stream.workspaceId !== workspaceId) return false
-
-      if (stream.rootStreamId) {
-        const rootStream = await StreamRepository.findById(client, stream.rootStreamId)
-        if (!rootStream) return false
-
-        if (rootStream.visibility !== Visibilities.PUBLIC) {
-          return StreamMemberRepository.isMember(client, stream.rootStreamId, memberId)
-        }
-        return true
-      }
-
-      if (stream.visibility !== Visibilities.PUBLIC) {
-        return StreamMemberRepository.isMember(client, streamId, memberId)
-      }
-      return true
     })
   }
 
