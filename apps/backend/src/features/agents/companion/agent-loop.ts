@@ -94,28 +94,19 @@ async function callToolExecute(tool: Tool<any, any>, args: unknown, toolCallId: 
   return t.execute(args, { toolCallId, messages: [] as ModelMessage[] })
 }
 
-function getToolStepType(toolName: string): AgentStepType {
-  switch (toolName) {
-    case AgentToolNames.READ_URL:
-      return "visit_page"
-    case WORKSPACE_RESEARCH_TOOL:
-    case AgentToolNames.SEARCH_MESSAGES:
-    case AgentToolNames.SEARCH_STREAMS:
-    case AgentToolNames.SEARCH_USERS:
-    case AgentToolNames.GET_STREAM_MESSAGES:
-      return "workspace_search"
-    default:
-      return "tool_call"
-  }
+// ---------------------------------------------------------------------------
+// Tool trace config — step-type mapping + trace formatting in one place (INV-43)
+// ---------------------------------------------------------------------------
+
+interface ToolTraceConfig {
+  stepType: AgentStepType
+  formatTrace(args: Record<string, unknown>, resultStr: string): { content: string; sources?: TraceSource[] }
 }
 
-function formatToolStep(
-  toolName: string,
-  args: Record<string, unknown>,
-  resultStr: string
-): { content: string; sources?: TraceSource[] } {
-  switch (toolName) {
-    case AgentToolNames.READ_URL: {
+const TOOL_TRACE: Record<string, ToolTraceConfig> = {
+  [AgentToolNames.READ_URL]: {
+    stepType: "visit_page",
+    formatTrace(args, resultStr) {
       const url = String(args.url ?? "")
       try {
         const parsed = JSON.parse(resultStr)
@@ -129,17 +120,49 @@ function formatToolStep(
         /* not valid JSON */
       }
       return { content: JSON.stringify({ url }) }
-    }
-    case AgentToolNames.SEARCH_MESSAGES:
-      return { content: JSON.stringify({ tool: toolName, query: args.query ?? "", stream: args.stream ?? null }) }
-    case AgentToolNames.SEARCH_STREAMS:
-    case AgentToolNames.SEARCH_USERS:
-      return { content: JSON.stringify({ tool: toolName, query: args.query ?? "" }) }
-    case AgentToolNames.GET_STREAM_MESSAGES:
-      return { content: JSON.stringify({ tool: toolName, stream: args.stream ?? null }) }
-    default:
-      return { content: JSON.stringify({ tool: toolName, args }) }
+    },
+  },
+  [AgentToolNames.SEARCH_MESSAGES]: {
+    stepType: "workspace_search",
+    formatTrace: (args) => ({
+      content: JSON.stringify({
+        tool: AgentToolNames.SEARCH_MESSAGES,
+        query: args.query ?? "",
+        stream: args.stream ?? null,
+      }),
+    }),
+  },
+  [AgentToolNames.SEARCH_STREAMS]: {
+    stepType: "workspace_search",
+    formatTrace: (args) => ({
+      content: JSON.stringify({ tool: AgentToolNames.SEARCH_STREAMS, query: args.query ?? "" }),
+    }),
+  },
+  [AgentToolNames.SEARCH_USERS]: {
+    stepType: "workspace_search",
+    formatTrace: (args) => ({
+      content: JSON.stringify({ tool: AgentToolNames.SEARCH_USERS, query: args.query ?? "" }),
+    }),
+  },
+  [AgentToolNames.GET_STREAM_MESSAGES]: {
+    stepType: "workspace_search",
+    formatTrace: (args) => ({
+      content: JSON.stringify({ tool: AgentToolNames.GET_STREAM_MESSAGES, stream: args.stream ?? null }),
+    }),
+  },
+}
+
+function getToolTrace(
+  toolName: string,
+  args: Record<string, unknown>,
+  resultStr: string
+): { stepType: AgentStepType; content: string; sources?: TraceSource[] } {
+  const config = TOOL_TRACE[toolName]
+  if (config) {
+    const { content, sources } = config.formatTrace(args, resultStr)
+    return { stepType: config.stepType, content, sources }
   }
+  return { stepType: "tool_call", content: JSON.stringify({ tool: toolName, args }) }
 }
 
 // ---------------------------------------------------------------------------
@@ -237,7 +260,10 @@ async function executeToolCalls(
 
           const workspaceSources = toSourceItems(parsed.sources)
           if (workspaceSources.length > 0) sources = mergeSourceItems(sources, workspaceSources)
-          if (parsed.retrievedContext?.trim()) retrievedContext = parsed.retrievedContext.trim()
+          if (parsed.retrievedContext?.trim()) {
+            const newContext = parsed.retrievedContext.trim()
+            retrievedContext = retrievedContext ? `${retrievedContext}\n\n${newContext}` : newContext
+          }
 
           await ctx.callbacks.recordStep({
             stepType: "workspace_search",
@@ -281,7 +307,7 @@ async function executeToolCalls(
             .join("\n")
 
           await ctx.callbacks.recordStep({
-            stepType: getToolStepType(tc.toolName),
+            stepType: TOOL_TRACE[tc.toolName]?.stepType ?? "tool_call",
             content: textContent,
             durationMs,
           })
@@ -302,15 +328,11 @@ async function executeToolCalls(
             })
           }
         } else {
-          const { content, sources: stepSources } = formatToolStep(
-            tc.toolName,
-            tc.input as Record<string, unknown>,
-            resultStr
-          )
+          const trace = getToolTrace(tc.toolName, tc.input as Record<string, unknown>, resultStr)
           await ctx.callbacks.recordStep({
-            stepType: getToolStepType(tc.toolName),
-            content,
-            sources: stepSources,
+            stepType: trace.stepType,
+            content: trace.content,
+            sources: trace.sources,
             durationMs,
           })
           resultParts.push(makeToolResult(tc, protectToolOutputText(resultStr)))

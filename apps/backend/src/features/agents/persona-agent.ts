@@ -316,7 +316,7 @@ export class PersonaAgent {
             personaId: persona.id,
             lastProcessedSequence: session.lastSeenSequence ?? initialSequence,
             telemetry: {
-              functionId: "generate",
+              functionId: "companion-agent-loop",
               metadata: {
                 model_id: parsed.modelId,
                 model_provider: parsed.modelProvider,
