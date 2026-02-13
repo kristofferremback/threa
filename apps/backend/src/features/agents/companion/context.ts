@@ -29,7 +29,6 @@ export interface ContextParams {
   messageId: string
   persona: Persona
   trigger?: typeof AgentTriggers.MENTION
-  hasResearcher: boolean
 }
 
 export interface AgentContext {
@@ -50,7 +49,7 @@ export interface AgentContext {
  */
 export async function buildAgentContext(deps: ContextDeps, params: ContextParams): Promise<AgentContext> {
   const { db, userPreferencesService, conversationSummaryService } = deps
-  const { workspaceId, streamId, stream, messageId, persona, trigger, hasResearcher } = params
+  const { workspaceId, streamId, stream, messageId, persona, trigger } = params
 
   const triggerMessage = await MessageRepository.findById(db, messageId)
   const invokingMemberId = triggerMessage?.authorType === AuthorTypes.MEMBER ? triggerMessage.authorId : undefined
@@ -144,7 +143,7 @@ export async function buildAgentContext(deps: ContextDeps, params: ContextParams
     trigger,
     mentionerName,
     rollingConversationSummary,
-    hasResearcher
+    invokingMemberId !== undefined
   )
 
   const messages = formatMessagesWithTemporal(streamContext.conversationHistory, streamContext)

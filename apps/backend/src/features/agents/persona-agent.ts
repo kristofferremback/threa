@@ -207,14 +207,10 @@ export class PersonaAgent {
         })
         trace.notifyActivityStarted()
 
-        // Quick pre-fetch to determine researcher availability (used in system prompt)
-        const triggerMsg = await MessageRepository.findById(pool, messageId)
-        const hasResearcher = triggerMsg?.authorType === AuthorTypes.MEMBER
-
         // Build all context the agent needs
         const agentContext = await buildAgentContext(
           { db: pool, userPreferencesService, conversationSummaryService },
-          { workspaceId, streamId, stream, messageId, persona, trigger, hasResearcher }
+          { workspaceId, streamId, stream, messageId, persona, trigger }
         )
 
         // Record initial context step for trace UI
