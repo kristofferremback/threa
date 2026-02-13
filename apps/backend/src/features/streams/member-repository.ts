@@ -166,6 +166,15 @@ export const StreamMemberRepository = {
     return result.rows.length > 0
   },
 
+  async filterMemberIds(db: Querier, streamId: string, memberIds: string[]): Promise<Set<string>> {
+    if (memberIds.length === 0) return new Set()
+    const result = await db.query<{ member_id: string }>(sql`
+      SELECT member_id FROM stream_members
+      WHERE stream_id = ${streamId} AND member_id = ANY(${memberIds})
+    `)
+    return new Set(result.rows.map((r) => r.member_id))
+  },
+
   async batchUpdateLastReadEventId(db: Querier, memberId: string, updates: Map<string, string>): Promise<void> {
     if (updates.size === 0) return
 

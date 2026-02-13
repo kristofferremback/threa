@@ -44,6 +44,7 @@ export type OutboxEventType =
   | "stream:member_joined"
   | "invitation:sent"
   | "invitation:accepted"
+  | "activity:created"
 
 /** Events that are scoped to a stream (have streamId) */
 export type StreamScopedEventType =
@@ -261,6 +262,20 @@ export interface InvitationAcceptedOutboxPayload extends WorkspaceScopedPayload 
   userId: string
 }
 
+// Member-scoped event payloads (delivered to a specific target member)
+export interface ActivityCreatedOutboxPayload extends WorkspaceScopedPayload {
+  targetMemberId: string
+  activity: {
+    id: string
+    activityType: string
+    streamId: string
+    messageId: string
+    actorId: string
+    context: Record<string, unknown>
+    createdAt: string
+  }
+}
+
 // Budget alert event payload
 export interface BudgetAlertOutboxPayload extends WorkspaceScopedPayload {
   alertType: string
@@ -307,6 +322,7 @@ export interface OutboxEventPayloadMap {
   "budget:alert": BudgetAlertOutboxPayload
   "invitation:sent": InvitationSentOutboxPayload
   "invitation:accepted": InvitationAcceptedOutboxPayload
+  "activity:created": ActivityCreatedOutboxPayload
 }
 
 export type OutboxEventPayload<T extends OutboxEventType> = OutboxEventPayloadMap[T]
@@ -386,6 +402,18 @@ const AUTHOR_SCOPED_EVENTS: AuthorScopedEventType[] = [
  */
 export function isAuthorScopedEvent(event: OutboxEvent): event is OutboxEvent<AuthorScopedEventType> {
   return AUTHOR_SCOPED_EVENTS.includes(event.eventType as AuthorScopedEventType)
+}
+
+/** Events that are scoped to a specific target member (delivered to that member's sockets) */
+export type MemberScopedEventType = "activity:created"
+
+const MEMBER_SCOPED_EVENTS: MemberScopedEventType[] = ["activity:created"]
+
+/**
+ * Type guard to check if an event is member-scoped (delivered to a specific target member).
+ */
+export function isMemberScopedEvent(event: OutboxEvent): event is OutboxEvent<MemberScopedEventType> {
+  return MEMBER_SCOPED_EVENTS.includes(event.eventType as MemberScopedEventType)
 }
 
 interface OutboxRow {

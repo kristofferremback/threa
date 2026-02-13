@@ -89,6 +89,18 @@ export const MemberRepository = {
     return result.rows[0] ? mapRowToMember(result.rows[0]) : null
   },
 
+  async findBySlugs(db: Querier, workspaceId: string, slugs: string[]): Promise<Member[]> {
+    if (slugs.length === 0) return []
+
+    const result = await db.query<MemberRow>(sql`
+      SELECT ${sql.raw(SELECT_FIELDS)}
+      FROM workspace_members wm
+      JOIN users u ON u.id = wm.user_id
+      WHERE wm.workspace_id = ${workspaceId} AND wm.slug = ANY(${slugs})
+    `)
+    return result.rows.map(mapRowToMember)
+  },
+
   async findByIds(db: Querier, ids: string[]): Promise<Member[]> {
     if (ids.length === 0) return []
 

@@ -7,6 +7,7 @@ import {
   isOutboxEventType,
   isOneOfOutboxEventType,
   isAuthorScopedEvent,
+  isMemberScopedEvent,
   type OutboxEvent,
   type StreamCreatedOutboxPayload,
   type CommandDispatchedOutboxPayload,
@@ -15,6 +16,7 @@ import {
   type StreamReadOutboxPayload,
   type StreamsReadAllOutboxPayload,
   type UserPreferencesUpdatedOutboxPayload,
+  type ActivityCreatedOutboxPayload,
 } from "./repository"
 import type { UserSocketRegistry } from "../user-socket-registry"
 import { logger } from "../logger"
@@ -126,6 +128,32 @@ export class BroadcastHandler implements OutboxHandler {
 
   private async broadcastEvent(event: OutboxEvent): Promise<void> {
     const { workspaceId } = event.payload
+
+    // Member-scoped events: emit to the target member's sockets
+    // targetMemberId → resolve to userId for socket registry lookup
+    if (isMemberScopedEvent(event)) {
+      const payload = event.payload as ActivityCreatedOutboxPayload
+      const { targetMemberId } = payload
+
+      const member = await MemberRepository.findById(this.db, targetMemberId)
+      if (!member) {
+        logger.warn(
+          { eventType: event.eventType, targetMemberId },
+          "Cannot broadcast member-scoped event: member not found"
+        )
+        return
+      }
+
+      const sockets = this.userSocketRegistry.getSockets(member.userId)
+      for (const socket of sockets) {
+        socket.emit(event.eventType, event.payload)
+      }
+      logger.debug(
+        { eventType: event.eventType, targetMemberId, userId: member.userId, emitted: sockets.length },
+        "Broadcast member-scoped event"
+      )
+      return
+    }
 
     // Author-scoped events: only emit to the author's sockets
     // authorId is a memberId — resolve to userId for socket registry lookup
