@@ -6,11 +6,13 @@ export {
   useStreamService,
   useMessageService,
   useConversationService,
+  useActivityService,
   type Services,
   type WorkspaceService,
   type StreamService,
   type MessageService,
   type ConversationService,
+  type ActivityService,
 } from "./services-context"
 export {
   SocketProvider,

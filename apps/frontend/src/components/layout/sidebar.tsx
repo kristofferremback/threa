@@ -37,12 +37,14 @@ import {
   useDraftScratchpads,
   useStreamOrDraft,
   useUnreadCounts,
+  useMentionCounts,
   useAllDrafts,
   workspaceKeys,
   useActors,
 } from "@/hooks"
 import { useQuickSwitcher, useCoordinatedLoading, useSidebar, type ViewMode } from "@/contexts"
 import { UnreadBadge } from "@/components/unread-badge"
+import { MentionBadge } from "@/components/mention-badge"
 import { RelativeTime } from "@/components/relative-time"
 import { StreamTypes, AuthorTypes, type AuthorType, type StreamWithPreview } from "@threa/types"
 import { useQueryClient } from "@tanstack/react-query"
@@ -125,17 +127,14 @@ const ALL_SECTIONS = {
 // Helper Functions
 // ============================================================================
 
-/** Calculate urgency level for a stream based on unread state */
-function calculateUrgency(stream: StreamWithPreview, unreadCount: number): UrgencyLevel {
-  // TODO: Check for mentions - for now use unread count as proxy
-  if (unreadCount > 5) return "mentions"
+/** Calculate urgency level for a stream based on unread and mention state */
+function calculateUrgency(stream: StreamWithPreview, unreadCount: number, mentionCount: number): UrgencyLevel {
+  if (mentionCount > 0) return "mentions"
 
-  // AI activity: last message was from a persona with unread messages
   if (stream.lastMessagePreview?.authorType === AuthorTypes.PERSONA && unreadCount > 0) {
     return "ai"
   }
 
-  // Any unread messages should show activity
   if (unreadCount > 0) return "activity"
 
   return "quiet"
@@ -518,6 +517,7 @@ interface StreamSectionProps {
   workspaceId: string
   activeStreamId?: string
   getUnreadCount: (streamId: string) => number
+  getMentionCount: (streamId: string) => number
   isCollapsed?: boolean
   onToggle?: () => void
   showCollapsedHint?: boolean
@@ -543,6 +543,7 @@ function StreamSection({
   workspaceId,
   activeStreamId,
   getUnreadCount,
+  getMentionCount,
   isCollapsed = false,
   onToggle,
   showCollapsedHint = false,
@@ -578,6 +579,7 @@ function StreamSection({
               stream={stream}
               isActive={stream.id === activeStreamId}
               unreadCount={getUnreadCount(stream.id)}
+              mentionCount={getMentionCount(stream.id)}
               allStreams={allStreams}
               compact={compact}
               showPreviewOnHover={showPreviewOnHover}
@@ -610,6 +612,7 @@ interface SmartSectionProps {
   workspaceId: string
   activeStreamId?: string
   getUnreadCount: (streamId: string) => number
+  getMentionCount: (streamId: string) => number
   isCollapsed?: boolean
   onToggle?: () => void
   /** Reference to scroll container for position tracking */
@@ -624,6 +627,7 @@ function SmartSection({
   workspaceId,
   activeStreamId,
   getUnreadCount,
+  getMentionCount,
   isCollapsed = false,
   onToggle,
   scrollContainerRef,
@@ -642,6 +646,7 @@ function SmartSection({
       workspaceId={workspaceId}
       activeStreamId={activeStreamId}
       getUnreadCount={getUnreadCount}
+      getMentionCount={getMentionCount}
       isCollapsed={isCollapsed}
       onToggle={onToggle}
       showCollapsedHint={config.showCollapsedHint}
@@ -661,6 +666,7 @@ interface StreamItemProps {
   stream: StreamItemData
   isActive: boolean
   unreadCount: number
+  mentionCount: number
   allStreams: StreamItemData[]
   showUrgencyStrip?: boolean
   /** Show compact view (title only, no preview) */
@@ -676,6 +682,7 @@ function StreamItem({
   stream,
   isActive,
   unreadCount,
+  mentionCount,
   allStreams,
   showUrgencyStrip = true,
   compact = false,
@@ -748,6 +755,7 @@ function StreamItem({
         stream={stream}
         isActive={isActive}
         unreadCount={unreadCount}
+        mentionCount={mentionCount}
         compact={compact}
         showPreviewOnHover={showPreviewOnHover}
         showUrgencyStrip={showUrgencyStrip}
@@ -779,7 +787,7 @@ function StreamItem({
                 <span className="font-normal text-muted-foreground/60 text-xs"> · {threadRootContext}</span>
               )}
             </span>
-            <UnreadBadge count={unreadCount} />
+            {mentionCount > 0 ? <MentionBadge count={mentionCount} /> : <UnreadBadge count={unreadCount} />}
           </div>
           <StreamItemPreview
             preview={preview}
@@ -809,6 +817,7 @@ interface ScratchpadItemProps {
   stream: StreamItemData
   isActive: boolean
   unreadCount: number
+  mentionCount: number
   showUrgencyStrip?: boolean
   /** Show compact view (title only, no preview) */
   compact?: boolean
@@ -823,6 +832,7 @@ function ScratchpadItem({
   stream: streamWithPreview,
   isActive,
   unreadCount,
+  mentionCount,
   showUrgencyStrip = true,
   compact = false,
   showPreviewOnHover = false,
@@ -910,7 +920,7 @@ function ScratchpadItem({
               {name}
               {isDraft && <span className="ml-1.5 text-xs text-muted-foreground font-normal">(draft)</span>}
             </span>
-            <UnreadBadge count={unreadCount} />
+            {mentionCount > 0 ? <MentionBadge count={mentionCount} /> : <UnreadBadge count={unreadCount} />}
           </div>
           <StreamItemPreview
             preview={preview}
@@ -1099,12 +1109,14 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   const createStream = useCreateStream(workspaceId)
   const { createDraft } = useDraftScratchpads(workspaceId)
   const { getUnreadCount } = useUnreadCounts(workspaceId)
+  const { getMentionCount, unreadActivityCount } = useMentionCounts(workspaceId)
   const { drafts: allDrafts } = useAllDrafts(workspaceId)
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
   const draftCount = allDrafts.length
   const isDraftsPage = splat === "drafts" || window.location.pathname.endsWith("/drafts")
+  const isActivityPage = splat === "activity" || window.location.pathname.endsWith("/activity")
 
   // Build set of streams the user is a member of (for filtering public channels)
   const memberStreamIds = useMemo(() => {
@@ -1126,7 +1138,8 @@ export function Sidebar({ workspaceId }: SidebarProps) {
       })
       .map((stream): StreamItemData => {
         const unreadCount = getUnreadCount(stream.id)
-        const urgency = calculateUrgency(stream, unreadCount)
+        const mentionCount = getMentionCount(stream.id)
+        const urgency = calculateUrgency(stream, unreadCount, mentionCount)
         const section = categorizeStream(stream, unreadCount, urgency)
 
         return {
@@ -1135,7 +1148,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
           section,
         }
       })
-  }, [bootstrap?.streams, memberStreamIds, getUnreadCount])
+  }, [bootstrap?.streams, memberStreamIds, getUnreadCount, getMentionCount])
 
   // System streams are auto-created infrastructure — don't count toward "has content"
   const hasUserStreams = processedStreams.some((s) => s.type !== StreamTypes.SYSTEM)
@@ -1341,6 +1354,18 @@ export function Sidebar({ workspaceId }: SidebarProps) {
             <MessageSquareText className="h-4 w-4" />
             Threads
           </Link>
+          <Link
+            to={`/w/${workspaceId}/activity`}
+            className={cn(
+              "flex items-center gap-2.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
+              isActivityPage ? "bg-primary/10" : "hover:bg-muted/50",
+              !isActivityPage && unreadActivityCount === 0 && "text-muted-foreground"
+            )}
+          >
+            <Bell className="h-4 w-4" />
+            Activity
+            {unreadActivityCount > 0 && <UnreadBadge count={unreadActivityCount} className="ml-auto" />}
+          </Link>
         </div>
       }
       streamList={
@@ -1371,6 +1396,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
                   workspaceId={workspaceId}
                   activeStreamId={activeStreamId}
                   getUnreadCount={getUnreadCount}
+                  getMentionCount={getMentionCount}
                   isCollapsed={isSectionCollapsed("important")}
                   onToggle={() => toggleSectionCollapsed("important")}
                   scrollContainerRef={scrollContainerRef}
@@ -1382,6 +1408,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
                   workspaceId={workspaceId}
                   activeStreamId={activeStreamId}
                   getUnreadCount={getUnreadCount}
+                  getMentionCount={getMentionCount}
                   isCollapsed={isSectionCollapsed("recent")}
                   onToggle={() => toggleSectionCollapsed("recent")}
                   scrollContainerRef={scrollContainerRef}
@@ -1393,6 +1420,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
                   workspaceId={workspaceId}
                   activeStreamId={activeStreamId}
                   getUnreadCount={getUnreadCount}
+                  getMentionCount={getMentionCount}
                   isCollapsed={isSectionCollapsed("pinned")}
                   onToggle={() => toggleSectionCollapsed("pinned")}
                   scrollContainerRef={scrollContainerRef}
@@ -1404,6 +1432,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
                   workspaceId={workspaceId}
                   activeStreamId={activeStreamId}
                   getUnreadCount={getUnreadCount}
+                  getMentionCount={getMentionCount}
                   isCollapsed={isSectionCollapsed("other")}
                   onToggle={() => toggleSectionCollapsed("other")}
                   scrollContainerRef={scrollContainerRef}
@@ -1419,6 +1448,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
                   workspaceId={workspaceId}
                   activeStreamId={activeStreamId}
                   getUnreadCount={getUnreadCount}
+                  getMentionCount={getMentionCount}
                   isCollapsed={isSectionCollapsed("scratchpads")}
                   onToggle={() => toggleSectionCollapsed("scratchpads")}
                   scrollContainerRef={scrollContainerRef}
@@ -1435,6 +1465,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
                   workspaceId={workspaceId}
                   activeStreamId={activeStreamId}
                   getUnreadCount={getUnreadCount}
+                  getMentionCount={getMentionCount}
                   isCollapsed={isSectionCollapsed("channels")}
                   onToggle={() => toggleSectionCollapsed("channels")}
                   scrollContainerRef={scrollContainerRef}
@@ -1452,6 +1483,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
                     workspaceId={workspaceId}
                     activeStreamId={activeStreamId}
                     getUnreadCount={getUnreadCount}
+                    getMentionCount={getMentionCount}
                     isCollapsed={isSectionCollapsed("dms")}
                     onToggle={() => toggleSectionCollapsed("dms")}
                     scrollContainerRef={scrollContainerRef}

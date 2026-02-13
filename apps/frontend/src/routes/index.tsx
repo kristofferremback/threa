@@ -5,6 +5,7 @@ import { WorkspaceLayout } from "@/pages/workspace-layout"
 import { StreamPage } from "@/pages/stream"
 import { DraftsPage } from "@/pages/drafts"
 import { ThreadsPage } from "@/pages/threads"
+import { ActivityPage } from "@/pages/activity"
 import { AIUsageAdminPage } from "@/pages/ai-usage-admin"
 import { MemberSetupPage } from "@/pages/member-setup"
 import { ErrorBoundary } from "@/components/error-boundary"
@@ -41,6 +42,10 @@ export const router = createBrowserRouter([
       {
         path: "threads",
         element: <ThreadsPage />,
+      },
+      {
+        path: "activity",
+        element: <ActivityPage />,
       },
       {
         path: "s/:streamId",

@@ -16,6 +16,7 @@ import type {
   StreamMember,
   UserPreferences,
   LastMessagePreview,
+  ActivityCreatedPayload,
 } from "@threa/types"
 
 /** Member shape from MemberRepository (includes name/email from users JOIN) */
@@ -396,43 +397,60 @@ export function useSocketEvents(workspaceId: string) {
     })
 
     // Handle stream read (from other sessions of the same user)
+    // Also clears mention counts — backend marks stream activity as read when stream is read
     socket.on("stream:read", (payload: StreamReadPayload) => {
-      // Only update if it's for this workspace
       if (payload.workspaceId !== workspaceId) return
 
-      queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), (old: unknown) => {
-        if (!old || typeof old !== "object") return old
-        const bootstrap = old as { unreadCounts?: Record<string, number> }
-        if (!bootstrap.unreadCounts) return old
+      // Check if there are mentions to clear before updating cache
+      const current = queryClient.getQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId))
+      const hadMentions = (current?.mentionCounts[payload.streamId] ?? 0) > 0
+
+      queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
+        if (!old) return old
+        const clearedMentions = old.mentionCounts[payload.streamId] ?? 0
         return {
-          ...bootstrap,
+          ...old,
           unreadCounts: {
-            ...bootstrap.unreadCounts,
+            ...old.unreadCounts,
             [payload.streamId]: 0,
           },
+          mentionCounts: {
+            ...old.mentionCounts,
+            [payload.streamId]: 0,
+          },
+          unreadActivityCount: Math.max(0, (old.unreadActivityCount ?? 0) - clearedMentions),
         }
       })
+
+      if (hadMentions) {
+        queryClient.invalidateQueries({ queryKey: ["activity", workspaceId] })
+      }
     })
 
     // Handle all streams read (from other sessions of the same user)
     socket.on("stream:read_all", (payload: StreamsReadAllPayload) => {
-      // Only update if it's for this workspace
       if (payload.workspaceId !== workspaceId) return
 
-      queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), (old: unknown) => {
-        if (!old || typeof old !== "object") return old
-        const bootstrap = old as { unreadCounts?: Record<string, number> }
-        if (!bootstrap.unreadCounts) return old
+      queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
+        if (!old) return old
 
-        const newUnreadCounts = { ...bootstrap.unreadCounts }
+        const newUnreadCounts = { ...old.unreadCounts }
+        const newMentionCounts = { ...old.mentionCounts }
+        let clearedMentions = 0
         for (const streamId of payload.streamIds) {
           newUnreadCounts[streamId] = 0
+          clearedMentions += newMentionCounts[streamId] ?? 0
+          newMentionCounts[streamId] = 0
         }
         return {
-          ...bootstrap,
+          ...old,
           unreadCounts: newUnreadCounts,
+          mentionCounts: newMentionCounts,
+          unreadActivityCount: Math.max(0, (old.unreadActivityCount ?? 0) - clearedMentions),
         }
       })
+
+      queryClient.invalidateQueries({ queryKey: ["activity", workspaceId] })
     })
 
     // Handle stream activity (when a new message is created in any stream)
@@ -529,6 +547,28 @@ export function useSocketEvents(workspaceId: string) {
       })
     })
 
+    // Handle activity created (mentions targeting this user)
+    socket.on("activity:created", (payload: ActivityCreatedPayload) => {
+      if (payload.workspaceId !== workspaceId) return
+
+      const { streamId } = payload.activity
+
+      queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
+        if (!old) return old
+        return {
+          ...old,
+          mentionCounts: {
+            ...old.mentionCounts,
+            [streamId]: (old.mentionCounts[streamId] ?? 0) + 1,
+          },
+          unreadActivityCount: (old.unreadActivityCount ?? 0) + 1,
+        }
+      })
+
+      // Invalidate activity feed so it refetches when the page is mounted
+      queryClient.invalidateQueries({ queryKey: ["activity", workspaceId] })
+    })
+
     return () => {
       abortController.abort()
       socket.emit("leave", `ws:${workspaceId}`)
@@ -544,6 +584,7 @@ export function useSocketEvents(workspaceId: string) {
       socket.off("stream:read_all")
       socket.off("stream:activity")
       socket.off("user_preferences:updated")
+      socket.off("activity:created")
     }
   }, [socket, workspaceId, queryClient, user, reconnectCount])
 }
