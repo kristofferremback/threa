@@ -146,7 +146,7 @@ Return the fully updated rolling summary.`,
         },
       ],
       repair: async ({ text }) => JSON.stringify({ summary: await this.normalizeSummaryText(text) }),
-      telemetry: { functionId: "companion-conversation-summary-update" },
+      telemetry: { functionId: "summary-update" },
       context: { workspaceId, origin: "system" },
     })
 

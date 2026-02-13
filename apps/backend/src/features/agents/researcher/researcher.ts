@@ -422,7 +422,7 @@ Guidelines for search:
           },
         ],
         temperature: config.temperature,
-        telemetry: { functionId: "workspace-agent-plan-retrieval", metadata: { query } },
+        telemetry: { functionId: "ws-plan", metadata: { query } },
         context: { workspaceId, origin: "system" },
       })
 
@@ -479,7 +479,7 @@ Each query must have:
           },
         ],
         temperature: config.temperature,
-        telemetry: { functionId: "workspace-agent-evaluate", metadata: { query } },
+        telemetry: { functionId: "ws-eval", metadata: { query } },
         context: { workspaceId, origin: "system" },
       })
 
@@ -609,7 +609,7 @@ Each query must have:
       try {
         const embedding = await embeddingService.embed(query.query, {
           workspaceId,
-          functionId: "workspace-agent-memo-semantic-search",
+          functionId: "ws-memo-embed",
         })
         // DB search (single query, INV-30)
         const semanticResults = await MemoRepository.semanticSearch(pool, {
@@ -684,7 +684,7 @@ Each query must have:
         try {
           embedding = await embeddingService.embed(searchQuery, {
             workspaceId,
-            functionId: "workspace-agent-message-semantic-search",
+            functionId: "ws-msg-embed",
           })
         } catch (error) {
           logger.warn({ error }, "Failed to generate embedding, falling back to keyword-only search")
