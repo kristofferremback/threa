@@ -306,6 +306,7 @@ export class PersonaAgent {
 
         const loopResult = await runAgentLoop(
           {
+            ai,
             model,
             systemPrompt: agentContext.systemPrompt,
             messages: agentContext.messages,

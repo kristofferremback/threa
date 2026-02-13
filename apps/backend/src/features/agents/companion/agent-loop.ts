@@ -1,8 +1,8 @@
-import { generateText } from "ai"
 import type { LanguageModel, ModelMessage, Tool, ToolCallPart, ToolResultPart } from "ai"
 import type { SourceItem, AgentStepType, TraceSource, AuthorType } from "@threa/types"
 import { AgentToolNames } from "@threa/types"
 import { trace, SpanStatusCode } from "@opentelemetry/api"
+import type { AI } from "../../../lib/ai/ai"
 import { logger } from "../../../lib/logger"
 import { protectToolOutputText } from "../tool-trust-boundary"
 import { isMultimodalToolResult } from "../tools"
@@ -37,6 +37,7 @@ export interface RecordStepParams {
 }
 
 export interface AgentLoopInput {
+  ai: AI
   model: LanguageModel
   systemPrompt: string
   messages: ModelMessage[]
@@ -509,14 +510,12 @@ async function runLoop(input: AgentLoopInput, callbacks: AgentLoopCallbacks): Pr
     const truncatedMessages = truncateMessages(conversation, MAX_MESSAGE_CHARS)
 
     const startTime = Date.now()
-    const result = await generateText({
+    const result = await input.ai.generateTextWithTools({
       model,
       system: fullSystemPrompt,
       messages: truncatedMessages,
       tools: toolDefinitions,
-      experimental_telemetry: telemetry
-        ? { isEnabled: true, functionId: telemetry.functionId, metadata: telemetry.metadata }
-        : undefined,
+      telemetry,
     })
     const durationMs = Date.now() - startTime
 
