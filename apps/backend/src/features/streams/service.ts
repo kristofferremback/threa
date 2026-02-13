@@ -70,10 +70,6 @@ export class StreamService {
     return stream
   }
 
-  async hasAccess(streamId: string, workspaceId: string, memberId: string): Promise<boolean> {
-    return (await this.checkAccess(streamId, workspaceId, memberId)) !== null
-  }
-
   private async checkAccess(streamId: string, workspaceId: string, memberId: string): Promise<Stream | null> {
     return withClient(this.pool, async (client) => {
       const stream = await StreamRepository.findById(client, streamId)

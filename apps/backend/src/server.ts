@@ -270,7 +270,7 @@ export async function startServer(): Promise<ServerInstance> {
   }
   const createThread = (params: Parameters<typeof streamService.createThread>[0]) => streamService.createThread(params)
 
-  const activityService = new ActivityService({ pool, streamService })
+  const activityService = new ActivityService({ pool })
   const systemMessageService = new SystemMessageService({ pool, createMessage })
 
   // Simulation agent - needed for SimulateCommand

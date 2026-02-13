@@ -81,59 +81,20 @@ export const ActivityRepository = {
     opts?: { limit?: number; cursor?: string; unreadOnly?: boolean }
   ): Promise<Activity[]> {
     const limit = opts?.limit ?? 50
+    const hasCursor = opts?.cursor !== undefined
+    const cursor = opts?.cursor ?? ""
     const unreadOnly = opts?.unreadOnly ?? false
-
-    if (opts?.cursor) {
-      if (unreadOnly) {
-        const result = await db.query<ActivityRow>(sql`
-          SELECT id, workspace_id, member_id, activity_type, stream_id, message_id, actor_id, context, read_at, created_at
-          FROM member_activity
-          WHERE member_id = ${memberId}
-            AND workspace_id = ${workspaceId}
-            AND read_at IS NULL
-            AND created_at < (
-              SELECT created_at FROM member_activity
-              WHERE id = ${opts.cursor} AND member_id = ${memberId} AND workspace_id = ${workspaceId}
-            )
-          ORDER BY created_at DESC
-          LIMIT ${limit}
-        `)
-        return result.rows.map(mapRowToActivity)
-      }
-
-      const result = await db.query<ActivityRow>(sql`
-        SELECT id, workspace_id, member_id, activity_type, stream_id, message_id, actor_id, context, read_at, created_at
-        FROM member_activity
-        WHERE member_id = ${memberId}
-          AND workspace_id = ${workspaceId}
-          AND created_at < (
-            SELECT created_at FROM member_activity
-            WHERE id = ${opts.cursor} AND member_id = ${memberId} AND workspace_id = ${workspaceId}
-          )
-        ORDER BY created_at DESC
-        LIMIT ${limit}
-      `)
-      return result.rows.map(mapRowToActivity)
-    }
-
-    if (unreadOnly) {
-      const result = await db.query<ActivityRow>(sql`
-        SELECT id, workspace_id, member_id, activity_type, stream_id, message_id, actor_id, context, read_at, created_at
-        FROM member_activity
-        WHERE member_id = ${memberId}
-          AND workspace_id = ${workspaceId}
-          AND read_at IS NULL
-        ORDER BY created_at DESC
-        LIMIT ${limit}
-      `)
-      return result.rows.map(mapRowToActivity)
-    }
 
     const result = await db.query<ActivityRow>(sql`
       SELECT id, workspace_id, member_id, activity_type, stream_id, message_id, actor_id, context, read_at, created_at
       FROM member_activity
       WHERE member_id = ${memberId}
         AND workspace_id = ${workspaceId}
+        AND (${!unreadOnly} OR read_at IS NULL)
+        AND (${!hasCursor} OR created_at < (
+          SELECT created_at FROM member_activity
+          WHERE id = ${cursor} AND member_id = ${memberId} AND workspace_id = ${workspaceId}
+        ))
       ORDER BY created_at DESC
       LIMIT ${limit}
     `)

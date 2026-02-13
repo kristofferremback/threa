@@ -1,23 +1,21 @@
-import type { Pool } from "pg"
+import type { Pool, PoolClient } from "pg"
 import { ActivityRepository, type Activity } from "./repository"
 import { MemberRepository } from "../workspaces"
+import { StreamRepository, StreamMemberRepository, type Stream } from "../streams"
 import { extractMentionSlugs } from "../agents"
-import type { StreamService } from "../streams"
+import { Visibilities } from "@threa/types"
 import { withClient } from "../../db"
 import { logger } from "../../lib/logger"
 
 interface ActivityServiceDeps {
   pool: Pool
-  streamService: StreamService
 }
 
 export class ActivityService {
   private readonly pool: Pool
-  private readonly streamService: StreamService
 
   constructor(deps: ActivityServiceDeps) {
     this.pool = deps.pool
-    this.streamService = deps.streamService
   }
 
   async processMessageMentions(params: {
@@ -32,30 +30,29 @@ export class ActivityService {
     const mentionSlugs = extractMentionSlugs(contentMarkdown)
     if (mentionSlugs.length === 0) return []
 
-    // Batch-resolve all slugs in one query
-    const members = await MemberRepository.findBySlugs(this.pool, workspaceId, mentionSlugs)
+    // Single connection: resolve slugs, check stream access, insert activities
+    return withClient(this.pool, async (client) => {
+      const members = await MemberRepository.findBySlugs(client, workspaceId, mentionSlugs)
 
-    // Filter out self-mentions
-    const candidates = members.filter((m) => m.id !== actorId)
-    if (candidates.length === 0) return []
+      const candidates = members.filter((m) => m.id !== actorId)
+      if (candidates.length === 0) return []
 
-    // Check access for all candidates concurrently
-    const accessChecks = await Promise.all(
-      candidates.map(async (m) => ({
-        member: m,
-        hasAccess: await this.streamService.hasAccess(streamId, workspaceId, m.id),
-      }))
-    )
+      // Fetch stream once to determine access rules
+      const stream = await StreamRepository.findById(client, streamId)
+      if (!stream || stream.workspaceId !== workspaceId) return []
 
-    const eligible = accessChecks.filter((c) => c.hasAccess).map((c) => c.member)
-    if (eligible.length === 0) return []
+      const eligible = await this.filterByAccess(
+        client,
+        stream,
+        candidates.map((m) => m.id)
+      )
+      if (eligible.size === 0) return []
 
-    // Batch-insert activity rows using a single connection
-    const contentPreview = contentMarkdown.slice(0, 200)
-    const activities: Activity[] = []
+      const contentPreview = contentMarkdown.slice(0, 200)
+      const activities: Activity[] = []
 
-    await withClient(this.pool, async (client) => {
-      for (const member of eligible) {
+      for (const member of candidates) {
+        if (!eligible.has(member.id)) continue
         const activity = await ActivityRepository.insert(client, {
           workspaceId,
           memberId: member.id,
@@ -70,9 +67,27 @@ export class ActivityService {
           activities.push(activity)
         }
       }
-    })
 
-    return activities
+      return activities
+    })
+  }
+
+  /**
+   * Batch-check which memberIds have access to a stream.
+   * Public streams: all pass. Private: single batch membership query.
+   */
+  private async filterByAccess(client: PoolClient, stream: Stream, memberIds: string[]): Promise<Set<string>> {
+    if (stream.rootStreamId) {
+      // Thread: access derived from root stream
+      const rootStream = await StreamRepository.findById(client, stream.rootStreamId)
+      if (!rootStream) return new Set()
+
+      if (rootStream.visibility === Visibilities.PUBLIC) return new Set(memberIds)
+      return StreamMemberRepository.filterMemberIds(client, rootStream.id, memberIds)
+    }
+
+    if (stream.visibility === Visibilities.PUBLIC) return new Set(memberIds)
+    return StreamMemberRepository.filterMemberIds(client, stream.id, memberIds)
   }
 
   async listFeed(
