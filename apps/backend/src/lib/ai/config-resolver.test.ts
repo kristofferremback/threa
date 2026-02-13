@@ -29,6 +29,7 @@ describe("StaticConfigResolver", () => {
 
     const researcherConfig = await resolver.resolve(COMPONENT_PATHS.COMPANION_RESEARCHER)
     expect(researcherConfig.modelId).toBe("openrouter:openai/gpt-oss-120b")
+    expect(researcherConfig.temperature).toBe(0.1)
 
     const embeddingConfig = await resolver.resolve(COMPONENT_PATHS.EMBEDDING)
     expect(embeddingConfig.modelId).toBe("openrouter:openai/text-embedding-3-small")

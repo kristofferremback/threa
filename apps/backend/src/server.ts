@@ -55,14 +55,12 @@ import {
   MentionInvokeHandler,
   createOrphanSessionCleanup,
   createPersonaAgentWorker,
-  Researcher,
+  WorkspaceAgent,
   createSimulationWorker,
   PersonaAgent,
   TraceEmitter,
   SimulationAgent,
   StubSimulationAgent,
-  LangGraphResponseGenerator,
-  StubResponseGenerator,
   AgentSessionMetricsCollector,
   ConversationSummaryService,
   COMPANION_SUMMARY_MODEL_ID,
@@ -337,19 +335,8 @@ export async function startServer(): Promise<ServerInstance> {
 
   const serverId = `server_${ulid()}`
 
-  // Create unified persona agent and register worker
-  // Handles both companion mode and @mention invocations
-  const responseGenerator = config.useStubCompanion
-    ? new StubResponseGenerator()
-    : new LangGraphResponseGenerator({
-        ai,
-        checkpointer,
-        tavilyApiKey: config.ai.tavilyApiKey || undefined,
-        costRecorder: costService,
-      })
-
-  // Create researcher for workspace knowledge retrieval
-  const researcher = new Researcher({ pool, ai, configResolver, embeddingService })
+  // Create workspace agent for on-demand workspace knowledge retrieval
+  const workspaceAgent = new WorkspaceAgent({ pool, ai, configResolver, embeddingService })
 
   const traceEmitter = new TraceEmitter({ io, pool })
   const conversationSummaryService = new ConversationSummaryService({
@@ -359,14 +346,18 @@ export async function startServer(): Promise<ServerInstance> {
   })
   const personaAgent = new PersonaAgent({
     pool,
+    ai,
     traceEmitter,
-    responseGenerator,
     userPreferencesService,
-    researcher,
+    workspaceAgent,
     searchService,
     conversationSummaryService,
     storage,
     modelRegistry,
+    tavilyApiKey: config.ai.tavilyApiKey || undefined,
+    stubResponse: config.useStubCompanion
+      ? "This is a stub response from the companion. The real AI integration is disabled."
+      : undefined,
     createMessage,
     createThread,
   })

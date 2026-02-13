@@ -1,4 +1,4 @@
-import { DynamicStructuredTool } from "@langchain/core/tools"
+import { tool } from "ai"
 import { z } from "zod"
 import { logger } from "../../../lib/logger"
 
@@ -58,8 +58,7 @@ export function isMultimodalToolResult(result: unknown): result is MultimodalToo
  * proper image content blocks that vision models can actually see.
  */
 export function createLoadAttachmentTool(callbacks: LoadAttachmentCallbacks) {
-  return new DynamicStructuredTool({
-    name: "load_attachment",
+  return tool({
     description: `Load an attachment for direct visual analysis. Only use this for images when you need to:
 - Analyze the actual visual content (not just the text extraction/caption)
 - Identify specific visual elements, colors, or layouts
@@ -67,8 +66,8 @@ export function createLoadAttachmentTool(callbacks: LoadAttachmentCallbacks) {
 - Understand diagrams, charts, or visual relationships
 
 For text content from documents, prefer get_attachment which returns the extracted text.`,
-    schema: LoadAttachmentSchema,
-    func: async (input: LoadAttachmentInput) => {
+    inputSchema: LoadAttachmentSchema,
+    execute: async (input) => {
       try {
         const result = await callbacks.loadAttachment(input)
 

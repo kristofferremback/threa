@@ -20,6 +20,13 @@ export interface CompanionInput {
   trigger: AgentTrigger
   /** Conversation history (if any) */
   conversationHistory?: Array<{ role: "user" | "assistant"; content: string }>
+  /** Additional workspace context from other streams for cross-stream memory tests */
+  workspaceContext?: Array<{
+    streamType?: StreamType
+    name?: string
+    description?: string
+    conversationHistory: Array<{ role: "user" | "assistant"; content: string }>
+  }>
   /** Additional context about the stream */
   streamContext?: {
     name?: string
@@ -328,6 +335,28 @@ const threadCases: EvalCase<CompanionInput, CompanionExpected>[] = [
       reason: "Code example request should include actual code",
     }
   ),
+
+  createCase(
+    "thread-correction-001",
+    "Thread: Latest correction in context should win",
+    {
+      message: "Can you summarize the final timeout decision?",
+      streamType: "thread",
+      trigger: "companion",
+      conversationHistory: [
+        { role: "user", content: "Let's set the request timeout to 30 seconds." },
+        { role: "assistant", content: "Sounds good, 30 seconds is a reasonable default." },
+        { role: "user", content: "Actually, let's lower it to 10 seconds for now." },
+      ],
+    },
+    {
+      shouldRespond: true,
+      responseCharacteristics: {
+        shouldContain: ["10 second"],
+      },
+      reason: "Thread responses should use the latest user correction from context",
+    }
+  ),
 ]
 
 // =============================================================================
@@ -391,6 +420,66 @@ const dmCases: EvalCase<CompanionInput, CompanionExpected>[] = [
         shouldNotContain: ["let me know if", "feel free to ask"],
       },
       reason: "Thank you message should get brief acknowledgment, not over-helpful response",
+    }
+  ),
+]
+
+// =============================================================================
+// Workspace Memory Cases (Cross-stream retrieval)
+// =============================================================================
+
+const workspaceMemoryCases: EvalCase<CompanionInput, CompanionExpected>[] = [
+  createCase(
+    "workspace-memory-001",
+    "Workspace Memory: Should recall cross-stream retry decision",
+    {
+      message: "Do you remember the retry strategy we chose for Project Hummingbird?",
+      streamType: "scratchpad",
+      trigger: "companion",
+      workspaceContext: [
+        {
+          streamType: "channel",
+          name: "ops-retros",
+          conversationHistory: [
+            { role: "user", content: "Decision log: Project Hummingbird retry policy is 4 attempts." },
+            { role: "user", content: "Add jitter to retries and cap total backoff at 7 seconds." },
+          ],
+        },
+      ],
+    },
+    {
+      shouldRespond: true,
+      responseCharacteristics: {
+        shouldContain: ["jitter"],
+      },
+      reason: "The agent should retrieve relevant cross-stream decisions when asked to recall prior workspace choices",
+    }
+  ),
+
+  createCase(
+    "workspace-memory-002",
+    "Workspace Memory: Should recall owner from prior workspace notes",
+    {
+      message: "Who owns the release freeze checklist again?",
+      streamType: "scratchpad",
+      trigger: "companion",
+      workspaceContext: [
+        {
+          streamType: "channel",
+          name: "release-planning",
+          conversationHistory: [
+            { role: "user", content: "Release note: Marta owns the release freeze checklist for v2.3." },
+            { role: "assistant", content: "Acknowledged, Marta is the checklist owner." },
+          ],
+        },
+      ],
+    },
+    {
+      shouldRespond: true,
+      responseCharacteristics: {
+        shouldContain: ["Marta"],
+      },
+      reason: "When workspace history contains the owner explicitly, the response should recall that owner",
     }
   ),
 ]
@@ -547,9 +636,10 @@ export const companionCases: EvalCase<CompanionInput, CompanionExpected>[] = [
   ...channelCases,
   ...threadCases,
   ...dmCases,
+  ...workspaceMemoryCases,
   ...edgeCases,
   ...consistencyCases,
 ]
 
 // Export case subsets for targeted testing
-export { scratchpadCases, channelCases, threadCases, dmCases, edgeCases, consistencyCases }
+export { scratchpadCases, channelCases, threadCases, dmCases, workspaceMemoryCases, edgeCases, consistencyCases }

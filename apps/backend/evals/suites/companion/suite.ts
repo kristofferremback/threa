@@ -48,18 +48,17 @@ import {
   PersonaAgent,
   type PersonaAgentInput,
   type PersonaAgentDeps,
-  LangGraphResponseGenerator,
-  Researcher,
+  WorkspaceAgent,
   PersonaRepository,
   TraceEmitter,
   ConversationSummaryService,
+  AgentSessionRepository,
 } from "../../../src/features/agents"
 import { SearchService } from "../../../src/features/search"
 import { UserPreferencesService } from "../../../src/features/user-preferences"
 import { EmbeddingService } from "../../../src/features/memos"
 import { StreamRepository, StreamMemberRepository } from "../../../src/features/streams"
 import { MessageRepository } from "../../../src/features/messaging"
-import { createPostgresCheckpointer } from "../../../src/lib/ai"
 import { createModelRegistry } from "../../../src/lib/ai/model-registry"
 import type { StorageProvider } from "../../../src/lib/storage/s3-client"
 import { EventService } from "../../../src/features/messaging"
@@ -82,6 +81,23 @@ function getModelConfig(ctx: EvalContext): { model: string; temperature: number 
     model: override?.model ?? ctx.permutation.model,
     temperature: override?.temperature ?? ctx.permutation.temperature ?? COMPANION_TEMPERATURE,
   }
+}
+
+const STREAM_TYPE_TO_DB_STREAM_TYPE: Record<
+  CompanionInput["streamType"],
+  (typeof StreamTypes)[keyof typeof StreamTypes]
+> = {
+  scratchpad: StreamTypes.SCRATCHPAD,
+  channel: StreamTypes.CHANNEL,
+  thread: StreamTypes.THREAD,
+  dm: StreamTypes.DM,
+  system: StreamTypes.SYSTEM,
+}
+
+function mapStreamTypeToDbStreamType(
+  streamType: CompanionInput["streamType"]
+): (typeof StreamTypes)[keyof typeof StreamTypes] {
+  return STREAM_TYPE_TO_DB_STREAM_TYPE[streamType]
 }
 
 /**
@@ -132,16 +148,7 @@ async function setupTestData(
   )
 
   // Map stream type from eval input to database type
-  const dbStreamType =
-    input.streamType === "scratchpad"
-      ? StreamTypes.SCRATCHPAD
-      : input.streamType === "channel"
-        ? StreamTypes.CHANNEL
-        : input.streamType === "thread"
-          ? StreamTypes.THREAD
-          : input.streamType === "dm"
-            ? StreamTypes.DM
-            : StreamTypes.SCRATCHPAD
+  const dbStreamType = mapStreamTypeToDbStreamType(input.streamType)
 
   // Create the stream
   const testStreamId = generateStreamId()
@@ -164,19 +171,47 @@ async function setupTestData(
   // Create event service for message creation
   const eventService = new EventService(pool)
 
-  // Create conversation history if provided
-  if (input.conversationHistory && input.conversationHistory.length > 0) {
-    for (const msg of input.conversationHistory) {
+  const seedConversationHistory = async (
+    targetStreamId: string,
+    history: Array<{ role: "user" | "assistant"; content: string }>
+  ): Promise<void> => {
+    for (const msg of history) {
       const authorId = msg.role === "user" ? ctx.userId : testPersonaId
       const authorType = msg.role === "user" ? AuthorTypes.MEMBER : AuthorTypes.PERSONA
       await eventService.createMessage({
         workspaceId: ctx.workspaceId,
-        streamId: testStreamId,
+        streamId: targetStreamId,
         authorId,
         authorType,
         contentJson: parseMarkdown(msg.content),
         contentMarkdown: msg.content,
       })
+    }
+  }
+
+  // Create conversation history if provided
+  if (input.conversationHistory && input.conversationHistory.length > 0) {
+    await seedConversationHistory(testStreamId, input.conversationHistory)
+  }
+
+  // Seed additional workspace context in separate streams for cross-stream retrieval tests
+  if (input.workspaceContext && input.workspaceContext.length > 0) {
+    for (const contextStream of input.workspaceContext) {
+      const contextStreamId = generateStreamId()
+      await StreamRepository.insert(pool, {
+        id: contextStreamId,
+        workspaceId: ctx.workspaceId,
+        type: mapStreamTypeToDbStreamType(contextStream.streamType ?? "scratchpad"),
+        displayName: contextStream.name ?? `Eval Context ${ulid().toLowerCase().slice(0, 6)}`,
+        slug: contextStream.streamType === "channel" ? `eval-context-${ulid().toLowerCase().slice(0, 8)}` : undefined,
+        description: contextStream.description,
+        visibility: "private",
+        companionMode: "off",
+        createdBy: ctx.userId,
+      })
+
+      await StreamMemberRepository.insert(pool, contextStreamId, ctx.userId)
+      await seedConversationHistory(contextStreamId, contextStream.conversationHistory)
     }
   }
 
@@ -214,14 +249,18 @@ async function runCompanionTask(input: CompanionInput, ctx: EvalContext): Promis
   }
 
   try {
+    if (!ctx.credentials.tavilyApiKey) {
+      throw new Error("TAVILY_API_KEY is required for companion evals to run with full web_search tool access")
+    }
+
     // Set up test data in the database
     const { personaId, streamId, messageId } = await setupTestData(input, ctx)
+    let createdThreadId: string | undefined
 
     // Create dependencies for PersonaAgent
-    const checkpointer = await createPostgresCheckpointer(ctx.pool)
     const embeddingService = new EmbeddingService({ ai: ctx.ai })
     const userPreferencesService = new UserPreferencesService(ctx.pool)
-    const researcher = new Researcher({
+    const workspaceAgent = new WorkspaceAgent({
       pool: ctx.pool,
       ai: ctx.ai,
       configResolver: ctx.configResolver,
@@ -230,13 +269,6 @@ async function runCompanionTask(input: CompanionInput, ctx: EvalContext): Promis
     const searchService = new SearchService({
       pool: ctx.pool,
       embeddingService,
-    })
-
-    const responseGenerator = new LangGraphResponseGenerator({
-      ai: ctx.ai,
-      checkpointer,
-      // No tavilyApiKey - web search disabled for evals
-      costRecorder: undefined,
     })
 
     // Stub Socket.io server for tracing - evals don't need real-time updates
@@ -272,6 +304,7 @@ async function runCompanionTask(input: CompanionInput, ctx: EvalContext): Promis
         parentStreamId: params.parentStreamId,
         parentMessageId: params.parentMessageId,
       })
+      createdThreadId = threadId
       return { id: threadId }
     }
 
@@ -291,14 +324,15 @@ async function runCompanionTask(input: CompanionInput, ctx: EvalContext): Promis
     })
     const personaAgent = new PersonaAgent({
       pool: ctx.pool,
+      ai: ctx.ai,
       traceEmitter,
-      responseGenerator,
       userPreferencesService,
-      researcher,
+      workspaceAgent,
       searchService,
       conversationSummaryService,
       storage: stubStorage,
       modelRegistry: createModelRegistry(),
+      tavilyApiKey: ctx.credentials.tavilyApiKey,
       createMessage,
       createThread,
     })
@@ -314,10 +348,12 @@ async function runCompanionTask(input: CompanionInput, ctx: EvalContext): Promis
     }
 
     // Run the agent!
-    await personaAgent.run(agentInput)
+    const runResult = await personaAgent.run(agentInput)
 
-    // Read back messages sent by the agent
-    const allMessages = await MessageRepository.list(ctx.pool, streamId, { limit: 100 })
+    // Read back messages sent by the agent.
+    // Mention-triggered responses are posted in the spawned thread stream.
+    const responseStreamId = input.trigger === "mention" && createdThreadId ? createdThreadId : streamId
+    const allMessages = await MessageRepository.list(ctx.pool, responseStreamId, { limit: 100 })
     const agentMessages = allMessages.filter((m) => m.authorId === personaId)
 
     const messages: CompanionMessage[] = agentMessages.map((m) => ({
@@ -325,10 +361,21 @@ async function runCompanionTask(input: CompanionInput, ctx: EvalContext): Promis
       // Sources are stored in contentJson but we just need content for evals
     }))
 
+    const toolCalls =
+      runResult.sessionId == null
+        ? []
+        : (await AgentSessionRepository.findStepsBySession(ctx.pool, runResult.sessionId))
+            .filter((step) => step.stepType === "web_search")
+            .map((step) => ({
+              name: "web_search",
+              args: { query: typeof step.content === "string" ? step.content : undefined },
+            }))
+
     return {
       input,
       messages,
       responded: messages.length > 0,
+      toolCalls,
     }
   } catch (error) {
     return {

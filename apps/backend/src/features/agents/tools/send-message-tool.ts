@@ -1,4 +1,4 @@
-import { DynamicStructuredTool } from "@langchain/core/tools"
+import { tool } from "ai"
 import { z } from "zod"
 import type { SourceItem } from "@threa/types"
 
@@ -10,7 +10,7 @@ export type SendMessageInput = z.infer<typeof SendMessageSchema>
 
 /**
  * Extended input for internal use (not exposed to the LLM tool schema).
- * The sources are added programmatically by the graph, not by the LLM.
+ * The sources are added programmatically by the agent loop, not by the LLM.
  */
 export interface SendMessageInputWithSources extends SendMessageInput {
   sources?: SourceItem[]
@@ -21,45 +21,13 @@ export interface SendMessageResult {
   content: string
 }
 
-export interface CreateSendMessageToolParams {
-  onSendMessage: (input: SendMessageInput) => Promise<SendMessageResult>
-  maxMessages: number
-  getMessagesSent: () => number
-}
-
 /**
- * Creates a send_message tool for the agent to explicitly send messages.
- *
- * The tool tracks message count and enforces a maximum limit per session.
- * When the limit is reached, it returns an error instead of sending.
+ * Creates a send_message tool definition WITHOUT an execute handler.
+ * The agent loop intercepts send_message calls and stages them (prep-then-send pattern).
  */
-export function createSendMessageTool(params: CreateSendMessageToolParams) {
-  const { onSendMessage, maxMessages, getMessagesSent } = params
-
-  return new DynamicStructuredTool({
-    name: "send_message",
+export function createSendMessageTool() {
+  return tool({
     description: "Send a message to the conversation. You can call this multiple times to send multiple messages.",
-    schema: SendMessageSchema,
-    func: async (input: SendMessageInput) => {
-      const messagesSent = getMessagesSent()
-
-      if (messagesSent >= maxMessages) {
-        return JSON.stringify({
-          error: `Maximum message limit (${maxMessages}) reached for this session. Cannot send more messages.`,
-          messagesSent,
-          maxMessages,
-        })
-      }
-
-      const result = await onSendMessage(input)
-
-      return JSON.stringify({
-        success: true,
-        messageId: result.messageId,
-        content: result.content,
-        messagesSent: messagesSent + 1,
-        messagesRemaining: maxMessages - messagesSent - 1,
-      })
-    },
+    inputSchema: SendMessageSchema,
   })
 }

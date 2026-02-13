@@ -1,4 +1,4 @@
-import { DynamicStructuredTool } from "@langchain/core/tools"
+import { tool } from "ai"
 import { z } from "zod"
 import { STREAM_TYPES } from "@threa/types"
 import { logger } from "../../../lib/logger"
@@ -101,8 +101,7 @@ const MAX_RESULTS = 10
  * Creates a search_messages tool for semantic/exact workspace message search.
  */
 export function createSearchMessagesTool(callbacks: SearchToolsCallbacks) {
-  return new DynamicStructuredTool({
-    name: "search_messages",
+  return tool({
     description: `Search for messages in the workspace knowledge base. Use this to find:
 - Previous discussions about a topic
 - Specific information mentioned in past conversations
@@ -110,8 +109,8 @@ export function createSearchMessagesTool(callbacks: SearchToolsCallbacks) {
 
 Set exact=true to find literal phrase matches (useful for error messages, IDs, or quoted text).
 Optionally filter by stream using ID (stream_xxx), slug (general), or prefixed slug (#general).`,
-    schema: SearchMessagesSchema,
-    func: async (input: SearchMessagesInput) => {
+    inputSchema: SearchMessagesSchema,
+    execute: async (input) => {
       try {
         const results = await callbacks.searchMessages(input)
 
@@ -157,14 +156,13 @@ Optionally filter by stream using ID (stream_xxx), slug (general), or prefixed s
  * Creates a search_streams tool to find streams in the workspace.
  */
 export function createSearchStreamsTool(callbacks: SearchToolsCallbacks) {
-  return new DynamicStructuredTool({
-    name: "search_streams",
+  return tool({
     description: `Search for streams (channels, scratchpads, DMs) in the workspace. Use this to find:
 - Specific channels or conversations
 - Where certain topics are discussed
 - Related discussions in other streams`,
-    schema: SearchStreamsSchema,
-    func: async (input: SearchStreamsInput) => {
+    inputSchema: SearchStreamsSchema,
+    execute: async (input) => {
       try {
         const results = await callbacks.searchStreams(input)
 
@@ -204,14 +202,13 @@ export function createSearchStreamsTool(callbacks: SearchToolsCallbacks) {
  * Creates a search_users tool to find users in the workspace.
  */
 export function createSearchUsersTool(callbacks: SearchToolsCallbacks) {
-  return new DynamicStructuredTool({
-    name: "search_users",
+  return tool({
     description: `Search for users in the workspace by name or email. Use this to find:
 - A specific person
 - Who to ask about a topic
 - Contact information`,
-    schema: SearchUsersSchema,
-    func: async (input: SearchUsersInput) => {
+    inputSchema: SearchUsersSchema,
+    execute: async (input) => {
       try {
         const results = await callbacks.searchUsers(input)
 
@@ -250,16 +247,15 @@ const MAX_STREAM_MESSAGES = 20
  * Creates a get_stream_messages tool to retrieve recent messages from a stream.
  */
 export function createGetStreamMessagesTool(callbacks: SearchToolsCallbacks) {
-  return new DynamicStructuredTool({
-    name: "get_stream_messages",
+  return tool({
     description: `Get recent messages from a specific stream (channel, scratchpad, DM, or thread). Use this to:
 - See what's being discussed in another stream
 - Get context from a related conversation
 - Check recent activity in a channel
 
 You can reference streams by their ID (stream_xxx), slug (general), or prefixed slug (#general).`,
-    schema: GetStreamMessagesSchema,
-    func: async (input: GetStreamMessagesInput) => {
+    inputSchema: GetStreamMessagesSchema,
+    execute: async (input) => {
       try {
         const limit = Math.min(input.limit ?? 10, MAX_STREAM_MESSAGES)
         const results = await callbacks.getStreamMessages({ ...input, limit })

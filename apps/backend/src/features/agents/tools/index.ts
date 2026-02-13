@@ -59,6 +59,12 @@ export {
   type LoadExcelSectionCallbacks,
   type LoadExcelSectionResult,
 } from "./load-excel-section-tool"
+export {
+  createWorkspaceResearchTool,
+  type WorkspaceResearchInput,
+  type WorkspaceResearchCallbacks,
+  type WorkspaceResearchToolResult,
+} from "./workspace-research-tool"
 
 /**
  * Check if a tool is enabled for a persona.

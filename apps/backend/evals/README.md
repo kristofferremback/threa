@@ -217,9 +217,12 @@ Langfuse integration provides traces for debugging failed cases (unless `--no-la
 
 ## Environment Variables
 
-| Variable              | Required | Description             |
-| --------------------- | -------- | ----------------------- |
-| `OPENROUTER_API_KEY`  | Yes      | API key for model calls |
-| `LANGFUSE_PUBLIC_KEY` | No       | Langfuse observability  |
-| `LANGFUSE_SECRET_KEY` | No       | Langfuse observability  |
-| `DATABASE_URL`        | Yes      | PostgreSQL connection   |
+| Variable              | Required | Description                                 |
+| --------------------- | -------- | ------------------------------------------- |
+| `OPENROUTER_API_KEY`  | Yes      | API key for model calls                     |
+| `TAVILY_API_KEY`      | Yes\*    | Tavily key for companion `web_search` evals |
+| `LANGFUSE_PUBLIC_KEY` | No       | Langfuse observability                      |
+| `LANGFUSE_SECRET_KEY` | No       | Langfuse observability                      |
+| `DATABASE_URL`        | Yes      | PostgreSQL connection                       |
+
+\* Required when running the `companion` suite, which now uses the real `web_search` tool path.

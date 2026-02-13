@@ -200,6 +200,8 @@ Invariants are constraints that must hold across the entire codebase. Reference 
 
 **INV-53: Subscribe+Bootstrap Pairing** — Every socket room subscribe MUST be paired with a bootstrap fetch. No gaps allowed. When re-subscribing (navigation back, socket reconnect), invalidate bootstrap to fill the event gap. See `docs/frontend/subscribe-then-bootstrap.md`.
 
+**INV-54: No Language-Specific Heuristic Decisions** — Never assume English (or any specific language) and never use language-specific literal/regex heuristics to decide semantic behavior (for example memory recall detection, trivial-message filtering, research gating, or intent classification). Use LLM/model-based semantic decisions for language-dependent behavior.
+
 When introducing a new invariant:
 
 1. Document here with next available ID

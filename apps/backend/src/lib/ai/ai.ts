@@ -15,7 +15,7 @@ import {
   embed as aiEmbed,
   embedMany as aiEmbedMany,
 } from "ai"
-import type { Embedding, LanguageModel, EmbeddingModel, ModelMessage } from "ai"
+import type { Embedding, LanguageModel, EmbeddingModel, ModelMessage, Tool } from "ai"
 import type { z } from "zod"
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
 import { ChatOpenAI } from "@langchain/openai"
@@ -176,6 +176,25 @@ export interface GenerateTextOptions {
   context?: CostContext
 }
 
+/**
+ * Options for generateText with tool support.
+ * Accepts a pre-resolved LanguageModel for use in agent loops that
+ * resolve the model once and call generateText many times.
+ */
+export interface GenerateTextWithToolsOptions {
+  model: LanguageModel
+  system?: string
+  messages: ModelMessage[]
+  tools?: Record<string, Tool<any, any>>
+  telemetry?: TelemetryConfig
+}
+
+export interface GenerateTextWithToolsResult {
+  text: string
+  toolCalls: Array<{ toolCallId: string; toolName: string; input: unknown }>
+  response: { messages: ModelMessage[] }
+}
+
 export interface GenerateObjectOptions<T extends z.ZodType> {
   model: string
   schema: T
@@ -264,6 +283,7 @@ export interface LangChainModelResult {
 export interface AI {
   // Generation
   generateText(options: GenerateTextOptions): Promise<TextResult>
+  generateTextWithTools(options: GenerateTextWithToolsOptions): Promise<GenerateTextWithToolsResult>
   generateObject<T extends z.ZodType>(options: GenerateObjectOptions<T>): Promise<ObjectResult<z.infer<T>>>
 
   // Embeddings
@@ -736,6 +756,29 @@ export function createAI(config: AIConfig): AI {
         value: response.text,
         response,
         usage,
+      }
+    },
+
+    async generateTextWithTools(options: GenerateTextWithToolsOptions): Promise<GenerateTextWithToolsResult> {
+      const response = await aiGenerateText({
+        model: options.model,
+        system: options.system,
+        messages: options.messages,
+        tools: options.tools,
+        // @ts-expect-error AI SDK telemetry types are stricter than needed; our TelemetryConfig output is compatible at runtime
+        experimental_telemetry: options.telemetry
+          ? { isEnabled: true, functionId: options.telemetry.functionId, metadata: options.telemetry.metadata }
+          : undefined,
+      })
+
+      return {
+        text: response.text,
+        toolCalls: response.toolCalls.map((tc) => ({
+          toolCallId: tc.toolCallId,
+          toolName: tc.toolName,
+          input: tc.input,
+        })),
+        response: { messages: response.response.messages },
       }
     },
 

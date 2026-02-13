@@ -139,7 +139,7 @@ describe("ConversationSummaryService", () => {
       | undefined
     expect(firstGenerateObjectCall).toMatchObject({
       context: { workspaceId: "ws_1", origin: "system" },
-      telemetry: { functionId: "companion-conversation-summary-update" },
+      telemetry: { functionId: "summary-update" },
     })
     const repairFn = firstGenerateObjectCall?.repair
     expect(typeof repairFn).toBe("function")

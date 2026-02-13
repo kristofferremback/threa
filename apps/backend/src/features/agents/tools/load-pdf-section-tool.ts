@@ -1,4 +1,4 @@
-import { DynamicStructuredTool } from "@langchain/core/tools"
+import { tool } from "ai"
 import { z } from "zod"
 import { logger } from "../../../lib/logger"
 
@@ -54,8 +54,7 @@ export interface LoadPdfSectionCallbacks {
  * page ranges before calling this tool.
  */
 export function createLoadPdfSectionTool(callbacks: LoadPdfSectionCallbacks) {
-  return new DynamicStructuredTool({
-    name: "load_pdf_section",
+  return tool({
     description: `Load specific pages from a large PDF document. Only use this when:
 - The PDF has more than 25 pages (large PDFs don't have full content in context)
 - You need to read specific sections based on the section metadata
@@ -64,8 +63,8 @@ export function createLoadPdfSectionTool(callbacks: LoadPdfSectionCallbacks) {
 The attachment extraction includes section metadata with page ranges. Use that to determine which pages to load.
 
 For small/medium PDFs (<25 pages), full content is already available in the extraction - don't use this tool.`,
-    schema: LoadPdfSectionSchema,
-    func: async (input: LoadPdfSectionInput) => {
+    inputSchema: LoadPdfSectionSchema,
+    execute: async (input) => {
       try {
         // Page range validation is handled by the Zod schema (.refine())
         const result = await callbacks.loadPdfSection(input)

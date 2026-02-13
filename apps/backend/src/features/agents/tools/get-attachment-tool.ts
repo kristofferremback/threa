@@ -1,4 +1,4 @@
-import { DynamicStructuredTool } from "@langchain/core/tools"
+import { tool } from "ai"
 import { z } from "zod"
 import type { ExtractionContentType, ChartData, TableData, DiagramData } from "@threa/types"
 import { logger } from "../../../lib/logger"
@@ -32,8 +32,7 @@ export interface GetAttachmentCallbacks {
  * Creates a get_attachment tool for retrieving full attachment details.
  */
 export function createGetAttachmentTool(callbacks: GetAttachmentCallbacks) {
-  return new DynamicStructuredTool({
-    name: "get_attachment",
+  return tool({
     description: `Get full details about a specific attachment including its extracted content.
 
 Use this after search_attachments to get:
@@ -42,8 +41,8 @@ Use this after search_attachments to get:
 - Full content that was summarized in the search results
 
 This provides text-based analysis results. Use load_attachment if you need to directly analyze the visual content.`,
-    schema: GetAttachmentSchema,
-    func: async (input: GetAttachmentInput) => {
+    inputSchema: GetAttachmentSchema,
+    execute: async (input) => {
       try {
         const result = await callbacks.getAttachment(input)
 
