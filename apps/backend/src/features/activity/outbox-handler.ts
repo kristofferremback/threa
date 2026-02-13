@@ -108,22 +108,24 @@ export class ActivityFeedHandler implements OutboxHandler {
             contentMarkdown: messageEvent.payload.contentMarkdown,
           })
 
-          // Publish activity:created outbox event for each new activity (real-time delivery)
-          for (const activity of activities) {
+          // Publish all activity:created outbox events in a single transaction
+          if (activities.length > 0) {
             await withTransaction(this.db, async (client) => {
-              await OutboxRepository.insert(client, "activity:created", {
-                workspaceId,
-                targetMemberId: activity.memberId,
-                activity: {
-                  id: activity.id,
-                  activityType: activity.activityType,
-                  streamId: activity.streamId,
-                  messageId: activity.messageId,
-                  actorId: activity.actorId,
-                  context: activity.context,
-                  createdAt: activity.createdAt.toISOString(),
-                },
-              })
+              for (const activity of activities) {
+                await OutboxRepository.insert(client, "activity:created", {
+                  workspaceId,
+                  targetMemberId: activity.memberId,
+                  activity: {
+                    id: activity.id,
+                    activityType: activity.activityType,
+                    streamId: activity.streamId,
+                    messageId: activity.messageId,
+                    actorId: activity.actorId,
+                    context: activity.context,
+                    createdAt: activity.createdAt.toISOString(),
+                  },
+                })
+              }
             })
           }
 

@@ -143,6 +143,8 @@ export interface WorkspaceBootstrap {
   emojiWeights: Record<string, number>
   commands: CommandInfo[]
   unreadCounts: Record<string, number>
+  mentionCounts: Record<string, number>
+  unreadActivityCount: number
   userPreferences: UserPreferences
   invitations?: WorkspaceInvitation[]
 }

@@ -91,7 +91,10 @@ export const ActivityRepository = {
           WHERE member_id = ${memberId}
             AND workspace_id = ${workspaceId}
             AND read_at IS NULL
-            AND created_at < (SELECT created_at FROM member_activity WHERE id = ${opts.cursor})
+            AND created_at < (
+              SELECT created_at FROM member_activity
+              WHERE id = ${opts.cursor} AND member_id = ${memberId} AND workspace_id = ${workspaceId}
+            )
           ORDER BY created_at DESC
           LIMIT ${limit}
         `)
@@ -103,7 +106,10 @@ export const ActivityRepository = {
         FROM member_activity
         WHERE member_id = ${memberId}
           AND workspace_id = ${workspaceId}
-          AND created_at < (SELECT created_at FROM member_activity WHERE id = ${opts.cursor})
+          AND created_at < (
+            SELECT created_at FROM member_activity
+            WHERE id = ${opts.cursor} AND member_id = ${memberId} AND workspace_id = ${workspaceId}
+          )
         ORDER BY created_at DESC
         LIMIT ${limit}
       `)

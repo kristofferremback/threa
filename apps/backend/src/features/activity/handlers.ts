@@ -11,7 +11,8 @@ export function createActivityHandlers({ activityService }: Dependencies) {
       const memberId = req.member!.id
       const workspaceId = req.workspaceId!
 
-      const limit = req.query.limit ? Number(req.query.limit) : 50
+      const rawLimit = req.query.limit ? Number(req.query.limit) : 50
+      const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(rawLimit, 1), 100) : 50
       const cursor = typeof req.query.cursor === "string" ? req.query.cursor : undefined
       const unreadOnly = req.query.unreadOnly === "true"
 

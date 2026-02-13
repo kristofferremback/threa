@@ -3,6 +3,7 @@ import { ActivityRepository, type Activity } from "./repository"
 import { MemberRepository } from "../workspaces"
 import { extractMentionSlugs } from "../agents/mention-extractor"
 import type { StreamService } from "../streams"
+import { withClient } from "../../db"
 import { logger } from "../../lib/logger"
 
 interface ActivityServiceDeps {
@@ -31,38 +32,45 @@ export class ActivityService {
     const mentionSlugs = extractMentionSlugs(contentMarkdown)
     if (mentionSlugs.length === 0) return []
 
+    // Batch-resolve all slugs in one query
+    const members = await MemberRepository.findBySlugs(this.pool, workspaceId, mentionSlugs)
+
+    // Filter out self-mentions
+    const candidates = members.filter((m) => m.id !== actorId)
+    if (candidates.length === 0) return []
+
+    // Check access for all candidates concurrently
+    const accessChecks = await Promise.all(
+      candidates.map(async (m) => ({
+        member: m,
+        hasAccess: await this.streamService.hasAccess(streamId, workspaceId, m.id),
+      }))
+    )
+
+    const eligible = accessChecks.filter((c) => c.hasAccess).map((c) => c.member)
+    if (eligible.length === 0) return []
+
+    // Batch-insert activity rows using a single connection
+    const contentPreview = contentMarkdown.slice(0, 200)
     const activities: Activity[] = []
 
-    for (const slug of mentionSlugs) {
-      const member = await MemberRepository.findBySlug(this.pool, workspaceId, slug)
-
-      // Skip non-members (could be a persona slug)
-      if (!member) continue
-
-      // Skip self-mentions
-      if (member.id === actorId) continue
-
-      // Skip if target can't access the stream
-      const hasAccess = await this.streamService.hasAccess(streamId, workspaceId, member.id)
-      if (!hasAccess) continue
-
-      const activity = await ActivityRepository.insert(this.pool, {
-        workspaceId,
-        memberId: member.id,
-        activityType: "mention",
-        streamId,
-        messageId,
-        actorId,
-        context: {
-          contentPreview: contentMarkdown.slice(0, 200),
-        },
-      })
-
-      // null means dedup (ON CONFLICT DO NOTHING) — already tracked
-      if (activity) {
-        activities.push(activity)
+    await withClient(this.pool, async (client) => {
+      for (const member of eligible) {
+        const activity = await ActivityRepository.insert(client, {
+          workspaceId,
+          memberId: member.id,
+          activityType: "mention",
+          streamId,
+          messageId,
+          actorId,
+          context: { contentPreview },
+        })
+        // null means dedup (ON CONFLICT DO NOTHING) — already tracked
+        if (activity) {
+          activities.push(activity)
+        }
       }
-    }
+    })
 
     return activities
   }
