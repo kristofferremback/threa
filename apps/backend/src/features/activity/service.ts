@@ -1,7 +1,7 @@
 import type { Pool } from "pg"
 import { ActivityRepository, type Activity } from "./repository"
 import { MemberRepository } from "../workspaces"
-import { extractMentionSlugs } from "../agents/mention-extractor"
+import { extractMentionSlugs } from "../agents"
 import type { StreamService } from "../streams"
 import { withClient } from "../../db"
 import { logger } from "../../lib/logger"
