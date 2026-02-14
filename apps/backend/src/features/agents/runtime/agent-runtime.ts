@@ -175,13 +175,15 @@ export class AgentRuntime {
       const truncatedMessages = truncateMessages(conversation, MAX_MESSAGE_CHARS)
 
       const startTime = Date.now()
-      const result = await ai.generateTextWithTools({
-        model,
-        system: fullSystemPrompt,
-        messages: truncatedMessages,
-        tools: this.toolDefs,
-        telemetry: this.config.telemetry,
-      })
+      const result = await this.wrapWithObserverContext(() =>
+        ai.generateTextWithTools({
+          model,
+          system: fullSystemPrompt,
+          messages: truncatedMessages,
+          tools: this.toolDefs,
+          telemetry: this.config.telemetry,
+        })
+      )
       const durationMs = Date.now() - startTime
 
       // Record thinking
@@ -494,6 +496,23 @@ export class AgentRuntime {
         logger.warn({ err, eventType: event.type }, "Observer failed to handle event")
       }
     }
+  }
+
+  /**
+   * Compose all observers' wrapExecution hooks around an async operation.
+   * Allows OTEL observer to set the active span context so that
+   * child spans (e.g., from Vercel AI SDK) nest under the root span.
+   */
+  private async wrapWithObserverContext<T>(fn: () => Promise<T>): Promise<T> {
+    let wrapped = fn
+    for (const observer of this.observers) {
+      if (observer.wrapExecution) {
+        const prev = wrapped
+        const obs = observer
+        wrapped = () => obs.wrapExecution!(prev)
+      }
+    }
+    return wrapped()
   }
 
   // ---------------------------------------------------------------------------
