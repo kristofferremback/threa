@@ -138,7 +138,10 @@ export function createWorkspaceHandlers({
       // approximation for bootstrap since ancestor-inherited mutes are rare).
       const streamTypeMap = new Map(streams.map((s) => [s.id, s.type]))
       const mutedStreamIds = streamMemberships
-        .filter((m) => getEffectiveLevel(m.notificationLevel, streamTypeMap.get(m.streamId)!) === "muted")
+        .filter((m) => {
+          const type = streamTypeMap.get(m.streamId)
+          return type && getEffectiveLevel(m.notificationLevel, type) === "muted"
+        })
         .map((m) => m.streamId)
 
       // Include invitations for admin+ members
