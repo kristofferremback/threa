@@ -89,8 +89,11 @@ export class ActivityFeedHandler implements OutboxHandler {
 
           const { streamId, workspaceId, event: messageEvent } = payload
 
-          // Only process messages from human members (avoid persona/system loops)
-          if (messageEvent.actorType !== AuthorTypes.MEMBER) {
+          // Skip system-authored messages (join/leave notices etc.) — no meaningful
+          // content for mention detection or notification-level activity. Member and
+          // persona messages both get processed: agents can @mention people and their
+          // messages should surface in the activity feed based on notification levels.
+          if (messageEvent.actorType === AuthorTypes.SYSTEM) {
             lastProcessedId = event.id
             continue
           }

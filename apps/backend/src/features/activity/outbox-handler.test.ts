@@ -96,9 +96,25 @@ describe("ActivityFeedHandler", () => {
     })
   })
 
-  it("should skip non-MEMBER author types to avoid persona loops", async () => {
+  it("should process persona messages for mentions and notifications", async () => {
     const event = makeMessageCreatedEvent(1n, {
       actorType: "persona",
+      actorId: "persona_agent1",
+    })
+
+    spyOn(OutboxRepository, "fetchAfterId").mockResolvedValue([event] as any)
+
+    const { handler, activityService } = createHandler()
+    handler.handle()
+
+    await new Promise((r) => setTimeout(r, 300))
+
+    expect(activityService.processMessageMentions).toHaveBeenCalled()
+  })
+
+  it("should skip system-authored messages", async () => {
+    const event = makeMessageCreatedEvent(1n, {
+      actorType: "system",
     })
 
     spyOn(OutboxRepository, "fetchAfterId").mockResolvedValue([event] as any)
