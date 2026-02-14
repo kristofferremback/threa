@@ -17,6 +17,7 @@ import {
   type StreamsReadAllOutboxPayload,
   type UserPreferencesUpdatedOutboxPayload,
   type ActivityCreatedOutboxPayload,
+  type StreamDisplayNameUpdatedPayload,
 } from "./repository"
 import type { UserSocketRegistry } from "../user-socket-registry"
 import { logger } from "../logger"
@@ -201,6 +202,20 @@ export class BroadcastHandler implements OutboxHandler {
       this.io.to(`ws:${workspaceId}:stream:${payload.streamId}`).emit(event.eventType, event.payload)
       if (payload.parentStreamId) {
         this.io.to(`ws:${workspaceId}:stream:${payload.parentStreamId}`).emit(event.eventType, event.payload)
+      }
+      return
+    }
+
+    // Display name updates for public streams go to the workspace room so all
+    // workspace members can update their bootstrap cache (e.g. for activity/search
+    // name resolution on streams the user isn't a member of). Private stream names
+    // stay stream-scoped to avoid leaking DM/scratchpad thread names.
+    if (isOutboxEventType(event, "stream:display_name_updated")) {
+      const payload = event.payload as StreamDisplayNameUpdatedPayload
+      if (payload.visibility === "public") {
+        this.io.to(`ws:${workspaceId}`).emit(event.eventType, event.payload)
+      } else {
+        this.io.to(`ws:${workspaceId}:stream:${payload.streamId}`).emit(event.eventType, event.payload)
       }
       return
     }

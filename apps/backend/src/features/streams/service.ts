@@ -8,6 +8,7 @@ import { MessageRepository } from "../messaging"
 import { OutboxRepository } from "../../lib/outbox"
 import { streamId, eventId } from "../../lib/id"
 import { DuplicateSlugError, HttpError, StreamNotFoundError, MessageNotFoundError } from "../../lib/errors"
+import { formatParticipantNames } from "./display-name"
 import {
   StreamTypes,
   Visibilities,
@@ -160,6 +161,42 @@ export class StreamService {
     })
   }
 
+  /**
+   * Resolve DM display names for bootstrap. DMs have null displayName in the DB
+   * because the name is viewer-dependent ("Max" vs "Sam" depending on who's looking).
+   * This populates displayName with formatted participant names for the viewing member.
+   */
+  async resolveDmDisplayNames(
+    streams: StreamWithPreview[],
+    workspaceMembers: { id: string; name: string }[],
+    viewingMemberId: string
+  ): Promise<StreamWithPreview[]> {
+    const dmStreams = streams.filter((s) => s.type === "dm")
+    if (dmStreams.length === 0) return streams
+
+    const dmStreamIds = dmStreams.map((s) => s.id)
+    const allDmMembers = await StreamMemberRepository.list(this.pool, { streamIds: dmStreamIds })
+
+    const memberNameMap = new Map(workspaceMembers.map((m) => [m.id, m.name]))
+
+    const membersByStream = new Map<string, { id: string; name: string }[]>()
+    for (const sm of allDmMembers) {
+      const name = memberNameMap.get(sm.memberId)
+      if (!name) continue
+      const list = membersByStream.get(sm.streamId) ?? []
+      list.push({ id: sm.memberId, name })
+      membersByStream.set(sm.streamId, list)
+    }
+
+    const dmNameMap = new Map<string, string>()
+    for (const dm of dmStreams) {
+      const participants = membersByStream.get(dm.id) ?? []
+      dmNameMap.set(dm.id, formatParticipantNames(participants, viewingMemberId))
+    }
+
+    return streams.map((s) => (dmNameMap.has(s.id) ? { ...s, displayName: dmNameMap.get(s.id)! } : s))
+  }
+
   async create(params: CreateStreamParams): Promise<Stream> {
     switch (params.type) {
       case StreamTypes.SCRATCHPAD:
@@ -283,6 +320,12 @@ export class StreamService {
 
       // Atomically insert or find existing thread
       // Uses ON CONFLICT DO NOTHING to handle race conditions
+      // Inherit visibility from the root stream — threads in public channels
+      // are public, threads in private DMs/scratchpads stay private.
+      const rootStream =
+        rootStreamId === parentStream.id ? parentStream : await StreamRepository.findById(client, rootStreamId)
+      const inheritedVisibility = rootStream?.visibility ?? Visibilities.PRIVATE
+
       const { stream, created } = await StreamRepository.insertThreadOrFind(client, {
         id,
         workspaceId: params.workspaceId,
@@ -290,7 +333,7 @@ export class StreamService {
         parentStreamId: params.parentStreamId,
         parentMessageId: params.parentMessageId,
         rootStreamId,
-        visibility: Visibilities.PRIVATE,
+        visibility: inheritedVisibility,
         createdBy: params.createdBy,
       })
 

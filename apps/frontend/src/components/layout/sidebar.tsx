@@ -30,7 +30,8 @@ import {
 import { cn } from "@/lib/utils"
 import { serializeToMarkdown } from "@threa/prosemirror"
 import type { JSONContent } from "@threa/types"
-import { getThreadDisplayName, getThreadRootContext } from "@/components/thread/breadcrumb-helpers"
+import { getThreadRootContext } from "@/components/thread/breadcrumb-helpers"
+import { getStreamName, streamFallbackLabel } from "@/lib/streams"
 import {
   useWorkspaceBootstrap,
   useCreateStream,
@@ -737,12 +738,7 @@ function StreamItem({
   }
 
   const avatar = getAvatar()
-  const name =
-    stream.type === StreamTypes.THREAD
-      ? getThreadDisplayName(stream)
-      : stream.slug
-        ? `#${stream.slug}`
-        : stream.displayName || "Untitled"
+  const name = getStreamName(stream) ?? streamFallbackLabel(stream.type, "sidebar")
 
   const threadRootContext = stream.type === StreamTypes.THREAD ? getThreadRootContext(stream, allStreams) : null
 
@@ -854,7 +850,7 @@ function ScratchpadItem({
   const inputRef = useRef<HTMLInputElement>(null)
 
   const currentDisplayName = stream?.displayName ?? streamWithPreview.displayName ?? null
-  const name = currentDisplayName || "New scratchpad"
+  const name = currentDisplayName || streamFallbackLabel("scratchpad", "sidebar")
   const preview = streamWithPreview.lastMessagePreview
 
   useUrgencyTracking(itemRef, streamWithPreview.id, streamWithPreview.urgency, scrollContainerRef)

@@ -233,6 +233,7 @@ export class StreamNamingService {
         workspaceId: stream.workspaceId,
         streamId,
         displayName: cleanName,
+        visibility: currentStream.visibility,
       })
 
       logger.info({ streamId, displayName: cleanName, requireName }, "Auto-generated stream display name")

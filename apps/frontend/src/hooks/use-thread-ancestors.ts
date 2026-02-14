@@ -1,11 +1,12 @@
 import { useMemo } from "react"
+import type { StreamType } from "@threa/types"
 import { useWorkspaceBootstrap } from "./use-workspaces"
 
 interface ThreadAncestor {
   id: string
   displayName: string | null
   slug: string | null
-  type: string
+  type: StreamType
   parentStreamId: string | null
 }
 

@@ -101,9 +101,12 @@ export function createWorkspaceHandlers({
         return res.status(404).json({ error: "Workspace not found" })
       }
 
+      // Resolve DM display names — viewer-dependent, so computed at bootstrap time
+      const resolvedStreams = await streamService.resolveDmDisplayNames(streams, members, memberId)
+
       const [streamMemberships, users] = await Promise.all([
         streamService.getMembershipsBatch(
-          streams.map((s) => s.id),
+          resolvedStreams.map((s) => s.id),
           memberId
         ),
         workspaceService.getUsersForMembers(members),
@@ -136,7 +139,7 @@ export function createWorkspaceHandlers({
       // Compute muted stream IDs: streams where effective notification level is "muted".
       // Uses explicit level + stream-type default (no ancestor inheritance — acceptable
       // approximation for bootstrap since ancestor-inherited mutes are rare).
-      const streamTypeMap = new Map(streams.map((s) => [s.id, s.type]))
+      const streamTypeMap = new Map(resolvedStreams.map((s) => [s.id, s.type]))
       const mutedStreamIds = streamMemberships
         .filter((m) => {
           const type = streamTypeMap.get(m.streamId)
@@ -153,7 +156,7 @@ export function createWorkspaceHandlers({
         data: {
           workspace,
           members,
-          streams,
+          streams: resolvedStreams,
           streamMemberships,
           users,
           personas,

@@ -1,10 +1,12 @@
 import { Link } from "react-router-dom"
 import { BreadcrumbItem, BreadcrumbLink, BreadcrumbSeparator } from "@/components/ui/breadcrumb"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { getStreamName, streamFallbackLabel } from "@/lib/streams"
+import type { StreamType } from "@threa/types"
 
 interface StreamInfo {
   id: string
-  type: string
+  type: StreamType
   displayName: string | null
   slug?: string | null
   rootStreamId?: string | null
@@ -12,18 +14,9 @@ interface StreamInfo {
 
 interface StreamForLookup {
   id: string
-  type: string
+  type: StreamType
   displayName: string | null
   slug?: string | null
-}
-
-/**
- * Get a display name for a thread.
- * If the thread has its own displayName (AI-generated), use that.
- * Otherwise, returns "Thread". Root context is shown separately via getThreadRootContext().
- */
-export function getThreadDisplayName(thread: { displayName?: string | null; rootStreamId: string | null }): string {
-  return thread.displayName || "Thread"
 }
 
 /**
@@ -35,38 +28,12 @@ export function getThreadRootContext(
   thread: { rootStreamId: string | null },
   allStreams: StreamForLookup[]
 ): string | null {
-  if (!thread.rootStreamId) {
-    return null
-  }
+  if (!thread.rootStreamId) return null
 
   const rootStream = allStreams.find((s) => s.id === thread.rootStreamId)
-  if (!rootStream) {
-    return null
-  }
+  if (!rootStream) return null
 
-  switch (rootStream.type) {
-    case "channel":
-      return `#${rootStream.slug || rootStream.displayName || "channel"}`
-    case "scratchpad":
-      return rootStream.displayName || "Scratchpad"
-    case "dm":
-      return rootStream.displayName || "DM"
-    default:
-      return null
-  }
-}
-
-/**
- * Get display name for a stream in breadcrumbs
- */
-export function getStreamBreadcrumbName(stream: StreamInfo): string {
-  if (stream.type === "thread") {
-    return stream.displayName || "Thread"
-  }
-  if (stream.slug) {
-    return `#${stream.slug}`
-  }
-  return stream.displayName || "..."
+  return getStreamName(rootStream) ?? streamFallbackLabel(rootStream.type, "sidebar")
 }
 
 interface AncestorBreadcrumbItemProps {
@@ -91,7 +58,7 @@ export function AncestorBreadcrumbItem({
   getNavigationUrl,
   maxWidth = 120,
 }: AncestorBreadcrumbItemProps) {
-  const displayName = getStreamBreadcrumbName(stream)
+  const displayName = getStreamName(stream) ?? streamFallbackLabel(stream.type, "breadcrumb")
 
   if (isMainViewStream) {
     return (
