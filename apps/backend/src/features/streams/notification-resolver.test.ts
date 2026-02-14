@@ -1,12 +1,11 @@
 import { describe, test, expect, spyOn, beforeEach } from "bun:test"
-import { resolveNotificationLevel, resolveNotificationLevelsForStream } from "./notification-resolver"
+import { resolveNotificationLevelsForStream } from "./notification-resolver"
 import { StreamRepository } from "./repository"
 import { StreamMemberRepository } from "./member-repository"
 import type { Stream } from "./repository"
 import type { StreamMember } from "./member-repository"
 
 const mockFindById = spyOn(StreamRepository, "findById")
-const mockFindByStreamAndMember = spyOn(StreamMemberRepository, "findByStreamAndMember")
 const mockList = spyOn(StreamMemberRepository, "list")
 
 function makeStream(overrides: Partial<Stream> = {}): Stream {
@@ -48,115 +47,7 @@ function makeMembership(overrides: Partial<StreamMember> = {}): StreamMember {
 
 beforeEach(() => {
   mockFindById.mockReset()
-  mockFindByStreamAndMember.mockReset()
   mockList.mockReset()
-})
-
-describe("resolveNotificationLevel", () => {
-  test("should return explicit level when set on membership", async () => {
-    const stream = makeStream({ type: "channel", parentStreamId: null })
-    mockFindByStreamAndMember.mockResolvedValue(makeMembership({ notificationLevel: "everything" }))
-
-    const result = await resolveNotificationLevel({} as never, stream, "member_1")
-
-    expect(result).toMatchObject({
-      memberId: "member_1",
-      effectiveLevel: "everything",
-      source: "explicit",
-    })
-  })
-
-  test("should return stream-type default when no explicit level and no ancestors", async () => {
-    const stream = makeStream({ type: "channel", parentStreamId: null })
-    mockFindByStreamAndMember.mockResolvedValue(makeMembership({ notificationLevel: null }))
-
-    const result = await resolveNotificationLevel({} as never, stream, "member_1")
-
-    expect(result).toMatchObject({
-      effectiveLevel: "mentions",
-      source: "default",
-    })
-  })
-
-  test("should return default for non-member", async () => {
-    const stream = makeStream({ type: "channel", parentStreamId: null })
-    mockFindByStreamAndMember.mockResolvedValue(null)
-
-    const result = await resolveNotificationLevel({} as never, stream, "member_1")
-
-    expect(result).toMatchObject({
-      effectiveLevel: "mentions",
-      source: "default",
-    })
-  })
-
-  test("should cascade parent 'everything' as 'activity'", async () => {
-    const threadStream = makeStream({ type: "thread", parentStreamId: "stream_channel" })
-    const parentStream = makeStream({
-      id: "stream_channel",
-      type: "channel",
-      parentStreamId: null,
-    })
-
-    // Thread membership: no explicit level
-    mockFindByStreamAndMember
-      .mockResolvedValueOnce(makeMembership({ notificationLevel: null }))
-      // Parent membership: everything
-      .mockResolvedValueOnce(makeMembership({ streamId: "stream_channel", notificationLevel: "everything" }))
-
-    mockFindById.mockResolvedValue(parentStream)
-
-    const result = await resolveNotificationLevel({} as never, threadStream, "member_1")
-
-    expect(result).toMatchObject({
-      effectiveLevel: "activity",
-      source: "inherited",
-    })
-  })
-
-  test("should cascade parent 'muted' as 'muted'", async () => {
-    const threadStream = makeStream({ type: "thread", parentStreamId: "stream_channel" })
-    const parentStream = makeStream({
-      id: "stream_channel",
-      type: "channel",
-      parentStreamId: null,
-    })
-
-    mockFindByStreamAndMember
-      .mockResolvedValueOnce(makeMembership({ notificationLevel: null }))
-      .mockResolvedValueOnce(makeMembership({ streamId: "stream_channel", notificationLevel: "muted" }))
-
-    mockFindById.mockResolvedValue(parentStream)
-
-    const result = await resolveNotificationLevel({} as never, threadStream, "member_1")
-
-    expect(result).toMatchObject({
-      effectiveLevel: "muted",
-      source: "inherited",
-    })
-  })
-
-  test("should stop walking when parent has 'mentions' (no cascade)", async () => {
-    const threadStream = makeStream({ type: "thread", parentStreamId: "stream_channel" })
-    const parentStream = makeStream({
-      id: "stream_channel",
-      type: "channel",
-      parentStreamId: null,
-    })
-
-    mockFindByStreamAndMember
-      .mockResolvedValueOnce(makeMembership({ notificationLevel: null }))
-      .mockResolvedValueOnce(makeMembership({ streamId: "stream_channel", notificationLevel: "mentions" }))
-
-    mockFindById.mockResolvedValue(parentStream)
-
-    const result = await resolveNotificationLevel({} as never, threadStream, "member_1")
-
-    expect(result).toMatchObject({
-      effectiveLevel: "activity",
-      source: "default",
-    })
-  })
 })
 
 describe("resolveNotificationLevelsForStream", () => {

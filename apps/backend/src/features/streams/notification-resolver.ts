@@ -24,32 +24,6 @@ export interface ResolvedNotification {
 }
 
 /**
- * Resolve effective notification level for a single member in a stream.
- */
-export async function resolveNotificationLevel(
-  db: Querier,
-  stream: Stream,
-  memberId: string
-): Promise<ResolvedNotification> {
-  const membership = await StreamMemberRepository.findByStreamAndMember(db, stream.id, memberId)
-  if (!membership) {
-    return { memberId, effectiveLevel: getDefaultLevel(stream.type), source: "default" }
-  }
-
-  if (membership.notificationLevel) {
-    return { memberId, effectiveLevel: membership.notificationLevel, source: "explicit" }
-  }
-
-  // Walk up parentStreamId chain (max 2 hops)
-  const inherited = await walkAncestors(db, stream, memberId)
-  if (inherited) {
-    return { memberId, effectiveLevel: inherited, source: "inherited" }
-  }
-
-  return { memberId, effectiveLevel: getDefaultLevel(stream.type), source: "default" }
-}
-
-/**
  * Batch-resolve notification levels for all members of a stream.
  * Optimized: fetches ancestry chain once, batch-fetches ancestor memberships.
  */
@@ -123,30 +97,6 @@ export async function resolveNotificationLevelsForStream(
   }
 
   return resolved
-}
-
-/**
- * Walk up parentStreamId chain to find an inherited notification level.
- * Max 2 hops to prevent runaway queries.
- */
-async function walkAncestors(db: Querier, stream: Stream, memberId: string): Promise<NotificationLevel | null> {
-  let currentStream = stream
-  let hops = 0
-
-  while (currentStream.parentStreamId && hops < 2) {
-    const parent = await StreamRepository.findById(db, currentStream.parentStreamId)
-    if (!parent) break
-
-    const parentMembership = await StreamMemberRepository.findByStreamAndMember(db, parent.id, memberId)
-    if (parentMembership?.notificationLevel) {
-      return cascadeLevel(parentMembership.notificationLevel)
-    }
-
-    currentStream = parent
-    hops++
-  }
-
-  return null
 }
 
 /**

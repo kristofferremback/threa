@@ -7,7 +7,7 @@ import type { InvitationService } from "../invitations"
 import type { ActivityService } from "../activity"
 import type { CommandRegistry } from "../commands"
 import { getEmojiList } from "../emoji"
-import { getEffectiveLevel } from "../streams/notification-config"
+import { getEffectiveLevel } from "../streams"
 
 const createWorkspaceSchema = z.object({
   name: z.string().min(1, "name is required"),

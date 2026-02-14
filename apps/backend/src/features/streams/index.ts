@@ -24,10 +24,10 @@ export {
 } from "./naming-config"
 
 // Notification config (INV-44)
-export { NOTIFICATION_CONFIG, isAllowedLevel, getDefaultLevel } from "./notification-config"
+export { NOTIFICATION_CONFIG, isAllowedLevel, getDefaultLevel, getEffectiveLevel } from "./notification-config"
 
 // Notification resolver
-export { resolveNotificationLevel, resolveNotificationLevelsForStream } from "./notification-resolver"
+export { resolveNotificationLevelsForStream } from "./notification-resolver"
 export type { ResolvedNotification } from "./notification-resolver"
 
 // Repositories
