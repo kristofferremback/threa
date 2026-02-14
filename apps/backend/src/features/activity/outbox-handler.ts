@@ -100,7 +100,10 @@ export class ActivityFeedHandler implements OutboxHandler {
             continue
           }
 
-          // 1. Mentions first (higher priority notification reason)
+          // Sequential: mentions first, then notification-level activities.
+          // A mentioned member gets a "mention" activity (more specific) instead of both
+          // "mention" + "message". The dedup index allows both types per message, so we
+          // exclude mentioned members explicitly rather than relying on the DB constraint.
           const mentionActivities = await this.activityService.processMessageMentions({
             workspaceId,
             streamId,

@@ -525,19 +525,19 @@ export class StreamService {
     memberId: string,
     level: NotificationLevel | null
   ): Promise<StreamMember | null> {
-    if (level !== null) {
-      const stream = await StreamRepository.findById(this.pool, streamId)
-      if (!stream) throw new StreamNotFoundError()
-      if (!isAllowedLevel(stream.type, level)) {
-        throw new HttpError(`Notification level '${level}' is not allowed for ${stream.type} streams`, {
-          status: 400,
-          code: "INVALID_NOTIFICATION_LEVEL",
-        })
+    return withTransaction(this.pool, async (client) => {
+      if (level !== null) {
+        const stream = await StreamRepository.findById(client, streamId)
+        if (!stream) throw new StreamNotFoundError()
+        if (!isAllowedLevel(stream.type, level)) {
+          throw new HttpError(`Notification level '${level}' is not allowed for ${stream.type} streams`, {
+            status: 400,
+            code: "INVALID_NOTIFICATION_LEVEL",
+          })
+        }
       }
-    }
-    return withTransaction(this.pool, (client) =>
-      StreamMemberRepository.update(client, streamId, memberId, { notificationLevel: level })
-    )
+      return StreamMemberRepository.update(client, streamId, memberId, { notificationLevel: level })
+    })
   }
 
   async markAsRead(

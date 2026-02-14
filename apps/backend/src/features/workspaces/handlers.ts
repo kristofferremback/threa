@@ -7,7 +7,7 @@ import type { InvitationService } from "../invitations"
 import type { ActivityService } from "../activity"
 import type { CommandRegistry } from "../commands"
 import { getEmojiList } from "../emoji"
-import { getDefaultLevel } from "../streams/notification-config"
+import { getEffectiveLevel } from "../streams/notification-config"
 
 const createWorkspaceSchema = z.object({
   name: z.string().min(1, "name is required"),
@@ -133,13 +133,12 @@ export function createWorkspaceHandlers({
         return { name, description: cmd.description }
       })
 
-      // Compute muted stream IDs: streams where effective notification level is "muted"
+      // Compute muted stream IDs: streams where effective notification level is "muted".
+      // Uses explicit level + stream-type default (no ancestor inheritance — acceptable
+      // approximation for bootstrap since ancestor-inherited mutes are rare).
       const streamTypeMap = new Map(streams.map((s) => [s.id, s.type]))
       const mutedStreamIds = streamMemberships
-        .filter((m) => {
-          const level = m.notificationLevel ?? getDefaultLevel(streamTypeMap.get(m.streamId) ?? "channel")
-          return level === "muted"
-        })
+        .filter((m) => getEffectiveLevel(m.notificationLevel, streamTypeMap.get(m.streamId)!) === "muted")
         .map((m) => m.streamId)
 
       // Include invitations for admin+ members

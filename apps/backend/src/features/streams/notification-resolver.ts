@@ -6,6 +6,17 @@ import { StreamRepository } from "./repository"
 import { StreamMemberRepository } from "./member-repository"
 import { getDefaultLevel } from "./notification-config"
 
+/**
+ * Determines what a parent's explicit notification level means for child streams.
+ * "everything" cascades as "activity", "muted" cascades as "muted",
+ * "mentions" and "activity" don't cascade (returns null to stop walk).
+ */
+function cascadeLevel(parentLevel: NotificationLevel): NotificationLevel | null {
+  if (parentLevel === "everything") return "activity"
+  if (parentLevel === "muted") return "muted"
+  return null
+}
+
 export interface ResolvedNotification {
   memberId: string
   effectiveLevel: NotificationLevel
@@ -96,16 +107,7 @@ export async function resolveNotificationLevelsForStream(
       const ancestorMembership = ancestorMemberships.get(ancestor.id)?.get(member.memberId)
       if (!ancestorMembership?.notificationLevel) continue
 
-      const level = ancestorMembership.notificationLevel
-      if (level === "everything") {
-        inherited = "activity" // everything cascades down as activity
-        break
-      }
-      if (level === "muted") {
-        inherited = "muted"
-        break
-      }
-      // mentions or activity — stop walking, don't cascade
+      inherited = cascadeLevel(ancestorMembership.notificationLevel)
       break
     }
 
@@ -137,11 +139,7 @@ async function walkAncestors(db: Querier, stream: Stream, memberId: string): Pro
 
     const parentMembership = await StreamMemberRepository.findByStreamAndMember(db, parent.id, memberId)
     if (parentMembership?.notificationLevel) {
-      const level = parentMembership.notificationLevel
-      if (level === "everything") return "activity"
-      if (level === "muted") return "muted"
-      // mentions or activity — stop walking
-      return null
+      return cascadeLevel(parentMembership.notificationLevel)
     }
 
     currentStream = parent
