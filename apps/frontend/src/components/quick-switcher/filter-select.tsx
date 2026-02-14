@@ -4,6 +4,7 @@ import { Calendar } from "@/components/ui/calendar"
 import { formatISODate } from "@/lib/dates"
 import { useFormattedDate } from "@/hooks"
 import type { StreamType, WorkspaceMember, Stream, User } from "@threa/types"
+import { getStreamName, streamFallbackLabel } from "@/lib/streams"
 
 interface StreamTypeOption {
   value: StreamType
@@ -183,14 +184,11 @@ function StreamSelect({ streams, onSelect }: StreamSelectProps) {
   const [search, setSearch] = useState("")
 
   const filtered = streams.filter((s) => {
-    const name = s.displayName || s.slug || ""
+    const name = getStreamName(s) ?? ""
     return name.toLowerCase().includes(search.toLowerCase())
   })
 
-  const getStreamName = (stream: Stream) => {
-    if (stream.slug) return `#${stream.slug}`
-    return stream.displayName || "Untitled"
-  }
+  const resolvedName = (stream: Stream) => getStreamName(stream) ?? streamFallbackLabel(stream.type, "generic")
 
   return (
     <div className="w-48">
@@ -200,12 +198,8 @@ function StreamSelect({ streams, onSelect }: StreamSelectProps) {
           <CommandEmpty>No streams found.</CommandEmpty>
           <CommandGroup>
             {filtered.slice(0, 10).map((stream) => (
-              <CommandItem
-                key={stream.id}
-                value={stream.id}
-                onSelect={() => onSelect(stream.id, getStreamName(stream))}
-              >
-                {getStreamName(stream)}
+              <CommandItem key={stream.id} value={stream.id} onSelect={() => onSelect(stream.id, resolvedName(stream))}>
+                {resolvedName(stream)}
               </CommandItem>
             ))}
           </CommandGroup>
