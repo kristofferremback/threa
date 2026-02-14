@@ -41,6 +41,17 @@ export interface InsertActivityParams {
   context?: Record<string, unknown>
 }
 
+export interface InsertActivityBatchParams {
+  workspaceId: string
+  memberIds: string[]
+  activityType: string
+  streamId: string
+  messageId: string
+  actorId: string
+  actorType: string
+  context?: Record<string, unknown>
+}
+
 function mapRowToActivity(row: ActivityRow): Activity {
   return {
     id: row.id,
@@ -77,6 +88,35 @@ export const ActivityRepository = {
       RETURNING id, workspace_id, member_id, activity_type, stream_id, message_id, actor_id, actor_type, context, read_at, created_at
     `)
     return result.rows[0] ? mapRowToActivity(result.rows[0]) : null
+  },
+
+  /**
+   * Batch insert activities for multiple members sharing the same message context.
+   * Single UNNEST query replaces N sequential inserts. ON CONFLICT deduplicates.
+   */
+  async insertBatch(db: Querier, params: InsertActivityBatchParams): Promise<Activity[]> {
+    if (params.memberIds.length === 0) return []
+
+    const ids = params.memberIds.map(() => activityId())
+    const contextJson = JSON.stringify(params.context ?? {})
+
+    const result = await db.query<ActivityRow>(sql`
+      INSERT INTO member_activity (id, workspace_id, member_id, activity_type, stream_id, message_id, actor_id, actor_type, context)
+      SELECT * FROM UNNEST(
+        ${ids}::text[],
+        ${params.memberIds.map(() => params.workspaceId)}::text[],
+        ${params.memberIds}::text[],
+        ${params.memberIds.map(() => params.activityType)}::text[],
+        ${params.memberIds.map(() => params.streamId)}::text[],
+        ${params.memberIds.map(() => params.messageId)}::text[],
+        ${params.memberIds.map(() => params.actorId)}::text[],
+        ${params.memberIds.map(() => params.actorType)}::text[],
+        ${params.memberIds.map(() => contextJson)}::jsonb[]
+      )
+      ON CONFLICT (member_id, message_id, activity_type, actor_id) DO NOTHING
+      RETURNING id, workspace_id, member_id, activity_type, stream_id, message_id, actor_id, actor_type, context, read_at, created_at
+    `)
+    return result.rows.map(mapRowToActivity)
   },
 
   async listByMember(

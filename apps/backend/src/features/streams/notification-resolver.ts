@@ -1,9 +1,8 @@
 import type { Querier } from "../../db"
+import { sql } from "../../db"
 import type { NotificationLevel } from "@threa/types"
 import type { Stream } from "./repository"
 import type { StreamMember } from "./member-repository"
-import { StreamRepository } from "./repository"
-import { StreamMemberRepository } from "./member-repository"
 import { getDefaultLevel } from "./notification-config"
 
 /**
@@ -48,40 +47,28 @@ export async function resolveNotificationLevelsForStream(
 
   if (needsResolution.length === 0) return resolved
 
-  // Build ancestry chain (max 2 hops)
-  const ancestors = await getAncestorChain(db, stream, 2)
-  if (ancestors.length === 0) {
-    // No ancestors — all unresolved members get stream-type default
+  // Fetch ancestor stream IDs in one recursive CTE (max 2 hops)
+  const ancestorIds = await getAncestorIds(db, stream.parentStreamId, 2)
+  if (ancestorIds.length === 0) {
     for (const member of needsResolution) {
       resolved.push({ memberId: member.memberId, effectiveLevel: getDefaultLevel(stream.type), source: "default" })
     }
     return resolved
   }
 
-  // Batch-fetch ancestor memberships: one list query per ancestor, filtered in-memory
-  const memberIdSet = new Set(needsResolution.map((m) => m.memberId))
-  const ancestorMemberships = new Map<string, Map<string, StreamMember>>()
+  // Batch-fetch all ancestor memberships for unresolved members in one query
+  const memberIds = needsResolution.map((m) => m.memberId)
+  const ancestorMemberships = await getAncestorMemberships(db, ancestorIds, memberIds)
 
-  for (const ancestor of ancestors) {
-    const allMemberships = await StreamMemberRepository.list(db, { streamId: ancestor.id })
-    const memberMap = new Map<string, StreamMember>()
-    for (const m of allMemberships) {
-      if (memberIdSet.has(m.memberId)) {
-        memberMap.set(m.memberId, m)
-      }
-    }
-    ancestorMemberships.set(ancestor.id, memberMap)
-  }
-
-  // Resolve each unresolved member
+  // Resolve each unresolved member by walking ancestors in order
   for (const member of needsResolution) {
     let inherited: NotificationLevel | null = null
 
-    for (const ancestor of ancestors) {
-      const ancestorMembership = ancestorMemberships.get(ancestor.id)?.get(member.memberId)
-      if (!ancestorMembership?.notificationLevel) continue
+    for (const ancestorId of ancestorIds) {
+      const level = ancestorMemberships.get(ancestorId)?.get(member.memberId)
+      if (!level) continue
 
-      inherited = cascadeLevel(ancestorMembership.notificationLevel)
+      inherited = cascadeLevel(level)
       break
     }
 
@@ -100,18 +87,54 @@ export async function resolveNotificationLevelsForStream(
 }
 
 /**
- * Get the chain of ancestor streams (parent, grandparent, etc.), max depth hops.
+ * Get ordered ancestor stream IDs via recursive CTE. Single query replaces N sequential findById calls.
  */
-async function getAncestorChain(db: Querier, stream: Stream, maxHops: number): Promise<Stream[]> {
-  const ancestors: Stream[] = []
-  let currentStream = stream
+async function getAncestorIds(db: Querier, parentStreamId: string | null, maxHops: number): Promise<string[]> {
+  if (!parentStreamId) return []
 
-  while (currentStream.parentStreamId && ancestors.length < maxHops) {
-    const parent = await StreamRepository.findById(db, currentStream.parentStreamId)
-    if (!parent) break
-    ancestors.push(parent)
-    currentStream = parent
+  const result = await db.query<{ id: string }>(sql`
+    WITH RECURSIVE ancestors AS (
+      SELECT id, parent_stream_id, 1 AS depth
+      FROM streams
+      WHERE id = ${parentStreamId}
+
+      UNION ALL
+
+      SELECT s.id, s.parent_stream_id, a.depth + 1
+      FROM ancestors a
+      JOIN streams s ON s.id = a.parent_stream_id
+      WHERE a.depth < ${maxHops}
+    )
+    SELECT id FROM ancestors ORDER BY depth
+  `)
+  return result.rows.map((r) => r.id)
+}
+
+/**
+ * Batch-fetch notification levels for specific members across multiple ancestor streams.
+ * Returns Map<ancestorId, Map<memberId, notificationLevel>>.
+ */
+async function getAncestorMemberships(
+  db: Querier,
+  ancestorIds: string[],
+  memberIds: string[]
+): Promise<Map<string, Map<string, NotificationLevel>>> {
+  const result = await db.query<{ stream_id: string; member_id: string; notification_level: string }>(sql`
+    SELECT stream_id, member_id, notification_level
+    FROM stream_members
+    WHERE stream_id = ANY(${ancestorIds})
+      AND member_id = ANY(${memberIds})
+      AND notification_level IS NOT NULL
+  `)
+
+  const map = new Map<string, Map<string, NotificationLevel>>()
+  for (const row of result.rows) {
+    let memberMap = map.get(row.stream_id)
+    if (!memberMap) {
+      memberMap = new Map()
+      map.set(row.stream_id, memberMap)
+    }
+    memberMap.set(row.member_id, row.notification_level as NotificationLevel)
   }
-
-  return ancestors
+  return map
 }

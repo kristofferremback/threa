@@ -1,12 +1,8 @@
-import { describe, test, expect, spyOn, beforeEach } from "bun:test"
+import { describe, test, expect, mock } from "bun:test"
 import { resolveNotificationLevelsForStream } from "./notification-resolver"
-import { StreamRepository } from "./repository"
-import { StreamMemberRepository } from "./member-repository"
 import type { Stream } from "./repository"
 import type { StreamMember } from "./member-repository"
-
-const mockFindById = spyOn(StreamRepository, "findById")
-const mockList = spyOn(StreamMemberRepository, "list")
+import type { Querier } from "../../db"
 
 function makeStream(overrides: Partial<Stream> = {}): Stream {
   return {
@@ -45,10 +41,17 @@ function makeMembership(overrides: Partial<StreamMember> = {}): StreamMember {
   }
 }
 
-beforeEach(() => {
-  mockFindById.mockReset()
-  mockList.mockReset()
-})
+/**
+ * Create a mock db that returns pre-configured results for sequential query calls.
+ * Call 1 = getAncestorIds CTE, Call 2 = getAncestorMemberships batch.
+ */
+function makeDb(responses: { rows: Record<string, unknown>[] }[]): Querier {
+  const queryFn = mock(() => Promise.resolve({ rows: [] as Record<string, unknown>[], rowCount: 0 }))
+  for (const response of responses) {
+    queryFn.mockResolvedValueOnce({ rows: response.rows, rowCount: response.rows.length })
+  }
+  return { query: queryFn } as unknown as Querier
+}
 
 describe("resolveNotificationLevelsForStream", () => {
   test("should resolve all explicit members without ancestry queries", async () => {
@@ -58,14 +61,16 @@ describe("resolveNotificationLevelsForStream", () => {
       makeMembership({ memberId: "member_2", notificationLevel: "muted" }),
     ]
 
-    const results = await resolveNotificationLevelsForStream({} as never, stream, members)
+    const db = makeDb([])
+
+    const results = await resolveNotificationLevelsForStream(db, stream, members)
 
     expect(results).toEqual([
       { memberId: "member_1", effectiveLevel: "everything", source: "explicit" },
       { memberId: "member_2", effectiveLevel: "muted", source: "explicit" },
     ])
-    // No ancestry queries needed
-    expect(mockFindById).not.toHaveBeenCalled()
+    // No queries needed — all explicit
+    expect(db.query).not.toHaveBeenCalled()
   })
 
   test("should fall back to defaults when no ancestors exist", async () => {
@@ -75,21 +80,20 @@ describe("resolveNotificationLevelsForStream", () => {
       makeMembership({ memberId: "member_2", notificationLevel: null }),
     ]
 
-    const results = await resolveNotificationLevelsForStream({} as never, stream, members)
+    const db = makeDb([])
+
+    const results = await resolveNotificationLevelsForStream(db, stream, members)
 
     expect(results).toEqual([
       { memberId: "member_1", effectiveLevel: "mentions", source: "default" },
       { memberId: "member_2", effectiveLevel: "mentions", source: "default" },
     ])
+    // parentStreamId is null → getAncestorIds short-circuits, no queries
+    expect(db.query).not.toHaveBeenCalled()
   })
 
   test("should batch-resolve inheritance from parent stream", async () => {
     const threadStream = makeStream({ type: "thread", parentStreamId: "stream_channel" })
-    const parentStream = makeStream({
-      id: "stream_channel",
-      type: "channel",
-      parentStreamId: null,
-    })
 
     const members = [
       makeMembership({ memberId: "member_1", notificationLevel: null }),
@@ -97,19 +101,18 @@ describe("resolveNotificationLevelsForStream", () => {
       makeMembership({ memberId: "member_3", notificationLevel: null }),
     ]
 
-    mockFindById.mockResolvedValue(parentStream)
-
-    // Parent stream memberships
-    mockList.mockResolvedValue([
-      makeMembership({ streamId: "stream_channel", memberId: "member_1", notificationLevel: "everything" }),
-      makeMembership({ streamId: "stream_channel", memberId: "member_3", notificationLevel: null }),
+    const db = makeDb([
+      // getAncestorIds: returns parent channel
+      { rows: [{ id: "stream_channel" }] },
+      // getAncestorMemberships: member_1 has "everything" on parent, member_3 has no level
+      { rows: [{ stream_id: "stream_channel", member_id: "member_1", notification_level: "everything" }] },
     ])
 
-    const results = await resolveNotificationLevelsForStream({} as never, threadStream, members)
+    const results = await resolveNotificationLevelsForStream(db, threadStream, members)
 
     const byMember = new Map(results.map((r) => [r.memberId, r]))
 
-    // member_2: explicit muted
+    // member_2: explicit muted (never hits DB)
     expect(byMember.get("member_2")).toMatchObject({ effectiveLevel: "muted", source: "explicit" })
     // member_1: inherits everything → activity
     expect(byMember.get("member_1")).toMatchObject({ effectiveLevel: "activity", source: "inherited" })
@@ -119,7 +122,8 @@ describe("resolveNotificationLevelsForStream", () => {
 
   test("should return empty array for empty members", async () => {
     const stream = makeStream()
-    const results = await resolveNotificationLevelsForStream({} as never, stream, [])
+    const db = makeDb([])
+    const results = await resolveNotificationLevelsForStream(db, stream, [])
     expect(results).toEqual([])
   })
 })
