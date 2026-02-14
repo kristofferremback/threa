@@ -3,7 +3,7 @@ import { createSearchAttachmentsTool, type AttachmentSearchResult } from "./sear
 import { createGetAttachmentTool, type AttachmentDetails } from "./get-attachment-tool"
 import { createLoadAttachmentTool, type LoadAttachmentResult } from "./load-attachment-tool"
 
-const toolOpts = { toolCallId: "test", messages: [] as any[] }
+const toolOpts = { toolCallId: "test" }
 
 describe("search_attachments tool", () => {
   it("returns search results when attachments found", async () => {
@@ -23,8 +23,8 @@ describe("search_attachments tool", () => {
     const searchAttachments = mock(() => Promise.resolve(mockResults))
     const tool = createSearchAttachmentsTool({ searchAttachments })
 
-    const result = (await tool.execute!({ query: "financial report", limit: 10 }, toolOpts)) as string
-    const parsed = JSON.parse(result)
+    const { output } = await tool.config.execute({ query: "financial report", limit: 10 }, toolOpts)
+    const parsed = JSON.parse(output)
 
     expect(parsed.query).toBe("financial report")
     expect(parsed.results).toHaveLength(1)
@@ -40,8 +40,8 @@ describe("search_attachments tool", () => {
     const searchAttachments = mock(() => Promise.resolve([]))
     const tool = createSearchAttachmentsTool({ searchAttachments })
 
-    const result = (await tool.execute!({ query: "nonexistent", limit: 10 }, toolOpts)) as string
-    const parsed = JSON.parse(result)
+    const { output } = await tool.config.execute({ query: "nonexistent", limit: 10 }, toolOpts)
+    const parsed = JSON.parse(output)
 
     expect(parsed.query).toBe("nonexistent")
     expect(parsed.results).toHaveLength(0)
@@ -66,8 +66,8 @@ describe("search_attachments tool", () => {
     const searchAttachments = mock(() => Promise.resolve(mockResults))
     const tool = createSearchAttachmentsTool({ searchAttachments })
 
-    const result = (await tool.execute!({ query: "doc", limit: 10 }, toolOpts)) as string
-    const parsed = JSON.parse(result)
+    const { output } = await tool.config.execute({ query: "doc", limit: 10 }, toolOpts)
+    const parsed = JSON.parse(output)
 
     expect(parsed.results[0].summary.length).toBeLessThanOrEqual(200)
     expect(parsed.results[0].summary.endsWith("...")).toBe(true)
@@ -80,7 +80,7 @@ describe("search_attachments tool", () => {
     })
     const tool = createSearchAttachmentsTool({ searchAttachments })
 
-    await tool.execute!({ query: "test", limit: 100 }, toolOpts)
+    await tool.config.execute({ query: "test", limit: 100 }, toolOpts)
 
     expect(searchAttachments).toHaveBeenCalled()
   })
@@ -89,8 +89,8 @@ describe("search_attachments tool", () => {
     const searchAttachments = mock(() => Promise.reject(new Error("Database error")))
     const tool = createSearchAttachmentsTool({ searchAttachments })
 
-    const result = (await tool.execute!({ query: "test", limit: 10 }, toolOpts)) as string
-    const parsed = JSON.parse(result)
+    const { output } = await tool.config.execute({ query: "test", limit: 10 }, toolOpts)
+    const parsed = JSON.parse(output)
 
     expect(parsed.error).toContain("Search failed")
     expect(parsed.query).toBe("test")
@@ -117,8 +117,8 @@ describe("get_attachment tool", () => {
     const getAttachment = mock(() => Promise.resolve(mockAttachment))
     const tool = createGetAttachmentTool({ getAttachment })
 
-    const result = (await tool.execute!({ attachmentId: "attach_1" }, toolOpts)) as string
-    const parsed = JSON.parse(result)
+    const { output } = await tool.config.execute({ attachmentId: "attach_1" }, toolOpts)
+    const parsed = JSON.parse(output)
 
     expect(parsed).toMatchObject({
       id: "attach_1",
@@ -138,8 +138,8 @@ describe("get_attachment tool", () => {
     const getAttachment = mock(() => Promise.resolve(null))
     const tool = createGetAttachmentTool({ getAttachment })
 
-    const result = (await tool.execute!({ attachmentId: "nonexistent" }, toolOpts)) as string
-    const parsed = JSON.parse(result)
+    const { output } = await tool.config.execute({ attachmentId: "nonexistent" }, toolOpts)
+    const parsed = JSON.parse(output)
 
     expect(parsed.error).toContain("not found")
     expect(parsed.attachmentId).toBe("nonexistent")
@@ -159,8 +159,8 @@ describe("get_attachment tool", () => {
     const getAttachment = mock(() => Promise.resolve(mockAttachment))
     const tool = createGetAttachmentTool({ getAttachment })
 
-    const result = (await tool.execute!({ attachmentId: "attach_1" }, toolOpts)) as string
-    const parsed = JSON.parse(result)
+    const { output } = await tool.config.execute({ attachmentId: "attach_1" }, toolOpts)
+    const parsed = JSON.parse(output)
 
     expect(parsed.extraction).toBeNull()
     expect(parsed.processingStatus).toBe("pending")
@@ -170,8 +170,8 @@ describe("get_attachment tool", () => {
     const getAttachment = mock(() => Promise.reject(new Error("Access denied")))
     const tool = createGetAttachmentTool({ getAttachment })
 
-    const result = (await tool.execute!({ attachmentId: "attach_1" }, toolOpts)) as string
-    const parsed = JSON.parse(result)
+    const { output } = await tool.config.execute({ attachmentId: "attach_1" }, toolOpts)
+    const parsed = JSON.parse(output)
 
     expect(parsed.error).toContain("Failed to get attachment")
     expect(parsed.attachmentId).toBe("attach_1")
@@ -179,7 +179,7 @@ describe("get_attachment tool", () => {
 })
 
 describe("load_attachment tool", () => {
-  it("returns multimodal content with image for vision models", async () => {
+  it("returns AgentToolResult with multimodal content for images", async () => {
     const mockResult: LoadAttachmentResult = {
       id: "attach_1",
       filename: "chart.png",
@@ -190,39 +190,18 @@ describe("load_attachment tool", () => {
     const loadAttachment = mock(() => Promise.resolve(mockResult))
     const tool = createLoadAttachmentTool({ loadAttachment })
 
-    const result = await tool.execute!({ attachmentId: "attach_1" }, toolOpts)
+    const result = await tool.config.execute({ attachmentId: "attach_1" }, toolOpts)
 
-    // Result should be a MultimodalToolResult, not a JSON string
-    expect(typeof result).toBe("object")
-    expect(result).toHaveProperty("__multimodal__", true)
-    expect(result).toHaveProperty("content")
-
-    // Type narrow to access content
-    if (typeof result === "object" && result !== null && "content" in result) {
-      const content = result.content as Array<{ type: string; text?: string; image_url?: { url: string } }>
-      expect(Array.isArray(content)).toBe(true)
-
-      // Should have text and image_url blocks
-      const textBlock = content.find((b) => b.type === "text")
-      const imageBlock = content.find((b) => b.type === "image_url")
-
-      expect(textBlock).toBeDefined()
-      expect(textBlock?.text).toContain("chart.png")
-      expect(imageBlock).toBeDefined()
-      expect(imageBlock?.image_url?.url).toBe("data:image/png;base64,iVBORw0KGgo...")
-    } else {
-      throw new Error("Expected multimodal result")
-    }
+    expect(result.output).toContain("chart.png")
+    expect(result.multimodal).toEqual([{ type: "image", url: "data:image/png;base64,iVBORw0KGgo..." }])
   })
 
   it("returns error when attachment not found", async () => {
     const loadAttachment = mock(() => Promise.resolve(null))
     const tool = createLoadAttachmentTool({ loadAttachment })
 
-    const result = (await tool.execute!({ attachmentId: "nonexistent" }, toolOpts)) as string
-
-    expect(typeof result).toBe("string")
-    const parsed = JSON.parse(result)
+    const { output } = await tool.config.execute({ attachmentId: "nonexistent" }, toolOpts)
+    const parsed = JSON.parse(output)
 
     expect(parsed.error).toContain("not found")
     expect(parsed.attachmentId).toBe("nonexistent")
@@ -232,10 +211,8 @@ describe("load_attachment tool", () => {
     const loadAttachment = mock(() => Promise.reject(new Error("Storage unavailable")))
     const tool = createLoadAttachmentTool({ loadAttachment })
 
-    const result = (await tool.execute!({ attachmentId: "attach_1" }, toolOpts)) as string
-
-    expect(typeof result).toBe("string")
-    const parsed = JSON.parse(result)
+    const { output } = await tool.config.execute({ attachmentId: "attach_1" }, toolOpts)
+    const parsed = JSON.parse(output)
 
     expect(parsed.error).toContain("Failed to load attachment")
     expect(parsed.attachmentId).toBe("attach_1")

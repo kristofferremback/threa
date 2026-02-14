@@ -1,6 +1,6 @@
-import { tool } from "ai"
 import { z } from "zod"
 import { logger } from "../../../lib/logger"
+import { defineAgentTool, type AgentToolResult } from "../runtime"
 
 const WebSearchSchema = z.object({
   query: z.string().describe("The search query to find information on the web"),
@@ -55,19 +55,16 @@ function redactQuery(query: string): string {
   return redacted
 }
 
-/**
- * Creates a web_search tool for the agent to search the web.
- *
- * Uses the Tavily API for search results optimized for LLMs.
- */
 export function createWebSearchTool(params: CreateWebSearchToolParams) {
   const { tavilyApiKey, maxResults = 5 } = params
 
-  return tool({
+  return defineAgentTool({
+    name: "web_search",
     description:
       "Search the web for current information. Returns relevant results with titles, URLs, and content snippets. Use this when you need up-to-date information or facts not in your training data.",
     inputSchema: WebSearchSchema,
-    execute: async (input) => {
+
+    execute: async (input): Promise<AgentToolResult> => {
       const controller = new AbortController()
       const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
       const sanitizedQuery = redactQuery(input.query)
@@ -91,10 +88,8 @@ export function createWebSearchTool(params: CreateWebSearchToolParams) {
         if (!response.ok) {
           const errorText = await response.text()
           logger.error({ status: response.status, error: errorText }, "Tavily API error")
-          return JSON.stringify({
-            error: `Search failed: ${response.status}`,
-            query: input.query,
-          })
+          const output = JSON.stringify({ error: `Search failed: ${response.status}`, query: input.query })
+          return { output }
         }
 
         const data = (await response.json()) as TavilySearchResponse
@@ -112,24 +107,40 @@ export function createWebSearchTool(params: CreateWebSearchToolParams) {
 
         logger.debug({ query: input.query, resultCount: result.results.length }, "Web search completed")
 
-        return JSON.stringify(result)
+        const output = JSON.stringify(result)
+
+        // Extract sources from results
+        const sources = result.results.filter((r) => r.title && r.url).map((r) => ({ title: r.title, url: r.url }))
+
+        return { output, sources }
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") {
           logger.warn({ query: input.query }, "Web search timed out")
-          return JSON.stringify({
-            error: `Search timed out after ${FETCH_TIMEOUT_MS / 1000}s`,
-            query: input.query,
-          })
+          return {
+            output: JSON.stringify({
+              error: `Search timed out after ${FETCH_TIMEOUT_MS / 1000}s`,
+              query: input.query,
+            }),
+          }
         }
 
         logger.error({ error, query: input.query }, "Web search failed")
-        return JSON.stringify({
-          error: `Search failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-          query: input.query,
-        })
+        return {
+          output: JSON.stringify({
+            error: `Search failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+            query: input.query,
+          }),
+        }
       } finally {
         clearTimeout(timeout)
       }
+    },
+
+    trace: {
+      stepType: "web_search",
+      formatContent: (input) => input.query,
+      extractSources: (_input, result) =>
+        (result.sources ?? []).map((s) => ({ type: "web" as const, title: s.title, url: s.url })),
     },
   })
 }

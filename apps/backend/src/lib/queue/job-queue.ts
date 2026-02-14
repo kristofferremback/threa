@@ -23,7 +23,6 @@ export const JobQueues = {
   BOUNDARY_EXTRACT: "boundary.extract",
   MEMO_BATCH_CHECK: "memo.batch-check",
   MEMO_BATCH_PROCESS: "memo.batch-process",
-  SIMULATE_RUN: "simulate.run",
   COMMAND_EXECUTE: "command.execute",
   IMAGE_CAPTION: "image.caption",
   PDF_PREPARE: "pdf.prepare",
@@ -71,15 +70,6 @@ export interface MemoBatchCheckJobData {
 export interface MemoBatchProcessJobData {
   workspaceId: string
   streamId: string
-}
-
-export interface SimulationJobData {
-  streamId: string
-  workspaceId: string
-  memberId: string
-  personas: string[]
-  topic: string
-  turns: number
 }
 
 export interface CommandExecuteJobData {
@@ -154,7 +144,6 @@ export interface JobDataMap {
   [JobQueues.BOUNDARY_EXTRACT]: BoundaryExtractionJobData
   [JobQueues.MEMO_BATCH_CHECK]: MemoBatchCheckJobData
   [JobQueues.MEMO_BATCH_PROCESS]: MemoBatchProcessJobData
-  [JobQueues.SIMULATE_RUN]: SimulationJobData
   [JobQueues.COMMAND_EXECUTE]: CommandExecuteJobData
   [JobQueues.IMAGE_CAPTION]: ImageCaptionJobData
   [JobQueues.PDF_PREPARE]: PdfPrepareJobData

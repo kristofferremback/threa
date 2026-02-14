@@ -1,7 +1,6 @@
-import type { Tool } from "ai"
 import { AgentToolNames } from "@threa/types"
+import type { AgentTool } from "../runtime"
 import {
-  createSendMessageTool,
   createWebSearchTool,
   createReadUrlTool,
   createSearchMessagesTool,
@@ -44,59 +43,57 @@ export interface ToolSetConfig {
 /**
  * Build the complete tool set for a companion agent session.
  * Each tool receives its dependencies at construction time.
- * The send_message tool has no execute handler — the agent loop intercepts it.
+ * Returns AgentTool[] — send_message is NOT included (the runtime handles it).
  */
-export function buildToolSet(config: ToolSetConfig): Record<string, Tool<any, any>> {
+export function buildToolSet(config: ToolSetConfig): AgentTool[] {
   const { enabledTools, tavilyApiKey, runWorkspaceAgent, search, attachments } = config
-  const tools: Record<string, Tool<any, any>> = {}
-
-  tools[AgentToolNames.SEND_MESSAGE] = createSendMessageTool()
+  const tools: AgentTool[] = []
 
   if (runWorkspaceAgent) {
-    tools["workspace_research"] = createWorkspaceResearchTool({ runWorkspaceAgent })
+    tools.push(createWorkspaceResearchTool({ runWorkspaceAgent }))
   }
 
   if (tavilyApiKey && isToolEnabled(enabledTools, AgentToolNames.WEB_SEARCH)) {
-    tools[AgentToolNames.WEB_SEARCH] = createWebSearchTool({ tavilyApiKey })
+    tools.push(createWebSearchTool({ tavilyApiKey }))
   }
 
   if (isToolEnabled(enabledTools, AgentToolNames.READ_URL)) {
-    tools[AgentToolNames.READ_URL] = createReadUrlTool()
+    tools.push(createReadUrlTool())
   }
 
   if (search) {
     if (isToolEnabled(enabledTools, AgentToolNames.SEARCH_MESSAGES)) {
-      tools[AgentToolNames.SEARCH_MESSAGES] = createSearchMessagesTool(search)
+      tools.push(createSearchMessagesTool(search))
     }
     if (isToolEnabled(enabledTools, AgentToolNames.SEARCH_STREAMS)) {
-      tools[AgentToolNames.SEARCH_STREAMS] = createSearchStreamsTool(search)
+      tools.push(createSearchStreamsTool(search))
     }
     if (isToolEnabled(enabledTools, AgentToolNames.SEARCH_USERS)) {
-      tools[AgentToolNames.SEARCH_USERS] = createSearchUsersTool(search)
+      tools.push(createSearchUsersTool(search))
     }
     if (isToolEnabled(enabledTools, AgentToolNames.GET_STREAM_MESSAGES)) {
-      tools[AgentToolNames.GET_STREAM_MESSAGES] = createGetStreamMessagesTool(search)
+      tools.push(createGetStreamMessagesTool(search))
     }
   }
 
   if (attachments) {
     if (isToolEnabled(enabledTools, AgentToolNames.SEARCH_ATTACHMENTS)) {
-      tools[AgentToolNames.SEARCH_ATTACHMENTS] = createSearchAttachmentsTool(attachments.search)
+      tools.push(createSearchAttachmentsTool(attachments.search))
     }
     if (isToolEnabled(enabledTools, AgentToolNames.GET_ATTACHMENT)) {
-      tools[AgentToolNames.GET_ATTACHMENT] = createGetAttachmentTool(attachments.get)
+      tools.push(createGetAttachmentTool(attachments.get))
     }
     if (attachments.load && isToolEnabled(enabledTools, AgentToolNames.LOAD_ATTACHMENT)) {
-      tools[AgentToolNames.LOAD_ATTACHMENT] = createLoadAttachmentTool(attachments.load)
+      tools.push(createLoadAttachmentTool(attachments.load))
     }
     if (attachments.loadPdfSection && isToolEnabled(enabledTools, AgentToolNames.LOAD_PDF_SECTION)) {
-      tools[AgentToolNames.LOAD_PDF_SECTION] = createLoadPdfSectionTool(attachments.loadPdfSection)
+      tools.push(createLoadPdfSectionTool(attachments.loadPdfSection))
     }
     if (attachments.loadFileSection && isToolEnabled(enabledTools, AgentToolNames.LOAD_FILE_SECTION)) {
-      tools[AgentToolNames.LOAD_FILE_SECTION] = createLoadFileSectionTool(attachments.loadFileSection)
+      tools.push(createLoadFileSectionTool(attachments.loadFileSection))
     }
     if (attachments.loadExcelSection && isToolEnabled(enabledTools, AgentToolNames.LOAD_EXCEL_SECTION)) {
-      tools[AgentToolNames.LOAD_EXCEL_SECTION] = createLoadExcelSectionTool(attachments.loadExcelSection)
+      tools.push(createLoadExcelSectionTool(attachments.loadExcelSection))
     }
   }
 

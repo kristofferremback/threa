@@ -28,14 +28,8 @@ import {
 import { resolveStreamIdentifier } from "./tools/identifier-resolver"
 import { awaitAttachmentProcessing } from "../attachments"
 import { logger } from "../../lib/logger"
-import {
-  runAgentLoop,
-  buildAgentContext,
-  buildToolSet,
-  withCompanionSession,
-  type RecordStepParams,
-  type WithSessionResult,
-} from "./companion"
+import { buildAgentContext, buildToolSet, withCompanionSession, type WithSessionResult } from "./companion"
+import { AgentRuntime, SessionTraceObserver, OtelObserver } from "./runtime"
 import type {
   SearchToolsCallbacks,
   SearchAttachmentsCallbacks,
@@ -65,7 +59,6 @@ export interface PersonaAgentDeps {
   storage: StorageProvider
   modelRegistry: ModelRegistry
   tavilyApiKey?: string
-  /** If set, sends this canned response instead of running the AI loop (for testing) */
   stubResponse?: string
   createMessage: (params: {
     workspaceId: string
@@ -104,15 +97,6 @@ export interface PersonaAgentResult {
   personaId?: string
 }
 
-/**
- * Unified persona agent that handles both companion mode and @mention invocations.
- *
- * Delegates to companion/ modules for:
- * - Session lifecycle (companion/session.ts)
- * - Context assembly (companion/context.ts)
- * - Tool construction (companion/tool-set.ts)
- * - Agent loop execution (companion/agent-loop.ts)
- */
 export class PersonaAgent {
   constructor(private readonly deps: PersonaAgentDeps) {}
 
@@ -296,33 +280,41 @@ export class PersonaAgent {
           }
         }
 
-        // Get model and run agent loop
+        // Get model
         const model = ai.getLanguageModel(persona.model)
         const parsed = ai.parseModel(persona.model)
 
-        const loopResult = await runAgentLoop(
-          {
-            ai,
-            model,
-            systemPrompt: agentContext.systemPrompt,
-            messages: agentContext.messages,
-            tools,
-            streamId: targetStreamId,
-            sessionId: session.id,
-            personaId: persona.id,
-            lastProcessedSequence: session.lastSeenSequence ?? initialSequence,
-            telemetry: {
-              functionId: "agent-loop",
+        // Run agent runtime
+        const runtime = new AgentRuntime({
+          ai,
+          model,
+          systemPrompt: agentContext.systemPrompt,
+          messages: agentContext.messages,
+          tools,
+          sendMessage: doSendMessage,
+          telemetry: {
+            functionId: "agent-loop",
+            metadata: {
+              model_id: parsed.modelId,
+              model_provider: parsed.modelProvider,
+              model_name: parsed.modelName,
+            },
+          },
+          observers: [
+            new SessionTraceObserver(trace),
+            new OtelObserver({
+              sessionId: session.id,
+              streamId: targetStreamId,
+              personaId: persona.id,
               metadata: {
                 model_id: parsed.modelId,
                 model_provider: parsed.modelProvider,
                 model_name: parsed.modelName,
               },
-            },
-          },
-          {
-            sendMessage: doSendMessage,
-            checkNewMessages: async (checkStreamId, sinceSequence, excludeAuthorId) => {
+            }),
+          ],
+          newMessages: {
+            check: async (checkStreamId, sinceSequence, excludeAuthorId) => {
               const messages = await MessageRepository.listSince(db, checkStreamId, sinceSequence, {
                 excludeAuthorId,
               })
@@ -349,22 +341,10 @@ export class PersonaAgent {
                 createdAt: m.createdAt.toISOString(),
               }))
             },
-            updateLastSeenSequence: async (updateSessionId, sequence) => {
+            updateSequence: async (updateSessionId, sequence) => {
               await AgentSessionRepository.updateLastSeenSequence(db, updateSessionId, sequence)
             },
-            recordStep: async (params: RecordStepParams) => {
-              const step = await trace.startStep({
-                stepType: params.stepType,
-                content: params.content,
-              })
-              await step.complete({
-                content: params.content,
-                sources: params.sources,
-                messageId: params.messageId,
-                durationMs: params.durationMs,
-              })
-            },
-            awaitAttachmentProcessing: async (messageIds) => {
+            awaitAttachments: async (messageIds) => {
               const attachmentsByMessage = await AttachmentRepository.findByMessageIds(db, messageIds)
               const allAttachmentIds: string[] = []
               for (const attachments of attachmentsByMessage.values()) {
@@ -374,8 +354,14 @@ export class PersonaAgent {
                 await awaitAttachmentProcessing(db, allAttachmentIds)
               }
             },
-          }
-        )
+            streamId: targetStreamId,
+            sessionId: session.id,
+            personaId: persona.id,
+            lastProcessedSequence: session.lastSeenSequence ?? initialSequence,
+          },
+        })
+
+        const loopResult = await runtime.run()
 
         return {
           messagesSent: loopResult.messagesSent,
@@ -434,10 +420,6 @@ export class PersonaAgent {
     }
   }
 
-  /**
-   * Build search and attachment tool callbacks from domain repositories.
-   * These wire the tool interfaces to the actual data access layer.
-   */
   private async buildToolCallbacks(
     db: Pool,
     params: {

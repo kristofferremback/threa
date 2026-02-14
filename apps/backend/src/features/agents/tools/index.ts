@@ -35,11 +35,9 @@ export {
 } from "./get-attachment-tool"
 export {
   createLoadAttachmentTool,
-  isMultimodalToolResult,
   type LoadAttachmentInput,
   type LoadAttachmentCallbacks,
   type LoadAttachmentResult,
-  type MultimodalToolResult,
 } from "./load-attachment-tool"
 export {
   createLoadPdfSectionTool,
