@@ -1,6 +1,6 @@
 import type { Pool } from "pg"
 import { withClient } from "../../db"
-import { AgentTriggers, AuthorTypes, StreamTypes, type AuthorType, type SourceItem } from "@threa/types"
+import { AgentStepTypes, AgentTriggers, AuthorTypes, StreamTypes, type AuthorType, type SourceItem } from "@threa/types"
 import type { UserPreferencesService } from "../user-preferences"
 import { StreamRepository } from "../streams"
 import { MessageRepository } from "../messaging"
@@ -204,7 +204,7 @@ export class PersonaAgent {
           const contextMessages = triggerIdx >= 0 ? history.slice(Math.max(0, triggerIdx - 4)) : history.slice(-5)
 
           const step = await trace.startStep({
-            stepType: "context_received",
+            stepType: AgentStepTypes.CONTEXT_RECEIVED,
             content: JSON.stringify({
               messages: contextMessages.map((m) => ({
                 messageId: m.id,

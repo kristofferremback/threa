@@ -331,14 +331,13 @@ export class AgentRuntime {
     let sources = currentSources
     let retrievedContext = currentContext
 
-    // Order: web_search first (collect sources), then others, then send_message (staged)
-    const webSearchCalls = toolCalls.filter((tc) => tc.toolName === AgentToolNames.WEB_SEARCH)
+    // Order: early-phase tools first, then normal, then send_message (staged)
     const sendMessageCalls = toolCalls.filter((tc) => tc.toolName === AgentToolNames.SEND_MESSAGE)
-    const otherCalls = toolCalls.filter(
-      (tc) => tc.toolName !== AgentToolNames.WEB_SEARCH && tc.toolName !== AgentToolNames.SEND_MESSAGE
-    )
+    const agentToolCalls = toolCalls.filter((tc) => tc.toolName !== AgentToolNames.SEND_MESSAGE)
+    const earlyCalls = agentToolCalls.filter((tc) => this.toolMap.get(tc.toolName)?.config.executionPhase === "early")
+    const normalCalls = agentToolCalls.filter((tc) => this.toolMap.get(tc.toolName)?.config.executionPhase !== "early")
 
-    for (const tc of [...webSearchCalls, ...otherCalls]) {
+    for (const tc of [...earlyCalls, ...normalCalls]) {
       const agentTool = this.toolMap.get(tc.toolName)
       if (!agentTool) {
         await this.emit({

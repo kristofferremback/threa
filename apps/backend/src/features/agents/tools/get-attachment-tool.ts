@@ -1,5 +1,11 @@
 import { z } from "zod"
-import type { ExtractionContentType, ChartData, TableData, DiagramData } from "@threa/types"
+import {
+  AgentStepTypes,
+  type ExtractionContentType,
+  type ChartData,
+  type TableData,
+  type DiagramData,
+} from "@threa/types"
 import { logger } from "../../../lib/logger"
 import { defineAgentTool, type AgentToolResult } from "../runtime"
 
@@ -86,7 +92,7 @@ This provides text-based analysis results. Use load_attachment if you need to di
     },
 
     trace: {
-      stepType: "tool_call",
+      stepType: AgentStepTypes.TOOL_CALL,
       formatContent: (input) => JSON.stringify({ tool: "get_attachment", attachmentId: input.attachmentId }),
     },
   })

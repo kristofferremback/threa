@@ -2,6 +2,7 @@ import { z } from "zod"
 import * as dns from "dns/promises"
 import * as ipaddr from "ipaddr.js"
 import { NodeHtmlMarkdown } from "node-html-markdown"
+import { AgentStepTypes } from "@threa/types"
 import { logger } from "../../../lib/logger"
 import { defineAgentTool, type AgentToolResult } from "../runtime"
 
@@ -285,7 +286,7 @@ export function createReadUrlTool() {
     },
 
     trace: {
-      stepType: "visit_page",
+      stepType: AgentStepTypes.VISIT_PAGE,
       formatContent: (input, result) => {
         try {
           const parsed = JSON.parse(result.output)

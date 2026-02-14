@@ -1,4 +1,4 @@
-import type { TraceSource } from "@threa/types"
+import { AgentStepTypes, type TraceSource } from "@threa/types"
 import type { SessionTrace } from "../trace-emitter"
 import type { AgentEvent } from "./agent-events"
 import type { AgentObserver } from "./agent-observer"
@@ -14,7 +14,7 @@ export class SessionTraceObserver implements AgentObserver {
     switch (event.type) {
       case "thinking": {
         const step = await this.trace.startStep({
-          stepType: "thinking",
+          stepType: AgentStepTypes.THINKING,
           content: event.content,
         })
         await step.complete({ durationMs: event.durationMs })
@@ -36,7 +36,7 @@ export class SessionTraceObserver implements AgentObserver {
 
       case "tool:error": {
         const step = await this.trace.startStep({
-          stepType: "tool_error",
+          stepType: AgentStepTypes.TOOL_ERROR,
           content: `${event.toolName} failed: ${event.error}`,
         })
         await step.complete({ durationMs: event.durationMs })
@@ -45,7 +45,7 @@ export class SessionTraceObserver implements AgentObserver {
 
       case "message:sent": {
         const step = await this.trace.startStep({
-          stepType: "message_sent",
+          stepType: AgentStepTypes.MESSAGE_SENT,
           content: event.content,
         })
         await step.complete({
@@ -58,7 +58,7 @@ export class SessionTraceObserver implements AgentObserver {
 
       case "context:received": {
         const step = await this.trace.startStep({
-          stepType: "context_received",
+          stepType: AgentStepTypes.CONTEXT_RECEIVED,
           content: JSON.stringify({
             messages: event.messages.map((m) => ({
               messageId: m.messageId,
@@ -75,7 +75,7 @@ export class SessionTraceObserver implements AgentObserver {
 
       case "reconsidering": {
         const step = await this.trace.startStep({
-          stepType: "reconsidering",
+          stepType: AgentStepTypes.RECONSIDERING,
           content: JSON.stringify({
             draftResponse: event.draft,
             newMessages: event.newMessages.map((m) => ({

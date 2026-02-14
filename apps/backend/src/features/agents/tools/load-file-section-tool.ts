@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { AgentStepTypes } from "@threa/types"
 import { logger } from "../../../lib/logger"
 import { defineAgentTool, type AgentToolResult } from "../runtime"
 
@@ -91,7 +92,7 @@ For small/medium files (<32KB), full content is already available in fullText - 
     },
 
     trace: {
-      stepType: "tool_call",
+      stepType: AgentStepTypes.TOOL_CALL,
       formatContent: (input) =>
         JSON.stringify({
           tool: "load_file_section",

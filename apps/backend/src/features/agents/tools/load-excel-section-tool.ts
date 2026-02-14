@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { AgentStepTypes } from "@threa/types"
 import { logger } from "../../../lib/logger"
 import { EXCEL_MAX_ROWS_PER_REQUEST } from "../../attachments"
 import { defineAgentTool, type AgentToolResult } from "../runtime"
@@ -111,7 +112,7 @@ For small/medium workbooks (<20K cells), full content is already available in fu
     },
 
     trace: {
-      stepType: "tool_call",
+      stepType: AgentStepTypes.TOOL_CALL,
       formatContent: (input) =>
         JSON.stringify({ tool: "load_excel_section", attachmentId: input.attachmentId, sheet: input.sheetName }),
     },

@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { AgentStepTypes } from "@threa/types"
 import { logger } from "../../../lib/logger"
 import { defineAgentTool, type AgentToolResult } from "../runtime"
 
@@ -62,7 +63,7 @@ For text content from documents, prefer get_attachment which returns the extract
     },
 
     trace: {
-      stepType: "tool_call",
+      stepType: AgentStepTypes.TOOL_CALL,
       formatContent: (input, result) => {
         if (result.multimodal && result.multimodal.length > 0) {
           return `Loaded image: ${input.attachmentId}`

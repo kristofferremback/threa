@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { STREAM_TYPES } from "@threa/types"
+import { AgentStepTypes, STREAM_TYPES } from "@threa/types"
 import { logger } from "../../../lib/logger"
 import { defineAgentTool, type AgentToolResult } from "../runtime"
 
@@ -150,7 +150,7 @@ Optionally filter by stream using ID (stream_xxx), slug (general), or prefixed s
     },
 
     trace: {
-      stepType: "workspace_search",
+      stepType: AgentStepTypes.WORKSPACE_SEARCH,
       formatContent: (input) =>
         JSON.stringify({
           tool: "search_messages",
@@ -211,7 +211,7 @@ export function createSearchStreamsTool(callbacks: SearchToolsCallbacks) {
     },
 
     trace: {
-      stepType: "workspace_search",
+      stepType: AgentStepTypes.WORKSPACE_SEARCH,
       formatContent: (input) => JSON.stringify({ tool: "search_streams", query: input.query ?? "" }),
     },
   })
@@ -264,7 +264,7 @@ export function createSearchUsersTool(callbacks: SearchToolsCallbacks) {
     },
 
     trace: {
-      stepType: "workspace_search",
+      stepType: AgentStepTypes.WORKSPACE_SEARCH,
       formatContent: (input) => JSON.stringify({ tool: "search_users", query: input.query ?? "" }),
     },
   })
@@ -322,7 +322,7 @@ You can reference streams by their ID (stream_xxx), slug (general), or prefixed 
     },
 
     trace: {
-      stepType: "workspace_search",
+      stepType: AgentStepTypes.WORKSPACE_SEARCH,
       formatContent: (input) => JSON.stringify({ tool: "get_stream_messages", stream: input.stream ?? null }),
     },
   })

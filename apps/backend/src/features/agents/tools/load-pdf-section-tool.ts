@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { AgentStepTypes } from "@threa/types"
 import { logger } from "../../../lib/logger"
 import { defineAgentTool, type AgentToolResult } from "../runtime"
 
@@ -92,7 +93,7 @@ For small/medium PDFs (<25 pages), full content is already available in the extr
     },
 
     trace: {
-      stepType: "tool_call",
+      stepType: AgentStepTypes.TOOL_CALL,
       formatContent: (input) =>
         JSON.stringify({
           tool: "load_pdf_section",

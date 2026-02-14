@@ -21,11 +21,20 @@ export interface AgentToolResult {
 // AgentToolConfig — self-describing tool definition
 // ---------------------------------------------------------------------------
 
+/**
+ * Execution phase controls tool ordering within a single LLM turn.
+ * - "early": runs first (e.g., web_search — collect sources before other tools)
+ * - "normal": runs after early tools (default)
+ */
+export type ExecutionPhase = "early" | "normal"
+
 export interface AgentToolConfig<TSchema extends z.ZodTypeAny = z.ZodTypeAny> {
   name: string
   description: string
   inputSchema: TSchema
   execute: (input: z.infer<TSchema>, opts: { toolCallId: string }) => Promise<AgentToolResult>
+  /** Controls execution ordering within a single LLM turn. Defaults to "normal". */
+  executionPhase?: ExecutionPhase
   trace: {
     stepType: AgentStepType
     formatContent: (input: z.infer<TSchema>, result: AgentToolResult) => string

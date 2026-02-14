@@ -1,6 +1,6 @@
 // Tool definition
 export { defineAgentTool, toVercelToolDefs } from "./agent-tool"
-export type { AgentTool, AgentToolConfig, AgentToolResult } from "./agent-tool"
+export type { AgentTool, AgentToolConfig, AgentToolResult, ExecutionPhase } from "./agent-tool"
 
 // Events
 export type { AgentEvent, NewMessageInfo } from "./agent-events"

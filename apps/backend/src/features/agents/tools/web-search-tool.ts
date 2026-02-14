@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { AgentStepTypes } from "@threa/types"
 import { logger } from "../../../lib/logger"
 import { defineAgentTool, type AgentToolResult } from "../runtime"
 
@@ -136,8 +137,10 @@ export function createWebSearchTool(params: CreateWebSearchToolParams) {
       }
     },
 
+    executionPhase: "early",
+
     trace: {
-      stepType: "web_search",
+      stepType: AgentStepTypes.WEB_SEARCH,
       formatContent: (input) => input.query,
       extractSources: (_input, result) =>
         (result.sources ?? []).map((s) => ({ type: "web" as const, title: s.title, url: s.url })),

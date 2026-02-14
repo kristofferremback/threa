@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { AgentStepTypes } from "@threa/types"
 import type { WorkspaceAgentResult } from "../researcher"
 import { defineAgentTool, type AgentToolResult } from "../runtime"
 
@@ -68,7 +69,7 @@ export function createWorkspaceResearchTool(callbacks: WorkspaceResearchCallback
     },
 
     trace: {
-      stepType: "workspace_search",
+      stepType: AgentStepTypes.WORKSPACE_SEARCH,
       formatContent: (_input, result) => {
         try {
           return result.output
