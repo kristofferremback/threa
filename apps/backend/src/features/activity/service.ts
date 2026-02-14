@@ -4,7 +4,7 @@ import { MemberRepository } from "../workspaces"
 import { StreamRepository, StreamMemberRepository, type Stream } from "../streams"
 import { resolveNotificationLevelsForStream } from "../streams/notification-resolver"
 import { extractMentionSlugs } from "../agents"
-import { Visibilities, NotificationLevels } from "@threa/types"
+import { Visibilities, NotificationLevels, StreamTypes } from "@threa/types"
 import { withClient } from "../../db"
 import { logger } from "../../lib/logger"
 
@@ -24,9 +24,10 @@ export class ActivityService {
     streamId: string
     messageId: string
     actorId: string
+    actorType: string
     contentMarkdown: string
   }): Promise<Activity[]> {
-    const { workspaceId, streamId, messageId, actorId, contentMarkdown } = params
+    const { workspaceId, streamId, messageId, actorId, actorType, contentMarkdown } = params
 
     const mentionSlugs = extractMentionSlugs(contentMarkdown)
     if (mentionSlugs.length === 0) return []
@@ -49,6 +50,7 @@ export class ActivityService {
       )
       if (eligible.size === 0) return []
 
+      const streamContext = await resolveStreamContext(client, stream)
       const contentPreview = contentMarkdown.slice(0, 200)
       const activities: Activity[] = []
 
@@ -61,7 +63,8 @@ export class ActivityService {
           streamId,
           messageId,
           actorId,
-          context: { contentPreview },
+          actorType,
+          context: { contentPreview, ...streamContext },
         })
         // null means dedup (ON CONFLICT DO NOTHING) — already tracked
         if (activity) {
@@ -78,10 +81,11 @@ export class ActivityService {
     streamId: string
     messageId: string
     actorId: string
+    actorType: string
     contentMarkdown: string
     excludeMemberIds: Set<string>
   }): Promise<Activity[]> {
-    const { workspaceId, streamId, messageId, actorId, contentMarkdown, excludeMemberIds } = params
+    const { workspaceId, streamId, messageId, actorId, actorType, contentMarkdown, excludeMemberIds } = params
 
     return withClient(this.pool, async (client) => {
       const stream = await StreamRepository.findById(client, streamId)
@@ -93,6 +97,7 @@ export class ActivityService {
       // Resolve effective notification levels for all members
       const resolved = await resolveNotificationLevelsForStream(client, stream, members)
 
+      const streamContext = await resolveStreamContext(client, stream)
       const contentPreview = contentMarkdown.slice(0, 200)
       const activities: Activity[] = []
 
@@ -117,7 +122,8 @@ export class ActivityService {
           streamId,
           messageId,
           actorId,
-          context: { contentPreview },
+          actorType,
+          context: { contentPreview, ...streamContext },
         })
         if (activity) {
           activities.push(activity)
@@ -181,5 +187,31 @@ export class ActivityService {
     if (count > 0) {
       logger.debug({ memberId, workspaceId, count }, "Marked all activity as read")
     }
+  }
+}
+
+function resolveStreamName(stream: Stream): string {
+  if (stream.type === StreamTypes.CHANNEL && stream.slug) return `#${stream.slug}`
+  return stream.displayName || "Untitled"
+}
+
+interface StreamContext {
+  streamName: string
+  rootStreamId?: string
+  parentStreamName?: string
+}
+
+async function resolveStreamContext(client: PoolClient, stream: Stream): Promise<StreamContext> {
+  if (!stream.rootStreamId) return { streamName: resolveStreamName(stream) }
+
+  // For threads, the parent/root stream name is the stable reference —
+  // thread names are often assigned asynchronously and may not exist yet.
+  // Also store rootStreamId so the frontend can resolve from bootstrap
+  // even for old activity items without parentStreamName.
+  const rootStream = await StreamRepository.findById(client, stream.rootStreamId)
+  return {
+    streamName: resolveStreamName(stream),
+    rootStreamId: stream.rootStreamId,
+    parentStreamName: rootStream ? resolveStreamName(rootStream) : undefined,
   }
 }

@@ -186,6 +186,7 @@ export interface Activity {
   streamId: string
   messageId: string
   actorId: string
+  actorType: string
   context: Record<string, unknown>
   readAt: string | null
   createdAt: string
@@ -201,6 +202,7 @@ export interface ActivityCreatedPayload {
     streamId: string
     messageId: string
     actorId: string
+    actorType: string
     context: Record<string, unknown>
     createdAt: string
   }

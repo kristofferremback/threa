@@ -92,6 +92,7 @@ describe("ActivityFeedHandler", () => {
       streamId: "stream_test",
       messageId: "msg_test",
       actorId: "member_author",
+      actorType: "member",
       contentMarkdown: "hey @alice look at this",
     })
   })
@@ -165,6 +166,7 @@ describe("ActivityFeedHandler", () => {
       streamId: "stream_test",
       messageId: "msg_test",
       actorId: "member_author",
+      actorType: "member",
       context: { contentPreview: "hey @alice" },
       readAt: null,
       createdAt: new Date("2025-01-01T00:00:00Z"),
@@ -196,6 +198,7 @@ describe("ActivityFeedHandler", () => {
         streamId: "stream_test",
         messageId: "msg_test",
         actorId: "member_author",
+        actorType: "member",
         context: { contentPreview: "hey @alice" },
         createdAt: "2025-01-01T00:00:00.000Z",
       },

@@ -10,6 +10,7 @@ interface ActivityRow {
   stream_id: string
   message_id: string
   actor_id: string
+  actor_type: string
   context: Record<string, unknown>
   read_at: Date | null
   created_at: Date
@@ -23,6 +24,7 @@ export interface Activity {
   streamId: string
   messageId: string
   actorId: string
+  actorType: string
   context: Record<string, unknown>
   readAt: Date | null
   createdAt: Date
@@ -35,6 +37,7 @@ export interface InsertActivityParams {
   streamId: string
   messageId: string
   actorId: string
+  actorType: string
   context?: Record<string, unknown>
 }
 
@@ -47,6 +50,7 @@ function mapRowToActivity(row: ActivityRow): Activity {
     streamId: row.stream_id,
     messageId: row.message_id,
     actorId: row.actor_id,
+    actorType: row.actor_type,
     context: row.context,
     readAt: row.read_at,
     createdAt: row.created_at,
@@ -57,7 +61,7 @@ export const ActivityRepository = {
   async insert(db: Querier, params: InsertActivityParams): Promise<Activity | null> {
     const id = activityId()
     const result = await db.query<ActivityRow>(sql`
-      INSERT INTO member_activity (id, workspace_id, member_id, activity_type, stream_id, message_id, actor_id, context)
+      INSERT INTO member_activity (id, workspace_id, member_id, activity_type, stream_id, message_id, actor_id, actor_type, context)
       VALUES (
         ${id},
         ${params.workspaceId},
@@ -66,10 +70,11 @@ export const ActivityRepository = {
         ${params.streamId},
         ${params.messageId},
         ${params.actorId},
+        ${params.actorType},
         ${JSON.stringify(params.context ?? {})}
       )
       ON CONFLICT (member_id, message_id, activity_type, actor_id) DO NOTHING
-      RETURNING id, workspace_id, member_id, activity_type, stream_id, message_id, actor_id, context, read_at, created_at
+      RETURNING id, workspace_id, member_id, activity_type, stream_id, message_id, actor_id, actor_type, context, read_at, created_at
     `)
     return result.rows[0] ? mapRowToActivity(result.rows[0]) : null
   },
@@ -86,7 +91,7 @@ export const ActivityRepository = {
     const unreadOnly = opts?.unreadOnly ?? false
 
     const result = await db.query<ActivityRow>(sql`
-      SELECT id, workspace_id, member_id, activity_type, stream_id, message_id, actor_id, context, read_at, created_at
+      SELECT id, workspace_id, member_id, activity_type, stream_id, message_id, actor_id, actor_type, context, read_at, created_at
       FROM member_activity
       WHERE member_id = ${memberId}
         AND workspace_id = ${workspaceId}

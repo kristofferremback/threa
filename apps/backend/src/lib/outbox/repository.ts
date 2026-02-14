@@ -271,6 +271,7 @@ export interface ActivityCreatedOutboxPayload extends WorkspaceScopedPayload {
     streamId: string
     messageId: string
     actorId: string
+    actorType: string
     context: Record<string, unknown>
     createdAt: string
   }

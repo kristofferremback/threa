@@ -112,6 +112,7 @@ export class ActivityFeedHandler implements OutboxHandler {
             streamId,
             messageId: messageEvent.payload.messageId,
             actorId: messageEvent.actorId,
+            actorType: messageEvent.actorType,
             contentMarkdown: messageEvent.payload.contentMarkdown,
           })
           const mentionedMemberIds = new Set(mentionActivities.map((a) => a.memberId))
@@ -122,6 +123,7 @@ export class ActivityFeedHandler implements OutboxHandler {
             streamId,
             messageId: messageEvent.payload.messageId,
             actorId: messageEvent.actorId,
+            actorType: messageEvent.actorType,
             contentMarkdown: messageEvent.payload.contentMarkdown,
             excludeMemberIds: mentionedMemberIds,
           })
@@ -141,6 +143,7 @@ export class ActivityFeedHandler implements OutboxHandler {
                     streamId: activity.streamId,
                     messageId: activity.messageId,
                     actorId: activity.actorId,
+                    actorType: activity.actorType,
                     context: activity.context,
                     createdAt: activity.createdAt.toISOString(),
                   },
