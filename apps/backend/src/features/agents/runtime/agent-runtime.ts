@@ -1,4 +1,4 @@
-import type { LanguageModel, ModelMessage, ToolResultPart } from "ai"
+import type { LanguageModel, ModelMessage, Tool, ToolResultPart } from "ai"
 import type { SourceItem, TraceSource } from "@threa/types"
 import { AgentToolNames } from "@threa/types"
 import type { AI } from "../../../lib/ai/ai"
@@ -17,6 +17,16 @@ import type { AgentObserver } from "./agent-observer"
 
 const DEFAULT_MAX_ITERATIONS = 20
 
+export interface NewMessageAwareness {
+  check: (streamId: string, sinceSequence: bigint, excludeAuthorId: string) => Promise<NewMessageInfo[]>
+  updateSequence: (sessionId: string, sequence: bigint) => Promise<void>
+  awaitAttachments: (messageIds: string[]) => Promise<void>
+  streamId: string
+  sessionId: string
+  personaId: string
+  lastProcessedSequence: bigint
+}
+
 export interface AgentRuntimeConfig {
   ai: AI
   model: LanguageModel
@@ -31,15 +41,7 @@ export interface AgentRuntimeConfig {
   sendMessage: (input: { content: string; sources?: SourceItem[] }) => Promise<{ messageId: string }>
 
   /** Optional new-message awareness (companion uses this, simpler agents don't) */
-  newMessages?: {
-    check: (streamId: string, sinceSequence: bigint, excludeAuthorId: string) => Promise<NewMessageInfo[]>
-    updateSequence: (sessionId: string, sequence: bigint) => Promise<void>
-    awaitAttachments: (messageIds: string[]) => Promise<void>
-    streamId: string
-    sessionId: string
-    personaId: string
-    lastProcessedSequence: bigint
-  }
+  newMessages?: NewMessageAwareness
 }
 
 export interface AgentRuntimeResult {
@@ -106,11 +108,23 @@ export class AgentRuntime {
   private readonly maxIterations: number
   private readonly observers: AgentObserver[]
   private readonly toolMap: Map<string, AgentTool>
+  private readonly toolDefs: Record<string, Tool<any, any>>
 
   constructor(private readonly config: AgentRuntimeConfig) {
     this.maxIterations = config.maxIterations ?? DEFAULT_MAX_ITERATIONS
     this.observers = config.observers ?? []
     this.toolMap = new Map(config.tools.map((t) => [t.name, t]))
+    this.toolDefs = this.buildToolDefs()
+  }
+
+  /**
+   * Build the complete set of tool definitions the LLM sees.
+   * Includes all AgentTool schemas plus send_message (terminal action the runtime intercepts).
+   */
+  private buildToolDefs(): Record<string, Tool<any, any>> {
+    const defs = toVercelToolDefs(this.config.tools)
+    defs[AgentToolNames.SEND_MESSAGE] = createSendMessageTool()
+    return defs
   }
 
   async run(): Promise<AgentRuntimeResult> {
@@ -134,7 +148,11 @@ export class AgentRuntime {
       throw error
     } finally {
       for (const observer of this.observers) {
-        await observer.cleanup?.()
+        try {
+          await observer.cleanup?.()
+        } catch (err) {
+          logger.warn({ err }, "Observer cleanup failed")
+        }
       }
     }
   }
@@ -144,10 +162,6 @@ export class AgentRuntime {
     const nm = this.config.newMessages
 
     const conversation: ModelMessage[] = [...this.config.messages]
-    const toolDefs = toVercelToolDefs(this.config.tools)
-    // send_message is not a regular AgentTool — the runtime intercepts it for staging.
-    // Add its schema so the LLM can call it.
-    toolDefs[AgentToolNames.SEND_MESSAGE] = createSendMessageTool()
     const sent = { ids: [] as string[], contents: [] as string[] }
     let messagesSent = 0
     let sources: SourceItem[] = []
@@ -165,7 +179,7 @@ export class AgentRuntime {
         model,
         system: fullSystemPrompt,
         messages: truncatedMessages,
-        tools: toolDefs,
+        tools: this.toolDefs,
         telemetry: this.config.telemetry,
       })
       const durationMs = Date.now() - startTime

@@ -47,55 +47,45 @@ export interface ToolSetConfig {
  */
 export function buildToolSet(config: ToolSetConfig): AgentTool[] {
   const { enabledTools, tavilyApiKey, runWorkspaceAgent, search, attachments } = config
-  const tools: AgentTool[] = []
 
-  if (runWorkspaceAgent) {
-    tools.push(createWorkspaceResearchTool({ runWorkspaceAgent }))
-  }
+  const tools: Array<AgentTool | null> = [
+    // Workspace research (available when agent has trigger context)
+    runWorkspaceAgent ? createWorkspaceResearchTool({ runWorkspaceAgent }) : null,
 
-  if (tavilyApiKey && isToolEnabled(enabledTools, AgentToolNames.WEB_SEARCH)) {
-    tools.push(createWebSearchTool({ tavilyApiKey }))
-  }
+    // Web tools
+    tavilyApiKey && isToolEnabled(enabledTools, AgentToolNames.WEB_SEARCH)
+      ? createWebSearchTool({ tavilyApiKey })
+      : null,
+    isToolEnabled(enabledTools, AgentToolNames.READ_URL) ? createReadUrlTool() : null,
 
-  if (isToolEnabled(enabledTools, AgentToolNames.READ_URL)) {
-    tools.push(createReadUrlTool())
-  }
+    // Workspace search tools
+    search && isToolEnabled(enabledTools, AgentToolNames.SEARCH_MESSAGES) ? createSearchMessagesTool(search) : null,
+    search && isToolEnabled(enabledTools, AgentToolNames.SEARCH_STREAMS) ? createSearchStreamsTool(search) : null,
+    search && isToolEnabled(enabledTools, AgentToolNames.SEARCH_USERS) ? createSearchUsersTool(search) : null,
+    search && isToolEnabled(enabledTools, AgentToolNames.GET_STREAM_MESSAGES)
+      ? createGetStreamMessagesTool(search)
+      : null,
 
-  if (search) {
-    if (isToolEnabled(enabledTools, AgentToolNames.SEARCH_MESSAGES)) {
-      tools.push(createSearchMessagesTool(search))
-    }
-    if (isToolEnabled(enabledTools, AgentToolNames.SEARCH_STREAMS)) {
-      tools.push(createSearchStreamsTool(search))
-    }
-    if (isToolEnabled(enabledTools, AgentToolNames.SEARCH_USERS)) {
-      tools.push(createSearchUsersTool(search))
-    }
-    if (isToolEnabled(enabledTools, AgentToolNames.GET_STREAM_MESSAGES)) {
-      tools.push(createGetStreamMessagesTool(search))
-    }
-  }
+    // Attachment tools
+    attachments && isToolEnabled(enabledTools, AgentToolNames.SEARCH_ATTACHMENTS)
+      ? createSearchAttachmentsTool(attachments.search)
+      : null,
+    attachments && isToolEnabled(enabledTools, AgentToolNames.GET_ATTACHMENT)
+      ? createGetAttachmentTool(attachments.get)
+      : null,
+    attachments?.load && isToolEnabled(enabledTools, AgentToolNames.LOAD_ATTACHMENT)
+      ? createLoadAttachmentTool(attachments.load)
+      : null,
+    attachments?.loadPdfSection && isToolEnabled(enabledTools, AgentToolNames.LOAD_PDF_SECTION)
+      ? createLoadPdfSectionTool(attachments.loadPdfSection)
+      : null,
+    attachments?.loadFileSection && isToolEnabled(enabledTools, AgentToolNames.LOAD_FILE_SECTION)
+      ? createLoadFileSectionTool(attachments.loadFileSection)
+      : null,
+    attachments?.loadExcelSection && isToolEnabled(enabledTools, AgentToolNames.LOAD_EXCEL_SECTION)
+      ? createLoadExcelSectionTool(attachments.loadExcelSection)
+      : null,
+  ]
 
-  if (attachments) {
-    if (isToolEnabled(enabledTools, AgentToolNames.SEARCH_ATTACHMENTS)) {
-      tools.push(createSearchAttachmentsTool(attachments.search))
-    }
-    if (isToolEnabled(enabledTools, AgentToolNames.GET_ATTACHMENT)) {
-      tools.push(createGetAttachmentTool(attachments.get))
-    }
-    if (attachments.load && isToolEnabled(enabledTools, AgentToolNames.LOAD_ATTACHMENT)) {
-      tools.push(createLoadAttachmentTool(attachments.load))
-    }
-    if (attachments.loadPdfSection && isToolEnabled(enabledTools, AgentToolNames.LOAD_PDF_SECTION)) {
-      tools.push(createLoadPdfSectionTool(attachments.loadPdfSection))
-    }
-    if (attachments.loadFileSection && isToolEnabled(enabledTools, AgentToolNames.LOAD_FILE_SECTION)) {
-      tools.push(createLoadFileSectionTool(attachments.loadFileSection))
-    }
-    if (attachments.loadExcelSection && isToolEnabled(enabledTools, AgentToolNames.LOAD_EXCEL_SECTION)) {
-      tools.push(createLoadExcelSectionTool(attachments.loadExcelSection))
-    }
-  }
-
-  return tools
+  return tools.filter((t): t is AgentTool => t !== null)
 }

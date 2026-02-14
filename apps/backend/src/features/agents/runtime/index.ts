@@ -14,4 +14,4 @@ export { OtelObserver } from "./otel-observer"
 
 // Runtime
 export { AgentRuntime } from "./agent-runtime"
-export type { AgentRuntimeConfig, AgentRuntimeResult } from "./agent-runtime"
+export type { AgentRuntimeConfig, AgentRuntimeResult, NewMessageAwareness } from "./agent-runtime"
