@@ -1,7 +1,7 @@
 import { describe, it, expect, mock, afterEach } from "bun:test"
 import { createWebSearchTool } from "./web-search-tool"
 
-const toolOpts = { toolCallId: "test", messages: [] as any[] }
+const toolOpts = { toolCallId: "test" }
 
 describe("web-search-tool", () => {
   const originalFetch = globalThis.fetch
@@ -29,8 +29,8 @@ describe("web-search-tool", () => {
     ) as unknown as typeof fetch
 
     const tool = createWebSearchTool({ tavilyApiKey: "test-api-key" })
-    const result = (await tool.execute!({ query: "test query" }, toolOpts)) as string
-    const parsed = JSON.parse(result)
+    const { output } = await tool.config.execute({ query: "test query" }, toolOpts)
+    const parsed = JSON.parse(output)
 
     expect(parsed.query).toBe("test query")
     expect(parsed.answer).toBe("This is the answer")
@@ -51,7 +51,7 @@ describe("web-search-tool", () => {
     }) as unknown as typeof fetch
 
     const tool = createWebSearchTool({ tavilyApiKey: "test-api-key" })
-    await tool.execute!({ query: "test query" }, toolOpts)
+    await tool.config.execute({ query: "test query" }, toolOpts)
 
     expect(capturedRequest).not.toBeNull()
     expect(capturedRequest!.url).toBe("https://api.tavily.com/search")
@@ -77,8 +77,8 @@ describe("web-search-tool", () => {
     ) as unknown as typeof fetch
 
     const tool = createWebSearchTool({ tavilyApiKey: "invalid-key" })
-    const result = (await tool.execute!({ query: "test" }, toolOpts)) as string
-    const parsed = JSON.parse(result)
+    const { output } = await tool.config.execute({ query: "test" }, toolOpts)
+    const parsed = JSON.parse(output)
 
     expect(parsed.error).toContain("Search failed: 401")
     expect(parsed.query).toBe("test")
@@ -88,8 +88,8 @@ describe("web-search-tool", () => {
     globalThis.fetch = mock(() => Promise.reject(new Error("Network error"))) as unknown as typeof fetch
 
     const tool = createWebSearchTool({ tavilyApiKey: "test-key" })
-    const result = (await tool.execute!({ query: "test" }, toolOpts)) as string
-    const parsed = JSON.parse(result)
+    const { output } = await tool.config.execute({ query: "test" }, toolOpts)
+    const parsed = JSON.parse(output)
 
     expect(parsed.error).toContain("Network error")
   })
@@ -106,7 +106,7 @@ describe("web-search-tool", () => {
     }) as unknown as typeof fetch
 
     const tool = createWebSearchTool({ tavilyApiKey: "test-key", maxResults: 10 })
-    await tool.execute!({ query: "test" }, toolOpts)
+    await tool.config.execute({ query: "test" }, toolOpts)
 
     expect(capturedBody).not.toBeNull()
     expect(capturedBody!.max_results).toBe(10)
@@ -119,8 +119,8 @@ describe("web-search-tool", () => {
     globalThis.fetch = mock(() => Promise.reject(abortError)) as unknown as typeof fetch
 
     const tool = createWebSearchTool({ tavilyApiKey: "test-key" })
-    const result = (await tool.execute!({ query: "test" }, toolOpts)) as string
-    const parsed = JSON.parse(result)
+    const { output } = await tool.config.execute({ query: "test" }, toolOpts)
+    const parsed = JSON.parse(output)
 
     expect(parsed.error).toContain("timed out")
   })

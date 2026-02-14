@@ -15,7 +15,6 @@ export {
   type BoundaryExtractionJobData,
   type MemoBatchCheckJobData,
   type MemoBatchProcessJobData,
-  type SimulationJobData,
   type CommandExecuteJobData,
   type ImageCaptionJobData,
   type PdfPrepareJobData,

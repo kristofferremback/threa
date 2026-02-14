@@ -1,6 +1,9 @@
-import { tool } from "ai"
 import { z } from "zod"
+import { AgentStepTypes } from "@threa/types"
 import { logger } from "../../../lib/logger"
+import { AttachmentRepository, AttachmentExtractionRepository } from "../../attachments"
+import { defineAgentTool, type AgentToolResult } from "../runtime"
+import type { WorkspaceToolDeps } from "./tool-deps"
 
 const MAX_LINES_PER_REQUEST = 500
 
@@ -21,35 +24,20 @@ const LoadFileSectionSchema = z
 
 export type LoadFileSectionInput = z.infer<typeof LoadFileSectionSchema>
 
-/**
- * Result from loading a file section.
- * Contains the text content for the requested line range.
- */
 export interface LoadFileSectionResult {
   attachmentId: string
   filename: string
   startLine: number
   endLine: number
   totalLines: number
-  /** Content for the requested lines */
   content: string
 }
 
-export interface LoadFileSectionCallbacks {
-  loadFileSection: (input: LoadFileSectionInput) => Promise<LoadFileSectionResult | null>
-}
+export function createLoadFileSectionTool(deps: WorkspaceToolDeps) {
+  const { db, accessibleStreamIds, storage } = deps
 
-/**
- * Creates a load_file_section tool for loading specific line ranges from large text files.
- *
- * This tool is only useful for large text files (>32KB) where full content isn't
- * injected into context. For small/medium files, full content is already available.
- *
- * Use the sections metadata from the attachment extraction to identify relevant
- * line ranges before calling this tool.
- */
-export function createLoadFileSectionTool(callbacks: LoadFileSectionCallbacks) {
-  return tool({
+  return defineAgentTool({
+    name: "load_file_section",
     description: `Load specific lines from a large text file. Only use this when:
 - The file is large (>32KB) and injection strategy is "summary" (full content not in context)
 - You need to read specific sections based on the section metadata
@@ -59,17 +47,65 @@ The attachment extraction includes textMetadata.sections with line ranges. Use t
 
 For small/medium files (<32KB), full content is already available in fullText - don't use this tool.`,
     inputSchema: LoadFileSectionSchema,
-    execute: async (input) => {
-      try {
-        const result = await callbacks.loadFileSection(input)
 
-        if (!result) {
-          return JSON.stringify({
-            error: "File not found, not accessible, or lines not available",
-            attachmentId: input.attachmentId,
-            startLine: input.startLine,
-            endLine: input.endLine,
-          })
+    execute: async (input): Promise<AgentToolResult> => {
+      try {
+        const attachment = await AttachmentRepository.findById(db, input.attachmentId)
+        if (!attachment) {
+          return {
+            output: JSON.stringify({
+              error: "File not found, not accessible, or lines not available",
+              attachmentId: input.attachmentId,
+              startLine: input.startLine,
+              endLine: input.endLine,
+            }),
+          }
+        }
+        if (!attachment.streamId || !accessibleStreamIds.includes(attachment.streamId)) {
+          return {
+            output: JSON.stringify({
+              error: "File not found, not accessible, or lines not available",
+              attachmentId: input.attachmentId,
+              startLine: input.startLine,
+              endLine: input.endLine,
+            }),
+          }
+        }
+
+        const extraction = await AttachmentExtractionRepository.findByAttachmentId(db, input.attachmentId)
+        if (!extraction || extraction.sourceType !== "text" || !extraction.textMetadata) {
+          return {
+            output: JSON.stringify({
+              error: "File not found, not accessible, or lines not available",
+              attachmentId: input.attachmentId,
+              startLine: input.startLine,
+              endLine: input.endLine,
+            }),
+          }
+        }
+
+        const totalLines = extraction.textMetadata.totalLines
+        if (input.startLine >= totalLines || input.endLine > totalLines) {
+          return {
+            output: JSON.stringify({
+              error: "File not found, not accessible, or lines not available",
+              attachmentId: input.attachmentId,
+              startLine: input.startLine,
+              endLine: input.endLine,
+            }),
+          }
+        }
+
+        const fileBuffer = await storage.getObject(attachment.storagePath)
+        const lines = fileBuffer.toString("utf-8").split("\n")
+
+        const result: LoadFileSectionResult = {
+          attachmentId: input.attachmentId,
+          filename: attachment.filename,
+          startLine: input.startLine,
+          endLine: input.endLine,
+          totalLines,
+          content: lines.slice(input.startLine, input.endLine).join("\n"),
         }
 
         logger.debug(
@@ -82,18 +118,32 @@ For small/medium files (<32KB), full content is already available in fullText - 
           "File section loaded"
         )
 
-        return JSON.stringify({
-          filename: result.filename,
-          lineRange: `${result.startLine}-${result.endLine - 1} of ${result.totalLines}`,
-          content: result.content,
-        })
+        return {
+          output: JSON.stringify({
+            filename: result.filename,
+            lineRange: `${result.startLine}-${result.endLine - 1} of ${result.totalLines}`,
+            content: result.content,
+          }),
+        }
       } catch (error) {
         logger.error({ error, ...input }, "Load file section failed")
-        return JSON.stringify({
-          error: `Failed to load file section: ${error instanceof Error ? error.message : "Unknown error"}`,
-          attachmentId: input.attachmentId,
-        })
+        return {
+          output: JSON.stringify({
+            error: `Failed to load file section: ${error instanceof Error ? error.message : "Unknown error"}`,
+            attachmentId: input.attachmentId,
+          }),
+        }
       }
+    },
+
+    trace: {
+      stepType: AgentStepTypes.TOOL_CALL,
+      formatContent: (input) =>
+        JSON.stringify({
+          tool: "load_file_section",
+          attachmentId: input.attachmentId,
+          lines: `${input.startLine}-${input.endLine}`,
+        }),
     },
   })
 }

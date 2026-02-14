@@ -10,7 +10,7 @@ import { logger } from "../../lib/logger"
 export interface CommandContext {
   /** Unique ID for this command execution */
   commandId: string
-  /** Command name (e.g., "simulate") */
+  /** Command name (e.g., "echo") */
   commandName: string
   /** Workspace the command was dispatched in */
   workspaceId: string
@@ -32,7 +32,7 @@ export interface CommandResult {
 }
 
 export interface Command {
-  /** Command name without leading slash (e.g., "simulate") */
+  /** Command name without leading slash (e.g., "echo") */
   name: string
   /** Human-readable description for help text */
   description: string

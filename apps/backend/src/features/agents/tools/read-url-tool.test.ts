@@ -19,6 +19,8 @@ describe("read-url-tool", () => {
     dnsResolve6Spy.mockRestore()
   })
 
+  const toolOpts = { toolCallId: "test" }
+
   it("should convert HTML to markdown", async () => {
     const html = `
       <!DOCTYPE html>
@@ -43,8 +45,8 @@ describe("read-url-tool", () => {
     ) as unknown as typeof fetch
 
     const tool = createReadUrlTool()
-    const result = await tool.execute!({ url: "https://example.com" }, { toolCallId: "test", messages: [] as any[] })
-    const parsed = JSON.parse(result as string)
+    const { output } = await tool.config.execute({ url: "https://example.com" }, toolOpts)
+    const parsed = JSON.parse(output)
 
     expect(parsed.url).toBe("https://example.com")
     expect(parsed.title).toBe("Test Page")
@@ -66,7 +68,7 @@ describe("read-url-tool", () => {
     }) as unknown as typeof fetch
 
     const tool = createReadUrlTool()
-    await tool.execute!({ url: "https://example.com" }, { toolCallId: "test", messages: [] as any[] })
+    await tool.config.execute({ url: "https://example.com" }, toolOpts)
 
     expect(capturedHeaders).not.toBeNull()
     expect(capturedHeaders!["User-Agent"]).toContain("Threa-Agent")
@@ -83,11 +85,8 @@ describe("read-url-tool", () => {
     ) as unknown as typeof fetch
 
     const tool = createReadUrlTool()
-    const result = await tool.execute!(
-      { url: "https://example.com/file.pdf" },
-      { toolCallId: "test", messages: [] as any[] }
-    )
-    const parsed = JSON.parse(result as string)
+    const { output } = await tool.config.execute({ url: "https://example.com/file.pdf" }, toolOpts)
+    const parsed = JSON.parse(output)
 
     expect(parsed.error).toContain("Unsupported content type")
     expect(parsed.error).toContain("application/pdf")
@@ -104,11 +103,8 @@ describe("read-url-tool", () => {
     ) as unknown as typeof fetch
 
     const tool = createReadUrlTool()
-    const result = await tool.execute!(
-      { url: "https://example.com/missing" },
-      { toolCallId: "test", messages: [] as any[] }
-    )
-    const parsed = JSON.parse(result as string)
+    const { output } = await tool.config.execute({ url: "https://example.com/missing" }, toolOpts)
+    const parsed = JSON.parse(output)
 
     expect(parsed.error).toContain("Failed to fetch URL: 404 Not Found")
   })
@@ -117,8 +113,8 @@ describe("read-url-tool", () => {
     globalThis.fetch = mock(() => Promise.reject(new Error("Connection refused"))) as unknown as typeof fetch
 
     const tool = createReadUrlTool()
-    const result = await tool.execute!({ url: "https://example.com" }, { toolCallId: "test", messages: [] as any[] })
-    const parsed = JSON.parse(result as string)
+    const { output } = await tool.config.execute({ url: "https://example.com" }, toolOpts)
+    const parsed = JSON.parse(output)
 
     expect(parsed.error).toContain("Connection refused")
   })
@@ -137,8 +133,8 @@ describe("read-url-tool", () => {
     ) as unknown as typeof fetch
 
     const tool = createReadUrlTool()
-    const result = await tool.execute!({ url: "https://example.com" }, { toolCallId: "test", messages: [] as any[] })
-    const parsed = JSON.parse(result as string)
+    const { output } = await tool.config.execute({ url: "https://example.com" }, toolOpts)
+    const parsed = JSON.parse(output)
 
     expect(parsed.content.length).toBeLessThan(60000)
     expect(parsed.content).toContain("[Content truncated...]")
@@ -155,11 +151,8 @@ describe("read-url-tool", () => {
     ) as unknown as typeof fetch
 
     const tool = createReadUrlTool()
-    const result = await tool.execute!(
-      { url: "https://example.com/file.txt" },
-      { toolCallId: "test", messages: [] as any[] }
-    )
-    const parsed = JSON.parse(result as string)
+    const { output } = await tool.config.execute({ url: "https://example.com/file.txt" }, toolOpts)
+    const parsed = JSON.parse(output)
 
     expect(parsed.content).toBe("This is plain text content.")
   })
@@ -171,8 +164,8 @@ describe("read-url-tool", () => {
     globalThis.fetch = mock(() => Promise.reject(abortError)) as unknown as typeof fetch
 
     const tool = createReadUrlTool()
-    const result = await tool.execute!({ url: "https://example.com" }, { toolCallId: "test", messages: [] as any[] })
-    const parsed = JSON.parse(result as string)
+    const { output } = await tool.config.execute({ url: "https://example.com" }, toolOpts)
+    const parsed = JSON.parse(output)
 
     expect(parsed.error).toContain("timed out")
   })
@@ -180,126 +173,96 @@ describe("read-url-tool", () => {
   describe("SSRF protection", () => {
     it("should block localhost", async () => {
       const tool = createReadUrlTool()
-      const result = await tool.execute!(
-        { url: "http://localhost/admin" },
-        { toolCallId: "test", messages: [] as any[] }
-      )
-      const parsed = JSON.parse(result as string)
+      const { output } = await tool.config.execute({ url: "http://localhost/admin" }, toolOpts)
+      const parsed = JSON.parse(output)
 
       expect(parsed.error).toContain("private or reserved")
     })
 
     it("should block 127.0.0.1", async () => {
       const tool = createReadUrlTool()
-      const result = await tool.execute!(
-        { url: "http://127.0.0.1:8080/secret" },
-        { toolCallId: "test", messages: [] as any[] }
-      )
-      const parsed = JSON.parse(result as string)
+      const { output } = await tool.config.execute({ url: "http://127.0.0.1:8080/secret" }, toolOpts)
+      const parsed = JSON.parse(output)
 
       expect(parsed.error).toContain("private or reserved")
     })
 
     it("should block any 127.x.x.x address", async () => {
       const tool = createReadUrlTool()
-      const result = await tool.execute!(
-        { url: "http://127.0.0.2/admin" },
-        { toolCallId: "test", messages: [] as any[] }
-      )
-      const parsed = JSON.parse(result as string)
+      const { output } = await tool.config.execute({ url: "http://127.0.0.2/admin" }, toolOpts)
+      const parsed = JSON.parse(output)
 
       expect(parsed.error).toContain("private or reserved")
     })
 
     it("should block private 10.x.x.x addresses", async () => {
       const tool = createReadUrlTool()
-      const result = await tool.execute!(
-        { url: "http://10.0.0.1/internal" },
-        { toolCallId: "test", messages: [] as any[] }
-      )
-      const parsed = JSON.parse(result as string)
+      const { output } = await tool.config.execute({ url: "http://10.0.0.1/internal" }, toolOpts)
+      const parsed = JSON.parse(output)
 
       expect(parsed.error).toContain("private or reserved")
     })
 
     it("should block private 192.168.x.x addresses", async () => {
       const tool = createReadUrlTool()
-      const result = await tool.execute!(
-        { url: "http://192.168.1.1/router" },
-        { toolCallId: "test", messages: [] as any[] }
-      )
-      const parsed = JSON.parse(result as string)
+      const { output } = await tool.config.execute({ url: "http://192.168.1.1/router" }, toolOpts)
+      const parsed = JSON.parse(output)
 
       expect(parsed.error).toContain("private or reserved")
     })
 
     it("should block private 172.16-31.x.x addresses", async () => {
       const tool = createReadUrlTool()
-      const result = await tool.execute!(
-        { url: "http://172.16.0.1/internal" },
-        { toolCallId: "test", messages: [] as any[] }
-      )
-      const parsed = JSON.parse(result as string)
+      const { output } = await tool.config.execute({ url: "http://172.16.0.1/internal" }, toolOpts)
+      const parsed = JSON.parse(output)
 
       expect(parsed.error).toContain("private or reserved")
     })
 
     it("should block cloud metadata endpoints (169.254.x.x)", async () => {
       const tool = createReadUrlTool()
-      const result = await tool.execute!(
-        { url: "http://169.254.169.254/latest/meta-data/" },
-        { toolCallId: "test", messages: [] as any[] }
-      )
-      const parsed = JSON.parse(result as string)
+      const { output } = await tool.config.execute({ url: "http://169.254.169.254/latest/meta-data/" }, toolOpts)
+      const parsed = JSON.parse(output)
 
       expect(parsed.error).toContain("private or reserved")
     })
 
     it("should block .local hostnames", async () => {
       const tool = createReadUrlTool()
-      const result = await tool.execute!(
-        { url: "http://internal-service.local/api" },
-        { toolCallId: "test", messages: [] as any[] }
-      )
-      const parsed = JSON.parse(result as string)
+      const { output } = await tool.config.execute({ url: "http://internal-service.local/api" }, toolOpts)
+      const parsed = JSON.parse(output)
 
       expect(parsed.error).toContain("internal hostnames")
     })
 
     it("should block .internal hostnames", async () => {
       const tool = createReadUrlTool()
-      const result = await tool.execute!(
-        { url: "http://db.internal:5432/" },
-        { toolCallId: "test", messages: [] as any[] }
-      )
-      const parsed = JSON.parse(result as string)
+      const { output } = await tool.config.execute({ url: "http://db.internal:5432/" }, toolOpts)
+      const parsed = JSON.parse(output)
 
       expect(parsed.error).toContain("internal hostnames")
     })
 
     it("should block non-HTTP protocols", async () => {
       const tool = createReadUrlTool()
-      const result = await tool.execute!({ url: "file:///etc/passwd" }, { toolCallId: "test", messages: [] as any[] })
-      const parsed = JSON.parse(result as string)
+      const { output } = await tool.config.execute({ url: "file:///etc/passwd" }, toolOpts)
+      const parsed = JSON.parse(output)
 
       expect(parsed.error).toContain("Unsupported protocol")
     })
 
     it("should block IPv6 loopback", async () => {
       const tool = createReadUrlTool()
-      const result = await tool.execute!({ url: "http://[::1]/admin" }, { toolCallId: "test", messages: [] as any[] })
-      const parsed = JSON.parse(result as string)
+      const { output } = await tool.config.execute({ url: "http://[::1]/admin" }, toolOpts)
+      const parsed = JSON.parse(output)
 
       expect(parsed.error).toContain("private or reserved")
     })
 
     it("should block IPv4-mapped IPv6 addresses", async () => {
       const tool = createReadUrlTool()
-      const result = await tool.execute!(
-        { url: "http://[::ffff:127.0.0.1]/admin" },
-        { toolCallId: "test", messages: [] as any[] }
-      )
-      const parsed = JSON.parse(result as string)
+      const { output } = await tool.config.execute({ url: "http://[::ffff:127.0.0.1]/admin" }, toolOpts)
+      const parsed = JSON.parse(output)
 
       expect(parsed.error).toContain("private or reserved")
     })
@@ -308,11 +271,8 @@ describe("read-url-tool", () => {
       dnsResolve4Spy.mockResolvedValue(["10.0.0.1"])
 
       const tool = createReadUrlTool()
-      const result = await tool.execute!(
-        { url: "https://evil.com/redirect" },
-        { toolCallId: "test", messages: [] as any[] }
-      )
-      const parsed = JSON.parse(result as string)
+      const { output } = await tool.config.execute({ url: "https://evil.com/redirect" }, toolOpts)
+      const parsed = JSON.parse(output)
 
       expect(parsed.error).toContain("resolves to a private or reserved")
     })
@@ -322,11 +282,8 @@ describe("read-url-tool", () => {
       dnsResolve6Spy.mockResolvedValue(["::1"])
 
       const tool = createReadUrlTool()
-      const result = await tool.execute!(
-        { url: "https://evil.com/ipv6-only" },
-        { toolCallId: "test", messages: [] as any[] }
-      )
-      const parsed = JSON.parse(result as string)
+      const { output } = await tool.config.execute({ url: "https://evil.com/ipv6-only" }, toolOpts)
+      const parsed = JSON.parse(output)
 
       expect(parsed.error).toContain("resolves to a private or reserved")
     })
@@ -336,28 +293,21 @@ describe("read-url-tool", () => {
       dnsResolve6Spy.mockRejectedValue(new Error("DNS timeout"))
 
       const tool = createReadUrlTool()
-      const result = await tool.execute!(
-        { url: "https://unreachable.example.com" },
-        { toolCallId: "test", messages: [] as any[] }
-      )
-      const parsed = JSON.parse(result as string)
+      const { output } = await tool.config.execute({ url: "https://unreachable.example.com" }, toolOpts)
+      const parsed = JSON.parse(output)
 
       expect(parsed.error).toContain("no DNS records found")
     })
 
     it("should block localhost with trailing dot (FQDN)", async () => {
       const tool = createReadUrlTool()
-      const result = await tool.execute!(
-        { url: "http://localhost./admin" },
-        { toolCallId: "test", messages: [] as any[] }
-      )
-      const parsed = JSON.parse(result as string)
+      const { output } = await tool.config.execute({ url: "http://localhost./admin" }, toolOpts)
+      const parsed = JSON.parse(output)
 
       expect(parsed.error).toContain("private or reserved")
     })
 
     it("should block redirects to private IPs", async () => {
-      // First request returns redirect
       globalThis.fetch = mock(() =>
         Promise.resolve({
           ok: false,
@@ -368,11 +318,8 @@ describe("read-url-tool", () => {
       ) as unknown as typeof fetch
 
       const tool = createReadUrlTool()
-      const result = await tool.execute!(
-        { url: "https://example.com/redirect" },
-        { toolCallId: "test", messages: [] as any[] }
-      )
-      const parsed = JSON.parse(result as string)
+      const { output } = await tool.config.execute({ url: "https://example.com/redirect" }, toolOpts)
+      const parsed = JSON.parse(output)
 
       expect(parsed.error).toContain("Redirect blocked")
     })
@@ -398,11 +345,8 @@ describe("read-url-tool", () => {
       }) as unknown as typeof fetch
 
       const tool = createReadUrlTool()
-      const result = await tool.execute!(
-        { url: "https://example.com/start" },
-        { toolCallId: "test", messages: [] as any[] }
-      )
-      const parsed = JSON.parse(result as string)
+      const { output } = await tool.config.execute({ url: "https://example.com/start" }, toolOpts)
+      const parsed = JSON.parse(output)
 
       expect(parsed.title).toBe("Final")
       expect(callCount).toBe(2)
@@ -419,11 +363,8 @@ describe("read-url-tool", () => {
       ) as unknown as typeof fetch
 
       const tool = createReadUrlTool()
-      const result = await tool.execute!(
-        { url: "https://example.com/loop" },
-        { toolCallId: "test", messages: [] as any[] }
-      )
-      const parsed = JSON.parse(result as string)
+      const { output } = await tool.config.execute({ url: "https://example.com/loop" }, toolOpts)
+      const parsed = JSON.parse(output)
 
       expect(parsed.error).toContain("Too many redirects")
     })

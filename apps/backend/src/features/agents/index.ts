@@ -5,34 +5,22 @@ export { createAgentSessionHandlers } from "./session-handlers"
 export { PersonaAgent } from "./persona-agent"
 export type { PersonaAgentDeps, PersonaAgentInput, PersonaAgentResult, WithSessionResult } from "./persona-agent"
 
-export { SimulationAgent } from "./simulation-agent"
-export type { SimulationAgentDeps, SimulationAgentInput, SimulationAgentResult } from "./simulation-agent"
-export { StubSimulationAgent } from "./simulation-agent.stub"
+// Runtime (composable agent loop, observers, tool definitions)
+export { defineAgentTool, toVercelToolDefs, AgentRuntime, SessionTraceObserver, OtelObserver } from "./runtime"
+export type {
+  AgentTool,
+  AgentToolConfig,
+  AgentToolResult,
+  AgentEvent,
+  NewMessageInfo,
+  AgentObserver,
+  AgentRuntimeConfig,
+  AgentRuntimeResult,
+} from "./runtime"
 
 // Companion agent modules
-export {
-  runAgentLoop,
-  buildAgentContext,
-  buildToolSet,
-  withCompanionSession,
-  truncateMessages,
-  MAX_MESSAGE_CHARS,
-  extractSourcesFromWebSearch,
-  parseWorkspaceResearchResult,
-  mergeSourceItems,
-  toSourceItems,
-} from "./companion"
-export type {
-  AgentLoopInput,
-  AgentLoopCallbacks,
-  AgentLoopResult,
-  RecordStepParams,
-  NewMessageInfo,
-  ContextDeps,
-  ContextParams,
-  AgentContext,
-  ToolSetConfig,
-} from "./companion"
+export { buildAgentContext, buildToolSet, withCompanionSession, truncateMessages, MAX_MESSAGE_CHARS } from "./companion"
+export type { ContextDeps, ContextParams, AgentContext, ToolSetConfig } from "./companion"
 
 export { TraceEmitter, SessionTrace, ActiveStep } from "./trace-emitter"
 
@@ -57,8 +45,6 @@ export type { MentionInvokeHandlerConfig } from "./mention-invoke-outbox-handler
 // Workers
 export { createPersonaAgentWorker } from "./persona-agent-worker"
 export type { PersonaAgentLike, PersonaAgentWorkerDeps } from "./persona-agent-worker"
-export { createSimulationWorker } from "./simulation-worker"
-export type { SimulationAgentLike, SimulationWorkerDeps } from "./simulation-worker"
 export { createOrphanSessionCleanup } from "./orphan-session-cleanup"
 export type { OrphanSessionCleanup } from "./orphan-session-cleanup"
 
@@ -95,10 +81,6 @@ export type {
   BuildStreamContextOptions,
   EnrichAttachmentsOptions,
 } from "./context-builder"
-
-// Simulation graph
-export { createSimulationGraph, SimulationState, TurnDecisionSchema } from "./simulation-graph"
-export type { SimulationMessage, TurnDecision, SimulationGraphCallbacks, SimulationStateType } from "./simulation-graph"
 
 // Tool trust boundary
 export { protectToolOutputText, protectToolOutputBlocks } from "./tool-trust-boundary"

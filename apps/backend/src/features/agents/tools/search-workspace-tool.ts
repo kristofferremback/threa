@@ -1,7 +1,14 @@
-import { tool } from "ai"
 import { z } from "zod"
-import { STREAM_TYPES } from "@threa/types"
+import { AgentStepTypes, STREAM_TYPES } from "@threa/types"
 import { logger } from "../../../lib/logger"
+import { StreamRepository } from "../../streams"
+import { MemberRepository } from "../../workspaces"
+import { MessageRepository } from "../../messaging"
+import { PersonaRepository } from "../persona-repository"
+import { enrichMessageSearchResults } from "../researcher"
+import { resolveStreamIdentifier } from "./identifier-resolver"
+import { defineAgentTool, type AgentToolResult } from "../runtime"
+import type { WorkspaceToolDeps } from "./tool-deps"
 
 // Schema for search_messages tool
 const SearchMessagesSchema = z.object({
@@ -81,27 +88,14 @@ export interface StreamMessagesResult {
   createdAt: string
 }
 
-/**
- * Callbacks for workspace search tools.
- * These are provided by the PersonaAgent which has access to the session context.
- *
- * Note: The `stream` field in inputs may be an ID, slug, or prefixed slug (#general).
- * The callback implementation is responsible for resolving these to actual stream IDs.
- */
-export interface SearchToolsCallbacks {
-  searchMessages: (input: SearchMessagesInput) => Promise<MessageSearchResult[]>
-  searchStreams: (input: SearchStreamsInput) => Promise<StreamSearchResult[]>
-  searchUsers: (input: SearchUsersInput) => Promise<UserSearchResult[]>
-  getStreamMessages: (input: GetStreamMessagesInput) => Promise<StreamMessagesResult[]>
-}
-
 const MAX_RESULTS = 10
+const MAX_STREAM_MESSAGES = 20
 
-/**
- * Creates a search_messages tool for semantic/exact workspace message search.
- */
-export function createSearchMessagesTool(callbacks: SearchToolsCallbacks) {
-  return tool({
+export function createSearchMessagesTool(deps: WorkspaceToolDeps) {
+  const { db, workspaceId, accessibleStreamIds, invokingMemberId, searchService } = deps
+
+  return defineAgentTool({
+    name: "search_messages",
     description: `Search for messages in the workspace knowledge base. Use this to find:
 - Previous discussions about a topic
 - Specific information mentioned in past conversations
@@ -110,18 +104,53 @@ export function createSearchMessagesTool(callbacks: SearchToolsCallbacks) {
 Set exact=true to find literal phrase matches (useful for error messages, IDs, or quoted text).
 Optionally filter by stream using ID (stream_xxx), slug (general), or prefixed slug (#general).`,
     inputSchema: SearchMessagesSchema,
-    execute: async (input) => {
+
+    execute: async (input): Promise<AgentToolResult> => {
       try {
-        const results = await callbacks.searchMessages(input)
+        let filterStreamIds = accessibleStreamIds
+        if (input.stream) {
+          const resolved = await resolveStreamIdentifier(db, workspaceId, input.stream, accessibleStreamIds)
+          if (!resolved.resolved)
+            return {
+              output: JSON.stringify({
+                query: input.query,
+                stream: input.stream,
+                exact: input.exact,
+                results: [],
+                message: "No matching messages found",
+              }),
+            }
+          filterStreamIds = [resolved.id]
+        }
+
+        const searchResults = await searchService.search({
+          workspaceId,
+          memberId: invokingMemberId,
+          query: input.query,
+          filters: { streamIds: filterStreamIds },
+          limit: 10,
+          exact: input.exact,
+        })
+
+        const enriched = await enrichMessageSearchResults(db, searchResults)
+        const results: MessageSearchResult[] = enriched.map((r) => ({
+          id: r.id,
+          content: r.content,
+          authorName: r.authorName,
+          streamName: r.streamName,
+          createdAt: r.createdAt.toISOString(),
+        }))
 
         if (results.length === 0) {
-          return JSON.stringify({
-            query: input.query,
-            stream: input.stream,
-            exact: input.exact,
-            results: [],
-            message: "No matching messages found",
-          })
+          return {
+            output: JSON.stringify({
+              query: input.query,
+              stream: input.stream,
+              exact: input.exact,
+              results: [],
+              message: "No matching messages found",
+            }),
+          }
         }
 
         logger.debug(
@@ -129,125 +158,174 @@ Optionally filter by stream using ID (stream_xxx), slug (general), or prefixed s
           "Message search completed"
         )
 
-        return JSON.stringify({
-          query: input.query,
-          stream: input.stream,
-          exact: input.exact,
-          results: results.slice(0, MAX_RESULTS).map((r) => ({
-            id: r.id,
-            content: truncate(r.content, 300),
-            author: r.authorName,
-            stream: r.streamName,
-            date: r.createdAt,
-          })),
-        })
+        return {
+          output: JSON.stringify({
+            query: input.query,
+            stream: input.stream,
+            exact: input.exact,
+            results: results.slice(0, MAX_RESULTS).map((r) => ({
+              id: r.id,
+              content: truncate(r.content, 300),
+              author: r.authorName,
+              stream: r.streamName,
+              date: r.createdAt,
+            })),
+          }),
+        }
       } catch (error) {
         logger.error({ error, query: input.query }, "Message search failed")
-        return JSON.stringify({
-          error: `Search failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-          query: input.query,
-        })
+        return {
+          output: JSON.stringify({
+            error: `Search failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+            query: input.query,
+          }),
+        }
       }
+    },
+
+    trace: {
+      stepType: AgentStepTypes.WORKSPACE_SEARCH,
+      formatContent: (input) =>
+        JSON.stringify({
+          tool: "search_messages",
+          query: input.query ?? "",
+          stream: input.stream ?? null,
+        }),
     },
   })
 }
 
-/**
- * Creates a search_streams tool to find streams in the workspace.
- */
-export function createSearchStreamsTool(callbacks: SearchToolsCallbacks) {
-  return tool({
+export function createSearchStreamsTool(deps: WorkspaceToolDeps) {
+  const { db, accessibleStreamIds } = deps
+
+  return defineAgentTool({
+    name: "search_streams",
     description: `Search for streams (channels, scratchpads, DMs) in the workspace. Use this to find:
 - Specific channels or conversations
 - Where certain topics are discussed
 - Related discussions in other streams`,
     inputSchema: SearchStreamsSchema,
-    execute: async (input) => {
+
+    execute: async (input): Promise<AgentToolResult> => {
       try {
-        const results = await callbacks.searchStreams(input)
+        const streams = await StreamRepository.searchByName(db, {
+          streamIds: accessibleStreamIds,
+          query: input.query,
+          types: input.types,
+          limit: 10,
+        })
+
+        const results: StreamSearchResult[] = streams.map((s) => ({
+          id: s.id,
+          type: s.type,
+          name: s.displayName ?? s.slug ?? null,
+          description: s.description ?? null,
+        }))
 
         if (results.length === 0) {
-          return JSON.stringify({
-            query: input.query,
-            types: input.types,
-            results: [],
-            message: "No matching streams found",
-          })
+          return {
+            output: JSON.stringify({
+              query: input.query,
+              types: input.types,
+              results: [],
+              message: "No matching streams found",
+            }),
+          }
         }
 
         logger.debug({ query: input.query, types: input.types, resultCount: results.length }, "Stream search completed")
 
-        return JSON.stringify({
-          query: input.query,
-          types: input.types,
-          results: results.slice(0, MAX_RESULTS).map((r) => ({
-            id: r.id,
-            type: r.type,
-            name: r.name ?? "(unnamed)",
-            description: r.description ? truncate(r.description, 100) : null,
-          })),
-        })
+        return {
+          output: JSON.stringify({
+            query: input.query,
+            types: input.types,
+            results: results.slice(0, MAX_RESULTS).map((r) => ({
+              id: r.id,
+              type: r.type,
+              name: r.name ?? "(unnamed)",
+              description: r.description ? truncate(r.description, 100) : null,
+            })),
+          }),
+        }
       } catch (error) {
         logger.error({ error, query: input.query }, "Stream search failed")
-        return JSON.stringify({
-          error: `Search failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-          query: input.query,
-        })
+        return {
+          output: JSON.stringify({
+            error: `Search failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+            query: input.query,
+          }),
+        }
       }
+    },
+
+    trace: {
+      stepType: AgentStepTypes.WORKSPACE_SEARCH,
+      formatContent: (input) => JSON.stringify({ tool: "search_streams", query: input.query ?? "" }),
     },
   })
 }
 
-/**
- * Creates a search_users tool to find users in the workspace.
- */
-export function createSearchUsersTool(callbacks: SearchToolsCallbacks) {
-  return tool({
+export function createSearchUsersTool(deps: WorkspaceToolDeps) {
+  const { db, workspaceId } = deps
+
+  return defineAgentTool({
+    name: "search_users",
     description: `Search for users in the workspace by name or email. Use this to find:
 - A specific person
 - Who to ask about a topic
 - Contact information`,
     inputSchema: SearchUsersSchema,
-    execute: async (input) => {
+
+    execute: async (input): Promise<AgentToolResult> => {
       try {
-        const results = await callbacks.searchUsers(input)
+        const members = await MemberRepository.searchByNameOrSlug(db, workspaceId, input.query, 10)
+        const results: UserSearchResult[] = members.map((m) => ({ id: m.id, name: m.name, email: m.email }))
 
         if (results.length === 0) {
-          return JSON.stringify({
-            query: input.query,
-            results: [],
-            message: "No matching users found",
-          })
+          return {
+            output: JSON.stringify({
+              query: input.query,
+              results: [],
+              message: "No matching users found",
+            }),
+          }
         }
 
         logger.debug({ query: input.query, resultCount: results.length }, "User search completed")
 
-        return JSON.stringify({
-          query: input.query,
-          results: results.slice(0, MAX_RESULTS).map((r) => ({
-            id: r.id,
-            name: r.name,
-            email: r.email,
-          })),
-        })
+        return {
+          output: JSON.stringify({
+            query: input.query,
+            results: results.slice(0, MAX_RESULTS).map((r) => ({
+              id: r.id,
+              name: r.name,
+              email: r.email,
+            })),
+          }),
+        }
       } catch (error) {
         logger.error({ error, query: input.query }, "User search failed")
-        return JSON.stringify({
-          error: `Search failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-          query: input.query,
-        })
+        return {
+          output: JSON.stringify({
+            error: `Search failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+            query: input.query,
+          }),
+        }
       }
+    },
+
+    trace: {
+      stepType: AgentStepTypes.WORKSPACE_SEARCH,
+      formatContent: (input) => JSON.stringify({ tool: "search_users", query: input.query ?? "" }),
     },
   })
 }
 
-const MAX_STREAM_MESSAGES = 20
+export function createGetStreamMessagesTool(deps: WorkspaceToolDeps) {
+  const { db, workspaceId, accessibleStreamIds } = deps
 
-/**
- * Creates a get_stream_messages tool to retrieve recent messages from a stream.
- */
-export function createGetStreamMessagesTool(callbacks: SearchToolsCallbacks) {
-  return tool({
+  return defineAgentTool({
+    name: "get_stream_messages",
     description: `Get recent messages from a specific stream (channel, scratchpad, DM, or thread). Use this to:
 - See what's being discussed in another stream
 - Get context from a related conversation
@@ -255,38 +333,84 @@ export function createGetStreamMessagesTool(callbacks: SearchToolsCallbacks) {
 
 You can reference streams by their ID (stream_xxx), slug (general), or prefixed slug (#general).`,
     inputSchema: GetStreamMessagesSchema,
-    execute: async (input) => {
+
+    execute: async (input): Promise<AgentToolResult> => {
       try {
         const limit = Math.min(input.limit ?? 10, MAX_STREAM_MESSAGES)
-        const results = await callbacks.getStreamMessages({ ...input, limit })
+
+        const resolved = await resolveStreamIdentifier(db, workspaceId, input.stream, accessibleStreamIds)
+        if (!resolved.resolved) {
+          return {
+            output: JSON.stringify({
+              stream: input.stream,
+              messages: [],
+              message: "No messages found in this stream (it may be empty or you may not have access)",
+            }),
+          }
+        }
+
+        const messages = await MessageRepository.list(db, resolved.id, { limit })
+        messages.reverse()
+
+        const memberIds = [...new Set(messages.filter((m) => m.authorType === "member").map((m) => m.authorId))]
+        const personaIds = [...new Set(messages.filter((m) => m.authorType === "persona").map((m) => m.authorId))]
+        const [members, personas] = await Promise.all([
+          memberIds.length > 0 ? MemberRepository.findByIds(db, memberIds) : Promise.resolve([]),
+          personaIds.length > 0 ? PersonaRepository.findByIds(db, personaIds) : Promise.resolve([]),
+        ])
+
+        const memberMap = new Map(members.map((m) => [m.id, m.name]))
+        const personaMap = new Map(personas.map((p) => [p.id, p.name]))
+
+        const results: StreamMessagesResult[] = messages.map((m) => ({
+          id: m.id,
+          content: m.contentMarkdown,
+          authorName:
+            m.authorType === "member"
+              ? (memberMap.get(m.authorId) ?? "Unknown Member")
+              : (personaMap.get(m.authorId) ?? "Unknown Persona"),
+          authorType: m.authorType,
+          createdAt: m.createdAt.toISOString(),
+        }))
 
         if (results.length === 0) {
-          return JSON.stringify({
-            stream: input.stream,
-            messages: [],
-            message: "No messages found in this stream (it may be empty or you may not have access)",
-          })
+          return {
+            output: JSON.stringify({
+              stream: input.stream,
+              messages: [],
+              message: "No messages found in this stream (it may be empty or you may not have access)",
+            }),
+          }
         }
 
         logger.debug({ stream: input.stream, messageCount: results.length }, "Stream messages retrieved")
 
-        return JSON.stringify({
-          stream: input.stream,
-          messages: results.map((r) => ({
-            id: r.id,
-            content: truncate(r.content, 500),
-            author: r.authorName,
-            authorType: r.authorType,
-            date: r.createdAt,
-          })),
-        })
+        return {
+          output: JSON.stringify({
+            stream: input.stream,
+            messages: results.map((r) => ({
+              id: r.id,
+              content: truncate(r.content, 500),
+              author: r.authorName,
+              authorType: r.authorType,
+              date: r.createdAt,
+            })),
+          }),
+        }
       } catch (error) {
         logger.error({ error, stream: input.stream }, "Get stream messages failed")
-        return JSON.stringify({
-          error: `Failed to get messages: ${error instanceof Error ? error.message : "Unknown error"}`,
-          stream: input.stream,
-        })
+        return {
+          output: JSON.stringify({
+            error: `Failed to get messages: ${error instanceof Error ? error.message : "Unknown error"}`,
+            stream: input.stream,
+          }),
+        }
       }
+    },
+
+    trace: {
+      stepType: AgentStepTypes.WORKSPACE_SEARCH,
+      formatContent: (input) => JSON.stringify({ tool: "get_stream_messages", stream: input.stream ?? null }),
     },
   })
 }

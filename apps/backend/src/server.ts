@@ -56,11 +56,8 @@ import {
   createOrphanSessionCleanup,
   createPersonaAgentWorker,
   WorkspaceAgent,
-  createSimulationWorker,
   PersonaAgent,
   TraceEmitter,
-  SimulationAgent,
-  StubSimulationAgent,
   AgentSessionMetricsCollector,
   ConversationSummaryService,
   COMPANION_SUMMARY_MODEL_ID,
@@ -71,7 +68,7 @@ import { SystemMessageService, SystemMessageOutboxHandler } from "./features/sys
 import { ActivityService, ActivityFeedHandler } from "./features/activity"
 import { AttachmentUploadedHandler } from "./features/attachments"
 import { AICostService, AIBudgetService } from "./features/ai-usage"
-import { CommandRegistry, SimulateCommand, createCommandWorker, CommandHandler } from "./features/commands"
+import { CommandRegistry, EchoCommand, createCommandWorker, CommandHandler } from "./features/commands"
 import {
   createImageCaptionWorker,
   createPdfPrepareWorker,
@@ -112,7 +109,6 @@ import type { AuthorType } from "@threa/types"
 import { parseMarkdown } from "@threa/prosemirror"
 import { normalizeMessage, toEmoji } from "./features/emoji"
 import { logger } from "./lib/logger"
-import { createPostgresCheckpointer } from "./lib/ai"
 import { createAI } from "./lib/ai/ai"
 import { createModelRegistry } from "./lib/ai/model-registry"
 import { createStaticConfigResolver } from "./lib/ai/static-config-resolver"
@@ -167,9 +163,6 @@ export async function startServer(): Promise<ServerInstance> {
   logger.info("Pre-warming connection pool...")
   await warmPool(pools.main, 15) // Pre-create 15 connections for workers
   logger.info("Connection pool pre-warmed")
-
-  // Initialize LangGraph checkpointer (creates tables in langgraph schema)
-  const checkpointer = await createPostgresCheckpointer(pool)
 
   const userService = new UserService(pool)
   const workosOrgService = config.useStubAuth ? new StubWorkosOrgService() : new WorkosOrgServiceImpl(config.workos)
@@ -271,27 +264,9 @@ export async function startServer(): Promise<ServerInstance> {
   const activityService = new ActivityService({ pool })
   const systemMessageService = new SystemMessageService({ pool, createMessage })
 
-  // Simulation agent - needed for SimulateCommand
-  const simulationAgent = config.useStubAI
-    ? new StubSimulationAgent()
-    : new SimulationAgent({
-        pool,
-        ai,
-        streamService,
-        checkpointer,
-        createMessage,
-        orchestratorModel: config.ai.namingModel,
-      })
-
   // Command infrastructure - created early for route registration
   const commandRegistry = new CommandRegistry()
-  const simulateCommand = new SimulateCommand({
-    pool,
-    ai,
-    simulationAgent,
-    parsingModel: config.ai.namingModel,
-  })
-  commandRegistry.register(simulateCommand)
+  commandRegistry.register(new EchoCommand())
 
   const isProduction = process.env.NODE_ENV === "production"
   const app = createApp({ corsAllowedOrigins: config.corsAllowedOrigins, isProduction })
@@ -392,11 +367,6 @@ export async function startServer(): Promise<ServerInstance> {
   const memoBatchProcessWorker = createMemoBatchProcessWorker({ pool, memoService, jobQueue })
   jobQueue.registerHandler(JobQueues.MEMO_BATCH_CHECK, memoBatchCheckWorker)
   jobQueue.registerHandler(JobQueues.MEMO_BATCH_PROCESS, memoBatchProcessWorker)
-
-  // Simulation worker - for non-command invocations (e.g., API or scheduled runs)
-  // Note: /simulate command runs the agent inline via SimulateCommand
-  const simulationWorker = createSimulationWorker({ agent: simulationAgent })
-  jobQueue.registerHandler(JobQueues.SIMULATE_RUN, simulationWorker)
 
   // Command execution worker
   const commandWorker = createCommandWorker({ pool, commandRegistry })

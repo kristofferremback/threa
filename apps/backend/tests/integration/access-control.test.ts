@@ -993,7 +993,7 @@ describe("Access Control", () => {
           eventType: "command_dispatched",
           payload: {
             commandId: cmdId,
-            name: "simulate",
+            name: "echo",
             args: "test args",
             status: "dispatched",
           },
@@ -1074,7 +1074,7 @@ describe("Access Control", () => {
           eventType: "command_dispatched",
           payload: {
             commandId: cmdId,
-            name: "simulate",
+            name: "echo",
             args: "bad args",
             status: "dispatched",
           },

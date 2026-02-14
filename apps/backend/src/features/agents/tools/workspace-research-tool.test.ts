@@ -1,10 +1,8 @@
 import { describe, expect, test, mock } from "bun:test"
 import { createWorkspaceResearchTool } from "./workspace-research-tool"
 
-const toolOpts = { toolCallId: "test", messages: [] as any[] }
-
 describe("workspace_research tool", () => {
-  test("should pass query to workspace agent and return structured results", async () => {
+  test("should pass query to workspace agent and return structured AgentToolResult", async () => {
     const runWorkspaceAgent = mock(async () => ({
       retrievedContext: "## Retrieved Knowledge\nUseful workspace details.",
       sources: [
@@ -27,23 +25,30 @@ describe("workspace_research tool", () => {
     }))
 
     const tool = createWorkspaceResearchTool({ runWorkspaceAgent })
-    const rawResult = (await tool.execute!({ query: "What were the design decisions?" }, toolOpts)) as string
-    const result = JSON.parse(rawResult)
+    const result = await tool.config.execute({ query: "What were the design decisions?" }, { toolCallId: "test" })
 
     expect(runWorkspaceAgent).toHaveBeenCalledTimes(1)
     expect(runWorkspaceAgent).toHaveBeenCalledWith("What were the design decisions?")
-    expect(result).toMatchObject({
-      retrievedContext: "## Retrieved Knowledge\nUseful workspace details.",
+
+    const status = JSON.parse(result.output)
+    expect(status).toMatchObject({
+      status: "ok",
+      contextAdded: true,
+      sourceCount: 1,
       memoCount: 1,
       messageCount: 0,
       attachmentCount: 0,
-      sources: [
-        {
-          type: "workspace",
-          title: "Design Notes",
-          url: "/w/ws_1/streams/stream_1?message=msg_1",
-        },
-      ],
     })
+
+    expect(result.sources).toEqual([
+      {
+        title: "Design Notes",
+        url: "/w/ws_1/streams/stream_1?message=msg_1",
+        type: "workspace",
+        snippet: "Important prior decision",
+      },
+    ])
+
+    expect(result.systemContext).toBe("## Retrieved Knowledge\nUseful workspace details.")
   })
 })

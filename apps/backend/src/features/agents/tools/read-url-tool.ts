@@ -1,9 +1,10 @@
-import { tool } from "ai"
 import { z } from "zod"
 import * as dns from "dns/promises"
 import * as ipaddr from "ipaddr.js"
 import { NodeHtmlMarkdown } from "node-html-markdown"
+import { AgentStepTypes } from "@threa/types"
 import { logger } from "../../../lib/logger"
+import { defineAgentTool, type AgentToolResult } from "../runtime"
 
 const ReadUrlSchema = z.object({
   url: z.string().url().describe("The URL of the web page to read"),
@@ -192,29 +193,19 @@ async function fetchWithRedirectValidation(
   return response
 }
 
-/**
- * Creates a read_url tool for the agent to fetch full page content.
- *
- * Includes comprehensive SSRF protection:
- * - Protocol validation (HTTP/HTTPS only)
- * - DNS resolution with IP validation
- * - IPv4/IPv6/mapped address handling via ipaddr.js
- * - Manual redirect following with validation
- */
 export function createReadUrlTool() {
-  return tool({
+  return defineAgentTool({
+    name: "read_url",
     description:
       "Fetch and read the full content of a web page. Use this after web_search when you need more detail than the snippet provides, or when the user shares a specific URL to analyze.",
     inputSchema: ReadUrlSchema,
-    execute: async (input) => {
+
+    execute: async (input): Promise<AgentToolResult> => {
       // Validate URL before fetching
       const validationError = await validateUrlWithDns(input.url)
       if (validationError) {
         logger.warn({ url: input.url, reason: validationError }, "URL blocked by SSRF protection")
-        return JSON.stringify({
-          error: validationError,
-          url: input.url,
-        })
+        return { output: JSON.stringify({ error: validationError, url: input.url }) }
       }
 
       const controller = new AbortController()
@@ -225,35 +216,34 @@ export function createReadUrlTool() {
 
         if ("error" in result) {
           logger.warn({ url: input.url, error: result.error }, "Fetch failed")
-          return JSON.stringify({
-            error: result.error,
-            url: input.url,
-          })
+          return { output: JSON.stringify({ error: result.error, url: input.url }) }
         }
 
         const response = result
 
         if (!response.ok) {
           logger.warn({ url: input.url, status: response.status }, "Failed to fetch URL")
-          return JSON.stringify({
-            error: `Failed to fetch URL: ${response.status} ${response.statusText}`,
-            url: input.url,
-          })
+          return {
+            output: JSON.stringify({
+              error: `Failed to fetch URL: ${response.status} ${response.statusText}`,
+              url: input.url,
+            }),
+          }
         }
 
         const contentType = response.headers.get("content-type") || ""
         if (!contentType.includes("text/html") && !contentType.includes("text/plain")) {
-          return JSON.stringify({
-            error: `Unsupported content type: ${contentType}. Only HTML and plain text are supported.`,
-            url: input.url,
-          })
+          return {
+            output: JSON.stringify({
+              error: `Unsupported content type: ${contentType}. Only HTML and plain text are supported.`,
+              url: input.url,
+            }),
+          }
         }
 
         const html = await response.text()
-
         const title = extractTitle(html)
 
-        // For plain text, just use the content directly; for HTML, convert to markdown
         let content: string
         if (contentType.includes("text/plain")) {
           content = html
@@ -265,32 +255,60 @@ export function createReadUrlTool() {
           content = content.slice(0, MAX_CONTENT_LENGTH) + "\n\n[Content truncated...]"
         }
 
-        const readResult: ReadUrlResult = {
-          url: input.url,
-          title,
-          content,
-        }
-
+        const readResult: ReadUrlResult = { url: input.url, title, content }
         logger.debug({ url: input.url, contentLength: content.length }, "URL read completed")
 
-        return JSON.stringify(readResult)
+        const output = JSON.stringify(readResult)
+
+        // Extract source if page has a meaningful title
+        const sources =
+          title && title !== "Untitled" ? [{ title, url: input.url, domain: new URL(input.url).hostname }] : undefined
+
+        return { output, sources }
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") {
           logger.warn({ url: input.url }, "URL fetch timed out")
-          return JSON.stringify({
-            error: `Request timed out after ${FETCH_TIMEOUT_MS / 1000}s`,
-            url: input.url,
-          })
+          return {
+            output: JSON.stringify({ error: `Request timed out after ${FETCH_TIMEOUT_MS / 1000}s`, url: input.url }),
+          }
         }
 
         logger.error({ error, url: input.url }, "Failed to read URL")
-        return JSON.stringify({
-          error: `Failed to read URL: ${error instanceof Error ? error.message : "Unknown error"}`,
-          url: input.url,
-        })
+        return {
+          output: JSON.stringify({
+            error: `Failed to read URL: ${error instanceof Error ? error.message : "Unknown error"}`,
+            url: input.url,
+          }),
+        }
       } finally {
         clearTimeout(timeout)
       }
+    },
+
+    trace: {
+      stepType: AgentStepTypes.VISIT_PAGE,
+      formatContent: (input, result) => {
+        try {
+          const parsed = JSON.parse(result.output)
+          if (parsed.title && parsed.title !== "Untitled") {
+            return JSON.stringify({ url: input.url, title: parsed.title })
+          }
+        } catch {
+          /* not valid JSON */
+        }
+        return JSON.stringify({ url: input.url })
+      },
+      extractSources: (input, result) => {
+        try {
+          const parsed = JSON.parse(result.output)
+          if (parsed.title && parsed.title !== "Untitled") {
+            return [{ type: "web" as const, title: parsed.title, url: input.url, domain: new URL(input.url).hostname }]
+          }
+        } catch {
+          /* not valid JSON */
+        }
+        return []
+      },
     },
   })
 }

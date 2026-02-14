@@ -1,7 +1,9 @@
-import { tool } from "ai"
 import { z } from "zod"
+import { AgentStepTypes } from "@threa/types"
 import { logger } from "../../../lib/logger"
-import { EXCEL_MAX_ROWS_PER_REQUEST } from "../../attachments"
+import { AttachmentRepository, AttachmentExtractionRepository, EXCEL_MAX_ROWS_PER_REQUEST } from "../../attachments"
+import { defineAgentTool, type AgentToolResult } from "../runtime"
+import type { WorkspaceToolDeps } from "./tool-deps"
 
 const LoadExcelSectionSchema = z
   .object({
@@ -37,10 +39,6 @@ const LoadExcelSectionSchema = z
 
 export type LoadExcelSectionInput = z.infer<typeof LoadExcelSectionSchema>
 
-/**
- * Result from loading an Excel section.
- * Contains the table data for the requested sheet and row range.
- */
 export interface LoadExcelSectionResult {
   attachmentId: string
   filename: string
@@ -49,25 +47,14 @@ export interface LoadExcelSectionResult {
   endRow: number
   totalRows: number
   headers: string[]
-  /** Content as a markdown table */
   content: string
 }
 
-export interface LoadExcelSectionCallbacks {
-  loadExcelSection: (input: LoadExcelSectionInput) => Promise<LoadExcelSectionResult | null>
-}
+export function createLoadExcelSectionTool(deps: WorkspaceToolDeps) {
+  const { db, accessibleStreamIds, storage } = deps
 
-/**
- * Creates a load_excel_section tool for loading specific row ranges from large Excel workbooks.
- *
- * This tool is only useful for large workbooks (>20K cells) where full content isn't
- * injected into context. For small/medium workbooks, full content is already available.
- *
- * Use the sheets metadata from the attachment extraction to identify relevant
- * sheets and row ranges before calling this tool.
- */
-export function createLoadExcelSectionTool(callbacks: LoadExcelSectionCallbacks) {
-  return tool({
+  return defineAgentTool({
+    name: "load_excel_section",
     description: `Load specific rows from a sheet in a large Excel workbook. Only use this when:
 - The workbook is large (>20K cells) and injection strategy is "summary" (full content not in context)
 - You need to read specific rows from a particular sheet
@@ -77,16 +64,94 @@ The attachment extraction includes excelMetadata.sheets with sheet names, row co
 
 For small/medium workbooks (<20K cells), full content is already available in fullText - don't use this tool.`,
     inputSchema: LoadExcelSectionSchema,
-    execute: async (input) => {
-      try {
-        const result = await callbacks.loadExcelSection(input)
 
-        if (!result) {
-          return JSON.stringify({
-            error: "Excel file not found, not accessible, or sheet/rows not available",
-            attachmentId: input.attachmentId,
-            sheetName: input.sheetName,
-          })
+    execute: async (input): Promise<AgentToolResult> => {
+      try {
+        const attachment = await AttachmentRepository.findById(db, input.attachmentId)
+        if (!attachment) {
+          return {
+            output: JSON.stringify({
+              error: "Excel file not found, not accessible, or sheet/rows not available",
+              attachmentId: input.attachmentId,
+              sheetName: input.sheetName,
+            }),
+          }
+        }
+        if (!attachment.streamId || !accessibleStreamIds.includes(attachment.streamId)) {
+          return {
+            output: JSON.stringify({
+              error: "Excel file not found, not accessible, or sheet/rows not available",
+              attachmentId: input.attachmentId,
+              sheetName: input.sheetName,
+            }),
+          }
+        }
+
+        const extraction = await AttachmentExtractionRepository.findByAttachmentId(db, input.attachmentId)
+        if (!extraction || extraction.sourceType !== "excel" || !extraction.excelMetadata) {
+          return {
+            output: JSON.stringify({
+              error: "Excel file not found, not accessible, or sheet/rows not available",
+              attachmentId: input.attachmentId,
+              sheetName: input.sheetName,
+            }),
+          }
+        }
+
+        const sheetInfo = extraction.excelMetadata.sheets.find((s) => s.name === input.sheetName)
+        if (!sheetInfo) {
+          return {
+            output: JSON.stringify({
+              error: "Excel file not found, not accessible, or sheet/rows not available",
+              attachmentId: input.attachmentId,
+              sheetName: input.sheetName,
+            }),
+          }
+        }
+
+        const startRow = input.startRow ?? 0
+        const endRow = Math.min(input.endRow ?? sheetInfo.rows, startRow + EXCEL_MAX_ROWS_PER_REQUEST)
+        if (startRow >= sheetInfo.rows || endRow > sheetInfo.rows) {
+          return {
+            output: JSON.stringify({
+              error: "Excel file not found, not accessible, or sheet/rows not available",
+              attachmentId: input.attachmentId,
+              sheetName: input.sheetName,
+            }),
+          }
+        }
+
+        const { extractExcel } = await import("../../attachments/excel/extractor")
+        const { validateExcelFormat } = await import("../../attachments/excel/detector")
+        const fileBuffer = await storage.getObject(attachment.storagePath)
+        const format = validateExcelFormat(fileBuffer)
+        const extracted = extractExcel(fileBuffer, format)
+
+        const sheet = extracted.sheets.find((s) => s.name === input.sheetName)
+        if (!sheet) {
+          return {
+            output: JSON.stringify({
+              error: "Excel file not found, not accessible, or sheet/rows not available",
+              attachmentId: input.attachmentId,
+              sheetName: input.sheetName,
+            }),
+          }
+        }
+
+        const selectedRows = sheet.data.slice(startRow, endRow)
+        const headerRow = `| ${sheet.headers.join(" | ")} |`
+        const separator = `| ${sheet.headers.map(() => "---").join(" | ")} |`
+        const dataRows = selectedRows.map((row) => `| ${row.join(" | ")} |`).join("\n")
+
+        const result: LoadExcelSectionResult = {
+          attachmentId: input.attachmentId,
+          filename: attachment.filename,
+          sheetName: input.sheetName,
+          startRow,
+          endRow,
+          totalRows: sheet.rows,
+          headers: sheet.headers,
+          content: `${headerRow}\n${separator}\n${dataRows}`,
         }
 
         logger.debug(
@@ -100,20 +165,30 @@ For small/medium workbooks (<20K cells), full content is already available in fu
           "Excel section loaded"
         )
 
-        return JSON.stringify({
-          filename: result.filename,
-          sheetName: result.sheetName,
-          rowRange: `${result.startRow}-${result.endRow - 1} of ${result.totalRows}`,
-          headers: result.headers,
-          content: result.content,
-        })
+        return {
+          output: JSON.stringify({
+            filename: result.filename,
+            sheetName: result.sheetName,
+            rowRange: `${result.startRow}-${result.endRow - 1} of ${result.totalRows}`,
+            headers: result.headers,
+            content: result.content,
+          }),
+        }
       } catch (error) {
         logger.error({ error, ...input }, "Load Excel section failed")
-        return JSON.stringify({
-          error: `Failed to load Excel section: ${error instanceof Error ? error.message : "Unknown error"}`,
-          attachmentId: input.attachmentId,
-        })
+        return {
+          output: JSON.stringify({
+            error: `Failed to load Excel section: ${error instanceof Error ? error.message : "Unknown error"}`,
+            attachmentId: input.attachmentId,
+          }),
+        }
       }
+    },
+
+    trace: {
+      stepType: AgentStepTypes.TOOL_CALL,
+      formatContent: (input) =>
+        JSON.stringify({ tool: "load_excel_section", attachmentId: input.attachmentId, sheet: input.sheetName }),
     },
   })
 }
