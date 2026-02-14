@@ -622,7 +622,7 @@ describe("API E2E Tests", () => {
             content: [
               {
                 type: "command",
-                attrs: { name: "simulate", args: "ariadne chatting about testing" },
+                attrs: { name: "echo", args: "hello world" },
               },
             ],
           },
@@ -640,8 +640,8 @@ describe("API E2E Tests", () => {
       expect(status).toBe(202)
       expect(data.command).toBeDefined()
       expect(data.command!.id).toMatch(/^cmd_/)
-      expect(data.command!.name).toBe("simulate")
-      expect(data.command!.args).toBe("ariadne chatting about testing")
+      expect(data.command!.name).toBe("echo")
+      expect(data.command!.args).toBe("hello world")
       expect(data.command!.status).toBe("dispatched")
       expect(data.event).toBeDefined()
     })
@@ -723,7 +723,7 @@ describe("API E2E Tests", () => {
             content: [
               {
                 type: "command",
-                attrs: { name: "simulate", args: "test" },
+                attrs: { name: "echo", args: "test" },
               },
             ],
           },
