@@ -148,12 +148,16 @@ test.describe("Sidebar Updates", () => {
       await expect(page.getByRole("heading", { name: "Drafts", level: 1 })).toBeVisible({ timeout: 5000 })
 
       // The sidebar should update the scratchpad's preview with the companion's response
-      // WITHOUT requiring a page refresh. We check for the preview text rather than the
-      // unread badge because the badge depends on whether `isViewingStream` was false when
+      // WITHOUT requiring a page refresh. We check preview text rather than the unread
+      // badge because the badge depends on whether `isViewingStream` was false when
       // `stream:activity` fired — a race with navigation timing.
+      //
+      // The preview may be in a compact section (hidden until hover) depending on whether
+      // unreadCount incremented (race with navigation). Hover to reveal it either way.
       const scratchpadLink = page.locator(`a[href*="/s/${streamId}"]`).first()
       await expect(scratchpadLink).toBeVisible({ timeout: 10000 })
 
+      await scratchpadLink.hover()
       await expect(scratchpadLink.getByText(/stub response/i)).toBeVisible({ timeout: 30000 })
     })
   })
