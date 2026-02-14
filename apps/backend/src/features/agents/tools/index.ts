@@ -1,3 +1,4 @@
+export { type WorkspaceToolDeps } from "./tool-deps"
 export {
   createSendMessageTool,
   type SendMessageInput,
@@ -15,7 +16,6 @@ export {
   type SearchStreamsInput,
   type SearchUsersInput,
   type GetStreamMessagesInput,
-  type SearchToolsCallbacks,
   type MessageSearchResult,
   type StreamSearchResult,
   type UserSearchResult,
@@ -24,37 +24,19 @@ export {
 export {
   createSearchAttachmentsTool,
   type SearchAttachmentsInput,
-  type SearchAttachmentsCallbacks,
   type AttachmentSearchResult,
 } from "./search-attachments-tool"
-export {
-  createGetAttachmentTool,
-  type GetAttachmentInput,
-  type GetAttachmentCallbacks,
-  type AttachmentDetails,
-} from "./get-attachment-tool"
-export {
-  createLoadAttachmentTool,
-  type LoadAttachmentInput,
-  type LoadAttachmentCallbacks,
-  type LoadAttachmentResult,
-} from "./load-attachment-tool"
-export {
-  createLoadPdfSectionTool,
-  type LoadPdfSectionInput,
-  type LoadPdfSectionCallbacks,
-  type LoadPdfSectionResult,
-} from "./load-pdf-section-tool"
+export { createGetAttachmentTool, type GetAttachmentInput, type AttachmentDetails } from "./get-attachment-tool"
+export { createLoadAttachmentTool, type LoadAttachmentInput, type LoadAttachmentResult } from "./load-attachment-tool"
+export { createLoadPdfSectionTool, type LoadPdfSectionInput, type LoadPdfSectionResult } from "./load-pdf-section-tool"
 export {
   createLoadFileSectionTool,
   type LoadFileSectionInput,
-  type LoadFileSectionCallbacks,
   type LoadFileSectionResult,
 } from "./load-file-section-tool"
 export {
   createLoadExcelSectionTool,
   type LoadExcelSectionInput,
-  type LoadExcelSectionCallbacks,
   type LoadExcelSectionResult,
 } from "./load-excel-section-tool"
 export {

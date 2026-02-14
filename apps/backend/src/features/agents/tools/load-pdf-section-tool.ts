@@ -1,7 +1,9 @@
 import { z } from "zod"
 import { AgentStepTypes } from "@threa/types"
 import { logger } from "../../../lib/logger"
+import { AttachmentRepository, AttachmentExtractionRepository, PdfPageExtractionRepository } from "../../attachments"
 import { defineAgentTool, type AgentToolResult } from "../runtime"
+import type { WorkspaceToolDeps } from "./tool-deps"
 
 const MAX_PAGES_PER_REQUEST = 10
 
@@ -32,11 +34,9 @@ export interface LoadPdfSectionResult {
   pages: Array<{ pageNumber: number; content: string }>
 }
 
-export interface LoadPdfSectionCallbacks {
-  loadPdfSection: (input: LoadPdfSectionInput) => Promise<LoadPdfSectionResult | null>
-}
+export function createLoadPdfSectionTool(deps: WorkspaceToolDeps) {
+  const { db, accessibleStreamIds } = deps
 
-export function createLoadPdfSectionTool(callbacks: LoadPdfSectionCallbacks) {
   return defineAgentTool({
     name: "load_pdf_section",
     description: `Load specific pages from a large PDF document. Only use this when:
@@ -51,9 +51,8 @@ For small/medium PDFs (<25 pages), full content is already available in the extr
 
     execute: async (input): Promise<AgentToolResult> => {
       try {
-        const result = await callbacks.loadPdfSection(input)
-
-        if (!result) {
+        const attachment = await AttachmentRepository.findById(db, input.attachmentId)
+        if (!attachment) {
           return {
             output: JSON.stringify({
               error: "PDF not found, not accessible, or pages not available",
@@ -62,6 +61,62 @@ For small/medium PDFs (<25 pages), full content is already available in the extr
               endPage: input.endPage,
             }),
           }
+        }
+        if (!attachment.streamId || !accessibleStreamIds.includes(attachment.streamId)) {
+          return {
+            output: JSON.stringify({
+              error: "PDF not found, not accessible, or pages not available",
+              attachmentId: input.attachmentId,
+              startPage: input.startPage,
+              endPage: input.endPage,
+            }),
+          }
+        }
+
+        const extraction = await AttachmentExtractionRepository.findByAttachmentId(db, input.attachmentId)
+        if (!extraction || extraction.sourceType !== "pdf" || !extraction.pdfMetadata) {
+          return {
+            output: JSON.stringify({
+              error: "PDF not found, not accessible, or pages not available",
+              attachmentId: input.attachmentId,
+              startPage: input.startPage,
+              endPage: input.endPage,
+            }),
+          }
+        }
+
+        const totalPages = extraction.pdfMetadata.totalPages
+        if (input.startPage > totalPages || input.endPage > totalPages) {
+          return {
+            output: JSON.stringify({
+              error: "PDF not found, not accessible, or pages not available",
+              attachmentId: input.attachmentId,
+              startPage: input.startPage,
+              endPage: input.endPage,
+            }),
+          }
+        }
+
+        const pages = await PdfPageExtractionRepository.findByAttachmentAndPageRange(
+          db,
+          input.attachmentId,
+          input.startPage,
+          input.endPage
+        )
+
+        const pageContents = pages.map((p) => ({
+          pageNumber: p.pageNumber,
+          content: p.markdownContent ?? p.ocrText ?? p.rawText ?? "",
+        }))
+
+        const result: LoadPdfSectionResult = {
+          attachmentId: input.attachmentId,
+          filename: attachment.filename,
+          startPage: input.startPage,
+          endPage: input.endPage,
+          totalPages,
+          content: pageContents.map((p) => p.content).join("\n\n---\n\n"),
+          pages: pageContents,
         }
 
         logger.debug(

@@ -1,5 +1,7 @@
 import { AgentToolNames } from "@threa/types"
 import type { AgentTool } from "../runtime"
+import type { WorkspaceAgentResult } from "../researcher"
+import type { WorkspaceToolDeps } from "../tools/tool-deps"
 import {
   createWebSearchTool,
   createReadUrlTool,
@@ -15,29 +17,14 @@ import {
   createLoadExcelSectionTool,
   createWorkspaceResearchTool,
   isToolEnabled,
-  type SearchToolsCallbacks,
-  type SearchAttachmentsCallbacks,
-  type GetAttachmentCallbacks,
-  type LoadAttachmentCallbacks,
-  type LoadPdfSectionCallbacks,
-  type LoadFileSectionCallbacks,
-  type LoadExcelSectionCallbacks,
-  type WorkspaceResearchCallbacks,
 } from "../tools"
 
 export interface ToolSetConfig {
   enabledTools: string[] | null
   tavilyApiKey?: string
-  runWorkspaceAgent?: WorkspaceResearchCallbacks["runWorkspaceAgent"]
-  search?: SearchToolsCallbacks
-  attachments?: {
-    search: SearchAttachmentsCallbacks
-    get: GetAttachmentCallbacks
-    load?: LoadAttachmentCallbacks
-    loadPdfSection?: LoadPdfSectionCallbacks
-    loadFileSection?: LoadFileSectionCallbacks
-    loadExcelSection?: LoadExcelSectionCallbacks
-  }
+  runWorkspaceAgent?: (query: string) => Promise<WorkspaceAgentResult>
+  workspace?: WorkspaceToolDeps
+  supportsVision?: boolean
 }
 
 /**
@@ -46,7 +33,7 @@ export interface ToolSetConfig {
  * Returns AgentTool[] — send_message is NOT included (the runtime handles it).
  */
 export function buildToolSet(config: ToolSetConfig): AgentTool[] {
-  const { enabledTools, tavilyApiKey, runWorkspaceAgent, search, attachments } = config
+  const { enabledTools, tavilyApiKey, runWorkspaceAgent, workspace, supportsVision } = config
 
   const tools: Array<AgentTool | null> = [
     // Workspace research (available when agent has trigger context)
@@ -59,31 +46,31 @@ export function buildToolSet(config: ToolSetConfig): AgentTool[] {
     isToolEnabled(enabledTools, AgentToolNames.READ_URL) ? createReadUrlTool() : null,
 
     // Workspace search tools
-    search && isToolEnabled(enabledTools, AgentToolNames.SEARCH_MESSAGES) ? createSearchMessagesTool(search) : null,
-    search && isToolEnabled(enabledTools, AgentToolNames.SEARCH_STREAMS) ? createSearchStreamsTool(search) : null,
-    search && isToolEnabled(enabledTools, AgentToolNames.SEARCH_USERS) ? createSearchUsersTool(search) : null,
-    search && isToolEnabled(enabledTools, AgentToolNames.GET_STREAM_MESSAGES)
-      ? createGetStreamMessagesTool(search)
+    workspace && isToolEnabled(enabledTools, AgentToolNames.SEARCH_MESSAGES)
+      ? createSearchMessagesTool(workspace)
+      : null,
+    workspace && isToolEnabled(enabledTools, AgentToolNames.SEARCH_STREAMS) ? createSearchStreamsTool(workspace) : null,
+    workspace && isToolEnabled(enabledTools, AgentToolNames.SEARCH_USERS) ? createSearchUsersTool(workspace) : null,
+    workspace && isToolEnabled(enabledTools, AgentToolNames.GET_STREAM_MESSAGES)
+      ? createGetStreamMessagesTool(workspace)
       : null,
 
     // Attachment tools
-    attachments && isToolEnabled(enabledTools, AgentToolNames.SEARCH_ATTACHMENTS)
-      ? createSearchAttachmentsTool(attachments.search)
+    workspace && isToolEnabled(enabledTools, AgentToolNames.SEARCH_ATTACHMENTS)
+      ? createSearchAttachmentsTool(workspace)
       : null,
-    attachments && isToolEnabled(enabledTools, AgentToolNames.GET_ATTACHMENT)
-      ? createGetAttachmentTool(attachments.get)
+    workspace && isToolEnabled(enabledTools, AgentToolNames.GET_ATTACHMENT) ? createGetAttachmentTool(workspace) : null,
+    workspace && supportsVision && isToolEnabled(enabledTools, AgentToolNames.LOAD_ATTACHMENT)
+      ? createLoadAttachmentTool(workspace)
       : null,
-    attachments?.load && isToolEnabled(enabledTools, AgentToolNames.LOAD_ATTACHMENT)
-      ? createLoadAttachmentTool(attachments.load)
+    workspace && isToolEnabled(enabledTools, AgentToolNames.LOAD_PDF_SECTION)
+      ? createLoadPdfSectionTool(workspace)
       : null,
-    attachments?.loadPdfSection && isToolEnabled(enabledTools, AgentToolNames.LOAD_PDF_SECTION)
-      ? createLoadPdfSectionTool(attachments.loadPdfSection)
+    workspace && isToolEnabled(enabledTools, AgentToolNames.LOAD_FILE_SECTION)
+      ? createLoadFileSectionTool(workspace)
       : null,
-    attachments?.loadFileSection && isToolEnabled(enabledTools, AgentToolNames.LOAD_FILE_SECTION)
-      ? createLoadFileSectionTool(attachments.loadFileSection)
-      : null,
-    attachments?.loadExcelSection && isToolEnabled(enabledTools, AgentToolNames.LOAD_EXCEL_SECTION)
-      ? createLoadExcelSectionTool(attachments.loadExcelSection)
+    workspace && isToolEnabled(enabledTools, AgentToolNames.LOAD_EXCEL_SECTION)
+      ? createLoadExcelSectionTool(workspace)
       : null,
   ]
 

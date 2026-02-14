@@ -1,7 +1,14 @@
 import { z } from "zod"
 import { AgentStepTypes, STREAM_TYPES } from "@threa/types"
 import { logger } from "../../../lib/logger"
+import { StreamRepository } from "../../streams"
+import { MemberRepository } from "../../workspaces"
+import { MessageRepository } from "../../messaging"
+import { PersonaRepository } from "../persona-repository"
+import { enrichMessageSearchResults } from "../researcher"
+import { resolveStreamIdentifier } from "./identifier-resolver"
 import { defineAgentTool, type AgentToolResult } from "../runtime"
+import type { WorkspaceToolDeps } from "./tool-deps"
 
 // Schema for search_messages tool
 const SearchMessagesSchema = z.object({
@@ -81,17 +88,12 @@ export interface StreamMessagesResult {
   createdAt: string
 }
 
-export interface SearchToolsCallbacks {
-  searchMessages: (input: SearchMessagesInput) => Promise<MessageSearchResult[]>
-  searchStreams: (input: SearchStreamsInput) => Promise<StreamSearchResult[]>
-  searchUsers: (input: SearchUsersInput) => Promise<UserSearchResult[]>
-  getStreamMessages: (input: GetStreamMessagesInput) => Promise<StreamMessagesResult[]>
-}
-
 const MAX_RESULTS = 10
 const MAX_STREAM_MESSAGES = 20
 
-export function createSearchMessagesTool(callbacks: SearchToolsCallbacks) {
+export function createSearchMessagesTool(deps: WorkspaceToolDeps) {
+  const { db, workspaceId, accessibleStreamIds, invokingMemberId, searchService } = deps
+
   return defineAgentTool({
     name: "search_messages",
     description: `Search for messages in the workspace knowledge base. Use this to find:
@@ -105,7 +107,39 @@ Optionally filter by stream using ID (stream_xxx), slug (general), or prefixed s
 
     execute: async (input): Promise<AgentToolResult> => {
       try {
-        const results = await callbacks.searchMessages(input)
+        let filterStreamIds = accessibleStreamIds
+        if (input.stream) {
+          const resolved = await resolveStreamIdentifier(db, workspaceId, input.stream, accessibleStreamIds)
+          if (!resolved.resolved)
+            return {
+              output: JSON.stringify({
+                query: input.query,
+                stream: input.stream,
+                exact: input.exact,
+                results: [],
+                message: "No matching messages found",
+              }),
+            }
+          filterStreamIds = [resolved.id]
+        }
+
+        const searchResults = await searchService.search({
+          workspaceId,
+          memberId: invokingMemberId,
+          query: input.query,
+          filters: { streamIds: filterStreamIds },
+          limit: 10,
+          exact: input.exact,
+        })
+
+        const enriched = await enrichMessageSearchResults(db, searchResults)
+        const results: MessageSearchResult[] = enriched.map((r) => ({
+          id: r.id,
+          content: r.content,
+          authorName: r.authorName,
+          streamName: r.streamName,
+          createdAt: r.createdAt.toISOString(),
+        }))
 
         if (results.length === 0) {
           return {
@@ -161,7 +195,9 @@ Optionally filter by stream using ID (stream_xxx), slug (general), or prefixed s
   })
 }
 
-export function createSearchStreamsTool(callbacks: SearchToolsCallbacks) {
+export function createSearchStreamsTool(deps: WorkspaceToolDeps) {
+  const { db, accessibleStreamIds } = deps
+
   return defineAgentTool({
     name: "search_streams",
     description: `Search for streams (channels, scratchpads, DMs) in the workspace. Use this to find:
@@ -172,7 +208,19 @@ export function createSearchStreamsTool(callbacks: SearchToolsCallbacks) {
 
     execute: async (input): Promise<AgentToolResult> => {
       try {
-        const results = await callbacks.searchStreams(input)
+        const streams = await StreamRepository.searchByName(db, {
+          streamIds: accessibleStreamIds,
+          query: input.query,
+          types: input.types,
+          limit: 10,
+        })
+
+        const results: StreamSearchResult[] = streams.map((s) => ({
+          id: s.id,
+          type: s.type,
+          name: s.displayName ?? s.slug ?? null,
+          description: s.description ?? null,
+        }))
 
         if (results.length === 0) {
           return {
@@ -217,7 +265,9 @@ export function createSearchStreamsTool(callbacks: SearchToolsCallbacks) {
   })
 }
 
-export function createSearchUsersTool(callbacks: SearchToolsCallbacks) {
+export function createSearchUsersTool(deps: WorkspaceToolDeps) {
+  const { db, workspaceId } = deps
+
   return defineAgentTool({
     name: "search_users",
     description: `Search for users in the workspace by name or email. Use this to find:
@@ -228,7 +278,8 @@ export function createSearchUsersTool(callbacks: SearchToolsCallbacks) {
 
     execute: async (input): Promise<AgentToolResult> => {
       try {
-        const results = await callbacks.searchUsers(input)
+        const members = await MemberRepository.searchByNameOrSlug(db, workspaceId, input.query, 10)
+        const results: UserSearchResult[] = members.map((m) => ({ id: m.id, name: m.name, email: m.email }))
 
         if (results.length === 0) {
           return {
@@ -270,7 +321,9 @@ export function createSearchUsersTool(callbacks: SearchToolsCallbacks) {
   })
 }
 
-export function createGetStreamMessagesTool(callbacks: SearchToolsCallbacks) {
+export function createGetStreamMessagesTool(deps: WorkspaceToolDeps) {
+  const { db, workspaceId, accessibleStreamIds } = deps
+
   return defineAgentTool({
     name: "get_stream_messages",
     description: `Get recent messages from a specific stream (channel, scratchpad, DM, or thread). Use this to:
@@ -284,7 +337,41 @@ You can reference streams by their ID (stream_xxx), slug (general), or prefixed 
     execute: async (input): Promise<AgentToolResult> => {
       try {
         const limit = Math.min(input.limit ?? 10, MAX_STREAM_MESSAGES)
-        const results = await callbacks.getStreamMessages({ ...input, limit })
+
+        const resolved = await resolveStreamIdentifier(db, workspaceId, input.stream, accessibleStreamIds)
+        if (!resolved.resolved) {
+          return {
+            output: JSON.stringify({
+              stream: input.stream,
+              messages: [],
+              message: "No messages found in this stream (it may be empty or you may not have access)",
+            }),
+          }
+        }
+
+        const messages = await MessageRepository.list(db, resolved.id, { limit })
+        messages.reverse()
+
+        const memberIds = [...new Set(messages.filter((m) => m.authorType === "member").map((m) => m.authorId))]
+        const personaIds = [...new Set(messages.filter((m) => m.authorType === "persona").map((m) => m.authorId))]
+        const [members, personas] = await Promise.all([
+          memberIds.length > 0 ? MemberRepository.findByIds(db, memberIds) : Promise.resolve([]),
+          personaIds.length > 0 ? PersonaRepository.findByIds(db, personaIds) : Promise.resolve([]),
+        ])
+
+        const memberMap = new Map(members.map((m) => [m.id, m.name]))
+        const personaMap = new Map(personas.map((p) => [p.id, p.name]))
+
+        const results: StreamMessagesResult[] = messages.map((m) => ({
+          id: m.id,
+          content: m.contentMarkdown,
+          authorName:
+            m.authorType === "member"
+              ? (memberMap.get(m.authorId) ?? "Unknown Member")
+              : (personaMap.get(m.authorId) ?? "Unknown Persona"),
+          authorType: m.authorType,
+          createdAt: m.createdAt.toISOString(),
+        }))
 
         if (results.length === 0) {
           return {

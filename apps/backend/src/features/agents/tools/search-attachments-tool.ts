@@ -1,7 +1,9 @@
 import { z } from "zod"
-import { AgentStepTypes } from "@threa/types"
+import { AgentStepTypes, type ExtractionContentType } from "@threa/types"
 import { logger } from "../../../lib/logger"
+import { AttachmentRepository } from "../../attachments"
 import { defineAgentTool, type AgentToolResult } from "../runtime"
+import type { WorkspaceToolDeps } from "./tool-deps"
 
 const SearchAttachmentsSchema = z.object({
   query: z.string().describe("Search query to find attachments by filename or content"),
@@ -25,13 +27,11 @@ export interface AttachmentSearchResult {
   createdAt: string
 }
 
-export interface SearchAttachmentsCallbacks {
-  searchAttachments: (input: SearchAttachmentsInput) => Promise<AttachmentSearchResult[]>
-}
-
 const MAX_RESULTS = 20
 
-export function createSearchAttachmentsTool(callbacks: SearchAttachmentsCallbacks) {
+export function createSearchAttachmentsTool(deps: WorkspaceToolDeps) {
+  const { db, workspaceId, accessibleStreamIds } = deps
+
   return defineAgentTool({
     name: "search_attachments",
     description: `Search for attachments (images, documents, files) in the workspace. Use this to find:
@@ -45,7 +45,25 @@ The search matches against filenames and extracted content summaries.`,
     execute: async (input): Promise<AgentToolResult> => {
       try {
         const limit = Math.min(input.limit ?? 10, MAX_RESULTS)
-        const results = await callbacks.searchAttachments({ ...input, limit })
+
+        const dbResults = await AttachmentRepository.searchWithExtractions(db, {
+          workspaceId,
+          streamIds: accessibleStreamIds,
+          query: input.query,
+          contentTypes: input.contentTypes as ExtractionContentType[] | undefined,
+          limit,
+        })
+
+        const results: AttachmentSearchResult[] = dbResults.map((r) => ({
+          id: r.id,
+          filename: r.filename,
+          mimeType: r.mimeType,
+          contentType: r.extraction?.contentType ?? null,
+          summary: r.extraction?.summary ?? null,
+          streamId: r.streamId,
+          messageId: r.messageId,
+          createdAt: r.createdAt.toISOString(),
+        }))
 
         if (results.length === 0) {
           return {

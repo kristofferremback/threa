@@ -1,7 +1,9 @@
 import { z } from "zod"
 import { AgentStepTypes } from "@threa/types"
 import { logger } from "../../../lib/logger"
+import { AttachmentRepository } from "../../attachments"
 import { defineAgentTool, type AgentToolResult } from "../runtime"
+import type { WorkspaceToolDeps } from "./tool-deps"
 
 const LoadAttachmentSchema = z.object({
   attachmentId: z.string().describe("The ID of the attachment to load for direct analysis"),
@@ -16,11 +18,9 @@ export interface LoadAttachmentResult {
   dataUrl: string
 }
 
-export interface LoadAttachmentCallbacks {
-  loadAttachment: (input: LoadAttachmentInput) => Promise<LoadAttachmentResult | null>
-}
+export function createLoadAttachmentTool(deps: WorkspaceToolDeps) {
+  const { db, accessibleStreamIds, storage } = deps
 
-export function createLoadAttachmentTool(callbacks: LoadAttachmentCallbacks) {
   return defineAgentTool({
     name: "load_attachment",
     description: `Load an attachment for direct visual analysis. Only use this for images when you need to:
@@ -34,15 +34,39 @@ For text content from documents, prefer get_attachment which returns the extract
 
     execute: async (input): Promise<AgentToolResult> => {
       try {
-        const result = await callbacks.loadAttachment(input)
-
-        if (!result) {
+        const attachment = await AttachmentRepository.findById(db, input.attachmentId)
+        if (!attachment) {
           return {
             output: JSON.stringify({
               error: "Attachment not found, not accessible, or not an image",
               attachmentId: input.attachmentId,
             }),
           }
+        }
+        if (!attachment.streamId || !accessibleStreamIds.includes(attachment.streamId)) {
+          return {
+            output: JSON.stringify({
+              error: "Attachment not found, not accessible, or not an image",
+              attachmentId: input.attachmentId,
+            }),
+          }
+        }
+        if (!attachment.mimeType.startsWith("image/")) {
+          return {
+            output: JSON.stringify({
+              error: "Attachment not found, not accessible, or not an image",
+              attachmentId: input.attachmentId,
+            }),
+          }
+        }
+
+        const buffer = await storage.getObject(attachment.storagePath)
+        const base64 = buffer.toString("base64")
+        const result: LoadAttachmentResult = {
+          id: attachment.id,
+          filename: attachment.filename,
+          mimeType: attachment.mimeType,
+          dataUrl: `data:${attachment.mimeType};base64,${base64}`,
         }
 
         logger.debug({ attachmentId: input.attachmentId, mimeType: result.mimeType }, "Attachment loaded for analysis")

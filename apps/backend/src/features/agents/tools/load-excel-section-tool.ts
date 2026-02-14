@@ -1,8 +1,9 @@
 import { z } from "zod"
 import { AgentStepTypes } from "@threa/types"
 import { logger } from "../../../lib/logger"
-import { EXCEL_MAX_ROWS_PER_REQUEST } from "../../attachments"
+import { AttachmentRepository, AttachmentExtractionRepository, EXCEL_MAX_ROWS_PER_REQUEST } from "../../attachments"
 import { defineAgentTool, type AgentToolResult } from "../runtime"
+import type { WorkspaceToolDeps } from "./tool-deps"
 
 const LoadExcelSectionSchema = z
   .object({
@@ -49,11 +50,9 @@ export interface LoadExcelSectionResult {
   content: string
 }
 
-export interface LoadExcelSectionCallbacks {
-  loadExcelSection: (input: LoadExcelSectionInput) => Promise<LoadExcelSectionResult | null>
-}
+export function createLoadExcelSectionTool(deps: WorkspaceToolDeps) {
+  const { db, accessibleStreamIds, storage } = deps
 
-export function createLoadExcelSectionTool(callbacks: LoadExcelSectionCallbacks) {
   return defineAgentTool({
     name: "load_excel_section",
     description: `Load specific rows from a sheet in a large Excel workbook. Only use this when:
@@ -68,9 +67,8 @@ For small/medium workbooks (<20K cells), full content is already available in fu
 
     execute: async (input): Promise<AgentToolResult> => {
       try {
-        const result = await callbacks.loadExcelSection(input)
-
-        if (!result) {
+        const attachment = await AttachmentRepository.findById(db, input.attachmentId)
+        if (!attachment) {
           return {
             output: JSON.stringify({
               error: "Excel file not found, not accessible, or sheet/rows not available",
@@ -78,6 +76,82 @@ For small/medium workbooks (<20K cells), full content is already available in fu
               sheetName: input.sheetName,
             }),
           }
+        }
+        if (!attachment.streamId || !accessibleStreamIds.includes(attachment.streamId)) {
+          return {
+            output: JSON.stringify({
+              error: "Excel file not found, not accessible, or sheet/rows not available",
+              attachmentId: input.attachmentId,
+              sheetName: input.sheetName,
+            }),
+          }
+        }
+
+        const extraction = await AttachmentExtractionRepository.findByAttachmentId(db, input.attachmentId)
+        if (!extraction || extraction.sourceType !== "excel" || !extraction.excelMetadata) {
+          return {
+            output: JSON.stringify({
+              error: "Excel file not found, not accessible, or sheet/rows not available",
+              attachmentId: input.attachmentId,
+              sheetName: input.sheetName,
+            }),
+          }
+        }
+
+        const sheetInfo = extraction.excelMetadata.sheets.find((s) => s.name === input.sheetName)
+        if (!sheetInfo) {
+          return {
+            output: JSON.stringify({
+              error: "Excel file not found, not accessible, or sheet/rows not available",
+              attachmentId: input.attachmentId,
+              sheetName: input.sheetName,
+            }),
+          }
+        }
+
+        const startRow = input.startRow ?? 0
+        const endRow = Math.min(input.endRow ?? sheetInfo.rows, startRow + EXCEL_MAX_ROWS_PER_REQUEST)
+        if (startRow >= sheetInfo.rows || endRow > sheetInfo.rows) {
+          return {
+            output: JSON.stringify({
+              error: "Excel file not found, not accessible, or sheet/rows not available",
+              attachmentId: input.attachmentId,
+              sheetName: input.sheetName,
+            }),
+          }
+        }
+
+        const { extractExcel } = await import("../../attachments/excel/extractor")
+        const { validateExcelFormat } = await import("../../attachments/excel/detector")
+        const fileBuffer = await storage.getObject(attachment.storagePath)
+        const format = validateExcelFormat(fileBuffer)
+        const extracted = extractExcel(fileBuffer, format)
+
+        const sheet = extracted.sheets.find((s) => s.name === input.sheetName)
+        if (!sheet) {
+          return {
+            output: JSON.stringify({
+              error: "Excel file not found, not accessible, or sheet/rows not available",
+              attachmentId: input.attachmentId,
+              sheetName: input.sheetName,
+            }),
+          }
+        }
+
+        const selectedRows = sheet.data.slice(startRow, endRow)
+        const headerRow = `| ${sheet.headers.join(" | ")} |`
+        const separator = `| ${sheet.headers.map(() => "---").join(" | ")} |`
+        const dataRows = selectedRows.map((row) => `| ${row.join(" | ")} |`).join("\n")
+
+        const result: LoadExcelSectionResult = {
+          attachmentId: input.attachmentId,
+          filename: attachment.filename,
+          sheetName: input.sheetName,
+          startRow,
+          endRow,
+          totalRows: sheet.rows,
+          headers: sheet.headers,
+          content: `${headerRow}\n${separator}\n${dataRows}`,
         }
 
         logger.debug(

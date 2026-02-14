@@ -1,7 +1,9 @@
 import { z } from "zod"
 import { AgentStepTypes } from "@threa/types"
 import { logger } from "../../../lib/logger"
+import { AttachmentRepository, AttachmentExtractionRepository } from "../../attachments"
 import { defineAgentTool, type AgentToolResult } from "../runtime"
+import type { WorkspaceToolDeps } from "./tool-deps"
 
 const MAX_LINES_PER_REQUEST = 500
 
@@ -31,11 +33,9 @@ export interface LoadFileSectionResult {
   content: string
 }
 
-export interface LoadFileSectionCallbacks {
-  loadFileSection: (input: LoadFileSectionInput) => Promise<LoadFileSectionResult | null>
-}
+export function createLoadFileSectionTool(deps: WorkspaceToolDeps) {
+  const { db, accessibleStreamIds, storage } = deps
 
-export function createLoadFileSectionTool(callbacks: LoadFileSectionCallbacks) {
   return defineAgentTool({
     name: "load_file_section",
     description: `Load specific lines from a large text file. Only use this when:
@@ -50,9 +50,8 @@ For small/medium files (<32KB), full content is already available in fullText - 
 
     execute: async (input): Promise<AgentToolResult> => {
       try {
-        const result = await callbacks.loadFileSection(input)
-
-        if (!result) {
+        const attachment = await AttachmentRepository.findById(db, input.attachmentId)
+        if (!attachment) {
           return {
             output: JSON.stringify({
               error: "File not found, not accessible, or lines not available",
@@ -61,6 +60,52 @@ For small/medium files (<32KB), full content is already available in fullText - 
               endLine: input.endLine,
             }),
           }
+        }
+        if (!attachment.streamId || !accessibleStreamIds.includes(attachment.streamId)) {
+          return {
+            output: JSON.stringify({
+              error: "File not found, not accessible, or lines not available",
+              attachmentId: input.attachmentId,
+              startLine: input.startLine,
+              endLine: input.endLine,
+            }),
+          }
+        }
+
+        const extraction = await AttachmentExtractionRepository.findByAttachmentId(db, input.attachmentId)
+        if (!extraction || extraction.sourceType !== "text" || !extraction.textMetadata) {
+          return {
+            output: JSON.stringify({
+              error: "File not found, not accessible, or lines not available",
+              attachmentId: input.attachmentId,
+              startLine: input.startLine,
+              endLine: input.endLine,
+            }),
+          }
+        }
+
+        const totalLines = extraction.textMetadata.totalLines
+        if (input.startLine >= totalLines || input.endLine > totalLines) {
+          return {
+            output: JSON.stringify({
+              error: "File not found, not accessible, or lines not available",
+              attachmentId: input.attachmentId,
+              startLine: input.startLine,
+              endLine: input.endLine,
+            }),
+          }
+        }
+
+        const fileBuffer = await storage.getObject(attachment.storagePath)
+        const lines = fileBuffer.toString("utf-8").split("\n")
+
+        const result: LoadFileSectionResult = {
+          attachmentId: input.attachmentId,
+          filename: attachment.filename,
+          startLine: input.startLine,
+          endLine: input.endLine,
+          totalLines,
+          content: lines.slice(input.startLine, input.endLine).join("\n"),
         }
 
         logger.debug(
