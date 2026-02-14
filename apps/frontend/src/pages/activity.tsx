@@ -4,17 +4,12 @@ import { Bell, ArrowLeft, Check } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
-import { cn } from "@/lib/utils"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useActivityFeed, useMarkActivityRead, useMarkAllActivityRead, useActors, useWorkspaceBootstrap } from "@/hooks"
 import { useMentionCounts } from "@/hooks/use-mention-counts"
+import { getStreamDisplayName } from "@/lib/streams"
 import { ActivityItem } from "@/components/activity/activity-item"
 import { ActivityEmpty } from "@/components/activity/activity-empty"
-import type { StreamWithPreview } from "@threa/types"
-
-function getStreamDisplayName(stream: StreamWithPreview): string {
-  if (stream.slug) return `#${stream.slug}`
-  return stream.displayName || "Untitled"
-}
 
 export function ActivityPage() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
@@ -53,26 +48,16 @@ export function ActivityPage() {
 
         <div className="flex items-center gap-2">
           {/* Filter tabs */}
-          <div className="flex gap-1 bg-muted rounded-md p-0.5">
-            <button
-              onClick={() => setUnreadOnly(false)}
-              className={cn(
-                "px-2 py-1 rounded text-xs font-medium transition-all",
-                !unreadOnly ? "bg-card text-primary" : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              All
-            </button>
-            <button
-              onClick={() => setUnreadOnly(true)}
-              className={cn(
-                "px-2 py-1 rounded text-xs font-medium transition-all",
-                unreadOnly ? "bg-card text-primary" : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              Unread
-            </button>
-          </div>
+          <Tabs value={unreadOnly ? "unread" : "all"} onValueChange={(v) => setUnreadOnly(v === "unread")}>
+            <TabsList className="h-8">
+              <TabsTrigger value="all" className="text-xs px-2.5 py-1">
+                All
+              </TabsTrigger>
+              <TabsTrigger value="unread" className="text-xs px-2.5 py-1">
+                Unread
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
 
           {/* Mark all as read */}
           {unreadActivityCount > 0 && (

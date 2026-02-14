@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import { Bell, FileText, Hash, MessageSquare, Plus, X, Archive } from "lucide-react"
 import { StreamTypes } from "@threa/types"
 import type { Stream, StreamType } from "@threa/types"
+import { getStreamDisplayName } from "@/lib/streams"
 import { streamsApi } from "@/api"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -40,13 +41,6 @@ const ARCHIVE_STATUS_OPTIONS: { value: "active" | "archived"; label: string }[] 
   { value: "active", label: "Active" },
   { value: "archived", label: "Archived" },
 ]
-
-function getStreamDisplayName(stream: Stream): string {
-  if (stream.type === StreamTypes.CHANNEL && stream.slug) {
-    return `#${stream.slug}`
-  }
-  return stream.displayName || "Untitled"
-}
 
 function getStreamTypeLabel(type: StreamType): string {
   switch (type) {
