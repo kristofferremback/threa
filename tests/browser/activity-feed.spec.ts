@@ -82,7 +82,7 @@ test.describe("Activity Feed", () => {
 
       // ──── User B: Verify mention indicator (@) appears on stream in sidebar ────
 
-      await expect(channelLink.getByText("@")).toBeVisible({ timeout: 15000 })
+      await expect(channelLink.locator("span.text-destructive")).toBeVisible({ timeout: 15000 })
 
       // ──── User B: Verify activity count badge on Activity link ────
 
@@ -117,7 +117,86 @@ test.describe("Activity Feed", () => {
       await expect(ctxB.page).toHaveURL(new RegExp(`/w/${workspaceId}/activity`))
 
       // The mention indicator should be gone since stream was read
-      await expect(channelLink.getByText("@")).not.toBeVisible({ timeout: 5000 })
+      await expect(channelLink.locator("span.text-destructive")).not.toBeVisible({ timeout: 5000 })
+    } finally {
+      await ctxA.context.close()
+      if (ctxB) await ctxB.context.close()
+    }
+  })
+
+  test("should clear mention indicators when viewing stream receives a mention", async ({ browser }) => {
+    test.setTimeout(60000)
+
+    const testId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
+    const userAEmail = `sender-view-${testId}@example.com`
+    const userAName = `Sender ${testId}`
+    const userBEmail = `viewer-${testId}@example.com`
+    const userBName = `Viewer ${testId}`
+
+    const ctxA = await loginInNewContext(browser, userAEmail, userAName)
+    let ctxB: { context: BrowserContext; page: Page } | undefined
+
+    try {
+      const createWsRes = await ctxA.page.request.post("/api/workspaces", {
+        data: { name: `ViewRead Test ${testId}`, slug: `viewread-${testId}` },
+      })
+      expect(createWsRes.ok()).toBeTruthy()
+      const { workspace } = (await createWsRes.json()) as { workspace: { id: string } }
+      const workspaceId = workspace.id
+
+      const channelSlug = `live-${testId}`
+      const createStreamRes = await ctxA.page.request.post(`/api/workspaces/${workspaceId}/streams`, {
+        data: { type: "channel", slug: channelSlug, visibility: "public" },
+      })
+      expect(createStreamRes.ok()).toBeTruthy()
+      const { stream } = (await createStreamRes.json()) as { stream: { id: string } }
+      const streamId = stream.id
+
+      // User B joins workspace + channel
+      ctxB = await loginInNewContext(browser, userBEmail, userBName)
+      const joinWsRes = await ctxB.page.request.post(`/api/dev/workspaces/${workspaceId}/join`, {
+        data: { role: "member" },
+      })
+      expect(joinWsRes.ok()).toBeTruthy()
+      const { member: memberB } = (await joinWsRes.json()) as { member: { id: string; slug: string } }
+
+      await ctxB.page.request.post(`/api/dev/workspaces/${workspaceId}/streams/${streamId}/join`)
+
+      // ──── User B: Navigate directly to the channel (is actively viewing it) ────
+
+      await ctxB.page.goto(`/w/${workspaceId}/s/${streamId}`)
+      await expect(ctxB.page.getByRole("heading", { name: `#${channelSlug}`, level: 1 })).toBeVisible({
+        timeout: 10000,
+      })
+
+      await switchToAllView(ctxB.page)
+      const channelLink = ctxB.page.getByRole("link", { name: `#${channelSlug}` })
+      await expect(channelLink).toBeVisible({ timeout: 10000 })
+      const actLink = activityLink(ctxB.page, workspaceId)
+
+      // ──── User A: Send message mentioning User B while B is viewing the stream ────
+
+      const mentionText = `Hey @${memberB.slug} check this out ${testId}`
+      const sendMsgRes = await ctxA.page.request.post(`/api/workspaces/${workspaceId}/messages`, {
+        data: { streamId, content: mentionText },
+      })
+      expect(sendMsgRes.ok()).toBeTruthy()
+
+      // User B should see the message appear in the stream (real-time delivery)
+      const mainContent = ctxB.page.getByRole("main")
+      await expect(mainContent.getByText(`check this out ${testId}`).first()).toBeVisible({ timeout: 10000 })
+
+      // ──── Verify: Indicators should clear because User B is reading the stream ────
+
+      // Wait for auto-mark-as-read debounce (500ms) + API round-trip
+      await ctxB.page.waitForTimeout(2000)
+
+      // Mention indicator should NOT be visible — User B has already read the message
+      const mentionIndicator = channelLink.locator("span.text-destructive")
+      await expect(mentionIndicator).not.toBeVisible({ timeout: 5000 })
+
+      // Activity count badge should NOT be visible either
+      await expect(actLink.getByText("1")).not.toBeVisible({ timeout: 5000 })
     } finally {
       await ctxA.context.close()
       if (ctxB) await ctxB.context.close()
@@ -179,7 +258,7 @@ test.describe("Activity Feed", () => {
       // Wait for both mentions to arrive — activity count shows 2
       const channelLink = ctxB.page.getByRole("link", { name: `#${channelSlug}` })
       await expect(actLink.getByText("2")).toBeVisible({ timeout: 15000 })
-      await expect(channelLink.getByText("@")).toBeVisible()
+      await expect(channelLink.locator("span.text-destructive")).toBeVisible()
 
       // Navigate to Activity page
       await actLink.click()
@@ -196,7 +275,7 @@ test.describe("Activity Feed", () => {
       await expect(markAllButton).not.toBeVisible({ timeout: 5000 })
 
       // Mention indicator should be cleared
-      await expect(channelLink.getByText("@")).not.toBeVisible({ timeout: 5000 })
+      await expect(channelLink.locator("span.text-destructive")).not.toBeVisible({ timeout: 5000 })
     } finally {
       await ctxA.context.close()
       if (ctxB) await ctxB.context.close()
