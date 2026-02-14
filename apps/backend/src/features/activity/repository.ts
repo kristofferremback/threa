@@ -106,12 +106,13 @@ export const ActivityRepository = {
     return result.rows.map(mapRowToActivity)
   },
 
-  async countUnreadByStream(db: Querier, memberId: string, workspaceId: string): Promise<Map<string, number>> {
+  async countUnreadMentionsByStream(db: Querier, memberId: string, workspaceId: string): Promise<Map<string, number>> {
     const result = await db.query<{ stream_id: string; count: string }>(sql`
       SELECT stream_id, COUNT(*)::text AS count
       FROM member_activity
       WHERE member_id = ${memberId}
         AND workspace_id = ${workspaceId}
+        AND activity_type = 'mention'
         AND read_at IS NULL
       GROUP BY stream_id
     `)
