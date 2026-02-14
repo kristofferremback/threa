@@ -3,13 +3,13 @@ import { useParams, Link } from "react-router-dom"
 import { Bell, ArrowLeft, Check } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useActivityFeed, useMarkActivityRead, useMarkAllActivityRead, useActors, useWorkspaceBootstrap } from "@/hooks"
 import { useMentionCounts } from "@/hooks/use-mention-counts"
 import { getStreamDisplayName } from "@/lib/streams"
 import { ActivityItem } from "@/components/activity/activity-item"
 import { ActivityEmpty } from "@/components/activity/activity-empty"
+import { ActivitySkeleton } from "@/components/activity/activity-skeleton"
 
 export function ActivityPage() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
@@ -47,7 +47,6 @@ export function ActivityPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Filter tabs */}
           <Tabs value={unreadOnly ? "unread" : "all"} onValueChange={(v) => setUnreadOnly(v === "unread")}>
             <TabsList className="h-8">
               <TabsTrigger value="all" className="text-xs px-2.5 py-1">
@@ -59,7 +58,6 @@ export function ActivityPage() {
             </TabsList>
           </Tabs>
 
-          {/* Mark all as read */}
           {unreadActivityCount > 0 && (
             <Button
               variant="ghost"
@@ -97,23 +95,6 @@ export function ActivityPage() {
           )}
         </main>
       </ScrollArea>
-    </div>
-  )
-}
-
-function ActivitySkeleton() {
-  return (
-    <div className="flex flex-col gap-2 px-4 py-2">
-      {Array.from({ length: 5 }).map((_, i) => (
-        <div key={i} className="flex items-start gap-3 py-3">
-          <Skeleton className="h-2 w-2 rounded-full mt-2" />
-          <div className="flex-1 space-y-2">
-            <Skeleton className="h-4 w-3/4" />
-            <Skeleton className="h-3 w-1/2" />
-            <Skeleton className="h-3 w-20" />
-          </div>
-        </div>
-      ))}
     </div>
   )
 }
