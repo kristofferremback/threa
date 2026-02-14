@@ -190,6 +190,9 @@ export type {
   SendInvitationsResponse,
   InvitationSkipReason,
   CompleteMemberSetupInput,
+  // Activity
+  Activity,
+  ActivityCreatedPayload,
   // Emojis
   EmojiEntry,
   // Commands

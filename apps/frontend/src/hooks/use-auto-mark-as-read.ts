@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react"
 import { useUnreadCounts } from "./use-unread-counts"
+import { useMentionCounts } from "./use-mention-counts"
 
 interface UseAutoMarkAsReadOptions {
   enabled?: boolean
@@ -9,6 +10,9 @@ interface UseAutoMarkAsReadOptions {
 /**
  * Hook that automatically marks a stream as read when viewing it.
  * Debounces the mark-as-read call to avoid excessive API calls when rapidly switching streams.
+ *
+ * Checks both unread counts AND mention counts — the mark-as-read API clears both,
+ * so this must fire when either is elevated (e.g., mention arrives while viewing the stream).
  */
 export function useAutoMarkAsRead(
   workspaceId: string,
@@ -18,6 +22,7 @@ export function useAutoMarkAsRead(
 ) {
   const { enabled = true, debounceMs = 500 } = options
   const { markAsRead, getUnreadCount } = useUnreadCounts(workspaceId)
+  const { getMentionCount } = useMentionCounts(workspaceId)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastMarkedRef = useRef<string | null>(null)
 
@@ -30,12 +35,17 @@ export function useAutoMarkAsRead(
   useEffect(() => {
     if (!enabled || !lastEventId) return
 
-    // Skip if already marked up to this event
-    if (lastMarkedRef.current === lastEventId) return
-
-    // Skip if no unreads for this stream
     const unreadCount = getUnreadCount(streamId)
-    if (unreadCount === 0) return
+    const mentionCount = getMentionCount(streamId)
+
+    // Skip if nothing to clear
+    if (unreadCount === 0 && mentionCount === 0) return
+
+    // Skip if already marked this event AND no pending mentions to clear.
+    // Mentions can arrive via activity:created while we're viewing the stream
+    // (stream:activity doesn't increment unreadCounts when viewing), so we
+    // must re-fire markAsRead to clear them even if lastEventId hasn't changed.
+    if (lastMarkedRef.current === lastEventId && mentionCount === 0) return
 
     // Clear any pending timer
     if (timerRef.current) {
@@ -57,5 +67,5 @@ export function useAutoMarkAsRead(
         clearTimeout(timerRef.current)
       }
     }
-  }, [enabled, streamId, lastEventId, debounceMs, markAsRead, getUnreadCount])
+  }, [enabled, streamId, lastEventId, debounceMs, markAsRead, getUnreadCount, getMentionCount])
 }

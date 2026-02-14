@@ -47,6 +47,10 @@ export { useConversations, conversationKeys } from "./use-conversations"
 
 export { useUnreadCounts } from "./use-unread-counts"
 
+export { useMentionCounts } from "./use-mention-counts"
+
+export { useActivityFeed, useMarkActivityRead, useMarkAllActivityRead, activityKeys } from "./use-activity"
+
 export { useAutoMarkAsRead } from "./use-auto-mark-as-read"
 
 export { useUnreadDivider } from "./use-unread-divider"

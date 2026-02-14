@@ -173,6 +173,39 @@ export interface CompleteMemberSetupInput {
 }
 
 // ============================================================================
+// Activity API
+// ============================================================================
+
+/** Wire format for activity items (dates as ISO strings) */
+export interface Activity {
+  id: string
+  workspaceId: string
+  memberId: string
+  activityType: string
+  streamId: string
+  messageId: string
+  actorId: string
+  context: Record<string, unknown>
+  readAt: string | null
+  createdAt: string
+}
+
+/** Socket event payload for activity:created */
+export interface ActivityCreatedPayload {
+  workspaceId: string
+  targetMemberId: string
+  activity: {
+    id: string
+    activityType: string
+    streamId: string
+    messageId: string
+    actorId: string
+    context: Record<string, unknown>
+    createdAt: string
+  }
+}
+
+// ============================================================================
 // Read State API
 // ============================================================================
 
