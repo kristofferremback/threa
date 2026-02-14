@@ -7,6 +7,7 @@ import type { InvitationService } from "../invitations"
 import type { ActivityService } from "../activity"
 import type { CommandRegistry } from "../commands"
 import { getEmojiList } from "../emoji"
+import { getDefaultLevel } from "../streams/notification-config"
 
 const createWorkspaceSchema = z.object({
   name: z.string().min(1, "name is required"),
@@ -132,6 +133,15 @@ export function createWorkspaceHandlers({
         return { name, description: cmd.description }
       })
 
+      // Compute muted stream IDs: streams where effective notification level is "muted"
+      const streamTypeMap = new Map(streams.map((s) => [s.id, s.type]))
+      const mutedStreamIds = streamMemberships
+        .filter((m) => {
+          const level = m.notificationLevel ?? getDefaultLevel(streamTypeMap.get(m.streamId) ?? "channel")
+          return level === "muted"
+        })
+        .map((m) => m.streamId)
+
       // Include invitations for admin+ members
       const memberRole = req.member!.role
       const isAdmin = memberRole === "admin" || memberRole === "owner"
@@ -151,6 +161,7 @@ export function createWorkspaceHandlers({
           unreadCounts,
           mentionCounts,
           unreadActivityCount: activityCounts?.total ?? 0,
+          mutedStreamIds,
           userPreferences,
           invitations,
         },

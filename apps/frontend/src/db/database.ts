@@ -41,7 +41,7 @@ export interface CachedStream {
   updatedAt: string
   // User-specific state (from membership)
   pinned?: boolean
-  muted?: boolean
+  notificationLevel?: string | null
   lastReadEventId?: string | null
   _cachedAt: number
 }

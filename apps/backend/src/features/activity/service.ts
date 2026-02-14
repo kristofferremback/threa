@@ -2,8 +2,9 @@ import type { Pool, PoolClient } from "pg"
 import { ActivityRepository, type Activity } from "./repository"
 import { MemberRepository } from "../workspaces"
 import { StreamRepository, StreamMemberRepository, type Stream } from "../streams"
+import { resolveNotificationLevelsForStream } from "../streams/notification-resolver"
 import { extractMentionSlugs } from "../agents"
-import { Visibilities } from "@threa/types"
+import { Visibilities, NotificationLevels } from "@threa/types"
 import { withClient } from "../../db"
 import { logger } from "../../lib/logger"
 
@@ -63,6 +64,61 @@ export class ActivityService {
           context: { contentPreview },
         })
         // null means dedup (ON CONFLICT DO NOTHING) — already tracked
+        if (activity) {
+          activities.push(activity)
+        }
+      }
+
+      return activities
+    })
+  }
+
+  async processMessageNotifications(params: {
+    workspaceId: string
+    streamId: string
+    messageId: string
+    actorId: string
+    contentMarkdown: string
+    excludeMemberIds: Set<string>
+  }): Promise<Activity[]> {
+    const { workspaceId, streamId, messageId, actorId, contentMarkdown, excludeMemberIds } = params
+
+    return withClient(this.pool, async (client) => {
+      const stream = await StreamRepository.findById(client, streamId)
+      if (!stream || stream.workspaceId !== workspaceId) return []
+
+      const members = await StreamMemberRepository.list(client, { streamId })
+      if (members.length === 0) return []
+
+      // Resolve effective notification levels for all members
+      const resolved = await resolveNotificationLevelsForStream(client, stream, members)
+
+      const contentPreview = contentMarkdown.slice(0, 200)
+      const activities: Activity[] = []
+
+      for (const resolution of resolved) {
+        // Skip the actor (don't notify yourself)
+        if (resolution.memberId === actorId) continue
+        // Skip members who already got a mention activity
+        if (excludeMemberIds.has(resolution.memberId)) continue
+
+        // Only activity or everything levels trigger message notifications
+        if (
+          resolution.effectiveLevel !== NotificationLevels.ACTIVITY &&
+          resolution.effectiveLevel !== NotificationLevels.EVERYTHING
+        ) {
+          continue
+        }
+
+        const activity = await ActivityRepository.insert(client, {
+          workspaceId,
+          memberId: resolution.memberId,
+          activityType: "message",
+          streamId,
+          messageId,
+          actorId,
+          context: { contentPreview },
+        })
         if (activity) {
           activities.push(activity)
         }

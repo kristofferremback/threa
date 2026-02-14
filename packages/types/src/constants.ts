@@ -72,6 +72,26 @@ export type CommandEventType = (typeof COMMAND_EVENT_TYPES)[number]
 export const WORKSPACE_MEMBER_ROLES = ["owner", "admin", "member"] as const
 export type WorkspaceMemberRole = (typeof WORKSPACE_MEMBER_ROLES)[number]
 
+// Notification levels (per-stream member preference)
+export const NOTIFICATION_LEVELS = ["everything", "activity", "mentions", "muted"] as const
+export type NotificationLevel = (typeof NOTIFICATION_LEVELS)[number]
+
+export const NotificationLevels = {
+  EVERYTHING: "everything",
+  ACTIVITY: "activity",
+  MENTIONS: "mentions",
+  MUTED: "muted",
+} as const satisfies Record<string, NotificationLevel>
+
+// Activity types
+export const ACTIVITY_TYPES = ["mention", "message"] as const
+export type ActivityType = (typeof ACTIVITY_TYPES)[number]
+
+export const ActivityTypes = {
+  MENTION: "mention",
+  MESSAGE: "message",
+} as const satisfies Record<string, ActivityType>
+
 // Invitation statuses
 export const INVITATION_STATUSES = ["pending", "accepted", "expired", "revoked"] as const
 export type InvitationStatus = (typeof INVITATION_STATUSES)[number]

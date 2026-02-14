@@ -170,7 +170,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/workspaces/:workspaceId/streams/:streamId/bootstrap", ...authed, stream.bootstrap)
   app.patch("/api/workspaces/:workspaceId/streams/:streamId/companion", ...authed, stream.updateCompanionMode)
   app.post("/api/workspaces/:workspaceId/streams/:streamId/pin", ...authed, stream.pin)
-  app.post("/api/workspaces/:workspaceId/streams/:streamId/mute", ...authed, stream.mute)
+  app.post("/api/workspaces/:workspaceId/streams/:streamId/notification-level", ...authed, stream.setNotificationLevel)
   app.post("/api/workspaces/:workspaceId/streams/:streamId/join", ...authed, stream.join)
   app.post("/api/workspaces/:workspaceId/streams/:streamId/read", ...authed, stream.markAsRead)
   app.post("/api/workspaces/:workspaceId/streams/:streamId/archive", ...authed, stream.archive)

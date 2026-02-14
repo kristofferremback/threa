@@ -100,13 +100,27 @@ export class ActivityFeedHandler implements OutboxHandler {
             continue
           }
 
-          const activities = await this.activityService.processMessageMentions({
+          // 1. Mentions first (higher priority notification reason)
+          const mentionActivities = await this.activityService.processMessageMentions({
             workspaceId,
             streamId,
             messageId: messageEvent.payload.messageId,
             actorId: messageEvent.actorId,
             contentMarkdown: messageEvent.payload.contentMarkdown,
           })
+          const mentionedMemberIds = new Set(mentionActivities.map((a) => a.memberId))
+
+          // 2. Notification-level activities, excluding already-mentioned members
+          const notificationActivities = await this.activityService.processMessageNotifications({
+            workspaceId,
+            streamId,
+            messageId: messageEvent.payload.messageId,
+            actorId: messageEvent.actorId,
+            contentMarkdown: messageEvent.payload.contentMarkdown,
+            excludeMemberIds: mentionedMemberIds,
+          })
+
+          const activities = [...mentionActivities, ...notificationActivities]
 
           // Publish all activity:created outbox events in a single transaction
           if (activities.length > 0) {

@@ -23,6 +23,7 @@ function mockCursorLock(onRun?: (result: ProcessResult) => void) {
 function createHandler() {
   const activityService = {
     processMessageMentions: mock(async () => []),
+    processMessageNotifications: mock(async () => []),
     listFeed: mock(async () => []),
     getUnreadCounts: mock(async () => ({ byStream: new Map(), total: 0 })),
     markAsRead: mock(async () => {}),
@@ -195,6 +196,7 @@ describe("ActivityFeedHandler", () => {
 
     const activityService = {
       processMessageMentions: mock(async () => []),
+      processMessageNotifications: mock(async () => []),
     } as unknown as ActivityService
     const handler = new ActivityFeedHandler({} as any, activityService)
     handler.handle()
@@ -218,6 +220,7 @@ describe("ActivityFeedHandler", () => {
 
     const activityService = {
       processMessageMentions: mock(async () => []),
+      processMessageNotifications: mock(async () => []),
     } as unknown as ActivityService
     const handler = new ActivityFeedHandler({} as any, activityService)
     handler.handle()

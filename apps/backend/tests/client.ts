@@ -445,7 +445,7 @@ export interface BootstrapData {
   stream: Stream
   events: StreamEvent[]
   members: StreamMember[]
-  membership: { streamId: string; userId: string; pinned: boolean; muted: boolean } | null
+  membership: { streamId: string; userId: string; pinned: boolean; notificationLevel: string | null } | null
   latestSequence: string
 }
 

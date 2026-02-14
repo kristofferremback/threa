@@ -145,6 +145,7 @@ export interface WorkspaceBootstrap {
   unreadCounts: Record<string, number>
   mentionCounts: Record<string, number>
   unreadActivityCount: number
+  mutedStreamIds: string[]
   userPreferences: UserPreferences
   invitations?: WorkspaceInvitation[]
 }

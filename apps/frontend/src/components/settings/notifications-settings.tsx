@@ -2,15 +2,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { usePreferences } from "@/contexts"
-import { NOTIFICATION_LEVEL_OPTIONS, type NotificationLevel } from "@threa/types"
+import { PREF_NOTIFICATION_LEVEL_OPTIONS, type PrefNotificationLevel } from "@threa/types"
 
-const NOTIFICATION_LABELS: Record<NotificationLevel, string> = {
+const NOTIFICATION_LABELS: Record<PrefNotificationLevel, string> = {
   all: "All messages",
   mentions: "Mentions only",
   none: "None",
 }
 
-const NOTIFICATION_DESCRIPTIONS: Record<NotificationLevel, string> = {
+const NOTIFICATION_DESCRIPTIONS: Record<PrefNotificationLevel, string> = {
   all: "Get notified for all new messages",
   mentions: "Only get notified when you're @mentioned",
   none: "Don't send any notifications",
@@ -31,10 +31,10 @@ export function NotificationsSettings() {
         <CardContent>
           <RadioGroup
             value={notificationLevel}
-            onValueChange={(value) => updatePreference("notificationLevel", value as NotificationLevel)}
+            onValueChange={(value) => updatePreference("notificationLevel", value as PrefNotificationLevel)}
             className="space-y-4"
           >
-            {NOTIFICATION_LEVEL_OPTIONS.map((option) => (
+            {PREF_NOTIFICATION_LEVEL_OPTIONS.map((option) => (
               <div key={option} className="flex items-start space-x-3">
                 <RadioGroupItem value={option} id={`notify-${option}`} className="mt-1" />
                 <div className="grid gap-1">
