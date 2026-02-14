@@ -44,7 +44,7 @@ import {
 } from "@/hooks"
 import { useQuickSwitcher, useCoordinatedLoading, useSidebar, type ViewMode } from "@/contexts"
 import { UnreadBadge } from "@/components/unread-badge"
-import { MentionBadge } from "@/components/mention-badge"
+import { MentionIndicator } from "@/components/mention-indicator"
 import { RelativeTime } from "@/components/relative-time"
 import { StreamTypes, AuthorTypes, type AuthorType, type StreamWithPreview } from "@threa/types"
 import { useQueryClient } from "@tanstack/react-query"
@@ -787,7 +787,7 @@ function StreamItem({
                 <span className="font-normal text-muted-foreground/60 text-xs"> · {threadRootContext}</span>
               )}
             </span>
-            {mentionCount > 0 ? <MentionBadge count={mentionCount} /> : <UnreadBadge count={unreadCount} />}
+            <MentionIndicator count={mentionCount} className="ml-auto" />
           </div>
           <StreamItemPreview
             preview={preview}
@@ -920,7 +920,7 @@ function ScratchpadItem({
               {name}
               {isDraft && <span className="ml-1.5 text-xs text-muted-foreground font-normal">(draft)</span>}
             </span>
-            {mentionCount > 0 ? <MentionBadge count={mentionCount} /> : <UnreadBadge count={unreadCount} />}
+            <MentionIndicator count={mentionCount} className="ml-auto" />
           </div>
           <StreamItemPreview
             preview={preview}

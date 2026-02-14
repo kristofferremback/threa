@@ -8,9 +8,9 @@ import { loginInNewContext, switchToAllView } from "./helpers"
  * 1. User A creates workspace + channel
  * 2. User B joins workspace + channel, opens the workspace in browser
  * 3. User A sends a message mentioning User B by @slug
- * 4. User B sees: mention badge on stream, activity count on sidebar Activity link
+ * 4. User B sees: mention indicator (@) on stream, activity count on sidebar Activity link
  * 5. User B navigates to Activity page, sees the mention
- * 6. User B clicks activity → navigates to stream, mention badge clears after reading
+ * 6. User B clicks activity → navigates to stream, mention indicator clears after reading
  */
 
 /** Stable locator for the Activity sidebar link (accessible name changes when badge appears) */
@@ -80,9 +80,9 @@ test.describe("Activity Feed", () => {
       })
       expect(sendMsgRes.ok()).toBeTruthy()
 
-      // ──── User B: Verify mention badge appears on stream in sidebar ────
+      // ──── User B: Verify mention indicator (@) appears on stream in sidebar ────
 
-      await expect(channelLink.getByText("@1")).toBeVisible({ timeout: 15000 })
+      await expect(channelLink.getByText("@")).toBeVisible({ timeout: 15000 })
 
       // ──── User B: Verify activity count badge on Activity link ────
 
@@ -109,15 +109,15 @@ test.describe("Activity Feed", () => {
       // The message should be visible in the stream
       await expect(ctxB.page.getByText(`please review this ${testId}`).first()).toBeVisible({ timeout: 10000 })
 
-      // ──── Verify: Mention badge cleared after viewing stream ────
+      // ──── Verify: Mention indicator cleared after viewing stream ────
 
       // Wait for auto-mark-as-read debounce (500ms) + API round-trip
       await ctxB.page.waitForTimeout(1500)
       await actLink.click()
       await expect(ctxB.page).toHaveURL(new RegExp(`/w/${workspaceId}/activity`))
 
-      // The mention badge should be gone since stream was read
-      await expect(channelLink.getByText("@1")).not.toBeVisible({ timeout: 5000 })
+      // The mention indicator should be gone since stream was read
+      await expect(channelLink.getByText("@")).not.toBeVisible({ timeout: 5000 })
     } finally {
       await ctxA.context.close()
       if (ctxB) await ctxB.context.close()
@@ -176,9 +176,10 @@ test.describe("Activity Feed", () => {
         expect(res.ok()).toBeTruthy()
       }
 
-      // Wait for both mentions to arrive — look within the channel link
+      // Wait for both mentions to arrive — activity count shows 2
       const channelLink = ctxB.page.getByRole("link", { name: `#${channelSlug}` })
-      await expect(channelLink.getByText("@2")).toBeVisible({ timeout: 15000 })
+      await expect(actLink.getByText("2")).toBeVisible({ timeout: 15000 })
+      await expect(channelLink.getByText("@")).toBeVisible()
 
       // Navigate to Activity page
       await actLink.click()
@@ -194,9 +195,8 @@ test.describe("Activity Feed", () => {
       // The "Mark all read" button should disappear (no more unread activity)
       await expect(markAllButton).not.toBeVisible({ timeout: 5000 })
 
-      // Mention badges should be cleared
-      await expect(channelLink.getByText("@2")).not.toBeVisible({ timeout: 5000 })
-      await expect(channelLink.getByText("@1")).not.toBeVisible({ timeout: 5000 })
+      // Mention indicator should be cleared
+      await expect(channelLink.getByText("@")).not.toBeVisible({ timeout: 5000 })
     } finally {
       await ctxA.context.close()
       if (ctxB) await ctxB.context.close()
