@@ -10,6 +10,7 @@ import { getStreamDisplayName } from "@/lib/streams"
 import { ActivityItem } from "@/components/activity/activity-item"
 import { ActivityEmpty } from "@/components/activity/activity-empty"
 import { ActivitySkeleton } from "@/components/activity/activity-skeleton"
+import type { AuthorType, Activity } from "@threa/types"
 
 export function ActivityPage() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
@@ -21,13 +22,49 @@ export function ActivityPage() {
   const { data: bootstrap } = useWorkspaceBootstrap(workspaceId ?? "")
   const { unreadActivityCount } = useMentionCounts(workspaceId ?? "")
 
-  const streamNameMap = useMemo(() => {
-    const map = new Map<string, string>()
-    for (const stream of bootstrap?.streams ?? []) {
-      map.set(stream.id, getStreamDisplayName(stream))
+  const streamLookup = useMemo(() => {
+    const streams = bootstrap?.streams ?? []
+    const byId = new Map(streams.map((s) => [s.id, s]))
+
+    function resolve(streamId: string): string {
+      const stream = byId.get(streamId)
+      if (!stream) return ""
+
+      const displayName = getStreamDisplayName(stream)
+
+      // Unnamed threads → show parent stream context instead of "Untitled"
+      if (displayName === "Untitled" && stream.rootStreamId) {
+        const root = byId.get(stream.rootStreamId)
+        if (root) return `a thread in ${getStreamDisplayName(root)}`
+      }
+
+      return displayName
     }
-    return map
+
+    return { byId, resolve }
   }, [bootstrap?.streams])
+
+  function resolveActivityStreamName(activity: Activity): string {
+    // Bootstrap is the freshest source — handles both named streams and unnamed threads
+    const bootstrapName = streamLookup.resolve(activity.streamId)
+    if (bootstrapName) return bootstrapName
+
+    const ctx = activity.context as {
+      parentStreamName?: string
+      streamName?: string
+      rootStreamId?: string
+    }
+
+    // For threads the user isn't a member of: resolve parent from bootstrap or context
+    if (ctx.parentStreamName) return `a thread in ${ctx.parentStreamName}`
+    if (ctx.rootStreamId) {
+      const rootName = streamLookup.resolve(ctx.rootStreamId)
+      if (rootName) return `a thread in ${rootName}`
+    }
+
+    if (ctx.streamName && ctx.streamName !== "Untitled") return ctx.streamName
+    return "a conversation"
+  }
 
   if (!workspaceId) return null
 
@@ -85,8 +122,8 @@ export function ActivityPage() {
                 <ActivityItem
                   key={activity.id}
                   activity={activity}
-                  actorName={getActorName(activity.actorId, "member")}
-                  streamName={streamNameMap.get(activity.streamId) ?? "Unknown stream"}
+                  actorName={getActorName(activity.actorId, activity.actorType as AuthorType)}
+                  streamName={resolveActivityStreamName(activity)}
                   workspaceId={workspaceId}
                   onMarkAsRead={(id) => markRead.mutate(id)}
                 />

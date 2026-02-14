@@ -8,8 +8,16 @@ import { MessageRepository } from "../messaging"
 import { OutboxRepository } from "../../lib/outbox"
 import { streamId, eventId } from "../../lib/id"
 import { DuplicateSlugError, HttpError, StreamNotFoundError, MessageNotFoundError } from "../../lib/errors"
-import { StreamTypes, Visibilities, CompanionModes, type StreamType, type CompanionMode } from "@threa/types"
+import {
+  StreamTypes,
+  Visibilities,
+  CompanionModes,
+  type StreamType,
+  type CompanionMode,
+  type NotificationLevel,
+} from "@threa/types"
 import { streamTypeSchema, visibilitySchema, companionModeSchema } from "../../lib/schemas"
+import { isAllowedLevel } from "./notification-config"
 
 const createScratchpadParamsSchema = z.object({
   workspaceId: z.string(),
@@ -512,8 +520,24 @@ export class StreamService {
     return withTransaction(this.pool, (client) => StreamMemberRepository.update(client, streamId, memberId, { pinned }))
   }
 
-  async muteStream(streamId: string, memberId: string, muted: boolean): Promise<StreamMember | null> {
-    return withTransaction(this.pool, (client) => StreamMemberRepository.update(client, streamId, memberId, { muted }))
+  async setNotificationLevel(
+    streamId: string,
+    memberId: string,
+    level: NotificationLevel | null
+  ): Promise<StreamMember | null> {
+    return withTransaction(this.pool, async (client) => {
+      if (level !== null) {
+        const stream = await StreamRepository.findById(client, streamId)
+        if (!stream) throw new StreamNotFoundError()
+        if (!isAllowedLevel(stream.type, level)) {
+          throw new HttpError(`Notification level '${level}' is not allowed for ${stream.type} streams`, {
+            status: 400,
+            code: "INVALID_NOTIFICATION_LEVEL",
+          })
+        }
+      }
+      return StreamMemberRepository.update(client, streamId, memberId, { notificationLevel: level })
+    })
   }
 
   async markAsRead(

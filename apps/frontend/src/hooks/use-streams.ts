@@ -89,7 +89,7 @@ export function useStreamBootstrap(workspaceId: string, streamId: string, option
         db.streams.put({
           ...bootstrap.stream,
           pinned: bootstrap.membership?.pinned,
-          muted: bootstrap.membership?.muted,
+          notificationLevel: bootstrap.membership?.notificationLevel,
           lastReadEventId: bootstrap.membership?.lastReadEventId,
           _cachedAt: now,
         }),
@@ -155,7 +155,7 @@ export function useCreateStream(workspaceId: string) {
           memberId: newStream.createdBy,
           pinned: false,
           pinnedAt: null,
-          muted: false,
+          notificationLevel: null,
           lastReadEventId: null,
           lastReadAt: null,
           joinedAt: newStream.createdAt,

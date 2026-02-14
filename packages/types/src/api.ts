@@ -145,6 +145,7 @@ export interface WorkspaceBootstrap {
   unreadCounts: Record<string, number>
   mentionCounts: Record<string, number>
   unreadActivityCount: number
+  mutedStreamIds: string[]
   userPreferences: UserPreferences
   invitations?: WorkspaceInvitation[]
 }
@@ -185,6 +186,7 @@ export interface Activity {
   streamId: string
   messageId: string
   actorId: string
+  actorType: string
   context: Record<string, unknown>
   readAt: string | null
   createdAt: string
@@ -200,6 +202,7 @@ export interface ActivityCreatedPayload {
     streamId: string
     messageId: string
     actorId: string
+    actorType: string
     context: Record<string, unknown>
     createdAt: string
   }

@@ -89,8 +89,11 @@ export class ActivityFeedHandler implements OutboxHandler {
 
           const { streamId, workspaceId, event: messageEvent } = payload
 
-          // Only process messages from human members (avoid persona/system loops)
-          if (messageEvent.actorType !== AuthorTypes.MEMBER) {
+          // Skip system-authored messages (join/leave notices etc.) — no meaningful
+          // content for mention detection or notification-level activity. Member and
+          // persona messages both get processed: agents can @mention people and their
+          // messages should surface in the activity feed based on notification levels.
+          if (messageEvent.actorType === AuthorTypes.SYSTEM) {
             lastProcessedId = event.id
             continue
           }
@@ -100,13 +103,32 @@ export class ActivityFeedHandler implements OutboxHandler {
             continue
           }
 
-          const activities = await this.activityService.processMessageMentions({
+          // Sequential: mentions first, then notification-level activities.
+          // A mentioned member gets a "mention" activity (more specific) instead of both
+          // "mention" + "message". The dedup index allows both types per message, so we
+          // exclude mentioned members explicitly rather than relying on the DB constraint.
+          const mentionActivities = await this.activityService.processMessageMentions({
             workspaceId,
             streamId,
             messageId: messageEvent.payload.messageId,
             actorId: messageEvent.actorId,
+            actorType: messageEvent.actorType,
             contentMarkdown: messageEvent.payload.contentMarkdown,
           })
+          const mentionedMemberIds = new Set(mentionActivities.map((a) => a.memberId))
+
+          // 2. Notification-level activities, excluding already-mentioned members
+          const notificationActivities = await this.activityService.processMessageNotifications({
+            workspaceId,
+            streamId,
+            messageId: messageEvent.payload.messageId,
+            actorId: messageEvent.actorId,
+            actorType: messageEvent.actorType,
+            contentMarkdown: messageEvent.payload.contentMarkdown,
+            excludeMemberIds: mentionedMemberIds,
+          })
+
+          const activities = [...mentionActivities, ...notificationActivities]
 
           // Publish all activity:created outbox events in a single transaction
           if (activities.length > 0) {
@@ -121,6 +143,7 @@ export class ActivityFeedHandler implements OutboxHandler {
                     streamId: activity.streamId,
                     messageId: activity.messageId,
                     actorId: activity.actorId,
+                    actorType: activity.actorType,
                     context: activity.context,
                     createdAt: activity.createdAt.toISOString(),
                   },

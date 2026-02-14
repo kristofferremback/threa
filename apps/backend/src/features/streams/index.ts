@@ -23,6 +23,13 @@ export {
   buildNamingSystemPrompt,
 } from "./naming-config"
 
+// Notification config (INV-44)
+export { NOTIFICATION_CONFIG, isAllowedLevel, getDefaultLevel, getEffectiveLevel } from "./notification-config"
+
+// Notification resolver
+export { resolveNotificationLevelsForStream } from "./notification-resolver"
+export type { ResolvedNotification } from "./notification-resolver"
+
 // Repositories
 export { StreamRepository } from "./repository"
 export type {

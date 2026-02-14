@@ -103,6 +103,14 @@ export {
   EXTRACTION_SOURCE_TYPES,
   type ExtractionSourceType,
   ExtractionSourceTypes,
+  // Notification levels (per-stream member preference)
+  NOTIFICATION_LEVELS,
+  type NotificationLevel,
+  NotificationLevels,
+  // Activity types
+  ACTIVITY_TYPES,
+  type ActivityType,
+  ActivityTypes,
   // Text processing
   TEXT_FORMATS,
   type TextFormat,
@@ -278,10 +286,10 @@ export {
   TIME_FORMAT_OPTIONS,
   type TimeFormat,
   TimeFormats,
-  // Notification level
-  NOTIFICATION_LEVEL_OPTIONS,
-  type NotificationLevel,
-  NotificationLevels,
+  // Notification level (user-level global preference)
+  PREF_NOTIFICATION_LEVEL_OPTIONS,
+  type PrefNotificationLevel,
+  PrefNotificationLevels,
   // Font size
   FONT_SIZE_OPTIONS,
   type FontSize,

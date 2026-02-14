@@ -52,7 +52,7 @@ function createBootstrapQueryFn(streamService: StreamService, socket: Socket, wo
       db.streams.put({
         ...bootstrap.stream,
         pinned: bootstrap.membership?.pinned,
-        muted: bootstrap.membership?.muted,
+        notificationLevel: bootstrap.membership?.notificationLevel,
         lastReadEventId: bootstrap.membership?.lastReadEventId,
         _cachedAt: now,
       }),

@@ -41,15 +41,15 @@ export const TimeFormats = {
   H12: "12h",
 } as const satisfies Record<string, TimeFormat>
 
-// Notification level
-export const NOTIFICATION_LEVEL_OPTIONS = ["all", "mentions", "none"] as const
-export type NotificationLevel = (typeof NOTIFICATION_LEVEL_OPTIONS)[number]
+// Notification level (user-level global preference, distinct from per-stream NotificationLevel)
+export const PREF_NOTIFICATION_LEVEL_OPTIONS = ["all", "mentions", "none"] as const
+export type PrefNotificationLevel = (typeof PREF_NOTIFICATION_LEVEL_OPTIONS)[number]
 
-export const NotificationLevels = {
+export const PrefNotificationLevels = {
   ALL: "all",
   MENTIONS: "mentions",
   NONE: "none",
-} as const satisfies Record<string, NotificationLevel>
+} as const satisfies Record<string, PrefNotificationLevel>
 
 // Font size for accessibility
 export const FONT_SIZE_OPTIONS = ["small", "medium", "large"] as const
@@ -131,7 +131,7 @@ export interface UserPreferences {
   timeFormat: TimeFormat
   timezone: string
   language: string
-  notificationLevel: NotificationLevel
+  notificationLevel: PrefNotificationLevel
   sidebarCollapsed: boolean
   messageSendMode: MessageSendMode
   keyboardShortcuts: KeyboardShortcuts
@@ -171,7 +171,7 @@ export interface UpdateUserPreferencesInput {
   timeFormat?: TimeFormat
   timezone?: string
   language?: string
-  notificationLevel?: NotificationLevel
+  notificationLevel?: PrefNotificationLevel
   sidebarCollapsed?: boolean
   messageSendMode?: MessageSendMode
   keyboardShortcuts?: KeyboardShortcuts

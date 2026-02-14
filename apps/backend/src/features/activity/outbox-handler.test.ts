@@ -23,6 +23,7 @@ function mockCursorLock(onRun?: (result: ProcessResult) => void) {
 function createHandler() {
   const activityService = {
     processMessageMentions: mock(async () => []),
+    processMessageNotifications: mock(async () => []),
     listFeed: mock(async () => []),
     getUnreadCounts: mock(async () => ({ byStream: new Map(), total: 0 })),
     markAsRead: mock(async () => {}),
@@ -91,13 +92,30 @@ describe("ActivityFeedHandler", () => {
       streamId: "stream_test",
       messageId: "msg_test",
       actorId: "member_author",
+      actorType: "member",
       contentMarkdown: "hey @alice look at this",
     })
   })
 
-  it("should skip non-MEMBER author types to avoid persona loops", async () => {
+  it("should process persona messages for mentions and notifications", async () => {
     const event = makeMessageCreatedEvent(1n, {
       actorType: "persona",
+      actorId: "persona_agent1",
+    })
+
+    spyOn(OutboxRepository, "fetchAfterId").mockResolvedValue([event] as any)
+
+    const { handler, activityService } = createHandler()
+    handler.handle()
+
+    await new Promise((r) => setTimeout(r, 300))
+
+    expect(activityService.processMessageMentions).toHaveBeenCalled()
+  })
+
+  it("should skip system-authored messages", async () => {
+    const event = makeMessageCreatedEvent(1n, {
+      actorType: "system",
     })
 
     spyOn(OutboxRepository, "fetchAfterId").mockResolvedValue([event] as any)
@@ -148,6 +166,7 @@ describe("ActivityFeedHandler", () => {
       streamId: "stream_test",
       messageId: "msg_test",
       actorId: "member_author",
+      actorType: "member",
       context: { contentPreview: "hey @alice" },
       readAt: null,
       createdAt: new Date("2025-01-01T00:00:00Z"),
@@ -179,6 +198,7 @@ describe("ActivityFeedHandler", () => {
         streamId: "stream_test",
         messageId: "msg_test",
         actorId: "member_author",
+        actorType: "member",
         context: { contentPreview: "hey @alice" },
         createdAt: "2025-01-01T00:00:00.000Z",
       },
@@ -195,6 +215,7 @@ describe("ActivityFeedHandler", () => {
 
     const activityService = {
       processMessageMentions: mock(async () => []),
+      processMessageNotifications: mock(async () => []),
     } as unknown as ActivityService
     const handler = new ActivityFeedHandler({} as any, activityService)
     handler.handle()
@@ -218,6 +239,7 @@ describe("ActivityFeedHandler", () => {
 
     const activityService = {
       processMessageMentions: mock(async () => []),
+      processMessageNotifications: mock(async () => []),
     } as unknown as ActivityService
     const handler = new ActivityFeedHandler({} as any, activityService)
     handler.handle()

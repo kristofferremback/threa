@@ -31,6 +31,7 @@ export function ActivityItem({ activity, actorName, streamName, workspaceId, onM
       <ActivityContent
         actorName={actorName}
         streamName={streamName}
+        activityType={activity.activityType}
         contentPreview={contentPreview}
         createdAt={activity.createdAt}
         isUnread={isUnread}

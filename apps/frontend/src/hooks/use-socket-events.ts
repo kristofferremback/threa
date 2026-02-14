@@ -182,7 +182,7 @@ export function useSocketEvents(workspaceId: string) {
                   memberId: payload.stream.createdBy,
                   pinned: false,
                   pinnedAt: null,
-                  muted: false,
+                  notificationLevel: null,
                   lastReadEventId: null,
                   lastReadAt: null,
                   joinedAt: payload.stream.createdAt,
@@ -547,20 +547,20 @@ export function useSocketEvents(workspaceId: string) {
       })
     })
 
-    // Handle activity created (mentions targeting this user)
+    // Handle activity created (mentions and notification-level activities)
     socket.on("activity:created", (payload: ActivityCreatedPayload) => {
       if (payload.workspaceId !== workspaceId) return
 
-      const { streamId } = payload.activity
+      const { streamId, activityType } = payload.activity
 
       queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
         if (!old) return old
         return {
           ...old,
-          mentionCounts: {
-            ...old.mentionCounts,
-            [streamId]: (old.mentionCounts[streamId] ?? 0) + 1,
-          },
+          mentionCounts:
+            activityType === "mention"
+              ? { ...old.mentionCounts, [streamId]: (old.mentionCounts[streamId] ?? 0) + 1 }
+              : old.mentionCounts,
           unreadActivityCount: (old.unreadActivityCount ?? 0) + 1,
         }
       })

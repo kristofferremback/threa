@@ -17,6 +17,7 @@ import type {
   EventType,
   WorkspaceMemberRole,
   InvitationStatus,
+  NotificationLevel,
   PersonaManagedBy,
   PersonaStatus,
   StorageProvider,
@@ -117,7 +118,7 @@ export interface StreamMember {
   memberId: string
   pinned: boolean
   pinnedAt: string | null
-  muted: boolean
+  notificationLevel: NotificationLevel | null
   lastReadEventId: string | null
   lastReadAt: string | null
   joinedAt: string

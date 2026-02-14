@@ -128,7 +128,14 @@ const ALL_SECTIONS = {
 // ============================================================================
 
 /** Calculate urgency level for a stream based on unread and mention state */
-function calculateUrgency(stream: StreamWithPreview, unreadCount: number, mentionCount: number): UrgencyLevel {
+function calculateUrgency(
+  stream: StreamWithPreview,
+  unreadCount: number,
+  mentionCount: number,
+  isMuted: boolean
+): UrgencyLevel {
+  if (isMuted) return "quiet"
+
   if (mentionCount > 0) return "mentions"
 
   if (stream.lastMessagePreview?.authorType === AuthorTypes.PERSONA && unreadCount > 0) {
@@ -1125,6 +1132,9 @@ export function Sidebar({ workspaceId }: SidebarProps) {
     return ids
   }, [bootstrap?.streamMemberships])
 
+  // Build set of muted streams (for suppressing unread badges)
+  const mutedStreamIdSet = useMemo(() => new Set(bootstrap?.mutedStreamIds ?? []), [bootstrap?.mutedStreamIds])
+
   // Process streams into enriched data with urgency and section
   const processedStreams = useMemo(() => {
     if (!bootstrap?.streams) return []
@@ -1139,7 +1149,8 @@ export function Sidebar({ workspaceId }: SidebarProps) {
       .map((stream): StreamItemData => {
         const unreadCount = getUnreadCount(stream.id)
         const mentionCount = getMentionCount(stream.id)
-        const urgency = calculateUrgency(stream, unreadCount, mentionCount)
+        const isMuted = mutedStreamIdSet.has(stream.id)
+        const urgency = calculateUrgency(stream, unreadCount, mentionCount, isMuted)
         const section = categorizeStream(stream, unreadCount, urgency)
 
         return {
@@ -1148,7 +1159,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
           section,
         }
       })
-  }, [bootstrap?.streams, memberStreamIds, getUnreadCount, getMentionCount])
+  }, [bootstrap?.streams, memberStreamIds, mutedStreamIdSet, getUnreadCount, getMentionCount])
 
   // System streams are auto-created infrastructure — don't count toward "has content"
   const hasUserStreams = processedStreams.some((s) => s.type !== StreamTypes.SYSTEM)

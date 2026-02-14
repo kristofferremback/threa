@@ -6,7 +6,7 @@ import type { ActivityService } from "../activity"
 import type { StreamEvent } from "./event-repository"
 import type { EventType } from "@threa/types"
 import { serializeBigInt } from "../../lib/serialization"
-import { streamTypeSchema, visibilitySchema, companionModeSchema } from "../../lib/schemas"
+import { streamTypeSchema, visibilitySchema, companionModeSchema, notificationLevelSchema } from "../../lib/schemas"
 
 const createStreamSchema = z
   .object({
@@ -48,15 +48,22 @@ const pinSchema = z.object({
   pinned: z.boolean(),
 })
 
-const muteSchema = z.object({
-  muted: z.boolean(),
+const setNotificationLevelSchema = z.object({
+  notificationLevel: notificationLevelSchema.nullable(),
 })
 
 const markAsReadSchema = z.object({
   lastEventId: z.string(),
 })
 
-export { createStreamSchema, updateStreamSchema, updateCompanionModeSchema, pinSchema, muteSchema, markAsReadSchema }
+export {
+  createStreamSchema,
+  updateStreamSchema,
+  updateCompanionModeSchema,
+  pinSchema,
+  setNotificationLevelSchema,
+  markAsReadSchema,
+}
 
 interface Dependencies {
   streamService: StreamService
@@ -231,12 +238,12 @@ export function createStreamHandlers({ streamService, eventService, activityServ
       res.json({ membership })
     },
 
-    async mute(req: Request, res: Response) {
+    async setNotificationLevel(req: Request, res: Response) {
       const memberId = req.member!.id
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
 
-      const result = muteSchema.safeParse(req.body)
+      const result = setNotificationLevelSchema.safeParse(req.body)
       if (!result.success) {
         return res.status(400).json({
           error: "Validation failed",
@@ -246,7 +253,7 @@ export function createStreamHandlers({ streamService, eventService, activityServ
 
       await streamService.validateStreamAccess(streamId, workspaceId, memberId)
 
-      const membership = await streamService.muteStream(streamId, memberId, result.data.muted)
+      const membership = await streamService.setNotificationLevel(streamId, memberId, result.data.notificationLevel)
       if (!membership) {
         return res.status(404).json({ error: "Not a member of this stream" })
       }

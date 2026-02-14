@@ -29,7 +29,7 @@ describe("StreamService.joinPublicChannel", () => {
       memberId: "member_1",
       pinned: false,
       pinnedAt: null,
-      muted: false,
+      notificationLevel: null,
       lastReadEventId: null,
       lastReadAt: null,
       joinedAt: new Date(),
