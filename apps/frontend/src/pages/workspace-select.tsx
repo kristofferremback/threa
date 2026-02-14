@@ -52,6 +52,10 @@ export function WorkspaceSelectPage() {
     )
   }
 
+  if (workspaces?.length === 1) {
+    return <Navigate to={`/w/${workspaces[0].id}`} replace />
+  }
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-background">
       <div className="flex flex-col items-center gap-8">
