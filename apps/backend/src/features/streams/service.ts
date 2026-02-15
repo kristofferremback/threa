@@ -588,6 +588,18 @@ export class StreamService {
     })
   }
 
+  private async removeFromStream(client: Querier, stream: Stream, memberId: string): Promise<boolean> {
+    const deleted = await StreamMemberRepository.delete(client, stream.id, memberId)
+    if (deleted) {
+      await OutboxRepository.insert(client, "stream:member_removed", {
+        workspaceId: stream.workspaceId,
+        streamId: stream.id,
+        memberId,
+      })
+    }
+    return deleted
+  }
+
   async removeMember(streamId: string, memberId: string): Promise<boolean> {
     return withTransaction(this.pool, async (client) => {
       const stream = await StreamRepository.findById(client, streamId)
@@ -602,14 +614,18 @@ export class StreamService {
         throw new HttpError("Cannot remove the only member", { status: 400, code: "LAST_MEMBER" })
       }
 
-      const deleted = await StreamMemberRepository.delete(client, streamId, memberId)
+      const deleted = await this.removeFromStream(client, stream, memberId)
 
       if (deleted) {
-        await OutboxRepository.insert(client, "stream:member_removed", {
-          workspaceId: stream.workspaceId,
-          streamId,
-          memberId,
-        })
+        // Batch-remove from all descendant threads the member is in (single recursive CTE)
+        const removedStreamIds = await StreamMemberRepository.deleteByMemberInDescendants(client, memberId, streamId)
+        for (const removedStreamId of removedStreamIds) {
+          await OutboxRepository.insert(client, "stream:member_removed", {
+            workspaceId: stream.workspaceId,
+            streamId: removedStreamId,
+            memberId,
+          })
+        }
       }
 
       return deleted

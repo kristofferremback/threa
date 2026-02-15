@@ -204,6 +204,8 @@ Invariants are constraints that must hold across the entire codebase. Reference 
 
 **INV-55: Zod for All Input Validation** — Validate all handler inputs (body, query, params) with Zod schemas. Never use manual `typeof` checks or hand-rolled validation. Zod gives exhaustive error collection (all violations returned, not just the first) and a consistent `{ error, details: fieldErrors }` response shape. Type-specific field rules use `superRefine` with config-driven disallowed-field maps.
 
+**INV-56: Batch DB Operations Over Loops** — When operating on multiple rows, use batch queries (`ANY()`, `unnest()`, multi-row `INSERT`, recursive CTEs) instead of per-item loops with individual queries. PostgreSQL handles set operations efficiently; per-row round-trips scale horribly. Same-connection calls within a transaction (e.g. outbox inserts) are acceptable when batch alternatives add disproportionate complexity.
+
 When introducing a new invariant:
 
 1. Document here with next available ID
