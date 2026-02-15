@@ -10,6 +10,7 @@ import {
   isMemberScopedEvent,
   type OutboxEvent,
   type StreamCreatedOutboxPayload,
+  type StreamMemberAddedOutboxPayload,
   type CommandDispatchedOutboxPayload,
   type CommandCompletedOutboxPayload,
   type CommandFailedOutboxPayload,
@@ -192,6 +193,22 @@ export class BroadcastHandler implements OutboxHandler {
         this.io.to(`ws:${workspaceId}:stream:${payload.streamId}`).emit(event.eventType, event.payload)
       } else {
         this.io.to(`ws:${workspaceId}`).emit(event.eventType, event.payload)
+      }
+      return
+    }
+
+    // stream:member_added: emit to stream room (existing members) AND the added
+    // member's sockets directly — they haven't joined the stream room yet.
+    if (isOutboxEventType(event, "stream:member_added")) {
+      const { streamId, memberId } = event.payload as StreamMemberAddedOutboxPayload
+      this.io.to(`ws:${workspaceId}:stream:${streamId}`).emit(event.eventType, event.payload)
+
+      const member = await MemberRepository.findById(this.db, memberId)
+      if (member) {
+        const sockets = this.userSocketRegistry.getSockets(member.userId)
+        for (const socket of sockets) {
+          socket.emit(event.eventType, event.payload)
+        }
       }
       return
     }

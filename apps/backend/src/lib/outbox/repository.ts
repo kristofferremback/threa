@@ -42,6 +42,8 @@ export type OutboxEventType =
   | "user_preferences:updated"
   | "budget:alert"
   | "stream:member_joined"
+  | "stream:member_added"
+  | "stream:member_removed"
   | "invitation:sent"
   | "invitation:accepted"
   | "activity:created"
@@ -56,6 +58,8 @@ export type StreamScopedEventType =
   | "reaction:removed"
   | "stream:display_name_updated"
   | "stream:member_joined"
+  | "stream:member_added"
+  | "stream:member_removed"
   | "stream:activity"
   | "conversation:created"
   | "conversation:updated"
@@ -122,6 +126,15 @@ export interface StreamDisplayNameUpdatedPayload extends StreamScopedPayload {
 
 export interface StreamMemberJoinedOutboxPayload extends StreamScopedPayload {
   event: StreamEvent
+}
+
+export interface StreamMemberAddedOutboxPayload extends StreamScopedPayload {
+  memberId: string
+  stream: Stream
+}
+
+export interface StreamMemberRemovedOutboxPayload extends StreamScopedPayload {
+  memberId: string
 }
 
 // Workspace-scoped event payloads (no streamId)
@@ -303,6 +316,8 @@ export interface OutboxEventPayloadMap {
   "stream:unarchived": StreamUnarchivedOutboxPayload
   "stream:display_name_updated": StreamDisplayNameUpdatedPayload
   "stream:member_joined": StreamMemberJoinedOutboxPayload
+  "stream:member_added": StreamMemberAddedOutboxPayload
+  "stream:member_removed": StreamMemberRemovedOutboxPayload
   "stream:read": StreamReadOutboxPayload
   "stream:read_all": StreamsReadAllOutboxPayload
   "stream:activity": StreamActivityOutboxPayload
@@ -365,6 +380,8 @@ const STREAM_SCOPED_EVENTS: StreamScopedEventType[] = [
   "reaction:removed",
   "stream:display_name_updated",
   "stream:member_joined",
+  "stream:member_added",
+  "stream:member_removed",
   "stream:activity",
   "conversation:created",
   "conversation:updated",

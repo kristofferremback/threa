@@ -5,7 +5,9 @@ import type { EventService, MessageCreatedPayload } from "../messaging"
 import type { ActivityService } from "../activity"
 import type { StreamEvent } from "./event-repository"
 import type { EventType } from "@threa/types"
+import { StreamTypes } from "@threa/types"
 import { serializeBigInt } from "../../lib/serialization"
+import { HttpError } from "../../lib/errors"
 import { streamTypeSchema, visibilitySchema, companionModeSchema, notificationLevelSchema } from "../../lib/schemas"
 
 const createStreamSchema = z
@@ -36,7 +38,14 @@ const createStreamSchema = z
 
 const updateStreamSchema = z.object({
   displayName: z.string().min(1).max(100).optional(),
+  slug: z
+    .string()
+    .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, {
+      message: "Slug must be lowercase alphanumeric with hyphens (no leading/trailing hyphens)",
+    })
+    .optional(),
   description: z.string().max(500).optional(),
+  visibility: visibilitySchema.optional(),
 })
 
 const updateCompanionModeSchema = z.object({
@@ -159,12 +168,36 @@ export function createStreamHandlers({ streamService, eventService, activityServ
 
       const stream = await streamService.validateStreamAccess(streamId, workspaceId, memberId)
 
-      // Only allow updates to scratchpads (channels have fixed slugs/names)
-      if (stream.type !== "scratchpad") {
-        return res.status(403).json({ error: "Only scratchpads can be updated" })
+      const { displayName, slug, description, visibility } = result.data
+
+      // Type-specific field validation
+      switch (stream.type) {
+        case StreamTypes.CHANNEL:
+          if (displayName) {
+            throw new HttpError("Channels cannot set displayName — use slug", { status: 400, code: "INVALID_FIELD" })
+          }
+          break
+        case StreamTypes.SCRATCHPAD:
+          if (slug) {
+            throw new HttpError("Scratchpads do not have slugs", { status: 400, code: "INVALID_FIELD" })
+          }
+          if (visibility) {
+            throw new HttpError("Scratchpads are always private", { status: 400, code: "INVALID_FIELD" })
+          }
+          break
+        case StreamTypes.THREAD:
+          if (slug || visibility) {
+            throw new HttpError("Threads inherit slug and visibility from parent", {
+              status: 400,
+              code: "INVALID_FIELD",
+            })
+          }
+          break
+        case StreamTypes.DM:
+          throw new HttpError("DMs cannot be updated", { status: 403, code: "DM_IMMUTABLE" })
       }
 
-      const updated = await streamService.updateStream(streamId, result.data)
+      const updated = await streamService.updateStream(streamId, { displayName, slug, description, visibility })
       res.json({ stream: updated })
     },
 
@@ -365,6 +398,63 @@ export function createStreamHandlers({ streamService, eventService, activityServ
           latestSequence: latestSequence.toString(),
         },
       })
+    },
+
+    async checkSlugAvailable(req: Request, res: Response) {
+      const workspaceId = req.workspaceId!
+      const slug = req.query.slug
+      const exclude = req.query.exclude
+
+      if (typeof slug !== "string" || slug.length === 0) {
+        return res.status(400).json({ error: "slug query parameter is required" })
+      }
+
+      const exists = await streamService.checkSlugAvailable(
+        workspaceId,
+        slug,
+        typeof exclude === "string" ? exclude : undefined
+      )
+      res.json({ available: !exists })
+    },
+
+    async addMember(req: Request, res: Response) {
+      const actorId = req.member!.id
+      const workspaceId = req.workspaceId!
+      const { streamId } = req.params
+      const { memberId } = req.body
+
+      if (typeof memberId !== "string" || memberId.length === 0) {
+        return res.status(400).json({ error: "memberId is required" })
+      }
+
+      const stream = await streamService.validateStreamAccess(streamId, workspaceId, actorId)
+
+      if (stream.type === StreamTypes.DM) {
+        throw new HttpError("Cannot add members to DMs", { status: 400, code: "DM_NO_ADD_MEMBER" })
+      }
+      if (stream.type === StreamTypes.SCRATCHPAD) {
+        throw new HttpError("Cannot add members to scratchpads", { status: 400, code: "SCRATCHPAD_NO_ADD_MEMBER" })
+      }
+
+      const membership = await streamService.addMember(streamId, memberId)
+      res.status(201).json({ membership })
+    },
+
+    async removeMember(req: Request, res: Response) {
+      const actorId = req.member!.id
+      const workspaceId = req.workspaceId!
+      const { streamId, memberId } = req.params
+
+      await streamService.validateStreamAccess(streamId, workspaceId, actorId)
+
+      // Check the actor is not removing themselves if they're the only member
+      const members = await streamService.getMembers(streamId)
+      if (members.length === 1 && members[0].memberId === memberId) {
+        throw new HttpError("Cannot remove the only member", { status: 400, code: "LAST_MEMBER" })
+      }
+
+      await streamService.removeMember(streamId, memberId)
+      res.status(204).send()
     },
   }
 }
