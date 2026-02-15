@@ -270,5 +270,23 @@ export function createWorkspaceHandlers({
       const member = await workspaceService.removeMemberAvatar(memberId, workspaceId)
       res.json({ member })
     },
+
+    async serveAvatarFile(req: Request, res: Response) {
+      const { workspaceId, memberId, file } = req.params
+      if (!workspaceId || !memberId || !file || !file.endsWith(".webp")) {
+        return res.status(404).end()
+      }
+
+      const s3Key = `avatars/${workspaceId}/${memberId}/${file}`
+
+      try {
+        const stream = await avatarService.streamImage(s3Key)
+        res.set("Content-Type", "image/webp")
+        res.set("Cache-Control", "public, max-age=31536000, immutable")
+        stream.pipe(res)
+      } catch {
+        res.status(404).end()
+      }
+    },
   }
 }

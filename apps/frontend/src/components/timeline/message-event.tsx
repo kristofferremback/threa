@@ -2,7 +2,7 @@ import { type ReactNode, useRef, useEffect } from "react"
 import type { StreamEvent, AttachmentSummary } from "@threa/types"
 import { Link } from "react-router-dom"
 import { MessageSquareReply, Sparkles } from "lucide-react"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { MarkdownContent, AttachmentProvider } from "@/components/ui/markdown-content"
 import { RelativeTime } from "@/components/relative-time"
@@ -43,6 +43,8 @@ interface MessageLayoutProps {
   actorInitials: string
   /** Persona slug for SVG icon support (e.g., "ariadne") */
   personaSlug?: string
+  /** Member avatar image URL */
+  actorAvatarUrl?: string
   statusIndicator: ReactNode
   actions?: ReactNode
   footer?: ReactNode
@@ -58,6 +60,7 @@ function MessageLayout({
   actorName,
   actorInitials,
   personaSlug,
+  actorAvatarUrl,
   statusIndicator,
   actions,
   footer,
@@ -87,6 +90,7 @@ function MessageLayout({
         <PersonaAvatar slug={personaSlug} fallback={actorInitials} size="md" className="message-avatar" />
       ) : (
         <Avatar className="message-avatar h-9 w-9 rounded-[10px] shrink-0">
+          {actorAvatarUrl && <AvatarImage src={actorAvatarUrl} alt={actorName} />}
           <AvatarFallback className={cn("text-foreground", isSystem ? "bg-blue-500/10 text-blue-500" : "bg-muted")}>
             {actorInitials}
           </AvatarFallback>
@@ -120,6 +124,7 @@ interface MessageEventInnerProps {
   actorName: string
   actorInitials: string
   personaSlug?: string
+  actorAvatarUrl?: string
   hideActions?: boolean
   isHighlighted?: boolean
   activity?: MessageAgentActivity
@@ -133,6 +138,7 @@ function SentMessageEvent({
   actorName,
   actorInitials,
   personaSlug,
+  actorAvatarUrl,
   hideActions,
   isHighlighted,
   activity,
@@ -214,6 +220,7 @@ function SentMessageEvent({
       actorName={actorName}
       actorInitials={actorInitials}
       personaSlug={personaSlug}
+      actorAvatarUrl={actorAvatarUrl}
       statusIndicator={<RelativeTime date={event.createdAt} className="text-xs text-muted-foreground" />}
       actions={
         !hideActions && (
@@ -254,6 +261,7 @@ function PendingMessageEvent({
   actorName,
   actorInitials,
   personaSlug,
+  actorAvatarUrl,
 }: MessageEventInnerProps) {
   return (
     <MessageLayout
@@ -263,6 +271,7 @@ function PendingMessageEvent({
       actorName={actorName}
       actorInitials={actorInitials}
       personaSlug={personaSlug}
+      actorAvatarUrl={actorAvatarUrl}
       containerClassName="opacity-60"
       statusIndicator={
         <span className="text-xs text-muted-foreground opacity-0 animate-fade-in-delayed">Sending...</span>
@@ -278,6 +287,7 @@ function FailedMessageEvent({
   actorName,
   actorInitials,
   personaSlug,
+  actorAvatarUrl,
 }: MessageEventInnerProps) {
   const { retryMessage } = usePendingMessages()
 
@@ -289,6 +299,7 @@ function FailedMessageEvent({
       actorName={actorName}
       actorInitials={actorInitials}
       personaSlug={personaSlug}
+      actorAvatarUrl={actorAvatarUrl}
       containerClassName="border-l-2 border-destructive pl-2"
       statusIndicator={<span className="text-xs text-destructive">Failed to send</span>}
       actions={
@@ -314,7 +325,11 @@ export function MessageEvent({
   const status = getStatus(event.id)
 
   const actorName = getActorName(event.actorId, event.actorType)
-  const { fallback: actorInitials, slug: personaSlug } = getActorAvatar(event.actorId, event.actorType)
+  const {
+    fallback: actorInitials,
+    slug: personaSlug,
+    avatarUrl: actorAvatarUrl,
+  } = getActorAvatar(event.actorId, event.actorType)
 
   switch (status) {
     case "pending":
@@ -327,6 +342,7 @@ export function MessageEvent({
           actorName={actorName}
           actorInitials={actorInitials}
           personaSlug={personaSlug}
+          actorAvatarUrl={actorAvatarUrl}
         />
       )
     case "failed":
@@ -339,6 +355,7 @@ export function MessageEvent({
           actorName={actorName}
           actorInitials={actorInitials}
           personaSlug={personaSlug}
+          actorAvatarUrl={actorAvatarUrl}
         />
       )
     default:
@@ -351,6 +368,7 @@ export function MessageEvent({
           actorName={actorName}
           actorInitials={actorInitials}
           personaSlug={personaSlug}
+          actorAvatarUrl={actorAvatarUrl}
           hideActions={hideActions}
           isHighlighted={isHighlighted}
           activity={activity}

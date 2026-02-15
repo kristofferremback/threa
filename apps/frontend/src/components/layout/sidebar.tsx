@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { cn } from "@/lib/utils"
+import { getInitials } from "@/lib/initials"
 import { serializeToMarkdown } from "@threa/prosemirror"
 import type { JSONContent } from "@threa/types"
 import { getThreadRootContext } from "@/components/thread/breadcrumb-helpers"
@@ -1031,16 +1032,6 @@ function StreamListSkeleton() {
 // ============================================================================
 // Footer Component
 // ============================================================================
-
-function getInitials(name: string): string {
-  return name
-    .split(/\s+/)
-    .map((w) => w[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join("")
-    .toUpperCase()
-}
 
 interface SidebarFooterProps {
   workspaceId: string

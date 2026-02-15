@@ -234,6 +234,9 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.post("/api/workspaces/:workspaceId/profile/avatar", ...authed, avatarUpload, workspace.uploadAvatar)
   app.delete("/api/workspaces/:workspaceId/profile/avatar", ...authed, workspace.removeAvatar)
 
+  // Avatar file serving (unauthenticated — S3 keys contain unguessable ULIDs)
+  app.get("/api/files/avatars/:workspaceId/:memberId/:file", workspace.serveAvatarFile)
+
   // AI Usage and Budget
   app.get("/api/workspaces/:workspaceId/ai-usage", ...authed, aiUsage.getUsage)
   app.get("/api/workspaces/:workspaceId/ai-usage/recent", ...authed, aiUsage.getRecentUsage)

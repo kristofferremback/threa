@@ -4,6 +4,7 @@ import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { useUploadAvatar, useRemoveAvatar } from "@/hooks"
 import { getAvatarUrl } from "@threa/types"
+import { getInitials } from "@/lib/initials"
 import { toast } from "sonner"
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
@@ -12,16 +13,6 @@ interface AvatarSectionProps {
   workspaceId: string
   memberName: string
   avatarUrl: string | null
-}
-
-function getInitials(name: string): string {
-  return name
-    .split(/\s+/)
-    .map((w) => w[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join("")
-    .toUpperCase()
 }
 
 export function AvatarSection({ workspaceId, memberName, avatarUrl }: AvatarSectionProps) {

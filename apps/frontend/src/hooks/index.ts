@@ -90,3 +90,5 @@ export { useThreadAncestors } from "./use-thread-ancestors"
 export { useAgentActivity, getStepLabel, type MessageAgentActivity } from "./use-agent-activity"
 
 export { useReconnectBootstrap } from "./use-reconnect-bootstrap"
+
+export { usePreloadImages } from "./use-preload-images"

@@ -72,12 +72,13 @@ export interface WorkspaceMember {
 }
 
 /**
- * Get the full avatar URL for a given size.
- * avatarUrl stores the base path; actual files have size suffix.
+ * Get the display URL for an avatar image.
+ * avatarUrl stores the S3 key base path; this constructs the backend
+ * proxy URL that serves the image.
  */
 export function getAvatarUrl(avatarUrl: string | null | undefined, size: 256 | 64): string | undefined {
   if (!avatarUrl) return undefined
-  return `${avatarUrl}.${size}.webp`
+  return `/api/files/${avatarUrl}.${size}.webp`
 }
 
 export interface WorkspaceInvitation {

@@ -46,6 +46,13 @@ export function ProfileSettings() {
     }
   }
 
+  const handleNameKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault()
+      handleSaveName()
+    }
+  }
+
   const handleSaveDescription = async () => {
     if (!descriptionChanged) return
     try {
@@ -71,6 +78,7 @@ export function ProfileSettings() {
             id="profile-name"
             value={currentName}
             onChange={(e) => setName(e.target.value)}
+            onKeyDown={handleNameKeyDown}
             maxLength={100}
             className="flex-1"
           />
@@ -97,13 +105,16 @@ export function ProfileSettings() {
             placeholder="What do you do? A brief description."
             className="resize-none"
           />
-          {descriptionChanged && (
-            <div className="flex justify-end">
-              <Button size="sm" onClick={handleSaveDescription} disabled={updateProfile.isPending}>
-                Save
-              </Button>
-            </div>
-          )}
+          <div className="flex justify-end">
+            <Button
+              size="sm"
+              onClick={handleSaveDescription}
+              disabled={!descriptionChanged || updateProfile.isPending}
+              className={descriptionChanged ? "" : "invisible"}
+            >
+              Save
+            </Button>
+          </div>
         </div>
       </div>
     </div>

@@ -1,10 +1,12 @@
 import { createContext, useContext, useState, useEffect, useMemo, useRef, type ReactNode } from "react"
 import { useWorkspaceBootstrap } from "@/hooks/use-workspaces"
+import { usePreloadImages } from "@/hooks/use-preload-images"
 import { useCoordinatedStreamQueries } from "@/hooks/use-coordinated-stream-queries"
 import { debugBootstrap } from "@/lib/bootstrap-debug"
 import { getQueryLoadState, isQueryLoadStateLoading } from "@/lib/query-load-state"
 import { StreamContentSkeleton } from "@/components/loading"
 import { ApiError } from "@/api/client"
+import { getAvatarUrl } from "@threa/types"
 
 /**
  * Global coordinated loading phase - only applies during initial app load.
@@ -71,6 +73,15 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
   const workspaceLoading = isQueryLoadStateLoading(workspaceLoadState)
   const streamsLoading = isQueryLoadStateLoading(streamsLoadState)
 
+  // Preload member avatar images so they're in the browser cache before first render
+  const avatarUrls = useMemo(() => {
+    if (!workspaceQuery.data) return []
+    return workspaceQuery.data.members
+      .map((m) => getAvatarUrl(m.avatarUrl, 64))
+      .filter((url): url is string => url !== undefined)
+  }, [workspaceQuery.data])
+  const avatarsReady = usePreloadImages(avatarUrls)
+
   const isLoading = workspaceLoading || streamsLoading
 
   debugBootstrap("Coordinated loading state", {
@@ -93,13 +104,13 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
     return "loading"
   }, [isReady, showSkeleton])
 
-  // Mark initial load as complete once loading finishes for the first time
+  // Mark initial load as complete once data + avatar images are ready
   useEffect(() => {
-    if (!isLoading && !initialLoadCompleteRef.current) {
+    if (!isLoading && avatarsReady && !initialLoadCompleteRef.current) {
       initialLoadCompleteRef.current = true
       setIsReady(true)
     }
-  }, [isLoading])
+  }, [isLoading, avatarsReady])
 
   // Show skeleton after delay if still loading during initial load
   useEffect(() => {
