@@ -20,6 +20,7 @@ import { StreamPanel, ThreadHeader } from "@/components/thread"
 import { ConversationList } from "@/components/conversations"
 import { StreamErrorView } from "@/components/stream-error-view"
 import { StreamTypes, type StreamType } from "@threa/types"
+import { getStreamName, streamFallbackLabel } from "@/lib/streams"
 
 function getStreamTypeLabel(type: StreamType): string {
   switch (type) {
@@ -77,14 +78,15 @@ export function StreamPage() {
 
   const isScratchpad = isDraft || stream?.type === StreamTypes.SCRATCHPAD
   const isArchived = stream?.archivedAt != null
-  const streamName = stream?.slug
-    ? `#${stream.slug}`
-    : stream?.displayName ||
-      (isDraft ? "New scratchpad" : isThread ? "Thread" : isScratchpad ? "New scratchpad" : "Stream")
+  const streamName = stream
+    ? (getStreamName(stream) ?? streamFallbackLabel(stream.type, "generic"))
+    : isDraft
+      ? streamFallbackLabel("scratchpad", "sidebar")
+      : "Stream"
   const isUnnamedScratchpad = isScratchpad && !stream?.displayName
 
   const handleStartRename = () => {
-    setEditValue(stream?.displayName || "")
+    setEditValue(stream?.displayName ?? "")
     setIsEditing(true)
   }
 

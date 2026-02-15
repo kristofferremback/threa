@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import { Bell, FileText, Hash, MessageSquare, Plus, X, Archive } from "lucide-react"
 import { StreamTypes } from "@threa/types"
 import type { Stream, StreamType } from "@threa/types"
-import { getStreamDisplayName } from "@/lib/streams"
+import { getStreamName, streamFallbackLabel } from "@/lib/streams"
 import { streamsApi } from "@/api"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -156,7 +156,7 @@ export function useStreamItems(context: ModeContext): ModeResult {
     // Score streams by match quality (lower = better)
     const scoreStream = (stream: Stream): number => {
       if (!searchText) return 0
-      const name = getStreamDisplayName(stream).toLowerCase()
+      const name = (getStreamName(stream) ?? streamFallbackLabel(stream.type, "generic")).toLowerCase()
       if (name === lowerQuery) return 0 // Exact match
       if (name.startsWith(lowerQuery)) return 1 // Starts with
       if (name.includes(lowerQuery)) return 2 // Contains
@@ -167,7 +167,12 @@ export function useStreamItems(context: ModeContext): ModeResult {
     return filteredStreams
       .map((stream) => ({ stream, score: scoreStream(stream) }))
       .filter(({ score }) => score !== Infinity)
-      .sort((a, b) => a.score - b.score || getStreamDisplayName(a.stream).localeCompare(getStreamDisplayName(b.stream)))
+      .sort((a, b) => {
+        if (a.score !== b.score) return a.score - b.score
+        const aName = getStreamName(a.stream) ?? streamFallbackLabel(a.stream.type, "generic")
+        const bName = getStreamName(b.stream) ?? streamFallbackLabel(b.stream.type, "generic")
+        return aName.localeCompare(bName)
+      })
       .map(({ stream }): QuickSwitcherItem => {
         const href = `/w/${workspaceId}/s/${stream.id}`
         const isArchived = stream.archivedAt != null
@@ -178,7 +183,7 @@ export function useStreamItems(context: ModeContext): ModeResult {
         else if (notJoined) description = `${typeLabel} · Not joined`
         return {
           id: stream.id,
-          label: getStreamDisplayName(stream),
+          label: getStreamName(stream) ?? streamFallbackLabel(stream.type, "generic"),
           description,
           icon: STREAM_ICONS[stream.type],
           href,

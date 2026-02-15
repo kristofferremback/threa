@@ -66,8 +66,11 @@ export const StreamMemberRepository = {
     return result.rows.map(mapRowToMember)
   },
 
-  async list(db: Querier, filters: { memberId?: string; streamId?: string }): Promise<StreamMember[]> {
-    if (filters.memberId && !filters.streamId) {
+  async list(
+    db: Querier,
+    filters: { memberId?: string; streamId?: string; streamIds?: string[] }
+  ): Promise<StreamMember[]> {
+    if (filters.memberId && !filters.streamId && !filters.streamIds) {
       const result = await db.query<StreamMemberRow>(sql`
         SELECT stream_id, member_id, pinned, pinned_at, notification_level,
                last_read_event_id, last_read_at, joined_at
@@ -89,7 +92,18 @@ export const StreamMemberRepository = {
       return result.rows.map(mapRowToMember)
     }
 
-    throw new Error("StreamMemberRepository.list requires either memberId or streamId filter")
+    if (filters.streamIds && filters.streamIds.length > 0 && !filters.memberId) {
+      const result = await db.query<StreamMemberRow>(sql`
+        SELECT stream_id, member_id, pinned, pinned_at, notification_level,
+               last_read_event_id, last_read_at, joined_at
+        FROM stream_members
+        WHERE stream_id = ANY(${filters.streamIds})
+        ORDER BY joined_at
+      `)
+      return result.rows.map(mapRowToMember)
+    }
+
+    throw new Error("StreamMemberRepository.list requires either memberId, streamId, or streamIds filter")
   },
 
   async insert(db: Querier, streamId: string, memberId: string): Promise<StreamMember> {

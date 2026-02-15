@@ -28,7 +28,8 @@ import { MessageComposer } from "@/components/composer"
 import { ThreadParentMessage } from "./thread-parent-message"
 import { ThreadHeader } from "./thread-header"
 import { ResponsiveBreadcrumbs } from "./responsive-breadcrumbs"
-import { StreamTypes, type JSONContent } from "@threa/types"
+import { StreamTypes, type JSONContent, type StreamType } from "@threa/types"
+import { getStreamName, streamFallbackLabel } from "@/lib/streams"
 import { serializeToMarkdown } from "@threa/prosemirror"
 
 interface StreamPanelProps {
@@ -210,7 +211,9 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
         ) : isThread && stream ? (
           <ThreadHeader workspaceId={workspaceId} stream={stream} inPanel />
         ) : (
-          <SidePanelTitle>{stream?.displayName || "Stream"}</SidePanelTitle>
+          <SidePanelTitle>
+            {stream ? (getStreamName(stream) ?? streamFallbackLabel(stream.type as StreamType, "generic")) : "Stream"}
+          </SidePanelTitle>
         )}
         <SidePanelClose onClose={onClose} />
       </SidePanelHeader>

@@ -9,10 +9,11 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { AncestorBreadcrumbItem } from "./breadcrumb-helpers"
 import { BreadcrumbEllipsisDropdown } from "./breadcrumb-ellipsis-dropdown"
+import type { StreamType } from "@threa/types"
 
 interface StreamInfo {
   id: string
-  type: string
+  type: StreamType
   displayName: string | null
   slug?: string | null
   parentStreamId?: string | null

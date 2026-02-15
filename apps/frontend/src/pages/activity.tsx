@@ -6,7 +6,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useActivityFeed, useMarkActivityRead, useMarkAllActivityRead, useActors, useWorkspaceBootstrap } from "@/hooks"
 import { useMentionCounts } from "@/hooks/use-mention-counts"
-import { getStreamDisplayName } from "@/lib/streams"
+import { getStreamName, streamFallbackLabel } from "@/lib/streams"
 import { ActivityItem } from "@/components/activity/activity-item"
 import { ActivityEmpty } from "@/components/activity/activity-empty"
 import { ActivitySkeleton } from "@/components/activity/activity-skeleton"
@@ -22,48 +22,44 @@ export function ActivityPage() {
   const { data: bootstrap } = useWorkspaceBootstrap(workspaceId ?? "")
   const { unreadActivityCount } = useMentionCounts(workspaceId ?? "")
 
-  const streamLookup = useMemo(() => {
+  const streamById = useMemo(() => {
     const streams = bootstrap?.streams ?? []
-    const byId = new Map(streams.map((s) => [s.id, s]))
-
-    function resolve(streamId: string): string {
-      const stream = byId.get(streamId)
-      if (!stream) return ""
-
-      const displayName = getStreamDisplayName(stream)
-
-      // Unnamed threads → show parent stream context instead of "Untitled"
-      if (displayName === "Untitled" && stream.rootStreamId) {
-        const root = byId.get(stream.rootStreamId)
-        if (root) return `a thread in ${getStreamDisplayName(root)}`
-      }
-
-      return displayName
-    }
-
-    return { byId, resolve }
+    return new Map(streams.map((s) => [s.id, s]))
   }, [bootstrap?.streams])
 
   function resolveActivityStreamName(activity: Activity): string {
-    // Bootstrap is the freshest source — handles both named streams and unnamed threads
-    const bootstrapName = streamLookup.resolve(activity.streamId)
-    if (bootstrapName) return bootstrapName
+    const stream = streamById.get(activity.streamId)
 
+    if (stream) {
+      const name = getStreamName(stream)
+      if (name) return name
+
+      // Unnamed thread → show parent context
+      if (stream.type === "thread" && stream.rootStreamId) {
+        const root = streamById.get(stream.rootStreamId)
+        const rootName = root ? getStreamName(root) : null
+        if (rootName) return `a thread in ${rootName}`
+      }
+
+      return streamFallbackLabel(stream.type, "activity")
+    }
+
+    // Stream not in bootstrap — fall back to activity context snapshot
     const ctx = activity.context as {
       parentStreamName?: string
       streamName?: string
       rootStreamId?: string
     }
 
-    // For threads the user isn't a member of: resolve parent from bootstrap or context
     if (ctx.parentStreamName) return `a thread in ${ctx.parentStreamName}`
     if (ctx.rootStreamId) {
-      const rootName = streamLookup.resolve(ctx.rootStreamId)
+      const root = streamById.get(ctx.rootStreamId)
+      const rootName = root ? getStreamName(root) : null
       if (rootName) return `a thread in ${rootName}`
     }
 
     if (ctx.streamName && ctx.streamName !== "Untitled") return ctx.streamName
-    return "a conversation"
+    return streamFallbackLabel("thread", "activity")
   }
 
   if (!workspaceId) return null

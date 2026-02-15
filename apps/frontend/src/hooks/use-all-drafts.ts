@@ -3,8 +3,9 @@ import { useCallback, useMemo } from "react"
 import { db, type CachedStream } from "@/db"
 import { isDraftId } from "./use-draft-scratchpads"
 import { serializeToMarkdown } from "@threa/prosemirror"
-import type { JSONContent } from "@threa/types"
+import type { JSONContent, StreamType } from "@threa/types"
 import { isEmptyContent } from "@/lib/prosemirror-utils"
+import { getStreamName, streamFallbackLabel } from "@/lib/streams"
 
 export type DraftType = "scratchpad" | "channel" | "dm" | "thread"
 
@@ -153,7 +154,7 @@ export function useAllDrafts(workspaceId: string) {
           id: draft.id,
           type: "scratchpad",
           streamId: draft.id,
-          displayName: draft.displayName || "New scratchpad",
+          displayName: draft.displayName ?? streamFallbackLabel("scratchpad", "sidebar"),
           preview: truncatePreview(getContentPreview(draftMessage?.contentJson)),
           attachmentCount: draftMessage?.attachments?.length ?? 0,
           updatedAt: draftMessage?.updatedAt ?? draft.createdAt,
@@ -185,9 +186,7 @@ export function useAllDrafts(workspaceId: string) {
         let href: string | null = null
         if (parentStream) {
           const streamName =
-            parentStream.type === "channel"
-              ? `#${parentStream.slug || parentStream.displayName || "channel"}`
-              : parentStream.displayName || "stream"
+            getStreamName(parentStream) ?? streamFallbackLabel(parentStream.type as StreamType, "sidebar")
           displayName = `Thread in ${streamName}`
           // Thread drafts use ?draft=parentStreamId:parentMessageId to open the draft panel
           href = `/w/${workspaceId}/s/${parentStream.id}?draft=${parentStream.id}:${parsed.id}`
@@ -211,9 +210,8 @@ export function useAllDrafts(workspaceId: string) {
         let draftType: DraftType
         if (stream) {
           displayName =
-            stream.type === "channel"
-              ? `#${stream.slug || stream.displayName || "channel"}`
-              : stream.displayName || "Message"
+            getStreamName(stream) ??
+            streamFallbackLabel(isValidDraftType(stream.type) ? stream.type : "channel", "sidebar")
           draftType = isValidDraftType(stream.type) ? stream.type : "channel"
         } else {
           // Stream not in cache - still show the draft with a generic name

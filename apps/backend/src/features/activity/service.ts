@@ -174,15 +174,15 @@ export class ActivityService {
   }
 }
 
-function resolveStreamName(stream: Stream): string {
+function resolveStreamName(stream: Stream): string | null {
   if (stream.type === StreamTypes.CHANNEL && stream.slug) return `#${stream.slug}`
-  return stream.displayName || "Untitled"
+  return stream.displayName ?? null
 }
 
 interface StreamContext {
-  streamName: string
+  streamName: string | null
   rootStreamId?: string
-  parentStreamName?: string
+  parentStreamName?: string | null
 }
 
 function resolveStreamContext(stream: Stream, rootStream: Stream | null): StreamContext {

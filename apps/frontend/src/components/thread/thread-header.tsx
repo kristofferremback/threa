@@ -3,10 +3,14 @@ import { useParams } from "react-router-dom"
 import { useThreadAncestors, useWorkspaceBootstrap } from "@/hooks"
 import { usePanel } from "@/contexts"
 import { ResponsiveBreadcrumbs } from "./responsive-breadcrumbs"
+import { getStreamName, streamFallbackLabel } from "@/lib/streams"
+import type { StreamType } from "@threa/types"
 
 interface ThreadHeaderStream {
   id: string
+  type: StreamType
   displayName: string | null
+  slug?: string | null
   parentStreamId: string | null
   rootStreamId: string | null
 }
@@ -65,7 +69,7 @@ export function ThreadHeader({ workspaceId, stream, inPanel = false }: ThreadHea
     <div className={`min-w-0 flex-1 overflow-hidden ${inPanel ? "pr-2" : ""}`}>
       <ResponsiveBreadcrumbs
         ancestors={ancestors}
-        currentLabel={stream.displayName || "Thread"}
+        currentLabel={getStreamName(stream) ?? streamFallbackLabel("thread", "breadcrumb")}
         isMainViewStream={isMainViewStream}
         onClosePanel={closePanel}
         getNavigationUrl={getNavigationUrl}

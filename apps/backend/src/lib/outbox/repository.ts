@@ -117,6 +117,7 @@ export interface ReactionOutboxPayload extends StreamScopedPayload {
 
 export interface StreamDisplayNameUpdatedPayload extends StreamScopedPayload {
   displayName: string
+  visibility: string
 }
 
 export interface StreamMemberJoinedOutboxPayload extends StreamScopedPayload {
