@@ -93,6 +93,8 @@ interface SidebarContextValue {
   setSidebarHeight: (height: number) => void
   /** Set scroll container offset from sidebar top */
   setScrollContainerOffset: (offset: number) => void
+  /** Notify that a menu inside the sidebar opened/closed (prevents collapse while open) */
+  setMenuOpen: (open: boolean) => void
 }
 
 const SidebarContext = createContext<SidebarContextValue | null>(null)
@@ -144,12 +146,14 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
   )
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < MOBILE_BREAKPOINT)
   const [isHovering, setIsHovering] = useState(false)
+  const isHoveringRef = useRef(false)
   const [isResizing, setIsResizing] = useState(false)
   const [urgencyBlocks, setUrgencyBlocks] = useState<Map<string, UrgencyBlock>>(new Map())
   const [sidebarHeight, setSidebarHeight] = useState(0)
   const [scrollContainerOffset, setScrollContainerOffset] = useState(0)
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fadeOutTimeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+  const menuOpenCountRef = useRef(0)
 
   // Persist state changes
   const updatePersistedState = useCallback((updates: Partial<SidebarPersistedState>) => {
@@ -230,17 +234,30 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
     updatePersistedState({ openState: "collapsed" })
   }, [clearHideTimeout, updatePersistedState])
 
-  // Track hovering state (don't hide when resizing - user may drag outside sidebar)
+  // Track hovering state (don't hide when resizing or menu is open)
   const setHovering = useCallback(
     (hovering: boolean) => {
       setIsHovering(hovering)
+      isHoveringRef.current = hovering
       if (hovering) {
         showPreview()
-      } else if (!isResizing) {
+      } else if (!isResizing && menuOpenCountRef.current === 0) {
         hidePreview()
       }
     },
     [showPreview, hidePreview, isResizing]
+  )
+
+  // Track open menus inside the sidebar (dropdowns render in portals outside the sidebar DOM,
+  // so mouse-leaving the sidebar while a menu is open should NOT collapse it)
+  const setMenuOpen = useCallback(
+    (open: boolean) => {
+      menuOpenCountRef.current = Math.max(0, menuOpenCountRef.current + (open ? 1 : -1))
+      if (!open && menuOpenCountRef.current === 0 && !isHoveringRef.current) {
+        hidePreview()
+      }
+    },
+    [hidePreview]
   )
 
   // Resize functions
@@ -380,6 +397,7 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
         setUrgencyBlock,
         setSidebarHeight,
         setScrollContainerOffset,
+        setMenuOpen,
       }}
     >
       {children}

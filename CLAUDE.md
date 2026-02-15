@@ -229,3 +229,20 @@ When introducing a new invariant:
 **AI integration:** All AI calls through createAI() wrapper (INV-28). Model format: provider:modelPath. Telemetry required (INV-19). See docs/model-reference.md and docs/backend/ai-integration.md.
 
 **Development:** Database/infra only in primary /threa folder, never worktrees. Feature work in worktrees (bun run setup:worktree). See .claude/reference.md for full setup.
+
+## Frontend Patterns
+
+**Cache-only observer (TanStack Query v5):** To subscribe reactively to query cache without triggering fetches, provide a `queryFn` that reads from the cache. `enabled: false` alone is not enough — v5 requires `queryFn` to be present. Never use `queryClient.getQueryData()` directly in component render — it's a non-reactive snapshot.
+
+```tsx
+const { data } = useQuery({
+  queryKey: someKeys.bootstrap(id),
+  queryFn: () => queryClient.getQueryData<SomeType>(someKeys.bootstrap(id)) ?? null,
+  enabled: false,
+  staleTime: Infinity,
+})
+```
+
+See `use-workspace-emoji.ts` and `use-socket-events.ts` for reference.
+
+**WorkspaceBootstrap.streams type:** `streams` is `StreamWithPreview[]`, not `Stream[]`. When adding streams to the sidebar cache, spread with `{ ...stream, lastMessagePreview: null }`.

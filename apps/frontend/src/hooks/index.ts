@@ -7,6 +7,11 @@ export {
   useCreateStream,
   useUpdateStream,
   useDeleteStream,
+  useArchiveStream,
+  useUnarchiveStream,
+  useSetNotificationLevel,
+  useAddStreamMember,
+  useRemoveStreamMember,
   streamKeys,
 } from "./use-streams"
 

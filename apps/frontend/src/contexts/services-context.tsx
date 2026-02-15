@@ -20,6 +20,10 @@ export interface StreamService {
   unarchive: typeof streamsApi.unarchive
   getEvents: typeof streamsApi.getEvents
   markAsRead: typeof streamsApi.markAsRead
+  checkSlugAvailable: typeof streamsApi.checkSlugAvailable
+  setNotificationLevel: typeof streamsApi.setNotificationLevel
+  addMember: typeof streamsApi.addMember
+  removeMember: typeof streamsApi.removeMember
 }
 
 export interface MessageService {
