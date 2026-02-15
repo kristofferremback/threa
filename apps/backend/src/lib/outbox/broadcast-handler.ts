@@ -25,7 +25,6 @@ import { logger } from "../logger"
 import { CursorLock, ensureListenerFromLatest, type ProcessResult } from "../cursor-lock"
 import { DebounceWithMaxWait } from "../debounce"
 import type { OutboxHandler } from "./dispatcher"
-import { withClient } from "../../db"
 
 export interface BroadcastHandlerConfig {
   batchSize?: number
@@ -133,27 +132,36 @@ export class BroadcastHandler implements OutboxHandler {
 
     // Member-scoped events: emit to the target member's sockets
     // targetMemberId → resolve to userId for socket registry lookup
+    // Errors are caught per-event to prevent a single failed member lookup from
+    // blocking the entire broadcast pipeline via cursor lock backoff.
     if (isMemberScopedEvent(event)) {
       const payload = event.payload as ActivityCreatedOutboxPayload
       const { targetMemberId } = payload
 
-      const member = await MemberRepository.findById(this.db, targetMemberId)
-      if (!member) {
-        logger.warn(
-          { eventType: event.eventType, targetMemberId },
-          "Cannot broadcast member-scoped event: member not found"
-        )
-        return
-      }
+      try {
+        const member = await MemberRepository.findById(this.db, targetMemberId)
+        if (!member) {
+          logger.warn(
+            { eventType: event.eventType, targetMemberId },
+            "Cannot broadcast member-scoped event: member not found"
+          )
+          return
+        }
 
-      const sockets = this.userSocketRegistry.getSockets(member.userId)
-      for (const socket of sockets) {
-        socket.emit(event.eventType, event.payload)
+        const sockets = this.userSocketRegistry.getSockets(member.userId)
+        for (const socket of sockets) {
+          socket.emit(event.eventType, event.payload)
+        }
+        logger.debug(
+          { eventType: event.eventType, targetMemberId, userId: member.userId, emitted: sockets.length },
+          "Broadcast member-scoped event"
+        )
+      } catch (err) {
+        logger.error(
+          { err, eventType: event.eventType, eventId: event.id.toString(), targetMemberId },
+          "Failed to broadcast member-scoped event, skipping"
+        )
       }
-      logger.debug(
-        { eventType: event.eventType, targetMemberId, userId: member.userId, emitted: sockets.length },
-        "Broadcast member-scoped event"
-      )
       return
     }
 
@@ -169,20 +177,30 @@ export class BroadcastHandler implements OutboxHandler {
         | UserPreferencesUpdatedOutboxPayload
       const { authorId } = payload
 
-      const member = await MemberRepository.findById(this.db, authorId)
-      if (!member) {
-        logger.warn({ eventType: event.eventType, authorId }, "Cannot broadcast author-scoped event: member not found")
-        return
-      }
+      try {
+        const member = await MemberRepository.findById(this.db, authorId)
+        if (!member) {
+          logger.warn(
+            { eventType: event.eventType, authorId },
+            "Cannot broadcast author-scoped event: member not found"
+          )
+          return
+        }
 
-      const sockets = this.userSocketRegistry.getSockets(member.userId)
-      for (const socket of sockets) {
-        socket.emit(event.eventType, event.payload)
+        const sockets = this.userSocketRegistry.getSockets(member.userId)
+        for (const socket of sockets) {
+          socket.emit(event.eventType, event.payload)
+        }
+        logger.debug(
+          { eventType: event.eventType, authorId, userId: member.userId, emitted: sockets.length },
+          "Broadcast author-scoped event"
+        )
+      } catch (err) {
+        logger.error(
+          { err, eventType: event.eventType, eventId: event.id.toString(), authorId },
+          "Failed to broadcast author-scoped event, skipping"
+        )
       }
-      logger.debug(
-        { eventType: event.eventType, authorId, userId: member.userId, emitted: sockets.length },
-        "Broadcast author-scoped event"
-      )
       return
     }
 
@@ -203,12 +221,19 @@ export class BroadcastHandler implements OutboxHandler {
       const { streamId, memberId } = event.payload as StreamMemberAddedOutboxPayload
       this.io.to(`ws:${workspaceId}:stream:${streamId}`).emit(event.eventType, event.payload)
 
-      const member = await MemberRepository.findById(this.db, memberId)
-      if (member) {
-        const sockets = this.userSocketRegistry.getSockets(member.userId)
-        for (const socket of sockets) {
-          socket.emit(event.eventType, event.payload)
+      try {
+        const member = await MemberRepository.findById(this.db, memberId)
+        if (member) {
+          const sockets = this.userSocketRegistry.getSockets(member.userId)
+          for (const socket of sockets) {
+            socket.emit(event.eventType, event.payload)
+          }
         }
+      } catch (err) {
+        logger.error(
+          { err, eventType: event.eventType, eventId: event.id.toString(), memberId },
+          "Failed to resolve added member for direct emit, skipping"
+        )
       }
       return
     }
