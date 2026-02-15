@@ -185,7 +185,7 @@ function truncateContent(content: JSONContent | string, maxLength: number = 50):
 
 /** Get display name for sorting (handles channels, scratchpads, DMs) */
 function getStreamSortName(stream: StreamWithPreview): string {
-  return (stream.slug ?? stream.displayName ?? "").toLowerCase()
+  return (getStreamName(stream) ?? "").toLowerCase()
 }
 
 /** Get activity timestamp for sorting (most recent message or creation) */
