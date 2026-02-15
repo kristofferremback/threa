@@ -5,7 +5,7 @@ import type { EventService, MessageCreatedPayload } from "../messaging"
 import type { ActivityService } from "../activity"
 import type { StreamEvent } from "./event-repository"
 import type { EventType } from "@threa/types"
-import { StreamTypes } from "@threa/types"
+import { StreamTypes, SLUG_PATTERN } from "@threa/types"
 import { serializeBigInt } from "../../lib/serialization"
 import { HttpError } from "../../lib/errors"
 import { streamTypeSchema, visibilitySchema, companionModeSchema, notificationLevelSchema } from "../../lib/schemas"
@@ -15,8 +15,8 @@ const createStreamSchema = z
     type: streamTypeSchema.extract(["scratchpad", "channel", "thread"]),
     slug: z
       .string()
-      .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, {
-        message: "Slug must be lowercase alphanumeric with hyphens (no leading/trailing hyphens)",
+      .regex(SLUG_PATTERN, {
+        message: "Slug must start with a letter and contain only lowercase letters, numbers, hyphens, or underscores",
       })
       .optional(),
     displayName: z.string().min(1).max(100).optional(),
@@ -40,8 +40,8 @@ const updateStreamSchema = z.object({
   displayName: z.string().min(1).max(100).optional(),
   slug: z
     .string()
-    .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, {
-      message: "Slug must be lowercase alphanumeric with hyphens (no leading/trailing hyphens)",
+    .regex(SLUG_PATTERN, {
+      message: "Slug must start with a letter and contain only lowercase letters, numbers, hyphens, or underscores",
     })
     .optional(),
   description: z.string().max(500).optional(),
@@ -441,11 +441,15 @@ export function createStreamHandlers({ streamService, eventService, activityServ
     },
 
     async removeMember(req: Request, res: Response) {
-      const actorId = req.member!.id
+      const actor = req.member!
       const workspaceId = req.workspaceId!
       const { streamId, memberId } = req.params
 
-      await streamService.validateStreamAccess(streamId, workspaceId, actorId)
+      if (actor.role !== "owner" && actor.role !== "admin") {
+        throw new HttpError("Only workspace owners and admins can remove members", { status: 403, code: "FORBIDDEN" })
+      }
+
+      await streamService.validateStreamAccess(streamId, workspaceId, actor.id)
       await streamService.removeMember(streamId, memberId)
       res.status(204).send()
     },

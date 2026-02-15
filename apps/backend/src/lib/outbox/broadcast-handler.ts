@@ -132,8 +132,7 @@ export class BroadcastHandler implements OutboxHandler {
 
     // Member-scoped events: emit to the target member's sockets
     // targetMemberId → resolve to userId for socket registry lookup
-    // Errors are caught per-event to prevent a single failed member lookup from
-    // blocking the entire broadcast pipeline via cursor lock backoff.
+    // Individual failures skip the event so remaining broadcasts proceed.
     if (isMemberScopedEvent(event)) {
       const payload = event.payload as ActivityCreatedOutboxPayload
       const { targetMemberId } = payload

@@ -592,10 +592,7 @@ export class StreamService {
 
       // Lock member rows and check count atomically to prevent racing removals
       // from leaving a stream with zero members
-      const countResult = await client.query(`SELECT COUNT(*) FROM stream_members WHERE stream_id = $1 FOR UPDATE`, [
-        streamId,
-      ])
-      const memberCount = parseInt(countResult.rows[0].count, 10)
+      const memberCount = await StreamMemberRepository.countByStreamForUpdate(client, streamId)
       if (memberCount <= 1) {
         throw new HttpError("Cannot remove the only member", { status: 400, code: "LAST_MEMBER" })
       }

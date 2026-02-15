@@ -462,7 +462,7 @@ describe("API E2E Tests", () => {
 
       expect(status).toBe(400)
       expect(data.error).toBe("Validation failed")
-      expect(data.details?.slug?.[0]).toContain("lowercase alphanumeric")
+      expect(data.details?.slug?.[0]).toContain("Slug must start with a letter")
     })
   })
 

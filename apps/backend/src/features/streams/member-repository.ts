@@ -173,6 +173,13 @@ export const StreamMemberRepository = {
     return result.rowCount !== null && result.rowCount > 0
   },
 
+  async countByStreamForUpdate(db: Querier, streamId: string): Promise<number> {
+    const result = await db.query<{ count: string }>(sql`
+      SELECT COUNT(*) FROM stream_members WHERE stream_id = ${streamId} FOR UPDATE
+    `)
+    return parseInt(result.rows[0].count, 10)
+  },
+
   async isMember(db: Querier, streamId: string, memberId: string): Promise<boolean> {
     const result = await db.query(sql`
       SELECT 1 FROM stream_members
