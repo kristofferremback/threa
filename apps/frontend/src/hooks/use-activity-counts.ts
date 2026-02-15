@@ -2,12 +2,12 @@ import { useQueryClient } from "@tanstack/react-query"
 import { workspaceKeys } from "./use-workspaces"
 import type { WorkspaceBootstrap } from "@threa/types"
 
-export function useMentionCounts(workspaceId: string) {
+export function useActivityCounts(workspaceId: string) {
   const queryClient = useQueryClient()
 
   const bootstrap = queryClient.getQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId))
   const mentionCounts = bootstrap?.mentionCounts ?? {}
-  const activityCountsByStream = bootstrap?.activityCountsByStream ?? {}
+  const activityCounts = bootstrap?.activityCounts ?? {}
   const unreadActivityCount = bootstrap?.unreadActivityCount ?? 0
 
   const getMentionCount = (streamId: string): number => {
@@ -15,7 +15,7 @@ export function useMentionCounts(workspaceId: string) {
   }
 
   const getActivityCount = (streamId: string): number => {
-    return activityCountsByStream[streamId] ?? 0
+    return activityCounts[streamId] ?? 0
   }
 
   const getTotalMentionCount = (): number => {

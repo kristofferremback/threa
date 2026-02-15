@@ -148,12 +148,7 @@ export class ActivityService {
     memberId: string,
     workspaceId: string
   ): Promise<{ mentionsByStream: Map<string, number>; totalByStream: Map<string, number>; total: number }> {
-    const [mentionsByStream, totalByStream, total] = await Promise.all([
-      ActivityRepository.countUnreadMentionsByStream(this.pool, memberId, workspaceId),
-      ActivityRepository.countUnreadByStream(this.pool, memberId, workspaceId),
-      ActivityRepository.countUnread(this.pool, memberId, workspaceId),
-    ])
-    return { mentionsByStream, totalByStream, total }
+    return ActivityRepository.countUnreadGrouped(this.pool, memberId, workspaceId)
   }
 
   async markAsRead(activityId: string, memberId: string): Promise<void> {

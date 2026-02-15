@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useActivityFeed, useMarkActivityRead, useMarkAllActivityRead, useActors, useWorkspaceBootstrap } from "@/hooks"
-import { useMentionCounts } from "@/hooks/use-mention-counts"
+import { useActivityCounts } from "@/hooks/use-activity-counts"
 import { getStreamName, streamFallbackLabel } from "@/lib/streams"
 import { ActivityItem } from "@/components/activity/activity-item"
 import { ActivityEmpty } from "@/components/activity/activity-empty"
@@ -20,7 +20,7 @@ export function ActivityPage() {
   const markAllRead = useMarkAllActivityRead(workspaceId ?? "")
   const { getActorName } = useActors(workspaceId ?? "")
   const { data: bootstrap } = useWorkspaceBootstrap(workspaceId ?? "")
-  const { unreadActivityCount } = useMentionCounts(workspaceId ?? "")
+  const { unreadActivityCount } = useActivityCounts(workspaceId ?? "")
 
   const streamById = useMemo(() => {
     const streams = bootstrap?.streams ?? []

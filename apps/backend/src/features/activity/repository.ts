@@ -146,48 +146,37 @@ export const ActivityRepository = {
     return result.rows.map(mapRowToActivity)
   },
 
-  async countUnreadMentionsByStream(db: Querier, memberId: string, workspaceId: string): Promise<Map<string, number>> {
-    const result = await db.query<{ stream_id: string; count: string }>(sql`
-      SELECT stream_id, COUNT(*)::text AS count
-      FROM member_activity
-      WHERE member_id = ${memberId}
-        AND workspace_id = ${workspaceId}
-        AND activity_type = 'mention'
-        AND read_at IS NULL
-      GROUP BY stream_id
-    `)
-    const map = new Map<string, number>()
-    for (const row of result.rows) {
-      map.set(row.stream_id, Number(row.count))
-    }
-    return map
-  },
-
-  async countUnreadByStream(db: Querier, memberId: string, workspaceId: string): Promise<Map<string, number>> {
-    const result = await db.query<{ stream_id: string; count: string }>(sql`
-      SELECT stream_id, COUNT(*)::text AS count
+  /**
+   * Single-scan aggregation: per-stream mention counts, per-stream total counts,
+   * and workspace-wide total — all from one GROUP BY with FILTER.
+   */
+  async countUnreadGrouped(
+    db: Querier,
+    memberId: string,
+    workspaceId: string
+  ): Promise<{ mentionsByStream: Map<string, number>; totalByStream: Map<string, number>; total: number }> {
+    const result = await db.query<{ stream_id: string; mention_count: string; total_count: string }>(sql`
+      SELECT
+        stream_id,
+        COUNT(*) FILTER (WHERE activity_type = 'mention')::text AS mention_count,
+        COUNT(*)::text AS total_count
       FROM member_activity
       WHERE member_id = ${memberId}
         AND workspace_id = ${workspaceId}
         AND read_at IS NULL
       GROUP BY stream_id
     `)
-    const map = new Map<string, number>()
+    const mentionsByStream = new Map<string, number>()
+    const totalByStream = new Map<string, number>()
+    let total = 0
     for (const row of result.rows) {
-      map.set(row.stream_id, Number(row.count))
+      const mentions = Number(row.mention_count)
+      const count = Number(row.total_count)
+      if (mentions > 0) mentionsByStream.set(row.stream_id, mentions)
+      totalByStream.set(row.stream_id, count)
+      total += count
     }
-    return map
-  },
-
-  async countUnread(db: Querier, memberId: string, workspaceId: string): Promise<number> {
-    const result = await db.query<{ count: string }>(sql`
-      SELECT COUNT(*)::text AS count
-      FROM member_activity
-      WHERE member_id = ${memberId}
-        AND workspace_id = ${workspaceId}
-        AND read_at IS NULL
-    `)
-    return Number(result.rows[0].count)
+    return { mentionsByStream, totalByStream, total }
   },
 
   async markAsRead(db: Querier, activityId: string, memberId: string): Promise<void> {

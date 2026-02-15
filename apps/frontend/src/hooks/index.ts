@@ -52,7 +52,7 @@ export { useConversations, conversationKeys } from "./use-conversations"
 
 export { useUnreadCounts } from "./use-unread-counts"
 
-export { useMentionCounts } from "./use-mention-counts"
+export { useActivityCounts } from "./use-activity-counts"
 
 export { useActivityFeed, useMarkActivityRead, useMarkAllActivityRead, activityKeys } from "./use-activity"
 

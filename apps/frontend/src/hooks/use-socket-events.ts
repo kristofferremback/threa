@@ -413,11 +413,11 @@ export function useSocketEvents(workspaceId: string) {
       if (payload.workspaceId !== workspaceId) return
 
       const current = queryClient.getQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId))
-      const hadActivity = (current?.activityCountsByStream[payload.streamId] ?? 0) > 0
+      const hadActivity = (current?.activityCounts[payload.streamId] ?? 0) > 0
 
       queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
         if (!old) return old
-        const clearedActivity = old.activityCountsByStream[payload.streamId] ?? 0
+        const clearedActivity = old.activityCounts[payload.streamId] ?? 0
         return {
           ...old,
           unreadCounts: {
@@ -428,8 +428,8 @@ export function useSocketEvents(workspaceId: string) {
             ...old.mentionCounts,
             [payload.streamId]: 0,
           },
-          activityCountsByStream: {
-            ...old.activityCountsByStream,
+          activityCounts: {
+            ...old.activityCounts,
             [payload.streamId]: 0,
           },
           unreadActivityCount: Math.max(0, (old.unreadActivityCount ?? 0) - clearedActivity),
@@ -450,7 +450,7 @@ export function useSocketEvents(workspaceId: string) {
 
         const newUnreadCounts = { ...old.unreadCounts }
         const newMentionCounts = { ...old.mentionCounts }
-        const newActivityCounts = { ...old.activityCountsByStream }
+        const newActivityCounts = { ...old.activityCounts }
         let clearedActivity = 0
         for (const streamId of payload.streamIds) {
           newUnreadCounts[streamId] = 0
@@ -462,7 +462,7 @@ export function useSocketEvents(workspaceId: string) {
           ...old,
           unreadCounts: newUnreadCounts,
           mentionCounts: newMentionCounts,
-          activityCountsByStream: newActivityCounts,
+          activityCounts: newActivityCounts,
           unreadActivityCount: Math.max(0, (old.unreadActivityCount ?? 0) - clearedActivity),
         }
       })
@@ -676,9 +676,9 @@ export function useSocketEvents(workspaceId: string) {
             activityType === "mention"
               ? { ...old.mentionCounts, [streamId]: (old.mentionCounts[streamId] ?? 0) + 1 }
               : old.mentionCounts,
-          activityCountsByStream: {
-            ...old.activityCountsByStream,
-            [streamId]: (old.activityCountsByStream[streamId] ?? 0) + 1,
+          activityCounts: {
+            ...old.activityCounts,
+            [streamId]: (old.activityCounts[streamId] ?? 0) + 1,
           },
           unreadActivityCount: (old.unreadActivityCount ?? 0) + 1,
         }

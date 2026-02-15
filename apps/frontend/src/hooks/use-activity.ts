@@ -75,13 +75,13 @@ export function useMarkAllActivityRead(workspaceId: string) {
         for (const key of Object.keys(old.mentionCounts)) {
           clearedMentionCounts[key] = 0
         }
-        for (const key of Object.keys(old.activityCountsByStream)) {
+        for (const key of Object.keys(old.activityCounts)) {
           clearedActivityCounts[key] = 0
         }
         return {
           ...old,
           mentionCounts: clearedMentionCounts,
-          activityCountsByStream: clearedActivityCounts,
+          activityCounts: clearedActivityCounts,
           unreadActivityCount: 0,
         }
       })

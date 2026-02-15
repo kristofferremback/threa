@@ -25,13 +25,13 @@ export function useUnreadCounts(workspaceId: string) {
       streamService.markAsRead(workspaceId, streamId, lastEventId),
     onSuccess: (_membership, { streamId }) => {
       const current = queryClient.getQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId))
-      const hadActivity = (current?.activityCountsByStream[streamId] ?? 0) > 0
+      const hadActivity = (current?.activityCounts[streamId] ?? 0) > 0
 
       // The backend marks ALL stream activity as read (mentions + message notifications)
       // when a stream is read, so clear all activity counts for this stream.
       queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
         if (!old) return old
-        const clearedActivity = old.activityCountsByStream[streamId] ?? 0
+        const clearedActivity = old.activityCounts[streamId] ?? 0
         return {
           ...old,
           unreadCounts: {
@@ -42,8 +42,8 @@ export function useUnreadCounts(workspaceId: string) {
             ...old.mentionCounts,
             [streamId]: 0,
           },
-          activityCountsByStream: {
-            ...old.activityCountsByStream,
+          activityCounts: {
+            ...old.activityCounts,
             [streamId]: 0,
           },
           unreadActivityCount: Math.max(0, (old.unreadActivityCount ?? 0) - clearedActivity),

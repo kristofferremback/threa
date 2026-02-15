@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react"
 import { useUnreadCounts } from "./use-unread-counts"
-import { useMentionCounts } from "./use-mention-counts"
+import { useActivityCounts } from "./use-activity-counts"
 
 interface UseAutoMarkAsReadOptions {
   enabled?: boolean
@@ -23,7 +23,7 @@ export function useAutoMarkAsRead(
 ) {
   const { enabled = true, debounceMs = 500 } = options
   const { markAsRead, getUnreadCount } = useUnreadCounts(workspaceId)
-  const { getActivityCount } = useMentionCounts(workspaceId)
+  const { getActivityCount } = useActivityCounts(workspaceId)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastMarkedRef = useRef<string | null>(null)
 
