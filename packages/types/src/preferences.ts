@@ -81,7 +81,14 @@ export const MessageSendModes = {
 } as const satisfies Record<string, MessageSendMode>
 
 // Settings tab options (for URL-driven settings dialog)
-export const SETTINGS_TAB_OPTIONS = ["appearance", "datetime", "notifications", "keyboard", "accessibility"] as const
+export const SETTINGS_TAB_OPTIONS = [
+  "profile",
+  "appearance",
+  "datetime",
+  "notifications",
+  "keyboard",
+  "accessibility",
+] as const
 export type SettingsTab = (typeof SETTINGS_TAB_OPTIONS)[number]
 
 // Alias for convenience

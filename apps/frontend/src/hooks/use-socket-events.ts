@@ -27,6 +27,8 @@ interface MemberWithDisplay {
   role: string
   slug: string
   name: string
+  description: string | null
+  avatarUrl: string | null
   timezone: string | null
   locale: string | null
   setupCompleted: boolean
@@ -318,6 +320,8 @@ export function useSocketEvents(workspaceId: string) {
                 role: member.role as WorkspaceMember["role"],
                 slug: member.slug,
                 name: member.name,
+                description: member.description,
+                avatarUrl: member.avatarUrl,
                 timezone: member.timezone,
                 locale: member.locale,
                 setupCompleted: member.setupCompleted,
@@ -336,6 +340,8 @@ export function useSocketEvents(workspaceId: string) {
         role: member.role as "owner" | "admin" | "member",
         slug: member.slug,
         name: member.name,
+        description: member.description,
+        avatarUrl: member.avatarUrl,
         timezone: member.timezone,
         locale: member.locale,
         setupCompleted: member.setupCompleted,
@@ -380,6 +386,8 @@ export function useSocketEvents(workspaceId: string) {
                 role: member.role as WorkspaceMember["role"],
                 slug: member.slug,
                 name: member.name,
+                description: member.description,
+                avatarUrl: member.avatarUrl,
                 timezone: member.timezone,
                 locale: member.locale,
                 setupCompleted: member.setupCompleted,
@@ -399,6 +407,8 @@ export function useSocketEvents(workspaceId: string) {
         role: member.role as "owner" | "admin" | "member",
         slug: member.slug,
         name: member.name,
+        description: member.description,
+        avatarUrl: member.avatarUrl,
         timezone: member.timezone,
         locale: member.locale,
         setupCompleted: member.setupCompleted,

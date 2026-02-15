@@ -1,7 +1,7 @@
 import type { Express, RequestHandler } from "express"
 import { createAuthMiddleware } from "./auth/middleware"
 import { createWorkspaceMemberMiddleware } from "./middleware/workspace"
-import { createUploadMiddleware } from "./middleware/upload"
+import { createUploadMiddleware, createAvatarUploadMiddleware } from "./middleware/upload"
 import { createRateLimiters, type RateLimiterConfig } from "./middleware/rate-limit"
 import { createOpsAccessMiddleware } from "./middleware/ops-access"
 import { requireRole } from "./middleware/authorization"
@@ -36,6 +36,7 @@ import type { ActivityService } from "./features/activity"
 import type { S3Config } from "./lib/env"
 import type { CommandRegistry } from "./features/commands"
 import type { UserPreferencesService } from "./features/user-preferences"
+import type { AvatarService } from "./features/workspaces"
 import type { Pool } from "pg"
 import type { PoolMonitor } from "./lib/observability"
 
@@ -55,6 +56,7 @@ interface Dependencies {
   activityService: ActivityService
   s3Config: S3Config
   commandRegistry: CommandRegistry
+  avatarService: AvatarService
   rateLimiterConfig: RateLimiterConfig
   allowDevAuthRoutes: boolean
 }
@@ -76,6 +78,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     activityService,
     s3Config,
     commandRegistry,
+    avatarService,
     rateLimiterConfig,
     allowDevAuthRoutes,
   } = deps
@@ -90,6 +93,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const opsAccess = createOpsAccessMiddleware()
 
   const authHandlers = createAuthHandlers({ authService, userService, invitationService })
+  const avatarUpload = createAvatarUploadMiddleware()
   const workspace = createWorkspaceHandlers({
     workspaceService,
     streamService,
@@ -97,6 +101,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     invitationService,
     activityService,
     commandRegistry,
+    avatarService,
   })
   const stream = createStreamHandlers({ streamService, eventService, activityService })
   const message = createMessageHandlers({ pool, eventService, streamService, commandRegistry })
@@ -223,6 +228,11 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   // Member setup (any authenticated member)
   app.get("/api/workspaces/:workspaceId/slug-available", ...authed, workspace.checkSlugAvailability)
   app.post("/api/workspaces/:workspaceId/setup", ...authed, workspace.completeMemberSetup)
+
+  // Member profile
+  app.patch("/api/workspaces/:workspaceId/profile", ...authed, workspace.updateProfile)
+  app.post("/api/workspaces/:workspaceId/profile/avatar", ...authed, avatarUpload, workspace.uploadAvatar)
+  app.delete("/api/workspaces/:workspaceId/profile/avatar", ...authed, workspace.removeAvatar)
 
   // AI Usage and Budget
   app.get("/api/workspaces/:workspaceId/ai-usage", ...authed, aiUsage.getUsage)

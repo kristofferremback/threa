@@ -5,7 +5,7 @@ import { debugBootstrap } from "@/lib/bootstrap-debug"
 import { getQueryLoadState, isTerminalBootstrapError } from "@/lib/query-load-state"
 import { db } from "@/db"
 import { joinRoomBestEffort } from "@/lib/socket-room"
-import type { Workspace } from "@threa/types"
+import type { Workspace, WorkspaceBootstrap, WorkspaceMember } from "@threa/types"
 
 // Query keys for cache management
 export const workspaceKeys = {
@@ -158,5 +158,52 @@ export function useCreateWorkspace() {
       // Cache to IndexedDB
       db.workspaces.put({ ...newWorkspace, _cachedAt: Date.now() })
     },
+  })
+}
+
+function updateMemberInBootstrap(
+  queryClient: ReturnType<typeof useQueryClient>,
+  workspaceId: string,
+  updatedMember: WorkspaceMember
+) {
+  queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
+    if (!old) return old
+    return {
+      ...old,
+      members: old.members.map((m) => (m.id === updatedMember.id ? updatedMember : m)),
+    }
+  })
+
+  db.workspaceMembers.put({ ...updatedMember, _cachedAt: Date.now() })
+}
+
+export function useUpdateProfile(workspaceId: string) {
+  const workspaceService = useWorkspaceService()
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (data: { name?: string; description?: string | null }) =>
+      workspaceService.updateProfile(workspaceId, data),
+    onSuccess: (member) => updateMemberInBootstrap(queryClient, workspaceId, member),
+  })
+}
+
+export function useUploadAvatar(workspaceId: string) {
+  const workspaceService = useWorkspaceService()
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (file: File) => workspaceService.uploadAvatar(workspaceId, file),
+    onSuccess: (member) => updateMemberInBootstrap(queryClient, workspaceId, member),
+  })
+}
+
+export function useRemoveAvatar(workspaceId: string) {
+  const workspaceService = useWorkspaceService()
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: () => workspaceService.removeAvatar(workspaceId),
+    onSuccess: (member) => updateMemberInBootstrap(queryClient, workspaceId, member),
   })
 }

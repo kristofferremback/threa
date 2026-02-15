@@ -12,6 +12,7 @@ import { generateSlug, generateUniqueSlug } from "../../lib/slug"
 import { serializeBigInt } from "../../lib/serialization"
 import { HttpError, isUniqueViolation } from "../../lib/errors"
 import type { WorkosOrgService } from "../../auth/workos-org-service"
+import type { AvatarService } from "./avatar-service"
 
 function deriveSlugFromEmail(email: string): string {
   const prefix = email.split("@")[0]
@@ -26,10 +27,12 @@ export interface CreateWorkspaceParams {
 export class WorkspaceService {
   private pool: Pool
   private workosOrgService: WorkosOrgService | null
+  private avatarService: AvatarService | null
 
-  constructor(pool: Pool, workosOrgService?: WorkosOrgService) {
+  constructor(pool: Pool, workosOrgService?: WorkosOrgService, avatarService?: AvatarService) {
     this.pool = pool
     this.workosOrgService = workosOrgService ?? null
+    this.avatarService = avatarService ?? null
   }
 
   async getWorkspaceById(id: string): Promise<Workspace | null> {
@@ -238,6 +241,91 @@ export class WorkspaceService {
         }
       }
     }
+  }
+
+  async updateMemberProfile(
+    memberId: string,
+    workspaceId: string,
+    params: { name?: string; description?: string | null }
+  ): Promise<WorkspaceMember> {
+    return withTransaction(this.pool, async (client) => {
+      const updated = await WorkspaceRepository.updateMember(client, memberId, params)
+      if (!updated) {
+        throw new HttpError("Member not found", { status: 404, code: "MEMBER_NOT_FOUND" })
+      }
+
+      const fullMember = await MemberRepository.findById(client, memberId)
+      if (fullMember) {
+        await OutboxRepository.insert(client, "member:updated", {
+          workspaceId,
+          member: serializeBigInt(fullMember),
+        })
+      }
+
+      return updated
+    })
+  }
+
+  async updateMemberAvatar(memberId: string, workspaceId: string, avatarUrl: string): Promise<WorkspaceMember> {
+    // Phase 1: Read current member to get old avatar URL (single query, pool)
+    const oldMember = await MemberRepository.findById(this.pool, memberId)
+    const oldAvatarUrl = oldMember?.avatarUrl ?? null
+
+    // Phase 3: Transaction to update avatar + emit event
+    const updated = await withTransaction(this.pool, async (client) => {
+      const result = await WorkspaceRepository.updateMember(client, memberId, { avatarUrl })
+      if (!result) {
+        throw new HttpError("Member not found", { status: 404, code: "MEMBER_NOT_FOUND" })
+      }
+
+      const fullMember = await MemberRepository.findById(client, memberId)
+      if (fullMember) {
+        await OutboxRepository.insert(client, "member:updated", {
+          workspaceId,
+          member: serializeBigInt(fullMember),
+        })
+      }
+
+      return result
+    })
+
+    // After commit: delete old avatar files (fire-and-forget)
+    if (oldAvatarUrl && this.avatarService) {
+      this.avatarService.deleteAvatarFiles(oldAvatarUrl)
+    }
+
+    return updated
+  }
+
+  async removeMemberAvatar(memberId: string, workspaceId: string): Promise<WorkspaceMember> {
+    // Phase 1: Read current member to get old avatar URL (single query, pool)
+    const oldMember = await MemberRepository.findById(this.pool, memberId)
+    const oldAvatarUrl = oldMember?.avatarUrl ?? null
+
+    // Phase 3: Transaction to clear avatar + emit event
+    const updated = await withTransaction(this.pool, async (client) => {
+      const result = await WorkspaceRepository.updateMember(client, memberId, { avatarUrl: null })
+      if (!result) {
+        throw new HttpError("Member not found", { status: 404, code: "MEMBER_NOT_FOUND" })
+      }
+
+      const fullMember = await MemberRepository.findById(client, memberId)
+      if (fullMember) {
+        await OutboxRepository.insert(client, "member:updated", {
+          workspaceId,
+          member: serializeBigInt(fullMember),
+        })
+      }
+
+      return result
+    })
+
+    // After commit: delete old avatar files (fire-and-forget)
+    if (oldAvatarUrl && this.avatarService) {
+      this.avatarService.deleteAvatarFiles(oldAvatarUrl)
+    }
+
+    return updated
   }
 
   private async shouldPreferEmailSlug(orgId: string | null, user: User): Promise<boolean> {

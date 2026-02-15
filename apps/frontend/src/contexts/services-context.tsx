@@ -8,6 +8,9 @@ export interface WorkspaceService {
   bootstrap: typeof workspacesApi.bootstrap
   create: typeof workspacesApi.create
   markAllAsRead: typeof workspacesApi.markAllAsRead
+  updateProfile: typeof workspacesApi.updateProfile
+  uploadAvatar: typeof workspacesApi.uploadAvatar
+  removeAvatar: typeof workspacesApi.removeAvatar
 }
 
 export interface StreamService {

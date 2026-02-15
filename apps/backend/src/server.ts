@@ -11,7 +11,7 @@ import { runMigrations } from "./db/migrations"
 import { WorkosAuthService } from "./auth/auth-service"
 import { StubAuthService } from "./auth/auth-service.stub"
 import { UserService } from "./auth/user-service"
-import { WorkspaceService } from "./features/workspaces"
+import { WorkspaceService, AvatarService } from "./features/workspaces"
 import { InvitationService } from "./features/invitations"
 import { WorkosOrgServiceImpl } from "./auth/workos-org-service"
 import { StubWorkosOrgService } from "./auth/workos-org-service.stub"
@@ -166,7 +166,8 @@ export async function startServer(): Promise<ServerInstance> {
 
   const userService = new UserService(pool)
   const workosOrgService = config.useStubAuth ? new StubWorkosOrgService() : new WorkosOrgServiceImpl(config.workos)
-  const workspaceService = new WorkspaceService(pool, workosOrgService)
+  const avatarService = new AvatarService(config.s3)
+  const workspaceService = new WorkspaceService(pool, workosOrgService, avatarService)
   const streamService = new StreamService(pool)
   const eventService = new EventService(pool)
   const authService = config.useStubAuth ? new StubAuthService() : new WorkosAuthService(config.workos)
@@ -287,6 +288,7 @@ export async function startServer(): Promise<ServerInstance> {
     activityService,
     s3Config: config.s3,
     commandRegistry,
+    avatarService,
     rateLimiterConfig: config.rateLimits,
     allowDevAuthRoutes: config.useStubAuth && !isProduction,
   })

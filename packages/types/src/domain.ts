@@ -63,10 +63,21 @@ export interface WorkspaceMember {
   role: WorkspaceMemberRole
   slug: string
   name: string
+  description: string | null
+  avatarUrl: string | null
   timezone: string | null
   locale: string | null
   setupCompleted: boolean
   joinedAt: string
+}
+
+/**
+ * Get the full avatar URL for a given size.
+ * avatarUrl stores the base path; actual files have size suffix.
+ */
+export function getAvatarUrl(avatarUrl: string | null | undefined, size: 256 | 64): string | undefined {
+  if (!avatarUrl) return undefined
+  return `${avatarUrl}.${size}.webp`
 }
 
 export interface WorkspaceInvitation {

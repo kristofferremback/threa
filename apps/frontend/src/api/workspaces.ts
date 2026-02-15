@@ -46,4 +46,37 @@ export const workspacesApi = {
     )
     return res.available
   },
+
+  async updateProfile(
+    workspaceId: string,
+    data: { name?: string; description?: string | null }
+  ): Promise<WorkspaceMember> {
+    const res = await api.patch<{ member: WorkspaceMember }>(`/api/workspaces/${workspaceId}/profile`, data)
+    return res.member
+  },
+
+  async uploadAvatar(workspaceId: string, file: File): Promise<WorkspaceMember> {
+    const formData = new FormData()
+    formData.append("avatar", file)
+
+    const response = await fetch(`/api/workspaces/${workspaceId}/profile/avatar`, {
+      method: "POST",
+      body: formData,
+      credentials: "include",
+    })
+
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      const errorMessage = typeof body.error === "string" ? body.error : body.error?.message || "Upload failed"
+      throw new Error(errorMessage)
+    }
+
+    const body = await response.json()
+    return body.member
+  },
+
+  async removeAvatar(workspaceId: string): Promise<WorkspaceMember> {
+    const res = await api.delete<{ member: WorkspaceMember }>(`/api/workspaces/${workspaceId}/profile/avatar`)
+    return res.member
+  },
 }

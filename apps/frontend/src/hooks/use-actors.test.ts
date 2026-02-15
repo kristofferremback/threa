@@ -32,6 +32,8 @@ function createMember(overrides: Partial<WorkspaceMember> = {}): WorkspaceMember
     role: "member",
     slug: "test-user",
     name: "Test User",
+    description: null,
+    avatarUrl: null,
     timezone: null,
     locale: null,
     setupCompleted: true,

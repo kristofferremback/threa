@@ -13,7 +13,7 @@ interface SettingsContextValue {
 
 const SettingsContext = createContext<SettingsContextValue | null>(null)
 
-const DEFAULT_TAB: SettingsTab = "appearance"
+const DEFAULT_TAB: SettingsTab = "profile"
 
 interface SettingsProviderProps {
   children: ReactNode
