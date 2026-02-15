@@ -147,12 +147,13 @@ export class ActivityService {
   async getUnreadCounts(
     memberId: string,
     workspaceId: string
-  ): Promise<{ byStream: Map<string, number>; total: number }> {
-    const [byStream, total] = await Promise.all([
+  ): Promise<{ mentionsByStream: Map<string, number>; totalByStream: Map<string, number>; total: number }> {
+    const [mentionsByStream, totalByStream, total] = await Promise.all([
       ActivityRepository.countUnreadMentionsByStream(this.pool, memberId, workspaceId),
+      ActivityRepository.countUnreadByStream(this.pool, memberId, workspaceId),
       ActivityRepository.countUnread(this.pool, memberId, workspaceId),
     ])
-    return { byStream, total }
+    return { mentionsByStream, totalByStream, total }
   }
 
   async markAsRead(activityId: string, memberId: string): Promise<void> {

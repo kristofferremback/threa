@@ -145,6 +145,7 @@ export interface WorkspaceBootstrap {
   commands: CommandInfo[]
   unreadCounts: Record<string, number>
   mentionCounts: Record<string, number>
+  activityCountsByStream: Record<string, number>
   unreadActivityCount: number
   mutedStreamIds: string[]
   userPreferences: UserPreferences

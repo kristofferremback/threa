@@ -24,16 +24,14 @@ export function useUnreadCounts(workspaceId: string) {
     mutationFn: ({ streamId, lastEventId }: { streamId: string; lastEventId: string }) =>
       streamService.markAsRead(workspaceId, streamId, lastEventId),
     onSuccess: (_membership, { streamId }) => {
-      // Check for mentions before clearing — needed for activity feed invalidation
       const current = queryClient.getQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId))
-      const hadMentions = (current?.mentionCounts[streamId] ?? 0) > 0
+      const hadActivity = (current?.activityCountsByStream[streamId] ?? 0) > 0
 
-      // Update the workspace bootstrap cache: clear unread count and mention count for this stream.
-      // The backend marks stream activity as read when the stream is read,
-      // so we optimistically clear mentions here too.
+      // The backend marks ALL stream activity as read (mentions + message notifications)
+      // when a stream is read, so clear all activity counts for this stream.
       queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
         if (!old) return old
-        const clearedMentions = old.mentionCounts[streamId] ?? 0
+        const clearedActivity = old.activityCountsByStream[streamId] ?? 0
         return {
           ...old,
           unreadCounts: {
@@ -44,11 +42,15 @@ export function useUnreadCounts(workspaceId: string) {
             ...old.mentionCounts,
             [streamId]: 0,
           },
-          unreadActivityCount: Math.max(0, (old.unreadActivityCount ?? 0) - clearedMentions),
+          activityCountsByStream: {
+            ...old.activityCountsByStream,
+            [streamId]: 0,
+          },
+          unreadActivityCount: Math.max(0, (old.unreadActivityCount ?? 0) - clearedActivity),
         }
       })
 
-      if (hadMentions) {
+      if (hadActivity) {
         queryClient.invalidateQueries({ queryKey: ["activity", workspaceId] })
       }
     },

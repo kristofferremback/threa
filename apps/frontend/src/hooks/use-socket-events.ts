@@ -408,17 +408,16 @@ export function useSocketEvents(workspaceId: string) {
     })
 
     // Handle stream read (from other sessions of the same user)
-    // Also clears mention counts — backend marks stream activity as read when stream is read
+    // Backend marks ALL stream activity as read (mentions + message notifications)
     socket.on("stream:read", (payload: StreamReadPayload) => {
       if (payload.workspaceId !== workspaceId) return
 
-      // Check if there are mentions to clear before updating cache
       const current = queryClient.getQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId))
-      const hadMentions = (current?.mentionCounts[payload.streamId] ?? 0) > 0
+      const hadActivity = (current?.activityCountsByStream[payload.streamId] ?? 0) > 0
 
       queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
         if (!old) return old
-        const clearedMentions = old.mentionCounts[payload.streamId] ?? 0
+        const clearedActivity = old.activityCountsByStream[payload.streamId] ?? 0
         return {
           ...old,
           unreadCounts: {
@@ -429,11 +428,15 @@ export function useSocketEvents(workspaceId: string) {
             ...old.mentionCounts,
             [payload.streamId]: 0,
           },
-          unreadActivityCount: Math.max(0, (old.unreadActivityCount ?? 0) - clearedMentions),
+          activityCountsByStream: {
+            ...old.activityCountsByStream,
+            [payload.streamId]: 0,
+          },
+          unreadActivityCount: Math.max(0, (old.unreadActivityCount ?? 0) - clearedActivity),
         }
       })
 
-      if (hadMentions) {
+      if (hadActivity) {
         queryClient.invalidateQueries({ queryKey: ["activity", workspaceId] })
       }
     })
@@ -447,17 +450,20 @@ export function useSocketEvents(workspaceId: string) {
 
         const newUnreadCounts = { ...old.unreadCounts }
         const newMentionCounts = { ...old.mentionCounts }
-        let clearedMentions = 0
+        const newActivityCounts = { ...old.activityCountsByStream }
+        let clearedActivity = 0
         for (const streamId of payload.streamIds) {
           newUnreadCounts[streamId] = 0
-          clearedMentions += newMentionCounts[streamId] ?? 0
           newMentionCounts[streamId] = 0
+          clearedActivity += newActivityCounts[streamId] ?? 0
+          newActivityCounts[streamId] = 0
         }
         return {
           ...old,
           unreadCounts: newUnreadCounts,
           mentionCounts: newMentionCounts,
-          unreadActivityCount: Math.max(0, (old.unreadActivityCount ?? 0) - clearedMentions),
+          activityCountsByStream: newActivityCounts,
+          unreadActivityCount: Math.max(0, (old.unreadActivityCount ?? 0) - clearedActivity),
         }
       })
 
@@ -670,6 +676,10 @@ export function useSocketEvents(workspaceId: string) {
             activityType === "mention"
               ? { ...old.mentionCounts, [streamId]: (old.mentionCounts[streamId] ?? 0) + 1 }
               : old.mentionCounts,
+          activityCountsByStream: {
+            ...old.activityCountsByStream,
+            [streamId]: (old.activityCountsByStream[streamId] ?? 0) + 1,
+          },
           unreadActivityCount: (old.unreadActivityCount ?? 0) + 1,
         }
       })

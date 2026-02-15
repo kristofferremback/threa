@@ -163,6 +163,22 @@ export const ActivityRepository = {
     return map
   },
 
+  async countUnreadByStream(db: Querier, memberId: string, workspaceId: string): Promise<Map<string, number>> {
+    const result = await db.query<{ stream_id: string; count: string }>(sql`
+      SELECT stream_id, COUNT(*)::text AS count
+      FROM member_activity
+      WHERE member_id = ${memberId}
+        AND workspace_id = ${workspaceId}
+        AND read_at IS NULL
+      GROUP BY stream_id
+    `)
+    const map = new Map<string, number>()
+    for (const row of result.rows) {
+      map.set(row.stream_id, Number(row.count))
+    }
+    return map
+  },
+
   async countUnread(db: Querier, memberId: string, workspaceId: string): Promise<number> {
     const result = await db.query<{ count: string }>(sql`
       SELECT COUNT(*)::text AS count
