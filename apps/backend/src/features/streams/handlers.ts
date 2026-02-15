@@ -436,7 +436,7 @@ export function createStreamHandlers({ streamService, eventService, activityServ
         throw new HttpError("Cannot add members to scratchpads", { status: 400, code: "SCRATCHPAD_NO_ADD_MEMBER" })
       }
 
-      const membership = await streamService.addMember(streamId, memberId)
+      const membership = await streamService.addMember(streamId, memberId, workspaceId)
       res.status(201).json({ membership })
     },
 
@@ -446,13 +446,6 @@ export function createStreamHandlers({ streamService, eventService, activityServ
       const { streamId, memberId } = req.params
 
       await streamService.validateStreamAccess(streamId, workspaceId, actorId)
-
-      // Check the actor is not removing themselves if they're the only member
-      const members = await streamService.getMembers(streamId)
-      if (members.length === 1 && members[0].memberId === memberId) {
-        throw new HttpError("Cannot remove the only member", { status: 400, code: "LAST_MEMBER" })
-      }
-
       await streamService.removeMember(streamId, memberId)
       res.status(204).send()
     },
