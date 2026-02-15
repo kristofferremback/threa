@@ -14,6 +14,7 @@ import {
   Visibilities,
   CompanionModes,
   type StreamType,
+  type Visibility,
   type CompanionMode,
   type NotificationLevel,
 } from "@threa/types"
@@ -442,8 +443,22 @@ export class StreamService {
     })
   }
 
-  async updateStream(streamId: string, data: { displayName?: string; description?: string }): Promise<Stream | null> {
+  async updateStream(
+    streamId: string,
+    data: { displayName?: string; slug?: string; description?: string; visibility?: Visibility }
+  ): Promise<Stream | null> {
     return withTransaction(this.pool, async (client) => {
+      // Slug uniqueness check (exclude current stream)
+      if (data.slug) {
+        const current = await StreamRepository.findById(client, streamId)
+        if (current && data.slug !== current.slug) {
+          const slugExists = await StreamRepository.slugExistsInWorkspace(client, current.workspaceId, data.slug)
+          if (slugExists) {
+            throw new DuplicateSlugError(data.slug)
+          }
+        }
+      }
+
       const stream = await StreamRepository.update(client, streamId, data)
       if (stream) {
         await OutboxRepository.insert(client, "stream:updated", {
@@ -453,6 +468,16 @@ export class StreamService {
         })
       }
       return stream
+    })
+  }
+
+  async checkSlugAvailable(workspaceId: string, slug: string, excludeStreamId?: string): Promise<boolean> {
+    return withClient(this.pool, async (client) => {
+      if (excludeStreamId) {
+        const current = await StreamRepository.findById(client, excludeStreamId)
+        if (current && current.slug === slug) return false
+      }
+      return StreamRepository.slugExistsInWorkspace(client, workspaceId, slug)
     })
   }
 
@@ -518,12 +543,45 @@ export class StreamService {
         }
       }
 
-      return StreamMemberRepository.insert(client, streamId, memberId)
+      const membership = await StreamMemberRepository.insert(client, streamId, memberId)
+
+      // Initialize last read to latest event so the member doesn't see all history as unread
+      const latestEventIds = await StreamEventRepository.getLatestEventIdByStreamBatch(client, [streamId])
+      const latestEventId = latestEventIds.get(streamId)
+      if (latestEventId) {
+        await StreamMemberRepository.update(client, streamId, memberId, { lastReadEventId: latestEventId })
+      }
+
+      await OutboxRepository.insert(client, "stream:member_added", {
+        workspaceId: stream.workspaceId,
+        streamId,
+        memberId,
+        stream,
+      })
+
+      return membership
     })
   }
 
   async removeMember(streamId: string, memberId: string): Promise<boolean> {
-    return withTransaction(this.pool, (client) => StreamMemberRepository.delete(client, streamId, memberId))
+    return withTransaction(this.pool, async (client) => {
+      const stream = await StreamRepository.findById(client, streamId)
+      if (!stream) {
+        throw new StreamNotFoundError()
+      }
+
+      const deleted = await StreamMemberRepository.delete(client, streamId, memberId)
+
+      if (deleted) {
+        await OutboxRepository.insert(client, "stream:member_removed", {
+          workspaceId: stream.workspaceId,
+          streamId,
+          memberId,
+        })
+      }
+
+      return deleted
+    })
   }
 
   async getMembers(streamId: string): Promise<StreamMember[]> {

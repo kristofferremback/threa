@@ -107,6 +107,8 @@ export {
   NOTIFICATION_LEVELS,
   type NotificationLevel,
   NotificationLevels,
+  type NotificationConfig,
+  NOTIFICATION_CONFIG,
   // Activity types
   ACTIVITY_TYPES,
   type ActivityType,

@@ -1,8 +1,7 @@
-import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback, type ReactNode } from "react"
+import { useRef, useEffect, useLayoutEffect, useMemo, useCallback, type ReactNode } from "react"
 import { Link, useParams, useNavigate, useSearchParams } from "react-router-dom"
 import {
   MoreHorizontal,
-  Pencil,
   Archive,
   Search as SearchIcon,
   FileEdit,
@@ -15,10 +14,10 @@ import {
   Plus,
   ChevronRight,
   Bell,
+  Lock,
 } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   DropdownMenu,
@@ -47,7 +46,8 @@ import { useQuickSwitcher, useCoordinatedLoading, useSidebar, type ViewMode } fr
 import { UnreadBadge } from "@/components/unread-badge"
 import { MentionIndicator } from "@/components/mention-indicator"
 import { RelativeTime } from "@/components/relative-time"
-import { StreamTypes, AuthorTypes, type AuthorType, type StreamWithPreview } from "@threa/types"
+import { StreamTypes, Visibilities, AuthorTypes, type AuthorType, type StreamWithPreview } from "@threa/types"
+import { useStreamSettings } from "@/components/stream-settings/use-stream-settings"
 import { useQueryClient } from "@tanstack/react-query"
 import { ThemeDropdown } from "@/components/theme-dropdown"
 import { ThreaLogo } from "@/components/threa-logo"
@@ -340,8 +340,10 @@ function StreamItemPreview({ preview, getActorName, compact, showPreviewOnHover 
 }
 
 function StreamItemContextMenu({ children }: { children: ReactNode }) {
+  const { setMenuOpen } = useSidebar()
+
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={setMenuOpen}>
       <DropdownMenuTrigger asChild>
         <Button
           variant="ghost"
@@ -698,6 +700,7 @@ function StreamItem({
   scrollContainerRef,
 }: StreamItemProps) {
   const { getActorName } = useActors(workspaceId)
+  const { openStreamSettings } = useStreamSettings()
   const itemRef = useRef<HTMLAnchorElement>(null)
   const hasUnread = unreadCount > 0
   const preview = stream.lastMessagePreview
@@ -790,6 +793,9 @@ function StreamItem({
                 <span className="font-normal text-muted-foreground/60 text-xs"> · {threadRootContext}</span>
               )}
             </span>
+            {stream.type === StreamTypes.CHANNEL && stream.visibility === Visibilities.PRIVATE && (
+              <Lock className="h-3 w-3 shrink-0 text-muted-foreground/60" />
+            )}
             <MentionIndicator count={mentionCount} className="ml-auto" />
           </div>
           <StreamItemPreview
@@ -802,9 +808,14 @@ function StreamItem({
       </div>
 
       <StreamItemContextMenu>
-        <DropdownMenuItem disabled className="text-muted-foreground">
-          <Pencil className="mr-2 h-4 w-4" />
-          Settings (coming soon)
+        <DropdownMenuItem
+          onClick={(e) => {
+            e.stopPropagation()
+            openStreamSettings(stream.id)
+          }}
+        >
+          <Settings className="mr-2 h-4 w-4" />
+          Settings
         </DropdownMenuItem>
       </StreamItemContextMenu>
     </Link>
@@ -841,13 +852,11 @@ function ScratchpadItem({
   showPreviewOnHover = false,
   scrollContainerRef,
 }: ScratchpadItemProps) {
-  const { stream, isDraft, rename, archive } = useStreamOrDraft(workspaceId, streamWithPreview.id)
+  const { stream, isDraft, archive } = useStreamOrDraft(workspaceId, streamWithPreview.id)
   const { getActorName } = useActors(workspaceId)
+  const { openStreamSettings } = useStreamSettings()
   const itemRef = useRef<HTMLAnchorElement>(null)
   const hasUnread = unreadCount > 0
-  const [isEditing, setIsEditing] = useState(false)
-  const [editValue, setEditValue] = useState("")
-  const inputRef = useRef<HTMLInputElement>(null)
 
   const currentDisplayName = stream?.displayName ?? streamWithPreview.displayName ?? null
   const name = currentDisplayName || streamFallbackLabel("scratchpad", "sidebar")
@@ -855,51 +864,8 @@ function ScratchpadItem({
 
   useUrgencyTracking(itemRef, streamWithPreview.id, streamWithPreview.urgency, scrollContainerRef)
 
-  useEffect(() => {
-    if (isEditing && inputRef.current) {
-      inputRef.current.focus()
-      inputRef.current.select()
-    }
-  }, [isEditing])
-
-  const handleStartRename = () => {
-    setEditValue(currentDisplayName || "")
-    setIsEditing(true)
-  }
-
-  const handleSaveRename = async () => {
-    const trimmed = editValue.trim()
-    setIsEditing(false)
-    if (!trimmed || trimmed === currentDisplayName) return
-    await rename(trimmed)
-  }
-
   const handleArchive = async () => {
     await archive()
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      handleSaveRename()
-    } else if (e.key === "Escape") {
-      setIsEditing(false)
-    }
-  }
-
-  if (isEditing) {
-    return (
-      <div className="px-1">
-        <Input
-          ref={inputRef}
-          value={editValue}
-          onChange={(e) => setEditValue(e.target.value)}
-          onBlur={handleSaveRename}
-          onKeyDown={handleKeyDown}
-          className="h-8 text-sm"
-          placeholder="Scratchpad name"
-        />
-      </div>
-    )
   }
 
   return (
@@ -935,20 +901,20 @@ function ScratchpadItem({
       </div>
 
       <StreamItemContextMenu>
+        {!isDraft && (
+          <DropdownMenuItem
+            onClick={(e) => {
+              e.stopPropagation()
+              openStreamSettings(streamWithPreview.id)
+            }}
+          >
+            <Settings className="mr-2 h-4 w-4" />
+            Settings
+          </DropdownMenuItem>
+        )}
+        {!isDraft && <DropdownMenuSeparator />}
         <DropdownMenuItem
           onClick={(e) => {
-            e.preventDefault()
-            e.stopPropagation()
-            handleStartRename()
-          }}
-        >
-          <Pencil className="mr-2 h-4 w-4" />
-          Rename
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          onClick={(e) => {
-            e.preventDefault()
             e.stopPropagation()
             handleArchive()
           }}
