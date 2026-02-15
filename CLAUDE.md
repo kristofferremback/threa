@@ -17,6 +17,12 @@ Default to Bun instead of Node.js:
 - `bun run <script>` instead of `npm run <script>`
 - Bun auto-loads `.env` - don't use dotenv
 
+## Workflow: Tests First, Always Verify
+
+**Write tests before implementation.** Tests describe the feature being built. Write the E2E or unit tests first, run them to confirm they fail for the right reasons, then build the implementation to make them pass.
+
+**Always run tests after writing them.** Never submit test code without executing it. Run `bun run test:e2e` for E2E tests, `bun run test` for unit tests. Fix failures before moving on.
+
 ## Project Structure
 
 Monorepo with Bun workspaces:

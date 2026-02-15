@@ -174,8 +174,11 @@ export const StreamMemberRepository = {
   },
 
   async countByStreamForUpdate(db: Querier, streamId: string): Promise<number> {
+    // Lock rows first, then count — FOR UPDATE can't be used with aggregates
     const result = await db.query<{ count: string }>(sql`
-      SELECT COUNT(*) FROM stream_members WHERE stream_id = ${streamId} FOR UPDATE
+      SELECT COUNT(*) FROM (
+        SELECT 1 FROM stream_members WHERE stream_id = ${streamId} FOR UPDATE
+      ) locked
     `)
     return parseInt(result.rows[0].count, 10)
   },
