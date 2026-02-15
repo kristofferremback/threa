@@ -4,8 +4,10 @@ import type { StreamService } from "./service"
 import type { EventService, MessageCreatedPayload } from "../messaging"
 import type { ActivityService } from "../activity"
 import type { StreamEvent } from "./event-repository"
-import type { EventType } from "@threa/types"
+import type { EventType, StreamType } from "@threa/types"
+import { StreamTypes, SLUG_PATTERN } from "@threa/types"
 import { serializeBigInt } from "../../lib/serialization"
+import { HttpError } from "../../lib/errors"
 import { streamTypeSchema, visibilitySchema, companionModeSchema, notificationLevelSchema } from "../../lib/schemas"
 
 const createStreamSchema = z
@@ -13,8 +15,8 @@ const createStreamSchema = z
     type: streamTypeSchema.extract(["scratchpad", "channel", "thread"]),
     slug: z
       .string()
-      .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, {
-        message: "Slug must be lowercase alphanumeric with hyphens (no leading/trailing hyphens)",
+      .regex(SLUG_PATTERN, {
+        message: "Slug must start with a letter and contain only lowercase letters, numbers, hyphens, or underscores",
       })
       .optional(),
     displayName: z.string().min(1).max(100).optional(),
@@ -36,7 +38,14 @@ const createStreamSchema = z
 
 const updateStreamSchema = z.object({
   displayName: z.string().min(1).max(100).optional(),
+  slug: z
+    .string()
+    .regex(SLUG_PATTERN, {
+      message: "Slug must start with a letter and contain only lowercase letters, numbers, hyphens, or underscores",
+    })
+    .optional(),
   description: z.string().max(500).optional(),
+  visibility: visibilitySchema.optional(),
 })
 
 const updateCompanionModeSchema = z.object({
@@ -55,6 +64,48 @@ const setNotificationLevelSchema = z.object({
 const markAsReadSchema = z.object({
   lastEventId: z.string(),
 })
+
+const checkSlugAvailableSchema = z.object({
+  slug: z.string().min(1, "slug query parameter is required"),
+  exclude: z.string().optional(),
+})
+
+const addMemberSchema = z.object({
+  memberId: z.string().min(1, "memberId is required"),
+})
+
+// Exhaustive: adding a StreamType forces a decision here
+const addMemberAllowed: Record<StreamType, boolean> = {
+  [StreamTypes.CHANNEL]: true,
+  [StreamTypes.THREAD]: true,
+  [StreamTypes.SCRATCHPAD]: false,
+  [StreamTypes.DM]: false,
+  [StreamTypes.SYSTEM]: false,
+}
+
+const disallowedUpdateFields: Record<StreamType, Record<string, string> | null> = {
+  [StreamTypes.CHANNEL]: { displayName: "Channels cannot set displayName — use slug" },
+  [StreamTypes.SCRATCHPAD]: { slug: "Scratchpads do not have slugs", visibility: "Scratchpads are always private" },
+  [StreamTypes.THREAD]: {
+    slug: "Threads inherit slug and visibility from parent",
+    visibility: "Threads inherit slug and visibility from parent",
+  },
+  [StreamTypes.DM]: null,
+  [StreamTypes.SYSTEM]: null,
+}
+
+function updateSchemaForType(streamType: StreamType) {
+  const disallowed = disallowedUpdateFields[streamType]
+  if (disallowed === null) return null
+
+  return updateStreamSchema.superRefine((data, ctx) => {
+    for (const [field, message] of Object.entries(disallowed)) {
+      if (data[field as keyof typeof data] !== undefined) {
+        ctx.addIssue({ code: "custom", path: [field], message })
+      }
+    }
+  })
+}
 
 export {
   createStreamSchema,
@@ -149,7 +200,14 @@ export function createStreamHandlers({ streamService, eventService, activityServ
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
 
-      const result = updateStreamSchema.safeParse(req.body)
+      const stream = await streamService.validateStreamAccess(streamId, workspaceId, memberId)
+
+      const schema = updateSchemaForType(stream.type)
+      if (!schema) {
+        throw new HttpError("Cannot update this stream type", { status: 403, code: "STREAM_IMMUTABLE" })
+      }
+
+      const result = schema.safeParse(req.body)
       if (!result.success) {
         return res.status(400).json({
           error: "Validation failed",
@@ -157,14 +215,9 @@ export function createStreamHandlers({ streamService, eventService, activityServ
         })
       }
 
-      const stream = await streamService.validateStreamAccess(streamId, workspaceId, memberId)
+      const { displayName, slug, description, visibility } = result.data
 
-      // Only allow updates to scratchpads (channels have fixed slugs/names)
-      if (stream.type !== "scratchpad") {
-        return res.status(403).json({ error: "Only scratchpads can be updated" })
-      }
-
-      const updated = await streamService.updateStream(streamId, result.data)
+      const updated = await streamService.updateStream(streamId, { displayName, slug, description, visibility })
       res.json({ stream: updated })
     },
 
@@ -365,6 +418,58 @@ export function createStreamHandlers({ streamService, eventService, activityServ
           latestSequence: latestSequence.toString(),
         },
       })
+    },
+
+    async checkSlugAvailable(req: Request, res: Response) {
+      const workspaceId = req.workspaceId!
+
+      const result = checkSlugAvailableSchema.safeParse(req.query)
+      if (!result.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: z.flattenError(result.error).fieldErrors,
+        })
+      }
+
+      const available = await streamService.checkSlugAvailable(workspaceId, result.data.slug, result.data.exclude)
+      res.json({ available })
+    },
+
+    async addMember(req: Request, res: Response) {
+      const actorId = req.member!.id
+      const workspaceId = req.workspaceId!
+      const { streamId } = req.params
+
+      const result = addMemberSchema.safeParse(req.body)
+      if (!result.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: z.flattenError(result.error).fieldErrors,
+        })
+      }
+
+      const stream = await streamService.validateStreamAccess(streamId, workspaceId, actorId)
+
+      if (!addMemberAllowed[stream.type]) {
+        throw new HttpError("Cannot add members to this stream type", { status: 400, code: "ADD_MEMBER_NOT_ALLOWED" })
+      }
+
+      const membership = await streamService.addMember(streamId, result.data.memberId, workspaceId)
+      res.status(201).json({ membership })
+    },
+
+    async removeMember(req: Request, res: Response) {
+      const actor = req.member!
+      const workspaceId = req.workspaceId!
+      const { streamId, memberId } = req.params
+
+      if (actor.role !== "owner" && actor.role !== "admin") {
+        throw new HttpError("Only workspace owners and admins can remove members", { status: 403, code: "FORBIDDEN" })
+      }
+
+      await streamService.validateStreamAccess(streamId, workspaceId, actor.id)
+      await streamService.removeMember(streamId, memberId)
+      res.status(204).send()
     },
   }
 }

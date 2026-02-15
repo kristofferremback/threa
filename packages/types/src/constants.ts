@@ -83,6 +83,20 @@ export const NotificationLevels = {
   MUTED: "muted",
 } as const satisfies Record<string, NotificationLevel>
 
+/** Per-stream-type notification config: which levels are allowed and what the default is */
+export interface NotificationConfig {
+  defaultLevel: NotificationLevel
+  allowedLevels: readonly NotificationLevel[]
+}
+
+export const NOTIFICATION_CONFIG: Record<StreamType, NotificationConfig> = {
+  scratchpad: { defaultLevel: "everything", allowedLevels: ["everything", "muted"] },
+  dm: { defaultLevel: "everything", allowedLevels: ["everything", "muted"] },
+  system: { defaultLevel: "everything", allowedLevels: ["everything", "muted"] },
+  channel: { defaultLevel: "mentions", allowedLevels: ["everything", "activity", "mentions", "muted"] },
+  thread: { defaultLevel: "activity", allowedLevels: ["everything", "activity", "mentions", "muted"] },
+}
+
 // Activity types
 export const ACTIVITY_TYPES = ["mention", "message"] as const
 export type ActivityType = (typeof ACTIVITY_TYPES)[number]

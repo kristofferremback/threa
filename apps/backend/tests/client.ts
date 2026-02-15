@@ -138,6 +138,8 @@ export interface Stream {
   type: string
   displayName: string | null
   slug: string | null
+  description: string | null
+  visibility: string
   companionMode: string
   workspaceId: string
 }
@@ -694,6 +696,26 @@ export async function getEmojis(client: TestClient, workspaceId: string): Promis
     throw new Error(`Get emojis failed: ${JSON.stringify(data)}`)
   }
   return data.emojis
+}
+
+// Raw helpers that return { status, data } for asserting on errors
+
+export function updateStream(client: TestClient, workspaceId: string, streamId: string, body: Record<string, unknown>) {
+  return client.patch<unknown>(`/api/workspaces/${workspaceId}/streams/${streamId}`, body)
+}
+
+export function addStreamMember(client: TestClient, workspaceId: string, streamId: string, memberId: string) {
+  return client.post<unknown>(`/api/workspaces/${workspaceId}/streams/${streamId}/members`, { memberId })
+}
+
+export function removeStreamMember(client: TestClient, workspaceId: string, streamId: string, memberId: string) {
+  return client.delete<unknown>(`/api/workspaces/${workspaceId}/streams/${streamId}/members/${memberId}`)
+}
+
+export function checkSlugAvailable(client: TestClient, workspaceId: string, slug: string, exclude?: string) {
+  const params = new URLSearchParams({ slug })
+  if (exclude) params.set("exclude", exclude)
+  return client.get<{ available: boolean }>(`/api/workspaces/${workspaceId}/streams/slug-available?${params}`)
 }
 
 /**

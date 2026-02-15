@@ -1,19 +1,27 @@
 import { z } from "zod"
 import { Pool } from "pg"
-import { withClient, withTransaction } from "../../db"
+import { withClient, withTransaction, type Querier } from "../../db"
 import { StreamRepository, Stream, StreamWithPreview, LastMessagePreview } from "./repository"
 import { StreamMemberRepository, StreamMember } from "./member-repository"
 import { StreamEventRepository } from "./event-repository"
 import { MessageRepository } from "../messaging"
 import { OutboxRepository } from "../../lib/outbox"
 import { streamId, eventId } from "../../lib/id"
-import { DuplicateSlugError, HttpError, StreamNotFoundError, MessageNotFoundError } from "../../lib/errors"
+import {
+  DuplicateSlugError,
+  HttpError,
+  StreamNotFoundError,
+  MessageNotFoundError,
+  isUniqueViolation,
+} from "../../lib/errors"
 import { formatParticipantNames } from "./display-name"
+import { MemberRepository } from "../workspaces"
 import {
   StreamTypes,
   Visibilities,
   CompanionModes,
   type StreamType,
+  type Visibility,
   type CompanionMode,
   type NotificationLevel,
 } from "@threa/types"
@@ -442,17 +450,50 @@ export class StreamService {
     })
   }
 
-  async updateStream(streamId: string, data: { displayName?: string; description?: string }): Promise<Stream | null> {
-    return withTransaction(this.pool, async (client) => {
-      const stream = await StreamRepository.update(client, streamId, data)
-      if (stream) {
-        await OutboxRepository.insert(client, "stream:updated", {
-          workspaceId: stream.workspaceId,
-          streamId: stream.id,
-          stream,
-        })
+  async updateStream(
+    streamId: string,
+    data: { displayName?: string; slug?: string; description?: string; visibility?: Visibility }
+  ): Promise<Stream | null> {
+    try {
+      return await withTransaction(this.pool, async (client) => {
+        // Slug uniqueness check (exclude current stream)
+        if (data.slug) {
+          const current = await StreamRepository.findById(client, streamId)
+          if (current && data.slug !== current.slug) {
+            const slugExists = await StreamRepository.slugExistsInWorkspace(client, current.workspaceId, data.slug)
+            if (slugExists) {
+              throw new DuplicateSlugError(data.slug)
+            }
+          }
+        }
+
+        const stream = await StreamRepository.update(client, streamId, data)
+        if (stream) {
+          await OutboxRepository.insert(client, "stream:updated", {
+            workspaceId: stream.workspaceId,
+            streamId: stream.id,
+            stream,
+          })
+        }
+        return stream
+      })
+    } catch (error) {
+      // DB unique constraint catches races the application check misses
+      if (data.slug && isUniqueViolation(error, "streams_workspace_id_slug_key")) {
+        throw new DuplicateSlugError(data.slug)
       }
-      return stream
+      throw error
+    }
+  }
+
+  async checkSlugAvailable(workspaceId: string, slug: string, excludeStreamId?: string): Promise<boolean> {
+    return withClient(this.pool, async (client) => {
+      if (excludeStreamId) {
+        const current = await StreamRepository.findById(client, excludeStreamId)
+        if (current && current.slug === slug) return true
+      }
+      const exists = await StreamRepository.slugExistsInWorkspace(client, workspaceId, slug)
+      return !exists
     })
   }
 
@@ -502,28 +543,93 @@ export class StreamService {
   }
 
   // Member operations
-  async addMember(streamId: string, memberId: string): Promise<StreamMember> {
+
+  private async addToStream(client: Querier, stream: Stream, memberId: string): Promise<StreamMember> {
+    const membership = await StreamMemberRepository.insert(client, stream.id, memberId)
+
+    const latestEventIds = await StreamEventRepository.getLatestEventIdByStreamBatch(client, [stream.id])
+    const latestEventId = latestEventIds.get(stream.id)
+    if (latestEventId) {
+      await StreamMemberRepository.update(client, stream.id, memberId, { lastReadEventId: latestEventId })
+    }
+
+    await OutboxRepository.insert(client, "stream:member_added", {
+      workspaceId: stream.workspaceId,
+      streamId: stream.id,
+      memberId,
+      stream,
+    })
+
+    return membership
+  }
+
+  async addMember(streamId: string, memberId: string, workspaceId: string): Promise<StreamMember> {
     return withTransaction(this.pool, async (client) => {
-      // Get the stream to check if it has a root (is a thread)
       const stream = await StreamRepository.findById(client, streamId)
       if (!stream) {
         throw new StreamNotFoundError()
       }
 
-      // If this is a thread, also add the member to the root stream
+      // Verify the target member belongs to this workspace
+      const member = await MemberRepository.findById(client, memberId)
+      if (!member || member.workspaceId !== workspaceId) {
+        throw new HttpError("Member not found in this workspace", { status: 404, code: "MEMBER_NOT_FOUND" })
+      }
+
       if (stream.rootStreamId) {
         const isRootMember = await StreamMemberRepository.isMember(client, stream.rootStreamId, memberId)
         if (!isRootMember) {
-          await StreamMemberRepository.insert(client, stream.rootStreamId, memberId)
+          const rootStream = await StreamRepository.findById(client, stream.rootStreamId)
+          if (rootStream) await this.addToStream(client, rootStream, memberId)
         }
       }
 
-      return StreamMemberRepository.insert(client, streamId, memberId)
+      return this.addToStream(client, stream, memberId)
     })
   }
 
+  private async removeFromStream(client: Querier, stream: Stream, memberId: string): Promise<boolean> {
+    const deleted = await StreamMemberRepository.delete(client, stream.id, memberId)
+    if (deleted) {
+      await OutboxRepository.insert(client, "stream:member_removed", {
+        workspaceId: stream.workspaceId,
+        streamId: stream.id,
+        memberId,
+      })
+    }
+    return deleted
+  }
+
   async removeMember(streamId: string, memberId: string): Promise<boolean> {
-    return withTransaction(this.pool, (client) => StreamMemberRepository.delete(client, streamId, memberId))
+    return withTransaction(this.pool, async (client) => {
+      const stream = await StreamRepository.findById(client, streamId)
+      if (!stream) {
+        throw new StreamNotFoundError()
+      }
+
+      // Lock member rows and check count atomically to prevent racing removals
+      // from leaving a stream with zero members
+      const memberCount = await StreamMemberRepository.countByStreamForUpdate(client, streamId)
+      if (memberCount <= 1) {
+        throw new HttpError("Cannot remove the only member", { status: 400, code: "LAST_MEMBER" })
+      }
+
+      const deleted = await this.removeFromStream(client, stream, memberId)
+
+      if (deleted) {
+        // Batch-remove from all descendant threads the member is in (single recursive CTE)
+        const removedStreamIds = await StreamMemberRepository.deleteByMemberInDescendants(client, memberId, streamId)
+        for (const removedStreamId of removedStreamIds) {
+          await OutboxRepository.insert(client, "stream:member_removed", {
+            workspaceId: stream.workspaceId,
+            streamId: removedStreamId,
+            memberId,
+          })
+        }
+      }
+
+      return deleted
+    })
   }
 
   async getMembers(streamId: string): Promise<StreamMember[]> {

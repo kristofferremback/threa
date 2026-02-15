@@ -4,7 +4,14 @@ import { debugBootstrap } from "@/lib/bootstrap-debug"
 import { getQueryLoadState, isTerminalBootstrapError } from "@/lib/query-load-state"
 import { db } from "@/db"
 import { joinRoomBestEffort } from "@/lib/socket-room"
-import type { Stream, StreamMember, StreamType, WorkspaceBootstrap } from "@threa/types"
+import type {
+  Stream,
+  StreamMember,
+  StreamType,
+  StreamBootstrap,
+  WorkspaceBootstrap,
+  NotificationLevel,
+} from "@threa/types"
 import type { CreateStreamInput, UpdateStreamInput } from "@/api"
 import { workspaceKeys } from "./use-workspaces"
 
@@ -246,3 +253,80 @@ export function useArchiveStream(workspaceId: string) {
 
 // Backwards compatibility alias
 export const useDeleteStream = useArchiveStream
+
+export function useUnarchiveStream(workspaceId: string) {
+  const streamService = useStreamService()
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (streamId: string) => streamService.unarchive(workspaceId, streamId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: streamKeys.lists() })
+      queryClient.invalidateQueries({ queryKey: workspaceKeys.bootstrap(workspaceId) })
+    },
+  })
+}
+
+export function useSetNotificationLevel(workspaceId: string, streamId: string) {
+  const streamService = useStreamService()
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (notificationLevel: NotificationLevel | null) =>
+      streamService.setNotificationLevel(workspaceId, streamId, notificationLevel),
+    onSuccess: (membership) => {
+      // Update stream bootstrap membership
+      queryClient.setQueryData<StreamBootstrap>(streamKeys.bootstrap(workspaceId, streamId), (old) => {
+        if (!old) return old
+        return { ...old, membership }
+      })
+
+      // Update workspace bootstrap streamMemberships
+      queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
+        if (!old) return old
+        return {
+          ...old,
+          streamMemberships: old.streamMemberships.map((sm) =>
+            sm.streamId === streamId ? { ...sm, notificationLevel: membership.notificationLevel } : sm
+          ),
+        }
+      })
+    },
+  })
+}
+
+export function useAddStreamMember(workspaceId: string, streamId: string) {
+  const streamService = useStreamService()
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (memberId: string) => streamService.addMember(workspaceId, streamId, memberId),
+    onSuccess: (membership) => {
+      queryClient.setQueryData(streamKeys.bootstrap(workspaceId, streamId), (old: unknown) => {
+        if (!old || typeof old !== "object") return old
+        const bootstrap = old as { members?: StreamMember[] }
+        if (!bootstrap.members) return old
+        const exists = bootstrap.members.some((m) => m.memberId === membership.memberId)
+        if (exists) return old
+        return { ...bootstrap, members: [...bootstrap.members, membership] }
+      })
+    },
+  })
+}
+
+export function useRemoveStreamMember(workspaceId: string, streamId: string) {
+  const streamService = useStreamService()
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (memberId: string) => streamService.removeMember(workspaceId, streamId, memberId),
+    onSuccess: (_, memberId) => {
+      queryClient.setQueryData(streamKeys.bootstrap(workspaceId, streamId), (old: unknown) => {
+        if (!old || typeof old !== "object") return old
+        const bootstrap = old as { members?: StreamMember[] }
+        if (!bootstrap.members) return old
+        return { ...bootstrap, members: bootstrap.members.filter((m) => m.memberId !== memberId) }
+      })
+    },
+  })
+}

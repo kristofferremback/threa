@@ -64,7 +64,9 @@ export interface InsertStreamParams {
 
 export interface UpdateStreamParams {
   displayName?: string
+  slug?: string
   description?: string
+  visibility?: Visibility
   companionMode?: CompanionMode
   companionPersonaId?: string | null
   archivedAt?: Date | null
@@ -419,9 +421,17 @@ export const StreamRepository = {
       sets.push(`display_name = $${paramIndex++}`)
       values.push(params.displayName)
     }
+    if (params.slug !== undefined) {
+      sets.push(`slug = $${paramIndex++}`)
+      values.push(params.slug)
+    }
     if (params.description !== undefined) {
       sets.push(`description = $${paramIndex++}`)
       values.push(params.description)
+    }
+    if (params.visibility !== undefined) {
+      sets.push(`visibility = $${paramIndex++}`)
+      values.push(params.visibility)
     }
     if (params.companionMode !== undefined) {
       sets.push(`companion_mode = $${paramIndex++}`)

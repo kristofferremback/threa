@@ -17,6 +17,12 @@ Default to Bun instead of Node.js:
 - `bun run <script>` instead of `npm run <script>`
 - Bun auto-loads `.env` - don't use dotenv
 
+## Workflow: Tests First, Always Verify
+
+**Write tests before implementation.** Tests describe the feature being built. Write the E2E or unit tests first, run them to confirm they fail for the right reasons, then build the implementation to make them pass.
+
+**Always run tests after writing them.** Never submit test code without executing it. Run `bun run test:e2e` for E2E tests, `bun run test` for unit tests. Fix failures before moving on.
+
 ## Project Structure
 
 Monorepo with Bun workspaces:
@@ -202,6 +208,10 @@ Invariants are constraints that must hold across the entire codebase. Reference 
 
 **INV-54: No Language-Specific Heuristic Decisions** — Never assume English (or any specific language) and never use language-specific literal/regex heuristics to decide semantic behavior (for example memory recall detection, trivial-message filtering, research gating, or intent classification). Use LLM/model-based semantic decisions for language-dependent behavior.
 
+**INV-55: Zod for All Input Validation** — Validate all handler inputs (body, query, params) with Zod schemas. Never use manual `typeof` checks or hand-rolled validation. Zod gives exhaustive error collection (all violations returned, not just the first) and a consistent `{ error, details: fieldErrors }` response shape. Type-specific field rules use `superRefine` with config-driven disallowed-field maps.
+
+**INV-56: Batch DB Operations Over Loops** — When operating on multiple rows, use batch queries (`ANY()`, `unnest()`, multi-row `INSERT`, recursive CTEs) instead of per-item loops with individual queries. PostgreSQL handles set operations efficiently; per-row round-trips scale horribly. Same-connection calls within a transaction (e.g. outbox inserts) are acceptable when batch alternatives add disproportionate complexity.
+
 When introducing a new invariant:
 
 1. Document here with next available ID
@@ -229,3 +239,20 @@ When introducing a new invariant:
 **AI integration:** All AI calls through createAI() wrapper (INV-28). Model format: provider:modelPath. Telemetry required (INV-19). See docs/model-reference.md and docs/backend/ai-integration.md.
 
 **Development:** Database/infra only in primary /threa folder, never worktrees. Feature work in worktrees (bun run setup:worktree). See .claude/reference.md for full setup.
+
+## Frontend Patterns
+
+**Cache-only observer (TanStack Query v5):** To subscribe reactively to query cache without triggering fetches, provide a `queryFn` that reads from the cache. `enabled: false` alone is not enough — v5 requires `queryFn` to be present. Never use `queryClient.getQueryData()` directly in component render — it's a non-reactive snapshot.
+
+```tsx
+const { data } = useQuery({
+  queryKey: someKeys.bootstrap(id),
+  queryFn: () => queryClient.getQueryData<SomeType>(someKeys.bootstrap(id)) ?? null,
+  enabled: false,
+  staleTime: Infinity,
+})
+```
+
+See `use-workspace-emoji.ts` and `use-socket-events.ts` for reference.
+
+**WorkspaceBootstrap.streams type:** `streams` is `StreamWithPreview[]`, not `Stream[]`. When adding streams to the sidebar cache, spread with `{ ...stream, lastMessagePreview: null }`.

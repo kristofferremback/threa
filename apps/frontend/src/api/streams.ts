@@ -7,6 +7,7 @@ import type {
   StreamBootstrap,
   CreateStreamInput,
   UpdateStreamInput,
+  NotificationLevel,
 } from "@threa/types"
 
 export type { StreamBootstrap, CreateStreamInput, UpdateStreamInput }
@@ -69,6 +70,39 @@ export const streamsApi = {
       `/api/workspaces/${workspaceId}/streams/${streamId}/events${query ? `?${query}` : ""}`
     )
     return res.events
+  },
+
+  async checkSlugAvailable(workspaceId: string, slug: string, excludeStreamId?: string): Promise<boolean> {
+    const params = new URLSearchParams({ slug })
+    if (excludeStreamId) params.set("exclude", excludeStreamId)
+    const res = await api.get<{ available: boolean }>(
+      `/api/workspaces/${workspaceId}/streams/slug-available?${params.toString()}`
+    )
+    return res.available
+  },
+
+  async addMember(workspaceId: string, streamId: string, memberId: string): Promise<StreamMember> {
+    const res = await api.post<{ membership: StreamMember }>(
+      `/api/workspaces/${workspaceId}/streams/${streamId}/members`,
+      { memberId }
+    )
+    return res.membership
+  },
+
+  async removeMember(workspaceId: string, streamId: string, memberId: string): Promise<void> {
+    await api.delete(`/api/workspaces/${workspaceId}/streams/${streamId}/members/${memberId}`)
+  },
+
+  async setNotificationLevel(
+    workspaceId: string,
+    streamId: string,
+    notificationLevel: NotificationLevel | null
+  ): Promise<StreamMember> {
+    const res = await api.post<{ membership: StreamMember }>(
+      `/api/workspaces/${workspaceId}/streams/${streamId}/notification-level`,
+      { notificationLevel }
+    )
+    return res.membership
   },
 
   async join(workspaceId: string, streamId: string): Promise<StreamMember> {

@@ -84,9 +84,10 @@ export function createAuthStubHandlers(deps: Dependencies): AuthStubHandlers {
 
   const handleStreamJoin: RequestHandler = async (req, res) => {
     const memberId = req.member!.id
+    const workspaceId = req.workspaceId!
     const { streamId } = req.params
 
-    const member = await streamService.addMember(streamId, memberId)
+    const member = await streamService.addMember(streamId, memberId, workspaceId)
     res.json({ member })
   }
 

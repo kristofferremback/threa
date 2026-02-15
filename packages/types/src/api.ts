@@ -37,6 +37,7 @@ export interface CreateStreamInput {
 
 export interface UpdateStreamInput {
   displayName?: string
+  slug?: string
   description?: string
   visibility?: Visibility
   companionMode?: CompanionMode

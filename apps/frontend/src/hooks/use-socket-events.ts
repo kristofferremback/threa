@@ -216,15 +216,26 @@ export function useSocketEvents(workspaceId: string) {
         return { ...old, stream: payload.stream }
       })
 
-      // Update workspace bootstrap cache (sidebar) - merge to preserve lastMessagePreview
-      queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), (old: unknown) => {
-        if (!old || typeof old !== "object") return old
-        const bootstrap = old as { streams?: Stream[] }
-        if (!bootstrap.streams) return old
-        return {
-          ...bootstrap,
-          streams: bootstrap.streams.map((s) => (s.id === payload.stream.id ? { ...s, ...payload.stream } : s)),
+      // Update workspace bootstrap cache (sidebar) - handle visibility changes
+      queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
+        if (!old?.streams) return old
+        const exists = old.streams.some((s) => s.id === payload.stream.id)
+        if (exists) {
+          const isMember = old.streamMemberships?.some((m) => m.streamId === payload.stream.id)
+          // Stream went private and user isn't a member — remove from sidebar
+          if (payload.stream.visibility === "private" && !isMember) {
+            return { ...old, streams: old.streams.filter((s) => s.id !== payload.stream.id) }
+          }
+          return {
+            ...old,
+            streams: old.streams.map((s) => (s.id === payload.stream.id ? { ...s, ...payload.stream } : s)),
+          }
         }
+        // Stream not in list — add if now visible (e.g. became public)
+        if (payload.stream.visibility === "public") {
+          return { ...old, streams: [...old.streams, { ...payload.stream, lastMessagePreview: null }] }
+        }
+        return old
       })
 
       // Update IndexedDB
@@ -533,6 +544,104 @@ export function useSocketEvents(workspaceId: string) {
       db.streams.update(payload.streamId, { displayName: payload.displayName, _cachedAt: Date.now() })
     })
 
+    // Handle stream member added
+    socket.on(
+      "stream:member_added",
+      (payload: { workspaceId: string; streamId: string; memberId: string; stream: Stream }) => {
+        if (payload.workspaceId !== workspaceId) return
+
+        // Update stream bootstrap members list
+        queryClient.setQueryData(streamKeys.bootstrap(workspaceId, payload.streamId), (old: unknown) => {
+          if (!old || typeof old !== "object") return old
+          const bootstrap = old as { members?: StreamMember[] }
+          if (!bootstrap.members) return old
+          const exists = bootstrap.members.some((m: StreamMember) => m.memberId === payload.memberId)
+          if (exists) return old
+          return {
+            ...bootstrap,
+            members: [
+              ...bootstrap.members,
+              {
+                streamId: payload.streamId,
+                memberId: payload.memberId,
+                pinned: false,
+                pinnedAt: null,
+                notificationLevel: null,
+                lastReadEventId: null,
+                lastReadAt: null,
+                joinedAt: new Date().toISOString(),
+              },
+            ],
+          }
+        })
+
+        // If the added member is the current user, add to streamMemberships + sidebar
+        queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
+          if (!old) return old
+          const currentMember = user && old.members?.find((m: WorkspaceMember) => m.userId === user.id)
+          if (!currentMember || payload.memberId !== currentMember.id) return old
+
+          const membershipExists = old.streamMemberships.some((m: StreamMember) => m.streamId === payload.streamId)
+          const streamExists = old.streams?.some((s) => s.id === payload.streamId)
+
+          return {
+            ...old,
+            streamMemberships: membershipExists
+              ? old.streamMemberships
+              : [
+                  ...old.streamMemberships,
+                  {
+                    streamId: payload.streamId,
+                    memberId: payload.memberId,
+                    pinned: false,
+                    pinnedAt: null,
+                    notificationLevel: null,
+                    lastReadEventId: null,
+                    lastReadAt: null,
+                    joinedAt: new Date().toISOString(),
+                  },
+                ],
+            streams: streamExists
+              ? old.streams
+              : [...(old.streams ?? []), { ...payload.stream, lastMessagePreview: null }],
+          }
+        })
+      }
+    )
+
+    // Handle stream member removed
+    socket.on("stream:member_removed", (payload: { workspaceId: string; streamId: string; memberId: string }) => {
+      if (payload.workspaceId !== workspaceId) return
+
+      // Update stream bootstrap members list
+      queryClient.setQueryData(streamKeys.bootstrap(workspaceId, payload.streamId), (old: unknown) => {
+        if (!old || typeof old !== "object") return old
+        const bootstrap = old as { members?: StreamMember[] }
+        if (!bootstrap.members) return old
+        return {
+          ...bootstrap,
+          members: bootstrap.members.filter((m: StreamMember) => m.memberId !== payload.memberId),
+        }
+      })
+
+      // If the removed member is the current user, remove from streamMemberships
+      // and remove private streams from sidebar (no longer visible)
+      queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
+        if (!old) return old
+        const currentMember = user && old.members?.find((m: WorkspaceMember) => m.userId === user.id)
+        if (!currentMember || payload.memberId !== currentMember.id) return old
+
+        const removedStream = old.streams?.find((s) => s.id === payload.streamId)
+        const shouldRemoveFromSidebar = removedStream?.visibility === "private"
+
+        return {
+          ...old,
+          streamMemberships: old.streamMemberships.filter((m: StreamMember) => m.streamId !== payload.streamId),
+          streams: shouldRemoveFromSidebar ? old.streams?.filter((s) => s.id !== payload.streamId) : old.streams,
+        }
+      })
+    })
+
     // Handle user preferences updated (from other sessions of the same user)
     socket.on("user_preferences:updated", (payload: UserPreferencesUpdatedPayload) => {
       // Only update if it's for this workspace
@@ -583,6 +692,8 @@ export function useSocketEvents(workspaceId: string) {
       socket.off("stream:read")
       socket.off("stream:read_all")
       socket.off("stream:activity")
+      socket.off("stream:member_added")
+      socket.off("stream:member_removed")
       socket.off("user_preferences:updated")
       socket.off("activity:created")
     }
