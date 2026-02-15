@@ -202,6 +202,8 @@ Invariants are constraints that must hold across the entire codebase. Reference 
 
 **INV-54: No Language-Specific Heuristic Decisions** — Never assume English (or any specific language) and never use language-specific literal/regex heuristics to decide semantic behavior (for example memory recall detection, trivial-message filtering, research gating, or intent classification). Use LLM/model-based semantic decisions for language-dependent behavior.
 
+**INV-55: Zod for All Input Validation** — Validate all handler inputs (body, query, params) with Zod schemas. Never use manual `typeof` checks or hand-rolled validation. Zod gives exhaustive error collection (all violations returned, not just the first) and a consistent `{ error, details: fieldErrors }` response shape. Type-specific field rules use `superRefine` with config-driven disallowed-field maps.
+
 When introducing a new invariant:
 
 1. Document here with next available ID

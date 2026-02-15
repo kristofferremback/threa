@@ -490,9 +490,10 @@ export class StreamService {
     return withClient(this.pool, async (client) => {
       if (excludeStreamId) {
         const current = await StreamRepository.findById(client, excludeStreamId)
-        if (current && current.slug === slug) return false
+        if (current && current.slug === slug) return true
       }
-      return StreamRepository.slugExistsInWorkspace(client, workspaceId, slug)
+      const exists = await StreamRepository.slugExistsInWorkspace(client, workspaceId, slug)
+      return !exists
     })
   }
 

@@ -20,6 +20,10 @@ const completeMemberSetupSchema = z.object({
   locale: z.string().min(1, "locale is required"),
 })
 
+const checkSlugAvailableSchema = z.object({
+  slug: z.string().min(1, "slug query parameter is required"),
+})
+
 export { createWorkspaceSchema }
 
 interface Dependencies {
@@ -204,13 +208,16 @@ export function createWorkspaceHandlers({
 
     async checkSlugAvailability(req: Request, res: Response) {
       const workspaceId = req.workspaceId!
-      const slug = req.query.slug
 
-      if (typeof slug !== "string" || slug.length === 0) {
-        return res.status(400).json({ error: "slug query parameter is required" })
+      const result = checkSlugAvailableSchema.safeParse(req.query)
+      if (!result.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: z.flattenError(result.error).fieldErrors,
+        })
       }
 
-      const available = await workspaceService.isSlugAvailable(workspaceId, slug)
+      const available = await workspaceService.isSlugAvailable(workspaceId, result.data.slug)
       res.json({ available })
     },
   }

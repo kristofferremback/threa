@@ -4,7 +4,7 @@ import type { StreamService } from "./service"
 import type { EventService, MessageCreatedPayload } from "../messaging"
 import type { ActivityService } from "../activity"
 import type { StreamEvent } from "./event-repository"
-import type { EventType } from "@threa/types"
+import type { EventType, StreamType } from "@threa/types"
 import { StreamTypes, SLUG_PATTERN } from "@threa/types"
 import { serializeBigInt } from "../../lib/serialization"
 import { HttpError } from "../../lib/errors"
@@ -64,6 +64,48 @@ const setNotificationLevelSchema = z.object({
 const markAsReadSchema = z.object({
   lastEventId: z.string(),
 })
+
+const checkSlugAvailableSchema = z.object({
+  slug: z.string().min(1, "slug query parameter is required"),
+  exclude: z.string().optional(),
+})
+
+const addMemberSchema = z.object({
+  memberId: z.string().min(1, "memberId is required"),
+})
+
+// Exhaustive: adding a StreamType forces a decision here
+const addMemberAllowed: Record<StreamType, boolean> = {
+  [StreamTypes.CHANNEL]: true,
+  [StreamTypes.THREAD]: true,
+  [StreamTypes.SCRATCHPAD]: false,
+  [StreamTypes.DM]: false,
+  [StreamTypes.SYSTEM]: false,
+}
+
+const disallowedUpdateFields: Record<StreamType, Record<string, string> | null> = {
+  [StreamTypes.CHANNEL]: { displayName: "Channels cannot set displayName — use slug" },
+  [StreamTypes.SCRATCHPAD]: { slug: "Scratchpads do not have slugs", visibility: "Scratchpads are always private" },
+  [StreamTypes.THREAD]: {
+    slug: "Threads inherit slug and visibility from parent",
+    visibility: "Threads inherit slug and visibility from parent",
+  },
+  [StreamTypes.DM]: null,
+  [StreamTypes.SYSTEM]: null,
+}
+
+function updateSchemaForType(streamType: StreamType) {
+  const disallowed = disallowedUpdateFields[streamType]
+  if (disallowed === null) return null
+
+  return updateStreamSchema.superRefine((data, ctx) => {
+    for (const [field, message] of Object.entries(disallowed)) {
+      if (data[field as keyof typeof data] !== undefined) {
+        ctx.addIssue({ code: "custom", path: [field], message })
+      }
+    }
+  })
+}
 
 export {
   createStreamSchema,
@@ -158,7 +200,14 @@ export function createStreamHandlers({ streamService, eventService, activityServ
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
 
-      const result = updateStreamSchema.safeParse(req.body)
+      const stream = await streamService.validateStreamAccess(streamId, workspaceId, memberId)
+
+      const schema = updateSchemaForType(stream.type)
+      if (!schema) {
+        throw new HttpError("Cannot update this stream type", { status: 403, code: "STREAM_IMMUTABLE" })
+      }
+
+      const result = schema.safeParse(req.body)
       if (!result.success) {
         return res.status(400).json({
           error: "Validation failed",
@@ -166,36 +215,7 @@ export function createStreamHandlers({ streamService, eventService, activityServ
         })
       }
 
-      const stream = await streamService.validateStreamAccess(streamId, workspaceId, memberId)
-
       const { displayName, slug, description, visibility } = result.data
-
-      // Type-specific field validation
-      switch (stream.type) {
-        case StreamTypes.CHANNEL:
-          if (displayName) {
-            throw new HttpError("Channels cannot set displayName — use slug", { status: 400, code: "INVALID_FIELD" })
-          }
-          break
-        case StreamTypes.SCRATCHPAD:
-          if (slug) {
-            throw new HttpError("Scratchpads do not have slugs", { status: 400, code: "INVALID_FIELD" })
-          }
-          if (visibility) {
-            throw new HttpError("Scratchpads are always private", { status: 400, code: "INVALID_FIELD" })
-          }
-          break
-        case StreamTypes.THREAD:
-          if (slug || visibility) {
-            throw new HttpError("Threads inherit slug and visibility from parent", {
-              status: 400,
-              code: "INVALID_FIELD",
-            })
-          }
-          break
-        case StreamTypes.DM:
-          throw new HttpError("DMs cannot be updated", { status: 403, code: "DM_IMMUTABLE" })
-      }
 
       const updated = await streamService.updateStream(streamId, { displayName, slug, description, visibility })
       res.json({ stream: updated })
@@ -402,41 +422,39 @@ export function createStreamHandlers({ streamService, eventService, activityServ
 
     async checkSlugAvailable(req: Request, res: Response) {
       const workspaceId = req.workspaceId!
-      const slug = req.query.slug
-      const exclude = req.query.exclude
 
-      if (typeof slug !== "string" || slug.length === 0) {
-        return res.status(400).json({ error: "slug query parameter is required" })
+      const result = checkSlugAvailableSchema.safeParse(req.query)
+      if (!result.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: z.flattenError(result.error).fieldErrors,
+        })
       }
 
-      const exists = await streamService.checkSlugAvailable(
-        workspaceId,
-        slug,
-        typeof exclude === "string" ? exclude : undefined
-      )
-      res.json({ available: !exists })
+      const available = await streamService.checkSlugAvailable(workspaceId, result.data.slug, result.data.exclude)
+      res.json({ available })
     },
 
     async addMember(req: Request, res: Response) {
       const actorId = req.member!.id
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
-      const { memberId } = req.body
 
-      if (typeof memberId !== "string" || memberId.length === 0) {
-        return res.status(400).json({ error: "memberId is required" })
+      const result = addMemberSchema.safeParse(req.body)
+      if (!result.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: z.flattenError(result.error).fieldErrors,
+        })
       }
 
       const stream = await streamService.validateStreamAccess(streamId, workspaceId, actorId)
 
-      if (stream.type === StreamTypes.DM) {
-        throw new HttpError("Cannot add members to DMs", { status: 400, code: "DM_NO_ADD_MEMBER" })
-      }
-      if (stream.type === StreamTypes.SCRATCHPAD) {
-        throw new HttpError("Cannot add members to scratchpads", { status: 400, code: "SCRATCHPAD_NO_ADD_MEMBER" })
+      if (!addMemberAllowed[stream.type]) {
+        throw new HttpError("Cannot add members to this stream type", { status: 400, code: "ADD_MEMBER_NOT_ALLOWED" })
       }
 
-      const membership = await streamService.addMember(streamId, memberId, workspaceId)
+      const membership = await streamService.addMember(streamId, result.data.memberId, workspaceId)
       res.status(201).json({ membership })
     },
 
