@@ -1,6 +1,6 @@
 import { z } from "zod"
 import { Pool } from "pg"
-import { withClient, withTransaction } from "../../db"
+import { withClient, withTransaction, type Querier } from "../../db"
 import { StreamRepository, Stream, StreamWithPreview, LastMessagePreview } from "./repository"
 import { StreamMemberRepository, StreamMember } from "./member-repository"
 import { StreamEventRepository } from "./event-repository"
@@ -543,6 +543,26 @@ export class StreamService {
   }
 
   // Member operations
+
+  private async addToStream(client: Querier, stream: Stream, memberId: string): Promise<StreamMember> {
+    const membership = await StreamMemberRepository.insert(client, stream.id, memberId)
+
+    const latestEventIds = await StreamEventRepository.getLatestEventIdByStreamBatch(client, [stream.id])
+    const latestEventId = latestEventIds.get(stream.id)
+    if (latestEventId) {
+      await StreamMemberRepository.update(client, stream.id, memberId, { lastReadEventId: latestEventId })
+    }
+
+    await OutboxRepository.insert(client, "stream:member_added", {
+      workspaceId: stream.workspaceId,
+      streamId: stream.id,
+      memberId,
+      stream,
+    })
+
+    return membership
+  }
+
   async addMember(streamId: string, memberId: string, workspaceId: string): Promise<StreamMember> {
     return withTransaction(this.pool, async (client) => {
       const stream = await StreamRepository.findById(client, streamId)
@@ -556,31 +576,15 @@ export class StreamService {
         throw new HttpError("Member not found in this workspace", { status: 404, code: "MEMBER_NOT_FOUND" })
       }
 
-      // If this is a thread, also add the member to the root stream
       if (stream.rootStreamId) {
         const isRootMember = await StreamMemberRepository.isMember(client, stream.rootStreamId, memberId)
         if (!isRootMember) {
-          await StreamMemberRepository.insert(client, stream.rootStreamId, memberId)
+          const rootStream = await StreamRepository.findById(client, stream.rootStreamId)
+          if (rootStream) await this.addToStream(client, rootStream, memberId)
         }
       }
 
-      const membership = await StreamMemberRepository.insert(client, streamId, memberId)
-
-      // Initialize last read to latest event so the member doesn't see all history as unread
-      const latestEventIds = await StreamEventRepository.getLatestEventIdByStreamBatch(client, [streamId])
-      const latestEventId = latestEventIds.get(streamId)
-      if (latestEventId) {
-        await StreamMemberRepository.update(client, streamId, memberId, { lastReadEventId: latestEventId })
-      }
-
-      await OutboxRepository.insert(client, "stream:member_added", {
-        workspaceId: stream.workspaceId,
-        streamId,
-        memberId,
-        stream,
-      })
-
-      return membership
+      return this.addToStream(client, stream, memberId)
     })
   }
 
