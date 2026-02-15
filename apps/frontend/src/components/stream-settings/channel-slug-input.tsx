@@ -67,7 +67,7 @@ export function ChannelSlugInput({
   }, [])
 
   const handleChange = (raw: string) => {
-    const normalized = raw.toLowerCase().replace(/[^a-z0-9-]/g, "")
+    const normalized = raw.toLowerCase().replace(/[^a-z0-9_-]/g, "")
     onChange(normalized)
 
     if (normalized.length === 0) {
