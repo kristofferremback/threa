@@ -3,7 +3,6 @@ import { parseCookies } from "./lib/cookies"
 import type { AuthService } from "./auth/auth-service"
 import type { UserService } from "./auth/user-service"
 import type { StreamService } from "./features/streams"
-import type { WorkspaceService } from "./features/workspaces"
 import type { UserSocketRegistry } from "./lib/user-socket-registry"
 import { AgentSessionRepository } from "./features/agents"
 import { MemberRepository } from "./features/workspaces"
@@ -26,6 +25,7 @@ function normalizeRoomPattern(room: string): string {
     .replace(/stream:[\w]+/, "stream:{streamId}")
     .replace(/thread:[\w]+/, "thread:{threadId}")
     .replace(/agent_session:[\w]+/, "agent_session:{sessionId}")
+    .replace(/member:[\w]+/, "member:{memberId}")
 }
 
 /**
@@ -53,12 +53,11 @@ interface Dependencies {
   authService: AuthService
   userService: UserService
   streamService: StreamService
-  workspaceService: WorkspaceService
   userSocketRegistry: UserSocketRegistry
 }
 
 export function registerSocketHandlers(io: Server, deps: Dependencies) {
-  const { pool, authService, userService, streamService, workspaceService, userSocketRegistry } = deps
+  const { pool, authService, userService, streamService, userSocketRegistry } = deps
 
   // ===========================================================================
   // Authentication middleware
@@ -99,6 +98,9 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
       joinedRooms: new Map(),
     }
 
+    // Track member rooms per workspace for auto-leave on workspace leave
+    const memberRooms = new Map<string, { memberId: string; memberRoom: string }>()
+
     // =========================================================================
     // Room management
     // =========================================================================
@@ -116,8 +118,8 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
       const workspaceMatch = room.match(/^ws:([^:]+)$/)
       if (workspaceMatch) {
         const wsId = workspaceMatch[1]
-        const isMember = await workspaceService.isMember(wsId, userId)
-        if (!isMember) {
+        const member = await MemberRepository.findByUserIdInWorkspace(pool, wsId, userId)
+        if (!member) {
           socket.emit("error", { message: "Not authorized to join this workspace" })
           wsMessagesTotal.inc({ workspace_id: wsId, direction: "sent", event_type: "error", room_pattern: roomPattern })
           callback?.({ ok: false, error: "Not authorized to join this workspace" })
@@ -125,11 +127,16 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
         }
         socket.join(room)
 
+        // Auto-join member room for targeted event delivery (activity, commands, read state)
+        const memberRoom = `ws:${wsId}:member:${member.id}`
+        socket.join(memberRoom)
+        memberRooms.set(wsId, { memberId: member.id, memberRoom })
+
         // Track metrics
         wsConnectionsActive.inc({ workspace_id: wsId, room_pattern: roomPattern })
         metricsState.joinedRooms.set(room, { workspaceId: wsId, roomPattern })
 
-        logger.debug({ userId, room }, "Joined workspace room")
+        logger.debug({ userId, room, memberRoom }, "Joined workspace room")
         callback?.({ ok: true })
         return
       }
@@ -232,6 +239,17 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
       })
 
       socket.leave(room)
+
+      // Auto-leave member room when leaving a workspace room
+      const wsMatch = room.match(/^ws:([^:]+)$/)
+      if (wsMatch) {
+        const wsId = wsMatch[1]
+        const entry = memberRooms.get(wsId)
+        if (entry) {
+          socket.leave(entry.memberRoom)
+          memberRooms.delete(wsId)
+        }
+      }
 
       // Track metrics
       const roomInfo = metricsState.joinedRooms.get(room)

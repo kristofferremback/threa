@@ -306,7 +306,7 @@ export async function startServer(): Promise<ServerInstance> {
   io.adapter(createAdapter(pool))
 
   const userSocketRegistry = new UserSocketRegistry()
-  registerSocketHandlers(io, { pool, authService, userService, streamService, workspaceService, userSocketRegistry })
+  registerSocketHandlers(io, { pool, authService, userService, streamService, userSocketRegistry })
 
   const serverId = `server_${ulid()}`
 
@@ -460,7 +460,7 @@ export async function startServer(): Promise<ServerInstance> {
   const outboxDispatcher = new OutboxDispatcher({ listenPool: pools.listen })
 
   // Create handlers - each manages its own cursor, debouncing, and processing
-  const broadcastHandler = new BroadcastHandler(pool, io, userSocketRegistry)
+  const broadcastHandler = new BroadcastHandler(pool, io)
   const companionHandler = new CompanionHandler(pool, jobQueue)
   const namingHandler = new NamingHandler(pool, jobQueue)
   const emojiUsageHandler = new EmojiUsageHandler(pool)

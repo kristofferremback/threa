@@ -225,6 +225,57 @@ describe("ActivityFeedHandler", () => {
     expect(result).toEqual({ status: "no_events" })
   })
 
+  it("should publish outbox events on retry when activities already exist", async () => {
+    // Simulates retry: insertBatch returns pre-existing rows via ON CONFLICT DO UPDATE
+    const preExistingActivity = {
+      id: "activity_existing",
+      workspaceId: "ws_test",
+      memberId: "member_bob",
+      activityType: "mention",
+      streamId: "stream_test",
+      messageId: "msg_test",
+      actorId: "member_author",
+      actorType: "member",
+      context: { contentPreview: "hey @bob" },
+      readAt: null,
+      createdAt: new Date("2025-01-01T00:00:00Z"),
+    }
+
+    const event = makeMessageCreatedEvent(1n, {
+      contentMarkdown: "hey @bob check this",
+    })
+
+    spyOn(OutboxRepository, "fetchAfterId").mockResolvedValue([event] as any)
+    const insertSpy = spyOn(OutboxRepository, "insert").mockResolvedValue({} as any)
+
+    spyOn(dbModule, "withTransaction").mockImplementation(async (_pool, callback) => {
+      return callback({} as any)
+    })
+
+    const { handler, activityService } = createHandler()
+    ;(activityService.processMessageMentions as any).mockResolvedValue([preExistingActivity])
+
+    handler.handle()
+
+    await new Promise((r) => setTimeout(r, 300))
+
+    const want = {
+      workspaceId: "ws_test",
+      targetMemberId: "member_bob",
+      activity: {
+        id: "activity_existing",
+        activityType: "mention",
+        streamId: "stream_test",
+        messageId: "msg_test",
+        actorId: "member_author",
+        actorType: "member",
+        context: { contentPreview: "hey @bob" },
+        createdAt: "2025-01-01T00:00:00.000Z",
+      },
+    }
+    expect(insertSpy).toHaveBeenCalledWith({}, "activity:created", want)
+  })
+
   it("should advance cursor past all events including skipped ones", async () => {
     spyOn(OutboxRepository, "fetchAfterId").mockResolvedValue([
       { id: 1n, eventType: "stream:created", payload: {}, createdAt: new Date() },

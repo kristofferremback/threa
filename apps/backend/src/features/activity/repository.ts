@@ -84,7 +84,8 @@ export const ActivityRepository = {
         ${params.actorType},
         ${JSON.stringify(params.context ?? {})}
       )
-      ON CONFLICT (member_id, message_id, activity_type, actor_id) DO NOTHING
+      ON CONFLICT (member_id, message_id, activity_type, actor_id)
+      DO UPDATE SET id = member_activity.id
       RETURNING id, workspace_id, member_id, activity_type, stream_id, message_id, actor_id, actor_type, context, read_at, created_at
     `)
     return result.rows[0] ? mapRowToActivity(result.rows[0]) : null
@@ -113,7 +114,8 @@ export const ActivityRepository = {
         ${params.memberIds.map(() => params.actorType)}::text[],
         ${params.memberIds.map(() => contextJson)}::jsonb[]
       )
-      ON CONFLICT (member_id, message_id, activity_type, actor_id) DO NOTHING
+      ON CONFLICT (member_id, message_id, activity_type, actor_id)
+      DO UPDATE SET id = member_activity.id
       RETURNING id, workspace_id, member_id, activity_type, stream_id, message_id, actor_id, actor_type, context, read_at, created_at
     `)
     return result.rows.map(mapRowToActivity)
