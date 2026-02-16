@@ -263,6 +263,26 @@ export const WorkspaceRepository = {
     return result.rows[0] ? mapRowToMember(result.rows[0]) : null
   },
 
+  async updateMemberAvatarIfLatestUpload(
+    db: Querier,
+    memberId: string,
+    avatarUploadId: string,
+    avatarUrl: string
+  ): Promise<WorkspaceMember | null> {
+    const result = await db.query<WorkspaceMemberRow>(sql`
+      UPDATE workspace_members SET avatar_url = ${avatarUrl}
+      WHERE id = ${memberId}
+        AND ${avatarUploadId} = (
+          SELECT id FROM avatar_uploads
+          WHERE member_id = ${memberId}
+          ORDER BY created_at DESC, id DESC
+          LIMIT 1
+        )
+      RETURNING id, workspace_id, user_id, role, slug, name, description, avatar_url, timezone, locale, setup_completed, joined_at
+    `)
+    return result.rows[0] ? mapRowToMember(result.rows[0]) : null
+  },
+
   async getWorkosOrganizationId(db: Querier, workspaceId: string): Promise<string | null> {
     const result = await db.query<{ workos_organization_id: string | null }>(sql`
       SELECT workos_organization_id FROM workspaces WHERE id = ${workspaceId}

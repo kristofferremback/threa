@@ -1,5 +1,6 @@
 import { Pool } from "pg"
-import { sql, withTransaction } from "../../db"
+import { withTransaction } from "../../db"
+import { WorkspaceRepository } from "./repository"
 import { MemberRepository } from "./member-repository"
 import { AvatarUploadRepository } from "./avatar-upload-repository"
 import { OutboxRepository } from "../../lib/outbox"
@@ -39,18 +40,14 @@ export class AvatarProcessingService {
     // Phase 4: Transaction — atomically update member if this is still the latest upload (INV-20)
     let variantsUsed = false
     await withTransaction(this.pool, async (client) => {
-      const { rowCount } = await client.query(sql`
-        UPDATE workspace_members SET avatar_url = ${basePath}
-        WHERE id = ${memberId}
-          AND ${avatarUploadId} = (
-            SELECT id FROM avatar_uploads
-            WHERE member_id = ${memberId}
-            ORDER BY created_at DESC, id DESC
-            LIMIT 1
-          )
-      `)
+      const updated = await WorkspaceRepository.updateMemberAvatarIfLatestUpload(
+        client,
+        memberId,
+        avatarUploadId,
+        basePath
+      )
 
-      if (rowCount && rowCount > 0) {
+      if (updated) {
         variantsUsed = true
         const fullMember = await MemberRepository.findById(client, memberId)
         if (fullMember) {
