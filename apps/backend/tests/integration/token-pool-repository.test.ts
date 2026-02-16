@@ -554,6 +554,8 @@ describe("TokenPoolRepository", () => {
   describe("deleteExpiredTokens", () => {
     test("should delete expired tokens", async () => {
       await withTestTransaction(pool, async (client) => {
+        await client.query("DELETE FROM queue_tokens")
+
         const now = new Date()
         const pastTime = new Date(now.getTime() - 10000)
 
@@ -606,6 +608,8 @@ describe("TokenPoolRepository", () => {
 
     test("should not delete non-expired tokens", async () => {
       await withTestTransaction(pool, async (client) => {
+        await client.query("DELETE FROM queue_tokens")
+
         const now = new Date()
 
         // Insert message

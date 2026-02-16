@@ -233,7 +233,7 @@ describe("Message Repository - listSince", () => {
       workspaceId: testWorkspaceId,
       streamId: testStreamId,
       authorId: testUserId,
-      authorType: "user",
+      authorType: "member",
       ...testMessageContent("First"),
     })
 
@@ -241,7 +241,7 @@ describe("Message Repository - listSince", () => {
       workspaceId: testWorkspaceId,
       streamId: testStreamId,
       authorId: testUserId,
-      authorType: "user",
+      authorType: "member",
       ...testMessageContent("Second"),
     })
 
@@ -249,7 +249,7 @@ describe("Message Repository - listSince", () => {
       workspaceId: testWorkspaceId,
       streamId: testStreamId,
       authorId: testUserId,
-      authorType: "user",
+      authorType: "member",
       ...testMessageContent("Third"),
     })
 
@@ -269,7 +269,7 @@ describe("Message Repository - listSince", () => {
       workspaceId: testWorkspaceId,
       streamId: testStreamId,
       authorId: testUserId,
-      authorType: "user",
+      authorType: "member",
       ...testMessageContent("Only message"),
     })
 
@@ -288,7 +288,7 @@ describe("Message Repository - listSince", () => {
       workspaceId: testWorkspaceId,
       streamId: testStreamId,
       authorId: user1Id,
-      authorType: "user",
+      authorType: "member",
       ...testMessageContent("From user 1"),
     })
 
@@ -296,7 +296,7 @@ describe("Message Repository - listSince", () => {
       workspaceId: testWorkspaceId,
       streamId: testStreamId,
       authorId: user2Id,
-      authorType: "user",
+      authorType: "member",
       ...testMessageContent("From user 2"),
     })
 
@@ -304,7 +304,7 @@ describe("Message Repository - listSince", () => {
       workspaceId: testWorkspaceId,
       streamId: testStreamId,
       authorId: user1Id,
-      authorType: "user",
+      authorType: "member",
       ...testMessageContent("From user 1 again"),
     })
 
@@ -325,7 +325,7 @@ describe("Message Repository - listSince", () => {
       workspaceId: testWorkspaceId,
       streamId: testStreamId,
       authorId: testUserId,
-      authorType: "user",
+      authorType: "member",
       ...testMessageContent("First"),
     })
 
@@ -333,7 +333,7 @@ describe("Message Repository - listSince", () => {
       workspaceId: testWorkspaceId,
       streamId: testStreamId,
       authorId: testUserId,
-      authorType: "user",
+      authorType: "member",
       ...testMessageContent("Second"),
     })
 
@@ -341,7 +341,7 @@ describe("Message Repository - listSince", () => {
       workspaceId: testWorkspaceId,
       streamId: testStreamId,
       authorId: testUserId,
-      authorType: "user",
+      authorType: "member",
       ...testMessageContent("Third"),
     })
 
@@ -361,7 +361,7 @@ describe("Message Repository - listSince", () => {
       workspaceId: testWorkspaceId,
       streamId: testStreamId,
       authorId: testUserId,
-      authorType: "user",
+      authorType: "member",
       ...testMessageContent("First"),
     })
 
@@ -369,7 +369,7 @@ describe("Message Repository - listSince", () => {
       workspaceId: testWorkspaceId,
       streamId: testStreamId,
       authorId: testUserId,
-      authorType: "user",
+      authorType: "member",
       ...testMessageContent("Second - will be deleted"),
     })
 
@@ -377,7 +377,7 @@ describe("Message Repository - listSince", () => {
       workspaceId: testWorkspaceId,
       streamId: testStreamId,
       authorId: testUserId,
-      authorType: "user",
+      authorType: "member",
       ...testMessageContent("Third"),
     })
 
@@ -404,7 +404,7 @@ describe("Message Repository - listSince", () => {
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent(`Message ${i + 1}`),
       })
     }

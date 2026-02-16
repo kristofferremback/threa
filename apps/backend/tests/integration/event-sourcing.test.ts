@@ -42,7 +42,7 @@ describe("Event Sourcing", () => {
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Hello, world!"),
       })
 
@@ -62,7 +62,7 @@ describe("Event Sourcing", () => {
         sequence: 1n,
         eventType: "message_created",
         actorId: testUserId,
-        actorType: "user",
+        actorType: "member",
       })
       expect(events[0].payload).toMatchObject({
         messageId: message.id,
@@ -79,7 +79,7 @@ describe("Event Sourcing", () => {
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("First"),
       })
 
@@ -87,7 +87,7 @@ describe("Event Sourcing", () => {
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Second"),
       })
 
@@ -95,7 +95,7 @@ describe("Event Sourcing", () => {
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Third"),
       })
 
@@ -119,7 +119,7 @@ describe("Event Sourcing", () => {
         workspaceId: testWorkspaceId,
         streamId: stream1,
         authorId: testUserId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Stream 1 - First"),
       })
 
@@ -127,7 +127,7 @@ describe("Event Sourcing", () => {
         workspaceId: testWorkspaceId,
         streamId: stream2,
         authorId: testUserId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Stream 2 - First"),
       })
 
@@ -135,7 +135,7 @@ describe("Event Sourcing", () => {
         workspaceId: testWorkspaceId,
         streamId: stream1,
         authorId: testUserId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Stream 1 - Second"),
       })
 
@@ -143,7 +143,7 @@ describe("Event Sourcing", () => {
         workspaceId: testWorkspaceId,
         streamId: stream2,
         authorId: testUserId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Stream 2 - Second"),
       })
 
@@ -185,7 +185,7 @@ describe("Event Sourcing", () => {
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Test message"),
       })
 
@@ -199,9 +199,9 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
       })
 
-      const unreadIncrementEvent = outboxEvents.find((e) => e.eventType === "unread:increment")
-      expect(unreadIncrementEvent).toBeDefined()
-      expect(unreadIncrementEvent!.payload).toMatchObject({
+      const streamActivityEvent = outboxEvents.find((e) => e.eventType === "stream:activity")
+      expect(streamActivityEvent).toBeDefined()
+      expect(streamActivityEvent!.payload).toMatchObject({
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
@@ -219,7 +219,7 @@ describe("Event Sourcing", () => {
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Original content"),
       })
 
@@ -257,7 +257,7 @@ describe("Event Sourcing", () => {
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Original"),
       })
 
@@ -282,7 +282,7 @@ describe("Event Sourcing", () => {
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Original"),
       })
 
@@ -315,7 +315,7 @@ describe("Event Sourcing", () => {
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("To be deleted"),
       })
 
@@ -349,7 +349,7 @@ describe("Event Sourcing", () => {
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Keep me"),
       })
 
@@ -357,7 +357,7 @@ describe("Event Sourcing", () => {
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Delete me"),
       })
 
@@ -383,7 +383,7 @@ describe("Event Sourcing", () => {
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("To delete"),
       })
 
@@ -417,7 +417,7 @@ describe("Event Sourcing", () => {
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("React to me"),
       })
 
@@ -426,7 +426,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         messageId: message.id,
         emoji: "👍",
-        userId: testUserId,
+        memberId: testUserId,
       })
 
       expect(updated).not.toBeNull()
@@ -442,7 +442,7 @@ describe("Event Sourcing", () => {
       expect(reactionEvent!.payload).toMatchObject({
         messageId: message.id,
         emoji: "👍",
-        userId: testUserId,
+        memberId: testUserId,
       })
     })
 
@@ -456,7 +456,7 @@ describe("Event Sourcing", () => {
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: user1,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Popular message"),
       })
 
@@ -465,7 +465,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         messageId: message.id,
         emoji: "👍",
-        userId: user1,
+        memberId: user1,
       })
 
       await eventService.addReaction({
@@ -473,7 +473,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         messageId: message.id,
         emoji: "👍",
-        userId: user2,
+        memberId: user2,
       })
 
       await eventService.addReaction({
@@ -481,7 +481,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         messageId: message.id,
         emoji: "❤️",
-        userId: user1,
+        memberId: user1,
       })
 
       const updated = await eventService.getMessageById(message.id)
@@ -501,7 +501,7 @@ describe("Event Sourcing", () => {
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("React then unreact"),
       })
 
@@ -510,7 +510,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         messageId: message.id,
         emoji: "👍",
-        userId: testUserId,
+        memberId: testUserId,
       })
 
       const afterRemove = await eventService.removeReaction({
@@ -518,7 +518,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         messageId: message.id,
         emoji: "👍",
-        userId: testUserId,
+        memberId: testUserId,
       })
 
       // Reaction should be gone from projection
@@ -541,7 +541,7 @@ describe("Event Sourcing", () => {
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Double react"),
       })
 
@@ -550,7 +550,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         messageId: message.id,
         emoji: "👍",
-        userId: testUserId,
+        memberId: testUserId,
       })
 
       // Add same reaction again - should not duplicate in projection
@@ -559,7 +559,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         messageId: message.id,
         emoji: "👍",
-        userId: testUserId,
+        memberId: testUserId,
       })
 
       const final = await eventService.getMessageById(message.id)
@@ -577,7 +577,7 @@ describe("Event Sourcing", () => {
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Outbox test"),
       })
 
@@ -589,7 +589,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         messageId: message.id,
         emoji: "👍",
-        userId: testUserId,
+        memberId: testUserId,
       })
 
       await eventService.removeReaction({
@@ -597,7 +597,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         messageId: message.id,
         emoji: "👍",
-        userId: testUserId,
+        memberId: testUserId,
       })
 
       const outboxEvents = await OutboxRepository.fetchAfterId(pool, baselineId)
@@ -618,7 +618,7 @@ describe("Event Sourcing", () => {
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("First"),
       })
 
@@ -626,7 +626,7 @@ describe("Event Sourcing", () => {
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Second"),
       })
 
@@ -634,7 +634,7 @@ describe("Event Sourcing", () => {
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Third"),
       })
 
@@ -655,7 +655,7 @@ describe("Event Sourcing", () => {
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Test"),
       })
 
@@ -664,7 +664,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         messageId: message.id,
         emoji: "👍",
-        userId: testUserId,
+        memberId: testUserId,
       })
 
       await eventService.editMessage({
@@ -694,7 +694,7 @@ describe("Event Sourcing", () => {
           workspaceId: testWorkspaceId,
           streamId: testStreamId,
           authorId: testUserId,
-          authorType: "user",
+          authorType: "member",
           ...testMessageContent(`Message ${i + 1}`),
         })
       }
@@ -720,7 +720,7 @@ describe("Event Sourcing", () => {
           workspaceId: testWorkspaceId,
           streamId: testStreamId,
           authorId: testUserId,
-          authorType: "user",
+          authorType: "member",
           ...testMessageContent(`Message ${i + 1}`),
         })
       }
@@ -753,7 +753,7 @@ describe("Event Sourcing", () => {
             eventType: "message_created",
             payload: { messageId: "msg_test", content: "Test", contentFormat: "markdown" },
             actorId: testUserId,
-            actorType: "user",
+            actorType: "member",
           })
 
           // Insert message
@@ -762,7 +762,7 @@ describe("Event Sourcing", () => {
             streamId: testStreamId,
             sequence: 1n,
             authorId: testUserId,
-            authorType: "user",
+            authorType: "member",
             ...testMessageContent("Test"),
           })
 

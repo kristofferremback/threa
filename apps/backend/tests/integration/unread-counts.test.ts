@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test"
 import { Pool } from "pg"
-import { withTransaction, withTestTransaction } from "./setup"
+import { withTransaction } from "./setup"
 import { StreamService, StreamEventRepository, StreamMemberRepository } from "../../src/features/streams"
 import { EventService } from "../../src/features/messaging"
 import { streamId, userId, workspaceId } from "../../src/lib/id"
@@ -40,7 +40,7 @@ describe("Unread Counts", () => {
       const testUserId = userId()
 
       // Create a stream and add a message
-      await withTestTransaction(pool, async (client) => {
+      await withTransaction(pool, async (client) => {
         await client.query(
           `INSERT INTO streams (id, workspace_id, type, visibility, created_by) VALUES ($1, $2, 'scratchpad', 'private', $3)`,
           [testStreamId, testWorkspaceId, testUserId]
@@ -52,7 +52,7 @@ describe("Unread Counts", () => {
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Hello"),
       })
 
@@ -71,7 +71,7 @@ describe("Unread Counts", () => {
       const testWorkspaceId = workspaceId()
       const testUserId = userId()
 
-      await withTestTransaction(pool, async (client) => {
+      await withTransaction(pool, async (client) => {
         await client.query(
           `INSERT INTO streams (id, workspace_id, type, visibility, created_by) VALUES ($1, $2, 'scratchpad', 'private', $3)`,
           [testStreamId, testWorkspaceId, testUserId]
@@ -84,7 +84,7 @@ describe("Unread Counts", () => {
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Message 1"),
       })
 
@@ -92,7 +92,7 @@ describe("Unread Counts", () => {
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Message 2"),
       })
 
@@ -100,7 +100,7 @@ describe("Unread Counts", () => {
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Message 3"),
       })
 
@@ -119,7 +119,7 @@ describe("Unread Counts", () => {
       const testWorkspaceId = workspaceId()
       const testUserId = userId()
 
-      await withTestTransaction(pool, async (client) => {
+      await withTransaction(pool, async (client) => {
         await client.query(
           `INSERT INTO streams (id, workspace_id, type, visibility, created_by) VALUES ($1, $2, 'scratchpad', 'private', $3)`,
           [testStreamId, testWorkspaceId, testUserId]
@@ -133,7 +133,7 @@ describe("Unread Counts", () => {
           workspaceId: testWorkspaceId,
           streamId: testStreamId,
           authorId: testUserId,
-          authorType: "user",
+          authorType: "member",
           ...testMessageContent(`Message ${i}`),
         })
       }
@@ -151,7 +151,7 @@ describe("Unread Counts", () => {
       const otherUserId = userId()
 
       // Create a stream with two members
-      await withTestTransaction(pool, async (client) => {
+      await withTransaction(pool, async (client) => {
         await client.query(
           `INSERT INTO streams (id, workspace_id, type, visibility, created_by) VALUES ($1, $2, 'channel', 'private', $3)`,
           [testStreamId, testWorkspaceId, authorId]
@@ -165,7 +165,7 @@ describe("Unread Counts", () => {
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: authorId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Hello from author"),
       })
 
@@ -195,7 +195,7 @@ describe("Unread Counts", () => {
       const testWorkspaceId = workspaceId()
       const testUserId = userId()
 
-      await withTestTransaction(pool, async (client) => {
+      await withTransaction(pool, async (client) => {
         await client.query(
           `INSERT INTO streams (id, workspace_id, type, visibility, created_by) VALUES ($1, $2, 'scratchpad', 'private', $3)`,
           [stream1, testWorkspaceId, testUserId]
@@ -213,14 +213,14 @@ describe("Unread Counts", () => {
         workspaceId: testWorkspaceId,
         streamId: stream1,
         authorId: testUserId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Stream 1 - Message 1"),
       })
       await eventService.createMessage({
         workspaceId: testWorkspaceId,
         streamId: stream1,
         authorId: testUserId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Stream 1 - Message 2"),
       })
 
@@ -230,7 +230,7 @@ describe("Unread Counts", () => {
           workspaceId: testWorkspaceId,
           streamId: stream2,
           authorId: testUserId,
-          authorType: "user",
+          authorType: "member",
           ...testMessageContent(`Stream 2 - Message ${i}`),
         })
       }
@@ -257,7 +257,7 @@ describe("Unread Counts", () => {
       const testUserId = userId()
       const otherUserId = userId()
 
-      await withTestTransaction(pool, async (client) => {
+      await withTransaction(pool, async (client) => {
         await client.query(
           `INSERT INTO streams (id, workspace_id, type, visibility, created_by) VALUES ($1, $2, 'scratchpad', 'private', $3)`,
           [stream1, testWorkspaceId, testUserId]
@@ -277,14 +277,14 @@ describe("Unread Counts", () => {
         workspaceId: testWorkspaceId,
         streamId: stream1,
         authorId: otherUserId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Stream 1 message"),
       })
       await eventService.createMessage({
         workspaceId: testWorkspaceId,
         streamId: stream2,
         authorId: otherUserId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Stream 2 message"),
       })
 
@@ -318,7 +318,7 @@ describe("Unread Counts", () => {
       const testWorkspaceId = workspaceId()
       const testUserId = userId()
 
-      await withTestTransaction(pool, async (client) => {
+      await withTransaction(pool, async (client) => {
         await client.query(
           `INSERT INTO streams (id, workspace_id, type, visibility, created_by) VALUES ($1, $2, 'scratchpad', 'private', $3)`,
           [stream1, testWorkspaceId, testUserId]
@@ -336,7 +336,7 @@ describe("Unread Counts", () => {
         workspaceId: testWorkspaceId,
         streamId: stream1,
         authorId: testUserId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Stream 1 message"),
       })
 
@@ -358,7 +358,7 @@ describe("Unread Counts", () => {
       const testUserId = userId()
       const otherUserId = userId()
 
-      await withTestTransaction(pool, async (client) => {
+      await withTransaction(pool, async (client) => {
         await client.query(
           `INSERT INTO streams (id, workspace_id, type, visibility, created_by) VALUES ($1, $2, 'scratchpad', 'private', $3)`,
           [stream1, workspace1, testUserId]
@@ -378,14 +378,14 @@ describe("Unread Counts", () => {
         workspaceId: workspace1,
         streamId: stream1,
         authorId: otherUserId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Workspace 1 message"),
       })
       await eventService.createMessage({
         workspaceId: workspace2,
         streamId: stream2,
         authorId: otherUserId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Workspace 2 message"),
       })
 
@@ -410,7 +410,7 @@ describe("Unread Counts", () => {
       const testWorkspaceId = workspaceId()
       const testUserId = userId()
 
-      await withTestTransaction(pool, async (client) => {
+      await withTransaction(pool, async (client) => {
         for (const id of [stream1, stream2, stream3]) {
           await client.query(
             `INSERT INTO streams (id, workspace_id, type, visibility, created_by) VALUES ($1, $2, 'scratchpad', 'private', $3)`,
@@ -427,7 +427,7 @@ describe("Unread Counts", () => {
           workspaceId: testWorkspaceId,
           streamId,
           authorId: testUserId,
-          authorType: "user",
+          authorType: "member",
           ...testMessageContent("Test message"),
         })
         const events = await StreamEventRepository.list(pool, streamId)
@@ -441,7 +441,7 @@ describe("Unread Counts", () => {
         [stream3, eventIds[2]],
       ])
 
-      await withTestTransaction(pool, async (client) => {
+      await withTransaction(pool, async (client) => {
         await StreamMemberRepository.batchUpdateLastReadEventId(client, testUserId, updates)
       })
 

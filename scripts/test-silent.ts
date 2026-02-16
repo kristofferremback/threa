@@ -47,7 +47,7 @@ const modeConfigs: Record<Mode, ModeConfig> = {
     runner: "bun",
     cwd: path.join(rootDir, "apps/backend"),
     baseOptions: ["--preload", "./tests/setup.ts"],
-    defaultPatterns: ["tests/integration/critical/"],
+    defaultPatterns: ["tests/integration/"],
   },
   "backend-e2e": {
     runner: "bun",

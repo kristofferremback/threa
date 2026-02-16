@@ -129,7 +129,7 @@ describe("BoundaryExtractionService", () => {
           streamId: testStreamId,
           sequence: BigInt(1),
           authorId: testUserId,
-          authorType: "user",
+          authorType: "member",
           ...testMessageContent("Starting a new topic"),
         })
       })
@@ -162,7 +162,7 @@ describe("BoundaryExtractionService", () => {
           streamId: testStreamId,
           sequence: BigInt(10),
           authorId: testUserId,
-          authorType: "user",
+          authorType: "member",
           ...testMessageContent("First message"),
         })
 
@@ -180,7 +180,7 @@ describe("BoundaryExtractionService", () => {
           streamId: testStreamId,
           sequence: BigInt(11),
           authorId: testUserId,
-          authorType: "user",
+          authorType: "member",
           ...testMessageContent("Continuation of topic"),
         })
       })
@@ -211,7 +211,7 @@ describe("BoundaryExtractionService", () => {
           streamId: testStreamId,
           sequence: BigInt(20),
           authorId: testUserId,
-          authorType: "user",
+          authorType: "member",
           ...testMessageContent("Question about X"),
         })
 
@@ -220,7 +220,7 @@ describe("BoundaryExtractionService", () => {
           streamId: testStreamId,
           sequence: BigInt(21),
           authorId: testUserId,
-          authorType: "user",
+          authorType: "member",
           ...testMessageContent("Working on Y"),
         })
 
@@ -247,7 +247,7 @@ describe("BoundaryExtractionService", () => {
           streamId: testStreamId,
           sequence: BigInt(22),
           authorId: testUserId,
-          authorType: "user",
+          authorType: "member",
           ...testMessageContent("Answer to X"),
         })
       })
@@ -288,7 +288,7 @@ describe("BoundaryExtractionService", () => {
           streamId: localStreamId,
           sequence: BigInt(1),
           authorId: testUserId,
-          authorType: "user",
+          authorType: "member",
           ...testMessageContent("New conversation starter"),
         })
       })
@@ -339,7 +339,7 @@ describe("BoundaryExtractionService", () => {
           streamId: localStreamId,
           sequence: BigInt(1),
           authorId: testUserId,
-          authorType: "user",
+          authorType: "member",
           ...testMessageContent("First message"),
         })
 
@@ -355,7 +355,7 @@ describe("BoundaryExtractionService", () => {
           streamId: localStreamId,
           sequence: BigInt(2),
           authorId: testUserId,
-          authorType: "user",
+          authorType: "member",
           ...testMessageContent("Second message"),
         })
       })
@@ -395,7 +395,7 @@ describe("BoundaryExtractionService", () => {
           streamId: testStreamId,
           sequence: BigInt(100),
           authorId: testUserId,
-          authorType: "user",
+          authorType: "member",
           ...testMessageContent("Test message"),
         })
       })
@@ -423,7 +423,7 @@ describe("BoundaryExtractionService", () => {
           streamId: testStreamId,
           sequence: BigInt(50),
           authorId: testUserId,
-          authorType: "user",
+          authorType: "member",
           ...testMessageContent("User 1 message"),
         })
 
@@ -440,7 +440,7 @@ describe("BoundaryExtractionService", () => {
           streamId: testStreamId,
           sequence: BigInt(51),
           authorId: user2Id,
-          authorType: "user",
+          authorType: "member",
           ...testMessageContent("User 2 reply"),
         })
       })
@@ -477,7 +477,7 @@ describe("BoundaryExtractionService", () => {
           streamId: localStreamId,
           sequence: BigInt(1),
           authorId: testUserId,
-          authorType: "user",
+          authorType: "member",
           ...testMessageContent("Scratchpad message"),
         })
       })
@@ -509,7 +509,7 @@ describe("BoundaryExtractionService", () => {
           streamId: localStreamId,
           sequence: BigInt(1),
           authorId: testUserId,
-          authorType: "user",
+          authorType: "member",
           ...testMessageContent("First note"),
         })
       })
@@ -527,7 +527,7 @@ describe("BoundaryExtractionService", () => {
           streamId: localStreamId,
           sequence: BigInt(2),
           authorId: testUserId,
-          authorType: "user",
+          authorType: "member",
           ...testMessageContent("Second note"),
         })
 
@@ -536,7 +536,7 @@ describe("BoundaryExtractionService", () => {
           streamId: localStreamId,
           sequence: BigInt(3),
           authorId: testUserId,
-          authorType: "user",
+          authorType: "member",
           ...testMessageContent("Third note"),
         })
       })
@@ -578,7 +578,7 @@ describe("BoundaryExtractionService", () => {
           streamId: localStreamId,
           sequence: BigInt(1),
           authorId: testUserId,
-          authorType: "user",
+          authorType: "member",
           ...testMessageContent("Some ideas"),
         })
       })
@@ -608,7 +608,7 @@ describe("BoundaryExtractionService", () => {
           streamId: localStreamId,
           sequence: BigInt(1),
           authorId: testUserId,
-          authorType: "user",
+          authorType: "member",
           ...testMessageContent("Test message"),
         })
       })
