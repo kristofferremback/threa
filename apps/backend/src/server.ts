@@ -168,7 +168,7 @@ export async function startServer(): Promise<ServerInstance> {
   const workosOrgService = config.useStubAuth ? new StubWorkosOrgService() : new WorkosOrgServiceImpl(config.workos)
   const storage = createS3Storage(config.s3)
   const avatarService = new AvatarService(storage)
-  const workspaceService = new WorkspaceService(pool, workosOrgService, avatarService)
+  const workspaceService = new WorkspaceService(pool, avatarService, workosOrgService)
   const streamService = new StreamService(pool)
   const eventService = new EventService(pool)
   const authService = config.useStubAuth ? new StubAuthService() : new WorkosAuthService(config.workos)

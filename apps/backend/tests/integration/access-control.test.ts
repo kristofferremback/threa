@@ -32,7 +32,7 @@ describe("Access Control", () => {
   beforeAll(async () => {
     pool = await setupTestDatabase()
     streamService = new StreamService(pool)
-    workspaceService = new WorkspaceService(pool)
+    workspaceService = new WorkspaceService(pool, {} as any)
     eventService = new EventService(pool)
   })
 

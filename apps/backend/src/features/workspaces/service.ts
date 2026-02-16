@@ -27,12 +27,12 @@ export interface CreateWorkspaceParams {
 export class WorkspaceService {
   private pool: Pool
   private workosOrgService: WorkosOrgService | null
-  private avatarService: AvatarService | null
+  private avatarService: AvatarService
 
-  constructor(pool: Pool, workosOrgService?: WorkosOrgService, avatarService?: AvatarService) {
+  constructor(pool: Pool, avatarService: AvatarService, workosOrgService?: WorkosOrgService) {
     this.pool = pool
+    this.avatarService = avatarService
     this.workosOrgService = workosOrgService ?? null
-    this.avatarService = avatarService ?? null
   }
 
   async getWorkspaceById(id: string): Promise<Workspace | null> {
@@ -267,10 +267,6 @@ export class WorkspaceService {
   }
 
   async uploadAvatar(memberId: string, workspaceId: string, buffer: Buffer): Promise<WorkspaceMember> {
-    if (!this.avatarService) {
-      throw new HttpError("Avatar service not configured", { status: 500, code: "AVATAR_SERVICE_UNAVAILABLE" })
-    }
-
     // Phase 1: Verify member exists before expensive processing
     const member = await MemberRepository.findById(this.pool, memberId)
     if (!member || member.workspaceId !== workspaceId) {
@@ -343,7 +339,7 @@ export class WorkspaceService {
     })
 
     // After commit: delete old avatar files (fire-and-forget)
-    if (oldAvatarUrl && this.avatarService) {
+    if (oldAvatarUrl) {
       this.avatarService.deleteAvatarFiles(oldAvatarUrl)
     }
 
