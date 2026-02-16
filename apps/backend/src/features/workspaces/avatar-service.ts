@@ -36,9 +36,13 @@ export class AvatarService {
    */
   async uploadImages(basePath: string, images: Map<number, Buffer>): Promise<void> {
     await Promise.all(
-      [...images.entries()].map(([size, processed]) =>
-        this.storage.putObject(`${basePath}.${size}.webp`, processed, "image/webp")
-      )
+      [...images.entries()].map(([size, processed]) => {
+        const filename = `${basePath.split("/").pop()}.${size}.webp`
+        if (!AvatarService.AVATAR_FILE_PATTERN.test(filename)) {
+          throw new Error(`Generated avatar filename doesn't match read pattern: ${filename}`)
+        }
+        return this.storage.putObject(`${basePath}.${size}.webp`, processed, "image/webp")
+      })
     )
   }
 
