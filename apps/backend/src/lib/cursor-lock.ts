@@ -50,7 +50,7 @@ export interface CompactState {
  *
  * Steps:
  * 1. Merge newly processed IDs into processedIds with readAt = now
- * 2. Find entries where readAt < now - gapWindowMs (expired)
+ * 2. Find entries where readAt <= now - gapWindowMs (expired)
  * 3. new_base = max(max(expired_ids), base_cursor)
  * 4. Remove all entries where id <= new_base
  * 5. Advance through any remaining entries contiguous with new_base
@@ -447,35 +447,18 @@ export class CursorLock {
         VALUES (${this.listenerId}, ${event.id.toString()}, ${errorMessage})
       `)
 
-      // Add this event to processed set and compact to advance cursor
+      // Compact with gapWindowMs=0 so the DLQ'd event expires immediately
       const processedIdsMap: ProcessedIdsMap = {}
       for (const id of processedIds) {
         processedIdsMap[id.toString()] = new Date().toISOString()
       }
-      processedIdsMap[event.id.toString()] = new Date().toISOString()
-
-      // Find new base: advance cursor past this event if it's contiguous
-      let newBase = cursor
-      if (event.id === cursor + 1n) {
-        newBase = event.id
-      } else {
-        // Event is beyond cursor with a gap — just add to processed set
-        newBase = cursor
-      }
-
-      // Remove entries <= newBase
-      const remaining: ProcessedIdsMap = {}
-      for (const [idStr, readAt] of Object.entries(processedIdsMap)) {
-        if (BigInt(idStr) > newBase) {
-          remaining[idStr] = readAt
-        }
-      }
+      const compacted = compact(cursor, processedIdsMap, [event.id], new Date(), 0)
 
       await client.query(sql`
         UPDATE outbox_listeners
         SET
-          last_processed_id = ${newBase.toString()},
-          processed_ids = ${JSON.stringify(remaining)},
+          last_processed_id = ${compacted.cursor.toString()},
+          processed_ids = ${JSON.stringify(compacted.processedIds)},
           last_processed_at = NOW(),
           retry_count = 0,
           retry_after = NULL,
