@@ -140,6 +140,7 @@ export class AttachmentUploadedHandler implements OutboxHandler {
               break
 
             default:
+              // Route everything else to text processing — binary detection decides skip vs process
               await this.jobQueue.send(JobQueues.TEXT_PROCESS, {
                 attachmentId,
                 workspaceId,

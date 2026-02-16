@@ -111,6 +111,7 @@ export class CompanionHandler implements OutboxHandler {
 
           const { streamId, event: messageEvent } = payload
 
+          // Ignore persona messages (avoid infinite loops)
           if (messageEvent.actorType !== AuthorTypes.MEMBER) {
             seen.push(event.id)
             continue
@@ -155,6 +156,8 @@ export class CompanionHandler implements OutboxHandler {
           if (lastSession) {
             const messageSequence = BigInt(messageEvent.sequence)
 
+            // If a session is still running or pending, it will pick up new messages
+            // via check_new_messages node in the graph — don't dispatch duplicate jobs
             if (lastSession.status === SessionStatuses.PENDING || lastSession.status === SessionStatuses.RUNNING) {
               logger.debug(
                 {

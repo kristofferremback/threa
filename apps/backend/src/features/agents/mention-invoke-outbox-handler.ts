@@ -108,6 +108,7 @@ export class MentionInvokeHandler implements OutboxHandler {
 
           const { streamId, workspaceId, event: messageEvent } = payload
 
+          // Ignore persona messages (avoid infinite loops)
           if (messageEvent.actorType !== AuthorTypes.MEMBER) {
             seen.push(event.id)
             continue
