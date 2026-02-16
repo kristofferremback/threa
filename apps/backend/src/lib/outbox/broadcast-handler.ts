@@ -1,6 +1,5 @@
 import { Server } from "socket.io"
 import type { Pool } from "pg"
-import { MemberRepository } from "../../features/workspaces"
 import {
   OutboxRepository,
   isStreamScopedEvent,
@@ -11,16 +10,9 @@ import {
   type OutboxEvent,
   type StreamCreatedOutboxPayload,
   type StreamMemberAddedOutboxPayload,
-  type CommandDispatchedOutboxPayload,
-  type CommandCompletedOutboxPayload,
-  type CommandFailedOutboxPayload,
-  type StreamReadOutboxPayload,
-  type StreamsReadAllOutboxPayload,
-  type UserPreferencesUpdatedOutboxPayload,
   type ActivityCreatedOutboxPayload,
   type StreamDisplayNameUpdatedPayload,
 } from "./repository"
-import type { UserSocketRegistry } from "../user-socket-registry"
 import { logger } from "../logger"
 import { CursorLock, ensureListenerFromLatest, type ProcessResult } from "../cursor-lock"
 import { DebounceWithMaxWait } from "../debounce"
@@ -51,7 +43,11 @@ const DEFAULT_CONFIG = {
  *
  * Stream-scoped events (messages, reactions) are broadcast to stream rooms: `ws:${workspaceId}:stream:${streamId}`
  * Workspace-scoped events (stream metadata, attachments) are broadcast to workspace rooms: `ws:${workspaceId}`
- * Author-scoped events (commands) are broadcast only to sockets belonging to the author.
+ * Member-scoped events (activity) are broadcast to member rooms: `ws:${workspaceId}:member:${memberId}`
+ * Author-scoped events (commands, read state) are broadcast to member rooms: `ws:${workspaceId}:member:${authorId}`
+ *
+ * Member rooms eliminate DB queries during broadcast — the memberId→userId mapping
+ * is resolved once at socket connect time, not per-event.
  *
  * Uses time-based cursor locking for exclusive access without
  * holding database connections during processing.
@@ -61,15 +57,13 @@ export class BroadcastHandler implements OutboxHandler {
 
   private readonly db: Pool
   private readonly io: Server
-  private readonly userSocketRegistry: UserSocketRegistry
   private readonly cursorLock: CursorLock
   private readonly debouncer: DebounceWithMaxWait
   private readonly batchSize: number
 
-  constructor(db: Pool, io: Server, userSocketRegistry: UserSocketRegistry, config?: BroadcastHandlerConfig) {
+  constructor(db: Pool, io: Server, config?: BroadcastHandlerConfig) {
     this.db = db
     this.io = io
-    this.userSocketRegistry = userSocketRegistry
     this.batchSize = config?.batchSize ?? DEFAULT_CONFIG.batchSize
 
     this.cursorLock = new CursorLock({
@@ -110,7 +104,7 @@ export class BroadcastHandler implements OutboxHandler {
 
       try {
         for (const event of events) {
-          await this.broadcastEvent(event)
+          this.broadcastEvent(event)
           lastProcessedId = event.id
         }
 
@@ -127,79 +121,20 @@ export class BroadcastHandler implements OutboxHandler {
     })
   }
 
-  private async broadcastEvent(event: OutboxEvent): Promise<void> {
+  private broadcastEvent(event: OutboxEvent): void {
     const { workspaceId } = event.payload
 
-    // Member-scoped events: emit to the target member's sockets
-    // targetMemberId → resolve to userId for socket registry lookup
-    // Individual failures skip the event so remaining broadcasts proceed.
+    // Member-scoped events: emit to the target member's room
     if (isMemberScopedEvent(event)) {
-      const payload = event.payload as ActivityCreatedOutboxPayload
-      const { targetMemberId } = payload
-
-      try {
-        const member = await MemberRepository.findById(this.db, targetMemberId)
-        if (!member) {
-          logger.warn(
-            { eventType: event.eventType, targetMemberId },
-            "Cannot broadcast member-scoped event: member not found"
-          )
-          return
-        }
-
-        const sockets = this.userSocketRegistry.getSockets(member.userId)
-        for (const socket of sockets) {
-          socket.emit(event.eventType, event.payload)
-        }
-        logger.debug(
-          { eventType: event.eventType, targetMemberId, userId: member.userId, emitted: sockets.length },
-          "Broadcast member-scoped event"
-        )
-      } catch (err) {
-        logger.error(
-          { err, eventType: event.eventType, eventId: event.id.toString(), targetMemberId },
-          "Failed to broadcast member-scoped event, skipping"
-        )
-      }
+      const { targetMemberId } = event.payload as ActivityCreatedOutboxPayload
+      this.io.to(`ws:${workspaceId}:member:${targetMemberId}`).emit(event.eventType, event.payload)
       return
     }
 
-    // Author-scoped events: only emit to the author's sockets
-    // authorId is a memberId — resolve to userId for socket registry lookup
+    // Author-scoped events: emit to the author's member room
     if (isAuthorScopedEvent(event)) {
-      const payload = event.payload as
-        | CommandDispatchedOutboxPayload
-        | CommandCompletedOutboxPayload
-        | CommandFailedOutboxPayload
-        | StreamReadOutboxPayload
-        | StreamsReadAllOutboxPayload
-        | UserPreferencesUpdatedOutboxPayload
-      const { authorId } = payload
-
-      try {
-        const member = await MemberRepository.findById(this.db, authorId)
-        if (!member) {
-          logger.warn(
-            { eventType: event.eventType, authorId },
-            "Cannot broadcast author-scoped event: member not found"
-          )
-          return
-        }
-
-        const sockets = this.userSocketRegistry.getSockets(member.userId)
-        for (const socket of sockets) {
-          socket.emit(event.eventType, event.payload)
-        }
-        logger.debug(
-          { eventType: event.eventType, authorId, userId: member.userId, emitted: sockets.length },
-          "Broadcast author-scoped event"
-        )
-      } catch (err) {
-        logger.error(
-          { err, eventType: event.eventType, eventId: event.id.toString(), authorId },
-          "Failed to broadcast author-scoped event, skipping"
-        )
-      }
+      const { authorId } = event.payload as { authorId: string }
+      this.io.to(`ws:${workspaceId}:member:${authorId}`).emit(event.eventType, event.payload)
       return
     }
 
@@ -215,25 +150,11 @@ export class BroadcastHandler implements OutboxHandler {
     }
 
     // stream:member_added: emit to stream room (existing members) AND the added
-    // member's sockets directly — they haven't joined the stream room yet.
+    // member's room directly — they haven't joined the stream room yet.
     if (isOutboxEventType(event, "stream:member_added")) {
       const { streamId, memberId } = event.payload as StreamMemberAddedOutboxPayload
       this.io.to(`ws:${workspaceId}:stream:${streamId}`).emit(event.eventType, event.payload)
-
-      try {
-        const member = await MemberRepository.findById(this.db, memberId)
-        if (member) {
-          const sockets = this.userSocketRegistry.getSockets(member.userId)
-          for (const socket of sockets) {
-            socket.emit(event.eventType, event.payload)
-          }
-        }
-      } catch (err) {
-        logger.error(
-          { err, eventType: event.eventType, eventId: event.id.toString(), memberId },
-          "Failed to resolve added member for direct emit, skipping"
-        )
-      }
+      this.io.to(`ws:${workspaceId}:member:${memberId}`).emit(event.eventType, event.payload)
       return
     }
 

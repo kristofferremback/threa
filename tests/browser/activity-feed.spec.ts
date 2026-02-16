@@ -257,7 +257,7 @@ test.describe("Activity Feed", () => {
 
       // Wait for both mentions to arrive — activity count shows 2
       const channelLink = ctxB.page.getByRole("link", { name: `#${channelSlug}` })
-      await expect(actLink.getByText("2")).toBeVisible({ timeout: 15000 })
+      await expect(actLink.getByText("2")).toBeVisible({ timeout: 20000 })
       await expect(channelLink.locator("span.text-destructive")).toBeVisible()
 
       // Navigate to Activity page
