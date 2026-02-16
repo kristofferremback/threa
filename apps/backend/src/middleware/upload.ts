@@ -75,4 +75,31 @@ export function createUploadMiddleware({ s3Config }: UploadMiddlewareConfig): Re
   return upload.single("file")
 }
 
+const AVATAR_MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB
+const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"])
+
+/**
+ * Creates an avatar upload middleware using memory storage.
+ * Memory storage is correct here: 5MB cap keeps memory bounded,
+ * and we need the buffer for sharp processing before uploading to S3.
+ */
+export function createAvatarUploadMiddleware(): RequestHandler {
+  const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: {
+      fileSize: AVATAR_MAX_FILE_SIZE,
+      files: 1,
+    },
+    fileFilter: (_req, file, cb) => {
+      if (ALLOWED_IMAGE_TYPES.has(file.mimetype)) {
+        cb(null, true)
+      } else {
+        cb(new Error(`Invalid file type: ${file.mimetype}. Allowed: JPEG, PNG, GIF, WebP`))
+      }
+    },
+  })
+
+  return upload.single("avatar")
+}
+
 export { MAX_FILE_SIZE }

@@ -313,6 +313,10 @@ async function runCompanionTask(input: CompanionInput, ctx: EvalContext): Promis
       getSignedDownloadUrl: async () => "",
       getObject: async () => Buffer.alloc(0),
       getObjectRange: async () => Buffer.alloc(0),
+      getObjectStream: async () => {
+        throw new Error("Not implemented in stub")
+      },
+      putObject: async () => {},
       delete: async () => {},
     }
 

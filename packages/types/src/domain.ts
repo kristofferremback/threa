@@ -63,10 +63,22 @@ export interface WorkspaceMember {
   role: WorkspaceMemberRole
   slug: string
   name: string
+  description: string | null
+  avatarUrl: string | null
   timezone: string | null
   locale: string | null
   setupCompleted: boolean
   joinedAt: string
+}
+
+/**
+ * Get the display URL for an avatar image.
+ * avatarUrl stores the S3 key base path; this constructs the backend
+ * proxy URL that serves the image.
+ */
+export function getAvatarUrl(avatarUrl: string | null | undefined, size: 256 | 64): string | undefined {
+  if (!avatarUrl) return undefined
+  return `/api/files/${avatarUrl}.${size}.webp`
 }
 
 export interface WorkspaceInvitation {

@@ -25,6 +25,8 @@ export function createMockMember(
     role: "member",
     slug: overrides.userId.replace("user_", ""),
     name: "Test Member",
+    description: null,
+    avatarUrl: null,
     timezone: null,
     locale: null,
     setupCompleted: true,

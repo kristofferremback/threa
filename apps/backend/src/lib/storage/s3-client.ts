@@ -1,4 +1,5 @@
-import { S3Client, GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3"
+import { Readable } from "node:stream"
+import { S3Client, GetObjectCommand, DeleteObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3"
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
 import type { S3Config } from "../env"
 
@@ -7,6 +8,8 @@ export interface StorageProvider {
   getObject(key: string): Promise<Buffer>
   /** Fetch first N bytes of an object using HTTP Range header */
   getObjectRange(key: string, start: number, end: number): Promise<Buffer>
+  getObjectStream(key: string): Promise<Readable>
+  putObject(key: string, body: Buffer, contentType: string): Promise<void>
   delete(key: string): Promise<void>
 }
 
@@ -72,6 +75,31 @@ export function createS3Storage(config: S3Config): StorageProvider {
         chunks.push(chunk)
       }
       return Buffer.concat(chunks)
+    },
+
+    async getObjectStream(key: string): Promise<Readable> {
+      const command = new GetObjectCommand({
+        Bucket: config.bucket,
+        Key: key,
+      })
+      const response = await client.send(command)
+
+      if (!response.Body) {
+        throw new Error(`No body in S3 response for key: ${key}`)
+      }
+
+      return response.Body as Readable
+    },
+
+    async putObject(key: string, body: Buffer, contentType: string): Promise<void> {
+      await client.send(
+        new PutObjectCommand({
+          Bucket: config.bucket,
+          Key: key,
+          Body: body,
+          ContentType: contentType,
+        })
+      )
     },
 
     async delete(key: string): Promise<void> {

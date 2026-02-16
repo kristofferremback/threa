@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from "react"
 import { useQueryClient } from "@tanstack/react-query"
+import { getAvatarUrl } from "@threa/types"
 import { workspaceKeys } from "./use-workspaces"
 import { useWorkspaceEmoji } from "./use-workspace-emoji"
 import type { User, Persona, WorkspaceBootstrap, WorkspaceMember, AuthorType } from "@threa/types"
@@ -7,6 +8,7 @@ import type { User, Persona, WorkspaceBootstrap, WorkspaceMember, AuthorType } f
 interface ActorAvatarInfo {
   fallback: string
   slug?: string
+  avatarUrl?: string
 }
 
 interface ActorLookup {
@@ -133,9 +135,15 @@ export function useActors(workspaceId: string): ActorLookup {
         return { fallback, slug: persona?.slug }
       }
 
+      if (actorId) {
+        const member = getMember(actorId)
+        const avatarUrl = getAvatarUrl(member?.avatarUrl, 64)
+        if (avatarUrl) return { fallback, avatarUrl }
+      }
+
       return { fallback }
     },
-    [getActorInitials, getPersona]
+    [getActorInitials, getPersona, getMember]
   )
 
   return useMemo(

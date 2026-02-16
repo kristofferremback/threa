@@ -6,6 +6,7 @@ import type { UserPreferencesService } from "../user-preferences"
 import type { InvitationService } from "../invitations"
 import type { ActivityService } from "../activity"
 import type { CommandRegistry } from "../commands"
+import type { AvatarService } from "./avatar-service"
 import { getEmojiList } from "../emoji"
 import { getEffectiveLevel } from "../streams"
 
@@ -18,6 +19,11 @@ const completeMemberSetupSchema = z.object({
   slug: z.string().optional(),
   timezone: z.string().min(1, "timezone is required"),
   locale: z.string().min(1, "locale is required"),
+})
+
+const updateProfileSchema = z.object({
+  name: z.string().min(1, "name is required").max(100).optional(),
+  description: z.string().max(500).nullable().optional(),
 })
 
 const checkSlugAvailableSchema = z.object({
@@ -33,6 +39,7 @@ interface Dependencies {
   invitationService: InvitationService
   activityService?: ActivityService
   commandRegistry: CommandRegistry
+  avatarService: AvatarService
 }
 
 export function createWorkspaceHandlers({
@@ -42,6 +49,7 @@ export function createWorkspaceHandlers({
   invitationService,
   activityService,
   commandRegistry,
+  avatarService,
 }: Dependencies) {
   return {
     async list(req: Request, res: Response) {
@@ -224,6 +232,67 @@ export function createWorkspaceHandlers({
 
       const available = await workspaceService.isSlugAvailable(workspaceId, result.data.slug)
       res.json({ available })
+    },
+
+    async updateProfile(req: Request, res: Response) {
+      const memberId = req.member!.id
+      const workspaceId = req.workspaceId!
+
+      const result = updateProfileSchema.safeParse(req.body)
+      if (!result.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: z.flattenError(result.error).fieldErrors,
+        })
+      }
+
+      const member = await workspaceService.updateMemberProfile(memberId, workspaceId, result.data)
+      res.json({ member })
+    },
+
+    async uploadAvatar(req: Request, res: Response) {
+      const memberId = req.member!.id
+      const workspaceId = req.workspaceId!
+
+      if (!req.file?.buffer) {
+        return res.status(400).json({ error: "No file uploaded" })
+      }
+
+      const member = await workspaceService.uploadAvatar(memberId, workspaceId, req.file.buffer)
+      res.json({ member })
+    },
+
+    async removeAvatar(req: Request, res: Response) {
+      const memberId = req.member!.id
+      const workspaceId = req.workspaceId!
+
+      const member = await workspaceService.removeMemberAvatar(memberId, workspaceId)
+      res.json({ member })
+    },
+
+    async serveAvatarFile(req: Request, res: Response) {
+      const { workspaceId, memberId, file } = req.params
+      if (!workspaceId || !memberId || !file) {
+        return res.status(404).end()
+      }
+
+      try {
+        const stream = await avatarService.streamAvatarFile({ workspaceId, memberId, file })
+        if (!stream) return res.status(404).end()
+
+        res.set("Content-Type", "image/webp")
+        res.set("Cache-Control", "public, max-age=31536000, immutable")
+        stream.on("error", () => {
+          if (!res.headersSent) {
+            res.status(500).end()
+          } else {
+            res.end()
+          }
+        })
+        stream.pipe(res)
+      } catch {
+        res.status(404).end()
+      }
     },
   }
 }

@@ -13,8 +13,10 @@ import {
   MessageSquareText,
   Plus,
   ChevronRight,
+  ChevronUp,
   Bell,
   Lock,
+  LogOut,
 } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
@@ -26,7 +28,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { cn } from "@/lib/utils"
+import { getInitials } from "@/lib/initials"
 import { serializeToMarkdown } from "@threa/prosemirror"
 import type { JSONContent } from "@threa/types"
 import { getThreadRootContext } from "@/components/thread/breadcrumb-helpers"
@@ -42,11 +46,20 @@ import {
   workspaceKeys,
   useActors,
 } from "@/hooks"
-import { useQuickSwitcher, useCoordinatedLoading, useSidebar, type ViewMode } from "@/contexts"
+import { useQuickSwitcher, useCoordinatedLoading, useSidebar, useSettings, type ViewMode } from "@/contexts"
 import { UnreadBadge } from "@/components/unread-badge"
 import { MentionIndicator } from "@/components/mention-indicator"
 import { RelativeTime } from "@/components/relative-time"
-import { StreamTypes, Visibilities, AuthorTypes, type AuthorType, type StreamWithPreview } from "@threa/types"
+import {
+  StreamTypes,
+  Visibilities,
+  AuthorTypes,
+  getAvatarUrl,
+  type AuthorType,
+  type StreamWithPreview,
+  type WorkspaceMember,
+} from "@threa/types"
+import { useAuth } from "@/auth"
 import { useStreamSettings } from "@/components/stream-settings/use-stream-settings"
 import { useQueryClient } from "@tanstack/react-query"
 import { ThemeDropdown } from "@/components/theme-dropdown"
@@ -1011,38 +1024,75 @@ function StreamListSkeleton() {
 // Footer Component
 // ============================================================================
 
-function SidebarFooter({ workspaceId }: { workspaceId: string }) {
-  const [searchParams, setSearchParams] = useSearchParams()
+interface SidebarFooterProps {
+  workspaceId: string
+  currentMember: WorkspaceMember | null
+}
+
+function SidebarFooter({ workspaceId, currentMember }: SidebarFooterProps) {
+  const [, setSearchParams] = useSearchParams()
+  const { openSettings } = useSettings()
+  const { logout } = useAuth()
 
   const openWorkspaceSettings = () => {
-    const newParams = new URLSearchParams(searchParams)
-    newParams.set("ws-settings", "members")
-    setSearchParams(newParams, { replace: true })
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.set("ws-settings", "members")
+        return next
+      },
+      { replace: true }
+    )
   }
 
+  if (!currentMember) return null
+
+  const avatarSrc = getAvatarUrl(currentMember.avatarUrl, 64)
+
   return (
-    <div className="space-y-1">
-      <button
-        onClick={openWorkspaceSettings}
-        className={cn(
-          "w-full flex items-center gap-2.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
-          "hover:bg-muted/50 text-muted-foreground"
-        )}
-      >
-        <Settings className="h-4 w-4" />
-        Settings
-      </button>
-      <Link
-        to={`/w/${workspaceId}/admin/ai-usage`}
-        className={cn(
-          "flex items-center gap-2.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
-          "hover:bg-muted/50 text-muted-foreground"
-        )}
-      >
-        <DollarSign className="h-4 w-4" />
-        AI Usage
-      </Link>
-    </div>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          className={cn(
+            "w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+            "hover:bg-muted/50"
+          )}
+        >
+          <Avatar className="h-7 w-7">
+            {avatarSrc && <AvatarImage src={avatarSrc} alt={currentMember.name} />}
+            <AvatarFallback className="text-[10px]">{getInitials(currentMember.name)}</AvatarFallback>
+          </Avatar>
+          <span className="truncate flex-1 text-left">{currentMember.name}</span>
+          <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side="top" align="start" className="w-56">
+        <DropdownMenuItem onClick={() => openSettings("profile")}>
+          <User className="mr-2 h-4 w-4" />
+          Profile
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => openSettings("appearance")}>
+          <Settings className="mr-2 h-4 w-4" />
+          Settings
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={openWorkspaceSettings}>
+          <Settings className="mr-2 h-4 w-4" />
+          Workspace Settings
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
+          <Link to={`/w/${workspaceId}/admin/ai-usage`}>
+            <DollarSign className="mr-2 h-4 w-4" />
+            AI Usage
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => logout()}>
+          <LogOut className="mr-2 h-4 w-4" />
+          Log out
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
@@ -1071,6 +1121,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   const { getUnreadCount } = useUnreadCounts(workspaceId)
   const { getMentionCount, unreadActivityCount } = useActivityCounts(workspaceId)
   const { drafts: allDrafts } = useAllDrafts(workspaceId)
+  const { user } = useAuth()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
@@ -1460,7 +1511,12 @@ export function Sidebar({ workspaceId }: SidebarProps) {
           </div>
         </ScrollArea>
       }
-      footer={<SidebarFooter workspaceId={workspaceId} />}
+      footer={
+        <SidebarFooter
+          workspaceId={workspaceId}
+          currentMember={bootstrap?.members.find((m) => m.userId === user?.id) ?? null}
+        />
+      }
     />
   )
 }

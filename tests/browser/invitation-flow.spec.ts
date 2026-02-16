@@ -54,8 +54,9 @@ test.describe("Invitation Flow", () => {
     await pageA.getByRole("button", { name: "+ New Channel" }).click()
     await expect(pageA.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
-    // Open workspace settings → Members tab
-    await pageA.getByRole("button", { name: "Settings", exact: true }).click()
+    // Open user menu → Workspace Settings → Members tab
+    await pageA.getByRole("button", { name: new RegExp(userAName) }).click()
+    await pageA.getByRole("menuitem", { name: "Workspace Settings" }).click()
     await expect(pageA.getByRole("heading", { name: "Workspace Settings" })).toBeVisible()
     await pageA.getByRole("tab", { name: "Members" }).click()
 

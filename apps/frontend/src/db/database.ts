@@ -19,6 +19,8 @@ export interface CachedWorkspaceMember {
   role: "owner" | "admin" | "member"
   slug: string
   name: string
+  description: string | null
+  avatarUrl: string | null
   timezone: string | null
   locale: string | null
   setupCompleted: boolean
@@ -204,6 +206,14 @@ class ThreaDatabase extends Dexie {
     // v9: Added name to workspace members (workspace-scoped display name).
     // Clear members cache to re-fetch with new shape.
     this.version(9)
+      .stores({})
+      .upgrade((tx) => {
+        return tx.table("workspaceMembers").clear()
+      })
+
+    // v10: Added description and avatarUrl to workspace members (profile fields).
+    // Clear members cache to re-fetch with new shape.
+    this.version(10)
       .stores({})
       .upgrade((tx) => {
         return tx.table("workspaceMembers").clear()

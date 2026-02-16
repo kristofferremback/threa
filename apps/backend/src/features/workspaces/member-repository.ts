@@ -8,6 +8,8 @@ interface MemberRow {
   role: string
   slug: string
   name: string
+  description: string | null
+  avatar_url: string | null
   timezone: string | null
   locale: string | null
   setup_completed: boolean
@@ -22,6 +24,8 @@ export interface Member {
   role: "owner" | "admin" | "member"
   slug: string
   name: string
+  description: string | null
+  avatarUrl: string | null
   timezone: string | null
   locale: string | null
   setupCompleted: boolean
@@ -39,7 +43,7 @@ export interface InsertMemberParams {
 
 const SELECT_FIELDS = `
   wm.id, wm.workspace_id, wm.user_id, wm.role, wm.slug,
-  wm.name, wm.timezone, wm.locale, wm.setup_completed, u.email, wm.joined_at
+  wm.name, wm.description, wm.avatar_url, wm.timezone, wm.locale, wm.setup_completed, u.email, wm.joined_at
 `
 
 function mapRowToMember(row: MemberRow): Member {
@@ -50,6 +54,8 @@ function mapRowToMember(row: MemberRow): Member {
     role: row.role as Member["role"],
     slug: row.slug,
     name: row.name,
+    description: row.description,
+    avatarUrl: row.avatar_url,
     timezone: row.timezone,
     locale: row.locale,
     setupCompleted: row.setup_completed,
