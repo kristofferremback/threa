@@ -27,6 +27,7 @@ export function createMockMember(
     name: "Test Member",
     description: null,
     avatarUrl: null,
+    avatarStatus: null,
     timezone: null,
     locale: null,
     setupCompleted: true,

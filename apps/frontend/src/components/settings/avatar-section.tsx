@@ -13,9 +13,10 @@ interface AvatarSectionProps {
   workspaceId: string
   memberName: string
   avatarUrl: string | null
+  avatarStatus: string | null
 }
 
-export function AvatarSection({ workspaceId, memberName, avatarUrl }: AvatarSectionProps) {
+export function AvatarSection({ workspaceId, memberName, avatarUrl, avatarStatus }: AvatarSectionProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const uploadAvatar = useUploadAvatar(workspaceId)
@@ -62,7 +63,7 @@ export function AvatarSection({ workspaceId, memberName, avatarUrl }: AvatarSect
           {imageUrl && <AvatarImage src={imageUrl} alt={memberName} />}
           <AvatarFallback className="text-lg">{getInitials(memberName)}</AvatarFallback>
         </Avatar>
-        {uploading && (
+        {(uploading || avatarStatus === "processing") && (
           <div className="absolute inset-0 flex items-center justify-center rounded-full bg-background/60">
             <Loader2 className="h-6 w-6 animate-spin" />
           </div>
@@ -77,7 +78,12 @@ export function AvatarSection({ workspaceId, memberName, avatarUrl }: AvatarSect
           className="hidden"
           onChange={handleFileChange}
         />
-        <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploading || avatarStatus === "processing"}
+        >
           Change photo
         </Button>
         {avatarUrl && (
@@ -85,7 +91,7 @@ export function AvatarSection({ workspaceId, memberName, avatarUrl }: AvatarSect
             variant="ghost"
             size="sm"
             onClick={handleRemove}
-            disabled={uploading || removeAvatar.isPending}
+            disabled={uploading || avatarStatus === "processing" || removeAvatar.isPending}
             className="text-muted-foreground"
           >
             Remove

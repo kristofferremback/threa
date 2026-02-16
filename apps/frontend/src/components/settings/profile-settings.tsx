@@ -68,7 +68,12 @@ export function ProfileSettings() {
     <div className="space-y-6">
       <div>
         <h3 className="text-sm font-medium mb-3">Photo</h3>
-        <AvatarSection workspaceId={workspaceId!} memberName={member.name} avatarUrl={member.avatarUrl} />
+        <AvatarSection
+          workspaceId={workspaceId!}
+          memberName={member.name}
+          avatarUrl={member.avatarUrl}
+          avatarStatus={member.avatarStatus}
+        />
       </div>
 
       <div>

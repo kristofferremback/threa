@@ -10,6 +10,7 @@ interface MemberRow {
   name: string
   description: string | null
   avatar_url: string | null
+  avatar_status: string | null
   timezone: string | null
   locale: string | null
   setup_completed: boolean
@@ -26,6 +27,7 @@ export interface Member {
   name: string
   description: string | null
   avatarUrl: string | null
+  avatarStatus: string | null
   timezone: string | null
   locale: string | null
   setupCompleted: boolean
@@ -43,7 +45,7 @@ export interface InsertMemberParams {
 
 const SELECT_FIELDS = `
   wm.id, wm.workspace_id, wm.user_id, wm.role, wm.slug,
-  wm.name, wm.description, wm.avatar_url, wm.timezone, wm.locale, wm.setup_completed, u.email, wm.joined_at
+  wm.name, wm.description, wm.avatar_url, wm.avatar_status, wm.timezone, wm.locale, wm.setup_completed, u.email, wm.joined_at
 `
 
 function mapRowToMember(row: MemberRow): Member {
@@ -56,6 +58,7 @@ function mapRowToMember(row: MemberRow): Member {
     name: row.name,
     description: row.description,
     avatarUrl: row.avatar_url,
+    avatarStatus: row.avatar_status,
     timezone: row.timezone,
     locale: row.locale,
     setupCompleted: row.setup_completed,

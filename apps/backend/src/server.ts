@@ -11,7 +11,12 @@ import { runMigrations } from "./db/migrations"
 import { WorkosAuthService } from "./auth/auth-service"
 import { StubAuthService } from "./auth/auth-service.stub"
 import { UserService } from "./auth/user-service"
-import { WorkspaceService, AvatarService } from "./features/workspaces"
+import {
+  WorkspaceService,
+  AvatarService,
+  createAvatarProcessWorker,
+  createAvatarProcessOnDLQ,
+} from "./features/workspaces"
 import { InvitationService } from "./features/invitations"
 import { WorkosOrgServiceImpl } from "./auth/workos-org-service"
 import { StubWorkosOrgService } from "./auth/workos-org-service.stub"
@@ -99,6 +104,7 @@ import {
   type TextProcessJobData,
   type WordProcessJobData,
   type ExcelProcessJobData,
+  type AvatarProcessJobData,
 } from "./lib/queue"
 import { ProcessingStatuses } from "@threa/types"
 import { AttachmentRepository } from "./features/attachments"
@@ -168,11 +174,9 @@ export async function startServer(): Promise<ServerInstance> {
   const workosOrgService = config.useStubAuth ? new StubWorkosOrgService() : new WorkosOrgServiceImpl(config.workos)
   const storage = createS3Storage(config.s3)
   const avatarService = new AvatarService(storage)
-  const workspaceService = new WorkspaceService(pool, avatarService, workosOrgService)
   const streamService = new StreamService(pool)
   const eventService = new EventService(pool)
   const authService = config.useStubAuth ? new StubAuthService() : new WorkosAuthService(config.workos)
-  const invitationService = new InvitationService(pool, workosOrgService, workspaceService)
 
   // Attachment service
   const malwareScanner = createMalwareScanner(storage, config.attachments)
@@ -219,6 +223,9 @@ export async function startServer(): Promise<ServerInstance> {
     maxActiveTokens: Number(process.env.QUEUE_MAX_ACTIVE_TOKENS) || 3,
     processingConcurrency: 3,
   })
+
+  const workspaceService = new WorkspaceService(pool, avatarService, jobQueue, workosOrgService)
+  const invitationService = new InvitationService(pool, workosOrgService, workspaceService)
 
   // Schedule manager for cron tick generation
   const scheduleManager = new ScheduleManager(pool, {
@@ -440,6 +447,13 @@ export async function startServer(): Promise<ServerInstance> {
   }
   jobQueue.registerHandler(JobQueues.EXCEL_PROCESS, excelProcessingWorker, {
     hooks: { onDLQ: excelOnDLQ },
+  })
+
+  // Avatar processing worker
+  const avatarProcessWorker = createAvatarProcessWorker({ pool, avatarService })
+  const avatarProcessOnDLQ = createAvatarProcessOnDLQ({ pool, avatarService })
+  jobQueue.registerHandler(JobQueues.AVATAR_PROCESS, avatarProcessWorker, {
+    hooks: { onDLQ: avatarProcessOnDLQ },
   })
 
   // Register handlers before starting

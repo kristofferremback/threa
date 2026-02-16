@@ -11,6 +11,8 @@ import { workspaceId, memberId as generateMemberId, streamId } from "../../lib/i
 import { generateSlug, generateUniqueSlug } from "../../lib/slug"
 import { serializeBigInt } from "../../lib/serialization"
 import { HttpError, isUniqueViolation } from "../../lib/errors"
+import { JobQueues } from "../../lib/queue"
+import type { QueueManager } from "../../lib/queue"
 import type { WorkosOrgService } from "../../auth/workos-org-service"
 import type { AvatarService } from "./avatar-service"
 
@@ -28,10 +30,12 @@ export class WorkspaceService {
   private pool: Pool
   private workosOrgService: WorkosOrgService | null
   private avatarService: AvatarService
+  private jobQueue: QueueManager
 
-  constructor(pool: Pool, avatarService: AvatarService, workosOrgService?: WorkosOrgService) {
+  constructor(pool: Pool, avatarService: AvatarService, jobQueue: QueueManager, workosOrgService?: WorkosOrgService) {
     this.pool = pool
     this.avatarService = avatarService
+    this.jobQueue = jobQueue
     this.workosOrgService = workosOrgService ?? null
   }
 
@@ -267,25 +271,26 @@ export class WorkspaceService {
   }
 
   async uploadAvatar(memberId: string, workspaceId: string, buffer: Buffer): Promise<WorkspaceMember> {
-    // Phase 1: Verify member exists before expensive processing
+    // Phase 1: Verify member exists
     const member = await MemberRepository.findById(this.pool, memberId)
     if (!member || member.workspaceId !== workspaceId) {
       throw new HttpError("Member not found", { status: 404, code: "MEMBER_NOT_FOUND" })
     }
 
-    // Phase 2: Process image + upload to S3 (slow, no DB connection held)
-    const avatarUrl = await this.avatarService.processAndUpload({ buffer, workspaceId, memberId })
+    // Phase 2: Upload raw buffer to S3 (single fast PUT, no processing)
+    const rawS3Key = await this.avatarService.uploadRaw({ buffer, workspaceId, memberId })
 
-    // Phase 3: Transaction to update avatar + emit event
+    // Phase 3: Transaction — set processing status + emit event
     let oldAvatarUrl: string | null = null
     let updated: WorkspaceMember
     try {
       updated = await withTransaction(this.pool, async (client) => {
-        // Read inside transaction for race-safe old URL
         const currentMember = await MemberRepository.findById(client, memberId)
         oldAvatarUrl = currentMember?.avatarUrl ?? null
 
-        const result = await WorkspaceRepository.updateMember(client, memberId, { avatarUrl })
+        const result = await WorkspaceRepository.updateMember(client, memberId, {
+          avatarStatus: "processing",
+        })
         if (!result) {
           throw new HttpError("Member not found", { status: 404, code: "MEMBER_NOT_FOUND" })
         }
@@ -301,15 +306,17 @@ export class WorkspaceService {
         return result
       })
     } catch (error) {
-      // Clean up newly uploaded files on DB failure
-      await this.avatarService.deleteAvatarFiles(avatarUrl)
+      this.avatarService.deleteRawFile(rawS3Key)
       throw error
     }
 
-    // After commit: delete old avatar files (fire-and-forget)
-    if (oldAvatarUrl) {
-      this.avatarService.deleteAvatarFiles(oldAvatarUrl)
-    }
+    // Phase 4: Enqueue processing job (after commit)
+    await this.jobQueue.send(JobQueues.AVATAR_PROCESS, {
+      workspaceId,
+      memberId,
+      rawS3Key,
+      oldAvatarUrl,
+    })
 
     return updated
   }
@@ -318,11 +325,13 @@ export class WorkspaceService {
     let oldAvatarUrl: string | null = null
 
     const updated = await withTransaction(this.pool, async (client) => {
-      // Read inside transaction for race-safe old URL
       const currentMember = await MemberRepository.findById(client, memberId)
       oldAvatarUrl = currentMember?.avatarUrl ?? null
 
-      const result = await WorkspaceRepository.updateMember(client, memberId, { avatarUrl: null })
+      const result = await WorkspaceRepository.updateMember(client, memberId, {
+        avatarUrl: null,
+        avatarStatus: null,
+      })
       if (!result) {
         throw new HttpError("Member not found", { status: 404, code: "MEMBER_NOT_FOUND" })
       }
@@ -338,7 +347,6 @@ export class WorkspaceService {
       return result
     })
 
-    // After commit: delete old avatar files (fire-and-forget)
     if (oldAvatarUrl) {
       this.avatarService.deleteAvatarFiles(oldAvatarUrl)
     }

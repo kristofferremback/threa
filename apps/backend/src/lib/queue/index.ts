@@ -23,6 +23,7 @@ export {
   type TextProcessJobData,
   type WordProcessJobData,
   type ExcelProcessJobData,
+  type AvatarProcessJobData,
 } from "./job-queue"
 export { ScheduleManager, type ScheduleManagerConfig } from "./schedule-manager"
 export { CleanupWorker, type CleanupWorkerConfig } from "./cleanup-worker"

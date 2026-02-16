@@ -61,6 +61,36 @@ export class AvatarService {
     return basePath
   }
 
+  /**
+   * Upload the raw (unprocessed) image buffer to S3.
+   * Returns the S3 key for later retrieval by the worker.
+   */
+  async uploadRaw(params: { buffer: Buffer; workspaceId: string; memberId: string }): Promise<string> {
+    const { buffer, workspaceId, memberId } = params
+    const timestamp = Date.now()
+    const key = `avatars/${workspaceId}/${memberId}/${timestamp}.original`
+    await this.storage.putObject(key, buffer, "application/octet-stream")
+    return key
+  }
+
+  /**
+   * Download a raw image buffer from S3 by key.
+   */
+  async downloadRaw(rawS3Key: string): Promise<Buffer> {
+    return this.storage.getObject(rawS3Key)
+  }
+
+  /**
+   * Delete a raw file from S3. Fire-and-forget — logs errors.
+   */
+  async deleteRawFile(rawS3Key: string): Promise<void> {
+    try {
+      await this.storage.delete(rawS3Key)
+    } catch (error) {
+      logger.warn({ error, rawS3Key }, "Failed to delete raw avatar file from S3")
+    }
+  }
+
   private static readonly AVATAR_FILE_PATTERN = /^\d+\.(256|64)\.webp$/
 
   /**

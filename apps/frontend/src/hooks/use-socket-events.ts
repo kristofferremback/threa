@@ -29,6 +29,7 @@ interface MemberWithDisplay {
   name: string
   description: string | null
   avatarUrl: string | null
+  avatarStatus: string | null
   timezone: string | null
   locale: string | null
   setupCompleted: boolean
@@ -322,6 +323,7 @@ export function useSocketEvents(workspaceId: string) {
                 name: member.name,
                 description: member.description,
                 avatarUrl: member.avatarUrl,
+                avatarStatus: member.avatarStatus,
                 timezone: member.timezone,
                 locale: member.locale,
                 setupCompleted: member.setupCompleted,
@@ -342,6 +344,7 @@ export function useSocketEvents(workspaceId: string) {
         name: member.name,
         description: member.description,
         avatarUrl: member.avatarUrl,
+        avatarStatus: member.avatarStatus,
         timezone: member.timezone,
         locale: member.locale,
         setupCompleted: member.setupCompleted,
@@ -388,6 +391,7 @@ export function useSocketEvents(workspaceId: string) {
                 name: member.name,
                 description: member.description,
                 avatarUrl: member.avatarUrl,
+                avatarStatus: member.avatarStatus,
                 timezone: member.timezone,
                 locale: member.locale,
                 setupCompleted: member.setupCompleted,
@@ -409,6 +413,7 @@ export function useSocketEvents(workspaceId: string) {
         name: member.name,
         description: member.description,
         avatarUrl: member.avatarUrl,
+        avatarStatus: member.avatarStatus,
         timezone: member.timezone,
         locale: member.locale,
         setupCompleted: member.setupCompleted,
