@@ -139,6 +139,7 @@ export default defineConfig({
       env: {
         VITE_BACKEND_PORT: String(backendPort),
         VITE_PORT: String(frontendPort),
+        VITE_DRAFT_DEBOUNCE_MS: "5",
       },
     },
   ],

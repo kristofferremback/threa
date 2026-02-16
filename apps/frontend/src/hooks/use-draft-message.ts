@@ -16,7 +16,7 @@ export function getDraftMessageKey(
   return `thread:${location.parentMessageId}`
 }
 
-const DEBOUNCE_MS = 500
+const DEBOUNCE_MS = import.meta.env.VITE_DRAFT_DEBOUNCE_MS ? Number(import.meta.env.VITE_DRAFT_DEBOUNCE_MS) : 500
 
 // Sentinel value to distinguish "loading" from "loaded but not found"
 const LOADING = Symbol("loading")

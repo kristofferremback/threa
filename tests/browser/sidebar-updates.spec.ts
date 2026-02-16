@@ -157,8 +157,15 @@ test.describe("Sidebar Updates", () => {
       const scratchpadLink = page.locator(`a[href*="/s/${streamId}"]`).first()
       await expect(scratchpadLink).toBeVisible({ timeout: 10000 })
 
-      await scratchpadLink.hover()
-      await expect(scratchpadLink.getByText(/stub response/i)).toBeVisible({ timeout: 30000 })
+      await expect
+        .poll(
+          async () => {
+            await scratchpadLink.hover()
+            return scratchpadLink.getByText(/stub response/i).isVisible()
+          },
+          { timeout: 30000 }
+        )
+        .toBeTruthy()
     })
   })
 

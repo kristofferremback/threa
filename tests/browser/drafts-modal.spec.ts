@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test"
+import { test, expect, type Page } from "@playwright/test"
 
 /**
  * Tests for the Drafts page feature.
@@ -15,6 +15,11 @@ import { test, expect } from "@playwright/test"
  * 9. Implicit clear (no confirmation) auto-deletes draft
  * 10. Thread draft navigation with draft panel opening
  */
+
+/** Wait for the drafts link to become highlighted (draftCount > 0 after IndexedDB write). */
+async function waitForDraftSaved(page: Page) {
+  await expect(page.locator('a[href*="/drafts"]')).not.toHaveClass(/text-muted-foreground/, { timeout: 5000 })
+}
 
 test.describe("Drafts Page", () => {
   const testId = Date.now().toString(36)
@@ -88,7 +93,7 @@ test.describe("Drafts Page", () => {
     await page.keyboard.type(draftContent)
 
     // Wait for draft to be saved (debounced at 500ms)
-    await page.waitForTimeout(700)
+    await waitForDraftSaved(page)
 
     // Navigate away to another location (switch to All view to access button, then create scratchpad)
     await switchToAllView(page)
@@ -117,7 +122,7 @@ test.describe("Drafts Page", () => {
     await editor.click()
     const draftContent = `Test draft for page ${testId}`
     await page.keyboard.type(draftContent)
-    await page.waitForTimeout(700)
+    await waitForDraftSaved(page)
 
     // Navigate away (switch to All view to access button)
     await switchToAllView(page)
@@ -153,7 +158,7 @@ test.describe("Drafts Page", () => {
     await editor.click()
     const draftContent = `Navigate test ${testId}`
     await page.keyboard.type(draftContent)
-    await page.waitForTimeout(700)
+    await waitForDraftSaved(page)
 
     // Navigate to drafts page
     await page.locator('a[href*="/drafts"]').click()
@@ -184,7 +189,7 @@ test.describe("Drafts Page", () => {
     await editor.click()
     const draftContent = `Delete test ${testId}`
     await page.keyboard.type(draftContent)
-    await page.waitForTimeout(700)
+    await waitForDraftSaved(page)
 
     // Navigate to drafts page
     await page.locator('a[href*="/drafts"]').click()
@@ -204,11 +209,8 @@ test.describe("Drafts Page", () => {
     // Confirm deletion (use the Delete button within the dialog)
     await dialog.getByRole("button", { name: "Delete" }).click()
 
-    // Wait for delete to complete and UI to update
-    await page.waitForTimeout(500)
-
     // Draft should be removed from page (no options in listbox)
-    await expect(page.getByRole("option")).not.toBeVisible({ timeout: 2000 })
+    await expect(page.getByRole("option")).not.toBeVisible({ timeout: 5000 })
 
     // Page should show empty state
     await expect(page.getByText(/no drafts/i)).toBeVisible()
@@ -228,7 +230,7 @@ test.describe("Drafts Page", () => {
     await editor.click()
     const draftContent = `Cancel delete ${testId}`
     await page.keyboard.type(draftContent)
-    await page.waitForTimeout(700)
+    await waitForDraftSaved(page)
 
     // Navigate to drafts page
     await page.locator('a[href*="/drafts"]').click()
@@ -259,7 +261,7 @@ test.describe("Drafts Page", () => {
     const editor = page.locator("[contenteditable='true']")
     await editor.click()
     await page.keyboard.type(`QS test ${testId}`)
-    await page.waitForTimeout(700)
+    await waitForDraftSaved(page)
 
     // Navigate away (switch to All view to access button)
     await switchToAllView(page)
@@ -325,7 +327,7 @@ test.describe("Drafts Page", () => {
     await expect(page.getByText("pasted-image-1.png")).toBeVisible({ timeout: 10000 })
 
     // Wait for draft to be saved
-    await page.waitForTimeout(700)
+    await waitForDraftSaved(page)
 
     // Navigate away (switch to All view to access button)
     await switchToAllView(page)
@@ -362,7 +364,7 @@ test.describe("Drafts Page", () => {
     await editor.click()
     const draftContent = `Auto clear test ${testId}`
     await page.keyboard.type(draftContent)
-    await page.waitForTimeout(700)
+    await waitForDraftSaved(page)
 
     // Verify draft was saved by checking Drafts link is highlighted
     const draftsLink = page.locator('a[href*="/drafts"]')
@@ -392,7 +394,7 @@ test.describe("Drafts Page", () => {
     await editor.click()
     const draftContent = `Scratchpad draft ${testId}`
     await page.keyboard.type(draftContent)
-    await page.waitForTimeout(700)
+    await waitForDraftSaved(page)
 
     // Create a channel to navigate away
     const channelName = `sp-draft-test-${testId}`
@@ -455,7 +457,7 @@ test.describe("Drafts Page", () => {
     await threadEditor.click()
     const threadDraftContent = `Thread reply draft ${testId}`
     await page.keyboard.type(threadDraftContent)
-    await page.waitForTimeout(700)
+    await waitForDraftSaved(page)
 
     // Navigate away by creating another channel (switch to All view to access button)
     await switchToAllView(page)
