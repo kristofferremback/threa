@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test"
+import { loginAndCreateWorkspace, switchToAllView } from "./helpers"
 
 /**
  * Tests for the Drafts page feature.
@@ -21,53 +22,22 @@ async function waitForDraftSaved(page: Page) {
   await expect(page.locator('a[href*="/drafts"]')).not.toHaveClass(/text-muted-foreground/, { timeout: 5000 })
 }
 
+// 1x1 red PNG for attachment tests
+function createTestImage(): Buffer {
+  return Buffer.from([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xde, 0x00, 0x00, 0x00, 0x0c, 0x49,
+    0x44, 0x41, 0x54, 0x08, 0xd7, 0x63, 0xf8, 0xcf, 0xc0, 0x00, 0x00, 0x00, 0x03, 0x00, 0x01, 0x00, 0x05, 0xfe, 0xd4,
+    0xef, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+  ])
+}
+
 test.describe("Drafts Page", () => {
-  const testId = Date.now().toString(36)
-  const testEmail = `drafts-test-${testId}@example.com`
-  const testName = `Drafts Test ${testId}`
-  const workspaceName = `Drafts Test WS ${testId}`
-
-  // Helper to switch to All view mode (needed to access section buttons in Smart view)
-  async function switchToAllView(page: import("@playwright/test").Page) {
-    const allButton = page.getByRole("button", { name: "All" })
-    if (await allButton.isVisible()) {
-      await allButton.click()
-      await expect(page.getByRole("heading", { name: "Scratchpads", level: 3 })).toBeVisible({ timeout: 5000 })
-    }
-  }
-
-  // Helper to create a test image as a buffer (1x1 red PNG)
-  function createTestImage(): Buffer {
-    return Buffer.from([
-      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00,
-      0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xde, 0x00, 0x00, 0x00, 0x0c, 0x49,
-      0x44, 0x41, 0x54, 0x08, 0xd7, 0x63, 0xf8, 0xcf, 0xc0, 0x00, 0x00, 0x00, 0x03, 0x00, 0x01, 0x00, 0x05, 0xfe, 0xd4,
-      0xef, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
-    ])
-  }
+  let testId: string
 
   test.beforeEach(async ({ page }) => {
-    // Login and create workspace
-    await page.goto("/login")
-    await page.getByRole("button", { name: "Sign in with WorkOS" }).click()
-    await expect(page.getByRole("heading", { name: "Test Login" })).toBeVisible()
-
-    await page.getByLabel("Email").fill(testEmail)
-    await page.getByLabel("Name").fill(testName)
-    await page.getByRole("button", { name: "Sign In" }).click()
-
-    // Wait for workspace selection page
-    await expect(page.getByRole("heading", { name: /Welcome/ })).toBeVisible()
-
-    // Create workspace
-    const workspaceInput = page.getByPlaceholder("New workspace name")
-    await workspaceInput.fill(workspaceName)
-    const createButton = page.getByRole("button", { name: "Create Workspace" })
-    await expect(createButton).toBeEnabled()
-    await createButton.click()
-
-    // Wait for sidebar to be visible (empty state shows buttons)
-    await expect(page.getByRole("button", { name: "+ New Channel" })).toBeVisible({ timeout: 10000 })
+    const result = await loginAndCreateWorkspace(page, "drafts")
+    testId = result.testId
   })
 
   test("should show greyed drafts link when no drafts exist", async ({ page }) => {
