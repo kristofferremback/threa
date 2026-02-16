@@ -31,6 +31,7 @@ export const JobQueues = {
   TEXT_PROCESS: "text.process",
   WORD_PROCESS: "word.process",
   EXCEL_PROCESS: "excel.process",
+  AVATAR_PROCESS: "avatar.process",
 } as const
 
 export type JobQueueName = (typeof JobQueues)[keyof typeof JobQueues]
@@ -136,6 +137,12 @@ export interface ExcelProcessJobData {
   storagePath: string
 }
 
+/** Avatar processing job - resizes raw upload into WebP variants */
+export interface AvatarProcessJobData {
+  workspaceId: string
+  avatarUploadId: string
+}
+
 // Map queue names to their data types
 export interface JobDataMap {
   [JobQueues.PERSONA_AGENT]: PersonaAgentJobData
@@ -152,6 +159,7 @@ export interface JobDataMap {
   [JobQueues.TEXT_PROCESS]: TextProcessJobData
   [JobQueues.WORD_PROCESS]: WordProcessJobData
   [JobQueues.EXCEL_PROCESS]: ExcelProcessJobData
+  [JobQueues.AVATAR_PROCESS]: AvatarProcessJobData
 }
 
 /**

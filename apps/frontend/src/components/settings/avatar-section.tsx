@@ -36,7 +36,7 @@ export function AvatarSection({ workspaceId, memberName, avatarUrl }: AvatarSect
     setUploading(true)
     try {
       await uploadAvatar.mutateAsync(file)
-      toast.success("Avatar updated")
+      toast.success("Avatar uploaded")
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to upload avatar")
     } finally {

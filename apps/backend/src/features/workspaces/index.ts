@@ -6,3 +6,7 @@ export type { Workspace, WorkspaceMember, InsertWorkspaceParams } from "./reposi
 export { MemberRepository } from "./member-repository"
 export type { Member, InsertMemberParams } from "./member-repository"
 export { AvatarService } from "./avatar-service"
+export { AvatarProcessingService } from "./avatar-processing-service"
+export { AvatarUploadRepository } from "./avatar-upload-repository"
+export type { AvatarUpload } from "./avatar-upload-repository"
+export { createAvatarProcessWorker, createAvatarProcessOnDLQ } from "./worker"
