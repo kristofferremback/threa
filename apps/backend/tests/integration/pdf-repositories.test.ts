@@ -9,13 +9,15 @@
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test"
 import { Pool } from "pg"
-import { setupTestDatabase, withTestTransaction } from "./setup"
+import { setupTestDatabase, withTestTransaction, addTestMember } from "./setup"
 import { UserRepository } from "../../src/auth/user-repository"
-import { WorkspaceRepository } from "../../src/repositories/workspace-repository"
-import { StreamRepository } from "../../src/repositories/stream-repository"
-import { AttachmentRepository } from "../../src/repositories/attachment-repository"
-import { PdfPageExtractionRepository } from "../../src/repositories/pdf-page-extraction-repository"
-import { PdfProcessingJobRepository } from "../../src/repositories/pdf-processing-job-repository"
+import { WorkspaceRepository } from "../../src/features/workspaces"
+import { StreamRepository } from "../../src/features/streams"
+import {
+  AttachmentRepository,
+  PdfPageExtractionRepository,
+  PdfProcessingJobRepository,
+} from "../../src/features/attachments"
 import { userId, workspaceId, streamId, attachmentId, pdfPageId, pdfJobId } from "../../src/lib/id"
 import { ProcessingStatuses, PdfJobStatuses, PdfPageClassifications } from "@threa/types"
 
@@ -47,7 +49,7 @@ describe("PDF Repositories", () => {
         slug: `pdf-test-${testWorkspaceId}`,
         createdBy: testUserId,
       })
-      await WorkspaceRepository.addMember(client, testWorkspaceId, testUserId)
+      await addTestMember(client, testWorkspaceId, testUserId)
       await StreamRepository.insert(client, {
         id: testStreamId,
         workspaceId: testWorkspaceId,

@@ -10,10 +10,10 @@ import type {
   OnDLQHook,
   QueueMessageMeta,
   ImageCaptionJobData,
-} from "../../src/lib/job-queue"
+} from "../../src/lib/queue"
 import type { Querier } from "../../src/db"
 import { ProcessingStatuses, type ProcessingStatus } from "@threa/types"
-import { JobQueues } from "../../src/lib/job-queue"
+import { JobQueues } from "../../src/lib/queue"
 
 const TEST_QUEUE = "test.dlq-hook" as JobQueueName
 

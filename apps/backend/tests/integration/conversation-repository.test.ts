@@ -10,12 +10,12 @@
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test"
 import { Pool } from "pg"
-import { withTestTransaction } from "./setup"
+import { withTestTransaction, addTestMember } from "./setup"
 import { UserRepository } from "../../src/auth/user-repository"
-import { WorkspaceRepository } from "../../src/repositories/workspace-repository"
-import { StreamRepository } from "../../src/repositories/stream-repository"
-import { MessageRepository } from "../../src/repositories/message-repository"
-import { ConversationRepository, type Conversation } from "../../src/repositories/conversation-repository"
+import { WorkspaceRepository } from "../../src/features/workspaces"
+import { StreamRepository } from "../../src/features/streams"
+import { MessageRepository } from "../../src/features/messaging"
+import { ConversationRepository, type Conversation } from "../../src/features/conversations"
 import { setupTestDatabase, testMessageContent } from "./setup"
 import { userId, workspaceId, streamId, messageId, conversationId } from "../../src/lib/id"
 import { ConversationStatuses } from "@threa/types"
@@ -47,7 +47,7 @@ describe("ConversationRepository", () => {
         slug: `test-ws-${testWorkspaceId}`,
         createdBy: testUserId,
       })
-      await WorkspaceRepository.addMember(client, testWorkspaceId, testUserId)
+      await addTestMember(client, testWorkspaceId, testUserId)
       await StreamRepository.insert(client, {
         id: testStreamId,
         workspaceId: testWorkspaceId,

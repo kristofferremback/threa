@@ -10,11 +10,11 @@
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test"
 import { Pool } from "pg"
-import { withTestTransaction } from "./setup"
+import { withTestTransaction, addTestMember } from "./setup"
 import { UserRepository } from "../../src/auth/user-repository"
-import { WorkspaceRepository } from "../../src/repositories/workspace-repository"
-import { StreamService } from "../../src/services/stream-service"
-import { EventService } from "../../src/services/event-service"
+import { WorkspaceRepository } from "../../src/features/workspaces"
+import { StreamService } from "../../src/features/streams"
+import { EventService } from "../../src/features/messaging"
 import { setupTestDatabase, testMessageContent } from "./setup"
 import { userId, workspaceId, messageId } from "../../src/lib/id"
 import { StreamTypes, Visibilities } from "@threa/types"
@@ -52,7 +52,7 @@ describe("Thread Graph", () => {
           slug: `thread-ws-${wsId}`,
           createdBy: ownerId,
         })
-        await WorkspaceRepository.addMember(client, wsId, ownerId)
+        await addTestMember(client, wsId, ownerId)
       })
 
       // Create a channel
@@ -104,7 +104,7 @@ describe("Thread Graph", () => {
           slug: `nested-ws-${wsId}`,
           createdBy: ownerId,
         })
-        await WorkspaceRepository.addMember(client, wsId, ownerId)
+        await addTestMember(client, wsId, ownerId)
       })
 
       // Create channel -> thread1 -> thread2
@@ -170,7 +170,7 @@ describe("Thread Graph", () => {
           slug: `deep-ws-${wsId}`,
           createdBy: ownerId,
         })
-        await WorkspaceRepository.addMember(client, wsId, ownerId)
+        await addTestMember(client, wsId, ownerId)
       })
 
       // Create channel -> t1 -> t2 -> t3 -> t4
@@ -234,7 +234,7 @@ describe("Thread Graph", () => {
           slug: `scratch-thread-ws-${wsId}`,
           createdBy: ownerId,
         })
-        await WorkspaceRepository.addMember(client, wsId, ownerId)
+        await addTestMember(client, wsId, ownerId)
       })
 
       // Create a scratchpad
@@ -283,7 +283,7 @@ describe("Thread Graph", () => {
           slug: `thread-member-ws-${wsId}`,
           createdBy: ownerId,
         })
-        await WorkspaceRepository.addMember(client, wsId, ownerId)
+        await addTestMember(client, wsId, ownerId)
       })
 
       const channel = await streamService.createChannel({
@@ -332,7 +332,7 @@ describe("Thread Graph", () => {
           slug: `invalid-thread-ws-${wsId}`,
           createdBy: ownerId,
         })
-        await WorkspaceRepository.addMember(client, wsId, ownerId)
+        await addTestMember(client, wsId, ownerId)
       })
 
       await expect(
@@ -364,7 +364,7 @@ describe("Thread Graph", () => {
           slug: `idem-ws-${wsId}`,
           createdBy: ownerId,
         })
-        await WorkspaceRepository.addMember(client, wsId, ownerId)
+        await addTestMember(client, wsId, ownerId)
       })
 
       const channel = await streamService.createChannel({
@@ -428,8 +428,8 @@ describe("Thread Graph", () => {
           slug: `idem-multi-ws-${wsId}`,
           createdBy: ownerId,
         })
-        await WorkspaceRepository.addMember(client, wsId, ownerId)
-        await WorkspaceRepository.addMember(client, wsId, user2Id)
+        await addTestMember(client, wsId, ownerId)
+        await addTestMember(client, wsId, user2Id)
       })
 
       const channel = await streamService.createChannel({
@@ -495,7 +495,7 @@ describe("Thread Graph", () => {
           slug: `reply-ws-${wsId}`,
           createdBy: ownerId,
         })
-        await WorkspaceRepository.addMember(client, wsId, ownerId)
+        await addTestMember(client, wsId, ownerId)
       })
 
       const channel = await streamService.createChannel({
@@ -570,7 +570,7 @@ describe("Thread Graph", () => {
           slug: `nested-reply-ws-${wsId}`,
           createdBy: ownerId,
         })
-        await WorkspaceRepository.addMember(client, wsId, ownerId)
+        await addTestMember(client, wsId, ownerId)
       })
 
       const channel = await streamService.createChannel({

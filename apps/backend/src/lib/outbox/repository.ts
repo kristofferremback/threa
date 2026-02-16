@@ -485,12 +485,32 @@ export const OutboxRepository = {
   /**
    * Fetches events after a cursor ID for cursor-based processing.
    * No locking - the caller should hold a lock on their listener's cursor row.
+   *
+   * @param excludeIds IDs to skip (already processed in the sliding window)
    */
-  async fetchAfterId(client: Querier, afterId: bigint, limit: number = 100): Promise<OutboxEvent[]> {
+  async fetchAfterId(
+    client: Querier,
+    afterId: bigint,
+    limit: number = 100,
+    excludeIds: bigint[] = []
+  ): Promise<OutboxEvent[]> {
+    if (excludeIds.length === 0) {
+      const result = await client.query<OutboxRow>(sql`
+        SELECT id, event_type, payload, created_at
+        FROM outbox
+        WHERE id > ${afterId.toString()}
+        ORDER BY id
+        LIMIT ${limit}
+      `)
+      return result.rows.map(mapRowToOutbox)
+    }
+
+    const excludeIdStrings = excludeIds.map((id) => id.toString())
     const result = await client.query<OutboxRow>(sql`
       SELECT id, event_type, payload, created_at
       FROM outbox
       WHERE id > ${afterId.toString()}
+        AND id != ALL(${excludeIdStrings}::bigint[])
       ORDER BY id
       LIMIT ${limit}
     `)

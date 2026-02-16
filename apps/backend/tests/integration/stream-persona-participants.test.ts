@@ -9,9 +9,9 @@
 
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test"
 import { Pool } from "pg"
-import { EventService } from "../../src/services/event-service"
-import { StreamPersonaParticipantRepository } from "../../src/repositories/stream-persona-participant-repository"
-import { SearchRepository } from "../../src/repositories/search-repository"
+import { EventService } from "../../src/features/messaging"
+import { StreamPersonaParticipantRepository } from "../../src/features/agents"
+import { SearchRepository } from "../../src/features/search"
 import { streamId, userId, workspaceId, personaId } from "../../src/lib/id"
 import { setupTestDatabase, testMessageContent } from "./setup"
 import { Visibilities } from "@threa/types"

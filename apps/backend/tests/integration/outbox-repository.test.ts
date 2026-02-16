@@ -133,15 +133,20 @@ describe("OutboxRepository", () => {
 
     test("should delete only rows at or below watermark and older than cutoff", async () => {
       await withTestTransaction(pool, async (client) => {
-        const baselineResult = await client.query("SELECT COALESCE(MAX(id), 0) as max_id FROM outbox")
-        const baselineId = BigInt(baselineResult.rows[0].max_id)
+        // Delete all pre-existing events so ORDER BY id LIMIT picks our test events
+        await client.query("DELETE FROM outbox")
 
         const first = await OutboxRepository.insert(client, "message:created", testEventPayload("stream_1"))
         const second = await OutboxRepository.insert(client, "message:created", testEventPayload("stream_2"))
         const third = await OutboxRepository.insert(client, "message:created", testEventPayload("stream_3"))
 
         const oldDate = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000)
-        await client.query("UPDATE outbox SET created_at = $1 WHERE id > $2", [oldDate, baselineId.toString()])
+        await client.query("UPDATE outbox SET created_at = $1 WHERE id IN ($2, $3, $4)", [
+          oldDate,
+          first.id.toString(),
+          second.id.toString(),
+          third.id.toString(),
+        ])
 
         const deleted = await OutboxRepository.deleteRetainedEvents(client, {
           maxEventId: second.id,
@@ -149,7 +154,7 @@ describe("OutboxRepository", () => {
           limit: 100,
         })
 
-        const remaining = await OutboxRepository.fetchAfterId(client, baselineId, 10)
+        const remaining = await OutboxRepository.fetchAfterId(client, 0n, 10)
         const want = {
           deleted: 2,
           remainingEventIds: [third.id],
@@ -166,25 +171,29 @@ describe("OutboxRepository", () => {
 
     test("should respect batch limit", async () => {
       await withTestTransaction(pool, async (client) => {
-        const baselineResult = await client.query("SELECT COALESCE(MAX(id), 0) as max_id FROM outbox")
-        const baselineId = BigInt(baselineResult.rows[0].max_id)
+        // Delete all pre-existing events so ORDER BY id LIMIT picks our test events
+        await client.query("DELETE FROM outbox")
 
-        let latestId = baselineId
+        const inserted: bigint[] = []
         for (let i = 0; i < 5; i++) {
-          const inserted = await OutboxRepository.insert(client, "message:created", testEventPayload(`stream_${i}`))
-          latestId = inserted.id
+          const result = await OutboxRepository.insert(client, "message:created", testEventPayload(`stream_${i}`))
+          inserted.push(result.id)
         }
 
         const oldDate = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000)
-        await client.query("UPDATE outbox SET created_at = $1 WHERE id > $2", [oldDate, baselineId.toString()])
+        const placeholders = inserted.map((_, i) => `$${i + 2}`).join(", ")
+        await client.query(`UPDATE outbox SET created_at = $1 WHERE id IN (${placeholders})`, [
+          oldDate,
+          ...inserted.map((id) => id.toString()),
+        ])
 
         const deleted = await OutboxRepository.deleteRetainedEvents(client, {
-          maxEventId: latestId,
+          maxEventId: inserted[inserted.length - 1],
           createdBefore: new Date(Date.now() - 24 * 60 * 60 * 1000),
           limit: 2,
         })
 
-        const remaining = await OutboxRepository.fetchAfterId(client, baselineId, 10)
+        const remaining = await OutboxRepository.fetchAfterId(client, 0n, 10)
         expect({
           deleted,
           remainingCount: remaining.length,

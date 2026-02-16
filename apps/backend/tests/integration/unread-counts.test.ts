@@ -1,10 +1,8 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test"
 import { Pool } from "pg"
 import { withTransaction, withTestTransaction } from "./setup"
-import { StreamService } from "../../src/services/stream-service"
-import { EventService } from "../../src/services/event-service"
-import { StreamEventRepository } from "../../src/repositories/stream-event-repository"
-import { StreamMemberRepository } from "../../src/repositories/stream-member-repository"
+import { StreamService, StreamEventRepository, StreamMemberRepository } from "../../src/features/streams"
+import { EventService } from "../../src/features/messaging"
 import { streamId, userId, workspaceId } from "../../src/lib/id"
 import { setupTestDatabase, testMessageContent } from "./setup"
 

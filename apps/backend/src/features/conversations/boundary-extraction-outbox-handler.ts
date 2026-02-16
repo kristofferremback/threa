@@ -78,34 +78,33 @@ export class BoundaryExtractionHandler implements OutboxHandler {
   }
 
   private async processEvents(): Promise<void> {
-    await this.cursorLock.run(async (cursor): Promise<ProcessResult> => {
-      const events = await OutboxRepository.fetchAfterId(this.db, cursor, this.batchSize)
+    await this.cursorLock.run(async (cursor, processedIds): Promise<ProcessResult> => {
+      const events = await OutboxRepository.fetchAfterId(this.db, cursor, this.batchSize, processedIds)
 
       if (events.length === 0) {
         return { status: "no_events" }
       }
 
-      let lastProcessedId = cursor
+      const seen: bigint[] = []
 
       try {
         for (const event of events) {
           if (event.eventType !== "message:created") {
-            lastProcessedId = event.id
+            seen.push(event.id)
             continue
           }
 
           const payload = parseMessageCreatedPayload(event.payload)
           if (!payload) {
             logger.debug({ eventId: event.id.toString() }, "BoundaryExtractionHandler: malformed event, skipping")
-            lastProcessedId = event.id
+            seen.push(event.id)
             continue
           }
 
           const { streamId, workspaceId, event: messageEvent } = payload
 
-          // Only process member messages
           if (messageEvent.actorType !== AuthorTypes.MEMBER) {
-            lastProcessedId = event.id
+            seen.push(event.id)
             continue
           }
 
@@ -117,15 +116,15 @@ export class BoundaryExtractionHandler implements OutboxHandler {
             workspaceId,
           })
 
-          lastProcessedId = event.id
+          seen.push(event.id)
         }
 
-        return { status: "processed", newCursor: events[events.length - 1].id }
+        return { status: "processed", processedIds: seen }
       } catch (err) {
         const error = err instanceof Error ? err : new Error(String(err))
 
-        if (lastProcessedId > cursor) {
-          return { status: "error", error, newCursor: lastProcessedId }
+        if (seen.length > 0) {
+          return { status: "error", error, processedIds: seen }
         }
 
         return { status: "error", error }

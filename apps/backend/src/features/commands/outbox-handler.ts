@@ -80,19 +80,19 @@ export class CommandHandler implements OutboxHandler {
   }
 
   private async processEvents(): Promise<void> {
-    await this.cursorLock.run(async (cursor): Promise<ProcessResult> => {
-      const events = await OutboxRepository.fetchAfterId(this.db, cursor, this.batchSize)
+    await this.cursorLock.run(async (cursor, processedIds): Promise<ProcessResult> => {
+      const events = await OutboxRepository.fetchAfterId(this.db, cursor, this.batchSize, processedIds)
 
       if (events.length === 0) {
         return { status: "no_events" }
       }
 
-      let lastProcessedId = cursor
+      const seen: bigint[] = []
 
       try {
         for (const event of events) {
           if (event.eventType !== "command:dispatched") {
-            lastProcessedId = event.id
+            seen.push(event.id)
             continue
           }
 
@@ -114,15 +114,15 @@ export class CommandHandler implements OutboxHandler {
             memberId: authorId,
           })
 
-          lastProcessedId = event.id
+          seen.push(event.id)
         }
 
-        return { status: "processed", newCursor: events[events.length - 1].id }
+        return { status: "processed", processedIds: seen }
       } catch (err) {
         const error = err instanceof Error ? err : new Error(String(err))
 
-        if (lastProcessedId > cursor) {
-          return { status: "error", error, newCursor: lastProcessedId }
+        if (seen.length > 0) {
+          return { status: "error", error, processedIds: seen }
         }
 
         return { status: "error", error }

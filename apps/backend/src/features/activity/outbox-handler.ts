@@ -64,26 +64,26 @@ export class ActivityFeedHandler implements OutboxHandler {
   }
 
   private async processEvents(): Promise<void> {
-    await this.cursorLock.run(async (cursor): Promise<ProcessResult> => {
-      const events = await OutboxRepository.fetchAfterId(this.db, cursor, this.batchSize)
+    await this.cursorLock.run(async (cursor, processedIds): Promise<ProcessResult> => {
+      const events = await OutboxRepository.fetchAfterId(this.db, cursor, this.batchSize, processedIds)
 
       if (events.length === 0) {
         return { status: "no_events" }
       }
 
-      let lastProcessedId = cursor
+      const seen: bigint[] = []
 
       try {
         for (const event of events) {
           if (event.eventType !== "message:created") {
-            lastProcessedId = event.id
+            seen.push(event.id)
             continue
           }
 
           const payload = parseMessageCreatedPayload(event.payload)
           if (!payload) {
             logger.debug({ eventId: event.id.toString() }, "ActivityFeedHandler: malformed event, skipping")
-            lastProcessedId = event.id
+            seen.push(event.id)
             continue
           }
 
@@ -94,12 +94,12 @@ export class ActivityFeedHandler implements OutboxHandler {
           // persona messages both get processed: agents can @mention people and their
           // messages should surface in the activity feed based on notification levels.
           if (messageEvent.actorType === AuthorTypes.SYSTEM) {
-            lastProcessedId = event.id
+            seen.push(event.id)
             continue
           }
 
           if (!messageEvent.actorId) {
-            lastProcessedId = event.id
+            seen.push(event.id)
             continue
           }
 
@@ -152,15 +152,15 @@ export class ActivityFeedHandler implements OutboxHandler {
             })
           }
 
-          lastProcessedId = event.id
+          seen.push(event.id)
         }
 
-        return { status: "processed", newCursor: events[events.length - 1].id }
+        return { status: "processed", processedIds: seen }
       } catch (err) {
         const error = err instanceof Error ? err : new Error(String(err))
 
-        if (lastProcessedId > cursor) {
-          return { status: "error", error, newCursor: lastProcessedId }
+        if (seen.length > 0) {
+          return { status: "error", error, processedIds: seen }
         }
 
         return { status: "error", error }

@@ -11,13 +11,11 @@
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test"
 import { Pool } from "pg"
-import { withTestTransaction } from "./setup"
+import { withTestTransaction, addTestMember } from "./setup"
 import { UserRepository } from "../../src/auth/user-repository"
-import { WorkspaceRepository } from "../../src/repositories/workspace-repository"
-import { StreamEventRepository } from "../../src/repositories/stream-event-repository"
-import { StreamService } from "../../src/services/stream-service"
-import { WorkspaceService } from "../../src/services/workspace-service"
-import { EventService } from "../../src/services/event-service"
+import { WorkspaceRepository, WorkspaceService } from "../../src/features/workspaces"
+import { StreamEventRepository, StreamService } from "../../src/features/streams"
+import { EventService } from "../../src/features/messaging"
 import { StreamNotFoundError } from "../../src/lib/errors"
 import { setupTestDatabase, testMessageContent } from "./setup"
 import { userId, workspaceId, eventId, commandId } from "../../src/lib/id"
@@ -59,7 +57,7 @@ describe("Access Control", () => {
           slug: `test-ws-${wsId}`,
           createdBy: user1Id,
         })
-        await WorkspaceRepository.addMember(client, wsId, user1Id)
+        await addTestMember(client, wsId, user1Id)
       })
 
       const isMember = await workspaceService.isMember(wsId, user1Id)
@@ -158,7 +156,7 @@ describe("Access Control", () => {
           slug: `public-test-ws-${wsId}`,
           createdBy: ownerId,
         })
-        await WorkspaceRepository.addMember(client, wsId, memberId)
+        await addTestMember(client, wsId, memberId)
       })
 
       // Create a public channel (not adding memberId as stream member)
@@ -200,7 +198,7 @@ describe("Access Control", () => {
           slug: `private-test-ws-${wsId}`,
           createdBy: ownerId,
         })
-        await WorkspaceRepository.addMember(client, wsId, memberId)
+        await addTestMember(client, wsId, memberId)
       })
 
       // Create a private channel (not adding memberId as stream member)
@@ -240,7 +238,7 @@ describe("Access Control", () => {
           slug: `priv-access-ws-${wsId}`,
           createdBy: ownerId,
         })
-        await WorkspaceRepository.addMember(client, wsId, streamMemberId)
+        await addTestMember(client, wsId, streamMemberId)
       })
 
       // Create a private channel
@@ -284,7 +282,7 @@ describe("Access Control", () => {
           slug: `scratch-test-ws-${wsId}`,
           createdBy: ownerId,
         })
-        await WorkspaceRepository.addMember(client, wsId, otherId)
+        await addTestMember(client, wsId, otherId)
       })
 
       // Create a scratchpad
@@ -333,7 +331,7 @@ describe("Access Control", () => {
           slug: `list-test-ws-${wsId}`,
           createdBy: user1Id,
         })
-        await WorkspaceRepository.addMember(client, wsId, user2Id)
+        await addTestMember(client, wsId, user2Id)
       })
 
       // User 1 creates a public channel
@@ -398,7 +396,7 @@ describe("Access Control", () => {
           slug: `add-member-ws-${wsId}`,
           createdBy: ownerId,
         })
-        await WorkspaceRepository.addMember(client, wsId, newMemberId)
+        await addTestMember(client, wsId, newMemberId)
       })
 
       // Create private channel
@@ -447,7 +445,7 @@ describe("Access Control", () => {
           slug: `rm-member-ws-${wsId}`,
           createdBy: ownerId,
         })
-        await WorkspaceRepository.addMember(client, wsId, removedMemberId)
+        await addTestMember(client, wsId, removedMemberId)
       })
 
       // Create private channel with member
@@ -553,7 +551,7 @@ describe("Access Control", () => {
           slug: `thread-vis-ws-${wsId}`,
           createdBy: ownerId,
         })
-        await WorkspaceRepository.addMember(client, wsId, memberId)
+        await addTestMember(client, wsId, memberId)
       })
 
       // Create a public channel
@@ -616,7 +614,7 @@ describe("Access Control", () => {
           slug: `deep-thread-ws-${wsId}`,
           createdBy: ownerId,
         })
-        await WorkspaceRepository.addMember(client, wsId, memberId)
+        await addTestMember(client, wsId, memberId)
       })
 
       // Create channel -> thread1 -> thread2 -> thread3
@@ -708,7 +706,7 @@ describe("Access Control", () => {
           slug: `priv-thread-ws-${wsId}`,
           createdBy: ownerId,
         })
-        await WorkspaceRepository.addMember(client, wsId, nonMemberId)
+        await addTestMember(client, wsId, nonMemberId)
       })
 
       // Create a private channel
@@ -781,8 +779,8 @@ describe("Access Control", () => {
           slug: `thread-ismember-ws-${wsId}`,
           createdBy: channelOwnerId,
         })
-        await WorkspaceRepository.addMember(client, wsId, channelMemberId)
-        await WorkspaceRepository.addMember(client, wsId, threadCreatorId)
+        await addTestMember(client, wsId, channelMemberId)
+        await addTestMember(client, wsId, threadCreatorId)
       })
 
       // Create channel with owner and member
@@ -839,7 +837,7 @@ describe("Access Control", () => {
           slug: `thread-add-member-ws-${wsId}`,
           createdBy: ownerId,
         })
-        await WorkspaceRepository.addMember(client, wsId, newMemberId)
+        await addTestMember(client, wsId, newMemberId)
       })
 
       // Create a private channel and thread
@@ -912,8 +910,8 @@ describe("Access Control", () => {
           slug: `is-member-ws-${wsId}`,
           createdBy: ownerId,
         })
-        await WorkspaceRepository.addMember(client, wsId, memberId)
-        await WorkspaceRepository.addMember(client, wsId, nonMemberId)
+        await addTestMember(client, wsId, memberId)
+        await addTestMember(client, wsId, nonMemberId)
       })
 
       // Create channel and add memberId
@@ -962,7 +960,7 @@ describe("Access Control", () => {
           slug: `cmd-vis-ws-${wsId}`,
           createdBy: userAId,
         })
-        await WorkspaceRepository.addMember(client, wsId, userBId)
+        await addTestMember(client, wsId, userBId)
       })
 
       // Create a public channel with both users as members
@@ -1053,7 +1051,7 @@ describe("Access Control", () => {
           slug: `cmd-fail-vis-ws-${wsId}`,
           createdBy: userAId,
         })
-        await WorkspaceRepository.addMember(client, wsId, userBId)
+        await addTestMember(client, wsId, userBId)
       })
 
       const channel = await streamService.createChannel({
