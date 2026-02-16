@@ -57,11 +57,16 @@ export class AvatarService {
     return basePath
   }
 
+  private static readonly AVATAR_FILE_PATTERN = /^\d+\.(256|64)\.webp$/
+
   /**
-   * Stream an avatar image from S3 by its full key (including size suffix).
-   * Returns a Node readable stream to pipe directly to the HTTP response.
+   * Stream an avatar file from S3. Validates filename format and constructs
+   * the S3 key internally — callers don't need to know the storage layout.
+   * Returns null if the filename doesn't match the expected pattern.
    */
-  async streamImage(s3Key: string): Promise<Readable> {
+  async streamAvatarFile(params: { workspaceId: string; memberId: string; file: string }): Promise<Readable | null> {
+    if (!AvatarService.AVATAR_FILE_PATTERN.test(params.file)) return null
+    const s3Key = `avatars/${params.workspaceId}/${params.memberId}/${params.file}`
     return this.storage.getObjectStream(s3Key)
   }
 

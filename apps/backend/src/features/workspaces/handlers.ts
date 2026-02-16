@@ -267,14 +267,14 @@ export function createWorkspaceHandlers({
 
     async serveAvatarFile(req: Request, res: Response) {
       const { workspaceId, memberId, file } = req.params
-      if (!workspaceId || !memberId || !file || !/^\d+\.(256|64)\.webp$/.test(file)) {
+      if (!workspaceId || !memberId || !file) {
         return res.status(404).end()
       }
 
-      const s3Key = `avatars/${workspaceId}/${memberId}/${file}`
-
       try {
-        const stream = await avatarService.streamImage(s3Key)
+        const stream = await avatarService.streamAvatarFile({ workspaceId, memberId, file })
+        if (!stream) return res.status(404).end()
+
         res.set("Content-Type", "image/webp")
         res.set("Cache-Control", "public, max-age=31536000, immutable")
         stream.on("error", () => {
