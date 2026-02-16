@@ -9,8 +9,8 @@ import { AuthorTypes } from "@threa/types"
 
 function makeFakeCursorLock(onRun?: (result: ProcessResult) => void) {
   return () => ({
-    run: mock(async (processor: (cursor: bigint) => Promise<ProcessResult>) => {
-      const result = await processor(0n)
+    run: mock(async (processor: (cursor: bigint, processedIds: bigint[]) => Promise<ProcessResult>) => {
+      const result = await processor(0n, [])
       onRun?.(result)
     }),
   })
@@ -297,6 +297,6 @@ describe("ActivityFeedHandler", () => {
 
     await new Promise((r) => setTimeout(r, 300))
 
-    expect(result).toEqual({ status: "processed", newCursor: 3n })
+    expect(result).toEqual({ status: "processed", processedIds: [1n, 2n, 3n] })
   })
 })

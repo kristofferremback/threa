@@ -86,84 +86,75 @@ export class CompanionHandler implements OutboxHandler {
   }
 
   private async processEvents(): Promise<void> {
-    await this.cursorLock.run(async (cursor): Promise<ProcessResult> => {
-      const events = await OutboxRepository.fetchAfterId(this.db, cursor, this.batchSize)
+    await this.cursorLock.run(async (cursor, processedIds): Promise<ProcessResult> => {
+      const events = await OutboxRepository.fetchAfterId(this.db, cursor, this.batchSize, processedIds)
 
       if (events.length === 0) {
         return { status: "no_events" }
       }
 
-      let lastProcessedId = cursor
+      const seen: bigint[] = []
 
       try {
         for (const event of events) {
-          // Only process message:created events
           if (event.eventType !== "message:created") {
-            lastProcessedId = event.id
+            seen.push(event.id)
             continue
           }
 
           const payload = parseMessageCreatedPayload(event.payload)
           if (!payload) {
             logger.debug({ eventId: event.id.toString() }, "CompanionHandler: malformed event, skipping")
-            lastProcessedId = event.id
+            seen.push(event.id)
             continue
           }
 
           const { streamId, event: messageEvent } = payload
 
-          // Ignore persona messages (avoid infinite loops)
           if (messageEvent.actorType !== AuthorTypes.MEMBER) {
-            lastProcessedId = event.id
+            seen.push(event.id)
             continue
           }
 
-          // Guard against missing actorId (should always exist for USER messages)
           if (!messageEvent.actorId) {
             logger.warn({ streamId }, "CompanionHandler: MEMBER message has no actorId, skipping")
-            lastProcessedId = event.id
+            seen.push(event.id)
             continue
           }
 
           const triggeredBy = messageEvent.actorId
 
-          // Look up stream to check companion mode
           const stream = await StreamRepository.findById(this.db, streamId)
           if (!stream) {
             logger.warn({ streamId }, "CompanionHandler: stream not found")
-            lastProcessedId = event.id
+            seen.push(event.id)
             continue
           }
 
           if (stream.companionMode !== CompanionModes.ON) {
-            lastProcessedId = event.id
+            seen.push(event.id)
             continue
           }
 
-          // Resolve persona: use stream's configured persona, or fall back to system default
           let persona = stream.companionPersonaId
             ? await PersonaRepository.findById(this.db, stream.companionPersonaId!)
             : null
 
-          // If configured persona is missing or inactive, try system default
           if (!persona || persona.status !== "active") {
             persona = await PersonaRepository.getSystemDefault(this.db)
           }
 
           if (!persona) {
             logger.warn({ streamId }, "Companion mode on but no active persona available")
-            lastProcessedId = event.id
+            seen.push(event.id)
             continue
           }
 
-          // Check if there's an existing session that will handle this message
           const lastSession = await AgentSessionRepository.findLatestByStream(this.db, streamId)
 
           if (lastSession) {
             const messageSequence = BigInt(messageEvent.sequence)
 
-            // If a session is still running or pending, it will pick up new messages
-            // via check_new_messages node in the graph - don't dispatch duplicate jobs
             if (lastSession.status === SessionStatuses.PENDING || lastSession.status === SessionStatuses.RUNNING) {
               logger.debug(
                 {
@@ -174,11 +165,10 @@ export class CompanionHandler implements OutboxHandler {
                 },
                 "Session already active for stream, new message will be handled in-flight"
               )
-              lastProcessedId = event.id
+              seen.push(event.id)
               continue
             }
 
-            // If session completed, check if it already saw this message
             if (lastSession.status === SessionStatuses.COMPLETED && lastSession.lastSeenSequence) {
               if (messageSequence <= lastSession.lastSeenSequence) {
                 logger.debug(
@@ -190,7 +180,7 @@ export class CompanionHandler implements OutboxHandler {
                   },
                   "Message already seen by previous session, skipping"
                 )
-                lastProcessedId = event.id
+                seen.push(event.id)
                 continue
               }
             }
@@ -209,15 +199,15 @@ export class CompanionHandler implements OutboxHandler {
             triggeredBy,
           })
 
-          lastProcessedId = event.id
+          seen.push(event.id)
         }
 
-        return { status: "processed", newCursor: events[events.length - 1].id }
+        return { status: "processed", processedIds: seen }
       } catch (err) {
         const error = err instanceof Error ? err : new Error(String(err))
 
-        if (lastProcessedId > cursor) {
-          return { status: "error", error, newCursor: lastProcessedId }
+        if (seen.length > 0) {
+          return { status: "error", error, processedIds: seen }
         }
 
         return { status: "error", error }

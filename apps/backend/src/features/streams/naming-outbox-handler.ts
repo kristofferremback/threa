@@ -91,29 +91,26 @@ export class NamingHandler implements OutboxHandler {
   }
 
   private async processEvents(): Promise<void> {
-    await this.cursorLock.run(async (cursor): Promise<ProcessResult> => {
-      // Fetch batch of events
-      const events = await OutboxRepository.fetchAfterId(this.db, cursor, this.batchSize)
+    await this.cursorLock.run(async (cursor, processedIds): Promise<ProcessResult> => {
+      const events = await OutboxRepository.fetchAfterId(this.db, cursor, this.batchSize, processedIds)
 
       if (events.length === 0) {
         return { status: "no_events" }
       }
 
-      // Track last successfully processed event for partial progress
-      let lastProcessedId = cursor
+      const seen: bigint[] = []
 
       try {
         for (const event of events) {
-          // Only process message:created events
           if (event.eventType !== "message:created") {
-            lastProcessedId = event.id
+            seen.push(event.id)
             continue
           }
 
           const payload = parseMessageCreatedPayload(event.payload)
           if (!payload) {
             logger.debug({ eventId: event.id.toString() }, "NamingHandler: malformed event, skipping")
-            lastProcessedId = event.id
+            seen.push(event.id)
             continue
           }
 
@@ -123,16 +120,15 @@ export class NamingHandler implements OutboxHandler {
           const stream = await StreamRepository.findById(this.db, streamId)
           if (!stream) {
             logger.warn({ streamId }, "NamingHandler: stream not found")
-            lastProcessedId = event.id
+            seen.push(event.id)
             continue
           }
 
           if (!needsAutoNaming(stream)) {
-            lastProcessedId = event.id
+            seen.push(event.id)
             continue
           }
 
-          // Dispatch to queue
           await this.jobQueue.send(JobQueues.NAMING_GENERATE, {
             workspaceId: stream.workspaceId,
             streamId,
@@ -140,16 +136,15 @@ export class NamingHandler implements OutboxHandler {
           })
 
           logger.info({ streamId, requireName: isAgentMessage }, "Naming job dispatched")
-          lastProcessedId = event.id
+          seen.push(event.id)
         }
 
-        return { status: "processed", newCursor: events[events.length - 1].id }
+        return { status: "processed", processedIds: seen }
       } catch (err) {
-        // Return partial progress if we processed some events
         const error = err instanceof Error ? err : new Error(String(err))
 
-        if (lastProcessedId > cursor) {
-          return { status: "error", error, newCursor: lastProcessedId }
+        if (seen.length > 0) {
+          return { status: "error", error, processedIds: seen }
         }
 
         return { status: "error", error }

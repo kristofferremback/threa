@@ -13,59 +13,119 @@ export interface CursorLockConfig {
   maxRetries: number // e.g., 5
   baseBackoffMs: number // e.g., 1000 (1s)
   batchSize: number // e.g., 100
+  gapWindowMs?: number // e.g., 1000 (1s) — how long to keep processed IDs before compacting
 }
 
 export type ProcessResult =
-  | { status: "processed"; newCursor: bigint }
+  | { status: "processed"; processedIds: bigint[] }
   | { status: "no_events" }
-  | { status: "error"; error: Error; newCursor?: bigint }
+  | { status: "error"; error: Error; processedIds?: bigint[] }
 
-interface ListenerLockState {
-  listenerId: string
-  lastProcessedId: bigint
-  retryCount: number
-  retryAfter: Date | null
-  lockedUntil: Date | null
-  lockRunId: string | null
-}
+/** Map of eventId → readAt ISO string */
+export type ProcessedIdsMap = Record<string, string>
 
 interface ListenerLockRow {
   listener_id: string
   last_processed_id: string
+  processed_ids: ProcessedIdsMap
   retry_count: number
   retry_after: Date | null
   locked_until: Date | null
   lock_run_id: string | null
 }
 
-function mapRowToState(row: ListenerLockRow): ListenerLockState {
-  return {
-    listenerId: row.listener_id,
-    lastProcessedId: BigInt(row.last_processed_id),
-    retryCount: row.retry_count,
-    retryAfter: row.retry_after,
-    lockedUntil: row.locked_until,
-    lockRunId: row.lock_run_id,
-  }
-}
-
 function generateRunId(): string {
   return ulid()
 }
 
+const DEFAULT_GAP_WINDOW_MS = 1000
+
+export interface CompactState {
+  cursor: bigint
+  processedIds: ProcessedIdsMap
+}
+
 /**
- * Time-based cursor lock for outbox event processing.
+ * Pure compaction: merges new IDs, expires old entries, advances base cursor.
  *
- * Instead of holding a database transaction open during processing,
- * this uses a time-based lock that can be refreshed. This prevents
- * connection pool exhaustion while maintaining exclusive cursor access.
+ * Steps:
+ * 1. Merge newly processed IDs into processedIds with readAt = now
+ * 2. Find entries where readAt < now - gapWindowMs (expired)
+ * 3. new_base = max(max(expired_ids), base_cursor)
+ * 4. Remove all entries where id <= new_base
+ * 5. Advance through any remaining entries contiguous with new_base
+ */
+export function compact(
+  cursor: bigint,
+  processedIds: ProcessedIdsMap,
+  newIds: bigint[],
+  now: Date,
+  gapWindowMs: number
+): CompactState {
+  // 1. Merge new IDs
+  const merged = { ...processedIds }
+  const nowIso = now.toISOString()
+  for (const id of newIds) {
+    merged[id.toString()] = nowIso
+  }
+
+  // 2. Find expired entries
+  const cutoff = now.getTime() - gapWindowMs
+  let maxExpired = cursor
+  for (const [idStr, readAt] of Object.entries(merged)) {
+    if (new Date(readAt).getTime() <= cutoff) {
+      const id = BigInt(idStr)
+      if (id > maxExpired) {
+        maxExpired = id
+      }
+    }
+  }
+
+  // 3. Advance base cursor
+  let newBase = maxExpired
+
+  // 4. Remove all entries <= new_base
+  const remaining: ProcessedIdsMap = {}
+  for (const [idStr, readAt] of Object.entries(merged)) {
+    if (BigInt(idStr) > newBase) {
+      remaining[idStr] = readAt
+    }
+  }
+
+  // 5. Advance through contiguous entries above new_base
+  let advanced = true
+  while (advanced) {
+    advanced = false
+    const nextStr = (newBase + 1n).toString()
+    if (remaining[nextStr] !== undefined) {
+      delete remaining[nextStr]
+      newBase = newBase + 1n
+      advanced = true
+    }
+  }
+
+  return { cursor: newBase, processedIds: remaining }
+}
+
+/**
+ * Time-based cursor lock with sliding window for outbox event processing.
+ *
+ * PostgreSQL BIGSERIAL allocates IDs at INSERT but rows become visible at
+ * COMMIT. Under concurrent transactions, out-of-order commits cause gaps
+ * where a higher ID is visible before a lower one. A simple "advance cursor
+ * to max seen" approach permanently skips the lower-ID event.
+ *
+ * The sliding window tracks recently processed event IDs separately from
+ * the base cursor. Events in the window are excluded from fetches. After
+ * the gap window expires, the base cursor advances past them.
  *
  * Flow:
  * 1. Check if in backoff (retry_after > now) → return false
  * 2. Try to claim lock → if failed, return false
  * 3. Start refresh timer
  * 4. Exhaust loop: repeatedly call processor until no_events or error
- * 5. Handle results (update cursor, record error, DLQ)
+ *    - After each batch: compact + persist (one DB write)
+ * 5. Handle errors (record error, DLQ)
  * 6. Release lock, stop timer
  */
 export class CursorLock {
@@ -77,6 +137,7 @@ export class CursorLock {
   private readonly refreshIntervalMs: number
   private readonly maxRetries: number
   private readonly baseBackoffMs: number
+  private readonly gapWindowMs: number
 
   private refreshTimer: ReturnType<typeof setInterval> | null = null
   private runId: string | null = null
@@ -89,18 +150,19 @@ export class CursorLock {
     this.maxRetries = config.maxRetries
     this.baseBackoffMs = config.baseBackoffMs
     this.batchSize = config.batchSize
+    this.gapWindowMs = config.gapWindowMs ?? DEFAULT_GAP_WINDOW_MS
   }
 
   /**
    * Try to acquire lock and exhaust events by repeatedly calling processor.
    *
-   * @param processor Function that processes a batch of events starting from cursor.
-   *                  Returns ProcessResult indicating success, no events, or error.
+   * @param processor Function that processes a batch of events.
+   *                  Receives (cursor, processedIds) and returns ProcessResult.
    * @param getNow Optional function to get current time (for testing).
    * @returns true if any work was done, false if lock unavailable or in backoff.
    */
   async run(
-    processor: (cursor: bigint) => Promise<ProcessResult>,
+    processor: (cursor: bigint, processedIds: bigint[]) => Promise<ProcessResult>,
     getNow: () => Date = () => new Date()
   ): Promise<boolean> {
     const now = getNow()
@@ -118,6 +180,7 @@ export class CursorLock {
     }
 
     let { cursor } = lockResult
+    let processedIdsMap = lockResult.processedIds
     let didWork = false
 
     try {
@@ -127,23 +190,22 @@ export class CursorLock {
       // Exhaust loop: keep processing until no more events or error
       let continueProcessing = true
       while (continueProcessing) {
-        const result = await processor(cursor)
+        const processedIdsBigints = Object.keys(processedIdsMap).map(BigInt)
+        const result = await processor(cursor, processedIdsBigints)
 
         switch (result.status) {
           case "processed": {
-            // Validate cursor moved forward
-            if (result.newCursor <= cursor) {
-              logger.error(
-                { listenerId: this.listenerId, oldCursor: cursor.toString(), newCursor: result.newCursor.toString() },
-                "Cursor did not advance - sanity check failed"
-              )
+            if (result.processedIds.length === 0) {
+              logger.error({ listenerId: this.listenerId }, "Processor returned 'processed' with empty processedIds")
               continueProcessing = false
               break
             }
 
-            // Update cursor and reset retry state
-            await this.updateCursor(result.newCursor, getNow())
-            cursor = result.newCursor
+            // Compact and persist
+            const compacted = compact(cursor, processedIdsMap, result.processedIds, getNow(), this.gapWindowMs)
+            await this.persistProcessedState(compacted, getNow())
+            cursor = compacted.cursor
+            processedIdsMap = compacted.processedIds
             didWork = true
             break
           }
@@ -156,10 +218,12 @@ export class CursorLock {
           }
 
           case "error": {
-            // Handle partial progress if newCursor provided
-            if (result.newCursor !== undefined && result.newCursor > cursor) {
-              await this.updateCursor(result.newCursor, getNow())
-              cursor = result.newCursor
+            // Handle partial progress if processedIds provided
+            if (result.processedIds !== undefined && result.processedIds.length > 0) {
+              const compacted = compact(cursor, processedIdsMap, result.processedIds, getNow(), this.gapWindowMs)
+              await this.persistProcessedState(compacted, getNow())
+              cursor = compacted.cursor
+              processedIdsMap = compacted.processedIds
               didWork = true
             }
 
@@ -167,8 +231,9 @@ export class CursorLock {
             const shouldRetry = await this.recordError(result.error.message, getNow())
 
             if (!shouldRetry) {
-              // Max retries exceeded - move first event to DLQ
-              await this.moveFirstEventToDLQ(cursor, result.error.message)
+              // Max retries exceeded - move first unprocessed event to DLQ
+              const processedIdsBigints = Object.keys(processedIdsMap).map(BigInt)
+              await this.moveFirstEventToDLQ(cursor, processedIdsBigints, result.error.message)
             }
 
             continueProcessing = false
@@ -204,7 +269,7 @@ export class CursorLock {
     return now >= retryAfter
   }
 
-  private async tryClaimLock(now: Date): Promise<{ cursor: bigint } | null> {
+  private async tryClaimLock(now: Date): Promise<{ cursor: bigint; processedIds: ProcessedIdsMap } | null> {
     this.runId = generateRunId()
     const lockedUntil = new Date(now.getTime() + this.lockDurationMs)
 
@@ -222,6 +287,7 @@ export class CursorLock {
       RETURNING
         listener_id,
         last_processed_id,
+        processed_ids,
         retry_count,
         retry_after,
         locked_until,
@@ -233,8 +299,11 @@ export class CursorLock {
       return null
     }
 
-    const state = mapRowToState(result.rows[0])
-    return { cursor: state.lastProcessedId }
+    const row = result.rows[0]
+    return {
+      cursor: BigInt(row.last_processed_id),
+      processedIds: (row.processed_ids ?? {}) as ProcessedIdsMap,
+    }
   }
 
   private startRefreshTimer(getNow: () => Date): void {
@@ -284,11 +353,12 @@ export class CursorLock {
     this.runId = null
   }
 
-  private async updateCursor(newCursor: bigint, now: Date): Promise<void> {
+  private async persistProcessedState(state: CompactState, now: Date): Promise<void> {
     await this.pool.query(sql`
       UPDATE outbox_listeners
       SET
-        last_processed_id = ${newCursor.toString()},
+        last_processed_id = ${state.cursor.toString()},
+        processed_ids = ${JSON.stringify(state.processedIds)},
         last_processed_at = ${now},
         retry_count = 0,
         retry_after = NULL,
@@ -360,10 +430,10 @@ export class CursorLock {
     })
   }
 
-  private async moveFirstEventToDLQ(cursor: bigint, errorMessage: string): Promise<void> {
+  private async moveFirstEventToDLQ(cursor: bigint, processedIds: bigint[], errorMessage: string): Promise<void> {
     await withClient(this.pool, async (client) => {
-      // Fetch the first event after cursor (the one that failed)
-      const events = await OutboxRepository.fetchAfterId(client, cursor, 1)
+      // Fetch the first unprocessed event after cursor
+      const events = await OutboxRepository.fetchAfterId(client, cursor, 1, processedIds)
       if (events.length === 0) {
         logger.warn({ listenerId: this.listenerId, cursor: cursor.toString() }, "No event to move to DLQ")
         return
@@ -377,11 +447,35 @@ export class CursorLock {
         VALUES (${this.listenerId}, ${event.id.toString()}, ${errorMessage})
       `)
 
-      // Advance cursor past this event and reset retry state
+      // Add this event to processed set and compact to advance cursor
+      const processedIdsMap: ProcessedIdsMap = {}
+      for (const id of processedIds) {
+        processedIdsMap[id.toString()] = new Date().toISOString()
+      }
+      processedIdsMap[event.id.toString()] = new Date().toISOString()
+
+      // Find new base: advance cursor past this event if it's contiguous
+      let newBase = cursor
+      if (event.id === cursor + 1n) {
+        newBase = event.id
+      } else {
+        // Event is beyond cursor with a gap — just add to processed set
+        newBase = cursor
+      }
+
+      // Remove entries <= newBase
+      const remaining: ProcessedIdsMap = {}
+      for (const [idStr, readAt] of Object.entries(processedIdsMap)) {
+        if (BigInt(idStr) > newBase) {
+          remaining[idStr] = readAt
+        }
+      }
+
       await client.query(sql`
         UPDATE outbox_listeners
         SET
-          last_processed_id = ${event.id.toString()},
+          last_processed_id = ${newBase.toString()},
+          processed_ids = ${JSON.stringify(remaining)},
           last_processed_at = NOW(),
           retry_count = 0,
           retry_after = NULL,

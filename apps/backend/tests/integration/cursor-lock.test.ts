@@ -1,7 +1,14 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test"
 import { Pool } from "pg"
 import { setupTestDatabase } from "./setup"
-import { CursorLock, ensureListener, type ProcessResult, type CursorLockConfig } from "../../src/lib/cursor-lock"
+import {
+  CursorLock,
+  ensureListener,
+  compact,
+  type ProcessResult,
+  type CursorLockConfig,
+  type ProcessedIdsMap,
+} from "../../src/lib/cursor-lock"
 import { OutboxRepository } from "../../src/lib/outbox"
 
 describe("CursorLock", () => {
@@ -24,13 +31,14 @@ describe("CursorLock", () => {
   async function getListenerState() {
     const result = await pool.query<{
       last_processed_id: string
+      processed_ids: ProcessedIdsMap
       retry_count: number
       retry_after: Date | null
       last_error: string | null
       locked_until: Date | null
       lock_run_id: string | null
     }>(
-      `SELECT last_processed_id, retry_count, retry_after, last_error, locked_until, lock_run_id
+      `SELECT last_processed_id, processed_ids, retry_count, retry_after, last_error, locked_until, lock_run_id
        FROM outbox_listeners WHERE listener_id = $1`,
       [testListenerId]
     )
@@ -44,6 +52,11 @@ describe("CursorLock", () => {
        RETURNING id`,
       [eventType]
     )
+    return BigInt(result.rows[0].id)
+  }
+
+  async function getLatestOutboxId(): Promise<bigint> {
+    const result = await pool.query<{ id: string }>("SELECT COALESCE(MAX(id), 0) AS id FROM outbox")
     return BigInt(result.rows[0].id)
   }
 
@@ -65,10 +78,8 @@ describe("CursorLock", () => {
   })
 
   beforeEach(async () => {
-    // Clean up test data between tests
     await pool.query("DELETE FROM outbox_dead_letters WHERE listener_id = $1", [testListenerId])
     await pool.query("DELETE FROM outbox_listeners WHERE listener_id = $1", [testListenerId])
-    // Clean outbox events created by tests (events with test payload)
     await pool.query(`DELETE FROM outbox WHERE payload->>'test' = 'true'`)
   })
 
@@ -101,28 +112,25 @@ describe("CursorLock", () => {
 
   describe("run - lock acquisition", () => {
     test("should acquire lock and process events", async () => {
-      await ensureListener(pool, testListenerId, 0n)
       const eventId = await insertTestEvent()
+      await ensureListener(pool, testListenerId, eventId - 1n)
 
       const cursorLock = createTestCursorLock()
-      const cursors: bigint[] = []
+      const calls: { cursor: bigint; processedIds: bigint[] }[] = []
 
-      const didWork = await cursorLock.run(async (cursor): Promise<ProcessResult> => {
-        cursors.push(cursor)
-        // Return no_events after processing to stop the exhaust loop
-        if (cursor === 0n) {
-          return { status: "processed", newCursor: eventId }
+      const didWork = await cursorLock.run(async (cursor, processedIds): Promise<ProcessResult> => {
+        calls.push({ cursor, processedIds: [...processedIds] })
+        if (calls.length === 1) {
+          return { status: "processed", processedIds: [eventId] }
         }
         return { status: "no_events" }
       })
 
       expect(didWork).toBe(true)
-      expect(cursors[0]).toBe(0n) // First call should have cursor 0n
+      expect(calls[0].cursor).toBe(eventId - 1n)
 
-      // Verify cursor was updated
       const state = await getListenerState()
-      expect(state!.last_processed_id).toBe(eventId.toString())
-      // Lock should be released
+      expect(BigInt(state!.last_processed_id)).toBeGreaterThanOrEqual(eventId)
       expect(state!.locked_until).toBeNull()
       expect(state!.lock_run_id).toBeNull()
     })
@@ -140,7 +148,6 @@ describe("CursorLock", () => {
     test("should return false when lock is already held", async () => {
       await ensureListener(pool, testListenerId, 0n)
 
-      // Manually set a lock that expires in the future
       const futureTime = new Date(Date.now() + 60_000)
       await pool.query(
         `UPDATE outbox_listeners SET locked_until = $1, lock_run_id = 'other_worker'
@@ -157,10 +164,9 @@ describe("CursorLock", () => {
     })
 
     test("should acquire expired lock", async () => {
-      await ensureListener(pool, testListenerId, 0n)
       const eventId = await insertTestEvent()
+      await ensureListener(pool, testListenerId, eventId - 1n)
 
-      // Set a lock that already expired
       const pastTime = new Date(Date.now() - 1000)
       await pool.query(
         `UPDATE outbox_listeners SET locked_until = $1, lock_run_id = 'old_worker'
@@ -169,8 +175,11 @@ describe("CursorLock", () => {
       )
 
       const cursorLock = createTestCursorLock()
-      const didWork = await cursorLock.run(async (cursor): Promise<ProcessResult> => {
-        return { status: "processed", newCursor: eventId }
+      let callCount = 0
+      const didWork = await cursorLock.run(async (): Promise<ProcessResult> => {
+        callCount++
+        if (callCount === 1) return { status: "processed", processedIds: [eventId] }
+        return { status: "no_events" }
       })
 
       expect(didWork).toBe(true)
@@ -181,7 +190,6 @@ describe("CursorLock", () => {
     test("should return false when in retry backoff", async () => {
       await ensureListener(pool, testListenerId, 0n)
 
-      // Set retry_after to future
       const futureTime = new Date(Date.now() + 60_000)
       await pool.query(`UPDATE outbox_listeners SET retry_after = $1 WHERE listener_id = $2`, [
         futureTime,
@@ -197,10 +205,9 @@ describe("CursorLock", () => {
     })
 
     test("should process when retry_after has passed", async () => {
-      await ensureListener(pool, testListenerId, 0n)
       const eventId = await insertTestEvent()
+      await ensureListener(pool, testListenerId, eventId - 1n)
 
-      // Set retry_after to past
       const pastTime = new Date(Date.now() - 1000)
       await pool.query(`UPDATE outbox_listeners SET retry_after = $1 WHERE listener_id = $2`, [
         pastTime,
@@ -208,8 +215,11 @@ describe("CursorLock", () => {
       ])
 
       const cursorLock = createTestCursorLock()
+      let callCount = 0
       const didWork = await cursorLock.run(async (): Promise<ProcessResult> => {
-        return { status: "processed", newCursor: eventId }
+        callCount++
+        if (callCount === 1) return { status: "processed", processedIds: [eventId] }
+        return { status: "no_events" }
       })
 
       expect(didWork).toBe(true)
@@ -218,7 +228,6 @@ describe("CursorLock", () => {
     test("should reset retry state when no_events after recovering from backoff", async () => {
       await ensureListener(pool, testListenerId, 100n)
 
-      // Simulate recovery from error: retry_after in past, but retry state still set
       const pastTime = new Date(Date.now() - 1000)
       await pool.query(
         `UPDATE outbox_listeners
@@ -228,52 +237,46 @@ describe("CursorLock", () => {
       )
 
       const cursorLock = createTestCursorLock()
-      // Processor returns no_events (cursor already caught up)
       const didWork = await cursorLock.run(async (): Promise<ProcessResult> => {
         return { status: "no_events" }
       })
 
       expect(didWork).toBe(false)
 
-      // Verify retry state was reset
       const state = await getListenerState()
       expect(state!.retry_count).toBe(0)
       expect(state!.retry_after).toBeNull()
       expect(state!.last_error).toBeNull()
-      // Cursor should not have changed
       expect(state!.last_processed_id).toBe("100")
     })
   })
 
   describe("run - exhaust loop", () => {
     test("should repeatedly call processor until no_events", async () => {
-      await ensureListener(pool, testListenerId, 0n)
       const event1 = await insertTestEvent()
       const event2 = await insertTestEvent()
       const event3 = await insertTestEvent()
+      await ensureListener(pool, testListenerId, event1 - 1n)
 
-      const cursorLock = createTestCursorLock()
-      const calls: bigint[] = []
+      // gapWindowMs=0 so cursor advances past all processed IDs immediately,
+      // even if concurrent inserts from other test files create gaps
+      const cursorLock = createTestCursorLock({ gapWindowMs: 0 })
+      const processedEventIds: bigint[] = []
 
-      const didWork = await cursorLock.run(async (cursor): Promise<ProcessResult> => {
-        calls.push(cursor)
-
-        if (cursor === 0n) {
-          return { status: "processed", newCursor: event1 }
-        } else if (cursor === event1) {
-          return { status: "processed", newCursor: event2 }
-        } else if (cursor === event2) {
-          return { status: "processed", newCursor: event3 }
-        } else {
-          return { status: "no_events" }
-        }
+      const didWork = await cursorLock.run(async (cursor, processedIds): Promise<ProcessResult> => {
+        const events = await OutboxRepository.fetchAfterId(pool, cursor, 1, processedIds)
+        if (events.length === 0) return { status: "no_events" }
+        processedEventIds.push(events[0].id)
+        return { status: "processed", processedIds: [events[0].id] }
       })
 
       expect(didWork).toBe(true)
-      expect(calls).toEqual([0n, event1, event2, event3])
+      expect(processedEventIds).toContain(event1)
+      expect(processedEventIds).toContain(event2)
+      expect(processedEventIds).toContain(event3)
 
       const state = await getListenerState()
-      expect(state!.last_processed_id).toBe(event3.toString())
+      expect(BigInt(state!.last_processed_id)).toBeGreaterThanOrEqual(event3)
     })
 
     test("should stop on no_events and report no work when starting exhausted", async () => {
@@ -287,16 +290,15 @@ describe("CursorLock", () => {
       expect(didWork).toBe(false)
     })
 
-    test("should reject cursor that does not advance", async () => {
+    test("should reject empty processedIds on processed status", async () => {
       await ensureListener(pool, testListenerId, 10n)
 
       const cursorLock = createTestCursorLock()
       let callCount = 0
 
-      const didWork = await cursorLock.run(async (cursor): Promise<ProcessResult> => {
+      const didWork = await cursorLock.run(async (): Promise<ProcessResult> => {
         callCount++
-        // Return same cursor (doesn't advance)
-        return { status: "processed", newCursor: cursor }
+        return { status: "processed", processedIds: [] }
       })
 
       expect(didWork).toBe(false)
@@ -306,7 +308,8 @@ describe("CursorLock", () => {
 
   describe("run - error handling", () => {
     test("should record error and set retry backoff", async () => {
-      await ensureListener(pool, testListenerId, 0n)
+      const baseId = await getLatestOutboxId()
+      await ensureListener(pool, testListenerId, baseId)
 
       const cursorLock = createTestCursorLock()
       const didWork = await cursorLock.run(async (): Promise<ProcessResult> => {
@@ -322,11 +325,9 @@ describe("CursorLock", () => {
     })
 
     test("should move event to DLQ after max retries", async () => {
-      // Insert event first, then create listener with cursor just before it
       const eventId = await insertTestEvent()
       await ensureListener(pool, testListenerId, eventId - 1n)
 
-      // Set retry_count to max
       await pool.query(`UPDATE outbox_listeners SET retry_count = 3 WHERE listener_id = $1`, [testListenerId])
 
       const cursorLock = createTestCursorLock({ maxRetries: 3 })
@@ -334,13 +335,11 @@ describe("CursorLock", () => {
         return { status: "error", error: new Error("Fatal error") }
       })
 
-      // Check event was moved to DLQ
       const deadLetters = await getDeadLetters()
       expect(deadLetters.length).toBe(1)
       expect(deadLetters[0].outbox_event_id).toBe(eventId.toString())
       expect(deadLetters[0].error).toBe("Fatal error")
 
-      // Cursor should be advanced past the failed event
       const state = await getListenerState()
       expect(state!.last_processed_id).toBe(eventId.toString())
       expect(state!.retry_count).toBe(0)
@@ -348,30 +347,26 @@ describe("CursorLock", () => {
     })
 
     test("should preserve partial progress on error", async () => {
-      // Insert events first
       const event1 = await insertTestEvent()
       const event2 = await insertTestEvent()
-      // Create listener with cursor just before event1
       await ensureListener(pool, testListenerId, event1 - 1n)
 
       const cursorLock = createTestCursorLock()
       await cursorLock.run(async (): Promise<ProcessResult> => {
-        // Partial progress: processed event1, failed on event2
-        return { status: "error", error: new Error("Partial failure"), newCursor: event1 }
+        return { status: "error", error: new Error("Partial failure"), processedIds: [event1] }
       })
 
       const state = await getListenerState()
-      // Cursor should be at event1, not 0
-      expect(state!.last_processed_id).toBe(event1.toString())
+      expect(BigInt(state!.last_processed_id)).toBeGreaterThanOrEqual(event1)
       expect(state!.retry_count).toBe(1)
     })
   })
 
   describe("run - testable time", () => {
     test("should use provided getNow function for time comparisons", async () => {
-      await ensureListener(pool, testListenerId, 0n)
+      const eventId = await insertTestEvent()
+      await ensureListener(pool, testListenerId, eventId - 1n)
 
-      // Set retry_after to a specific time
       const retryAfter = new Date("2024-01-01T12:00:00Z")
       await pool.query(`UPDATE outbox_listeners SET retry_after = $1 WHERE listener_id = $2`, [
         retryAfter,
@@ -380,18 +375,18 @@ describe("CursorLock", () => {
 
       const cursorLock = createTestCursorLock()
 
-      // When "now" is before retry_after, should not process
       const beforeRetry = () => new Date("2024-01-01T11:59:00Z")
       const didWorkBefore = await cursorLock.run(async () => {
         throw new Error("Should not be called")
       }, beforeRetry)
       expect(didWorkBefore).toBe(false)
 
-      // When "now" is after retry_after, should process
       const afterRetry = () => new Date("2024-01-01T12:01:00Z")
-      const eventId = await insertTestEvent()
+      let callCount = 0
       const didWorkAfter = await cursorLock.run(async (): Promise<ProcessResult> => {
-        return { status: "processed", newCursor: eventId }
+        callCount++
+        if (callCount === 1) return { status: "processed", processedIds: [eventId] }
+        return { status: "no_events" }
       }, afterRetry)
       expect(didWorkAfter).toBe(true)
     })
@@ -414,6 +409,156 @@ describe("CursorLock", () => {
       const state = await getListenerState()
       expect(state!.locked_until).toBeNull()
       expect(state!.lock_run_id).toBeNull()
+    })
+  })
+
+  describe("compact (pure function)", () => {
+    test("should merge new IDs into processed set", () => {
+      const result = compact(10n, {}, [11n, 12n, 13n], new Date(), 1000)
+
+      // All contiguous with cursor 10: should advance to 13
+      expect(result.cursor).toBe(13n)
+      expect(Object.keys(result.processedIds)).toHaveLength(0)
+    })
+
+    test("should preserve uncompacted entries within window", () => {
+      const now = new Date()
+      // IDs 12 and 14 are in the window (just added), 13 is a gap
+      const result = compact(10n, {}, [12n, 14n], now, 1000)
+
+      // No entries are expired yet (all just added), so base stays at 10
+      expect(result.cursor).toBe(10n)
+      expect(Object.keys(result.processedIds)).toHaveLength(2)
+      expect(result.processedIds["12"]).toBe(now.toISOString())
+      expect(result.processedIds["14"]).toBe(now.toISOString())
+    })
+
+    test("should compact expired entries and advance cursor past gaps", () => {
+      const now = new Date()
+      const oldTime = new Date(now.getTime() - 2000).toISOString()
+
+      // IDs 11, 12, 14 were processed 2s ago (expired at 1s window)
+      // 13 is a gap that never appeared
+      const processedIds: ProcessedIdsMap = {
+        "11": oldTime,
+        "12": oldTime,
+        "14": oldTime,
+      }
+
+      const result = compact(10n, processedIds, [], now, 1000)
+
+      // max expired = 14, so base advances to 14
+      // All entries <= 14 are removed
+      expect(result.cursor).toBe(14n)
+      expect(Object.keys(result.processedIds)).toHaveLength(0)
+    })
+
+    test("should advance through contiguous entries after compaction", () => {
+      const now = new Date()
+      const oldTime = new Date(now.getTime() - 2000).toISOString()
+
+      // 11 is expired, 12 and 13 are fresh (just added)
+      const processedIds: ProcessedIdsMap = {
+        "11": oldTime,
+        "12": now.toISOString(),
+        "13": now.toISOString(),
+      }
+
+      const result = compact(10n, processedIds, [], now, 1000)
+
+      // max expired = 11, base advances to 11
+      // Then 12 and 13 are contiguous with 11, so base advances to 13
+      expect(result.cursor).toBe(13n)
+      expect(Object.keys(result.processedIds)).toHaveLength(0)
+    })
+
+    test("should handle DLQ with processed set exclusion", () => {
+      const now = new Date()
+      // Simulate: cursor at 10, we've processed 12 and 13, but 11 failed repeatedly
+      // After DLQ moves 11, the processed set should be {12, 13}
+      // Next compact after adding 11 to processed should advance cursor to 13
+      const processedIds: ProcessedIdsMap = {
+        "12": now.toISOString(),
+        "13": now.toISOString(),
+      }
+
+      const result = compact(10n, processedIds, [11n], now, 1000)
+
+      // 11, 12, 13 are all contiguous with cursor 10 — advance to 13
+      expect(result.cursor).toBe(13n)
+      expect(Object.keys(result.processedIds)).toHaveLength(0)
+    })
+
+    test("should accumulate processedIds across exhaust loop iterations", () => {
+      const now = new Date()
+
+      // Iteration 1: process IDs 12, 15 (gaps at 11, 13, 14)
+      const state1 = compact(10n, {}, [12n, 15n], now, 1000)
+      expect(state1.cursor).toBe(10n)
+      expect(Object.keys(state1.processedIds)).toHaveLength(2)
+
+      // Iteration 2: process IDs 11, 13 (filling some gaps)
+      const state2 = compact(state1.cursor, state1.processedIds, [11n, 13n], now, 1000)
+      // 11, 12, 13 contiguous with 10 → advance to 13. 15 remains in window
+      expect(state2.cursor).toBe(13n)
+      expect(Object.keys(state2.processedIds)).toHaveLength(1)
+      expect(state2.processedIds["15"]).toBeDefined()
+
+      // Iteration 3: process ID 14 (fills the last gap)
+      const state3 = compact(state2.cursor, state2.processedIds, [14n], now, 1000)
+      // 14, 15 contiguous with 13 → advance to 15
+      expect(state3.cursor).toBe(15n)
+      expect(Object.keys(state3.processedIds)).toHaveLength(0)
+    })
+  })
+
+  describe("sliding window - integration", () => {
+    test("should pick up events that appear in gaps after compaction", async () => {
+      const baseId = await getLatestOutboxId()
+      const event1 = await insertTestEvent()
+      const event2 = await insertTestEvent()
+      await ensureListener(pool, testListenerId, baseId)
+
+      // gapWindowMs=0 with <= comparison means entries expire immediately
+      const cursorLock = createTestCursorLock({ gapWindowMs: 0 })
+
+      const didWork = await cursorLock.run(async (cursor, processedIds): Promise<ProcessResult> => {
+        const events = await OutboxRepository.fetchAfterId(pool, cursor, 10, processedIds)
+        if (events.length === 0) return { status: "no_events" }
+        return { status: "processed", processedIds: events.map((e) => e.id) }
+      })
+
+      expect(didWork).toBe(true)
+
+      const state = await getListenerState()
+      expect(BigInt(state!.last_processed_id)).toBeGreaterThanOrEqual(event2)
+    })
+
+    test("should pass processedIds to processor across exhaust loop iterations", async () => {
+      const event1 = await insertTestEvent()
+      const event2 = await insertTestEvent()
+      // Cursor far before events creates non-contiguous gap, so processedIds
+      // won't be consumed by contiguous advancement
+      await ensureListener(pool, testListenerId, event1 - 2n)
+
+      // Long gap window keeps entries in the processed set between iterations
+      const cursorLock = createTestCursorLock({ gapWindowMs: 60_000 })
+      const processedIdsSeen: bigint[][] = []
+      let callCount = 0
+
+      const didWork = await cursorLock.run(async (cursor, processedIds): Promise<ProcessResult> => {
+        processedIdsSeen.push([...processedIds])
+        callCount++
+        if (callCount === 1) return { status: "processed", processedIds: [event1] }
+        if (callCount === 2) return { status: "processed", processedIds: [event2] }
+        return { status: "no_events" }
+      })
+
+      expect(didWork).toBe(true)
+      // First call: no processedIds yet
+      expect(processedIdsSeen[0]).toHaveLength(0)
+      // Second call: event1 should be in processedIds (non-contiguous, stays in window)
+      expect(processedIdsSeen[1]).toContainEqual(event1)
     })
   })
 })
