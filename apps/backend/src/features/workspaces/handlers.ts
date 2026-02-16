@@ -253,13 +253,7 @@ export function createWorkspaceHandlers({
         return res.status(400).json({ error: "No file uploaded" })
       }
 
-      const avatarUrl = await avatarService.processAndUpload({
-        buffer: req.file.buffer,
-        workspaceId,
-        memberId,
-      })
-
-      const member = await workspaceService.updateMemberAvatar(memberId, workspaceId, avatarUrl)
+      const member = await workspaceService.uploadAvatar(memberId, workspaceId, req.file.buffer)
       res.json({ member })
     },
 
@@ -273,7 +267,7 @@ export function createWorkspaceHandlers({
 
     async serveAvatarFile(req: Request, res: Response) {
       const { workspaceId, memberId, file } = req.params
-      if (!workspaceId || !memberId || !file || !file.endsWith(".webp")) {
+      if (!workspaceId || !memberId || !file || !/^\d+\.(256|64)\.webp$/.test(file)) {
         return res.status(404).end()
       }
 
@@ -283,6 +277,13 @@ export function createWorkspaceHandlers({
         const stream = await avatarService.streamImage(s3Key)
         res.set("Content-Type", "image/webp")
         res.set("Cache-Control", "public, max-age=31536000, immutable")
+        stream.on("error", () => {
+          if (!res.headersSent) {
+            res.status(500).end()
+          } else {
+            res.end()
+          }
+        })
         stream.pipe(res)
       } catch {
         res.status(404).end()

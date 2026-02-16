@@ -27,6 +27,42 @@ export class AvatarService {
   }
 
   /**
+   * Process an image buffer into WebP variants at each AVATAR_SIZES dimension.
+   * Pure image transformation — no I/O.
+   */
+  async processImages(buffer: Buffer): Promise<Map<number, Buffer>> {
+    const results = new Map<number, Buffer>()
+    await Promise.all(
+      AVATAR_SIZES.map(async (size) => {
+        const processed = await sharp(buffer)
+          .resize(size, size, { fit: "cover" })
+          .webp({ quality: WEBP_QUALITY })
+          .toBuffer()
+        results.set(size, processed)
+      })
+    )
+    return results
+  }
+
+  /**
+   * Upload pre-processed image buffers to S3 under the given base path.
+   */
+  async uploadImages(basePath: string, images: Map<number, Buffer>): Promise<void> {
+    await Promise.all(
+      [...images.entries()].map(([size, processed]) =>
+        this.s3Client.send(
+          new PutObjectCommand({
+            Bucket: this.bucket,
+            Key: `${basePath}.${size}.webp`,
+            Body: processed,
+            ContentType: "image/webp",
+          })
+        )
+      )
+    )
+  }
+
+  /**
    * Process an image buffer into two WebP variants and upload to S3.
    * Returns the S3 key base path (without size suffix) — frontend
    * constructs display URLs via getAvatarUrl() which points to the
@@ -36,26 +72,8 @@ export class AvatarService {
     const { buffer, workspaceId, memberId } = params
     const timestamp = Date.now()
     const basePath = `avatars/${workspaceId}/${memberId}/${timestamp}`
-
-    const uploads = AVATAR_SIZES.map(async (size) => {
-      const processed = await sharp(buffer)
-        .resize(size, size, { fit: "cover" })
-        .webp({ quality: WEBP_QUALITY })
-        .toBuffer()
-
-      const key = `${basePath}.${size}.webp`
-      await this.s3Client.send(
-        new PutObjectCommand({
-          Bucket: this.bucket,
-          Key: key,
-          Body: processed,
-          ContentType: "image/webp",
-        })
-      )
-    })
-
-    await Promise.all(uploads)
-
+    const images = await this.processImages(buffer)
+    await this.uploadImages(basePath, images)
     return basePath
   }
 

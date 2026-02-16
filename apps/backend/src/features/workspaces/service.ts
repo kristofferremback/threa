@@ -266,31 +266,46 @@ export class WorkspaceService {
     })
   }
 
-  async updateMemberAvatar(memberId: string, workspaceId: string, avatarUrl: string): Promise<WorkspaceMember> {
-    // Phase 1: Read current member to get old avatar URL (single query, pool)
-    const oldMember = await MemberRepository.findById(this.pool, memberId)
-    const oldAvatarUrl = oldMember?.avatarUrl ?? null
+  async uploadAvatar(memberId: string, workspaceId: string, buffer: Buffer): Promise<WorkspaceMember> {
+    if (!this.avatarService) {
+      throw new HttpError("Avatar service not configured", { status: 500, code: "AVATAR_SERVICE_UNAVAILABLE" })
+    }
+
+    // Phase 2: Process image + upload to S3 (slow, no DB connection held)
+    const avatarUrl = await this.avatarService.processAndUpload({ buffer, workspaceId, memberId })
 
     // Phase 3: Transaction to update avatar + emit event
-    const updated = await withTransaction(this.pool, async (client) => {
-      const result = await WorkspaceRepository.updateMember(client, memberId, { avatarUrl })
-      if (!result) {
-        throw new HttpError("Member not found", { status: 404, code: "MEMBER_NOT_FOUND" })
-      }
+    let oldAvatarUrl: string | null = null
+    let updated: WorkspaceMember
+    try {
+      updated = await withTransaction(this.pool, async (client) => {
+        // Read inside transaction for race-safe old URL
+        const currentMember = await MemberRepository.findById(client, memberId)
+        oldAvatarUrl = currentMember?.avatarUrl ?? null
 
-      const fullMember = await MemberRepository.findById(client, memberId)
-      if (fullMember) {
-        await OutboxRepository.insert(client, "member:updated", {
-          workspaceId,
-          member: serializeBigInt(fullMember),
-        })
-      }
+        const result = await WorkspaceRepository.updateMember(client, memberId, { avatarUrl })
+        if (!result) {
+          throw new HttpError("Member not found", { status: 404, code: "MEMBER_NOT_FOUND" })
+        }
 
-      return result
-    })
+        const fullMember = await MemberRepository.findById(client, memberId)
+        if (fullMember) {
+          await OutboxRepository.insert(client, "member:updated", {
+            workspaceId,
+            member: serializeBigInt(fullMember),
+          })
+        }
+
+        return result
+      })
+    } catch (error) {
+      // Clean up newly uploaded files on DB failure
+      this.avatarService.deleteAvatarFiles(avatarUrl)
+      throw error
+    }
 
     // After commit: delete old avatar files (fire-and-forget)
-    if (oldAvatarUrl && this.avatarService) {
+    if (oldAvatarUrl) {
       this.avatarService.deleteAvatarFiles(oldAvatarUrl)
     }
 
@@ -298,12 +313,13 @@ export class WorkspaceService {
   }
 
   async removeMemberAvatar(memberId: string, workspaceId: string): Promise<WorkspaceMember> {
-    // Phase 1: Read current member to get old avatar URL (single query, pool)
-    const oldMember = await MemberRepository.findById(this.pool, memberId)
-    const oldAvatarUrl = oldMember?.avatarUrl ?? null
+    let oldAvatarUrl: string | null = null
 
-    // Phase 3: Transaction to clear avatar + emit event
     const updated = await withTransaction(this.pool, async (client) => {
+      // Read inside transaction for race-safe old URL
+      const currentMember = await MemberRepository.findById(client, memberId)
+      oldAvatarUrl = currentMember?.avatarUrl ?? null
+
       const result = await WorkspaceRepository.updateMember(client, memberId, { avatarUrl: null })
       if (!result) {
         throw new HttpError("Member not found", { status: 404, code: "MEMBER_NOT_FOUND" })
