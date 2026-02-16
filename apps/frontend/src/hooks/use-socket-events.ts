@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from "react"
-import { useQueryClient, useQuery } from "@tanstack/react-query"
+import { useQueryClient, useQuery, type QueryClient } from "@tanstack/react-query"
 import { useParams } from "react-router-dom"
 import { useSocket, useSocketReconnectCount } from "@/contexts"
 import { useAuth } from "@/auth"
@@ -18,6 +18,33 @@ import type {
   LastMessagePreview,
   ActivityCreatedPayload,
 } from "@threa/types"
+
+/**
+ * Update the workspace bootstrap cache, or invalidate if it's not cached yet.
+ *
+ * Socket events can arrive before the bootstrap queryFn completes (the member
+ * room is joined before the fetch finishes). Without this guard, setQueryData
+ * sees `old === undefined` and silently drops the update. Invalidating triggers
+ * a re-fetch that will include the event's state from the DB.
+ *
+ * Returns true if the update was applied, false if invalidated instead.
+ */
+function updateBootstrapOrInvalidate(
+  queryClient: QueryClient,
+  workspaceId: string,
+  updater: (old: WorkspaceBootstrap) => WorkspaceBootstrap
+): boolean {
+  const key = workspaceKeys.bootstrap(workspaceId)
+  if (!queryClient.getQueryData(key)) {
+    queryClient.invalidateQueries({ queryKey: key })
+    return false
+  }
+  queryClient.setQueryData<WorkspaceBootstrap>(key, (old) => {
+    if (!old) return old
+    return updater(old)
+  })
+  return true
+}
 
 /** Member shape from MemberRepository (includes name/email from users JOIN) */
 interface MemberWithDisplay {
@@ -158,9 +185,7 @@ export function useSocketEvents(workspaceId: string) {
       let shouldJoinStreamRoom = false
 
       // Add to workspace bootstrap cache (sidebar)
-      queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
-        if (!old) return old
-
+      const applied = updateBootstrapOrInvalidate(queryClient, workspaceId, (old) => {
         const streamExists = old.streams.some((s) => s.id === payload.stream.id)
         const currentMember = user && old.members?.find((m: WorkspaceMember) => m.userId === user.id)
         const isCreator = Boolean(currentMember && payload.stream.createdBy === currentMember.id)
@@ -194,7 +219,7 @@ export function useSocketEvents(workspaceId: string) {
         }
       })
 
-      if (shouldJoinStreamRoom) {
+      if (applied && shouldJoinStreamRoom) {
         joinRoomFireAndForget(
           socket,
           `ws:${workspaceId}:stream:${payload.stream.id}`,
@@ -304,11 +329,8 @@ export function useSocketEvents(workspaceId: string) {
       const { member } = payload
 
       // Update workspace bootstrap cache - add member and user if not present
-      queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), (old: unknown) => {
-        if (!old || typeof old !== "object") return old
-        const bootstrap = old as { members?: WorkspaceMember[]; users?: User[] }
-
-        const members = bootstrap.members || []
+      updateBootstrapOrInvalidate(queryClient, workspaceId, (old) => {
+        const members = old.members || []
         const updatedMembers = members.some((m) => m.id === member.id)
           ? members
           : [
@@ -329,7 +351,7 @@ export function useSocketEvents(workspaceId: string) {
               },
             ]
 
-        return { ...bootstrap, members: updatedMembers }
+        return { ...old, members: updatedMembers }
       })
 
       // Cache member to IndexedDB
@@ -592,8 +614,7 @@ export function useSocketEvents(workspaceId: string) {
         })
 
         // If the added member is the current user, add to streamMemberships + sidebar
-        queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
-          if (!old) return old
+        updateBootstrapOrInvalidate(queryClient, workspaceId, (old) => {
           const currentMember = user && old.members?.find((m: WorkspaceMember) => m.userId === user.id)
           if (!currentMember || payload.memberId !== currentMember.id) return old
 
@@ -678,21 +699,18 @@ export function useSocketEvents(workspaceId: string) {
 
       const { streamId, activityType } = payload.activity
 
-      queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
-        if (!old) return old
-        return {
-          ...old,
-          mentionCounts:
-            activityType === "mention"
-              ? { ...old.mentionCounts, [streamId]: (old.mentionCounts[streamId] ?? 0) + 1 }
-              : old.mentionCounts,
-          activityCounts: {
-            ...old.activityCounts,
-            [streamId]: (old.activityCounts[streamId] ?? 0) + 1,
-          },
-          unreadActivityCount: (old.unreadActivityCount ?? 0) + 1,
-        }
-      })
+      updateBootstrapOrInvalidate(queryClient, workspaceId, (old) => ({
+        ...old,
+        mentionCounts:
+          activityType === "mention"
+            ? { ...old.mentionCounts, [streamId]: (old.mentionCounts[streamId] ?? 0) + 1 }
+            : old.mentionCounts,
+        activityCounts: {
+          ...old.activityCounts,
+          [streamId]: (old.activityCounts[streamId] ?? 0) + 1,
+        },
+        unreadActivityCount: (old.unreadActivityCount ?? 0) + 1,
+      }))
 
       // Invalidate activity feed so it refetches when the page is mounted
       queryClient.invalidateQueries({ queryKey: ["activity", workspaceId] })
