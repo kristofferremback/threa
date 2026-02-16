@@ -435,8 +435,6 @@ function SidebarHeader({ workspaceName, viewMode, onViewModeChange, hideViewTogg
 interface SectionHeaderProps {
   label: string
   icon?: string
-  /** Total unread count for the section (sum of all item unreads) */
-  unreadCount?: number
   /** Whether the section is currently collapsed */
   isCollapsed?: boolean
   /** Toggle callback - if provided, section becomes collapsible */
@@ -448,7 +446,7 @@ interface SectionHeaderProps {
 }
 
 /** Section header with consistent styling across all views */
-function SectionHeader({ label, icon, unreadCount, isCollapsed, onToggle, onAdd, addTooltip }: SectionHeaderProps) {
+function SectionHeader({ label, icon, isCollapsed, onToggle, onAdd, addTooltip }: SectionHeaderProps) {
   const isCollapsible = !!onToggle
 
   const headingContent = (
@@ -470,9 +468,6 @@ function SectionHeader({ label, icon, unreadCount, isCollapsed, onToggle, onAdd,
 
   const rightContent = (
     <div className="flex items-center gap-1">
-      {unreadCount !== undefined && unreadCount > 0 && (
-        <span className="px-2 py-0.5 bg-muted rounded-full text-[10px]">{unreadCount}</span>
-      )}
       {onAdd && (
         <button
           onClick={(e) => {
@@ -564,15 +559,11 @@ function StreamSection({
   onAdd,
   addTooltip,
 }: StreamSectionProps) {
-  // Sum up unread counts for all items in this section
-  const totalUnreadCount = items.reduce((sum, item) => sum + getUnreadCount(item.id), 0)
-
   return (
     <div className="mb-4">
       <SectionHeader
         label={label}
         icon={icon}
-        unreadCount={totalUnreadCount}
         isCollapsed={isCollapsed}
         onToggle={onToggle}
         onAdd={onAdd}
