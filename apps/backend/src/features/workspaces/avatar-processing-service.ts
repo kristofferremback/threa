@@ -1,6 +1,5 @@
 import { Pool } from "pg"
-import { withTransaction } from "../../db"
-import { WorkspaceRepository } from "./repository"
+import { sql, withTransaction } from "../../db"
 import { MemberRepository } from "./member-repository"
 import { AvatarUploadRepository } from "./avatar-upload-repository"
 import { OutboxRepository } from "../../lib/outbox"
@@ -37,22 +36,22 @@ export class AvatarProcessingService {
     const images = await this.avatarService.processImages(buffer)
     await this.avatarService.uploadImages(basePath, images)
 
-    // Phase 4: Transaction — update member if this is still the latest upload
+    // Phase 4: Transaction — atomically update member if this is still the latest upload (INV-20)
     let variantsUsed = false
     await withTransaction(this.pool, async (client) => {
-      const currentUpload = await AvatarUploadRepository.findById(client, avatarUploadId)
-      if (!currentUpload) {
-        logger.info({ avatarUploadId }, "Upload row gone during processing, skipping")
-        return
-      }
+      const { rowCount } = await client.query(sql`
+        UPDATE workspace_members SET avatar_url = ${basePath}
+        WHERE id = ${memberId}
+          AND ${avatarUploadId} = (
+            SELECT id FROM avatar_uploads
+            WHERE member_id = ${memberId}
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+          )
+      `)
 
-      const latest = await AvatarUploadRepository.findLatestForMember(client, memberId)
-      const isLatest = latest?.id === avatarUploadId
-
-      if (isLatest) {
+      if (rowCount && rowCount > 0) {
         variantsUsed = true
-        await WorkspaceRepository.updateMember(client, memberId, { avatarUrl: basePath })
-
         const fullMember = await MemberRepository.findById(client, memberId)
         if (fullMember) {
           await OutboxRepository.insert(client, "member:updated", {
@@ -61,10 +60,10 @@ export class AvatarProcessingService {
           })
         }
       } else {
-        logger.info({ avatarUploadId, latestId: latest?.id }, "Newer upload exists, skipping member update")
+        logger.info({ avatarUploadId, memberId }, "Upload gone or superseded, skipping member update")
       }
 
-      // Delete our upload row regardless — processing is done
+      // Delete our upload row regardless (no-op if already gone)
       await AvatarUploadRepository.deleteById(client, avatarUploadId)
     })
 
