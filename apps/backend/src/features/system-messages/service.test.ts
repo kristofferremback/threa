@@ -91,7 +91,7 @@ describe("SystemMessageService", () => {
           name: "Alice",
           description: null,
           avatarUrl: null,
-          avatarStatus: null,
+
           email: "alice@test.com",
           setupCompleted: true,
           joinedAt: new Date(),
@@ -134,7 +134,7 @@ describe("SystemMessageService", () => {
           name: "Alice",
           description: null,
           avatarUrl: null,
-          avatarStatus: null,
+
           email: "alice@test.com",
           setupCompleted: true,
           joinedAt: new Date(),
@@ -150,7 +150,7 @@ describe("SystemMessageService", () => {
           name: "Bob",
           description: null,
           avatarUrl: null,
-          avatarStatus: null,
+
           email: "bob@test.com",
           setupCompleted: true,
           joinedAt: new Date(),
@@ -188,7 +188,7 @@ describe("SystemMessageService", () => {
           name: "Alice",
           description: null,
           avatarUrl: null,
-          avatarStatus: null,
+
           email: "alice@test.com",
           setupCompleted: true,
           joinedAt: new Date(),
@@ -204,7 +204,7 @@ describe("SystemMessageService", () => {
           name: "Bob",
           description: null,
           avatarUrl: null,
-          avatarStatus: null,
+
           email: "bob@test.com",
           setupCompleted: true,
           joinedAt: new Date(),
@@ -234,7 +234,7 @@ describe("SystemMessageService", () => {
           name: "Alice",
           description: null,
           avatarUrl: null,
-          avatarStatus: null,
+
           email: "alice@test.com",
           setupCompleted: true,
           joinedAt: new Date(),
@@ -250,7 +250,7 @@ describe("SystemMessageService", () => {
           name: "Bob",
           description: null,
           avatarUrl: null,
-          avatarStatus: null,
+
           email: "bob@test.com",
           setupCompleted: true,
           joinedAt: new Date(),
@@ -283,7 +283,7 @@ describe("SystemMessageService", () => {
           name: "Alice",
           description: null,
           avatarUrl: null,
-          avatarStatus: null,
+
           email: "alice@test.com",
           setupCompleted: true,
           joinedAt: new Date(),
@@ -299,7 +299,7 @@ describe("SystemMessageService", () => {
           name: "Bob",
           description: null,
           avatarUrl: null,
-          avatarStatus: null,
+
           email: "bob@test.com",
           setupCompleted: true,
           joinedAt: new Date(),

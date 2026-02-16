@@ -65,7 +65,6 @@ export interface WorkspaceMember {
   name: string
   description: string | null
   avatarUrl: string | null
-  avatarStatus: string | null
   timezone: string | null
   locale: string | null
   setupCompleted: boolean

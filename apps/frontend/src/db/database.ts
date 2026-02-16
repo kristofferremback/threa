@@ -21,7 +21,6 @@ export interface CachedWorkspaceMember {
   name: string
   description: string | null
   avatarUrl: string | null
-  avatarStatus: string | null
   timezone: string | null
   locale: string | null
   setupCompleted: boolean
@@ -215,14 +214,6 @@ class ThreaDatabase extends Dexie {
     // v10: Added description and avatarUrl to workspace members (profile fields).
     // Clear members cache to re-fetch with new shape.
     this.version(10)
-      .stores({})
-      .upgrade((tx) => {
-        return tx.table("workspaceMembers").clear()
-      })
-
-    // v11: Added avatarStatus to workspace members (async avatar processing).
-    // Clear members cache to re-fetch with new shape.
-    this.version(11)
       .stores({})
       .upgrade((tx) => {
         return tx.table("workspaceMembers").clear()

@@ -13,10 +13,9 @@ interface AvatarSectionProps {
   workspaceId: string
   memberName: string
   avatarUrl: string | null
-  avatarStatus: string | null
 }
 
-export function AvatarSection({ workspaceId, memberName, avatarUrl, avatarStatus }: AvatarSectionProps) {
+export function AvatarSection({ workspaceId, memberName, avatarUrl }: AvatarSectionProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const uploadAvatar = useUploadAvatar(workspaceId)
@@ -37,7 +36,7 @@ export function AvatarSection({ workspaceId, memberName, avatarUrl, avatarStatus
     setUploading(true)
     try {
       await uploadAvatar.mutateAsync(file)
-      toast.success("Avatar updated")
+      toast.success("Avatar uploaded")
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to upload avatar")
     } finally {
@@ -63,7 +62,7 @@ export function AvatarSection({ workspaceId, memberName, avatarUrl, avatarStatus
           {imageUrl && <AvatarImage src={imageUrl} alt={memberName} />}
           <AvatarFallback className="text-lg">{getInitials(memberName)}</AvatarFallback>
         </Avatar>
-        {(uploading || avatarStatus === "processing") && (
+        {uploading && (
           <div className="absolute inset-0 flex items-center justify-center rounded-full bg-background/60">
             <Loader2 className="h-6 w-6 animate-spin" />
           </div>
@@ -78,12 +77,7 @@ export function AvatarSection({ workspaceId, memberName, avatarUrl, avatarStatus
           className="hidden"
           onChange={handleFileChange}
         />
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={uploading || avatarStatus === "processing"}
-        >
+        <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
           Change photo
         </Button>
         {avatarUrl && (
@@ -91,7 +85,7 @@ export function AvatarSection({ workspaceId, memberName, avatarUrl, avatarStatus
             variant="ghost"
             size="sm"
             onClick={handleRemove}
-            disabled={uploading || avatarStatus === "processing" || removeAvatar.isPending}
+            disabled={uploading || removeAvatar.isPending}
             className="text-muted-foreground"
           >
             Remove

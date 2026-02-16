@@ -212,6 +212,8 @@ Invariants are constraints that must hold across the entire codebase. Reference 
 
 **INV-56: Batch DB Operations Over Loops** — When operating on multiple rows, use batch queries (`ANY()`, `unnest()`, multi-row `INSERT`, recursive CTEs) instead of per-item loops with individual queries. PostgreSQL handles set operations efficiently; per-row round-trips scale horribly. Same-connection calls within a transaction (e.g. outbox inserts) are acceptable when batch alternatives add disproportionate complexity.
 
+**INV-57: No Transient State on Domain Entities** — Processing/workflow state doesn't belong on domain entities. If you need `xxx_status` on an entity, that's a modelling smell — use a separate tracking table that references the entity instead. The entity gets updated only when processing completes. Examples: avatar processing tracked via `avatar_uploads` table, not `avatar_status` on `workspace_members`.
+
 When introducing a new invariant:
 
 1. Document here with next available ID

@@ -140,9 +140,7 @@ export interface ExcelProcessJobData {
 /** Avatar processing job - resizes raw upload into WebP variants */
 export interface AvatarProcessJobData {
   workspaceId: string
-  memberId: string
-  rawS3Key: string
-  oldAvatarUrl: string | null
+  avatarUploadId: string
 }
 
 // Map queue names to their data types

@@ -104,7 +104,6 @@ import {
   type TextProcessJobData,
   type WordProcessJobData,
   type ExcelProcessJobData,
-  type AvatarProcessJobData,
 } from "./lib/queue"
 import { ProcessingStatuses } from "@threa/types"
 import { AttachmentRepository } from "./features/attachments"

@@ -47,21 +47,6 @@ export class AvatarService {
   }
 
   /**
-   * Process an image buffer into two WebP variants and upload to S3.
-   * Returns the S3 key base path (without size suffix) — frontend
-   * constructs display URLs via getAvatarUrl() which points to the
-   * backend proxy endpoint.
-   */
-  async processAndUpload(params: { buffer: Buffer; workspaceId: string; memberId: string }): Promise<string> {
-    const { buffer, workspaceId, memberId } = params
-    const timestamp = Date.now()
-    const basePath = `avatars/${workspaceId}/${memberId}/${timestamp}`
-    const images = await this.processImages(buffer)
-    await this.uploadImages(basePath, images)
-    return basePath
-  }
-
-  /**
    * Upload the raw (unprocessed) image buffer to S3.
    * Returns the S3 key for later retrieval by the worker.
    */
