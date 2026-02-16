@@ -166,15 +166,15 @@ export async function startServer(): Promise<ServerInstance> {
 
   const userService = new UserService(pool)
   const workosOrgService = config.useStubAuth ? new StubWorkosOrgService() : new WorkosOrgServiceImpl(config.workos)
-  const avatarService = new AvatarService(config.s3)
+  const storage = createS3Storage(config.s3)
+  const avatarService = new AvatarService(storage)
   const workspaceService = new WorkspaceService(pool, workosOrgService, avatarService)
   const streamService = new StreamService(pool)
   const eventService = new EventService(pool)
   const authService = config.useStubAuth ? new StubAuthService() : new WorkosAuthService(config.workos)
   const invitationService = new InvitationService(pool, workosOrgService, workspaceService)
 
-  // Storage and attachment service
-  const storage = createS3Storage(config.s3)
+  // Attachment service
   const malwareScanner = createMalwareScanner(storage, config.attachments)
   const attachmentService = new AttachmentService(pool, storage, malwareScanner)
   await attachmentService.recoverStalePendingScans()

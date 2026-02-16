@@ -1,5 +1,5 @@
 import { useRef, useEffect, useLayoutEffect, useMemo, useCallback, type ReactNode } from "react"
-import { Link, useParams, useNavigate } from "react-router-dom"
+import { Link, useParams, useNavigate, useSearchParams } from "react-router-dom"
 import {
   MoreHorizontal,
   Archive,
@@ -1039,9 +1039,20 @@ interface SidebarFooterProps {
 }
 
 function SidebarFooter({ workspaceId, currentMember }: SidebarFooterProps) {
-  const navigate = useNavigate()
+  const [, setSearchParams] = useSearchParams()
   const { openSettings } = useSettings()
   const { logout } = useAuth()
+
+  const openWorkspaceSettings = () => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.set("ws-settings", "members")
+        return next
+      },
+      { replace: true }
+    )
+  }
 
   if (!currentMember) return null
 
@@ -1073,10 +1084,16 @@ function SidebarFooter({ workspaceId, currentMember }: SidebarFooterProps) {
           <Settings className="mr-2 h-4 w-4" />
           Settings
         </DropdownMenuItem>
+        <DropdownMenuItem onClick={openWorkspaceSettings}>
+          <Settings className="mr-2 h-4 w-4" />
+          Workspace Settings
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => navigate(`/w/${workspaceId}/admin/ai-usage`)}>
-          <DollarSign className="mr-2 h-4 w-4" />
-          AI Usage
+        <DropdownMenuItem asChild>
+          <Link to={`/w/${workspaceId}/admin/ai-usage`}>
+            <DollarSign className="mr-2 h-4 w-4" />
+            AI Usage
+          </Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => logout()}>

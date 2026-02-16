@@ -271,6 +271,12 @@ export class WorkspaceService {
       throw new HttpError("Avatar service not configured", { status: 500, code: "AVATAR_SERVICE_UNAVAILABLE" })
     }
 
+    // Phase 1: Verify member exists before expensive processing
+    const member = await MemberRepository.findById(this.pool, memberId)
+    if (!member || member.workspaceId !== workspaceId) {
+      throw new HttpError("Member not found", { status: 404, code: "MEMBER_NOT_FOUND" })
+    }
+
     // Phase 2: Process image + upload to S3 (slow, no DB connection held)
     const avatarUrl = await this.avatarService.processAndUpload({ buffer, workspaceId, memberId })
 
@@ -300,7 +306,7 @@ export class WorkspaceService {
       })
     } catch (error) {
       // Clean up newly uploaded files on DB failure
-      this.avatarService.deleteAvatarFiles(avatarUrl)
+      await this.avatarService.deleteAvatarFiles(avatarUrl)
       throw error
     }
 

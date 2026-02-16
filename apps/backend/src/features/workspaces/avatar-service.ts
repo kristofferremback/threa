@@ -1,29 +1,16 @@
 import { Readable } from "node:stream"
 import sharp from "sharp"
-import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3"
-import type { S3Config } from "../../lib/env"
+import type { StorageProvider } from "../../lib/storage/s3-client"
 import { logger } from "../../lib/logger"
 
 const AVATAR_SIZES = [256, 64] as const
 const WEBP_QUALITY = 80
 
 export class AvatarService {
-  private s3Client: S3Client
-  private bucket: string
+  private storage: StorageProvider
 
-  constructor(s3Config: S3Config) {
-    this.s3Client = new S3Client({
-      region: s3Config.region,
-      credentials: {
-        accessKeyId: s3Config.accessKeyId,
-        secretAccessKey: s3Config.secretAccessKey,
-      },
-      ...(s3Config.endpoint && {
-        endpoint: s3Config.endpoint,
-        forcePathStyle: true,
-      }),
-    })
-    this.bucket = s3Config.bucket
+  constructor(storage: StorageProvider) {
+    this.storage = storage
   }
 
   /**
@@ -50,14 +37,7 @@ export class AvatarService {
   async uploadImages(basePath: string, images: Map<number, Buffer>): Promise<void> {
     await Promise.all(
       [...images.entries()].map(([size, processed]) =>
-        this.s3Client.send(
-          new PutObjectCommand({
-            Bucket: this.bucket,
-            Key: `${basePath}.${size}.webp`,
-            Body: processed,
-            ContentType: "image/webp",
-          })
-        )
+        this.storage.putObject(`${basePath}.${size}.webp`, processed, "image/webp")
       )
     )
   }
@@ -82,14 +62,7 @@ export class AvatarService {
    * Returns a Node readable stream to pipe directly to the HTTP response.
    */
   async streamImage(s3Key: string): Promise<Readable> {
-    const command = new GetObjectCommand({ Bucket: this.bucket, Key: s3Key })
-    const response = await this.s3Client.send(command)
-
-    if (!response.Body) {
-      throw new Error(`No body in S3 response for key: ${s3Key}`)
-    }
-
-    return response.Body as Readable
+    return this.storage.getObjectStream(s3Key)
   }
 
   /**
@@ -97,16 +70,7 @@ export class AvatarService {
    */
   async deleteAvatarFiles(avatarKeyBase: string): Promise<void> {
     try {
-      const deletes = AVATAR_SIZES.map((size) =>
-        this.s3Client.send(
-          new DeleteObjectCommand({
-            Bucket: this.bucket,
-            Key: `${avatarKeyBase}.${size}.webp`,
-          })
-        )
-      )
-
-      await Promise.all(deletes)
+      await Promise.all(AVATAR_SIZES.map((size) => this.storage.delete(`${avatarKeyBase}.${size}.webp`)))
     } catch (error) {
       logger.warn({ error, avatarKeyBase }, "Failed to delete avatar files from S3")
     }
