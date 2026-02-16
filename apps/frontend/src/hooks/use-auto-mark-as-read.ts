@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react"
 import { useUnreadCounts } from "./use-unread-counts"
-import { useMentionCounts } from "./use-mention-counts"
+import { useActivityCounts } from "./use-activity-counts"
 
 interface UseAutoMarkAsReadOptions {
   enabled?: boolean
@@ -11,8 +11,9 @@ interface UseAutoMarkAsReadOptions {
  * Hook that automatically marks a stream as read when viewing it.
  * Debounces the mark-as-read call to avoid excessive API calls when rapidly switching streams.
  *
- * Checks both unread counts AND mention counts — the mark-as-read API clears both,
- * so this must fire when either is elevated (e.g., mention arrives while viewing the stream).
+ * Checks unread counts, mention counts, AND activity counts — the mark-as-read API
+ * clears all of these, so this must fire when any is elevated (e.g., activity arrives
+ * via the outbox handler while viewing the stream).
  */
 export function useAutoMarkAsRead(
   workspaceId: string,
@@ -22,7 +23,7 @@ export function useAutoMarkAsRead(
 ) {
   const { enabled = true, debounceMs = 500 } = options
   const { markAsRead, getUnreadCount } = useUnreadCounts(workspaceId)
-  const { getMentionCount } = useMentionCounts(workspaceId)
+  const { getActivityCount } = useActivityCounts(workspaceId)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastMarkedRef = useRef<string | null>(null)
 
@@ -36,16 +37,16 @@ export function useAutoMarkAsRead(
     if (!enabled || !lastEventId) return
 
     const unreadCount = getUnreadCount(streamId)
-    const mentionCount = getMentionCount(streamId)
+    const activityCount = getActivityCount(streamId)
 
     // Skip if nothing to clear
-    if (unreadCount === 0 && mentionCount === 0) return
+    if (unreadCount === 0 && activityCount === 0) return
 
-    // Skip if already marked this event AND no pending mentions to clear.
-    // Mentions can arrive via activity:created while we're viewing the stream
-    // (stream:activity doesn't increment unreadCounts when viewing), so we
-    // must re-fire markAsRead to clear them even if lastEventId hasn't changed.
-    if (lastMarkedRef.current === lastEventId && mentionCount === 0) return
+    // Skip if already marked this event AND no pending activities to clear.
+    // Activities can arrive via activity:created while we're viewing the stream
+    // (the outbox handler is async), so we must re-fire markAsRead to clear
+    // them even if lastEventId hasn't changed.
+    if (lastMarkedRef.current === lastEventId && activityCount === 0) return
 
     // Clear any pending timer
     if (timerRef.current) {
@@ -67,5 +68,5 @@ export function useAutoMarkAsRead(
         clearTimeout(timerRef.current)
       }
     }
-  }, [enabled, streamId, lastEventId, debounceMs, markAsRead, getUnreadCount, getMentionCount])
+  }, [enabled, streamId, lastEventId, debounceMs, markAsRead, getUnreadCount, getActivityCount])
 }

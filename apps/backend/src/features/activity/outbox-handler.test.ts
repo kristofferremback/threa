@@ -25,7 +25,7 @@ function createHandler() {
     processMessageMentions: mock(async () => []),
     processMessageNotifications: mock(async () => []),
     listFeed: mock(async () => []),
-    getUnreadCounts: mock(async () => ({ byStream: new Map(), total: 0 })),
+    getUnreadCounts: mock(async () => ({ mentionsByStream: new Map(), totalByStream: new Map(), total: 0 })),
     markAsRead: mock(async () => {}),
     markStreamActivityAsRead: mock(async () => {}),
     markAllAsRead: mock(async () => {}),

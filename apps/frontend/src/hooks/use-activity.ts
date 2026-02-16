@@ -71,12 +71,17 @@ export function useMarkAllActivityRead(workspaceId: string) {
       queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
         if (!old) return old
         const clearedMentionCounts: Record<string, number> = {}
+        const clearedActivityCounts: Record<string, number> = {}
         for (const key of Object.keys(old.mentionCounts)) {
           clearedMentionCounts[key] = 0
+        }
+        for (const key of Object.keys(old.activityCounts)) {
+          clearedActivityCounts[key] = 0
         }
         return {
           ...old,
           mentionCounts: clearedMentionCounts,
+          activityCounts: clearedActivityCounts,
           unreadActivityCount: 0,
         }
       })

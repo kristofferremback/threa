@@ -37,7 +37,7 @@ import {
   useDraftScratchpads,
   useStreamOrDraft,
   useUnreadCounts,
-  useMentionCounts,
+  useActivityCounts,
   useAllDrafts,
   workspaceKeys,
   useActors,
@@ -1069,7 +1069,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   const createStream = useCreateStream(workspaceId)
   const { createDraft } = useDraftScratchpads(workspaceId)
   const { getUnreadCount } = useUnreadCounts(workspaceId)
-  const { getMentionCount, unreadActivityCount } = useMentionCounts(workspaceId)
+  const { getMentionCount, unreadActivityCount } = useActivityCounts(workspaceId)
   const { drafts: allDrafts } = useAllDrafts(workspaceId)
   const navigate = useNavigate()
   const queryClient = useQueryClient()

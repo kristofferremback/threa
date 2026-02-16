@@ -129,9 +129,13 @@ export function createWorkspaceHandlers({
       }
 
       const mentionCounts: Record<string, number> = {}
+      const activityCountsPerStream: Record<string, number> = {}
       if (activityCounts) {
-        for (const [streamId, count] of activityCounts.byStream) {
+        for (const [streamId, count] of activityCounts.mentionsByStream) {
           mentionCounts[streamId] = count
+        }
+        for (const [streamId, count] of activityCounts.totalByStream) {
+          activityCountsPerStream[streamId] = count
         }
       }
 
@@ -169,6 +173,7 @@ export function createWorkspaceHandlers({
           commands,
           unreadCounts,
           mentionCounts,
+          activityCounts: activityCountsPerStream,
           unreadActivityCount: activityCounts?.total ?? 0,
           mutedStreamIds,
           userPreferences,
