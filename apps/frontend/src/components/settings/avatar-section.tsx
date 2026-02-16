@@ -7,7 +7,7 @@ import { getAvatarUrl } from "@threa/types"
 import { getInitials } from "@/lib/initials"
 import { toast } from "sonner"
 
-const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
+const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB
 
 interface AvatarSectionProps {
   workspaceId: string
@@ -29,7 +29,7 @@ export function AvatarSection({ workspaceId, memberName, avatarUrl }: AvatarSect
     e.target.value = ""
 
     if (file.size > MAX_FILE_SIZE) {
-      toast.error("File too large. Maximum size is 5MB.")
+      toast.error("File too large. Maximum size is 50MB.")
       return
     }
 

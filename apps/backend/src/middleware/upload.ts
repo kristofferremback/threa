@@ -75,7 +75,7 @@ export function createUploadMiddleware({ s3Config }: UploadMiddlewareConfig): Re
   return upload.single("file")
 }
 
-const AVATAR_MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
+const AVATAR_MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"])
 
 /**
