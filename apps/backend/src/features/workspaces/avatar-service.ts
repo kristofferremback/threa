@@ -76,6 +76,14 @@ export class AvatarService {
     }
   }
 
+  /**
+   * Derive the base path for processed avatar variants from a raw S3 key.
+   * Centralizes knowledge of the raw key format (avatars/{ws}/{member}/{ts}.original).
+   */
+  rawKeyToBasePath(rawS3Key: string): string {
+    return rawS3Key.replace(/\.original$/, "")
+  }
+
   private static readonly AVATAR_FILE_PATTERN = /^\d+\.(256|64)\.webp$/
 
   /**

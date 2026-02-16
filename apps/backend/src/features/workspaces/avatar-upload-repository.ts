@@ -55,7 +55,7 @@ export const AvatarUploadRepository = {
     const result = await db.query<AvatarUploadRow>(sql`
       SELECT id, workspace_id, member_id, raw_s3_key, replaces_avatar_url, created_at
       FROM avatar_uploads WHERE member_id = ${memberId}
-      ORDER BY created_at DESC LIMIT 1
+      ORDER BY created_at DESC, id DESC LIMIT 1
     `)
     return result.rows[0] ? mapRow(result.rows[0]) : null
   },

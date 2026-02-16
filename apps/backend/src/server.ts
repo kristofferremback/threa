@@ -14,6 +14,7 @@ import { UserService } from "./auth/user-service"
 import {
   WorkspaceService,
   AvatarService,
+  AvatarProcessingService,
   createAvatarProcessWorker,
   createAvatarProcessOnDLQ,
 } from "./features/workspaces"
@@ -449,8 +450,9 @@ export async function startServer(): Promise<ServerInstance> {
   })
 
   // Avatar processing worker
-  const avatarProcessWorker = createAvatarProcessWorker({ pool, avatarService })
-  const avatarProcessOnDLQ = createAvatarProcessOnDLQ({ pool, avatarService })
+  const avatarProcessingService = new AvatarProcessingService(pool, avatarService)
+  const avatarProcessWorker = createAvatarProcessWorker({ avatarProcessingService })
+  const avatarProcessOnDLQ = createAvatarProcessOnDLQ()
   jobQueue.registerHandler(JobQueues.AVATAR_PROCESS, avatarProcessWorker, {
     hooks: { onDLQ: avatarProcessOnDLQ },
   })
