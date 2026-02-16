@@ -9,13 +9,13 @@
 
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test"
 import { Pool } from "pg"
-import { withTransaction, withClient } from "./setup"
+import { withTransaction, withClient, addTestMember } from "./setup"
 import { UserRepository } from "../../src/auth/user-repository"
-import { WorkspaceRepository } from "../../src/repositories/workspace-repository"
-import { StreamRepository } from "../../src/repositories/stream-repository"
-import { ConversationRepository } from "../../src/repositories/conversation-repository"
+import { WorkspaceRepository } from "../../src/features/workspaces"
+import { StreamRepository } from "../../src/features/streams"
+import { ConversationRepository } from "../../src/features/conversations"
 import { PendingItemRepository } from "../../src/features/memos"
-import { StreamStateRepository } from "../../src/repositories/stream-state-repository"
+import { StreamStateRepository } from "../../src/features/streams"
 import { MemoRepository } from "../../src/features/memos"
 import { setupTestDatabase } from "./setup"
 import { userId, workspaceId, streamId, memoId, pendingItemId, conversationId } from "../../src/lib/id"
@@ -46,7 +46,7 @@ describe("Memo Repositories", () => {
         slug: `memo-test-${testWorkspaceId}`,
         createdBy: testUserId,
       })
-      await WorkspaceRepository.addMember(client, testWorkspaceId, testUserId)
+      await addTestMember(client, testWorkspaceId, testUserId)
       await StreamRepository.insert(client, {
         id: testStreamId,
         workspaceId: testWorkspaceId,

@@ -10,7 +10,7 @@
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test"
 import { Pool } from "pg"
-import { withTestTransaction } from "./setup"
+import { withTestTransaction, addTestMember } from "./setup"
 import { UserRepository } from "../../src/auth/user-repository"
 import { WorkspaceRepository } from "../../src/features/workspaces"
 import { StreamService, StreamRepository, type Stream } from "../../src/features/streams"
@@ -291,7 +291,7 @@ describe("Stream Naming", () => {
           slug: `name-update-ws-${wsId}`,
           createdBy: ownerId,
         })
-        await WorkspaceRepository.addMember(client, wsId, ownerId)
+        await addTestMember(client, wsId, ownerId)
       })
 
       const scratchpad = await streamService.createScratchpad({
@@ -327,7 +327,7 @@ describe("Stream Naming", () => {
           slug: `manual-name-ws-${wsId}`,
           createdBy: ownerId,
         })
-        await WorkspaceRepository.addMember(client, wsId, ownerId)
+        await addTestMember(client, wsId, ownerId)
       })
 
       const scratchpad = await streamService.createScratchpad({

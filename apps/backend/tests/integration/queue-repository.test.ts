@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test"
 import { Pool } from "pg"
-import { QueueRepository } from "../../src/repositories/queue-repository"
+import { QueueRepository } from "../../src/lib/queue"
 import { setupTestDatabase, withTestTransaction } from "./setup"
 
 describe("QueueRepository", () => {

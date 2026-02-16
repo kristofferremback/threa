@@ -1,7 +1,6 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test"
 import { Pool } from "pg"
-import { UserPreferencesService } from "../../src/services/user-preferences-service"
-import { UserPreferencesRepository } from "../../src/repositories/user-preferences-repository"
+import { UserPreferencesService, UserPreferencesRepository } from "../../src/features/user-preferences"
 import { workspaceId, userId } from "../../src/lib/id"
 import { setupTestDatabase } from "./setup"
 import { DEFAULT_USER_PREFERENCES } from "@threa/types"

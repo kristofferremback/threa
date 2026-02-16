@@ -11,18 +11,18 @@
 
 import { describe, test, expect, beforeAll, afterAll, beforeEach, afterEach } from "bun:test"
 import { Pool } from "pg"
-import { withTransaction } from "./setup"
+import { withTransaction, addTestMember } from "./setup"
 import { UserRepository } from "../../src/auth/user-repository"
-import { WorkspaceRepository } from "../../src/repositories/workspace-repository"
-import { StreamRepository } from "../../src/repositories/stream-repository"
-import { MessageRepository } from "../../src/repositories/message-repository"
-import { ConversationRepository } from "../../src/repositories/conversation-repository"
+import { WorkspaceRepository } from "../../src/features/workspaces"
+import { StreamRepository } from "../../src/features/streams"
+import { MessageRepository } from "../../src/features/messaging"
+import { ConversationRepository } from "../../src/features/conversations"
 import { OutboxRepository } from "../../src/lib/outbox"
-import { BoundaryExtractionService } from "../../src/services/boundary-extraction-service"
+import { BoundaryExtractionService } from "../../src/features/conversations"
 import { setupTestDatabase, testMessageContent } from "./setup"
 import { userId, workspaceId, streamId, messageId, conversationId } from "../../src/lib/id"
 import { ConversationStatuses } from "@threa/types"
-import type { BoundaryExtractor, ExtractionContext, ExtractionResult } from "../../src/lib/boundary-extraction/types"
+import type { BoundaryExtractor, ExtractionContext, ExtractionResult } from "../../src/features/conversations"
 
 /**
  * Stub extractor that returns configurable results and tracks calls.
@@ -79,7 +79,7 @@ describe("BoundaryExtractionService", () => {
         slug: `test-ws-${testWorkspaceId}`,
         createdBy: testUserId,
       })
-      await WorkspaceRepository.addMember(client, testWorkspaceId, testUserId)
+      await addTestMember(client, testWorkspaceId, testUserId)
       await StreamRepository.insert(client, {
         id: testStreamId,
         workspaceId: testWorkspaceId,

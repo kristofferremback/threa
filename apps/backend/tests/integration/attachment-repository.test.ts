@@ -7,12 +7,11 @@
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test"
 import { Pool } from "pg"
-import { setupTestDatabase, withTestTransaction } from "./setup"
+import { setupTestDatabase, withTestTransaction, addTestMember } from "./setup"
 import { UserRepository } from "../../src/auth/user-repository"
-import { WorkspaceRepository } from "../../src/repositories/workspace-repository"
-import { StreamRepository } from "../../src/repositories/stream-repository"
-import { AttachmentRepository } from "../../src/repositories/attachment-repository"
-import { AttachmentExtractionRepository } from "../../src/repositories/attachment-extraction-repository"
+import { WorkspaceRepository } from "../../src/features/workspaces"
+import { StreamRepository } from "../../src/features/streams"
+import { AttachmentRepository, AttachmentExtractionRepository } from "../../src/features/attachments"
 import { userId, workspaceId, streamId, attachmentId, extractionId } from "../../src/lib/id"
 import type { ExtractionContentType } from "@threa/types"
 
@@ -42,7 +41,7 @@ describe("AttachmentRepository", () => {
         slug: `attachment-test-${testWorkspaceId}`,
         createdBy: testUserId,
       })
-      await WorkspaceRepository.addMember(client, testWorkspaceId, testUserId)
+      await addTestMember(client, testWorkspaceId, testUserId)
       await StreamRepository.insert(client, {
         id: testStreamId,
         workspaceId: testWorkspaceId,

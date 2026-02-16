@@ -10,10 +10,10 @@
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test"
 import { Pool } from "pg"
-import { withTestTransaction } from "./setup"
+import { withTestTransaction, addTestMember } from "./setup"
 import { UserRepository } from "../../src/auth/user-repository"
-import { WorkspaceRepository } from "../../src/repositories/workspace-repository"
-import { StreamRepository } from "../../src/repositories/stream-repository"
+import { WorkspaceRepository } from "../../src/features/workspaces"
+import { StreamRepository } from "../../src/features/streams"
 import { setupTestDatabase } from "./setup"
 import { userId, workspaceId, streamId } from "../../src/lib/id"
 
@@ -65,7 +65,7 @@ describe("Trigram Search", () => {
         createdBy: testUserIds[0],
       })
       for (const uid of testUserIds) {
-        await WorkspaceRepository.addMember(client, testWorkspaceId, uid)
+        await addTestMember(client, testWorkspaceId, uid)
       }
 
       // Create streams with various names

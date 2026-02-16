@@ -6,6 +6,9 @@
 import { Pool, type PoolClient } from "pg"
 import { createDatabasePool } from "../../src/db"
 import { createMigrator } from "../../src/db/migrations"
+import { memberId } from "../../src/lib/id"
+import type { Querier } from "../../src/db"
+import { MemberRepository } from "../../src/features/workspaces"
 
 // Re-export production helpers for tests that need to persist data
 export { withClient, withTransaction } from "../../src/db"
@@ -99,4 +102,24 @@ export function testMessageContent(content: string) {
     contentJson: testContentJson(content),
     contentMarkdown: content,
   }
+}
+
+/**
+ * Adds a workspace member with auto-generated id/slug for test convenience.
+ * Wraps MemberRepository.insert with sensible defaults.
+ */
+export async function addTestMember(
+  db: Querier,
+  workspaceId: string,
+  userId: string,
+  role: "owner" | "admin" | "member" = "member"
+) {
+  const id = memberId()
+  return MemberRepository.insert(db, {
+    id,
+    workspaceId,
+    userId,
+    role,
+    slug: `test-${id}`,
+  })
 }
