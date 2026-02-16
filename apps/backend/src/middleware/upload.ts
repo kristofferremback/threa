@@ -76,7 +76,7 @@ export function createUploadMiddleware({ s3Config }: UploadMiddlewareConfig): Re
 }
 
 const AVATAR_MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
-const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"])
+const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"])
 
 /**
  * Creates an avatar upload middleware using memory storage.

@@ -73,7 +73,7 @@ export function AvatarSection({ workspaceId, memberName, avatarUrl }: AvatarSect
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/jpeg,image/png,image/gif,image/webp"
+          accept="image/jpeg,image/png,image/webp"
           className="hidden"
           onChange={handleFileChange}
         />
