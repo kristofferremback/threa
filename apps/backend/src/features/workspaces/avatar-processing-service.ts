@@ -38,6 +38,7 @@ export class AvatarProcessingService {
     await this.avatarService.uploadImages(basePath, images)
 
     // Phase 4: Transaction — update member if this is still the latest upload
+    let variantsUsed = false
     await withTransaction(this.pool, async (client) => {
       const currentUpload = await AvatarUploadRepository.findById(client, avatarUploadId)
       if (!currentUpload) {
@@ -49,6 +50,7 @@ export class AvatarProcessingService {
       const isLatest = latest?.id === avatarUploadId
 
       if (isLatest) {
+        variantsUsed = true
         await WorkspaceRepository.updateMember(client, memberId, { avatarUrl: basePath })
 
         const fullMember = await MemberRepository.findById(client, memberId)
@@ -66,10 +68,13 @@ export class AvatarProcessingService {
       await AvatarUploadRepository.deleteById(client, avatarUploadId)
     })
 
-    // Fire-and-forget cleanup: raw file + old avatar
+    // Fire-and-forget cleanup: raw file always, variants + old avatar only if we used them
     this.avatarService.deleteRawFile(rawS3Key)
-    if (replacesAvatarUrl) {
+    if (variantsUsed && replacesAvatarUrl) {
       this.avatarService.deleteAvatarFiles(replacesAvatarUrl)
+    }
+    if (!variantsUsed) {
+      this.avatarService.deleteAvatarFiles(basePath)
     }
 
     logger.info({ avatarUploadId, memberId }, "Avatar processing completed")
