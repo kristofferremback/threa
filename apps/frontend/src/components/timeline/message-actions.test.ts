@@ -18,7 +18,7 @@ describe("getVisibleActions", () => {
     expect(ids).toEqual(["reply-in-thread", "copy"])
   })
 
-  it("should include show-trace for persona messages with sessionId", () => {
+  it("should include show-trace for persona messages with sessionId and traceUrl", () => {
     const actions = getVisibleActions(
       createContext({
         actorType: "persona",
@@ -32,17 +32,32 @@ describe("getVisibleActions", () => {
   })
 
   it("should not include show-trace for persona messages without sessionId", () => {
-    const actions = getVisibleActions(createContext({ actorType: "persona" }))
+    const actions = getVisibleActions(createContext({ actorType: "persona", traceUrl: "/trace/x" }))
+    const ids = actions.map((a) => a.id)
+
+    expect(ids).not.toContain("show-trace")
+  })
+
+  it("should not include show-trace for persona messages without traceUrl", () => {
+    const actions = getVisibleActions(createContext({ actorType: "persona", sessionId: "session_123" }))
     const ids = actions.map((a) => a.id)
 
     expect(ids).not.toContain("show-trace")
   })
 
   it("should not include show-trace for member messages", () => {
-    const actions = getVisibleActions(createContext({ sessionId: "session_123" }))
+    const actions = getVisibleActions(createContext({ sessionId: "session_123", traceUrl: "/trace/x" }))
     const ids = actions.map((a) => a.id)
 
     expect(ids).not.toContain("show-trace")
+  })
+
+  it("should not include reply-in-thread when viewing as thread parent", () => {
+    const actions = getVisibleActions(createContext({ isThreadParent: true }))
+    const ids = actions.map((a) => a.id)
+
+    expect(ids).not.toContain("reply-in-thread")
+    expect(ids).toEqual(["copy"])
   })
 })
 

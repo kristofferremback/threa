@@ -1,6 +1,7 @@
 import type { ComponentType } from "react"
 import { Sparkles, MessageSquareReply, Copy, FileText, Type } from "lucide-react"
 import { toast } from "sonner"
+import { stripMarkdown } from "@/lib/markdown"
 
 /**
  * Context available to message actions.
@@ -10,6 +11,8 @@ export interface MessageActionContext {
   contentMarkdown: string
   actorType: string | null
   sessionId?: string
+  /** Whether this message is the parent of the currently open thread panel */
+  isThreadParent?: boolean
   /** URL for "reply in thread" */
   replyUrl: string
   /** URL for "show trace" (only for persona messages) */
@@ -22,6 +25,8 @@ export interface MessageAction {
   icon: ComponentType<{ className?: string }>
   /** Sub-actions turn this item into a dropdown with variants (e.g. "Copy as Markdown | Plain text") */
   subActions?: MessageAction[]
+  /** Render a separator before this action in the menu */
+  separatorBefore?: boolean
   when: (context: MessageActionContext) => boolean
   /** URL for navigation actions — rendered as <Link> (INV-40) */
   getHref?: (context: MessageActionContext) => string | undefined
@@ -30,35 +35,6 @@ export interface MessageAction {
 }
 
 // --- Helpers ---
-
-function stripMarkdown(md: string): string {
-  return (
-    md
-      // Remove code blocks (fenced) — extract inner content
-      .replace(/```[\s\S]*?```/g, (match) => {
-        const lines = match.split("\n")
-        return lines.slice(1, -1).join("\n")
-      })
-      // Remove headers
-      .replace(/^#{1,6}\s+/gm, "")
-      // Remove bold/italic
-      .replace(/\*{1,3}([^*]+)\*{1,3}/g, "$1")
-      .replace(/_{1,3}([^_]+)_{1,3}/g, "$1")
-      // Remove inline code
-      .replace(/`([^`]+)`/g, "$1")
-      // Remove links but keep text
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-      // Remove images
-      .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
-      // Remove blockquotes
-      .replace(/^>\s?/gm, "")
-      // Remove horizontal rules
-      .replace(/^---+$/gm, "")
-      // Clean up extra whitespace
-      .replace(/\n{3,}/g, "\n\n")
-      .trim()
-  )
-}
 
 async function copyToClipboard(text: string): Promise<void> {
   await navigator.clipboard.writeText(text)
@@ -71,20 +47,21 @@ export const messageActions: MessageAction[] = [
     id: "show-trace",
     label: "Show trace and sources",
     icon: Sparkles,
-    when: (ctx) => ctx.actorType === "persona" && !!ctx.sessionId,
+    when: (ctx) => ctx.actorType === "persona" && !!ctx.sessionId && !!ctx.traceUrl,
     getHref: (ctx) => ctx.traceUrl,
   },
   {
     id: "reply-in-thread",
     label: "Reply in thread",
     icon: MessageSquareReply,
-    when: () => true,
+    when: (ctx) => !ctx.isThreadParent,
     getHref: (ctx) => ctx.replyUrl,
   },
   {
     id: "copy",
     label: "Copy as Markdown",
     icon: Copy,
+    separatorBefore: true,
     subActions: [
       {
         id: "copy-markdown",
@@ -116,15 +93,6 @@ export const messageActions: MessageAction[] = [
       },
     ],
     when: () => true,
-    async action(ctx) {
-      // Default: copy as markdown (same as first sub-action)
-      try {
-        await copyToClipboard(ctx.contentMarkdown)
-        toast.success("Copied as Markdown")
-      } catch {
-        toast.error("Failed to copy")
-      }
-    },
   },
 ]
 

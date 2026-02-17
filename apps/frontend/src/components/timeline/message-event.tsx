@@ -143,7 +143,7 @@ function SentMessageEvent({
   isHighlighted,
   activity,
 }: MessageEventInnerProps) {
-  const { getPanelUrl } = usePanel()
+  const { panelId, getPanelUrl } = usePanel()
   const { getTraceUrl } = useTrace()
   const replyCount = payload.replyCount ?? 0
   const threadId = payload.threadId
@@ -227,6 +227,7 @@ function SentMessageEvent({
                 contentMarkdown: payload.contentMarkdown,
                 actorType: event.actorType,
                 sessionId: payload.sessionId,
+                isThreadParent: panelId === threadId,
                 replyUrl: effectiveThreadId ? getPanelUrl(effectiveThreadId) : draftPanelUrl,
                 traceUrl:
                   event.actorType === "persona" && payload.sessionId
