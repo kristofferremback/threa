@@ -4,10 +4,6 @@
 ALTER TABLE streams
 ADD COLUMN IF NOT EXISTS uniqueness_key TEXT;
 
-ALTER TABLE streams
-  DROP COLUMN IF EXISTS dm_member_a_id,
-  DROP COLUMN IF EXISTS dm_member_b_id;
-
 -- Backfill DM uniqueness keys for existing valid one-to-one DMs.
 WITH dm_members AS (
   SELECT
