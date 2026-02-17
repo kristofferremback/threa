@@ -317,9 +317,6 @@ function useDraftDmStream(workspaceId: string, streamId: string, enabled: boolea
         }
       })
 
-      // Always re-fetch authoritative bootstrap to close any event ordering gaps.
-      void queryClient.refetchQueries({ queryKey: workspaceKeys.bootstrap(workspaceId), type: "active" })
-
       return { navigateTo: `/w/${workspaceId}/s/${message.streamId}`, replace: true }
     },
     [targetMemberId, workspaceId, messageService, queryClient, targetMemberName]

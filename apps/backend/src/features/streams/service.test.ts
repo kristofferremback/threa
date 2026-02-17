@@ -14,7 +14,6 @@ const mockFindById = spyOn(StreamRepository, "findById")
 const mockInsertOrFindByUniquenessKey = spyOn(StreamRepository, "insertOrFindByUniquenessKey")
 const mockInsertMember = spyOn(StreamMemberRepository, "insert")
 const mockInsertManyMembers = spyOn(StreamMemberRepository, "insertMany")
-const mockListMembers = spyOn(StreamMemberRepository, "list")
 const mockInsertEvent = spyOn(StreamEventRepository, "insert")
 const mockInsertOutbox = spyOn(OutboxRepository, "insert")
 const mockFindMembersByIds = spyOn(MemberRepository, "findByIds")
@@ -182,7 +181,7 @@ describe("StreamService.resolveWritableMessageStream", () => {
       memberOneId: "member_1",
       memberTwoId: "member_2",
     })
-    expect(isMemberSpy).toHaveBeenCalledWith("stream_dm", "member_1")
+    expect(isMemberSpy).not.toHaveBeenCalled()
     expect(resolved).toBe(dmStream)
   })
 
@@ -238,7 +237,6 @@ describe("StreamService.findOrCreateDm", () => {
     mockFindMembersByIds.mockReset()
     mockInsertOrFindByUniquenessKey.mockReset()
     mockInsertManyMembers.mockReset().mockResolvedValue([] as never)
-    mockListMembers.mockReset()
     mockInsertOutbox.mockReset().mockResolvedValue({
       id: 1n,
       eventType: "stream:created",
@@ -260,10 +258,6 @@ describe("StreamService.findOrCreateDm", () => {
       { id: "member_2", workspaceId: "ws_1" },
     ] as never)
     mockInsertOrFindByUniquenessKey.mockResolvedValue({ stream, created: true } as never)
-    mockListMembers.mockResolvedValue([
-      { streamId: "stream_dm_1", memberId: "member_1" },
-      { streamId: "stream_dm_1", memberId: "member_2" },
-    ] as never)
 
     const result = await service.findOrCreateDm({
       workspaceId: "ws_1",
@@ -281,7 +275,15 @@ describe("StreamService.findOrCreateDm", () => {
       })
     )
     expect(mockInsertManyMembers).toHaveBeenCalledWith({}, "stream_dm_1", ["member_1", "member_2"])
-    expect(mockInsertOutbox).toHaveBeenCalledTimes(1)
+    expect(mockInsertOutbox).toHaveBeenCalledWith(
+      {},
+      "stream:created",
+      expect.objectContaining({
+        workspaceId: "ws_1",
+        streamId: "stream_dm_1",
+        dmMemberIds: ["member_1", "member_2"],
+      })
+    )
     expect(result).toBe(stream)
   })
 
@@ -298,10 +300,6 @@ describe("StreamService.findOrCreateDm", () => {
       { id: "member_2", workspaceId: "ws_1" },
     ] as never)
     mockInsertOrFindByUniquenessKey.mockResolvedValue({ stream, created: false } as never)
-    mockListMembers.mockResolvedValue([
-      { streamId: "stream_dm_1", memberId: "member_1" },
-      { streamId: "stream_dm_1", memberId: "member_2" },
-    ] as never)
 
     await service.findOrCreateDm({
       workspaceId: "ws_1",

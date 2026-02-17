@@ -235,14 +235,25 @@ export class StreamService {
   }
 
   async resolveWritableMessageStream(params: ResolveWritableMessageStreamParams): Promise<Stream> {
-    const stream =
-      "dmMemberId" in params.target
-        ? await this.findOrCreateDm({
-            workspaceId: params.workspaceId,
-            memberOneId: params.memberId,
-            memberTwoId: params.target.dmMemberId,
-          })
-        : await this.getStreamById(params.target.streamId)
+    if ("dmMemberId" in params.target) {
+      const stream = await this.findOrCreateDm({
+        workspaceId: params.workspaceId,
+        memberOneId: params.memberId,
+        memberTwoId: params.target.dmMemberId,
+      })
+
+      if (stream.workspaceId !== params.workspaceId) {
+        throw new StreamNotFoundError()
+      }
+
+      if (stream.archivedAt) {
+        throw new HttpError("Cannot send messages to an archived stream", { status: 403 })
+      }
+
+      return stream
+    }
+
+    const stream = await this.getStreamById(params.target.streamId)
 
     if (!stream || stream.workspaceId !== params.workspaceId) {
       throw new StreamNotFoundError()
@@ -258,24 +269,6 @@ export class StreamService {
     }
 
     return stream
-  }
-
-  private async assertDmPairMembership(
-    client: Querier,
-    stream: Stream,
-    memberAId: string,
-    memberBId: string
-  ): Promise<void> {
-    if (stream.type !== StreamTypes.DM) {
-      throw new Error(`DM pair references non-DM stream ${stream.id}`)
-    }
-
-    const memberships = await StreamMemberRepository.list(client, { streamId: stream.id })
-    const memberIds = new Set(memberships.map((membership) => membership.memberId))
-    const hasExactPair = memberIds.size === 2 && memberIds.has(memberAId) && memberIds.has(memberBId)
-    if (!hasExactPair) {
-      throw new Error(`DM stream ${stream.id} must include exactly members ${memberAId} and ${memberBId}`)
-    }
   }
 
   async findOrCreateDm(params: FindOrCreateDmParams): Promise<Stream> {
@@ -312,7 +305,6 @@ export class StreamService {
       }
 
       await StreamMemberRepository.insertMany(client, stream.id, [memberAId, memberBId])
-      await this.assertDmPairMembership(client, stream, memberAId, memberBId)
 
       if (created) {
         await OutboxRepository.insert(client, "stream:created", {
