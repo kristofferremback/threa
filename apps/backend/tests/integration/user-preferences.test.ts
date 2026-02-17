@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test"
 import { Pool } from "pg"
 import { UserPreferencesService, UserPreferencesRepository } from "../../src/features/user-preferences"
-import { workspaceId, userId } from "../../src/lib/id"
+import { workspaceId, memberId } from "../../src/lib/id"
 import { setupTestDatabase } from "./setup"
 import { DEFAULT_USER_PREFERENCES } from "@threa/types"
 
@@ -25,7 +25,7 @@ describe("User Preferences - Sparse Override Pattern", () => {
     await pool.query("DELETE FROM user_preference_overrides")
     await pool.query("DELETE FROM outbox")
     testWorkspaceId = workspaceId()
-    testMemberId = userId()
+    testMemberId = memberId()
   })
 
   describe("getPreferences", () => {

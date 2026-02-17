@@ -3,7 +3,7 @@ import { Pool } from "pg"
 import { withTransaction } from "./setup"
 import { StreamService, StreamEventRepository, StreamMemberRepository } from "../../src/features/streams"
 import { EventService } from "../../src/features/messaging"
-import { streamId, userId, workspaceId } from "../../src/lib/id"
+import { streamId, memberId, workspaceId } from "../../src/lib/id"
 import { setupTestDatabase, testMessageContent } from "./setup"
 
 describe("Unread Counts", () => {
@@ -37,7 +37,7 @@ describe("Unread Counts", () => {
     test("should return 0 unread when lastReadEventId matches latest event", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = userId()
+      const testUserId = memberId()
 
       // Create a stream and add a message
       await withTransaction(pool, async (client) => {
@@ -69,7 +69,7 @@ describe("Unread Counts", () => {
     test("should return correct unread count when messages exist after lastReadEventId", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = userId()
+      const testUserId = memberId()
 
       await withTransaction(pool, async (client) => {
         await client.query(
@@ -117,7 +117,7 @@ describe("Unread Counts", () => {
     test("should return all messages as unread when lastReadEventId is null", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = userId()
+      const testUserId = memberId()
 
       await withTransaction(pool, async (client) => {
         await client.query(
@@ -147,8 +147,8 @@ describe("Unread Counts", () => {
     test("should not count user's own message as unread", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const authorId = userId()
-      const otherUserId = userId()
+      const authorId = memberId()
+      const otherUserId = memberId()
 
       // Create a stream with two members
       await withTransaction(pool, async (client) => {
@@ -193,7 +193,7 @@ describe("Unread Counts", () => {
       const stream1 = streamId()
       const stream2 = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = userId()
+      const testUserId = memberId()
 
       await withTransaction(pool, async (client) => {
         await client.query(
@@ -254,8 +254,8 @@ describe("Unread Counts", () => {
       const stream1 = streamId()
       const stream2 = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = userId()
-      const otherUserId = userId()
+      const testUserId = memberId()
+      const otherUserId = memberId()
 
       await withTransaction(pool, async (client) => {
         await client.query(
@@ -316,7 +316,7 @@ describe("Unread Counts", () => {
       const stream1 = streamId()
       const stream2 = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = userId()
+      const testUserId = memberId()
 
       await withTransaction(pool, async (client) => {
         await client.query(
@@ -355,8 +355,8 @@ describe("Unread Counts", () => {
       const stream2 = streamId()
       const workspace1 = workspaceId()
       const workspace2 = workspaceId()
-      const testUserId = userId()
-      const otherUserId = userId()
+      const testUserId = memberId()
+      const otherUserId = memberId()
 
       await withTransaction(pool, async (client) => {
         await client.query(
@@ -408,7 +408,7 @@ describe("Unread Counts", () => {
       const stream2 = streamId()
       const stream3 = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = userId()
+      const testUserId = memberId()
 
       await withTransaction(pool, async (client) => {
         for (const id of [stream1, stream2, stream3]) {

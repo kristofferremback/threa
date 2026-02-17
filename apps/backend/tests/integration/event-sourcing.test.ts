@@ -1,10 +1,10 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test"
 import { Pool } from "pg"
-import { withTransaction } from "./setup"
+import { withTransaction, withTestTransaction } from "./setup"
 import { EventService, MessageRepository } from "../../src/features/messaging"
 import { StreamEventRepository } from "../../src/features/streams"
 import { OutboxRepository } from "../../src/lib/outbox"
-import { streamId, userId, workspaceId } from "../../src/lib/id"
+import { streamId, memberId, workspaceId } from "../../src/lib/id"
 import { setupTestDatabase, testMessageContent } from "./setup"
 
 describe("Event Sourcing", () => {
@@ -36,7 +36,7 @@ describe("Event Sourcing", () => {
     test("should create event, projection, and outbox entry atomically", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = userId()
+      const testUserId = memberId()
 
       const message = await eventService.createMessage({
         workspaceId: testWorkspaceId,
@@ -73,7 +73,7 @@ describe("Event Sourcing", () => {
     test("should assign sequential sequence numbers", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = userId()
+      const testUserId = memberId()
 
       const msg1 = await eventService.createMessage({
         workspaceId: testWorkspaceId,
@@ -112,7 +112,7 @@ describe("Event Sourcing", () => {
       const stream1 = streamId()
       const stream2 = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = userId()
+      const testUserId = memberId()
 
       // Create messages in interleaved order
       await eventService.createMessage({
@@ -175,7 +175,7 @@ describe("Event Sourcing", () => {
     test("should publish to outbox for real-time delivery", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = userId()
+      const testUserId = memberId()
 
       // Get baseline outbox id
       const baselineResult = await pool.query("SELECT COALESCE(MAX(id), 0) as max_id FROM outbox")
@@ -213,7 +213,7 @@ describe("Event Sourcing", () => {
     test("should create edit event and update projection", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = userId()
+      const testUserId = memberId()
 
       const original = await eventService.createMessage({
         workspaceId: testWorkspaceId,
@@ -251,7 +251,7 @@ describe("Event Sourcing", () => {
     test("should preserve sequence on edit", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = userId()
+      const testUserId = memberId()
 
       const original = await eventService.createMessage({
         workspaceId: testWorkspaceId,
@@ -276,7 +276,7 @@ describe("Event Sourcing", () => {
     test("should publish edit event to outbox", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = userId()
+      const testUserId = memberId()
 
       const original = await eventService.createMessage({
         workspaceId: testWorkspaceId,
@@ -309,7 +309,7 @@ describe("Event Sourcing", () => {
     test("should create delete event and soft-delete projection", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = userId()
+      const testUserId = memberId()
 
       const message = await eventService.createMessage({
         workspaceId: testWorkspaceId,
@@ -343,7 +343,7 @@ describe("Event Sourcing", () => {
     test("should exclude deleted messages from list queries", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = userId()
+      const testUserId = memberId()
 
       const msg1 = await eventService.createMessage({
         workspaceId: testWorkspaceId,
@@ -377,7 +377,7 @@ describe("Event Sourcing", () => {
     test("should publish delete event to outbox", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = userId()
+      const testUserId = memberId()
 
       const message = await eventService.createMessage({
         workspaceId: testWorkspaceId,
@@ -411,7 +411,7 @@ describe("Event Sourcing", () => {
     test("should add reaction event and update projection", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = userId()
+      const testUserId = memberId()
 
       const message = await eventService.createMessage({
         workspaceId: testWorkspaceId,
@@ -449,8 +449,8 @@ describe("Event Sourcing", () => {
     test("should aggregate multiple reactions correctly", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const user1 = userId()
-      const user2 = userId()
+      const user1 = memberId()
+      const user2 = memberId()
 
       const message = await eventService.createMessage({
         workspaceId: testWorkspaceId,
@@ -495,7 +495,7 @@ describe("Event Sourcing", () => {
     test("should remove reaction event and update projection", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = userId()
+      const testUserId = memberId()
 
       const message = await eventService.createMessage({
         workspaceId: testWorkspaceId,
@@ -535,7 +535,7 @@ describe("Event Sourcing", () => {
     test("should handle duplicate reaction gracefully", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = userId()
+      const testUserId = memberId()
 
       const message = await eventService.createMessage({
         workspaceId: testWorkspaceId,
@@ -571,7 +571,7 @@ describe("Event Sourcing", () => {
     test("should publish reaction events to outbox", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = userId()
+      const testUserId = memberId()
 
       const message = await eventService.createMessage({
         workspaceId: testWorkspaceId,
@@ -612,7 +612,7 @@ describe("Event Sourcing", () => {
     test("should list events in sequence order", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = userId()
+      const testUserId = memberId()
 
       await eventService.createMessage({
         workspaceId: testWorkspaceId,
@@ -649,7 +649,7 @@ describe("Event Sourcing", () => {
     test("should filter events by type", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = userId()
+      const testUserId = memberId()
 
       const message = await eventService.createMessage({
         workspaceId: testWorkspaceId,
@@ -687,7 +687,7 @@ describe("Event Sourcing", () => {
     test("should paginate events with afterSequence", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = userId()
+      const testUserId = memberId()
 
       for (let i = 0; i < 5; i++) {
         await eventService.createMessage({
@@ -713,7 +713,7 @@ describe("Event Sourcing", () => {
     test("should respect limit parameter", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = userId()
+      const testUserId = memberId()
 
       for (let i = 0; i < 10; i++) {
         await eventService.createMessage({
@@ -735,7 +735,7 @@ describe("Event Sourcing", () => {
     test("should rollback all changes on failure", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = userId()
+      const testUserId = memberId()
 
       // Get baseline counts
       const beforeEvents = await pool.query("SELECT COUNT(*) as count FROM stream_events")
