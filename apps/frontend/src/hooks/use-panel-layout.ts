@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react"
+import { useResizeDrag } from "./use-resize-drag"
 
 const DEFAULT_PANEL_WIDTH = 480
 const MIN_PANEL_WIDTH = 300
@@ -6,9 +7,8 @@ const MAX_PANEL_RATIO = 0.7
 
 export function usePanelLayout(isPanelOpen: boolean) {
   const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH)
-  const [isResizing, setIsResizing] = useState(false)
   const [enableTransition, setEnableTransition] = useState(false)
-  const resizeRef = useRef<{ startX: number; startWidth: number } | null>(null)
+  const [showContent, setShowContent] = useState(isPanelOpen)
   const containerRef = useRef<HTMLDivElement>(null)
 
   // Enable transitions after first paint to prevent animation on page load
@@ -19,41 +19,36 @@ export function usePanelLayout(isPanelOpen: boolean) {
     return () => cancelAnimationFrame(frame)
   }, [])
 
-  const handleResizeStart = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault()
-      e.stopPropagation()
-      resizeRef.current = { startX: e.clientX, startWidth: panelWidth }
-      setIsResizing(true)
-    },
-    [panelWidth]
-  )
-
+  // Content mount/unmount lifecycle — keep content mounted during close animation
   useEffect(() => {
-    if (!isResizing) return
-
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!resizeRef.current || !containerRef.current) return
-      const containerWidth = containerRef.current.offsetWidth
-      const maxWidth = Math.round(containerWidth * MAX_PANEL_RATIO)
-      // Dragging left increases panel width (panel is on the right side)
-      const delta = resizeRef.current.startX - e.clientX
-      const newWidth = Math.max(MIN_PANEL_WIDTH, Math.min(maxWidth, resizeRef.current.startWidth + delta))
-      setPanelWidth(newWidth)
+    if (isPanelOpen) {
+      setShowContent(true)
+    } else if (!enableTransition) {
+      // No transition active = instant unmount (e.g. page load edge case)
+      setShowContent(false)
     }
+  }, [isPanelOpen, enableTransition])
 
-    const handleMouseUp = () => {
-      resizeRef.current = null
-      setIsResizing(false)
+  const handleTransitionEnd = useCallback(() => {
+    if (!isPanelOpen) {
+      setShowContent(false)
     }
+  }, [isPanelOpen])
 
-    document.addEventListener("mousemove", handleMouseMove)
-    document.addEventListener("mouseup", handleMouseUp)
-    return () => {
-      document.removeEventListener("mousemove", handleMouseMove)
-      document.removeEventListener("mouseup", handleMouseUp)
+  const handleWidthChange = useCallback((newWidth: number) => {
+    if (!containerRef.current) {
+      throw new Error("usePanelLayout: containerRef must be attached to a DOM element for max-width clamping")
     }
-  }, [isResizing])
+    const containerWidth = containerRef.current.offsetWidth
+    const maxWidth = Math.round(containerWidth * MAX_PANEL_RATIO)
+    setPanelWidth(Math.max(MIN_PANEL_WIDTH, Math.min(maxWidth, newWidth)))
+  }, [])
+
+  const { isResizing, handleResizeStart } = useResizeDrag({
+    width: panelWidth,
+    onWidthChange: handleWidthChange,
+    direction: "left",
+  })
 
   return {
     containerRef,
@@ -61,6 +56,8 @@ export function usePanelLayout(isPanelOpen: boolean) {
     displayWidth: isPanelOpen ? panelWidth : 0,
     shouldAnimate: enableTransition && !isResizing,
     isResizing,
+    showContent,
     handleResizeStart,
+    handleTransitionEnd,
   }
 }

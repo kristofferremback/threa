@@ -83,7 +83,6 @@
     "react-dom": "^19",
     "react-hook-form": "^7.68.0",
     "react-markdown": "^10.1.0",
-    "react-resizable-panels": "^4.0.7",
     "react-router-dom": "^7.11.0",
     "recharts": "2.15.4",
     "remark-gfm": "^4.0.1",

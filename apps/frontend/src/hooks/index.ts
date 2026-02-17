@@ -94,3 +94,5 @@ export { useReconnectBootstrap } from "./use-reconnect-bootstrap"
 export { usePreloadImages } from "./use-preload-images"
 
 export { usePanelLayout } from "./use-panel-layout"
+
+export { useResizeDrag } from "./use-resize-drag"

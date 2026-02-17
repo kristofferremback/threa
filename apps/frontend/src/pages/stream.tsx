@@ -41,8 +41,16 @@ export function StreamPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const { stream, isDraft, error, rename, archive, unarchive } = useStreamOrDraft(workspaceId!, streamId!)
   const { panelId, isPanelOpen, closePanel } = usePanel()
-  const { containerRef, panelWidth, displayWidth, shouldAnimate, isResizing, handleResizeStart } =
-    usePanelLayout(isPanelOpen)
+  const {
+    containerRef,
+    panelWidth,
+    displayWidth,
+    shouldAnimate,
+    isResizing,
+    showContent,
+    handleResizeStart,
+    handleTransitionEnd,
+  } = usePanelLayout(isPanelOpen)
 
   // Unified error checking - checks both coordinated loading and direct query errors
   const streamError = useStreamError(streamId, error)
@@ -249,8 +257,9 @@ export function StreamPage() {
         <div
           className={cn("flex-shrink-0 overflow-hidden", shouldAnimate && "transition-[width] duration-200 ease-out")}
           style={{ width: displayWidth }}
+          onTransitionEnd={handleTransitionEnd}
         >
-          {isPanelOpen && (
+          {showContent && (
             <div className="flex h-full" style={{ width: panelWidth, minWidth: panelWidth }}>
               {/* Resize handle */}
               <div

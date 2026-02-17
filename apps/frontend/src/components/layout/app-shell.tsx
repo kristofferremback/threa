@@ -1,6 +1,7 @@
-import { type ReactNode, useCallback, useEffect, useRef } from "react"
+import { type ReactNode, useCallback } from "react"
 import { PanelLeftClose, PanelLeft, Command } from "lucide-react"
 import { useSidebar, useQuickSwitcher, useCoordinatedLoading } from "@/contexts"
+import { useResizeDrag } from "@/hooks"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { TopbarLoadingIndicator } from "./topbar-loading-indicator"
@@ -93,7 +94,14 @@ export function AppShell({ sidebar, children }: AppShellProps) {
     stopResizing,
     setWidth,
   } = useSidebar()
-  const resizeRef = useRef<{ startX: number; startWidth: number } | null>(null)
+
+  const { handleResizeStart } = useResizeDrag({
+    width,
+    onWidthChange: setWidth,
+    direction: "right",
+    onResizeStart: startResizing,
+    onResizeEnd: stopResizing,
+  })
 
   const isCollapsed = state === "collapsed"
   const isPreview = state === "preview"
@@ -118,41 +126,6 @@ export function AppShell({ sidebar, children }: AppShellProps) {
   const handleBackdropClick = useCallback(() => {
     collapse()
   }, [collapse])
-
-  // Resize handlers
-  const handleResizeStart = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault()
-      e.stopPropagation()
-      resizeRef.current = { startX: e.clientX, startWidth: width }
-      startResizing()
-    },
-    [width, startResizing]
-  )
-
-  // Global mouse move/up handlers for resizing
-  useEffect(() => {
-    if (!isResizing) return
-
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!resizeRef.current) return
-      const delta = e.clientX - resizeRef.current.startX
-      setWidth(resizeRef.current.startWidth + delta)
-    }
-
-    const handleMouseUp = () => {
-      resizeRef.current = null
-      stopResizing()
-    }
-
-    document.addEventListener("mousemove", handleMouseMove)
-    document.addEventListener("mouseup", handleMouseUp)
-
-    return () => {
-      document.removeEventListener("mousemove", handleMouseMove)
-      document.removeEventListener("mouseup", handleMouseUp)
-    }
-  }, [isResizing, setWidth, stopResizing])
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden">
