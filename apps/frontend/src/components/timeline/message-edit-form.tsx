@@ -86,7 +86,8 @@ export function MessageEditForm({
 
   return (
     <>
-      <div className="input-glow-wrapper">
+      {/* Negative margins offset the padding so text stays in the same position as the rendered message */}
+      <div className="input-glow-wrapper -mx-3 -mt-2">
         <div className="rounded-[16px] border border-input bg-card p-3">
           <RichEditor
             value={contentJson}
