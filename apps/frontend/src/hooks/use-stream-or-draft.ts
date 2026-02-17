@@ -38,6 +38,23 @@ export function getDmDraftMemberId(id: string): string | null {
   return memberId.length > 0 ? memberId : null
 }
 
+function resolveRealDmDisplayName(
+  streamId: string,
+  streamDisplayName: string | null,
+  streamMembers: Array<{ memberId: string }>,
+  workspaceBootstrap: WorkspaceBootstrap | undefined,
+  currentMemberId: string | null
+): string | null {
+  const workspaceName = workspaceBootstrap?.streams.find((stream) => stream.id === streamId)?.displayName
+  if (workspaceName) return workspaceName
+
+  const otherMemberId = streamMembers.find((member) => member.memberId !== currentMemberId)?.memberId
+  if (!otherMemberId) return streamDisplayName
+
+  const otherMemberName = workspaceBootstrap?.members.find((member) => member.id === otherMemberId)?.name ?? null
+  return otherMemberName ?? streamDisplayName
+}
+
 export interface VirtualStream {
   id: string
   workspaceId: string
@@ -179,7 +196,7 @@ function useDraftDmStream(workspaceId: string, streamId: string, enabled: boolea
   const currentMemberId = wsBootstrap?.members.find((m) => m.userId === user?.id)?.id ?? null
   const existingDmStreamId =
     targetMemberId && currentMemberId
-      ? wsBootstrap?.dmPeers?.find((peer) => peer.memberId === targetMemberId)?.streamId
+      ? wsBootstrap?.dmPeers.find((peer) => peer.memberId === targetMemberId)?.streamId
       : null
 
   useEffect(() => {
@@ -254,7 +271,7 @@ function useDraftDmStream(workspaceId: string, streamId: string, enabled: boolea
       queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
         if (!old) return old
 
-        const hasPeer = (old.dmPeers ?? []).some(
+        const hasPeer = old.dmPeers.some(
           (peer) => peer.memberId === targetMemberId && peer.streamId === message.streamId
         )
 
@@ -291,9 +308,7 @@ function useDraftDmStream(workspaceId: string, streamId: string, enabled: boolea
 
         return {
           ...old,
-          dmPeers: hasPeer
-            ? old.dmPeers
-            : [...(old.dmPeers ?? []), { memberId: targetMemberId, streamId: message.streamId }],
+          dmPeers: hasPeer ? old.dmPeers : [...old.dmPeers, { memberId: targetMemberId, streamId: message.streamId }],
           streams: optimisticStream.map((stream) =>
             stream.id === message.streamId && stream.type === StreamTypes.DM
               ? { ...stream, displayName: targetMemberName ?? stream.displayName }
@@ -334,6 +349,16 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
   const currentMemberId = wsBootstrap?.members?.find((m) => m.userId === user?.id)?.id ?? null
 
   const { data: bootstrap, isLoading, error } = useStreamBootstrap(workspaceId, streamId, { enabled })
+  const displayName =
+    bootstrap?.stream?.type === StreamTypes.DM
+      ? resolveRealDmDisplayName(
+          bootstrap.stream.id,
+          bootstrap.stream.displayName,
+          bootstrap.members,
+          wsBootstrap,
+          currentMemberId
+        )
+      : (bootstrap?.stream?.displayName ?? null)
 
   const stream: VirtualStream | undefined = bootstrap?.stream
     ? {
@@ -341,17 +366,7 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
         workspaceId: bootstrap.stream.workspaceId,
         type: bootstrap.stream.type,
         slug: bootstrap.stream.slug,
-        displayName:
-          bootstrap.stream.type === StreamTypes.DM
-            ? (() => {
-                const workspaceName = wsBootstrap?.streams.find((s) => s.id === bootstrap.stream.id)?.displayName
-                if (workspaceName) return workspaceName
-
-                const otherMemberId = bootstrap.members.find((m) => m.memberId !== currentMemberId)?.memberId
-                const otherMemberName = wsBootstrap?.members.find((m) => m.id === otherMemberId)?.name ?? null
-                return otherMemberName ?? bootstrap.stream.displayName
-              })()
-            : bootstrap.stream.displayName,
+        displayName,
         companionMode: bootstrap.stream.companionMode,
         isDraft: false,
         parentStreamId: bootstrap.stream.parentStreamId,

@@ -105,7 +105,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   const virtualDmStreams = useMemo(() => {
     if (!bootstrap?.members || !currentMember) return []
 
-    const dmPeerIds = new Set((bootstrap.dmPeers ?? []).map((peer) => peer.memberId))
+    const dmPeerIds = new Set(bootstrap.dmPeers.map((peer) => peer.memberId))
     const now = new Date().toISOString()
 
     return bootstrap.members
@@ -146,8 +146,9 @@ export function Sidebar({ workspaceId }: SidebarProps) {
     const recentCandidates: StreamItemData[] = [] // All streams that could go in Recent
     const pinned: StreamItemData[] = []
     const other: StreamItemData[] = []
+    const smartStreams = [...processedStreams, ...virtualDmStreams]
 
-    for (const stream of processedStreams) {
+    for (const stream of smartStreams) {
       switch (stream.section) {
         case "important":
           important.push(stream)
@@ -196,7 +197,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
       pinned,
       other,
     }
-  }, [processedStreams, getUnreadCount])
+  }, [processedStreams, virtualDmStreams, getUnreadCount])
 
   // Organize streams by type for "All" view
   const streamsByType = useMemo(() => {

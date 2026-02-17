@@ -266,13 +266,13 @@ export class StreamService {
           memberTwoId: memberBId,
         })
 
-        await StreamMemberRepository.insert(client, id, memberAId)
-        await StreamMemberRepository.insert(client, id, memberBId)
+        await StreamMemberRepository.insertMany(client, id, [memberAId, memberBId])
 
         await OutboxRepository.insert(client, "stream:created", {
           workspaceId: params.workspaceId,
           streamId: stream.id,
           stream,
+          dmMemberIds: [memberAId, memberBId],
         })
 
         return stream

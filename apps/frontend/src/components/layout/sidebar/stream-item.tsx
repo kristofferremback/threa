@@ -7,7 +7,7 @@ import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { MentionIndicator } from "@/components/mention-indicator"
 import { RelativeTime } from "@/components/relative-time"
 import { getThreadRootContext } from "@/components/thread/breadcrumb-helpers"
-import { useActors } from "@/hooks"
+import { isDraftId, useActors } from "@/hooks"
 import { useSidebar } from "@/contexts"
 import { useStreamSettings } from "@/components/stream-settings/use-stream-settings"
 import { cn } from "@/lib/utils"
@@ -152,7 +152,7 @@ export function StreamItem({
   const itemRef = useRef<HTMLAnchorElement>(null)
   const hasUnread = unreadCount > 0
   const preview = stream.lastMessagePreview
-  const isVirtualDraft = stream.id.startsWith("draft_")
+  const isVirtualDraft = isDraftId(stream.id)
 
   useUrgencyTracking(itemRef, stream.id, stream.urgency, scrollContainerRef)
 

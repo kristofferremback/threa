@@ -155,7 +155,7 @@ export interface WorkspaceBootstrap {
   members: WorkspaceMember[]
   streams: StreamWithPreview[]
   streamMemberships: StreamMember[]
-  dmPeers?: Array<{ memberId: string; streamId: string }>
+  dmPeers: Array<{ memberId: string; streamId: string }>
   users: User[]
   personas: Persona[]
   emojis: EmojiEntry[]
