@@ -4,11 +4,6 @@
 ALTER TABLE streams
 ADD COLUMN IF NOT EXISTS uniqueness_key TEXT;
 
--- Ensure only generic uniqueness metadata remains on streams.
-DROP INDEX IF EXISTS idx_streams_dm_member_pair_unique;
-DROP INDEX IF EXISTS idx_streams_workspace_dm_member_a;
-DROP INDEX IF EXISTS idx_streams_workspace_dm_member_b;
-
 ALTER TABLE streams
   DROP COLUMN IF EXISTS dm_member_a_id,
   DROP COLUMN IF EXISTS dm_member_b_id;
