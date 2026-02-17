@@ -255,6 +255,7 @@ export function StreamPage() {
 
         {/* Thread panel — barn door animation wrapper */}
         <div
+          data-testid="panel"
           className={cn("flex-shrink-0 overflow-hidden", shouldAnimate && "transition-[width] duration-200 ease-out")}
           style={{ width: displayWidth }}
           onTransitionEnd={handleTransitionEnd}
