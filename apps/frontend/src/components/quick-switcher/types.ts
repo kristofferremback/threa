@@ -5,6 +5,7 @@ export interface QuickSwitcherItem {
   id: string
   label: string
   icon?: React.ComponentType<{ className?: string }>
+  avatarUrl?: string
   description?: string
   group?: string
   href?: string

@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Bell, FileText, Hash, MessageSquare, Plus, X, Archive } from "lucide-react"
-import { StreamTypes } from "@threa/types"
+import { StreamTypes, getAvatarUrl } from "@threa/types"
 import type { Stream, StreamType } from "@threa/types"
 import { getStreamName, streamFallbackLabel } from "@/lib/streams"
 import { streamsApi } from "@/api"
@@ -137,6 +137,8 @@ export function useStreamItems(context: ModeContext): ModeResult {
 
   const items = useMemo(() => {
     const lowerQuery = searchText.toLowerCase()
+    const memberById = new Map((members ?? []).map((member) => [member.id, member]))
+    const dmPeerByStreamId = new Map((dmPeers ?? []).map((peer) => [peer.streamId, peer.memberId]))
 
     // Combine streams based on filters
     const allStreams: Stream[] = [
@@ -185,11 +187,20 @@ export function useStreamItems(context: ModeContext): ModeResult {
         let description = typeLabel
         if (isArchived) description = `${typeLabel} · Archived`
         else if (notJoined) description = `${typeLabel} · Not joined`
+
+        let avatarUrl: string | undefined
+        if (stream.type === StreamTypes.DM) {
+          const peerMemberId = dmPeerByStreamId.get(stream.id)
+          const peerMember = peerMemberId ? memberById.get(peerMemberId) : undefined
+          avatarUrl = getAvatarUrl(peerMember?.avatarUrl, 64)
+        }
+
         return {
           id: stream.id,
           label: getStreamName(stream) ?? streamFallbackLabel(stream.type, "generic"),
           description,
           icon: STREAM_ICONS[stream.type],
+          avatarUrl,
           href,
           onSelect: () => {
             closeDialog()
@@ -225,6 +236,7 @@ export function useStreamItems(context: ModeContext): ModeResult {
           label: member.name,
           description: "Direct Message · Start conversation",
           icon: STREAM_ICONS[StreamTypes.DM],
+          avatarUrl: getAvatarUrl(member.avatarUrl, 64),
           group: "Members",
           href: `/w/${workspaceId}/s/${createDmDraftId(member.id)}`,
           onSelect: () => {

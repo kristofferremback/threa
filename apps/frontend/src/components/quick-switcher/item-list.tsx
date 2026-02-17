@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react"
 import { Link } from "react-router-dom"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import type { QuickSwitcherItem } from "./types"
 
 interface ItemListProps {
@@ -75,10 +76,22 @@ export function ItemList({
             const Icon = item.icon
             const ActionIcon = item.actionIcon
             const isSelected = index === selectedIndex
+            const iconFallback = Icon ? (
+              <Icon className="h-3.5 w-3.5 opacity-60" />
+            ) : (
+              item.label.slice(0, 1).toUpperCase()
+            )
 
             const itemContent = (
               <>
-                {Icon && <Icon className="h-4 w-4 opacity-50" />}
+                {item.avatarUrl ? (
+                  <Avatar className="h-7 w-7 rounded-md">
+                    <AvatarImage src={item.avatarUrl} alt={item.label} />
+                    <AvatarFallback className="rounded-md">{iconFallback}</AvatarFallback>
+                  </Avatar>
+                ) : (
+                  Icon && <Icon className="h-4 w-4 opacity-50" />
+                )}
                 <div className="flex flex-col flex-1 min-w-0">
                   <span className="truncate">{item.label}</span>
                   {item.description && (
