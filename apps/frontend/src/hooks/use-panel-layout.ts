@@ -29,11 +29,16 @@ export function usePanelLayout(isPanelOpen: boolean) {
     }
   }, [isPanelOpen, enableTransition])
 
-  const handleTransitionEnd = useCallback(() => {
-    if (!isPanelOpen) {
-      setShowContent(false)
-    }
-  }, [isPanelOpen])
+  const handleTransitionEnd = useCallback(
+    (e: React.TransitionEvent) => {
+      // Only respond to our own width transition, not bubbled child transitions
+      // (e.g. resize handle's transition-colors finishes 50ms earlier)
+      if (e.propertyName === "width" && e.target === e.currentTarget && !isPanelOpen) {
+        setShowContent(false)
+      }
+    },
+    [isPanelOpen]
+  )
 
   const handleWidthChange = useCallback((newWidth: number) => {
     if (!containerRef.current) {
