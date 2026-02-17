@@ -1,5 +1,6 @@
 import { serializeToMarkdown } from "@threa/prosemirror"
 import { AuthorTypes, type JSONContent, type StreamWithPreview } from "@threa/types"
+import { stripMarkdown } from "@/lib/markdown"
 import { getStreamName } from "@/lib/streams"
 import type { SectionKey, SortType, StreamItemData, UrgencyLevel } from "./types"
 
@@ -48,13 +49,8 @@ export function categorizeStream(stream: StreamWithPreview, unreadCount: number,
 
 /** Truncate content for preview display. Accepts either JSONContent or plain markdown string. */
 export function truncateContent(content: JSONContent | string, maxLength: number = 50): string {
-  // Handle plain markdown string (from socket events) vs JSONContent (from database)
   const markdown = typeof content === "string" ? content : serializeToMarkdown(content)
-  const stripped = markdown
-    .replace(/[*_~`#]/g, "")
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-    .replace(/\n+/g, " ")
-    .trim()
+  const stripped = stripMarkdown(markdown).replace(/\n+/g, " ")
   return stripped.length > maxLength ? stripped.slice(0, maxLength) + "..." : stripped
 }
 

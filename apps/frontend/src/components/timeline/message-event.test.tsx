@@ -5,8 +5,18 @@ import type { StreamEvent } from "@threa/types"
 
 // Only mock what can't run in jsdom: routing and data-fetching hooks
 vi.mock("react-router-dom", () => ({
-  Link: ({ to, children, className }: { to: string; children: React.ReactNode; className?: string }) => (
-    <a href={to} className={className}>
+  Link: ({
+    to,
+    children,
+    className,
+    onClick,
+  }: {
+    to: string
+    children: React.ReactNode
+    className?: string
+    onClick?: () => void
+  }) => (
+    <a href={to} className={className} onClick={onClick}>
       {children}
     </a>
   ),

@@ -1,7 +1,6 @@
 import { type ReactNode, useRef, useEffect } from "react"
 import type { StreamEvent, AttachmentSummary } from "@threa/types"
 import { Link } from "react-router-dom"
-import { MessageSquareReply, Sparkles } from "lucide-react"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { MarkdownContent, AttachmentProvider } from "@/components/ui/markdown-content"
@@ -11,6 +10,7 @@ import { usePendingMessages, usePanel, createDraftPanelId, useTrace } from "@/co
 import { useActors, getStepLabel, type MessageAgentActivity } from "@/hooks"
 import { cn } from "@/lib/utils"
 import { AttachmentList } from "./attachment-list"
+import { MessageContextMenu } from "./message-context-menu"
 import { ThreadIndicator } from "./thread-indicator"
 
 interface MessagePayload {
@@ -156,9 +156,6 @@ function SentMessageEvent({
     }
   }, [isHighlighted])
 
-  // Don't show reply button if we're viewing this message as the thread parent
-  const isParentOfCurrentThread = panelId === threadId
-
   // Create draft panel URL for messages that don't have a thread yet
   const draftPanelId = createDraftPanelId(streamId, payload.messageId)
   const draftPanelUrl = getPanelUrl(draftPanelId)
@@ -224,26 +221,20 @@ function SentMessageEvent({
       statusIndicator={<RelativeTime date={event.createdAt} className="text-xs text-muted-foreground" />}
       actions={
         !hideActions && (
-          <div className="opacity-0 group-hover:opacity-100 transition-opacity ml-auto flex items-center gap-1">
-            {/* Trace link for AI messages with sessionId */}
-            {event.actorType === "persona" && payload.sessionId && (
-              <Link
-                to={getTraceUrl(payload.sessionId, payload.messageId)}
-                className="inline-flex items-center justify-center h-6 px-2 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground"
-                title="View agent trace"
-              >
-                <Sparkles className="h-4 w-4" />
-              </Link>
-            )}
-            {/* Reply in thread button (only when thread exists or agent activity has threadStreamId) */}
-            {!isParentOfCurrentThread && effectiveThreadId && (
-              <Link
-                to={getPanelUrl(effectiveThreadId)}
-                className="inline-flex items-center justify-center h-6 px-2 rounded-md hover:bg-accent"
-              >
-                <MessageSquareReply className="h-4 w-4" />
-              </Link>
-            )}
+          <div className="opacity-0 group-hover:opacity-100 has-[[data-state=open]]:opacity-100 transition-opacity ml-auto flex items-center gap-1">
+            <MessageContextMenu
+              context={{
+                contentMarkdown: payload.contentMarkdown,
+                actorType: event.actorType,
+                sessionId: payload.sessionId,
+                isThreadParent: panelId === threadId,
+                replyUrl: effectiveThreadId ? getPanelUrl(effectiveThreadId) : draftPanelUrl,
+                traceUrl:
+                  event.actorType === "persona" && payload.sessionId
+                    ? getTraceUrl(payload.sessionId, payload.messageId)
+                    : undefined,
+              }}
+            />
           </div>
         )
       }
