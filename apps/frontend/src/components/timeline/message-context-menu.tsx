@@ -84,7 +84,7 @@ function ActionItem({
                   key={sub.id}
                   className="gap-2 cursor-pointer"
                   onSelect={() => {
-                    sub.action?.(context)
+                    sub.action(context)
                     onClose()
                   }}
                 >

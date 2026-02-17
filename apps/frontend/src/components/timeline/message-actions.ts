@@ -19,14 +19,24 @@ export interface MessageActionContext {
   traceUrl?: string
 }
 
+/** A variant within a sub-menu (e.g. "Copy as Markdown" vs "Copy as Plain text"). */
+export interface MessageSubAction {
+  id: string
+  label: string
+  icon: ComponentType<{ className?: string }>
+  action: (context: MessageActionContext) => void | Promise<void>
+}
+
+/** A top-level action in the message context menu. */
 export interface MessageAction {
   id: string
   label: string
   icon: ComponentType<{ className?: string }>
-  /** Sub-actions turn this item into a dropdown with variants (e.g. "Copy as Markdown | Plain text") */
-  subActions?: MessageAction[]
+  /** Sub-actions turn this item into a sub-menu with variants */
+  subActions?: MessageSubAction[]
   /** Render a separator before this action in the menu */
   separatorBefore?: boolean
+  /** Controls visibility — evaluated by getVisibleActions */
   when: (context: MessageActionContext) => boolean
   /** URL for navigation actions — rendered as <Link> (INV-40) */
   getHref?: (context: MessageActionContext) => string | undefined
@@ -67,7 +77,6 @@ export const messageActions: MessageAction[] = [
         id: "copy-markdown",
         label: "Copy as Markdown",
         icon: FileText,
-        when: () => true,
         action: async (ctx) => {
           try {
             await copyToClipboard(ctx.contentMarkdown)
@@ -81,7 +90,6 @@ export const messageActions: MessageAction[] = [
         id: "copy-plain-text",
         label: "Copy as Plain text",
         icon: Type,
-        when: () => true,
         action: async (ctx) => {
           try {
             await copyToClipboard(stripMarkdown(ctx.contentMarkdown))
