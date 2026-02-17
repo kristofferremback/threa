@@ -393,6 +393,7 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
     },
 
     async getHistory(req: Request, res: Response) {
+      const memberId = req.member!.id
       const workspaceId = req.workspaceId!
       const { messageId } = req.params
 
@@ -401,9 +402,17 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
         return res.status(404).json({ error: "Message not found" })
       }
 
-      const stream = await streamService.getStreamById(existing.streamId)
+      const [stream, isMember] = await Promise.all([
+        streamService.getStreamById(existing.streamId),
+        streamService.isMember(existing.streamId, memberId),
+      ])
+
       if (!stream || stream.workspaceId !== workspaceId) {
         return res.status(404).json({ error: "Message not found" })
+      }
+
+      if (!isMember) {
+        return res.status(403).json({ error: "Not a member of this stream" })
       }
 
       const versions = await eventService.getMessageVersions(messageId)

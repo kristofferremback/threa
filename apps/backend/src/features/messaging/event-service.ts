@@ -246,7 +246,10 @@ export class EventService {
 
   async editMessage(params: EditMessageParams): Promise<Message | null> {
     return withTransaction(this.pool, async (client) => {
-      // 1. Snapshot pre-edit content as a version record (atomic version numbering via INSERT subquery)
+      // Lock the message row to serialize concurrent edits (prevents duplicate version numbers)
+      await MessageRepository.lockById(client, params.messageId)
+
+      // 1. Snapshot pre-edit content as a version record
       const existing = await MessageRepository.findById(client, params.messageId)
       if (existing) {
         await MessageVersionRepository.insert(client, {

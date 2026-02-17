@@ -191,6 +191,18 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
           }),
         }
       })
+
+      // Persist updated message_created event to IndexedDB for offline cache coherency
+      const bootstrap = queryClient.getQueryData(streamKeys.bootstrap(workspaceId, streamId)) as
+        | StreamBootstrap
+        | undefined
+      const updatedEvent = bootstrap?.events.find((e) => {
+        if (e.eventType !== "message_created") return false
+        return (e.payload as { messageId: string }).messageId === editPayload.messageId
+      })
+      if (updatedEvent) {
+        await db.events.put({ ...updatedEvent, _cachedAt: Date.now() })
+      }
     }
 
     const handleMessageDeleted = async (payload: MessageDeletedPayload) => {

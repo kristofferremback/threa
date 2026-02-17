@@ -67,6 +67,7 @@ describe("EventService.editMessage version capture", () => {
   beforeEach(() => {
     spyOn(db, "withTransaction").mockImplementation(((_db: unknown, callback: (client: any) => Promise<unknown>) =>
       callback({})) as any)
+    spyOn(MessageRepository, "lockById").mockResolvedValue(true)
     spyOn(MessageRepository, "findById").mockResolvedValue(existingMessage as any)
     spyOn(MessageVersionRepository, "insert").mockResolvedValue({
       id: "msgv_1",
