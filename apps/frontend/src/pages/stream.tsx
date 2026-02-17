@@ -1,6 +1,6 @@
 import { useState, useRef } from "react"
 import { useParams, useSearchParams } from "react-router-dom"
-import { MoreHorizontal, Pencil, Archive, MessageCircle, X, ArchiveX, GripVertical } from "lucide-react"
+import { MoreHorizontal, Pencil, Archive, MessageCircle, X, ArchiveX } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -16,6 +16,7 @@ import { useStreamOrDraft, useStreamError, usePanelLayout } from "@/hooks"
 import { usePanel } from "@/contexts"
 import { TimelineView } from "@/components/timeline"
 import { StreamPanel, ThreadHeader } from "@/components/thread"
+import { ThreadPanelSlot } from "@/components/layout"
 import { ConversationList } from "@/components/conversations"
 import { StreamErrorView } from "@/components/stream-error-view"
 import { StreamTypes, type StreamType } from "@threa/types"
@@ -254,45 +255,19 @@ export function StreamPage() {
       <div ref={containerRef} className="flex h-full">
         <div className="flex-1 min-w-0 overflow-hidden">{mainStreamContent}</div>
 
-        {/* Thread panel — barn door animation wrapper */}
-        <div
-          data-testid="panel"
-          className={cn("flex-shrink-0 overflow-hidden", shouldAnimate && "transition-[width] duration-200 ease-out")}
-          style={{ width: displayWidth }}
+        <ThreadPanelSlot
+          displayWidth={displayWidth}
+          panelWidth={panelWidth}
+          shouldAnimate={shouldAnimate}
+          showContent={showContent}
+          isResizing={isResizing}
+          maxWidth={Math.round((containerRef.current?.offsetWidth ?? 1200) * 0.7)}
           onTransitionEnd={handleTransitionEnd}
+          onResizeStart={handleResizeStart}
+          onResizeKeyDown={handleResizeKeyDown}
         >
-          {showContent && (
-            <div className="flex h-full" style={{ width: panelWidth, minWidth: panelWidth }}>
-              {/* Resize handle */}
-              <div
-                className={cn(
-                  "relative flex w-px flex-shrink-0 items-center justify-center bg-border cursor-col-resize",
-                  "after:absolute after:inset-y-0 after:left-1/2 after:w-1 after:-translate-x-1/2",
-                  "focus-visible:bg-primary/30 focus-visible:outline-none",
-                  !isResizing && "transition-colors duration-150",
-                  isResizing && "bg-primary/30"
-                )}
-                onMouseDown={handleResizeStart}
-                onKeyDown={handleResizeKeyDown}
-                tabIndex={0}
-                role="separator"
-                aria-orientation="vertical"
-                aria-valuenow={panelWidth}
-                aria-valuemin={300}
-                aria-valuemax={Math.round((containerRef.current?.offsetWidth ?? 1200) * 0.7)}
-                aria-label="Resize thread panel"
-              >
-                <div className="z-10 flex h-4 w-3 items-center justify-center rounded-sm border bg-border">
-                  <GripVertical className="h-2.5 w-2.5" />
-                </div>
-              </div>
-
-              <div className="flex-1 min-w-0 overflow-hidden">
-                <StreamPanel key={panelId} workspaceId={workspaceId} onClose={closePanel} />
-              </div>
-            </div>
-          )}
-        </div>
+          <StreamPanel key={panelId} workspaceId={workspaceId} onClose={closePanel} />
+        </ThreadPanelSlot>
       </div>
       {conversationPanel}
     </>
