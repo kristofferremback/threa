@@ -19,16 +19,6 @@ export function usePanelLayout(isPanelOpen: boolean) {
     return () => cancelAnimationFrame(frame)
   }, [])
 
-  // Content mount/unmount lifecycle — keep content mounted during close animation
-  useEffect(() => {
-    if (isPanelOpen) {
-      setShowContent(true)
-    } else if (!enableTransition) {
-      // No transition active = instant unmount (e.g. page load edge case)
-      setShowContent(false)
-    }
-  }, [isPanelOpen, enableTransition])
-
   const handleTransitionEnd = useCallback(
     (e: React.TransitionEvent) => {
       // Only respond to our own width transition, not bubbled child transitions
@@ -55,6 +45,30 @@ export function usePanelLayout(isPanelOpen: boolean) {
     direction: "left",
   })
 
+  // Content mount/unmount lifecycle — keep content mounted during close animation
+  useEffect(() => {
+    if (isPanelOpen) {
+      setShowContent(true)
+    } else if (!enableTransition || isResizing) {
+      // No transition will fire — unmount immediately
+      setShowContent(false)
+    }
+  }, [isPanelOpen, enableTransition, isResizing])
+
+  const handleResizeKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      const step = e.shiftKey ? 50 : 10
+      if (e.key === "ArrowLeft") {
+        e.preventDefault()
+        handleWidthChange(panelWidth + step)
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault()
+        handleWidthChange(panelWidth - step)
+      }
+    },
+    [panelWidth, handleWidthChange]
+  )
+
   return {
     containerRef,
     panelWidth,
@@ -63,6 +77,7 @@ export function usePanelLayout(isPanelOpen: boolean) {
     isResizing,
     showContent,
     handleResizeStart,
+    handleResizeKeyDown,
     handleTransitionEnd,
   }
 }
