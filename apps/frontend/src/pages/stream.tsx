@@ -1,6 +1,6 @@
 import { useState, useRef } from "react"
 import { useParams, useSearchParams } from "react-router-dom"
-import { MoreHorizontal, Pencil, Archive, MessageCircle, X, ArchiveX } from "lucide-react"
+import { MoreHorizontal, Pencil, Archive, MessageCircle, X, ArchiveX, GripVertical } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -11,9 +11,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable"
 import { cn } from "@/lib/utils"
-import { useStreamOrDraft, useStreamError } from "@/hooks"
+import { useStreamOrDraft, useStreamError, usePanelLayout } from "@/hooks"
 import { usePanel } from "@/contexts"
 import { TimelineView } from "@/components/timeline"
 import { StreamPanel, ThreadHeader } from "@/components/thread"
@@ -42,6 +41,8 @@ export function StreamPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const { stream, isDraft, error, rename, archive, unarchive } = useStreamOrDraft(workspaceId!, streamId!)
   const { panelId, isPanelOpen, closePanel } = usePanel()
+  const { containerRef, panelWidth, displayWidth, shouldAnimate, isResizing, handleResizeStart } =
+    usePanelLayout(isPanelOpen)
 
   // Unified error checking - checks both coordinated loading and direct query errors
   const streamError = useStreamError(streamId, error)
@@ -239,32 +240,42 @@ export function StreamPage() {
     </>
   )
 
-  // Panel open: resizable side-by-side layout
-  if (isPanelOpen) {
-    return (
-      <>
-        <ResizablePanelGroup orientation="horizontal" className="h-full">
-          <ResizablePanel id="main" defaultSize={60} minSize={30}>
-            {mainStreamContent}
-          </ResizablePanel>
-
-          <ResizableHandle withHandle />
-
-          <ResizablePanel id="panel" defaultSize={40} minSize={30}>
-            {/* StreamPanel handles both regular streams and drafts */}
-            {/* Key forces remount when panelId changes to ensure clean state */}
-            <StreamPanel key={panelId} workspaceId={workspaceId} onClose={closePanel} />
-          </ResizablePanel>
-        </ResizablePanelGroup>
-        {conversationPanel}
-      </>
-    )
-  }
-
-  // Default: main content without panels
   return (
     <>
-      {mainStreamContent}
+      <div ref={containerRef} className="flex h-full">
+        <div className="flex-1 min-w-0 overflow-hidden">{mainStreamContent}</div>
+
+        {/* Thread panel — barn door animation wrapper */}
+        <div
+          className={cn("flex-shrink-0 overflow-hidden", shouldAnimate && "transition-[width] duration-200 ease-out")}
+          style={{ width: displayWidth }}
+        >
+          {isPanelOpen && (
+            <div className="flex h-full" style={{ width: panelWidth, minWidth: panelWidth }}>
+              {/* Resize handle */}
+              <div
+                className={cn(
+                  "relative flex w-px flex-shrink-0 items-center justify-center bg-border cursor-col-resize",
+                  "after:absolute after:inset-y-0 after:left-1/2 after:w-1 after:-translate-x-1/2",
+                  !isResizing && "transition-colors duration-150",
+                  isResizing && "bg-primary/30"
+                )}
+                onMouseDown={handleResizeStart}
+                role="separator"
+                aria-orientation="vertical"
+              >
+                <div className="z-10 flex h-4 w-3 items-center justify-center rounded-sm border bg-border">
+                  <GripVertical className="h-2.5 w-2.5" />
+                </div>
+              </div>
+
+              <div className="flex-1 min-w-0 overflow-hidden">
+                <StreamPanel key={panelId} workspaceId={workspaceId} onClose={closePanel} />
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
       {conversationPanel}
     </>
   )
