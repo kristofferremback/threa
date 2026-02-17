@@ -113,7 +113,7 @@ describe("MessageEditForm", () => {
   it("should show hint text for keyboard shortcuts", () => {
     renderForm()
 
-    expect(screen.getByText(/Escape to cancel/)).toBeInTheDocument()
-    expect(screen.getByText(/Enter to save/)).toBeInTheDocument()
+    expect(screen.getByText("Esc")).toBeInTheDocument()
+    expect(screen.getByText("↵")).toBeInTheDocument()
   })
 })

@@ -86,37 +86,42 @@ export function MessageEditForm({
 
   return (
     <>
-      <div className="rounded-md border bg-background">
-        <RichEditor
-          value={contentJson}
-          onChange={setContentJson}
-          onSubmit={handleSubmit}
-          placeholder="Edit message..."
-          autoFocus
-          className="px-3"
-        />
-        <div className="flex items-center justify-end gap-2 px-3 py-2 border-t">
-          <span className="text-xs text-muted-foreground mr-auto">Escape to cancel · Enter to save</span>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7 shrink-0"
-                onClick={() => setDocEditorOpen(true)}
-                disabled={isSaving}
-              >
-                <Expand className="h-3.5 w-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="top">Expand editor</TooltipContent>
-          </Tooltip>
-          <Button variant="ghost" size="sm" onClick={onCancel} disabled={isSaving}>
-            Cancel
-          </Button>
-          <Button size="sm" onClick={handleSubmit} disabled={isSaving}>
-            {isSaving ? "Saving..." : "Save"}
-          </Button>
+      <div className="input-glow-wrapper">
+        <div className="rounded-[16px] border border-input bg-card p-3">
+          <RichEditor
+            value={contentJson}
+            onChange={setContentJson}
+            onSubmit={handleSubmit}
+            placeholder="Edit message..."
+            autoFocus
+          />
+          <div className="flex items-center gap-2 mt-2 pt-2 border-t border-border/50">
+            <span className="text-[11px] text-muted-foreground/70 flex items-center gap-1.5 mr-auto">
+              <kbd className="kbd-hint">Esc</kbd> cancel
+              <span className="text-muted-foreground/30">·</span>
+              <kbd className="kbd-hint">↵</kbd> save
+            </span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+                  onClick={() => setDocEditorOpen(true)}
+                  disabled={isSaving}
+                >
+                  <Expand className="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">Expand editor</TooltipContent>
+            </Tooltip>
+            <Button variant="ghost" size="sm" className="h-7 px-2.5 text-xs" onClick={onCancel} disabled={isSaving}>
+              Cancel
+            </Button>
+            <Button size="sm" className="h-7 px-3 text-xs" onClick={handleSubmit} disabled={isSaving}>
+              {isSaving ? "Saving..." : "Save"}
+            </Button>
+          </div>
         </div>
       </div>
       <DocumentEditorModal
