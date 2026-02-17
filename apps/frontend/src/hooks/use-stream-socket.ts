@@ -167,16 +167,30 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
     const handleMessageEdited = async (payload: MessageEventPayload) => {
       if (payload.streamId !== streamId) return
 
+      const editEvent = payload.event
+      const editPayload = editEvent.payload as { messageId: string; contentJson: unknown; contentMarkdown: string }
+
       queryClient.setQueryData(streamKeys.bootstrap(workspaceId, streamId), (old: unknown) => {
         if (!old || typeof old !== "object") return old
         const bootstrap = old as StreamBootstrap
         return {
           ...bootstrap,
-          events: [...bootstrap.events, payload.event],
+          events: bootstrap.events.map((e) => {
+            if (e.eventType !== "message_created") return e
+            const eventPayload = e.payload as { messageId: string }
+            if (eventPayload.messageId !== editPayload.messageId) return e
+            return {
+              ...e,
+              payload: {
+                ...eventPayload,
+                contentJson: editPayload.contentJson,
+                contentMarkdown: editPayload.contentMarkdown,
+                editedAt: editEvent.createdAt,
+              },
+            }
+          }),
         }
       })
-
-      await db.events.put({ ...payload.event, _cachedAt: Date.now() })
     }
 
     const handleMessageDeleted = async (payload: MessageDeletedPayload) => {

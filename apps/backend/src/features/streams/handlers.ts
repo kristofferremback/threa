@@ -394,17 +394,37 @@ export function createStreamHandlers({ streamService, eventService, activityServ
         streamService.getThreadsWithReplyCounts(streamId),
       ])
 
-      // Enrich message events with threadId and replyCount (if the message has a thread)
-      const enrichedEvents = events.map((event) => {
-        if (event.eventType !== "message_created") return event
-        const payload = event.payload as MessageCreatedPayload
-        const threadData = threadDataMap.get(payload.messageId)
-        if (!threadData) return event
-        return {
-          ...event,
-          payload: { ...payload, threadId: threadData.threadId, replyCount: threadData.replyCount },
-        }
-      })
+      // Batch-fetch message projections to enrich with editedAt/deletedAt
+      const messageCreatedEvents = events.filter((e) => e.eventType === "message_created")
+      const messageIds = messageCreatedEvents.map((e) => (e.payload as MessageCreatedPayload).messageId)
+      const messagesMap = messageIds.length > 0 ? await eventService.getMessagesByIds(messageIds) : new Map()
+
+      // Enrich message_created events with thread data and edit/delete state
+      const enrichedEvents = events
+        .filter((e) => e.eventType !== "message_edited" && e.eventType !== "message_deleted")
+        .map((event) => {
+          if (event.eventType !== "message_created") return event
+          const payload = event.payload as MessageCreatedPayload
+          const threadData = threadDataMap.get(payload.messageId)
+          const message = messagesMap.get(payload.messageId)
+
+          const enrichments: Record<string, unknown> = {}
+          if (threadData) {
+            enrichments.threadId = threadData.threadId
+            enrichments.replyCount = threadData.replyCount
+          }
+          if (message?.editedAt) {
+            enrichments.editedAt = message.editedAt.toISOString()
+            enrichments.contentJson = message.contentJson
+            enrichments.contentMarkdown = message.contentMarkdown
+          }
+          if (message?.deletedAt) {
+            enrichments.deletedAt = message.deletedAt.toISOString()
+          }
+
+          if (Object.keys(enrichments).length === 0) return event
+          return { ...event, payload: { ...payload, ...enrichments } }
+        })
 
       // Get the latest sequence number from the most recent event
       const latestSequence = events.length > 0 ? events[events.length - 1].sequence : "0"

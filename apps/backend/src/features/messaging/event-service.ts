@@ -7,7 +7,8 @@ import { MessageRepository, Message } from "./repository"
 import { AttachmentRepository } from "../attachments"
 import { OutboxRepository } from "../../lib/outbox"
 import { StreamPersonaParticipantRepository } from "../agents"
-import { eventId, messageId } from "../../lib/id"
+import { eventId, messageId, messageVersionId } from "../../lib/id"
+import { MessageVersionRepository } from "./version-repository"
 import { serializeBigInt } from "../../lib/serialization"
 import { messagesTotal } from "../../lib/observability"
 import {
@@ -245,7 +246,19 @@ export class EventService {
 
   async editMessage(params: EditMessageParams): Promise<Message | null> {
     return withTransaction(this.pool, async (client) => {
-      // 1. Append event
+      // 1. Snapshot pre-edit content as a version record (atomic version numbering via INSERT subquery)
+      const existing = await MessageRepository.findById(client, params.messageId)
+      if (existing) {
+        await MessageVersionRepository.insert(client, {
+          id: messageVersionId(),
+          messageId: params.messageId,
+          contentJson: existing.contentJson,
+          contentMarkdown: existing.contentMarkdown,
+          editedBy: params.actorId,
+        })
+      }
+
+      // 2. Append event
       const event = await StreamEventRepository.insert(client, {
         id: eventId(),
         streamId: params.streamId,
@@ -259,7 +272,7 @@ export class EventService {
         actorType: "member",
       })
 
-      // 2. Update projection
+      // 3. Update projection
       const message = await MessageRepository.updateContent(
         client,
         params.messageId,
@@ -268,7 +281,7 @@ export class EventService {
       )
 
       if (message) {
-        // 3. Publish to outbox
+        // 4. Publish to outbox
         await OutboxRepository.insert(client, "message:edited", {
           workspaceId: params.workspaceId,
           streamId: params.streamId,
@@ -427,5 +440,13 @@ export class EventService {
    */
   async countMessagesByStreams(streamIds: string[]): Promise<Map<string, number>> {
     return StreamEventRepository.countMessagesByStreamBatch(this.pool, streamIds)
+  }
+
+  async getMessageVersions(messageId: string): Promise<import("./version-repository").MessageVersion[]> {
+    return MessageVersionRepository.listByMessageId(this.pool, messageId)
+  }
+
+  async getMessagesByIds(messageIds: string[]): Promise<Map<string, Message>> {
+    return MessageRepository.findByIds(this.pool, messageIds)
   }
 }

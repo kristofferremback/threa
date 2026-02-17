@@ -1,26 +1,34 @@
-import { type ReactNode, useRef, useEffect } from "react"
-import type { StreamEvent, AttachmentSummary } from "@threa/types"
+import { type ReactNode, useRef, useEffect, useState } from "react"
+import type { StreamEvent, AttachmentSummary, JSONContent } from "@threa/types"
 import { Link } from "react-router-dom"
+import { toast } from "sonner"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { MarkdownContent, AttachmentProvider } from "@/components/ui/markdown-content"
 import { RelativeTime } from "@/components/relative-time"
 import { PersonaAvatar } from "@/components/persona-avatar"
 import { usePendingMessages, usePanel, createDraftPanelId, useTrace } from "@/contexts"
-import { useActors, getStepLabel, type MessageAgentActivity } from "@/hooks"
+import { useActors, useWorkspaceBootstrap, getStepLabel, type MessageAgentActivity } from "@/hooks"
+import { useUser } from "@/auth"
+import { messagesApi } from "@/api/messages"
 import { cn } from "@/lib/utils"
 import { AttachmentList } from "./attachment-list"
 import { MessageContextMenu } from "./message-context-menu"
 import { ThreadIndicator } from "./thread-indicator"
+import { DeleteMessageDialog } from "./delete-message-dialog"
+import { MessageEditForm } from "./message-edit-form"
+import { EditedIndicator } from "./edited-indicator"
+import { MessageHistoryDialog } from "./message-history-dialog"
 
 interface MessagePayload {
   messageId: string
   contentMarkdown: string
-  contentJson?: unknown
+  contentJson?: JSONContent
   attachments?: AttachmentSummary[]
   replyCount?: number
   threadId?: string
   sessionId?: string
+  editedAt?: string
 }
 
 interface MessageEventProps {
@@ -48,6 +56,7 @@ interface MessageLayoutProps {
   statusIndicator: ReactNode
   actions?: ReactNode
   footer?: ReactNode
+  children?: ReactNode
   containerClassName?: string
   isHighlighted?: boolean
   containerRef?: React.RefObject<HTMLDivElement | null>
@@ -64,6 +73,7 @@ function MessageLayout({
   statusIndicator,
   actions,
   footer,
+  children,
   containerClassName,
   isHighlighted,
   containerRef,
@@ -104,12 +114,14 @@ function MessageLayout({
           {statusIndicator}
           {actions}
         </div>
-        <AttachmentProvider workspaceId={workspaceId} attachments={payload.attachments ?? []}>
-          <MarkdownContent content={payload.contentMarkdown} className="text-sm leading-relaxed" />
-          {payload.attachments && payload.attachments.length > 0 && (
-            <AttachmentList attachments={payload.attachments} workspaceId={workspaceId} />
-          )}
-        </AttachmentProvider>
+        {children ?? (
+          <AttachmentProvider workspaceId={workspaceId} attachments={payload.attachments ?? []}>
+            <MarkdownContent content={payload.contentMarkdown} className="text-sm leading-relaxed" />
+            {payload.attachments && payload.attachments.length > 0 && (
+              <AttachmentList attachments={payload.attachments} workspaceId={workspaceId} />
+            )}
+          </AttachmentProvider>
+        )}
         {footer}
       </div>
     </div>
@@ -128,6 +140,7 @@ interface MessageEventInnerProps {
   hideActions?: boolean
   isHighlighted?: boolean
   activity?: MessageAgentActivity
+  currentMemberId: string | null
 }
 
 function SentMessageEvent({
@@ -142,12 +155,18 @@ function SentMessageEvent({
   hideActions,
   isHighlighted,
   activity,
+  currentMemberId,
 }: MessageEventInnerProps) {
   const { panelId, getPanelUrl } = usePanel()
   const { getTraceUrl } = useTrace()
   const replyCount = payload.replyCount ?? 0
   const threadId = payload.threadId
   const containerRef = useRef<HTMLDivElement>(null)
+
+  const [isEditing, setIsEditing] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
 
   // Scroll to this message when highlighted
   useEffect(() => {
@@ -209,39 +228,95 @@ function SentMessageEvent({
     </div>
   ) : null
 
+  const handleDelete = async () => {
+    setIsDeleting(true)
+    try {
+      await messagesApi.delete(workspaceId, payload.messageId)
+      setDeleteDialogOpen(false)
+    } catch {
+      toast.error("Failed to delete message")
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
   return (
-    <MessageLayout
-      event={event}
-      payload={payload}
-      workspaceId={workspaceId}
-      actorName={actorName}
-      actorInitials={actorInitials}
-      personaSlug={personaSlug}
-      actorAvatarUrl={actorAvatarUrl}
-      statusIndicator={<RelativeTime date={event.createdAt} className="text-xs text-muted-foreground" />}
-      actions={
-        !hideActions && (
-          <div className="opacity-0 group-hover:opacity-100 has-[[data-state=open]]:opacity-100 transition-opacity ml-auto flex items-center gap-1">
-            <MessageContextMenu
-              context={{
-                contentMarkdown: payload.contentMarkdown,
-                actorType: event.actorType,
-                sessionId: payload.sessionId,
-                isThreadParent: panelId === threadId,
-                replyUrl: effectiveThreadId ? getPanelUrl(effectiveThreadId) : draftPanelUrl,
-                traceUrl:
-                  event.actorType === "persona" && payload.sessionId
-                    ? getTraceUrl(payload.sessionId, payload.messageId)
-                    : undefined,
-              }}
-            />
-          </div>
-        )
-      }
-      footer={threadFooter}
-      containerRef={containerRef}
-      isHighlighted={isHighlighted}
-    />
+    <>
+      <MessageLayout
+        event={event}
+        payload={payload}
+        workspaceId={workspaceId}
+        actorName={actorName}
+        actorInitials={actorInitials}
+        personaSlug={personaSlug}
+        actorAvatarUrl={actorAvatarUrl}
+        statusIndicator={
+          <>
+            <RelativeTime date={event.createdAt} className="text-xs text-muted-foreground" />
+            {payload.editedAt && (
+              <EditedIndicator editedAt={payload.editedAt} onShowHistory={() => setHistoryOpen(true)} />
+            )}
+          </>
+        }
+        actions={
+          !hideActions && (
+            <div className="opacity-0 group-hover:opacity-100 has-[[data-state=open]]:opacity-100 transition-opacity ml-auto flex items-center gap-1">
+              <MessageContextMenu
+                context={{
+                  contentMarkdown: payload.contentMarkdown,
+                  actorType: event.actorType,
+                  sessionId: payload.sessionId,
+                  isThreadParent: panelId === threadId,
+                  replyUrl: effectiveThreadId ? getPanelUrl(effectiveThreadId) : draftPanelUrl,
+                  traceUrl:
+                    event.actorType === "persona" && payload.sessionId
+                      ? getTraceUrl(payload.sessionId, payload.messageId)
+                      : undefined,
+                  messageId: payload.messageId,
+                  authorId: event.actorId ?? undefined,
+                  currentMemberId: currentMemberId ?? undefined,
+                  onEdit: () => setIsEditing(true),
+                  onDelete: () => setDeleteDialogOpen(true),
+                }}
+              />
+            </div>
+          )
+        }
+        footer={threadFooter}
+        containerRef={containerRef}
+        isHighlighted={isHighlighted}
+      >
+        {isEditing ? (
+          <MessageEditForm
+            messageId={payload.messageId}
+            workspaceId={workspaceId}
+            initialContentJson={payload.contentJson}
+            onSave={() => setIsEditing(false)}
+            onCancel={() => setIsEditing(false)}
+          />
+        ) : undefined}
+      </MessageLayout>
+      {deleteDialogOpen && (
+        <DeleteMessageDialog
+          open={deleteDialogOpen}
+          onOpenChange={setDeleteDialogOpen}
+          onConfirm={handleDelete}
+          isDeleting={isDeleting}
+        />
+      )}
+      {historyOpen && (
+        <MessageHistoryDialog
+          open={historyOpen}
+          onOpenChange={setHistoryOpen}
+          messageId={payload.messageId}
+          workspaceId={workspaceId}
+          currentContent={{
+            contentMarkdown: payload.contentMarkdown,
+            editedAt: payload.editedAt,
+          }}
+        />
+      )}
+    </>
   )
 }
 
@@ -315,6 +390,10 @@ export function MessageEvent({
   const { getActorName, getActorAvatar } = useActors(workspaceId)
   const status = getStatus(event.id)
 
+  const user = useUser()
+  const { data: wsBootstrap } = useWorkspaceBootstrap(workspaceId)
+  const currentMemberId = wsBootstrap?.members?.find((m) => m.userId === user?.id)?.id ?? null
+
   const actorName = getActorName(event.actorId, event.actorType)
   const {
     fallback: actorInitials,
@@ -334,6 +413,7 @@ export function MessageEvent({
           actorInitials={actorInitials}
           personaSlug={personaSlug}
           actorAvatarUrl={actorAvatarUrl}
+          currentMemberId={currentMemberId}
         />
       )
     case "failed":
@@ -347,6 +427,7 @@ export function MessageEvent({
           actorInitials={actorInitials}
           personaSlug={personaSlug}
           actorAvatarUrl={actorAvatarUrl}
+          currentMemberId={currentMemberId}
         />
       )
     default:
@@ -363,6 +444,7 @@ export function MessageEvent({
           hideActions={hideActions}
           isHighlighted={isHighlighted}
           activity={activity}
+          currentMemberId={currentMemberId}
         />
       )
   }

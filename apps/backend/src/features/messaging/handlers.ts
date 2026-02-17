@@ -391,5 +391,23 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
 
       res.json({ message: serializeMessage(message) })
     },
+
+    async getHistory(req: Request, res: Response) {
+      const workspaceId = req.workspaceId!
+      const { messageId } = req.params
+
+      const existing = await eventService.getMessageById(messageId)
+      if (!existing) {
+        return res.status(404).json({ error: "Message not found" })
+      }
+
+      const stream = await streamService.getStreamById(existing.streamId)
+      if (!stream || stream.workspaceId !== workspaceId) {
+        return res.status(404).json({ error: "Message not found" })
+      }
+
+      const versions = await eventService.getMessageVersions(messageId)
+      res.json({ versions: versions.map(serializeBigInt) })
+    },
   }
 }

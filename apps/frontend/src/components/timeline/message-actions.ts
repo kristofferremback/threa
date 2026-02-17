@@ -1,5 +1,5 @@
 import type { ComponentType } from "react"
-import { Sparkles, MessageSquareReply, Copy, FileText, Type } from "lucide-react"
+import { Sparkles, MessageSquareReply, Copy, FileText, Type, Pencil, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { stripMarkdown } from "@/lib/markdown"
 
@@ -17,6 +17,16 @@ export interface MessageActionContext {
   replyUrl: string
   /** URL for "show trace" (only for persona messages) */
   traceUrl?: string
+  /** Message ID for edit/delete operations */
+  messageId?: string
+  /** Author's member ID */
+  authorId?: string
+  /** Current user's member ID */
+  currentMemberId?: string
+  /** Callback to enter edit mode */
+  onEdit?: () => void
+  /** Callback to open delete confirmation */
+  onDelete?: () => void
 }
 
 /** A variant within a sub-menu (e.g. "Copy as Markdown" vs "Copy as Plain text"). */
@@ -36,6 +46,8 @@ export interface MessageAction {
   subActions?: MessageSubAction[]
   /** Render a separator before this action in the menu */
   separatorBefore?: boolean
+  /** Visual variant — "destructive" renders in red */
+  variant?: "destructive"
   /** Controls visibility — evaluated by getVisibleActions */
   when: (context: MessageActionContext) => boolean
   /** URL for navigation actions — rendered as <Link> (INV-40) */
@@ -66,6 +78,13 @@ export const messageActions: MessageAction[] = [
     icon: MessageSquareReply,
     when: (ctx) => !ctx.isThreadParent,
     getHref: (ctx) => ctx.replyUrl,
+  },
+  {
+    id: "edit-message",
+    label: "Edit message",
+    icon: Pencil,
+    when: (ctx) => ctx.actorType === "member" && !!ctx.authorId && ctx.authorId === ctx.currentMemberId,
+    action: (ctx) => ctx.onEdit?.(),
   },
   {
     id: "copy",
@@ -101,6 +120,15 @@ export const messageActions: MessageAction[] = [
       },
     ],
     when: () => true,
+  },
+  {
+    id: "delete-message",
+    label: "Delete message",
+    icon: Trash2,
+    separatorBefore: true,
+    variant: "destructive",
+    when: (ctx) => ctx.actorType === "member" && !!ctx.authorId && ctx.authorId === ctx.currentMemberId,
+    action: (ctx) => ctx.onDelete?.(),
   },
 ]
 

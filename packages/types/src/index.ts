@@ -137,6 +137,7 @@ export type {
   StreamWithPreview,
   StreamMember,
   Message,
+  MessageVersion,
   StreamEvent,
   Persona,
   Attachment,

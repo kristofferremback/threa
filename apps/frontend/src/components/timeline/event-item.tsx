@@ -30,8 +30,15 @@ export function EventItem({
 
   switch (event.eventType) {
     case "message_created":
-    case "message_edited":
-    case "companion_response":
+    case "companion_response": {
+      const payload = event.payload as { deletedAt?: string }
+      if (payload.deletedAt) {
+        return (
+          <div data-event-id={event.id}>
+            <DeletedMessageEvent event={event} />
+          </div>
+        )
+      }
       return (
         <div data-event-id={event.id}>
           <MessageEvent
@@ -44,6 +51,7 @@ export function EventItem({
           />
         </div>
       )
+    }
 
     case "message_deleted":
       return (
