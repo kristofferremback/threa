@@ -7,6 +7,7 @@ interface ThreadPanelSlotProps {
   shouldAnimate: boolean
   showContent: boolean
   isResizing: boolean
+  minWidth: number
   maxWidth: number
   onTransitionEnd: (e: React.TransitionEvent) => void
   onResizeStart: (e: React.MouseEvent) => void
@@ -20,6 +21,7 @@ export function ThreadPanelSlot({
   shouldAnimate,
   showContent,
   isResizing,
+  minWidth,
   maxWidth,
   onTransitionEnd,
   onResizeStart,
@@ -38,6 +40,7 @@ export function ThreadPanelSlot({
           <PanelResizeHandle
             isResizing={isResizing}
             panelWidth={panelWidth}
+            minWidth={minWidth}
             maxWidth={maxWidth}
             onMouseDown={onResizeStart}
             onKeyDown={onResizeKeyDown}

@@ -69,9 +69,13 @@ export function usePanelLayout(isPanelOpen: boolean) {
     [panelWidth, handleWidthChange]
   )
 
+  const maxWidth = Math.round((containerRef.current?.offsetWidth ?? 0) * MAX_PANEL_RATIO)
+
   return {
     containerRef,
     panelWidth,
+    maxWidth,
+    minWidth: MIN_PANEL_WIDTH,
     displayWidth: isPanelOpen ? panelWidth : 0,
     shouldAnimate: enableTransition && !isResizing,
     isResizing,

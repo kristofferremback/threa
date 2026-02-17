@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils"
 interface PanelResizeHandleProps {
   isResizing: boolean
   panelWidth: number
+  minWidth: number
   maxWidth: number
   onMouseDown: (e: React.MouseEvent) => void
   onKeyDown: (e: React.KeyboardEvent) => void
@@ -12,6 +13,7 @@ interface PanelResizeHandleProps {
 export function PanelResizeHandle({
   isResizing,
   panelWidth,
+  minWidth,
   maxWidth,
   onMouseDown,
   onKeyDown,
@@ -31,7 +33,7 @@ export function PanelResizeHandle({
       role="separator"
       aria-orientation="vertical"
       aria-valuenow={panelWidth}
-      aria-valuemin={300}
+      aria-valuemin={minWidth}
       aria-valuemax={maxWidth}
       aria-label="Resize thread panel"
     >

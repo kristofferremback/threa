@@ -45,6 +45,8 @@ export function StreamPage() {
   const {
     containerRef,
     panelWidth,
+    maxWidth,
+    minWidth,
     displayWidth,
     shouldAnimate,
     isResizing,
@@ -261,7 +263,8 @@ export function StreamPage() {
           shouldAnimate={shouldAnimate}
           showContent={showContent}
           isResizing={isResizing}
-          maxWidth={Math.round((containerRef.current?.offsetWidth ?? 1200) * 0.7)}
+          maxWidth={maxWidth}
+          minWidth={minWidth}
           onTransitionEnd={handleTransitionEnd}
           onResizeStart={handleResizeStart}
           onResizeKeyDown={handleResizeKeyDown}
