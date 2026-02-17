@@ -11,12 +11,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable"
 import { cn } from "@/lib/utils"
-import { useStreamOrDraft, useStreamError } from "@/hooks"
+import { useStreamOrDraft, useStreamError, usePanelLayout } from "@/hooks"
 import { usePanel } from "@/contexts"
 import { TimelineView } from "@/components/timeline"
 import { StreamPanel, ThreadHeader } from "@/components/thread"
+import { ThreadPanelSlot } from "@/components/layout"
 import { ConversationList } from "@/components/conversations"
 import { StreamErrorView } from "@/components/stream-error-view"
 import { StreamTypes, type StreamType } from "@threa/types"
@@ -42,6 +42,19 @@ export function StreamPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const { stream, isDraft, error, rename, archive, unarchive } = useStreamOrDraft(workspaceId!, streamId!)
   const { panelId, isPanelOpen, closePanel } = usePanel()
+  const {
+    containerRef,
+    panelWidth,
+    maxWidth,
+    minWidth,
+    displayWidth,
+    shouldAnimate,
+    isResizing,
+    showContent,
+    handleResizeStart,
+    handleResizeKeyDown,
+    handleTransitionEnd,
+  } = usePanelLayout(isPanelOpen)
 
   // Unified error checking - checks both coordinated loading and direct query errors
   const streamError = useStreamError(streamId, error)
@@ -239,32 +252,26 @@ export function StreamPage() {
     </>
   )
 
-  // Panel open: resizable side-by-side layout
-  if (isPanelOpen) {
-    return (
-      <>
-        <ResizablePanelGroup orientation="horizontal" className="h-full">
-          <ResizablePanel id="main" defaultSize={60} minSize={30}>
-            {mainStreamContent}
-          </ResizablePanel>
-
-          <ResizableHandle withHandle />
-
-          <ResizablePanel id="panel" defaultSize={40} minSize={30}>
-            {/* StreamPanel handles both regular streams and drafts */}
-            {/* Key forces remount when panelId changes to ensure clean state */}
-            <StreamPanel key={panelId} workspaceId={workspaceId} onClose={closePanel} />
-          </ResizablePanel>
-        </ResizablePanelGroup>
-        {conversationPanel}
-      </>
-    )
-  }
-
-  // Default: main content without panels
   return (
     <>
-      {mainStreamContent}
+      <div ref={containerRef} className="flex h-full">
+        <div className="flex-1 min-w-0 overflow-hidden">{mainStreamContent}</div>
+
+        <ThreadPanelSlot
+          displayWidth={displayWidth}
+          panelWidth={panelWidth}
+          shouldAnimate={shouldAnimate}
+          showContent={showContent}
+          isResizing={isResizing}
+          maxWidth={maxWidth}
+          minWidth={minWidth}
+          onTransitionEnd={handleTransitionEnd}
+          onResizeStart={handleResizeStart}
+          onResizeKeyDown={handleResizeKeyDown}
+        >
+          <StreamPanel key={panelId} workspaceId={workspaceId} onClose={closePanel} />
+        </ThreadPanelSlot>
+      </div>
       {conversationPanel}
     </>
   )
