@@ -2,7 +2,7 @@
  * Trigram Search Integration Tests
  *
  * Tests verify:
- * 1. UserRepository.searchByNameOrEmail handles typos via trigram similarity
+ * 1. MemberRepository.searchByNameOrSlug handles typos via trigram similarity
  * 2. StreamRepository.searchByName handles typos via trigram similarity
  * 3. Results are ordered by similarity score
  * 4. ILIKE fallback works for exact substring matches
@@ -10,12 +10,12 @@
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test"
 import { Pool } from "pg"
-import { withTestTransaction, addTestMember } from "./setup"
+import { withTestTransaction, withTransaction } from "./setup"
 import { UserRepository } from "../../src/auth/user-repository"
-import { WorkspaceRepository } from "../../src/features/workspaces"
+import { MemberRepository, WorkspaceRepository } from "../../src/features/workspaces"
 import { StreamRepository } from "../../src/features/streams"
 import { setupTestDatabase } from "./setup"
-import { userId, workspaceId, streamId } from "../../src/lib/id"
+import { memberId, userId, workspaceId, streamId } from "../../src/lib/id"
 
 describe("Trigram Search", () => {
   let pool: Pool
@@ -33,27 +33,24 @@ describe("Trigram Search", () => {
     // Use unique suffix to avoid collisions with previous test runs
     const suffix = testWorkspaceId.slice(-8)
 
-    await withTestTransaction(pool, async (client) => {
+    await withTransaction(pool, async (client) => {
       // Create users with various names for fuzzy matching tests
       await UserRepository.insert(client, {
         id: testUserIds[0],
         email: `john.smith.${suffix}@example.com`,
         name: "John Smith",
-        slug: `john-smith-${suffix}`,
         workosUserId: `workos_${testUserIds[0]}`,
       })
       await UserRepository.insert(client, {
         id: testUserIds[1],
         email: `kristoffer.${suffix}@example.com`,
         name: "Kristoffer Remback",
-        slug: `kristoffer-${suffix}`,
         workosUserId: `workos_${testUserIds[1]}`,
       })
       await UserRepository.insert(client, {
         id: testUserIds[2],
         email: `jane.doe.${suffix}@example.com`,
         name: "Jane Doe",
-        slug: `jane-doe-${suffix}`,
         workosUserId: `workos_${testUserIds[2]}`,
       })
 
@@ -64,9 +61,32 @@ describe("Trigram Search", () => {
         slug: `trgm-test-${testWorkspaceId}`,
         createdBy: testUserIds[0],
       })
-      for (const uid of testUserIds) {
-        await addTestMember(client, testWorkspaceId, uid)
-      }
+      await WorkspaceRepository.addMember(client, {
+        id: memberId(),
+        workspaceId: testWorkspaceId,
+        userId: testUserIds[0],
+        slug: `john-smith-${suffix}`,
+        name: "John Smith",
+        role: "member",
+      })
+
+      await WorkspaceRepository.addMember(client, {
+        id: memberId(),
+        workspaceId: testWorkspaceId,
+        userId: testUserIds[1],
+        slug: `kristoffer-${suffix}`,
+        name: "Kristoffer Remback",
+        role: "member",
+      })
+
+      await WorkspaceRepository.addMember(client, {
+        id: memberId(),
+        workspaceId: testWorkspaceId,
+        userId: testUserIds[2],
+        slug: `jane-doe-${suffix}`,
+        name: "Jane Doe",
+        role: "member",
+      })
 
       // Create streams with various names
       await StreamRepository.insert(client, {
@@ -106,10 +126,10 @@ describe("Trigram Search", () => {
     await pool.end()
   })
 
-  describe("UserRepository.searchByNameOrEmail", () => {
+  describe("MemberRepository.searchByNameOrSlug", () => {
     test("finds user by exact name", async () => {
       await withTestTransaction(pool, async (client) => {
-        const results = await UserRepository.searchByNameOrEmail(client, testWorkspaceId, "John Smith", 10)
+        const results = await MemberRepository.searchByNameOrSlug(client, testWorkspaceId, "John Smith", 10)
 
         expect(results.length).toBeGreaterThan(0)
         expect(results[0].name).toBe("John Smith")
@@ -118,7 +138,7 @@ describe("Trigram Search", () => {
 
     test("finds user by partial name (ILIKE fallback)", async () => {
       await withTestTransaction(pool, async (client) => {
-        const results = await UserRepository.searchByNameOrEmail(client, testWorkspaceId, "john", 10)
+        const results = await MemberRepository.searchByNameOrSlug(client, testWorkspaceId, "john", 10)
 
         expect(results.length).toBeGreaterThan(0)
         expect(results.some((u) => u.name === "John Smith")).toBe(true)
@@ -129,7 +149,7 @@ describe("Trigram Search", () => {
       await withTestTransaction(pool, async (client) => {
         // "Jonh" (transposition typo) should match "John" via trigram similarity
         // Note: very short strings like "jhon" vs "john" may not meet the 0.3 threshold
-        const results = await UserRepository.searchByNameOrEmail(client, testWorkspaceId, "John Smth", 10)
+        const results = await MemberRepository.searchByNameOrSlug(client, testWorkspaceId, "John Smth", 10)
 
         expect(results.length).toBeGreaterThan(0)
         expect(results.some((u) => u.name === "John Smith")).toBe(true)
@@ -139,7 +159,7 @@ describe("Trigram Search", () => {
     test("finds user with typo in longer name", async () => {
       await withTestTransaction(pool, async (client) => {
         // "kristofer" should match "Kristoffer" via trigram similarity
-        const results = await UserRepository.searchByNameOrEmail(client, testWorkspaceId, "kristofer", 10)
+        const results = await MemberRepository.searchByNameOrSlug(client, testWorkspaceId, "kristofer", 10)
 
         expect(results.length).toBeGreaterThan(0)
         expect(results.some((u) => u.name === "Kristoffer Remback")).toBe(true)
@@ -149,7 +169,7 @@ describe("Trigram Search", () => {
     test("finds user by email (partial)", async () => {
       await withTestTransaction(pool, async (client) => {
         // Email has unique suffix but "kristoffer" should still match
-        const results = await UserRepository.searchByNameOrEmail(client, testWorkspaceId, "kristoffer", 10)
+        const results = await MemberRepository.searchByNameOrSlug(client, testWorkspaceId, "kristoffer", 10)
 
         expect(results.length).toBeGreaterThan(0)
         expect(results.some((u) => u.name === "Kristoffer Remback")).toBe(true)
@@ -159,7 +179,7 @@ describe("Trigram Search", () => {
     test("finds user by slug (partial)", async () => {
       await withTestTransaction(pool, async (client) => {
         // Slug has unique suffix but "jane-doe" should still match
-        const results = await UserRepository.searchByNameOrEmail(client, testWorkspaceId, "jane-doe", 10)
+        const results = await MemberRepository.searchByNameOrSlug(client, testWorkspaceId, "jane-doe", 10)
 
         expect(results.length).toBeGreaterThan(0)
         expect(results.some((u) => u.name === "Jane Doe")).toBe(true)
@@ -168,7 +188,7 @@ describe("Trigram Search", () => {
 
     test("returns empty array for no matches", async () => {
       await withTestTransaction(pool, async (client) => {
-        const results = await UserRepository.searchByNameOrEmail(client, testWorkspaceId, "zzzznotauser", 10)
+        const results = await MemberRepository.searchByNameOrSlug(client, testWorkspaceId, "zzzznotauser", 10)
 
         expect(results).toEqual([])
       })

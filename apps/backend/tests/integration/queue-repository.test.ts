@@ -20,6 +20,30 @@ describe("QueueRepository", () => {
     await pool.query("DELETE FROM queue_tokens WHERE workspace_id LIKE 'ws_test%'")
   })
 
+  async function claimNext(
+    client: any,
+    params: {
+      queueName: string
+      workspaceId: string
+      claimedBy: string
+      claimedAt: Date
+      claimedUntil: Date
+      now: Date
+    }
+  ) {
+    const claimed = await QueueRepository.batchClaimMessages(client, { ...params, limit: 1 })
+    return claimed[0] ?? null
+  }
+
+  async function renewClaim(client: any, params: { messageId: string; claimedBy: string; claimedUntil: Date }) {
+    const renewed = await QueueRepository.batchRenewClaims(client, {
+      messageIds: [params.messageId],
+      claimedBy: params.claimedBy,
+      claimedUntil: params.claimedUntil,
+    })
+    return renewed === 1
+  }
+
   describe("insert", () => {
     test("should insert a message", async () => {
       await withTestTransaction(pool, async (client) => {
@@ -76,7 +100,7 @@ describe("QueueRepository", () => {
         })
 
         // Claim next (should get first one)
-        const claimed = await QueueRepository.claimNext(client, {
+        const claimed = await claimNext(client, {
           queueName: "test.queue",
           workspaceId: "ws_test",
           claimedBy: "worker_test",
@@ -96,7 +120,7 @@ describe("QueueRepository", () => {
       await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
-        const claimed = await QueueRepository.claimNext(client, {
+        const claimed = await claimNext(client, {
           queueName: "test.queue",
           workspaceId: "ws_test",
           claimedBy: "worker_test",
@@ -123,7 +147,7 @@ describe("QueueRepository", () => {
           insertedAt: now,
         })
 
-        const claimed = await QueueRepository.claimNext(client, {
+        const claimed = await claimNext(client, {
           queueName: "test.queue",
           workspaceId: "ws_test",
           claimedBy: "worker_test",
@@ -150,7 +174,7 @@ describe("QueueRepository", () => {
           insertedAt: now,
         })
 
-        const firstClaim = await QueueRepository.claimNext(client, {
+        const firstClaim = await claimNext(client, {
           queueName: "test.queue",
           workspaceId: "ws_test",
           claimedBy: "worker_1",
@@ -162,7 +186,7 @@ describe("QueueRepository", () => {
         expect(firstClaim).not.toBeNull()
 
         // Try to claim again (should skip claimed message)
-        const secondClaim = await QueueRepository.claimNext(client, {
+        const secondClaim = await claimNext(client, {
           queueName: "test.queue",
           workspaceId: "ws_test",
           claimedBy: "worker_2",
@@ -190,7 +214,7 @@ describe("QueueRepository", () => {
         })
 
         // Claim with expired claimedUntil
-        await QueueRepository.claimNext(client, {
+        await claimNext(client, {
           queueName: "test.queue",
           workspaceId: "ws_test",
           claimedBy: "worker_1",
@@ -200,7 +224,7 @@ describe("QueueRepository", () => {
         })
 
         // Should be able to reclaim
-        const reclaimed = await QueueRepository.claimNext(client, {
+        const reclaimed = await claimNext(client, {
           queueName: "test.queue",
           workspaceId: "ws_test",
           claimedBy: "worker_2",
@@ -231,7 +255,7 @@ describe("QueueRepository", () => {
         })
 
         // Claim and complete
-        const claimed = await QueueRepository.claimNext(client, {
+        const claimed = await claimNext(client, {
           queueName: "test.queue",
           workspaceId: "ws_test",
           claimedBy: "worker_1",
@@ -247,7 +271,7 @@ describe("QueueRepository", () => {
         })
 
         // Try to claim again (should not get completed message)
-        const secondClaim = await QueueRepository.claimNext(client, {
+        const secondClaim = await claimNext(client, {
           queueName: "test.queue",
           workspaceId: "ws_test",
           claimedBy: "worker_2",
@@ -275,7 +299,7 @@ describe("QueueRepository", () => {
         })
 
         // Claim and move to DLQ
-        const claimed = await QueueRepository.claimNext(client, {
+        const claimed = await claimNext(client, {
           queueName: "test.queue",
           workspaceId: "ws_test",
           claimedBy: "worker_1",
@@ -292,7 +316,7 @@ describe("QueueRepository", () => {
         })
 
         // Try to claim again (should not get DLQ message)
-        const secondClaim = await QueueRepository.claimNext(client, {
+        const secondClaim = await claimNext(client, {
           queueName: "test.queue",
           workspaceId: "ws_test",
           claimedBy: "worker_2",
@@ -321,7 +345,7 @@ describe("QueueRepository", () => {
           insertedAt: now,
         })
 
-        await QueueRepository.claimNext(client, {
+        await claimNext(client, {
           queueName: "test.queue",
           workspaceId: "ws_test",
           claimedBy: "worker_test",
@@ -331,7 +355,7 @@ describe("QueueRepository", () => {
         })
 
         // Renew claim
-        const renewed = await QueueRepository.renewClaim(client, {
+        const renewed = await renewClaim(client, {
           messageId: "queue_test1",
           claimedBy: "worker_test",
           claimedUntil: new Date(now.getTime() + 20000),
@@ -359,7 +383,7 @@ describe("QueueRepository", () => {
           insertedAt: now,
         })
 
-        await QueueRepository.claimNext(client, {
+        const firstClaim = await claimNext(client, {
           queueName: "test.queue",
           workspaceId: "ws_test",
           claimedBy: "worker_1",
@@ -369,7 +393,7 @@ describe("QueueRepository", () => {
         })
 
         // Try to renew with different worker
-        const renewed = await QueueRepository.renewClaim(client, {
+        const renewed = await renewClaim(client, {
           messageId: "queue_test1",
           claimedBy: "worker_2",
           claimedUntil: new Date(now.getTime() + 20000),
@@ -393,7 +417,7 @@ describe("QueueRepository", () => {
           insertedAt: now,
         })
 
-        await QueueRepository.claimNext(client, {
+        await claimNext(client, {
           queueName: "test.queue",
           workspaceId: "ws_test",
           claimedBy: "worker_test",
@@ -409,7 +433,7 @@ describe("QueueRepository", () => {
         })
 
         // Try to renew completed message
-        const renewed = await QueueRepository.renewClaim(client, {
+        const renewed = await renewClaim(client, {
           messageId: "queue_test1",
           claimedBy: "worker_test",
           claimedUntil: new Date(now.getTime() + 20000),
@@ -435,7 +459,7 @@ describe("QueueRepository", () => {
           insertedAt: now,
         })
 
-        await QueueRepository.claimNext(client, {
+        await claimNext(client, {
           queueName: "test.queue",
           workspaceId: "ws_test",
           claimedBy: "worker_test",
@@ -473,7 +497,7 @@ describe("QueueRepository", () => {
           insertedAt: now,
         })
 
-        await QueueRepository.claimNext(client, {
+        const firstClaim = await claimNext(client, {
           queueName: "test.queue",
           workspaceId: "ws_test",
           claimedBy: "worker_1",
@@ -510,7 +534,7 @@ describe("QueueRepository", () => {
           insertedAt: now,
         })
 
-        await QueueRepository.claimNext(client, {
+        await claimNext(client, {
           queueName: "test.queue",
           workspaceId: "ws_test",
           claimedBy: "worker_test",
@@ -554,7 +578,7 @@ describe("QueueRepository", () => {
 
         // Fail twice
         for (let i = 1; i <= 2; i++) {
-          const claimed = await QueueRepository.claimNext(client, {
+          const claimed = await claimNext(client, {
             queueName: "test.queue",
             workspaceId: "ws_test",
             claimedBy: "worker_test",
@@ -594,7 +618,7 @@ describe("QueueRepository", () => {
           insertedAt: now,
         })
 
-        await QueueRepository.claimNext(client, {
+        await claimNext(client, {
           queueName: "test.queue",
           workspaceId: "ws_test",
           claimedBy: "worker_test",
@@ -636,7 +660,7 @@ describe("QueueRepository", () => {
           insertedAt: now,
         })
 
-        await QueueRepository.claimNext(client, {
+        await claimNext(client, {
           queueName: "test.queue",
           workspaceId: "ws_test",
           claimedBy: "worker_test",
@@ -870,8 +894,8 @@ describe("QueueRepository", () => {
           })
         }
 
-        // Worker 1 claims first message
-        await QueueRepository.claimNext(client, {
+        // Worker 1 claims one message
+        const firstClaim = await claimNext(client, {
           queueName: "test.queue",
           workspaceId: "ws_test",
           claimedBy: "worker_1",
@@ -892,7 +916,7 @@ describe("QueueRepository", () => {
         })
 
         expect(claimed.length).toBe(2)
-        expect(claimed.some((m) => m.id === "queue_test1")).toBe(false)
+        expect(claimed.some((m) => m.id === firstClaim!.id)).toBe(false)
         expect(claimed.every((m) => m.claimedBy === "worker_2")).toBe(true)
       })
     })
@@ -958,7 +982,7 @@ describe("QueueRepository", () => {
         }
 
         // Claim and complete first message
-        const claimed = await QueueRepository.claimNext(client, {
+        const claimed = await claimNext(client, {
           queueName: "test.queue",
           workspaceId: "ws_test",
           claimedBy: "worker_1",
@@ -985,7 +1009,7 @@ describe("QueueRepository", () => {
         })
 
         expect(batchClaimed.length).toBe(2)
-        expect(batchClaimed.some((m) => m.id === "queue_test1")).toBe(false)
+        expect(batchClaimed.some((m) => m.id === claimed!.id)).toBe(false)
       })
     })
 
@@ -1006,7 +1030,7 @@ describe("QueueRepository", () => {
         }
 
         // Claim and DLQ first message
-        const claimed = await QueueRepository.claimNext(client, {
+        const claimed = await claimNext(client, {
           queueName: "test.queue",
           workspaceId: "ws_test",
           claimedBy: "worker_1",
@@ -1034,7 +1058,7 @@ describe("QueueRepository", () => {
         })
 
         expect(batchClaimed.length).toBe(2)
-        expect(batchClaimed.some((m) => m.id === "queue_test1")).toBe(false)
+        expect(batchClaimed.some((m) => m.id === claimed!.id)).toBe(false)
       })
     })
   })
@@ -1199,7 +1223,7 @@ describe("QueueRepository", () => {
         }
 
         // Worker 1 claims first message
-        await QueueRepository.claimNext(client, {
+        await claimNext(client, {
           queueName: "test.queue",
           workspaceId: "ws_test",
           claimedBy: "worker_1",
@@ -1209,7 +1233,7 @@ describe("QueueRepository", () => {
         })
 
         // Worker 2 claims second message
-        await QueueRepository.claimNext(client, {
+        await claimNext(client, {
           queueName: "test.queue",
           workspaceId: "ws_test",
           claimedBy: "worker_2",
@@ -1248,6 +1272,8 @@ describe("QueueRepository", () => {
   describe("deleteOldMessages", () => {
     test("should delete old completed messages", async () => {
       await withTestTransaction(pool, async (client) => {
+        // Isolate retention test from preexisting rows created by other suites.
+        await client.query("DELETE FROM queue_messages")
         const now = new Date()
         const oldDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) // 7 days ago
 
@@ -1261,7 +1287,7 @@ describe("QueueRepository", () => {
           insertedAt: oldDate,
         })
 
-        await QueueRepository.claimNext(client, {
+        await claimNext(client, {
           queueName: "test.queue",
           workspaceId: "ws_test",
           claimedBy: "worker_test",
@@ -1286,7 +1312,7 @@ describe("QueueRepository", () => {
           insertedAt: now,
         })
 
-        await QueueRepository.claimNext(client, {
+        await claimNext(client, {
           queueName: "test.queue",
           workspaceId: "ws_test",
           claimedBy: "worker_test",
@@ -1320,6 +1346,8 @@ describe("QueueRepository", () => {
 
     test("should delete old DLQ messages", async () => {
       await withTestTransaction(pool, async (client) => {
+        // Isolate retention test from preexisting rows created by other suites.
+        await client.query("DELETE FROM queue_messages")
         const now = new Date()
         const oldDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) // 7 days ago
 
@@ -1333,7 +1361,7 @@ describe("QueueRepository", () => {
           insertedAt: oldDate,
         })
 
-        await QueueRepository.claimNext(client, {
+        await claimNext(client, {
           queueName: "test.queue",
           workspaceId: "ws_test",
           claimedBy: "worker_test",

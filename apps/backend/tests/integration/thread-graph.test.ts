@@ -68,7 +68,7 @@ describe("Thread Graph", () => {
         workspaceId: wsId,
         streamId: channel.id,
         authorId: ownerId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Parent message for thread test"),
       })
 
@@ -84,7 +84,7 @@ describe("Thread Graph", () => {
       expect(thread.parentStreamId).toBe(channel.id)
       expect(thread.parentMessageId).toBe(parentMessage.id)
       expect(thread.rootStreamId).toBe(channel.id)
-      expect(thread.visibility).toBe(Visibilities.PRIVATE)
+      expect(thread.visibility).toBe(Visibilities.PUBLIC)
     })
 
     test("nested thread inherits root from parent thread", async () => {
@@ -119,7 +119,7 @@ describe("Thread Graph", () => {
         workspaceId: wsId,
         streamId: channel.id,
         authorId: ownerId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Message 1"),
       })
 
@@ -134,7 +134,7 @@ describe("Thread Graph", () => {
         workspaceId: wsId,
         streamId: thread1.id,
         authorId: ownerId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Message 2"),
       })
 
@@ -189,7 +189,7 @@ describe("Thread Graph", () => {
           workspaceId: wsId,
           streamId: parentStream.id,
           authorId: ownerId,
-          authorType: "user",
+          authorType: "member",
           ...testMessageContent(`Deep message ${i + 1}`),
         })
 
@@ -248,7 +248,7 @@ describe("Thread Graph", () => {
         workspaceId: wsId,
         streamId: scratchpad.id,
         authorId: ownerId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Scratchpad message for thread"),
       })
 
@@ -297,7 +297,7 @@ describe("Thread Graph", () => {
         workspaceId: wsId,
         streamId: channel.id,
         authorId: ownerId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Message for thread membership test"),
       })
 
@@ -379,7 +379,7 @@ describe("Thread Graph", () => {
         workspaceId: wsId,
         streamId: channel.id,
         authorId: ownerId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Parent message for idempotency test"),
       })
 
@@ -444,7 +444,7 @@ describe("Thread Graph", () => {
         workspaceId: wsId,
         streamId: channel.id,
         authorId: ownerId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Parent message for multi-user idempotency test"),
       })
 
@@ -510,7 +510,7 @@ describe("Thread Graph", () => {
         workspaceId: wsId,
         streamId: channel.id,
         authorId: ownerId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Parent message"),
       })
 
@@ -531,7 +531,7 @@ describe("Thread Graph", () => {
         workspaceId: wsId,
         streamId: thread.id,
         authorId: ownerId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Reply 1"),
       })
 
@@ -544,7 +544,7 @@ describe("Thread Graph", () => {
         workspaceId: wsId,
         streamId: thread.id,
         authorId: ownerId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Reply 2"),
       })
 
@@ -585,7 +585,7 @@ describe("Thread Graph", () => {
         workspaceId: wsId,
         streamId: channel.id,
         authorId: ownerId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Channel message"),
       })
 
@@ -602,7 +602,7 @@ describe("Thread Graph", () => {
         workspaceId: wsId,
         streamId: thread1.id,
         authorId: ownerId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Thread 1 message"),
       })
 
@@ -623,7 +623,7 @@ describe("Thread Graph", () => {
         workspaceId: wsId,
         streamId: thread2.id,
         authorId: ownerId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent("Thread 2 message"),
       })
 

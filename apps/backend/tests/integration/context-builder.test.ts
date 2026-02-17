@@ -10,7 +10,7 @@
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test"
 import { Pool } from "pg"
-import { withTestTransaction } from "./setup"
+import { addTestMember, withTestTransaction } from "./setup"
 import { UserRepository } from "../../src/auth/user-repository"
 import { WorkspaceRepository } from "../../src/features/workspaces"
 import { StreamRepository, StreamMemberRepository } from "../../src/features/streams"
@@ -34,22 +34,23 @@ describe("Context Builder", () => {
   describe("Scratchpad Context", () => {
     test("should include conversation history", async () => {
       await withTestTransaction(pool, async (client) => {
-        const ownerId = userId()
+        const ownerUserId = userId()
         const wsId = workspaceId()
         const scratchpadId = streamId()
 
         await UserRepository.insert(client, {
-          id: ownerId,
-          email: `scratchpad-ctx-${ownerId}@test.com`,
+          id: ownerUserId,
+          email: `scratchpad-ctx-${ownerUserId}@test.com`,
           name: "Scratchpad Owner",
-          workosUserId: `workos_${ownerId}`,
+          workosUserId: `workos_${ownerUserId}`,
         })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Context Test Workspace",
           slug: `ctx-ws-${wsId}`,
-          createdBy: ownerId,
+          createdBy: ownerUserId,
         })
+        const ownerMemberId = (await addTestMember(client, wsId, ownerUserId)).id
 
         const scratchpad = await StreamRepository.insert(client, {
           id: scratchpadId,
@@ -58,7 +59,7 @@ describe("Context Builder", () => {
           displayName: "My Scratchpad",
           description: "Personal notes",
           visibility: Visibilities.PRIVATE,
-          createdBy: ownerId,
+          createdBy: ownerMemberId,
         })
 
         // Add some messages
@@ -68,16 +69,16 @@ describe("Context Builder", () => {
           id: msg1Id,
           streamId: scratchpadId,
           sequence: BigInt(1),
-          authorId: ownerId,
-          authorType: "user",
+          authorId: ownerMemberId,
+          authorType: "member",
           ...testMessageContent("Hello world"),
         })
         await MessageRepository.insert(client, {
           id: msg2Id,
           streamId: scratchpadId,
           sequence: BigInt(2),
-          authorId: ownerId,
-          authorType: "user",
+          authorId: ownerMemberId,
+          authorType: "member",
           ...testMessageContent("Second message"),
         })
 
@@ -99,29 +100,35 @@ describe("Context Builder", () => {
   describe("Channel Context", () => {
     test("should include members and conversation", async () => {
       await withTestTransaction(pool, async (client) => {
-        const ownerId = userId()
-        const memberId = userId()
+        const ownerUserId = userId()
+        const memberUserId = userId()
         const wsId = workspaceId()
         const channelId = streamId()
 
         await UserRepository.insert(client, {
-          id: ownerId,
-          email: `channel-ctx-owner-${ownerId}@test.com`,
+          id: ownerUserId,
+          email: `channel-ctx-owner-${ownerUserId}@test.com`,
           name: "Channel Owner",
-          workosUserId: `workos_${ownerId}`,
+          workosUserId: `workos_${ownerUserId}`,
         })
         await UserRepository.insert(client, {
-          id: memberId,
-          email: `channel-ctx-member-${memberId}@test.com`,
+          id: memberUserId,
+          email: `channel-ctx-member-${memberUserId}@test.com`,
           name: "Channel Member",
-          workosUserId: `workos_${memberId}`,
+          workosUserId: `workos_${memberUserId}`,
         })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Channel Context Workspace",
           slug: `channel-ctx-ws-${wsId}`,
-          createdBy: ownerId,
+          createdBy: ownerUserId,
         })
+        const ownerMember = await addTestMember(client, wsId, ownerUserId)
+        const memberMember = await addTestMember(client, wsId, memberUserId)
+        const ownerMemberId = ownerMember.id
+        const memberMemberId = memberMember.id
+        await WorkspaceRepository.updateMember(client, ownerMemberId, { name: "Channel Owner" })
+        await WorkspaceRepository.updateMember(client, memberMemberId, { name: "Channel Member" })
 
         const channel = await StreamRepository.insert(client, {
           id: channelId,
@@ -131,12 +138,12 @@ describe("Context Builder", () => {
           slug: "general",
           description: "General discussion",
           visibility: Visibilities.PUBLIC,
-          createdBy: ownerId,
+          createdBy: ownerMemberId,
         })
 
         // Add members
-        await StreamMemberRepository.insert(client, channelId, ownerId)
-        await StreamMemberRepository.insert(client, channelId, memberId)
+        await StreamMemberRepository.insert(client, channelId, ownerMemberId)
+        await StreamMemberRepository.insert(client, channelId, memberMemberId)
 
         // Add a message
         const msgId = messageId()
@@ -144,8 +151,8 @@ describe("Context Builder", () => {
           id: msgId,
           streamId: channelId,
           sequence: BigInt(1),
-          authorId: ownerId,
-          authorType: "user",
+          authorId: ownerMemberId,
+          authorType: "member",
           ...testMessageContent("Welcome to the channel!"),
         })
 
@@ -167,23 +174,24 @@ describe("Context Builder", () => {
   describe("Thread Context", () => {
     test("should include thread hierarchy path", async () => {
       await withTestTransaction(pool, async (client) => {
-        const ownerId = userId()
+        const ownerUserId = userId()
         const wsId = workspaceId()
         const channelId = streamId()
         const threadId = streamId()
 
         await UserRepository.insert(client, {
-          id: ownerId,
-          email: `thread-ctx-${ownerId}@test.com`,
+          id: ownerUserId,
+          email: `thread-ctx-${ownerUserId}@test.com`,
           name: "Thread Owner",
-          workosUserId: `workos_${ownerId}`,
+          workosUserId: `workos_${ownerUserId}`,
         })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Thread Context Workspace",
           slug: `thread-ctx-ws-${wsId}`,
-          createdBy: ownerId,
+          createdBy: ownerUserId,
         })
+        const ownerMemberId = (await addTestMember(client, wsId, ownerUserId)).id
 
         // Create channel
         await StreamRepository.insert(client, {
@@ -193,7 +201,7 @@ describe("Context Builder", () => {
           displayName: "Discussions",
           slug: "discussions",
           visibility: Visibilities.PUBLIC,
-          createdBy: ownerId,
+          createdBy: ownerMemberId,
         })
 
         // Add parent message
@@ -202,8 +210,8 @@ describe("Context Builder", () => {
           id: parentMsgId,
           streamId: channelId,
           sequence: BigInt(1),
-          authorId: ownerId,
-          authorType: "user",
+          authorId: ownerMemberId,
+          authorType: "member",
           ...testMessageContent("This is the parent message that spawned the thread"),
         })
 
@@ -217,7 +225,7 @@ describe("Context Builder", () => {
           parentStreamId: channelId,
           parentMessageId: parentMsgId,
           rootStreamId: channelId,
-          createdBy: ownerId,
+          createdBy: ownerMemberId,
         })
 
         // Add thread message
@@ -226,8 +234,8 @@ describe("Context Builder", () => {
           id: threadMsgId,
           streamId: threadId,
           sequence: BigInt(1),
-          authorId: ownerId,
-          authorType: "user",
+          authorId: ownerMemberId,
+          authorType: "member",
           ...testMessageContent("Reply in thread"),
         })
 
@@ -257,24 +265,25 @@ describe("Context Builder", () => {
 
     test("should handle deeply nested threads", async () => {
       await withTestTransaction(pool, async (client) => {
-        const ownerId = userId()
+        const ownerUserId = userId()
         const wsId = workspaceId()
         const channelId = streamId()
         const thread1Id = streamId()
         const thread2Id = streamId()
 
         await UserRepository.insert(client, {
-          id: ownerId,
-          email: `deep-thread-ctx-${ownerId}@test.com`,
+          id: ownerUserId,
+          email: `deep-thread-ctx-${ownerUserId}@test.com`,
           name: "Deep Thread Owner",
-          workosUserId: `workos_${ownerId}`,
+          workosUserId: `workos_${ownerUserId}`,
         })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Deep Thread Context Workspace",
           slug: `deep-thread-ws-${wsId}`,
-          createdBy: ownerId,
+          createdBy: ownerUserId,
         })
+        const ownerMemberId = (await addTestMember(client, wsId, ownerUserId)).id
 
         // Create channel -> thread1 -> thread2
         await StreamRepository.insert(client, {
@@ -284,7 +293,7 @@ describe("Context Builder", () => {
           displayName: "Root Channel",
           slug: "root",
           visibility: Visibilities.PUBLIC,
-          createdBy: ownerId,
+          createdBy: ownerMemberId,
         })
 
         const msg1Id = messageId()
@@ -292,8 +301,8 @@ describe("Context Builder", () => {
           id: msg1Id,
           streamId: channelId,
           sequence: BigInt(1),
-          authorId: ownerId,
-          authorType: "user",
+          authorId: ownerMemberId,
+          authorType: "member",
           ...testMessageContent("First level message"),
         })
 
@@ -306,7 +315,7 @@ describe("Context Builder", () => {
           parentStreamId: channelId,
           parentMessageId: msg1Id,
           rootStreamId: channelId,
-          createdBy: ownerId,
+          createdBy: ownerMemberId,
         })
 
         const msg2Id = messageId()
@@ -314,8 +323,8 @@ describe("Context Builder", () => {
           id: msg2Id,
           streamId: thread1Id,
           sequence: BigInt(1),
-          authorId: ownerId,
-          authorType: "user",
+          authorId: ownerMemberId,
+          authorType: "member",
           ...testMessageContent("Second level message"),
         })
 
@@ -328,7 +337,7 @@ describe("Context Builder", () => {
           parentStreamId: thread1Id,
           parentMessageId: msg2Id,
           rootStreamId: channelId,
-          createdBy: ownerId,
+          createdBy: ownerMemberId,
         })
 
         const msg3Id = messageId()
@@ -336,8 +345,8 @@ describe("Context Builder", () => {
           id: msg3Id,
           streamId: thread2Id,
           sequence: BigInt(1),
-          authorId: ownerId,
-          authorType: "user",
+          authorId: ownerMemberId,
+          authorType: "member",
           ...testMessageContent("Third level message"),
         })
 
@@ -383,18 +392,24 @@ describe("Context Builder", () => {
           slug: `dm-ctx-ws-${wsId}`,
           createdBy: user1Id,
         })
+        const member1 = await addTestMember(client, wsId, user1Id)
+        const member2 = await addTestMember(client, wsId, user2Id)
+        const member1Id = member1.id
+        const member2Id = member2.id
+        await WorkspaceRepository.updateMember(client, member1Id, { name: "Alice" })
+        await WorkspaceRepository.updateMember(client, member2Id, { name: "Bob" })
 
         const dm = await StreamRepository.insert(client, {
           id: dmId,
           workspaceId: wsId,
           type: StreamTypes.DM,
           visibility: Visibilities.PRIVATE,
-          createdBy: user1Id,
+          createdBy: member1Id,
         })
 
         // Add both as members
-        await StreamMemberRepository.insert(client, dmId, user1Id)
-        await StreamMemberRepository.insert(client, dmId, user2Id)
+        await StreamMemberRepository.insert(client, dmId, member1Id)
+        await StreamMemberRepository.insert(client, dmId, member2Id)
 
         // Add messages
         const msgId = messageId()
@@ -402,8 +417,8 @@ describe("Context Builder", () => {
           id: msgId,
           streamId: dmId,
           sequence: BigInt(1),
-          authorId: user1Id,
-          authorType: "user",
+          authorId: member1Id,
+          authorType: "member",
           ...testMessageContent("Hey Bob!"),
         })
 

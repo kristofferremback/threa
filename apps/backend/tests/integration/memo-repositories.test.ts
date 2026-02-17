@@ -7,9 +7,9 @@
  * 3. MemoRepository: basic CRUD operations
  */
 
-import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test"
+import { describe, test, expect, beforeAll, afterAll } from "bun:test"
 import { Pool } from "pg"
-import { withTransaction, withClient, addTestMember } from "./setup"
+import { withTransaction, addTestMember } from "./setup"
 import { UserRepository } from "../../src/auth/user-repository"
 import { WorkspaceRepository } from "../../src/features/workspaces"
 import { StreamRepository } from "../../src/features/streams"
@@ -18,11 +18,12 @@ import { PendingItemRepository } from "../../src/features/memos"
 import { StreamStateRepository } from "../../src/features/streams"
 import { MemoRepository } from "../../src/features/memos"
 import { setupTestDatabase } from "./setup"
-import { userId, workspaceId, streamId, memoId, pendingItemId, conversationId } from "../../src/lib/id"
+import { userId, memberId, workspaceId, streamId, memoId, pendingItemId, conversationId } from "../../src/lib/id"
 
 describe("Memo Repositories", () => {
   let pool: Pool
   let testUserId: string
+  let testMemberId: string
   let testWorkspaceId: string
   let testStreamId: string
 
@@ -33,7 +34,7 @@ describe("Memo Repositories", () => {
     testWorkspaceId = workspaceId()
     testStreamId = streamId()
 
-    await withTestTransaction(pool, async (client) => {
+    await withTransaction(pool, async (client) => {
       await UserRepository.insert(client, {
         id: testUserId,
         email: `memo-test-${testUserId}@test.com`,
@@ -46,14 +47,14 @@ describe("Memo Repositories", () => {
         slug: `memo-test-${testWorkspaceId}`,
         createdBy: testUserId,
       })
-      await addTestMember(client, testWorkspaceId, testUserId)
+      testMemberId = (await addTestMember(client, testWorkspaceId, testUserId)).id
       await StreamRepository.insert(client, {
         id: testStreamId,
         workspaceId: testWorkspaceId,
         type: "scratchpad",
         visibility: "private",
         companionMode: "off",
-        createdBy: testUserId,
+        createdBy: testMemberId,
       })
     })
   })
@@ -68,7 +69,7 @@ describe("Memo Repositories", () => {
         const itemId = `msg_${Date.now()}`
         const pendingId = pendingItemId()
 
-        const result = await withTestTransaction(pool, async (client) => {
+        const result = await withTransaction(pool, async (client) => {
           return PendingItemRepository.queue(client, [
             {
               id: pendingId,
@@ -89,7 +90,7 @@ describe("Memo Repositories", () => {
       test("deduplicates items by workspace/type/itemId", async () => {
         const itemId = `msg_dedupe_${Date.now()}`
 
-        await withTestTransaction(pool, async (client) => {
+        await withTransaction(pool, async (client) => {
           await PendingItemRepository.queue(client, [
             {
               id: pendingItemId(),
@@ -102,7 +103,7 @@ describe("Memo Repositories", () => {
         })
 
         // Queue same item again - should not create duplicate
-        const secondQueue = await withTestTransaction(pool, async (client) => {
+        const secondQueue = await withTransaction(pool, async (client) => {
           return PendingItemRepository.queue(client, [
             {
               id: pendingItemId(),
@@ -118,7 +119,7 @@ describe("Memo Repositories", () => {
         expect(secondQueue.length).toBe(0)
 
         // Verify only one exists
-        const count = await withTestTransaction(pool, async (client) => {
+        const count = await withTransaction(pool, async (client) => {
           return PendingItemRepository.countUnprocessed(client, testWorkspaceId, testStreamId)
         })
 
@@ -131,7 +132,7 @@ describe("Memo Repositories", () => {
         const firstId = pendingItemId()
 
         // Queue and process
-        await withTestTransaction(pool, async (client) => {
+        await withTransaction(pool, async (client) => {
           await PendingItemRepository.queue(client, [
             {
               id: firstId,
@@ -145,7 +146,7 @@ describe("Memo Repositories", () => {
         })
 
         // Queue same item again - should work since previous was processed
-        const result = await withTestTransaction(pool, async (client) => {
+        const result = await withTransaction(pool, async (client) => {
           return PendingItemRepository.queue(client, [
             {
               id: pendingItemId(),
@@ -170,14 +171,14 @@ describe("Memo Repositories", () => {
         const processedItemId = `msg_proc_${Date.now()}`
         const processedPendingId = pendingItemId()
 
-        await withTestTransaction(pool, async (client) => {
+        await withTransaction(pool, async (client) => {
           await StreamRepository.insert(client, {
             id: localStreamId,
             workspaceId: testWorkspaceId,
             type: "channel",
             visibility: "public",
             companionMode: "off",
-            createdBy: testUserId,
+            createdBy: testMemberId,
           })
 
           await PendingItemRepository.queue(client, [
@@ -200,7 +201,7 @@ describe("Memo Repositories", () => {
           await PendingItemRepository.markProcessed(client, [processedPendingId])
         })
 
-        const unprocessed = await withTestTransaction(pool, async (client) => {
+        const unprocessed = await withTransaction(pool, async (client) => {
           return PendingItemRepository.findUnprocessed(client, testWorkspaceId, localStreamId)
         })
 
@@ -211,14 +212,14 @@ describe("Memo Repositories", () => {
       test("respects limit parameter", async () => {
         const localStreamId = streamId()
 
-        await withTestTransaction(pool, async (client) => {
+        await withTransaction(pool, async (client) => {
           await StreamRepository.insert(client, {
             id: localStreamId,
             workspaceId: testWorkspaceId,
             type: "channel",
             visibility: "public",
             companionMode: "off",
-            createdBy: testUserId,
+            createdBy: testMemberId,
           })
 
           // Queue 5 items
@@ -232,7 +233,7 @@ describe("Memo Repositories", () => {
           await PendingItemRepository.queue(client, items)
         })
 
-        const limited = await withTestTransaction(pool, async (client) => {
+        const limited = await withTransaction(pool, async (client) => {
           return PendingItemRepository.findUnprocessed(client, testWorkspaceId, localStreamId, {
             limit: 3,
           })
@@ -247,7 +248,7 @@ describe("Memo Repositories", () => {
         const itemId = `msg_mark_${Date.now()}`
         const pendingId = pendingItemId()
 
-        await withTestTransaction(pool, async (client) => {
+        await withTransaction(pool, async (client) => {
           await PendingItemRepository.queue(client, [
             {
               id: pendingId,
@@ -259,16 +260,16 @@ describe("Memo Repositories", () => {
           ])
         })
 
-        const beforeProcess = await withTestTransaction(pool, async (client) => {
+        const beforeProcess = await withTransaction(pool, async (client) => {
           return PendingItemRepository.findUnprocessed(client, testWorkspaceId, testStreamId)
         })
         expect(beforeProcess.some((i) => i.id === pendingId)).toBe(true)
 
-        await withTestTransaction(pool, async (client) => {
+        await withTransaction(pool, async (client) => {
           await PendingItemRepository.markProcessed(client, [pendingId])
         })
 
-        const afterProcess = await withTestTransaction(pool, async (client) => {
+        const afterProcess = await withTransaction(pool, async (client) => {
           return PendingItemRepository.findUnprocessed(client, testWorkspaceId, testStreamId)
         })
         expect(afterProcess.some((i) => i.id === pendingId)).toBe(false)
@@ -281,19 +282,19 @@ describe("Memo Repositories", () => {
       test("creates stream state on first activity", async () => {
         const localStreamId = streamId()
 
-        await withTestTransaction(pool, async (client) => {
+        await withTransaction(pool, async (client) => {
           await StreamRepository.insert(client, {
             id: localStreamId,
             workspaceId: testWorkspaceId,
             type: "channel",
             visibility: "public",
             companionMode: "off",
-            createdBy: testUserId,
+            createdBy: testMemberId,
           })
           await StreamStateRepository.upsertActivity(client, testWorkspaceId, localStreamId)
         })
 
-        const state = await withTestTransaction(pool, async (client) => {
+        const state = await withTransaction(pool, async (client) => {
           return StreamStateRepository.findByStream(client, testWorkspaceId, localStreamId)
         })
 
@@ -305,29 +306,29 @@ describe("Memo Repositories", () => {
       test("updates lastActivityAt on subsequent calls", async () => {
         const localStreamId = streamId()
 
-        await withTestTransaction(pool, async (client) => {
+        await withTransaction(pool, async (client) => {
           await StreamRepository.insert(client, {
             id: localStreamId,
             workspaceId: testWorkspaceId,
             type: "channel",
             visibility: "public",
             companionMode: "off",
-            createdBy: testUserId,
+            createdBy: testMemberId,
           })
           await StreamStateRepository.upsertActivity(client, testWorkspaceId, localStreamId)
         })
 
-        const firstState = await withTestTransaction(pool, async (client) => {
+        const firstState = await withTransaction(pool, async (client) => {
           return StreamStateRepository.findByStream(client, testWorkspaceId, localStreamId)
         })
 
         await new Promise((r) => setTimeout(r, 50))
 
-        await withTestTransaction(pool, async (client) => {
+        await withTransaction(pool, async (client) => {
           await StreamStateRepository.upsertActivity(client, testWorkspaceId, localStreamId)
         })
 
-        const secondState = await withTestTransaction(pool, async (client) => {
+        const secondState = await withTransaction(pool, async (client) => {
           return StreamStateRepository.findByStream(client, testWorkspaceId, localStreamId)
         })
 
@@ -339,19 +340,19 @@ describe("Memo Repositories", () => {
       test("sets lastProcessedAt timestamp", async () => {
         const localStreamId = streamId()
 
-        await withTestTransaction(pool, async (client) => {
+        await withTransaction(pool, async (client) => {
           await StreamRepository.insert(client, {
             id: localStreamId,
             workspaceId: testWorkspaceId,
             type: "channel",
             visibility: "public",
             companionMode: "off",
-            createdBy: testUserId,
+            createdBy: testMemberId,
           })
           await StreamStateRepository.markProcessed(client, testWorkspaceId, localStreamId)
         })
 
-        const state = await withTestTransaction(pool, async (client) => {
+        const state = await withTransaction(pool, async (client) => {
           return StreamStateRepository.findByStream(client, testWorkspaceId, localStreamId)
         })
 
@@ -363,14 +364,14 @@ describe("Memo Repositories", () => {
       test("includes stream that was never processed", async () => {
         const localStreamId = streamId()
 
-        await withTestTransaction(pool, async (client) => {
+        await withTransaction(pool, async (client) => {
           await StreamRepository.insert(client, {
             id: localStreamId,
             workspaceId: testWorkspaceId,
             type: "channel",
             visibility: "public",
             companionMode: "off",
-            createdBy: testUserId,
+            createdBy: testMemberId,
           })
 
           // Queue a pending item (required for stream to appear)
@@ -385,7 +386,7 @@ describe("Memo Repositories", () => {
           ])
         })
 
-        const ready = await withTestTransaction(pool, async (client) => {
+        const ready = await withTransaction(pool, async (client) => {
           return StreamStateRepository.findStreamsReadyToProcess(client)
         })
 
@@ -395,14 +396,14 @@ describe("Memo Repositories", () => {
       test("excludes stream with recent processing and recent activity", async () => {
         const localStreamId = streamId()
 
-        await withTestTransaction(pool, async (client) => {
+        await withTransaction(pool, async (client) => {
           await StreamRepository.insert(client, {
             id: localStreamId,
             workspaceId: testWorkspaceId,
             type: "channel",
             visibility: "public",
             companionMode: "off",
-            createdBy: testUserId,
+            createdBy: testMemberId,
           })
 
           // Mark as processed (simulates recent processing)
@@ -427,7 +428,7 @@ describe("Memo Repositories", () => {
         // - Cap interval (5 min) NOT exceeded
         // - Quiet interval (30s) NOT exceeded
         // Therefore: NOT ready
-        const ready = await withTestTransaction(pool, async (client) => {
+        const ready = await withTransaction(pool, async (client) => {
           return StreamStateRepository.findStreamsReadyToProcess(client)
         })
 
@@ -437,14 +438,14 @@ describe("Memo Repositories", () => {
       test("includes stream when quiet interval exceeded (activity stopped)", async () => {
         const localStreamId = streamId()
 
-        await withTestTransaction(pool, async (client) => {
+        await withTransaction(pool, async (client) => {
           await StreamRepository.insert(client, {
             id: localStreamId,
             workspaceId: testWorkspaceId,
             type: "channel",
             visibility: "public",
             companionMode: "off",
-            createdBy: testUserId,
+            createdBy: testMemberId,
           })
 
           // Mark as just processed
@@ -473,7 +474,7 @@ describe("Memo Repositories", () => {
         })
 
         // Use 1-second quiet interval for test (activity was 2s ago)
-        const ready = await withTestTransaction(pool, async (client) => {
+        const ready = await withTransaction(pool, async (client) => {
           return StreamStateRepository.findStreamsReadyToProcess(client, {
             quietIntervalSeconds: 1,
             capIntervalSeconds: 300,
@@ -486,14 +487,14 @@ describe("Memo Repositories", () => {
       test("includes stream when cap interval exceeded", async () => {
         const localStreamId = streamId()
 
-        await withTestTransaction(pool, async (client) => {
+        await withTransaction(pool, async (client) => {
           await StreamRepository.insert(client, {
             id: localStreamId,
             workspaceId: testWorkspaceId,
             type: "channel",
             visibility: "public",
             companionMode: "off",
-            createdBy: testUserId,
+            createdBy: testMemberId,
           })
 
           // Set lastProcessedAt to 10 seconds ago (use short cap for test)
@@ -521,7 +522,7 @@ describe("Memo Repositories", () => {
         })
 
         // Use 5-second cap interval for test (processed 10s ago)
-        const ready = await withTestTransaction(pool, async (client) => {
+        const ready = await withTransaction(pool, async (client) => {
           return StreamStateRepository.findStreamsReadyToProcess(client, {
             capIntervalSeconds: 5,
             quietIntervalSeconds: 300, // Long quiet so it doesn't trigger
@@ -534,21 +535,21 @@ describe("Memo Repositories", () => {
       test("excludes stream with no pending items", async () => {
         const localStreamId = streamId()
 
-        await withTestTransaction(pool, async (client) => {
+        await withTransaction(pool, async (client) => {
           await StreamRepository.insert(client, {
             id: localStreamId,
             workspaceId: testWorkspaceId,
             type: "channel",
             visibility: "public",
             companionMode: "off",
-            createdBy: testUserId,
+            createdBy: testMemberId,
           })
 
           // Only create state, no pending items
           await StreamStateRepository.upsertActivity(client, testWorkspaceId, localStreamId)
         })
 
-        const ready = await withTestTransaction(pool, async (client) => {
+        const ready = await withTransaction(pool, async (client) => {
           return StreamStateRepository.findStreamsReadyToProcess(client)
         })
 
@@ -563,7 +564,7 @@ describe("Memo Repositories", () => {
         const id = memoId()
         const sourceMessageId = `msg_source_${Date.now()}`
 
-        const memo = await withTestTransaction(pool, async (client) => {
+        const memo = await withTransaction(pool, async (client) => {
           return MemoRepository.insert(client, {
             id,
             workspaceId: testWorkspaceId,
@@ -573,7 +574,7 @@ describe("Memo Repositories", () => {
             abstract: "This is a test abstract for the memo.",
             keyPoints: ["Point 1", "Point 2"],
             sourceMessageIds: [sourceMessageId],
-            participantIds: [testUserId],
+            participantIds: [testMemberId],
             knowledgeType: "decision",
             tags: ["test", "memo"],
             status: "active",
@@ -593,7 +594,7 @@ describe("Memo Repositories", () => {
         const id = memoId()
         const sourceConvId = conversationId()
 
-        await withTestTransaction(pool, async (client) => {
+        await withTransaction(pool, async (client) => {
           await ConversationRepository.insert(client, {
             id: sourceConvId,
             streamId: testStreamId,
@@ -601,7 +602,7 @@ describe("Memo Repositories", () => {
           })
         })
 
-        const memo = await withTestTransaction(pool, async (client) => {
+        const memo = await withTransaction(pool, async (client) => {
           return MemoRepository.insert(client, {
             id,
             workspaceId: testWorkspaceId,
@@ -611,7 +612,7 @@ describe("Memo Repositories", () => {
             abstract: "Summary of the conversation.",
             keyPoints: [],
             sourceMessageIds: ["msg1", "msg2"],
-            participantIds: [testUserId],
+            participantIds: [testMemberId],
             knowledgeType: "learning",
             tags: [],
             status: "active",
@@ -628,7 +629,7 @@ describe("Memo Repositories", () => {
       test("returns memo when exists", async () => {
         const id = memoId()
 
-        await withTestTransaction(pool, async (client) => {
+        await withTransaction(pool, async (client) => {
           await MemoRepository.insert(client, {
             id,
             workspaceId: testWorkspaceId,
@@ -645,7 +646,7 @@ describe("Memo Repositories", () => {
           })
         })
 
-        const found = await withTestTransaction(pool, async (client) => {
+        const found = await withTransaction(pool, async (client) => {
           return MemoRepository.findById(client, id)
         })
 
@@ -655,7 +656,7 @@ describe("Memo Repositories", () => {
       })
 
       test("returns null when not exists", async () => {
-        const found = await withTestTransaction(pool, async (client) => {
+        const found = await withTransaction(pool, async (client) => {
           return MemoRepository.findById(client, "memo_nonexistent")
         })
 
@@ -668,7 +669,7 @@ describe("Memo Repositories", () => {
         const id = memoId()
         const convId = conversationId()
 
-        await withTestTransaction(pool, async (client) => {
+        await withTransaction(pool, async (client) => {
           await ConversationRepository.insert(client, {
             id: convId,
             streamId: testStreamId,
@@ -691,7 +692,7 @@ describe("Memo Repositories", () => {
           })
         })
 
-        const found = await withTestTransaction(pool, async (client) => {
+        const found = await withTransaction(pool, async (client) => {
           return MemoRepository.findActiveByConversation(client, convId)
         })
 
@@ -703,7 +704,7 @@ describe("Memo Repositories", () => {
       test("does not return superseded memo", async () => {
         const convId = conversationId()
 
-        await withTestTransaction(pool, async (client) => {
+        await withTransaction(pool, async (client) => {
           await ConversationRepository.insert(client, {
             id: convId,
             streamId: testStreamId,
@@ -726,7 +727,7 @@ describe("Memo Repositories", () => {
           })
         })
 
-        const found = await withTestTransaction(pool, async (client) => {
+        const found = await withTransaction(pool, async (client) => {
           return MemoRepository.findActiveByConversation(client, convId)
         })
 
@@ -738,7 +739,7 @@ describe("Memo Repositories", () => {
       test("marks memo as superseded with reason", async () => {
         const id = memoId()
 
-        await withTestTransaction(pool, async (client) => {
+        await withTransaction(pool, async (client) => {
           await MemoRepository.insert(client, {
             id,
             workspaceId: testWorkspaceId,
@@ -755,7 +756,7 @@ describe("Memo Repositories", () => {
           })
         })
 
-        const superseded = await withTestTransaction(pool, async (client) => {
+        const superseded = await withTransaction(pool, async (client) => {
           return MemoRepository.supersede(client, id, "New information available")
         })
 
@@ -769,8 +770,9 @@ describe("Memo Repositories", () => {
         const localWorkspaceId = workspaceId()
         const localStreamId = streamId()
         const localUserId = userId()
+        let localMemberId = ""
 
-        await withTestTransaction(pool, async (client) => {
+        await withTransaction(pool, async (client) => {
           await UserRepository.insert(client, {
             id: localUserId,
             email: `tags-test-${localUserId}@test.com`,
@@ -783,13 +785,14 @@ describe("Memo Repositories", () => {
             slug: `tags-test-${localWorkspaceId}`,
             createdBy: localUserId,
           })
+          localMemberId = (await addTestMember(client, localWorkspaceId, localUserId)).id
           await StreamRepository.insert(client, {
             id: localStreamId,
             workspaceId: localWorkspaceId,
             type: "scratchpad",
             visibility: "private",
             companionMode: "off",
-            createdBy: localUserId,
+            createdBy: localMemberId,
           })
 
           await MemoRepository.insert(client, {
@@ -823,7 +826,7 @@ describe("Memo Repositories", () => {
           })
         })
 
-        const tags = await withTestTransaction(pool, async (client) => {
+        const tags = await withTransaction(pool, async (client) => {
           return MemoRepository.getAllTags(client, localWorkspaceId)
         })
 
@@ -843,14 +846,14 @@ describe("Memo Repositories", () => {
         const memo1Id = memoId()
         const memo2Id = memoId()
 
-        await withTestTransaction(pool, async (client) => {
+        await withTransaction(pool, async (client) => {
           await StreamRepository.insert(client, {
             id: localStreamId,
             workspaceId: testWorkspaceId,
             type: "channel",
             visibility: "public",
             companionMode: "off",
-            createdBy: testUserId,
+            createdBy: testMemberId,
           })
 
           await ConversationRepository.insert(client, {
@@ -877,7 +880,7 @@ describe("Memo Repositories", () => {
 
         await new Promise((r) => setTimeout(r, 10))
 
-        await withTestTransaction(pool, async (client) => {
+        await withTransaction(pool, async (client) => {
           await ConversationRepository.insert(client, {
             id: conv2Id,
             streamId: localStreamId,
@@ -900,7 +903,7 @@ describe("Memo Repositories", () => {
           })
         })
 
-        const memos = await withTestTransaction(pool, async (client) => {
+        const memos = await withTransaction(pool, async (client) => {
           return MemoRepository.findByStream(client, localStreamId, { status: "active" })
         })
 
@@ -914,14 +917,14 @@ describe("Memo Repositories", () => {
       test("respects limit parameter", async () => {
         const localStreamId = streamId()
 
-        await withTestTransaction(pool, async (client) => {
+        await withTransaction(pool, async (client) => {
           await StreamRepository.insert(client, {
             id: localStreamId,
             workspaceId: testWorkspaceId,
             type: "channel",
             visibility: "public",
             companionMode: "off",
-            createdBy: testUserId,
+            createdBy: testMemberId,
           })
 
           for (let i = 0; i < 5; i++) {
@@ -949,7 +952,7 @@ describe("Memo Repositories", () => {
           }
         })
 
-        const memos = await withTestTransaction(pool, async (client) => {
+        const memos = await withTransaction(pool, async (client) => {
           return MemoRepository.findByStream(client, localStreamId, { limit: 3 })
         })
 

@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test"
 import { Pool } from "pg"
 import { UserPreferencesService, UserPreferencesRepository } from "../../src/features/user-preferences"
-import { workspaceId, userId } from "../../src/lib/id"
+import { workspaceId, memberId } from "../../src/lib/id"
 import { setupTestDatabase } from "./setup"
 import { DEFAULT_USER_PREFERENCES } from "@threa/types"
 
@@ -9,7 +9,7 @@ describe("User Preferences - Sparse Override Pattern", () => {
   let pool: Pool
   let service: UserPreferencesService
   let testWorkspaceId: string
-  let testUserId: string
+  let testMemberId: string
 
   beforeAll(async () => {
     pool = await setupTestDatabase()
@@ -25,16 +25,16 @@ describe("User Preferences - Sparse Override Pattern", () => {
     await pool.query("DELETE FROM user_preference_overrides")
     await pool.query("DELETE FROM outbox")
     testWorkspaceId = workspaceId()
-    testUserId = userId()
+    testMemberId = memberId()
   })
 
   describe("getPreferences", () => {
     test("should return defaults when no overrides exist", async () => {
-      const prefs = await service.getPreferences(testWorkspaceId, testUserId)
+      const prefs = await service.getPreferences(testWorkspaceId, testMemberId)
 
       expect(prefs).toMatchObject({
         workspaceId: testWorkspaceId,
-        userId: testUserId,
+        memberId: testMemberId,
         theme: DEFAULT_USER_PREFERENCES.theme,
         messageDisplay: DEFAULT_USER_PREFERENCES.messageDisplay,
         dateFormat: DEFAULT_USER_PREFERENCES.dateFormat,
@@ -45,7 +45,7 @@ describe("User Preferences - Sparse Override Pattern", () => {
       })
 
       // Verify no rows in database
-      const overrides = await UserPreferencesRepository.findOverrides(pool, testWorkspaceId, testUserId)
+      const overrides = await UserPreferencesRepository.findOverrides(pool, testMemberId)
       expect(overrides).toHaveLength(0)
     })
   })
@@ -53,54 +53,54 @@ describe("User Preferences - Sparse Override Pattern", () => {
   describe("updatePreferences - sparse storage", () => {
     test("should only store overrides that differ from defaults", async () => {
       // Update theme to non-default value
-      await service.updatePreferences(testWorkspaceId, testUserId, {
+      await service.updatePreferences(testWorkspaceId, testMemberId, {
         theme: "dark",
       })
 
       // Verify only one row exists
-      const overrides = await UserPreferencesRepository.findOverrides(pool, testWorkspaceId, testUserId)
+      const overrides = await UserPreferencesRepository.findOverrides(pool, testMemberId)
       expect(overrides).toHaveLength(1)
       expect(overrides[0]).toMatchObject({ key: "theme", value: "dark" })
     })
 
     test("should not store values that match defaults", async () => {
       // Update theme to the default value
-      await service.updatePreferences(testWorkspaceId, testUserId, {
+      await service.updatePreferences(testWorkspaceId, testMemberId, {
         theme: "system", // This is the default
       })
 
       // Verify no rows exist
-      const overrides = await UserPreferencesRepository.findOverrides(pool, testWorkspaceId, testUserId)
+      const overrides = await UserPreferencesRepository.findOverrides(pool, testMemberId)
       expect(overrides).toHaveLength(0)
     })
 
     test("should delete override when value reverts to default", async () => {
       // First set to non-default
-      await service.updatePreferences(testWorkspaceId, testUserId, {
+      await service.updatePreferences(testWorkspaceId, testMemberId, {
         theme: "dark",
       })
 
-      let overrides = await UserPreferencesRepository.findOverrides(pool, testWorkspaceId, testUserId)
+      let overrides = await UserPreferencesRepository.findOverrides(pool, testMemberId)
       expect(overrides).toHaveLength(1)
 
       // Revert to default
-      await service.updatePreferences(testWorkspaceId, testUserId, {
+      await service.updatePreferences(testWorkspaceId, testMemberId, {
         theme: "system",
       })
 
-      overrides = await UserPreferencesRepository.findOverrides(pool, testWorkspaceId, testUserId)
+      overrides = await UserPreferencesRepository.findOverrides(pool, testMemberId)
       expect(overrides).toHaveLength(0)
     })
 
     test("should handle nested accessibility overrides", async () => {
-      await service.updatePreferences(testWorkspaceId, testUserId, {
+      await service.updatePreferences(testWorkspaceId, testMemberId, {
         accessibility: {
           fontSize: "large",
           reducedMotion: true,
         },
       })
 
-      const overrides = await UserPreferencesRepository.findOverrides(pool, testWorkspaceId, testUserId)
+      const overrides = await UserPreferencesRepository.findOverrides(pool, testMemberId)
 
       // Should have two separate rows for nested keys
       expect(overrides).toHaveLength(2)
@@ -110,11 +110,11 @@ describe("User Preferences - Sparse Override Pattern", () => {
 
     test("should merge overrides with defaults when fetching", async () => {
       // Set only theme override
-      await service.updatePreferences(testWorkspaceId, testUserId, {
+      await service.updatePreferences(testWorkspaceId, testMemberId, {
         theme: "dark",
       })
 
-      const prefs = await service.getPreferences(testWorkspaceId, testUserId)
+      const prefs = await service.getPreferences(testWorkspaceId, testMemberId)
 
       // Theme should be overridden
       expect(prefs.theme).toBe("dark")
@@ -126,7 +126,7 @@ describe("User Preferences - Sparse Override Pattern", () => {
     })
 
     test("should handle multiple overrides correctly", async () => {
-      await service.updatePreferences(testWorkspaceId, testUserId, {
+      await service.updatePreferences(testWorkspaceId, testMemberId, {
         theme: "dark",
         messageDisplay: "compact",
         dateFormat: "DD/MM/YYYY",
@@ -135,12 +135,12 @@ describe("User Preferences - Sparse Override Pattern", () => {
         },
       })
 
-      const overrides = await UserPreferencesRepository.findOverrides(pool, testWorkspaceId, testUserId)
+      const overrides = await UserPreferencesRepository.findOverrides(pool, testMemberId)
 
       // Should have 4 overrides
       expect(overrides).toHaveLength(4)
 
-      const prefs = await service.getPreferences(testWorkspaceId, testUserId)
+      const prefs = await service.getPreferences(testWorkspaceId, testMemberId)
       expect(prefs.theme).toBe("dark")
       expect(prefs.messageDisplay).toBe("compact")
       expect(prefs.dateFormat).toBe("DD/MM/YYYY")
@@ -153,13 +153,13 @@ describe("User Preferences - Sparse Override Pattern", () => {
 
   describe("keyboard shortcuts", () => {
     test("should store keyboard shortcut overrides", async () => {
-      await service.updatePreferences(testWorkspaceId, testUserId, {
+      await service.updatePreferences(testWorkspaceId, testMemberId, {
         keyboardShortcuts: {
           openQuickSwitcher: "mod+p",
         },
       })
 
-      const overrides = await UserPreferencesRepository.findOverrides(pool, testWorkspaceId, testUserId)
+      const overrides = await UserPreferencesRepository.findOverrides(pool, testMemberId)
 
       expect(overrides).toHaveLength(1)
       expect(overrides[0]).toMatchObject({
@@ -171,7 +171,7 @@ describe("User Preferences - Sparse Override Pattern", () => {
 
   describe("outbox events", () => {
     test("should publish outbox event with merged preferences", async () => {
-      await service.updatePreferences(testWorkspaceId, testUserId, {
+      await service.updatePreferences(testWorkspaceId, testMemberId, {
         theme: "dark",
       })
 

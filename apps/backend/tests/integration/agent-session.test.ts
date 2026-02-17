@@ -3,7 +3,7 @@ import { Pool } from "pg"
 import { withClient } from "./setup"
 import { EventService, MessageRepository } from "../../src/features/messaging"
 import { AgentSessionRepository, SessionStatuses } from "../../src/features/agents"
-import { streamId, userId, workspaceId, sessionId, personaId, messageId, stepId } from "../../src/lib/id"
+import { streamId, memberId, workspaceId, sessionId, personaId, messageId, stepId } from "../../src/lib/id"
 import { AgentStepTypes } from "@threa/types"
 import { setupTestDatabase, testMessageContent } from "./setup"
 
@@ -227,13 +227,13 @@ describe("Message Repository - listSince", () => {
   test("should return messages after given sequence", async () => {
     const testStreamId = streamId()
     const testWorkspaceId = workspaceId()
-    const testUserId = userId()
+    const testUserId = memberId()
 
     const msg1 = await eventService.createMessage({
       workspaceId: testWorkspaceId,
       streamId: testStreamId,
       authorId: testUserId,
-      authorType: "user",
+      authorType: "member",
       ...testMessageContent("First"),
     })
 
@@ -241,7 +241,7 @@ describe("Message Repository - listSince", () => {
       workspaceId: testWorkspaceId,
       streamId: testStreamId,
       authorId: testUserId,
-      authorType: "user",
+      authorType: "member",
       ...testMessageContent("Second"),
     })
 
@@ -249,7 +249,7 @@ describe("Message Repository - listSince", () => {
       workspaceId: testWorkspaceId,
       streamId: testStreamId,
       authorId: testUserId,
-      authorType: "user",
+      authorType: "member",
       ...testMessageContent("Third"),
     })
 
@@ -263,13 +263,13 @@ describe("Message Repository - listSince", () => {
   test("should return empty array when no messages after sequence", async () => {
     const testStreamId = streamId()
     const testWorkspaceId = workspaceId()
-    const testUserId = userId()
+    const testUserId = memberId()
 
     await eventService.createMessage({
       workspaceId: testWorkspaceId,
       streamId: testStreamId,
       authorId: testUserId,
-      authorType: "user",
+      authorType: "member",
       ...testMessageContent("Only message"),
     })
 
@@ -281,14 +281,14 @@ describe("Message Repository - listSince", () => {
   test("should exclude messages from specified author", async () => {
     const testStreamId = streamId()
     const testWorkspaceId = workspaceId()
-    const user1Id = userId()
-    const user2Id = userId()
+    const user1Id = memberId()
+    const user2Id = memberId()
 
     await eventService.createMessage({
       workspaceId: testWorkspaceId,
       streamId: testStreamId,
       authorId: user1Id,
-      authorType: "user",
+      authorType: "member",
       ...testMessageContent("From user 1"),
     })
 
@@ -296,7 +296,7 @@ describe("Message Repository - listSince", () => {
       workspaceId: testWorkspaceId,
       streamId: testStreamId,
       authorId: user2Id,
-      authorType: "user",
+      authorType: "member",
       ...testMessageContent("From user 2"),
     })
 
@@ -304,7 +304,7 @@ describe("Message Repository - listSince", () => {
       workspaceId: testWorkspaceId,
       streamId: testStreamId,
       authorId: user1Id,
-      authorType: "user",
+      authorType: "member",
       ...testMessageContent("From user 1 again"),
     })
 
@@ -319,13 +319,13 @@ describe("Message Repository - listSince", () => {
   test("should order by sequence ascending (oldest first)", async () => {
     const testStreamId = streamId()
     const testWorkspaceId = workspaceId()
-    const testUserId = userId()
+    const testUserId = memberId()
 
     await eventService.createMessage({
       workspaceId: testWorkspaceId,
       streamId: testStreamId,
       authorId: testUserId,
-      authorType: "user",
+      authorType: "member",
       ...testMessageContent("First"),
     })
 
@@ -333,7 +333,7 @@ describe("Message Repository - listSince", () => {
       workspaceId: testWorkspaceId,
       streamId: testStreamId,
       authorId: testUserId,
-      authorType: "user",
+      authorType: "member",
       ...testMessageContent("Second"),
     })
 
@@ -341,7 +341,7 @@ describe("Message Repository - listSince", () => {
       workspaceId: testWorkspaceId,
       streamId: testStreamId,
       authorId: testUserId,
-      authorType: "user",
+      authorType: "member",
       ...testMessageContent("Third"),
     })
 
@@ -355,13 +355,13 @@ describe("Message Repository - listSince", () => {
   test("should not include deleted messages", async () => {
     const testStreamId = streamId()
     const testWorkspaceId = workspaceId()
-    const testUserId = userId()
+    const testUserId = memberId()
 
     await eventService.createMessage({
       workspaceId: testWorkspaceId,
       streamId: testStreamId,
       authorId: testUserId,
-      authorType: "user",
+      authorType: "member",
       ...testMessageContent("First"),
     })
 
@@ -369,7 +369,7 @@ describe("Message Repository - listSince", () => {
       workspaceId: testWorkspaceId,
       streamId: testStreamId,
       authorId: testUserId,
-      authorType: "user",
+      authorType: "member",
       ...testMessageContent("Second - will be deleted"),
     })
 
@@ -377,7 +377,7 @@ describe("Message Repository - listSince", () => {
       workspaceId: testWorkspaceId,
       streamId: testStreamId,
       authorId: testUserId,
-      authorType: "user",
+      authorType: "member",
       ...testMessageContent("Third"),
     })
 
@@ -397,14 +397,14 @@ describe("Message Repository - listSince", () => {
   test("should respect limit parameter", async () => {
     const testStreamId = streamId()
     const testWorkspaceId = workspaceId()
-    const testUserId = userId()
+    const testUserId = memberId()
 
     for (let i = 0; i < 10; i++) {
       await eventService.createMessage({
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "user",
+        authorType: "member",
         ...testMessageContent(`Message ${i + 1}`),
       })
     }
