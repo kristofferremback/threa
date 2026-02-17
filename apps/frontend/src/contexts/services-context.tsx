@@ -31,6 +31,7 @@ export interface StreamService {
 
 export interface MessageService {
   create: typeof messagesApi.create
+  createDm: typeof messagesApi.createDm
   update: typeof messagesApi.update
   delete: typeof messagesApi.delete
   addReaction: typeof messagesApi.addReaction

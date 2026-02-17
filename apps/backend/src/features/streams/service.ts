@@ -4,6 +4,7 @@ import { withClient, withTransaction, type Querier } from "../../db"
 import { StreamRepository, Stream, StreamWithPreview, LastMessagePreview } from "./repository"
 import { StreamMemberRepository, StreamMember } from "./member-repository"
 import { StreamEventRepository } from "./event-repository"
+import { DmPairRepository, normalizeDmMemberPair, type DmPeer } from "./dm-repository"
 import { MessageRepository } from "../messaging"
 import { OutboxRepository } from "../../lib/outbox"
 import { streamId, eventId } from "../../lib/id"
@@ -73,6 +74,12 @@ const createStreamParamsSchema = z.object({
 })
 
 export type CreateStreamParams = z.infer<typeof createStreamParamsSchema>
+
+interface FindOrCreateDmParams {
+  workspaceId: string
+  senderMemberId: string
+  recipientMemberId: string
+}
 
 export class StreamService {
   constructor(private pool: Pool) {}
@@ -203,6 +210,92 @@ export class StreamService {
     }
 
     return streams.map((s) => (dmNameMap.has(s.id) ? { ...s, displayName: dmNameMap.get(s.id)! } : s))
+  }
+
+  async listDmPeers(workspaceId: string, memberId: string): Promise<DmPeer[]> {
+    return DmPairRepository.listPeersForMember(this.pool, workspaceId, memberId)
+  }
+
+  async findOrCreateDm(params: FindOrCreateDmParams): Promise<Stream> {
+    if (params.senderMemberId === params.recipientMemberId) {
+      throw new HttpError("Cannot create a DM with yourself", { status: 400, code: "DM_SELF_NOT_ALLOWED" })
+    }
+
+    const { memberAId, memberBId } = normalizeDmMemberPair(params.senderMemberId, params.recipientMemberId)
+
+    try {
+      return await withTransaction(this.pool, async (client) => {
+        const [sender, recipient] = await Promise.all([
+          MemberRepository.findById(client, params.senderMemberId),
+          MemberRepository.findById(client, params.recipientMemberId),
+        ])
+
+        if (!sender || sender.workspaceId !== params.workspaceId) {
+          throw new HttpError("Sender is not a member of this workspace", { status: 404, code: "MEMBER_NOT_FOUND" })
+        }
+
+        if (!recipient || recipient.workspaceId !== params.workspaceId) {
+          throw new HttpError("Recipient is not a member of this workspace", {
+            status: 404,
+            code: "MEMBER_NOT_FOUND",
+          })
+        }
+
+        const existing = await DmPairRepository.findByMembers(client, params.workspaceId, memberAId, memberBId)
+        if (existing) {
+          const stream = await StreamRepository.findById(client, existing.streamId)
+          if (!stream) {
+            throw new Error(`DM pair references missing stream ${existing.streamId}`)
+          }
+          return stream
+        }
+
+        const id = streamId()
+        const stream = await StreamRepository.insert(client, {
+          id,
+          workspaceId: params.workspaceId,
+          type: StreamTypes.DM,
+          visibility: Visibilities.PRIVATE,
+          createdBy: params.senderMemberId,
+        })
+
+        await DmPairRepository.insert(client, {
+          streamId: id,
+          workspaceId: params.workspaceId,
+          memberOneId: memberAId,
+          memberTwoId: memberBId,
+        })
+
+        await StreamMemberRepository.insert(client, id, memberAId)
+        await StreamMemberRepository.insert(client, id, memberBId)
+
+        await OutboxRepository.insert(client, "stream:created", {
+          workspaceId: params.workspaceId,
+          streamId: stream.id,
+          stream,
+        })
+
+        return stream
+      })
+    } catch (error) {
+      if (!isUniqueViolation(error, "dm_pairs_workspace_member_pair_key")) {
+        throw error
+      }
+
+      return withClient(this.pool, async (client) => {
+        const existing = await DmPairRepository.findByMembers(client, params.workspaceId, memberAId, memberBId)
+        if (!existing) {
+          throw error
+        }
+
+        const stream = await StreamRepository.findById(client, existing.streamId)
+        if (!stream) {
+          throw new Error(`DM pair references missing stream ${existing.streamId}`)
+        }
+
+        return stream
+      })
+    }
   }
 
   async create(params: CreateStreamParams): Promise<Stream> {
@@ -570,6 +663,13 @@ export class StreamService {
         throw new StreamNotFoundError()
       }
 
+      if (stream.type === StreamTypes.DM) {
+        throw new HttpError("Cannot add members to direct messages", {
+          status: 400,
+          code: "DM_MEMBERS_IMMUTABLE",
+        })
+      }
+
       // Verify the target member belongs to this workspace
       const member = await MemberRepository.findById(client, memberId)
       if (!member || member.workspaceId !== workspaceId) {
@@ -605,6 +705,13 @@ export class StreamService {
       const stream = await StreamRepository.findById(client, streamId)
       if (!stream) {
         throw new StreamNotFoundError()
+      }
+
+      if (stream.type === StreamTypes.DM) {
+        throw new HttpError("Cannot remove members from direct messages", {
+          status: 400,
+          code: "DM_MEMBERS_IMMUTABLE",
+        })
       }
 
       // Lock member rows and check count atomically to prevent racing removals

@@ -18,6 +18,7 @@ import type {
   LastMessagePreview,
   ActivityCreatedPayload,
 } from "@threa/types"
+import { StreamTypes } from "@threa/types"
 
 /**
  * Update the workspace bootstrap cache, or invalidate if it's not cached yet.
@@ -196,6 +197,7 @@ export function useSocketEvents(workspaceId: string) {
         const isCreator = Boolean(currentMember && payload.stream.createdBy === currentMember.id)
         const hasMembership = old.streamMemberships.some((m: StreamMember) => m.streamId === payload.stream.id)
         const shouldAddMembership = isCreator && !hasMembership
+        const shouldAddStream = !streamExists && payload.stream.type !== StreamTypes.DM
 
         // Ensure creators are subscribed immediately for follow-up stream activity
         // (prevents missing early stream:activity events after channel creation).
@@ -205,7 +207,9 @@ export function useSocketEvents(workspaceId: string) {
 
         return {
           ...old,
-          streams: streamExists ? old.streams : [...old.streams, { ...payload.stream, lastMessagePreview: null }],
+          // DM payloads do not include viewer-resolved names. Avoid inserting
+          // placeholder "Direct message" entries and wait for bootstrap refetch.
+          streams: shouldAddStream ? [...old.streams, { ...payload.stream, lastMessagePreview: null }] : old.streams,
           streamMemberships: shouldAddMembership
             ? [
                 ...old.streamMemberships,
@@ -235,6 +239,12 @@ export function useSocketEvents(workspaceId: string) {
 
       // Cache to IndexedDB
       db.streams.put({ ...payload.stream, _cachedAt: Date.now() })
+
+      // DM creation affects viewer-specific dmPeers and memberships, which cannot
+      // be derived from this payload alone. Refetch workspace bootstrap to resolve.
+      if (payload.stream.type === StreamTypes.DM) {
+        void queryClient.refetchQueries({ queryKey: workspaceKeys.bootstrap(workspaceId), type: "active" })
+      }
     })
 
     // Handle stream updated
@@ -260,7 +270,18 @@ export function useSocketEvents(workspaceId: string) {
           }
           return {
             ...old,
-            streams: old.streams.map((s) => (s.id === payload.stream.id ? { ...s, ...payload.stream } : s)),
+            streams: old.streams.map((s) =>
+              s.id === payload.stream.id
+                ? {
+                    ...s,
+                    ...payload.stream,
+                    displayName:
+                      payload.stream.type === StreamTypes.DM && payload.stream.displayName == null
+                        ? s.displayName
+                        : payload.stream.displayName,
+                  }
+                : s
+            ),
           }
         }
         // Stream not in list — add if now visible (e.g. became public)

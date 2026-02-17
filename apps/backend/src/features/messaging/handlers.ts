@@ -14,8 +14,8 @@ import { toShortcode, normalizeMessage, toEmoji } from "../emoji"
 import { parseMarkdown, serializeToMarkdown } from "@threa/prosemirror"
 import type { JSONContent } from "@threa/types"
 
-// Schema for JSON input (from rich clients)
-const createMessageJsonSchema = z.object({
+// Schema for JSON input to an existing stream (from rich clients)
+const createMessageJsonToStreamSchema = z.object({
   streamId: z.string().min(1, "streamId is required"),
   contentJson: z.object({
     type: z.literal("doc"),
@@ -25,15 +25,38 @@ const createMessageJsonSchema = z.object({
   attachmentIds: z.array(z.string()).optional(),
 })
 
-// Schema for markdown input (from AI/external)
-const createMessageMarkdownSchema = z.object({
+// Schema for markdown input to an existing stream (from AI/external)
+const createMessageMarkdownToStreamSchema = z.object({
   streamId: z.string().min(1, "streamId is required"),
   content: z.string().min(1, "content is required"),
   attachmentIds: z.array(z.string()).optional(),
 })
 
+// Schema for JSON input to a DM target member (lazy stream creation on first message)
+const createMessageJsonToDmSchema = z.object({
+  dmMemberId: z.string().min(1, "dmMemberId is required"),
+  contentJson: z.object({
+    type: z.literal("doc"),
+    content: z.array(z.any()),
+  }),
+  contentMarkdown: z.string().optional(),
+  attachmentIds: z.array(z.string()).optional(),
+})
+
+// Schema for markdown input to a DM target member (lazy stream creation on first message)
+const createMessageMarkdownToDmSchema = z.object({
+  dmMemberId: z.string().min(1, "dmMemberId is required"),
+  content: z.string().min(1, "content is required"),
+  attachmentIds: z.array(z.string()).optional(),
+})
+
 // Union schema - accepts either format
-const createMessageSchema = z.union([createMessageJsonSchema, createMessageMarkdownSchema])
+const createMessageSchema = z.union([
+  createMessageJsonToStreamSchema,
+  createMessageMarkdownToStreamSchema,
+  createMessageJsonToDmSchema,
+  createMessageMarkdownToDmSchema,
+])
 
 // Update can also be either format
 const updateMessageJsonSchema = z.object({
@@ -128,13 +151,28 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
         })
       }
 
-      const streamId = result.data.streamId
-      const attachmentIds = result.data.attachmentIds
+      const data = result.data
+      const attachmentIds = data.attachmentIds
 
-      const [stream, isStreamMember] = await Promise.all([
-        streamService.getStreamById(streamId),
-        streamService.isMember(streamId, memberId),
-      ])
+      let streamId: string
+      let stream: Awaited<ReturnType<typeof streamService.getStreamById>> | null = null
+      let isStreamMember = false
+
+      if ("dmMemberId" in data) {
+        stream = await streamService.findOrCreateDm({
+          workspaceId,
+          senderMemberId: memberId,
+          recipientMemberId: data.dmMemberId,
+        })
+        streamId = stream.id
+        isStreamMember = true
+      } else {
+        streamId = data.streamId
+        ;[stream, isStreamMember] = await Promise.all([
+          streamService.getStreamById(streamId),
+          streamService.isMember(streamId, memberId),
+        ])
+      }
 
       if (!stream || stream.workspaceId !== workspaceId) {
         return res.status(404).json({ error: "Stream not found" })
@@ -149,7 +187,7 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
       }
 
       // Check for slash command in first node BEFORE normalization (normalization loses command nodes)
-      const originalContentJson = "contentJson" in result.data ? result.data.contentJson : undefined
+      const originalContentJson = "contentJson" in data ? data.contentJson : undefined
       const detectedCommand = originalContentJson ? detectCommand(originalContentJson) : null
 
       if (detectedCommand && commandRegistry.has(detectedCommand.name)) {
@@ -194,7 +232,7 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
       }
 
       // Normalize to both JSON and markdown formats for normal message creation
-      const { contentJson, contentMarkdown } = normalizeContent(result.data)
+      const { contentJson, contentMarkdown } = normalizeContent(data)
 
       // Normal message creation
       const message = await eventService.createMessage({

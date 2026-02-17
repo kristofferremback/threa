@@ -4,6 +4,7 @@ import { Search, Terminal, FileText } from "lucide-react"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { useWorkspaceBootstrap, useDraftScratchpads, useCreateStream } from "@/hooks"
 import { useSettings } from "@/contexts"
+import { useUser } from "@/auth"
 import { StreamTypes } from "@threa/types"
 import { useStreamItems } from "./use-stream-items"
 import { useCommandItems } from "./use-command-items"
@@ -61,6 +62,7 @@ export function getDisplayQuery(query: string, mode: QuickSwitcherMode): string 
 export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: QuickSwitcherProps) {
   const navigate = useNavigate()
   const { data: bootstrap } = useWorkspaceBootstrap(workspaceId)
+  const user = useUser()
   const { createDraft } = useDraftScratchpads(workspaceId)
   const createStream = useCreateStream(workspaceId)
   const { openSettings } = useSettings()
@@ -88,6 +90,12 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
 
   const streams = useMemo(() => bootstrap?.streams ?? [], [bootstrap?.streams])
   const streamMemberships = useMemo(() => bootstrap?.streamMemberships ?? [], [bootstrap?.streamMemberships])
+  const members = useMemo(() => bootstrap?.members ?? [], [bootstrap?.members])
+  const currentMemberId = useMemo(
+    () => members.find((member) => member.userId === user?.id)?.id ?? null,
+    [members, user?.id]
+  )
+  const dmPeers = bootstrap?.dmPeers
 
   const inputRef = useRef<HTMLInputElement>(null)
   const richInputRef = useRef<RichInputRef>(null)
@@ -146,6 +154,9 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
     closeDialog: handleClose,
     streams,
     streamMemberships,
+    members,
+    currentMemberId,
+    dmPeers,
   })
 
   const commandResult = useCommandItems({

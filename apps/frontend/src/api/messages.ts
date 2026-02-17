@@ -1,13 +1,21 @@
 import { api } from "./client"
-import type { Message, CreateMessageInput, UpdateMessageInput } from "@threa/types"
+import type { Message, CreateMessageInput, CreateDmMessageInput, UpdateMessageInput } from "@threa/types"
 
-export type { CreateMessageInput, UpdateMessageInput }
+export type { CreateMessageInput, CreateDmMessageInput, UpdateMessageInput }
 
 export const messagesApi = {
   async create(workspaceId: string, streamId: string, data: CreateMessageInput): Promise<Message> {
     const res = await api.post<{ message: Message }>(`/api/workspaces/${workspaceId}/messages`, {
       ...data,
       streamId,
+    })
+    return res.message
+  },
+
+  async createDm(workspaceId: string, dmMemberId: string, data: CreateDmMessageInput): Promise<Message> {
+    const res = await api.post<{ message: Message }>(`/api/workspaces/${workspaceId}/messages`, {
+      ...data,
+      dmMemberId,
     })
     return res.message
   },

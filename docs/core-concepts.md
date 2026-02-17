@@ -27,13 +27,13 @@ Everything that can send messages is a stream. Streams are the fundamental commu
 #### DM (Direct Message)
 
 - **Purpose**: Private conversations between members
-- **Members**: Two or more members (typically two, supports group DMs)
-- **Naming**: Display name computed from participants (e.g., "You and Alice" or "You, Alice, and Bob")
+- **Members**: Exactly two members
+- **Naming**: Viewer-dependent virtual name of the other member
 - **Creation**: Special flow, not standard stream creation API
+- **Lifecycle**: Stream is created lazily on the first message
 - **Visibility**: Always private
 - **Companion**: Can have AI companion
-- **Use case**: Private one-on-one or small group conversations
-- **Future**: Support converting group DMs to channels
+- **Use case**: Private one-on-one conversations
 
 #### Thread
 
@@ -256,7 +256,8 @@ Ariadne (`persona_system_ariadne`) is the default system persona:
 
 - Workspace is the sharding boundary (all resources scoped to workspace)
 - Stream slugs must be unique within workspace
-- DMs have 2 or more members (typically 2, supports group DMs)
+- DMs have exactly 2 members
+- DMs are uniquely constrained by ordered member pair within a workspace
 - Thread visibility always matches root stream
 - System personas have `workspaceId=NULL`
 

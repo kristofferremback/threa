@@ -229,12 +229,12 @@ describe("Stream Naming", () => {
   })
 
   describe("formatParticipantNames", () => {
-    test("returns 'Notes to self' when no other participants", () => {
+    test("falls back to the only participant when no other participant exists", () => {
       const participants = [{ id: "user_1", name: "Alice" }]
-      expect(formatParticipantNames(participants, "user_1")).toBe("Notes to self")
+      expect(formatParticipantNames(participants, "user_1")).toBe("Alice")
     })
 
-    test("returns single name for 1 other participant", () => {
+    test("returns the other participant in a strict 1:1 DM", () => {
       const participants = [
         { id: "user_1", name: "Alice" },
         { id: "user_2", name: "Bob" },
@@ -242,34 +242,13 @@ describe("Stream Naming", () => {
       expect(formatParticipantNames(participants, "user_1")).toBe("Bob")
     })
 
-    test("returns 'X and Y' for 2 other participants", () => {
+    test("uses the first other participant defensively for malformed 3-member input", () => {
       const participants = [
         { id: "user_1", name: "Alice" },
         { id: "user_2", name: "Bob" },
         { id: "user_3", name: "Charlie" },
       ]
-      expect(formatParticipantNames(participants, "user_1")).toBe("Bob and Charlie")
-    })
-
-    test("returns 'X, Y, and N others' for 3+ participants", () => {
-      const participants = [
-        { id: "user_1", name: "Alice" },
-        { id: "user_2", name: "Bob" },
-        { id: "user_3", name: "Charlie" },
-        { id: "user_4", name: "Diana" },
-      ]
-      expect(formatParticipantNames(participants, "user_1")).toBe("Bob, Charlie, and 1 other")
-    })
-
-    test("handles plural for many others", () => {
-      const participants = [
-        { id: "user_1", name: "Alice" },
-        { id: "user_2", name: "Bob" },
-        { id: "user_3", name: "Charlie" },
-        { id: "user_4", name: "Diana" },
-        { id: "user_5", name: "Eve" },
-      ]
-      expect(formatParticipantNames(participants, "user_1")).toBe("Bob, Charlie, and 2 others")
+      expect(formatParticipantNames(participants, "user_1")).toBe("Bob")
     })
   })
 

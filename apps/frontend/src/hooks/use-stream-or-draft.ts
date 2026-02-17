@@ -1,4 +1,4 @@
-import { useCallback } from "react"
+import { useCallback, useEffect } from "react"
 import { useLiveQuery } from "dexie-react-hooks"
 import { useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "react-router-dom"
@@ -9,8 +9,10 @@ import { useStreamBootstrap, streamKeys } from "./use-streams"
 import { useWorkspaceBootstrap, workspaceKeys } from "./use-workspaces"
 import { createOptimisticBootstrap, type AttachmentSummary } from "./create-optimistic-bootstrap"
 import { serializeToMarkdown } from "@threa/prosemirror"
-import type { StreamType, CompanionMode, StreamEvent, JSONContent } from "@threa/types"
-import { StreamTypes } from "@threa/types"
+import type { StreamType, CompanionMode, StreamEvent, JSONContent, WorkspaceBootstrap } from "@threa/types"
+import { StreamTypes, Visibilities, CompanionModes } from "@threa/types"
+
+const DM_DRAFT_PREFIX = "draft_dm_"
 
 function generateClientId(): string {
   const timestamp = Date.now().toString(36)
@@ -20,6 +22,20 @@ function generateClientId(): string {
 
 export function isDraftId(id: string): boolean {
   return id.startsWith("draft_")
+}
+
+export function createDmDraftId(memberId: string): string {
+  return `${DM_DRAFT_PREFIX}${memberId}`
+}
+
+export function isDmDraftId(id: string): boolean {
+  return id.startsWith(DM_DRAFT_PREFIX)
+}
+
+export function getDmDraftMemberId(id: string): string | null {
+  if (!isDmDraftId(id)) return null
+  const memberId = id.slice(DM_DRAFT_PREFIX.length)
+  return memberId.length > 0 ? memberId : null
 }
 
 export interface VirtualStream {
@@ -147,6 +163,165 @@ function useDraftStream(workspaceId: string, streamId: string, enabled: boolean)
 }
 
 /**
+ * Implementation for virtual DM drafts.
+ * The stream is created lazily on first message via backend find-or-create.
+ */
+function useDraftDmStream(workspaceId: string, streamId: string, enabled: boolean): UseStreamOrDraftReturn {
+  const queryClient = useQueryClient()
+  const navigate = useNavigate()
+  const messageService = useMessageService()
+  const user = useUser()
+  const { data: wsBootstrap, isLoading } = useWorkspaceBootstrap(workspaceId)
+
+  const targetMemberId = getDmDraftMemberId(streamId)
+  const targetMember = wsBootstrap?.members.find((m) => m.id === targetMemberId) ?? null
+  const targetMemberName = targetMember?.name ?? null
+  const currentMemberId = wsBootstrap?.members.find((m) => m.userId === user?.id)?.id ?? null
+  const existingDmStreamId =
+    targetMemberId && currentMemberId
+      ? wsBootstrap?.dmPeers?.find((peer) => peer.memberId === targetMemberId)?.streamId
+      : null
+
+  useEffect(() => {
+    if (!enabled || !existingDmStreamId) return
+    let cancelled = false
+    const draftKey = `stream:${streamId}`
+    const realStreamKey = `stream:${existingDmStreamId}`
+
+    const migrateDraftAndNavigate = async () => {
+      if (draftKey !== realStreamKey) {
+        const draft = await db.draftMessages.get(draftKey)
+        if (draft) {
+          const existingDraft = await db.draftMessages.get(realStreamKey)
+          if (!existingDraft || existingDraft.updatedAt < draft.updatedAt) {
+            await db.draftMessages.put({ ...draft, id: realStreamKey })
+          }
+          await db.draftMessages.delete(draftKey)
+        }
+      }
+
+      if (!cancelled) {
+        navigate(`/w/${workspaceId}/s/${existingDmStreamId}`, { replace: true })
+      }
+    }
+
+    void migrateDraftAndNavigate()
+
+    return () => {
+      cancelled = true
+    }
+  }, [enabled, existingDmStreamId, navigate, streamId, workspaceId])
+
+  const stream: VirtualStream | undefined =
+    enabled && targetMemberId
+      ? {
+          id: streamId,
+          workspaceId,
+          type: StreamTypes.DM,
+          displayName: targetMember?.name ?? "Direct message",
+          companionMode: "off",
+          isDraft: true,
+          parentStreamId: null,
+          parentMessageId: null,
+          rootStreamId: null,
+          archivedAt: null,
+        }
+      : undefined
+
+  const rename = useCallback(async () => {}, [])
+
+  const archive = useCallback(async () => {
+    await db.draftMessages.delete(`stream:${streamId}`)
+    navigate(`/w/${workspaceId}`)
+  }, [streamId, workspaceId, navigate])
+
+  const sendMessage = useCallback(
+    async (input: SendMessageInput): Promise<{ navigateTo?: string; replace?: boolean }> => {
+      if (!targetMemberId) {
+        throw new Error("Invalid DM draft target")
+      }
+
+      const contentMarkdown = serializeToMarkdown(input.contentJson)
+      const message = await messageService.createDm(workspaceId, targetMemberId, {
+        dmMemberId: targetMemberId,
+        contentJson: input.contentJson,
+        contentMarkdown,
+        attachmentIds: input.attachmentIds,
+      })
+
+      // Keep sidebar state consistent immediately on sender side:
+      // remove virtual DM draft and set viewer-specific DM name as soon as streamId is known.
+      queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
+        if (!old) return old
+
+        const hasPeer = (old.dmPeers ?? []).some(
+          (peer) => peer.memberId === targetMemberId && peer.streamId === message.streamId
+        )
+
+        const streamExists = old.streams.some((stream) => stream.id === message.streamId)
+        const optimisticStream = streamExists
+          ? old.streams
+          : [
+              ...old.streams,
+              {
+                id: message.streamId,
+                workspaceId,
+                type: StreamTypes.DM,
+                displayName: targetMemberName ?? "Direct message",
+                slug: null,
+                description: null,
+                visibility: Visibilities.PRIVATE,
+                parentStreamId: null,
+                parentMessageId: null,
+                rootStreamId: null,
+                companionMode: CompanionModes.OFF,
+                companionPersonaId: null,
+                createdBy: message.authorId,
+                createdAt: message.createdAt,
+                updatedAt: message.createdAt,
+                archivedAt: null,
+                lastMessagePreview: {
+                  authorId: message.authorId,
+                  authorType: message.authorType,
+                  content: message.contentMarkdown,
+                  createdAt: message.createdAt,
+                },
+              },
+            ]
+
+        return {
+          ...old,
+          dmPeers: hasPeer
+            ? old.dmPeers
+            : [...(old.dmPeers ?? []), { memberId: targetMemberId, streamId: message.streamId }],
+          streams: optimisticStream.map((stream) =>
+            stream.id === message.streamId && stream.type === StreamTypes.DM
+              ? { ...stream, displayName: targetMemberName ?? stream.displayName }
+              : stream
+          ),
+        }
+      })
+
+      // Always re-fetch authoritative bootstrap to close any event ordering gaps.
+      void queryClient.refetchQueries({ queryKey: workspaceKeys.bootstrap(workspaceId), type: "active" })
+
+      return { navigateTo: `/w/${workspaceId}/s/${message.streamId}`, replace: true }
+    },
+    [targetMemberId, workspaceId, messageService, queryClient, targetMemberName]
+  )
+
+  return {
+    stream,
+    isLoading: enabled && isLoading,
+    isDraft: true,
+    error: null,
+    rename,
+    archive,
+    sendMessage,
+  }
+}
+
+/**
  * Implementation for real streams (stored on server).
  */
 function useRealStream(workspaceId: string, streamId: string, enabled: boolean): UseStreamOrDraftReturn {
@@ -166,7 +341,17 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
         workspaceId: bootstrap.stream.workspaceId,
         type: bootstrap.stream.type,
         slug: bootstrap.stream.slug,
-        displayName: bootstrap.stream.displayName,
+        displayName:
+          bootstrap.stream.type === StreamTypes.DM
+            ? (() => {
+                const workspaceName = wsBootstrap?.streams.find((s) => s.id === bootstrap.stream.id)?.displayName
+                if (workspaceName) return workspaceName
+
+                const otherMemberId = bootstrap.members.find((m) => m.memberId !== currentMemberId)?.memberId
+                const otherMemberName = wsBootstrap?.members.find((m) => m.id === otherMemberId)?.name ?? null
+                return otherMemberName ?? bootstrap.stream.displayName
+              })()
+            : bootstrap.stream.displayName,
         companionMode: bootstrap.stream.companionMode,
         isDraft: false,
         parentStreamId: bootstrap.stream.parentStreamId,
@@ -339,11 +524,16 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
  */
 export function useStreamOrDraft(workspaceId: string, streamId: string): UseStreamOrDraftReturn {
   const isDraft = isDraftId(streamId)
+  const isDmDraft = isDmDraftId(streamId)
+  const isScratchpadDraft = isDraft && !isDmDraft
 
   // Call both implementations (React hook rules require consistent hook calls)
   // Each implementation no-ops when not enabled
-  const draftResult = useDraftStream(workspaceId, streamId, isDraft)
+  const draftResult = useDraftStream(workspaceId, streamId, isScratchpadDraft)
+  const draftDmResult = useDraftDmStream(workspaceId, streamId, isDmDraft)
   const realResult = useRealStream(workspaceId, streamId, !isDraft)
 
-  return isDraft ? draftResult : realResult
+  if (isDmDraft) return draftDmResult
+  if (isScratchpadDraft) return draftResult
+  return realResult
 }

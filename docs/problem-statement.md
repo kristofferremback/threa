@@ -72,7 +72,7 @@ While the USP of this app will be the knowledge system, we need a robust messagi
 
 - Multi-workspace support from the get-go (e.g., users can be a member of their job's workspace and their personal workspace)
 - Private and public channels
-- Direct messages between two or more users
+- Direct messages between exactly two users
 - Scratchpad (basically the same as self-DMs)
 - Multi-level threading, where a nested threads are supported out of the box. Not reddit-like, but Slack-like threading but deeper.
 - Thinking Spaces which are essentially the same as chats in ChatGPT or Claude.ai
