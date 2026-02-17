@@ -4,7 +4,7 @@ import { withClient, withTransaction, type Querier } from "../../db"
 import { StreamRepository, Stream, StreamWithPreview, LastMessagePreview } from "./repository"
 import { StreamMemberRepository, StreamMember } from "./member-repository"
 import { StreamEventRepository } from "./event-repository"
-import { DmPairRepository, normalizeDmMemberPair, type DmPeer } from "./dm-repository"
+import { DmPairRepository, normalizeDmMemberPair, buildDmUniquenessKey, type DmPeer } from "./dm-repository"
 import { MessageRepository } from "../messaging"
 import { OutboxRepository } from "../../lib/outbox"
 import { streamId, eventId } from "../../lib/id"
@@ -77,8 +77,14 @@ export type CreateStreamParams = z.infer<typeof createStreamParamsSchema>
 
 interface FindOrCreateDmParams {
   workspaceId: string
-  senderMemberId: string
-  recipientMemberId: string
+  memberOneId: string
+  memberTwoId: string
+}
+
+interface ResolveWritableMessageStreamParams {
+  workspaceId: string
+  memberId: string
+  target: { streamId: string } | { dmMemberId: string }
 }
 
 export class StreamService {
@@ -216,86 +222,97 @@ export class StreamService {
     return DmPairRepository.listPeersForMember(this.pool, workspaceId, memberId)
   }
 
+  async resolveWritableMessageStream(params: ResolveWritableMessageStreamParams): Promise<Stream> {
+    const stream =
+      "dmMemberId" in params.target
+        ? await this.findOrCreateDm({
+            workspaceId: params.workspaceId,
+            memberOneId: params.memberId,
+            memberTwoId: params.target.dmMemberId,
+          })
+        : await this.getStreamById(params.target.streamId)
+
+    if (!stream || stream.workspaceId !== params.workspaceId) {
+      throw new StreamNotFoundError()
+    }
+
+    if (stream.archivedAt) {
+      throw new HttpError("Cannot send messages to an archived stream", { status: 403 })
+    }
+
+    const isMember = await this.isMember(stream.id, params.memberId)
+    if (!isMember) {
+      throw new HttpError("Not a member of this stream", { status: 403 })
+    }
+
+    return stream
+  }
+
+  private async assertDmPairMembership(
+    client: Querier,
+    stream: Stream,
+    memberAId: string,
+    memberBId: string
+  ): Promise<void> {
+    if (stream.type !== StreamTypes.DM) {
+      throw new Error(`DM pair references non-DM stream ${stream.id}`)
+    }
+
+    const memberships = await StreamMemberRepository.list(client, { streamId: stream.id })
+    const memberIds = new Set(memberships.map((membership) => membership.memberId))
+    const hasExactPair = memberIds.size === 2 && memberIds.has(memberAId) && memberIds.has(memberBId)
+    if (!hasExactPair) {
+      throw new Error(`DM stream ${stream.id} must include exactly members ${memberAId} and ${memberBId}`)
+    }
+  }
+
   async findOrCreateDm(params: FindOrCreateDmParams): Promise<Stream> {
-    if (params.senderMemberId === params.recipientMemberId) {
+    if (params.memberOneId === params.memberTwoId) {
       throw new HttpError("Cannot create a DM with yourself", { status: 400, code: "DM_SELF_NOT_ALLOWED" })
     }
 
-    const { memberAId, memberBId } = normalizeDmMemberPair(params.senderMemberId, params.recipientMemberId)
+    const { memberAId, memberBId } = normalizeDmMemberPair(params.memberOneId, params.memberTwoId)
+    const uniquenessKey = buildDmUniquenessKey(memberAId, memberBId)
 
-    try {
-      return await withTransaction(this.pool, async (client) => {
-        const [sender, recipient] = await Promise.all([
-          MemberRepository.findById(client, params.senderMemberId),
-          MemberRepository.findById(client, params.recipientMemberId),
-        ])
-
-        if (!sender || sender.workspaceId !== params.workspaceId) {
-          throw new HttpError("Sender is not a member of this workspace", { status: 404, code: "MEMBER_NOT_FOUND" })
-        }
-
-        if (!recipient || recipient.workspaceId !== params.workspaceId) {
-          throw new HttpError("Recipient is not a member of this workspace", {
-            status: 404,
-            code: "MEMBER_NOT_FOUND",
-          })
-        }
-
-        const existing = await DmPairRepository.findByMembers(client, params.workspaceId, memberAId, memberBId)
-        if (existing) {
-          const stream = await StreamRepository.findById(client, existing.streamId)
-          if (!stream) {
-            throw new Error(`DM pair references missing stream ${existing.streamId}`)
-          }
-          return stream
-        }
-
-        const id = streamId()
-        const stream = await StreamRepository.insert(client, {
-          id,
-          workspaceId: params.workspaceId,
-          type: StreamTypes.DM,
-          visibility: Visibilities.PRIVATE,
-          createdBy: params.senderMemberId,
+    return withTransaction(this.pool, async (client) => {
+      const members = await MemberRepository.findByIds(client, [memberAId, memberBId])
+      const workspaceMemberIds = new Set(
+        members.filter((member) => member.workspaceId === params.workspaceId).map((member) => member.id)
+      )
+      if (!workspaceMemberIds.has(memberAId) || !workspaceMemberIds.has(memberBId)) {
+        throw new HttpError("Both members must belong to this workspace", {
+          status: 404,
+          code: "MEMBER_NOT_FOUND",
         })
+      }
 
-        await DmPairRepository.insert(client, {
-          streamId: id,
-          workspaceId: params.workspaceId,
-          memberOneId: memberAId,
-          memberTwoId: memberBId,
-        })
+      const { stream, created } = await StreamRepository.insertOrFindByUniquenessKey(client, {
+        id: streamId(),
+        workspaceId: params.workspaceId,
+        type: StreamTypes.DM,
+        visibility: Visibilities.PRIVATE,
+        uniquenessKey,
+        createdBy: params.memberOneId,
+      })
 
-        await StreamMemberRepository.insertMany(client, id, [memberAId, memberBId])
+      if (stream.type !== StreamTypes.DM) {
+        throw new Error(`Uniqueness key ${uniquenessKey} is already used by non-DM stream ${stream.id}`)
+      }
 
+      await StreamMemberRepository.insertMany(client, stream.id, [memberAId, memberBId])
+      await this.assertDmPairMembership(client, stream, memberAId, memberBId)
+
+      if (created) {
         await OutboxRepository.insert(client, "stream:created", {
           workspaceId: params.workspaceId,
           streamId: stream.id,
           stream,
           dmMemberIds: [memberAId, memberBId],
         })
-
-        return stream
-      })
-    } catch (error) {
-      if (!isUniqueViolation(error, "dm_pairs_workspace_member_pair_key")) {
-        throw error
       }
 
-      return withClient(this.pool, async (client) => {
-        const existing = await DmPairRepository.findByMembers(client, params.workspaceId, memberAId, memberBId)
-        if (!existing) {
-          throw error
-        }
-
-        const stream = await StreamRepository.findById(client, existing.streamId)
-        if (!stream) {
-          throw new Error(`DM pair references missing stream ${existing.streamId}`)
-        }
-
-        return stream
-      })
-    }
+      return stream
+    })
   }
 
   async create(params: CreateStreamParams): Promise<Stream> {

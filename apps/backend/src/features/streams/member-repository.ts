@@ -126,17 +126,14 @@ export const StreamMemberRepository = {
     const uniqueMemberIds = Array.from(new Set(memberIds))
     if (uniqueMemberIds.length === 0) return []
 
-    const inserted = await db.query<StreamMemberRow>(
-      `
+    const inserted = await db.query<StreamMemberRow>(sql`
       INSERT INTO stream_members (stream_id, member_id)
-      SELECT $1, members.member_id
-      FROM unnest($2::text[]) AS members(member_id)
+      SELECT ${streamId}, members.member_id
+      FROM unnest(${uniqueMemberIds}::text[]) AS members(member_id)
       ON CONFLICT (stream_id, member_id) DO NOTHING
       RETURNING stream_id, member_id, pinned, pinned_at, notification_level,
                 last_read_event_id, last_read_at, joined_at
-      `,
-      [streamId, uniqueMemberIds]
-    )
+    `)
 
     if (inserted.rows.length === uniqueMemberIds.length) {
       const insertedByMemberId = new Map(inserted.rows.map((row) => [row.member_id, mapRowToMember(row)]))

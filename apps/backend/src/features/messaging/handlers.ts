@@ -154,37 +154,12 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
       const data = result.data
       const attachmentIds = data.attachmentIds
 
-      let streamId: string
-      let stream: Awaited<ReturnType<typeof streamService.getStreamById>> | null = null
-      let isStreamMember = false
-
-      if ("dmMemberId" in data) {
-        stream = await streamService.findOrCreateDm({
-          workspaceId,
-          senderMemberId: memberId,
-          recipientMemberId: data.dmMemberId,
-        })
-        streamId = stream.id
-        isStreamMember = true
-      } else {
-        streamId = data.streamId
-        ;[stream, isStreamMember] = await Promise.all([
-          streamService.getStreamById(streamId),
-          streamService.isMember(streamId, memberId),
-        ])
-      }
-
-      if (!stream || stream.workspaceId !== workspaceId) {
-        return res.status(404).json({ error: "Stream not found" })
-      }
-
-      if (stream.archivedAt) {
-        return res.status(403).json({ error: "Cannot send messages to an archived stream" })
-      }
-
-      if (!isStreamMember) {
-        return res.status(403).json({ error: "Not a member of this stream" })
-      }
+      const stream = await streamService.resolveWritableMessageStream({
+        workspaceId,
+        memberId,
+        target: "dmMemberId" in data ? { dmMemberId: data.dmMemberId } : { streamId: data.streamId },
+      })
+      const streamId = stream.id
 
       // Check for slash command in first node BEFORE normalization (normalization loses command nodes)
       const originalContentJson = "contentJson" in data ? data.contentJson : undefined

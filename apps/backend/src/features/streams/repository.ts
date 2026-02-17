@@ -59,6 +59,7 @@ export interface InsertStreamParams {
   rootStreamId?: string
   companionMode?: CompanionMode
   companionPersonaId?: string
+  uniquenessKey?: string
   createdBy: string
 }
 
@@ -172,6 +173,15 @@ export const StreamRepository = {
     const result = await db.query<StreamRow>(
       sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams
           WHERE workspace_id = ${workspaceId} AND LOWER(slug) = LOWER(${slug})
+          LIMIT 1`
+    )
+    return result.rows[0] ? mapRowToStream(result.rows[0]) : null
+  },
+
+  async findByUniquenessKey(db: Querier, workspaceId: string, uniquenessKey: string): Promise<Stream | null> {
+    const result = await db.query<StreamRow>(
+      sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams
+          WHERE workspace_id = ${workspaceId} AND uniqueness_key = ${uniquenessKey}
           LIMIT 1`
     )
     return result.rows[0] ? mapRowToStream(result.rows[0]) : null
@@ -342,7 +352,7 @@ export const StreamRepository = {
       INSERT INTO streams (
         id, workspace_id, type, display_name, slug, description, visibility,
         parent_stream_id, parent_message_id, root_stream_id,
-        companion_mode, companion_persona_id, created_by
+        companion_mode, companion_persona_id, uniqueness_key, created_by
       ) VALUES (
         ${params.id},
         ${params.workspaceId},
@@ -356,11 +366,58 @@ export const StreamRepository = {
         ${params.rootStreamId ?? null},
         ${params.companionMode ?? "off"},
         ${params.companionPersonaId ?? null},
+        ${params.uniquenessKey ?? null},
         ${params.createdBy}
       )
       RETURNING ${sql.raw(SELECT_FIELDS)}
     `)
     return mapRowToStream(result.rows[0])
+  },
+
+  /**
+   * Atomically insert a stream with a uniqueness key or return the existing one.
+   * Works with the partial unique index on (workspace_id, uniqueness_key).
+   */
+  async insertOrFindByUniquenessKey(
+    db: Querier,
+    params: InsertStreamParams & { uniquenessKey: string }
+  ): Promise<{ stream: Stream; created: boolean }> {
+    const insertResult = await db.query<StreamRow>(sql`
+      INSERT INTO streams (
+        id, workspace_id, type, display_name, slug, description, visibility,
+        parent_stream_id, parent_message_id, root_stream_id,
+        companion_mode, companion_persona_id, uniqueness_key, created_by
+      ) VALUES (
+        ${params.id},
+        ${params.workspaceId},
+        ${params.type},
+        ${params.displayName ?? null},
+        ${params.slug ?? null},
+        ${params.description ?? null},
+        ${params.visibility ?? "private"},
+        ${params.parentStreamId ?? null},
+        ${params.parentMessageId ?? null},
+        ${params.rootStreamId ?? null},
+        ${params.companionMode ?? "off"},
+        ${params.companionPersonaId ?? null},
+        ${params.uniquenessKey},
+        ${params.createdBy}
+      )
+      ON CONFLICT (workspace_id, uniqueness_key)
+        WHERE uniqueness_key IS NOT NULL
+      DO NOTHING
+      RETURNING ${sql.raw(SELECT_FIELDS)}
+    `)
+
+    if (insertResult.rows.length > 0) {
+      return { stream: mapRowToStream(insertResult.rows[0]), created: true }
+    }
+
+    const existing = await this.findByUniquenessKey(db, params.workspaceId, params.uniquenessKey)
+    if (!existing) {
+      throw new Error("Stream uniqueness conflict but existing stream not found")
+    }
+    return { stream: existing, created: false }
   },
 
   /**
@@ -376,7 +433,7 @@ export const StreamRepository = {
       INSERT INTO streams (
         id, workspace_id, type, display_name, slug, description, visibility,
         parent_stream_id, parent_message_id, root_stream_id,
-        companion_mode, companion_persona_id, created_by
+        companion_mode, companion_persona_id, uniqueness_key, created_by
       ) VALUES (
         ${params.id},
         ${params.workspaceId},
@@ -390,6 +447,7 @@ export const StreamRepository = {
         ${params.rootStreamId ?? null},
         ${params.companionMode ?? "off"},
         ${params.companionPersonaId ?? null},
+        ${params.uniquenessKey ?? null},
         ${params.createdBy}
       )
       ON CONFLICT (parent_stream_id, parent_message_id)
