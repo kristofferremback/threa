@@ -86,44 +86,39 @@ export function MessageEditForm({
 
   return (
     <>
-      {/* Negative margins offset the padding so text stays in the same position as the rendered message */}
-      <div className="input-glow-wrapper -mx-3 -mt-2">
-        <div className="rounded-[16px] border border-input bg-card p-3">
-          <RichEditor
-            value={contentJson}
-            onChange={setContentJson}
-            onSubmit={handleSubmit}
-            placeholder="Edit message..."
-            autoFocus
-          />
-          <div className="flex items-center gap-2 mt-2 pt-2 border-t border-border/50">
-            <span className="text-[11px] text-muted-foreground/70 flex items-center gap-1.5 mr-auto">
-              <kbd className="kbd-hint">Esc</kbd> cancel
-              <span className="text-muted-foreground/30">·</span>
-              <kbd className="kbd-hint">↵</kbd> save
-            </span>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
-                  onClick={() => setDocEditorOpen(true)}
-                  disabled={isSaving}
-                >
-                  <Expand className="h-3.5 w-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="top">Expand editor</TooltipContent>
-            </Tooltip>
-            <Button variant="ghost" size="sm" className="h-7 px-2.5 text-xs" onClick={onCancel} disabled={isSaving}>
-              Cancel
+      <RichEditor
+        value={contentJson}
+        onChange={setContentJson}
+        onSubmit={handleSubmit}
+        placeholder="Edit message..."
+        autoFocus
+      />
+      <div className="flex items-center gap-1.5 mt-1">
+        <span className="text-[11px] text-muted-foreground/70 flex items-center gap-1.5 mr-auto">
+          <kbd className="kbd-hint">Esc</kbd> cancel
+          <span className="text-muted-foreground/30">·</span>
+          <kbd className="kbd-hint">↵</kbd> save
+        </span>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 shrink-0 text-muted-foreground hover:text-foreground"
+              onClick={() => setDocEditorOpen(true)}
+              disabled={isSaving}
+            >
+              <Expand className="h-3 w-3" />
             </Button>
-            <Button size="sm" className="h-7 px-3 text-xs" onClick={handleSubmit} disabled={isSaving}>
-              {isSaving ? "Saving..." : "Save"}
-            </Button>
-          </div>
-        </div>
+          </TooltipTrigger>
+          <TooltipContent side="top">Expand editor</TooltipContent>
+        </Tooltip>
+        <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={onCancel} disabled={isSaving}>
+          Cancel
+        </Button>
+        <Button size="sm" className="h-6 px-2.5 text-xs" onClick={handleSubmit} disabled={isSaving}>
+          {isSaving ? "Saving..." : "Save"}
+        </Button>
       </div>
       <DocumentEditorModal
         open={docEditorOpen}

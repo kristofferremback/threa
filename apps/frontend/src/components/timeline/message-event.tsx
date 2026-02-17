@@ -59,6 +59,7 @@ interface MessageLayoutProps {
   children?: ReactNode
   containerClassName?: string
   isHighlighted?: boolean
+  isEditing?: boolean
   containerRef?: React.RefObject<HTMLDivElement | null>
 }
 
@@ -76,6 +77,7 @@ function MessageLayout({
   children,
   containerClassName,
   isHighlighted,
+  isEditing,
   containerRef,
 }: MessageLayoutProps) {
   const isPersona = event.actorType === "persona"
@@ -92,6 +94,8 @@ function MessageLayout({
         // System messages get a subtle info-toned accent
         isSystem &&
           "bg-gradient-to-r from-blue-500/[0.04] to-transparent -mx-6 px-6 py-4 shadow-[inset_3px_0_0_hsl(210_100%_55%)]",
+        // Edit mode: subtle primary tint across the full message row
+        isEditing && !isPersona && !isSystem && "bg-primary/[0.04] -mx-6 px-6 py-4 rounded-lg",
         isHighlighted && "animate-highlight-flash",
         containerClassName
       )}
@@ -258,8 +262,10 @@ function SentMessageEvent({
             )}
           </>
         }
+        isEditing={isEditing}
         actions={
-          !hideActions && (
+          !hideActions &&
+          !isEditing && (
             <div className="opacity-0 group-hover:opacity-100 has-[[data-state=open]]:opacity-100 transition-opacity ml-auto flex items-center gap-1">
               <MessageContextMenu
                 context={{
