@@ -38,6 +38,7 @@ export type {
   UpdateStreamParams,
   StreamWithPreview,
   LastMessagePreview,
+  DmPeer,
 } from "./repository"
 
 export { StreamEventRepository } from "./event-repository"
@@ -45,9 +46,6 @@ export type { StreamEvent, InsertEventParams } from "./event-repository"
 
 export { StreamMemberRepository } from "./member-repository"
 export type { StreamMember, UpdateStreamMemberParams } from "./member-repository"
-
-export { DmPairRepository, normalizeDmMemberPair, buildDmUniquenessKey } from "./dm-repository"
-export type { DmPeer } from "./dm-repository"
 
 export { StreamStateRepository } from "./state-repository"
 export type { MemoStreamState, StreamReadyToProcess } from "./state-repository"

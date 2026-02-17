@@ -1,10 +1,9 @@
 import { z } from "zod"
 import { Pool } from "pg"
 import { withClient, withTransaction, type Querier } from "../../db"
-import { StreamRepository, Stream, StreamWithPreview, LastMessagePreview } from "./repository"
+import { StreamRepository, Stream, StreamWithPreview, LastMessagePreview, type DmPeer } from "./repository"
 import { StreamMemberRepository, StreamMember } from "./member-repository"
 import { StreamEventRepository } from "./event-repository"
-import { DmPairRepository, normalizeDmMemberPair, buildDmUniquenessKey, type DmPeer } from "./dm-repository"
 import { MessageRepository } from "../messaging"
 import { OutboxRepository } from "../../lib/outbox"
 import { streamId, eventId } from "../../lib/id"
@@ -28,6 +27,8 @@ import {
 } from "@threa/types"
 import { streamTypeSchema, visibilitySchema, companionModeSchema } from "../../lib/schemas"
 import { isAllowedLevel } from "./notification-config"
+
+const DM_UNIQUENESS_KEY_PREFIX = "dm"
 
 const createScratchpadParamsSchema = z.object({
   workspaceId: z.string(),
@@ -85,6 +86,17 @@ interface ResolveWritableMessageStreamParams {
   workspaceId: string
   memberId: string
   target: { streamId: string } | { dmMemberId: string }
+}
+
+function normalizeDmMemberPair(memberOneId: string, memberTwoId: string): { memberAId: string; memberBId: string } {
+  return memberOneId < memberTwoId
+    ? { memberAId: memberOneId, memberBId: memberTwoId }
+    : { memberAId: memberTwoId, memberBId: memberOneId }
+}
+
+function buildDmUniquenessKey(memberOneId: string, memberTwoId: string): string {
+  const { memberAId, memberBId } = normalizeDmMemberPair(memberOneId, memberTwoId)
+  return `${DM_UNIQUENESS_KEY_PREFIX}:${memberAId}:${memberBId}`
 }
 
 export class StreamService {
@@ -219,7 +231,7 @@ export class StreamService {
   }
 
   async listDmPeers(workspaceId: string, memberId: string): Promise<DmPeer[]> {
-    return DmPairRepository.listPeersForMember(this.pool, workspaceId, memberId)
+    return StreamRepository.listDmPeersForMember(this.pool, workspaceId, memberId)
   }
 
   async resolveWritableMessageStream(params: ResolveWritableMessageStreamParams): Promise<Stream> {
