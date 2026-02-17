@@ -132,6 +132,10 @@ export function useSocketEvents(workspaceId: string) {
   const currentStreamIdRef = useRef(currentStreamId)
   currentStreamIdRef.current = currentStreamId
 
+  // Keep user in a ref so handler effects don't churn when auth hydration settles.
+  const userRef = useRef(user)
+  userRef.current = user
+
   // Subscribe to stream memberships so we can join/leave stream rooms reactively
   const { data: memberStreamIds } = useQuery({
     queryKey: workspaceKeys.bootstrap(workspaceId),
@@ -187,7 +191,8 @@ export function useSocketEvents(workspaceId: string) {
       // Add to workspace bootstrap cache (sidebar)
       const applied = updateBootstrapOrInvalidate(queryClient, workspaceId, (old) => {
         const streamExists = old.streams.some((s) => s.id === payload.stream.id)
-        const currentMember = user && old.members?.find((m: WorkspaceMember) => m.userId === user.id)
+        const currentUser = userRef.current
+        const currentMember = currentUser && old.members?.find((m: WorkspaceMember) => m.userId === currentUser.id)
         const isCreator = Boolean(currentMember && payload.stream.createdBy === currentMember.id)
         const hasMembership = old.streamMemberships.some((m: StreamMember) => m.streamId === payload.stream.id)
         const shouldAddMembership = isCreator && !hasMembership
@@ -528,7 +533,8 @@ export function useSocketEvents(workspaceId: string) {
         // Determine if we should increment unread count:
         // - Not for own messages (authorId is now a memberId — match via member.userId)
         // - Not when currently viewing the stream
-        const currentMember = user && old.members?.find((m: WorkspaceMember) => m.userId === user.id)
+        const currentUser = userRef.current
+        const currentMember = currentUser && old.members?.find((m: WorkspaceMember) => m.userId === currentUser.id)
         const isOwnMessage = currentMember && payload.authorId === currentMember.id
         const shouldIncrementUnread = !isOwnMessage && !isViewingStream
 
@@ -615,7 +621,8 @@ export function useSocketEvents(workspaceId: string) {
 
         // If the added member is the current user, add to streamMemberships + sidebar
         updateBootstrapOrInvalidate(queryClient, workspaceId, (old) => {
-          const currentMember = user && old.members?.find((m: WorkspaceMember) => m.userId === user.id)
+          const currentUser = userRef.current
+          const currentMember = currentUser && old.members?.find((m: WorkspaceMember) => m.userId === currentUser.id)
           if (!currentMember || payload.memberId !== currentMember.id) return old
 
           const membershipExists = old.streamMemberships.some((m: StreamMember) => m.streamId === payload.streamId)
@@ -665,7 +672,8 @@ export function useSocketEvents(workspaceId: string) {
       // and remove private streams from sidebar (no longer visible)
       queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
         if (!old) return old
-        const currentMember = user && old.members?.find((m: WorkspaceMember) => m.userId === user.id)
+        const currentUser = userRef.current
+        const currentMember = currentUser && old.members?.find((m: WorkspaceMember) => m.userId === currentUser.id)
         if (!currentMember || payload.memberId !== currentMember.id) return old
 
         const removedStream = old.streams?.find((s) => s.id === payload.streamId)
@@ -718,7 +726,8 @@ export function useSocketEvents(workspaceId: string) {
 
     return () => {
       abortController.abort()
-      socket.emit("leave", `ws:${workspaceId}`)
+      // Do NOT leave workspace room here. Multiple hooks perform ws joins and Socket.io
+      // rooms are not reference-counted; one leave can drop member-scoped delivery.
       socket.off("stream:created")
       socket.off("stream:updated")
       socket.off("stream:archived")
@@ -735,5 +744,5 @@ export function useSocketEvents(workspaceId: string) {
       socket.off("user_preferences:updated")
       socket.off("activity:created")
     }
-  }, [socket, workspaceId, queryClient, user, reconnectCount])
+  }, [socket, workspaceId, queryClient, reconnectCount])
 }
