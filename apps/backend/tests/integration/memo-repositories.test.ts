@@ -18,11 +18,12 @@ import { PendingItemRepository } from "../../src/features/memos"
 import { StreamStateRepository } from "../../src/features/streams"
 import { MemoRepository } from "../../src/features/memos"
 import { setupTestDatabase } from "./setup"
-import { userId, workspaceId, streamId, memoId, pendingItemId, conversationId } from "../../src/lib/id"
+import { userId, memberId, workspaceId, streamId, memoId, pendingItemId, conversationId } from "../../src/lib/id"
 
 describe("Memo Repositories", () => {
   let pool: Pool
   let testUserId: string
+  let testMemberId: string
   let testWorkspaceId: string
   let testStreamId: string
 
@@ -46,14 +47,14 @@ describe("Memo Repositories", () => {
         slug: `memo-test-${testWorkspaceId}`,
         createdBy: testUserId,
       })
-      await addTestMember(client, testWorkspaceId, testUserId)
+      testMemberId = (await addTestMember(client, testWorkspaceId, testUserId)).id
       await StreamRepository.insert(client, {
         id: testStreamId,
         workspaceId: testWorkspaceId,
         type: "scratchpad",
         visibility: "private",
         companionMode: "off",
-        createdBy: testUserId,
+        createdBy: testMemberId,
       })
     })
   })
@@ -177,7 +178,7 @@ describe("Memo Repositories", () => {
             type: "channel",
             visibility: "public",
             companionMode: "off",
-            createdBy: testUserId,
+            createdBy: testMemberId,
           })
 
           await PendingItemRepository.queue(client, [
@@ -218,7 +219,7 @@ describe("Memo Repositories", () => {
             type: "channel",
             visibility: "public",
             companionMode: "off",
-            createdBy: testUserId,
+            createdBy: testMemberId,
           })
 
           // Queue 5 items
@@ -288,7 +289,7 @@ describe("Memo Repositories", () => {
             type: "channel",
             visibility: "public",
             companionMode: "off",
-            createdBy: testUserId,
+            createdBy: testMemberId,
           })
           await StreamStateRepository.upsertActivity(client, testWorkspaceId, localStreamId)
         })
@@ -312,7 +313,7 @@ describe("Memo Repositories", () => {
             type: "channel",
             visibility: "public",
             companionMode: "off",
-            createdBy: testUserId,
+            createdBy: testMemberId,
           })
           await StreamStateRepository.upsertActivity(client, testWorkspaceId, localStreamId)
         })
@@ -346,7 +347,7 @@ describe("Memo Repositories", () => {
             type: "channel",
             visibility: "public",
             companionMode: "off",
-            createdBy: testUserId,
+            createdBy: testMemberId,
           })
           await StreamStateRepository.markProcessed(client, testWorkspaceId, localStreamId)
         })
@@ -370,7 +371,7 @@ describe("Memo Repositories", () => {
             type: "channel",
             visibility: "public",
             companionMode: "off",
-            createdBy: testUserId,
+            createdBy: testMemberId,
           })
 
           // Queue a pending item (required for stream to appear)
@@ -402,7 +403,7 @@ describe("Memo Repositories", () => {
             type: "channel",
             visibility: "public",
             companionMode: "off",
-            createdBy: testUserId,
+            createdBy: testMemberId,
           })
 
           // Mark as processed (simulates recent processing)
@@ -444,7 +445,7 @@ describe("Memo Repositories", () => {
             type: "channel",
             visibility: "public",
             companionMode: "off",
-            createdBy: testUserId,
+            createdBy: testMemberId,
           })
 
           // Mark as just processed
@@ -493,7 +494,7 @@ describe("Memo Repositories", () => {
             type: "channel",
             visibility: "public",
             companionMode: "off",
-            createdBy: testUserId,
+            createdBy: testMemberId,
           })
 
           // Set lastProcessedAt to 10 seconds ago (use short cap for test)
@@ -541,7 +542,7 @@ describe("Memo Repositories", () => {
             type: "channel",
             visibility: "public",
             companionMode: "off",
-            createdBy: testUserId,
+            createdBy: testMemberId,
           })
 
           // Only create state, no pending items
@@ -573,7 +574,7 @@ describe("Memo Repositories", () => {
             abstract: "This is a test abstract for the memo.",
             keyPoints: ["Point 1", "Point 2"],
             sourceMessageIds: [sourceMessageId],
-            participantIds: [testUserId],
+            participantIds: [testMemberId],
             knowledgeType: "decision",
             tags: ["test", "memo"],
             status: "active",
@@ -611,7 +612,7 @@ describe("Memo Repositories", () => {
             abstract: "Summary of the conversation.",
             keyPoints: [],
             sourceMessageIds: ["msg1", "msg2"],
-            participantIds: [testUserId],
+            participantIds: [testMemberId],
             knowledgeType: "learning",
             tags: [],
             status: "active",
@@ -769,6 +770,7 @@ describe("Memo Repositories", () => {
         const localWorkspaceId = workspaceId()
         const localStreamId = streamId()
         const localUserId = userId()
+        let localMemberId = ""
 
         await withTransaction(pool, async (client) => {
           await UserRepository.insert(client, {
@@ -783,13 +785,14 @@ describe("Memo Repositories", () => {
             slug: `tags-test-${localWorkspaceId}`,
             createdBy: localUserId,
           })
+          localMemberId = (await addTestMember(client, localWorkspaceId, localUserId)).id
           await StreamRepository.insert(client, {
             id: localStreamId,
             workspaceId: localWorkspaceId,
             type: "scratchpad",
             visibility: "private",
             companionMode: "off",
-            createdBy: localUserId,
+            createdBy: localMemberId,
           })
 
           await MemoRepository.insert(client, {
@@ -850,7 +853,7 @@ describe("Memo Repositories", () => {
             type: "channel",
             visibility: "public",
             companionMode: "off",
-            createdBy: testUserId,
+            createdBy: testMemberId,
           })
 
           await ConversationRepository.insert(client, {
@@ -921,7 +924,7 @@ describe("Memo Repositories", () => {
             type: "channel",
             visibility: "public",
             companionMode: "off",
-            createdBy: testUserId,
+            createdBy: testMemberId,
           })
 
           for (let i = 0; i < 5; i++) {

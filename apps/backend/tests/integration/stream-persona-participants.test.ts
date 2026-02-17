@@ -14,7 +14,7 @@ import { StreamPersonaParticipantRepository } from "../../src/features/agents"
 import { SearchRepository } from "../../src/features/search"
 import { UserRepository } from "../../src/auth/user-repository"
 import { WorkspaceRepository } from "../../src/features/workspaces"
-import { streamId, userId, workspaceId, personaId } from "../../src/lib/id"
+import { streamId, userId, memberId, workspaceId, personaId } from "../../src/lib/id"
 import { addTestMember, setupTestDatabase, testMessageContent } from "./setup"
 import { Visibilities } from "@threa/types"
 
@@ -51,7 +51,7 @@ describe("Stream Persona Participants", () => {
       await pool.query(
         `INSERT INTO streams (id, workspace_id, type, visibility, created_by)
          VALUES ($1, $2, 'scratchpad', 'private', $3)`,
-        [testStreamId, testWorkspaceId, userId()]
+        [testStreamId, testWorkspaceId, memberId()]
       )
 
       // Send a message as persona
@@ -75,20 +75,20 @@ describe("Stream Persona Participants", () => {
     test("should NOT record participation for user messages", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = userId()
+      const testMemberId = memberId()
 
       // Create a stream first
       await pool.query(
         `INSERT INTO streams (id, workspace_id, type, visibility, created_by)
          VALUES ($1, $2, 'scratchpad', 'private', $3)`,
-        [testStreamId, testWorkspaceId, testUserId]
+        [testStreamId, testWorkspaceId, testMemberId]
       )
 
       // Send a message as user
       await eventService.createMessage({
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
-        authorId: testUserId,
+        authorId: testMemberId,
         authorType: "member",
         ...testMessageContent("Hello from user!"),
       })
@@ -107,7 +107,7 @@ describe("Stream Persona Participants", () => {
       await pool.query(
         `INSERT INTO streams (id, workspace_id, type, visibility, created_by)
          VALUES ($1, $2, 'scratchpad', 'private', $3)`,
-        [testStreamId, testWorkspaceId, userId()]
+        [testStreamId, testWorkspaceId, memberId()]
       )
 
       // Send multiple messages as the same persona
@@ -146,7 +146,7 @@ describe("Stream Persona Participants", () => {
     test("should find all streams where a persona has participated", async () => {
       const testWorkspaceId = workspaceId()
       const testPersonaId = personaId()
-      const creatorId = userId()
+      const creatorId = memberId()
 
       // Create 3 streams
       const stream1 = streamId()
@@ -190,7 +190,7 @@ describe("Stream Persona Participants", () => {
       const testWorkspaceId = workspaceId()
       const persona1 = personaId()
       const persona2 = personaId()
-      const creatorId = userId()
+      const creatorId = memberId()
 
       // Create 3 streams
       const stream1 = streamId()

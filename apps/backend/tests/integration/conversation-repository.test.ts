@@ -17,12 +17,13 @@ import { StreamRepository } from "../../src/features/streams"
 import { MessageRepository } from "../../src/features/messaging"
 import { ConversationRepository, type Conversation } from "../../src/features/conversations"
 import { setupTestDatabase, testMessageContent } from "./setup"
-import { userId, workspaceId, streamId, messageId, conversationId } from "../../src/lib/id"
+import { userId, memberId, workspaceId, streamId, messageId, conversationId } from "../../src/lib/id"
 import { ConversationStatuses } from "@threa/types"
 
 describe("ConversationRepository", () => {
   let pool: Pool
   let testUserId: string
+  let testMemberId: string
   let testWorkspaceId: string
   let testStreamId: string
 
@@ -47,14 +48,14 @@ describe("ConversationRepository", () => {
         slug: `test-ws-${testWorkspaceId}`,
         createdBy: testUserId,
       })
-      await addTestMember(client, testWorkspaceId, testUserId)
+      testMemberId = (await addTestMember(client, testWorkspaceId, testUserId)).id
       await StreamRepository.insert(client, {
         id: testStreamId,
         workspaceId: testWorkspaceId,
         type: "scratchpad",
         visibility: "private",
         companionMode: "off",
-        createdBy: testUserId,
+        createdBy: testMemberId,
       })
     })
   })
@@ -96,7 +97,7 @@ describe("ConversationRepository", () => {
           id: msgId,
           streamId: testStreamId,
           sequence: BigInt(1),
-          authorId: testUserId,
+          authorId: testMemberId,
           authorType: "member",
           ...testMessageContent("Test message"),
         })
@@ -106,7 +107,7 @@ describe("ConversationRepository", () => {
           streamId: testStreamId,
           workspaceId: testWorkspaceId,
           messageIds: [msgId],
-          participantIds: [testUserId],
+          participantIds: [testMemberId],
           topicSummary: "Discussion about testing",
           completenessScore: 3,
           confidence: 0.85,
@@ -116,7 +117,7 @@ describe("ConversationRepository", () => {
 
       expect(conversation.id).toBe(convId)
       expect(conversation.messageIds).toEqual([msgId])
-      expect(conversation.participantIds).toEqual([testUserId])
+      expect(conversation.participantIds).toEqual([testMemberId])
       expect(conversation.topicSummary).toBe("Discussion about testing")
       expect(conversation.completenessScore).toBe(3)
       expect(conversation.confidence).toBe(0.85)
@@ -169,7 +170,7 @@ describe("ConversationRepository", () => {
           type: "channel",
           visibility: "public",
           companionMode: "off",
-          createdBy: testUserId,
+          createdBy: testMemberId,
         })
       })
 
@@ -218,7 +219,7 @@ describe("ConversationRepository", () => {
           type: "scratchpad",
           visibility: "private",
           companionMode: "off",
-          createdBy: testUserId,
+          createdBy: testMemberId,
         })
 
         await ConversationRepository.insert(client, {
@@ -261,7 +262,7 @@ describe("ConversationRepository", () => {
           type: "scratchpad",
           visibility: "private",
           companionMode: "off",
-          createdBy: testUserId,
+          createdBy: testMemberId,
         })
 
         await ConversationRepository.insert(client, {
@@ -299,7 +300,7 @@ describe("ConversationRepository", () => {
           id: msgId,
           streamId: testStreamId,
           sequence: BigInt(100),
-          authorId: testUserId,
+          authorId: testMemberId,
           authorType: "member",
           ...testMessageContent("Message in conversation"),
         })
@@ -417,7 +418,7 @@ describe("ConversationRepository", () => {
           id: msg1Id,
           streamId: testStreamId,
           sequence: BigInt(200),
-          authorId: testUserId,
+          authorId: testMemberId,
           authorType: "member",
           ...testMessageContent("First message"),
         })
@@ -426,7 +427,7 @@ describe("ConversationRepository", () => {
           id: msg2Id,
           streamId: testStreamId,
           sequence: BigInt(201),
-          authorId: testUserId,
+          authorId: testMemberId,
           authorType: "member",
           ...testMessageContent("Second message"),
         })
@@ -458,30 +459,32 @@ describe("ConversationRepository", () => {
   describe("addParticipant", () => {
     test("adds new participant to conversation", async () => {
       const convId = conversationId()
-      const user2Id = userId()
+      const user2UserId = userId()
+      let user2MemberId = ""
 
       await withTransaction(pool, async (client) => {
         await UserRepository.insert(client, {
-          id: user2Id,
-          email: `conv-participant-${user2Id}@test.com`,
+          id: user2UserId,
+          email: `conv-participant-${user2UserId}@test.com`,
           name: "Second User",
-          workosUserId: `workos_${user2Id}`,
+          workosUserId: `workos_${user2UserId}`,
         })
+        user2MemberId = (await addTestMember(client, testWorkspaceId, user2UserId)).id
 
         await ConversationRepository.insert(client, {
           id: convId,
           streamId: testStreamId,
           workspaceId: testWorkspaceId,
-          participantIds: [testUserId],
+          participantIds: [testMemberId],
         })
       })
 
       const updated = await withTransaction(pool, async (client) => {
-        return ConversationRepository.addParticipant(client, convId, user2Id)
+        return ConversationRepository.addParticipant(client, convId, user2MemberId)
       })
 
-      expect(updated?.participantIds).toContain(testUserId)
-      expect(updated?.participantIds).toContain(user2Id)
+      expect(updated?.participantIds).toContain(testMemberId)
+      expect(updated?.participantIds).toContain(user2MemberId)
     })
 
     test("does not duplicate existing participant", async () => {
@@ -492,16 +495,16 @@ describe("ConversationRepository", () => {
           id: convId,
           streamId: testStreamId,
           workspaceId: testWorkspaceId,
-          participantIds: [testUserId],
+          participantIds: [testMemberId],
         })
       })
 
       const updated = await withTransaction(pool, async (client) => {
-        return ConversationRepository.addParticipant(client, convId, testUserId)
+        return ConversationRepository.addParticipant(client, convId, testMemberId)
       })
 
       // Should still only have one instance of the user
-      expect(updated?.participantIds.filter((id) => id === testUserId).length).toBe(1)
+      expect(updated?.participantIds.filter((id) => id === testMemberId).length).toBe(1)
     })
   })
 
