@@ -192,6 +192,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.post("/api/workspaces/:workspaceId/messages", ...authed, rateLimits.messageCreate, message.create)
   app.patch("/api/workspaces/:workspaceId/messages/:messageId", ...authed, message.update)
   app.delete("/api/workspaces/:workspaceId/messages/:messageId", ...authed, message.delete)
+  app.get("/api/workspaces/:workspaceId/messages/:messageId/versions", ...authed, message.getHistory)
   app.post("/api/workspaces/:workspaceId/messages/:messageId/reactions", ...authed, message.addReaction)
   app.delete("/api/workspaces/:workspaceId/messages/:messageId/reactions/:emoji", ...authed, message.removeReaction)
 

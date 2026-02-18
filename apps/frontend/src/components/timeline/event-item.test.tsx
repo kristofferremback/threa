@@ -91,15 +91,15 @@ describe("EventItem", () => {
       expect(screen.getByTestId("message-event")).toBeInTheDocument()
     })
 
-    it("should render MessageEvent for message_edited events", () => {
+    it("should render deleted state when message_created has deletedAt", () => {
       const event: StreamEvent = {
-        ...createMessageEvent("msg_123", "Edited"),
-        eventType: "message_edited",
+        ...createMessageEvent("msg_123", "Deleted message"),
+        payload: { messageId: "msg_123", contentMarkdown: "Deleted message", deletedAt: new Date().toISOString() },
       }
 
       render(<EventItem event={event} workspaceId={workspaceId} streamId={streamId} />)
 
-      expect(screen.getByTestId("message-event")).toBeInTheDocument()
+      expect(screen.getByText("This message was deleted")).toBeInTheDocument()
     })
 
     it("should render MessageEvent for companion_response events", () => {

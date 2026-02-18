@@ -1,5 +1,5 @@
 import { Pool } from "pg"
-import { withTransaction } from "../../db"
+import { withTransaction, withClient } from "../../db"
 import { StreamEventRepository, StreamEvent } from "../streams"
 import { StreamRepository } from "../streams"
 import { StreamMemberRepository } from "../streams"
@@ -7,7 +7,8 @@ import { MessageRepository, Message } from "./repository"
 import { AttachmentRepository } from "../attachments"
 import { OutboxRepository } from "../../lib/outbox"
 import { StreamPersonaParticipantRepository } from "../agents"
-import { eventId, messageId } from "../../lib/id"
+import { eventId, messageId, messageVersionId } from "../../lib/id"
+import { MessageVersionRepository, type MessageVersion } from "./version-repository"
 import { serializeBigInt } from "../../lib/serialization"
 import { messagesTotal } from "../../lib/observability"
 import {
@@ -245,7 +246,20 @@ export class EventService {
 
   async editMessage(params: EditMessageParams): Promise<Message | null> {
     return withTransaction(this.pool, async (client) => {
-      // 1. Append event
+      // Returns null if the message was concurrently deleted — prevents phantom edits
+      const existing = await MessageRepository.findByIdForUpdate(client, params.messageId)
+      if (!existing || existing.deletedAt) return null
+
+      // 1. Snapshot pre-edit content as a version record
+      await MessageVersionRepository.insert(client, {
+        id: messageVersionId(),
+        messageId: params.messageId,
+        contentJson: existing.contentJson,
+        contentMarkdown: existing.contentMarkdown,
+        editedBy: params.actorId,
+      })
+
+      // 2. Append event
       const event = await StreamEventRepository.insert(client, {
         id: eventId(),
         streamId: params.streamId,
@@ -259,7 +273,7 @@ export class EventService {
         actorType: "member",
       })
 
-      // 2. Update projection
+      // 3. Update projection
       const message = await MessageRepository.updateContent(
         client,
         params.messageId,
@@ -268,7 +282,7 @@ export class EventService {
       )
 
       if (message) {
-        // 3. Publish to outbox
+        // 4. Publish to outbox
         await OutboxRepository.insert(client, "message:edited", {
           workspaceId: params.workspaceId,
           streamId: params.streamId,
@@ -282,6 +296,9 @@ export class EventService {
 
   async deleteMessage(params: DeleteMessageParams): Promise<Message | null> {
     return withTransaction(this.pool, async (client) => {
+      const existing = await MessageRepository.findByIdForUpdate(client, params.messageId)
+      if (!existing || existing.deletedAt) return null
+
       // 1. Append event
       await StreamEventRepository.insert(client, {
         id: eventId(),
@@ -303,6 +320,7 @@ export class EventService {
           workspaceId: params.workspaceId,
           streamId: params.streamId,
           messageId: params.messageId,
+          deletedAt: message.deletedAt!.toISOString(),
         })
 
         // 4. If this is a thread, update parent message's reply count
@@ -427,5 +445,61 @@ export class EventService {
    */
   async countMessagesByStreams(streamIds: string[]): Promise<Map<string, number>> {
     return StreamEventRepository.countMessagesByStreamBatch(this.pool, streamIds)
+  }
+
+  async getMessageVersions(messageId: string): Promise<MessageVersion[]> {
+    return MessageVersionRepository.listByMessageId(this.pool, messageId)
+  }
+
+  async getMessagesByIds(messageIds: string[]): Promise<Map<string, Message>> {
+    return withClient(this.pool, (client) => MessageRepository.findByIds(client, messageIds))
+  }
+
+  /**
+   * Enrich bootstrap events with projection state for display.
+   *
+   * Filters out operational events (message_edited, message_deleted) that are
+   * redundant after enrichment, then injects editedAt/deletedAt/contentJson/contentMarkdown
+   * from the messages projection and threadId/replyCount from the thread data map into
+   * each message_created event's payload.
+   */
+  async enrichBootstrapEvents(
+    events: StreamEvent[],
+    threadDataMap: Map<string, { threadId: string; replyCount: number }>
+  ): Promise<StreamEvent[]> {
+    const messageCreatedEvents = events.filter((e) => e.eventType === "message_created")
+    const messageIds = messageCreatedEvents.map((e) => (e.payload as MessageCreatedPayload).messageId)
+
+    // Only query the messages projection when edits or deletes exist in the event window.
+    // Operational events always have later sequences than the message_created they modify,
+    // so if a creation is in the window, any corresponding edit/delete is too.
+    const hasModifications = events.some((e) => e.eventType === "message_edited" || e.eventType === "message_deleted")
+    const messagesMap =
+      hasModifications && messageIds.length > 0 ? await this.getMessagesByIds(messageIds) : new Map<string, Message>()
+
+    return events
+      .filter((e) => e.eventType !== "message_edited" && e.eventType !== "message_deleted")
+      .map((event) => {
+        if (event.eventType !== "message_created") return event
+        const payload = event.payload as MessageCreatedPayload
+        const threadData = threadDataMap.get(payload.messageId)
+        const message = messagesMap.get(payload.messageId)
+
+        const enrichments: Record<string, unknown> = {}
+        if (threadData) {
+          enrichments.threadId = threadData.threadId
+          enrichments.replyCount = threadData.replyCount
+        }
+        if (message?.deletedAt) {
+          enrichments.deletedAt = message.deletedAt.toISOString()
+        } else if (message?.editedAt) {
+          enrichments.editedAt = message.editedAt.toISOString()
+          enrichments.contentJson = message.contentJson
+          enrichments.contentMarkdown = message.contentMarkdown
+        }
+
+        if (Object.keys(enrichments).length === 0) return event
+        return { ...event, payload: { ...payload, ...enrichments } }
+      })
   }
 }

@@ -84,4 +84,38 @@ describe("MessageContextMenu", () => {
 
     expect(screen.queryByText("Show trace and sources")).not.toBeInTheDocument()
   })
+
+  it("should show edit and delete actions for own messages", async () => {
+    const user = userEvent.setup()
+    render(
+      <MessageContextMenu
+        context={createContext({
+          authorId: "member_1",
+          currentMemberId: "member_1",
+        })}
+      />
+    )
+
+    await user.click(screen.getByRole("button", { name: "Message actions" }))
+
+    expect(screen.getByText("Edit message")).toBeInTheDocument()
+    expect(screen.getByText("Delete message")).toBeInTheDocument()
+  })
+
+  it("should not show edit or delete actions for other members' messages", async () => {
+    const user = userEvent.setup()
+    render(
+      <MessageContextMenu
+        context={createContext({
+          authorId: "member_other",
+          currentMemberId: "member_1",
+        })}
+      />
+    )
+
+    await user.click(screen.getByRole("button", { name: "Message actions" }))
+
+    expect(screen.queryByText("Edit message")).not.toBeInTheDocument()
+    expect(screen.queryByText("Delete message")).not.toBeInTheDocument()
+  })
 })

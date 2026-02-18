@@ -36,6 +36,7 @@ export interface MessageService {
   delete: typeof messagesApi.delete
   addReaction: typeof messagesApi.addReaction
   removeReaction: typeof messagesApi.removeReaction
+  getVersions: typeof messagesApi.getVersions
 }
 
 export interface ConversationService {

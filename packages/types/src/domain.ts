@@ -151,6 +151,16 @@ export interface Message {
   createdAt: string
 }
 
+export interface MessageVersion {
+  id: string
+  messageId: string
+  versionNumber: number
+  contentJson: ThreaDocument
+  contentMarkdown: string
+  editedBy: string
+  createdAt: string
+}
+
 export interface StreamEvent {
   id: string
   streamId: string

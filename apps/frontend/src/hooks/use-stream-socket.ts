@@ -17,6 +17,7 @@ interface MessageDeletedPayload {
   workspaceId: string
   streamId: string
   messageId: string
+  deletedAt: string
 }
 
 interface ReactionPayload {
@@ -164,19 +165,50 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
       await db.events.put({ ...payload.event, _cachedAt: Date.now() })
     }
 
+    // Reads the updated message_created event from the query cache and persists it to IndexedDB.
+    // Must be called after the cache mutation so the persisted snapshot reflects the latest state.
+    const persistUpdatedMessageEvent = async (messageId: string) => {
+      const bootstrap = queryClient.getQueryData(streamKeys.bootstrap(workspaceId, streamId)) as
+        | StreamBootstrap
+        | undefined
+      const updatedEvent = bootstrap?.events.find((e) => {
+        if (e.eventType !== "message_created") return false
+        return (e.payload as { messageId: string }).messageId === messageId
+      })
+      if (updatedEvent) {
+        await db.events.put({ ...updatedEvent, _cachedAt: Date.now() })
+      }
+    }
+
     const handleMessageEdited = async (payload: MessageEventPayload) => {
       if (payload.streamId !== streamId) return
+
+      const editEvent = payload.event
+      const editPayload = editEvent.payload as { messageId: string; contentJson: unknown; contentMarkdown: string }
 
       queryClient.setQueryData(streamKeys.bootstrap(workspaceId, streamId), (old: unknown) => {
         if (!old || typeof old !== "object") return old
         const bootstrap = old as StreamBootstrap
         return {
           ...bootstrap,
-          events: [...bootstrap.events, payload.event],
+          events: bootstrap.events.map((e) => {
+            if (e.eventType !== "message_created") return e
+            const eventPayload = e.payload as { messageId: string }
+            if (eventPayload.messageId !== editPayload.messageId) return e
+            return {
+              ...e,
+              payload: {
+                ...eventPayload,
+                contentJson: editPayload.contentJson,
+                contentMarkdown: editPayload.contentMarkdown,
+                editedAt: editEvent.createdAt,
+              },
+            }
+          }),
         }
       })
 
-      await db.events.put({ ...payload.event, _cachedAt: Date.now() })
+      await persistUpdatedMessageEvent(editPayload.messageId)
     }
 
     const handleMessageDeleted = async (payload: MessageDeletedPayload) => {
@@ -191,10 +223,12 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
             if (e.eventType !== "message_created") return e
             const eventPayload = e.payload as { messageId: string }
             if (eventPayload.messageId !== payload.messageId) return e
-            return { ...e, payload: { ...eventPayload, deletedAt: new Date().toISOString() } }
+            return { ...e, payload: { ...eventPayload, deletedAt: payload.deletedAt } }
           }),
         }
       })
+
+      await persistUpdatedMessageEvent(payload.messageId)
     }
 
     const handleReactionAdded = async (payload: ReactionPayload) => {

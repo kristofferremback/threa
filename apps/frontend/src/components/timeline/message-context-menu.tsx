@@ -113,17 +113,21 @@ function ActionItem({
     )
   }
 
+  const isDestructive = action.variant === "destructive"
+
   return (
     <>
       {separator}
       <DropdownMenuItem
-        className="gap-2 cursor-pointer"
+        className={
+          isDestructive ? "gap-2 cursor-pointer text-destructive focus:text-destructive" : "gap-2 cursor-pointer"
+        }
         onSelect={() => {
           action.action?.(context)
           onClose()
         }}
       >
-        <Icon className="h-4 w-4 text-muted-foreground" />
+        <Icon className={isDestructive ? "h-4 w-4" : "h-4 w-4 text-muted-foreground"} />
         {action.label}
       </DropdownMenuItem>
     </>

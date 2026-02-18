@@ -1,7 +1,7 @@
 import { z } from "zod"
 import type { Request, Response } from "express"
 import type { StreamService } from "./service"
-import type { EventService, MessageCreatedPayload } from "../messaging"
+import type { EventService } from "../messaging"
 import type { ActivityService } from "../activity"
 import type { StreamEvent } from "./event-repository"
 import type { EventType, StreamType } from "@threa/types"
@@ -394,17 +394,7 @@ export function createStreamHandlers({ streamService, eventService, activityServ
         streamService.getThreadsWithReplyCounts(streamId),
       ])
 
-      // Enrich message events with threadId and replyCount (if the message has a thread)
-      const enrichedEvents = events.map((event) => {
-        if (event.eventType !== "message_created") return event
-        const payload = event.payload as MessageCreatedPayload
-        const threadData = threadDataMap.get(payload.messageId)
-        if (!threadData) return event
-        return {
-          ...event,
-          payload: { ...payload, threadId: threadData.threadId, replyCount: threadData.replyCount },
-        }
-      })
+      const enrichedEvents = await eventService.enrichBootstrapEvents(events, threadDataMap)
 
       // Get the latest sequence number from the most recent event
       const latestSequence = events.length > 0 ? events[events.length - 1].sequence : "0"

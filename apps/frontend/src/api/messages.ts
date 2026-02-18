@@ -1,7 +1,17 @@
 import { api } from "./client"
-import type { Message, CreateMessageInput, CreateDmMessageInput, UpdateMessageInput } from "@threa/types"
+import type {
+  Message,
+  MessageVersion,
+  CreateMessageInput,
+  CreateDmMessageInput,
+  UpdateMessageInput,
+} from "@threa/types"
 
 export type { CreateMessageInput, CreateDmMessageInput, UpdateMessageInput }
+
+export const messageKeys = {
+  versions: (workspaceId: string, messageId: string) => ["messageVersions", workspaceId, messageId] as const,
+}
 
 export const messagesApi = {
   async create(workspaceId: string, streamId: string, data: CreateMessageInput): Promise<Message> {
@@ -36,5 +46,12 @@ export const messagesApi = {
 
   removeReaction(workspaceId: string, messageId: string, emoji: string): Promise<void> {
     return api.delete(`/api/workspaces/${workspaceId}/messages/${messageId}/reactions/${emoji}`)
+  },
+
+  async getVersions(workspaceId: string, messageId: string): Promise<MessageVersion[]> {
+    const res = await api.get<{ versions: MessageVersion[] }>(
+      `/api/workspaces/${workspaceId}/messages/${messageId}/versions`
+    )
+    return res.versions
   },
 }

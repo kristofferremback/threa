@@ -2,6 +2,10 @@
 export { MessageRepository } from "./repository"
 export type { Message, InsertMessageParams } from "./repository"
 
+// Version Repository
+export { MessageVersionRepository } from "./version-repository"
+export type { MessageVersion } from "./version-repository"
+
 // Event Service
 export { EventService } from "./event-service"
 export type {

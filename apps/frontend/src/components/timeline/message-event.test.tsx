@@ -40,8 +40,17 @@ vi.mock("@/contexts", async (importOriginal) => {
     usePreferences: () => ({
       preferences: { timezone: "UTC", locale: "en-US" },
     }),
+    useMessageService: () => ({
+      delete: vi.fn().mockResolvedValue(undefined),
+      update: vi.fn().mockResolvedValue({}),
+      getVersions: vi.fn().mockResolvedValue([]),
+    }),
   }
 })
+
+vi.mock("@/auth", () => ({
+  useUser: () => ({ id: "usr_123" }),
+}))
 
 vi.mock("@/hooks", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/hooks")>()
@@ -56,6 +65,9 @@ vi.mock("@/hooks", async (importOriginal) => {
         if (actorType === "persona") return { fallback: "🜃", slug: "ariadne" }
         return { fallback: "TU", slug: undefined }
       },
+    }),
+    useWorkspaceBootstrap: () => ({
+      data: { members: [{ id: "member_123", userId: "usr_123" }] },
     }),
   }
 })
