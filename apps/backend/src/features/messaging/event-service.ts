@@ -249,7 +249,7 @@ export class EventService {
       // Lock the message row and fetch its content in one round-trip.
       // Returns null if the message was deleted between the handler's pre-check and here.
       const existing = await MessageRepository.findByIdForUpdate(client, params.messageId)
-      if (!existing) return null
+      if (!existing || existing.deletedAt) return null
 
       // 1. Snapshot pre-edit content as a version record
       await MessageVersionRepository.insert(client, {
