@@ -246,20 +246,19 @@ export class EventService {
 
   async editMessage(params: EditMessageParams): Promise<Message | null> {
     return withTransaction(this.pool, async (client) => {
-      // Lock the message row to serialize concurrent edits (prevents duplicate version numbers)
-      await MessageRepository.lockById(client, params.messageId)
+      // Lock the message row and fetch its content in one round-trip.
+      // Returns null if the message was deleted between the handler's pre-check and here.
+      const existing = await MessageRepository.findByIdForUpdate(client, params.messageId)
+      if (!existing) return null
 
       // 1. Snapshot pre-edit content as a version record
-      const existing = await MessageRepository.findById(client, params.messageId)
-      if (existing) {
-        await MessageVersionRepository.insert(client, {
-          id: messageVersionId(),
-          messageId: params.messageId,
-          contentJson: existing.contentJson,
-          contentMarkdown: existing.contentMarkdown,
-          editedBy: params.actorId,
-        })
-      }
+      await MessageVersionRepository.insert(client, {
+        id: messageVersionId(),
+        messageId: params.messageId,
+        contentJson: existing.contentJson,
+        contentMarkdown: existing.contentMarkdown,
+        editedBy: params.actorId,
+      })
 
       // 2. Append event
       const event = await StreamEventRepository.insert(client, {

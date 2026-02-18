@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
@@ -34,6 +34,10 @@ export function MessageHistoryDialog({
   currentContent,
 }: MessageHistoryDialogProps) {
   const [selectedIndex, setSelectedIndex] = useState(0)
+
+  useEffect(() => {
+    setSelectedIndex(0)
+  }, [messageId])
 
   const { data: versions = [] } = useQuery({
     queryKey: ["messageVersions", messageId],

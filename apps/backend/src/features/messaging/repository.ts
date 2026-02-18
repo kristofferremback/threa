@@ -105,9 +105,12 @@ const SELECT_FIELDS = `
 `
 
 export const MessageRepository = {
-  async lockById(db: Querier, id: string): Promise<boolean> {
-    const result = await db.query<{ id: string }>(sql`SELECT id FROM messages WHERE id = ${id} FOR UPDATE`)
-    return result.rows.length > 0
+  async findByIdForUpdate(db: Querier, id: string): Promise<Message | null> {
+    const result = await db.query<MessageRow>(
+      sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM messages WHERE id = ${id} FOR UPDATE`
+    )
+    if (!result.rows[0]) return null
+    return mapRowToMessage(result.rows[0])
   },
 
   async findById(db: Querier, id: string): Promise<Message | null> {

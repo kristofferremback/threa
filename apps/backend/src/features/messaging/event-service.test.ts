@@ -67,7 +67,7 @@ describe("EventService.editMessage version capture", () => {
   beforeEach(() => {
     spyOn(db, "withTransaction").mockImplementation(((_db: unknown, callback: (client: any) => Promise<unknown>) =>
       callback({})) as any)
-    spyOn(MessageRepository, "lockById").mockResolvedValue(true)
+    spyOn(MessageRepository, "findByIdForUpdate").mockResolvedValue(existingMessage as any)
     spyOn(MessageRepository, "findById").mockResolvedValue(existingMessage as any)
     spyOn(MessageVersionRepository, "insert").mockResolvedValue({
       id: "msgv_1",
@@ -124,7 +124,7 @@ describe("EventService.editMessage version capture", () => {
   })
 
   it("should not create version when message does not exist", async () => {
-    spyOn(MessageRepository, "findById").mockResolvedValue(null)
+    spyOn(MessageRepository, "findByIdForUpdate").mockResolvedValue(null)
 
     const service = new EventService({} as any)
 
