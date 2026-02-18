@@ -70,27 +70,31 @@ vi.mock("react-router-dom", () => ({
 }))
 
 // Mock @/hooks with fixture data
-vi.mock("@/hooks", () => ({
-  useWorkspaceBootstrap: () => ({
-    data: mockWorkspaceBootstrap.data,
-    isLoading: false,
-  }),
-  useDraftScratchpads: () => ({ createDraft: vi.fn() }),
-  useCreateStream: () => ({ mutateAsync: vi.fn() }),
-  useSearch: () => ({
-    results: mockSearchState.results,
-    isLoading: mockSearchState.isLoading,
-    error: null,
-    search: mockSearchState.search,
-    clear: mockSearchState.clear,
-  }),
-  useFormattedDate: () => ({
-    formatDate: (date: Date) => date.toLocaleDateString(),
-    formatTime: (date: Date) => date.toLocaleTimeString(),
-    formatDateTime: (date: Date) => date.toLocaleString(),
-    formatRelative: (_date: Date) => "just now",
-  }),
-}))
+vi.mock("@/hooks", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/hooks")>()
+  return {
+    ...actual,
+    useWorkspaceBootstrap: () => ({
+      data: mockWorkspaceBootstrap.data,
+      isLoading: false,
+    }),
+    useDraftScratchpads: () => ({ createDraft: vi.fn() }),
+    useCreateStream: () => ({ mutateAsync: vi.fn() }),
+    useSearch: () => ({
+      results: mockSearchState.results,
+      isLoading: mockSearchState.isLoading,
+      error: null,
+      search: mockSearchState.search,
+      clear: mockSearchState.clear,
+    }),
+    useFormattedDate: () => ({
+      formatDate: (date: Date) => date.toLocaleDateString(),
+      formatTime: (date: Date) => date.toLocaleTimeString(),
+      formatDateTime: (date: Date) => date.toLocaleString(),
+      formatRelative: (_date: Date) => "just now",
+    }),
+  }
+})
 
 // Mock use-mentionables - called by RichInput's useMentionSuggestion
 vi.mock("@/hooks/use-mentionables", () => {

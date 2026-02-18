@@ -26,8 +26,8 @@ test.describe("DM Lazy Creation", () => {
 
       const membersResponse = await ownerPage.request.get(`/api/workspaces/${workspaceId}/members`)
       expect(membersResponse.ok()).toBeTruthy()
-      const membersBody = (await membersResponse.json()) as { members: Array<{ id: string; email: string }> }
-      const inviteeMember = membersBody.members.find((member) => member.email === inviteeEmail)
+      const membersBody = (await membersResponse.json()) as { members: Array<{ id: string; name: string }> }
+      const inviteeMember = membersBody.members.find((member) => member.name === inviteeName)
       expect(inviteeMember).toBeTruthy()
 
       const draftStreamId = createDmDraftId(inviteeMember!.id)
