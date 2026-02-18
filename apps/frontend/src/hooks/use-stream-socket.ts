@@ -17,6 +17,7 @@ interface MessageDeletedPayload {
   workspaceId: string
   streamId: string
   messageId: string
+  deletedAt: string
 }
 
 interface ReactionPayload {
@@ -222,7 +223,7 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
             if (e.eventType !== "message_created") return e
             const eventPayload = e.payload as { messageId: string }
             if (eventPayload.messageId !== payload.messageId) return e
-            return { ...e, payload: { ...eventPayload, deletedAt: new Date().toISOString() } }
+            return { ...e, payload: { ...eventPayload, deletedAt: payload.deletedAt } }
           }),
         }
       })

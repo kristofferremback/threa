@@ -104,6 +104,7 @@ export interface MessageEditedOutboxPayload extends StreamScopedPayload {
 
 export interface MessageDeletedOutboxPayload extends StreamScopedPayload {
   messageId: string
+  deletedAt: string
 }
 
 export interface MessageUpdatedOutboxPayload extends StreamScopedPayload {

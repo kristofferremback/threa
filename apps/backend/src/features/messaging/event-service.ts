@@ -8,7 +8,7 @@ import { AttachmentRepository } from "../attachments"
 import { OutboxRepository } from "../../lib/outbox"
 import { StreamPersonaParticipantRepository } from "../agents"
 import { eventId, messageId, messageVersionId } from "../../lib/id"
-import { MessageVersionRepository } from "./version-repository"
+import { MessageVersionRepository, type MessageVersion } from "./version-repository"
 import { serializeBigInt } from "../../lib/serialization"
 import { messagesTotal } from "../../lib/observability"
 import {
@@ -320,6 +320,7 @@ export class EventService {
           workspaceId: params.workspaceId,
           streamId: params.streamId,
           messageId: params.messageId,
+          deletedAt: message.deletedAt!.toISOString(),
         })
 
         // 4. If this is a thread, update parent message's reply count
@@ -446,7 +447,7 @@ export class EventService {
     return StreamEventRepository.countMessagesByStreamBatch(this.pool, streamIds)
   }
 
-  async getMessageVersions(messageId: string): Promise<import("./version-repository").MessageVersion[]> {
+  async getMessageVersions(messageId: string): Promise<MessageVersion[]> {
     return MessageVersionRepository.listByMessageId(this.pool, messageId)
   }
 
