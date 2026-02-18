@@ -42,33 +42,12 @@ export function MessageEditForm({
     return () => document.removeEventListener("keydown", handleKeyDown)
   }, [onCancel])
 
-  const handleSubmit = useCallback(async () => {
-    const contentMarkdown = serializeToMarkdown(contentJson)
-    if (!contentMarkdown.trim()) return
-
-    setIsSaving(true)
-    try {
-      await messagesApi.update(workspaceId, messageId, { contentJson, contentMarkdown })
-      queryClient.invalidateQueries({ queryKey: messageKeys.versions(messageId) })
-      onSave()
-    } catch {
-      toast.error("Failed to save edit")
-    } finally {
-      setIsSaving(false)
-    }
-  }, [contentJson, workspaceId, messageId, onSave, queryClient])
-
-  const handleDocEditorSend = useCallback(
-    async (markdown: string) => {
-      const trimmed = markdown.trim()
-      if (!trimmed) return
-
-      const json = parseMarkdown(trimmed)
+  const saveEdit = useCallback(
+    async (json: JSONContent, markdown: string) => {
       setIsSaving(true)
       try {
-        await messagesApi.update(workspaceId, messageId, { contentJson: json, contentMarkdown: trimmed })
+        await messagesApi.update(workspaceId, messageId, { contentJson: json, contentMarkdown: markdown })
         queryClient.invalidateQueries({ queryKey: messageKeys.versions(messageId) })
-        setDocEditorOpen(false)
         onSave()
       } catch {
         toast.error("Failed to save edit")
@@ -77,6 +56,22 @@ export function MessageEditForm({
       }
     },
     [workspaceId, messageId, onSave, queryClient]
+  )
+
+  const handleSubmit = useCallback(async () => {
+    const contentMarkdown = serializeToMarkdown(contentJson)
+    if (!contentMarkdown.trim()) return
+    await saveEdit(contentJson, contentMarkdown)
+  }, [contentJson, saveEdit])
+
+  const handleDocEditorSend = useCallback(
+    async (markdown: string) => {
+      const trimmed = markdown.trim()
+      if (!trimmed) return
+      setDocEditorOpen(false)
+      await saveEdit(parseMarkdown(trimmed), trimmed)
+    },
+    [saveEdit]
   )
 
   const handleDocEditorDismiss = useCallback((markdown: string) => {

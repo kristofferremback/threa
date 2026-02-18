@@ -56,6 +56,7 @@ export const MessageVersionRepository = {
       )
       RETURNING *
     `)
+    if (!result.rows[0]) throw new Error(`Failed to insert message version for ${params.messageId}`)
     return mapRow(result.rows[0])
   },
 

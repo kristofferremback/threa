@@ -413,13 +413,12 @@ export function createStreamHandlers({ streamService, eventService, activityServ
             enrichments.threadId = threadData.threadId
             enrichments.replyCount = threadData.replyCount
           }
-          if (message?.editedAt) {
+          if (message?.deletedAt) {
+            enrichments.deletedAt = message.deletedAt.toISOString()
+          } else if (message?.editedAt) {
             enrichments.editedAt = message.editedAt.toISOString()
             enrichments.contentJson = message.contentJson
             enrichments.contentMarkdown = message.contentMarkdown
-          }
-          if (message?.deletedAt) {
-            enrichments.deletedAt = message.deletedAt.toISOString()
           }
 
           if (Object.keys(enrichments).length === 0) return event
