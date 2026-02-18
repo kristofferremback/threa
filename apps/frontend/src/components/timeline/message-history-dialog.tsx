@@ -42,7 +42,7 @@ export function MessageHistoryDialog({
   }, [messageId])
 
   const { data: versions = [] } = useQuery({
-    queryKey: messageKeys.versions(messageId),
+    queryKey: messageKeys.versions(workspaceId, messageId),
     queryFn: () => messageService.getVersions(workspaceId, messageId),
     enabled: open,
   })

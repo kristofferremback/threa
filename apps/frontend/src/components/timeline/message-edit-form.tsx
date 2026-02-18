@@ -49,7 +49,7 @@ export function MessageEditForm({
       setIsSaving(true)
       try {
         await messageService.update(workspaceId, messageId, { contentJson: json, contentMarkdown: markdown })
-        queryClient.invalidateQueries({ queryKey: messageKeys.versions(messageId) })
+        queryClient.invalidateQueries({ queryKey: messageKeys.versions(workspaceId, messageId) })
         onSave()
       } catch {
         toast.error("Failed to save edit")
@@ -57,7 +57,7 @@ export function MessageEditForm({
         setIsSaving(false)
       }
     },
-    [workspaceId, messageId, onSave, queryClient]
+    [workspaceId, messageId, onSave, queryClient, messageService]
   )
 
   const handleSubmit = useCallback(async () => {

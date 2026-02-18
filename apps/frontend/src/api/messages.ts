@@ -1,10 +1,16 @@
 import { api } from "./client"
-import type { Message, MessageVersion, CreateMessageInput, CreateDmMessageInput, UpdateMessageInput } from "@threa/types"
+import type {
+  Message,
+  MessageVersion,
+  CreateMessageInput,
+  CreateDmMessageInput,
+  UpdateMessageInput,
+} from "@threa/types"
 
 export type { CreateMessageInput, CreateDmMessageInput, UpdateMessageInput }
 
 export const messageKeys = {
-  versions: (messageId: string) => ["messageVersions", messageId] as const,
+  versions: (workspaceId: string, messageId: string) => ["messageVersions", workspaceId, messageId] as const,
 }
 
 export const messagesApi = {

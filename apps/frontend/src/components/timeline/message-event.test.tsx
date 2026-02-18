@@ -40,6 +40,11 @@ vi.mock("@/contexts", async (importOriginal) => {
     usePreferences: () => ({
       preferences: { timezone: "UTC", locale: "en-US" },
     }),
+    useMessageService: () => ({
+      delete: vi.fn().mockResolvedValue(undefined),
+      update: vi.fn().mockResolvedValue({}),
+      getVersions: vi.fn().mockResolvedValue([]),
+    }),
   }
 })
 

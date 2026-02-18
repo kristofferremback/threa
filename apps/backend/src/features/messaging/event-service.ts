@@ -469,7 +469,13 @@ export class EventService {
   ): Promise<StreamEvent[]> {
     const messageCreatedEvents = events.filter((e) => e.eventType === "message_created")
     const messageIds = messageCreatedEvents.map((e) => (e.payload as MessageCreatedPayload).messageId)
-    const messagesMap = messageIds.length > 0 ? await this.getMessagesByIds(messageIds) : new Map<string, Message>()
+
+    // Only query the messages projection when edits or deletes exist in the event window.
+    // Operational events always have later sequences than the message_created they modify,
+    // so if a creation is in the window, any corresponding edit/delete is too.
+    const hasModifications = events.some((e) => e.eventType === "message_edited" || e.eventType === "message_deleted")
+    const messagesMap =
+      hasModifications && messageIds.length > 0 ? await this.getMessagesByIds(messageIds) : new Map<string, Message>()
 
     return events
       .filter((e) => e.eventType !== "message_edited" && e.eventType !== "message_deleted")

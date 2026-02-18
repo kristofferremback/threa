@@ -51,11 +51,15 @@ vi.mock("@threa/prosemirror", () => ({
   }),
 }))
 
-vi.mock("@/api/messages", () => ({
-  messagesApi: {
-    update: vi.fn().mockResolvedValue({}),
-  },
-}))
+vi.mock("@/contexts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/contexts")>()
+  return {
+    ...actual,
+    useMessageService: () => ({
+      update: vi.fn().mockResolvedValue({}),
+    }),
+  }
+})
 
 const initialContentJson: JSONContent = {
   type: "doc",
