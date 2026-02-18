@@ -241,10 +241,6 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
         return res.status(404).json({ error: "Message not found" })
       }
 
-      if (existing.deletedAt) {
-        return res.status(410).json({ error: "Cannot edit a deleted message" })
-      }
-
       const [stream, isMember] = await Promise.all([
         streamService.getStreamById(existing.streamId),
         streamService.isMember(existing.streamId, memberId),
@@ -289,10 +285,6 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
       const existing = await eventService.getMessageById(messageId)
       if (!existing) {
         return res.status(404).json({ error: "Message not found" })
-      }
-
-      if (existing.deletedAt) {
-        return res.status(204).send()
       }
 
       const [stream, isMember] = await Promise.all([

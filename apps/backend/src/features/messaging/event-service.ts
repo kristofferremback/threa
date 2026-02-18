@@ -297,6 +297,9 @@ export class EventService {
 
   async deleteMessage(params: DeleteMessageParams): Promise<Message | null> {
     return withTransaction(this.pool, async (client) => {
+      const existing = await MessageRepository.findByIdForUpdate(client, params.messageId)
+      if (!existing || existing.deletedAt) return null
+
       // 1. Append event
       await StreamEventRepository.insert(client, {
         id: eventId(),
