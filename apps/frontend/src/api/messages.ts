@@ -3,6 +3,10 @@ import type { Message, MessageVersion, CreateMessageInput, CreateDmMessageInput,
 
 export type { CreateMessageInput, CreateDmMessageInput, UpdateMessageInput }
 
+export const messageKeys = {
+  versions: (messageId: string) => ["messageVersions", messageId] as const,
+}
+
 export const messagesApi = {
   async create(workspaceId: string, streamId: string, data: CreateMessageInput): Promise<Message> {
     const res = await api.post<{ message: Message }>(`/api/workspaces/${workspaceId}/messages`, {

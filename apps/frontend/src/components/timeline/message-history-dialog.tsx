@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Badge } from "@/components/ui/badge"
 import { MarkdownContent } from "@/components/ui/markdown-content"
 import { RelativeTime } from "@/components/relative-time"
-import { messagesApi } from "@/api/messages"
+import { messagesApi, messageKeys } from "@/api/messages"
 import { cn } from "@/lib/utils"
 import type { MessageVersion } from "@threa/types"
 
@@ -40,7 +40,7 @@ export function MessageHistoryDialog({
   }, [messageId])
 
   const { data: versions = [] } = useQuery({
-    queryKey: ["messageVersions", messageId],
+    queryKey: messageKeys.versions(messageId),
     queryFn: () => messagesApi.getVersions(workspaceId, messageId),
     enabled: open,
   })

@@ -5,7 +5,7 @@ import { Expand } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { RichEditor, DocumentEditorModal } from "@/components/editor"
-import { messagesApi } from "@/api/messages"
+import { messagesApi, messageKeys } from "@/api/messages"
 import { serializeToMarkdown, parseMarkdown } from "@threa/prosemirror"
 import type { JSONContent } from "@threa/types"
 
@@ -49,7 +49,7 @@ export function MessageEditForm({
     setIsSaving(true)
     try {
       await messagesApi.update(workspaceId, messageId, { contentJson, contentMarkdown })
-      queryClient.invalidateQueries({ queryKey: ["messageVersions", messageId] })
+      queryClient.invalidateQueries({ queryKey: messageKeys.versions(messageId) })
       onSave()
     } catch {
       toast.error("Failed to save edit")
@@ -67,7 +67,7 @@ export function MessageEditForm({
       setIsSaving(true)
       try {
         await messagesApi.update(workspaceId, messageId, { contentJson: json, contentMarkdown: trimmed })
-        queryClient.invalidateQueries({ queryKey: ["messageVersions", messageId] })
+        queryClient.invalidateQueries({ queryKey: messageKeys.versions(messageId) })
         setDocEditorOpen(false)
         onSave()
       } catch {

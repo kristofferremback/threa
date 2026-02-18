@@ -1,4 +1,4 @@
-import { type ReactNode, useRef, useEffect, useState } from "react"
+import { type ReactNode, useRef, useEffect, useState, useMemo } from "react"
 import type { StreamEvent, AttachmentSummary, JSONContent } from "@threa/types"
 import { Link } from "react-router-dom"
 import { toast } from "sonner"
@@ -405,7 +405,10 @@ export function MessageEvent({
 
   const user = useUser()
   const { data: wsBootstrap } = useWorkspaceBootstrap(workspaceId)
-  const currentMemberId = wsBootstrap?.members?.find((m) => m.userId === user?.id)?.id ?? null
+  const currentMemberId = useMemo(
+    () => wsBootstrap?.members?.find((m) => m.userId === user?.id)?.id ?? null,
+    [wsBootstrap?.members, user?.id]
+  )
 
   const actorName = getActorName(event.actorId, event.actorType)
   const {

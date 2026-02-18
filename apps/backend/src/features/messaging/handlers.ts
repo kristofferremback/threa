@@ -414,7 +414,7 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
       const { messageId } = req.params
 
       const existing = await eventService.getMessageById(messageId)
-      if (!existing) {
+      if (!existing || existing.deletedAt) {
         return res.status(404).json({ error: "Message not found" })
       }
 

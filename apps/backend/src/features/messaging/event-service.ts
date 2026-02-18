@@ -1,5 +1,5 @@
 import { Pool } from "pg"
-import { withTransaction } from "../../db"
+import { withTransaction, withClient } from "../../db"
 import { StreamEventRepository, StreamEvent } from "../streams"
 import { StreamRepository } from "../streams"
 import { StreamMemberRepository } from "../streams"
@@ -246,8 +246,7 @@ export class EventService {
 
   async editMessage(params: EditMessageParams): Promise<Message | null> {
     return withTransaction(this.pool, async (client) => {
-      // Lock the message row and fetch its content in one round-trip.
-      // Returns null if the message was deleted between the handler's pre-check and here.
+      // Returns null if the message was concurrently deleted — prevents phantom edits
       const existing = await MessageRepository.findByIdForUpdate(client, params.messageId)
       if (!existing || existing.deletedAt) return null
 
@@ -452,6 +451,6 @@ export class EventService {
   }
 
   async getMessagesByIds(messageIds: string[]): Promise<Map<string, Message>> {
-    return MessageRepository.findByIds(this.pool, messageIds)
+    return withClient(this.pool, (client) => MessageRepository.findByIds(client, messageIds))
   }
 }
