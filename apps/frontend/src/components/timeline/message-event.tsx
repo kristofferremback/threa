@@ -87,15 +87,18 @@ function MessageLayout({
     <div
       ref={containerRef}
       className={cn(
-        "message-item group flex gap-[14px] mb-5",
+        "message-item group relative flex gap-[14px] mb-5",
         // AI/Persona messages get full-width gradient with gold accent
         isPersona &&
           "bg-gradient-to-r from-primary/[0.06] to-transparent -mx-6 px-6 py-4 shadow-[inset_3px_0_0_hsl(var(--primary))]",
         // System messages get a subtle info-toned accent
         isSystem &&
           "bg-gradient-to-r from-blue-500/[0.04] to-transparent -mx-6 px-6 py-4 shadow-[inset_3px_0_0_hsl(210_100%_55%)]",
-        // Edit mode: subtle primary tint across the full message row
-        isEditing && !isPersona && !isSystem && "bg-primary/[0.04] -mx-6 px-6 py-4 rounded-lg",
+        // Edit mode: pseudo-element background so no layout shift — zero padding/margin changes
+        isEditing &&
+          !isPersona &&
+          !isSystem &&
+          "before:content-[''] before:absolute before:-top-4 before:-bottom-4 before:-left-6 before:-right-6 before:bg-primary/[0.04] before:-z-10",
         isHighlighted && "animate-highlight-flash",
         containerClassName
       )}
@@ -264,9 +267,13 @@ function SentMessageEvent({
         }
         isEditing={isEditing}
         actions={
-          !hideActions &&
-          !isEditing && (
-            <div className="opacity-0 group-hover:opacity-100 has-[[data-state=open]]:opacity-100 transition-opacity ml-auto flex items-center gap-1">
+          !hideActions && (
+            <div
+              className={cn(
+                "opacity-0 group-hover:opacity-100 has-[[data-state=open]]:opacity-100 transition-opacity ml-auto flex items-center gap-1",
+                isEditing && "!opacity-0 pointer-events-none"
+              )}
+            >
               <MessageContextMenu
                 context={{
                   contentMarkdown: payload.contentMarkdown,
@@ -288,7 +295,7 @@ function SentMessageEvent({
             </div>
           )
         }
-        footer={threadFooter}
+        footer={isEditing ? undefined : threadFooter}
         containerRef={containerRef}
         isHighlighted={isHighlighted}
       >

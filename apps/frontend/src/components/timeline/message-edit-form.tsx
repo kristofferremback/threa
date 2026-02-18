@@ -86,13 +86,15 @@ export function MessageEditForm({
 
   return (
     <>
-      <RichEditor
-        value={contentJson}
-        onChange={setContentJson}
-        onSubmit={handleSubmit}
-        placeholder="Edit message..."
-        autoFocus
-      />
+      <div className="[&_.tiptap]:!pt-0 [&_.tiptap_p]:!leading-relaxed">
+        <RichEditor
+          value={contentJson}
+          onChange={setContentJson}
+          onSubmit={handleSubmit}
+          placeholder="Edit message..."
+          autoFocus
+        />
+      </div>
       <div className="flex items-center gap-1.5 mt-1">
         <span className="text-[11px] text-muted-foreground/70 flex items-center gap-1.5 mr-auto">
           <kbd className="kbd-hint">Esc</kbd> cancel
