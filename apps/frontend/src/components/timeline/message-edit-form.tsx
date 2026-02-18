@@ -5,7 +5,8 @@ import { Expand } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { RichEditor, DocumentEditorModal } from "@/components/editor"
-import { messagesApi, messageKeys } from "@/api/messages"
+import { useMessageService } from "@/contexts"
+import { messageKeys } from "@/api/messages"
 import { serializeToMarkdown, parseMarkdown } from "@threa/prosemirror"
 import type { JSONContent } from "@threa/types"
 
@@ -27,6 +28,7 @@ export function MessageEditForm({
   onCancel,
 }: MessageEditFormProps) {
   const queryClient = useQueryClient()
+  const messageService = useMessageService()
   const [contentJson, setContentJson] = useState<JSONContent>(initialContentJson ?? EMPTY_DOC)
   const [isSaving, setIsSaving] = useState(false)
   const [docEditorOpen, setDocEditorOpen] = useState(false)
@@ -46,7 +48,7 @@ export function MessageEditForm({
     async (json: JSONContent, markdown: string) => {
       setIsSaving(true)
       try {
-        await messagesApi.update(workspaceId, messageId, { contentJson: json, contentMarkdown: markdown })
+        await messageService.update(workspaceId, messageId, { contentJson: json, contentMarkdown: markdown })
         queryClient.invalidateQueries({ queryKey: messageKeys.versions(messageId) })
         onSave()
       } catch {

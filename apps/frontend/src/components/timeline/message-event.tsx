@@ -7,10 +7,9 @@ import { Button } from "@/components/ui/button"
 import { MarkdownContent, AttachmentProvider } from "@/components/ui/markdown-content"
 import { RelativeTime } from "@/components/relative-time"
 import { PersonaAvatar } from "@/components/persona-avatar"
-import { usePendingMessages, usePanel, createDraftPanelId, useTrace } from "@/contexts"
+import { usePendingMessages, usePanel, createDraftPanelId, useTrace, useMessageService } from "@/contexts"
 import { useActors, useWorkspaceBootstrap, getStepLabel, type MessageAgentActivity } from "@/hooks"
 import { useUser } from "@/auth"
-import { messagesApi } from "@/api/messages"
 import { cn } from "@/lib/utils"
 import { AttachmentList } from "./attachment-list"
 import { MessageContextMenu } from "./message-context-menu"
@@ -147,7 +146,6 @@ interface MessageEventInnerProps {
   hideActions?: boolean
   isHighlighted?: boolean
   activity?: MessageAgentActivity
-  currentMemberId: string | null
 }
 
 function SentMessageEvent({
@@ -162,9 +160,15 @@ function SentMessageEvent({
   hideActions,
   isHighlighted,
   activity,
-  currentMemberId,
 }: MessageEventInnerProps) {
   const { panelId, getPanelUrl } = usePanel()
+  const messageService = useMessageService()
+  const user = useUser()
+  const { data: wsBootstrap } = useWorkspaceBootstrap(workspaceId)
+  const currentMemberId = useMemo(
+    () => wsBootstrap?.members?.find((m) => m.userId === user?.id)?.id ?? null,
+    [wsBootstrap?.members, user?.id]
+  )
   const { getTraceUrl } = useTrace()
   const replyCount = payload.replyCount ?? 0
   const threadId = payload.threadId
@@ -238,7 +242,7 @@ function SentMessageEvent({
   const handleDelete = async () => {
     setIsDeleting(true)
     try {
-      await messagesApi.delete(workspaceId, payload.messageId)
+      await messageService.delete(workspaceId, payload.messageId)
       setDeleteDialogOpen(false)
     } catch {
       toast.error("Failed to delete message")
@@ -403,13 +407,6 @@ export function MessageEvent({
   const { getActorName, getActorAvatar } = useActors(workspaceId)
   const status = getStatus(event.id)
 
-  const user = useUser()
-  const { data: wsBootstrap } = useWorkspaceBootstrap(workspaceId)
-  const currentMemberId = useMemo(
-    () => wsBootstrap?.members?.find((m) => m.userId === user?.id)?.id ?? null,
-    [wsBootstrap?.members, user?.id]
-  )
-
   const actorName = getActorName(event.actorId, event.actorType)
   const {
     fallback: actorInitials,
@@ -429,7 +426,6 @@ export function MessageEvent({
           actorInitials={actorInitials}
           personaSlug={personaSlug}
           actorAvatarUrl={actorAvatarUrl}
-          currentMemberId={currentMemberId}
         />
       )
     case "failed":
@@ -443,7 +439,6 @@ export function MessageEvent({
           actorInitials={actorInitials}
           personaSlug={personaSlug}
           actorAvatarUrl={actorAvatarUrl}
-          currentMemberId={currentMemberId}
         />
       )
     default:
@@ -460,7 +455,6 @@ export function MessageEvent({
           hideActions={hideActions}
           isHighlighted={isHighlighted}
           activity={activity}
-          currentMemberId={currentMemberId}
         />
       )
   }

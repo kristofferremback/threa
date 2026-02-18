@@ -453,4 +453,46 @@ export class EventService {
   async getMessagesByIds(messageIds: string[]): Promise<Map<string, Message>> {
     return withClient(this.pool, (client) => MessageRepository.findByIds(client, messageIds))
   }
+
+  /**
+   * Enrich bootstrap events with projection state for display.
+   *
+   * Filters out operational events (message_edited, message_deleted) that are
+   * redundant after enrichment, then injects editedAt/deletedAt/contentJson/contentMarkdown
+   * from the messages projection and threadId/replyCount from the thread data map into
+   * each message_created event's payload.
+   */
+  async enrichBootstrapEvents(
+    events: StreamEvent[],
+    threadDataMap: Map<string, { threadId: string; replyCount: number }>
+  ): Promise<StreamEvent[]> {
+    const messageCreatedEvents = events.filter((e) => e.eventType === "message_created")
+    const messageIds = messageCreatedEvents.map((e) => (e.payload as MessageCreatedPayload).messageId)
+    const messagesMap = messageIds.length > 0 ? await this.getMessagesByIds(messageIds) : new Map<string, Message>()
+
+    return events
+      .filter((e) => e.eventType !== "message_edited" && e.eventType !== "message_deleted")
+      .map((event) => {
+        if (event.eventType !== "message_created") return event
+        const payload = event.payload as MessageCreatedPayload
+        const threadData = threadDataMap.get(payload.messageId)
+        const message = messagesMap.get(payload.messageId)
+
+        const enrichments: Record<string, unknown> = {}
+        if (threadData) {
+          enrichments.threadId = threadData.threadId
+          enrichments.replyCount = threadData.replyCount
+        }
+        if (message?.deletedAt) {
+          enrichments.deletedAt = message.deletedAt.toISOString()
+        } else if (message?.editedAt) {
+          enrichments.editedAt = message.editedAt.toISOString()
+          enrichments.contentJson = message.contentJson
+          enrichments.contentMarkdown = message.contentMarkdown
+        }
+
+        if (Object.keys(enrichments).length === 0) return event
+        return { ...event, payload: { ...payload, ...enrichments } }
+      })
+  }
 }

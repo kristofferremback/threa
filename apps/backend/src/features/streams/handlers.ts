@@ -1,7 +1,7 @@
 import { z } from "zod"
 import type { Request, Response } from "express"
 import type { StreamService } from "./service"
-import type { EventService, MessageCreatedPayload } from "../messaging"
+import type { EventService } from "../messaging"
 import type { ActivityService } from "../activity"
 import type { StreamEvent } from "./event-repository"
 import type { EventType, StreamType } from "@threa/types"
@@ -394,36 +394,7 @@ export function createStreamHandlers({ streamService, eventService, activityServ
         streamService.getThreadsWithReplyCounts(streamId),
       ])
 
-      // Batch-fetch message projections to enrich with editedAt/deletedAt
-      const messageCreatedEvents = events.filter((e) => e.eventType === "message_created")
-      const messageIds = messageCreatedEvents.map((e) => (e.payload as MessageCreatedPayload).messageId)
-      const messagesMap = messageIds.length > 0 ? await eventService.getMessagesByIds(messageIds) : new Map()
-
-      // Enrich message_created events with thread data and edit/delete state
-      const enrichedEvents = events
-        .filter((e) => e.eventType !== "message_edited" && e.eventType !== "message_deleted")
-        .map((event) => {
-          if (event.eventType !== "message_created") return event
-          const payload = event.payload as MessageCreatedPayload
-          const threadData = threadDataMap.get(payload.messageId)
-          const message = messagesMap.get(payload.messageId)
-
-          const enrichments: Record<string, unknown> = {}
-          if (threadData) {
-            enrichments.threadId = threadData.threadId
-            enrichments.replyCount = threadData.replyCount
-          }
-          if (message?.deletedAt) {
-            enrichments.deletedAt = message.deletedAt.toISOString()
-          } else if (message?.editedAt) {
-            enrichments.editedAt = message.editedAt.toISOString()
-            enrichments.contentJson = message.contentJson
-            enrichments.contentMarkdown = message.contentMarkdown
-          }
-
-          if (Object.keys(enrichments).length === 0) return event
-          return { ...event, payload: { ...payload, ...enrichments } }
-        })
+      const enrichedEvents = await eventService.enrichBootstrapEvents(events, threadDataMap)
 
       // Get the latest sequence number from the most recent event
       const latestSequence = events.length > 0 ? events[events.length - 1].sequence : "0"

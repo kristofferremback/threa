@@ -164,6 +164,21 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
       await db.events.put({ ...payload.event, _cachedAt: Date.now() })
     }
 
+    // Reads the updated message_created event from the query cache and persists it to IndexedDB.
+    // Must be called after the cache mutation so the persisted snapshot reflects the latest state.
+    const persistUpdatedMessageEvent = async (messageId: string) => {
+      const bootstrap = queryClient.getQueryData(streamKeys.bootstrap(workspaceId, streamId)) as
+        | StreamBootstrap
+        | undefined
+      const updatedEvent = bootstrap?.events.find((e) => {
+        if (e.eventType !== "message_created") return false
+        return (e.payload as { messageId: string }).messageId === messageId
+      })
+      if (updatedEvent) {
+        await db.events.put({ ...updatedEvent, _cachedAt: Date.now() })
+      }
+    }
+
     const handleMessageEdited = async (payload: MessageEventPayload) => {
       if (payload.streamId !== streamId) return
 
@@ -192,17 +207,7 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
         }
       })
 
-      // Persist updated message_created event to IndexedDB for offline cache coherency
-      const bootstrap = queryClient.getQueryData(streamKeys.bootstrap(workspaceId, streamId)) as
-        | StreamBootstrap
-        | undefined
-      const updatedEvent = bootstrap?.events.find((e) => {
-        if (e.eventType !== "message_created") return false
-        return (e.payload as { messageId: string }).messageId === editPayload.messageId
-      })
-      if (updatedEvent) {
-        await db.events.put({ ...updatedEvent, _cachedAt: Date.now() })
-      }
+      await persistUpdatedMessageEvent(editPayload.messageId)
     }
 
     const handleMessageDeleted = async (payload: MessageDeletedPayload) => {
@@ -222,17 +227,7 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
         }
       })
 
-      // Persist updated message_created event to IndexedDB for offline cache coherency
-      const bootstrap = queryClient.getQueryData(streamKeys.bootstrap(workspaceId, streamId)) as
-        | StreamBootstrap
-        | undefined
-      const updatedEvent = bootstrap?.events.find((e) => {
-        if (e.eventType !== "message_created") return false
-        return (e.payload as { messageId: string }).messageId === payload.messageId
-      })
-      if (updatedEvent) {
-        await db.events.put({ ...updatedEvent, _cachedAt: Date.now() })
-      }
+      await persistUpdatedMessageEvent(payload.messageId)
     }
 
     const handleReactionAdded = async (payload: ReactionPayload) => {

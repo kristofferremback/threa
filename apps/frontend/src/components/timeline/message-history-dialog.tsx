@@ -4,7 +4,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Badge } from "@/components/ui/badge"
 import { MarkdownContent } from "@/components/ui/markdown-content"
 import { RelativeTime } from "@/components/relative-time"
-import { messagesApi, messageKeys } from "@/api/messages"
+import { useMessageService } from "@/contexts"
+import { messageKeys } from "@/api/messages"
 import { cn } from "@/lib/utils"
 import type { MessageVersion } from "@threa/types"
 
@@ -34,6 +35,7 @@ export function MessageHistoryDialog({
   currentContent,
 }: MessageHistoryDialogProps) {
   const [selectedIndex, setSelectedIndex] = useState(0)
+  const messageService = useMessageService()
 
   useEffect(() => {
     setSelectedIndex(0)
@@ -41,7 +43,7 @@ export function MessageHistoryDialog({
 
   const { data: versions = [] } = useQuery({
     queryKey: messageKeys.versions(messageId),
-    queryFn: () => messagesApi.getVersions(workspaceId, messageId),
+    queryFn: () => messageService.getVersions(workspaceId, messageId),
     enabled: open,
   })
 
