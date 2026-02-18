@@ -51,11 +51,11 @@ test.describe("DM Lazy Creation", () => {
       })
 
       // Verify invitee sees the DM in their sidebar after navigating to the workspace.
-      // Bootstrap on navigation includes the DM stream created above.
+      // Bootstrap on navigation includes the DM stream created above. Wait directly for
+      // the DM link — the invitee already has streams so the empty-state button never shows.
       await invitee.page.goto(`/w/${workspaceId}`)
-      await expect(invitee.page.getByRole("button", { name: "+ New Scratchpad" })).toBeVisible({ timeout: 10000 })
       await expect(invitee.page.locator(`a[href="/w/${workspaceId}/s/${streamId}"]`).first()).toBeVisible({
-        timeout: 10000,
+        timeout: 15000,
       })
     } finally {
       await ownerContext.close()
