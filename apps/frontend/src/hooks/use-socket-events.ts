@@ -18,6 +18,7 @@ import type {
   LastMessagePreview,
   ActivityCreatedPayload,
 } from "@threa/types"
+import { StreamTypes } from "@threa/types"
 
 /**
  * Update the workspace bootstrap cache, or invalidate if it's not cached yet.
@@ -67,6 +68,7 @@ interface StreamPayload {
   workspaceId: string
   streamId: string
   stream: Stream
+  dmMemberIds?: [string, string]
 }
 
 interface WorkspaceMemberAddedPayload {
@@ -193,25 +195,32 @@ export function useSocketEvents(workspaceId: string) {
         const streamExists = old.streams.some((s) => s.id === payload.stream.id)
         const currentUser = userRef.current
         const currentMember = currentUser && old.members?.find((m: WorkspaceMember) => m.userId === currentUser.id)
+        const currentMemberId = currentMember?.id ?? null
         const isCreator = Boolean(currentMember && payload.stream.createdBy === currentMember.id)
+        const isDmParticipant =
+          payload.stream.type === StreamTypes.DM &&
+          currentMemberId !== null &&
+          payload.dmMemberIds?.includes(currentMemberId) === true
         const hasMembership = old.streamMemberships.some((m: StreamMember) => m.streamId === payload.stream.id)
-        const shouldAddMembership = isCreator && !hasMembership
+        const shouldAddMembership = Boolean(currentMemberId && !hasMembership && (isCreator || isDmParticipant))
+        const shouldAddStream = !streamExists && payload.stream.type !== StreamTypes.DM
 
-        // Ensure creators are subscribed immediately for follow-up stream activity
-        // (prevents missing early stream:activity events after channel creation).
+        // Ensure members are subscribed immediately for follow-up stream activity.
         shouldJoinStreamRoom = hasMembership || shouldAddMembership
 
         if (streamExists && !shouldAddMembership) return old
 
         return {
           ...old,
-          streams: streamExists ? old.streams : [...old.streams, { ...payload.stream, lastMessagePreview: null }],
+          // DM payloads do not include viewer-resolved names. Avoid inserting
+          // placeholder "Direct message" entries and wait for bootstrap refetch.
+          streams: shouldAddStream ? [...old.streams, { ...payload.stream, lastMessagePreview: null }] : old.streams,
           streamMemberships: shouldAddMembership
             ? [
                 ...old.streamMemberships,
                 {
                   streamId: payload.stream.id,
-                  memberId: payload.stream.createdBy,
+                  memberId: currentMemberId!,
                   pinned: false,
                   pinnedAt: null,
                   notificationLevel: null,
@@ -235,6 +244,12 @@ export function useSocketEvents(workspaceId: string) {
 
       // Cache to IndexedDB
       db.streams.put({ ...payload.stream, _cachedAt: Date.now() })
+
+      // DM creation still requires bootstrap refetch for viewer-specific dmPeers and
+      // resolved display names in the sidebar.
+      if (payload.stream.type === StreamTypes.DM) {
+        void queryClient.refetchQueries({ queryKey: workspaceKeys.bootstrap(workspaceId), type: "active" })
+      }
     })
 
     // Handle stream updated
@@ -260,7 +275,18 @@ export function useSocketEvents(workspaceId: string) {
           }
           return {
             ...old,
-            streams: old.streams.map((s) => (s.id === payload.stream.id ? { ...s, ...payload.stream } : s)),
+            streams: old.streams.map((s) =>
+              s.id === payload.stream.id
+                ? {
+                    ...s,
+                    ...payload.stream,
+                    displayName:
+                      payload.stream.type === StreamTypes.DM && payload.stream.displayName == null
+                        ? s.displayName
+                        : payload.stream.displayName,
+                  }
+                : s
+            ),
           }
         }
         // Stream not in list — add if now visible (e.g. became public)

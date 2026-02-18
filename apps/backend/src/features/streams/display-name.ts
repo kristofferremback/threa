@@ -81,29 +81,16 @@ export function getEffectiveDisplayName(stream: Stream, context?: DisplayNameCon
 
 /**
  * Formats participant names for DM display.
- * - 0 others: "Notes to self"
- * - 1 other: "Max"
- * - 2 others: "Max and Sam"
- * - 3+ others: "Max, Sam, and 2 others"
+ * DMs are strict 1:1, so the effective name is always "the other participant".
  */
 export function formatParticipantNames(participants: { id: string; name: string }[], viewingUserId: string): string {
-  const others = participants.filter((p) => p.id !== viewingUserId)
-
-  if (others.length === 0) {
-    return "Notes to self"
+  const other = participants.find((participant) => participant.id !== viewingUserId)
+  if (other) {
+    return other.name
   }
 
-  if (others.length === 1) {
-    return others[0].name
-  }
-
-  if (others.length === 2) {
-    return `${others[0].name} and ${others[1].name}`
-  }
-
-  // 3+ participants
-  const remaining = others.length - 2
-  return `${others[0].name}, ${others[1].name}, and ${remaining} ${remaining === 1 ? "other" : "others"}`
+  // Defensive fallback for inconsistent data.
+  return participants[0]?.name ?? "Direct message"
 }
 
 /**

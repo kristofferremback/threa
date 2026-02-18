@@ -122,6 +122,43 @@ export const StreamMemberRepository = {
     return mapRowToMember(result.rows[0])
   },
 
+  async insertMany(db: Querier, streamId: string, memberIds: string[]): Promise<StreamMember[]> {
+    const uniqueMemberIds = Array.from(new Set(memberIds))
+    if (uniqueMemberIds.length === 0) return []
+
+    const inserted = await db.query<StreamMemberRow>(sql`
+      INSERT INTO stream_members (stream_id, member_id)
+      SELECT ${streamId}, members.member_id
+      FROM unnest(${uniqueMemberIds}::text[]) AS members(member_id)
+      ON CONFLICT (stream_id, member_id) DO NOTHING
+      RETURNING stream_id, member_id, pinned, pinned_at, notification_level,
+                last_read_event_id, last_read_at, joined_at
+    `)
+
+    if (inserted.rows.length === uniqueMemberIds.length) {
+      const insertedByMemberId = new Map(inserted.rows.map((row) => [row.member_id, mapRowToMember(row)]))
+      return uniqueMemberIds.map((memberId) => {
+        const member = insertedByMemberId.get(memberId)
+        if (!member) throw new Error(`Failed to insert stream member ${memberId}`)
+        return member
+      })
+    }
+
+    const existing = await db.query<StreamMemberRow>(sql`
+      SELECT stream_id, member_id, pinned, pinned_at, notification_level,
+             last_read_event_id, last_read_at, joined_at
+      FROM stream_members
+      WHERE stream_id = ${streamId} AND member_id = ANY(${uniqueMemberIds})
+    `)
+
+    const existingByMemberId = new Map(existing.rows.map((row) => [row.member_id, mapRowToMember(row)]))
+    return uniqueMemberIds.map((memberId) => {
+      const member = existingByMemberId.get(memberId)
+      if (!member) throw new Error(`Failed to insert or find stream member ${memberId}`)
+      return member
+    })
+  },
+
   async update(
     db: Querier,
     streamId: string,

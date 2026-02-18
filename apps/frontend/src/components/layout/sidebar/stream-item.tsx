@@ -3,10 +3,11 @@ import { Bell, FileEdit, Hash, Lock, MessageSquareText, MoreHorizontal, Settings
 import { Link } from "react-router-dom"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Button } from "@/components/ui/button"
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { MentionIndicator } from "@/components/mention-indicator"
 import { RelativeTime } from "@/components/relative-time"
 import { getThreadRootContext } from "@/components/thread/breadcrumb-helpers"
-import { useActors } from "@/hooks"
+import { isDraftId, useActors } from "@/hooks"
 import { useSidebar } from "@/contexts"
 import { useStreamSettings } from "@/components/stream-settings/use-stream-settings"
 import { cn } from "@/lib/utils"
@@ -30,10 +31,12 @@ export function UrgencyStrip({ urgency }: { urgency: UrgencyLevel }) {
 interface StreamItemAvatarProps {
   icon: ReactNode
   className: string
+  avatarUrl?: string
+  avatarAlt?: string
   badge?: { icon: typeof Hash; color: string } | null
 }
 
-export function StreamItemAvatar({ icon, className, badge }: StreamItemAvatarProps) {
+export function StreamItemAvatar({ icon, className, avatarUrl, avatarAlt, badge }: StreamItemAvatarProps) {
   return (
     <div
       className={cn(
@@ -41,7 +44,16 @@ export function StreamItemAvatar({ icon, className, badge }: StreamItemAvatarPro
         badge ? "bg-muted" : className
       )}
     >
-      {badge ? <MessageSquareText className="h-3.5 w-3.5 text-muted-foreground" /> : icon}
+      {badge ? (
+        <MessageSquareText className="h-3.5 w-3.5 text-muted-foreground" />
+      ) : avatarUrl ? (
+        <Avatar className="h-8 w-8 rounded-lg">
+          <AvatarImage src={avatarUrl} alt={avatarAlt ?? "Member avatar"} />
+          <AvatarFallback className="rounded-lg">{icon}</AvatarFallback>
+        </Avatar>
+      ) : (
+        icon
+      )}
       {badge && (
         <div
           className={cn(
@@ -135,11 +147,12 @@ export function StreamItem({
   showPreviewOnHover = false,
   scrollContainerRef,
 }: StreamItemProps) {
-  const { getActorName } = useActors(workspaceId)
+  const { getActorName, getActorAvatar } = useActors(workspaceId)
   const { openStreamSettings } = useStreamSettings()
   const itemRef = useRef<HTMLAnchorElement>(null)
   const hasUnread = unreadCount > 0
   const preview = stream.lastMessagePreview
+  const isVirtualDraft = isDraftId(stream.id)
 
   useUrgencyTracking(itemRef, stream.id, stream.urgency, scrollContainerRef)
 
@@ -178,6 +191,7 @@ export function StreamItem({
 
   const avatar = getAvatar()
   const name = getStreamName(stream) ?? streamFallbackLabel(stream.type, "sidebar")
+  const dmPeerAvatar = stream.type === StreamTypes.DM ? getActorAvatar(stream.dmPeerMemberId ?? null, "member") : null
 
   const threadRootContext = stream.type === StreamTypes.THREAD ? getThreadRootContext(stream, allStreams) : null
 
@@ -219,7 +233,13 @@ export function StreamItem({
       {showUrgencyStrip && <UrgencyStrip urgency={stream.urgency} />}
 
       <div className="flex items-center gap-2.5 flex-1 min-w-0 px-2 py-2">
-        <StreamItemAvatar icon={avatar.icon} className={avatar.className} badge={threadBadge} />
+        <StreamItemAvatar
+          icon={avatar.icon}
+          className={avatar.className}
+          avatarUrl={dmPeerAvatar?.avatarUrl}
+          avatarAlt={name}
+          badge={threadBadge}
+        />
 
         <div className="flex flex-col flex-1 min-w-0 gap-0.5">
           <div className="flex items-center gap-2 pr-8">
@@ -243,17 +263,19 @@ export function StreamItem({
         </div>
       </div>
 
-      <StreamItemContextMenu>
-        <DropdownMenuItem
-          onClick={(e) => {
-            e.stopPropagation()
-            openStreamSettings(stream.id)
-          }}
-        >
-          <Settings className="mr-2 h-4 w-4" />
-          Settings
-        </DropdownMenuItem>
-      </StreamItemContextMenu>
+      {!isVirtualDraft && (
+        <StreamItemContextMenu>
+          <DropdownMenuItem
+            onClick={(e) => {
+              e.stopPropagation()
+              openStreamSettings(stream.id)
+            }}
+          >
+            <Settings className="mr-2 h-4 w-4" />
+            Settings
+          </DropdownMenuItem>
+        </StreamItemContextMenu>
+      )}
     </Link>
   )
 }

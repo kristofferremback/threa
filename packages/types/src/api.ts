@@ -73,6 +73,15 @@ export interface CreateMessageInputJson {
   attachmentIds?: string[]
 }
 
+export interface CreateDmMessageInputJson {
+  dmMemberId: string
+  /** ProseMirror JSON content from TipTap editor */
+  contentJson: JSONContent
+  /** Optional pre-computed markdown (backend derives if missing) */
+  contentMarkdown?: string
+  attachmentIds?: string[]
+}
+
 /**
  * Markdown input format - used by AI agents, external integrators, CLI tools.
  */
@@ -83,11 +92,19 @@ export interface CreateMessageInputMarkdown {
   attachmentIds?: string[]
 }
 
+export interface CreateDmMessageInputMarkdown {
+  dmMemberId: string
+  /** Markdown text content */
+  content: string
+  attachmentIds?: string[]
+}
+
 /**
  * Union type - API accepts either JSON or Markdown input.
  * Backend detects format by presence of `contentJson` vs `content` field.
  */
 export type CreateMessageInput = CreateMessageInputJson | CreateMessageInputMarkdown
+export type CreateDmMessageInput = CreateDmMessageInputJson | CreateDmMessageInputMarkdown
 
 /**
  * JSON input format for updates.
@@ -138,6 +155,7 @@ export interface WorkspaceBootstrap {
   members: WorkspaceMember[]
   streams: StreamWithPreview[]
   streamMemberships: StreamMember[]
+  dmPeers: Array<{ memberId: string; streamId: string }>
   users: User[]
   personas: Persona[]
   emojis: EmojiEntry[]

@@ -1,5 +1,6 @@
 import { Server } from "socket.io"
 import type { Pool } from "pg"
+import { StreamTypes } from "@threa/types"
 import {
   OutboxRepository,
   isStreamScopedEvent,
@@ -143,6 +144,10 @@ export class BroadcastHandler implements OutboxHandler {
       const payload = event.payload as StreamCreatedOutboxPayload
       if (payload.stream.parentMessageId) {
         this.io.to(`ws:${workspaceId}:stream:${payload.streamId}`).emit(event.eventType, event.payload)
+      } else if (payload.stream.type === StreamTypes.DM && payload.dmMemberIds?.length === 2) {
+        for (const memberId of new Set(payload.dmMemberIds)) {
+          this.io.to(`ws:${workspaceId}:member:${memberId}`).emit(event.eventType, event.payload)
+        }
       } else {
         this.io.to(`ws:${workspaceId}`).emit(event.eventType, event.payload)
       }

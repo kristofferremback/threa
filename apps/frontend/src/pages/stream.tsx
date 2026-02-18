@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
-import { useStreamOrDraft, useStreamError, usePanelLayout } from "@/hooks"
+import { useStreamOrDraft, useStreamError, usePanelLayout, isDmDraftId } from "@/hooks"
 import { usePanel } from "@/contexts"
 import { TimelineView } from "@/components/timeline"
 import { StreamPanel, ThreadHeader } from "@/components/thread"
@@ -89,12 +89,13 @@ export function StreamPage() {
     return <StreamErrorView type={streamError.type} workspaceId={workspaceId} />
   }
 
-  const isScratchpad = isDraft || stream?.type === StreamTypes.SCRATCHPAD
+  const isScratchpad = stream?.type === StreamTypes.SCRATCHPAD
   const isArchived = stream?.archivedAt != null
+  const isDmDraft = isDraft && isDmDraftId(streamId)
   const streamName = stream
     ? (getStreamName(stream) ?? streamFallbackLabel(stream.type, "generic"))
     : isDraft
-      ? streamFallbackLabel("scratchpad", "sidebar")
+      ? streamFallbackLabel(isDmDraft ? "dm" : "scratchpad", "sidebar")
       : "Stream"
   const isUnnamedScratchpad = isScratchpad && !stream?.displayName
 

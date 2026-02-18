@@ -222,6 +222,33 @@ describe("BroadcastHandler", () => {
     })
   })
 
+  it("should emit stream:created DM to member rooms", async () => {
+    const event = makeEvent(1n, "stream:created", {
+      workspaceId: "ws_1",
+      streamId: "stream_dm",
+      stream: { id: "stream_dm", parentMessageId: null, type: "dm" },
+      dmMemberIds: ["member_alice", "member_bob"],
+    })
+
+    spyOn(OutboxRepository, "fetchAfterId").mockResolvedValue([event])
+
+    const { handler, emitChains } = createHandler()
+    handler.handle()
+    await new Promise((r) => setTimeout(r, 300))
+
+    expect(emitChains).toContainEqual({
+      room: "ws:ws_1:member:member_alice",
+      eventType: "stream:created",
+      payload: event.payload,
+    })
+    expect(emitChains).toContainEqual({
+      room: "ws:ws_1:member:member_bob",
+      eventType: "stream:created",
+      payload: event.payload,
+    })
+    expect(emitChains.some((chain) => chain.room === "ws:ws_1")).toBe(false)
+  })
+
   it("should emit stream:display_name_updated for public stream to workspace room", async () => {
     const event = makeEvent(1n, "stream:display_name_updated", {
       workspaceId: "ws_1",

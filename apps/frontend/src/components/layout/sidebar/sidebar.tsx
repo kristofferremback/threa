@@ -6,6 +6,7 @@ import { useAuth } from "@/auth"
 import {
   useActivityCounts,
   useAllDrafts,
+  createDmDraftId,
   useCreateStream,
   useDraftScratchpads,
   useUnreadCounts,
@@ -49,6 +50,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   const { user } = useAuth()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const currentMember = bootstrap?.members.find((m) => m.userId === user?.id) ?? null
 
   const draftCount = allDrafts.length
   const isDraftsPage = splat === "drafts" || window.location.pathname.endsWith("/drafts")
@@ -63,6 +65,10 @@ export function Sidebar({ workspaceId }: SidebarProps) {
 
   // Build set of muted streams (for suppressing unread badges)
   const mutedStreamIdSet = useMemo(() => new Set(bootstrap?.mutedStreamIds ?? []), [bootstrap?.mutedStreamIds])
+  const dmPeerByStreamId = useMemo(
+    () => new Map((bootstrap?.dmPeers ?? []).map((peer) => [peer.streamId, peer.memberId])),
+    [bootstrap?.dmPeers]
+  )
 
   // Process streams into enriched data with urgency and section
   const processedStreams = useMemo(() => {
@@ -81,17 +87,58 @@ export function Sidebar({ workspaceId }: SidebarProps) {
         const isMuted = mutedStreamIdSet.has(stream.id)
         const urgency = calculateUrgency(stream, unreadCount, mentionCount, isMuted)
         const section = categorizeStream(stream, unreadCount, urgency)
+        const dmPeerMemberId = stream.type === StreamTypes.DM ? dmPeerByStreamId.get(stream.id) : undefined
 
         return {
           ...stream,
           urgency,
           section,
+          dmPeerMemberId,
         }
       })
-  }, [bootstrap?.streams, memberStreamIds, mutedStreamIdSet, getUnreadCount, getMentionCount])
+  }, [bootstrap?.streams, memberStreamIds, mutedStreamIdSet, getUnreadCount, getMentionCount, dmPeerByStreamId])
 
   // System streams are auto-created infrastructure — don't count toward "has content"
-  const hasUserStreams = processedStreams.some((s) => s.type !== StreamTypes.SYSTEM)
+  const hasUserStreamsFromStreams = processedStreams.some((s) => s.type !== StreamTypes.SYSTEM)
+
+  // Members without existing DM streams are shown as virtual DM drafts.
+  const virtualDmStreams = useMemo(() => {
+    if (!bootstrap?.members || !currentMember) return []
+
+    const dmPeerIds = new Set(bootstrap.dmPeers.map((peer) => peer.memberId))
+    const now = new Date().toISOString()
+
+    return bootstrap.members
+      .filter((member) => member.id !== currentMember.id)
+      .filter((member) => !dmPeerIds.has(member.id))
+      .map(
+        (member): StreamItemData => ({
+          id: createDmDraftId(member.id),
+          workspaceId,
+          type: StreamTypes.DM,
+          displayName: member.name,
+          slug: null,
+          description: null,
+          visibility: Visibilities.PRIVATE,
+          parentStreamId: null,
+          parentMessageId: null,
+          rootStreamId: null,
+          companionMode: "off",
+          companionPersonaId: null,
+          createdBy: currentMember.id,
+          createdAt: now,
+          updatedAt: now,
+          archivedAt: null,
+          lastMessagePreview: null,
+          urgency: "quiet",
+          section: "other",
+          dmPeerMemberId: member.id,
+        })
+      )
+      .sort((a, b) => (a.displayName ?? "").localeCompare(b.displayName ?? ""))
+  }, [bootstrap?.members, bootstrap?.dmPeers, currentMember, workspaceId])
+
+  const hasUserStreams = hasUserStreamsFromStreams || virtualDmStreams.length > 0
 
   // Organize streams by section
   const streamsBySection = useMemo(() => {
@@ -99,8 +146,9 @@ export function Sidebar({ workspaceId }: SidebarProps) {
     const recentCandidates: StreamItemData[] = [] // All streams that could go in Recent
     const pinned: StreamItemData[] = []
     const other: StreamItemData[] = []
+    const smartStreams = [...processedStreams, ...virtualDmStreams]
 
-    for (const stream of processedStreams) {
+    for (const stream of smartStreams) {
       switch (stream.section) {
         case "important":
           important.push(stream)
@@ -149,7 +197,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
       pinned,
       other,
     }
-  }, [processedStreams, getUnreadCount])
+  }, [processedStreams, virtualDmStreams, getUnreadCount])
 
   // Organize streams by type for "All" view
   const streamsByType = useMemo(() => {
@@ -171,10 +219,14 @@ export function Sidebar({ workspaceId }: SidebarProps) {
     // Sort each section using configured sort types
     sortStreams(scratchpads, ALL_SECTIONS.scratchpads.sortType, getUnreadCount)
     sortStreams(channels, ALL_SECTIONS.channels.sortType, getUnreadCount)
-    sortStreams(dms, ALL_SECTIONS.dms.sortType, getUnreadCount)
+    const realDms = dms.filter((stream) => stream.type === StreamTypes.DM)
+    const systemStreams = dms.filter((stream) => stream.type === StreamTypes.SYSTEM)
 
-    return { scratchpads, channels, dms }
-  }, [processedStreams, getUnreadCount])
+    sortStreams(realDms, "activity", getUnreadCount)
+    sortStreams(systemStreams, ALL_SECTIONS.dms.sortType, getUnreadCount)
+
+    return { scratchpads, channels, dms: [...realDms, ...systemStreams, ...virtualDmStreams] }
+  }, [processedStreams, getUnreadCount, virtualDmStreams])
 
   const isSectionCollapsed = useCallback((section: string) => collapsedSections.includes(section), [collapsedSections])
 
@@ -299,12 +351,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
           scrollContainerRef={scrollContainerRef}
         />
       }
-      footer={
-        <SidebarFooter
-          workspaceId={workspaceId}
-          currentMember={bootstrap?.members.find((m) => m.userId === user?.id) ?? null}
-        />
-      }
+      footer={<SidebarFooter workspaceId={workspaceId} currentMember={currentMember} />}
     />
   )
 }

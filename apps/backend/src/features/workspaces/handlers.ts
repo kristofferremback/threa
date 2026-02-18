@@ -100,13 +100,14 @@ export function createWorkspaceHandlers({
       const memberId = req.member!.id
       const workspaceId = req.workspaceId!
 
-      const [workspace, members, streams, personas, emojiWeights, userPreferences] = await Promise.all([
+      const [workspace, members, streams, personas, emojiWeights, userPreferences, dmPeers] = await Promise.all([
         workspaceService.getWorkspaceById(workspaceId),
         workspaceService.getMembers(workspaceId),
         streamService.listWithPreviews(workspaceId, memberId),
         workspaceService.getPersonasForWorkspace(workspaceId),
         workspaceService.getEmojiWeights(workspaceId, memberId),
         userPreferencesService.getPreferences(workspaceId, memberId),
+        streamService.listDmPeers(workspaceId, memberId),
       ])
 
       if (!workspace) {
@@ -184,6 +185,7 @@ export function createWorkspaceHandlers({
           activityCounts: activityCountsPerStream,
           unreadActivityCount: activityCounts?.total ?? 0,
           mutedStreamIds,
+          dmPeers,
           userPreferences,
           invitations,
         },

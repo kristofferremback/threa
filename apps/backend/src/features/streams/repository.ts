@@ -59,6 +59,7 @@ export interface InsertStreamParams {
   rootStreamId?: string
   companionMode?: CompanionMode
   companionPersonaId?: string
+  uniquenessKey?: string
   createdBy: string
 }
 
@@ -84,6 +85,11 @@ export interface LastMessagePreview {
 /** Stream with optional last message preview, for sidebar listing */
 export interface StreamWithPreview extends Stream {
   lastMessagePreview: LastMessagePreview | null
+}
+
+export interface DmPeer {
+  memberId: string
+  streamId: string
 }
 
 function mapRowToStream(row: StreamRow): Stream {
@@ -175,6 +181,45 @@ export const StreamRepository = {
           LIMIT 1`
     )
     return result.rows[0] ? mapRowToStream(result.rows[0]) : null
+  },
+
+  async findByUniquenessKey(db: Querier, workspaceId: string, uniquenessKey: string): Promise<Stream | null> {
+    const result = await db.query<StreamRow>(
+      sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams
+          WHERE workspace_id = ${workspaceId} AND uniqueness_key = ${uniquenessKey}
+          LIMIT 1`
+    )
+    return result.rows[0] ? mapRowToStream(result.rows[0]) : null
+  },
+
+  async listDmPeersForMember(db: Querier, workspaceId: string, memberId: string): Promise<DmPeer[]> {
+    const result = await db.query<{ stream_id: string; member_id: string }>(sql`
+      WITH dm_members AS (
+        SELECT
+          sm.stream_id,
+          array_agg(DISTINCT sm.member_id ORDER BY sm.member_id) AS member_ids
+        FROM stream_members sm
+        JOIN streams s ON s.id = sm.stream_id
+        WHERE s.workspace_id = ${workspaceId}
+          AND s.type = 'dm'
+          AND s.archived_at IS NULL
+        GROUP BY sm.stream_id
+        HAVING COUNT(DISTINCT sm.member_id) = 2
+          AND bool_or(sm.member_id = ${memberId})
+      )
+      SELECT
+        stream_id,
+        CASE
+          WHEN member_ids[1] = ${memberId} THEN member_ids[2]
+          ELSE member_ids[1]
+        END AS member_id
+      FROM dm_members
+    `)
+
+    return result.rows.map((row) => ({
+      memberId: row.member_id,
+      streamId: row.stream_id,
+    }))
   },
 
   async list(
@@ -342,7 +387,7 @@ export const StreamRepository = {
       INSERT INTO streams (
         id, workspace_id, type, display_name, slug, description, visibility,
         parent_stream_id, parent_message_id, root_stream_id,
-        companion_mode, companion_persona_id, created_by
+        companion_mode, companion_persona_id, uniqueness_key, created_by
       ) VALUES (
         ${params.id},
         ${params.workspaceId},
@@ -356,11 +401,58 @@ export const StreamRepository = {
         ${params.rootStreamId ?? null},
         ${params.companionMode ?? "off"},
         ${params.companionPersonaId ?? null},
+        ${params.uniquenessKey ?? null},
         ${params.createdBy}
       )
       RETURNING ${sql.raw(SELECT_FIELDS)}
     `)
     return mapRowToStream(result.rows[0])
+  },
+
+  /**
+   * Atomically insert a stream with a uniqueness key or return the existing one.
+   * Works with the partial unique index on (workspace_id, uniqueness_key).
+   */
+  async insertOrFindByUniquenessKey(
+    db: Querier,
+    params: InsertStreamParams & { uniquenessKey: string }
+  ): Promise<{ stream: Stream; created: boolean }> {
+    const insertResult = await db.query<StreamRow>(sql`
+      INSERT INTO streams (
+        id, workspace_id, type, display_name, slug, description, visibility,
+        parent_stream_id, parent_message_id, root_stream_id,
+        companion_mode, companion_persona_id, uniqueness_key, created_by
+      ) VALUES (
+        ${params.id},
+        ${params.workspaceId},
+        ${params.type},
+        ${params.displayName ?? null},
+        ${params.slug ?? null},
+        ${params.description ?? null},
+        ${params.visibility ?? "private"},
+        ${params.parentStreamId ?? null},
+        ${params.parentMessageId ?? null},
+        ${params.rootStreamId ?? null},
+        ${params.companionMode ?? "off"},
+        ${params.companionPersonaId ?? null},
+        ${params.uniquenessKey},
+        ${params.createdBy}
+      )
+      ON CONFLICT (workspace_id, uniqueness_key)
+        WHERE uniqueness_key IS NOT NULL
+      DO NOTHING
+      RETURNING ${sql.raw(SELECT_FIELDS)}
+    `)
+
+    if (insertResult.rows.length > 0) {
+      return { stream: mapRowToStream(insertResult.rows[0]), created: true }
+    }
+
+    const existing = await this.findByUniquenessKey(db, params.workspaceId, params.uniquenessKey)
+    if (!existing) {
+      throw new Error("Stream uniqueness conflict but existing stream not found")
+    }
+    return { stream: existing, created: false }
   },
 
   /**
@@ -376,7 +468,7 @@ export const StreamRepository = {
       INSERT INTO streams (
         id, workspace_id, type, display_name, slug, description, visibility,
         parent_stream_id, parent_message_id, root_stream_id,
-        companion_mode, companion_persona_id, created_by
+        companion_mode, companion_persona_id, uniqueness_key, created_by
       ) VALUES (
         ${params.id},
         ${params.workspaceId},
@@ -390,6 +482,7 @@ export const StreamRepository = {
         ${params.rootStreamId ?? null},
         ${params.companionMode ?? "off"},
         ${params.companionPersonaId ?? null},
+        ${params.uniquenessKey ?? null},
         ${params.createdBy}
       )
       ON CONFLICT (parent_stream_id, parent_message_id)

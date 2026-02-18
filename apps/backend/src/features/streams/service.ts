@@ -1,7 +1,7 @@
 import { z } from "zod"
 import { Pool } from "pg"
 import { withClient, withTransaction, type Querier } from "../../db"
-import { StreamRepository, Stream, StreamWithPreview, LastMessagePreview } from "./repository"
+import { StreamRepository, Stream, StreamWithPreview, LastMessagePreview, type DmPeer } from "./repository"
 import { StreamMemberRepository, StreamMember } from "./member-repository"
 import { StreamEventRepository } from "./event-repository"
 import { MessageRepository } from "../messaging"
@@ -27,6 +27,8 @@ import {
 } from "@threa/types"
 import { streamTypeSchema, visibilitySchema, companionModeSchema } from "../../lib/schemas"
 import { isAllowedLevel } from "./notification-config"
+
+const DM_UNIQUENESS_KEY_PREFIX = "dm"
 
 const createScratchpadParamsSchema = z.object({
   workspaceId: z.string(),
@@ -73,6 +75,29 @@ const createStreamParamsSchema = z.object({
 })
 
 export type CreateStreamParams = z.infer<typeof createStreamParamsSchema>
+
+interface FindOrCreateDmParams {
+  workspaceId: string
+  memberOneId: string
+  memberTwoId: string
+}
+
+interface ResolveWritableMessageStreamParams {
+  workspaceId: string
+  memberId: string
+  target: { streamId: string } | { dmMemberId: string }
+}
+
+function normalizeDmMemberPair(memberOneId: string, memberTwoId: string): { memberAId: string; memberBId: string } {
+  return memberOneId < memberTwoId
+    ? { memberAId: memberOneId, memberBId: memberTwoId }
+    : { memberAId: memberTwoId, memberBId: memberOneId }
+}
+
+function buildDmUniquenessKey(memberOneId: string, memberTwoId: string): string {
+  const { memberAId, memberBId } = normalizeDmMemberPair(memberOneId, memberTwoId)
+  return `${DM_UNIQUENESS_KEY_PREFIX}:${memberAId}:${memberBId}`
+}
 
 export class StreamService {
   constructor(private pool: Pool) {}
@@ -203,6 +228,94 @@ export class StreamService {
     }
 
     return streams.map((s) => (dmNameMap.has(s.id) ? { ...s, displayName: dmNameMap.get(s.id)! } : s))
+  }
+
+  async listDmPeers(workspaceId: string, memberId: string): Promise<DmPeer[]> {
+    return StreamRepository.listDmPeersForMember(this.pool, workspaceId, memberId)
+  }
+
+  async resolveWritableMessageStream(params: ResolveWritableMessageStreamParams): Promise<Stream> {
+    if ("dmMemberId" in params.target) {
+      const stream = await this.findOrCreateDm({
+        workspaceId: params.workspaceId,
+        memberOneId: params.memberId,
+        memberTwoId: params.target.dmMemberId,
+      })
+
+      if (stream.workspaceId !== params.workspaceId) {
+        throw new StreamNotFoundError()
+      }
+
+      if (stream.archivedAt) {
+        throw new HttpError("Cannot send messages to an archived stream", { status: 403 })
+      }
+
+      return stream
+    }
+
+    const stream = await this.getStreamById(params.target.streamId)
+
+    if (!stream || stream.workspaceId !== params.workspaceId) {
+      throw new StreamNotFoundError()
+    }
+
+    if (stream.archivedAt) {
+      throw new HttpError("Cannot send messages to an archived stream", { status: 403 })
+    }
+
+    const isMember = await this.isMember(stream.id, params.memberId)
+    if (!isMember) {
+      throw new HttpError("Not a member of this stream", { status: 403 })
+    }
+
+    return stream
+  }
+
+  async findOrCreateDm(params: FindOrCreateDmParams): Promise<Stream> {
+    if (params.memberOneId === params.memberTwoId) {
+      throw new HttpError("Cannot create a DM with yourself", { status: 400, code: "DM_SELF_NOT_ALLOWED" })
+    }
+
+    const { memberAId, memberBId } = normalizeDmMemberPair(params.memberOneId, params.memberTwoId)
+    const uniquenessKey = buildDmUniquenessKey(memberAId, memberBId)
+
+    return withTransaction(this.pool, async (client) => {
+      const members = await MemberRepository.findByIds(client, [memberAId, memberBId])
+      const workspaceMemberIds = new Set(
+        members.filter((member) => member.workspaceId === params.workspaceId).map((member) => member.id)
+      )
+      if (!workspaceMemberIds.has(memberAId) || !workspaceMemberIds.has(memberBId)) {
+        throw new HttpError("Both members must belong to this workspace", {
+          status: 404,
+          code: "MEMBER_NOT_FOUND",
+        })
+      }
+
+      const { stream, created } = await StreamRepository.insertOrFindByUniquenessKey(client, {
+        id: streamId(),
+        workspaceId: params.workspaceId,
+        type: StreamTypes.DM,
+        visibility: Visibilities.PRIVATE,
+        uniquenessKey,
+        createdBy: params.memberOneId,
+      })
+
+      if (stream.type !== StreamTypes.DM) {
+        throw new Error(`Uniqueness key ${uniquenessKey} is already used by non-DM stream ${stream.id}`)
+      }
+
+      if (created) {
+        await StreamMemberRepository.insertMany(client, stream.id, [memberAId, memberBId])
+        await OutboxRepository.insert(client, "stream:created", {
+          workspaceId: params.workspaceId,
+          streamId: stream.id,
+          stream,
+          dmMemberIds: [memberAId, memberBId],
+        })
+      }
+
+      return stream
+    })
   }
 
   async create(params: CreateStreamParams): Promise<Stream> {
@@ -570,6 +683,13 @@ export class StreamService {
         throw new StreamNotFoundError()
       }
 
+      if (stream.type === StreamTypes.DM) {
+        throw new HttpError("Cannot add members to direct messages", {
+          status: 400,
+          code: "DM_MEMBERS_IMMUTABLE",
+        })
+      }
+
       // Verify the target member belongs to this workspace
       const member = await MemberRepository.findById(client, memberId)
       if (!member || member.workspaceId !== workspaceId) {
@@ -605,6 +725,13 @@ export class StreamService {
       const stream = await StreamRepository.findById(client, streamId)
       if (!stream) {
         throw new StreamNotFoundError()
+      }
+
+      if (stream.type === StreamTypes.DM) {
+        throw new HttpError("Cannot remove members from direct messages", {
+          status: 400,
+          code: "DM_MEMBERS_IMMUTABLE",
+        })
       }
 
       // Lock member rows and check count atomically to prevent racing removals

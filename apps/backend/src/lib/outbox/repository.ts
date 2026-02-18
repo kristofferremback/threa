@@ -144,6 +144,7 @@ export interface StreamMemberRemovedOutboxPayload extends StreamScopedPayload {
 export interface StreamCreatedOutboxPayload extends WorkspaceScopedPayload {
   streamId: string
   stream: Stream
+  dmMemberIds?: [string, string]
 }
 
 export interface StreamUpdatedOutboxPayload extends WorkspaceScopedPayload {

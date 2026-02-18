@@ -38,6 +38,7 @@ export type {
   UpdateStreamParams,
   StreamWithPreview,
   LastMessagePreview,
+  DmPeer,
 } from "./repository"
 
 export { StreamEventRepository } from "./event-repository"

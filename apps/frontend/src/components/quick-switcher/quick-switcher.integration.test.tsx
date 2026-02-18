@@ -27,13 +27,23 @@ function renderWithProviders(ui: React.ReactElement) {
 // are in src/test/setup.ts which runs before tests via vitest config
 
 // Hoisted values for configurable mocks (vi.mock is hoisted above imports)
-const { mockNavigate, mockSearchState } = vi.hoisted(() => ({
+const { mockNavigate, mockSearchState, mockWorkspaceBootstrap } = vi.hoisted(() => ({
   mockNavigate: vi.fn(),
   mockSearchState: {
     results: [] as typeof import("@/test/fixtures/messages").mockSearchResultsList,
     isLoading: false,
     search: vi.fn(),
     clear: vi.fn(),
+  },
+  mockWorkspaceBootstrap: {
+    data: {} as {
+      streams: unknown[]
+      streamMemberships: unknown[]
+      users: unknown[]
+      members: unknown[]
+      personas: unknown[]
+      dmPeers?: Array<{ memberId: string; streamId: string }>
+    },
   },
 }))
 
@@ -60,32 +70,31 @@ vi.mock("react-router-dom", () => ({
 }))
 
 // Mock @/hooks with fixture data
-vi.mock("@/hooks", () => ({
-  useWorkspaceBootstrap: () => ({
-    data: {
-      streams: mockStreamsList,
-      users: mockUsersList,
-      members: mockMembersList,
-      personas: [],
-    },
-    isLoading: false,
-  }),
-  useDraftScratchpads: () => ({ createDraft: vi.fn() }),
-  useCreateStream: () => ({ mutateAsync: vi.fn() }),
-  useSearch: () => ({
-    results: mockSearchState.results,
-    isLoading: mockSearchState.isLoading,
-    error: null,
-    search: mockSearchState.search,
-    clear: mockSearchState.clear,
-  }),
-  useFormattedDate: () => ({
-    formatDate: (date: Date) => date.toLocaleDateString(),
-    formatTime: (date: Date) => date.toLocaleTimeString(),
-    formatDateTime: (date: Date) => date.toLocaleString(),
-    formatRelative: (_date: Date) => "just now",
-  }),
-}))
+vi.mock("@/hooks", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/hooks")>()
+  return {
+    ...actual,
+    useWorkspaceBootstrap: () => ({
+      data: mockWorkspaceBootstrap.data,
+      isLoading: false,
+    }),
+    useDraftScratchpads: () => ({ createDraft: vi.fn() }),
+    useCreateStream: () => ({ mutateAsync: vi.fn() }),
+    useSearch: () => ({
+      results: mockSearchState.results,
+      isLoading: mockSearchState.isLoading,
+      error: null,
+      search: mockSearchState.search,
+      clear: mockSearchState.clear,
+    }),
+    useFormattedDate: () => ({
+      formatDate: (date: Date) => date.toLocaleDateString(),
+      formatTime: (date: Date) => date.toLocaleTimeString(),
+      formatDateTime: (date: Date) => date.toLocaleString(),
+      formatRelative: (_date: Date) => "just now",
+    }),
+  }
+})
 
 // Mock use-mentionables - called by RichInput's useMentionSuggestion
 vi.mock("@/hooks/use-mentionables", () => {
@@ -127,12 +136,7 @@ vi.mock("@/auth", () => ({
 // Mock use-workspaces - called by useChannelSuggestion
 vi.mock("@/hooks/use-workspaces", () => ({
   useWorkspaceBootstrap: () => ({
-    data: {
-      streams: mockStreamsList,
-      users: mockUsersList,
-      members: mockMembersList,
-      personas: [],
-    },
+    data: mockWorkspaceBootstrap.data,
     isLoading: false,
   }),
 }))
@@ -165,6 +169,14 @@ describe("QuickSwitcher Integration Tests", () => {
     mockSearchState.isLoading = false
     mockSearchState.search = vi.fn()
     mockSearchState.clear = vi.fn()
+    mockWorkspaceBootstrap.data = {
+      streams: mockStreamsList,
+      streamMemberships: [],
+      users: mockUsersList,
+      members: mockMembersList,
+      personas: [],
+      dmPeers: undefined,
+    }
   })
 
   describe("dialog lifecycle", () => {
@@ -288,6 +300,10 @@ describe("QuickSwitcher Integration Tests", () => {
 
       it("should not go below last item with ArrowDown", async () => {
         const user = userEvent.setup()
+        mockWorkspaceBootstrap.data.dmPeers = [
+          { memberId: "member_2", streamId: "stream_dm_existing_2" },
+          { memberId: "member_3", streamId: "stream_dm_existing_3" },
+        ]
         renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
         await waitFor(() => {
@@ -1272,6 +1288,34 @@ describe("QuickSwitcher Integration Tests", () => {
 
       await waitFor(() => {
         expect(screen.getByText("No streams found.")).toBeInTheDocument()
+      })
+    })
+
+    it("should include virtual DM targets for members without DM streams", async () => {
+      const user = userEvent.setup()
+      mockWorkspaceBootstrap.data.dmPeers = [{ memberId: "member_2", streamId: "stream_dm_existing" }]
+
+      renderWithProviders(<QuickSwitcher {...defaultProps} />)
+
+      const input = screen.getByLabelText("Quick switcher input")
+      await user.type(input, "test")
+
+      await waitFor(() => {
+        expect(document.querySelector('a[href="/w/workspace_1/s/draft_dm_member_3"]')).toBeInTheDocument()
+      })
+    })
+
+    it("should include virtual DM targets when dmPeers is missing", async () => {
+      const user = userEvent.setup()
+      mockWorkspaceBootstrap.data.dmPeers = undefined
+
+      renderWithProviders(<QuickSwitcher {...defaultProps} />)
+
+      const input = screen.getByLabelText("Quick switcher input")
+      await user.type(input, "test")
+
+      await waitFor(() => {
+        expect(document.querySelector('a[href="/w/workspace_1/s/draft_dm_member_3"]')).toBeInTheDocument()
       })
     })
   })

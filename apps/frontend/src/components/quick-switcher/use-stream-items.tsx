@@ -1,10 +1,11 @@
 import { useState, useMemo, useCallback } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Bell, FileText, Hash, MessageSquare, Plus, X, Archive } from "lucide-react"
-import { StreamTypes } from "@threa/types"
+import { StreamTypes, getAvatarUrl } from "@threa/types"
 import type { Stream, StreamType } from "@threa/types"
 import { getStreamName, streamFallbackLabel } from "@/lib/streams"
 import { streamsApi } from "@/api"
+import { createDmDraftId } from "@/hooks"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -63,6 +64,9 @@ export function useStreamItems(context: ModeContext): ModeResult {
   const {
     streams: activeStreams,
     streamMemberships,
+    members,
+    currentMemberId,
+    dmPeers,
     query,
     onQueryChange,
     workspaceId,
@@ -133,6 +137,8 @@ export function useStreamItems(context: ModeContext): ModeResult {
 
   const items = useMemo(() => {
     const lowerQuery = searchText.toLowerCase()
+    const memberById = new Map((members ?? []).map((member) => [member.id, member]))
+    const dmPeerByStreamId = new Map((dmPeers ?? []).map((peer) => [peer.streamId, peer.memberId]))
 
     // Combine streams based on filters
     const allStreams: Stream[] = [
@@ -164,7 +170,7 @@ export function useStreamItems(context: ModeContext): ModeResult {
       return Infinity // No match
     }
 
-    return filteredStreams
+    const streamItems = filteredStreams
       .map((stream) => ({ stream, score: scoreStream(stream) }))
       .filter(({ score }) => score !== Infinity)
       .sort((a, b) => {
@@ -181,11 +187,20 @@ export function useStreamItems(context: ModeContext): ModeResult {
         let description = typeLabel
         if (isArchived) description = `${typeLabel} · Archived`
         else if (notJoined) description = `${typeLabel} · Not joined`
+
+        let avatarUrl: string | undefined
+        if (stream.type === StreamTypes.DM) {
+          const peerMemberId = dmPeerByStreamId.get(stream.id)
+          const peerMember = peerMemberId ? memberById.get(peerMemberId) : undefined
+          avatarUrl = getAvatarUrl(peerMember?.avatarUrl, 64)
+        }
+
         return {
           id: stream.id,
           label: getStreamName(stream) ?? streamFallbackLabel(stream.type, "generic"),
           description,
           icon: STREAM_ICONS[stream.type],
+          avatarUrl,
           href,
           onSelect: () => {
             closeDialog()
@@ -193,9 +208,51 @@ export function useStreamItems(context: ModeContext): ModeResult {
           },
         }
       })
+
+    const canShowVirtualDms =
+      Boolean(currentMemberId) &&
+      Boolean(members) &&
+      showActive &&
+      (typeFilters.length === 0 || typeFilters.includes(StreamTypes.DM))
+
+    if (!canShowVirtualDms) {
+      return streamItems
+    }
+
+    const existingDmPeerIds = new Set((dmPeers ?? []).map((peer) => peer.memberId))
+    const virtualDmItems = members!
+      .filter((member) => member.id !== currentMemberId)
+      .filter((member) => !existingDmPeerIds.has(member.id))
+      .map((member) => {
+        const name = member.name
+        const score = searchText ? (name.toLowerCase().includes(lowerQuery) ? 0 : Infinity) : 0
+        return { member, score }
+      })
+      .filter(({ score }) => score !== Infinity)
+      .sort((a, b) => a.member.name.localeCompare(b.member.name))
+      .map(
+        ({ member }): QuickSwitcherItem => ({
+          id: createDmDraftId(member.id),
+          label: member.name,
+          description: "Direct Message · Start conversation",
+          icon: STREAM_ICONS[StreamTypes.DM],
+          avatarUrl: getAvatarUrl(member.avatarUrl, 64),
+          group: "Members",
+          href: `/w/${workspaceId}/s/${createDmDraftId(member.id)}`,
+          onSelect: () => {
+            closeDialog()
+            navigate(`/w/${workspaceId}/s/${createDmDraftId(member.id)}`)
+          },
+        })
+      )
+
+    return [...streamItems, ...virtualDmItems]
   }, [
     activeStreams,
     archivedStreams,
+    currentMemberId,
+    dmPeers,
+    members,
     searchText,
     showActive,
     showArchived,
