@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test"
-import { loginAndCreateWorkspace, loginInNewContext } from "./helpers"
+import { loginAndCreateWorkspace, loginInNewContext, createDmDraftId } from "./helpers"
 
 test.describe("DM Lazy Creation", () => {
   test("should convert a draft DM to a real stream on first message", async ({ browser }) => {
@@ -30,7 +30,7 @@ test.describe("DM Lazy Creation", () => {
       const inviteeMember = membersBody.members.find((member) => member.email === inviteeEmail)
       expect(inviteeMember).toBeTruthy()
 
-      const draftStreamId = `draft_dm_${inviteeMember!.id}`
+      const draftStreamId = createDmDraftId(inviteeMember!.id)
       await ownerPage.goto(`/w/${workspaceId}/s/${draftStreamId}`)
 
       const firstMessage = `First DM message ${testId}`
@@ -48,6 +48,14 @@ test.describe("DM Lazy Creation", () => {
       await expect(ownerPage.locator(`a[href="/w/${workspaceId}/s/${draftStreamId}"]`)).toHaveCount(0)
       await expect(ownerPage.locator(`a[href="/w/${workspaceId}/s/${streamId}"]`).first()).toBeVisible({
         timeout: 5000,
+      })
+
+      // Verify invitee sees the DM in their sidebar after navigating to the workspace.
+      // Bootstrap on navigation includes the DM stream created above.
+      await invitee.page.goto(`/w/${workspaceId}`)
+      await expect(invitee.page.getByRole("button", { name: "+ New Scratchpad" })).toBeVisible({ timeout: 10000 })
+      await expect(invitee.page.locator(`a[href="/w/${workspaceId}/s/${streamId}"]`).first()).toBeVisible({
+        timeout: 10000,
       })
     } finally {
       await ownerContext.close()

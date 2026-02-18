@@ -304,9 +304,8 @@ export class StreamService {
         throw new Error(`Uniqueness key ${uniquenessKey} is already used by non-DM stream ${stream.id}`)
       }
 
-      await StreamMemberRepository.insertMany(client, stream.id, [memberAId, memberBId])
-
       if (created) {
+        await StreamMemberRepository.insertMany(client, stream.id, [memberAId, memberBId])
         await OutboxRepository.insert(client, "stream:created", {
           workspaceId: params.workspaceId,
           streamId: stream.id,

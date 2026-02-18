@@ -306,6 +306,8 @@ function useDraftDmStream(workspaceId: string, streamId: string, enabled: boolea
               },
             ]
 
+        const membershipExists = old.streamMemberships.some((m) => m.streamId === message.streamId)
+
         return {
           ...old,
           dmPeers: hasPeer ? old.dmPeers : [...old.dmPeers, { memberId: targetMemberId, streamId: message.streamId }],
@@ -314,12 +316,28 @@ function useDraftDmStream(workspaceId: string, streamId: string, enabled: boolea
               ? { ...stream, displayName: targetMemberName ?? stream.displayName }
               : stream
           ),
+          streamMemberships:
+            !membershipExists && currentMemberId
+              ? [
+                  ...old.streamMemberships,
+                  {
+                    streamId: message.streamId,
+                    memberId: currentMemberId,
+                    pinned: false,
+                    pinnedAt: null,
+                    notificationLevel: null,
+                    lastReadEventId: null,
+                    lastReadAt: null,
+                    joinedAt: message.createdAt,
+                  },
+                ]
+              : old.streamMemberships,
         }
       })
 
       return { navigateTo: `/w/${workspaceId}/s/${message.streamId}`, replace: true }
     },
-    [targetMemberId, workspaceId, messageService, queryClient, targetMemberName]
+    [targetMemberId, workspaceId, messageService, queryClient, targetMemberName, currentMemberId]
   )
 
   return {

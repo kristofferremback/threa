@@ -82,6 +82,14 @@ export async function switchToAllView(page: Page): Promise<void> {
  * Create a channel via the dialog prompt and wait for it to load.
  * Switches to "All" view after creation so the channel appears in sidebar.
  */
+/**
+ * Mirrors the frontend's createDmDraftId so E2E tests reference the same route shape
+ * without duplicating the raw string literal at call sites.
+ */
+export function createDmDraftId(memberId: string): string {
+  return `draft_dm_${memberId}`
+}
+
 export async function createChannel(page: Page, channelName: string): Promise<void> {
   page.once("dialog", async (dialog) => {
     await dialog.accept(channelName)
