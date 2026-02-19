@@ -216,6 +216,7 @@ export function StreamContent({
         />
       ) : (
         <MessageInput
+          key={streamId}
           workspaceId={workspaceId}
           streamId={streamId}
           streamName={stream?.displayName ?? undefined}

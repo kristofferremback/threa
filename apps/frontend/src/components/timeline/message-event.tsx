@@ -1,4 +1,4 @@
-import { type ReactNode, useRef, useEffect, useState, useMemo } from "react"
+import { type ReactNode, useRef, useEffect, useState, useMemo, useCallback } from "react"
 import type { StreamEvent, AttachmentSummary, JSONContent } from "@threa/types"
 import { Link } from "react-router-dom"
 import { toast } from "sonner"
@@ -8,7 +8,7 @@ import { MarkdownContent, AttachmentProvider } from "@/components/ui/markdown-co
 import { RelativeTime } from "@/components/relative-time"
 import { PersonaAvatar } from "@/components/persona-avatar"
 import { usePendingMessages, usePanel, createDraftPanelId, useTrace, useMessageService } from "@/contexts"
-import { useActors, useWorkspaceBootstrap, getStepLabel, type MessageAgentActivity } from "@/hooks"
+import { useActors, useWorkspaceBootstrap, getStepLabel, focusAtEnd, type MessageAgentActivity } from "@/hooks"
 import { useUser } from "@/auth"
 import { cn } from "@/lib/utils"
 import { AttachmentList } from "./attachment-list"
@@ -179,6 +179,16 @@ function SentMessageEvent({
   const [isDeleting, setIsDeleting] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
 
+  // Restore focus to the zone's editor after exiting inline edit mode
+  const stopEditing = useCallback(() => {
+    setIsEditing(false)
+    requestAnimationFrame(() => {
+      const zone = containerRef.current?.closest<HTMLElement>("[data-editor-zone]")
+      const editor = zone?.querySelector<HTMLElement>('[contenteditable="true"]')
+      if (editor) focusAtEnd(editor)
+    })
+  }, [])
+
   // Scroll to this message when highlighted
   useEffect(() => {
     if (isHighlighted && containerRef.current) {
@@ -308,8 +318,8 @@ function SentMessageEvent({
             messageId={payload.messageId}
             workspaceId={workspaceId}
             initialContentJson={payload.contentJson}
-            onSave={() => setIsEditing(false)}
-            onCancel={() => setIsEditing(false)}
+            onSave={stopEditing}
+            onCancel={stopEditing}
           />
         ) : undefined}
       </MessageLayout>

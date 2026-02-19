@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
-import { useStreamOrDraft, useStreamError, usePanelLayout, isDmDraftId } from "@/hooks"
+import { useStreamOrDraft, useStreamError, usePanelLayout, isDmDraftId, useTypeToFocus } from "@/hooks"
 import { usePanel } from "@/contexts"
 import { TimelineView } from "@/components/timeline"
 import { StreamPanel, ThreadHeader } from "@/components/thread"
@@ -55,6 +55,8 @@ export function StreamPage() {
     handleResizeKeyDown,
     handleTransitionEnd,
   } = usePanelLayout(isPanelOpen)
+
+  useTypeToFocus()
 
   // Unified error checking - checks both coordinated loading and direct query errors
   const streamError = useStreamError(streamId, error)
@@ -211,8 +213,8 @@ export function StreamPage() {
           )}
         </div>
       </header>
-      <main className="flex-1 overflow-hidden">
-        <TimelineView isDraft={isDraft} />
+      <main className="flex-1 overflow-hidden" data-editor-zone="main">
+        <TimelineView isDraft={isDraft} autoFocus />
       </main>
     </div>
   )

@@ -3,9 +3,10 @@ import { StreamContent } from "./stream-content"
 
 interface TimelineViewProps {
   isDraft?: boolean
+  autoFocus?: boolean
 }
 
-export function TimelineView({ isDraft = false }: TimelineViewProps) {
+export function TimelineView({ isDraft = false, autoFocus }: TimelineViewProps) {
   const { workspaceId, streamId } = useParams<{ workspaceId: string; streamId: string }>()
   const [searchParams] = useSearchParams()
   const highlightMessageId = searchParams.get("m")
@@ -20,6 +21,7 @@ export function TimelineView({ isDraft = false }: TimelineViewProps) {
       streamId={streamId}
       highlightMessageId={highlightMessageId}
       isDraft={isDraft}
+      autoFocus={autoFocus}
     />
   )
 }

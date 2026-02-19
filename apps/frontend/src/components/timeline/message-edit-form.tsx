@@ -83,7 +83,7 @@ export function MessageEditForm({
 
   return (
     <>
-      <div className="[&_.tiptap]:!pt-0 [&_.tiptap_p]:!leading-relaxed">
+      <div data-inline-edit className="[&_.tiptap]:!pt-0 [&_.tiptap_p]:!leading-relaxed">
         <RichEditor
           value={contentJson}
           onChange={setContentJson}
