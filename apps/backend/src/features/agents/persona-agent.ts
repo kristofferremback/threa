@@ -30,6 +30,7 @@ import { WorkspaceAgent, type WorkspaceAgentResult, computeAgentAccessSpec } fro
 import { logger } from "../../lib/logger"
 import { buildAgentContext, buildToolSet, withCompanionSession, type WithSessionResult } from "./companion"
 import { AgentRuntime, SessionTraceObserver, OtelObserver, type NewMessageInfo } from "./runtime"
+import { SUPERSEDE_RESPONSE_VALIDATOR_MAX_TOKENS, SUPERSEDE_RESPONSE_VALIDATOR_TEMPERATURE } from "./config"
 
 export type { WithSessionResult }
 
@@ -785,8 +786,8 @@ function buildSupersedeResponseValidator(params: {
             rerun_cause: rerunContext?.cause ?? "unknown",
           },
         },
-        maxTokens: 180,
-        temperature: 0,
+        maxTokens: SUPERSEDE_RESPONSE_VALIDATOR_MAX_TOKENS,
+        temperature: SUPERSEDE_RESPONSE_VALIDATOR_TEMPERATURE,
         messages: [
           {
             role: "system",
