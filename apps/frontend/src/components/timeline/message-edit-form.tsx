@@ -32,6 +32,7 @@ export function MessageEditForm({
   const [contentJson, setContentJson] = useState<JSONContent>(initialContentJson ?? EMPTY_DOC)
   const [isSaving, setIsSaving] = useState(false)
   const [docEditorOpen, setDocEditorOpen] = useState(false)
+  const [initialMarkdown] = useState(() => serializeToMarkdown(initialContentJson ?? EMPTY_DOC).trim())
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -63,17 +64,26 @@ export function MessageEditForm({
   const handleSubmit = useCallback(async () => {
     const contentMarkdown = serializeToMarkdown(contentJson)
     if (!contentMarkdown.trim()) return
+    if (contentMarkdown.trim() === initialMarkdown) {
+      onCancel()
+      return
+    }
     await saveEdit(contentJson, contentMarkdown)
-  }, [contentJson, saveEdit])
+  }, [contentJson, saveEdit, initialMarkdown, onCancel])
 
   const handleDocEditorSend = useCallback(
     async (markdown: string) => {
       const trimmed = markdown.trim()
       if (!trimmed) return
+      if (trimmed === initialMarkdown) {
+        setDocEditorOpen(false)
+        onCancel()
+        return
+      }
       setDocEditorOpen(false)
       await saveEdit(parseMarkdown(trimmed), trimmed)
     },
-    [saveEdit]
+    [saveEdit, initialMarkdown, onCancel]
   )
 
   const handleDocEditorDismiss = useCallback((markdown: string) => {

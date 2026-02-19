@@ -261,6 +261,11 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
       // Normalize to both JSON and markdown formats
       const { contentJson, contentMarkdown } = normalizeContent(result.data)
 
+      // Skip edit if content hasn't meaningfully changed
+      if (contentMarkdown.trim() === existing.contentMarkdown.trim()) {
+        return res.json({ message: serializeMessage(existing) })
+      }
+
       const message = await eventService.editMessage({
         workspaceId,
         messageId,

@@ -120,4 +120,18 @@ describe("MessageEditForm", () => {
     expect(screen.getByText("Esc")).toBeInTheDocument()
     expect(screen.getByText("↵")).toBeInTheDocument()
   })
+
+  it("should call onCancel without saving when content is unchanged", async () => {
+    const user = userEvent.setup()
+    const onCancel = vi.fn()
+    const onSave = vi.fn()
+
+    renderForm({ onCancel, onSave })
+
+    // Click Save without changing the content
+    await user.click(screen.getByRole("button", { name: "Save" }))
+
+    expect(onCancel).toHaveBeenCalledOnce()
+    expect(onSave).not.toHaveBeenCalled()
+  })
 })
