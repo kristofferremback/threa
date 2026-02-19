@@ -66,7 +66,7 @@ Do NOT flag: pre-existing issues, unchanged lines (except missing corresponding 
 ---
 
 **Agent 1: Spec Compliance** — Two jobs:
-1. **CLAUDE.md audit:** Check each change for violations of instructions/invariants. Cite specific INV-ID with quotes. Only CLEAR violations introduced by this PR. Skip: pre-existing, linter-catchable, stylistic.
+1. **CLAUDE.md audit:** Check each change for violations of instructions/invariants. Cite the specific INV-ID, quote the exact rule text, and include the relevant Invariant Playbook section title. Only CLEAR violations introduced by this PR. Skip: pre-existing, linter-catchable, stylistic.
 2. **Plan adherence:** Compare diff against plan/PR description. Missing corresponding changes? (API→frontend, type→usages, schema→migration). Skip: supporting infrastructure, implementation choices.
 
 **Agent 2: Correctness** — Two jobs:
@@ -105,7 +105,7 @@ Use `gh pr comment N --body "..."`. Link format: `https://github.com/OWNER/REPO/
 
 Found N issues:
 
-1. `file.ts:10-20` — Description (CLAUDE.md: "<quoted>" | bug: <reason> | etc.)
+1. `file.ts:10-20` — Description (CLAUDE.md [INV-XX, <section>]: "<quoted>" | bug: <reason> | etc.)
    https://github.com/OWNER/REPO/blob/SHA/path/file.ts#L9-L21
 
 ---

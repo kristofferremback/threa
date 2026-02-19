@@ -2,6 +2,8 @@
 
 This document describes the three-phase approach used to revise and optimize Threa's CLAUDE.md file for improved quality, scannability, and context efficiency.
 
+> Status note: This is a historical process log. The current canonical rules live in `/Users/kristofferremback/dev/personal/threa/CLAUDE.md` under **Invariant Playbook (Narrative)** and **Quick Invariant Lookup**.
+
 ## Goal
 
 Compact and improve CLAUDE.md quality through factual corrections, documentation extraction, and aggressive compression while preserving all critical information.
@@ -20,7 +22,7 @@ Review each section for outdated or incorrect information. Update to reflect cur
 - **Local Development**: Added NEW section for agent-friendly stub auth mode
 - **Core Concepts**: Expanded with accurate Streams/Memos/Personas details
 - **Architecture Patterns**: Massively expanded from 4 to 9+ patterns
-- **Project Invariants**: Added INV-30 through INV-40 (11 new invariants)
+- **Invariants**: Added INV-30 through INV-40 (11 new invariants)
 - **Backend Architecture**: NEW compact section replacing Service Guidelines
 - **AI Integration**: Updated with wrapper details and cost tracking
 - **Development**: Restructured to emphasize primary folder vs worktrees
@@ -47,7 +49,7 @@ Move detailed concept explanations and component descriptions to `./docs/` for r
 This principle guides extraction decisions:
 
 - **Extract**: Detailed explanations of concepts you already know exist (Streams, Memos, Architecture Patterns). Once you know these exist, you'll look them up when needed.
-- **Keep**: Unknown unknowns, gotchas, and anti-patterns you wouldn't think to search for (Lessons Learned, Project Invariants). These prevent mistakes you don't know to avoid.
+- **Keep**: Unknown unknowns, gotchas, and anti-patterns you wouldn't think to search for (Lessons Learned, Invariants). These prevent mistakes you don't know to avoid.
 
 #### Documents Extracted
 
@@ -83,7 +85,7 @@ This principle guides extraction decisions:
 - Preserved all pattern names and key concepts
 - Added reference: "See: `docs/architecture.md`"
 
-**Invariants Format**: Converted table to list
+**Invariants Format (historical at that revision)**: Converted table to list
 
 - Replaced 3-column table with bold list items: `**INV-X: Name** - Description`
 - Reduced horizontal whitespace from column padding
