@@ -144,6 +144,7 @@ export async function withCompanionSession(
     const { messagesSent, sentMessageIds, lastSeenSequence } = await work(session, pool)
 
     // Phase 3: Complete session + emit completed event atomically
+    let completionCommitted = false
     try {
       await withTransaction(pool, async (db) => {
         const completed = await AgentSessionRepository.completeSession(db, session.id, {
@@ -180,18 +181,27 @@ export async function withCompanionSession(
           streamId,
           event: streamEvent,
         })
+        completionCommitted = true
       })
     } catch (err) {
       logger.error({ err, sessionId: session.id }, "Failed to complete session, orphan cleanup will recover")
       throw err
     }
 
-    const latestSession = await AgentSessionRepository.findById(pool, session.id)
-    if (latestSession?.status === SessionStatuses.DELETED || latestSession?.status === SessionStatuses.SUPERSEDED) {
+    if (!completionCommitted) {
+      const latestSession = await AgentSessionRepository.findById(pool, session.id)
+      if (latestSession?.status === SessionStatuses.DELETED || latestSession?.status === SessionStatuses.SUPERSEDED) {
+        return {
+          status: "skipped" as const,
+          sessionId: latestSession.id,
+          reason: `session ${latestSession.status} before completion`,
+        }
+      }
+
       return {
         status: "skipped" as const,
-        sessionId: latestSession.id,
-        reason: `session ${latestSession.status} before completion`,
+        sessionId: session.id,
+        reason: "session terminated before completion",
       }
     }
 

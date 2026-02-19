@@ -139,6 +139,72 @@ describe("AgentMessageMutationHandler", () => {
     })
   })
 
+  it("does not dispatch rerun when concurrent supersede already won terminal transition", async () => {
+    const editedAt = new Date("2026-02-19T12:00:00.000Z")
+
+    spyOn(OutboxRepository, "fetchAfterId").mockResolvedValue([
+      {
+        id: 1n,
+        eventType: "message:edited",
+        payload: {
+          workspaceId: "ws_1",
+          streamId: "stream_1",
+          event: {
+            actorId: "member_editor",
+            payload: {
+              messageId: "msg_invoke_1",
+            },
+          },
+        },
+        createdAt: editedAt,
+      } as any,
+    ])
+
+    spyOn(MessageVersionRepository, "getCurrentRevision").mockResolvedValue(3)
+    spyOn(StreamEventRepository, "listMessageIdsBySession").mockResolvedValue([])
+
+    spyOn(AgentSessionRepository, "findByTriggerMessage").mockResolvedValue({
+      id: "session_old",
+      streamId: "stream_thread_1",
+      personaId: "persona_1",
+      triggerMessageId: "msg_invoke_1",
+      triggerMessageRevision: 2,
+      supersedesSessionId: null,
+      status: SessionStatuses.COMPLETED,
+      currentStep: 0,
+      currentStepType: null,
+      serverId: null,
+      heartbeatAt: null,
+      responseMessageId: "msg_agent_1",
+      error: null,
+      lastSeenSequence: 10n,
+      sentMessageIds: ["msg_agent_1"],
+      createdAt: new Date("2026-02-19T11:30:00.000Z"),
+      completedAt: new Date("2026-02-19T11:59:00.000Z"),
+    })
+
+    const updateStatusSpy = spyOn(AgentSessionRepository, "updateStatus").mockResolvedValue(null)
+    const findRerunSpy = spyOn(AgentSessionRepository, "findLatestBySupersedesSession").mockResolvedValue(null)
+
+    const { handler, eventService, jobQueue } = createHandler()
+    handler.handle()
+
+    await waitForDebounce()
+
+    expect(updateStatusSpy).toHaveBeenCalledWith(
+      {},
+      "session_old",
+      SessionStatuses.SUPERSEDED,
+      expect.objectContaining({
+        error: "Superseded by invoking message edit",
+        onlyIfStatusIn: [SessionStatuses.COMPLETED, SessionStatuses.FAILED],
+      })
+    )
+    expect(findRerunSpy).not.toHaveBeenCalled()
+    expect(eventService.deleteMessage).not.toHaveBeenCalled()
+    expect(jobQueue.send).not.toHaveBeenCalled()
+  })
+
   it("does not dispatch duplicate rerun when superseded session already has successor", async () => {
     spyOn(OutboxRepository, "fetchAfterId").mockResolvedValue([
       {

@@ -274,6 +274,8 @@ export const AgentSessionRepository = {
       responseMessageId?: string
       sentMessageIds?: string[]
       error?: string
+      onlyIfStatus?: SessionStatus
+      onlyIfStatusIn?: SessionStatus[]
     }
   ): Promise<AgentSession | null> {
     const now = new Date()
@@ -284,6 +286,13 @@ export const AgentSessionRepository = {
       status === SessionStatuses.SUPERSEDED
         ? now
         : null
+
+    const statusGuard =
+      extras?.onlyIfStatusIn && extras.onlyIfStatusIn.length > 0
+        ? sql` AND status = ANY(${extras.onlyIfStatusIn})`
+        : extras?.onlyIfStatus
+          ? sql` AND status = ${extras.onlyIfStatus}`
+          : sql.raw("")
 
     const result = await db.query<SessionRow>(
       sql`
@@ -302,6 +311,7 @@ export const AgentSessionRepository = {
           },
           completed_at = ${completedAt}
         WHERE id = ${id}
+          ${statusGuard}
         RETURNING ${sql.raw(SESSION_SELECT_FIELDS)}
       `
     )

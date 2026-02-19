@@ -365,6 +365,7 @@ export class AgentMessageMutationHandler implements OutboxHandler {
         ? session
         : await AgentSessionRepository.updateStatus(this.db, session.id, SessionStatuses.SUPERSEDED, {
             error: supersedeReason,
+            onlyIfStatusIn: [SessionStatuses.COMPLETED, SessionStatuses.FAILED],
           })
     if (!superseded) return
 
