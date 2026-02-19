@@ -5,6 +5,7 @@ import { Sidebar } from "@/components/layout/sidebar"
 import { Toaster } from "@/components/ui/sonner"
 import { MentionableMarkdownWrapper } from "@/components/ui/markdown-content"
 import { WorkspaceEmojiProvider } from "@/components/workspace-emoji"
+import { ChannelLinkProvider } from "@/lib/markdown/channel-link-context"
 import {
   PanelProvider,
   QuickSwitcherProvider,
@@ -91,7 +92,7 @@ export function WorkspaceLayout() {
     return [streamId, ...panelIds].filter((id): id is string => Boolean(id))
   }, [streamId, searchParams])
 
-  const { error: workspaceError } = useWorkspaceBootstrap(workspaceId ?? "")
+  const { data: bootstrap, error: workspaceError } = useWorkspaceBootstrap(workspaceId ?? "")
   const { mentionables } = useMentionables()
 
   useEffect(() => {
@@ -124,46 +125,48 @@ export function WorkspaceLayout() {
 
   return (
     <CoordinatedLoadingProvider workspaceId={workspaceId} streamIds={streamIds}>
-      <MentionableMarkdownWrapper mentionables={mentionables}>
-        <WorkspaceEmojiProvider workspaceId={workspaceId}>
-          <PreferencesProvider workspaceId={workspaceId}>
-            <SettingsProvider>
-              <WorkspaceKeyboardHandler
-                switcherOpen={switcherOpen}
-                onOpenSwitcher={openSwitcher}
-                onCloseSwitcher={closeSwitcher}
-              >
-                <QuickSwitcherProvider openSwitcher={openSwitcher}>
-                  <PanelProvider>
-                    <TraceProvider>
-                      <SidebarProvider>
-                        <CoordinatedLoadingGate>
-                          <AppShell sidebar={<Sidebar workspaceId={workspaceId} />}>
-                            <MainContentGate>
-                              <Outlet />
-                            </MainContentGate>
-                          </AppShell>
-                        </CoordinatedLoadingGate>
-                      </SidebarProvider>
-                      <QuickSwitcher
-                        workspaceId={workspaceId}
-                        open={switcherOpen}
-                        onOpenChange={setSwitcherOpen}
-                        initialMode={switcherMode}
-                      />
-                      <SettingsDialog />
-                      <WorkspaceSettingsDialog workspaceId={workspaceId} />
-                      <StreamSettingsDialog workspaceId={workspaceId} />
-                      <TraceDialogContainer />
-                      <Toaster />
-                    </TraceProvider>
-                  </PanelProvider>
-                </QuickSwitcherProvider>
-              </WorkspaceKeyboardHandler>
-            </SettingsProvider>
-          </PreferencesProvider>
-        </WorkspaceEmojiProvider>
-      </MentionableMarkdownWrapper>
+      <ChannelLinkProvider workspaceId={workspaceId} streams={bootstrap?.streams ?? []}>
+        <MentionableMarkdownWrapper mentionables={mentionables}>
+          <WorkspaceEmojiProvider workspaceId={workspaceId}>
+            <PreferencesProvider workspaceId={workspaceId}>
+              <SettingsProvider>
+                <WorkspaceKeyboardHandler
+                  switcherOpen={switcherOpen}
+                  onOpenSwitcher={openSwitcher}
+                  onCloseSwitcher={closeSwitcher}
+                >
+                  <QuickSwitcherProvider openSwitcher={openSwitcher}>
+                    <PanelProvider>
+                      <TraceProvider>
+                        <SidebarProvider>
+                          <CoordinatedLoadingGate>
+                            <AppShell sidebar={<Sidebar workspaceId={workspaceId} />}>
+                              <MainContentGate>
+                                <Outlet />
+                              </MainContentGate>
+                            </AppShell>
+                          </CoordinatedLoadingGate>
+                        </SidebarProvider>
+                        <QuickSwitcher
+                          workspaceId={workspaceId}
+                          open={switcherOpen}
+                          onOpenChange={setSwitcherOpen}
+                          initialMode={switcherMode}
+                        />
+                        <SettingsDialog />
+                        <WorkspaceSettingsDialog workspaceId={workspaceId} />
+                        <StreamSettingsDialog workspaceId={workspaceId} />
+                        <TraceDialogContainer />
+                        <Toaster />
+                      </TraceProvider>
+                    </PanelProvider>
+                  </QuickSwitcherProvider>
+                </WorkspaceKeyboardHandler>
+              </SettingsProvider>
+            </PreferencesProvider>
+          </WorkspaceEmojiProvider>
+        </MentionableMarkdownWrapper>
+      </ChannelLinkProvider>
     </CoordinatedLoadingProvider>
   )
 }
