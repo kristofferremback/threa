@@ -493,6 +493,27 @@ export const OutboxRepository = {
     return mapRowToOutbox(result.rows[0]) as OutboxEvent<T>
   },
 
+  async insertMany<T extends OutboxEventType>(
+    client: Querier,
+    entries: Array<{ eventType: T; payload: OutboxEventPayloadMap[T] }>
+  ): Promise<OutboxEvent<T>[]> {
+    if (entries.length === 0) return []
+
+    const eventTypes = entries.map((e) => e.eventType)
+    const payloads = entries.map((e) => JSON.stringify(e.payload, bigIntReplacer))
+
+    const result = await client.query<OutboxRow>(
+      `INSERT INTO outbox (event_type, payload)
+       SELECT * FROM unnest($1::text[], $2::jsonb[])
+       RETURNING id, event_type, payload, created_at`,
+      [eventTypes, payloads]
+    )
+
+    await client.query(`NOTIFY ${OUTBOX_CHANNEL}`)
+
+    return result.rows.map((r) => mapRowToOutbox(r) as OutboxEvent<T>)
+  },
+
   /**
    * Fetches events after a cursor ID for cursor-based processing.
    * No locking - the caller should hold a lock on their listener's cursor row.

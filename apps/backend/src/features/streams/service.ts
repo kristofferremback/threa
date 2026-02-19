@@ -7,6 +7,7 @@ import { StreamEventRepository } from "./event-repository"
 import { MessageRepository } from "../messaging"
 import { OutboxRepository } from "../../lib/outbox"
 import { streamId, eventId } from "../../lib/id"
+import { logger } from "../../lib/logger"
 import {
   DuplicateSlugError,
   HttpError,
@@ -426,29 +427,51 @@ export class StreamService {
         const members = await MemberRepository.findByIds(client, additionalMemberIds)
         const validMemberIds = members.filter((m) => m.workspaceId === params.workspaceId).map((m) => m.id)
 
+        // INV-11: warn on invalid member IDs rather than silently dropping
+        const invalidCount = additionalMemberIds.length - validMemberIds.length
+        if (invalidCount > 0) {
+          logger.warn(
+            "createChannel: dropped %d invalid member IDs not in workspace %s",
+            invalidCount,
+            params.workspaceId
+          )
+        }
+
         if (validMemberIds.length > 0) {
-          // INV-56: batch insert members, then batch events and outbox entries
+          // INV-56: batch insert members, events, and outbox entries
           await StreamMemberRepository.insertMany(client, stream.id, validMemberIds)
 
-          for (const memberId of validMemberIds) {
-            const evtId = eventId()
-            const event = await StreamEventRepository.insert(client, {
-              id: evtId,
-              streamId: stream.id,
-              eventType: "member_added",
-              payload: { addedBy: params.createdBy },
-              actorId: memberId,
-              actorType: "member",
-            })
+          const eventParams = validMemberIds.map((memberId) => ({
+            id: eventId(),
+            streamId: stream.id,
+            eventType: "member_added" as const,
+            payload: { addedBy: params.createdBy },
+            actorId: memberId,
+            actorType: "member" as const,
+          }))
+          const events = await StreamEventRepository.insertMany(client, eventParams)
 
-            await OutboxRepository.insert(client, "stream:member_added", {
-              workspaceId: stream.workspaceId,
-              streamId: stream.id,
-              memberId,
-              stream,
-              event,
-            })
-          }
+          await OutboxRepository.insertMany(
+            client,
+            events.map((event, i) => ({
+              eventType: "stream:member_added" as const,
+              payload: {
+                workspaceId: stream.workspaceId,
+                streamId: stream.id,
+                memberId: validMemberIds[i],
+                stream,
+                event,
+              },
+            }))
+          )
+
+          // Set lastReadEventId so initial members don't see creation events as unread
+          const lastEvent = events[events.length - 1]
+          await client.query(
+            `UPDATE stream_members SET last_read_event_id = $1, last_read_at = NOW()
+             WHERE stream_id = $2 AND member_id = ANY($3)`,
+            [lastEvent.id, stream.id, validMemberIds]
+          )
         }
       }
 
@@ -695,11 +718,8 @@ export class StreamService {
 
   private async addToStream(client: Querier, stream: Stream, memberId: string, actorId: string): Promise<StreamMember> {
     // Check if already a member to avoid spurious events on duplicate calls
-    const alreadyMember = await StreamMemberRepository.isMember(client, stream.id, memberId)
-    if (alreadyMember) {
-      const existing = await StreamMemberRepository.findByStreamAndMember(client, stream.id, memberId)
-      if (existing) return existing
-    }
+    const existing = await StreamMemberRepository.findByStreamAndMember(client, stream.id, memberId)
+    if (existing) return existing
 
     const membership = await StreamMemberRepository.insert(client, stream.id, memberId)
 

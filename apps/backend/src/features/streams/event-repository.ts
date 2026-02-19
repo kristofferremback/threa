@@ -82,6 +82,19 @@ export const StreamEventRepository = {
     return BigInt(result.rows[0].next_sequence)
   },
 
+  async getNextSequences(db: Querier, streamId: string, count: number): Promise<bigint[]> {
+    if (count <= 0) return []
+    const result = await db.query<{ start_sequence: string }>(sql`
+      INSERT INTO stream_sequences (stream_id, next_sequence)
+      VALUES (${streamId}, ${count + 1})
+      ON CONFLICT (stream_id) DO UPDATE
+        SET next_sequence = stream_sequences.next_sequence + ${count}
+      RETURNING next_sequence - ${count} AS start_sequence
+    `)
+    const start = BigInt(result.rows[0].start_sequence)
+    return Array.from({ length: count }, (_, i) => start + BigInt(i))
+  },
+
   async insert(db: Querier, params: InsertEventParams): Promise<StreamEvent> {
     const sequence = await this.getNextSequence(db, params.streamId)
 
@@ -99,6 +112,28 @@ export const StreamEventRepository = {
       RETURNING id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at
     `)
     return mapRowToEvent(result.rows[0])
+  },
+
+  async insertMany(db: Querier, paramsList: InsertEventParams[]): Promise<StreamEvent[]> {
+    if (paramsList.length === 0) return []
+    const streamId = paramsList[0].streamId
+    const sequences = await this.getNextSequences(db, streamId, paramsList.length)
+
+    const ids = paramsList.map((p) => p.id)
+    const streamIds = paramsList.map(() => streamId)
+    const seqs = sequences.map((s) => s.toString())
+    const eventTypes = paramsList.map((p) => p.eventType)
+    const payloads = paramsList.map((p) => JSON.stringify(p.payload))
+    const actorIds = paramsList.map((p) => p.actorId ?? null)
+    const actorTypes = paramsList.map((p) => p.actorType ?? null)
+
+    const result = await db.query<StreamEventRow>(
+      `INSERT INTO stream_events (id, stream_id, sequence, event_type, payload, actor_id, actor_type)
+       SELECT * FROM unnest($1::text[], $2::text[], $3::bigint[], $4::text[], $5::jsonb[], $6::text[], $7::text[])
+       RETURNING id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at`,
+      [ids, streamIds, seqs, eventTypes, payloads, actorIds, actorTypes]
+    )
+    return result.rows.map(mapRowToEvent)
   },
 
   async list(
