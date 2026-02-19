@@ -34,7 +34,7 @@ interface MessageEventProps {
   event: StreamEvent
   workspaceId: string
   streamId: string
-  /** Hide action buttons and thread footer - used when showing parent message in thread view */
+  /** Hide thread footer (reply link / indicator) - used when showing parent message in thread view */
   hideActions?: boolean
   /** Whether to highlight this message (scroll into view and flash) */
   isHighlighted?: boolean
@@ -281,33 +281,31 @@ function SentMessageEvent({
         }
         isEditing={isEditing}
         actions={
-          !hideActions && (
-            <div
-              className={cn(
-                "opacity-0 group-hover:opacity-100 has-[[data-state=open]]:opacity-100 transition-opacity ml-auto flex items-center gap-1",
-                isEditing && "!opacity-0 pointer-events-none"
-              )}
-            >
-              <MessageContextMenu
-                context={{
-                  contentMarkdown: payload.contentMarkdown,
-                  actorType: event.actorType,
-                  sessionId: payload.sessionId,
-                  isThreadParent: panelId === threadId,
-                  replyUrl: effectiveThreadId ? getPanelUrl(effectiveThreadId) : draftPanelUrl,
-                  traceUrl:
-                    event.actorType === "persona" && payload.sessionId
-                      ? getTraceUrl(payload.sessionId, payload.messageId)
-                      : undefined,
-                  messageId: payload.messageId,
-                  authorId: event.actorId ?? undefined,
-                  currentMemberId: currentMemberId ?? undefined,
-                  onEdit: () => setIsEditing(true),
-                  onDelete: () => setDeleteDialogOpen(true),
-                }}
-              />
-            </div>
-          )
+          <div
+            className={cn(
+              "opacity-0 group-hover:opacity-100 has-[[data-state=open]]:opacity-100 transition-opacity ml-auto flex items-center gap-1",
+              isEditing && "!opacity-0 pointer-events-none"
+            )}
+          >
+            <MessageContextMenu
+              context={{
+                contentMarkdown: payload.contentMarkdown,
+                actorType: event.actorType,
+                sessionId: payload.sessionId,
+                isThreadParent: panelId === threadId || hideActions,
+                replyUrl: effectiveThreadId ? getPanelUrl(effectiveThreadId) : draftPanelUrl,
+                traceUrl:
+                  event.actorType === "persona" && payload.sessionId
+                    ? getTraceUrl(payload.sessionId, payload.messageId)
+                    : undefined,
+                messageId: payload.messageId,
+                authorId: event.actorId ?? undefined,
+                currentMemberId: currentMemberId ?? undefined,
+                onEdit: () => setIsEditing(true),
+                onDelete: () => setDeleteDialogOpen(true),
+              }}
+            />
+          </div>
         }
         footer={isEditing ? undefined : threadFooter}
         containerRef={containerRef}
