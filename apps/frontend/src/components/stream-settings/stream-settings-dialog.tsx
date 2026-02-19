@@ -106,7 +106,7 @@ export function StreamSettingsDialog({ workspaceId }: StreamSettingsDialogProps)
               ))}
             </TabsList>
 
-            <div className="flex-1 overflow-y-auto mt-4">
+            <div className="flex-1 overflow-y-auto mt-4 pr-2 scrollbar-thin">
               <TabsContent value="general" className="mt-0">
                 <GeneralTab
                   workspaceId={workspaceId}

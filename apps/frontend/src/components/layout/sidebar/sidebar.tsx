@@ -1,19 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef } from "react"
 import { RefreshCw } from "lucide-react"
 import { useNavigate, useParams } from "react-router-dom"
-import { useQueryClient } from "@tanstack/react-query"
 import { useAuth } from "@/auth"
 import {
   useActivityCounts,
   useAllDrafts,
   createDmDraftId,
-  useCreateStream,
   useDraftScratchpads,
   useUnreadCounts,
   useWorkspaceBootstrap,
-  workspaceKeys,
 } from "@/hooks"
 import { useCoordinatedLoading, useSidebar } from "@/contexts"
+import { useCreateChannel } from "@/components/create-channel"
 import { Button } from "@/components/ui/button"
 import { SidebarShell } from "./sidebar-shell"
 import { SidebarHeader } from "./sidebar-header"
@@ -42,14 +40,13 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   } = useSidebar()
   const { streamId: activeStreamId, "*": splat } = useParams<{ streamId: string; "*": string }>()
   const { data: bootstrap, isLoading, error, retryBootstrap } = useWorkspaceBootstrap(workspaceId)
-  const createStream = useCreateStream(workspaceId)
   const { createDraft } = useDraftScratchpads(workspaceId)
   const { getUnreadCount } = useUnreadCounts(workspaceId)
   const { getMentionCount, unreadActivityCount } = useActivityCounts(workspaceId)
   const { drafts: allDrafts } = useAllDrafts(workspaceId)
+  const { openCreateChannel } = useCreateChannel()
   const { user } = useAuth()
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
   const currentMember = bootstrap?.members.find((m) => m.userId === user?.id) ?? null
 
   const draftCount = allDrafts.length
@@ -296,19 +293,8 @@ export function Sidebar({ workspaceId }: SidebarProps) {
     navigate(`/w/${workspaceId}/s/${draftId}`)
   }
 
-  const handleCreateChannel = async () => {
-    const name = prompt("Channel name:")
-    if (!name?.trim()) return
-    const slug = name
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "")
-    if (!slug) return
-
-    const stream = await createStream.mutateAsync({ type: StreamTypes.CHANNEL, slug })
-    queryClient.invalidateQueries({ queryKey: workspaceKeys.bootstrap(workspaceId) })
-    navigate(`/w/${workspaceId}/s/${stream.id}`)
+  const handleCreateChannel = () => {
+    openCreateChannel()
   }
 
   return (

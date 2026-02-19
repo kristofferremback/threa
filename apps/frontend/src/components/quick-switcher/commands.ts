@@ -19,7 +19,7 @@ export interface CommandContext {
   navigate: NavigateFunction
   closeDialog: () => void
   createDraftScratchpad: (companionMode: "on" | "off") => Promise<string>
-  createChannel: (slug: string) => Promise<{ id: string }>
+  openCreateChannel: () => void
   setMode?: (mode: "stream" | "command" | "search") => void
   requestInput: (request: InputRequest) => void
   openSettings: (tab?: SettingsTab) => void
@@ -55,31 +55,9 @@ export const commands: Command[] = [
     label: "New Channel",
     icon: Hash,
     keywords: ["create", "add"],
-    action: ({ workspaceId, navigate, closeDialog, createChannel, requestInput }) => {
-      requestInput({
-        icon: Hash,
-        placeholder: "Enter channel name...",
-        hint: "Press Enter to create, Esc to cancel",
-        onSubmit: async (name: string) => {
-          const trimmed = name.trim()
-          if (!trimmed) return
-
-          const slug = trimmed
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, "-")
-            .replace(/^-|-$/g, "")
-          if (!slug) return
-
-          try {
-            const stream = await createChannel(slug)
-            closeDialog()
-            navigate(`/w/${workspaceId}/s/${stream.id}`)
-          } catch (error) {
-            console.error("Failed to create channel:", error)
-            toast.error("Failed to create channel")
-          }
-        },
-      })
+    action: ({ closeDialog, openCreateChannel }) => {
+      closeDialog()
+      openCreateChannel()
     },
   },
   {

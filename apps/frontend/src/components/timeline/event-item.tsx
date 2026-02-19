@@ -61,6 +61,7 @@ export function EventItem({
       )
 
     case "member_joined":
+    case "member_added":
     case "member_left":
       return (
         <div data-event-id={event.id}>

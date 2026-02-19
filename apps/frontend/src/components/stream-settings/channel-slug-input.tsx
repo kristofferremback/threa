@@ -7,8 +7,8 @@ type SlugStatus = "idle" | "checking" | "available" | "taken" | "invalid"
 
 interface ChannelSlugInputProps {
   workspaceId: string
-  streamId: string
-  currentSlug: string
+  streamId?: string
+  currentSlug?: string
   value: string
   onChange: (slug: string) => void
   onValidityChange: (valid: boolean) => void
@@ -82,8 +82,8 @@ export function ChannelSlugInput({
       return
     }
 
-    // Current slug is always valid
-    if (normalized === currentSlug) {
+    // Current slug is always valid (only applies when editing an existing stream)
+    if (currentSlug && normalized === currentSlug) {
       setStatus("available")
       onValidityChange(true)
       return

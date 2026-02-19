@@ -134,6 +134,7 @@ export interface StreamMemberJoinedOutboxPayload extends StreamScopedPayload {
 export interface StreamMemberAddedOutboxPayload extends StreamScopedPayload {
   memberId: string
   stream: Stream
+  event: StreamEvent
 }
 
 export interface StreamMemberRemovedOutboxPayload extends StreamScopedPayload {

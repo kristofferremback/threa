@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { VisibilityPicker } from "@/components/ui/visibility-picker"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import {
@@ -166,20 +166,7 @@ function VisibilitySection({ workspaceId, stream }: { workspaceId: string; strea
   return (
     <div className="space-y-3">
       <Label className="text-sm font-medium">Visibility</Label>
-      <RadioGroup value={stream.visibility} onValueChange={handleVisibilityChange}>
-        <div className="flex items-center space-x-2">
-          <RadioGroupItem value={Visibilities.PUBLIC} id="vis-public" />
-          <Label htmlFor="vis-public" className="font-normal">
-            Public — visible to all workspace members
-          </Label>
-        </div>
-        <div className="flex items-center space-x-2">
-          <RadioGroupItem value={Visibilities.PRIVATE} id="vis-private" />
-          <Label htmlFor="vis-private" className="font-normal">
-            Private — only visible to members
-          </Label>
-        </div>
-      </RadioGroup>
+      <VisibilityPicker value={stream.visibility} onChange={handleVisibilityChange} />
 
       <AlertDialog open={confirmOpen} onOpenChange={handleCancel}>
         <AlertDialogContent>
@@ -205,14 +192,8 @@ function VisibilityDisplay() {
   return (
     <div className="space-y-3">
       <Label className="text-sm font-medium">Visibility</Label>
-      <RadioGroup value="private" disabled>
-        <div className="flex items-center space-x-2">
-          <RadioGroupItem value="private" id="vis-private-disabled" />
-          <Label htmlFor="vis-private-disabled" className="font-normal text-muted-foreground">
-            Private — scratchpads are always private
-          </Label>
-        </div>
-      </RadioGroup>
+      <VisibilityPicker value="private" onChange={() => {}} disabled />
+      <p className="text-xs text-muted-foreground">Scratchpads are always private</p>
     </div>
   )
 }

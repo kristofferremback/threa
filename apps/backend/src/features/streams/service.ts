@@ -47,6 +47,7 @@ const createChannelParamsSchema = z.object({
   description: z.string().optional(),
   visibility: visibilitySchema.optional(),
   createdBy: z.string(),
+  memberIds: z.array(z.string()).optional(),
 })
 
 export type CreateChannelParams = z.infer<typeof createChannelParamsSchema>
@@ -71,6 +72,7 @@ const createStreamParamsSchema = z.object({
   companionPersonaId: z.string().optional(),
   parentStreamId: z.string().optional(),
   parentMessageId: z.string().optional(),
+  memberIds: z.array(z.string()).optional(),
   createdBy: z.string(),
 })
 
@@ -339,6 +341,7 @@ export class StreamService {
           description: params.description,
           visibility: params.visibility,
           createdBy: params.createdBy,
+          memberIds: params.memberIds,
         })
       case StreamTypes.THREAD:
         if (!params.parentStreamId || !params.parentMessageId) {
@@ -415,6 +418,18 @@ export class StreamService {
         streamId: stream.id,
         stream,
       })
+
+      // Add initial members (excluding the creator who was already added)
+      const additionalMemberIds = (params.memberIds ?? []).filter((mid) => mid !== params.createdBy)
+      if (additionalMemberIds.length > 0) {
+        // Validate members belong to this workspace (INV-20: batch lookup)
+        const members = await MemberRepository.findByIds(client, additionalMemberIds)
+        const validMemberIds = members.filter((m) => m.workspaceId === params.workspaceId).map((m) => m.id)
+
+        for (const memberId of validMemberIds) {
+          await this.addToStream(client, stream, memberId, params.createdBy)
+        }
+      }
 
       return stream
     })
@@ -657,7 +672,7 @@ export class StreamService {
 
   // Member operations
 
-  private async addToStream(client: Querier, stream: Stream, memberId: string): Promise<StreamMember> {
+  private async addToStream(client: Querier, stream: Stream, memberId: string, actorId: string): Promise<StreamMember> {
     const membership = await StreamMemberRepository.insert(client, stream.id, memberId)
 
     const latestEventIds = await StreamEventRepository.getLatestEventIdByStreamBatch(client, [stream.id])
@@ -666,17 +681,29 @@ export class StreamService {
       await StreamMemberRepository.update(client, stream.id, memberId, { lastReadEventId: latestEventId })
     }
 
+    // Create timeline event so "X was added" appears in the stream
+    const evtId = eventId()
+    const event = await StreamEventRepository.insert(client, {
+      id: evtId,
+      streamId: stream.id,
+      eventType: "member_added",
+      payload: { addedBy: actorId },
+      actorId: memberId,
+      actorType: "member",
+    })
+
     await OutboxRepository.insert(client, "stream:member_added", {
       workspaceId: stream.workspaceId,
       streamId: stream.id,
       memberId,
       stream,
+      event,
     })
 
     return membership
   }
 
-  async addMember(streamId: string, memberId: string, workspaceId: string): Promise<StreamMember> {
+  async addMember(streamId: string, memberId: string, workspaceId: string, actorId: string): Promise<StreamMember> {
     return withTransaction(this.pool, async (client) => {
       const stream = await StreamRepository.findById(client, streamId)
       if (!stream) {
@@ -700,11 +727,11 @@ export class StreamService {
         const isRootMember = await StreamMemberRepository.isMember(client, stream.rootStreamId, memberId)
         if (!isRootMember) {
           const rootStream = await StreamRepository.findById(client, stream.rootStreamId)
-          if (rootStream) await this.addToStream(client, rootStream, memberId)
+          if (rootStream) await this.addToStream(client, rootStream, memberId, actorId)
         }
       }
 
-      return this.addToStream(client, stream, memberId)
+      return this.addToStream(client, stream, memberId, actorId)
     })
   }
 

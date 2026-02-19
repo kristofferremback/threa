@@ -30,6 +30,7 @@ import { QuickSwitcher, type QuickSwitcherMode } from "@/components/quick-switch
 import { SettingsDialog } from "@/components/settings"
 import { WorkspaceSettingsDialog } from "@/components/workspace-settings/workspace-settings-dialog"
 import { StreamSettingsDialog } from "@/components/stream-settings/stream-settings-dialog"
+import { CreateChannelDialog } from "@/components/create-channel"
 import { TraceDialog } from "@/components/trace"
 import { ApiError } from "@/api/client"
 
@@ -157,6 +158,7 @@ export function WorkspaceLayout() {
                         <SettingsDialog />
                         <WorkspaceSettingsDialog workspaceId={workspaceId} />
                         <StreamSettingsDialog workspaceId={workspaceId} />
+                        <CreateChannelDialog workspaceId={workspaceId} />
                         <TraceDialogContainer />
                         <Toaster />
                       </TraceProvider>

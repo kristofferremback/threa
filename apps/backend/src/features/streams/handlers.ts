@@ -26,6 +26,7 @@ const createStreamSchema = z
     companionPersonaId: z.string().optional(),
     parentStreamId: z.string().optional(),
     parentMessageId: z.string().optional(),
+    memberIds: z.array(z.string().min(1)).max(50).optional(),
   })
   .refine((data) => data.type !== "channel" || data.slug, {
     message: "Slug is required for channels",
@@ -167,6 +168,7 @@ export function createStreamHandlers({ streamService, eventService, activityServ
         companionPersonaId,
         parentStreamId,
         parentMessageId,
+        memberIds,
       } = result.data
 
       const stream = await streamService.create({
@@ -180,6 +182,7 @@ export function createStreamHandlers({ streamService, eventService, activityServ
         companionPersonaId,
         parentStreamId,
         parentMessageId,
+        memberIds,
         createdBy: memberId,
       })
 
@@ -444,7 +447,7 @@ export function createStreamHandlers({ streamService, eventService, activityServ
         throw new HttpError("Cannot add members to this stream type", { status: 400, code: "ADD_MEMBER_NOT_ALLOWED" })
       }
 
-      const membership = await streamService.addMember(streamId, result.data.memberId, workspaceId)
+      const membership = await streamService.addMember(streamId, result.data.memberId, workspaceId, actorId)
       res.status(201).json({ membership })
     },
 

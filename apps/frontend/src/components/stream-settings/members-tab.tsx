@@ -1,9 +1,10 @@
-import { useState, useMemo } from "react"
+import { useState, useMemo, useCallback } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
+import { SearchableList, type SearchableListItem } from "@/components/ui/searchable-list"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,7 +19,14 @@ import { X, UserPlus } from "lucide-react"
 import { useAddStreamMember, useRemoveStreamMember, streamKeys, workspaceKeys } from "@/hooks"
 import { useStreamService } from "@/contexts"
 import { StreamTypes, type StreamMember, type WorkspaceBootstrap } from "@threa/types"
+import { getInitials } from "@/lib/initials"
+import { getAvatarColor } from "@/lib/avatar-color"
 import { toast } from "sonner"
+
+interface MemberItem extends SearchableListItem {
+  slug: string
+  name: string
+}
 
 interface MembersTabProps {
   workspaceId: string
@@ -75,23 +83,51 @@ export function MembersTab({ workspaceId, streamId, currentMemberId }: MembersTa
     return enrichedMembers.filter((m) => m.name.toLowerCase().includes(q) || m.slug.toLowerCase().includes(q))
   }, [enrichedMembers, search])
 
-  const availableToAdd = useMemo(() => {
+  const availableToAdd = useMemo((): MemberItem[] => {
     if (!addSearch) return []
     const q = addSearch.toLowerCase()
-    return workspaceMembers.filter(
-      (m) => !streamMemberIds.has(m.id) && (m.name.toLowerCase().includes(q) || m.slug.toLowerCase().includes(q))
-    )
+    return workspaceMembers
+      .filter(
+        (m) => !streamMemberIds.has(m.id) && (m.name.toLowerCase().includes(q) || m.slug.toLowerCase().includes(q))
+      )
+      .map((m) => ({
+        id: m.id,
+        label: m.name || m.slug,
+        description: `@${m.slug}`,
+        slug: m.slug,
+        name: m.name,
+      }))
   }, [workspaceMembers, streamMemberIds, addSearch])
 
-  const handleAdd = (memberId: string) => {
-    addMutation.mutate(memberId, {
-      onSuccess: () => {
-        toast.success("Member added")
-        setAddSearch("")
-      },
-      onError: () => toast.error("Failed to add member"),
-    })
-  }
+  const handleAdd = useCallback(
+    (item: MemberItem) => {
+      addMutation.mutate(item.id, {
+        onSuccess: () => {
+          toast.success("Member added")
+          setAddSearch("")
+        },
+        onError: () => toast.error("Failed to add member"),
+      })
+    },
+    [addMutation]
+  )
+
+  const renderMemberItem = useCallback((item: MemberItem, _highlighted: boolean) => {
+    const initials = getInitials(item.name || item.slug)
+    const color = getAvatarColor(item.id)
+
+    return (
+      <div className="flex items-center gap-2.5 px-2.5 py-2">
+        <div className={`flex items-center justify-center h-7 w-7 rounded-full text-xs font-medium shrink-0 ${color}`}>
+          {initials}
+        </div>
+        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+          <span className="text-sm font-medium truncate">{item.label}</span>
+          <span className="text-xs text-muted-foreground truncate">{item.description}</span>
+        </div>
+      </div>
+    )
+  }, [])
 
   const [removeMemberId, setRemoveMemberId] = useState<string | null>(null)
   const removeMemberName = removeMemberId
@@ -122,30 +158,42 @@ export function MembersTab({ workspaceId, streamId, currentMemberId }: MembersTa
         />
 
         <div className="space-y-1 max-h-64 overflow-y-auto">
-          {filteredMembers.map((member) => (
-            <div key={member.memberId} className="flex items-center justify-between rounded-md border px-3 py-2">
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-sm font-medium truncate">{member.name || member.slug}</span>
-                <span className="text-xs text-muted-foreground">@{member.slug}</span>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <Badge variant={member.role === "owner" ? "default" : "secondary"} className="text-xs">
-                  {member.role}
-                </Badge>
-                {canManageMembers && member.memberId !== currentMemberId && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6"
-                    onClick={() => setRemoveMemberId(member.memberId)}
-                    disabled={removeMutation.isPending}
+          {filteredMembers.map((member) => {
+            const initials = getInitials(member.name || member.slug)
+            const color = getAvatarColor(member.memberId)
+
+            return (
+              <div key={member.memberId} className="flex items-center justify-between rounded-md border px-3 py-2">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div
+                    className={`flex items-center justify-center h-7 w-7 rounded-full text-xs font-medium shrink-0 ${color}`}
                   >
-                    <X className="h-3.5 w-3.5" />
-                  </Button>
-                )}
+                    {initials}
+                  </div>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="text-sm font-medium truncate">{member.name || member.slug}</span>
+                    <span className="text-xs text-muted-foreground">@{member.slug}</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Badge variant={member.role === "owner" ? "default" : "secondary"} className="text-xs">
+                    {member.role}
+                  </Badge>
+                  {canManageMembers && member.memberId !== currentMemberId && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6"
+                      onClick={() => setRemoveMemberId(member.memberId)}
+                      disabled={removeMutation.isPending}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
           {filteredMembers.length === 0 && <p className="text-sm text-muted-foreground py-2">No members found</p>}
         </div>
       </div>
@@ -153,36 +201,16 @@ export function MembersTab({ workspaceId, streamId, currentMemberId }: MembersTa
       {canAddMembers && (
         <div className="space-y-3">
           <Label className="text-sm font-medium">Add member</Label>
-          <div className="relative">
-            <UserPlus className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              placeholder="Search workspace members..."
-              value={addSearch}
-              onChange={(e) => setAddSearch(e.target.value)}
-              className="h-8 pl-8"
-            />
-          </div>
-
-          {availableToAdd.length > 0 && (
-            <div className="space-y-1 max-h-48 overflow-y-auto border rounded-md">
-              {availableToAdd.map((member) => (
-                <button
-                  key={member.id}
-                  className="flex items-center justify-between w-full px-3 py-2 text-left hover:bg-muted/50 transition-colors"
-                  onClick={() => handleAdd(member.id)}
-                  disabled={addMutation.isPending}
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-sm font-medium truncate">{member.name || member.slug}</span>
-                    <span className="text-xs text-muted-foreground">@{member.slug}</span>
-                  </div>
-                  <Badge variant="outline" className="text-xs shrink-0">
-                    Add
-                  </Badge>
-                </button>
-              ))}
-            </div>
-          )}
+          <SearchableList
+            items={availableToAdd}
+            renderItem={renderMemberItem}
+            onSelect={handleAdd}
+            search={addSearch}
+            onSearchChange={setAddSearch}
+            placeholder="Search workspace members..."
+            emptyMessage="No matching members"
+            icon={UserPlus}
+          />
         </div>
       )}
 
