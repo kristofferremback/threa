@@ -1,4 +1,4 @@
-import { Pool } from "pg"
+import type { Pool, PoolClient } from "pg"
 import { withTransaction, withClient } from "../../db"
 import { StreamEventRepository, StreamEvent } from "../streams"
 import { StreamRepository } from "../streams"
@@ -13,6 +13,7 @@ import { serializeBigInt } from "../../lib/serialization"
 import { messagesTotal } from "../../lib/observability"
 import {
   AttachmentSafetyStatuses,
+  AuthorTypes,
   type AuthorType,
   type EventType,
   type SourceItem,
@@ -106,6 +107,28 @@ export interface RemoveReactionParams {
 
 export class EventService {
   constructor(private pool: Pool) {}
+
+  private async resolveActorType(
+    client: PoolClient,
+    streamId: string,
+    actorId: string,
+    actorType?: AuthorType
+  ): Promise<AuthorType> {
+    if (actorType) return actorType
+
+    const [isMember, isPersona] = await Promise.all([
+      StreamMemberRepository.isMember(client, streamId, actorId),
+      StreamPersonaParticipantRepository.hasParticipated(client, streamId, actorId),
+    ])
+
+    if (isMember && isPersona) {
+      throw new Error(`Actor ${actorId} has ambiguous type in stream ${streamId}`)
+    }
+    if (isMember) return AuthorTypes.MEMBER
+    if (isPersona) return AuthorTypes.PERSONA
+
+    throw new Error(`Actor ${actorId} has no resolved type in stream ${streamId}`)
+  }
 
   async createMessage(params: CreateMessageParams): Promise<Message> {
     return withTransaction(this.pool, async (client) => {
@@ -247,12 +270,12 @@ export class EventService {
   }
 
   async editMessage(params: EditMessageParams): Promise<Message | null> {
-    const actorType = params.actorType ?? "member"
-
     return withTransaction(this.pool, async (client) => {
       // Returns null if the message was concurrently deleted — prevents phantom edits
       const existing = await MessageRepository.findByIdForUpdate(client, params.messageId)
       if (!existing || existing.deletedAt) return null
+
+      const actorType = await this.resolveActorType(client, params.streamId, params.actorId, params.actorType)
 
       // 1. Snapshot pre-edit content as a version record
       await MessageVersionRepository.insert(client, {
@@ -299,11 +322,11 @@ export class EventService {
   }
 
   async deleteMessage(params: DeleteMessageParams): Promise<Message | null> {
-    const actorType = params.actorType ?? "member"
-
     return withTransaction(this.pool, async (client) => {
       const existing = await MessageRepository.findByIdForUpdate(client, params.messageId)
       if (!existing || existing.deletedAt) return null
+
+      const actorType = await this.resolveActorType(client, params.streamId, params.actorId, params.actorType)
 
       // 1. Append event
       await StreamEventRepository.insert(client, {

@@ -390,37 +390,7 @@ export class AgentMessageMutationHandler implements OutboxHandler {
     if (sessions.length === 0) return
 
     for (const session of sessions) {
-      const deletedAt =
-        session.status === SessionStatuses.DELETED
-          ? (session.completedAt?.toISOString() ?? null)
-          : await withTransaction(this.db, async (db) => {
-              const updated = await AgentSessionRepository.updateStatus(db, session.id, SessionStatuses.DELETED, {
-                error: "Invoking message deleted",
-              })
-              if (!updated) return null
-
-              const deletedAtIso = updated.completedAt?.toISOString() ?? new Date().toISOString()
-
-              const streamEvent = await StreamEventRepository.insert(db, {
-                id: eventId(),
-                streamId: updated.streamId,
-                eventType: "agent_session:deleted",
-                payload: {
-                  sessionId: updated.id,
-                  deletedAt: deletedAtIso,
-                },
-                actorId: updated.personaId,
-                actorType: AuthorTypes.PERSONA,
-              })
-
-              await OutboxRepository.insert(db, "agent_session:deleted", {
-                workspaceId: payload.workspaceId,
-                streamId: updated.streamId,
-                event: serializeBigInt(streamEvent),
-              })
-
-              return deletedAtIso
-            })
+      const deletedAt = await this.markSessionDeleted(session, payload.workspaceId)
 
       await this.deleteSessionMessages(session, payload.workspaceId)
 
@@ -435,6 +405,41 @@ export class AgentMessageMutationHandler implements OutboxHandler {
         "Deleted session and sent messages because invoking message was deleted"
       )
     }
+  }
+
+  private async markSessionDeleted(session: AgentSession, workspaceId: string): Promise<string | null> {
+    if (session.status === SessionStatuses.DELETED) {
+      return session.completedAt?.toISOString() ?? null
+    }
+
+    return withTransaction(this.db, async (db) => {
+      const updated = await AgentSessionRepository.updateStatus(db, session.id, SessionStatuses.DELETED, {
+        error: "Invoking message deleted",
+      })
+      if (!updated) return null
+
+      const deletedAtIso = updated.completedAt?.toISOString() ?? new Date().toISOString()
+
+      const streamEvent = await StreamEventRepository.insert(db, {
+        id: eventId(),
+        streamId: updated.streamId,
+        eventType: "agent_session:deleted",
+        payload: {
+          sessionId: updated.id,
+          deletedAt: deletedAtIso,
+        },
+        actorId: updated.personaId,
+        actorType: AuthorTypes.PERSONA,
+      })
+
+      await OutboxRepository.insert(db, "agent_session:deleted", {
+        workspaceId,
+        streamId: updated.streamId,
+        event: serializeBigInt(streamEvent),
+      })
+
+      return deletedAtIso
+    })
   }
 
   private async deleteSessionMessages(session: AgentSession, workspaceId: string): Promise<void> {

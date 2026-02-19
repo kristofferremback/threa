@@ -3,11 +3,12 @@ import { AttachmentSafetyStatuses } from "@threa/types"
 import { EventService } from "./event-service"
 import { MessageRepository } from "./repository"
 import { MessageVersionRepository } from "./version-repository"
-import { StreamEventRepository, StreamRepository } from "../streams"
+import { StreamEventRepository, StreamMemberRepository, StreamRepository } from "../streams"
 import { AttachmentRepository } from "../attachments"
 import { OutboxRepository } from "../../lib/outbox"
 import * as db from "../../db"
 import { messagesTotal } from "../../lib/observability"
+import { StreamPersonaParticipantRepository } from "../agents"
 
 describe("EventService attachment safety checks", () => {
   beforeEach(() => {
@@ -63,12 +64,16 @@ describe("EventService.editMessage version capture", () => {
     authorId: "member_1",
     authorType: "member",
   }
+  let isMemberSpy: ReturnType<typeof spyOn>
+  let hasParticipatedSpy: ReturnType<typeof spyOn>
 
   beforeEach(() => {
     spyOn(db, "withTransaction").mockImplementation(((_db: unknown, callback: (client: any) => Promise<unknown>) =>
       callback({})) as any)
     spyOn(MessageRepository, "findByIdForUpdate").mockResolvedValue(existingMessage as any)
     spyOn(MessageRepository, "findById").mockResolvedValue(existingMessage as any)
+    isMemberSpy = spyOn(StreamMemberRepository, "isMember").mockResolvedValue(true)
+    hasParticipatedSpy = spyOn(StreamPersonaParticipantRepository, "hasParticipated").mockResolvedValue(false)
     spyOn(MessageVersionRepository, "insert").mockResolvedValue({
       id: "msgv_1",
       messageId: "msg_1",
@@ -136,6 +141,47 @@ describe("EventService.editMessage version capture", () => {
       contentMarkdown: "edited",
       actorId: "member_1",
     })
+
+    expect(MessageVersionRepository.insert).not.toHaveBeenCalled()
+  })
+
+  it("resolves actor type as persona when not provided", async () => {
+    isMemberSpy.mockResolvedValue(false)
+    hasParticipatedSpy.mockResolvedValue(true)
+    const service = new EventService({} as any)
+
+    await service.editMessage({
+      workspaceId: "ws_1",
+      messageId: "msg_1",
+      streamId: "stream_1",
+      contentJson: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "edited" }] }] },
+      contentMarkdown: "edited",
+      actorId: "persona_1",
+    })
+
+    expect(StreamEventRepository.insert).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        actorType: "persona",
+      })
+    )
+  })
+
+  it("throws when actor type cannot be resolved", async () => {
+    isMemberSpy.mockResolvedValue(false)
+    hasParticipatedSpy.mockResolvedValue(false)
+    const service = new EventService({} as any)
+
+    await expect(
+      service.editMessage({
+        workspaceId: "ws_1",
+        messageId: "msg_1",
+        streamId: "stream_1",
+        contentJson: { type: "doc", content: [] },
+        contentMarkdown: "edited",
+        actorId: "unknown_actor",
+      })
+    ).rejects.toThrow("has no resolved type")
 
     expect(MessageVersionRepository.insert).not.toHaveBeenCalled()
   })
