@@ -94,6 +94,7 @@ export function WorkspaceLayout() {
 
   const { data: bootstrap, error: workspaceError } = useWorkspaceBootstrap(workspaceId ?? "")
   const { mentionables } = useMentionables()
+  const streams = useMemo(() => bootstrap?.streams ?? [], [bootstrap])
 
   useEffect(() => {
     if (
@@ -125,7 +126,7 @@ export function WorkspaceLayout() {
 
   return (
     <CoordinatedLoadingProvider workspaceId={workspaceId} streamIds={streamIds}>
-      <ChannelLinkProvider workspaceId={workspaceId} streams={bootstrap?.streams ?? []}>
+      <ChannelLinkProvider workspaceId={workspaceId} streams={streams}>
         <MentionableMarkdownWrapper mentionables={mentionables}>
           <WorkspaceEmojiProvider workspaceId={workspaceId}>
             <PreferencesProvider workspaceId={workspaceId}>

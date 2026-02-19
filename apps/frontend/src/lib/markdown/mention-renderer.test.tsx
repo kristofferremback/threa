@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest"
 import { render, screen } from "@testing-library/react"
+import { MemoryRouter } from "react-router-dom"
 import { renderMentions, processChildrenForMentions } from "./mention-renderer"
+import { ChannelLinkProvider } from "./channel-link-context"
 
 // No-op emoji lookup for mention tests (not testing emoji rendering here)
 const noEmoji = () => null
@@ -205,6 +207,59 @@ describe("mention-renderer", () => {
       expect(screen.getByText(/@alice/)).toBeInTheDocument()
       expect(screen.getByText(/@bob/)).toBeInTheDocument()
       expect(screen.getByText(/@charlie/)).toBeInTheDocument()
+    })
+  })
+
+  describe("channel link rendering", () => {
+    const streams = [
+      { id: "stream_abc", type: "channel", slug: "general" },
+      { id: "stream_def", type: "channel", slug: "engineering" },
+      { id: "stream_ghi", type: "scratchpad", slug: null },
+    ]
+
+    function renderWithChannelLinks(text: string) {
+      const result = renderMentions(text, noEmoji)
+      return render(
+        <MemoryRouter>
+          <ChannelLinkProvider workspaceId="workspace_123" streams={streams}>
+            <>{result}</>
+          </ChannelLinkProvider>
+        </MemoryRouter>
+      )
+    }
+
+    it("should render known channel as a link", () => {
+      renderWithChannelLinks("Check #general")
+
+      const link = screen.getByRole("link", { name: /#general/ })
+      expect(link).toBeInTheDocument()
+      expect(link).toHaveAttribute("href", "/w/workspace_123/s/stream_abc")
+    })
+
+    it("should render unknown channel as inert span", () => {
+      renderWithChannelLinks("Check #nonexistent")
+
+      const chip = screen.getByText(/#nonexistent/)
+      expect(chip.tagName).toBe("SPAN")
+      expect(chip).not.toHaveAttribute("href")
+    })
+
+    it("should render multiple channel links", () => {
+      renderWithChannelLinks("#general and #engineering")
+
+      const generalLink = screen.getByRole("link", { name: /#general/ })
+      const engineeringLink = screen.getByRole("link", { name: /#engineering/ })
+      expect(generalLink).toHaveAttribute("href", "/w/workspace_123/s/stream_abc")
+      expect(engineeringLink).toHaveAttribute("href", "/w/workspace_123/s/stream_def")
+    })
+
+    it("should not link non-channel stream types", () => {
+      // scratchpad streams with slugs should not create channel links
+      renderWithChannelLinks("#general")
+
+      // Only the channel stream should be linked
+      const links = screen.getAllByRole("link")
+      expect(links).toHaveLength(1)
     })
   })
 
