@@ -64,13 +64,14 @@ describe("EventService.editMessage version capture", () => {
     authorId: "member_1",
     authorType: "member",
   }
+  let findByIdForUpdateSpy: ReturnType<typeof spyOn>
   let isMemberSpy: ReturnType<typeof spyOn>
   let hasParticipatedSpy: ReturnType<typeof spyOn>
 
   beforeEach(() => {
     spyOn(db, "withTransaction").mockImplementation(((_db: unknown, callback: (client: any) => Promise<unknown>) =>
       callback({})) as any)
-    spyOn(MessageRepository, "findByIdForUpdate").mockResolvedValue(existingMessage as any)
+    findByIdForUpdateSpy = spyOn(MessageRepository, "findByIdForUpdate").mockResolvedValue(existingMessage as any)
     spyOn(MessageRepository, "findById").mockResolvedValue(existingMessage as any)
     isMemberSpy = spyOn(StreamMemberRepository, "isMember").mockResolvedValue(true)
     hasParticipatedSpy = spyOn(StreamPersonaParticipantRepository, "hasParticipated").mockResolvedValue(false)
@@ -129,7 +130,7 @@ describe("EventService.editMessage version capture", () => {
   })
 
   it("should not create version when message does not exist", async () => {
-    spyOn(MessageRepository, "findByIdForUpdate").mockResolvedValue(null)
+    findByIdForUpdateSpy.mockResolvedValue(null)
 
     const service = new EventService({} as any)
 
@@ -170,6 +171,10 @@ describe("EventService.editMessage version capture", () => {
   it("throws when actor type cannot be resolved", async () => {
     isMemberSpy.mockResolvedValue(false)
     hasParticipatedSpy.mockResolvedValue(false)
+    findByIdForUpdateSpy.mockResolvedValue({
+      ...existingMessage,
+      authorId: "another_actor",
+    })
     const service = new EventService({} as any)
 
     await expect(
@@ -184,5 +189,27 @@ describe("EventService.editMessage version capture", () => {
     ).rejects.toThrow("has no resolved type")
 
     expect(MessageVersionRepository.insert).not.toHaveBeenCalled()
+  })
+
+  it("uses existing message author type when actorType is omitted", async () => {
+    isMemberSpy.mockResolvedValue(false)
+    hasParticipatedSpy.mockResolvedValue(false)
+    const service = new EventService({} as any)
+
+    await service.editMessage({
+      workspaceId: "ws_1",
+      messageId: "msg_1",
+      streamId: "stream_1",
+      contentJson: { type: "doc", content: [] },
+      contentMarkdown: "edited",
+      actorId: "member_1",
+    })
+
+    expect(StreamEventRepository.insert).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        actorType: "member",
+      })
+    )
   })
 })

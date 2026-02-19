@@ -112,9 +112,14 @@ export class EventService {
     client: PoolClient,
     streamId: string,
     actorId: string,
-    actorType?: AuthorType
+    actorType?: AuthorType,
+    existingMessage?: Pick<Message, "authorId" | "authorType">
   ): Promise<AuthorType> {
     if (actorType) return actorType
+
+    if (existingMessage && existingMessage.authorId === actorId) {
+      return existingMessage.authorType
+    }
 
     const [isMember, isPersona] = await Promise.all([
       StreamMemberRepository.isMember(client, streamId, actorId),
@@ -275,7 +280,7 @@ export class EventService {
       const existing = await MessageRepository.findByIdForUpdate(client, params.messageId)
       if (!existing || existing.deletedAt) return null
 
-      const actorType = await this.resolveActorType(client, params.streamId, params.actorId, params.actorType)
+      const actorType = await this.resolveActorType(client, params.streamId, params.actorId, params.actorType, existing)
 
       // 1. Snapshot pre-edit content as a version record
       await MessageVersionRepository.insert(client, {
@@ -326,7 +331,7 @@ export class EventService {
       const existing = await MessageRepository.findByIdForUpdate(client, params.messageId)
       if (!existing || existing.deletedAt) return null
 
-      const actorType = await this.resolveActorType(client, params.streamId, params.actorId, params.actorType)
+      const actorType = await this.resolveActorType(client, params.streamId, params.actorId, params.actorType, existing)
 
       // 1. Append event
       await StreamEventRepository.insert(client, {
