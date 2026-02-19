@@ -2,17 +2,13 @@ import { useState, useMemo, useCallback } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
-import { SearchableList, type SearchableListItem } from "@/components/ui/searchable-list"
+import { SearchableList } from "@/components/ui/searchable-list"
+import { renderMemberItem, type MemberItem } from "@/components/ui/member-list-item"
 import { UserPlus, X } from "lucide-react"
 import { workspaceKeys } from "@/hooks"
 import { getInitials } from "@/lib/initials"
 import { getAvatarColor } from "@/lib/avatar-color"
 import type { WorkspaceBootstrap } from "@threa/types"
-
-interface MemberItem extends SearchableListItem {
-  slug: string
-  name: string
-}
 
 interface MemberPickerProps {
   workspaceId: string
@@ -74,23 +70,6 @@ export function MemberPicker({ workspaceId, currentMemberId, selectedMemberIds, 
   const handleRemove = (memberId: string) => {
     onChange(selectedMemberIds.filter((id) => id !== memberId))
   }
-
-  const renderMemberItem = useCallback((item: MemberItem, _highlighted: boolean) => {
-    const initials = getInitials(item.name || item.slug)
-    const color = getAvatarColor(item.id)
-
-    return (
-      <div className="flex items-center gap-2.5 px-2.5 py-2">
-        <div className={`flex items-center justify-center h-7 w-7 rounded-full text-xs font-medium shrink-0 ${color}`}>
-          {initials}
-        </div>
-        <div className="flex items-center gap-1.5 min-w-0 flex-1">
-          <span className="text-sm font-medium truncate">{item.label}</span>
-          <span className="text-xs text-muted-foreground truncate">{item.description}</span>
-        </div>
-      </div>
-    )
-  }, [])
 
   return (
     <div className="space-y-3">

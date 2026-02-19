@@ -426,8 +426,29 @@ export class StreamService {
         const members = await MemberRepository.findByIds(client, additionalMemberIds)
         const validMemberIds = members.filter((m) => m.workspaceId === params.workspaceId).map((m) => m.id)
 
-        for (const memberId of validMemberIds) {
-          await this.addToStream(client, stream, memberId, params.createdBy)
+        if (validMemberIds.length > 0) {
+          // INV-56: batch insert members, then batch events and outbox entries
+          await StreamMemberRepository.insertMany(client, stream.id, validMemberIds)
+
+          for (const memberId of validMemberIds) {
+            const evtId = eventId()
+            const event = await StreamEventRepository.insert(client, {
+              id: evtId,
+              streamId: stream.id,
+              eventType: "member_added",
+              payload: { addedBy: params.createdBy },
+              actorId: memberId,
+              actorType: "member",
+            })
+
+            await OutboxRepository.insert(client, "stream:member_added", {
+              workspaceId: stream.workspaceId,
+              streamId: stream.id,
+              memberId,
+              stream,
+              event,
+            })
+          }
         }
       }
 
@@ -673,6 +694,13 @@ export class StreamService {
   // Member operations
 
   private async addToStream(client: Querier, stream: Stream, memberId: string, actorId: string): Promise<StreamMember> {
+    // Check if already a member to avoid spurious events on duplicate calls
+    const alreadyMember = await StreamMemberRepository.isMember(client, stream.id, memberId)
+    if (alreadyMember) {
+      const existing = await StreamMemberRepository.findByStreamAndMember(client, stream.id, memberId)
+      if (existing) return existing
+    }
+
     const membership = await StreamMemberRepository.insert(client, stream.id, memberId)
 
     const latestEventIds = await StreamEventRepository.getLatestEventIdByStreamBatch(client, [stream.id])

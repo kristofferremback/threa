@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
-import { SearchableList, type SearchableListItem } from "@/components/ui/searchable-list"
+import { SearchableList } from "@/components/ui/searchable-list"
+import { renderMemberItem, type MemberItem } from "@/components/ui/member-list-item"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,11 +23,6 @@ import { StreamTypes, type StreamMember, type WorkspaceBootstrap } from "@threa/
 import { getInitials } from "@/lib/initials"
 import { getAvatarColor } from "@/lib/avatar-color"
 import { toast } from "sonner"
-
-interface MemberItem extends SearchableListItem {
-  slug: string
-  name: string
-}
 
 interface MembersTabProps {
   workspaceId: string
@@ -111,23 +107,6 @@ export function MembersTab({ workspaceId, streamId, currentMemberId }: MembersTa
     },
     [addMutation]
   )
-
-  const renderMemberItem = useCallback((item: MemberItem, _highlighted: boolean) => {
-    const initials = getInitials(item.name || item.slug)
-    const color = getAvatarColor(item.id)
-
-    return (
-      <div className="flex items-center gap-2.5 px-2.5 py-2">
-        <div className={`flex items-center justify-center h-7 w-7 rounded-full text-xs font-medium shrink-0 ${color}`}>
-          {initials}
-        </div>
-        <div className="flex items-center gap-1.5 min-w-0 flex-1">
-          <span className="text-sm font-medium truncate">{item.label}</span>
-          <span className="text-xs text-muted-foreground truncate">{item.description}</span>
-        </div>
-      </div>
-    )
-  }, [])
 
   const [removeMemberId, setRemoveMemberId] = useState<string | null>(null)
   const removeMemberName = removeMemberId

@@ -11,6 +11,7 @@ import { VisibilityPicker } from "@/components/ui/visibility-picker"
 import { MemberPicker } from "./member-picker"
 import { useCreateChannel } from "./use-create-channel"
 import { useCreateStream, workspaceKeys } from "@/hooks"
+import { useAuth } from "@/auth"
 import { toast } from "sonner"
 import type { Visibility, WorkspaceBootstrap } from "@threa/types"
 
@@ -20,6 +21,7 @@ interface CreateChannelDialogProps {
 
 export function CreateChannelDialog({ workspaceId }: CreateChannelDialogProps) {
   const { isOpen, closeCreateChannel } = useCreateChannel()
+  const { user } = useAuth()
   const navigate = useNavigate()
   const createStream = useCreateStream(workspaceId)
   const queryClient = useQueryClient()
@@ -38,11 +40,11 @@ export function CreateChannelDialog({ workspaceId }: CreateChannelDialogProps) {
     staleTime: Infinity,
   })
 
-  // Derive current member from workspace bootstrap memberships
+  // Derive current member from workspace bootstrap members list
   const currentMemberId = useMemo(() => {
-    if (!wsBootstrap?.streamMemberships?.length) return null
-    return wsBootstrap.streamMemberships[0]?.memberId ?? null
-  }, [wsBootstrap])
+    if (!wsBootstrap?.members || !user) return null
+    return wsBootstrap.members.find((m) => m.userId === user.id)?.id ?? null
+  }, [wsBootstrap, user])
 
   const resetForm = useCallback(() => {
     setSlug("")
