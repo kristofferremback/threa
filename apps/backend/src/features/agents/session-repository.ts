@@ -287,34 +287,67 @@ export const AgentSessionRepository = {
         ? now
         : null
 
-    const statusGuard =
+    const query =
       extras?.onlyIfStatusIn && extras.onlyIfStatusIn.length > 0
-        ? sql` AND status = ANY(${extras.onlyIfStatusIn})`
+        ? sql`
+            UPDATE agent_sessions
+            SET
+              status = ${status},
+              server_id = COALESCE(${extras?.serverId ?? null}, server_id),
+              heartbeat_at = ${status === SessionStatuses.RUNNING ? now : sql.raw("heartbeat_at")},
+              response_message_id = COALESCE(${extras?.responseMessageId ?? null}, response_message_id),
+              sent_message_ids = COALESCE(${extras?.sentMessageIds ?? null}, sent_message_ids),
+              error = COALESCE(${extras?.error ?? null}, error),
+              current_step_type = ${
+                status === SessionStatuses.DELETED || status === SessionStatuses.SUPERSEDED
+                  ? null
+                  : sql.raw("current_step_type")
+              },
+              completed_at = ${completedAt}
+            WHERE id = ${id}
+              AND status = ANY(${extras.onlyIfStatusIn})
+            RETURNING ${sql.raw(SESSION_SELECT_FIELDS)}
+          `
         : extras?.onlyIfStatus
-          ? sql` AND status = ${extras.onlyIfStatus}`
-          : sql.raw("")
+          ? sql`
+              UPDATE agent_sessions
+              SET
+                status = ${status},
+                server_id = COALESCE(${extras?.serverId ?? null}, server_id),
+                heartbeat_at = ${status === SessionStatuses.RUNNING ? now : sql.raw("heartbeat_at")},
+                response_message_id = COALESCE(${extras?.responseMessageId ?? null}, response_message_id),
+                sent_message_ids = COALESCE(${extras?.sentMessageIds ?? null}, sent_message_ids),
+                error = COALESCE(${extras?.error ?? null}, error),
+                current_step_type = ${
+                  status === SessionStatuses.DELETED || status === SessionStatuses.SUPERSEDED
+                    ? null
+                    : sql.raw("current_step_type")
+                },
+                completed_at = ${completedAt}
+              WHERE id = ${id}
+                AND status = ${extras.onlyIfStatus}
+              RETURNING ${sql.raw(SESSION_SELECT_FIELDS)}
+            `
+          : sql`
+              UPDATE agent_sessions
+              SET
+                status = ${status},
+                server_id = COALESCE(${extras?.serverId ?? null}, server_id),
+                heartbeat_at = ${status === SessionStatuses.RUNNING ? now : sql.raw("heartbeat_at")},
+                response_message_id = COALESCE(${extras?.responseMessageId ?? null}, response_message_id),
+                sent_message_ids = COALESCE(${extras?.sentMessageIds ?? null}, sent_message_ids),
+                error = COALESCE(${extras?.error ?? null}, error),
+                current_step_type = ${
+                  status === SessionStatuses.DELETED || status === SessionStatuses.SUPERSEDED
+                    ? null
+                    : sql.raw("current_step_type")
+                },
+                completed_at = ${completedAt}
+              WHERE id = ${id}
+              RETURNING ${sql.raw(SESSION_SELECT_FIELDS)}
+            `
 
-    const result = await db.query<SessionRow>(
-      sql`
-        UPDATE agent_sessions
-        SET
-          status = ${status},
-          server_id = COALESCE(${extras?.serverId ?? null}, server_id),
-          heartbeat_at = ${status === SessionStatuses.RUNNING ? now : sql.raw("heartbeat_at")},
-          response_message_id = COALESCE(${extras?.responseMessageId ?? null}, response_message_id),
-          sent_message_ids = COALESCE(${extras?.sentMessageIds ?? null}, sent_message_ids),
-          error = COALESCE(${extras?.error ?? null}, error),
-          current_step_type = ${
-            status === SessionStatuses.DELETED || status === SessionStatuses.SUPERSEDED
-              ? null
-              : sql.raw("current_step_type")
-          },
-          completed_at = ${completedAt}
-        WHERE id = ${id}
-          ${statusGuard}
-        RETURNING ${sql.raw(SESSION_SELECT_FIELDS)}
-      `
-    )
+    const result = await db.query<SessionRow>(query)
     return result.rows[0] ? mapRowToSession(result.rows[0]) : null
   },
 
