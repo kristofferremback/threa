@@ -1,6 +1,8 @@
 import type { ReactNode } from "react"
+import { Link } from "react-router-dom"
 import { cn } from "@/lib/utils"
 import { useMentionType } from "./mention-context"
+import { useChannelUrl } from "./channel-link-context"
 import { useEmojiLookup } from "./emoji-context"
 import { MENTION_PATTERN, isValidSlug } from "@threa/types"
 
@@ -22,20 +24,35 @@ interface TriggerChipProps {
   text: string
 }
 
+const chipBase = "inline px-1 py-px rounded font-medium"
+
 /**
  * Styled chip for rendered triggers (mentions, channels, commands).
- * Uses MentionContext for correct mention type styling.
+ * Channel chips render as links; mentions and commands render as spans.
  */
 function TriggerChip({ type, text }: TriggerChipProps) {
   const getMentionType = useMentionType()
+  const getChannelUrl = useChannelUrl()
+
+  if (type === "channel") {
+    const url = getChannelUrl(text)
+    if (url) {
+      return (
+        <Link
+          to={url}
+          className={cn(chipBase, "hover:underline underline-offset-2 decoration-current/50", triggerStyles.channel)}
+        >
+          #{text}
+        </Link>
+      )
+    }
+    return <span className={cn(chipBase, triggerStyles.channel)}>#{text}</span>
+  }
+
   let style: string
   let prefix: string
 
   switch (type) {
-    case "channel":
-      style = triggerStyles.channel
-      prefix = "#"
-      break
     case "command":
       style = triggerStyles.command
       prefix = "/"
@@ -46,7 +63,7 @@ function TriggerChip({ type, text }: TriggerChipProps) {
   }
 
   return (
-    <span className={cn("inline px-1 py-px rounded font-medium cursor-pointer", style)}>
+    <span className={cn(chipBase, "cursor-pointer", style)}>
       {prefix}
       {text}
     </span>
