@@ -61,7 +61,7 @@ export interface AgentRuntimeConfig {
    * Optional validation hook for candidate final responses.
    * Return a reason string to reject and force another iteration.
    */
-  validateFinalResponse?: (content: string) => string | null
+  validateFinalResponse?: (content: string) => Promise<string | null> | string | null
 }
 
 export interface AgentRuntimeResult {
@@ -255,7 +255,9 @@ export class AgentRuntime {
         }
 
         if (lastAssistantText) {
-          const validationError = this.config.validateFinalResponse?.(lastAssistantText) ?? null
+          const validationError = this.config.validateFinalResponse
+            ? await this.config.validateFinalResponse(lastAssistantText)
+            : null
           if (validationError) {
             conversation.push({
               role: "system",
@@ -310,7 +312,7 @@ export class AgentRuntime {
 
         if (execResult.pendingMessages.length > 0) {
           if (newMessages.length === 0) {
-            const invalidPending = this.findInvalidPendingMessage(execResult.pendingMessages)
+            const invalidPending = await this.findInvalidPendingMessage(execResult.pendingMessages)
             if (invalidPending) {
               conversation.push({
                 role: "system",
@@ -386,7 +388,7 @@ export class AgentRuntime {
       } else {
         // No new-message awareness — commit pending messages immediately
         if (execResult.pendingMessages.length > 0) {
-          const invalidPending = this.findInvalidPendingMessage(execResult.pendingMessages)
+          const invalidPending = await this.findInvalidPendingMessage(execResult.pendingMessages)
           if (invalidPending) {
             conversation.push({
               role: "system",
@@ -636,11 +638,13 @@ export class AgentRuntime {
     return operation === "edited" ? 0 : 1
   }
 
-  private findInvalidPendingMessage(pendingMessages: PendingMessage[]): { content: string; reason: string } | null {
+  private async findInvalidPendingMessage(
+    pendingMessages: PendingMessage[]
+  ): Promise<{ content: string; reason: string } | null> {
     if (!this.config.validateFinalResponse) return null
 
     for (const pending of pendingMessages) {
-      const reason = this.config.validateFinalResponse(pending.content)
+      const reason = await this.config.validateFinalResponse(pending.content)
       if (reason) return { content: pending.content, reason }
     }
 

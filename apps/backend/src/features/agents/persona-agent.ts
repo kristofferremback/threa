@@ -1,4 +1,5 @@
 import type { Pool } from "pg"
+import { z } from "zod"
 import { withClient, type Querier } from "../../db"
 import {
   AgentStepTypes,
@@ -349,7 +350,12 @@ export class PersonaAgent {
           sendMessage: doSendMessage,
           allowNoMessageOutput: isSupersedeRerun,
           validateFinalResponse: isSupersedeRerun
-            ? (content) => validateSupersedeFinalResponse(content, rerunContext)
+            ? buildSupersedeResponseValidator({
+                ai,
+                model: persona.model,
+                sessionId: session.id,
+                rerunContext,
+              })
             : undefined,
           telemetry: {
             functionId: "agent-loop",
@@ -747,48 +753,66 @@ For the final outcome:
 - Do not end your turn without calling exactly one of \`keep_response\` or \`send_message\`.`
 }
 
-function validateSupersedeFinalResponse(content: string, rerunContext?: AgentSessionRerunContext): string | null {
-  const trimmed = content.trim()
-  if (trimmed.length === 0) {
-    return "Your response is empty. Provide a direct, useful answer to the edited request."
-  }
+const SupersedeResponseValidationSchema = z.object({
+  verdict: z.enum(["accept", "revise"]),
+  reason: z.string().min(1).max(280),
+})
 
-  const lower = trimmed.toLowerCase()
-  const hasClarificationPhrase =
-    lower.includes("did you mean") ||
-    lower.includes("let me know") ||
-    lower.includes("what direction") ||
-    lower.includes("which direction") ||
-    lower.includes("can you clarify")
+function buildSupersedeResponseValidator(params: {
+  ai: AI
+  model: string
+  sessionId: string
+  rerunContext?: AgentSessionRerunContext
+}): (content: string) => Promise<string | null> {
+  const { ai, model, sessionId, rerunContext } = params
+  const editedBefore = rerunContext?.editedMessageBefore ?? null
+  const editedAfter = rerunContext?.editedMessageAfter ?? null
 
-  const hasActionableAnswerSignals =
-    /(?:^|\n)\s*[-*]\s+/.test(trimmed) ||
-    /(?:^|\n)\s*\d+\.\s+/.test(trimmed) ||
-    lower.includes("i recommend") ||
-    lower.includes("here's") ||
-    lower.includes("here are") ||
-    lower.includes("ingredients") ||
-    lower.includes("instructions") ||
-    lower.includes("steps")
+  return async (content: string): Promise<string | null> => {
+    const candidate = content.trim()
+    if (candidate.length === 0) {
+      return "Your response is empty. Provide a direct, useful answer to the edited request."
+    }
 
-  if (hasClarificationPhrase && !hasActionableAnswerSignals) {
-    return "Do not send a clarification-only response. The edited request is concrete; provide a direct answer."
-  }
+    try {
+      const { value } = await ai.generateObject({
+        model,
+        schema: SupersedeResponseValidationSchema,
+        telemetry: {
+          functionId: "agent-rerun-response-validation",
+          metadata: {
+            session_id: sessionId,
+            rerun_cause: rerunContext?.cause ?? "unknown",
+          },
+        },
+        maxTokens: 180,
+        temperature: 0,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are validating whether an assistant response is acceptable for a supersede rerun in a chat agent.\n" +
+              "Decide if the candidate response should be accepted as the final answer to the edited request.\n" +
+              "Return JSON only via schema.\n" +
+              "Use verdict='accept' when the response directly and helpfully addresses the edited user request.\n" +
+              "Use verdict='revise' when the response does not adequately answer the edited request (for example only meta discussion, only reconfirmation, or insufficiently actionable output).",
+          },
+          {
+            role: "user",
+            content: JSON.stringify({
+              rerunCause: rerunContext?.cause ?? null,
+              editedMessageBefore: editedBefore,
+              editedMessageAfter: editedAfter,
+              candidateResponse: candidate.length > 4000 ? `${candidate.slice(0, 4000)}...` : candidate,
+            }),
+          },
+        ],
+      })
 
-  const editedText = rerunContext?.editedMessageAfter?.toLowerCase() ?? ""
-  const expectsRecipe = editedText.includes("recipe")
-  if (expectsRecipe) {
-    const hasRecipeSignals =
-      lower.includes("recipe") ||
-      lower.includes("ingredients") ||
-      lower.includes("instructions") ||
-      lower.includes("steps") ||
-      lower.includes("recommend")
-
-    if (!hasRecipeSignals) {
-      return "The edited request asks for a recipe. Provide a concrete recipe recommendation, not just a follow-up question."
+      return value.verdict === "revise" ? value.reason : null
+    } catch (err) {
+      logger.warn({ err, sessionId }, "Supersede response validation failed; skipping validation gate")
+      return null
     }
   }
-
-  return null
 }
