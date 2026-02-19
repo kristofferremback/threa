@@ -191,7 +191,7 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
   }, [ancestors, parentBootstrap?.stream, draftInfo])
 
   return (
-    <SidePanel>
+    <SidePanel data-editor-zone="panel">
       <SidePanelHeader className="relative">
         <StreamLoadingIndicator isLoading={showLoadingIndicator} />
         {isDraft && parentBootstrap?.stream ? (
