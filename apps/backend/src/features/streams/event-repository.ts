@@ -117,6 +117,9 @@ export const StreamEventRepository = {
   async insertMany(db: Querier, paramsList: InsertEventParams[]): Promise<StreamEvent[]> {
     if (paramsList.length === 0) return []
     const streamId = paramsList[0].streamId
+    if (paramsList.some((p) => p.streamId !== streamId)) {
+      throw new Error("insertMany requires all events to belong to the same stream")
+    }
     const sequences = await this.getNextSequences(db, streamId, paramsList.length)
 
     const ids = paramsList.map((p) => p.id)

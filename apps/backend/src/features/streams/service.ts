@@ -453,12 +453,12 @@ export class StreamService {
 
           await OutboxRepository.insertMany(
             client,
-            events.map((event, i) => ({
+            events.map((event) => ({
               eventType: "stream:member_added" as const,
               payload: {
                 workspaceId: stream.workspaceId,
                 streamId: stream.id,
-                memberId: validMemberIds[i],
+                memberId: event.actorId!,
                 stream,
                 event,
               },
@@ -467,11 +467,7 @@ export class StreamService {
 
           // Set lastReadEventId so initial members don't see creation events as unread
           const lastEvent = events[events.length - 1]
-          await client.query(
-            `UPDATE stream_members SET last_read_event_id = $1, last_read_at = NOW()
-             WHERE stream_id = $2 AND member_id = ANY($3)`,
-            [lastEvent.id, stream.id, validMemberIds]
-          )
+          await StreamMemberRepository.setLastReadEventIdForMembers(client, stream.id, validMemberIds, lastEvent.id)
         }
       }
 
@@ -723,12 +719,6 @@ export class StreamService {
 
     const membership = await StreamMemberRepository.insert(client, stream.id, memberId)
 
-    const latestEventIds = await StreamEventRepository.getLatestEventIdByStreamBatch(client, [stream.id])
-    const latestEventId = latestEventIds.get(stream.id)
-    if (latestEventId) {
-      await StreamMemberRepository.update(client, stream.id, memberId, { lastReadEventId: latestEventId })
-    }
-
     // Create timeline event so "X was added" appears in the stream
     const evtId = eventId()
     const event = await StreamEventRepository.insert(client, {
@@ -739,6 +729,9 @@ export class StreamService {
       actorId: memberId,
       actorType: "member",
     })
+
+    // Set read cursor *after* inserting the member_added event so it's not shown as unread
+    await StreamMemberRepository.update(client, stream.id, memberId, { lastReadEventId: evtId })
 
     await OutboxRepository.insert(client, "stream:member_added", {
       workspaceId: stream.workspaceId,

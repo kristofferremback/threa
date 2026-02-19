@@ -254,6 +254,21 @@ export const StreamMemberRepository = {
     )
   },
 
+  async setLastReadEventIdForMembers(
+    db: Querier,
+    streamId: string,
+    memberIds: string[],
+    lastReadEventId: string
+  ): Promise<void> {
+    if (memberIds.length === 0) return
+
+    await db.query(
+      `UPDATE stream_members SET last_read_event_id = $1, last_read_at = NOW()
+       WHERE stream_id = $2 AND member_id = ANY($3)`,
+      [lastReadEventId, streamId, memberIds]
+    )
+  },
+
   async filterStreamsWithAllMembers(db: Querier, streamIds: string[], memberIds: string[]): Promise<Set<string>> {
     if (streamIds.length === 0 || memberIds.length === 0) {
       return new Set(streamIds)
