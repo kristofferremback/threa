@@ -63,12 +63,13 @@ export function MessageEditForm({
 
   const handleSubmit = useCallback(async () => {
     const contentMarkdown = serializeToMarkdown(contentJson)
-    if (!contentMarkdown.trim()) return
-    if (contentMarkdown.trim() === initialMarkdown) {
+    const trimmed = contentMarkdown.trim()
+    if (!trimmed) return
+    if (trimmed === initialMarkdown) {
       onCancel()
       return
     }
-    await saveEdit(contentJson, contentMarkdown)
+    await saveEdit(contentJson, trimmed)
   }, [contentJson, saveEdit, initialMarkdown, onCancel])
 
   const handleDocEditorSend = useCallback(

@@ -151,6 +151,7 @@ export interface Message {
   authorId: string
   reactions: Record<string, string[]>
   streamId: string
+  editedAt: string | null
   createdAt: string
 }
 

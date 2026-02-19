@@ -280,6 +280,9 @@ export class EventService {
       const existing = await MessageRepository.findByIdForUpdate(client, params.messageId)
       if (!existing || existing.deletedAt) return null
 
+      // No-op: content hasn't meaningfully changed
+      if (params.contentMarkdown.trim() === existing.contentMarkdown.trim()) return existing
+
       const actorType = await this.resolveActorType(client, params.streamId, params.actorId, params.actorType, existing)
 
       // 1. Snapshot pre-edit content as a version record
