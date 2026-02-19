@@ -14,7 +14,7 @@ export function ThreadParentMessage({ event, workspaceId, streamId, replyCount }
     <div className="border-b">
       <div className="pt-4 pb-2">
         <div className="px-6 mx-auto max-w-[800px] w-full min-w-0">
-          <EventItem event={event} workspaceId={workspaceId} streamId={streamId} hideActions />
+          <EventItem event={event} workspaceId={workspaceId} streamId={streamId} isThreadParent />
         </div>
       </div>
       <Separator />
