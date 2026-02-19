@@ -6,6 +6,7 @@ import { TraceDialog } from "./trace-dialog"
 const mockNavigate = vi.fn()
 let mockSessionId = "session_1"
 let mockSessionIndex = 0
+let mockSteps: Array<{ id: string; stepType: string }> = []
 
 vi.mock("react-router-dom", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router-dom")>()
@@ -64,7 +65,7 @@ const relatedSessions: AgentSession[] = [
 
 vi.mock("@/hooks/use-agent-trace", () => ({
   useAgentTrace: () => ({
-    steps: [],
+    steps: mockSteps,
     session: relatedSessions[mockSessionIndex],
     relatedSessions,
     persona: { id: "persona_1", name: "Ariadne", avatarUrl: null, avatarEmoji: "🜃" },
@@ -82,6 +83,7 @@ describe("TraceDialog", () => {
   it("shows superseded-by version hint for superseded sessions", () => {
     mockSessionId = "session_1"
     mockSessionIndex = 0
+    mockSteps = []
     render(<TraceDialog />)
 
     expect(screen.getByText("Superseded by Version 2")).toBeInTheDocument()
@@ -90,11 +92,26 @@ describe("TraceDialog", () => {
   it("shows rerun reason when session was retriggered by follow-up edit", () => {
     mockSessionId = "session_2"
     mockSessionIndex = 1
+    mockSteps = []
     render(<TraceDialog />)
 
     expect(screen.getByText("Rerun triggered by follow-up message edit")).toBeInTheDocument()
     expect(
       screen.getByText('Edited message changed from "Include peanut butter" to "No peanuts please"')
     ).toBeInTheDocument()
+  })
+
+  it("counts message edits as sent responses in footer", () => {
+    mockSessionId = "session_2"
+    mockSessionIndex = 1
+    mockSteps = [
+      { id: "step_1", stepType: "thinking" },
+      { id: "step_2", stepType: "message_edited" },
+      { id: "step_3", stepType: "reconsidering" },
+    ]
+
+    render(<TraceDialog />)
+
+    expect(screen.getByText("3 steps • 1 message sent")).toBeInTheDocument()
   })
 })

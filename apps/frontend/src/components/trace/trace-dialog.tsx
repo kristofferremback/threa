@@ -51,7 +51,7 @@ export function TraceDialog() {
   const rerunReasonLabel = formatRerunReasonLabel(session?.rerunContext)
   const rerunReasonDetail = formatRerunReasonDetail(session?.rerunContext)
 
-  const messageCount = steps.filter((s) => s.stepType === "message_sent").length
+  const messageCount = steps.filter((s) => s.stepType === "message_sent" || s.stepType === "message_edited").length
 
   return (
     <Dialog open onOpenChange={(open) => !open && closeTraceModal()}>

@@ -635,7 +635,8 @@ export class AgentRuntime {
       sources: traceSources,
     })
 
-    return operation === "edited" ? 0 : 1
+    // User-visible response updates (both creates and edits) count as sent output.
+    return 1
   }
 
   private async findInvalidPendingMessage(
