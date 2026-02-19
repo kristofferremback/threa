@@ -77,6 +77,7 @@ export interface EditMessageParams {
   contentJson: JSONContent
   contentMarkdown: string
   actorId: string
+  actorType?: AuthorType
 }
 
 export interface DeleteMessageParams {
@@ -84,6 +85,7 @@ export interface DeleteMessageParams {
   messageId: string
   streamId: string
   actorId: string
+  actorType?: AuthorType
 }
 
 export interface AddReactionParams {
@@ -245,6 +247,8 @@ export class EventService {
   }
 
   async editMessage(params: EditMessageParams): Promise<Message | null> {
+    const actorType = params.actorType ?? "member"
+
     return withTransaction(this.pool, async (client) => {
       // Returns null if the message was concurrently deleted — prevents phantom edits
       const existing = await MessageRepository.findByIdForUpdate(client, params.messageId)
@@ -270,7 +274,7 @@ export class EventService {
           contentMarkdown: params.contentMarkdown,
         } satisfies MessageEditedPayload,
         actorId: params.actorId,
-        actorType: "member",
+        actorType,
       })
 
       // 3. Update projection
@@ -295,6 +299,8 @@ export class EventService {
   }
 
   async deleteMessage(params: DeleteMessageParams): Promise<Message | null> {
+    const actorType = params.actorType ?? "member"
+
     return withTransaction(this.pool, async (client) => {
       const existing = await MessageRepository.findByIdForUpdate(client, params.messageId)
       if (!existing || existing.deletedAt) return null
@@ -308,7 +314,7 @@ export class EventService {
           messageId: params.messageId,
         } satisfies MessageDeletedPayload,
         actorId: params.actorId,
-        actorType: "member",
+        actorType,
       })
 
       // 2. Update projection (soft delete)

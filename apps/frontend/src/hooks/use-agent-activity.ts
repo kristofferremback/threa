@@ -6,6 +6,7 @@ import type {
   AgentSessionStartedPayload,
   AgentSessionCompletedPayload,
   AgentSessionFailedPayload,
+  AgentSessionDeletedPayload,
   AgentSessionProgressPayload,
   AgentActivityStartedPayload,
   AgentActivityEndedPayload,
@@ -71,6 +72,11 @@ export function useAgentActivity(events: StreamEvent[], socket: Socket | null): 
         }
         case "agent_session:failed": {
           const payload = event.payload as AgentSessionFailedPayload
+          terminated.add(payload.sessionId)
+          break
+        }
+        case "agent_session:deleted": {
+          const payload = event.payload as AgentSessionDeletedPayload
           terminated.add(payload.sessionId)
           break
         }
@@ -196,7 +202,10 @@ export function useAgentActivity(events: StreamEvent[], socket: Socket | null): 
 function hasTerminatedInEvents(events: StreamEvent[], sessionId: string): boolean {
   return events.some(
     (e) =>
-      (e.eventType === "agent_session:completed" || e.eventType === "agent_session:failed") &&
-      (e.payload as AgentSessionCompletedPayload | AgentSessionFailedPayload).sessionId === sessionId
+      (e.eventType === "agent_session:completed" ||
+        e.eventType === "agent_session:failed" ||
+        e.eventType === "agent_session:deleted") &&
+      (e.payload as AgentSessionCompletedPayload | AgentSessionFailedPayload | AgentSessionDeletedPayload).sessionId ===
+        sessionId
   )
 }

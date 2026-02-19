@@ -61,6 +61,7 @@ export const EVENT_TYPES = [
   "agent_session:started",
   "agent_session:completed",
   "agent_session:failed",
+  "agent_session:deleted",
 ] as const
 export type EventType = (typeof EVENT_TYPES)[number]
 
@@ -276,6 +277,7 @@ export const AGENT_SESSION_EVENT_TYPES = [
   "agent_session:started",
   "agent_session:completed",
   "agent_session:failed",
+  "agent_session:deleted",
 ] as const
 export type AgentSessionEventType = (typeof AGENT_SESSION_EVENT_TYPES)[number]
 
@@ -288,6 +290,7 @@ export const AGENT_STEP_TYPES = [
   "visit_page",
   "workspace_search",
   "message_sent",
+  "message_edited",
   "tool_call",
   "tool_error",
 ] as const
@@ -301,12 +304,13 @@ export const AgentStepTypes = {
   VISIT_PAGE: "visit_page",
   WORKSPACE_SEARCH: "workspace_search",
   MESSAGE_SENT: "message_sent",
+  MESSAGE_EDITED: "message_edited",
   TOOL_CALL: "tool_call",
   TOOL_ERROR: "tool_error",
 } as const satisfies Record<string, AgentStepType>
 
 // Agent session statuses
-export const AGENT_SESSION_STATUSES = ["pending", "running", "completed", "failed"] as const
+export const AGENT_SESSION_STATUSES = ["pending", "running", "completed", "failed", "deleted", "superseded"] as const
 export type AgentSessionStatus = (typeof AGENT_SESSION_STATUSES)[number]
 
 export const AgentSessionStatuses = {
@@ -314,6 +318,8 @@ export const AgentSessionStatuses = {
   RUNNING: "running",
   COMPLETED: "completed",
   FAILED: "failed",
+  DELETED: "deleted",
+  SUPERSEDED: "superseded",
 } as const satisfies Record<string, AgentSessionStatus>
 
 // PDF page classifications

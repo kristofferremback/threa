@@ -68,4 +68,33 @@ export const MessageVersionRepository = {
     `)
     return result.rows.map(mapRow)
   },
+
+  async findLatestByMessageId(db: Querier, messageId: string): Promise<MessageVersion | null> {
+    const result = await db.query<MessageVersionRow>(sql`
+      SELECT * FROM message_versions
+      WHERE message_id = ${messageId}
+      ORDER BY version_number DESC
+      LIMIT 1
+    `)
+    return result.rows[0] ? mapRow(result.rows[0]) : null
+  },
+
+  /**
+   * Returns the current revision number for a message.
+   *
+   * Revision semantics:
+   * - Initial message content is revision 1
+   * - Each edit increments revision by 1
+   */
+  async getCurrentRevision(db: Querier, messageId: string): Promise<number | null> {
+    const result = await db.query<{ revision: number | null }>(sql`
+      SELECT CASE
+        WHEN EXISTS (SELECT 1 FROM messages WHERE id = ${messageId})
+        THEN COALESCE((SELECT MAX(version_number) FROM message_versions WHERE message_id = ${messageId}), 0) + 1
+        ELSE NULL
+      END AS revision
+    `)
+
+    return result.rows[0]?.revision ?? null
+  },
 }

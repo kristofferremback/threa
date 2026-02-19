@@ -5,6 +5,7 @@ import type { AI } from "../../../lib/ai/ai"
 import { logger } from "../../../lib/logger"
 import { protectToolOutputText } from "../tool-trust-boundary"
 import { MAX_MESSAGE_CHARS, truncateMessages } from "../companion/truncation"
+import { createKeepResponseTool } from "../tools/keep-response-tool"
 import { createSendMessageTool } from "../tools/send-message-tool"
 import type { AgentTool, AgentToolResult } from "./agent-tool"
 import { toVercelToolDefs } from "./agent-tool"
@@ -16,6 +17,7 @@ import type { AgentObserver } from "./agent-observer"
 // ---------------------------------------------------------------------------
 
 const DEFAULT_MAX_ITERATIONS = 20
+const KEEP_RESPONSE_TOOL_NAME = "keep_response"
 
 export interface NewMessageAwareness {
   check: (streamId: string, sinceSequence: bigint, excludeAuthorId: string) => Promise<NewMessageInfo[]>
@@ -38,10 +40,28 @@ export interface AgentRuntimeConfig {
   telemetry?: { functionId: string; metadata?: Record<string, string | number | boolean> }
 
   /** Terminal action — sends a message to the conversation */
-  sendMessage: (input: { content: string; sources?: SourceItem[] }) => Promise<{ messageId: string }>
+  sendMessage: (input: {
+    content: string
+    sources?: SourceItem[]
+  }) => Promise<{ messageId: string; operation?: "created" | "edited" }>
 
   /** Optional new-message awareness (companion uses this, simpler agents don't) */
   newMessages?: NewMessageAwareness
+
+  /** Optional cancellation hook (e.g., when session was externally deleted/superseded). */
+  shouldAbort?: () => Promise<string | null>
+
+  /**
+   * Allow sessions to complete without sending a new message.
+   * Used for supersede reruns where retaining prior responses is a valid outcome.
+   */
+  allowNoMessageOutput?: boolean
+
+  /**
+   * Optional validation hook for candidate final responses.
+   * Return a reason string to reject and force another iteration.
+   */
+  validateFinalResponse?: (content: string) => string | null
 }
 
 export interface AgentRuntimeResult {
@@ -50,6 +70,7 @@ export interface AgentRuntimeResult {
   sentContents: string[]
   lastProcessedSequence: bigint
   sources: SourceItem[]
+  noMessageReason?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -124,6 +145,9 @@ export class AgentRuntime {
   private buildToolDefs(): Record<string, Tool<any, any>> {
     const defs = toVercelToolDefs(this.config.tools)
     defs[AgentToolNames.SEND_MESSAGE] = createSendMessageTool()
+    if (this.config.allowNoMessageOutput) {
+      defs[KEEP_RESPONSE_TOOL_NAME] = createKeepResponseTool()
+    }
     return defs
   }
 
@@ -169,8 +193,15 @@ export class AgentRuntime {
     let lastAssistantText: string | undefined
     let hasTextReconsidered = false
     let lastProcessedSequence = nm?.lastProcessedSequence ?? BigInt(0)
+    let keptResponseReason: string | null = null
+    let responseKeptEmitted = false
 
     for (let iteration = 0; iteration < this.maxIterations; iteration++) {
+      const abortReason = await this.config.shouldAbort?.()
+      if (abortReason) {
+        throw new Error(`Agent session aborted: ${abortReason}`)
+      }
+
       const fullSystemPrompt = retrievedContext ? `${systemPrompt}\n\n${retrievedContext}` : systemPrompt
       const truncatedMessages = truncateMessages(conversation, MAX_MESSAGE_CHARS)
 
@@ -224,8 +255,33 @@ export class AgentRuntime {
         }
 
         if (lastAssistantText) {
+          const validationError = this.config.validateFinalResponse?.(lastAssistantText) ?? null
+          if (validationError) {
+            conversation.push({
+              role: "system",
+              content:
+                `[Final response needs revision]\n\n` +
+                `${validationError}\n\n` +
+                `Your proposed response was:\n"${lastAssistantText}"\n\n` +
+                `Please provide a revised final response now.`,
+            })
+            continue
+          }
+
           const committed = await this.commitMessage({ content: lastAssistantText, sources }, sent)
           messagesSent += committed
+        }
+        if (!lastAssistantText && this.config.allowNoMessageOutput) {
+          conversation.push({
+            role: "system",
+            content:
+              `[Final decision required]\n\n` +
+              `You must choose one final action now.\n` +
+              `- If previous responses remain correct, call keep_response with a specific reason tied to the edited message.\n` +
+              `- If changes are needed, call send_message with the revised response.\n` +
+              `Do not return an empty response.`,
+          })
+          continue
         }
         break
       }
@@ -254,6 +310,19 @@ export class AgentRuntime {
 
         if (execResult.pendingMessages.length > 0) {
           if (newMessages.length === 0) {
+            const invalidPending = this.findInvalidPendingMessage(execResult.pendingMessages)
+            if (invalidPending) {
+              conversation.push({
+                role: "system",
+                content:
+                  `[Final response needs revision]\n\n` +
+                  `${invalidPending.reason}\n\n` +
+                  `Your proposed response was:\n"${invalidPending.content}"\n\n` +
+                  `Please provide a revised final response and call send_message again.`,
+              })
+              continue
+            }
+
             for (const pending of execResult.pendingMessages) {
               const committed = await this.commitMessage(
                 { content: pending.content, sources: pending.sources ?? [] },
@@ -282,6 +351,34 @@ export class AgentRuntime {
                 `You may send the same response${execResult.pendingMessages.length > 1 ? "s" : ""} if still appropriate, or revise based on the new information.`,
             })
           }
+        } else if (execResult.keepResponseReason) {
+          if (newMessages.length === 0) {
+            keptResponseReason = execResult.keepResponseReason
+            await this.emit({
+              type: "response:kept",
+              reason: keptResponseReason,
+            })
+            responseKeptEmitted = true
+            break
+          }
+
+          const maxSeq = await this.injectNewMessages(newMessages, lastProcessedSequence, nm, conversation)
+          lastProcessedSequence = maxSeq
+
+          await this.emit({
+            type: "reconsidering",
+            draft: `[No change decision]\nReason: ${execResult.keepResponseReason}`,
+            newMessages,
+          })
+
+          conversation.push({
+            role: "system",
+            content:
+              `[New context arrived after you decided to keep the existing response]\n\n` +
+              `Your keep-response reason was:\n"${execResult.keepResponseReason}"\n\n` +
+              `Please reconsider. If the previous response is still correct, call keep_response again with an updated reason. ` +
+              `If changes are needed, call send_message with the updated response.`,
+          })
         } else if (newMessages.length > 0) {
           const maxSeq = await this.injectNewMessages(newMessages, lastProcessedSequence, nm, conversation)
           lastProcessedSequence = maxSeq
@@ -289,6 +386,19 @@ export class AgentRuntime {
       } else {
         // No new-message awareness — commit pending messages immediately
         if (execResult.pendingMessages.length > 0) {
+          const invalidPending = this.findInvalidPendingMessage(execResult.pendingMessages)
+          if (invalidPending) {
+            conversation.push({
+              role: "system",
+              content:
+                `[Final response needs revision]\n\n` +
+                `${invalidPending.reason}\n\n` +
+                `Your proposed response was:\n"${invalidPending.content}"\n\n` +
+                `Please provide a revised final response and call send_message again.`,
+            })
+            continue
+          }
+
           for (const pending of execResult.pendingMessages) {
             const committed = await this.commitMessage(
               { content: pending.content, sources: pending.sources ?? [] },
@@ -298,10 +408,45 @@ export class AgentRuntime {
           }
           break
         }
+
+        if (execResult.keepResponseReason) {
+          keptResponseReason = execResult.keepResponseReason
+          await this.emit({
+            type: "response:kept",
+            reason: keptResponseReason,
+          })
+          responseKeptEmitted = true
+          break
+        }
       }
     }
 
-    if (messagesSent === 0) {
+    if (sent.ids.length === 0) {
+      if (this.config.allowNoMessageOutput) {
+        const noMessageReason =
+          keptResponseReason ?? "The existing response still fit the updated context, so no message changes were made."
+
+        if (!responseKeptEmitted) {
+          await this.emit({
+            type: "response:kept",
+            reason: noMessageReason,
+          })
+        }
+
+        logger.info(
+          { sessionId: nm?.sessionId, streamId: nm?.streamId, iterations: this.maxIterations },
+          "Agent run completed without sending a message"
+        )
+        return {
+          messagesSent,
+          sentMessageIds: sent.ids,
+          sentContents: sent.contents,
+          lastProcessedSequence,
+          sources,
+          noMessageReason,
+        }
+      }
+
       logger.error(
         { sessionId: nm?.sessionId, streamId: nm?.streamId, iterations: this.maxIterations },
         "Agent loop exhausted iterations without sending a message"
@@ -324,18 +469,27 @@ export class AgentRuntime {
     resultParts: ToolResultPart[]
     extraMessages: ModelMessage[]
     pendingMessages: PendingMessage[]
+    keepResponseReason: string | null
     sources: SourceItem[]
     retrievedContext: string | null
   }> {
     const resultParts: ToolResultPart[] = []
     const extraMessages: ModelMessage[] = []
     const pendingMessages: PendingMessage[] = []
+    let keepResponseReason: string | null = null
     let sources = currentSources
     let retrievedContext = currentContext
 
     // Order: early-phase tools first, then normal, then send_message (staged)
     const sendMessageCalls = toolCalls.filter((tc) => tc.toolName === AgentToolNames.SEND_MESSAGE)
-    const agentToolCalls = toolCalls.filter((tc) => tc.toolName !== AgentToolNames.SEND_MESSAGE)
+    const keepResponseCalls = this.config.allowNoMessageOutput
+      ? toolCalls.filter((tc) => tc.toolName === KEEP_RESPONSE_TOOL_NAME)
+      : []
+    const agentToolCalls = toolCalls.filter(
+      (tc) =>
+        tc.toolName !== AgentToolNames.SEND_MESSAGE &&
+        (!this.config.allowNoMessageOutput || tc.toolName !== KEEP_RESPONSE_TOOL_NAME)
+    )
     const earlyCalls = agentToolCalls.filter((tc) => this.toolMap.get(tc.toolName)?.config.executionPhase === "early")
     const normalCalls = agentToolCalls.filter((tc) => this.toolMap.get(tc.toolName)?.config.executionPhase !== "early")
 
@@ -425,7 +579,25 @@ export class AgentRuntime {
       )
     }
 
-    return { resultParts, extraMessages, pendingMessages, sources, retrievedContext }
+    for (const tc of keepResponseCalls) {
+      const reason = (tc.input as { reason?: unknown }).reason
+      keepResponseReason =
+        typeof reason === "string" && reason.trim().length > 0
+          ? reason.trim()
+          : "No substantive changes were needed after reconsidering the updated context."
+      resultParts.push(
+        makeToolResult(
+          tc,
+          JSON.stringify({
+            status: "accepted",
+            message: "Keeping existing response unchanged.",
+            reason: keepResponseReason,
+          })
+        )
+      )
+    }
+
+    return { resultParts, extraMessages, pendingMessages, keepResponseReason, sources, retrievedContext }
   }
 
   // ---------------------------------------------------------------------------
@@ -440,25 +612,39 @@ export class AgentRuntime {
       content: pending.content,
       sources: pending.sources.length > 0 ? pending.sources : undefined,
     })
+    const operation = sendResult.operation ?? "created"
     sent.ids.push(sendResult.messageId)
     sent.contents.push(pending.content)
 
+    const traceSources =
+      pending.sources.length > 0
+        ? pending.sources.map((s) => ({
+            type: (s.type ?? "web") as TraceSource["type"],
+            title: s.title,
+            url: s.url,
+            snippet: s.snippet,
+          }))
+        : undefined
+
     await this.emit({
-      type: "message:sent",
+      type: operation === "edited" ? "message:edited" : "message:sent",
       messageId: sendResult.messageId,
       content: pending.content,
-      sources:
-        pending.sources.length > 0
-          ? pending.sources.map((s) => ({
-              type: (s.type ?? "web") as TraceSource["type"],
-              title: s.title,
-              url: s.url,
-              snippet: s.snippet,
-            }))
-          : undefined,
+      sources: traceSources,
     })
 
-    return 1
+    return operation === "edited" ? 0 : 1
+  }
+
+  private findInvalidPendingMessage(pendingMessages: PendingMessage[]): { content: string; reason: string } | null {
+    if (!this.config.validateFinalResponse) return null
+
+    for (const pending of pendingMessages) {
+      const reason = this.config.validateFinalResponse(pending.content)
+      if (reason) return { content: pending.content, reason }
+    }
+
+    return null
   }
 
   // ---------------------------------------------------------------------------

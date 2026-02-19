@@ -2,7 +2,7 @@ import type { Request, Response } from "express"
 import type { Pool } from "pg"
 import { withClient } from "../../db"
 import { AgentSessionRepository } from "./session-repository"
-import { StreamRepository } from "../streams"
+import { StreamRepository, StreamEventRepository } from "../streams"
 import { StreamMemberRepository } from "../streams"
 import { PersonaRepository } from "./persona-repository"
 import type { AgentSessionWithSteps, AgentStepType } from "@threa/types"
@@ -47,18 +47,33 @@ export function createAgentSessionHandlers({ pool }: Dependencies) {
           return { error: "Persona not found", status: 404 }
         }
 
+        const relatedSessions = (
+          await AgentSessionRepository.listByTriggerMessage(db, session.triggerMessageId)
+        ).filter((relatedSession) => relatedSession.streamId === session.streamId)
+        const sessionIds = [...new Set([session.id, ...relatedSessions.map((relatedSession) => relatedSession.id)])]
+        const rerunContextBySessionId = await StreamEventRepository.listRerunContextBySessionIds(
+          db,
+          session.streamId,
+          sessionIds
+        )
+
+        const mapSession = (s: typeof session) => ({
+          id: s.id,
+          streamId: s.streamId,
+          personaId: s.personaId,
+          triggerMessageId: s.triggerMessageId,
+          triggerMessageRevision: s.triggerMessageRevision,
+          supersedesSessionId: s.supersedesSessionId,
+          rerunContext: rerunContextBySessionId.get(s.id) ?? null,
+          status: s.status,
+          currentStepType: s.currentStepType as AgentStepType | undefined,
+          sentMessageIds: s.sentMessageIds,
+          createdAt: s.createdAt.toISOString(),
+          completedAt: s.completedAt?.toISOString(),
+        })
+
         const response: AgentSessionWithSteps = {
-          session: {
-            id: session.id,
-            streamId: session.streamId,
-            personaId: session.personaId,
-            triggerMessageId: session.triggerMessageId,
-            status: session.status,
-            currentStepType: session.currentStepType as AgentStepType | undefined,
-            sentMessageIds: session.sentMessageIds,
-            createdAt: session.createdAt.toISOString(),
-            completedAt: session.completedAt?.toISOString(),
-          },
+          session: mapSession(session),
           steps: steps.map((step) => ({
             id: step.id,
             sessionId: step.sessionId,
@@ -79,6 +94,7 @@ export function createAgentSessionHandlers({ pool }: Dependencies) {
             avatarUrl: null, // Personas use avatarEmoji, not URL
             avatarEmoji: persona.avatarEmoji,
           },
+          relatedSessions: relatedSessions.map(mapSession),
         }
 
         return { data: response }

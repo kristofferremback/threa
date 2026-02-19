@@ -17,6 +17,16 @@ export interface TraceSource {
   timestamp?: string
 }
 
+export type AgentSessionRerunCause = "invoking_message_edited" | "referenced_message_edited"
+
+export interface AgentSessionRerunContext {
+  cause: AgentSessionRerunCause
+  editedMessageId: string
+  editedMessageRevision?: number | null
+  editedMessageBefore?: string | null
+  editedMessageAfter?: string | null
+}
+
 // Agent session step (wire format for API responses)
 export interface AgentSessionStep {
   id: string
@@ -38,6 +48,9 @@ export interface AgentSession {
   streamId: string
   personaId: string
   triggerMessageId: string
+  triggerMessageRevision?: number | null
+  supersedesSessionId?: string | null
+  rerunContext?: AgentSessionRerunContext | null
   status: AgentSessionStatus
   currentStepType?: AgentStepType
   sentMessageIds: string[]
@@ -55,6 +68,7 @@ export interface AgentSessionWithSteps {
     avatarUrl: string | null
     avatarEmoji?: string | null
   }
+  relatedSessions: AgentSession[]
 }
 
 // Real-time socket event for cross-stream activity
@@ -85,6 +99,7 @@ export interface AgentSessionStartedPayload {
   personaId: string
   personaName: string
   triggerMessageId: string
+  rerunContext?: AgentSessionRerunContext | null
   startedAt: string
 }
 
@@ -102,6 +117,11 @@ export interface AgentSessionFailedPayload {
   error: string
   traceId: string
   failedAt: string
+}
+
+export interface AgentSessionDeletedPayload {
+  sessionId: string
+  deletedAt: string
 }
 
 // Session-room socket event payloads (for trace dialog real-time updates)

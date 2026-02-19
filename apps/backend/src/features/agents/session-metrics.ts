@@ -88,7 +88,7 @@ export class AgentSessionMetricsCollector {
         JOIN streams s ON a.stream_id = s.id
         WHERE a.completed_at IS NOT NULL
           AND a.completed_at > ${this.lastCollectedAt}
-          AND a.status IN ('completed', 'failed')
+          AND a.status IN ('completed', 'failed', 'deleted', 'superseded')
       `)
 
       for (const row of durationResult.rows) {

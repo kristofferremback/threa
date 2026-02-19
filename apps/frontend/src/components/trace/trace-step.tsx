@@ -101,10 +101,18 @@ function StepContent({
 interface MessageInfo {
   messageId: string
   authorName: string
-  authorType: "user" | "persona"
+  authorType: "member" | "persona" | "system"
+  changeType?: "message_created" | "message_edited" | "message_deleted"
   createdAt: string
   content: string
   isTrigger?: boolean
+}
+
+interface RerunContextInfo {
+  cause: "invoking_message_edited" | "referenced_message_edited"
+  editedMessageId: string
+  editedMessageBefore?: string | null
+  editedMessageAfter?: string | null
 }
 
 function renderStepContent(
@@ -117,11 +125,14 @@ function renderStepContent(
     case "context_received": {
       if (structured && "messages" in structured) {
         const messages = structured.messages as MessageInfo[]
+        const rerunContext = (structured.rerunContext as RerunContextInfo | undefined) ?? null
         const triggerMessage = messages.find((m) => m.isTrigger)
         const contextMessages = messages.filter((m) => !m.isTrigger)
 
         return (
           <div className="space-y-3">
+            {rerunContext && <RerunContextSummary rerunContext={rerunContext} />}
+
             {/* Trigger message - highlighted */}
             {triggerMessage && (
               <div>
@@ -156,16 +167,37 @@ function renderStepContent(
     }
 
     case "reconsidering": {
+      if (structured && structured.decision === "kept_previous_response") {
+        const reason = typeof structured.reason === "string" ? structured.reason : null
+        return (
+          <div className="space-y-2">
+            <div className="text-muted-foreground">
+              Kept the previous response unchanged after reconsidering the updated context.
+            </div>
+            {reason && (
+              <div className="rounded bg-muted/50 px-3 py-2 text-xs">
+                <span className="font-medium">Reason:</span> {reason}
+              </div>
+            )}
+          </div>
+        )
+      }
+
       if (structured && "draftResponse" in structured) {
         const draft = structured.draftResponse as string
         const newMessages = (structured.newMessages as MessageInfo[]) ?? []
+        const hasMutatedMessages = newMessages.some(
+          (message) => message.changeType === "message_edited" || message.changeType === "message_deleted"
+        )
         return (
           <div className="space-y-3">
             {/* New messages that arrived */}
             {newMessages.length > 0 && (
               <div>
                 <div className="text-muted-foreground text-[11px] mb-1.5 font-medium">
-                  New {newMessages.length === 1 ? "message" : "messages"} arrived:
+                  {hasMutatedMessages
+                    ? "Message changes arrived:"
+                    : `New ${newMessages.length === 1 ? "message" : "messages"} arrived:`}
                 </div>
                 <div className="space-y-1.5">
                   {newMessages.map((msg) => (
@@ -243,6 +275,27 @@ function renderStepContent(
       )
     }
 
+    case "message_edited": {
+      const messagePreview = content.length > 100 ? content.slice(0, 100) + "..." : content
+      return (
+        <div className="group">
+          <span className="text-muted-foreground">Updated previous message: </span>
+          <span className="inline">
+            "<MarkdownContent content={messagePreview} className="inline text-sm" />"
+          </span>
+          {messageLink && (
+            <Link
+              to={messageLink}
+              className="inline-flex items-center gap-1 ml-2 text-xs text-muted-foreground hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity"
+            >
+              View message
+              <ExternalLink className="w-3 h-3" />
+            </Link>
+          )}
+        </div>
+      )
+    }
+
     case "tool_call": {
       if (structured && "tool" in structured) {
         const tool = structured.tool as string
@@ -277,6 +330,31 @@ function renderStepContent(
     default:
       return <span>{content}</span>
   }
+}
+
+function RerunContextSummary({ rerunContext }: { rerunContext: RerunContextInfo }) {
+  const causeLabel =
+    rerunContext.cause === "invoking_message_edited"
+      ? "Rerun caused by invoking message edit"
+      : "Rerun caused by follow-up message edit"
+
+  const before = rerunContext.editedMessageBefore?.trim()
+  const after = rerunContext.editedMessageAfter?.trim()
+
+  return (
+    <div className="rounded bg-muted/40 px-3 py-2 space-y-1">
+      <div className="text-[11px] font-medium text-muted-foreground">{causeLabel}</div>
+      {before && after && before !== after ? (
+        <div className="text-xs">
+          <span className="font-medium">Edit:</span> "{before}" → "{after}"
+        </div>
+      ) : after ? (
+        <div className="text-xs">
+          <span className="font-medium">Edited message:</span> "{after}"
+        </div>
+      ) : null}
+    </div>
+  )
 }
 
 interface SourceListProps {
@@ -372,6 +450,7 @@ function SourceTitle({ source, internalLink }: { source: TraceSource; internalLi
 /** Preview of a message in context_received or reconsidering steps */
 function MessagePreview({ message, highlight }: { message: MessageInfo; highlight?: boolean }) {
   const isPersona = message.authorType === "persona"
+  const messageChangeLabel = getMessageChangeLabel(message.changeType)
   // Truncate long content but preserve markdown structure
   const preview = message.content.length > 150 ? message.content.slice(0, 150) + "..." : message.content
 
@@ -381,6 +460,11 @@ function MessagePreview({ message, highlight }: { message: MessageInfo; highligh
     >
       <div className="flex items-center gap-2 mb-1">
         <span className={cn("font-medium", isPersona && "text-primary")}>{message.authorName}</span>
+        {messageChangeLabel && (
+          <span className="rounded border border-border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+            {messageChangeLabel}
+          </span>
+        )}
         <span className="text-muted-foreground text-[10px]">
           <RelativeTime date={message.createdAt} className="text-[10px] text-muted-foreground" />
         </span>
@@ -388,4 +472,17 @@ function MessagePreview({ message, highlight }: { message: MessageInfo; highligh
       <MarkdownContent content={preview} className="text-xs leading-relaxed text-foreground/90" />
     </div>
   )
+}
+
+function getMessageChangeLabel(changeType: MessageInfo["changeType"]): string | null {
+  switch (changeType) {
+    case "message_created":
+      return "New"
+    case "message_edited":
+      return "Edited"
+    case "message_deleted":
+      return "Deleted"
+    default:
+      return null
+  }
 }

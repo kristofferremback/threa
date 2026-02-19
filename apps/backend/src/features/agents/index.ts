@@ -41,6 +41,8 @@ export { CompanionHandler } from "./companion-outbox-handler"
 export type { CompanionHandlerConfig } from "./companion-outbox-handler"
 export { MentionInvokeHandler } from "./mention-invoke-outbox-handler"
 export type { MentionInvokeHandlerConfig } from "./mention-invoke-outbox-handler"
+export { AgentMessageMutationHandler } from "./message-mutation-outbox-handler"
+export type { AgentMessageMutationHandlerConfig } from "./message-mutation-outbox-handler"
 
 // Workers
 export { createPersonaAgentWorker } from "./persona-agent-worker"

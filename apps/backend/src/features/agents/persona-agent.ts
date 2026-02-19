@@ -1,12 +1,20 @@
 import type { Pool } from "pg"
-import { withClient } from "../../db"
-import { AgentStepTypes, AgentTriggers, AuthorTypes, StreamTypes, type AuthorType, type SourceItem } from "@threa/types"
+import { withClient, type Querier } from "../../db"
+import {
+  AgentStepTypes,
+  AgentTriggers,
+  AuthorTypes,
+  StreamTypes,
+  type AgentSessionRerunContext,
+  type AuthorType,
+  type SourceItem,
+} from "@threa/types"
 import type { UserPreferencesService } from "../user-preferences"
 import { StreamRepository } from "../streams"
-import { MessageRepository } from "../messaging"
+import { MessageRepository, MessageVersionRepository } from "../messaging"
 import { MemberRepository } from "../workspaces"
 import { PersonaRepository } from "./persona-repository"
-import { AgentSessionRepository } from "./session-repository"
+import { AgentSessionRepository, SessionStatuses } from "./session-repository"
 import { StreamEventRepository } from "../streams"
 import { AttachmentRepository } from "../attachments"
 import { awaitAttachmentProcessing } from "../attachments"
@@ -20,7 +28,7 @@ import type { ModelRegistry } from "../../lib/ai/model-registry"
 import { WorkspaceAgent, type WorkspaceAgentResult, computeAgentAccessSpec } from "./researcher"
 import { logger } from "../../lib/logger"
 import { buildAgentContext, buildToolSet, withCompanionSession, type WithSessionResult } from "./companion"
-import { AgentRuntime, SessionTraceObserver, OtelObserver } from "./runtime"
+import { AgentRuntime, SessionTraceObserver, OtelObserver, type NewMessageInfo } from "./runtime"
 
 export type { WithSessionResult }
 
@@ -45,6 +53,19 @@ export interface PersonaAgentDeps {
     sources?: SourceItem[]
     sessionId?: string
   }) => Promise<{ id: string }>
+  editMessage: (params: {
+    workspaceId: string
+    streamId: string
+    messageId: string
+    actorId: string
+    content: string
+  }) => Promise<{ id: string } | null>
+  deleteMessage: (params: {
+    workspaceId: string
+    streamId: string
+    messageId: string
+    actorId: string
+  }) => Promise<{ id: string } | null>
   createThread: (params: {
     workspaceId: string
     parentStreamId: string
@@ -60,6 +81,8 @@ export interface PersonaAgentInput {
   personaId: string
   serverId: string
   trigger?: typeof AgentTriggers.MENTION
+  supersedesSessionId?: string
+  rerunContext?: AgentSessionRerunContext
 }
 
 export interface PersonaAgentResult {
@@ -71,6 +94,11 @@ export interface PersonaAgentResult {
   lastSeenSequence?: bigint
   streamId?: string
   personaId?: string
+}
+
+interface SupersededMessagePlan {
+  messageIds: string[]
+  nextIndex: number
 }
 
 export class PersonaAgent {
@@ -90,9 +118,11 @@ export class PersonaAgent {
       tavilyApiKey,
       stubResponse,
       createMessage,
+      editMessage,
+      deleteMessage,
       createThread,
     } = this.deps
-    const { workspaceId, streamId, messageId, personaId, serverId, trigger } = input
+    const { workspaceId, streamId, messageId, personaId, serverId, trigger, supersedesSessionId, rerunContext } = input
 
     // Step 1: Load and validate persona + stream
     const precheck = await withClient(pool, async (client) => {
@@ -107,12 +137,14 @@ export class PersonaAgent {
       }
 
       const latestSequence = await StreamEventRepository.getLatestSequence(client, streamId)
+      const triggerMessageRevision = await MessageVersionRepository.getCurrentRevision(client, messageId)
 
       return {
         skip: false as const,
         persona,
         stream,
         initialSequence: latestSequence ?? BigInt(0),
+        triggerMessageRevision,
       }
     })
 
@@ -126,7 +158,7 @@ export class PersonaAgent {
       }
     }
 
-    const { persona, stream, initialSequence } = precheck
+    const { persona, stream, initialSequence, triggerMessageRevision } = precheck
 
     // Step 2: For channel mentions, create thread eagerly so session events go there
     const isChannelMention = trigger === AgentTriggers.MENTION && stream.type === StreamTypes.CHANNEL
@@ -155,6 +187,9 @@ export class PersonaAgent {
         workspaceId,
         serverId,
         initialSequence: isChannelMention ? BigInt(0) : initialSequence,
+        triggerMessageRevision,
+        supersedesSessionId,
+        rerunContext,
       },
       async (session, db) => {
         const trace = traceEmitter.forSession({
@@ -190,6 +225,7 @@ export class PersonaAgent {
                 content: m.contentMarkdown.slice(0, 300),
                 isTrigger: m.id === messageId,
               })),
+              rerunContext: toTraceRerunContext(rerunContext),
             }),
           })
           await step.complete({})
@@ -211,8 +247,43 @@ export class PersonaAgent {
         }
 
         const targetStreamId = sessionStreamId
+        const supersededMessagePlan = await this.loadSupersededMessagePlan(db, {
+          supersedesSessionId,
+          streamId: targetStreamId,
+          personaId: persona.id,
+          triggerMessageId: messageId,
+        })
+        const isSupersedeRerun = !!supersededMessagePlan
 
         const doSendMessage = async (msgInput: { content: string; sources?: SourceItem[] }) => {
+          const latestSession = await AgentSessionRepository.findById(db, session.id)
+          if (!latestSession || latestSession.status !== SessionStatuses.RUNNING) {
+            throw new Error(`Session ${session.id} is no longer running`)
+          }
+
+          const reusableMessageId = supersededMessagePlan?.messageIds[supersededMessagePlan.nextIndex]
+          if (reusableMessageId) {
+            supersededMessagePlan.nextIndex += 1
+
+            try {
+              const editedMessage = await editMessage({
+                workspaceId,
+                streamId: targetStreamId,
+                messageId: reusableMessageId,
+                actorId: persona.id,
+                content: msgInput.content,
+              })
+              if (editedMessage) {
+                return { messageId: editedMessage.id, operation: "edited" as const }
+              }
+            } catch (err) {
+              logger.warn(
+                { err, sessionId: session.id, supersedesSessionId, messageId: reusableMessageId },
+                "Failed to edit superseded message; creating a new message instead"
+              )
+            }
+          }
+
           const message = await createMessage({
             workspaceId,
             streamId: targetStreamId,
@@ -222,7 +293,7 @@ export class PersonaAgent {
             sources: msgInput.sources,
             sessionId: session.id,
           })
-          return { messageId: message.id }
+          return { messageId: message.id, operation: "created" as const }
         }
 
         // Build workspace tool deps (requires invoking member for access control)
@@ -270,10 +341,16 @@ export class PersonaAgent {
         const runtime = new AgentRuntime({
           ai,
           model,
-          systemPrompt: agentContext.systemPrompt,
+          systemPrompt: isSupersedeRerun
+            ? buildSupersedeRerunSystemPrompt(agentContext.systemPrompt, rerunContext)
+            : agentContext.systemPrompt,
           messages: agentContext.messages,
           tools,
           sendMessage: doSendMessage,
+          allowNoMessageOutput: isSupersedeRerun,
+          validateFinalResponse: isSupersedeRerun
+            ? (content) => validateSupersedeFinalResponse(content, rerunContext)
+            : undefined,
           telemetry: {
             functionId: "agent-loop",
             metadata: {
@@ -295,14 +372,45 @@ export class PersonaAgent {
               },
             }),
           ],
+          shouldAbort: async () => {
+            const latestSession = await AgentSessionRepository.findById(db, session.id)
+            if (!latestSession) return "session missing"
+            if (latestSession.status === SessionStatuses.RUNNING) return null
+            if (latestSession.status === SessionStatuses.DELETED) return "session deleted"
+            if (latestSession.status === SessionStatuses.SUPERSEDED) return "session superseded"
+            return null
+          },
           newMessages: {
             check: async (checkStreamId, sinceSequence, excludeAuthorId) => {
-              const messages = await MessageRepository.listSince(db, checkStreamId, sinceSequence, {
-                excludeAuthorId,
+              const events = await StreamEventRepository.list(db, checkStreamId, {
+                types: ["message_created", "message_edited", "message_deleted"],
+                afterSequence: sinceSequence,
+                limit: 50,
               })
 
-              const memberIds = [...new Set(messages.filter((m) => m.authorType === "member").map((m) => m.authorId))]
-              const personaIds = [...new Set(messages.filter((m) => m.authorType === "persona").map((m) => m.authorId))]
+              const filteredEvents = events.filter((event) => event.actorId !== excludeAuthorId)
+              if (filteredEvents.length === 0) return []
+
+              const changedMessageIds = filteredEvents
+                .map((event) => (event.payload as { messageId?: string }).messageId)
+                .filter((messageId): messageId is string => typeof messageId === "string")
+
+              const messagesById = await MessageRepository.findByIds(db, changedMessageIds)
+
+              const memberIds = [
+                ...new Set(
+                  filteredEvents
+                    .filter((event) => event.actorType === "member" && event.actorId)
+                    .map((event) => event.actorId!)
+                ),
+              ]
+              const personaIds = [
+                ...new Set(
+                  filteredEvents
+                    .filter((event) => event.actorType === "persona" && event.actorId)
+                    .map((event) => event.actorId!)
+                ),
+              ]
 
               const [members, personas] = await Promise.all([
                 memberIds.length > 0 ? MemberRepository.findByIds(db, memberIds) : Promise.resolve([]),
@@ -313,15 +421,62 @@ export class PersonaAgent {
               for (const m of members) names.set(m.id, m.name)
               for (const p of personas) names.set(p.id, p.name)
 
-              return messages.map((m) => ({
-                sequence: m.sequence,
-                messageId: m.id,
-                content: m.contentMarkdown,
-                authorId: m.authorId,
-                authorName: names.get(m.authorId) ?? "Unknown",
-                authorType: m.authorType,
-                createdAt: m.createdAt.toISOString(),
-              }))
+              return filteredEvents.flatMap<NewMessageInfo>((event) => {
+                const eventPayload = event.payload as { messageId?: string }
+                const eventMessageId = eventPayload.messageId
+                if (!eventMessageId) return []
+
+                const message = messagesById.get(eventMessageId)
+                const authorId = event.actorId ?? message?.authorId ?? "system"
+                const authorType = event.actorType ?? message?.authorType ?? AuthorTypes.SYSTEM
+                const authorName = names.get(authorId) ?? (authorType === AuthorTypes.SYSTEM ? "System" : "Unknown")
+
+                if (event.eventType === "message_created") {
+                  if (!message) return []
+                  return [
+                    {
+                      sequence: event.sequence,
+                      messageId: message.id,
+                      changeType: "message_created" as const,
+                      content: message.contentMarkdown,
+                      authorId,
+                      authorName,
+                      authorType,
+                      createdAt: event.createdAt.toISOString(),
+                    },
+                  ]
+                }
+
+                if (event.eventType === "message_edited") {
+                  return [
+                    {
+                      sequence: event.sequence,
+                      messageId: eventMessageId,
+                      changeType: "message_edited" as const,
+                      content: message?.contentMarkdown
+                        ? `[Message edited]\\n${message.contentMarkdown}`
+                        : "[Message edited]",
+                      authorId,
+                      authorName,
+                      authorType,
+                      createdAt: event.createdAt.toISOString(),
+                    },
+                  ]
+                }
+
+                return [
+                  {
+                    sequence: event.sequence,
+                    messageId: eventMessageId,
+                    changeType: "message_deleted" as const,
+                    content: "[Message deleted]",
+                    authorId,
+                    authorName,
+                    authorType,
+                    createdAt: event.createdAt.toISOString(),
+                  },
+                ]
+              })
             },
             updateSequence: async (updateSessionId, sequence) => {
               await AgentSessionRepository.updateLastSeenSequence(db, updateSessionId, sequence)
@@ -344,19 +499,52 @@ export class PersonaAgent {
         })
 
         const loopResult = await runtime.run()
+        const retainedMessageIds =
+          isSupersedeRerun && loopResult.sentMessageIds.length === 0
+            ? [...supersededMessagePlan.messageIds]
+            : loopResult.sentMessageIds
+
+        if (isSupersedeRerun && loopResult.sentMessageIds.length === 0) {
+          logger.info(
+            {
+              sessionId: session.id,
+              supersedesSessionId,
+              retainedMessageCount: retainedMessageIds.length,
+              reason: loopResult.noMessageReason,
+            },
+            "Supersede rerun kept previous session messages unchanged"
+          )
+        }
+
+        if (supersededMessagePlan) {
+          await this.reconcileSupersededMessages({
+            workspaceId,
+            streamId: targetStreamId,
+            personaId: persona.id,
+            sessionId: session.id,
+            supersedesSessionId,
+            supersededMessageIds: supersededMessagePlan.messageIds,
+            retainedMessageIds,
+            deleteMessage,
+          })
+        }
 
         return {
           messagesSent: loopResult.messagesSent,
-          sentMessageIds: loopResult.sentMessageIds,
+          sentMessageIds: retainedMessageIds,
           lastSeenSequence: loopResult.lastProcessedSequence,
         }
       }
     )
 
     // Notify trace rooms about terminal status
-    if (result.status === "completed" || result.status === "failed") {
+    if (
+      result.status === "completed" ||
+      result.status === "failed" ||
+      (result.status === "skipped" && result.sessionId)
+    ) {
       const trace = traceEmitter.forSession({
-        sessionId: result.sessionId,
+        sessionId: result.sessionId!,
         workspaceId,
         streamId: sessionStreamId,
         triggerMessageId: messageId,
@@ -365,7 +553,7 @@ export class PersonaAgent {
       })
       if (result.status === "completed") {
         trace.notifyCompleted()
-      } else {
+      } else if (result.status === "failed") {
         trace.notifyFailed()
       }
       trace.notifyActivityEnded()
@@ -374,7 +562,7 @@ export class PersonaAgent {
     switch (result.status) {
       case "skipped":
         return {
-          sessionId: null,
+          sessionId: result.sessionId,
           messagesSent: 0,
           sentMessageIds: [],
           status: "skipped",
@@ -401,4 +589,206 @@ export class PersonaAgent {
         }
     }
   }
+
+  private async loadSupersededMessagePlan(
+    db: Querier,
+    params: {
+      supersedesSessionId?: string
+      streamId: string
+      personaId: string
+      triggerMessageId: string
+    }
+  ): Promise<SupersededMessagePlan | null> {
+    const { supersedesSessionId, streamId, personaId, triggerMessageId } = params
+    if (!supersedesSessionId) return null
+
+    const supersededSession = await AgentSessionRepository.findById(db, supersedesSessionId)
+    if (!supersededSession) {
+      logger.warn({ supersedesSessionId }, "Superseded session was not found; skipping reconciliation")
+      return null
+    }
+
+    if (
+      supersededSession.streamId !== streamId ||
+      supersededSession.personaId !== personaId ||
+      supersededSession.triggerMessageId !== triggerMessageId
+    ) {
+      logger.warn(
+        {
+          supersedesSessionId,
+          expected: { streamId, personaId, triggerMessageId },
+          actual: {
+            streamId: supersededSession.streamId,
+            personaId: supersededSession.personaId,
+            triggerMessageId: supersededSession.triggerMessageId,
+          },
+        },
+        "Superseded session mismatch; skipping reconciliation"
+      )
+      return null
+    }
+
+    const eventMessageIds = await StreamEventRepository.listMessageIdsBySession(db, streamId, supersededSession.id)
+    const candidateMessageIds = dedupeMessageIds([...eventMessageIds, ...supersededSession.sentMessageIds])
+    if (candidateMessageIds.length === 0) {
+      return { messageIds: [], nextIndex: 0 }
+    }
+
+    const messagesById = await MessageRepository.findByIds(db, candidateMessageIds)
+    const reusableMessageIds = candidateMessageIds.filter((id) => {
+      const message = messagesById.get(id)
+      if (!message || message.deletedAt) return false
+      return (
+        message.streamId === streamId && message.authorType === AuthorTypes.PERSONA && message.authorId === personaId
+      )
+    })
+
+    return { messageIds: reusableMessageIds, nextIndex: 0 }
+  }
+
+  private async reconcileSupersededMessages(params: {
+    workspaceId: string
+    streamId: string
+    personaId: string
+    sessionId: string
+    supersedesSessionId?: string
+    supersededMessageIds: string[]
+    retainedMessageIds: string[]
+    deleteMessage: PersonaAgentDeps["deleteMessage"]
+  }): Promise<void> {
+    const {
+      workspaceId,
+      streamId,
+      personaId,
+      sessionId,
+      supersedesSessionId,
+      supersededMessageIds,
+      retainedMessageIds,
+      deleteMessage,
+    } = params
+
+    const retained = new Set(retainedMessageIds)
+    const staleMessageIds = supersededMessageIds.filter((id) => !retained.has(id))
+    for (const messageId of staleMessageIds) {
+      try {
+        await deleteMessage({
+          workspaceId,
+          streamId,
+          messageId,
+          actorId: personaId,
+        })
+      } catch (err) {
+        logger.error(
+          { err, sessionId, supersedesSessionId, messageId },
+          "Failed deleting stale superseded message during reconciliation"
+        )
+      }
+    }
+  }
+}
+
+function dedupeMessageIds(ids: string[]): string[] {
+  const seen = new Set<string>()
+  const deduped: string[] = []
+  for (const id of ids) {
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    deduped.push(id)
+  }
+  return deduped
+}
+
+function toTraceRerunContext(rerunContext?: AgentSessionRerunContext): Record<string, unknown> | undefined {
+  if (!rerunContext) return undefined
+  return {
+    cause: rerunContext.cause,
+    editedMessageId: rerunContext.editedMessageId,
+    editedMessageBefore: rerunContext.editedMessageBefore ?? null,
+    editedMessageAfter: rerunContext.editedMessageAfter ?? null,
+    editedMessageRevision: rerunContext.editedMessageRevision ?? null,
+  }
+}
+
+function buildSupersedeRerunSystemPrompt(basePrompt: string, rerunContext?: AgentSessionRerunContext): string {
+  const cause =
+    rerunContext?.cause === "referenced_message_edited"
+      ? "a follow-up (referenced) message was edited"
+      : "the invoking message was edited"
+  const editedBefore = rerunContext?.editedMessageBefore?.trim()
+  const editedAfter = rerunContext?.editedMessageAfter?.trim()
+
+  const changeBlock = [
+    `Rerun cause: ${cause}.`,
+    `Edited message ID: ${rerunContext?.editedMessageId ?? "unknown"}.`,
+    editedBefore ? `Before edit: "${editedBefore}"` : null,
+    editedAfter ? `After edit: "${editedAfter}"` : null,
+    rerunContext?.editedMessageRevision ? `Edited message revision: ${rerunContext.editedMessageRevision}.` : null,
+  ]
+    .filter((line): line is string => line !== null)
+    .join("\n")
+
+  return `${basePrompt}
+
+## Superseded Session Reconciliation
+
+This run supersedes a previous completed session because conversation context changed after completion.
+${changeBlock}
+
+For the final outcome:
+- Compare the previous response(s) against the edited context and current conversation state.
+- Treat the edited message text as the authoritative user intent. The prior wording is obsolete.
+- If any previous response is now incorrect, contradictory, or misses a new constraint, call \`send_message\` with the revised response.
+- When updating, answer the edited request directly with concrete help. Do not ask the user to reconfirm the edited intent unless the edited prompt is genuinely ambiguous or missing required constraints.
+- For "best" or singular requests, provide one clear recommendation first (with practical details), then optional alternatives.
+- If the edited request is concrete (for example noun/topic substitutions), do not reply with only a clarification question.
+- Avoid meta narration about the edit itself (for example "I see your message was edited") unless the user explicitly asks about that process.
+- If the previous response should stay exactly as-is, call \`keep_response\` with a specific reason that references what changed and why no update is needed.
+- Never use both \`keep_response\` and \`send_message\` for the same final decision.
+- Do not end your turn without calling exactly one of \`keep_response\` or \`send_message\`.`
+}
+
+function validateSupersedeFinalResponse(content: string, rerunContext?: AgentSessionRerunContext): string | null {
+  const trimmed = content.trim()
+  if (trimmed.length === 0) {
+    return "Your response is empty. Provide a direct, useful answer to the edited request."
+  }
+
+  const lower = trimmed.toLowerCase()
+  const hasClarificationPhrase =
+    lower.includes("did you mean") ||
+    lower.includes("let me know") ||
+    lower.includes("what direction") ||
+    lower.includes("which direction") ||
+    lower.includes("can you clarify")
+
+  const hasActionableAnswerSignals =
+    /(?:^|\n)\s*[-*]\s+/.test(trimmed) ||
+    /(?:^|\n)\s*\d+\.\s+/.test(trimmed) ||
+    lower.includes("i recommend") ||
+    lower.includes("here's") ||
+    lower.includes("here are") ||
+    lower.includes("ingredients") ||
+    lower.includes("instructions") ||
+    lower.includes("steps")
+
+  if (hasClarificationPhrase && !hasActionableAnswerSignals) {
+    return "Do not send a clarification-only response. The edited request is concrete; provide a direct answer."
+  }
+
+  const editedText = rerunContext?.editedMessageAfter?.toLowerCase() ?? ""
+  const expectsRecipe = editedText.includes("recipe")
+  if (expectsRecipe) {
+    const hasRecipeSignals =
+      lower.includes("recipe") ||
+      lower.includes("ingredients") ||
+      lower.includes("instructions") ||
+      lower.includes("steps") ||
+      lower.includes("recommend")
+
+    if (!hasRecipeSignals) {
+      return "The edited request asks for a recipe. Provide a concrete recipe recommendation, not just a follow-up question."
+    }
+  }
+
+  return null
 }

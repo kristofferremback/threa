@@ -1,4 +1,5 @@
 import type { Pool } from "pg"
+import type { AgentSessionRerunContext } from "@threa/types"
 import { withTransaction } from "../../../db"
 import { AgentSessionRepository, SessionStatuses, type AgentSession } from "../session-repository"
 import { OutboxRepository } from "../../../lib/outbox"
@@ -7,7 +8,7 @@ import { eventId, sessionId } from "../../../lib/id"
 import { logger } from "../../../lib/logger"
 
 export type WithSessionResult =
-  | { status: "skipped"; sessionId: null; reason: string }
+  | { status: "skipped"; sessionId: string | null; reason: string }
   | { status: "completed"; sessionId: string; messagesSent: number; sentMessageIds: string[]; lastSeenSequence: bigint }
   | { status: "failed"; sessionId: string }
 
@@ -34,31 +35,52 @@ export async function withCompanionSession(
     workspaceId: string
     serverId: string
     initialSequence: bigint
+    triggerMessageRevision?: number | null
+    supersedesSessionId?: string | null
+    rerunContext?: AgentSessionRerunContext
   },
   work: (
     session: AgentSession,
     pool: Pool
   ) => Promise<{ messagesSent: number; sentMessageIds: string[]; lastSeenSequence: bigint }>
 ): Promise<WithSessionResult> {
-  const { pool, triggerMessageId, streamId, personaId, personaName, workspaceId, serverId, initialSequence } = params
+  const {
+    pool,
+    triggerMessageId,
+    streamId,
+    personaId,
+    personaName,
+    workspaceId,
+    serverId,
+    initialSequence,
+    triggerMessageRevision,
+    supersedesSessionId,
+    rerunContext,
+  } = params
 
   // Phase 1: Session setup (short-lived transaction)
   const setupResult = await withTransaction(pool, async (db) => {
     const existingSession = await AgentSessionRepository.findByTriggerMessage(db, triggerMessageId)
 
-    if (existingSession?.status === SessionStatuses.COMPLETED) {
-      logger.info({ sessionId: existingSession.id }, "Session already completed")
-      return { status: "skipped" as const, sessionId: null, reason: "session already completed" }
-    }
-
     if (existingSession) {
-      const session = await AgentSessionRepository.updateStatus(db, existingSession.id, SessionStatuses.RUNNING, {
-        serverId,
-      })
-      if (!session) {
-        return { status: "skipped" as const, sessionId: null, reason: "failed to resume session" }
+      if (existingSession.status === SessionStatuses.COMPLETED) {
+        logger.info({ sessionId: existingSession.id }, "Session already completed")
+        return { status: "skipped" as const, sessionId: null, reason: "session already completed" }
       }
-      return { status: "ready" as const, session }
+
+      if (
+        existingSession.status === SessionStatuses.RUNNING ||
+        existingSession.status === SessionStatuses.PENDING ||
+        existingSession.status === SessionStatuses.FAILED
+      ) {
+        const session = await AgentSessionRepository.updateStatus(db, existingSession.id, SessionStatuses.RUNNING, {
+          serverId,
+        })
+        if (!session) {
+          return { status: "skipped" as const, sessionId: null, reason: "failed to resume session" }
+        }
+        return { status: "ready" as const, session }
+      }
     }
 
     const session = await AgentSessionRepository.insertRunningOrSkip(db, {
@@ -68,6 +90,8 @@ export async function withCompanionSession(
       triggerMessageId,
       serverId,
       initialSequence,
+      triggerMessageRevision,
+      supersedesSessionId,
     })
 
     if (!session) {
@@ -84,6 +108,7 @@ export async function withCompanionSession(
         personaId,
         personaName,
         triggerMessageId,
+        rerunContext: rerunContext ?? null,
         startedAt: session.createdAt.toISOString(),
       },
       actorId: personaId,
@@ -127,8 +152,13 @@ export async function withCompanionSession(
           sentMessageIds,
         })
 
+        if (!completed) {
+          logger.info({ sessionId: session.id }, "Session already terminated before completion")
+          return
+        }
+
         const steps = await AgentSessionRepository.findStepsBySession(db, session.id)
-        const completedAt = completed?.completedAt ?? new Date()
+        const completedAt = completed.completedAt ?? new Date()
         const duration = completedAt.getTime() - session.createdAt.getTime()
 
         const streamEvent = await StreamEventRepository.insert(db, {
@@ -138,7 +168,7 @@ export async function withCompanionSession(
           payload: {
             sessionId: session.id,
             stepCount: steps.length,
-            messageCount: sentMessageIds.length,
+            messageCount: messagesSent,
             duration,
             completedAt: completedAt.toISOString(),
           },
@@ -156,6 +186,15 @@ export async function withCompanionSession(
       throw err
     }
 
+    const latestSession = await AgentSessionRepository.findById(pool, session.id)
+    if (latestSession?.status === SessionStatuses.DELETED || latestSession?.status === SessionStatuses.SUPERSEDED) {
+      return {
+        status: "skipped" as const,
+        sessionId: latestSession.id,
+        reason: `session ${latestSession.status} before completion`,
+      }
+    }
+
     logger.info({ sessionId: session.id, messagesSent, sentMessageIds }, "Session completed")
 
     return {
@@ -167,6 +206,15 @@ export async function withCompanionSession(
     }
   } catch (err) {
     logger.error({ err, sessionId: session.id }, "Session failed")
+
+    const latestSession = await AgentSessionRepository.findById(pool, session.id)
+    if (latestSession?.status === SessionStatuses.DELETED || latestSession?.status === SessionStatuses.SUPERSEDED) {
+      return {
+        status: "skipped" as const,
+        sessionId: latestSession.id,
+        reason: `session ${latestSession.status}`,
+      }
+    }
 
     await withTransaction(pool, async (db) => {
       const failed = await AgentSessionRepository.updateStatus(db, session.id, SessionStatuses.FAILED, {
