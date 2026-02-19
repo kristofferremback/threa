@@ -72,15 +72,22 @@ test.describe("Editor Auto-Focus", () => {
   test("main editor refocuses after stream navigation", async ({ page }) => {
     const testId = Date.now().toString(36)
 
-    // Create two channels
-    const channel1 = `focus-nav-a-${testId}`
-    const channel2 = `focus-nav-b-${testId}`
-    await createChannel(page, channel1)
-    await createChannel(page, channel2)
+    // Create a channel then navigate away and back
+    const channelName = `focus-nav-${testId}`
+    await createChannel(page, channelName)
 
-    // Navigate back to channel1 via sidebar
-    await page.getByRole("link", { name: `#${channel1}` }).click()
-    await expect(page.getByRole("heading", { name: `#${channel1}`, level: 1 })).toBeVisible({ timeout: 5000 })
+    // Switch to "All" sidebar view so channels are always visible
+    await page.locator("button", { hasText: /^All$/ }).click()
+
+    // Navigate to Drafts (away from channel)
+    await page.getByRole("link", { name: "Drafts" }).click()
+    await expect(page.getByRole("heading", { name: "Drafts" })).toBeVisible({ timeout: 5000 })
+
+    // Navigate back to the channel via sidebar link (text includes # prefix)
+    const sidebarLink = page.getByRole("link", { name: `#${channelName}` })
+    await expect(sidebarLink).toBeVisible({ timeout: 5000 })
+    await sidebarLink.click()
+    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Editor should be focused after navigation
     const mainEditor = page.locator("[data-editor-zone='main'] [contenteditable='true']")
@@ -182,7 +189,7 @@ test.describe("Editor Auto-Focus", () => {
     await messageContainer.hover()
 
     // Click the context menu trigger (the ... button)
-    const menuTrigger = messageContainer.locator("[data-slot='dropdown-menu-trigger']")
+    const menuTrigger = messageContainer.getByRole("button", { name: "Message actions" })
     await expect(menuTrigger).toBeVisible({ timeout: 3000 })
     await menuTrigger.click()
 
