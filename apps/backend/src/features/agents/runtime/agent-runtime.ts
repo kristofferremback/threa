@@ -18,6 +18,8 @@ import type { AgentObserver } from "./agent-observer"
 
 const DEFAULT_MAX_ITERATIONS = 20
 const KEEP_RESPONSE_TOOL_NAME = "keep_response"
+const MAX_REPEATED_INVALID_DRAFTS = 3
+const MAX_EMPTY_FINAL_DECISION_ATTEMPTS = 3
 
 export interface NewMessageAwareness {
   check: (streamId: string, sinceSequence: bigint, excludeAuthorId: string) => Promise<NewMessageInfo[]>
@@ -195,6 +197,9 @@ export class AgentRuntime {
     let lastProcessedSequence = nm?.lastProcessedSequence ?? BigInt(0)
     let keptResponseReason: string | null = null
     let responseKeptEmitted = false
+    let repeatedInvalidDraftCount = 0
+    let lastInvalidDraft: string | null = null
+    let emptyFinalDecisionAttempts = 0
 
     for (let iteration = 0; iteration < this.maxIterations; iteration++) {
       const abortReason = await this.config.shouldAbort?.()
@@ -232,7 +237,10 @@ export class AgentRuntime {
       // ── Text-only response (no tool calls) ──
       if (result.toolCalls.length === 0) {
         const currentText = extractAssistantText(result)
-        if (currentText) lastAssistantText = currentText
+        if (currentText) {
+          lastAssistantText = currentText
+          emptyFinalDecisionAttempts = 0
+        }
 
         if (nm) {
           const newMessages = await nm.check(nm.streamId, lastProcessedSequence, nm.personaId)
@@ -259,6 +267,19 @@ export class AgentRuntime {
             ? await this.config.validateFinalResponse(lastAssistantText)
             : null
           if (validationError) {
+            if (lastInvalidDraft === lastAssistantText) {
+              repeatedInvalidDraftCount += 1
+            } else {
+              lastInvalidDraft = lastAssistantText
+              repeatedInvalidDraftCount = 1
+            }
+
+            if (this.config.allowNoMessageOutput && repeatedInvalidDraftCount >= MAX_REPEATED_INVALID_DRAFTS) {
+              keptResponseReason =
+                "Kept the previous response because revised drafts repeatedly failed validation after context updates."
+              break
+            }
+
             conversation.push({
               role: "system",
               content:
@@ -270,10 +291,19 @@ export class AgentRuntime {
             continue
           }
 
+          repeatedInvalidDraftCount = 0
+          lastInvalidDraft = null
           const committed = await this.commitMessage({ content: lastAssistantText, sources }, sent)
           messagesSent += committed
         }
         if (!lastAssistantText && this.config.allowNoMessageOutput) {
+          emptyFinalDecisionAttempts += 1
+          if (emptyFinalDecisionAttempts >= MAX_EMPTY_FINAL_DECISION_ATTEMPTS) {
+            keptResponseReason =
+              "Kept the previous response because the rerun produced no actionable output after repeated attempts."
+            break
+          }
+
           conversation.push({
             role: "system",
             content:
