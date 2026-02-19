@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { render, screen } from "@testing-library/react"
 import { MemoryRouter } from "react-router-dom"
+import { StreamTypes } from "@threa/types"
 import { renderMentions, processChildrenForMentions } from "./mention-renderer"
 import { ChannelLinkProvider } from "./channel-link-context"
 
@@ -212,9 +213,9 @@ describe("mention-renderer", () => {
 
   describe("channel link rendering", () => {
     const streams = [
-      { id: "stream_abc", type: "channel", slug: "general" },
-      { id: "stream_def", type: "channel", slug: "engineering" },
-      { id: "stream_ghi", type: "scratchpad", slug: null },
+      { id: "stream_abc", type: StreamTypes.CHANNEL, slug: "general" },
+      { id: "stream_def", type: StreamTypes.CHANNEL, slug: "engineering" },
+      { id: "stream_ghi", type: StreamTypes.SCRATCHPAD, slug: null },
     ]
 
     function renderWithChannelLinks(text: string) {

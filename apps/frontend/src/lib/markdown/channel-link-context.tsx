@@ -1,4 +1,5 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react"
+import { StreamTypes, type StreamType } from "@threa/types"
 
 interface ChannelLinkContextValue {
   getChannelUrl: (slug: string) => string | null
@@ -8,7 +9,7 @@ const ChannelLinkContext = createContext<ChannelLinkContextValue | null>(null)
 
 interface ChannelLinkProviderProps {
   workspaceId: string
-  streams: ReadonlyArray<{ id: string; type: string; slug: string | null }>
+  streams: ReadonlyArray<{ id: string; type: StreamType; slug: string | null }>
   children: ReactNode
 }
 
@@ -20,7 +21,7 @@ export function ChannelLinkProvider({ workspaceId, streams, children }: ChannelL
   const value = useMemo<ChannelLinkContextValue>(() => {
     const slugToUrl = new Map<string, string>()
     for (const stream of streams) {
-      if (stream.type === "channel" && stream.slug) {
+      if (stream.type === StreamTypes.CHANNEL && stream.slug) {
         slugToUrl.set(stream.slug, `/w/${workspaceId}/s/${stream.id}`)
       }
     }
