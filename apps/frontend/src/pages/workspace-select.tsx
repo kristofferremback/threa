@@ -9,7 +9,7 @@ import { ApiError } from "@/api/client"
 
 function getCreateWorkspaceErrorMessage(error: unknown): string | null {
   if (!error) return null
-  if (ApiError.isApiError(error) && error.status === 403) {
+  if (ApiError.isApiError(error) && error.status === 403 && error.code === "WORKSPACE_CREATION_INVITE_REQUIRED") {
     return "Workspace creation requires a dedicated workspace invite."
   }
   if (error instanceof Error) {

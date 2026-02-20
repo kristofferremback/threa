@@ -130,6 +130,11 @@ export function loadConfig(): Config {
 
   if (useStubAuth) {
     logger.warn("Using stub auth service - NOT FOR PRODUCTION")
+    if (config.workspaceCreationRequiresInvite) {
+      logger.warn(
+        "USE_STUB_AUTH is enabled while workspace creation invite checks are enabled; stub auth cannot verify WorkOS invites and will allow workspace creation. Set WORKSPACE_CREATION_SKIP_INVITE=true to make the bypass explicit."
+      )
+    }
   }
 
   if (useStubCompanion) {

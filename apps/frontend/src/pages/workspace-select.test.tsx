@@ -98,7 +98,7 @@ describe("WorkspaceSelectPage", () => {
     expect(screen.getByRole("link", { name: "Beta" })).toHaveAttribute("href", "/w/workspace_2")
   })
 
-  it("should show invite-only message when workspace creation is forbidden", () => {
+  it("should show invite-only message when invite is required", () => {
     mockUseWorkspaces.mockReturnValue({
       data: [],
       isLoading: false,
@@ -107,11 +107,33 @@ describe("WorkspaceSelectPage", () => {
     mockUseCreateWorkspace.mockReturnValue({
       mutateAsync: vi.fn(),
       isPending: false,
-      error: new ApiError(403, "UNKNOWN_ERROR", "Request failed with status 403"),
+      error: new ApiError(
+        403,
+        "WORKSPACE_CREATION_INVITE_REQUIRED",
+        "Workspace creation requires a dedicated workspace invite."
+      ),
     })
 
     renderPage()
 
     expect(screen.getByText("Workspace creation requires a dedicated workspace invite.")).toBeInTheDocument()
+  })
+
+  it("should show backend message for non-invite 403 errors", () => {
+    mockUseWorkspaces.mockReturnValue({
+      data: [],
+      isLoading: false,
+      error: null,
+    })
+    mockUseCreateWorkspace.mockReturnValue({
+      mutateAsync: vi.fn(),
+      isPending: false,
+      error: new ApiError(403, "UNKNOWN_ERROR", "Workspace quota exceeded"),
+    })
+
+    renderPage()
+
+    expect(screen.getByText("Workspace quota exceeded")).toBeInTheDocument()
+    expect(screen.queryByText("Workspace creation requires a dedicated workspace invite.")).not.toBeInTheDocument()
   })
 })
