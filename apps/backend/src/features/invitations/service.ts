@@ -1,14 +1,12 @@
 import { Pool } from "pg"
 import { withTransaction, type Querier } from "../../db"
 import { InvitationRepository, type Invitation } from "./repository"
-import { WorkspaceRepository, type WorkspaceService } from "../workspaces"
-import { MemberRepository } from "../workspaces"
+import { WorkspaceRepository, MemberRepository, type WorkspaceService } from "../workspaces"
 import { UserRepository } from "../../auth/user-repository"
 import { OutboxRepository } from "../../lib/outbox"
 import { invitationId } from "../../lib/id"
 import { logger } from "../../lib/logger"
 import { getWorkosErrorCode, type WorkosOrgService } from "../../auth/workos-org-service"
-import { HttpError } from "../../lib/errors"
 import type { InvitationSkipReason, InvitationStatus } from "@threa/types"
 
 const INVITATION_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
@@ -28,11 +26,6 @@ interface SendInvitationsParams {
 interface SendResult {
   sent: Invitation[]
   skipped: Array<{ email: string; reason: InvitationSkipReason }>
-}
-
-interface SendWorkspaceCreationInvitationsResult {
-  sent: string[]
-  failed: Array<{ email: string; error: string }>
 }
 
 export interface AcceptPendingResult {
@@ -155,64 +148,6 @@ export class InvitationService {
     }
 
     return { sent, skipped }
-  }
-
-  async sendWorkspaceCreationInvitations(params: {
-    workspaceId: string
-    invitedBy: string // member_id
-    emails: string[]
-  }): Promise<SendWorkspaceCreationInvitationsResult> {
-    // Ensure inviter belongs to this workspace
-    const inviterMember = await MemberRepository.findById(this.pool, params.invitedBy)
-    if (!inviterMember || inviterMember.workspaceId !== params.workspaceId) {
-      throw new HttpError("Inviter not found in workspace", { status: 404, code: "INVITER_NOT_FOUND" })
-    }
-
-    const inviterWorkosUserId = await this.getInviterWorkosUserId(params.invitedBy)
-    if (!inviterWorkosUserId) {
-      throw new HttpError("Inviter is missing WorkOS identity", {
-        status: 400,
-        code: "INVITER_WORKOS_USER_NOT_FOUND",
-      })
-    }
-
-    const normalizedEmails = [...new Set(params.emails.map((email) => email.toLowerCase().trim()))]
-    if (normalizedEmails.length === 0) {
-      return { sent: [], failed: [] }
-    }
-
-    const results = await Promise.allSettled(
-      normalizedEmails.map((email) =>
-        this.workosOrgService.sendInvitation({
-          email,
-          inviterUserId: inviterWorkosUserId,
-        })
-      )
-    )
-
-    const sent: string[] = []
-    const failed: Array<{ email: string; error: string }> = []
-
-    for (let i = 0; i < results.length; i++) {
-      const result = results[i]
-      const email = normalizedEmails[i]
-      if (result.status === "fulfilled") {
-        sent.push(email)
-        continue
-      }
-
-      const errorCode = getWorkosErrorCode(result.reason)
-      logger.error(
-        { err: result.reason, email, errorCode },
-        "Failed to send workspace creation invitation through WorkOS"
-      )
-      failed.push({
-        email,
-        error: errorCode ?? (result.reason instanceof Error ? result.reason.message : String(result.reason)),
-      })
-    }
-
-    return { sent, failed }
   }
 
   async acceptInvitation(invitationId: string, userId: string): Promise<string | null> {

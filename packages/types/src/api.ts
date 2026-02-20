@@ -187,15 +187,6 @@ export interface SendInvitationsResponse {
   skipped: Array<{ email: string; reason: InvitationSkipReason }>
 }
 
-export interface SendWorkspaceCreationInvitationsInput {
-  emails: string[]
-}
-
-export interface SendWorkspaceCreationInvitationsResponse {
-  sent: string[]
-  failed: Array<{ email: string; error: string }>
-}
-
 export interface CompleteMemberSetupInput {
   name?: string
   slug?: string
