@@ -4,7 +4,7 @@
  * These types are used by QueueManager (queue-manager.ts) and all job workers.
  */
 
-import { AgentTriggers } from "@threa/types"
+import { AgentTriggers, type AgentSessionRerunContext } from "@threa/types"
 
 /**
  * Job object passed to handlers.
@@ -44,6 +44,8 @@ export interface PersonaAgentJobData {
   personaId: string
   triggeredBy: string
   trigger?: typeof AgentTriggers.MENTION // undefined = companion mode
+  supersedesSessionId?: string
+  rerunContext?: AgentSessionRerunContext
 }
 
 export interface NamingJobData {

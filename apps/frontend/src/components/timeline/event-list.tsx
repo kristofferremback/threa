@@ -3,6 +3,7 @@ import {
   AGENT_SESSION_EVENT_TYPES,
   type CommandEventType,
   type AgentSessionEventType,
+  type AgentSessionStartedPayload,
   type StreamEvent,
   type CommandDispatchedPayload,
   type CommandCompletedPayload,
@@ -47,22 +48,34 @@ function getSessionId(event: StreamEvent): string | null {
   return (event.payload as { sessionId?: string })?.sessionId ?? null
 }
 
+function getTriggerMessageId(event: StreamEvent): string | null {
+  if (event.eventType !== "agent_session:started") return null
+  return (event.payload as AgentSessionStartedPayload).triggerMessageId ?? null
+}
+
+function getSessionSlotKey(sessionId: string, triggerMessageId: string | null): string {
+  return triggerMessageId ? `trigger:${triggerMessageId}` : `session:${sessionId}`
+}
+
 /** Represents either a regular event, a group of command events, or a group of agent session events */
 type TimelineItem =
   | { type: "event"; event: StreamEvent }
   | { type: "command_group"; commandId: string; events: StreamEvent[] }
-  | { type: "session_group"; sessionId: string; events: StreamEvent[] }
+  | { type: "session_group"; sessionId: string; sessionVersion: number; events: StreamEvent[] }
 
 /**
- * Groups command events by commandId and agent session events by sessionId
- * while preserving order. Groups appear at the position of their first event.
+ * Groups command events by commandId and agent session events by trigger-message slot.
+ * For superseding sessions, the newer session replaces the old slot in place.
  */
-function groupTimelineItems(events: StreamEvent[], currentUserId: string | undefined): TimelineItem[] {
+export function groupTimelineItems(events: StreamEvent[], currentUserId: string | undefined): TimelineItem[] {
   const result: TimelineItem[] = []
   const commandGroups = new Map<string, StreamEvent[]>()
   const commandPositions = new Map<string, number>()
-  const sessionGroups = new Map<string, StreamEvent[]>()
-  const sessionPositions = new Map<string, number>()
+  const sessionSlots = new Map<string, { sessionId: string; sessionVersion: number; events: StreamEvent[] }>()
+  const sessionSlotPositions = new Map<string, number>()
+  const triggerBySessionId = new Map<string, string>()
+  const sessionVersionById = new Map<string, number>()
+  const nextVersionBySlot = new Map<string, number>()
 
   for (const event of events) {
     const commandId = getCommandId(event)
@@ -79,12 +92,40 @@ function groupTimelineItems(events: StreamEvent[], currentUserId: string | undef
       }
       commandGroups.get(commandId)!.push(event)
     } else if (agentSessionId) {
-      if (!sessionGroups.has(agentSessionId)) {
-        sessionGroups.set(agentSessionId, [])
-        sessionPositions.set(agentSessionId, result.length)
-        result.push({ type: "session_group", sessionId: agentSessionId, events: [] })
+      const triggerMessageId = getTriggerMessageId(event)
+      if (triggerMessageId) {
+        triggerBySessionId.set(agentSessionId, triggerMessageId)
       }
-      sessionGroups.get(agentSessionId)!.push(event)
+
+      const knownTriggerMessageId = triggerBySessionId.get(agentSessionId) ?? null
+      const sessionSlotKey = getSessionSlotKey(agentSessionId, knownTriggerMessageId)
+      if (event.eventType === "agent_session:started") {
+        const nextVersion = (nextVersionBySlot.get(sessionSlotKey) ?? 0) + 1
+        nextVersionBySlot.set(sessionSlotKey, nextVersion)
+        sessionVersionById.set(agentSessionId, nextVersion)
+      }
+      const sessionVersion = sessionVersionById.get(agentSessionId) ?? 1
+
+      if (!sessionSlots.has(sessionSlotKey)) {
+        sessionSlots.set(sessionSlotKey, { sessionId: agentSessionId, sessionVersion, events: [] })
+        sessionSlotPositions.set(sessionSlotKey, result.length)
+        result.push({ type: "session_group", sessionId: agentSessionId, sessionVersion, events: [] })
+      }
+
+      const slot = sessionSlots.get(sessionSlotKey)!
+
+      if (event.eventType === "agent_session:started" && slot.sessionId !== agentSessionId) {
+        slot.sessionId = agentSessionId
+        slot.sessionVersion = sessionVersion
+        slot.events = [event]
+        continue
+      }
+
+      if (slot.sessionId !== agentSessionId) {
+        continue
+      }
+
+      slot.events.push(event)
     } else {
       result.push({ type: "event", event })
     }
@@ -96,10 +137,15 @@ function groupTimelineItems(events: StreamEvent[], currentUserId: string | undef
     result[position] = { type: "command_group", commandId, events }
   }
 
-  // Fill in session groups with their events
-  for (const [sessionId, events] of sessionGroups) {
-    const position = sessionPositions.get(sessionId)!
-    result[position] = { type: "session_group", sessionId, events }
+  // Fill in session slots with their active session events
+  for (const [sessionSlotKey, slot] of sessionSlots) {
+    const position = sessionSlotPositions.get(sessionSlotKey)!
+    result[position] = {
+      type: "session_group",
+      sessionId: slot.sessionId,
+      sessionVersion: slot.sessionVersion,
+      events: slot.events,
+    }
   }
 
   return result
@@ -182,7 +228,11 @@ export function EventList({
               <CommandEvent events={item.events} />
             ) : item.type === "session_group" ? (
               hideSessionCards ? null : (
-                <AgentSessionEvent events={item.events} liveCounts={sessionLiveCounts.get(item.sessionId)} />
+                <AgentSessionEvent
+                  events={item.events}
+                  sessionVersion={item.sessionVersion}
+                  liveCounts={sessionLiveCounts.get(item.sessionId)}
+                />
               )
             ) : (
               <EventItem

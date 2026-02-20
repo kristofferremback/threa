@@ -19,6 +19,7 @@ interface UseAgentTraceResult {
   steps: AgentSessionStep[]
   streamingContent: Record<string, string>
   session: AgentSession | null
+  relatedSessions: AgentSession[]
   persona: AgentSessionWithSteps["persona"] | null
   status: AgentSessionStatus | null
   isLoading: boolean
@@ -203,6 +204,7 @@ export function useAgentTrace(workspaceId: string, sessionId: string): UseAgentT
     steps: mergedSteps,
     streamingContent,
     session: data?.session ?? null,
+    relatedSessions: data?.relatedSessions ?? [],
     persona: data?.persona ?? null,
     status,
     isLoading: isSubscribing || isQueryLoading,

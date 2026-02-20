@@ -65,7 +65,7 @@ export class SessionTrace {
    */
   async startStep(params: { stepType: AgentStepType; content?: string }): Promise<ActiveStep> {
     this.stepNumber++
-    if (params.stepType === "message_sent") this.messageCount++
+    if (params.stepType === "message_sent" || params.stepType === "message_edited") this.messageCount++
     const now = new Date()
 
     // Persist step row (started, not yet completed)

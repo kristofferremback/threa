@@ -1,4 +1,4 @@
-import { AgentStepTypes, type TraceSource } from "@threa/types"
+import { AgentReconsiderationDecisions, AgentStepTypes, type TraceSource } from "@threa/types"
 import type { SessionTrace } from "../trace-emitter"
 import type { AgentEvent } from "./agent-events"
 import type { AgentObserver } from "./agent-observer"
@@ -56,12 +56,38 @@ export class SessionTraceObserver implements AgentObserver {
         break
       }
 
+      case "message:edited": {
+        const step = await this.trace.startStep({
+          stepType: AgentStepTypes.MESSAGE_EDITED,
+          content: event.content,
+        })
+        await step.complete({
+          content: event.content,
+          messageId: event.messageId,
+          sources: event.sources,
+        })
+        break
+      }
+
+      case "response:kept": {
+        const step = await this.trace.startStep({
+          stepType: AgentStepTypes.RECONSIDERING,
+          content: JSON.stringify({
+            decision: AgentReconsiderationDecisions.KEPT_PREVIOUS_RESPONSE,
+            reason: event.reason,
+          }),
+        })
+        await step.complete({})
+        break
+      }
+
       case "context:received": {
         const step = await this.trace.startStep({
           stepType: AgentStepTypes.CONTEXT_RECEIVED,
           content: JSON.stringify({
             messages: event.messages.map((m) => ({
               messageId: m.messageId,
+              changeType: m.changeType,
               authorName: m.authorName,
               authorType: m.authorType,
               createdAt: m.createdAt,
@@ -80,6 +106,7 @@ export class SessionTraceObserver implements AgentObserver {
             draftResponse: event.draft,
             newMessages: event.newMessages.map((m) => ({
               messageId: m.messageId,
+              changeType: m.changeType,
               authorName: m.authorName,
               authorType: m.authorType,
               createdAt: m.createdAt,

@@ -7,6 +7,7 @@ import type { AgentStepType, TraceSource, AuthorType } from "@threa/types"
 export interface NewMessageInfo {
   sequence: bigint
   messageId: string
+  changeType: "message_created" | "message_edited" | "message_deleted"
   content: string
   authorId: string
   authorName: string
@@ -33,6 +34,8 @@ export type AgentEvent =
     }
   | { type: "tool:error"; toolCallId: string; toolName: string; error: string; durationMs: number }
   | { type: "message:sent"; messageId: string; content: string; sources?: TraceSource[] }
+  | { type: "message:edited"; messageId: string; content: string; sources?: TraceSource[] }
+  | { type: "response:kept"; reason: string }
   | { type: "context:received"; messages: NewMessageInfo[] }
   | { type: "reconsidering"; draft: string; newMessages: NewMessageInfo[] }
   | { type: "session:end"; messagesSent: number; sourceCount: number; lastContent?: string }

@@ -291,6 +291,30 @@ async function runCompanionTask(input: CompanionInput, ctx: EvalContext): Promis
       return { id: message.id }
     }
 
+    const editMessage: PersonaAgentDeps["editMessage"] = async (params) => {
+      const message = await evalEventService.editMessage({
+        workspaceId: params.workspaceId,
+        streamId: params.streamId,
+        messageId: params.messageId,
+        contentJson: parseMarkdown(params.content),
+        contentMarkdown: params.content,
+        actorId: params.actorId,
+        actorType: "persona",
+      })
+      return message ? { id: message.id } : null
+    }
+
+    const deleteMessage: PersonaAgentDeps["deleteMessage"] = async (params) => {
+      const message = await evalEventService.deleteMessage({
+        workspaceId: params.workspaceId,
+        streamId: params.streamId,
+        messageId: params.messageId,
+        actorId: params.actorId,
+        actorType: "persona",
+      })
+      return message ? { id: message.id } : null
+    }
+
     const createThread: PersonaAgentDeps["createThread"] = async (params) => {
       // For evals, we don't actually need threads - return a mock
       const threadId = generateStreamId()
@@ -338,6 +362,8 @@ async function runCompanionTask(input: CompanionInput, ctx: EvalContext): Promis
       modelRegistry: createModelRegistry(),
       tavilyApiKey: ctx.credentials.tavilyApiKey,
       createMessage,
+      editMessage,
+      deleteMessage,
       createThread,
     })
 

@@ -1,6 +1,6 @@
 import type { Querier } from "../../db"
 import { sql } from "../../db"
-import { COMMAND_EVENT_TYPES, type AuthorType, type EventType } from "@threa/types"
+import { COMMAND_EVENT_TYPES, type AgentSessionRerunContext, type AuthorType, type EventType } from "@threa/types"
 
 // Internal row type (snake_case, not exported)
 interface StreamEventRow {
@@ -12,6 +12,11 @@ interface StreamEventRow {
   actor_id: string | null
   actor_type: string | null
   created_at: Date
+}
+
+interface AgentSessionRerunContextRow {
+  session_id: string
+  rerun_context: unknown
 }
 
 export interface StreamEvent {
@@ -44,6 +49,23 @@ function mapRowToEvent(row: StreamEventRow): StreamEvent {
     actorId: row.actor_id,
     actorType: row.actor_type as AuthorType | null,
     createdAt: row.created_at,
+  }
+}
+
+function parseAgentSessionRerunContext(value: unknown): AgentSessionRerunContext | null {
+  if (!value || typeof value !== "object") return null
+  const ctx = value as Record<string, unknown>
+  if (ctx.cause !== "invoking_message_edited" && ctx.cause !== "referenced_message_edited") return null
+  if (typeof ctx.editedMessageId !== "string") return null
+  return {
+    cause: ctx.cause,
+    editedMessageId: ctx.editedMessageId,
+    editedMessageRevision:
+      typeof ctx.editedMessageRevision === "number" && Number.isInteger(ctx.editedMessageRevision)
+        ? ctx.editedMessageRevision
+        : null,
+    editedMessageBefore: typeof ctx.editedMessageBefore === "string" ? ctx.editedMessageBefore : null,
+    editedMessageAfter: typeof ctx.editedMessageAfter === "string" ? ctx.editedMessageAfter : null,
   }
 }
 
@@ -164,11 +186,56 @@ export const StreamEventRepository = {
     const result = await db.query<{ sequence: string }>(sql`
       SELECT sequence FROM stream_events
       WHERE stream_id = ${streamId}
+        AND event_type = 'message_created'
         AND actor_type = 'member'
       ORDER BY sequence DESC
       LIMIT 1
     `)
     return result.rows[0] ? BigInt(result.rows[0].sequence) : null
+  },
+
+  /**
+   * List message IDs emitted by a specific agent session.
+   * Uses message_created event payload.sessionId to include messages sent before
+   * session completion (when agent_sessions.sent_message_ids may still be empty).
+   */
+  async listMessageIdsBySession(db: Querier, streamId: string, sessionId: string): Promise<string[]> {
+    const result = await db.query<{ message_id: string }>(sql`
+      SELECT payload->>'messageId' AS message_id
+      FROM stream_events
+      WHERE stream_id = ${streamId}
+        AND event_type = 'message_created'
+        AND payload->>'sessionId' = ${sessionId}
+        AND payload->>'messageId' IS NOT NULL
+      ORDER BY sequence ASC
+    `)
+    return result.rows.map((row) => row.message_id)
+  },
+
+  async listRerunContextBySessionIds(
+    db: Querier,
+    streamId: string,
+    sessionIds: string[]
+  ): Promise<Map<string, AgentSessionRerunContext>> {
+    if (sessionIds.length === 0) return new Map()
+
+    const result = await db.query<AgentSessionRerunContextRow>(sql`
+      SELECT
+        payload->>'sessionId' AS session_id,
+        payload->'rerunContext' AS rerun_context
+      FROM stream_events
+      WHERE stream_id = ${streamId}
+        AND event_type = 'agent_session:started'
+        AND payload->>'sessionId' = ANY(${sessionIds}::text[])
+    `)
+
+    const map = new Map<string, AgentSessionRerunContext>()
+    for (const row of result.rows) {
+      const rerunContext = parseAgentSessionRerunContext(row.rerun_context)
+      if (!rerunContext) continue
+      map.set(row.session_id, rerunContext)
+    }
+    return map
   },
 
   /**

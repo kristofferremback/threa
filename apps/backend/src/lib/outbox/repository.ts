@@ -39,6 +39,7 @@ export type OutboxEventType =
   | "agent_session:started"
   | "agent_session:completed"
   | "agent_session:failed"
+  | "agent_session:deleted"
   | "user_preferences:updated"
   | "budget:alert"
   | "stream:member_joined"
@@ -66,6 +67,7 @@ export type StreamScopedEventType =
   | "agent_session:started"
   | "agent_session:completed"
   | "agent_session:failed"
+  | "agent_session:deleted"
 
 /** Events that are scoped to a workspace (no streamId) */
 export type WorkspaceScopedEventType =
@@ -247,6 +249,10 @@ export interface AgentSessionFailedOutboxPayload extends StreamScopedPayload {
   event: StreamEvent
 }
 
+export interface AgentSessionDeletedOutboxPayload extends StreamScopedPayload {
+  event: StreamEvent
+}
+
 // Read state event payloads (author-scoped - only visible to the user marking as read)
 export interface StreamReadOutboxPayload extends WorkspaceScopedPayload {
   authorId: string
@@ -337,6 +343,7 @@ export interface OutboxEventPayloadMap {
   "agent_session:started": AgentSessionStartedOutboxPayload
   "agent_session:completed": AgentSessionCompletedOutboxPayload
   "agent_session:failed": AgentSessionFailedOutboxPayload
+  "agent_session:deleted": AgentSessionDeletedOutboxPayload
   "user_preferences:updated": UserPreferencesUpdatedOutboxPayload
   "budget:alert": BudgetAlertOutboxPayload
   "invitation:sent": InvitationSentOutboxPayload
@@ -390,6 +397,7 @@ const STREAM_SCOPED_EVENTS: StreamScopedEventType[] = [
   "agent_session:started",
   "agent_session:completed",
   "agent_session:failed",
+  "agent_session:deleted",
 ]
 
 /**

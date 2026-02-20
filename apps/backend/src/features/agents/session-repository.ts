@@ -15,6 +15,8 @@ interface SessionRow {
   stream_id: string
   persona_id: string
   trigger_message_id: string
+  trigger_message_revision: number | null
+  supersedes_session_id: string | null
   status: string
   current_step: number
   current_step_type: string | null
@@ -47,6 +49,8 @@ export interface AgentSession {
   streamId: string
   personaId: string
   triggerMessageId: string
+  triggerMessageRevision: number | null
+  supersedesSessionId: string | null
   status: SessionStatus
   currentStep: number
   currentStepType: StepType | null
@@ -79,6 +83,8 @@ export interface InsertSessionParams {
   streamId: string
   personaId: string
   triggerMessageId: string
+  triggerMessageRevision?: number | null
+  supersedesSessionId?: string | null
   status?: SessionStatus
   serverId?: string
 }
@@ -104,6 +110,8 @@ function mapRowToSession(row: SessionRow): AgentSession {
     streamId: row.stream_id,
     personaId: row.persona_id,
     triggerMessageId: row.trigger_message_id,
+    triggerMessageRevision: row.trigger_message_revision,
+    supersedesSessionId: row.supersedes_session_id,
     status: row.status as SessionStatus,
     currentStep: row.current_step,
     currentStepType: row.current_step_type as StepType | null,
@@ -134,7 +142,7 @@ function mapRowToStep(row: StepRow): AgentSessionStep {
 }
 
 const SESSION_SELECT_FIELDS = `
-  id, stream_id, persona_id, trigger_message_id,
+  id, stream_id, persona_id, trigger_message_id, trigger_message_revision, supersedes_session_id,
   status, current_step, current_step_type, server_id, heartbeat_at,
   response_message_id, error, last_seen_sequence,
   sent_message_ids, created_at, completed_at
@@ -154,12 +162,15 @@ export const AgentSessionRepository = {
       sql`
         INSERT INTO agent_sessions (
           id, stream_id, persona_id, trigger_message_id,
+          trigger_message_revision, supersedes_session_id,
           status, server_id, heartbeat_at
         ) VALUES (
           ${params.id},
           ${params.streamId},
           ${params.personaId},
           ${params.triggerMessageId},
+          ${params.triggerMessageRevision ?? null},
+          ${params.supersedesSessionId ?? null},
           ${status},
           ${params.serverId ?? null},
           ${params.serverId ? new Date() : null}
@@ -184,12 +195,15 @@ export const AgentSessionRepository = {
       sql`
         INSERT INTO agent_sessions (
           id, stream_id, persona_id, trigger_message_id,
+          trigger_message_revision, supersedes_session_id,
           status, server_id, heartbeat_at, last_seen_sequence
         ) VALUES (
           ${params.id},
           ${params.streamId},
           ${params.personaId},
           ${params.triggerMessageId},
+          ${params.triggerMessageRevision ?? null},
+          ${params.supersedesSessionId ?? null},
           ${SessionStatuses.RUNNING},
           ${params.serverId ?? null},
           ${params.serverId ? new Date() : null},
@@ -226,6 +240,31 @@ export const AgentSessionRepository = {
     return result.rows[0] ? mapRowToSession(result.rows[0]) : null
   },
 
+  async listByTriggerMessage(db: Querier, triggerMessageId: string): Promise<AgentSession[]> {
+    const result = await db.query<SessionRow>(
+      sql`
+        SELECT ${sql.raw(SESSION_SELECT_FIELDS)}
+        FROM agent_sessions
+        WHERE trigger_message_id = ${triggerMessageId}
+        ORDER BY created_at DESC
+      `
+    )
+    return result.rows.map(mapRowToSession)
+  },
+
+  async findLatestBySupersedesSession(db: Querier, supersedesSessionId: string): Promise<AgentSession | null> {
+    const result = await db.query<SessionRow>(
+      sql`
+        SELECT ${sql.raw(SESSION_SELECT_FIELDS)}
+        FROM agent_sessions
+        WHERE supersedes_session_id = ${supersedesSessionId}
+        ORDER BY created_at DESC
+        LIMIT 1
+      `
+    )
+    return result.rows[0] ? mapRowToSession(result.rows[0]) : null
+  },
+
   async updateStatus(
     db: Querier,
     id: string,
@@ -235,26 +274,61 @@ export const AgentSessionRepository = {
       responseMessageId?: string
       sentMessageIds?: string[]
       error?: string
+      onlyIfStatus?: SessionStatus
+      onlyIfStatusIn?: SessionStatus[]
     }
   ): Promise<AgentSession | null> {
     const now = new Date()
-    const completedAt = status === SessionStatuses.COMPLETED || status === SessionStatuses.FAILED ? now : null
+    let completedAt: Date | null = null
+    if (
+      status === SessionStatuses.COMPLETED ||
+      status === SessionStatuses.FAILED ||
+      status === SessionStatuses.DELETED ||
+      status === SessionStatuses.SUPERSEDED
+    ) {
+      completedAt = now
+    }
 
-    const result = await db.query<SessionRow>(
-      sql`
-        UPDATE agent_sessions
-        SET
-          status = ${status},
-          server_id = COALESCE(${extras?.serverId ?? null}, server_id),
-          heartbeat_at = ${status === SessionStatuses.RUNNING ? now : sql.raw("heartbeat_at")},
-          response_message_id = COALESCE(${extras?.responseMessageId ?? null}, response_message_id),
-          sent_message_ids = COALESCE(${extras?.sentMessageIds ?? null}, sent_message_ids),
-          error = COALESCE(${extras?.error ?? null}, error),
-          completed_at = ${completedAt}
-        WHERE id = ${id}
-        RETURNING ${sql.raw(SESSION_SELECT_FIELDS)}
-      `
-    )
+    const shouldClearCurrentStepType = status === SessionStatuses.DELETED || status === SessionStatuses.SUPERSEDED
+    const heartbeatAt = status === SessionStatuses.RUNNING ? now : null
+
+    const values: unknown[] = [
+      status,
+      extras?.serverId ?? null,
+      heartbeatAt,
+      extras?.responseMessageId ?? null,
+      extras?.sentMessageIds ?? null,
+      extras?.error ?? null,
+      shouldClearCurrentStepType,
+      completedAt,
+      id,
+    ]
+
+    let whereClause = "WHERE id = $9"
+    if (extras?.onlyIfStatusIn && extras.onlyIfStatusIn.length > 0) {
+      values.push(extras.onlyIfStatusIn)
+      whereClause += ` AND status = ANY($${values.length})`
+    } else if (extras?.onlyIfStatus) {
+      values.push(extras.onlyIfStatus)
+      whereClause += ` AND status = $${values.length}`
+    }
+
+    const query = `
+      UPDATE agent_sessions
+      SET
+        status = $1,
+        server_id = COALESCE($2, server_id),
+        heartbeat_at = COALESCE($3, heartbeat_at),
+        response_message_id = COALESCE($4, response_message_id),
+        sent_message_ids = COALESCE($5, sent_message_ids),
+        error = COALESCE($6, error),
+        current_step_type = CASE WHEN $7 THEN NULL ELSE current_step_type END,
+        completed_at = $8
+      ${whereClause}
+      RETURNING ${SESSION_SELECT_FIELDS}
+    `
+
+    const result = await db.query<SessionRow>({ text: query, values })
     return result.rows[0] ? mapRowToSession(result.rows[0]) : null
   },
 
@@ -386,6 +460,7 @@ export const AgentSessionRepository = {
           current_step_type = NULL,
           completed_at = NOW()
         WHERE id = ${id}
+          AND status = ${SessionStatuses.RUNNING}
         RETURNING ${sql.raw(SESSION_SELECT_FIELDS)}
       `
     )

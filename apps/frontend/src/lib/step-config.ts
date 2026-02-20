@@ -89,6 +89,14 @@ export const STEP_DISPLAY_CONFIG: Record<AgentStepType, StepDisplayConfig> = {
     saturation: 76,
     lightness: 36,
   },
+  message_edited: {
+    label: "Response Updated",
+    inlineLabel: "Updating response...",
+    icon: MessageSquare,
+    hue: 142,
+    saturation: 76,
+    lightness: 36,
+  },
   tool_call: {
     label: "Tool Call",
     inlineLabel: "Using tools...",

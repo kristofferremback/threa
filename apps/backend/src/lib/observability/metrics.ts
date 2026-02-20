@@ -180,7 +180,7 @@ export const memoRevised = new Counter({
 export const agentSessionsActive = new Gauge({
   name: "agent_sessions_active",
   help: "Number of agent sessions by workspace and status",
-  labelNames: ["workspace_id", "status"], // status: pending | running | completed | failed
+  labelNames: ["workspace_id", "status"], // status: pending | running | completed | failed | deleted | superseded
   registers: [registry],
 })
 

@@ -41,6 +41,8 @@ export { CompanionHandler } from "./companion-outbox-handler"
 export type { CompanionHandlerConfig } from "./companion-outbox-handler"
 export { MentionInvokeHandler } from "./mention-invoke-outbox-handler"
 export type { MentionInvokeHandlerConfig } from "./mention-invoke-outbox-handler"
+export { AgentMessageMutationHandler } from "./message-mutation-outbox-handler"
+export type { AgentMessageMutationHandlerConfig } from "./message-mutation-outbox-handler"
 
 // Workers
 export { createPersonaAgentWorker } from "./persona-agent-worker"
@@ -95,6 +97,8 @@ export type { AgentAccessSpec, ComputeAccessSpecParams } from "./researcher"
 // Config (exported for static-config-resolver)
 export { COMPANION_MODEL_ID, COMPANION_TEMPERATURE } from "./companion/config"
 export { COMPANION_SUMMARY_MODEL_ID, COMPANION_SUMMARY_TEMPERATURE } from "./companion/config"
+export { SUPERSEDE_RESPONSE_VALIDATOR_MAX_TOKENS, SUPERSEDE_RESPONSE_VALIDATOR_TEMPERATURE } from "./config"
+export { SUPERSEDE_RESPONSE_VALIDATOR_MODEL_ID } from "./config"
 export {
   WORKSPACE_AGENT_MODEL_ID,
   WORKSPACE_AGENT_TEMPERATURE,

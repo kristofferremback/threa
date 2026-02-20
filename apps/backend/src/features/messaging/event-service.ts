@@ -1,4 +1,4 @@
-import { Pool } from "pg"
+import type { Pool, PoolClient } from "pg"
 import { withTransaction, withClient } from "../../db"
 import { StreamEventRepository, StreamEvent } from "../streams"
 import { StreamRepository } from "../streams"
@@ -13,6 +13,7 @@ import { serializeBigInt } from "../../lib/serialization"
 import { messagesTotal } from "../../lib/observability"
 import {
   AttachmentSafetyStatuses,
+  AuthorTypes,
   type AuthorType,
   type EventType,
   type SourceItem,
@@ -77,6 +78,7 @@ export interface EditMessageParams {
   contentJson: JSONContent
   contentMarkdown: string
   actorId: string
+  actorType?: AuthorType
 }
 
 export interface DeleteMessageParams {
@@ -84,6 +86,7 @@ export interface DeleteMessageParams {
   messageId: string
   streamId: string
   actorId: string
+  actorType?: AuthorType
 }
 
 export interface AddReactionParams {
@@ -104,6 +107,33 @@ export interface RemoveReactionParams {
 
 export class EventService {
   constructor(private pool: Pool) {}
+
+  private async resolveActorType(
+    client: PoolClient,
+    streamId: string,
+    actorId: string,
+    actorType?: AuthorType,
+    existingMessage?: Pick<Message, "authorId" | "authorType">
+  ): Promise<AuthorType> {
+    if (actorType) return actorType
+
+    if (existingMessage && existingMessage.authorId === actorId) {
+      return existingMessage.authorType
+    }
+
+    const [isMember, isPersona] = await Promise.all([
+      StreamMemberRepository.isMember(client, streamId, actorId),
+      StreamPersonaParticipantRepository.hasParticipated(client, streamId, actorId),
+    ])
+
+    if (isMember && isPersona) {
+      throw new Error(`Actor ${actorId} has ambiguous type in stream ${streamId}`)
+    }
+    if (isMember) return AuthorTypes.MEMBER
+    if (isPersona) return AuthorTypes.PERSONA
+
+    throw new Error(`Actor ${actorId} has no resolved type in stream ${streamId}`)
+  }
 
   async createMessage(params: CreateMessageParams): Promise<Message> {
     return withTransaction(this.pool, async (client) => {
@@ -250,6 +280,8 @@ export class EventService {
       const existing = await MessageRepository.findByIdForUpdate(client, params.messageId)
       if (!existing || existing.deletedAt) return null
 
+      const actorType = await this.resolveActorType(client, params.streamId, params.actorId, params.actorType, existing)
+
       // 1. Snapshot pre-edit content as a version record
       await MessageVersionRepository.insert(client, {
         id: messageVersionId(),
@@ -270,7 +302,7 @@ export class EventService {
           contentMarkdown: params.contentMarkdown,
         } satisfies MessageEditedPayload,
         actorId: params.actorId,
-        actorType: "member",
+        actorType,
       })
 
       // 3. Update projection
@@ -299,6 +331,8 @@ export class EventService {
       const existing = await MessageRepository.findByIdForUpdate(client, params.messageId)
       if (!existing || existing.deletedAt) return null
 
+      const actorType = await this.resolveActorType(client, params.streamId, params.actorId, params.actorType, existing)
+
       // 1. Append event
       await StreamEventRepository.insert(client, {
         id: eventId(),
@@ -308,7 +342,7 @@ export class EventService {
           messageId: params.messageId,
         } satisfies MessageDeletedPayload,
         actorId: params.actorId,
-        actorType: "member",
+        actorType,
       })
 
       // 2. Update projection (soft delete)

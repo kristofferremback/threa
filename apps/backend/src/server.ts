@@ -59,6 +59,7 @@ import { OutboxDispatcher, BroadcastHandler, OutboxRetentionWorker } from "./lib
 import {
   CompanionHandler,
   MentionInvokeHandler,
+  AgentMessageMutationHandler,
   createOrphanSessionCleanup,
   createPersonaAgentWorker,
   WorkspaceAgent,
@@ -267,6 +268,33 @@ export async function startServer(): Promise<ServerInstance> {
       sessionId: params.sessionId,
     })
   }
+  const editMessage = async (params: {
+    workspaceId: string
+    streamId: string
+    messageId: string
+    actorId: string
+    content: string
+  }) => {
+    const contentMarkdown = normalizeMessage(params.content)
+    const contentJson = parseMarkdown(contentMarkdown, undefined, toEmoji)
+    return eventService.editMessage({
+      workspaceId: params.workspaceId,
+      streamId: params.streamId,
+      messageId: params.messageId,
+      contentJson,
+      contentMarkdown,
+      actorId: params.actorId,
+      actorType: "persona",
+    })
+  }
+  const deleteMessage = (params: { workspaceId: string; streamId: string; messageId: string; actorId: string }) =>
+    eventService.deleteMessage({
+      workspaceId: params.workspaceId,
+      streamId: params.streamId,
+      messageId: params.messageId,
+      actorId: params.actorId,
+      actorType: "persona",
+    })
   const createThread = (params: Parameters<typeof streamService.createThread>[0]) => streamService.createThread(params)
 
   const activityService = new ActivityService({ pool })
@@ -343,6 +371,8 @@ export async function startServer(): Promise<ServerInstance> {
       ? "This is a stub response from the companion. The real AI integration is disabled."
       : undefined,
     createMessage,
+    editMessage,
+    deleteMessage,
     createThread,
   })
   const personaAgentWorker = createPersonaAgentWorker({ agent: personaAgent, serverId, pool, jobQueue })
@@ -486,6 +516,7 @@ export async function startServer(): Promise<ServerInstance> {
   const memoAccumulatorHandler = new MemoAccumulatorHandler(pool)
   const commandHandler = new CommandHandler(pool, jobQueue)
   const mentionInvokeHandler = new MentionInvokeHandler(pool, jobQueue)
+  const agentMessageMutationHandler = new AgentMessageMutationHandler(pool, jobQueue, eventService)
   const attachmentUploadedHandler = new AttachmentUploadedHandler(pool, jobQueue)
   const systemMessageOutboxHandler = new SystemMessageOutboxHandler(pool, systemMessageService)
   const activityFeedHandler = new ActivityFeedHandler(pool, activityService)
@@ -499,6 +530,7 @@ export async function startServer(): Promise<ServerInstance> {
     memoAccumulatorHandler,
     commandHandler,
     mentionInvokeHandler,
+    agentMessageMutationHandler,
     attachmentUploadedHandler,
     systemMessageOutboxHandler,
     activityFeedHandler,

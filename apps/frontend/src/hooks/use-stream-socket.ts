@@ -431,6 +431,7 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
     socket.on("agent_session:started", handleAgentSessionEvent)
     socket.on("agent_session:completed", handleAgentSessionEvent)
     socket.on("agent_session:failed", handleAgentSessionEvent)
+    socket.on("agent_session:deleted", handleAgentSessionEvent)
 
     return () => {
       abortController.abort()
@@ -453,6 +454,7 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
       socket.off("agent_session:started", handleAgentSessionEvent)
       socket.off("agent_session:completed", handleAgentSessionEvent)
       socket.off("agent_session:failed", handleAgentSessionEvent)
+      socket.off("agent_session:deleted", handleAgentSessionEvent)
     }
   }, [socket, workspaceId, streamId, shouldSubscribe, queryClient, reconnectCount])
 }

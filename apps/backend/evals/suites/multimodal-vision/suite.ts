@@ -306,6 +306,30 @@ async function runVisionTask(input: MultimodalVisionInput, ctx: EvalContext): Pr
       return { id: message.id }
     }
 
+    const editMessage: PersonaAgentDeps["editMessage"] = async (params) => {
+      const message = await evalEventService.editMessage({
+        workspaceId: params.workspaceId,
+        streamId: params.streamId,
+        messageId: params.messageId,
+        contentJson: parseMarkdown(params.content),
+        contentMarkdown: params.content,
+        actorId: params.actorId,
+        actorType: "persona",
+      })
+      return message ? { id: message.id } : null
+    }
+
+    const deleteMessage: PersonaAgentDeps["deleteMessage"] = async (params) => {
+      const message = await evalEventService.deleteMessage({
+        workspaceId: params.workspaceId,
+        streamId: params.streamId,
+        messageId: params.messageId,
+        actorId: params.actorId,
+        actorType: "persona",
+      })
+      return message ? { id: message.id } : null
+    }
+
     const createThread: PersonaAgentDeps["createThread"] = async (params) => {
       const threadId = generateStreamId()
       await StreamRepository.insert(ctx.pool, {
@@ -338,6 +362,8 @@ async function runVisionTask(input: MultimodalVisionInput, ctx: EvalContext): Pr
       storage: mockStorage,
       modelRegistry,
       createMessage,
+      editMessage,
+      deleteMessage,
       createThread,
     })
 
