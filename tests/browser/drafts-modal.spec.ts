@@ -296,8 +296,12 @@ test.describe("Drafts Page", () => {
     // Wait for upload
     await expect(page.getByText("pasted-image-1.png")).toBeVisible({ timeout: 10000 })
 
-    // Wait for draft to be saved
+    // Wait for draft to be saved. The first debounce fires during upload (saving
+    // attachments: []), so waitForDraftSaved returns immediately (link already highlighted).
+    // The post-upload debounce captures the attachment metadata — wait for it to fire (5ms)
+    // and the IndexedDB write to land before navigating away.
     await waitForDraftSaved(page)
+    await page.waitForTimeout(200)
 
     // Navigate away (switch to All view to access button)
     await switchToAllView(page)
@@ -316,8 +320,8 @@ test.describe("Drafts Page", () => {
     await expect(page).toHaveURL(/\/drafts$/, { timeout: 2000 })
     const draftItem = page.getByRole("option").first()
     await expect(draftItem).toBeVisible()
-    // The attachment count is shown as just a number with a paperclip icon
-    await expect(draftItem.getByText("1")).toBeVisible()
+    // The attachment count is shown as "[1 📎]" appended to the description text
+    await expect(draftItem.getByText(/\[1 📎\]/)).toBeVisible({ timeout: 5000 })
   })
 
   test("should auto-delete draft when clearing input (no confirmation)", async ({ page }) => {

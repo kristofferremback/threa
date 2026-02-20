@@ -34,8 +34,8 @@ interface MessageEventProps {
   event: StreamEvent
   workspaceId: string
   streamId: string
-  /** Hide action buttons and thread footer - used when showing parent message in thread view */
-  hideActions?: boolean
+  /** This message is the thread parent shown at the top of the thread panel */
+  isThreadParent?: boolean
   /** Whether to highlight this message (scroll into view and flash) */
   isHighlighted?: boolean
   /** Active agent session triggered by this message */
@@ -143,7 +143,7 @@ interface MessageEventInnerProps {
   actorInitials: string
   personaSlug?: string
   actorAvatarUrl?: string
-  hideActions?: boolean
+  isThreadParent?: boolean
   isHighlighted?: boolean
   activity?: MessageAgentActivity
 }
@@ -157,7 +157,7 @@ function SentMessageEvent({
   actorInitials,
   personaSlug,
   actorAvatarUrl,
-  hideActions,
+  isThreadParent: isThreadParentProp,
   isHighlighted,
   activity,
 }: MessageEventInnerProps) {
@@ -211,7 +211,7 @@ function SentMessageEvent({
   // When activity.threadStreamId is present, use it for the thread link (allows immediate
   // navigation to the real thread before the slower stream:created event updates threadId)
   const effectiveThreadId = threadId ?? activity?.threadStreamId
-  const threadFooter = !hideActions ? (
+  const threadFooter = !isThreadParentProp ? (
     <div className="mt-1 flex items-center gap-1.5 text-xs">
       {effectiveThreadId ? (
         replyCount > 0 ? (
@@ -281,33 +281,31 @@ function SentMessageEvent({
         }
         isEditing={isEditing}
         actions={
-          !hideActions && (
-            <div
-              className={cn(
-                "opacity-0 group-hover:opacity-100 has-[[data-state=open]]:opacity-100 transition-opacity ml-auto flex items-center gap-1",
-                isEditing && "!opacity-0 pointer-events-none"
-              )}
-            >
-              <MessageContextMenu
-                context={{
-                  contentMarkdown: payload.contentMarkdown,
-                  actorType: event.actorType,
-                  sessionId: payload.sessionId,
-                  isThreadParent: panelId === threadId,
-                  replyUrl: effectiveThreadId ? getPanelUrl(effectiveThreadId) : draftPanelUrl,
-                  traceUrl:
-                    event.actorType === "persona" && payload.sessionId
-                      ? getTraceUrl(payload.sessionId, payload.messageId)
-                      : undefined,
-                  messageId: payload.messageId,
-                  authorId: event.actorId ?? undefined,
-                  currentMemberId: currentMemberId ?? undefined,
-                  onEdit: () => setIsEditing(true),
-                  onDelete: () => setDeleteDialogOpen(true),
-                }}
-              />
-            </div>
-          )
+          <div
+            className={cn(
+              "opacity-0 group-hover:opacity-100 has-[[data-state=open]]:opacity-100 transition-opacity ml-auto flex items-center gap-1",
+              isEditing && "!opacity-0 pointer-events-none"
+            )}
+          >
+            <MessageContextMenu
+              context={{
+                contentMarkdown: payload.contentMarkdown,
+                actorType: event.actorType,
+                sessionId: payload.sessionId,
+                isThreadParent: panelId === threadId || isThreadParentProp,
+                replyUrl: effectiveThreadId ? getPanelUrl(effectiveThreadId) : draftPanelUrl,
+                traceUrl:
+                  event.actorType === "persona" && payload.sessionId
+                    ? getTraceUrl(payload.sessionId, payload.messageId)
+                    : undefined,
+                messageId: payload.messageId,
+                authorId: event.actorId ?? undefined,
+                currentMemberId: currentMemberId ?? undefined,
+                onEdit: () => setIsEditing(true),
+                onDelete: () => setDeleteDialogOpen(true),
+              }}
+            />
+          </div>
         }
         footer={isEditing ? undefined : threadFooter}
         containerRef={containerRef}
@@ -408,7 +406,7 @@ export function MessageEvent({
   event,
   workspaceId,
   streamId,
-  hideActions,
+  isThreadParent,
   isHighlighted,
   activity,
 }: MessageEventProps) {
@@ -462,7 +460,7 @@ export function MessageEvent({
           actorInitials={actorInitials}
           personaSlug={personaSlug}
           actorAvatarUrl={actorAvatarUrl}
-          hideActions={hideActions}
+          isThreadParent={isThreadParent}
           isHighlighted={isHighlighted}
           activity={activity}
         />

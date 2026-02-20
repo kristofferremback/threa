@@ -8,8 +8,8 @@ interface EventItemProps {
   event: StreamEvent
   workspaceId: string
   streamId: string
-  /** Hide action buttons (e.g., reply) - used when showing parent message in thread view */
-  hideActions?: boolean
+  /** This message is the thread parent shown at the top of the thread panel */
+  isThreadParent?: boolean
   /** ID of message to highlight and scroll to */
   highlightMessageId?: string | null
   /** Active agent sessions mapped by trigger message ID */
@@ -20,7 +20,7 @@ export function EventItem({
   event,
   workspaceId,
   streamId,
-  hideActions,
+  isThreadParent,
   highlightMessageId,
   agentActivity,
 }: EventItemProps) {
@@ -45,7 +45,7 @@ export function EventItem({
             event={event}
             workspaceId={workspaceId}
             streamId={streamId}
-            hideActions={hideActions}
+            isThreadParent={isThreadParent}
             isHighlighted={isHighlighted}
             activity={messageId ? agentActivity?.get(messageId) : undefined}
           />

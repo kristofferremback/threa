@@ -439,15 +439,16 @@ test.describe("Message Send Mode", () => {
       await page.getByRole("button", { name: "+ New Scratchpad" }).click()
       await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
 
-      // Hover over the expand button to reveal the tooltip
+      // Hover over the expand button to reveal the tooltip.
+      // Use a longer timeout because the bootstrap API call after reload
+      // must complete before preferences (messageSendMode) are available.
+      // The tooltip re-renders reactively when preferences arrive.
       const expandButtonAfterReload = page
         .getByRole("button")
         .filter({ has: page.locator(".lucide-expand") })
         .first()
       await expandButtonAfterReload.hover()
-
-      // Verify hint still shows Cmd+Enter after reload (preference persisted)
-      await expect(page.getByText(/⌘Enter to send|Ctrl\+Enter to send/).first()).toBeVisible({ timeout: 2000 })
+      await expect(page.getByText(/⌘Enter to send|Ctrl\+Enter to send/).first()).toBeVisible({ timeout: 5000 })
     })
   })
 })
