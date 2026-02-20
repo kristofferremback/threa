@@ -337,12 +337,10 @@ export function RichEditor({
     }
   }, [editor, mentionables, getMentionType, toEmoji])
 
-  // Focus editor on mount
-  useEffect(() => {
-    if (editor && !editor.isDestroyed) {
-      editor.commands.focus("end")
-    }
-  }, [editor])
+  // TipTap's autofocus option (line 184) handles initial focus.
+  // No additional focus-on-mount effect needed — the redundant focus()
+  // dispatch caused a view update that raced with toolbar rendering,
+  // briefly dropping focus in autoFocus editors (e.g. inline edit).
 
   // Copy handler: serialize selection to markdown
   useEffect(() => {
@@ -372,10 +370,13 @@ export function RichEditor({
     }
   }, [editor])
 
-  // Re-focus after disabled changes (e.g., after sending)
+  // Re-focus after disabled transitions (e.g., after sending)
+  // Track previous value so this only fires on true→false transitions, not on mount.
+  const prevDisabledRef = useRef(disabled)
   useEffect(() => {
-    if (!disabled && editor && !editor.isDestroyed) {
-      // Small delay to ensure editor is re-enabled
+    const wasDisabled = prevDisabledRef.current
+    prevDisabledRef.current = disabled
+    if (wasDisabled && !disabled && editor && !editor.isDestroyed) {
       const timer = setTimeout(() => focus(), 0)
       return () => clearTimeout(timer)
     }
