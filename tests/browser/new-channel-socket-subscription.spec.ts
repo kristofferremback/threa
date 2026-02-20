@@ -52,10 +52,10 @@ test.describe("New Channel Socket Subscription", () => {
     const workspaceId = workspaceMatch![1]
 
     // Create a channel
-    userA.page.once("dialog", async (dialog) => {
-      await dialog.accept(channelName)
-    })
     await userA.page.getByRole("button", { name: "+ New Channel" }).click()
+    await userA.page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
+    await userA.page.waitForTimeout(400)
+    await userA.page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
     await expect(userA.page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Grab the stream ID from the URL
@@ -158,10 +158,10 @@ test.describe("New Channel Socket Subscription", () => {
     const workspaceId = workspaceMatch![1]
 
     // Create channel
-    userA.page.once("dialog", async (dialog) => {
-      await dialog.accept(channelName)
-    })
     await userA.page.getByRole("button", { name: "+ New Channel" }).click()
+    await userA.page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
+    await userA.page.waitForTimeout(400)
+    await userA.page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
     await expect(userA.page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     const streamMatch = userA.page.url().match(/\/s\/([^/?]+)/)

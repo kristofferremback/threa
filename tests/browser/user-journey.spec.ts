@@ -48,17 +48,13 @@ test.describe("User Journey", () => {
     await expect(page.getByRole("button", { name: "+ New Scratchpad" })).toBeVisible()
     await expect(page.getByRole("button", { name: "+ New Channel" })).toBeVisible()
 
-    // Step 8: Set up dialog handler BEFORE clicking (dialog appears synchronously)
-    page.once("dialog", async (dialog) => {
-      expect(dialog.type()).toBe("prompt")
-      expect(dialog.message()).toBe("Channel name:")
-      await dialog.accept(channelName)
-    })
-
-    // Step 9: Create a channel - this triggers the dialog and navigates to the channel
+    // Step 8: Create a channel via the modal dialog
     await page.getByRole("button", { name: "+ New Channel" }).click()
+    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
+    await page.waitForTimeout(400)
+    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
 
-    // Step 10: Verify we're in the channel view (channel heading and empty state)
+    // Step 9: Verify we're in the channel view (channel heading and empty state)
     await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
     await expect(page.getByText("No messages yet")).toBeVisible()
 
@@ -106,10 +102,10 @@ test.describe("User Journey", () => {
 
     // Create a channel with a unique name we can search for
     const quickSwitchChannel = `qs-test-${testId}`
-    page.once("dialog", async (dialog) => {
-      await dialog.accept(quickSwitchChannel)
-    })
     await page.getByRole("button", { name: "+ New Channel" }).click()
+    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(quickSwitchChannel)
+    await page.waitForTimeout(400)
+    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
 
     // Creating a channel navigates to it - verify via main content heading
     await expect(page.getByRole("heading", { name: `#${quickSwitchChannel}`, level: 1 })).toBeVisible({ timeout: 5000 })

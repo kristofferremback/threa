@@ -38,10 +38,10 @@ test.describe("Thread Breadcrumbs", () => {
   test("should show ancestor chain in breadcrumbs and navigate via breadcrumb click", async ({ page }) => {
     // Create a channel
     const channelName = `bc-nav-${testId}`
-    page.once("dialog", async (dialog) => {
-      await dialog.accept(channelName)
-    })
     await page.getByRole("button", { name: "+ New Channel" }).click()
+    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
+    await page.waitForTimeout(400)
+    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
     await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Post a message in the channel
@@ -115,10 +115,10 @@ test.describe("Thread Breadcrumbs", () => {
   test("should show thread with root context suffix in sidebar", async ({ page }) => {
     // Create a channel
     const channelName = `sidebar-${testId}`
-    page.once("dialog", async (dialog) => {
-      await dialog.accept(channelName)
-    })
     await page.getByRole("button", { name: "+ New Channel" }).click()
+    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
+    await page.waitForTimeout(400)
+    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
     await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Post a message

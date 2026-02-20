@@ -87,7 +87,7 @@ export function createAuthStubHandlers(deps: Dependencies): AuthStubHandlers {
     const workspaceId = req.workspaceId!
     const { streamId } = req.params
 
-    const member = await streamService.addMember(streamId, memberId, workspaceId)
+    const member = await streamService.addMember(streamId, memberId, workspaceId, memberId)
     res.json({ member })
   }
 

@@ -39,10 +39,10 @@ async function setupWorkspace(page: Page) {
 }
 
 async function createChannel(page: Page, name: string) {
-  page.once("dialog", async (dialog) => {
-    await dialog.accept(name)
-  })
   await page.getByRole("button", { name: "+ New Channel" }).click()
+  await page.getByRole("dialog").getByPlaceholder("channel-name").fill(name)
+  await page.waitForTimeout(400)
+  await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
   await expect(page.getByRole("heading", { name: `#${name}`, level: 1 })).toBeVisible({ timeout: 5000 })
 }
 

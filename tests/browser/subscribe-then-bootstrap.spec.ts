@@ -29,10 +29,10 @@ test.describe("Subscribe Then Bootstrap", () => {
       .toBeGreaterThan(0)
 
     const channelName = `bootstrap-e2e-${testId}`
-    page.once("dialog", async (dialog) => {
-      await dialog.accept(channelName)
-    })
     await page.getByRole("button", { name: "+ New Channel" }).click()
+    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
+    await page.waitForTimeout(400)
+    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
     await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 10000 })
 
     const streamMatch = page.url().match(/\/s\/([^/?]+)/)

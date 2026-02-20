@@ -6,15 +6,28 @@ interface MembershipEventProps {
   workspaceId: string
 }
 
+function getAction(event: StreamEvent): string {
+  switch (event.eventType) {
+    case "member_joined":
+      return "joined the conversation"
+    case "member_added":
+      return "was added to the conversation"
+    case "member_left":
+      return "left the conversation"
+    default:
+      return "updated their membership"
+  }
+}
+
 export function MembershipEvent({ event, workspaceId }: MembershipEventProps) {
   const { getActorName } = useActors(workspaceId)
-  const action = event.eventType === "member_joined" ? "joined" : "left"
   const actorName = getActorName(event.actorId, event.actorType)
+  const action = getAction(event)
 
   return (
     <div className="py-2 text-center">
       <p className="text-sm text-muted-foreground">
-        <span className="font-medium">{actorName}</span> {action} the conversation
+        <span className="font-medium">{actorName}</span> {action}
       </p>
     </div>
   )

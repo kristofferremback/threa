@@ -76,10 +76,10 @@ test.describe("Agent Activity", () => {
   test("should show agent response in thread after @mention in channel", async ({ page }) => {
     const testId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
     const channelName = `agent-resp-${testId}`
-    page.once("dialog", async (dialog) => {
-      await dialog.accept(channelName)
-    })
     await page.getByRole("button", { name: "+ New Channel" }).click()
+    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
+    await page.waitForTimeout(400)
+    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
     await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     await sendMention(page, "help me out")
@@ -92,10 +92,10 @@ test.describe("Agent Activity", () => {
   test("should show session card in thread, not in channel", async ({ page }) => {
     const testId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
     const channelName = `sess-card-${testId}`
-    page.once("dialog", async (dialog) => {
-      await dialog.accept(channelName)
-    })
     await page.getByRole("button", { name: "+ New Channel" }).click()
+    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
+    await page.waitForTimeout(400)
+    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
     await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     await sendMention(page, "do your thing")
@@ -119,10 +119,10 @@ test.describe("Agent Activity", () => {
   test("should show session card with subtitle (no layout shift)", async ({ page }) => {
     const testId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
     const channelName = `layout-${testId}`
-    page.once("dialog", async (dialog) => {
-      await dialog.accept(channelName)
-    })
     await page.getByRole("button", { name: "+ New Channel" }).click()
+    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
+    await page.waitForTimeout(400)
+    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
     await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     await sendMention(page, "check this")
@@ -142,10 +142,10 @@ test.describe("Agent Activity", () => {
   test("should link session card to trace view", async ({ page }) => {
     const testId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
     const channelName = `trace-${testId}`
-    page.once("dialog", async (dialog) => {
-      await dialog.accept(channelName)
-    })
     await page.getByRole("button", { name: "+ New Channel" }).click()
+    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
+    await page.waitForTimeout(400)
+    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
     await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     await sendMention(page, "show me trace")

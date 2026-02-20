@@ -50,10 +50,10 @@ test.describe("Drafts Page", () => {
   test("should highlight drafts link when draft exists in channel", async ({ page }) => {
     // Create a channel
     const channelName = `draft-channel-${testId}`
-    page.once("dialog", async (dialog) => {
-      await dialog.accept(channelName)
-    })
     await page.getByRole("button", { name: "+ New Channel" }).click()
+    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
+    await page.waitForTimeout(400)
+    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
     await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Type something in the editor to create a draft
@@ -81,10 +81,10 @@ test.describe("Drafts Page", () => {
   test("should show draft content on drafts page", async ({ page }) => {
     // Create a channel and draft
     const channelName = `page-test-${testId}`
-    page.once("dialog", async (dialog) => {
-      await dialog.accept(channelName)
-    })
     await page.getByRole("button", { name: "+ New Channel" }).click()
+    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
+    await page.waitForTimeout(400)
+    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
     await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Create draft
@@ -117,10 +117,10 @@ test.describe("Drafts Page", () => {
   test("should navigate to draft location when clicking draft on page", async ({ page }) => {
     // Create a channel and draft
     const channelName = `nav-test-${testId}`
-    page.once("dialog", async (dialog) => {
-      await dialog.accept(channelName)
-    })
     await page.getByRole("button", { name: "+ New Channel" }).click()
+    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
+    await page.waitForTimeout(400)
+    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
     await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Create draft
@@ -148,10 +148,10 @@ test.describe("Drafts Page", () => {
   test("should delete draft with confirmation when clicking delete button", async ({ page }) => {
     // Create a channel and draft
     const channelName = `delete-test-${testId}`
-    page.once("dialog", async (dialog) => {
-      await dialog.accept(channelName)
-    })
     await page.getByRole("button", { name: "+ New Channel" }).click()
+    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
+    await page.waitForTimeout(400)
+    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
     await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Create draft
@@ -189,10 +189,10 @@ test.describe("Drafts Page", () => {
   test("should keep draft when canceling delete confirmation", async ({ page }) => {
     // Create a channel and draft
     const channelName = `cancel-delete-${testId}`
-    page.once("dialog", async (dialog) => {
-      await dialog.accept(channelName)
-    })
     await page.getByRole("button", { name: "+ New Channel" }).click()
+    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
+    await page.waitForTimeout(400)
+    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
     await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Create draft
@@ -221,10 +221,10 @@ test.describe("Drafts Page", () => {
   test("should navigate to drafts page via quick switcher command", async ({ page }) => {
     // Create a channel and draft first
     const channelName = `qs-drafts-${testId}`
-    page.once("dialog", async (dialog) => {
-      await dialog.accept(channelName)
-    })
     await page.getByRole("button", { name: "+ New Channel" }).click()
+    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
+    await page.waitForTimeout(400)
+    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
     await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Create draft
@@ -262,10 +262,10 @@ test.describe("Drafts Page", () => {
   test("should show attachment-only draft on page", async ({ page }) => {
     // Create a channel
     const channelName = `attach-only-${testId}`
-    page.once("dialog", async (dialog) => {
-      await dialog.accept(channelName)
-    })
     await page.getByRole("button", { name: "+ New Channel" }).click()
+    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
+    await page.waitForTimeout(400)
+    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
     await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Focus editor and paste an image (no text)
@@ -327,10 +327,10 @@ test.describe("Drafts Page", () => {
   test("should auto-delete draft when clearing input (no confirmation)", async ({ page }) => {
     // Create a channel
     const channelName = `auto-clear-${testId}`
-    page.once("dialog", async (dialog) => {
-      await dialog.accept(channelName)
-    })
     await page.getByRole("button", { name: "+ New Channel" }).click()
+    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
+    await page.waitForTimeout(400)
+    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
     await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Type draft content
@@ -372,10 +372,10 @@ test.describe("Drafts Page", () => {
 
     // Create a channel to navigate away
     const channelName = `sp-draft-test-${testId}`
-    page.once("dialog", async (dialog) => {
-      await dialog.accept(channelName)
-    })
     await page.getByRole("button", { name: "+ New Channel" }).click()
+    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
+    await page.waitForTimeout(400)
+    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
     await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Drafts link should not be greyed
@@ -394,10 +394,10 @@ test.describe("Drafts Page", () => {
   test("should navigate to thread draft and open draft panel", async ({ page }) => {
     // Create a channel
     const channelName = `thread-draft-${testId}`
-    page.once("dialog", async (dialog) => {
-      await dialog.accept(channelName)
-    })
     await page.getByRole("button", { name: "+ New Channel" }).click()
+    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
+    await page.waitForTimeout(400)
+    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
     await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Send a message to reply to
@@ -436,10 +436,10 @@ test.describe("Drafts Page", () => {
     // Navigate away by creating another channel (switch to All view to access button)
     await switchToAllView(page)
     const otherChannelName = `other-channel-${testId}`
-    page.once("dialog", async (dialog) => {
-      await dialog.accept(otherChannelName)
-    })
     await page.getByRole("button", { name: "+ New Channel" }).click()
+    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(otherChannelName)
+    await page.waitForTimeout(400)
+    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
     await expect(page.getByRole("heading", { name: `#${otherChannelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Drafts link should not be greyed (has thread draft)

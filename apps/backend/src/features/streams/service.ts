@@ -7,6 +7,7 @@ import { StreamEventRepository } from "./event-repository"
 import { MessageRepository } from "../messaging"
 import { OutboxRepository } from "../../lib/outbox"
 import { streamId, eventId } from "../../lib/id"
+import { logger } from "../../lib/logger"
 import {
   DuplicateSlugError,
   HttpError,
@@ -47,6 +48,7 @@ const createChannelParamsSchema = z.object({
   description: z.string().optional(),
   visibility: visibilitySchema.optional(),
   createdBy: z.string(),
+  memberIds: z.array(z.string()).optional(),
 })
 
 export type CreateChannelParams = z.infer<typeof createChannelParamsSchema>
@@ -71,6 +73,7 @@ const createStreamParamsSchema = z.object({
   companionPersonaId: z.string().optional(),
   parentStreamId: z.string().optional(),
   parentMessageId: z.string().optional(),
+  memberIds: z.array(z.string()).optional(),
   createdBy: z.string(),
 })
 
@@ -339,6 +342,7 @@ export class StreamService {
           description: params.description,
           visibility: params.visibility,
           createdBy: params.createdBy,
+          memberIds: params.memberIds,
         })
       case StreamTypes.THREAD:
         if (!params.parentStreamId || !params.parentMessageId) {
@@ -415,6 +419,57 @@ export class StreamService {
         streamId: stream.id,
         stream,
       })
+
+      // Add initial members (excluding the creator who was already added)
+      const additionalMemberIds = (params.memberIds ?? []).filter((mid) => mid !== params.createdBy)
+      if (additionalMemberIds.length > 0) {
+        // Validate members belong to this workspace (INV-20: batch lookup)
+        const members = await MemberRepository.findByIds(client, additionalMemberIds)
+        const validMemberIds = members.filter((m) => m.workspaceId === params.workspaceId).map((m) => m.id)
+
+        // INV-11: warn on invalid member IDs rather than silently dropping
+        const invalidCount = additionalMemberIds.length - validMemberIds.length
+        if (invalidCount > 0) {
+          logger.warn(
+            "createChannel: dropped %d invalid member IDs not in workspace %s",
+            invalidCount,
+            params.workspaceId
+          )
+        }
+
+        if (validMemberIds.length > 0) {
+          // INV-56: batch insert members, events, and outbox entries
+          await StreamMemberRepository.insertMany(client, stream.id, validMemberIds)
+
+          const eventParams = validMemberIds.map((memberId) => ({
+            id: eventId(),
+            streamId: stream.id,
+            eventType: "member_added" as const,
+            payload: { addedBy: params.createdBy },
+            actorId: memberId,
+            actorType: "member" as const,
+          }))
+          const events = await StreamEventRepository.insertMany(client, eventParams)
+
+          await OutboxRepository.insertMany(
+            client,
+            events.map((event) => ({
+              eventType: "stream:member_added" as const,
+              payload: {
+                workspaceId: stream.workspaceId,
+                streamId: stream.id,
+                memberId: event.actorId!,
+                stream,
+                event,
+              },
+            }))
+          )
+
+          // Set lastReadEventId so initial members don't see creation events as unread
+          const lastEvent = events[events.length - 1]
+          await StreamMemberRepository.setLastReadEventIdForMembers(client, stream.id, validMemberIds, lastEvent.id)
+        }
+      }
 
       return stream
     })
@@ -657,26 +712,39 @@ export class StreamService {
 
   // Member operations
 
-  private async addToStream(client: Querier, stream: Stream, memberId: string): Promise<StreamMember> {
+  private async addToStream(client: Querier, stream: Stream, memberId: string, actorId: string): Promise<StreamMember> {
+    // Check if already a member to avoid spurious events on duplicate calls
+    const existing = await StreamMemberRepository.findByStreamAndMember(client, stream.id, memberId)
+    if (existing) return existing
+
     const membership = await StreamMemberRepository.insert(client, stream.id, memberId)
 
-    const latestEventIds = await StreamEventRepository.getLatestEventIdByStreamBatch(client, [stream.id])
-    const latestEventId = latestEventIds.get(stream.id)
-    if (latestEventId) {
-      await StreamMemberRepository.update(client, stream.id, memberId, { lastReadEventId: latestEventId })
-    }
+    // Create timeline event so "X was added" appears in the stream
+    const evtId = eventId()
+    const event = await StreamEventRepository.insert(client, {
+      id: evtId,
+      streamId: stream.id,
+      eventType: "member_added",
+      payload: { addedBy: actorId },
+      actorId: memberId,
+      actorType: "member",
+    })
+
+    // Set read cursor *after* inserting the member_added event so it's not shown as unread
+    await StreamMemberRepository.update(client, stream.id, memberId, { lastReadEventId: evtId })
 
     await OutboxRepository.insert(client, "stream:member_added", {
       workspaceId: stream.workspaceId,
       streamId: stream.id,
       memberId,
       stream,
+      event,
     })
 
     return membership
   }
 
-  async addMember(streamId: string, memberId: string, workspaceId: string): Promise<StreamMember> {
+  async addMember(streamId: string, memberId: string, workspaceId: string, actorId: string): Promise<StreamMember> {
     return withTransaction(this.pool, async (client) => {
       const stream = await StreamRepository.findById(client, streamId)
       if (!stream) {
@@ -700,11 +768,11 @@ export class StreamService {
         const isRootMember = await StreamMemberRepository.isMember(client, stream.rootStreamId, memberId)
         if (!isRootMember) {
           const rootStream = await StreamRepository.findById(client, stream.rootStreamId)
-          if (rootStream) await this.addToStream(client, rootStream, memberId)
+          if (rootStream) await this.addToStream(client, rootStream, memberId, actorId)
         }
       }
 
-      return this.addToStream(client, stream, memberId)
+      return this.addToStream(client, stream, memberId, actorId)
     })
   }
 

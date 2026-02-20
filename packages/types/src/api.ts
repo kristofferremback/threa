@@ -33,6 +33,7 @@ export interface CreateStreamInput {
   companionPersonaId?: string
   parentStreamId?: string
   parentMessageId?: string
+  memberIds?: string[]
 }
 
 export interface UpdateStreamInput {
