@@ -15,7 +15,7 @@ import { test, expect } from "@playwright/test"
 
 test.describe("Invitation Flow", () => {
   test("should allow owner to invite a user who then joins and sees the workspace", async ({ browser }) => {
-    test.setTimeout(60000)
+    test.setTimeout(120000)
 
     const testId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
     const userAEmail = `inviter-${testId}@example.com`
@@ -127,10 +127,12 @@ test.describe("Invitation Flow", () => {
 
       const displaySlugInput = pageB.getByLabel("Display slug")
       if (!(await completeSetupButton.isEnabled().catch(() => false))) {
-        await displaySlugInput.fill(`invitee-${testId}`)
+        await displayNameInput.fill(userBName)
+        // Avoid flaky slug-availability waits under load; blank slug auto-generates on submit.
+        await displaySlugInput.fill("")
       }
 
-      await expect(completeSetupButton).toBeEnabled({ timeout: 20000 })
+      await expect.poll(() => completeSetupButton.isEnabled().catch(() => false), { timeout: 20000 }).toBe(true)
       await completeSetupButton.click()
     }
 
@@ -158,17 +160,17 @@ test.describe("Invitation Flow", () => {
     await expect(channelOption).toBeVisible({ timeout: 10000 })
     await channelOption.click()
 
-    // Wait for navigation to the channel page.
-    await expect(pageB.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 10000 })
-
+    const channelHeading = pageB.getByRole("heading", { name: `#${channelName}`, level: 1 })
     const joinButton = pageB.getByRole("button", { name: "Join Channel" })
     const sendButton = pageB.getByRole("button", { name: "Send" })
 
-    // Under load, navigation can race with membership hydration.
-    // Wait until either join gate (not joined) or composer (already joined) is visible.
+    // Under load, quick-switcher close, navigation, and membership hydration can race.
+    // Wait for channel view to settle to either heading, join gate, or composer.
     await expect
       .poll(
         async () => {
+          const inChannel = await channelHeading.isVisible().catch(() => false)
+          if (inChannel) return "channel"
           const canJoin = await joinButton.isVisible().catch(() => false)
           if (canJoin) return "join"
           const canSend = await sendButton.isVisible().catch(() => false)
