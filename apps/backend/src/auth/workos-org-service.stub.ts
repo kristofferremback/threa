@@ -17,8 +17,12 @@ export class StubWorkosOrgService implements WorkosOrgService {
     return id ? { id } : null
   }
 
+  async hasAcceptedWorkspaceCreationInvitation(_email: string): Promise<boolean> {
+    return true
+  }
+
   async sendInvitation(params: {
-    organizationId: string
+    organizationId?: string
     email: string
     inviterUserId: string
   }): Promise<{ id: string; expiresAt: Date }> {

@@ -5,6 +5,18 @@ import { useWorkspaces, useCreateWorkspace } from "@/hooks"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ThreaLogo } from "@/components/threa-logo"
+import { ApiError } from "@/api/client"
+
+function getCreateWorkspaceErrorMessage(error: unknown): string | null {
+  if (!error) return null
+  if (ApiError.isApiError(error) && error.status === 403) {
+    return "Workspace creation requires a dedicated workspace invite."
+  }
+  if (error instanceof Error) {
+    return error.message
+  }
+  return "Failed to create workspace"
+}
 
 export function WorkspaceSelectPage() {
   const { user, loading: authLoading } = useAuth()
@@ -12,6 +24,7 @@ export function WorkspaceSelectPage() {
   const createWorkspace = useCreateWorkspace()
   const navigate = useNavigate()
   const [newWorkspaceName, setNewWorkspaceName] = useState("")
+  const createWorkspaceErrorMessage = getCreateWorkspaceErrorMessage(createWorkspace.error)
 
   const handleCreateWorkspace = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -87,7 +100,7 @@ export function WorkspaceSelectPage() {
           <Button type="submit" disabled={!newWorkspaceName.trim() || createWorkspace.isPending}>
             {createWorkspace.isPending ? "Creating..." : "Create Workspace"}
           </Button>
-          {createWorkspace.error && <p className="text-sm text-destructive">{createWorkspace.error.message}</p>}
+          {createWorkspaceErrorMessage && <p className="text-sm text-destructive">{createWorkspaceErrorMessage}</p>}
         </form>
       </div>
     </div>

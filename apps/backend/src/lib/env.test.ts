@@ -67,3 +67,24 @@ describe("loadConfig attachment safety policy", () => {
     expect(config.attachments.malwareScanEnabled).toBe(false)
   })
 })
+
+describe("loadConfig workspace creation invite policy", () => {
+  test("defaults workspace creation invite requirement to enabled", () => {
+    setBaseEnv()
+    process.env.NODE_ENV = "development"
+    process.env.USE_STUB_AUTH = "true"
+
+    const config = loadConfig()
+    expect(config.workspaceCreationRequiresInvite).toBe(true)
+  })
+
+  test("allows disabling workspace creation invite requirement when configured", () => {
+    setBaseEnv()
+    process.env.NODE_ENV = "development"
+    process.env.USE_STUB_AUTH = "true"
+    process.env.WORKSPACE_CREATION_SKIP_INVITE = "true"
+
+    const config = loadConfig()
+    expect(config.workspaceCreationRequiresInvite).toBe(false)
+  })
+})

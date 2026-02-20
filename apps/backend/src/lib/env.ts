@@ -38,6 +38,7 @@ export interface Config {
   databaseUrl: string
   /** Skip graceful shutdown for immediate termination (dev/test environments) */
   fastShutdown: boolean
+  workspaceCreationRequiresInvite: boolean
   useStubAuth: boolean
   useStubCompanion: boolean
   useStubBoundaryExtraction: boolean
@@ -92,6 +93,7 @@ export function loadConfig(): Config {
     port: Number(process.env.PORT) || 3001,
     databaseUrl: process.env.DATABASE_URL,
     fastShutdown,
+    workspaceCreationRequiresInvite: process.env.WORKSPACE_CREATION_SKIP_INVITE !== "true",
     useStubAuth,
     useStubCompanion,
     useStubBoundaryExtraction,

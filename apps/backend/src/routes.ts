@@ -225,6 +225,12 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     requireRole("admin"),
     invitation.resend
   )
+  app.post(
+    "/api/workspaces/:workspaceId/workspace-creation-invitations",
+    ...authed,
+    requireRole("admin"),
+    invitation.sendWorkspaceCreation
+  )
 
   // Member setup (any authenticated member)
   app.get("/api/workspaces/:workspaceId/slug-available", ...authed, workspace.checkSlugAvailability)

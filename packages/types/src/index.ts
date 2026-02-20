@@ -206,6 +206,8 @@ export type {
   // Invitations
   SendInvitationsInput,
   SendInvitationsResponse,
+  SendWorkspaceCreationInvitationsInput,
+  SendWorkspaceCreationInvitationsResponse,
   InvitationSkipReason,
   CompleteMemberSetupInput,
   // Activity

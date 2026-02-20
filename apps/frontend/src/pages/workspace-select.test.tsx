@@ -3,6 +3,7 @@ import { MemoryRouter, Route, Routes, useParams } from "react-router-dom"
 import { render, screen } from "@/test"
 import { WorkspaceSelectPage } from "./workspace-select"
 import type { Workspace } from "@threa/types"
+import { ApiError } from "@/api/client"
 
 const mockUseAuth = vi.fn()
 const mockUseWorkspaces = vi.fn()
@@ -95,5 +96,22 @@ describe("WorkspaceSelectPage", () => {
     expect(screen.getByText("Select a workspace to continue")).toBeInTheDocument()
     expect(screen.getByRole("link", { name: "Alpha" })).toHaveAttribute("href", "/w/workspace_1")
     expect(screen.getByRole("link", { name: "Beta" })).toHaveAttribute("href", "/w/workspace_2")
+  })
+
+  it("should show invite-only message when workspace creation is forbidden", () => {
+    mockUseWorkspaces.mockReturnValue({
+      data: [],
+      isLoading: false,
+      error: null,
+    })
+    mockUseCreateWorkspace.mockReturnValue({
+      mutateAsync: vi.fn(),
+      isPending: false,
+      error: new ApiError(403, "UNKNOWN_ERROR", "Request failed with status 403"),
+    })
+
+    renderPage()
+
+    expect(screen.getByText("Workspace creation requires a dedicated workspace invite.")).toBeInTheDocument()
   })
 })

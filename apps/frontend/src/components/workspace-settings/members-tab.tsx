@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge"
 import { invitationsApi } from "@/api/invitations"
 import { workspaceKeys } from "@/hooks/use-workspaces"
 import { InviteDialog } from "./invite-dialog"
+import { WorkspaceCreationInviteDialog } from "./workspace-creation-invite-dialog"
 import type { WorkspaceMember, WorkspaceInvitation } from "@threa/types"
 
 interface MembersTabProps {
@@ -13,6 +14,7 @@ interface MembersTabProps {
 
 export function MembersTab({ workspaceId }: MembersTabProps) {
   const [inviteOpen, setInviteOpen] = useState(false)
+  const [workspaceCreationInviteOpen, setWorkspaceCreationInviteOpen] = useState(false)
   const queryClient = useQueryClient()
 
   const bootstrapData = queryClient.getQueryData<{
@@ -43,9 +45,14 @@ export function MembersTab({ workspaceId }: MembersTabProps) {
     <div className="space-y-6 p-1">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium">Members ({members.length})</h3>
-        <Button size="sm" onClick={() => setInviteOpen(true)}>
-          Invite
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={() => setWorkspaceCreationInviteOpen(true)}>
+            Invite Workspace Creator
+          </Button>
+          <Button size="sm" onClick={() => setInviteOpen(true)}>
+            Invite
+          </Button>
+        </div>
       </div>
 
       <div className="space-y-2">
@@ -102,6 +109,11 @@ export function MembersTab({ workspaceId }: MembersTabProps) {
         open={inviteOpen}
         onOpenChange={setInviteOpen}
         onSuccess={() => invitationsQuery.refetch()}
+      />
+      <WorkspaceCreationInviteDialog
+        workspaceId={workspaceId}
+        open={workspaceCreationInviteOpen}
+        onOpenChange={setWorkspaceCreationInviteOpen}
       />
     </div>
   )

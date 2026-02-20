@@ -10,6 +10,13 @@ const sendInvitationsSchema = z.object({
   role: z.enum(["admin", "member"]).optional().default("member"),
 })
 
+const sendWorkspaceCreationInvitationsSchema = z.object({
+  emails: z
+    .array(z.string().email("Invalid email address"))
+    .min(1, "At least one email is required")
+    .max(20, "Maximum 20 emails per request"),
+})
+
 interface Dependencies {
   invitationService: InvitationService
 }
@@ -46,6 +53,27 @@ export function createInvitationHandlers({ invitationService }: Dependencies) {
       const invitations = await invitationService.listInvitations(workspaceId)
 
       res.json({ invitations })
+    },
+
+    async sendWorkspaceCreation(req: Request, res: Response) {
+      const workspaceId = req.workspaceId!
+      const memberId = req.member!.id
+
+      const result = sendWorkspaceCreationInvitationsSchema.safeParse(req.body)
+      if (!result.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: z.flattenError(result.error).fieldErrors,
+        })
+      }
+
+      const sendResult = await invitationService.sendWorkspaceCreationInvitations({
+        workspaceId,
+        invitedBy: memberId,
+        emails: result.data.emails,
+      })
+
+      res.status(201).json(sendResult)
     },
 
     async revoke(req: Request, res: Response) {

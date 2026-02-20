@@ -1,5 +1,11 @@
 import { api } from "./client"
-import type { WorkspaceInvitation, SendInvitationsInput, SendInvitationsResponse } from "@threa/types"
+import type {
+  WorkspaceInvitation,
+  SendInvitationsInput,
+  SendInvitationsResponse,
+  SendWorkspaceCreationInvitationsInput,
+  SendWorkspaceCreationInvitationsResponse,
+} from "@threa/types"
 
 export const invitationsApi = {
   async list(workspaceId: string): Promise<WorkspaceInvitation[]> {
@@ -20,5 +26,15 @@ export const invitationsApi = {
       `/api/workspaces/${workspaceId}/invitations/${invitationId}/resend`
     )
     return res.invitation
+  },
+
+  async sendWorkspaceCreation(
+    workspaceId: string,
+    data: SendWorkspaceCreationInvitationsInput
+  ): Promise<SendWorkspaceCreationInvitationsResponse> {
+    return api.post<SendWorkspaceCreationInvitationsResponse>(
+      `/api/workspaces/${workspaceId}/workspace-creation-invitations`,
+      data
+    )
   },
 }

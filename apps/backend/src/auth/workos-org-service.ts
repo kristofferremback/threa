@@ -18,8 +18,9 @@ export function getWorkosErrorCode(error: unknown): string | null {
 export interface WorkosOrgService {
   createOrganization(params: { name: string; externalId: string }): Promise<{ id: string }>
   getOrganizationByExternalId(externalId: string): Promise<{ id: string } | null>
+  hasAcceptedWorkspaceCreationInvitation(email: string): Promise<boolean>
   sendInvitation(params: {
-    organizationId: string
+    organizationId?: string
     email: string
     inviterUserId: string
   }): Promise<{ id: string; expiresAt: Date }>
@@ -52,15 +53,45 @@ export class WorkosOrgServiceImpl implements WorkosOrgService {
     }
   }
 
+  async hasAcceptedWorkspaceCreationInvitation(email: string): Promise<boolean> {
+    try {
+      const normalizedEmail = email.toLowerCase()
+      let after: string | undefined
+
+      for (;;) {
+        const invitations = await this.workos.userManagement.listInvitations({
+          email: normalizedEmail,
+          limit: 100,
+          ...(after ? { after } : {}),
+        })
+
+        const hasAcceptedAppInvitation = invitations.data.some(
+          (invitation) => invitation.state === "accepted" && invitation.organizationId == null
+        )
+        if (hasAcceptedAppInvitation) {
+          return true
+        }
+
+        after = invitations.listMetadata.after ?? undefined
+        if (!after) {
+          return false
+        }
+      }
+    } catch (error) {
+      logger.error({ err: error, email }, "Failed to list WorkOS invitations")
+      throw error
+    }
+  }
+
   async sendInvitation(params: {
-    organizationId: string
+    organizationId?: string
     email: string
     inviterUserId: string
   }): Promise<{ id: string; expiresAt: Date }> {
     const invitation = await this.workos.userManagement.sendInvitation({
       email: params.email,
-      organizationId: params.organizationId,
       inviterUserId: params.inviterUserId,
+      ...(params.organizationId ? { organizationId: params.organizationId } : {}),
     })
     logger.info({ invitationId: invitation.id, email: params.email }, "Sent WorkOS invitation")
     return {
