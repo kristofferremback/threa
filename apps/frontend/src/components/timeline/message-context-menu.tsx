@@ -36,7 +36,14 @@ export function MessageContextMenu({ context }: MessageContextMenuProps) {
           <EllipsisVertical className="h-3.5 w-3.5" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-[200px]">
+      <DropdownMenuContent
+        align="end"
+        className="min-w-[200px]"
+        // Prevent Radix from restoring focus to the trigger button on close.
+        // Without this, selecting "Edit message" focuses the editor via autoFocus,
+        // then Radix's cleanup steals focus back to the trigger button.
+        onCloseAutoFocus={(e) => e.preventDefault()}
+      >
         {actions.map((action, index) => (
           <ActionItem
             key={action.id}
