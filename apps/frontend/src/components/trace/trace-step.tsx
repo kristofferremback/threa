@@ -1,5 +1,10 @@
 import { Link } from "react-router-dom"
-import type { AgentSessionStep, AgentStepType, TraceSource } from "@threa/types"
+import {
+  AgentReconsiderationDecisions,
+  type AgentSessionStep,
+  type AgentStepType,
+  type TraceSource,
+} from "@threa/types"
 import { cn } from "@/lib/utils"
 import { MarkdownContent } from "@/components/ui/markdown-content"
 import { RelativeTime } from "@/components/relative-time"
@@ -167,7 +172,7 @@ function renderStepContent(
     }
 
     case "reconsidering": {
-      if (structured && structured.decision === "kept_previous_response") {
+      if (structured && structured.decision === AgentReconsiderationDecisions.KEPT_PREVIOUS_RESPONSE) {
         const reason = typeof structured.reason === "string" ? structured.reason : null
         return (
           <div className="space-y-2">

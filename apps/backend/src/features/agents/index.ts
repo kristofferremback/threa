@@ -98,6 +98,7 @@ export type { AgentAccessSpec, ComputeAccessSpecParams } from "./researcher"
 export { COMPANION_MODEL_ID, COMPANION_TEMPERATURE } from "./companion/config"
 export { COMPANION_SUMMARY_MODEL_ID, COMPANION_SUMMARY_TEMPERATURE } from "./companion/config"
 export { SUPERSEDE_RESPONSE_VALIDATOR_MAX_TOKENS, SUPERSEDE_RESPONSE_VALIDATOR_TEMPERATURE } from "./config"
+export { SUPERSEDE_RESPONSE_VALIDATOR_MODEL_ID } from "./config"
 export {
   WORKSPACE_AGENT_MODEL_ID,
   WORKSPACE_AGENT_TEMPERATURE,

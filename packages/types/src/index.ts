@@ -86,6 +86,9 @@ export {
   AGENT_STEP_TYPES,
   type AgentStepType,
   AgentStepTypes,
+  AGENT_RECONSIDERATION_DECISIONS,
+  type AgentReconsiderationDecision,
+  AgentReconsiderationDecisions,
   // Agent session statuses
   AGENT_SESSION_STATUSES,
   type AgentSessionStatus,

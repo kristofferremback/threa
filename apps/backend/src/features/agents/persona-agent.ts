@@ -30,7 +30,11 @@ import { WorkspaceAgent, type WorkspaceAgentResult, computeAgentAccessSpec } fro
 import { logger } from "../../lib/logger"
 import { buildAgentContext, buildToolSet, withCompanionSession, type WithSessionResult } from "./companion"
 import { AgentRuntime, SessionTraceObserver, OtelObserver, type NewMessageInfo } from "./runtime"
-import { SUPERSEDE_RESPONSE_VALIDATOR_MAX_TOKENS, SUPERSEDE_RESPONSE_VALIDATOR_TEMPERATURE } from "./config"
+import {
+  SUPERSEDE_RESPONSE_VALIDATOR_MAX_TOKENS,
+  SUPERSEDE_RESPONSE_VALIDATOR_MODEL_ID,
+  SUPERSEDE_RESPONSE_VALIDATOR_TEMPERATURE,
+} from "./config"
 
 export type { WithSessionResult }
 
@@ -353,7 +357,6 @@ export class PersonaAgent {
           validateFinalResponse: isSupersedeRerun
             ? buildSupersedeResponseValidator({
                 ai,
-                model: persona.model,
                 sessionId: session.id,
                 rerunContext,
               })
@@ -761,11 +764,10 @@ const SupersedeResponseValidationSchema = z.object({
 
 function buildSupersedeResponseValidator(params: {
   ai: AI
-  model: string
   sessionId: string
   rerunContext?: AgentSessionRerunContext
 }): (content: string) => Promise<string | null> {
-  const { ai, model, sessionId, rerunContext } = params
+  const { ai, sessionId, rerunContext } = params
   const editedBefore = rerunContext?.editedMessageBefore ?? null
   const editedAfter = rerunContext?.editedMessageAfter ?? null
 
@@ -777,7 +779,7 @@ function buildSupersedeResponseValidator(params: {
 
     try {
       const { value } = await ai.generateObject({
-        model,
+        model: SUPERSEDE_RESPONSE_VALIDATOR_MODEL_ID,
         schema: SupersedeResponseValidationSchema,
         telemetry: {
           functionId: "agent-rerun-response-validation",

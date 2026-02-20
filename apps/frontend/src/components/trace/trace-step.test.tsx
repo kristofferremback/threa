@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 import { render, screen } from "@testing-library/react"
 import { MemoryRouter } from "react-router-dom"
-import type { AgentSessionStep } from "@threa/types"
+import { AgentReconsiderationDecisions, type AgentSessionStep } from "@threa/types"
 import { TraceStep } from "./trace-step"
 
 vi.mock("@/components/relative-time", () => ({
@@ -15,7 +15,7 @@ function createStep(overrides: Partial<AgentSessionStep> = {}): AgentSessionStep
     stepNumber: 1,
     stepType: "reconsidering",
     content: JSON.stringify({
-      decision: "kept_previous_response",
+      decision: AgentReconsiderationDecisions.KEPT_PREVIOUS_RESPONSE,
       reason: "The message edit only fixed grammar and didn't change the underlying request.",
     }),
     startedAt: "2026-02-19T18:00:00.000Z",

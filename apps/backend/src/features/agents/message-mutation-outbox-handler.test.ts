@@ -111,8 +111,6 @@ describe("AgentMessageMutationHandler", () => {
       createdAt: new Date("2026-02-19T11:30:00.000Z"),
       completedAt: new Date("2026-02-19T12:01:00.000Z"),
     })
-    spyOn(AgentSessionRepository, "findLatestBySupersedesSession").mockResolvedValue(null)
-
     const { handler, eventService, jobQueue } = createHandler()
     handler.handle()
 
@@ -125,18 +123,24 @@ describe("AgentMessageMutationHandler", () => {
       expect.objectContaining({ error: "Superseded by invoking message edit" })
     )
     expect(eventService.deleteMessage).not.toHaveBeenCalled()
-    expect(jobQueue.send).toHaveBeenCalledWith("persona.agent", {
-      workspaceId: "ws_1",
-      streamId: "stream_thread_1",
-      messageId: "msg_invoke_1",
-      personaId: "persona_1",
-      triggeredBy: "member_editor",
-      supersedesSessionId: "session_old",
-      rerunContext: expect.objectContaining({
-        cause: "invoking_message_edited",
-        editedMessageId: "msg_invoke_1",
-      }),
-    })
+    expect(jobQueue.send).toHaveBeenCalledWith(
+      "persona.agent",
+      {
+        workspaceId: "ws_1",
+        streamId: "stream_thread_1",
+        messageId: "msg_invoke_1",
+        personaId: "persona_1",
+        triggeredBy: "member_editor",
+        supersedesSessionId: "session_old",
+        rerunContext: expect.objectContaining({
+          cause: "invoking_message_edited",
+          editedMessageId: "msg_invoke_1",
+        }),
+      },
+      {
+        messageId: "queue_rerun_session_old",
+      }
+    )
   })
 
   it("does not dispatch rerun when concurrent supersede already won terminal transition", async () => {
@@ -184,7 +188,6 @@ describe("AgentMessageMutationHandler", () => {
     })
 
     const updateStatusSpy = spyOn(AgentSessionRepository, "updateStatus").mockResolvedValue(null)
-    const findRerunSpy = spyOn(AgentSessionRepository, "findLatestBySupersedesSession").mockResolvedValue(null)
 
     const { handler, eventService, jobQueue } = createHandler()
     handler.handle()
@@ -200,12 +203,11 @@ describe("AgentMessageMutationHandler", () => {
         onlyIfStatusIn: [SessionStatuses.COMPLETED, SessionStatuses.FAILED],
       })
     )
-    expect(findRerunSpy).not.toHaveBeenCalled()
     expect(eventService.deleteMessage).not.toHaveBeenCalled()
     expect(jobQueue.send).not.toHaveBeenCalled()
   })
 
-  it("does not dispatch duplicate rerun when superseded session already has successor", async () => {
+  it("dispatches idempotent rerun send for superseded session replays", async () => {
     spyOn(OutboxRepository, "fetchAfterId").mockResolvedValue([
       {
         id: 1n,
@@ -247,33 +249,21 @@ describe("AgentMessageMutationHandler", () => {
       createdAt: new Date("2026-02-19T11:30:00.000Z"),
       completedAt: new Date("2026-02-19T11:59:00.000Z"),
     })
-    spyOn(AgentSessionRepository, "findLatestBySupersedesSession").mockResolvedValue({
-      id: "session_new",
-      streamId: "stream_thread_1",
-      personaId: "persona_1",
-      triggerMessageId: "msg_invoke_1",
-      triggerMessageRevision: 3,
-      supersedesSessionId: "session_old",
-      status: SessionStatuses.RUNNING,
-      currentStep: 0,
-      currentStepType: "thinking",
-      serverId: "server_1",
-      heartbeatAt: new Date(),
-      responseMessageId: null,
-      error: null,
-      lastSeenSequence: 11n,
-      sentMessageIds: [],
-      createdAt: new Date(),
-      completedAt: null,
-    })
-
     const { handler, eventService, jobQueue } = createHandler()
     handler.handle()
 
     await waitForDebounce()
 
     expect(eventService.deleteMessage).not.toHaveBeenCalled()
-    expect(jobQueue.send).not.toHaveBeenCalled()
+    expect(jobQueue.send).toHaveBeenCalledWith(
+      "persona.agent",
+      expect.objectContaining({
+        supersedesSessionId: "session_old",
+      }),
+      {
+        messageId: "queue_rerun_session_old",
+      }
+    )
     expect(updateStatusSpy).not.toHaveBeenCalled()
   })
 
@@ -321,8 +311,6 @@ describe("AgentMessageMutationHandler", () => {
       createdAt: new Date("2026-02-19T11:30:00.000Z"),
       completedAt: new Date("2026-02-19T12:02:00.000Z"),
     })
-    spyOn(AgentSessionRepository, "findLatestBySupersedesSession").mockResolvedValue(null)
-
     const { handler, eventService, jobQueue } = createHandler()
     handler.handle()
 
@@ -330,18 +318,24 @@ describe("AgentMessageMutationHandler", () => {
 
     expect(updateStatusSpy).not.toHaveBeenCalled()
     expect(eventService.deleteMessage).not.toHaveBeenCalled()
-    expect(jobQueue.send).toHaveBeenCalledWith("persona.agent", {
-      workspaceId: "ws_1",
-      streamId: "stream_thread_1",
-      messageId: "msg_invoke_1",
-      personaId: "persona_1",
-      triggeredBy: "member_editor",
-      supersedesSessionId: "session_old",
-      rerunContext: expect.objectContaining({
-        cause: "invoking_message_edited",
-        editedMessageId: "msg_invoke_1",
-      }),
-    })
+    expect(jobQueue.send).toHaveBeenCalledWith(
+      "persona.agent",
+      {
+        workspaceId: "ws_1",
+        streamId: "stream_thread_1",
+        messageId: "msg_invoke_1",
+        personaId: "persona_1",
+        triggeredBy: "member_editor",
+        supersedesSessionId: "session_old",
+        rerunContext: expect.objectContaining({
+          cause: "invoking_message_edited",
+          editedMessageId: "msg_invoke_1",
+        }),
+      },
+      {
+        messageId: "queue_rerun_session_old",
+      }
+    )
   })
 
   it("supersedes failed invoking session on message edit and dispatches rerun", async () => {
@@ -407,8 +401,6 @@ describe("AgentMessageMutationHandler", () => {
       createdAt: new Date("2026-02-19T11:30:00.000Z"),
       completedAt: new Date("2026-02-19T12:01:00.000Z"),
     })
-    spyOn(AgentSessionRepository, "findLatestBySupersedesSession").mockResolvedValue(null)
-
     const { handler, eventService, jobQueue } = createHandler()
     handler.handle()
 
@@ -421,18 +413,24 @@ describe("AgentMessageMutationHandler", () => {
       expect.objectContaining({ error: "Superseded by invoking message edit" })
     )
     expect(eventService.deleteMessage).not.toHaveBeenCalled()
-    expect(jobQueue.send).toHaveBeenCalledWith("persona.agent", {
-      workspaceId: "ws_1",
-      streamId: "stream_thread_1",
-      messageId: "msg_invoke_1",
-      personaId: "persona_1",
-      triggeredBy: "member_editor",
-      supersedesSessionId: "session_failed",
-      rerunContext: expect.objectContaining({
-        cause: "invoking_message_edited",
-        editedMessageId: "msg_invoke_1",
-      }),
-    })
+    expect(jobQueue.send).toHaveBeenCalledWith(
+      "persona.agent",
+      {
+        workspaceId: "ws_1",
+        streamId: "stream_thread_1",
+        messageId: "msg_invoke_1",
+        personaId: "persona_1",
+        triggeredBy: "member_editor",
+        supersedesSessionId: "session_failed",
+        rerunContext: expect.objectContaining({
+          cause: "invoking_message_edited",
+          editedMessageId: "msg_invoke_1",
+        }),
+      },
+      {
+        messageId: "queue_rerun_session_failed",
+      }
+    )
   })
 
   it("does not rerun when edit happened before session completed", async () => {
@@ -604,8 +602,6 @@ describe("AgentMessageMutationHandler", () => {
       createdAt: new Date("2026-02-19T11:00:00.000Z"),
       completedAt: new Date("2026-02-19T12:11:00.000Z"),
     })
-    spyOn(AgentSessionRepository, "findLatestBySupersedesSession").mockResolvedValue(null)
-
     const { handler, eventService, jobQueue } = createHandler()
     handler.handle()
 
@@ -619,18 +615,24 @@ describe("AgentMessageMutationHandler", () => {
       expect.objectContaining({ error: "Superseded by referenced message edit" })
     )
     expect(eventService.deleteMessage).not.toHaveBeenCalled()
-    expect(jobQueue.send).toHaveBeenCalledWith("persona.agent", {
-      workspaceId: "ws_1",
-      streamId: "stream_thread_1",
-      messageId: "msg_invoke_latest",
-      personaId: "persona_1",
-      triggeredBy: "member_editor",
-      supersedesSessionId: "session_latest",
-      rerunContext: expect.objectContaining({
-        cause: "referenced_message_edited",
-        editedMessageId: "msg_referenced_1",
-      }),
-    })
+    expect(jobQueue.send).toHaveBeenCalledWith(
+      "persona.agent",
+      {
+        workspaceId: "ws_1",
+        streamId: "stream_thread_1",
+        messageId: "msg_invoke_latest",
+        personaId: "persona_1",
+        triggeredBy: "member_editor",
+        supersedesSessionId: "session_latest",
+        rerunContext: expect.objectContaining({
+          cause: "referenced_message_edited",
+          editedMessageId: "msg_referenced_1",
+        }),
+      },
+      {
+        messageId: "queue_rerun_session_latest",
+      }
+    )
   })
 
   it("does not rerun for referenced edit already seen by latest session", async () => {
@@ -825,9 +827,32 @@ describe("AgentMessageMutationHandler", () => {
 
     await waitForDebounce()
 
-    expect(AgentSessionRepository.updateStatus).toHaveBeenCalledTimes(1)
-    expect(StreamEventRepository.insert).toHaveBeenCalledTimes(1)
-    expect(OutboxRepository.insert).toHaveBeenCalledTimes(1)
+    expect(AgentSessionRepository.updateStatus).toHaveBeenCalledWith(
+      expect.anything(),
+      "session_1",
+      SessionStatuses.DELETED,
+      expect.objectContaining({
+        error: "Invoking message deleted",
+      })
+    )
+    expect(StreamEventRepository.insert).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        eventType: "agent_session:deleted",
+        payload: expect.objectContaining({
+          sessionId: "session_1",
+          deletedAt: "2026-02-19T12:00:00.000Z",
+        }),
+      })
+    )
+    expect(OutboxRepository.insert).toHaveBeenCalledWith(
+      expect.anything(),
+      "agent_session:deleted",
+      expect.objectContaining({
+        workspaceId: "ws_1",
+        streamId: "stream_thread_1",
+      })
+    )
     expect(eventService.deleteMessage).toHaveBeenCalledTimes(2)
     expect(eventService.deleteMessage).toHaveBeenCalledWith(
       expect.objectContaining({

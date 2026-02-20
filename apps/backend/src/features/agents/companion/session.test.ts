@@ -151,4 +151,54 @@ describe("withCompanionSession", () => {
     })
     expect(stepsSpy).not.toHaveBeenCalled()
   })
+
+  it("does not resume when guarded RUNNING transition loses to terminal status change", async () => {
+    mockTransactions()
+
+    spyOn(AgentSessionRepository, "findByTriggerMessage").mockResolvedValue(
+      makeRunningSession({
+        status: SessionStatuses.FAILED,
+        completedAt: new Date("2026-02-19T12:01:00.000Z"),
+      })
+    )
+    const updateStatusSpy = spyOn(AgentSessionRepository, "updateStatus").mockResolvedValue(null)
+    const insertRunningSpy = spyOn(AgentSessionRepository, "insertRunningOrSkip").mockResolvedValue(null)
+    const insertEventSpy = spyOn(StreamEventRepository, "insert").mockResolvedValue({} as any)
+    const insertOutboxSpy = spyOn(OutboxRepository, "insert").mockResolvedValue({} as any)
+
+    const result = await withCompanionSession(
+      {
+        pool: {} as any,
+        triggerMessageId: "msg_trigger_1",
+        streamId: "stream_1",
+        personaId: "persona_1",
+        personaName: "Ariadne",
+        workspaceId: "ws_1",
+        serverId: "server_1",
+        initialSequence: 10n,
+      },
+      async () => ({
+        messagesSent: 1,
+        sentMessageIds: ["msg_agent_1"],
+        lastSeenSequence: 11n,
+      })
+    )
+
+    expect(result).toEqual({
+      status: "skipped",
+      sessionId: null,
+      reason: "failed to resume session",
+    })
+    expect(updateStatusSpy).toHaveBeenCalledWith(
+      {},
+      "session_1",
+      SessionStatuses.RUNNING,
+      expect.objectContaining({
+        onlyIfStatusIn: [SessionStatuses.RUNNING, SessionStatuses.PENDING, SessionStatuses.FAILED],
+      })
+    )
+    expect(insertRunningSpy).not.toHaveBeenCalled()
+    expect(insertEventSpy).not.toHaveBeenCalled()
+    expect(insertOutboxSpy).not.toHaveBeenCalled()
+  })
 })

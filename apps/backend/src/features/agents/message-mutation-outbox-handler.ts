@@ -34,6 +34,10 @@ const DEFAULT_CONFIG = {
   baseBackoffMs: 1_000,
 }
 
+function rerunQueueMessageId(sessionId: string): string {
+  return `queue_rerun_${sessionId}`
+}
+
 interface NormalizedMessageEditedPayload {
   workspaceId: string
   streamId: string
@@ -369,18 +373,21 @@ export class AgentMessageMutationHandler implements OutboxHandler {
           })
     if (!superseded) return
 
-    const existingRerun = await AgentSessionRepository.findLatestBySupersedesSession(this.db, superseded.id)
-    if (existingRerun) return
-
-    await this.jobQueue.send(JobQueues.PERSONA_AGENT, {
-      workspaceId,
-      streamId: superseded.streamId,
-      messageId: rerunMessageId,
-      personaId: superseded.personaId,
-      triggeredBy: triggeredBy ?? "system",
-      supersedesSessionId: superseded.id,
-      rerunContext,
-    })
+    await this.jobQueue.send(
+      JobQueues.PERSONA_AGENT,
+      {
+        workspaceId,
+        streamId: superseded.streamId,
+        messageId: rerunMessageId,
+        personaId: superseded.personaId,
+        triggeredBy: triggeredBy ?? "system",
+        supersedesSessionId: superseded.id,
+        rerunContext,
+      },
+      {
+        messageId: rerunQueueMessageId(superseded.id),
+      }
+    )
 
     logger.info({ sessionId: superseded.id, ...logFields }, logMessage)
   }

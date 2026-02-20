@@ -14,6 +14,7 @@ import {
   queueMessagesProcessed,
   queueMessageDuration,
 } from "../observability"
+import { isUniqueViolation } from "../errors"
 
 /**
  * Configuration for QueueManager
@@ -181,23 +182,31 @@ export class QueueManager {
   async send<T extends JobQueueName>(
     queueName: T,
     data: JobDataMap[T],
-    options?: { processAfter?: Date }
+    options?: { processAfter?: Date; messageId?: string }
   ): Promise<string> {
     // Extract workspaceId from job data
     const workspaceId = this.extractWorkspaceId(queueName, data)
 
-    const messageId = queueId()
+    const messageId = options?.messageId ?? queueId()
     const now = new Date()
     const processAfter = options?.processAfter ?? now
 
-    await this.queueRepo.insert(this.pool, {
-      id: messageId,
-      queueName,
-      workspaceId,
-      payload: data,
-      processAfter,
-      insertedAt: now,
-    })
+    try {
+      await this.queueRepo.insert(this.pool, {
+        id: messageId,
+        queueName,
+        workspaceId,
+        payload: data,
+        processAfter,
+        insertedAt: now,
+      })
+    } catch (error) {
+      if (options?.messageId && isUniqueViolation(error, "queue_messages_pkey")) {
+        logger.info({ queueName, messageId, workspaceId }, "Queue message already enqueued (idempotent send)")
+        return messageId
+      }
+      throw error
+    }
 
     queueMessagesEnqueued.inc({ queue: queueName, workspace_id: workspaceId })
     logger.debug({ queueName, messageId, workspaceId }, "Message sent to queue")

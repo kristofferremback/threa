@@ -1,4 +1,4 @@
-import { AgentStepTypes, type TraceSource } from "@threa/types"
+import { AgentReconsiderationDecisions, AgentStepTypes, type TraceSource } from "@threa/types"
 import type { SessionTrace } from "../trace-emitter"
 import type { AgentEvent } from "./agent-events"
 import type { AgentObserver } from "./agent-observer"
@@ -73,7 +73,7 @@ export class SessionTraceObserver implements AgentObserver {
         const step = await this.trace.startStep({
           stepType: AgentStepTypes.RECONSIDERING,
           content: JSON.stringify({
-            decision: "kept_previous_response",
+            decision: AgentReconsiderationDecisions.KEPT_PREVIOUS_RESPONSE,
             reason: event.reason,
           }),
         })

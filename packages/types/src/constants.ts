@@ -309,6 +309,14 @@ export const AgentStepTypes = {
   TOOL_ERROR: "tool_error",
 } as const satisfies Record<string, AgentStepType>
 
+// Agent reconsideration decision values
+export const AGENT_RECONSIDERATION_DECISIONS = ["kept_previous_response"] as const
+export type AgentReconsiderationDecision = (typeof AGENT_RECONSIDERATION_DECISIONS)[number]
+
+export const AgentReconsiderationDecisions = {
+  KEPT_PREVIOUS_RESPONSE: "kept_previous_response",
+} as const satisfies Record<string, AgentReconsiderationDecision>
+
 // Agent session statuses
 export const AGENT_SESSION_STATUSES = ["pending", "running", "completed", "failed", "deleted", "superseded"] as const
 export type AgentSessionStatus = (typeof AGENT_SESSION_STATUSES)[number]

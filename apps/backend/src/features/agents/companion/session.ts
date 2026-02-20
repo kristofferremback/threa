@@ -75,6 +75,7 @@ export async function withCompanionSession(
       ) {
         const session = await AgentSessionRepository.updateStatus(db, existingSession.id, SessionStatuses.RUNNING, {
           serverId,
+          onlyIfStatusIn: [SessionStatuses.RUNNING, SessionStatuses.PENDING, SessionStatuses.FAILED],
         })
         if (!session) {
           return { status: "skipped" as const, sessionId: null, reason: "failed to resume session" }
