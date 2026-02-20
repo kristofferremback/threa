@@ -415,40 +415,43 @@ test.describe("Message Send Mode", () => {
       // Change to cmdEnter mode (non-default)
       await setSendMode(page, "cmdEnter")
 
-      // Create scratchpad and verify hint shows cmdEnter mode
-      await page.getByRole("button", { name: "+ New Scratchpad" }).click()
-      await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
+      async function assertCmdEnterMode(messageContent: string) {
+        const editor = page.locator("[contenteditable='true']")
+        if (!(await editor.isVisible())) {
+          await page.getByRole("button", { name: "+ New Scratchpad" }).click()
+          await expect(editor).toBeVisible({ timeout: 5000 })
+        }
 
-      // Hover over the expand button to reveal the tooltip
-      const expandButton = page
-        .getByRole("button")
-        .filter({ has: page.locator(".lucide-expand") })
-        .first()
-      await expandButton.hover()
+        await editor.click()
+        await page.keyboard.type(messageContent)
 
-      // Verify hint shows Cmd+Enter
-      await expect(page.getByText(/⌘Enter to send|Ctrl\+Enter to send/).first()).toBeVisible({ timeout: 2000 })
+        // Enter should not send in cmdEnter mode.
+        await page.keyboard.press("Enter")
+        await expect(editor).toContainText(messageContent)
+
+        // Cmd/Ctrl+Enter should send.
+        await page.keyboard.press("Meta+Enter")
+        await expect(page.locator("p").filter({ hasText: messageContent }).first()).toBeVisible({ timeout: 5000 })
+      }
+
+      // Verify behavior before reload.
+      await assertCmdEnterMode(`CmdEnter before reload ${testId}-${Date.now()}`)
 
       // Reload page
       await page.reload()
 
-      // Wait for app to load
-      await expect(page.getByRole("button", { name: "+ New Scratchpad" })).toBeVisible({ timeout: 10000 })
+      // Wait for app to load (either existing stream composer or "new scratchpad" button).
+      await expect
+        .poll(
+          async () =>
+            (await page.locator("[contenteditable='true']").isVisible()) ||
+            (await page.getByRole("button", { name: "+ New Scratchpad" }).isVisible()),
+          { timeout: 10000 }
+        )
+        .toBe(true)
 
-      // Create another scratchpad
-      await page.getByRole("button", { name: "+ New Scratchpad" }).click()
-      await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
-
-      // Hover over the expand button to reveal the tooltip.
-      // Use a longer timeout because the bootstrap API call after reload
-      // must complete before preferences (messageSendMode) are available.
-      // The tooltip re-renders reactively when preferences arrive.
-      const expandButtonAfterReload = page
-        .getByRole("button")
-        .filter({ has: page.locator(".lucide-expand") })
-        .first()
-      await expandButtonAfterReload.hover()
-      await expect(page.getByText(/⌘Enter to send|Ctrl\+Enter to send/).first()).toBeVisible({ timeout: 5000 })
+      // Verify behavior after reload - preference should persist.
+      await assertCmdEnterMode(`CmdEnter after reload ${testId}-${Date.now()}`)
     })
   })
 })
