@@ -37,12 +37,15 @@ export function MemberSetupPage() {
 
   const checkSlug = useCallback(
     (slugToCheck: string) => {
+      // Always invalidate the previous check so stale responses cannot overwrite newer input state.
+      slugCheckAbort.current?.abort()
+
       if (!workspaceId || slugToCheck.length === 0) {
+        slugCheckAbort.current = null
         setSlugStatus("idle")
         return
       }
 
-      slugCheckAbort.current?.abort()
       const controller = new AbortController()
       slugCheckAbort.current = controller
 
@@ -51,11 +54,11 @@ export function MemberSetupPage() {
       workspacesApi
         .checkSlugAvailable(workspaceId, slugToCheck)
         .then((available) => {
-          if (controller.signal.aborted) return
+          if (controller.signal.aborted || slugCheckAbort.current !== controller) return
           setSlugStatus(available ? "available" : "taken")
         })
         .catch(() => {
-          if (controller.signal.aborted) return
+          if (controller.signal.aborted || slugCheckAbort.current !== controller) return
           setSlugStatus("idle")
         })
     },
@@ -92,14 +95,17 @@ export function MemberSetupPage() {
     }
     return () => {
       if (slugCheckTimer.current) clearTimeout(slugCheckTimer.current)
+      slugCheckAbort.current?.abort()
     }
   }, [])
+
+  const trimmedSlug = slug.trim()
 
   const setupMutation = useMutation({
     mutationFn: () =>
       workspacesApi.completeMemberSetup(workspaceId!, {
         name: name || undefined,
-        slug: slug || undefined,
+        slug: trimmedSlug || undefined,
         timezone,
         locale,
       }),
@@ -110,7 +116,8 @@ export function MemberSetupPage() {
 
   if (!workspaceId) return null
 
-  const canSubmit = slugStatus !== "taken" && slugStatus !== "checking" && !setupMutation.isPending
+  const isSlugBlank = trimmedSlug.length === 0
+  const canSubmit = (isSlugBlank || (slugStatus !== "taken" && slugStatus !== "checking")) && !setupMutation.isPending
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background">

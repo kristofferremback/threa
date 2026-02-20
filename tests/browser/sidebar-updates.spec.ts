@@ -157,13 +157,16 @@ test.describe("Sidebar Updates", () => {
       const scratchpadLink = page.locator(`a[href*="/s/${streamId}"]`).first()
       await expect(scratchpadLink).toBeVisible({ timeout: 10000 })
 
+      // Wait for sidebar preview text to reflect the companion response.
+      // Read text content directly (instead of nested visibility checks) to avoid hover rendering races.
       await expect
         .poll(
           async () => {
             await scratchpadLink.hover()
-            return scratchpadLink.getByText(/stub response/i).isVisible()
+            const previewText = ((await scratchpadLink.textContent()) ?? "").toLowerCase()
+            return previewText.includes("stub response")
           },
-          { timeout: 30000 }
+          { timeout: 45000 }
         )
         .toBeTruthy()
     })

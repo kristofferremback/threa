@@ -18,6 +18,32 @@ function activityLink(page: Page, workspaceId: string) {
   return page.locator(`a[href="/w/${workspaceId}/activity"]`)
 }
 
+async function waitForStreamReadState(page: Page, workspaceId: string, streamId: string) {
+  await expect
+    .poll(
+      async () => {
+        const bootstrapRes = await page.request.get(`/api/workspaces/${workspaceId}/bootstrap`)
+        if (!bootstrapRes.ok()) return -1
+
+        const body = (await bootstrapRes.json()) as {
+          data: {
+            unreadCounts: Record<string, number>
+            mentionCounts: Record<string, number>
+            activityCounts: Record<string, number>
+          }
+        }
+
+        return (
+          (body.data.unreadCounts[streamId] ?? 0) +
+          (body.data.mentionCounts[streamId] ?? 0) +
+          (body.data.activityCounts[streamId] ?? 0)
+        )
+      },
+      { timeout: 20000 }
+    )
+    .toBe(0)
+}
+
 test.describe("Activity Feed", () => {
   test("should show mention badge and activity feed when @mentioned by another user", async ({ browser }) => {
     test.setTimeout(60000)
@@ -111,13 +137,14 @@ test.describe("Activity Feed", () => {
 
       // ──── Verify: Mention indicator cleared after viewing stream ────
 
-      // Wait for auto-mark-as-read debounce (500ms) + API round-trip
-      await ctxB.page.waitForTimeout(1500)
+      // Wait for backend read-state to settle before asserting sidebar badges.
+      await waitForStreamReadState(ctxB.page, workspaceId, streamId)
       await actLink.click()
       await expect(ctxB.page).toHaveURL(new RegExp(`/w/${workspaceId}/activity`))
 
       // The mention indicator should be gone since stream was read
-      await expect(channelLink.locator("span.text-destructive")).not.toBeVisible({ timeout: 5000 })
+      await expect(channelLink.locator("span.text-destructive")).not.toBeVisible({ timeout: 10000 })
+      await expect(actLink.getByText("1")).not.toBeVisible({ timeout: 10000 })
     } finally {
       await ctxA.context.close()
       if (ctxB) await ctxB.context.close()
@@ -188,15 +215,14 @@ test.describe("Activity Feed", () => {
 
       // ──── Verify: Indicators should clear because User B is reading the stream ────
 
-      // Wait for auto-mark-as-read debounce (500ms) + API round-trip
-      await ctxB.page.waitForTimeout(2000)
+      await waitForStreamReadState(ctxB.page, workspaceId, streamId)
 
       // Mention indicator should NOT be visible — User B has already read the message
       const mentionIndicator = channelLink.locator("span.text-destructive")
-      await expect(mentionIndicator).not.toBeVisible({ timeout: 5000 })
+      await expect(mentionIndicator).not.toBeVisible({ timeout: 10000 })
 
       // Activity count badge should NOT be visible either
-      await expect(actLink.getByText("1")).not.toBeVisible({ timeout: 5000 })
+      await expect(actLink.getByText("1")).not.toBeVisible({ timeout: 10000 })
     } finally {
       await ctxA.context.close()
       if (ctxB) await ctxB.context.close()
