@@ -45,10 +45,10 @@ test.describe("Thread Replies", () => {
 
     // Create a channel
     const channelName = `thread-reply-${testId}`
-    page.once("dialog", async (dialog) => {
-      await dialog.accept(channelName)
-    })
     await page.getByRole("button", { name: "+ New Channel" }).click()
+    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
+    await page.waitForTimeout(400)
+    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
     await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Send a parent message in the channel
@@ -98,10 +98,10 @@ test.describe("Thread Replies", () => {
 
     // Create a channel
     const channelName = `reply-count-${testId}`
-    page.once("dialog", async (dialog) => {
-      await dialog.accept(channelName)
-    })
     await page.getByRole("button", { name: "+ New Channel" }).click()
+    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
+    await page.waitForTimeout(400)
+    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
     await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Send a parent message
@@ -147,10 +147,10 @@ test.describe("Thread Replies", () => {
 
     // Create a channel
     const channelName = `multi-reply-${testId}`
-    page.once("dialog", async (dialog) => {
-      await dialog.accept(channelName)
-    })
     await page.getByRole("button", { name: "+ New Channel" }).click()
+    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
+    await page.waitForTimeout(400)
+    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
     await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Send a parent message
@@ -210,10 +210,10 @@ test.describe("Thread Replies", () => {
 
     // Create a channel
     const channelName = `reopen-thread-${testId}`
-    page.once("dialog", async (dialog) => {
-      await dialog.accept(channelName)
-    })
     await page.getByRole("button", { name: "+ New Channel" }).click()
+    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
+    await page.waitForTimeout(400)
+    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
     await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Send a parent message

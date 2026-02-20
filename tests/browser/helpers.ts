@@ -87,14 +87,15 @@ export function createDmDraftId(memberId: string): string {
 }
 
 /**
- * Create a channel via the dialog prompt and wait for it to load.
+ * Create a channel via the create channel modal and wait for it to load.
  * Switches to "All" view after creation so the channel appears in sidebar.
  */
 export async function createChannel(page: Page, channelName: string): Promise<void> {
-  page.once("dialog", async (dialog) => {
-    await dialog.accept(channelName)
-  })
   await page.getByRole("button", { name: "+ New Channel" }).click()
+  await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
+  // Wait for slug validation to clear (debounced availability check)
+  await page.waitForTimeout(400)
+  await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
   await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
   await switchToAllView(page)
   await expect(page.getByRole("link", { name: `#${channelName}` })).toBeVisible({ timeout: 5000 })

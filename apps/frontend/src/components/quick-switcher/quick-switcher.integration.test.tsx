@@ -51,6 +51,7 @@ const { mockNavigate, mockSearchState, mockWorkspaceBootstrap } = vi.hoisted(() 
 vi.mock("react-router-dom", () => ({
   useNavigate: () => mockNavigate,
   useParams: () => ({ workspaceId: "workspace_1" }),
+  useSearchParams: () => [new URLSearchParams(), vi.fn()],
   Link: ({
     to,
     children,
