@@ -227,6 +227,22 @@ describe("API E2E Tests", () => {
       expect(updated.contentMarkdown).toBe("Updated content")
     })
 
+    test("should not create edit event when content is unchanged", async () => {
+      const client = new TestClient()
+      await loginAs(client, testEmail("edit-noop"), "Edit Noop Test")
+      const workspace = await createWorkspace(client, `Edit Noop WS ${testRunId}`)
+      const scratchpad = await createScratchpad(client, workspace.id)
+      const message = await sendMessage(client, workspace.id, scratchpad.id, "Same content")
+
+      const updated = await updateMessage(client, workspace.id, message.id, "Same content")
+
+      expect(updated.contentMarkdown).toBe("Same content")
+      expect(updated.editedAt).toBeNull()
+
+      const editEvents = await listEvents(client, workspace.id, scratchpad.id, ["message_edited"])
+      expect(editEvents).toHaveLength(0)
+    })
+
     test("should delete message", async () => {
       const client = new TestClient()
       await loginAs(client, testEmail("delete"), "Delete Test")
