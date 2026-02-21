@@ -1,5 +1,5 @@
 import type { NavigateFunction } from "react-router-dom"
-import type { Stream, StreamMember, WorkspaceMember } from "@threa/types"
+import type { Stream, StreamMember, User } from "@threa/types"
 
 export interface QuickSwitcherItem {
   id: string
@@ -26,7 +26,7 @@ export interface ModeContext {
   closeDialog: () => void
   streams: Stream[]
   streamMemberships: StreamMember[]
-  members?: WorkspaceMember[]
+  members?: User[]
   currentMemberId?: string | null
   dmPeers?: Array<{ memberId: string; streamId: string }>
 }

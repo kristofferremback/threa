@@ -48,13 +48,13 @@ export function useSearchItems(context: ModeContext): ModeResult {
 
   const [addingFilter, setAddingFilter] = useState<FilterType | null>(null)
 
-  const members = useMemo(() => bootstrap?.members ?? [], [bootstrap?.members])
+  const members = useMemo(() => bootstrap?.users ?? bootstrap?.members ?? [], [bootstrap?.users, bootstrap?.members])
   const streams = useMemo(() => bootstrap?.streams ?? [], [bootstrap?.streams])
 
   // Parse filters from query string (single source of truth)
   const { filters: parsedFilters, text: searchText } = useMemo(() => parseSearchQuery(query), [query])
 
-  // Resolve slug to member ID (slugs live on WorkspaceMember, not User)
+  // Resolve slug to member ID (slugs live on workspace user records).
   const resolveUserSlug = useCallback(
     (slug: string): string | null => {
       const member = members.find((m) => m.slug === slug)

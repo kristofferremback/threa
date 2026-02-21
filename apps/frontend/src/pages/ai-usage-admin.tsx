@@ -439,14 +439,14 @@ export function AIUsageAdminPage() {
   const { data: usage, isLoading: usageLoading } = useAIUsage(workspaceId ?? "")
   const { data: budget, isLoading: budgetLoading } = useAIBudget(workspaceId ?? "")
 
-  // Build member name lookup map (memberId -> display name).
+  // Build workspace user name lookup map (userId -> display name).
   const memberNames = useMemo(() => {
     const map = new Map<string, string>()
-    for (const member of bootstrap?.members ?? []) {
-      map.set(member.id, member.name || member.email || member.slug)
+    for (const user of bootstrap?.users ?? bootstrap?.members ?? []) {
+      map.set(user.id, user.name || user.email || user.slug)
     }
     return map
-  }, [bootstrap?.members])
+  }, [bootstrap?.users, bootstrap?.members])
 
   // Get system usage from byOrigin data
   const systemCost = useMemo(() => {

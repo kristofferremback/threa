@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge"
 import { invitationsApi } from "@/api/invitations"
 import { workspaceKeys } from "@/hooks/use-workspaces"
 import { InviteDialog } from "./invite-dialog"
-import type { WorkspaceMember, WorkspaceInvitation } from "@threa/types"
+import type { User, WorkspaceInvitation } from "@threa/types"
 
 interface MembersTabProps {
   workspaceId: string
@@ -16,11 +16,12 @@ export function MembersTab({ workspaceId }: MembersTabProps) {
   const queryClient = useQueryClient()
 
   const bootstrapData = queryClient.getQueryData<{
-    members: WorkspaceMember[]
+    users?: User[]
+    members: User[]
     invitations?: WorkspaceInvitation[]
   }>(workspaceKeys.bootstrap(workspaceId))
 
-  const members = bootstrapData?.members ?? []
+  const members = bootstrapData?.users ?? bootstrapData?.members ?? []
 
   const invitationsQuery = useQuery({
     queryKey: ["invitations", workspaceId],

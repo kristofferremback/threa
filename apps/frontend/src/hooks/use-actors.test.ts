@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { createElement, type ReactNode } from "react"
 import { useActors } from "./use-actors"
 import { workspaceKeys } from "./use-workspaces"
-import type { WorkspaceBootstrap, WorkspaceMember, Persona } from "@threa/types"
+import type { WorkspaceBootstrap, User, Persona } from "@threa/types"
 
 function createTestWrapper(queryClient: QueryClient) {
   return function Wrapper({ children }: { children: ReactNode }) {
@@ -12,7 +12,7 @@ function createTestWrapper(queryClient: QueryClient) {
   }
 }
 
-function createMember(overrides: Partial<WorkspaceMember> = {}): WorkspaceMember {
+function createMember(overrides: Partial<User> = {}): User {
   return {
     id: "mem_123",
     workspaceId: "ws_123",
