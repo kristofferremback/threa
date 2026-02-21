@@ -47,7 +47,7 @@ export interface Workspace {
   updatedAt: string
 }
 
-export interface WorkspaceMember {
+export interface User {
   id: string
   workspaceId: string
   workosUserId: string
@@ -62,6 +62,9 @@ export interface WorkspaceMember {
   setupCompleted: boolean
   joinedAt: string
 }
+
+// Backward-compatible alias while the app migrates to "User" terminology.
+export type WorkspaceMember = User
 
 /**
  * Get the display URL for an avatar image.

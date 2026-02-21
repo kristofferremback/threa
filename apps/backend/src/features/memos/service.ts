@@ -4,7 +4,7 @@ import { StreamStateRepository } from "../streams"
 import { ConversationRepository } from "../conversations"
 import { MessageRepository, type Message } from "../messaging"
 import { OutboxRepository } from "../../lib/outbox"
-import { MemberRepository } from "../workspaces"
+import { UserRepository } from "../workspaces"
 import { MemoRepository, type Memo } from "./repository"
 import { PendingItemRepository, type PendingMemoItem } from "./pending-item-repository"
 import { MemoClassifier } from "./classifier"
@@ -166,7 +166,7 @@ export class MemoService implements MemoServiceLike {
 
       const authorTimezones = new Map<string, string | null>()
       if (authorIds.size > 0) {
-        const members = await MemberRepository.findByIds(client, Array.from(authorIds))
+        const members = await UserRepository.findByIds(client, Array.from(authorIds))
         for (const member of members) {
           authorTimezones.set(member.id, member.timezone)
         }

@@ -1,12 +1,14 @@
 import type { Request, Response, NextFunction } from "express"
 import type { Pool } from "pg"
-import { MemberRepository, type Member, WorkspaceRepository } from "../features/workspaces"
+import { UserRepository, type User, WorkspaceRepository } from "../features/workspaces"
 
 declare global {
   namespace Express {
     interface Request {
       workspaceId?: string
-      member?: Member
+      user?: User
+      // Backward-compatible alias while call sites migrate.
+      member?: User
     }
   }
 }
@@ -15,8 +17,8 @@ interface Dependencies {
   pool: Pool
 }
 
-export function createWorkspaceMemberMiddleware({ pool }: Dependencies) {
-  return async function workspaceMemberMiddleware(req: Request, res: Response, next: NextFunction) {
+export function createWorkspaceUserMiddleware({ pool }: Dependencies) {
+  return async function workspaceUserMiddleware(req: Request, res: Response, next: NextFunction) {
     const { workspaceId } = req.params
 
     if (!workspaceId) {
@@ -33,13 +35,17 @@ export function createWorkspaceMemberMiddleware({ pool }: Dependencies) {
       return res.status(404).json({ error: "Workspace not found" })
     }
 
-    const member = await MemberRepository.findByWorkosUserIdInWorkspace(pool, workspaceId, workosUserId)
-    if (!member) {
+    const user = await UserRepository.findByWorkosUserIdInWorkspace(pool, workspaceId, workosUserId)
+    if (!user) {
       return res.status(403).json({ error: "Not a member of this workspace" })
     }
 
     req.workspaceId = workspaceId
-    req.member = member
+    req.user = user
+    req.member = user
     next()
   }
 }
+
+// Backward-compatible alias while imports migrate.
+export const createWorkspaceMemberMiddleware = createWorkspaceUserMiddleware

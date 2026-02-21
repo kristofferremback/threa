@@ -29,7 +29,7 @@ export function MemberPicker({ workspaceId, currentMemberId, selectedMemberIds, 
     staleTime: Infinity,
   })
 
-  const workspaceMembers = wsBootstrap?.members ?? []
+  const workspaceMembers = wsBootstrap?.users ?? wsBootstrap?.members ?? []
   const selectedSet = useMemo(() => new Set(selectedMemberIds), [selectedMemberIds])
 
   // Members available to add: not current user, not already selected

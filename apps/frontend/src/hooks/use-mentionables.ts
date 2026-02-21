@@ -40,12 +40,13 @@ export function useMentionables() {
 
     // Build member mentionables from workspace-scoped member profile.
     const currentUserId = currentUser?.id
-    const users: Mentionable[] = bootstrap.members.map((member) => ({
-      id: member.id,
-      slug: member.slug,
-      name: member.name,
+    const workspaceUsers = bootstrap.users ?? bootstrap.members ?? []
+    const users: Mentionable[] = workspaceUsers.map((u) => ({
+      id: u.id,
+      slug: u.slug,
+      name: u.name,
       type: "user",
-      isCurrentUser: member.workosUserId === currentUserId,
+      isCurrentUser: u.workosUserId === currentUserId,
     }))
 
     // Sort users so current user is first

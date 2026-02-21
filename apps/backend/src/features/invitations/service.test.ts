@@ -2,7 +2,7 @@ import { describe, test, expect, spyOn, beforeEach, mock } from "bun:test"
 import type { PoolClient } from "pg"
 import { InvitationService } from "./service"
 import { InvitationRepository } from "./repository"
-import { WorkspaceRepository, MemberRepository } from "../workspaces"
+import { WorkspaceRepository, UserRepository } from "../workspaces"
 import { OutboxRepository } from "../../lib/outbox"
 import { logger } from "../../lib/logger"
 import * as db from "../../db"
@@ -110,8 +110,8 @@ describe("InvitationService.sendInvitations", () => {
 
   const mockLoggerWarn = spyOn(logger, "warn")
   const mockLoggerError = spyOn(logger, "error")
-  const mockFindById = spyOn(MemberRepository, "findById")
-  const mockFindMemberEmails = spyOn(WorkspaceRepository, "findMemberEmails")
+  const mockFindById = spyOn(UserRepository, "findById")
+  const mockFindUserEmails = spyOn(WorkspaceRepository, "findUserEmails")
   const mockFindPendingByEmailsAndWorkspace = spyOn(InvitationRepository, "findPendingByEmailsAndWorkspace")
   const mockInsertInvitation = spyOn(InvitationRepository, "insert")
   const mockInsertOutbox = spyOn(OutboxRepository, "insert")
@@ -124,7 +124,7 @@ describe("InvitationService.sendInvitations", () => {
     mockLoggerWarn.mockReset()
     mockLoggerError.mockReset()
     mockFindById.mockReset().mockResolvedValue({ id: "member_1", workosUserId: "workos_user_1" } as never)
-    mockFindMemberEmails.mockReset().mockResolvedValue(new Set())
+    mockFindUserEmails.mockReset().mockResolvedValue(new Set())
     mockFindPendingByEmailsAndWorkspace.mockReset().mockResolvedValue([])
     mockInsertInvitation
       .mockReset()

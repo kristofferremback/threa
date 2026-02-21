@@ -1,7 +1,7 @@
 import type { Querier } from "../../db"
 import { sql } from "../../db"
 
-interface MemberRow {
+interface UserRow {
   id: string
   workspace_id: string
   workos_user_id: string
@@ -17,7 +17,7 @@ interface MemberRow {
   joined_at: Date
 }
 
-export interface Member {
+export interface User {
   id: string
   workspaceId: string
   workosUserId: string
@@ -33,7 +33,7 @@ export interface Member {
   joinedAt: Date
 }
 
-export interface InsertMemberParams {
+export interface InsertUserParams {
   id: string
   workspaceId: string
   workosUserId: string
@@ -48,13 +48,13 @@ const SELECT_FIELDS = `
   wm.name, wm.description, wm.avatar_url, wm.timezone, wm.locale, wm.setup_completed, wm.joined_at
 `
 
-function mapRowToMember(row: MemberRow): Member {
+function mapRowToUser(row: UserRow): User {
   return {
     id: row.id,
     workspaceId: row.workspace_id,
     workosUserId: row.workos_user_id,
     email: row.email,
-    role: row.role as Member["role"],
+    role: row.role as User["role"],
     slug: row.slug,
     name: row.name,
     description: row.description,
@@ -66,74 +66,74 @@ function mapRowToMember(row: MemberRow): Member {
   }
 }
 
-export const MemberRepository = {
-  async findById(db: Querier, id: string): Promise<Member | null> {
-    const result = await db.query<MemberRow>(sql`
+export const UserRepository = {
+  async findById(db: Querier, id: string): Promise<User | null> {
+    const result = await db.query<UserRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS)}
       FROM workspace_members wm
       WHERE wm.id = ${id}
     `)
-    return result.rows[0] ? mapRowToMember(result.rows[0]) : null
+    return result.rows[0] ? mapRowToUser(result.rows[0]) : null
   },
 
-  async findByWorkosUserIdInWorkspace(db: Querier, workspaceId: string, workosUserId: string): Promise<Member | null> {
-    const result = await db.query<MemberRow>(sql`
+  async findByWorkosUserIdInWorkspace(db: Querier, workspaceId: string, workosUserId: string): Promise<User | null> {
+    const result = await db.query<UserRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS)}
       FROM workspace_members wm
       WHERE wm.workspace_id = ${workspaceId} AND wm.workos_user_id = ${workosUserId}
     `)
-    return result.rows[0] ? mapRowToMember(result.rows[0]) : null
+    return result.rows[0] ? mapRowToUser(result.rows[0]) : null
   },
 
-  async findBySlug(db: Querier, workspaceId: string, slug: string): Promise<Member | null> {
-    const result = await db.query<MemberRow>(sql`
+  async findBySlug(db: Querier, workspaceId: string, slug: string): Promise<User | null> {
+    const result = await db.query<UserRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS)}
       FROM workspace_members wm
       WHERE wm.workspace_id = ${workspaceId} AND wm.slug = ${slug}
     `)
-    return result.rows[0] ? mapRowToMember(result.rows[0]) : null
+    return result.rows[0] ? mapRowToUser(result.rows[0]) : null
   },
 
-  async findBySlugs(db: Querier, workspaceId: string, slugs: string[]): Promise<Member[]> {
+  async findBySlugs(db: Querier, workspaceId: string, slugs: string[]): Promise<User[]> {
     if (slugs.length === 0) return []
 
-    const result = await db.query<MemberRow>(sql`
+    const result = await db.query<UserRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS)}
       FROM workspace_members wm
       WHERE wm.workspace_id = ${workspaceId} AND wm.slug = ANY(${slugs})
     `)
-    return result.rows.map(mapRowToMember)
+    return result.rows.map(mapRowToUser)
   },
 
-  async findByIds(db: Querier, ids: string[]): Promise<Member[]> {
+  async findByIds(db: Querier, ids: string[]): Promise<User[]> {
     if (ids.length === 0) return []
 
-    const result = await db.query<MemberRow>(sql`
+    const result = await db.query<UserRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS)}
       FROM workspace_members wm
       WHERE wm.id = ANY(${ids})
     `)
-    return result.rows.map(mapRowToMember)
+    return result.rows.map(mapRowToUser)
   },
 
-  async listByWorkspace(db: Querier, workspaceId: string): Promise<Member[]> {
-    const result = await db.query<MemberRow>(sql`
+  async listByWorkspace(db: Querier, workspaceId: string): Promise<User[]> {
+    const result = await db.query<UserRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS)}
       FROM workspace_members wm
       WHERE wm.workspace_id = ${workspaceId}
       ORDER BY wm.joined_at
     `)
-    return result.rows.map(mapRowToMember)
+    return result.rows.map(mapRowToUser)
   },
 
-  async insert(db: Querier, params: InsertMemberParams): Promise<Member> {
+  async insert(db: Querier, params: InsertUserParams): Promise<User> {
     await db.query(sql`
       INSERT INTO workspace_members (id, workspace_id, workos_user_id, email, role, slug, name)
       VALUES (${params.id}, ${params.workspaceId}, ${params.workosUserId}, ${params.email}, ${params.role}, ${params.slug}, ${params.name})
     `)
-    const member = await this.findById(db, params.id)
-    if (!member) throw new Error("Failed to insert member")
-    return member
+    const user = await this.findById(db, params.id)
+    if (!user) throw new Error("Failed to insert user")
+    return user
   },
 
   async remove(db: Querier, workspaceId: string, memberId: string): Promise<void> {
@@ -181,13 +181,13 @@ export const MemberRepository = {
   },
 
   /**
-   * Search for members in a workspace by name, email, or slug.
+   * Search for users in a workspace by name, email, or slug.
    * Uses pg_trgm trigram similarity for fuzzy matching (handles typos),
    * combined with ILIKE for exact substring matches.
    */
-  async searchByNameOrSlug(db: Querier, workspaceId: string, query: string, limit: number): Promise<Member[]> {
+  async searchByNameOrSlug(db: Querier, workspaceId: string, query: string, limit: number): Promise<User[]> {
     const pattern = `%${query}%`
-    const result = await db.query<MemberRow>(sql`
+    const result = await db.query<UserRow>(sql`
       SELECT DISTINCT ${sql.raw(SELECT_FIELDS)},
         GREATEST(
           similarity(wm.name, ${query}),
@@ -207,6 +207,11 @@ export const MemberRepository = {
       ORDER BY sim_score DESC, wm.name
       LIMIT ${limit}
     `)
-    return result.rows.map(mapRowToMember)
+    return result.rows.map(mapRowToUser)
   },
 }
+
+// Backward-compatible aliases while call sites migrate.
+export const MemberRepository = UserRepository
+export type Member = User
+export type InsertMemberParams = InsertUserParams

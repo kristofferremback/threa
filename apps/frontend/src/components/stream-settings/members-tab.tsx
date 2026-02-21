@@ -58,7 +58,7 @@ export function MembersTab({ workspaceId, streamId, currentMemberId }: MembersTa
   const streamType = bootstrap?.stream?.type
   const canAddMembers = streamType === StreamTypes.CHANNEL || streamType === StreamTypes.THREAD
   const streamMembers = bootstrap?.members ?? []
-  const workspaceMembers = wsBootstrap?.members ?? []
+  const workspaceMembers = wsBootstrap?.users ?? wsBootstrap?.members ?? []
   const currentWorkspaceMember = workspaceMembers.find((m) => m.id === currentMemberId)
   const canManageMembers = currentWorkspaceMember?.role === "owner" || currentWorkspaceMember?.role === "admin"
 

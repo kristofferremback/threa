@@ -480,7 +480,7 @@ export async function sendMessageWithAttachments(
   return data.message
 }
 
-export interface WorkspaceMember {
+export interface WorkspaceUser {
   id: string
   workspaceId: string
   workosUserId: string
@@ -488,6 +488,8 @@ export interface WorkspaceMember {
   name: string
   role: string
 }
+
+export type WorkspaceMember = WorkspaceUser
 
 export interface StreamMember {
   streamId: string
@@ -498,14 +500,20 @@ export async function joinWorkspace(
   client: TestClient,
   workspaceId: string,
   role: "member" | "admin" = "member"
-): Promise<WorkspaceMember> {
-  const { status, data } = await client.post<{ member: WorkspaceMember }>(`/api/dev/workspaces/${workspaceId}/join`, {
-    role,
-  })
+): Promise<WorkspaceUser> {
+  const { status, data } = await client.post<{ member?: WorkspaceUser; user?: WorkspaceUser }>(
+    `/api/dev/workspaces/${workspaceId}/join`,
+    {
+      role,
+    }
+  )
   if (status !== 200) {
     throw new Error(`Join workspace failed: ${JSON.stringify(data)}`)
   }
-  return data.member
+  if (!data.user && !data.member) {
+    throw new Error(`Join workspace returned no user payload: ${JSON.stringify(data)}`)
+  }
+  return data.user ?? data.member!
 }
 
 export async function joinStream(client: TestClient, workspaceId: string, streamId: string): Promise<StreamMember> {
@@ -573,7 +581,8 @@ export interface EmojiEntry {
 
 export interface WorkspaceBootstrapData {
   workspace: Workspace
-  members: WorkspaceMember[]
+  users: WorkspaceUser[]
+  members: WorkspaceUser[]
   streams: Stream[]
   streamMemberships: StreamMember[]
   personas: Persona[]
@@ -599,7 +608,8 @@ export async function getWorkspaceBootstrap(client: TestClient, workspaceId: str
  */
 export async function getMemberId(client: TestClient, workspaceId: string, workosUserId: string): Promise<string> {
   const bootstrap = await getWorkspaceBootstrap(client, workspaceId)
-  const member = bootstrap.members.find((m) => m.workosUserId === workosUserId)
+  const users = bootstrap.users.length > 0 ? bootstrap.users : bootstrap.members
+  const member = users.find((u) => u.workosUserId === workosUserId)
   if (!member) {
     throw new Error(`Member not found for WorkOS user ${workosUserId} in workspace ${workspaceId}`)
   }

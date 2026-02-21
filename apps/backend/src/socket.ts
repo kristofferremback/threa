@@ -4,7 +4,7 @@ import type { AuthService } from "./auth/auth-service"
 import type { StreamService } from "./features/streams"
 import type { UserSocketRegistry } from "./lib/user-socket-registry"
 import { AgentSessionRepository } from "./features/agents"
-import { MemberRepository } from "./features/workspaces"
+import { UserRepository } from "./features/workspaces"
 import { HttpError } from "./lib/errors"
 import { logger } from "./lib/logger"
 import { wsConnectionsActive, wsConnectionDuration, wsMessagesTotal } from "./lib/observability"
@@ -111,7 +111,7 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
       const workspaceMatch = room.match(/^ws:([^:]+)$/)
       if (workspaceMatch) {
         const wsId = workspaceMatch[1]
-        const member = await MemberRepository.findByWorkosUserIdInWorkspace(pool, wsId, workosUserId)
+        const member = await UserRepository.findByWorkosUserIdInWorkspace(pool, wsId, workosUserId)
         if (!member) {
           socket.emit("error", { message: "Not authorized to join this workspace" })
           wsMessagesTotal.inc({ workspace_id: wsId, direction: "sent", event_type: "error", room_pattern: roomPattern })
@@ -139,7 +139,7 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
       if (streamMatch) {
         const [, wsId, streamId] = streamMatch
         // Resolve user -> member for stream access validation
-        const member = await MemberRepository.findByWorkosUserIdInWorkspace(pool, wsId, workosUserId)
+        const member = await UserRepository.findByWorkosUserIdInWorkspace(pool, wsId, workosUserId)
         if (!member) {
           socket.emit("error", { message: "Not authorized to join this stream" })
           wsMessagesTotal.inc({ workspace_id: wsId, direction: "sent", event_type: "error", room_pattern: roomPattern })
@@ -181,7 +181,7 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
           return
         }
         // Resolve user -> member for stream access validation
-        const member = await MemberRepository.findByWorkosUserIdInWorkspace(pool, wsId, workosUserId)
+        const member = await UserRepository.findByWorkosUserIdInWorkspace(pool, wsId, workosUserId)
         if (!member) {
           socket.emit("error", { message: "Not authorized to join this session" })
           wsMessagesTotal.inc({ workspace_id: wsId, direction: "sent", event_type: "error", room_pattern: roomPattern })

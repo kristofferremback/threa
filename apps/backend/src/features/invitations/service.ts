@@ -2,7 +2,7 @@ import { Pool } from "pg"
 import { withTransaction, type Querier } from "../../db"
 import { InvitationRepository, type Invitation } from "./repository"
 import { WorkspaceRepository, type WorkspaceService } from "../workspaces"
-import { MemberRepository } from "../workspaces"
+import { UserRepository } from "../workspaces"
 import { OutboxRepository } from "../../lib/outbox"
 import { invitationId } from "../../lib/id"
 import { logger } from "../../lib/logger"
@@ -56,11 +56,11 @@ export class InvitationService {
     const orgId = await this.ensureWorkosOrganization(workspaceId)
 
     // Look up the inviter's WorkOS user ID for WorkOS API
-    const inviterMember = await MemberRepository.findById(this.pool, invitedBy)
+    const inviterMember = await UserRepository.findById(this.pool, invitedBy)
     const inviterWorkosUserId = inviterMember?.workosUserId ?? undefined
 
     // Batch-fetch: existing members + pending invitations
-    const existingMemberEmails = await WorkspaceRepository.findMemberEmails(this.pool, workspaceId, emails)
+    const existingMemberEmails = await WorkspaceRepository.findUserEmails(this.pool, workspaceId, emails)
 
     const pendingInvitations = await InvitationRepository.findPendingByEmailsAndWorkspace(
       this.pool,

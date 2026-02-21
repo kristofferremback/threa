@@ -16,7 +16,7 @@ import {
   isUniqueViolation,
 } from "../../lib/errors"
 import { formatParticipantNames } from "./display-name"
-import { MemberRepository } from "../workspaces"
+import { UserRepository } from "../workspaces"
 import {
   StreamTypes,
   Visibilities,
@@ -283,7 +283,7 @@ export class StreamService {
     const uniquenessKey = buildDmUniquenessKey(memberAId, memberBId)
 
     return withTransaction(this.pool, async (client) => {
-      const members = await MemberRepository.findByIds(client, [memberAId, memberBId])
+      const members = await UserRepository.findByIds(client, [memberAId, memberBId])
       const workspaceMemberIds = new Set(
         members.filter((member) => member.workspaceId === params.workspaceId).map((member) => member.id)
       )
@@ -424,7 +424,7 @@ export class StreamService {
       const additionalMemberIds = (params.memberIds ?? []).filter((mid) => mid !== params.createdBy)
       if (additionalMemberIds.length > 0) {
         // Validate members belong to this workspace (INV-20: batch lookup)
-        const members = await MemberRepository.findByIds(client, additionalMemberIds)
+        const members = await UserRepository.findByIds(client, additionalMemberIds)
         const validMemberIds = members.filter((m) => m.workspaceId === params.workspaceId).map((m) => m.id)
 
         // INV-11: warn on invalid member IDs rather than silently dropping
@@ -759,7 +759,7 @@ export class StreamService {
       }
 
       // Verify the target member belongs to this workspace
-      const member = await MemberRepository.findById(client, memberId)
+      const member = await UserRepository.findById(client, memberId)
       if (!member || member.workspaceId !== workspaceId) {
         throw new HttpError("Member not found in this workspace", { status: 404, code: "MEMBER_NOT_FOUND" })
       }

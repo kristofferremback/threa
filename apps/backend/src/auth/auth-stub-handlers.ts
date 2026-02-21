@@ -83,21 +83,21 @@ export function createAuthStubHandlers(deps: Dependencies): AuthStubHandlers {
     }
 
     const name = [authUser.firstName, authUser.lastName].filter(Boolean).join(" ") || authUser.email
-    const member = await workspaceService.addMember(workspaceId, {
+    const user = await workspaceService.addUser(workspaceId, {
       workosUserId,
       email: authUser.email,
       name,
       role: role || "member",
     })
-    res.json({ member })
+    res.json({ user })
   }
 
   const handleStreamJoin: RequestHandler = async (req, res) => {
-    const memberId = req.member!.id
+    const userId = req.user!.id
     const workspaceId = req.workspaceId!
     const { streamId } = req.params
 
-    const member = await streamService.addMember(streamId, memberId, workspaceId, memberId)
+    const member = await streamService.addMember(streamId, userId, workspaceId, userId)
     res.json({ member })
   }
 

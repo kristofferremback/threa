@@ -9,7 +9,7 @@ interface MockResponse {
 
 function createReq(role?: "owner" | "admin" | "member"): Request {
   return {
-    member: role
+    user: role
       ? ({
           id: "member_1",
           workspaceId: "ws_1",
@@ -21,7 +21,7 @@ function createReq(role?: "owner" | "admin" | "member"): Request {
           name: role,
           email: `${role}@example.com`,
           joinedAt: new Date(),
-        } as Request["member"])
+        } as Request["user"])
       : undefined,
   } as Request
 }
@@ -67,8 +67,8 @@ describe("requireRole", () => {
     expect(memberResult.res.statusCode).toBe(403)
     expect(memberResult.res.body).toEqual({ error: "Insufficient role" })
 
-    const noMemberResult = run(createReq())
-    expect(noMemberResult.nextCalled).toBe(false)
-    expect(noMemberResult.res.statusCode).toBe(401)
+    const noUserResult = run(createReq())
+    expect(noUserResult.nextCalled).toBe(false)
+    expect(noUserResult.res.statusCode).toBe(401)
   })
 })

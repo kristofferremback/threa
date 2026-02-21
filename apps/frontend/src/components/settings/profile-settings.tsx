@@ -8,18 +8,19 @@ import { useAuth } from "@/auth"
 import { useWorkspaceBootstrap, useUpdateProfile } from "@/hooks"
 import { AvatarSection } from "./avatar-section"
 import { toast } from "sonner"
-import type { WorkspaceMember } from "@threa/types"
+import type { User } from "@threa/types"
 
-function useCurrentMember(workspaceId: string): WorkspaceMember | null {
+function useCurrentUser(workspaceId: string): User | null {
   const { user } = useAuth()
   const { data: bootstrap } = useWorkspaceBootstrap(workspaceId)
   if (!user || !bootstrap) return null
-  return bootstrap.members.find((m) => m.workosUserId === user.id) ?? null
+  const workspaceUsers = bootstrap.users ?? bootstrap.members ?? []
+  return workspaceUsers.find((u) => u.workosUserId === user.id) ?? null
 }
 
 export function ProfileSettings() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
-  const member = useCurrentMember(workspaceId!)
+  const member = useCurrentUser(workspaceId!)
   const updateProfile = useUpdateProfile(workspaceId!)
 
   const [name, setName] = useState<string | null>(null)

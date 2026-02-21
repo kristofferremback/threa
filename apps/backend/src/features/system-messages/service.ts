@@ -2,7 +2,7 @@ import type { Pool } from "pg"
 import { StreamRepository, type Stream } from "../streams"
 import { InvitationRepository } from "../invitations"
 import type { BudgetAlertOutboxPayload, InvitationAcceptedOutboxPayload } from "../../lib/outbox"
-import { MemberRepository } from "../workspaces"
+import { UserRepository } from "../workspaces"
 import { StreamTypes, AuthorTypes } from "@threa/types"
 import type { AuthorType } from "@threa/types"
 import type { Message } from "../messaging"
@@ -76,7 +76,7 @@ export class SystemMessageService {
   }
 
   async notifyOwners(workspaceId: string, contentMarkdown: string): Promise<void> {
-    const allMembers = await MemberRepository.listByWorkspace(this.pool, workspaceId)
+    const allMembers = await UserRepository.listByWorkspace(this.pool, workspaceId)
     const members = allMembers.filter((m) => m.role === "owner")
 
     const existingStreams = await StreamRepository.list(this.pool, workspaceId, {
