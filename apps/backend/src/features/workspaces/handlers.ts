@@ -54,8 +54,8 @@ export function createWorkspaceHandlers({
   return {
     async list(req: Request, res: Response) {
       // Pre-workspace route: uses userId (no member context yet)
-      const userId = req.userId!
-      const workspaces = await workspaceService.getWorkspacesByUserId(userId)
+      const workosUserId = req.userId!
+      const workspaces = await workspaceService.getWorkspacesByWorkosUserId(workosUserId)
       res.json({ workspaces })
     },
 
@@ -72,7 +72,8 @@ export function createWorkspaceHandlers({
 
     async create(req: Request, res: Response) {
       // Pre-workspace route: uses userId (no member context yet)
-      const userId = req.userId!
+      const workosUserId = req.userId!
+      const authUser = req.authUser
 
       const result = createWorkspaceSchema.safeParse(req.body)
       if (!result.success) {
@@ -82,9 +83,16 @@ export function createWorkspaceHandlers({
         })
       }
 
+      if (!authUser) {
+        return res.status(401).json({ error: "Not authenticated" })
+      }
+
+      const memberName = [authUser.firstName, authUser.lastName].filter(Boolean).join(" ") || authUser.email
       const workspace = await workspaceService.createWorkspace({
         name: result.data.name,
-        createdBy: userId,
+        workosUserId,
+        email: authUser.email,
+        memberName,
       })
 
       res.status(201).json({ workspace })
@@ -117,13 +125,10 @@ export function createWorkspaceHandlers({
       // Resolve DM display names — viewer-dependent, so computed at bootstrap time
       const resolvedStreams = await streamService.resolveDmDisplayNames(streams, members, memberId)
 
-      const [streamMemberships, users] = await Promise.all([
-        streamService.getMembershipsBatch(
-          resolvedStreams.map((s) => s.id),
-          memberId
-        ),
-        workspaceService.getUsersForMembers(members),
-      ])
+      const streamMemberships = await streamService.getMembershipsBatch(
+        resolvedStreams.map((s) => s.id),
+        memberId
+      )
 
       // Calculate unread counts for all streams based on memberships
       const [unreadCountsMap, activityCounts] = await Promise.all([
@@ -175,7 +180,6 @@ export function createWorkspaceHandlers({
           members,
           streams: resolvedStreams,
           streamMemberships,
-          users,
           personas,
           emojis: getEmojiList(),
           emojiWeights,

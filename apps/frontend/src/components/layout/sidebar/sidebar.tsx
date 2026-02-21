@@ -47,7 +47,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   const { openCreateChannel } = useCreateChannel()
   const { user } = useAuth()
   const navigate = useNavigate()
-  const currentMember = bootstrap?.members.find((m) => m.userId === user?.id) ?? null
+  const currentMember = bootstrap?.members.find((m) => m.workosUserId === user?.id) ?? null
 
   const draftCount = allDrafts.length
   const isDraftsPage = splat === "drafts" || window.location.pathname.endsWith("/drafts")

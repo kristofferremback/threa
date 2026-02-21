@@ -14,7 +14,6 @@ import type {
   Workspace,
   WorkspaceMember,
   WorkspaceInvitation,
-  User,
   Persona,
 } from "./domain"
 import type { UserPreferences } from "./preferences"
@@ -157,7 +156,6 @@ export interface WorkspaceBootstrap {
   streams: StreamWithPreview[]
   streamMemberships: StreamMember[]
   dmPeers: Array<{ memberId: string; streamId: string }>
-  users: User[]
   personas: Persona[]
   emojis: EmojiEntry[]
   emojiWeights: Record<string, number>

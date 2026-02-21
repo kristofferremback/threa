@@ -3,7 +3,6 @@ import { StreamRepository, type Stream } from "../streams"
 import { InvitationRepository } from "../invitations"
 import type { BudgetAlertOutboxPayload, InvitationAcceptedOutboxPayload } from "../../lib/outbox"
 import { MemberRepository } from "../workspaces"
-import { UserRepository } from "../../auth/user-repository"
 import { StreamTypes, AuthorTypes } from "@threa/types"
 import type { AuthorType } from "@threa/types"
 import type { Message } from "../messaging"
@@ -62,7 +61,7 @@ export class SystemMessageService {
   }
 
   async sendInvitationAccepted(payload: InvitationAcceptedOutboxPayload): Promise<void> {
-    const { workspaceId, invitationId, userId } = payload
+    const { workspaceId, invitationId, memberName } = payload
 
     const invitation = await InvitationRepository.findById(this.pool, invitationId)
     if (!invitation) {
@@ -70,8 +69,7 @@ export class SystemMessageService {
       return
     }
 
-    const user = await UserRepository.findById(this.pool, userId)
-    const name = user?.name || invitation.email
+    const name = memberName || invitation.email
 
     const content = `**${name}** accepted your invitation and joined the workspace.`
     await this.notifyMember(workspaceId, invitation.invitedBy, content)

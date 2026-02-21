@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import { getAvatarUrl } from "@threa/types"
 import { workspaceKeys } from "./use-workspaces"
 import { useWorkspaceEmoji } from "./use-workspace-emoji"
-import type { User, Persona, WorkspaceBootstrap, WorkspaceMember, AuthorType } from "@threa/types"
+import type { Persona, WorkspaceBootstrap, WorkspaceMember, AuthorType } from "@threa/types"
 
 interface ActorAvatarInfo {
   fallback: string
@@ -17,7 +17,6 @@ interface ActorLookup {
   /** Returns avatar info including fallback text and persona slug (for SVG icon support) */
   getActorAvatar: (actorId: string | null, actorType: AuthorType | null) => ActorAvatarInfo
   getMember: (memberId: string) => WorkspaceMember | undefined
-  getUser: (userId: string) => User | undefined
   getPersona: (personaId: string) => Persona | undefined
 }
 
@@ -46,14 +45,6 @@ export function useActors(workspaceId: string): ActorLookup {
     (memberId: string): WorkspaceMember | undefined => {
       const bootstrap = getBootstrapData()
       return bootstrap?.members?.find((m) => m.id === memberId)
-    },
-    [getBootstrapData]
-  )
-
-  const getUser = useCallback(
-    (userId: string): User | undefined => {
-      const bootstrap = getBootstrapData()
-      return bootstrap?.users?.find((u) => u.id === userId)
     },
     [getBootstrapData]
   )
@@ -152,9 +143,8 @@ export function useActors(workspaceId: string): ActorLookup {
       getActorInitials,
       getActorAvatar,
       getMember,
-      getUser,
       getPersona,
     }),
-    [getActorName, getActorInitials, getActorAvatar, getMember, getUser, getPersona]
+    [getActorName, getActorInitials, getActorAvatar, getMember, getPersona]
   )
 }

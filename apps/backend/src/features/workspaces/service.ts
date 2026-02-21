@@ -5,7 +5,6 @@ import { MemberRepository, Member } from "./member-repository"
 import { OutboxRepository } from "../../lib/outbox"
 import { StreamRepository, StreamMemberRepository } from "../streams"
 import { EmojiUsageRepository } from "../emoji"
-import { UserRepository, User } from "../../auth/user-repository"
 import { PersonaRepository, type Persona } from "../agents"
 import { workspaceId, memberId as generateMemberId, streamId, avatarUploadId } from "../../lib/id"
 import { generateSlug, generateUniqueSlug } from "../../lib/slug"
@@ -24,7 +23,10 @@ function deriveSlugFromEmail(email: string): string {
 
 export interface CreateWorkspaceParams {
   name: string
-  createdBy: string
+  workosUserId: string
+  email: string
+  memberName: string
+  setupCompleted?: boolean
 }
 
 export class WorkspaceService {
@@ -48,53 +50,83 @@ export class WorkspaceService {
     return WorkspaceRepository.findBySlug(this.pool, slug)
   }
 
-  async getWorkspacesByUserId(userId: string): Promise<Workspace[]> {
-    return WorkspaceRepository.list(this.pool, { userId })
+  async getWorkspacesByWorkosUserId(workosUserId: string): Promise<Workspace[]> {
+    return WorkspaceRepository.list(this.pool, { workosUserId })
   }
 
   async createWorkspace(params: CreateWorkspaceParams): Promise<Workspace> {
     return withTransaction(this.pool, async (client) => {
       const id = workspaceId()
+      const ownerMemberId = generateMemberId()
       const slug = await generateUniqueSlug(params.name, (slug) => WorkspaceRepository.slugExists(client, slug))
 
       const ws = await WorkspaceRepository.insert(client, {
         id,
         name: params.name,
         slug,
-        createdBy: params.createdBy,
+        createdBy: ownerMemberId,
       })
 
       await this.createMemberInTransaction(client, {
+        id: ownerMemberId,
         workspaceId: id,
-        userId: params.createdBy,
+        workosUserId: params.workosUserId,
+        email: params.email,
+        name: params.memberName,
         role: "owner",
+        setupCompleted: params.setupCompleted,
       })
 
       return ws
     })
   }
 
-  async addMember(wsId: string, userId: string, role: WorkspaceMember["role"] = "member"): Promise<WorkspaceMember> {
+  async addMember(
+    wsId: string,
+    params: {
+      workosUserId: string
+      email: string
+      name: string
+      role?: WorkspaceMember["role"]
+      setupCompleted?: boolean
+    }
+  ): Promise<WorkspaceMember> {
     return withTransaction(this.pool, async (client) => {
-      return this.createMemberInTransaction(client, { workspaceId: wsId, userId, role })
+      return this.createMemberInTransaction(client, {
+        workspaceId: wsId,
+        workosUserId: params.workosUserId,
+        email: params.email,
+        name: params.name,
+        role: params.role ?? "member",
+        setupCompleted: params.setupCompleted,
+      })
     })
   }
 
   async createMemberInTransaction(
     client: Querier,
-    params: { workspaceId: string; userId: string; role: WorkspaceMember["role"]; setupCompleted?: boolean }
+    params: {
+      id?: string
+      workspaceId: string
+      workosUserId: string
+      email: string
+      name: string
+      role: WorkspaceMember["role"]
+      setupCompleted?: boolean
+    }
   ): Promise<WorkspaceMember> {
-    const user = await UserRepository.findById(client, params.userId)
-    const memberSlug = user
-      ? await generateUniqueSlug(user.name, (s) => WorkspaceRepository.memberSlugExists(client, params.workspaceId, s))
-      : `member-${generateMemberId().slice(7, 15)}`
+    const normalizedEmail = params.email.trim().toLowerCase()
+    const memberSlug = await generateUniqueSlug(params.name, (s) =>
+      WorkspaceRepository.memberSlugExists(client, params.workspaceId, s)
+    )
 
     const m = await WorkspaceRepository.addMember(client, {
-      id: generateMemberId(),
+      id: params.id ?? generateMemberId(),
       workspaceId: params.workspaceId,
-      userId: params.userId,
+      workosUserId: params.workosUserId,
+      email: normalizedEmail,
       slug: memberSlug,
-      name: user?.name ?? "",
+      name: params.name,
       role: params.role,
       setupCompleted: params.setupCompleted,
     })
@@ -138,14 +170,8 @@ export class WorkspaceService {
     return WorkspaceRepository.listMembers(this.pool, workspaceId)
   }
 
-  async isMember(workspaceId: string, userId: string): Promise<boolean> {
-    return WorkspaceRepository.isMember(this.pool, workspaceId, userId)
-  }
-
-  async getUsersForMembers(members: WorkspaceMember[]): Promise<User[]> {
-    if (members.length === 0) return []
-    const userIds = members.map((m) => m.userId)
-    return UserRepository.findByIds(this.pool, userIds)
+  async isMember(workspaceId: string, workosUserId: string): Promise<boolean> {
+    return WorkspaceRepository.isMember(this.pool, workspaceId, workosUserId)
   }
 
   async getPersonasForWorkspace(workspaceId: string): Promise<Persona[]> {
@@ -167,7 +193,7 @@ export class WorkspaceService {
     params: { name?: string; slug?: string; timezone: string; locale: string }
   ): Promise<WorkspaceMember> {
     // Phase 1: Fast reads
-    const { member, user, orgId } = await withClient(this.pool, async (client) => {
+    const { member, orgId } = await withClient(this.pool, async (client) => {
       const member = await MemberRepository.findById(client, memberId)
       if (!member || member.workspaceId !== workspaceId) {
         throw new HttpError("Member not found", { status: 404, code: "MEMBER_NOT_FOUND" })
@@ -177,15 +203,12 @@ export class WorkspaceService {
         throw new HttpError("Member setup already completed", { status: 400, code: "SETUP_ALREADY_COMPLETED" })
       }
 
-      const user = await UserRepository.findById(client, member.userId)
-      if (!user) throw new HttpError("User not found", { status: 404, code: "USER_NOT_FOUND" })
-
       const orgId = await WorkspaceRepository.getWorkosOrganizationId(client, workspaceId)
-      return { member, user, orgId }
+      return { member, orgId }
     })
 
     // Phase 2: External API call — no DB connection held
-    const preferEmailSlug = await this.shouldPreferEmailSlug(orgId, user)
+    const preferEmailSlug = await this.shouldPreferEmailSlug(orgId, member.email)
 
     // Phase 3: Transaction with retry on slug collision.
     // generateUniqueSlug checks availability within the transaction, but a concurrent
@@ -204,11 +227,11 @@ export class WorkspaceService {
           let slug: string
 
           if (preferEmailSlug) {
-            slug = deriveSlugFromEmail(user.email)
+            slug = deriveSlugFromEmail(member.email)
           } else if (params.slug) {
             slug = generateSlug(params.slug)
           } else {
-            slug = await generateUniqueSlug(user.name, (s) =>
+            slug = await generateUniqueSlug(member.name, (s) =>
               WorkspaceRepository.memberSlugExists(client, workspaceId, s)
             )
           }
@@ -339,13 +362,13 @@ export class WorkspaceService {
     return updated
   }
 
-  private async shouldPreferEmailSlug(orgId: string | null, user: User): Promise<boolean> {
+  private async shouldPreferEmailSlug(orgId: string | null, email: string): Promise<boolean> {
     if (!this.workosOrgService || !orgId) return false
 
     const org = await this.workosOrgService.getOrganization(orgId)
     if (!org || org.domains.length === 0) return false
 
-    const emailDomain = user.email.split("@")[1]?.toLowerCase()
+    const emailDomain = email.split("@")[1]?.toLowerCase()
     return org.domains.some((d) => d.toLowerCase() === emailDomain)
   }
 }

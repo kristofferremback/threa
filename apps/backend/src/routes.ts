@@ -24,7 +24,6 @@ import { createAgentSessionHandlers } from "./features/agents"
 import { errorHandler } from "./lib/error-handler"
 import type { AuthService } from "./auth/auth-service"
 import { StubAuthService } from "./auth/auth-service.stub"
-import type { UserService } from "./auth/user-service"
 import type { WorkspaceService } from "./features/workspaces"
 import type { StreamService } from "./features/streams"
 import type { EventService } from "./features/messaging"
@@ -44,7 +43,6 @@ interface Dependencies {
   pool: Pool
   poolMonitor: PoolMonitor
   authService: AuthService
-  userService: UserService
   workspaceService: WorkspaceService
   streamService: StreamService
   eventService: EventService
@@ -66,7 +64,6 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     pool,
     poolMonitor,
     authService,
-    userService,
     workspaceService,
     streamService,
     eventService,
@@ -83,7 +80,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     allowDevAuthRoutes,
   } = deps
 
-  const auth = createAuthMiddleware({ authService, userService })
+  const auth = createAuthMiddleware({ authService })
   const workspaceMember = createWorkspaceMemberMiddleware({ pool })
   const upload = createUploadMiddleware({ s3Config })
   // Express natively chains handlers - spread array at usage sites
@@ -92,7 +89,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const rateLimits = createRateLimiters(rateLimiterConfig)
   const opsAccess = createOpsAccessMiddleware()
 
-  const authHandlers = createAuthHandlers({ authService, userService, invitationService })
+  const authHandlers = createAuthHandlers({ authService, invitationService })
   const avatarUpload = createAvatarUploadMiddleware()
   const workspace = createWorkspaceHandlers({
     workspaceService,
@@ -136,7 +133,6 @@ export function registerRoutes(app: Express, deps: Dependencies) {
 
     const authStub = createAuthStubHandlers({
       authStubService: authService,
-      userService,
       workspaceService,
       streamService,
       invitationService,

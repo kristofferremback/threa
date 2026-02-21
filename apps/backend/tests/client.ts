@@ -448,7 +448,7 @@ export interface BootstrapData {
   stream: Stream
   events: StreamEvent[]
   members: StreamMember[]
-  membership: { streamId: string; userId: string; pinned: boolean; notificationLevel: string | null } | null
+  membership: { streamId: string; memberId: string; pinned: boolean; notificationLevel: string | null } | null
   latestSequence: string
 }
 
@@ -483,13 +483,15 @@ export async function sendMessageWithAttachments(
 export interface WorkspaceMember {
   id: string
   workspaceId: string
-  userId: string
+  workosUserId: string
+  email: string
+  name: string
   role: string
 }
 
 export interface StreamMember {
   streamId: string
-  userId: string
+  memberId: string
 }
 
 export async function joinWorkspace(
@@ -574,7 +576,6 @@ export interface WorkspaceBootstrapData {
   members: WorkspaceMember[]
   streams: Stream[]
   streamMemberships: StreamMember[]
-  users: User[]
   personas: Persona[]
   emojis: EmojiEntry[]
   emojiWeights: Record<string, number>
@@ -594,13 +595,13 @@ export async function getWorkspaceBootstrap(client: TestClient, workspaceId: str
 
 /**
  * Get the current user's member ID in a workspace.
- * Fetches workspace bootstrap and finds the member matching the given user ID.
+ * Fetches workspace bootstrap and finds the member matching the given WorkOS user ID.
  */
-export async function getMemberId(client: TestClient, workspaceId: string, userId: string): Promise<string> {
+export async function getMemberId(client: TestClient, workspaceId: string, workosUserId: string): Promise<string> {
   const bootstrap = await getWorkspaceBootstrap(client, workspaceId)
-  const member = bootstrap.members.find((m) => m.userId === userId)
+  const member = bootstrap.members.find((m) => m.workosUserId === workosUserId)
   if (!member) {
-    throw new Error(`Member not found for user ${userId} in workspace ${workspaceId}`)
+    throw new Error(`Member not found for WorkOS user ${workosUserId} in workspace ${workspaceId}`)
   }
   return member.id
 }

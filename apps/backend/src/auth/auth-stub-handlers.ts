@@ -1,6 +1,5 @@
 import type { RequestHandler } from "express"
 import type { StubAuthService } from "./auth-service.stub"
-import type { UserService } from "./user-service"
 import type { WorkspaceService } from "../features/workspaces"
 import type { StreamService } from "../features/streams"
 import type { InvitationService } from "../features/invitations"
@@ -9,7 +8,6 @@ import { decodeAndSanitizeRedirectState } from "./redirect"
 
 interface Dependencies {
   authStubService: StubAuthService
-  userService: UserService
   workspaceService: WorkspaceService
   streamService: StreamService
   invitationService: InvitationService
@@ -24,7 +22,7 @@ interface AuthStubHandlers {
 }
 
 export function createAuthStubHandlers(deps: Dependencies): AuthStubHandlers {
-  const { authStubService, userService, workspaceService, streamService, invitationService } = deps
+  const { authStubService, workspaceService, streamService, invitationService } = deps
 
   const getLoginPage: RequestHandler = (req, res) => {
     const state = (req.query.state as string) || ""
@@ -34,13 +32,14 @@ export function createAuthStubHandlers(deps: Dependencies): AuthStubHandlers {
   const handleLogin: RequestHandler = async (req, res) => {
     const { email, name, state } = req.body as { email?: string; name?: string; state?: string }
 
-    const { user, session } = await authStubService.devLogin(userService, { email, name })
+    const { user, session } = await authStubService.devLogin({ email, name })
 
     // Auto-accept pending invitations (mirrors real WorkOS callback flow)
-    const { accepted: acceptedWorkspaceIds } = await invitationService.acceptPendingForEmail(
-      email || "test@example.com",
-      user.id
-    )
+    const { accepted: acceptedWorkspaceIds } = await invitationService.acceptPendingForEmail(user.email, {
+      workosUserId: user.id,
+      email: user.email,
+      name: user.name,
+    })
 
     res.cookie("wos_session", session, {
       httpOnly: true,
@@ -61,7 +60,7 @@ export function createAuthStubHandlers(deps: Dependencies): AuthStubHandlers {
   const handleDevLogin: RequestHandler = async (req, res) => {
     const { email, name } = req.body as { email?: string; name?: string }
 
-    const { user, session } = await authStubService.devLogin(userService, { email, name })
+    const { user, session } = await authStubService.devLogin({ email, name })
 
     res.cookie("wos_session", session, {
       httpOnly: true,
@@ -74,11 +73,22 @@ export function createAuthStubHandlers(deps: Dependencies): AuthStubHandlers {
   }
 
   const handleWorkspaceJoin: RequestHandler = async (req, res) => {
-    const userId = req.userId!
+    const workosUserId = req.userId!
+    const authUser = req.authUser
     const { workspaceId } = req.params
     const { role } = req.body as { role?: "member" | "admin" }
 
-    const member = await workspaceService.addMember(workspaceId, userId, role || "member")
+    if (!authUser) {
+      return res.status(401).json({ error: "Not authenticated" })
+    }
+
+    const name = [authUser.firstName, authUser.lastName].filter(Boolean).join(" ") || authUser.email
+    const member = await workspaceService.addMember(workspaceId, {
+      workosUserId,
+      email: authUser.email,
+      name,
+      role: role || "member",
+    })
     res.json({ member })
   }
 
