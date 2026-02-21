@@ -3,10 +3,15 @@ import type { PoolClient } from "pg"
 import { InvitationService } from "./service"
 import { InvitationRepository } from "./repository"
 import { WorkspaceRepository, MemberRepository } from "../workspaces"
-import { UserRepository } from "../../auth/user-repository"
 import { OutboxRepository } from "../../lib/outbox"
 import { logger } from "../../lib/logger"
 import * as db from "../../db"
+
+const identity = {
+  workosUserId: "workos_user_1",
+  email: "test@example.com",
+  name: "Test User",
+}
 
 describe("InvitationService.acceptInvitation", () => {
   let service: InvitationService
@@ -51,18 +56,20 @@ describe("InvitationService.acceptInvitation", () => {
   })
 
   test("should delegate member creation to workspaceService when accepting invitation", async () => {
-    await service.acceptInvitation("inv_1", "user_1")
+    await service.acceptInvitation("inv_1", identity)
 
     expect(mockCreateMember).toHaveBeenCalledWith({} as PoolClient, {
       workspaceId: "ws_1",
-      userId: "user_1",
+      workosUserId: "workos_user_1",
+      email: "test@example.com",
+      name: "Test User",
       role: "member",
       setupCompleted: false,
     })
   })
 
   test("should emit invitation:accepted outbox event", async () => {
-    await service.acceptInvitation("inv_1", "user_1")
+    await service.acceptInvitation("inv_1", identity)
 
     const acceptedCall = mockInsertOutbox.mock.calls.find((call) => call[1] === "invitation:accepted")
     expect(acceptedCall).toBeDefined()
@@ -70,14 +77,15 @@ describe("InvitationService.acceptInvitation", () => {
       workspaceId: "ws_1",
       invitationId: "inv_1",
       email: "test@example.com",
-      userId: "user_1",
+      workosUserId: "workos_user_1",
+      memberName: "Test User",
     })
   })
 
   test("should not create member when user is already a member", async () => {
     mockIsMember.mockResolvedValue(true)
 
-    await service.acceptInvitation("inv_1", "user_1")
+    await service.acceptInvitation("inv_1", identity)
 
     expect(mockCreateMember).not.toHaveBeenCalled()
   })
@@ -85,7 +93,7 @@ describe("InvitationService.acceptInvitation", () => {
   test("should return null when invitation update fails", async () => {
     mockUpdateStatus.mockResolvedValue(false)
 
-    const result = await service.acceptInvitation("inv_1", "user_1")
+    const result = await service.acceptInvitation("inv_1", identity)
 
     expect(result).toBeNull()
     expect(mockInsertOutbox).not.toHaveBeenCalled()
@@ -103,9 +111,7 @@ describe("InvitationService.sendInvitations", () => {
   const mockLoggerWarn = spyOn(logger, "warn")
   const mockLoggerError = spyOn(logger, "error")
   const mockFindById = spyOn(MemberRepository, "findById")
-  const mockFindUserById = spyOn(UserRepository, "findById")
-  const mockFindByEmails = spyOn(UserRepository, "findByEmails")
-  const mockFindMemberUserIds = spyOn(WorkspaceRepository, "findMemberUserIds")
+  const mockFindMemberEmails = spyOn(WorkspaceRepository, "findMemberEmails")
   const mockFindPendingByEmailsAndWorkspace = spyOn(InvitationRepository, "findPendingByEmailsAndWorkspace")
   const mockInsertInvitation = spyOn(InvitationRepository, "insert")
   const mockInsertOutbox = spyOn(OutboxRepository, "insert")
@@ -117,10 +123,8 @@ describe("InvitationService.sendInvitations", () => {
   beforeEach(() => {
     mockLoggerWarn.mockReset()
     mockLoggerError.mockReset()
-    mockFindById.mockReset().mockResolvedValue({ id: "member_1", userId: "user_owner" } as never)
-    mockFindUserById.mockReset().mockResolvedValue({ id: "user_owner", workosUserId: "workos_user_1" } as never)
-    mockFindByEmails.mockReset().mockResolvedValue([])
-    mockFindMemberUserIds.mockReset().mockResolvedValue(new Set())
+    mockFindById.mockReset().mockResolvedValue({ id: "member_1", workosUserId: "workos_user_1" } as never)
+    mockFindMemberEmails.mockReset().mockResolvedValue(new Set())
     mockFindPendingByEmailsAndWorkspace.mockReset().mockResolvedValue([])
     mockInsertInvitation
       .mockReset()
@@ -230,7 +234,7 @@ describe("InvitationService.acceptPendingForEmail", () => {
   })
 
   test("should return structured result with accepted workspace IDs", async () => {
-    const result = await service.acceptPendingForEmail("test@example.com", "user_1")
+    const result = await service.acceptPendingForEmail("test@example.com", identity)
 
     expect(result.accepted).toEqual(["ws_1", "ws_2"])
     expect(result.failed).toEqual([])
@@ -239,14 +243,14 @@ describe("InvitationService.acceptPendingForEmail", () => {
   test("should return empty results when no pending invitations", async () => {
     mockFindPendingByEmail.mockResolvedValue([])
 
-    const result = await service.acceptPendingForEmail("test@example.com", "user_1")
+    const result = await service.acceptPendingForEmail("test@example.com", identity)
 
     expect(result.accepted).toEqual([])
     expect(result.failed).toEqual([])
   })
 
   test("should use a single transaction for all invitations", async () => {
-    await service.acceptPendingForEmail("test@example.com", "user_1")
+    await service.acceptPendingForEmail("test@example.com", identity)
 
     // withTransaction called once for 2 invitations (batched)
     expect(mockWithTransaction).toHaveBeenCalledTimes(1)
@@ -257,7 +261,7 @@ describe("InvitationService.acceptPendingForEmail", () => {
       .mockResolvedValueOnce({ id: "member_1", workspaceId: "ws_1" })
       .mockRejectedValueOnce(new Error("DB constraint violation"))
 
-    const result = await service.acceptPendingForEmail("test@example.com", "user_1")
+    const result = await service.acceptPendingForEmail("test@example.com", identity)
 
     expect(result.accepted).toEqual(["ws_1"])
     expect(result.failed).toHaveLength(1)
@@ -270,7 +274,7 @@ describe("InvitationService.acceptPendingForEmail", () => {
   })
 
   test("should use savepoints for per-invitation error isolation", async () => {
-    await service.acceptPendingForEmail("test@example.com", "user_1")
+    await service.acceptPendingForEmail("test@example.com", identity)
 
     const savepointCalls = mockClient.query.mock.calls.filter(
       (call) => typeof call[0] === "string" && call[0].includes("SAVEPOINT")

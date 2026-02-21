@@ -14,7 +14,7 @@ function useCurrentMember(workspaceId: string): WorkspaceMember | null {
   const { user } = useAuth()
   const { data: bootstrap } = useWorkspaceBootstrap(workspaceId)
   if (!user || !bootstrap) return null
-  return bootstrap.members.find((m) => m.userId === user.id) ?? null
+  return bootstrap.members.find((m) => m.workosUserId === user.id) ?? null
 }
 
 export function ProfileSettings() {

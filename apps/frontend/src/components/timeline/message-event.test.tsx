@@ -49,7 +49,7 @@ vi.mock("@/contexts", async (importOriginal) => {
 })
 
 vi.mock("@/auth", () => ({
-  useUser: () => ({ id: "usr_123" }),
+  useUser: () => ({ id: "workos_user_123" }),
 }))
 
 vi.mock("@/hooks", async (importOriginal) => {
@@ -67,7 +67,7 @@ vi.mock("@/hooks", async (importOriginal) => {
       },
     }),
     useWorkspaceBootstrap: () => ({
-      data: { members: [{ id: "member_123", userId: "usr_123" }] },
+      data: { members: [{ id: "member_123", workosUserId: "workos_user_123" }] },
     }),
   }
 })

@@ -23,8 +23,8 @@ export function createWorkspaceMemberMiddleware({ pool }: Dependencies) {
       return next()
     }
 
-    const userId = req.userId
-    if (!userId) {
+    const workosUserId = req.userId
+    if (!workosUserId) {
       return res.status(401).json({ error: "Not authenticated" })
     }
 
@@ -33,7 +33,7 @@ export function createWorkspaceMemberMiddleware({ pool }: Dependencies) {
       return res.status(404).json({ error: "Workspace not found" })
     }
 
-    const member = await MemberRepository.findByUserIdInWorkspace(pool, workspaceId, userId)
+    const member = await MemberRepository.findByWorkosUserIdInWorkspace(pool, workspaceId, workosUserId)
     if (!member) {
       return res.status(403).json({ error: "Not a member of this workspace" })
     }

@@ -116,7 +116,7 @@ export class SystemMessageOutboxHandler implements OutboxHandler {
       {
         workspaceId: payload.workspaceId,
         invitationId: payload.invitationId,
-        userId: payload.userId,
+        workosUserId: payload.workosUserId,
       },
       "Invitation accepted notification sent to inviter"
     )

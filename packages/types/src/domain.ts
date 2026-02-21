@@ -38,15 +38,6 @@ import type {
 } from "./constants"
 import type { ThreaDocument } from "./prosemirror"
 
-export interface User {
-  id: string
-  email: string
-  name: string
-  workosUserId: string | null
-  createdAt: string
-  updatedAt: string
-}
-
 export interface Workspace {
   id: string
   name: string
@@ -59,7 +50,8 @@ export interface Workspace {
 export interface WorkspaceMember {
   id: string
   workspaceId: string
-  userId: string
+  workosUserId: string
+  email: string
   role: WorkspaceMemberRole
   slug: string
   name: string

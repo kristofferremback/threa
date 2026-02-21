@@ -10,7 +10,6 @@ import { streamKeys } from "./use-streams"
 import { workspaceKeys } from "./use-workspaces"
 import type {
   Stream,
-  User,
   WorkspaceMember,
   WorkspaceBootstrap,
   StreamMember,
@@ -47,11 +46,11 @@ function updateBootstrapOrInvalidate(
   return true
 }
 
-/** Member shape from MemberRepository (includes name/email from users JOIN) */
+/** Member shape from MemberRepository. */
 interface MemberWithDisplay {
   id: string
   workspaceId: string
-  userId: string
+  workosUserId: string
   role: string
   slug: string
   name: string
@@ -194,7 +193,8 @@ export function useSocketEvents(workspaceId: string) {
       const applied = updateBootstrapOrInvalidate(queryClient, workspaceId, (old) => {
         const streamExists = old.streams.some((s) => s.id === payload.stream.id)
         const currentUser = userRef.current
-        const currentMember = currentUser && old.members?.find((m: WorkspaceMember) => m.userId === currentUser.id)
+        const currentMember =
+          currentUser && old.members?.find((m: WorkspaceMember) => m.workosUserId === currentUser.id)
         const currentMemberId = currentMember?.id ?? null
         const isCreator = Boolean(currentMember && payload.stream.createdBy === currentMember.id)
         const isDmParticipant =
@@ -369,7 +369,8 @@ export function useSocketEvents(workspaceId: string) {
               {
                 id: member.id,
                 workspaceId: member.workspaceId,
-                userId: member.userId,
+                workosUserId: member.workosUserId,
+                email: member.email,
                 role: member.role as WorkspaceMember["role"],
                 slug: member.slug,
                 name: member.name,
@@ -389,7 +390,8 @@ export function useSocketEvents(workspaceId: string) {
       db.workspaceMembers.put({
         id: member.id,
         workspaceId: member.workspaceId,
-        userId: member.userId,
+        workosUserId: member.workosUserId,
+        email: member.email,
         role: member.role as "owner" | "admin" | "member",
         slug: member.slug,
         name: member.name,
@@ -425,17 +427,18 @@ export function useSocketEvents(workspaceId: string) {
       const now = Date.now()
       const { member } = payload
 
-      // Update workspace bootstrap cache — update both member and user records
+      // Update workspace bootstrap cache.
       queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), (old: unknown) => {
         if (!old || typeof old !== "object") return old
-        const bootstrap = old as { members?: WorkspaceMember[]; users?: User[] }
+        const bootstrap = old as { members?: WorkspaceMember[] }
 
         const updatedMembers = bootstrap.members?.map((m) =>
           m.id === member.id
             ? {
                 id: member.id,
                 workspaceId: member.workspaceId,
-                userId: member.userId,
+                workosUserId: member.workosUserId,
+                email: member.email,
                 role: member.role as WorkspaceMember["role"],
                 slug: member.slug,
                 name: member.name,
@@ -456,7 +459,8 @@ export function useSocketEvents(workspaceId: string) {
       db.workspaceMembers.put({
         id: member.id,
         workspaceId: member.workspaceId,
-        userId: member.userId,
+        workosUserId: member.workosUserId,
+        email: member.email,
         role: member.role as "owner" | "admin" | "member",
         slug: member.slug,
         name: member.name,
@@ -557,10 +561,11 @@ export function useSocketEvents(workspaceId: string) {
         if (!isMember) return old
 
         // Determine if we should increment unread count:
-        // - Not for own messages (authorId is now a memberId — match via member.userId)
+        // - Not for own messages (authorId is now a memberId — match via member.workosUserId)
         // - Not when currently viewing the stream
         const currentUser = userRef.current
-        const currentMember = currentUser && old.members?.find((m: WorkspaceMember) => m.userId === currentUser.id)
+        const currentMember =
+          currentUser && old.members?.find((m: WorkspaceMember) => m.workosUserId === currentUser.id)
         const isOwnMessage = currentMember && payload.authorId === currentMember.id
         const shouldIncrementUnread = !isOwnMessage && !isViewingStream
 
@@ -648,7 +653,8 @@ export function useSocketEvents(workspaceId: string) {
         // If the added member is the current user, add to streamMemberships + sidebar
         updateBootstrapOrInvalidate(queryClient, workspaceId, (old) => {
           const currentUser = userRef.current
-          const currentMember = currentUser && old.members?.find((m: WorkspaceMember) => m.userId === currentUser.id)
+          const currentMember =
+            currentUser && old.members?.find((m: WorkspaceMember) => m.workosUserId === currentUser.id)
           if (!currentMember || payload.memberId !== currentMember.id) return old
 
           const membershipExists = old.streamMemberships.some((m: StreamMember) => m.streamId === payload.streamId)
@@ -699,7 +705,8 @@ export function useSocketEvents(workspaceId: string) {
       queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
         if (!old) return old
         const currentUser = userRef.current
-        const currentMember = currentUser && old.members?.find((m: WorkspaceMember) => m.userId === currentUser.id)
+        const currentMember =
+          currentUser && old.members?.find((m: WorkspaceMember) => m.workosUserId === currentUser.id)
         if (!currentMember || payload.memberId !== currentMember.id) return old
 
         const removedStream = old.streams?.find((s) => s.id === payload.streamId)

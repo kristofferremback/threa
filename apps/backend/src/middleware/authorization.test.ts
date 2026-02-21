@@ -13,7 +13,7 @@ function createReq(role?: "owner" | "admin" | "member"): Request {
       ? ({
           id: "member_1",
           workspaceId: "ws_1",
-          userId: "user_1",
+          workosUserId: "workos_user_1",
           role,
           slug: role,
           timezone: null,

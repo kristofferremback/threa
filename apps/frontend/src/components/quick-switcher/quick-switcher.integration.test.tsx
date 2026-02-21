@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { QuickSwitcher } from "./quick-switcher"
 import { mockStreamsList } from "@/test/fixtures"
-import { mockUsersList, mockMembersList } from "@/test/fixtures/users"
+import { mockMembersList } from "@/test/fixtures/users"
 import { mockSearchResultsList } from "@/test/fixtures/messages"
 
 // Create a fresh QueryClient for each test to avoid shared state
@@ -39,7 +39,6 @@ const { mockNavigate, mockSearchState, mockWorkspaceBootstrap } = vi.hoisted(() 
     data: {} as {
       streams: unknown[]
       streamMemberships: unknown[]
-      users: unknown[]
       members: unknown[]
       personas: unknown[]
       dmPeers?: Array<{ memberId: string; streamId: string }>
@@ -131,7 +130,7 @@ vi.mock("@/hooks/use-mentionables", () => {
 
 // Mock auth - called by RichInput's useMentionSuggestion
 vi.mock("@/auth", () => ({
-  useUser: () => ({ id: "user_1", name: "Martin", slug: "martin" }),
+  useUser: () => ({ id: "workos_user_1", name: "Martin", slug: "martin" }),
 }))
 
 // Mock use-workspaces - called by useChannelSuggestion
@@ -173,7 +172,6 @@ describe("QuickSwitcher Integration Tests", () => {
     mockWorkspaceBootstrap.data = {
       streams: mockStreamsList,
       streamMemberships: [],
-      users: mockUsersList,
       members: mockMembersList,
       personas: [],
       dmPeers: undefined,

@@ -49,7 +49,6 @@ export function useSearchItems(context: ModeContext): ModeResult {
   const [addingFilter, setAddingFilter] = useState<FilterType | null>(null)
 
   const members = useMemo(() => bootstrap?.members ?? [], [bootstrap?.members])
-  const users = useMemo(() => bootstrap?.users ?? [], [bootstrap?.users])
   const streams = useMemo(() => bootstrap?.streams ?? [], [bootstrap?.streams])
 
   // Parse filters from query string (single source of truth)
@@ -202,7 +201,6 @@ export function useSearchItems(context: ModeContext): ModeResult {
             <FilterSelect
               type={addingFilter}
               members={members}
-              users={users}
               streams={streams}
               streamTypes={STREAM_TYPE_OPTIONS}
               statusOptions={ARCHIVE_STATUS_OPTIONS}

@@ -193,7 +193,7 @@ function useDraftDmStream(workspaceId: string, streamId: string, enabled: boolea
   const targetMemberId = getDmDraftMemberId(streamId)
   const targetMember = wsBootstrap?.members.find((m) => m.id === targetMemberId) ?? null
   const targetMemberName = targetMember?.name ?? null
-  const currentMemberId = wsBootstrap?.members.find((m) => m.userId === user?.id)?.id ?? null
+  const currentMemberId = wsBootstrap?.members.find((m) => m.workosUserId === user?.id)?.id ?? null
   const existingDmStreamId =
     targetMemberId && currentMemberId
       ? wsBootstrap?.dmPeers.find((peer) => peer.memberId === targetMemberId)?.streamId
@@ -361,7 +361,7 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
   const { markPending, markFailed, markSent } = usePendingMessages()
   const user = useUser()
   const { data: wsBootstrap } = useWorkspaceBootstrap(workspaceId)
-  const currentMemberId = wsBootstrap?.members?.find((m) => m.userId === user?.id)?.id ?? null
+  const currentMemberId = wsBootstrap?.members?.find((m) => m.workosUserId === user?.id)?.id ?? null
 
   const { data: bootstrap, isLoading, error } = useStreamBootstrap(workspaceId, streamId, { enabled })
   const displayName =

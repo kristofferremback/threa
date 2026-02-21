@@ -66,7 +66,7 @@ describe("API E2E Tests", () => {
       const client = new TestClient()
       const user = await loginAs(client, testEmail("auth"), "Auth Test User")
 
-      expect(user.id).toMatch(/^usr_/)
+      expect(user.id).toMatch(/^workos_test_/)
       expect(user.email).toBe(testEmail("auth"))
 
       // Verify session works
@@ -116,19 +116,19 @@ describe("API E2E Tests", () => {
       expect(data.workspaces.length).toBeGreaterThan(0)
     })
 
-    test("should return users and personas in workspace bootstrap", async () => {
+    test("should return members and personas in workspace bootstrap", async () => {
       const client = new TestClient()
       const user = await loginAs(client, testEmail("wsboot"), "WS Bootstrap Test")
       const workspace = await createWorkspace(client, `Boot Test WS ${testRunId}`)
 
       const bootstrap = await getWorkspaceBootstrap(client, workspace.id)
 
-      // Should include the logged-in user in users array
-      expect(bootstrap.users).toBeInstanceOf(Array)
-      expect(bootstrap.users.length).toBeGreaterThan(0)
-      const foundUser = bootstrap.users.find((u) => u.id === user.id)
-      expect(foundUser).toBeDefined()
-      expect(foundUser?.name).toBe("WS Bootstrap Test")
+      // Should include the logged-in user as a workspace member
+      expect(bootstrap.members).toBeInstanceOf(Array)
+      expect(bootstrap.members.length).toBeGreaterThan(0)
+      const foundMember = bootstrap.members.find((m) => m.workosUserId === user.id)
+      expect(foundMember).toBeDefined()
+      expect(foundMember?.name).toBe("WS Bootstrap Test")
 
       // Should include system personas (Ariadne at minimum)
       expect(bootstrap.personas).toBeInstanceOf(Array)
@@ -766,7 +766,7 @@ describe("API E2E Tests", () => {
 
       // 1. Login
       const user = await loginAs(client, testEmail("journey"), "Journey User")
-      expect(user.id).toMatch(/^usr_/)
+      expect(user.id).toMatch(/^workos_test_/)
 
       // 2. Create workspace
       const workspace = await createWorkspace(client, `Journey WS ${testRunId}`)
