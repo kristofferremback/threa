@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import { getAvatarUrl } from "@threa/types"
 import { workspaceKeys } from "./use-workspaces"
 import { useWorkspaceEmoji } from "./use-workspace-emoji"
-import type { Persona, WorkspaceBootstrap, WorkspaceMember, AuthorType } from "@threa/types"
+import type { Persona, WorkspaceBootstrap, User, AuthorType } from "@threa/types"
 
 interface ActorAvatarInfo {
   fallback: string
@@ -16,7 +16,7 @@ interface ActorLookup {
   getActorInitials: (actorId: string | null, actorType: AuthorType | null) => string
   /** Returns avatar info including fallback text and persona slug (for SVG icon support) */
   getActorAvatar: (actorId: string | null, actorType: AuthorType | null) => ActorAvatarInfo
-  getMember: (memberId: string) => WorkspaceMember | undefined
+  getMember: (memberId: string) => User | undefined
   getPersona: (personaId: string) => Persona | undefined
 }
 
@@ -24,7 +24,7 @@ interface ActorLookup {
  * Resolve display name for a member ID.
  * Uses the workspace-scoped name stored on the member record.
  */
-function resolveMemberName(memberId: string, members: WorkspaceMember[] | undefined): string | undefined {
+function resolveMemberName(memberId: string, members: User[] | undefined): string | undefined {
   const member = members?.find((m) => m.id === memberId)
   return member?.name || undefined
 }
@@ -42,9 +42,10 @@ export function useActors(workspaceId: string): ActorLookup {
   }, [queryClient, workspaceId])
 
   const getMember = useCallback(
-    (memberId: string): WorkspaceMember | undefined => {
+    (memberId: string): User | undefined => {
       const bootstrap = getBootstrapData()
-      return bootstrap?.members?.find((m) => m.id === memberId)
+      const users = bootstrap?.users ?? bootstrap?.members ?? []
+      return users.find((u) => u.id === memberId)
     },
     [getBootstrapData]
   )
@@ -70,7 +71,8 @@ export function useActors(workspaceId: string): ActorLookup {
 
       // actorType === "member" — resolve workspace-scoped name
       const bootstrap = getBootstrapData()
-      const name = resolveMemberName(actorId, bootstrap?.members)
+      const users = bootstrap?.users ?? bootstrap?.members
+      const name = resolveMemberName(actorId, users)
       return name ?? actorId.substring(0, 8)
     },
     [getBootstrapData, getPersona]
@@ -100,7 +102,8 @@ export function useActors(workspaceId: string): ActorLookup {
       }
 
       const bootstrap = getBootstrapData()
-      const name = resolveMemberName(actorId, bootstrap?.members)
+      const users = bootstrap?.users ?? bootstrap?.members
+      const name = resolveMemberName(actorId, users)
       if (name) {
         const words = name.split(" ")
         return words

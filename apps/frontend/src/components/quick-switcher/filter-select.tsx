@@ -3,7 +3,7 @@ import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, Command
 import { Calendar } from "@/components/ui/calendar"
 import { formatISODate } from "@/lib/dates"
 import { useFormattedDate } from "@/hooks"
-import type { StreamType, WorkspaceMember, Stream } from "@threa/types"
+import type { StreamType, User, Stream } from "@threa/types"
 import { getStreamName, streamFallbackLabel } from "@/lib/streams"
 
 interface StreamTypeOption {
@@ -18,7 +18,7 @@ interface ArchiveStatusOption {
 
 interface FilterSelectProps {
   type: "from" | "with" | "type" | "status" | "in" | "after" | "before"
-  members: WorkspaceMember[]
+  members: User[]
   streams: Stream[]
   streamTypes: StreamTypeOption[]
   statusOptions?: ArchiveStatusOption[]
@@ -76,7 +76,7 @@ export function FilterSelect({
 }
 
 interface UserSelectProps {
-  members: WorkspaceMember[]
+  members: User[]
   onSelect: (value: string, label: string) => void
 }
 

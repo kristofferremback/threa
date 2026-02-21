@@ -338,7 +338,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
           scrollContainerRef={scrollContainerRef}
         />
       }
-      footer={<SidebarFooter workspaceId={workspaceId} currentMember={currentMember} />}
+      footer={<SidebarFooter workspaceId={workspaceId} currentUser={currentMember} />}
     />
   )
 }

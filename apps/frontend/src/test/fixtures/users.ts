@@ -1,11 +1,9 @@
-import type { WorkspaceMember } from "@threa/types"
+import type { User } from "@threa/types"
 
 /**
- * Factory for creating mock WorkspaceMember objects.
+ * Factory for creating mock User objects.
  */
-export function createMockMember(
-  overrides: Partial<WorkspaceMember> & { id: string; workosUserId: string }
-): WorkspaceMember {
+export function createMockMember(overrides: Partial<User> & { id: string; workosUserId: string }): User {
   return {
     workspaceId: "workspace_1",
     email: `${overrides.workosUserId}@test.com`,
@@ -55,4 +53,4 @@ export const mockMembers = {
 /**
  * Array of all mock members.
  */
-export const mockMembersList: WorkspaceMember[] = Object.values(mockMembers)
+export const mockMembersList: User[] = Object.values(mockMembers)
