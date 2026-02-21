@@ -68,8 +68,8 @@ export type WorkspaceMember = User
 
 /**
  * Get the display URL for an avatar image.
- * avatarUrl stores the S3 key base path (avatars/:workspaceId/:memberId/:timestamp);
- * this constructs the workspace-scoped URL that serves the image.
+ * avatarUrl stores the S3 key base path (avatars/{workspaceId}/{userId}/{timestamp}).
+ * This constructs a workspace-scoped backend URL that serves the image.
  */
 export function getAvatarUrl(
   workspaceId: string,
@@ -77,18 +77,20 @@ export function getAvatarUrl(
   size: 256 | 64
 ): string | undefined {
   if (!avatarUrl) return undefined
-  // avatarUrl format: avatars/:workspaceId/:memberId/:timestamp
-  const parts = avatarUrl.split("/")
-  if (parts.length !== 4 || parts[0] !== "avatars") {
-    console.error(`Malformed avatarUrl: "${avatarUrl}" (expected avatars/:workspaceId/:memberId/:timestamp)`)
+
+  const match = avatarUrl.match(/^avatars\/([^/]+)\/([^/]+)\/([^/]+)$/)
+  if (!match) {
+    console.error(`Malformed avatarUrl: "${avatarUrl}" (expected avatars/{workspaceId}/{userId}/{timestamp})`)
     return undefined
   }
-  const [, embeddedWorkspaceId, memberId, file] = parts
+
+  const [, embeddedWorkspaceId, userId, timestamp] = match
   if (embeddedWorkspaceId !== workspaceId) {
     console.error(`avatarUrl workspaceId mismatch: key has "${embeddedWorkspaceId}" but received "${workspaceId}"`)
     return undefined
   }
-  return `/api/workspaces/${workspaceId}/files/avatars/${memberId}/${file}.${size}.webp`
+
+  return `/api/workspaces/${workspaceId}/users/${userId}/avatar/${timestamp}.${size}.webp`
 }
 
 export interface WorkspaceInvitation {
