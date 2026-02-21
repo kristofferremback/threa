@@ -36,7 +36,7 @@ export function createCommandHandlers({ pool, commandRegistry, streamService }: 
      * queues the command for execution, and returns an ack.
      */
     async dispatch(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const memberId = req.user!.id
       const workspaceId = req.workspaceId!
 
       const result = dispatchCommandSchema.safeParse(req.body)

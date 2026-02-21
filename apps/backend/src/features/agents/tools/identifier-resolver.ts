@@ -11,7 +11,7 @@
 
 import type { Querier } from "../../../db"
 import { StreamRepository } from "../../streams"
-import { MemberRepository } from "../../workspaces"
+import { UserRepository } from "../../workspaces"
 import { logger } from "../../../lib/logger"
 
 /**
@@ -131,7 +131,7 @@ export async function resolveMemberIdentifier(
 
   // If it looks like a member ID, validate it exists in this workspace
   if (isMemberId(trimmed)) {
-    const member = await MemberRepository.findById(db, trimmed)
+    const member = await UserRepository.findById(db, trimmed)
     if (!member || member.workspaceId !== workspaceId) {
       return { resolved: false, reason: `No member found with ID: ${trimmed}` }
     }
@@ -141,7 +141,7 @@ export async function resolveMemberIdentifier(
   // Otherwise, treat as slug (strip @ prefix if present)
   const slug = normalizeMemberRef(trimmed)
 
-  const member = await MemberRepository.findBySlug(db, workspaceId, slug)
+  const member = await UserRepository.findBySlug(db, workspaceId, slug)
 
   if (!member) {
     return { resolved: false, reason: `No member found with slug: ${slug}` }

@@ -20,7 +20,7 @@ export function createAgentSessionHandlers({ pool }: Dependencies) {
      * User must have access to the session's stream.
      */
     async getSession(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const memberId = req.user!.id
       const workspaceId = req.workspaceId!
       const { sessionId } = req.params
 

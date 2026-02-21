@@ -13,7 +13,7 @@ import type {
 import { StreamTypes, AuthorTypes, ExtractionSourceTypes, PdfSizeTiers, InjectionStrategies } from "@threa/types"
 import { StreamRepository, StreamMemberRepository, type Stream } from "../streams"
 import { MessageRepository, type Message } from "../messaging"
-import { MemberRepository } from "../workspaces"
+import { UserRepository } from "../workspaces"
 import { AttachmentRepository } from "../attachments"
 import { AttachmentExtractionRepository, type PdfMetadata, type PdfSection } from "../attachments"
 import { getUtcOffset, type TemporalContext, type ParticipantTemporal } from "../../lib/temporal"
@@ -397,7 +397,7 @@ async function resolveParticipantsWithTimezones(
   }
 
   // Batch fetch all members in one query
-  const members = await MemberRepository.findByIds(db, memberIds)
+  const members = await UserRepository.findByIds(db, memberIds)
 
   const participants: Participant[] = members.map((member) => ({
     id: member.id,
@@ -431,7 +431,7 @@ async function resolveAuthorName(db: Querier, authorId: string, authorType: Auth
   }
 
   if (authorType === "member") {
-    const member = await MemberRepository.findById(db, authorId)
+    const member = await UserRepository.findById(db, authorId)
     return member?.name ?? "Unknown"
   }
 

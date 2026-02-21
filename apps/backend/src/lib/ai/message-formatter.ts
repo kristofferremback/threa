@@ -1,7 +1,7 @@
 import type { Querier } from "../../db"
 import type { Message } from "../../features/messaging"
 import type { AttachmentWithExtraction } from "../../features/attachments"
-import { MemberRepository } from "../../features/workspaces"
+import { UserRepository } from "../../features/workspaces"
 import { PersonaRepository } from "../../features/agents"
 
 function escapeXml(s: string): string {
@@ -57,7 +57,7 @@ export class MessageFormatter {
     }
 
     const [members, personas] = await Promise.all([
-      MemberRepository.findByIds(client, [...memberIds]),
+      UserRepository.findByIds(client, [...memberIds]),
       PersonaRepository.findByIds(client, [...personaIds]),
     ])
 

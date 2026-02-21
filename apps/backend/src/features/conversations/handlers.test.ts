@@ -4,7 +4,7 @@ import { StreamNotFoundError } from "../../lib/errors"
 
 function mockReq(overrides: Record<string, unknown> = {}) {
   return {
-    member: { id: "member_1" },
+    user: { id: "member_1" },
     workspaceId: "ws_1",
     params: { streamId: "stream_1" },
     query: {},

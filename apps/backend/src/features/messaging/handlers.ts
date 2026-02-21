@@ -140,7 +140,7 @@ interface Dependencies {
 export function createMessageHandlers({ pool, eventService, streamService, commandRegistry }: Dependencies) {
   return {
     async create(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const memberId = req.user!.id
       const workspaceId = req.workspaceId!
 
       const result = createMessageSchema.safeParse(req.body)
@@ -224,7 +224,7 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
     },
 
     async update(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const memberId = req.user!.id
       const workspaceId = req.workspaceId!
       const { messageId } = req.params
 
@@ -278,7 +278,7 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
     },
 
     async delete(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const memberId = req.user!.id
       const workspaceId = req.workspaceId!
       const { messageId } = req.params
 
@@ -315,7 +315,7 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
     },
 
     async addReaction(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const memberId = req.user!.id
       const workspaceId = req.workspaceId!
       const { messageId } = req.params
 
@@ -366,7 +366,7 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
     },
 
     async removeReaction(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const memberId = req.user!.id
       const workspaceId = req.workspaceId!
       const { messageId, emoji } = req.params
 
@@ -409,7 +409,7 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
     },
 
     async getHistory(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const memberId = req.user!.id
       const workspaceId = req.workspaceId!
       const { messageId } = req.params
 

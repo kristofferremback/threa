@@ -42,7 +42,7 @@ interface Dependencies {
 export function createUserPreferencesHandlers({ userPreferencesService }: Dependencies) {
   return {
     async get(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const memberId = req.user!.id
       const workspaceId = req.workspaceId!
 
       const preferences = await userPreferencesService.getPreferences(workspaceId, memberId)
@@ -50,7 +50,7 @@ export function createUserPreferencesHandlers({ userPreferencesService }: Depend
     },
 
     async update(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const memberId = req.user!.id
       const workspaceId = req.workspaceId!
 
       const result = updatePreferencesSchema.safeParse(req.body)

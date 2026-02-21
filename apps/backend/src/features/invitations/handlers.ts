@@ -18,7 +18,7 @@ export function createInvitationHandlers({ invitationService }: Dependencies) {
   return {
     async send(req: Request, res: Response) {
       const workspaceId = req.workspaceId!
-      const memberId = req.member!.id
+      const memberId = req.user!.id
 
       const result = sendInvitationsSchema.safeParse(req.body)
       if (!result.success) {

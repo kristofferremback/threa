@@ -15,7 +15,7 @@ export function createAttachmentHandlers({ attachmentService, streamService }: D
      * Workspace membership is checked by middleware.
      */
     async upload(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const memberId = req.user!.id
       const workspaceId = req.workspaceId!
 
       // File was uploaded to S3 by multer-s3 middleware
@@ -57,7 +57,7 @@ export function createAttachmentHandlers({ attachmentService, streamService }: D
      * For pending files (not yet attached), workspace membership is sufficient.
      */
     async getDownloadUrl(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const memberId = req.user!.id
       const workspaceId = req.workspaceId!
       const { attachmentId } = req.params
 
@@ -90,7 +90,7 @@ export function createAttachmentHandlers({ attachmentService, streamService }: D
      * Attached files cannot be deleted.
      */
     async delete(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const memberId = req.user!.id
       const workspaceId = req.workspaceId!
       const { attachmentId } = req.params
 

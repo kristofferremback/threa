@@ -1,7 +1,7 @@
 import { Pool } from "pg"
 import { withTransaction, type Querier } from "../../db"
 import { InvitationRepository, type Invitation } from "./repository"
-import { WorkspaceRepository, MemberRepository, type WorkspaceService } from "../workspaces"
+import { WorkspaceRepository, UserRepository, type WorkspaceService } from "../workspaces"
 import { OutboxRepository } from "../../lib/outbox"
 import { invitationId } from "../../lib/id"
 import { logger } from "../../lib/logger"
@@ -58,7 +58,7 @@ export class InvitationService {
     const inviterWorkosUserId = (await this.getInviterWorkosUserId(invitedBy)) ?? undefined
 
     // Batch-fetch: existing members + pending invitations
-    const existingMemberEmails = await WorkspaceRepository.findMemberEmails(this.pool, workspaceId, emails)
+    const existingMemberEmails = await WorkspaceRepository.findUserEmails(this.pool, workspaceId, emails)
 
     const pendingInvitations = await InvitationRepository.findPendingByEmailsAndWorkspace(
       this.pool,
@@ -178,7 +178,7 @@ export class InvitationService {
     const isMember = await WorkspaceRepository.isMember(client, invitation.workspaceId, identity.workosUserId)
     if (isMember) return invitation.workspaceId
 
-    await this.workspaceService.createMemberInTransaction(client, {
+    await this.workspaceService.createUserInTransaction(client, {
       workspaceId: invitation.workspaceId,
       workosUserId: identity.workosUserId,
       email: identity.email,
@@ -325,9 +325,7 @@ export class InvitationService {
   }
 
   private async getInviterWorkosUserId(invitedBy: string): Promise<string | null> {
-    const inviterMember = await MemberRepository.findById(this.pool, invitedBy)
-    if (!inviterMember) return null
-
-    return inviterMember.workosUserId
+    const inviterUser = await UserRepository.findById(this.pool, invitedBy)
+    return inviterUser?.workosUserId ?? null
   }
 }

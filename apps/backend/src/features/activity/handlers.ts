@@ -8,7 +8,7 @@ interface Dependencies {
 export function createActivityHandlers({ activityService }: Dependencies) {
   return {
     async list(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const memberId = req.user!.id
       const workspaceId = req.workspaceId!
 
       const rawLimit = req.query.limit ? Number(req.query.limit) : 50
@@ -26,7 +26,7 @@ export function createActivityHandlers({ activityService }: Dependencies) {
     },
 
     async markAllAsRead(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const memberId = req.user!.id
       const workspaceId = req.workspaceId!
 
       await activityService.markAllAsRead(memberId, workspaceId)
@@ -35,7 +35,7 @@ export function createActivityHandlers({ activityService }: Dependencies) {
     },
 
     async markOneAsRead(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const memberId = req.user!.id
       const activityId = req.params.id
 
       await activityService.markAsRead(activityId, memberId)

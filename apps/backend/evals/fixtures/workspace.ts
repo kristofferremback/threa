@@ -46,8 +46,8 @@ export async function createWorkspaceFixture(pool: Pool): Promise<WorkspaceFixtu
       createdBy: ownerMemberId,
     })
 
-    // Add owner member
-    await WorkspaceRepository.addMember(client, {
+    // Add owner user
+    await WorkspaceRepository.addUser(client, {
       id: ownerMemberId,
       workspaceId: workspace.id,
       workosUserId,
@@ -89,8 +89,8 @@ export async function createAdditionalUser(
   const userEmail = options.email ?? `eval-user-${timestamp}@test.local`
 
   const result = await withTransaction(pool, async (client) => {
-    // Add to workspace as member
-    await WorkspaceRepository.addMember(client, {
+    // Add to workspace as user
+    await WorkspaceRepository.addUser(client, {
       id: memberId(),
       workspaceId,
       workosUserId,

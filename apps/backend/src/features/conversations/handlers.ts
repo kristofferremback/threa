@@ -17,7 +17,7 @@ interface Dependencies {
 export function createConversationHandlers({ conversationService, streamService }: Dependencies) {
   return {
     async listByStream(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const memberId = req.user!.id
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
 
@@ -37,7 +37,7 @@ export function createConversationHandlers({ conversationService, streamService 
     },
 
     async getById(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const memberId = req.user!.id
       const workspaceId = req.workspaceId!
       const { conversationId } = req.params
 
@@ -53,7 +53,7 @@ export function createConversationHandlers({ conversationService, streamService 
     },
 
     async getMessages(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const memberId = req.user!.id
       const workspaceId = req.workspaceId!
       const { conversationId } = req.params
 

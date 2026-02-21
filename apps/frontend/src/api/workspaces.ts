@@ -1,11 +1,5 @@
 import { api } from "./client"
-import type {
-  Workspace,
-  WorkspaceBootstrap,
-  WorkspaceMember,
-  CreateWorkspaceInput,
-  CompleteMemberSetupInput,
-} from "@threa/types"
+import type { Workspace, WorkspaceBootstrap, User, CreateWorkspaceInput, CompleteMemberSetupInput } from "@threa/types"
 
 export type { WorkspaceBootstrap, CreateWorkspaceInput }
 
@@ -35,9 +29,12 @@ export const workspacesApi = {
     return res.updatedStreamIds
   },
 
-  async completeMemberSetup(workspaceId: string, data: CompleteMemberSetupInput): Promise<WorkspaceMember> {
-    const res = await api.post<{ member: WorkspaceMember }>(`/api/workspaces/${workspaceId}/setup`, data)
-    return res.member
+  async completeUserSetup(workspaceId: string, data: CompleteMemberSetupInput): Promise<User> {
+    const res = await api.post<{ user?: User; member?: User }>(`/api/workspaces/${workspaceId}/setup`, data)
+    if (!res.user && !res.member) {
+      throw new Error("Setup response missing user payload")
+    }
+    return res.user ?? res.member!
   },
 
   async checkSlugAvailable(workspaceId: string, slug: string): Promise<boolean> {
@@ -47,15 +44,15 @@ export const workspacesApi = {
     return res.available
   },
 
-  async updateProfile(
-    workspaceId: string,
-    data: { name?: string; description?: string | null }
-  ): Promise<WorkspaceMember> {
-    const res = await api.patch<{ member: WorkspaceMember }>(`/api/workspaces/${workspaceId}/profile`, data)
-    return res.member
+  async updateProfile(workspaceId: string, data: { name?: string; description?: string | null }): Promise<User> {
+    const res = await api.patch<{ user?: User; member?: User }>(`/api/workspaces/${workspaceId}/profile`, data)
+    if (!res.user && !res.member) {
+      throw new Error("Profile response missing user payload")
+    }
+    return res.user ?? res.member!
   },
 
-  async uploadAvatar(workspaceId: string, file: File): Promise<WorkspaceMember> {
+  async uploadAvatar(workspaceId: string, file: File): Promise<User> {
     const formData = new FormData()
     formData.append("avatar", file)
 
@@ -72,11 +69,19 @@ export const workspacesApi = {
     }
 
     const body = await response.json()
-    return body.member
+    return body.user ?? body.member
   },
 
-  async removeAvatar(workspaceId: string): Promise<WorkspaceMember> {
-    const res = await api.delete<{ member: WorkspaceMember }>(`/api/workspaces/${workspaceId}/profile/avatar`)
-    return res.member
+  async removeAvatar(workspaceId: string): Promise<User> {
+    const res = await api.delete<{ user?: User; member?: User }>(`/api/workspaces/${workspaceId}/profile/avatar`)
+    if (!res.user && !res.member) {
+      throw new Error("Avatar response missing user payload")
+    }
+    return res.user ?? res.member!
+  },
+
+  // Backward-compatible alias while call sites migrate.
+  completeMemberSetup(workspaceId: string, data: CompleteMemberSetupInput) {
+    return this.completeUserSetup(workspaceId, data)
   },
 }

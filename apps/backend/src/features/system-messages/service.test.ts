@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, mock, spyOn } from "bun:test"
 import { AuthorTypes, CompanionModes, StreamTypes, Visibilities } from "@threa/types"
 import { StreamRepository } from "../streams"
 import { InvitationRepository } from "../invitations"
-import { MemberRepository } from "../workspaces"
+import { UserRepository } from "../workspaces"
 import { SystemMessageService } from "./service"
 import type { Stream } from "../streams"
 
@@ -33,7 +33,7 @@ function fakeStream(overrides: Partial<Stream> = {}): Stream {
   }
 }
 
-function fakeMember(overrides: Partial<Awaited<ReturnType<typeof MemberRepository.findById>>> = {}) {
+function fakeMember(overrides: Partial<Awaited<ReturnType<typeof UserRepository.findById>>> = {}) {
   return {
     id: MEMBER_A,
     workspaceId: WORKSPACE_ID,
@@ -97,7 +97,7 @@ describe("SystemMessageService", () => {
     it("should format budget data as markdown and delegate to notifyOwners", async () => {
       const streamA = fakeStream({ createdBy: MEMBER_A })
 
-      spyOn(MemberRepository, "listByWorkspace").mockResolvedValue([fakeMember({ id: MEMBER_A })] as never)
+      spyOn(UserRepository, "listByWorkspace").mockResolvedValue([fakeMember({ id: MEMBER_A })] as never)
       spyOn(StreamRepository, "list").mockResolvedValue([streamA])
 
       const { service, createMessage } = createService()
@@ -123,7 +123,7 @@ describe("SystemMessageService", () => {
       const streamA = fakeStream({ createdBy: MEMBER_A })
       const streamB = fakeStream({ createdBy: MEMBER_B })
 
-      spyOn(MemberRepository, "listByWorkspace").mockResolvedValue([
+      spyOn(UserRepository, "listByWorkspace").mockResolvedValue([
         fakeMember({ id: MEMBER_A, role: "owner", name: "Alice", email: "alice@test.com" }),
         fakeMember({ id: MEMBER_B, role: "owner", name: "Bob", email: "bob@test.com" }),
       ] as never)
@@ -147,7 +147,7 @@ describe("SystemMessageService", () => {
     it("should only notify owners, not regular members", async () => {
       const streamA = fakeStream({ createdBy: MEMBER_A })
 
-      spyOn(MemberRepository, "listByWorkspace").mockResolvedValue([
+      spyOn(UserRepository, "listByWorkspace").mockResolvedValue([
         fakeMember({ id: MEMBER_A, role: "owner", name: "Alice" }),
         fakeMember({ id: MEMBER_B, role: "member", name: "Bob" }),
       ] as never)
@@ -163,7 +163,7 @@ describe("SystemMessageService", () => {
     it("should skip owners with missing streams and continue notifying others", async () => {
       const streamB = fakeStream({ createdBy: MEMBER_B })
 
-      spyOn(MemberRepository, "listByWorkspace").mockResolvedValue([
+      spyOn(UserRepository, "listByWorkspace").mockResolvedValue([
         fakeMember({ id: MEMBER_A, role: "owner", name: "Alice" }),
         fakeMember({ id: MEMBER_B, role: "owner", name: "Bob" }),
       ] as never)
@@ -182,7 +182,7 @@ describe("SystemMessageService", () => {
       const streamA = fakeStream({ createdBy: MEMBER_A })
       const streamB = fakeStream({ createdBy: MEMBER_B })
 
-      spyOn(MemberRepository, "listByWorkspace").mockResolvedValue([
+      spyOn(UserRepository, "listByWorkspace").mockResolvedValue([
         fakeMember({ id: MEMBER_A, role: "owner", name: "Alice" }),
         fakeMember({ id: MEMBER_B, role: "owner", name: "Bob" }),
       ] as never)

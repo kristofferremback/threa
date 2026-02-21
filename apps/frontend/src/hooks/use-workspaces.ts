@@ -5,7 +5,7 @@ import { debugBootstrap } from "@/lib/bootstrap-debug"
 import { getQueryLoadState, isTerminalBootstrapError } from "@/lib/query-load-state"
 import { db } from "@/db"
 import { joinRoomBestEffort } from "@/lib/socket-room"
-import type { Workspace, WorkspaceBootstrap, WorkspaceMember } from "@threa/types"
+import type { Workspace, WorkspaceBootstrap, User } from "@threa/types"
 
 // Query keys for cache management
 export const workspaceKeys = {
@@ -77,10 +77,11 @@ export function useWorkspaceBootstrap(workspaceId: string) {
       await joinRoomBestEffort(socket, `ws:${workspaceId}`, "WorkspaceBootstrap")
 
       const bootstrap = await workspaceService.bootstrap(workspaceId)
+      const users = bootstrap.users ?? bootstrap.members ?? []
       debugBootstrap("Workspace bootstrap fetch success", {
         workspaceId,
         streamCount: bootstrap.streams.length,
-        memberCount: bootstrap.members.length,
+        userCount: users.length,
       })
       const now = Date.now()
 
@@ -88,8 +89,8 @@ export function useWorkspaceBootstrap(workspaceId: string) {
       await Promise.all([
         db.workspaces.put({ ...bootstrap.workspace, _cachedAt: now }),
         db.workspaceMembers.bulkPut(
-          bootstrap.members.map((m) => ({
-            ...m,
+          users.map((u) => ({
+            ...u,
             _cachedAt: now,
           }))
         ),
@@ -160,20 +161,18 @@ export function useCreateWorkspace() {
   })
 }
 
-function updateMemberInBootstrap(
-  queryClient: ReturnType<typeof useQueryClient>,
-  workspaceId: string,
-  updatedMember: WorkspaceMember
-) {
+function updateUserInBootstrap(queryClient: ReturnType<typeof useQueryClient>, workspaceId: string, updatedUser: User) {
   queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
     if (!old) return old
+    const users = old.users ?? old.members ?? []
     return {
       ...old,
-      members: old.members.map((m) => (m.id === updatedMember.id ? updatedMember : m)),
+      users: users.map((u) => (u.id === updatedUser.id ? updatedUser : u)),
+      members: users.map((u) => (u.id === updatedUser.id ? updatedUser : u)),
     }
   })
 
-  db.workspaceMembers.put({ ...updatedMember, _cachedAt: Date.now() })
+  db.workspaceMembers.put({ ...updatedUser, _cachedAt: Date.now() })
 }
 
 export function useUpdateProfile(workspaceId: string) {
@@ -183,7 +182,7 @@ export function useUpdateProfile(workspaceId: string) {
   return useMutation({
     mutationFn: (data: { name?: string; description?: string | null }) =>
       workspaceService.updateProfile(workspaceId, data),
-    onSuccess: (member) => updateMemberInBootstrap(queryClient, workspaceId, member),
+    onSuccess: (user) => updateUserInBootstrap(queryClient, workspaceId, user),
   })
 }
 
@@ -193,7 +192,7 @@ export function useUploadAvatar(workspaceId: string) {
 
   return useMutation({
     mutationFn: (file: File) => workspaceService.uploadAvatar(workspaceId, file),
-    onSuccess: (member) => updateMemberInBootstrap(queryClient, workspaceId, member),
+    onSuccess: (user) => updateUserInBootstrap(queryClient, workspaceId, user),
   })
 }
 
@@ -203,6 +202,6 @@ export function useRemoveAvatar(workspaceId: string) {
 
   return useMutation({
     mutationFn: () => workspaceService.removeAvatar(workspaceId),
-    onSuccess: (member) => updateMemberInBootstrap(queryClient, workspaceId, member),
+    onSuccess: (user) => updateUserInBootstrap(queryClient, workspaceId, user),
   })
 }

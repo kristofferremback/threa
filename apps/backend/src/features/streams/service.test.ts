@@ -5,7 +5,7 @@ import { StreamRepository } from "./repository"
 import { StreamMemberRepository } from "./member-repository"
 import { StreamEventRepository } from "./event-repository"
 import { OutboxRepository } from "../../lib/outbox"
-import { MemberRepository } from "../workspaces"
+import { UserRepository } from "../workspaces"
 import * as idModule from "../../lib/id"
 import * as db from "../../db"
 import { HttpError } from "../../lib/errors"
@@ -16,7 +16,7 @@ const mockInsertMember = spyOn(StreamMemberRepository, "insert")
 const mockInsertManyMembers = spyOn(StreamMemberRepository, "insertMany")
 const mockInsertEvent = spyOn(StreamEventRepository, "insert")
 const mockInsertOutbox = spyOn(OutboxRepository, "insert")
-const mockFindMembersByIds = spyOn(MemberRepository, "findByIds")
+const mockFindMembersByIds = spyOn(UserRepository, "findByIds")
 
 spyOn(idModule, "eventId").mockReturnValue("evt_1")
 spyOn(idModule, "streamId").mockReturnValue("stream_new")

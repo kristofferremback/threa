@@ -53,7 +53,7 @@ export function createSearchHandlers({ searchService }: Dependencies) {
      * - limit: number (optional) - max results (1-100)
      */
     async search(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const memberId = req.user!.id
       const workspaceId = req.workspaceId!
 
       const result = searchQuerySchema.safeParse(req.body)
