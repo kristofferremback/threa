@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, spyOn, test } from "bun:test"
 import { loadConfig } from "./env"
+import { logger } from "./logger"
 
 const ORIGINAL_ENV = { ...process.env }
 
@@ -65,5 +66,41 @@ describe("loadConfig attachment safety policy", () => {
 
     const config = loadConfig()
     expect(config.attachments.malwareScanEnabled).toBe(false)
+  })
+})
+
+describe("loadConfig workspace creation invite policy", () => {
+  test("defaults workspace creation invite requirement to enabled", () => {
+    setBaseEnv()
+    process.env.NODE_ENV = "development"
+    process.env.USE_STUB_AUTH = "true"
+
+    const config = loadConfig()
+    expect(config.workspaceCreationRequiresInvite).toBe(true)
+  })
+
+  test("allows disabling workspace creation invite requirement when configured", () => {
+    setBaseEnv()
+    process.env.NODE_ENV = "development"
+    process.env.USE_STUB_AUTH = "true"
+    process.env.WORKSPACE_CREATION_SKIP_INVITE = "true"
+
+    const config = loadConfig()
+    expect(config.workspaceCreationRequiresInvite).toBe(false)
+  })
+
+  test("logs warning when stub auth is used with invite requirement enabled", () => {
+    setBaseEnv()
+    process.env.NODE_ENV = "development"
+    process.env.USE_STUB_AUTH = "true"
+
+    const warnSpy = spyOn(logger, "warn")
+
+    loadConfig()
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      "USE_STUB_AUTH is enabled while workspace creation invite checks are enabled; stub auth cannot verify WorkOS invites and will allow workspace creation. Set WORKSPACE_CREATION_SKIP_INVITE=true to make the bypass explicit."
+    )
+    warnSpy.mockRestore()
   })
 })

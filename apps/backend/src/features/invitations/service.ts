@@ -1,8 +1,7 @@
 import { Pool } from "pg"
 import { withTransaction, type Querier } from "../../db"
 import { InvitationRepository, type Invitation } from "./repository"
-import { WorkspaceRepository, type WorkspaceService } from "../workspaces"
-import { MemberRepository } from "../workspaces"
+import { WorkspaceRepository, MemberRepository, type WorkspaceService } from "../workspaces"
 import { UserRepository } from "../../auth/user-repository"
 import { OutboxRepository } from "../../lib/outbox"
 import { invitationId } from "../../lib/id"
@@ -51,12 +50,7 @@ export class InvitationService {
     const orgId = await this.ensureWorkosOrganization(workspaceId)
 
     // Look up the inviter's WorkOS user ID for WorkOS API
-    const inviterMember = await MemberRepository.findById(this.pool, invitedBy)
-    let inviterWorkosUserId: string | undefined
-    if (inviterMember) {
-      const user = await UserRepository.findById(this.pool, inviterMember.userId)
-      inviterWorkosUserId = user?.workosUserId ?? undefined
-    }
+    const inviterWorkosUserId = (await this.getInviterWorkosUserId(invitedBy)) ?? undefined
 
     // Batch-fetch: users by email, existing members, pending invitations
     const existingUsers = await UserRepository.findByEmails(this.pool, emails)
@@ -325,5 +319,13 @@ export class InvitationService {
 
     // Re-read to get the winning org ID (handles race where another caller saved first)
     return WorkspaceRepository.getWorkosOrganizationId(this.pool, workspaceId)
+  }
+
+  private async getInviterWorkosUserId(invitedBy: string): Promise<string | null> {
+    const inviterMember = await MemberRepository.findById(this.pool, invitedBy)
+    if (!inviterMember) return null
+
+    const inviterUser = await UserRepository.findById(this.pool, inviterMember.userId)
+    return inviterUser?.workosUserId ?? null
   }
 }

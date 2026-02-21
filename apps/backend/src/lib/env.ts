@@ -38,6 +38,7 @@ export interface Config {
   databaseUrl: string
   /** Skip graceful shutdown for immediate termination (dev/test environments) */
   fastShutdown: boolean
+  workspaceCreationRequiresInvite: boolean
   useStubAuth: boolean
   useStubCompanion: boolean
   useStubBoundaryExtraction: boolean
@@ -92,6 +93,7 @@ export function loadConfig(): Config {
     port: Number(process.env.PORT) || 3001,
     databaseUrl: process.env.DATABASE_URL,
     fastShutdown,
+    workspaceCreationRequiresInvite: process.env.WORKSPACE_CREATION_SKIP_INVITE !== "true",
     useStubAuth,
     useStubCompanion,
     useStubBoundaryExtraction,
@@ -128,6 +130,11 @@ export function loadConfig(): Config {
 
   if (useStubAuth) {
     logger.warn("Using stub auth service - NOT FOR PRODUCTION")
+    if (config.workspaceCreationRequiresInvite) {
+      logger.warn(
+        "USE_STUB_AUTH is enabled while workspace creation invite checks are enabled; stub auth cannot verify WorkOS invites and will allow workspace creation. Set WORKSPACE_CREATION_SKIP_INVITE=true to make the bypass explicit."
+      )
+    }
   }
 
   if (useStubCompanion) {

@@ -27,17 +27,29 @@ export interface CreateWorkspaceParams {
   createdBy: string
 }
 
+interface WorkspaceServiceOptions {
+  requireWorkspaceCreationInvite?: boolean
+}
+
 export class WorkspaceService {
   private pool: Pool
   private workosOrgService: WorkosOrgService | null
   private avatarService: AvatarService
   private jobQueue: QueueManager
+  private requireWorkspaceCreationInvite: boolean
 
-  constructor(pool: Pool, avatarService: AvatarService, jobQueue: QueueManager, workosOrgService?: WorkosOrgService) {
+  constructor(
+    pool: Pool,
+    avatarService: AvatarService,
+    jobQueue: QueueManager,
+    workosOrgService?: WorkosOrgService,
+    options?: WorkspaceServiceOptions
+  ) {
     this.pool = pool
     this.avatarService = avatarService
     this.jobQueue = jobQueue
     this.workosOrgService = workosOrgService ?? null
+    this.requireWorkspaceCreationInvite = options?.requireWorkspaceCreationInvite ?? false
   }
 
   async getWorkspaceById(id: string): Promise<Workspace | null> {
@@ -53,6 +65,10 @@ export class WorkspaceService {
   }
 
   async createWorkspace(params: CreateWorkspaceParams): Promise<Workspace> {
+    if (this.requireWorkspaceCreationInvite) {
+      await this.assertWorkspaceCreationAllowed(params.createdBy)
+    }
+
     return withTransaction(this.pool, async (client) => {
       const id = workspaceId()
       const slug = await generateUniqueSlug(params.name, (slug) => WorkspaceRepository.slugExists(client, slug))
@@ -72,6 +88,28 @@ export class WorkspaceService {
 
       return ws
     })
+  }
+
+  private async assertWorkspaceCreationAllowed(userId: string): Promise<void> {
+    if (!this.workosOrgService) {
+      throw new HttpError("Workspace invite validation is not configured", {
+        status: 500,
+        code: "WORKSPACE_INVITE_VALIDATION_NOT_CONFIGURED",
+      })
+    }
+
+    const user = await UserRepository.findById(this.pool, userId)
+    if (!user) {
+      throw new HttpError("User not found", { status: 404, code: "USER_NOT_FOUND" })
+    }
+
+    const hasWorkspaceCreationInvite = await this.workosOrgService.hasAcceptedWorkspaceCreationInvitation(user.email)
+    if (!hasWorkspaceCreationInvite) {
+      throw new HttpError("Workspace creation requires a dedicated workspace invite.", {
+        status: 403,
+        code: "WORKSPACE_CREATION_INVITE_REQUIRED",
+      })
+    }
   }
 
   async addMember(wsId: string, userId: string, role: WorkspaceMember["role"] = "member"): Promise<WorkspaceMember> {
