@@ -278,14 +278,13 @@ export function createWorkspaceHandlers({
     },
 
     async serveAvatarFile(req: Request, res: Response) {
-      const { workspaceId, userId, memberId, file } = req.params
-      const actorId = userId ?? memberId
-      if (!workspaceId || !actorId || !file) {
+      const { workspaceId, userId, file } = req.params
+      if (!workspaceId || !userId || !file) {
         return res.status(404).end()
       }
 
       try {
-        const stream = await avatarService.streamAvatarFile({ workspaceId, memberId: actorId, file })
+        const stream = await avatarService.streamAvatarFile({ workspaceId, memberId: userId, file })
         if (!stream) return res.status(404).end()
 
         res.set("Content-Type", "image/webp")

@@ -68,12 +68,17 @@ export type WorkspaceMember = User
 
 /**
  * Get the display URL for an avatar image.
- * avatarUrl stores the S3 key base path; this constructs the backend
- * proxy URL that serves the image.
+ * avatarUrl stores the S3 key base path (avatars/{workspaceId}/{userId}/{timestamp}).
+ * This constructs a workspace-scoped backend URL that serves the image.
  */
 export function getAvatarUrl(avatarUrl: string | null | undefined, size: 256 | 64): string | undefined {
   if (!avatarUrl) return undefined
-  return `/api/files/${avatarUrl}.${size}.webp`
+
+  const match = avatarUrl.match(/^avatars\/([^/]+)\/([^/]+)\/([^/]+)$/)
+  if (!match) return undefined
+
+  const [, workspaceId, userId, timestamp] = match
+  return `/api/workspaces/${workspaceId}/users/${userId}/avatar/${timestamp}.${size}.webp`
 }
 
 export interface WorkspaceInvitation {
