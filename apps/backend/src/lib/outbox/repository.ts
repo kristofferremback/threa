@@ -2,7 +2,7 @@ import { sql, type Querier } from "../../db"
 import { bigIntReplacer } from "../serialization"
 import type { Stream } from "../../features/streams"
 import type { StreamEvent } from "../../features/streams"
-import type { Member } from "../../features/workspaces"
+import type { User } from "../../features/workspaces"
 import type { ConversationWithStaleness } from "../../features/conversations"
 import type { Memo as WireMemo, UserPreferences, LastMessagePreview } from "@threa/types"
 
@@ -175,7 +175,7 @@ export interface AttachmentUploadedOutboxPayload extends WorkspaceScopedPayload 
 }
 
 export interface WorkspaceMemberAddedOutboxPayload extends WorkspaceScopedPayload {
-  member: Member
+  member: User
 }
 
 export interface WorkspaceMemberRemovedOutboxPayload extends WorkspaceScopedPayload {
@@ -183,7 +183,7 @@ export interface WorkspaceMemberRemovedOutboxPayload extends WorkspaceScopedPayl
 }
 
 export interface MemberUpdatedOutboxPayload extends WorkspaceScopedPayload {
-  member: Member
+  member: User
 }
 
 /** Stream-scoped event for sidebar updates when new messages arrive.

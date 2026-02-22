@@ -210,8 +210,3 @@ export const UserRepository = {
     return result.rows.map(mapRowToUser)
   },
 }
-
-// Backward-compatible aliases while call sites migrate.
-export const MemberRepository = UserRepository
-export type Member = User
-export type InsertMemberParams = InsertUserParams

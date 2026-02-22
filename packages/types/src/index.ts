@@ -133,7 +133,6 @@ export { getAvatarUrl } from "./domain"
 export type {
   Workspace,
   User,
-  WorkspaceMember,
   WorkspaceInvitation,
   Stream,
   LastMessagePreview,

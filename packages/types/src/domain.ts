@@ -63,9 +63,6 @@ export interface User {
   joinedAt: string
 }
 
-// Backward-compatible alias while the app migrates to "User" terminology.
-export type WorkspaceMember = User
-
 /**
  * Get the display URL for an avatar image.
  * avatarUrl stores the S3 key base path (avatars/{workspaceId}/{userId}/{timestamp}).

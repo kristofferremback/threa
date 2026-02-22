@@ -7,8 +7,6 @@ declare global {
     interface Request {
       workspaceId?: string
       user?: User
-      // Backward-compatible alias while call sites migrate.
-      member?: User
     }
   }
 }
@@ -42,10 +40,6 @@ export function createWorkspaceUserMiddleware({ pool }: Dependencies) {
 
     req.workspaceId = workspaceId
     req.user = user
-    req.member = user
     next()
   }
 }
-
-// Backward-compatible alias while imports migrate.
-export const createWorkspaceMemberMiddleware = createWorkspaceUserMiddleware

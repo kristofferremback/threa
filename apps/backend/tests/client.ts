@@ -489,8 +489,6 @@ export interface WorkspaceUser {
   role: string
 }
 
-export type WorkspaceMember = WorkspaceUser
-
 export interface StreamMember {
   streamId: string
   memberId: string

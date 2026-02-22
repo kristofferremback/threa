@@ -11,7 +11,6 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test"
 import { Pool } from "pg"
 import { withTestTransaction, withTransaction } from "./setup"
-import { UserRepository } from "../../src/auth/user-repository"
 import { UserRepository, WorkspaceRepository } from "../../src/features/workspaces"
 import { StreamRepository } from "../../src/features/streams"
 import { setupTestDatabase } from "./setup"
@@ -20,69 +19,54 @@ import { memberId, userId, workspaceId, streamId } from "../../src/lib/id"
 describe("Trigram Search", () => {
   let pool: Pool
   let testWorkspaceId: string
-  let testUserIds: string[]
+  let testMemberIds: string[]
+  let testWorkosUserIds: string[]
   let testStreamIds: string[]
 
   beforeAll(async () => {
     pool = await setupTestDatabase()
 
     testWorkspaceId = workspaceId()
-    testUserIds = [userId(), userId(), userId()]
+    testMemberIds = [memberId(), memberId(), memberId()]
+    testWorkosUserIds = [userId(), userId(), userId()]
     testStreamIds = [streamId(), streamId(), streamId()]
 
     // Use unique suffix to avoid collisions with previous test runs
     const suffix = testWorkspaceId.slice(-8)
 
     await withTransaction(pool, async (client) => {
-      // Create users with various names for fuzzy matching tests
-      await UserRepository.insert(client, {
-        id: testUserIds[0],
-        email: `john.smith.${suffix}@example.com`,
-        name: "John Smith",
-        workosUserId: `workos_${testUserIds[0]}`,
-      })
-      await UserRepository.insert(client, {
-        id: testUserIds[1],
-        email: `kristoffer.${suffix}@example.com`,
-        name: "Kristoffer Remback",
-        workosUserId: `workos_${testUserIds[1]}`,
-      })
-      await UserRepository.insert(client, {
-        id: testUserIds[2],
-        email: `jane.doe.${suffix}@example.com`,
-        name: "Jane Doe",
-        workosUserId: `workos_${testUserIds[2]}`,
-      })
-
-      // Create workspace and add all users
+      // Create workspace and seed workspace-scoped users for fuzzy matching tests.
       await WorkspaceRepository.insert(client, {
         id: testWorkspaceId,
         name: "Trigram Test Workspace",
         slug: `trgm-test-${testWorkspaceId}`,
-        createdBy: testUserIds[0],
+        createdBy: testMemberIds[0],
       })
       await WorkspaceRepository.addUser(client, {
-        id: memberId(),
+        id: testMemberIds[0],
         workspaceId: testWorkspaceId,
-        userId: testUserIds[0],
+        workosUserId: testWorkosUserIds[0],
+        email: `john.smith.${suffix}@example.com`,
         slug: `john-smith-${suffix}`,
         name: "John Smith",
-        role: "member",
+        role: "owner",
       })
 
       await WorkspaceRepository.addUser(client, {
-        id: memberId(),
+        id: testMemberIds[1],
         workspaceId: testWorkspaceId,
-        userId: testUserIds[1],
+        workosUserId: testWorkosUserIds[1],
+        email: `kristoffer.${suffix}@example.com`,
         slug: `kristoffer-${suffix}`,
         name: "Kristoffer Remback",
         role: "member",
       })
 
       await WorkspaceRepository.addUser(client, {
-        id: memberId(),
+        id: testMemberIds[2],
         workspaceId: testWorkspaceId,
-        userId: testUserIds[2],
+        workosUserId: testWorkosUserIds[2],
+        email: `jane.doe.${suffix}@example.com`,
         slug: `jane-doe-${suffix}`,
         name: "Jane Doe",
         role: "member",
@@ -97,7 +81,7 @@ describe("Trigram Search", () => {
         slug: "general-discussion",
         visibility: "public",
         companionMode: "off",
-        createdBy: testUserIds[0],
+        createdBy: testMemberIds[0],
       })
       await StreamRepository.insert(client, {
         id: testStreamIds[1],
@@ -107,7 +91,7 @@ describe("Trigram Search", () => {
         slug: "project-alpha",
         visibility: "public",
         companionMode: "off",
-        createdBy: testUserIds[0],
+        createdBy: testMemberIds[0],
       })
       await StreamRepository.insert(client, {
         id: testStreamIds[2],
@@ -117,7 +101,7 @@ describe("Trigram Search", () => {
         slug: "engineering",
         visibility: "public",
         companionMode: "off",
-        createdBy: testUserIds[0],
+        createdBy: testMemberIds[0],
       })
     })
   })

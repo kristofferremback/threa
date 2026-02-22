@@ -12,6 +12,19 @@ SET workos_user_id = u.workos_user_id,
 FROM users u
 WHERE wm.user_id = u.id;
 
+-- Fail fast with a clear error before adding NOT NULL constraints.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM workspace_members
+    WHERE workos_user_id IS NULL OR email IS NULL
+  ) THEN
+    RAISE EXCEPTION
+      'workspace_members backfill left NULL workos_user_id/email rows; backfill legacy users data before migration';
+  END IF;
+END $$;
+
 -- Enforce required identity fields.
 ALTER TABLE workspace_members ALTER COLUMN workos_user_id SET NOT NULL;
 ALTER TABLE workspace_members ALTER COLUMN email SET NOT NULL;

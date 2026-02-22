@@ -310,5 +310,3 @@ export const WorkspaceRepository = {
     return result.rows[0] ? mapRowToUser(result.rows[0]) : null
   },
 }
-
-export type WorkspaceMember = WorkspaceUser

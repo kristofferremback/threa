@@ -111,14 +111,17 @@ export function testMessageContent(content: string) {
 export async function addTestMember(
   db: Querier,
   workspaceId: string,
-  userId: string,
+  workosUserId: string,
   role: "owner" | "admin" | "member" = "member"
 ) {
   const id = memberId()
+  const normalizedWorkosUserId = workosUserId.toLowerCase()
   return UserRepository.insert(db, {
     id,
     workspaceId,
-    userId,
+    workosUserId,
+    email: `${normalizedWorkosUserId}@test.local`,
+    name: `Test ${normalizedWorkosUserId.slice(-8)}`,
     role,
     slug: `test-${id}`,
   })
