@@ -37,7 +37,7 @@ export function SidebarFooter({ workspaceId, currentMember }: SidebarFooterProps
 
   if (!currentMember) return null
 
-  const avatarSrc = getAvatarUrl(currentMember.avatarUrl, 64)
+  const avatarSrc = getAvatarUrl(workspaceId, currentMember.avatarUrl, 64)
 
   return (
     <DropdownMenu>

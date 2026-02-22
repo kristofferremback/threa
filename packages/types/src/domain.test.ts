@@ -1,26 +1,32 @@
-import { describe, test, expect } from "bun:test"
+import { describe, test, expect, spyOn } from "bun:test"
 import { getAvatarUrl } from "./domain"
 
 describe("getAvatarUrl", () => {
   test("constructs workspace-scoped URL for valid avatar key", () => {
-    expect(getAvatarUrl("avatars/ws_123/mem_456/1700000000000", 256)).toBe(
+    expect(getAvatarUrl("ws_123", "avatars/ws_123/mem_456/1700000000000", 256)).toBe(
       "/api/workspaces/ws_123/files/avatars/mem_456/1700000000000.256.webp"
     )
-    expect(getAvatarUrl("avatars/ws_123/mem_456/1700000000000", 64)).toBe(
+    expect(getAvatarUrl("ws_123", "avatars/ws_123/mem_456/1700000000000", 64)).toBe(
       "/api/workspaces/ws_123/files/avatars/mem_456/1700000000000.64.webp"
     )
   })
 
   test("returns undefined for null/undefined", () => {
-    expect(getAvatarUrl(null, 256)).toBeUndefined()
-    expect(getAvatarUrl(undefined, 64)).toBeUndefined()
+    expect(getAvatarUrl("ws_123", null, 256)).toBeUndefined()
+    expect(getAvatarUrl("ws_123", undefined, 64)).toBeUndefined()
   })
 
-  test("throws on malformed avatar key (wrong segment count)", () => {
-    expect(() => getAvatarUrl("avatars/ws_123", 256)).toThrow("Malformed avatarUrl")
+  test("returns undefined and logs error on malformed avatar key (wrong segment count)", () => {
+    const spy = spyOn(console, "error").mockImplementation(() => {})
+    expect(getAvatarUrl("ws_123", "avatars/ws_123", 256)).toBeUndefined()
+    expect(spy).toHaveBeenCalledTimes(1)
+    spy.mockRestore()
   })
 
-  test("throws on malformed avatar key (wrong prefix)", () => {
-    expect(() => getAvatarUrl("files/ws_123/mem_456/12345", 256)).toThrow("Malformed avatarUrl")
+  test("returns undefined and logs error on malformed avatar key (wrong prefix)", () => {
+    const spy = spyOn(console, "error").mockImplementation(() => {})
+    expect(getAvatarUrl("ws_123", "files/ws_123/mem_456/12345", 256)).toBeUndefined()
+    expect(spy).toHaveBeenCalledTimes(1)
+    spy.mockRestore()
   })
 })

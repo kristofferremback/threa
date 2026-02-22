@@ -4,8 +4,7 @@
   "type": "module",
   "workspaces": [
     "apps/*",
-    "packages/*",
-    "apps/workspace-router"
+    "packages/*"
   ],
   "scripts": {
     "dev": "bun scripts/dev.ts",

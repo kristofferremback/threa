@@ -192,7 +192,7 @@ export function useStreamItems(context: ModeContext): ModeResult {
         if (stream.type === StreamTypes.DM) {
           const peerMemberId = dmPeerByStreamId.get(stream.id)
           const peerMember = peerMemberId ? memberById.get(peerMemberId) : undefined
-          avatarUrl = getAvatarUrl(peerMember?.avatarUrl, 64)
+          avatarUrl = getAvatarUrl(workspaceId, peerMember?.avatarUrl, 64)
         }
 
         return {
@@ -236,7 +236,7 @@ export function useStreamItems(context: ModeContext): ModeResult {
           label: member.name,
           description: "Direct Message · Start conversation",
           icon: STREAM_ICONS[StreamTypes.DM],
-          avatarUrl: getAvatarUrl(member.avatarUrl, 64),
+          avatarUrl: getAvatarUrl(workspaceId, member.avatarUrl, 64),
           group: "Members",
           href: `/w/${workspaceId}/s/${createDmDraftId(member.id)}`,
           onSelect: () => {

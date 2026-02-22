@@ -76,14 +76,19 @@ export interface WorkspaceMember {
  * avatarUrl stores the S3 key base path (avatars/:workspaceId/:memberId/:timestamp);
  * this constructs the workspace-scoped URL that serves the image.
  */
-export function getAvatarUrl(avatarUrl: string | null | undefined, size: 256 | 64): string | undefined {
+export function getAvatarUrl(
+  workspaceId: string,
+  avatarUrl: string | null | undefined,
+  size: 256 | 64
+): string | undefined {
   if (!avatarUrl) return undefined
   // avatarUrl format: avatars/:workspaceId/:memberId/:timestamp
   const parts = avatarUrl.split("/")
   if (parts.length !== 4 || parts[0] !== "avatars") {
-    throw new Error(`Malformed avatarUrl in DB: "${avatarUrl}" (expected avatars/:workspaceId/:memberId/:timestamp)`)
+    console.error(`Malformed avatarUrl: "${avatarUrl}" (expected avatars/:workspaceId/:memberId/:timestamp)`)
+    return undefined
   }
-  const [, workspaceId, memberId, file] = parts
+  const [, , memberId, file] = parts
   return `/api/workspaces/${workspaceId}/files/avatars/${memberId}/${file}.${size}.webp`
 }
 
