@@ -142,6 +142,20 @@ describe("workspace-router", () => {
       }
     })
 
+    test("routes /api/workspaces/:workspaceId (no trailing path) by workspace region", async () => {
+      const originalFetch = globalThis.fetch
+      const fn = mockFetchFn()
+      try {
+        const env = makeEnv({
+          WORKSPACE_REGIONS: { get: mock(() => Promise.resolve("eu-north-1")) },
+        })
+        await worker.fetch(makeRequest("/api/workspaces/ws_123"), env)
+        expect(getProxiedUrl(fn)).toBe("http://eu-north-1.backend:3002/api/workspaces/ws_123")
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+
     test("returns 404 for workspace route with no region", async () => {
       const env = makeEnv({ DEFAULT_REGION: undefined })
       const res = await worker.fetch(makeRequest("/api/workspaces/ws_123/messages"), env)

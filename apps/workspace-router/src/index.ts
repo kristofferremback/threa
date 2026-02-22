@@ -13,8 +13,8 @@ interface RegionConfig {
 
 type RegionsMap = Record<string, RegionConfig>
 
-/** Matches /api/workspaces/:workspaceId/... (with at least one more path segment) */
-const WORKSPACE_ROUTE_RE = /^\/api\/workspaces\/([^/]+)\/.+$/
+/** Matches /api/workspaces/:workspaceId with optional trailing path */
+const WORKSPACE_ROUTE_RE = /^\/api\/workspaces\/([^/]+)(?:\/.+)?$/
 
 /** Matches /api/workspaces/:workspaceId/config exactly */
 const CONFIG_ROUTE_RE = /^\/api\/workspaces\/([^/]+)\/config$/

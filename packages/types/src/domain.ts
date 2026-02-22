@@ -80,7 +80,9 @@ export function getAvatarUrl(avatarUrl: string | null | undefined, size: 256 | 6
   if (!avatarUrl) return undefined
   // avatarUrl format: avatars/:workspaceId/:memberId/:timestamp
   const parts = avatarUrl.split("/")
-  if (parts.length < 4) return undefined
+  if (parts.length !== 4 || parts[0] !== "avatars") {
+    throw new Error(`Malformed avatarUrl in DB: "${avatarUrl}" (expected avatars/:workspaceId/:memberId/:timestamp)`)
+  }
   const [, workspaceId, memberId, file] = parts
   return `/api/workspaces/${workspaceId}/files/avatars/${memberId}/${file}.${size}.webp`
 }
