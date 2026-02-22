@@ -222,7 +222,7 @@ export function createWorkspaceHandlers({
 
       const user = await workspaceService.completeUserSetup(userId, workspaceId, result.data)
 
-      res.json({ user, member: user })
+      res.json({ user })
     },
 
     async checkSlugAvailability(req: Request, res: Response) {
@@ -253,7 +253,7 @@ export function createWorkspaceHandlers({
       }
 
       const user = await workspaceService.updateUserProfile(userId, workspaceId, result.data)
-      res.json({ user, member: user })
+      res.json({ user })
     },
 
     async uploadAvatar(req: Request, res: Response) {
@@ -265,7 +265,7 @@ export function createWorkspaceHandlers({
       }
 
       const user = await workspaceService.uploadAvatar(userId, workspaceId, req.file.buffer)
-      res.json({ user, member: user })
+      res.json({ user })
     },
 
     async removeAvatar(req: Request, res: Response) {
@@ -273,7 +273,7 @@ export function createWorkspaceHandlers({
       const workspaceId = req.workspaceId!
 
       const user = await workspaceService.removeUserAvatar(userId, workspaceId)
-      res.json({ user, member: user })
+      res.json({ user })
     },
 
     async serveAvatarFile(req: Request, res: Response) {

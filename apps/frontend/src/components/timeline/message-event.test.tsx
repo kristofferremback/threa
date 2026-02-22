@@ -67,7 +67,7 @@ vi.mock("@/hooks", async (importOriginal) => {
       },
     }),
     useWorkspaceBootstrap: () => ({
-      data: { members: [{ id: "member_123", workosUserId: "workos_user_123" }] },
+      data: { users: [{ id: "member_123", workosUserId: "workos_user_123" }] },
     }),
   }
 })

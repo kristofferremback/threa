@@ -259,11 +259,12 @@ export class WorkspaceService {
           let slug: string
 
           if (preferEmailSlug) {
-            slug = deriveSlugFromEmail(user.email)
+            slug = deriveSlugFromEmail(currentUser.email)
           } else if (params.slug) {
             slug = generateSlug(params.slug)
           } else {
-            slug = await generateUniqueSlug(user.name, (s) =>
+            const slugBaseName = params.name ?? currentUser.name
+            slug = await generateUniqueSlug(slugBaseName, (s) =>
               WorkspaceRepository.userSlugExists(client, workspaceId, s)
             )
           }

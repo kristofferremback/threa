@@ -9,7 +9,7 @@ import type { MockSearchResult } from "../fixtures/messages"
  */
 export interface MockBootstrapData {
   streams: Stream[]
-  members: User[]
+  users: User[]
   personas: Persona[]
 }
 
@@ -18,7 +18,7 @@ export interface MockBootstrapData {
  */
 export const defaultBootstrapData: MockBootstrapData = {
   streams: mockStreamsList,
-  members: mockMembersList,
+  users: mockMembersList,
   personas: [],
 }
 

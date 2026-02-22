@@ -30,11 +30,11 @@ export const workspacesApi = {
   },
 
   async completeUserSetup(workspaceId: string, data: CompleteMemberSetupInput): Promise<User> {
-    const res = await api.post<{ user?: User; member?: User }>(`/api/workspaces/${workspaceId}/setup`, data)
-    if (!res.user && !res.member) {
+    const res = await api.post<{ user?: User }>(`/api/workspaces/${workspaceId}/setup`, data)
+    if (!res.user) {
       throw new Error("Setup response missing user payload")
     }
-    return res.user ?? res.member!
+    return res.user
   },
 
   async checkSlugAvailable(workspaceId: string, slug: string): Promise<boolean> {
@@ -45,11 +45,11 @@ export const workspacesApi = {
   },
 
   async updateProfile(workspaceId: string, data: { name?: string; description?: string | null }): Promise<User> {
-    const res = await api.patch<{ user?: User; member?: User }>(`/api/workspaces/${workspaceId}/profile`, data)
-    if (!res.user && !res.member) {
+    const res = await api.patch<{ user?: User }>(`/api/workspaces/${workspaceId}/profile`, data)
+    if (!res.user) {
       throw new Error("Profile response missing user payload")
     }
-    return res.user ?? res.member!
+    return res.user
   },
 
   async uploadAvatar(workspaceId: string, file: File): Promise<User> {
@@ -69,14 +69,17 @@ export const workspacesApi = {
     }
 
     const body = await response.json()
-    return body.user ?? body.member
+    if (!body.user) {
+      throw new Error("Avatar response missing user payload")
+    }
+    return body.user
   },
 
   async removeAvatar(workspaceId: string): Promise<User> {
-    const res = await api.delete<{ user?: User; member?: User }>(`/api/workspaces/${workspaceId}/profile/avatar`)
-    if (!res.user && !res.member) {
+    const res = await api.delete<{ user?: User }>(`/api/workspaces/${workspaceId}/profile/avatar`)
+    if (!res.user) {
       throw new Error("Avatar response missing user payload")
     }
-    return res.user ?? res.member!
+    return res.user
   },
 }
