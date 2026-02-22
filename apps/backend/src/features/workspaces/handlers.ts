@@ -53,8 +53,8 @@ export function createWorkspaceHandlers({
 }: Dependencies) {
   return {
     async list(req: Request, res: Response) {
-      // Pre-workspace route: uses userId (no member context yet)
-      const workosUserId = req.userId!
+      // Pre-workspace route: uses WorkOS identity (no workspace user context yet)
+      const workosUserId = req.workosUserId!
       const workspaces = await workspaceService.getWorkspacesByWorkosUserId(workosUserId)
       res.json({ workspaces })
     },
@@ -71,8 +71,8 @@ export function createWorkspaceHandlers({
     },
 
     async create(req: Request, res: Response) {
-      // Pre-workspace route: uses userId (no member context yet)
-      const workosUserId = req.userId!
+      // Pre-workspace route: uses WorkOS identity (no workspace user context yet)
+      const workosUserId = req.workosUserId!
       const authUser = req.authUser
 
       const result = createWorkspaceSchema.safeParse(req.body)

@@ -73,7 +73,7 @@ export function createAuthStubHandlers(deps: Dependencies): AuthStubHandlers {
   }
 
   const handleWorkspaceJoin: RequestHandler = async (req, res) => {
-    const workosUserId = req.userId!
+    const workosUserId = req.workosUserId!
     const authUser = req.authUser
     const { workspaceId } = req.params
     const { role } = req.body as { role?: "member" | "admin" }

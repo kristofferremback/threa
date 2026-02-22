@@ -224,9 +224,7 @@ describe("Stream Settings E2E", () => {
 
       // Verify member also in root channel bootstrap
       const channelBootstrap = await getBootstrap(memberClient, workspaceId, channel.id)
-      const channelMemberIds = channelBootstrap.members.map(
-        (m: { memberId?: string; userId?: string }) => m.memberId ?? m.userId
-      )
+      const channelMemberIds = channelBootstrap.members.map((m: { memberId: string }) => m.memberId)
       expect(channelMemberIds).toContain(memberMemberId)
     })
   })

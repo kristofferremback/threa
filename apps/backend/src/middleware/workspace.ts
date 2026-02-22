@@ -23,7 +23,7 @@ export function createWorkspaceUserMiddleware({ pool }: Dependencies) {
       return next()
     }
 
-    const workosUserId = req.userId
+    const workosUserId = req.workosUserId
     if (!workosUserId) {
       return res.status(401).json({ error: "Not authenticated" })
     }

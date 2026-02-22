@@ -15,7 +15,7 @@ declare global {
   namespace Express {
     interface Request {
       /** WorkOS user ID from authenticated session */
-      userId?: string
+      workosUserId?: string
       /** Full WorkOS identity from authenticated session */
       authUser?: AuthenticatedUser
     }
@@ -45,7 +45,7 @@ export function createAuthMiddleware({ authService }: Dependencies) {
       res.cookie(SESSION_COOKIE_NAME, result.sealedSession, SESSION_COOKIE_CONFIG)
     }
 
-    req.userId = result.user.id
+    req.workosUserId = result.user.id
     req.authUser = result.user
     next()
   }
