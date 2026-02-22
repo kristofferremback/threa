@@ -24,13 +24,13 @@ test.describe("DM Lazy Creation", () => {
       })
       expect(joinWorkspaceResponse.ok()).toBeTruthy()
 
-      const membersResponse = await ownerPage.request.get(`/api/workspaces/${workspaceId}/members`)
-      expect(membersResponse.ok()).toBeTruthy()
-      const membersBody = (await membersResponse.json()) as { members: Array<{ id: string; name: string }> }
-      const inviteeMember = membersBody.members.find((member) => member.name === inviteeName)
-      expect(inviteeMember).toBeTruthy()
+      const usersResponse = await ownerPage.request.get(`/api/workspaces/${workspaceId}/users`)
+      expect(usersResponse.ok()).toBeTruthy()
+      const usersBody = (await usersResponse.json()) as { users: Array<{ id: string; name: string }> }
+      const inviteeUser = usersBody.users.find((user) => user.name === inviteeName)
+      expect(inviteeUser).toBeTruthy()
 
-      const draftStreamId = createDmDraftId(inviteeMember!.id)
+      const draftStreamId = createDmDraftId(inviteeUser!.id)
       await ownerPage.goto(`/w/${workspaceId}/s/${draftStreamId}`)
 
       const firstMessage = `First DM message ${testId}`
