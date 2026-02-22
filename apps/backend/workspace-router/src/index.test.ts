@@ -225,6 +225,23 @@ describe("workspace-router", () => {
       }
     })
 
+    test("strips client-supplied X-Forwarded-For when CF-Connecting-IP is absent", async () => {
+      const originalFetch = globalThis.fetch
+      const mockFetch = mock(() => Promise.resolve(new Response("ok")))
+      globalThis.fetch = mockFetch
+      try {
+        const req = new Request("http://localhost:3001/api/workspaces/ws_123/messages", {
+          headers: { "X-Forwarded-For": "attacker-spoofed-ip" },
+        })
+        await worker.fetch(req, makeEnv())
+        const [, init] = mockFetch.mock.calls[0] as [string, RequestInit]
+        const headers = new Headers(init.headers as HeadersInit)
+        expect(headers.get("X-Forwarded-For")).toBeNull()
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+
     test("preserves query string through proxy", async () => {
       const originalFetch = globalThis.fetch
       const mockFetch = mock(() => Promise.resolve(new Response("ok")))

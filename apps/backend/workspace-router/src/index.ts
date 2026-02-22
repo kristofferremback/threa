@@ -140,10 +140,13 @@ async function proxyRequest(request: Request, targetBaseUrl: string): Promise<Re
   headers.set("X-Forwarded-Host", url.host)
   headers.set("X-Forwarded-Proto", url.protocol.replace(":", ""))
 
-  // Preserve client IP through the proxy chain for rate limiting
-  const clientIp = request.headers.get("CF-Connecting-IP") || request.headers.get("X-Forwarded-For")
+  // Only trust CF-Connecting-IP (set by Cloudflare, not spoofable by clients).
+  // Strip any client-supplied X-Forwarded-For to prevent rate limit bypass.
+  const clientIp = request.headers.get("CF-Connecting-IP")
   if (clientIp) {
     headers.set("X-Forwarded-For", clientIp)
+  } else {
+    headers.delete("X-Forwarded-For")
   }
 
   headers.delete("host")
