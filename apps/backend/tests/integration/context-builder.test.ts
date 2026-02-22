@@ -11,7 +11,6 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test"
 import { Pool } from "pg"
 import { addTestMember, withTestTransaction } from "./setup"
-import { UserRepository } from "../../src/auth/user-repository"
 import { WorkspaceRepository } from "../../src/features/workspaces"
 import { StreamRepository, StreamMemberRepository } from "../../src/features/streams"
 import { MessageRepository } from "../../src/features/messaging"
@@ -37,13 +36,6 @@ describe("Context Builder", () => {
         const ownerUserId = userId()
         const wsId = workspaceId()
         const scratchpadId = streamId()
-
-        await UserRepository.insert(client, {
-          id: ownerUserId,
-          email: `scratchpad-ctx-${ownerUserId}@test.com`,
-          name: "Scratchpad Owner",
-          workosUserId: `workos_${ownerUserId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Context Test Workspace",
@@ -104,19 +96,6 @@ describe("Context Builder", () => {
         const memberUserId = userId()
         const wsId = workspaceId()
         const channelId = streamId()
-
-        await UserRepository.insert(client, {
-          id: ownerUserId,
-          email: `channel-ctx-owner-${ownerUserId}@test.com`,
-          name: "Channel Owner",
-          workosUserId: `workos_${ownerUserId}`,
-        })
-        await UserRepository.insert(client, {
-          id: memberUserId,
-          email: `channel-ctx-member-${memberUserId}@test.com`,
-          name: "Channel Member",
-          workosUserId: `workos_${memberUserId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Channel Context Workspace",
@@ -178,13 +157,6 @@ describe("Context Builder", () => {
         const wsId = workspaceId()
         const channelId = streamId()
         const threadId = streamId()
-
-        await UserRepository.insert(client, {
-          id: ownerUserId,
-          email: `thread-ctx-${ownerUserId}@test.com`,
-          name: "Thread Owner",
-          workosUserId: `workos_${ownerUserId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Thread Context Workspace",
@@ -270,13 +242,6 @@ describe("Context Builder", () => {
         const channelId = streamId()
         const thread1Id = streamId()
         const thread2Id = streamId()
-
-        await UserRepository.insert(client, {
-          id: ownerUserId,
-          email: `deep-thread-ctx-${ownerUserId}@test.com`,
-          name: "Deep Thread Owner",
-          workosUserId: `workos_${ownerUserId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Deep Thread Context Workspace",
@@ -373,19 +338,6 @@ describe("Context Builder", () => {
         const user2Id = userId()
         const wsId = workspaceId()
         const dmId = streamId()
-
-        await UserRepository.insert(client, {
-          id: user1Id,
-          email: `dm-ctx-user1-${user1Id}@test.com`,
-          name: "Alice",
-          workosUserId: `workos_${user1Id}`,
-        })
-        await UserRepository.insert(client, {
-          id: user2Id,
-          email: `dm-ctx-user2-${user2Id}@test.com`,
-          name: "Bob",
-          workosUserId: `workos_${user2Id}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "DM Context Workspace",

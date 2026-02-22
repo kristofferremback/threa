@@ -12,7 +12,6 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test"
 import { Pool } from "pg"
 import { withTransaction, addTestMember } from "./setup"
-import { UserRepository } from "../../src/auth/user-repository"
 import { WorkspaceRepository, WorkspaceService } from "../../src/features/workspaces"
 import { StreamEventRepository, StreamService } from "../../src/features/streams"
 import { EventService } from "../../src/features/messaging"
@@ -30,7 +29,7 @@ describe("Access Control", () => {
   beforeAll(async () => {
     pool = await setupTestDatabase()
     streamService = new StreamService(pool)
-    workspaceService = new WorkspaceService(pool, {} as any)
+    workspaceService = new WorkspaceService(pool, {} as any, {} as any)
     eventService = new EventService(pool)
   })
 
@@ -44,13 +43,6 @@ describe("Access Control", () => {
       const wsId = workspaceId()
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: user1Id,
-          email: `workspace-member-${user1Id}@test.com`,
-          name: "Test User",
-          workosUserId: `workos_${user1Id}`,
-        })
-
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Test Workspace",
@@ -70,18 +62,6 @@ describe("Access Control", () => {
       const wsId = workspaceId()
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `owner-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
-        await UserRepository.insert(client, {
-          id: nonMemberId,
-          email: `non-member-${nonMemberId}@test.com`,
-          name: "Non-Member",
-          workosUserId: `workos_${nonMemberId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Test Workspace",
@@ -100,18 +80,6 @@ describe("Access Control", () => {
       const wsId = workspaceId()
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `owner-join-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
-        await UserRepository.insert(client, {
-          id: joiningUserId,
-          email: `joining-${joiningUserId}@test.com`,
-          name: "Joining User",
-          workosUserId: `workos_${joiningUserId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Test Workspace",
@@ -124,7 +92,11 @@ describe("Access Control", () => {
       expect(await workspaceService.isMember(wsId, joiningUserId)).toBe(false)
 
       // Join the workspace
-      await workspaceService.addMember(wsId, joiningUserId)
+      await workspaceService.addUser(wsId, {
+        workosUserId: joiningUserId,
+        email: `joining-user-${joiningUserId}@test.com`,
+        name: "Joining User",
+      })
 
       // Now a member
       expect(await workspaceService.isMember(wsId, joiningUserId)).toBe(true)
@@ -138,18 +110,6 @@ describe("Access Control", () => {
       const wsId = workspaceId()
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `public-owner-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
-        await UserRepository.insert(client, {
-          id: memberId,
-          email: `public-member-${memberId}@test.com`,
-          name: "Member",
-          workosUserId: `workos_${memberId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Public Test Workspace",
@@ -180,18 +140,6 @@ describe("Access Control", () => {
       const wsId = workspaceId()
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `private-owner-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
-        await UserRepository.insert(client, {
-          id: memberId,
-          email: `private-member-${memberId}@test.com`,
-          name: "Member",
-          workosUserId: `workos_${memberId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Private Test Workspace",
@@ -221,18 +169,6 @@ describe("Access Control", () => {
       let streamMemberWorkspaceId = ""
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `priv-access-owner-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
-        await UserRepository.insert(client, {
-          id: streamMemberId,
-          email: `priv-access-member-${streamMemberId}@test.com`,
-          name: "Stream Member",
-          workosUserId: `workos_${streamMemberId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Private Access Workspace",
@@ -265,18 +201,6 @@ describe("Access Control", () => {
       const wsId = workspaceId()
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `scratch-owner-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
-        await UserRepository.insert(client, {
-          id: otherId,
-          email: `scratch-other-${otherId}@test.com`,
-          name: "Other",
-          workosUserId: `workos_${otherId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Scratchpad Test Workspace",
@@ -314,18 +238,6 @@ describe("Access Control", () => {
       const wsId = workspaceId()
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: user1Id,
-          email: `list-user1-${user1Id}@test.com`,
-          name: "User 1",
-          workosUserId: `workos_${user1Id}`,
-        })
-        await UserRepository.insert(client, {
-          id: user2Id,
-          email: `list-user2-${user2Id}@test.com`,
-          name: "User 2",
-          workosUserId: `workos_${user2Id}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "List Test Workspace",
@@ -380,18 +292,6 @@ describe("Access Control", () => {
       let newMemberWorkspaceId = ""
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `add-member-owner-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
-        await UserRepository.insert(client, {
-          id: newMemberId,
-          email: `add-member-new-${newMemberId}@test.com`,
-          name: "New Member",
-          workosUserId: `workos_${newMemberId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Add Member Workspace",
@@ -430,18 +330,6 @@ describe("Access Control", () => {
       let removedMemberWorkspaceId = ""
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `rm-member-owner-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
-        await UserRepository.insert(client, {
-          id: removedMemberId,
-          email: `rm-member-removed-${removedMemberId}@test.com`,
-          name: "Removed Member",
-          workosUserId: `workos_${removedMemberId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Remove Member Workspace",
@@ -483,18 +371,6 @@ describe("Access Control", () => {
       const ws2Id = workspaceId()
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: user1Id,
-          email: `cross-ws-user1-${user1Id}@test.com`,
-          name: "User 1",
-          workosUserId: `workos_${user1Id}`,
-        })
-        await UserRepository.insert(client, {
-          id: user2Id,
-          email: `cross-ws-user2-${user2Id}@test.com`,
-          name: "User 2",
-          workosUserId: `workos_${user2Id}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: ws1Id,
           name: "Workspace 1",
@@ -536,18 +412,6 @@ describe("Access Control", () => {
       const wsId = workspaceId()
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `thread-vis-owner-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
-        await UserRepository.insert(client, {
-          id: memberId,
-          email: `thread-vis-member-${memberId}@test.com`,
-          name: "Member",
-          workosUserId: `workos_${memberId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Thread Visibility Workspace",
@@ -599,18 +463,6 @@ describe("Access Control", () => {
       const wsId = workspaceId()
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `deep-thread-owner-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
-        await UserRepository.insert(client, {
-          id: memberId,
-          email: `deep-thread-member-${memberId}@test.com`,
-          name: "Member",
-          workosUserId: `workos_${memberId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Deep Thread Workspace",
@@ -692,18 +544,6 @@ describe("Access Control", () => {
       let nonMemberWorkspaceId = ""
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `priv-thread-owner-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
-        await UserRepository.insert(client, {
-          id: nonMemberId,
-          email: `priv-thread-nonmember-${nonMemberId}@test.com`,
-          name: "Non-Member",
-          workosUserId: `workos_${nonMemberId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Private Thread Workspace",
@@ -760,24 +600,6 @@ describe("Access Control", () => {
       let channelMemberWorkspaceId = ""
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: channelOwnerId,
-          email: `thread-ismember-owner-${channelOwnerId}@test.com`,
-          name: "Channel Owner",
-          workosUserId: `workos_${channelOwnerId}`,
-        })
-        await UserRepository.insert(client, {
-          id: channelMemberId,
-          email: `thread-ismember-member-${channelMemberId}@test.com`,
-          name: "Channel Member",
-          workosUserId: `workos_${channelMemberId}`,
-        })
-        await UserRepository.insert(client, {
-          id: threadCreatorId,
-          email: `thread-ismember-creator-${threadCreatorId}@test.com`,
-          name: "Thread Creator",
-          workosUserId: `workos_${threadCreatorId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Thread isMember Workspace",
@@ -825,18 +647,6 @@ describe("Access Control", () => {
       let newMemberWorkspaceId = ""
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `thread-add-member-owner-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
-        await UserRepository.insert(client, {
-          id: newMemberId,
-          email: `thread-add-member-new-${newMemberId}@test.com`,
-          name: "New Member",
-          workosUserId: `workos_${newMemberId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Thread Add Member Workspace",
@@ -894,24 +704,6 @@ describe("Access Control", () => {
       let nonMemberWorkspaceId = ""
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `is-member-owner-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
-        await UserRepository.insert(client, {
-          id: memberId,
-          email: `is-member-member-${memberId}@test.com`,
-          name: "Member",
-          workosUserId: `workos_${memberId}`,
-        })
-        await UserRepository.insert(client, {
-          id: nonMemberId,
-          email: `is-member-non-${nonMemberId}@test.com`,
-          name: "Non-Member",
-          workosUserId: `workos_${nonMemberId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "isMember Test Workspace",
@@ -951,18 +743,6 @@ describe("Access Control", () => {
       let userBMemberId = ""
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: userAId,
-          email: `cmd-vis-userA-${userAId}@test.com`,
-          name: "User A",
-          workosUserId: `workos_${userAId}`,
-        })
-        await UserRepository.insert(client, {
-          id: userBId,
-          email: `cmd-vis-userB-${userBId}@test.com`,
-          name: "User B",
-          workosUserId: `workos_${userBId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Command Visibility Workspace",
@@ -1043,18 +823,6 @@ describe("Access Control", () => {
       let userBMemberId = ""
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: userAId,
-          email: `cmd-fail-vis-userA-${userAId}@test.com`,
-          name: "User A",
-          workosUserId: `workos_${userAId}`,
-        })
-        await UserRepository.insert(client, {
-          id: userBId,
-          email: `cmd-fail-vis-userB-${userBId}@test.com`,
-          name: "User B",
-          workosUserId: `workos_${userBId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Command Failed Visibility Workspace",

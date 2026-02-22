@@ -11,7 +11,6 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test"
 import { Pool } from "pg"
 import { withTransaction, addTestMember } from "./setup"
-import { UserRepository } from "../../src/auth/user-repository"
 import { WorkspaceRepository } from "../../src/features/workspaces"
 import { StreamRepository } from "../../src/features/streams"
 import { MessageRepository } from "../../src/features/messaging"
@@ -36,12 +35,6 @@ describe("ConversationRepository", () => {
     testStreamId = streamId()
 
     await withTransaction(pool, async (client) => {
-      await UserRepository.insert(client, {
-        id: testUserId,
-        email: `conv-test-${testUserId}@test.com`,
-        name: "Test User",
-        workosUserId: `workos_${testUserId}`,
-      })
       await WorkspaceRepository.insert(client, {
         id: testWorkspaceId,
         name: "Test Workspace",
@@ -463,12 +456,6 @@ describe("ConversationRepository", () => {
       let user2MemberId = ""
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: user2UserId,
-          email: `conv-participant-${user2UserId}@test.com`,
-          name: "Second User",
-          workosUserId: `workos_${user2UserId}`,
-        })
         user2MemberId = (await addTestMember(client, testWorkspaceId, user2UserId)).id
 
         await ConversationRepository.insert(client, {

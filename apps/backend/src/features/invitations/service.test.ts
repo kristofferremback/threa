@@ -32,7 +32,7 @@ describe("InvitationService.acceptInvitation", () => {
 
   spyOn(db, "withTransaction").mockImplementation((_pool, fn) => fn({} as PoolClient))
 
-  const mockCreateMember = mock<() => Promise<{ id: string; workspaceId: string }>>()
+  const mockCreateUser = mock<() => Promise<{ id: string; workspaceId: string }>>()
 
   beforeEach(() => {
     mockUpdateStatus.mockReset().mockResolvedValue(true)
@@ -44,13 +44,13 @@ describe("InvitationService.acceptInvitation", () => {
       payload: {},
       createdAt: new Date(),
     } as never)
-    mockCreateMember.mockReset().mockResolvedValue({ id: "member_new", workspaceId: "ws_1" })
+    mockCreateUser.mockReset().mockResolvedValue({ id: "member_new", workspaceId: "ws_1" })
 
     service = new InvitationService(
       {} as never,
       {} as never,
       {
-        createMemberInTransaction: mockCreateMember,
+        createUserInTransaction: mockCreateUser,
       } as never
     )
   })
@@ -58,7 +58,7 @@ describe("InvitationService.acceptInvitation", () => {
   test("should delegate member creation to workspaceService when accepting invitation", async () => {
     await service.acceptInvitation("inv_1", identity)
 
-    expect(mockCreateMember).toHaveBeenCalledWith({} as PoolClient, {
+    expect(mockCreateUser).toHaveBeenCalledWith({} as PoolClient, {
       workspaceId: "ws_1",
       workosUserId: "workos_user_1",
       email: "test@example.com",
@@ -87,7 +87,7 @@ describe("InvitationService.acceptInvitation", () => {
 
     await service.acceptInvitation("inv_1", identity)
 
-    expect(mockCreateMember).not.toHaveBeenCalled()
+    expect(mockCreateUser).not.toHaveBeenCalled()
   })
 
   test("should return null when invitation update fails", async () => {
@@ -97,7 +97,7 @@ describe("InvitationService.acceptInvitation", () => {
 
     expect(result).toBeNull()
     expect(mockInsertOutbox).not.toHaveBeenCalled()
-    expect(mockCreateMember).not.toHaveBeenCalled()
+    expect(mockCreateUser).not.toHaveBeenCalled()
   })
 })
 
@@ -206,7 +206,7 @@ describe("InvitationService.acceptPendingForEmail", () => {
   const mockClient = { query: mock<(text: string) => Promise<{ rows: never[]; rowCount: number }>>() }
   const mockWithTransaction = spyOn(db, "withTransaction").mockImplementation((_pool, fn) => fn(mockClient as never))
 
-  const mockCreateMember = mock<() => Promise<{ id: string; workspaceId: string }>>()
+  const mockCreateUser = mock<() => Promise<{ id: string; workspaceId: string }>>()
 
   beforeEach(() => {
     mockClient.query.mockReset().mockResolvedValue({ rows: [] as never[], rowCount: 0 })
@@ -222,13 +222,13 @@ describe("InvitationService.acceptPendingForEmail", () => {
       .mockReset()
       .mockResolvedValue({ id: 1n, eventType: "test", payload: {}, createdAt: new Date() } as never)
     mockLoggerError.mockReset()
-    mockCreateMember.mockReset().mockResolvedValue({ id: "member_new", workspaceId: "ws_1" })
+    mockCreateUser.mockReset().mockResolvedValue({ id: "member_new", workspaceId: "ws_1" })
 
     service = new InvitationService(
       {} as never,
       {} as never,
       {
-        createMemberInTransaction: mockCreateMember,
+        createUserInTransaction: mockCreateUser,
       } as never
     )
   })
@@ -257,7 +257,7 @@ describe("InvitationService.acceptPendingForEmail", () => {
   })
 
   test("should capture failed invitations without aborting others", async () => {
-    mockCreateMember
+    mockCreateUser
       .mockResolvedValueOnce({ id: "member_1", workspaceId: "ws_1" })
       .mockRejectedValueOnce(new Error("DB constraint violation"))
 

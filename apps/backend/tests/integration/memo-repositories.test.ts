@@ -10,7 +10,6 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test"
 import { Pool } from "pg"
 import { withTransaction, addTestMember } from "./setup"
-import { UserRepository } from "../../src/auth/user-repository"
 import { WorkspaceRepository } from "../../src/features/workspaces"
 import { StreamRepository } from "../../src/features/streams"
 import { ConversationRepository } from "../../src/features/conversations"
@@ -35,12 +34,6 @@ describe("Memo Repositories", () => {
     testStreamId = streamId()
 
     await withTransaction(pool, async (client) => {
-      await UserRepository.insert(client, {
-        id: testUserId,
-        email: `memo-test-${testUserId}@test.com`,
-        name: "Memo Test User",
-        workosUserId: `workos_${testUserId}`,
-      })
       await WorkspaceRepository.insert(client, {
         id: testWorkspaceId,
         name: "Memo Test Workspace",
@@ -773,12 +766,6 @@ describe("Memo Repositories", () => {
         let localMemberId = ""
 
         await withTransaction(pool, async (client) => {
-          await UserRepository.insert(client, {
-            id: localUserId,
-            email: `tags-test-${localUserId}@test.com`,
-            name: "Tags Test User",
-            workosUserId: `workos_${localUserId}`,
-          })
           await WorkspaceRepository.insert(client, {
             id: localWorkspaceId,
             name: "Tags Test Workspace",

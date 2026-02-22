@@ -12,7 +12,6 @@ import { Pool } from "pg"
 import { EventService } from "../../src/features/messaging"
 import { StreamPersonaParticipantRepository } from "../../src/features/agents"
 import { SearchRepository } from "../../src/features/search"
-import { UserRepository } from "../../src/auth/user-repository"
 import { WorkspaceRepository } from "../../src/features/workspaces"
 import { streamId, userId, memberId, workspaceId, personaId } from "../../src/lib/id"
 import { addTestMember, setupTestDatabase, testMessageContent } from "./setup"
@@ -265,13 +264,6 @@ describe("Stream Persona Participants", () => {
       // Create 2 streams - user is member of both
       const stream1 = streamId()
       const stream2 = streamId()
-
-      await UserRepository.insert(pool, {
-        id: testUserId,
-        email: `search-integ-${testUserId}@test.com`,
-        name: "Search Member",
-        workosUserId: `workos_${testUserId}`,
-      })
       await WorkspaceRepository.insert(pool, {
         id: testWorkspaceId,
         name: "Search Integration Workspace",
@@ -340,19 +332,6 @@ describe("Stream Persona Participants", () => {
       const stream1 = streamId()
       const stream2 = streamId()
       const stream3 = streamId()
-
-      await UserRepository.insert(pool, {
-        id: user1,
-        email: `search-mixed-u1-${user1}@test.com`,
-        name: "Mixed User 1",
-        workosUserId: `workos_${user1}`,
-      })
-      await UserRepository.insert(pool, {
-        id: user2,
-        email: `search-mixed-u2-${user2}@test.com`,
-        name: "Mixed User 2",
-        workosUserId: `workos_${user2}`,
-      })
       await WorkspaceRepository.insert(pool, {
         id: testWorkspaceId,
         name: "Search Mixed Workspace",

@@ -166,13 +166,10 @@ export class WorkspaceService {
       setupCompleted: params.setupCompleted,
     })
 
-    const fullUser = await UserRepository.findById(client, user.id)
-    if (fullUser) {
-      await OutboxRepository.insert(client, "workspace_member:added", {
-        workspaceId: params.workspaceId,
-        member: serializeBigInt(fullUser),
-      })
-    }
+    await OutboxRepository.insert(client, "workspace_member:added", {
+      workspaceId: params.workspaceId,
+      member: serializeBigInt(user),
+    })
 
     const sId = streamId()
     const stream = await StreamRepository.insertSystemStream(client, {
@@ -288,13 +285,10 @@ export class WorkspaceService {
             throw new HttpError("Member setup already completed", { status: 400, code: "SETUP_ALREADY_COMPLETED" })
           }
 
-          const fullUser = await UserRepository.findById(client, userId)
-          if (fullUser) {
-            await OutboxRepository.insert(client, "member:updated", {
-              workspaceId,
-              member: serializeBigInt(fullUser),
-            })
-          }
+          await OutboxRepository.insert(client, "member:updated", {
+            workspaceId,
+            member: serializeBigInt(updated),
+          })
 
           return updated
         })
@@ -317,13 +311,10 @@ export class WorkspaceService {
         throw new HttpError("Member not found", { status: 404, code: "MEMBER_NOT_FOUND" })
       }
 
-      const fullUser = await UserRepository.findById(client, userId)
-      if (fullUser) {
-        await OutboxRepository.insert(client, "member:updated", {
-          workspaceId,
-          member: serializeBigInt(fullUser),
-        })
-      }
+      await OutboxRepository.insert(client, "member:updated", {
+        workspaceId,
+        member: serializeBigInt(updated),
+      })
 
       return updated
     })
@@ -379,13 +370,10 @@ export class WorkspaceService {
         throw new HttpError("Member not found", { status: 404, code: "MEMBER_NOT_FOUND" })
       }
 
-      const fullUser = await UserRepository.findById(client, userId)
-      if (fullUser) {
-        await OutboxRepository.insert(client, "member:updated", {
-          workspaceId,
-          member: serializeBigInt(fullUser),
-        })
-      }
+      await OutboxRepository.insert(client, "member:updated", {
+        workspaceId,
+        member: serializeBigInt(result),
+      })
 
       return result
     })
@@ -405,42 +393,5 @@ export class WorkspaceService {
 
     const emailDomain = email.split("@")[1]?.toLowerCase()
     return org.domains.some((d) => d.toLowerCase() === emailDomain)
-  }
-
-  // Backward-compatible aliases while call sites migrate.
-  addMember(wsId: string, params: Parameters<WorkspaceService["addUser"]>[1]) {
-    return this.addUser(wsId, params)
-  }
-
-  createMemberInTransaction(client: Querier, params: Parameters<WorkspaceService["createUserInTransaction"]>[1]) {
-    return this.createUserInTransaction(client, params)
-  }
-
-  removeMember(workspaceId: string, memberId: string) {
-    return this.removeUser(workspaceId, memberId)
-  }
-
-  getMembers(workspaceId: string) {
-    return this.getUsers(workspaceId)
-  }
-
-  completeMemberSetup(
-    memberId: string,
-    workspaceId: string,
-    params: Parameters<WorkspaceService["completeUserSetup"]>[2]
-  ) {
-    return this.completeUserSetup(memberId, workspaceId, params)
-  }
-
-  updateMemberProfile(
-    memberId: string,
-    workspaceId: string,
-    params: Parameters<WorkspaceService["updateUserProfile"]>[2]
-  ) {
-    return this.updateUserProfile(memberId, workspaceId, params)
-  }
-
-  removeMemberAvatar(memberId: string, workspaceId: string) {
-    return this.removeUserAvatar(memberId, workspaceId)
   }
 }

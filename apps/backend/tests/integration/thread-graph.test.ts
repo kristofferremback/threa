@@ -11,7 +11,6 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test"
 import { Pool } from "pg"
 import { withTestTransaction, addTestMember } from "./setup"
-import { UserRepository } from "../../src/auth/user-repository"
 import { WorkspaceRepository } from "../../src/features/workspaces"
 import { StreamService } from "../../src/features/streams"
 import { EventService } from "../../src/features/messaging"
@@ -40,12 +39,6 @@ describe("Thread Graph", () => {
       const wsId = workspaceId()
 
       await withTestTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `thread-owner-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Thread Test Workspace",
@@ -92,12 +85,6 @@ describe("Thread Graph", () => {
       const wsId = workspaceId()
 
       await withTestTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `nested-owner-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Nested Thread Workspace",
@@ -158,12 +145,6 @@ describe("Thread Graph", () => {
       const wsId = workspaceId()
 
       await withTestTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `deep-owner-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Deep Thread Workspace",
@@ -222,12 +203,6 @@ describe("Thread Graph", () => {
       const wsId = workspaceId()
 
       await withTestTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `scratch-thread-owner-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Scratchpad Thread Workspace",
@@ -271,12 +246,6 @@ describe("Thread Graph", () => {
       const wsId = workspaceId()
 
       await withTestTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `thread-member-owner-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Thread Member Workspace",
@@ -320,12 +289,6 @@ describe("Thread Graph", () => {
       const wsId = workspaceId()
 
       await withTestTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `invalid-thread-owner-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Invalid Thread Workspace",
@@ -352,12 +315,6 @@ describe("Thread Graph", () => {
       const wsId = workspaceId()
 
       await withTestTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `idem-owner-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Idempotency Test Workspace",
@@ -410,18 +367,6 @@ describe("Thread Graph", () => {
       const wsId = workspaceId()
 
       await withTestTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `idem-owner2-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
-        await UserRepository.insert(client, {
-          id: user2Id,
-          email: `idem-user2-${user2Id}@test.com`,
-          name: "User 2",
-          workosUserId: `workos_${user2Id}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Multi-user Idempotency Workspace",
@@ -483,12 +428,6 @@ describe("Thread Graph", () => {
       const wsId = workspaceId()
 
       await withTestTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `reply-count-owner-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Reply Count Test Workspace",
@@ -558,12 +497,6 @@ describe("Thread Graph", () => {
       const wsId = workspaceId()
 
       await withTestTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `nested-reply-owner-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Nested Reply Count Workspace",

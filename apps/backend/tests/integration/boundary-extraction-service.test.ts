@@ -12,7 +12,6 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach, afterEach } from "bun:test"
 import { Pool } from "pg"
 import { withTransaction, addTestMember } from "./setup"
-import { UserRepository } from "../../src/auth/user-repository"
 import { WorkspaceRepository } from "../../src/features/workspaces"
 import { StreamRepository } from "../../src/features/streams"
 import { MessageRepository } from "../../src/features/messaging"
@@ -68,12 +67,6 @@ describe("BoundaryExtractionService", () => {
     testStreamId = streamId()
 
     await withTransaction(pool, async (client) => {
-      await UserRepository.insert(client, {
-        id: testUserId,
-        email: `boundary-test-${testUserId}@test.com`,
-        name: "Test User",
-        workosUserId: `workos_${testUserId}`,
-      })
       await WorkspaceRepository.insert(client, {
         id: testWorkspaceId,
         name: "Test Workspace",
@@ -413,12 +406,6 @@ describe("BoundaryExtractionService", () => {
       const msg2Id = messageId()
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: user2Id,
-          email: `boundary-test-user2-${user2Id}@test.com`,
-          name: "Second User",
-          workosUserId: `workos_${user2Id}`,
-        })
         user2MemberId = (await addTestMember(client, testWorkspaceId, user2Id)).id
 
         await MessageRepository.insert(client, {
