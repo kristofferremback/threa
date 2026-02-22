@@ -101,7 +101,7 @@ export function createWorkspaceHandlers({
     async getUsers(req: Request, res: Response) {
       const workspaceId = req.workspaceId!
       const users = await workspaceService.getUsers(workspaceId)
-      res.json({ users, members: users })
+      res.json({ users })
     },
 
     async bootstrap(req: Request, res: Response) {
@@ -178,7 +178,6 @@ export function createWorkspaceHandlers({
         data: {
           workspace,
           users,
-          members: users,
           streams: resolvedStreams,
           streamMemberships,
           personas,

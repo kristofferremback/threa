@@ -14,7 +14,7 @@ function useCurrentUser(workspaceId: string): User | null {
   const { user } = useAuth()
   const { data: bootstrap } = useWorkspaceBootstrap(workspaceId)
   if (!user || !bootstrap) return null
-  const workspaceUsers = bootstrap.users ?? bootstrap.members ?? []
+  const workspaceUsers = bootstrap.users
   return workspaceUsers.find((u) => u.workosUserId === user.id) ?? null
 }
 

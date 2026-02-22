@@ -76,7 +76,7 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
   // Preload member avatar images so they're in the browser cache before first render
   const avatarUrls = useMemo(() => {
     if (!workspaceQuery.data) return []
-    const users = workspaceQuery.data.users ?? workspaceQuery.data.members ?? []
+    const users = workspaceQuery.data.users
     return users.map((u) => getAvatarUrl(workspaceId, u.avatarUrl, 64)).filter((url): url is string => url !== undefined)
   }, [workspaceQuery.data])
   const avatarsReady = usePreloadImages(avatarUrls)

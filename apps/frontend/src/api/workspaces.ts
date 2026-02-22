@@ -79,9 +79,4 @@ export const workspacesApi = {
     }
     return res.user ?? res.member!
   },
-
-  // Backward-compatible alias while call sites migrate.
-  completeMemberSetup(workspaceId: string, data: CompleteMemberSetupInput) {
-    return this.completeUserSetup(workspaceId, data)
-  },
 }

@@ -40,7 +40,7 @@ export function useMentionables() {
 
     // Build member mentionables from workspace-scoped member profile.
     const currentUserId = currentUser?.id
-    const workspaceUsers = bootstrap.users ?? bootstrap.members ?? []
+    const workspaceUsers = bootstrap.users
     const users: Mentionable[] = workspaceUsers.map((u) => ({
       id: u.id,
       slug: u.slug,

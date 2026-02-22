@@ -580,7 +580,6 @@ export interface EmojiEntry {
 export interface WorkspaceBootstrapData {
   workspace: Workspace
   users: WorkspaceUser[]
-  members: WorkspaceUser[]
   streams: Stream[]
   streamMemberships: StreamMember[]
   personas: Persona[]
@@ -606,8 +605,7 @@ export async function getWorkspaceBootstrap(client: TestClient, workspaceId: str
  */
 export async function getMemberId(client: TestClient, workspaceId: string, workosUserId: string): Promise<string> {
   const bootstrap = await getWorkspaceBootstrap(client, workspaceId)
-  const users = bootstrap.users.length > 0 ? bootstrap.users : bootstrap.members
-  const member = users.find((u) => u.workosUserId === workosUserId)
+  const member = bootstrap.users.find((u) => u.workosUserId === workosUserId)
   if (!member) {
     throw new Error(`Member not found for WorkOS user ${workosUserId} in workspace ${workspaceId}`)
   }

@@ -165,7 +165,7 @@ function SentMessageEvent({
   const messageService = useMessageService()
   const user = useUser()
   const { data: wsBootstrap } = useWorkspaceBootstrap(workspaceId)
-  const workspaceUsers = wsBootstrap?.users ?? wsBootstrap?.members
+  const workspaceUsers = wsBootstrap?.users
   const currentMemberId = useMemo(
     () => workspaceUsers?.find((m) => m.workosUserId === user?.id)?.id ?? null,
     [workspaceUsers, user?.id]

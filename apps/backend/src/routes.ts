@@ -152,7 +152,6 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/workspaces/:workspaceId", ...authed, workspace.get)
   app.get("/api/workspaces/:workspaceId/bootstrap", ...authed, workspace.bootstrap)
   app.get("/api/workspaces/:workspaceId/users", ...authed, workspace.getUsers)
-  app.get("/api/workspaces/:workspaceId/members", ...authed, workspace.getUsers)
   app.get("/api/workspaces/:workspaceId/emojis", ...authed, emoji.list)
 
   // User preferences

@@ -151,7 +151,7 @@ export function CreateChannelDialog({ workspaceId }: CreateChannelDialogProps) {
 
   const currentMemberId = useMemo(() => {
     if (!wsBootstrap || !user) return null
-    const users = wsBootstrap.users ?? wsBootstrap.members ?? []
+    const users = wsBootstrap.users
     return users.find((u) => u.workosUserId === user.id)?.id ?? null
   }, [wsBootstrap, user])
 

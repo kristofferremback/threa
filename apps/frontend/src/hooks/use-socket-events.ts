@@ -47,15 +47,18 @@ function updateBootstrapOrInvalidate(
 }
 
 function getWorkspaceUsers(bootstrap: WorkspaceBootstrap): User[] {
-  return bootstrap.users ?? bootstrap.members ?? []
+  return bootstrap.users
 }
 
 function withWorkspaceUsers(bootstrap: WorkspaceBootstrap, users: User[]): WorkspaceBootstrap {
   return {
     ...bootstrap,
     users,
-    members: users,
   }
+}
+
+function toWorkspaceUser(member: MemberWithDisplay): User {
+  return { ...member, role: member.role as User["role"] }
 }
 
 /** Member shape from MemberRepository. */
@@ -373,45 +376,15 @@ export function useSocketEvents(workspaceId: string) {
       // Update workspace bootstrap cache - add member and user if not present
       updateBootstrapOrInvalidate(queryClient, workspaceId, (old) => {
         const users = getWorkspaceUsers(old)
-        const updatedUsers = users.some((u) => u.id === member.id)
-          ? users
-          : [
-              ...users,
-              {
-                id: member.id,
-                workspaceId: member.workspaceId,
-                workosUserId: member.workosUserId,
-                email: member.email,
-                role: member.role as User["role"],
-                slug: member.slug,
-                name: member.name,
-                description: member.description,
-                avatarUrl: member.avatarUrl,
-                timezone: member.timezone,
-                locale: member.locale,
-                setupCompleted: member.setupCompleted,
-                joinedAt: member.joinedAt,
-              },
-            ]
+        const incomingUser = toWorkspaceUser(member)
+        const updatedUsers = users.some((u) => u.id === member.id) ? users : [...users, incomingUser]
 
         return withWorkspaceUsers(old, updatedUsers)
       })
 
       // Cache member to IndexedDB
       db.workspaceMembers.put({
-        id: member.id,
-        workspaceId: member.workspaceId,
-        workosUserId: member.workosUserId,
-        email: member.email,
-        role: member.role as "owner" | "admin" | "member",
-        slug: member.slug,
-        name: member.name,
-        description: member.description,
-        avatarUrl: member.avatarUrl,
-        timezone: member.timezone,
-        locale: member.locale,
-        setupCompleted: member.setupCompleted,
-        joinedAt: member.joinedAt,
+        ...toWorkspaceUser(member),
         _cachedAt: now,
       })
     })
@@ -443,44 +416,15 @@ export function useSocketEvents(workspaceId: string) {
         if (!old || typeof old !== "object") return old
         const bootstrap = old as WorkspaceBootstrap
         const users = getWorkspaceUsers(bootstrap)
-        const updatedUsers = users.map((u) =>
-          u.id === member.id
-            ? {
-                id: member.id,
-                workspaceId: member.workspaceId,
-                workosUserId: member.workosUserId,
-                email: member.email,
-                role: member.role as User["role"],
-                slug: member.slug,
-                name: member.name,
-                description: member.description,
-                avatarUrl: member.avatarUrl,
-                timezone: member.timezone,
-                locale: member.locale,
-                setupCompleted: member.setupCompleted,
-                joinedAt: member.joinedAt,
-              }
-            : u
-        )
+        const incomingUser = toWorkspaceUser(member)
+        const updatedUsers = users.map((u) => (u.id === member.id ? incomingUser : u))
 
         return withWorkspaceUsers(bootstrap, updatedUsers)
       })
 
       // Update IndexedDB
       db.workspaceMembers.put({
-        id: member.id,
-        workspaceId: member.workspaceId,
-        workosUserId: member.workosUserId,
-        email: member.email,
-        role: member.role as "owner" | "admin" | "member",
-        slug: member.slug,
-        name: member.name,
-        description: member.description,
-        avatarUrl: member.avatarUrl,
-        timezone: member.timezone,
-        locale: member.locale,
-        setupCompleted: member.setupCompleted,
-        joinedAt: member.joinedAt,
+        ...toWorkspaceUser(member),
         _cachedAt: now,
       })
     })

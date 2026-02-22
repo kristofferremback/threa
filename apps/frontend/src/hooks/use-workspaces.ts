@@ -77,7 +77,7 @@ export function useWorkspaceBootstrap(workspaceId: string) {
       await joinRoomBestEffort(socket, `ws:${workspaceId}`, "WorkspaceBootstrap")
 
       const bootstrap = await workspaceService.bootstrap(workspaceId)
-      const users = bootstrap.users ?? bootstrap.members ?? []
+      const users = bootstrap.users
       debugBootstrap("Workspace bootstrap fetch success", {
         workspaceId,
         streamCount: bootstrap.streams.length,
@@ -164,11 +164,10 @@ export function useCreateWorkspace() {
 function updateUserInBootstrap(queryClient: ReturnType<typeof useQueryClient>, workspaceId: string, updatedUser: User) {
   queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
     if (!old) return old
-    const users = old.users ?? old.members ?? []
+    const users = old.users
     return {
       ...old,
       users: users.map((u) => (u.id === updatedUser.id ? updatedUser : u)),
-      members: users.map((u) => (u.id === updatedUser.id ? updatedUser : u)),
     }
   })
 

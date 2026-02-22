@@ -48,7 +48,7 @@ export function useSearchItems(context: ModeContext): ModeResult {
 
   const [addingFilter, setAddingFilter] = useState<FilterType | null>(null)
 
-  const members = useMemo(() => bootstrap?.users ?? bootstrap?.members ?? [], [bootstrap?.users, bootstrap?.members])
+  const members = useMemo(() => bootstrap?.users ?? [], [bootstrap?.users])
   const streams = useMemo(() => bootstrap?.streams ?? [], [bootstrap?.streams])
 
   // Parse filters from query string (single source of truth)

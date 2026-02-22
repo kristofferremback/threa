@@ -153,8 +153,6 @@ export interface CommandInfo {
 export interface WorkspaceBootstrap {
   workspace: Workspace
   users: User[]
-  // Backward-compatible alias while clients migrate.
-  members?: User[]
   streams: StreamWithPreview[]
   streamMemberships: StreamMember[]
   dmPeers: Array<{ memberId: string; streamId: string }>

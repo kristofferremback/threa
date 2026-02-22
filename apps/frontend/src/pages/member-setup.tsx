@@ -103,7 +103,7 @@ export function MemberSetupPage() {
 
   const setupMutation = useMutation({
     mutationFn: () =>
-      workspacesApi.completeMemberSetup(workspaceId!, {
+      workspacesApi.completeUserSetup(workspaceId!, {
         name: name || undefined,
         slug: trimmedSlug || undefined,
         timezone,

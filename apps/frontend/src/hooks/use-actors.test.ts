@@ -75,7 +75,7 @@ describe("useActors", () => {
 
     it("should return member display name when found in cache", () => {
       const bootstrap: Partial<WorkspaceBootstrap> = {
-        members: [createMember({ id: "mem_123", name: "John Doe" })],
+        users: [createMember({ id: "mem_123", name: "John Doe" })],
         personas: [],
       }
       queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
@@ -89,7 +89,7 @@ describe("useActors", () => {
 
     it("should return truncated ID when member not in cache", () => {
       const bootstrap: Partial<WorkspaceBootstrap> = {
-        members: [],
+        users: [],
         personas: [],
       }
       queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
@@ -147,7 +147,7 @@ describe("useActors", () => {
 
     it("should return initials from member display name", () => {
       const bootstrap: Partial<WorkspaceBootstrap> = {
-        members: [createMember({ id: "mem_123", name: "John Doe" })],
+        users: [createMember({ id: "mem_123", name: "John Doe" })],
         personas: [],
       }
       queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
@@ -199,7 +199,7 @@ describe("useActors", () => {
 
     it("should return truncated ID when member not found", () => {
       const bootstrap: Partial<WorkspaceBootstrap> = {
-        members: [],
+        users: [],
         personas: [],
       }
       queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)

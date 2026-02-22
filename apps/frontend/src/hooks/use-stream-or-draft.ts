@@ -51,7 +51,7 @@ function resolveRealDmDisplayName(
   const otherMemberId = streamMembers.find((member) => member.memberId !== currentMemberId)?.memberId
   if (!otherMemberId) return streamDisplayName
 
-  const workspaceUsers = workspaceBootstrap?.users ?? workspaceBootstrap?.members ?? []
+  const workspaceUsers = workspaceBootstrap?.users ?? []
   const otherMemberName = workspaceUsers.find((u) => u.id === otherMemberId)?.name ?? null
   return otherMemberName ?? streamDisplayName
 }
@@ -190,7 +190,7 @@ function useDraftDmStream(workspaceId: string, streamId: string, enabled: boolea
   const messageService = useMessageService()
   const user = useUser()
   const { data: wsBootstrap, isLoading } = useWorkspaceBootstrap(workspaceId)
-  const workspaceUsers = wsBootstrap?.users ?? wsBootstrap?.members ?? []
+  const workspaceUsers = wsBootstrap?.users ?? []
 
   const targetMemberId = getDmDraftMemberId(streamId)
   const targetMember = workspaceUsers.find((u) => u.id === targetMemberId) ?? null
@@ -363,7 +363,7 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
   const { markPending, markFailed, markSent } = usePendingMessages()
   const user = useUser()
   const { data: wsBootstrap } = useWorkspaceBootstrap(workspaceId)
-  const workspaceUsers = wsBootstrap?.users ?? wsBootstrap?.members ?? []
+  const workspaceUsers = wsBootstrap?.users ?? []
   const currentMemberId = workspaceUsers.find((u) => u.workosUserId === user?.id)?.id ?? null
 
   const { data: bootstrap, isLoading, error } = useStreamBootstrap(workspaceId, streamId, { enabled })

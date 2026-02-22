@@ -113,9 +113,9 @@ describe("Activity Feed E2E", () => {
       ownerMemberId = await getMemberId(ownerClient, workspaceId, owner.id)
       aliceMemberId = await getMemberId(aliceClient, workspaceId, alice.id)
 
-      // Get Alice's slug from the bootstrap members list
+      // Get Alice's slug from the bootstrap users list
       const bootstrap = await getWorkspaceBootstrap(ownerClient, workspaceId)
-      const aliceMember = bootstrap.members.find((m) => m.id === aliceMemberId)
+      const aliceMember = bootstrap.users.find((m) => m.id === aliceMemberId)
       aliceSlug = (aliceMember as unknown as { slug: string }).slug
 
       const channel = await createChannel(ownerClient, workspaceId, `general-${testRunId}`, "public")
@@ -143,7 +143,7 @@ describe("Activity Feed E2E", () => {
     test("should not create activity for self-mentions", async () => {
       // Get owner's slug
       const bootstrap = await getWorkspaceBootstrap(ownerClient, workspaceId)
-      const ownerMember = bootstrap.members.find((m) => m.id === ownerMemberId)
+      const ownerMember = bootstrap.users.find((m) => m.id === ownerMemberId)
       const ownerSlug = (ownerMember as unknown as { slug: string }).slug
 
       // Owner mentions themselves
@@ -198,7 +198,7 @@ describe("Activity Feed E2E", () => {
       const bobMemberId = await getMemberId(bobClient, workspaceId, bob.id)
 
       const bootstrap = await getWorkspaceBootstrap(ownerClient, workspaceId)
-      const bobMember = bootstrap.members.find((m) => m.id === bobMemberId)
+      const bobMember = bootstrap.users.find((m) => m.id === bobMemberId)
       bobSlug = (bobMember as unknown as { slug: string }).slug
 
       const channel = await createChannel(ownerClient, workspaceId, `readstate-${testRunId}`, "public")
@@ -273,8 +273,8 @@ describe("Activity Feed E2E", () => {
 
       const charlieMemberId = await getMemberId(charlieClient, workspace.id, charlie.id)
 
-      const membersBootstrap = await getWorkspaceBootstrap(ownerClient, workspace.id)
-      const charlieMember = membersBootstrap.members.find((m) => m.id === charlieMemberId)
+      const usersBootstrap = await getWorkspaceBootstrap(ownerClient, workspace.id)
+      const charlieMember = usersBootstrap.users.find((m) => m.id === charlieMemberId)
       const charlieSlug = (charlieMember as unknown as { slug: string }).slug
 
       const channel = await createChannel(ownerClient, workspace.id, `bootstrap-${testRunId}`, "public")
@@ -314,7 +314,7 @@ describe("Activity Feed E2E", () => {
       const dupeMemberId = await getMemberId(dupeClient, workspace.id, dupe.id)
 
       const bootstrap = await getWorkspaceBootstrap(ownerClient, workspace.id)
-      const dupeMember = bootstrap.members.find((m) => m.id === dupeMemberId)
+      const dupeMember = bootstrap.users.find((m) => m.id === dupeMemberId)
       const dupeSlug = (dupeMember as unknown as { slug: string }).slug
 
       const channel = await createChannel(ownerClient, workspace.id, `dedup-${testRunId}`, "public")

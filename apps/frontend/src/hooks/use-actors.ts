@@ -44,7 +44,7 @@ export function useActors(workspaceId: string): ActorLookup {
   const getMember = useCallback(
     (memberId: string): User | undefined => {
       const bootstrap = getBootstrapData()
-      const users = bootstrap?.users ?? bootstrap?.members ?? []
+      const users = bootstrap?.users ?? []
       return users.find((u) => u.id === memberId)
     },
     [getBootstrapData]
@@ -71,7 +71,7 @@ export function useActors(workspaceId: string): ActorLookup {
 
       // actorType === "member" — resolve workspace-scoped name
       const bootstrap = getBootstrapData()
-      const users = bootstrap?.users ?? bootstrap?.members
+      const users = bootstrap?.users
       const name = resolveMemberName(actorId, users)
       return name ?? actorId.substring(0, 8)
     },
@@ -102,7 +102,7 @@ export function useActors(workspaceId: string): ActorLookup {
       }
 
       const bootstrap = getBootstrapData()
-      const users = bootstrap?.users ?? bootstrap?.members
+      const users = bootstrap?.users
       const name = resolveMemberName(actorId, users)
       if (name) {
         const words = name.split(" ")

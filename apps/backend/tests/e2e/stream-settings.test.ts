@@ -189,7 +189,7 @@ describe("Stream Settings E2E", () => {
 
       // Verify member appears in bootstrap (member client can now access)
       const bootstrap = await getBootstrap(memberClient, workspaceId, channel.id)
-      const memberIds = bootstrap.members.map((m: { memberId?: string; userId?: string }) => m.memberId ?? m.userId)
+      const memberIds = bootstrap.members.map((m: { memberId: string }) => m.memberId)
       expect(memberIds).toContain(memberMemberId)
     })
 

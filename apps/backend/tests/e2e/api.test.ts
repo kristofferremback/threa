@@ -116,7 +116,7 @@ describe("API E2E Tests", () => {
       expect(data.workspaces.length).toBeGreaterThan(0)
     })
 
-    test("should return members and personas in workspace bootstrap", async () => {
+    test("should return users and personas in workspace bootstrap", async () => {
       const client = new TestClient()
       const user = await loginAs(client, testEmail("wsboot"), "WS Bootstrap Test")
       const workspace = await createWorkspace(client, `Boot Test WS ${testRunId}`)
@@ -124,9 +124,9 @@ describe("API E2E Tests", () => {
       const bootstrap = await getWorkspaceBootstrap(client, workspace.id)
 
       // Should include the logged-in user as a workspace member
-      expect(bootstrap.members).toBeInstanceOf(Array)
-      expect(bootstrap.members.length).toBeGreaterThan(0)
-      const foundMember = bootstrap.members.find((m) => m.workosUserId === user.id)
+      expect(bootstrap.users).toBeInstanceOf(Array)
+      expect(bootstrap.users.length).toBeGreaterThan(0)
+      const foundMember = bootstrap.users.find((m) => m.workosUserId === user.id)
       expect(foundMember).toBeDefined()
       expect(foundMember?.name).toBe("WS Bootstrap Test")
 

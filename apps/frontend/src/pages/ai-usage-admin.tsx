@@ -442,11 +442,11 @@ export function AIUsageAdminPage() {
   // Build workspace user name lookup map (userId -> display name).
   const memberNames = useMemo(() => {
     const map = new Map<string, string>()
-    for (const user of bootstrap?.users ?? bootstrap?.members ?? []) {
+    for (const user of bootstrap?.users ?? []) {
       map.set(user.id, user.name || user.email || user.slug)
     }
     return map
-  }, [bootstrap?.users, bootstrap?.members])
+  }, [bootstrap?.users])
 
   // Get system usage from byOrigin data
   const systemCost = useMemo(() => {
