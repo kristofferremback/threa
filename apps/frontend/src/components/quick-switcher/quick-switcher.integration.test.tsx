@@ -39,7 +39,7 @@ const { mockNavigate, mockSearchState, mockWorkspaceBootstrap } = vi.hoisted(() 
     data: {} as {
       streams: unknown[]
       streamMemberships: unknown[]
-      members: unknown[]
+      users: unknown[]
       personas: unknown[]
       dmPeers?: Array<{ memberId: string; streamId: string }>
     },
@@ -172,7 +172,7 @@ describe("QuickSwitcher Integration Tests", () => {
     mockWorkspaceBootstrap.data = {
       streams: mockStreamsList,
       streamMemberships: [],
-      members: mockMembersList,
+      users: mockMembersList,
       personas: [],
       dmPeers: undefined,
     }
@@ -1297,7 +1297,7 @@ describe("QuickSwitcher Integration Tests", () => {
       renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
       const input = screen.getByLabelText("Quick switcher input")
-      await user.type(input, "test")
+      await user.type(input, "alice")
 
       await waitFor(() => {
         expect(document.querySelector('a[href="/w/workspace_1/s/draft_dm_member_3"]')).toBeInTheDocument()
@@ -1311,7 +1311,7 @@ describe("QuickSwitcher Integration Tests", () => {
       renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
       const input = screen.getByLabelText("Quick switcher input")
-      await user.type(input, "test")
+      await user.type(input, "alice")
 
       await waitFor(() => {
         expect(document.querySelector('a[href="/w/workspace_1/s/draft_dm_member_3"]')).toBeInTheDocument()
