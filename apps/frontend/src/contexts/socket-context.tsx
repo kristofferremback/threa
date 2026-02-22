@@ -129,10 +129,6 @@ export function SocketProvider({ workspaceId, children }: SocketProviderProps) {
       newSocket?.close()
       setSocket(null)
       setStatus("connecting")
-      // Intentionally NOT resetting reconnectCount: when workspaceId changes and a
-      // new socket connects, useReconnectBootstrap needs to see a count change to
-      // invalidate stale queries and close the event gap (INV-53).
-      setReconnectCount((c) => c + 1)
     }
   }, [workspaceId])
 

@@ -1,6 +1,5 @@
 import type { NextFunction, Request, Response } from "express"
 import ipaddr from "ipaddr.js"
-import { getClientIp } from "../lib/client-ip"
 
 export function isInternalNetworkIp(rawIp: string): boolean {
   if (!rawIp) return false
@@ -23,8 +22,11 @@ export function isInternalNetworkIp(rawIp: string): boolean {
 
 export function createOpsAccessMiddleware() {
   return function opsAccessMiddleware(req: Request, res: Response, next: NextFunction): void {
-    const clientIp = getClientIp(req)
-    if (isInternalNetworkIp(clientIp)) {
+    // Use the actual TCP peer address, not req.ip which trusts X-Forwarded-For
+    // via trust proxy. Ops endpoints are accessed directly by infrastructure,
+    // never through the workspace router proxy.
+    const peerIp = req.socket.remoteAddress ?? ""
+    if (isInternalNetworkIp(peerIp)) {
       return next()
     }
 
