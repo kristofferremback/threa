@@ -284,7 +284,7 @@ async function main() {
     await ensureMinioBucket()
   }
 
-  console.log("Starting backend and frontend...")
+  console.log("Starting workspace-router, backend and frontend...")
 
   // Load backend's .env file (worktree-specific DATABASE_URL, etc.)
   const backendEnvPath = path.join(process.cwd(), "apps/backend/.env")
@@ -297,11 +297,19 @@ async function main() {
       ...process.env,
       ...backendEnv,
       FAST_SHUTDOWN: "true",
+      PORT: "3002",
       // Fallback DATABASE_URL only if not in .env
       DATABASE_URL:
         backendEnv.DATABASE_URL ?? process.env.DATABASE_URL ?? "postgresql://threa:threa@localhost:5454/threa",
       USE_STUB_AUTH: backendEnv.USE_STUB_AUTH ?? process.env.USE_STUB_AUTH ?? "false",
     },
+  })
+
+  const routerDir = path.join(process.cwd(), "apps/backend/workspace-router")
+  const router = Bun.spawn(["bunx", "wrangler", "dev", "--port", "3001"], {
+    cwd: routerDir,
+    stdout: "inherit",
+    stderr: "inherit",
   })
 
   const frontend = Bun.spawn(["bun", "run", "--cwd", "apps/frontend", "dev"], {
@@ -320,17 +328,18 @@ async function main() {
 
     // Use SIGKILL for immediate termination in development
     backend.kill("SIGKILL")
+    router.kill("SIGKILL")
     frontend.kill("SIGKILL")
 
     // Wait for processes to fully terminate
-    await Promise.all([backend.exited, frontend.exited])
+    await Promise.all([backend.exited, router.exited, frontend.exited])
     process.exit(0)
   }
 
   process.on("SIGINT", shutdown)
   process.on("SIGTERM", shutdown)
 
-  await Promise.all([backend.exited, frontend.exited])
+  await Promise.all([backend.exited, router.exited, frontend.exited])
 }
 
 main()

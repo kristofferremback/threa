@@ -1,0 +1,14 @@
+name = "workspace-router"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+[[kv_namespaces]]
+binding = "WORKSPACE_REGIONS"
+id = "workspace-regions-kv"
+
+[vars]
+DEFAULT_REGION = "local"
+REGIONS = '{"local":{"apiUrl":"http://localhost:3002","wsUrl":"ws://localhost:3002"}}'
+
+[dev]
+port = 3001
