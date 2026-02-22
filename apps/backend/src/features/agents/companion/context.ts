@@ -4,7 +4,7 @@ import type { UserPreferences } from "@threa/types"
 import { AgentTriggers, StreamTypes, AuthorTypes } from "@threa/types"
 import type { UserPreferencesService } from "../../user-preferences"
 import { MessageRepository, type Message } from "../../messaging"
-import { MemberRepository } from "../../workspaces"
+import { UserRepository } from "../../workspaces"
 import { PersonaRepository } from "../persona-repository"
 import type { Persona } from "../persona-repository"
 import { AttachmentRepository } from "../../attachments"
@@ -111,7 +111,7 @@ export async function buildAgentContext(deps: ContextDeps, params: ContextParams
     ),
   ]
   if (memberAuthorIds.length > 0) {
-    const members = await MemberRepository.findByIds(db, memberAuthorIds)
+    const members = await UserRepository.findByIds(db, memberAuthorIds)
     for (const m of members) authorNames.set(m.id, m.name)
   }
 
@@ -127,7 +127,7 @@ export async function buildAgentContext(deps: ContextDeps, params: ContextParams
 
   let mentionerName: string | undefined
   if (trigger === AgentTriggers.MENTION && triggerMessage?.authorType === AuthorTypes.MEMBER) {
-    const mentioner = await MemberRepository.findById(db, triggerMessage.authorId)
+    const mentioner = await UserRepository.findById(db, triggerMessage.authorId)
     mentionerName = mentioner?.name ?? undefined
   }
 

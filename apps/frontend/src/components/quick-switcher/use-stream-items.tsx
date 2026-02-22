@@ -285,7 +285,6 @@ export function useStreamItems(context: ModeContext): ModeResult {
             <FilterSelect
               type={addingFilter}
               members={[]} // Not needed for stream status/type
-              users={[]} // Not needed
               streams={[]} // Not needed
               streamTypes={STREAM_TYPE_OPTIONS}
               statusOptions={ARCHIVE_STATUS_OPTIONS}

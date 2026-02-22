@@ -54,7 +54,7 @@ describe("attachment handlers safety gating", () => {
 
     await handlers.upload(
       {
-        member: { id: "member_1" },
+        user: { id: "member_1" },
         workspaceId: "ws_1",
         attachmentId: "attach_1",
         file: {
@@ -90,7 +90,7 @@ describe("attachment handlers safety gating", () => {
 
     await handlers.upload(
       {
-        member: { id: "member_1" },
+        user: { id: "member_1" },
         workspaceId: "ws_1",
         attachmentId: "attach_1",
         file: {
@@ -126,7 +126,7 @@ describe("attachment handlers safety gating", () => {
 
     await handlers.getDownloadUrl(
       {
-        member: { id: "member_1" },
+        user: { id: "member_1" },
         workspaceId: "ws_1",
         params: { attachmentId: "attach_1" },
       } as any,
@@ -154,7 +154,7 @@ describe("attachment handlers safety gating", () => {
 
     await handlers.getDownloadUrl(
       {
-        member: { id: "member_1" },
+        user: { id: "member_1" },
         workspaceId: "ws_1",
         params: { attachmentId: "attach_1" },
       } as any,
@@ -182,7 +182,7 @@ describe("attachment handlers safety gating", () => {
 
     await handlers.getDownloadUrl(
       {
-        member: { id: "member_1" },
+        user: { id: "member_1" },
         workspaceId: "ws_1",
         params: { attachmentId: "attach_1" },
       } as any,

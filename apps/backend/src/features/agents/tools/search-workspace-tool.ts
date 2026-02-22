@@ -2,7 +2,7 @@ import { z } from "zod"
 import { AgentStepTypes, STREAM_TYPES } from "@threa/types"
 import { logger } from "../../../lib/logger"
 import { StreamRepository } from "../../streams"
-import { MemberRepository } from "../../workspaces"
+import { UserRepository } from "../../workspaces"
 import { MessageRepository } from "../../messaging"
 import { PersonaRepository } from "../persona-repository"
 import { enrichMessageSearchResults } from "../researcher"
@@ -278,7 +278,7 @@ export function createSearchUsersTool(deps: WorkspaceToolDeps) {
 
     execute: async (input): Promise<AgentToolResult> => {
       try {
-        const members = await MemberRepository.searchByNameOrSlug(db, workspaceId, input.query, 10)
+        const members = await UserRepository.searchByNameOrSlug(db, workspaceId, input.query, 10)
         const results: UserSearchResult[] = members.map((m) => ({ id: m.id, name: m.name, email: m.email }))
 
         if (results.length === 0) {
@@ -355,7 +355,7 @@ You can reference streams by their ID (stream_xxx), slug (general), or prefixed 
         const memberIds = [...new Set(messages.filter((m) => m.authorType === "member").map((m) => m.authorId))]
         const personaIds = [...new Set(messages.filter((m) => m.authorType === "persona").map((m) => m.authorId))]
         const [members, personas] = await Promise.all([
-          memberIds.length > 0 ? MemberRepository.findByIds(db, memberIds) : Promise.resolve([]),
+          memberIds.length > 0 ? UserRepository.findByIds(db, memberIds) : Promise.resolve([]),
           personaIds.length > 0 ? PersonaRepository.findByIds(db, personaIds) : Promise.resolve([]),
         ])
 

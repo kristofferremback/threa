@@ -2,8 +2,7 @@ import { Pool } from "pg"
 import { withTransaction, type Querier } from "../../db"
 import { InvitationRepository, type Invitation } from "./repository"
 import { WorkspaceRepository, type WorkspaceService } from "../workspaces"
-import { MemberRepository } from "../workspaces"
-import { UserRepository } from "../../auth/user-repository"
+import { UserRepository } from "../workspaces"
 import { OutboxRepository } from "../../lib/outbox"
 import { invitationId } from "../../lib/id"
 import { logger } from "../../lib/logger"
@@ -34,6 +33,12 @@ export interface AcceptPendingResult {
   failed: Array<{ invitationId: string; email: string; error: string }>
 }
 
+export interface WorkosIdentity {
+  workosUserId: string
+  email: string
+  name: string
+}
+
 export class InvitationService {
   constructor(
     private pool: Pool,
@@ -51,19 +56,11 @@ export class InvitationService {
     const orgId = await this.ensureWorkosOrganization(workspaceId)
 
     // Look up the inviter's WorkOS user ID for WorkOS API
-    const inviterMember = await MemberRepository.findById(this.pool, invitedBy)
-    let inviterWorkosUserId: string | undefined
-    if (inviterMember) {
-      const user = await UserRepository.findById(this.pool, inviterMember.userId)
-      inviterWorkosUserId = user?.workosUserId ?? undefined
-    }
+    const inviterMember = await UserRepository.findById(this.pool, invitedBy)
+    const inviterWorkosUserId = inviterMember?.workosUserId ?? undefined
 
-    // Batch-fetch: users by email, existing members, pending invitations
-    const existingUsers = await UserRepository.findByEmails(this.pool, emails)
-    const usersByEmail = new Map(existingUsers.map((u) => [u.email, u]))
-
-    const userIds = existingUsers.map((u) => u.id)
-    const memberUserIds = await WorkspaceRepository.findMemberUserIds(this.pool, workspaceId, userIds)
+    // Batch-fetch: existing members + pending invitations
+    const existingMemberEmails = await WorkspaceRepository.findUserEmails(this.pool, workspaceId, emails)
 
     const pendingInvitations = await InvitationRepository.findPendingByEmailsAndWorkspace(
       this.pool,
@@ -75,8 +72,7 @@ export class InvitationService {
     // Build list of emails to send (filter skipped)
     const emailsToSend: string[] = []
     for (const email of emails) {
-      const user = usersByEmail.get(email)
-      if (user && memberUserIds.has(user.id)) {
+      if (existingMemberEmails.has(email)) {
         skipped.push({ email, reason: "already_member" })
         continue
       }
@@ -156,16 +152,16 @@ export class InvitationService {
     return { sent, skipped }
   }
 
-  async acceptInvitation(invitationId: string, userId: string): Promise<string | null> {
+  async acceptInvitation(invitationId: string, identity: WorkosIdentity): Promise<string | null> {
     return withTransaction(this.pool, async (client) => {
-      return this.acceptInvitationInTransaction(client, invitationId, userId)
+      return this.acceptInvitationInTransaction(client, invitationId, identity)
     })
   }
 
   private async acceptInvitationInTransaction(
     client: Querier,
     invitationId: string,
-    userId: string
+    identity: WorkosIdentity
   ): Promise<string | null> {
     const now = new Date()
     const updated = await InvitationRepository.updateStatus(client, invitationId, "accepted", {
@@ -181,12 +177,14 @@ export class InvitationService {
     if (!invitation) return null
 
     // Check if already a member (race condition safety)
-    const isMember = await WorkspaceRepository.isMember(client, invitation.workspaceId, userId)
+    const isMember = await WorkspaceRepository.isMember(client, invitation.workspaceId, identity.workosUserId)
     if (isMember) return invitation.workspaceId
 
     await this.workspaceService.createMemberInTransaction(client, {
       workspaceId: invitation.workspaceId,
-      userId,
+      workosUserId: identity.workosUserId,
+      email: identity.email,
+      name: identity.name,
       role: invitation.role,
       setupCompleted: false,
     })
@@ -195,13 +193,14 @@ export class InvitationService {
       workspaceId: invitation.workspaceId,
       invitationId: invitation.id,
       email: invitation.email,
-      userId,
+      workosUserId: identity.workosUserId,
+      memberName: identity.name,
     })
 
     return invitation.workspaceId
   }
 
-  async acceptPendingForEmail(email: string, userId: string): Promise<AcceptPendingResult> {
+  async acceptPendingForEmail(email: string, identity: WorkosIdentity): Promise<AcceptPendingResult> {
     const pending = await InvitationRepository.findPendingByEmail(this.pool, email.toLowerCase())
     if (pending.length === 0) return { accepted: [], failed: [] }
 
@@ -214,7 +213,7 @@ export class InvitationService {
           // Savepoint allows partial success: if one invitation fails,
           // we rollback just that one and continue with the rest
           await client.query("SAVEPOINT accept_inv")
-          const wsId = await this.acceptInvitationInTransaction(client, invitation.id, userId)
+          const wsId = await this.acceptInvitationInTransaction(client, invitation.id, identity)
           await client.query("RELEASE SAVEPOINT accept_inv")
 
           if (wsId) {

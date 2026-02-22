@@ -166,8 +166,8 @@ function SentMessageEvent({
   const user = useUser()
   const { data: wsBootstrap } = useWorkspaceBootstrap(workspaceId)
   const currentMemberId = useMemo(
-    () => wsBootstrap?.members?.find((m) => m.userId === user?.id)?.id ?? null,
-    [wsBootstrap?.members, user?.id]
+    () => (wsBootstrap?.users ?? wsBootstrap?.members)?.find((m) => m.workosUserId === user?.id)?.id ?? null,
+    [wsBootstrap?.users ?? wsBootstrap?.members, user?.id]
   )
   const { getTraceUrl } = useTrace()
   const replyCount = payload.replyCount ?? 0

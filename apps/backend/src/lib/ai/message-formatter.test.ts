@@ -1,6 +1,6 @@
 import { describe, test, expect, mock, beforeEach, spyOn } from "bun:test"
 import { MessageFormatter } from "./message-formatter"
-import { MemberRepository } from "../../features/workspaces"
+import { UserRepository } from "../../features/workspaces"
 import { PersonaRepository } from "../../features/agents"
 import type { Message } from "../../features/messaging"
 import type { AttachmentWithExtraction } from "../../features/attachments"
@@ -40,7 +40,7 @@ describe("MessageFormatter", () => {
     mockFindMembersByIds.mockResolvedValue([])
     mockFindPersonasByIds.mockResolvedValue([])
 
-    spyOn(MemberRepository, "findByIds").mockImplementation(mockFindMembersByIds as any)
+    spyOn(UserRepository, "findByIds").mockImplementation(mockFindMembersByIds as any)
     spyOn(PersonaRepository, "findByIds").mockImplementation(mockFindPersonasByIds as any)
 
     formatter = new MessageFormatter()

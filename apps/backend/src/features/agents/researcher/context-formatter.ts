@@ -1,6 +1,6 @@
 import type { AuthorType } from "@threa/types"
 import type { Querier } from "../../../db"
-import { MemberRepository } from "../../workspaces"
+import { UserRepository } from "../../workspaces"
 import { StreamRepository } from "../../streams"
 import type { Memo } from "../../memos"
 import { PersonaRepository } from "../persona-repository"
@@ -168,7 +168,7 @@ export async function enrichMessageSearchResults(
 
   // Batch fetch members, personas, streams
   const [members, personas, streams] = await Promise.all([
-    memberIds.size > 0 ? MemberRepository.findByIds(db, [...memberIds]) : Promise.resolve([]),
+    memberIds.size > 0 ? UserRepository.findByIds(db, [...memberIds]) : Promise.resolve([]),
     personaIds.size > 0 ? PersonaRepository.findByIds(db, [...personaIds]) : Promise.resolve([]),
     StreamRepository.findByIds(db, [...streamIds]),
   ])

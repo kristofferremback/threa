@@ -1,6 +1,6 @@
 import type { Express, RequestHandler } from "express"
 import { createAuthMiddleware } from "./auth/middleware"
-import { createWorkspaceMemberMiddleware } from "./middleware/workspace"
+import { createWorkspaceUserMiddleware } from "./middleware/workspace"
 import { createUploadMiddleware, createAvatarUploadMiddleware } from "./middleware/upload"
 import { createRateLimiters, type RateLimiterConfig } from "./middleware/rate-limit"
 import { createOpsAccessMiddleware } from "./middleware/ops-access"
@@ -24,7 +24,6 @@ import { createAgentSessionHandlers } from "./features/agents"
 import { errorHandler } from "./lib/error-handler"
 import type { AuthService } from "./auth/auth-service"
 import { StubAuthService } from "./auth/auth-service.stub"
-import type { UserService } from "./auth/user-service"
 import type { WorkspaceService } from "./features/workspaces"
 import type { StreamService } from "./features/streams"
 import type { EventService } from "./features/messaging"
@@ -44,7 +43,6 @@ interface Dependencies {
   pool: Pool
   poolMonitor: PoolMonitor
   authService: AuthService
-  userService: UserService
   workspaceService: WorkspaceService
   streamService: StreamService
   eventService: EventService
@@ -66,7 +64,6 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     pool,
     poolMonitor,
     authService,
-    userService,
     workspaceService,
     streamService,
     eventService,
@@ -83,16 +80,16 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     allowDevAuthRoutes,
   } = deps
 
-  const auth = createAuthMiddleware({ authService, userService })
-  const workspaceMember = createWorkspaceMemberMiddleware({ pool })
+  const auth = createAuthMiddleware({ authService })
+  const workspaceUser = createWorkspaceUserMiddleware({ pool })
   const upload = createUploadMiddleware({ s3Config })
   // Express natively chains handlers - spread array at usage sites
-  const authed: RequestHandler[] = [auth, workspaceMember]
+  const authed: RequestHandler[] = [auth, workspaceUser]
 
   const rateLimits = createRateLimiters(rateLimiterConfig)
   const opsAccess = createOpsAccessMiddleware()
 
-  const authHandlers = createAuthHandlers({ authService, userService, invitationService })
+  const authHandlers = createAuthHandlers({ authService, invitationService })
   const avatarUpload = createAvatarUploadMiddleware()
   const workspace = createWorkspaceHandlers({
     workspaceService,
@@ -136,7 +133,6 @@ export function registerRoutes(app: Express, deps: Dependencies) {
 
     const authStub = createAuthStubHandlers({
       authStubService: authService,
-      userService,
       workspaceService,
       streamService,
       invitationService,
@@ -146,12 +142,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     app.post("/test-auth-login", authStub.handleLogin)
     app.post("/api/dev/login", authStub.handleDevLogin)
     app.post("/api/dev/workspaces/:workspaceId/join", auth, authStub.handleWorkspaceJoin)
-    app.post(
-      "/api/dev/workspaces/:workspaceId/streams/:streamId/join",
-      auth,
-      workspaceMember,
-      authStub.handleStreamJoin
-    )
+    app.post("/api/dev/workspaces/:workspaceId/streams/:streamId/join", auth, workspaceUser, authStub.handleStreamJoin)
   }
 
   app.get("/api/auth/me", auth, authHandlers.me)
@@ -160,7 +151,8 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.post("/api/workspaces", auth, workspace.create)
   app.get("/api/workspaces/:workspaceId", ...authed, workspace.get)
   app.get("/api/workspaces/:workspaceId/bootstrap", ...authed, workspace.bootstrap)
-  app.get("/api/workspaces/:workspaceId/members", ...authed, workspace.getMembers)
+  app.get("/api/workspaces/:workspaceId/users", ...authed, workspace.getUsers)
+  app.get("/api/workspaces/:workspaceId/members", ...authed, workspace.getUsers)
   app.get("/api/workspaces/:workspaceId/emojis", ...authed, emoji.list)
 
   // User preferences
@@ -226,17 +218,17 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     invitation.resend
   )
 
-  // Member setup (any authenticated member)
+  // User setup (any authenticated workspace user)
   app.get("/api/workspaces/:workspaceId/slug-available", ...authed, workspace.checkSlugAvailability)
-  app.post("/api/workspaces/:workspaceId/setup", ...authed, workspace.completeMemberSetup)
+  app.post("/api/workspaces/:workspaceId/setup", ...authed, workspace.completeUserSetup)
 
-  // Member profile
+  // User profile
   app.patch("/api/workspaces/:workspaceId/profile", ...authed, workspace.updateProfile)
   app.post("/api/workspaces/:workspaceId/profile/avatar", ...authed, avatarUpload, workspace.uploadAvatar)
   app.delete("/api/workspaces/:workspaceId/profile/avatar", ...authed, workspace.removeAvatar)
 
   // Avatar file serving (unauthenticated — S3 keys contain unguessable ULIDs)
-  app.get("/api/files/avatars/:workspaceId/:memberId/:file", workspace.serveAvatarFile)
+  app.get("/api/workspaces/:workspaceId/users/:userId/avatar/:file", workspace.serveAvatarFile)
 
   // AI Usage and Budget
   app.get("/api/workspaces/:workspaceId/ai-usage", ...authed, aiUsage.getUsage)

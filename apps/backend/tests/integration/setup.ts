@@ -8,7 +8,7 @@ import { createDatabasePool } from "../../src/db"
 import { createMigrator } from "../../src/db/migrations"
 import { memberId } from "../../src/lib/id"
 import type { Querier } from "../../src/db"
-import { MemberRepository } from "../../src/features/workspaces"
+import { UserRepository } from "../../src/features/workspaces"
 
 // Re-export production helpers for tests that need to persist data
 export { withClient, withTransaction } from "../../src/db"
@@ -106,7 +106,7 @@ export function testMessageContent(content: string) {
 
 /**
  * Adds a workspace member with auto-generated id/slug for test convenience.
- * Wraps MemberRepository.insert with sensible defaults.
+ * Wraps UserRepository.insert with sensible defaults.
  */
 export async function addTestMember(
   db: Querier,
@@ -115,7 +115,7 @@ export async function addTestMember(
   role: "owner" | "admin" | "member" = "member"
 ) {
   const id = memberId()
-  return MemberRepository.insert(db, {
+  return UserRepository.insert(db, {
     id,
     workspaceId,
     userId,

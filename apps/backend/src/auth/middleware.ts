@@ -1,24 +1,32 @@
 import type { Request, Response, NextFunction } from "express"
 import type { AuthService } from "./auth-service"
-import type { UserService } from "./user-service"
 import { SESSION_COOKIE_CONFIG } from "../lib/cookies"
 
 const SESSION_COOKIE_NAME = "wos_session"
 
+interface AuthenticatedUser {
+  id: string
+  email: string
+  firstName: string | null
+  lastName: string | null
+}
+
 declare global {
   namespace Express {
     interface Request {
+      /** WorkOS user ID from authenticated session */
       userId?: string
+      /** Full WorkOS identity from authenticated session */
+      authUser?: AuthenticatedUser
     }
   }
 }
 
 interface Dependencies {
   authService: AuthService
-  userService: UserService
 }
 
-export function createAuthMiddleware({ authService, userService }: Dependencies) {
+export function createAuthMiddleware({ authService }: Dependencies) {
   return async function authMiddleware(req: Request, res: Response, next: NextFunction) {
     const session = req.cookies[SESSION_COOKIE_NAME]
 
@@ -37,16 +45,8 @@ export function createAuthMiddleware({ authService, userService }: Dependencies)
       res.cookie(SESSION_COOKIE_NAME, result.sealedSession, SESSION_COOKIE_CONFIG)
     }
 
-    // Try WorkOS ID first (production), fall back to internal ID (stub auth)
-    let user = await userService.getUserByWorkosUserId(result.user.id)
-    if (!user) {
-      user = await userService.getUserById(result.user.id)
-    }
-    if (!user) {
-      return res.status(401).json({ error: "User not found" })
-    }
-
-    req.userId = user.id
+    req.userId = result.user.id
+    req.authUser = result.user
     next()
   }
 }

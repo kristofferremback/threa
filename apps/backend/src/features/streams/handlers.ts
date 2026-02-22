@@ -130,7 +130,7 @@ function serializeEvent(event: StreamEvent) {
 export function createStreamHandlers({ streamService, eventService, activityService }: Dependencies) {
   return {
     async list(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const memberId = req.user!.id
       const workspaceId = req.workspaceId!
       const { stream_type, status } = req.query
 
@@ -147,7 +147,7 @@ export function createStreamHandlers({ streamService, eventService, activityServ
     },
 
     async create(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const memberId = req.user!.id
       const workspaceId = req.workspaceId!
 
       const result = createStreamSchema.safeParse(req.body)
@@ -190,7 +190,7 @@ export function createStreamHandlers({ streamService, eventService, activityServ
     },
 
     async get(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const memberId = req.user!.id
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
 
@@ -199,7 +199,7 @@ export function createStreamHandlers({ streamService, eventService, activityServ
     },
 
     async update(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const memberId = req.user!.id
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
 
@@ -225,7 +225,7 @@ export function createStreamHandlers({ streamService, eventService, activityServ
     },
 
     async listEvents(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const memberId = req.user!.id
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
       const { type, limit, after } = req.query
@@ -245,7 +245,7 @@ export function createStreamHandlers({ streamService, eventService, activityServ
     },
 
     async updateCompanionMode(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const memberId = req.user!.id
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
 
@@ -272,7 +272,7 @@ export function createStreamHandlers({ streamService, eventService, activityServ
     },
 
     async pin(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const memberId = req.user!.id
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
 
@@ -295,7 +295,7 @@ export function createStreamHandlers({ streamService, eventService, activityServ
     },
 
     async setNotificationLevel(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const memberId = req.user!.id
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
 
@@ -318,7 +318,7 @@ export function createStreamHandlers({ streamService, eventService, activityServ
     },
 
     async markAsRead(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const memberId = req.user!.id
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
 
@@ -344,7 +344,7 @@ export function createStreamHandlers({ streamService, eventService, activityServ
     },
 
     async archive(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const memberId = req.user!.id
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
 
@@ -359,7 +359,7 @@ export function createStreamHandlers({ streamService, eventService, activityServ
     },
 
     async unarchive(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const memberId = req.user!.id
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
 
@@ -374,7 +374,7 @@ export function createStreamHandlers({ streamService, eventService, activityServ
     },
 
     async join(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const memberId = req.user!.id
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
 
@@ -383,7 +383,7 @@ export function createStreamHandlers({ streamService, eventService, activityServ
     },
 
     async bootstrap(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const memberId = req.user!.id
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
 
@@ -429,7 +429,7 @@ export function createStreamHandlers({ streamService, eventService, activityServ
     },
 
     async addMember(req: Request, res: Response) {
-      const actorId = req.member!.id
+      const actorId = req.user!.id
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
 
@@ -452,7 +452,7 @@ export function createStreamHandlers({ streamService, eventService, activityServ
     },
 
     async removeMember(req: Request, res: Response) {
-      const actor = req.member!
+      const actor = req.user!
       const workspaceId = req.workspaceId!
       const { streamId, memberId } = req.params
 

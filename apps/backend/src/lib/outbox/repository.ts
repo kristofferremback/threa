@@ -282,7 +282,8 @@ export interface InvitationSentOutboxPayload extends WorkspaceScopedPayload {
 export interface InvitationAcceptedOutboxPayload extends WorkspaceScopedPayload {
   invitationId: string
   email: string
-  userId: string
+  workosUserId: string
+  memberName: string
 }
 
 // Member-scoped event payloads (delivered to a specific target member)

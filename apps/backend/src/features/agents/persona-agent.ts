@@ -13,7 +13,7 @@ import {
 import type { UserPreferencesService } from "../user-preferences"
 import { StreamRepository } from "../streams"
 import { MessageRepository, MessageVersionRepository } from "../messaging"
-import { MemberRepository } from "../workspaces"
+import { UserRepository } from "../workspaces"
 import { PersonaRepository } from "./persona-repository"
 import { AgentSessionRepository, SessionStatuses } from "./session-repository"
 import { StreamEventRepository } from "../streams"
@@ -423,7 +423,7 @@ export class PersonaAgent {
               ]
 
               const [members, personas] = await Promise.all([
-                memberIds.length > 0 ? MemberRepository.findByIds(db, memberIds) : Promise.resolve([]),
+                memberIds.length > 0 ? UserRepository.findByIds(db, memberIds) : Promise.resolve([]),
                 personaIds.length > 0 ? PersonaRepository.findByIds(db, personaIds) : Promise.resolve([]),
               ])
 

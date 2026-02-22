@@ -1,6 +1,6 @@
 import type { Pool, PoolClient } from "pg"
 import { ActivityRepository, type Activity } from "./repository"
-import { MemberRepository } from "../workspaces"
+import { UserRepository } from "../workspaces"
 import { StreamRepository, StreamMemberRepository, resolveNotificationLevelsForStream, type Stream } from "../streams"
 import { extractMentionSlugs } from "../agents"
 import { Visibilities, NotificationLevels, StreamTypes } from "@threa/types"
@@ -32,7 +32,7 @@ export class ActivityService {
     if (mentionSlugs.length === 0) return []
 
     return withClient(this.pool, async (client) => {
-      const members = await MemberRepository.findBySlugs(client, workspaceId, mentionSlugs)
+      const members = await UserRepository.findBySlugs(client, workspaceId, mentionSlugs)
 
       const candidates = members.filter((m) => m.id !== actorId)
       if (candidates.length === 0) return []

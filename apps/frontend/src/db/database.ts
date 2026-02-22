@@ -15,7 +15,8 @@ export interface CachedWorkspace {
 export interface CachedWorkspaceMember {
   id: string // member ID (member_xxx)
   workspaceId: string
-  userId: string
+  workosUserId: string
+  email: string
   role: "owner" | "admin" | "member"
   slug: string
   name: string
@@ -60,13 +61,6 @@ export interface CachedEvent {
   // Optimistic sending state (for message_created events)
   _clientId?: string
   _status?: "pending" | "sent" | "failed"
-  _cachedAt: number
-}
-
-export interface CachedUser {
-  id: string
-  email: string
-  name: string
   _cachedAt: number
 }
 
@@ -140,7 +134,6 @@ class ThreaDatabase extends Dexie {
   workspaceMembers!: EntityTable<CachedWorkspaceMember, "id">
   streams!: EntityTable<CachedStream, "id">
   events!: EntityTable<CachedEvent, "id">
-  users!: EntityTable<CachedUser, "id">
   personas!: EntityTable<CachedPersona, "id">
   pendingMessages!: EntityTable<PendingMessage, "clientId">
   syncCursors!: EntityTable<SyncCursor, "key">
@@ -218,6 +211,16 @@ class ThreaDatabase extends Dexie {
       .upgrade((tx) => {
         return tx.table("workspaceMembers").clear()
       })
+
+    // v11: Remove cached users table and move WorkOS identity/email onto members.
+    this.version(11)
+      .stores({
+        workspaceMembers: "id, workspaceId, workosUserId, email, slug, _cachedAt",
+        users: null,
+      })
+      .upgrade((tx) => {
+        return tx.table("workspaceMembers").clear()
+      })
   }
 }
 
@@ -231,7 +234,6 @@ export async function clearAllCachedData(): Promise<void> {
     db.workspaceMembers.clear(),
     db.streams.clear(),
     db.events.clear(),
-    db.users.clear(),
     db.personas.clear(),
     db.syncCursors.clear(),
     // Note: we keep pendingMessages to retry sending after re-login

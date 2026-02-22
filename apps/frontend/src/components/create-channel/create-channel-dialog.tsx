@@ -150,8 +150,9 @@ export function CreateChannelDialog({ workspaceId }: CreateChannelDialogProps) {
   })
 
   const currentMemberId = useMemo(() => {
-    if (!wsBootstrap?.members || !user) return null
-    return wsBootstrap.members.find((m) => m.userId === user.id)?.id ?? null
+    if (!wsBootstrap || !user) return null
+    const users = wsBootstrap.users ?? wsBootstrap.members ?? []
+    return users.find((u) => u.workosUserId === user.id)?.id ?? null
   }, [wsBootstrap, user])
 
   const resetForm = useCallback(() => {

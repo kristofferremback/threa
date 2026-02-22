@@ -10,7 +10,6 @@ import { createDatabasePools, warmPool, type DatabasePools } from "./db"
 import { runMigrations } from "./db/migrations"
 import { WorkosAuthService } from "./auth/auth-service"
 import { StubAuthService } from "./auth/auth-service.stub"
-import { UserService } from "./auth/user-service"
 import {
   WorkspaceService,
   AvatarService,
@@ -171,7 +170,6 @@ export async function startServer(): Promise<ServerInstance> {
   await warmPool(pools.main, 15) // Pre-create 15 connections for workers
   logger.info("Connection pool pre-warmed")
 
-  const userService = new UserService(pool)
   const workosOrgService = config.useStubAuth ? new StubWorkosOrgService() : new WorkosOrgServiceImpl(config.workos)
   const storage = createS3Storage(config.s3)
   const avatarService = new AvatarService(storage)
@@ -311,7 +309,6 @@ export async function startServer(): Promise<ServerInstance> {
     pool,
     poolMonitor,
     authService,
-    userService,
     workspaceService,
     streamService,
     eventService,
@@ -343,7 +340,7 @@ export async function startServer(): Promise<ServerInstance> {
   io.adapter(createAdapter(pool))
 
   const userSocketRegistry = new UserSocketRegistry()
-  registerSocketHandlers(io, { pool, authService, userService, streamService, userSocketRegistry })
+  registerSocketHandlers(io, { pool, authService, streamService, userSocketRegistry })
 
   const serverId = `server_${ulid()}`
 

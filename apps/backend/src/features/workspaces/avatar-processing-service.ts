@@ -1,7 +1,7 @@
 import { Pool } from "pg"
 import { withTransaction } from "../../db"
 import { WorkspaceRepository } from "./repository"
-import { MemberRepository } from "./member-repository"
+import { UserRepository } from "./member-repository"
 import { AvatarUploadRepository } from "./avatar-upload-repository"
 import { OutboxRepository } from "../../lib/outbox"
 import { serializeBigInt } from "../../lib/serialization"
@@ -40,7 +40,7 @@ export class AvatarProcessingService {
     // Phase 4: Transaction — atomically update member if this is still the latest upload (INV-20)
     let variantsUsed = false
     await withTransaction(this.pool, async (client) => {
-      const updated = await WorkspaceRepository.updateMemberAvatarIfLatestUpload(
+      const updated = await WorkspaceRepository.updateUserAvatarIfLatestUpload(
         client,
         memberId,
         avatarUploadId,
@@ -49,7 +49,7 @@ export class AvatarProcessingService {
 
       if (updated) {
         variantsUsed = true
-        const fullMember = await MemberRepository.findById(client, memberId)
+        const fullMember = await UserRepository.findById(client, memberId)
         if (fullMember) {
           await OutboxRepository.insert(client, "member:updated", {
             workspaceId,

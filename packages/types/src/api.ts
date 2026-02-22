@@ -12,9 +12,8 @@ import type {
   StreamEvent,
   StreamMember,
   Workspace,
-  WorkspaceMember,
-  WorkspaceInvitation,
   User,
+  WorkspaceInvitation,
   Persona,
 } from "./domain"
 import type { UserPreferences } from "./preferences"
@@ -153,11 +152,12 @@ export interface CommandInfo {
 
 export interface WorkspaceBootstrap {
   workspace: Workspace
-  members: WorkspaceMember[]
+  users: User[]
+  // Backward-compatible alias while clients migrate.
+  members?: User[]
   streams: StreamWithPreview[]
   streamMemberships: StreamMember[]
   dmPeers: Array<{ memberId: string; streamId: string }>
-  users: User[]
   personas: Persona[]
   emojis: EmojiEntry[]
   emojiWeights: Record<string, number>

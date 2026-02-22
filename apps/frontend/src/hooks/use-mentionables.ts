@@ -38,19 +38,16 @@ export function useMentionables() {
   const mentionables = useMemo<Mentionable[]>(() => {
     if (!bootstrap) return BROADCAST_MENTIONS
 
-    // Build member mentionables with slug from member and name from user
+    // Build member mentionables from workspace-scoped member profile.
     const currentUserId = currentUser?.id
-    const userMap = new Map(bootstrap.users.map((u) => [u.id, u]))
-    const users: Mentionable[] = bootstrap.members.map((member) => {
-      const user = userMap.get(member.userId)
-      return {
-        id: member.id,
-        slug: member.slug,
-        name: user?.name ?? member.slug,
-        type: "user",
-        isCurrentUser: member.userId === currentUserId,
-      }
-    })
+    const workspaceUsers = bootstrap.users ?? bootstrap.members ?? []
+    const users: Mentionable[] = workspaceUsers.map((u) => ({
+      id: u.id,
+      slug: u.slug,
+      name: u.name,
+      type: "user",
+      isCurrentUser: u.workosUserId === currentUserId,
+    }))
 
     // Sort users so current user is first
     users.sort((a, b) => {

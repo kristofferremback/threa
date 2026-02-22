@@ -14,7 +14,7 @@ const createWorkspaceSchema = z.object({
   name: z.string().min(1, "name is required"),
 })
 
-const completeMemberSetupSchema = z.object({
+const completeUserSetupSchema = z.object({
   name: z.string().min(1, "name is required").optional(),
   slug: z.string().optional(),
   timezone: z.string().min(1, "timezone is required"),
@@ -54,8 +54,8 @@ export function createWorkspaceHandlers({
   return {
     async list(req: Request, res: Response) {
       // Pre-workspace route: uses userId (no member context yet)
-      const userId = req.userId!
-      const workspaces = await workspaceService.getWorkspacesByUserId(userId)
+      const workosUserId = req.userId!
+      const workspaces = await workspaceService.getWorkspacesByWorkosUserId(workosUserId)
       res.json({ workspaces })
     },
 
@@ -72,7 +72,8 @@ export function createWorkspaceHandlers({
 
     async create(req: Request, res: Response) {
       // Pre-workspace route: uses userId (no member context yet)
-      const userId = req.userId!
+      const workosUserId = req.userId!
+      const authUser = req.authUser
 
       const result = createWorkspaceSchema.safeParse(req.body)
       if (!result.success) {
@@ -82,32 +83,39 @@ export function createWorkspaceHandlers({
         })
       }
 
+      if (!authUser) {
+        return res.status(401).json({ error: "Not authenticated" })
+      }
+
+      const userName = [authUser.firstName, authUser.lastName].filter(Boolean).join(" ") || authUser.email
       const workspace = await workspaceService.createWorkspace({
         name: result.data.name,
-        createdBy: userId,
+        workosUserId,
+        email: authUser.email,
+        userName,
       })
 
       res.status(201).json({ workspace })
     },
 
-    async getMembers(req: Request, res: Response) {
+    async getUsers(req: Request, res: Response) {
       const workspaceId = req.workspaceId!
-      const members = await workspaceService.getMembers(workspaceId)
-      res.json({ members })
+      const users = await workspaceService.getUsers(workspaceId)
+      res.json({ users, members: users })
     },
 
     async bootstrap(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const userId = req.user!.id
       const workspaceId = req.workspaceId!
 
-      const [workspace, members, streams, personas, emojiWeights, userPreferences, dmPeers] = await Promise.all([
+      const [workspace, users, streams, personas, emojiWeights, userPreferences, dmPeers] = await Promise.all([
         workspaceService.getWorkspaceById(workspaceId),
-        workspaceService.getMembers(workspaceId),
-        streamService.listWithPreviews(workspaceId, memberId),
+        workspaceService.getUsers(workspaceId),
+        streamService.listWithPreviews(workspaceId, userId),
         workspaceService.getPersonasForWorkspace(workspaceId),
-        workspaceService.getEmojiWeights(workspaceId, memberId),
-        userPreferencesService.getPreferences(workspaceId, memberId),
-        streamService.listDmPeers(workspaceId, memberId),
+        workspaceService.getEmojiWeights(workspaceId, userId),
+        userPreferencesService.getPreferences(workspaceId, userId),
+        streamService.listDmPeers(workspaceId, userId),
       ])
 
       if (!workspace) {
@@ -115,22 +123,19 @@ export function createWorkspaceHandlers({
       }
 
       // Resolve DM display names — viewer-dependent, so computed at bootstrap time
-      const resolvedStreams = await streamService.resolveDmDisplayNames(streams, members, memberId)
+      const resolvedStreams = await streamService.resolveDmDisplayNames(streams, users, userId)
 
-      const [streamMemberships, users] = await Promise.all([
-        streamService.getMembershipsBatch(
-          resolvedStreams.map((s) => s.id),
-          memberId
-        ),
-        workspaceService.getUsersForMembers(members),
-      ])
+      const streamMemberships = await streamService.getMembershipsBatch(
+        resolvedStreams.map((s) => s.id),
+        userId
+      )
 
       // Calculate unread counts for all streams based on memberships
       const [unreadCountsMap, activityCounts] = await Promise.all([
         streamService.getUnreadCounts(
           streamMemberships.map((m) => ({ streamId: m.streamId, lastReadEventId: m.lastReadEventId }))
         ),
-        activityService?.getUnreadCounts(memberId, workspaceId),
+        activityService?.getUnreadCounts(userId, workspaceId),
       ])
       const unreadCounts: Record<string, number> = {}
       for (const [streamId, count] of unreadCountsMap) {
@@ -165,17 +170,17 @@ export function createWorkspaceHandlers({
         .map((m) => m.streamId)
 
       // Include invitations for admin+ members
-      const memberRole = req.member!.role
-      const isAdmin = memberRole === "admin" || memberRole === "owner"
+      const userRole = req.user!.role
+      const isAdmin = userRole === "admin" || userRole === "owner"
       const invitations = isAdmin ? await invitationService.listInvitations(workspaceId) : undefined
 
       res.json({
         data: {
           workspace,
-          members,
+          users,
+          members: users,
           streams: resolvedStreams,
           streamMemberships,
-          users,
           personas,
           emojis: getEmojiList(),
           emojiWeights,
@@ -193,22 +198,22 @@ export function createWorkspaceHandlers({
     },
 
     async markAllAsRead(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const userId = req.user!.id
       const workspaceId = req.workspaceId!
 
-      const updatedStreamIds = await streamService.markAllAsRead(workspaceId, memberId)
+      const updatedStreamIds = await streamService.markAllAsRead(workspaceId, userId)
 
       // Clear all mention badges
-      await activityService?.markAllAsRead(memberId, workspaceId)
+      await activityService?.markAllAsRead(userId, workspaceId)
 
       res.json({ updatedStreamIds })
     },
 
-    async completeMemberSetup(req: Request, res: Response) {
-      const memberId = req.member!.id
+    async completeUserSetup(req: Request, res: Response) {
+      const userId = req.user!.id
       const workspaceId = req.workspaceId!
 
-      const result = completeMemberSetupSchema.safeParse(req.body)
+      const result = completeUserSetupSchema.safeParse(req.body)
       if (!result.success) {
         return res.status(400).json({
           error: "Validation failed",
@@ -216,9 +221,9 @@ export function createWorkspaceHandlers({
         })
       }
 
-      const member = await workspaceService.completeMemberSetup(memberId, workspaceId, result.data)
+      const user = await workspaceService.completeUserSetup(userId, workspaceId, result.data)
 
-      res.json({ member })
+      res.json({ user, member: user })
     },
 
     async checkSlugAvailability(req: Request, res: Response) {
@@ -237,7 +242,7 @@ export function createWorkspaceHandlers({
     },
 
     async updateProfile(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const userId = req.user!.id
       const workspaceId = req.workspaceId!
 
       const result = updateProfileSchema.safeParse(req.body)
@@ -248,38 +253,38 @@ export function createWorkspaceHandlers({
         })
       }
 
-      const member = await workspaceService.updateMemberProfile(memberId, workspaceId, result.data)
-      res.json({ member })
+      const user = await workspaceService.updateUserProfile(userId, workspaceId, result.data)
+      res.json({ user, member: user })
     },
 
     async uploadAvatar(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const userId = req.user!.id
       const workspaceId = req.workspaceId!
 
       if (!req.file?.buffer) {
         return res.status(400).json({ error: "No file uploaded" })
       }
 
-      const member = await workspaceService.uploadAvatar(memberId, workspaceId, req.file.buffer)
-      res.json({ member })
+      const user = await workspaceService.uploadAvatar(userId, workspaceId, req.file.buffer)
+      res.json({ user, member: user })
     },
 
     async removeAvatar(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const userId = req.user!.id
       const workspaceId = req.workspaceId!
 
-      const member = await workspaceService.removeMemberAvatar(memberId, workspaceId)
-      res.json({ member })
+      const user = await workspaceService.removeUserAvatar(userId, workspaceId)
+      res.json({ user, member: user })
     },
 
     async serveAvatarFile(req: Request, res: Response) {
-      const { workspaceId, memberId, file } = req.params
-      if (!workspaceId || !memberId || !file) {
+      const { workspaceId, userId, file } = req.params
+      if (!workspaceId || !userId || !file) {
         return res.status(404).end()
       }
 
       try {
-        const stream = await avatarService.streamAvatarFile({ workspaceId, memberId, file })
+        const stream = await avatarService.streamAvatarFile({ workspaceId, memberId: userId, file })
         if (!stream) return res.status(404).end()
 
         res.set("Content-Type", "image/webp")

@@ -47,7 +47,8 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   const { openCreateChannel } = useCreateChannel()
   const { user } = useAuth()
   const navigate = useNavigate()
-  const currentMember = bootstrap?.members.find((m) => m.userId === user?.id) ?? null
+  const workspaceUsers = bootstrap?.users ?? bootstrap?.members ?? []
+  const currentMember = workspaceUsers.find((u) => u.workosUserId === user?.id) ?? null
 
   const draftCount = allDrafts.length
   const isDraftsPage = splat === "drafts" || window.location.pathname.endsWith("/drafts")
@@ -100,12 +101,12 @@ export function Sidebar({ workspaceId }: SidebarProps) {
 
   // Members without existing DM streams are shown as virtual DM drafts.
   const virtualDmStreams = useMemo(() => {
-    if (!bootstrap?.members || !currentMember) return []
+    if (workspaceUsers.length === 0 || !currentMember) return []
 
-    const dmPeerIds = new Set(bootstrap.dmPeers.map((peer) => peer.memberId))
+    const dmPeerIds = new Set((bootstrap?.dmPeers ?? []).map((peer) => peer.memberId))
     const now = new Date().toISOString()
 
-    return bootstrap.members
+    return workspaceUsers
       .filter((member) => member.id !== currentMember.id)
       .filter((member) => !dmPeerIds.has(member.id))
       .map(
@@ -133,7 +134,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
         })
       )
       .sort((a, b) => (a.displayName ?? "").localeCompare(b.displayName ?? ""))
-  }, [bootstrap?.members, bootstrap?.dmPeers, currentMember, workspaceId])
+  }, [workspaceUsers, bootstrap?.dmPeers, currentMember, workspaceId])
 
   const hasUserStreams = hasUserStreamsFromStreams || virtualDmStreams.length > 0
 
@@ -337,7 +338,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
           scrollContainerRef={scrollContainerRef}
         />
       }
-      footer={<SidebarFooter workspaceId={workspaceId} currentMember={currentMember} />}
+      footer={<SidebarFooter workspaceId={workspaceId} currentUser={currentMember} />}
     />
   )
 }

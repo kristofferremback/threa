@@ -90,9 +90,9 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
 
   const streams = useMemo(() => bootstrap?.streams ?? [], [bootstrap?.streams])
   const streamMemberships = useMemo(() => bootstrap?.streamMemberships ?? [], [bootstrap?.streamMemberships])
-  const members = useMemo(() => bootstrap?.members ?? [], [bootstrap?.members])
+  const members = useMemo(() => bootstrap?.users ?? bootstrap?.members ?? [], [bootstrap?.users, bootstrap?.members])
   const currentMemberId = useMemo(
-    () => members.find((member) => member.userId === user?.id)?.id ?? null,
+    () => members.find((member) => member.workosUserId === user?.id)?.id ?? null,
     [members, user?.id]
   )
   const dmPeers = bootstrap?.dmPeers
