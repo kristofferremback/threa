@@ -63,6 +63,7 @@ async function main() {
 
     // Get random available ports
     const backendPort = await findAvailablePort()
+    const routerPort = await findAvailablePort()
     const frontendPort = await findAvailablePort()
 
     // Load backend .env file explicitly (Bun only auto-loads from CWD)
@@ -92,17 +93,26 @@ async function main() {
       CORS_ALLOWED_ORIGINS: `http://localhost:${frontendPort},http://127.0.0.1:${frontendPort}`,
     }
 
-    // Set environment variables for frontend (needs to know backend port for proxy)
+    // Set environment variables for frontend (proxies API calls through the router)
     const frontendEnvVars = {
       ...process.env,
       VITE_PORT: String(frontendPort),
-      VITE_BACKEND_PORT: String(backendPort),
+      VITE_BACKEND_PORT: String(routerPort),
     }
+
+    // Build the REGIONS config pointing to the dynamic backend port
+    const regionsJson = JSON.stringify({
+      local: {
+        apiUrl: `http://localhost:${backendPort}`,
+        wsUrl: `ws://localhost:${backendPort}`,
+      },
+    })
 
     console.log("\nStarting dev server in test mode:")
     console.log(`  - Database: ${TEST_DB_NAME}`)
     console.log(`  - Stub Auth: enabled`)
     console.log(`  - Frontend: http://localhost:${frontendPort}`)
+    console.log(`  - Router: http://localhost:${routerPort}`)
     console.log(`  - Backend: http://localhost:${backendPort}\n`)
 
     // Run backend without --hot (more stable for testing)
@@ -111,6 +121,26 @@ async function main() {
       stderr: "inherit",
       env: backendEnvVars,
     })
+
+    const routerDir = path.join(process.cwd(), "apps/backend/workspace-router")
+    const router = Bun.spawn(
+      [
+        "bunx",
+        "wrangler",
+        "dev",
+        "--port",
+        String(routerPort),
+        "--var",
+        "DEFAULT_REGION:local",
+        "--var",
+        `REGIONS:${regionsJson}`,
+      ],
+      {
+        cwd: routerDir,
+        stdout: "inherit",
+        stderr: "inherit",
+      }
+    )
 
     const frontend = Bun.spawn(["bun", "run", "--cwd", "apps/frontend", "dev"], {
       stdout: "inherit",
@@ -125,15 +155,16 @@ async function main() {
       isShuttingDown = true
       console.log("\nShutting down test server...")
       backend.kill("SIGKILL")
+      router.kill("SIGKILL")
       frontend.kill("SIGKILL")
-      await Promise.all([backend.exited, frontend.exited])
+      await Promise.all([backend.exited, router.exited, frontend.exited])
       process.exit(0)
     }
 
     process.on("SIGINT", shutdown)
     process.on("SIGTERM", shutdown)
 
-    await Promise.all([backend.exited, frontend.exited])
+    await Promise.all([backend.exited, router.exited, frontend.exited])
   } catch (err) {
     console.error("Failed to start test server:", err)
     process.exit(1)

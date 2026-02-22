@@ -61,13 +61,14 @@ function getOrAllocatePort(envVar: string): number {
 // Find free ports for this test run (allows parallel execution across worktrees)
 // Ports are cached in env vars so worker processes use the same ports
 const backendPort = getOrAllocatePort("PLAYWRIGHT_BACKEND_PORT")
+const routerPort = getOrAllocatePort("PLAYWRIGHT_ROUTER_PORT")
 const frontendPort = getOrAllocatePort("PLAYWRIGHT_FRONTEND_PORT")
 const dbName = deriveTestDatabaseName()
 
 // Only log once (when ports are first allocated)
 if (!process.env.PLAYWRIGHT_PORTS_LOGGED) {
   console.log(
-    `Playwright config: backend=${backendPort}, frontend=${frontendPort}, db=${dbName}, postgres=${DB_PORT}, minio=${MINIO_PORT}`
+    `Playwright config: backend=${backendPort}, router=${routerPort}, frontend=${frontendPort}, db=${dbName}, postgres=${DB_PORT}, minio=${MINIO_PORT}`
   )
   process.env.PLAYWRIGHT_PORTS_LOGGED = "true"
 }
@@ -103,12 +104,12 @@ export default defineConfig({
     },
   ],
 
-  // Start both backend and frontend before running tests
+  // Start backend, workspace-router, and frontend before running tests
   // Ports are dynamically allocated to avoid conflicts with other worktrees
   webServer: [
     {
       command: "bun run test:browser:backend",
-      url: `http://localhost:${backendPort}/health`,
+      url: `http://localhost:${backendPort}/readyz`,
       reuseExistingServer: !process.env.CI,
       timeout: 30000,
       env: {
@@ -132,12 +133,19 @@ export default defineConfig({
       },
     },
     {
+      command: `bunx wrangler dev --port ${routerPort} --var DEFAULT_REGION:local --var 'REGIONS:${JSON.stringify({ local: { apiUrl: `http://localhost:${backendPort}`, wsUrl: `ws://localhost:${backendPort}` } })}'`,
+      cwd: "./apps/backend/workspace-router",
+      url: `http://localhost:${routerPort}/readyz`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 30000,
+    },
+    {
       command: "bun run test:browser:frontend",
       url: `http://localhost:${frontendPort}`,
       reuseExistingServer: !process.env.CI,
       timeout: 30000,
       env: {
-        VITE_BACKEND_PORT: String(backendPort),
+        VITE_BACKEND_PORT: String(routerPort),
         VITE_PORT: String(frontendPort),
         VITE_DRAFT_DEBOUNCE_MS: "5",
       },
