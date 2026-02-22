@@ -142,6 +142,7 @@ export function WorkspaceLayout() {
   return (
     <SocketProvider workspaceId={workspaceId}>
       <WorkspaceSocketHandler workspaceId={workspaceId} streamIds={streamIds}>
+        <PendingMessageRetryHandler />
         <CoordinatedLoadingProvider workspaceId={workspaceId} streamIds={streamIds}>
           <ChannelLinkProvider workspaceId={workspaceId} streams={streams}>
             <MentionableMarkdownWrapper mentionables={mentionables}>
@@ -158,7 +159,6 @@ export function WorkspaceLayout() {
                           <TraceProvider>
                             <SidebarProvider>
                               <CoordinatedLoadingGate>
-                                <PendingMessageRetryHandler />
                                 <AppShell sidebar={<Sidebar workspaceId={workspaceId} />}>
                                   <MainContentGate>
                                     <Outlet />
