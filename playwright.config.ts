@@ -134,7 +134,7 @@ export default defineConfig({
     },
     {
       command: `bunx wrangler dev --port ${routerPort} --var DEFAULT_REGION:local --var 'REGIONS:${JSON.stringify({ local: { apiUrl: `http://localhost:${backendPort}`, wsUrl: `ws://localhost:${backendPort}` } })}'`,
-      cwd: "./apps/backend/workspace-router",
+      cwd: "./apps/workspace-router",
       url: `http://localhost:${routerPort}/readyz`,
       reuseExistingServer: !process.env.CI,
       timeout: 30000,

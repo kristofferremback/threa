@@ -151,15 +151,17 @@ describe("workspace-router", () => {
   })
 
   describe("avatar routing", () => {
-    test("proxies avatar requests using workspace ID from path", async () => {
+    test("proxies avatar requests via workspace-scoped path", async () => {
       const originalFetch = globalThis.fetch
       const fn = mockFetchFn(new Response("image-data"))
       try {
         const env = makeEnv({
           WORKSPACE_REGIONS: { get: mock(() => Promise.resolve("eu-north-1")) },
         })
-        await worker.fetch(makeRequest("/api/files/avatars/ws_123/avatar.png"), env)
-        expect(getProxiedUrl(fn)).toBe("http://eu-north-1.backend:3002/api/files/avatars/ws_123/avatar.png")
+        await worker.fetch(makeRequest("/api/workspaces/ws_123/files/avatars/mem_456/avatar.png"), env)
+        expect(getProxiedUrl(fn)).toBe(
+          "http://eu-north-1.backend:3002/api/workspaces/ws_123/files/avatars/mem_456/avatar.png"
+        )
       } finally {
         globalThis.fetch = originalFetch
       }

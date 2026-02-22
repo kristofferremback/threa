@@ -73,12 +73,16 @@ export interface WorkspaceMember {
 
 /**
  * Get the display URL for an avatar image.
- * avatarUrl stores the S3 key base path; this constructs the backend
- * proxy URL that serves the image.
+ * avatarUrl stores the S3 key base path (avatars/:workspaceId/:memberId/:timestamp);
+ * this constructs the workspace-scoped URL that serves the image.
  */
 export function getAvatarUrl(avatarUrl: string | null | undefined, size: 256 | 64): string | undefined {
   if (!avatarUrl) return undefined
-  return `/api/files/${avatarUrl}.${size}.webp`
+  // avatarUrl format: avatars/:workspaceId/:memberId/:timestamp
+  const parts = avatarUrl.split("/")
+  if (parts.length < 4) return undefined
+  const [, workspaceId, memberId, file] = parts
+  return `/api/workspaces/${workspaceId}/files/avatars/${memberId}/${file}.${size}.webp`
 }
 
 export interface WorkspaceInvitation {

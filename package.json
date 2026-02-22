@@ -5,7 +5,7 @@
   "workspaces": [
     "apps/*",
     "packages/*",
-    "apps/backend/workspace-router"
+    "apps/workspace-router"
   ],
   "scripts": {
     "dev": "bun scripts/dev.ts",

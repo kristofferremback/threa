@@ -305,7 +305,7 @@ async function main() {
     },
   })
 
-  const routerDir = path.join(process.cwd(), "apps/backend/workspace-router")
+  const routerDir = path.join(process.cwd(), "apps/workspace-router")
   const router = Bun.spawn(["bunx", "wrangler", "dev", "--port", "3001"], {
     cwd: routerDir,
     stdout: "inherit",

@@ -16,9 +16,6 @@ type RegionsMap = Record<string, RegionConfig>
 /** Matches /api/workspaces/:workspaceId/... (with at least one more path segment) */
 const WORKSPACE_ROUTE_RE = /^\/api\/workspaces\/([^/]+)\/.+$/
 
-/** Matches /api/files/avatars/:workspaceId/... */
-const AVATAR_ROUTE_RE = /^\/api\/files\/avatars\/([^/]+)\/.+$/
-
 /** Matches /api/workspaces/:workspaceId/config exactly */
 const CONFIG_ROUTE_RE = /^\/api\/workspaces\/([^/]+)\/config$/
 
@@ -54,12 +51,6 @@ export default {
     const workspaceMatch = path.match(WORKSPACE_ROUTE_RE)
     if (workspaceMatch) {
       return routeWorkspaceRequest(request, workspaceMatch[1], regions, env)
-    }
-
-    // Avatar file routes (workspace-scoped but different path structure)
-    const avatarMatch = path.match(AVATAR_ROUTE_RE)
-    if (avatarMatch) {
-      return routeWorkspaceRequest(request, avatarMatch[1], regions, env)
     }
 
     // Non-workspace routes (auth, workspace list/create, ops) → default region

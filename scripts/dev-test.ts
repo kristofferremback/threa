@@ -122,7 +122,7 @@ async function main() {
       env: backendEnvVars,
     })
 
-    const routerDir = path.join(process.cwd(), "apps/backend/workspace-router")
+    const routerDir = path.join(process.cwd(), "apps/workspace-router")
     const router = Bun.spawn(
       [
         "bunx",
