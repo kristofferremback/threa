@@ -1,7 +1,7 @@
 import { Pool } from "pg"
 import { withTransaction } from "../../db"
 import { WorkspaceRepository } from "./repository"
-import { UserRepository } from "./member-repository"
+import { UserRepository } from "./user-repository"
 import { AvatarUploadRepository } from "./avatar-upload-repository"
 import { OutboxRepository } from "../../lib/outbox"
 import { serializeBigInt } from "../../lib/serialization"

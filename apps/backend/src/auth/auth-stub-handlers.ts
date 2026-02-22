@@ -5,6 +5,7 @@ import type { StreamService } from "../features/streams"
 import type { InvitationService } from "../features/invitations"
 import { renderLoginPage } from "./auth-stub-login-page"
 import { decodeAndSanitizeRedirectState } from "./redirect"
+import { displayNameFromWorkos } from "./display-name"
 
 interface Dependencies {
   authStubService: StubAuthService
@@ -82,7 +83,7 @@ export function createAuthStubHandlers(deps: Dependencies): AuthStubHandlers {
       return res.status(401).json({ error: "Not authenticated" })
     }
 
-    const name = [authUser.firstName, authUser.lastName].filter(Boolean).join(" ") || authUser.email
+    const name = displayNameFromWorkos(authUser)
     const user = await workspaceService.addUser(workspaceId, {
       workosUserId,
       email: authUser.email,

@@ -9,6 +9,7 @@ import type { CommandRegistry } from "../commands"
 import type { AvatarService } from "./avatar-service"
 import { getEmojiList } from "../emoji"
 import { getEffectiveLevel } from "../streams"
+import { displayNameFromWorkos } from "../../auth/display-name"
 
 const createWorkspaceSchema = z.object({
   name: z.string().min(1, "name is required"),
@@ -87,7 +88,7 @@ export function createWorkspaceHandlers({
         return res.status(401).json({ error: "Not authenticated" })
       }
 
-      const userName = [authUser.firstName, authUser.lastName].filter(Boolean).join(" ") || authUser.email
+      const userName = displayNameFromWorkos(authUser)
       const workspace = await workspaceService.createWorkspace({
         name: result.data.name,
         workosUserId,

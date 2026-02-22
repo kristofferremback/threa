@@ -1,7 +1,7 @@
 import { Pool } from "pg"
 import { withTransaction, withClient, type Querier } from "../../db"
 import { WorkspaceRepository, Workspace, WorkspaceUser } from "./repository"
-import { UserRepository } from "./member-repository"
+import { UserRepository } from "./user-repository"
 import { OutboxRepository } from "../../lib/outbox"
 import { StreamRepository, StreamMemberRepository } from "../streams"
 import { EmojiUsageRepository } from "../emoji"

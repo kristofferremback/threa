@@ -499,19 +499,16 @@ export async function joinWorkspace(
   workspaceId: string,
   role: "member" | "admin" = "member"
 ): Promise<WorkspaceUser> {
-  const { status, data } = await client.post<{ member?: WorkspaceUser; user?: WorkspaceUser }>(
-    `/api/dev/workspaces/${workspaceId}/join`,
-    {
-      role,
-    }
-  )
+  const { status, data } = await client.post<{ user: WorkspaceUser }>(`/api/dev/workspaces/${workspaceId}/join`, {
+    role,
+  })
   if (status !== 200) {
     throw new Error(`Join workspace failed: ${JSON.stringify(data)}`)
   }
-  if (!data.user && !data.member) {
+  if (!data.user) {
     throw new Error(`Join workspace returned no user payload: ${JSON.stringify(data)}`)
   }
-  return data.user ?? data.member!
+  return data.user
 }
 
 export async function joinStream(client: TestClient, workspaceId: string, streamId: string): Promise<StreamMember> {

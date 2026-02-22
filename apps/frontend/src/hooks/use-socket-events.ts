@@ -58,7 +58,7 @@ function withWorkspaceUsers(bootstrap: WorkspaceBootstrap, users: User[]): Works
 }
 
 function toWorkspaceUser(member: MemberWithDisplay): User {
-  return { ...member, role: member.role as User["role"] }
+  return { ...member }
 }
 
 /** Member shape from MemberRepository. */
@@ -66,7 +66,7 @@ interface MemberWithDisplay {
   id: string
   workspaceId: string
   workosUserId: string
-  role: string
+  role: User["role"]
   slug: string
   name: string
   description: string | null

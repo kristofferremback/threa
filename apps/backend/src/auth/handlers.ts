@@ -3,6 +3,7 @@ import type { AuthService } from "./auth-service"
 import type { InvitationService } from "../features/invitations"
 import { SESSION_COOKIE_CONFIG } from "../lib/cookies"
 import { decodeAndSanitizeRedirectState } from "./redirect"
+import { displayNameFromWorkos } from "./display-name"
 import { logger } from "../lib/logger"
 
 const SESSION_COOKIE_NAME = "wos_session"
@@ -34,7 +35,7 @@ export function createAuthHandlers({ authService, invitationService }: Dependenc
         return res.status(401).json({ error: "Authentication failed" })
       }
 
-      const name = [result.user.firstName, result.user.lastName].filter(Boolean).join(" ") || result.user.email
+      const name = displayNameFromWorkos(result.user)
 
       // Auto-accept any pending invitations for this email
       const { accepted: acceptedWorkspaceIds, failed } = await invitationService.acceptPendingForEmail(
@@ -91,7 +92,7 @@ export function createAuthHandlers({ authService, invitationService }: Dependenc
         return res.status(401).json({ error: "Not authenticated" })
       }
 
-      const name = [authUser.firstName, authUser.lastName].filter(Boolean).join(" ") || authUser.email
+      const name = displayNameFromWorkos(authUser)
       res.json({
         id: authUser.id,
         email: authUser.email,
