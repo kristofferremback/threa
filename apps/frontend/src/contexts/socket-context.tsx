@@ -46,8 +46,9 @@ export function SocketProvider({ workspaceId, children }: SocketProviderProps) {
   useEffect(() => {
     let cancelled = false
     let newSocket: Socket | null = null
+    let retryTimer: ReturnType<typeof setTimeout> | null = null
 
-    async function connect() {
+    async function connect(attempt = 0) {
       try {
         const config = await api.get<WorkspaceConfig>(`/api/workspaces/${workspaceId}/config`)
         if (cancelled) return
@@ -85,9 +86,9 @@ export function SocketProvider({ workspaceId, children }: SocketProviderProps) {
         })
 
         // Socket.io manager events for reconnection tracking
-        newSocket.io.on("reconnect_attempt", (attempt) => {
+        newSocket.io.on("reconnect_attempt", (socketAttempt) => {
           setStatus("reconnecting")
-          console.log(`[Socket] Reconnect attempt ${attempt}`)
+          console.log(`[Socket] Reconnect attempt ${socketAttempt}`)
         })
 
         newSocket.io.on("reconnect_error", (error) => {
@@ -102,7 +103,18 @@ export function SocketProvider({ workspaceId, children }: SocketProviderProps) {
         setSocket(newSocket)
       } catch (error) {
         console.error("[Socket] Failed to fetch workspace config:", error)
-        if (!cancelled) {
+        if (cancelled) return
+
+        // Retry with exponential backoff (1s, 2s, 4s, then give up)
+        if (attempt < 3) {
+          const delay = 1000 * Math.pow(2, attempt)
+          console.log(`[Socket] Retrying config fetch in ${delay}ms (attempt ${attempt + 1}/3)`)
+          setStatus("reconnecting")
+          retryTimer = setTimeout(() => {
+            if (!cancelled) connect(attempt + 1)
+          }, delay)
+        } else {
+          console.error("[Socket] Config fetch failed after 3 retries — giving up")
           setStatus("disconnected")
         }
       }
@@ -113,10 +125,14 @@ export function SocketProvider({ workspaceId, children }: SocketProviderProps) {
     return () => {
       cancelled = true
       hasEverConnectedRef.current = false
+      if (retryTimer) clearTimeout(retryTimer)
       newSocket?.close()
       setSocket(null)
       setStatus("connecting")
-      setReconnectCount(0)
+      // Intentionally NOT resetting reconnectCount: when workspaceId changes and a
+      // new socket connects, useReconnectBootstrap needs to see a count change to
+      // invalidate stale queries and close the event gap (INV-53).
+      setReconnectCount((c) => c + 1)
     }
   }, [workspaceId])
 

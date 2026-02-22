@@ -22,9 +22,20 @@ const AVATAR_ROUTE_RE = /^\/api\/files\/avatars\/([^/]+)\/.+$/
 /** Matches /api/workspaces/:workspaceId/config exactly */
 const CONFIG_ROUTE_RE = /^\/api\/workspaces\/([^/]+)\/config$/
 
+/** Cache parsed regions per REGIONS string (static per env binding) */
+let cachedRegionsRaw: string | null = null
+let cachedRegions: RegionsMap | null = null
+
+function getRegions(raw: string): RegionsMap {
+  if (raw === cachedRegionsRaw && cachedRegions) return cachedRegions
+  cachedRegions = parseRegions(raw)
+  cachedRegionsRaw = raw
+  return cachedRegions
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const regions = parseRegions(env.REGIONS)
+    const regions = getRegions(env.REGIONS)
     const url = new URL(request.url)
     const path = url.pathname
 
@@ -57,10 +68,11 @@ export default {
 }
 
 function parseRegions(raw: string): RegionsMap {
+  if (!raw) throw new Error("REGIONS env var is empty or missing")
   try {
     return JSON.parse(raw) as RegionsMap
-  } catch {
-    return {}
+  } catch (e) {
+    throw new Error(`REGIONS env var is not valid JSON: ${(e as Error).message}`)
   }
 }
 
@@ -127,6 +139,13 @@ async function proxyRequest(request: Request, targetBaseUrl: string): Promise<Re
   const headers = new Headers(request.headers)
   headers.set("X-Forwarded-Host", url.host)
   headers.set("X-Forwarded-Proto", url.protocol.replace(":", ""))
+
+  // Preserve client IP through the proxy chain for rate limiting
+  const clientIp = request.headers.get("CF-Connecting-IP") || request.headers.get("X-Forwarded-For")
+  if (clientIp) {
+    headers.set("X-Forwarded-For", clientIp)
+  }
+
   headers.delete("host")
 
   return fetch(targetUrl.toString(), {
