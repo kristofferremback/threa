@@ -225,7 +225,9 @@ export async function startServer(): Promise<ServerInstance> {
     processingConcurrency: 3,
   })
 
-  const workspaceService = new WorkspaceService(pool, avatarService, jobQueue, workosOrgService)
+  const workspaceService = new WorkspaceService(pool, avatarService, jobQueue, workosOrgService, {
+    requireWorkspaceCreationInvite: config.workspaceCreationRequiresInvite,
+  })
   const invitationService = new InvitationService(pool, workosOrgService, workspaceService)
 
   // Schedule manager for cron tick generation

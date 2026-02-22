@@ -87,6 +87,7 @@ async function main() {
       ...process.env, // Override with process env
       DATABASE_URL: `postgresql://threa:threa@localhost:5454/${TEST_DB_NAME}`,
       USE_STUB_AUTH: "true",
+      WORKSPACE_CREATION_SKIP_INVITE: "true",
       FAST_SHUTDOWN: "true",
       PORT: String(backendPort),
       CORS_ALLOWED_ORIGINS: `http://localhost:${frontendPort},http://127.0.0.1:${frontendPort}`,
@@ -102,6 +103,7 @@ async function main() {
     console.log("\nStarting dev server in test mode:")
     console.log(`  - Database: ${TEST_DB_NAME}`)
     console.log(`  - Stub Auth: enabled`)
+    console.log(`  - Workspace Invite Check: skipped`)
     console.log(`  - Frontend: http://localhost:${frontendPort}`)
     console.log(`  - Backend: http://localhost:${backendPort}\n`)
 
