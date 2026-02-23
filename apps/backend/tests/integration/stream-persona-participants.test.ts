@@ -13,7 +13,7 @@ import { EventService } from "../../src/features/messaging"
 import { StreamPersonaParticipantRepository } from "../../src/features/agents"
 import { SearchRepository } from "../../src/features/search"
 import { WorkspaceRepository } from "../../src/features/workspaces"
-import { streamId, userId, userId, workspaceId, personaId } from "../../src/lib/id"
+import { streamId, userId, workspaceId, personaId } from "../../src/lib/id"
 import { addTestMember, setupTestDatabase, testMessageContent } from "./setup"
 import { Visibilities } from "@threa/types"
 

@@ -14,7 +14,7 @@ import { withTestTransaction, withTransaction } from "./setup"
 import { UserRepository, WorkspaceRepository } from "../../src/features/workspaces"
 import { StreamRepository } from "../../src/features/streams"
 import { setupTestDatabase } from "./setup"
-import { userId, userId, workspaceId, streamId } from "../../src/lib/id"
+import { userId, workspaceId, streamId } from "../../src/lib/id"
 
 describe("Trigram Search", () => {
   let pool: Pool

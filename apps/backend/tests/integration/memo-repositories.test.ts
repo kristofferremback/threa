@@ -17,11 +17,10 @@ import { PendingItemRepository } from "../../src/features/memos"
 import { StreamStateRepository } from "../../src/features/streams"
 import { MemoRepository } from "../../src/features/memos"
 import { setupTestDatabase } from "./setup"
-import { userId, userId, workspaceId, streamId, memoId, pendingItemId, conversationId } from "../../src/lib/id"
+import { userId, workspaceId, streamId, memoId, pendingItemId, conversationId } from "../../src/lib/id"
 
 describe("Memo Repositories", () => {
   let pool: Pool
-  let testUserId: string
   let testUserId: string
   let testWorkspaceId: string
   let testStreamId: string

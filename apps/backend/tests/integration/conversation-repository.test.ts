@@ -16,12 +16,11 @@ import { StreamRepository } from "../../src/features/streams"
 import { MessageRepository } from "../../src/features/messaging"
 import { ConversationRepository, type Conversation } from "../../src/features/conversations"
 import { setupTestDatabase, testMessageContent } from "./setup"
-import { userId, userId, workspaceId, streamId, messageId, conversationId } from "../../src/lib/id"
+import { userId, workspaceId, streamId, messageId, conversationId } from "../../src/lib/id"
 import { ConversationStatuses } from "@threa/types"
 
 describe("ConversationRepository", () => {
   let pool: Pool
-  let testUserId: string
   let testUserId: string
   let testWorkspaceId: string
   let testStreamId: string

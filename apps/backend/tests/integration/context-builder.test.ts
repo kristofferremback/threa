@@ -33,16 +33,16 @@ describe("Context Builder", () => {
   describe("Scratchpad Context", () => {
     test("should include conversation history", async () => {
       await withTestTransaction(pool, async (client) => {
-        const ownerUserId = userId()
+        const workosUserId = userId()
         const wsId = workspaceId()
         const scratchpadId = streamId()
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Context Test Workspace",
           slug: `ctx-ws-${wsId}`,
-          createdBy: ownerUserId,
+          createdBy: workosUserId,
         })
-        const ownerUserId = (await addTestMember(client, wsId, ownerUserId)).id
+        const ownerUserId = (await addTestMember(client, wsId, workosUserId)).id
 
         const scratchpad = await StreamRepository.insert(client, {
           id: scratchpadId,
@@ -92,18 +92,18 @@ describe("Context Builder", () => {
   describe("Channel Context", () => {
     test("should include members and conversation", async () => {
       await withTestTransaction(pool, async (client) => {
-        const ownerUserId = userId()
-        const memberUserId = userId()
+        const ownerWorkosId = userId()
+        const memberWorkosId = userId()
         const wsId = workspaceId()
         const channelId = streamId()
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Channel Context Workspace",
           slug: `channel-ctx-ws-${wsId}`,
-          createdBy: ownerUserId,
+          createdBy: ownerWorkosId,
         })
-        const ownerUser = await addTestMember(client, wsId, ownerUserId)
-        const memberMember = await addTestMember(client, wsId, memberUserId)
+        const ownerUser = await addTestMember(client, wsId, ownerWorkosId)
+        const memberMember = await addTestMember(client, wsId, memberWorkosId)
         const ownerUserId = ownerUser.id
         const memberUserId = memberMember.id
         await UserRepository.update(client, wsId, ownerUserId, { name: "Channel Owner" })
@@ -153,7 +153,7 @@ describe("Context Builder", () => {
   describe("Thread Context", () => {
     test("should include thread hierarchy path", async () => {
       await withTestTransaction(pool, async (client) => {
-        const ownerUserId = userId()
+        const workosUserId = userId()
         const wsId = workspaceId()
         const channelId = streamId()
         const threadId = streamId()
@@ -161,9 +161,9 @@ describe("Context Builder", () => {
           id: wsId,
           name: "Thread Context Workspace",
           slug: `thread-ctx-ws-${wsId}`,
-          createdBy: ownerUserId,
+          createdBy: workosUserId,
         })
-        const ownerUserId = (await addTestMember(client, wsId, ownerUserId)).id
+        const ownerUserId = (await addTestMember(client, wsId, workosUserId)).id
 
         // Create channel
         await StreamRepository.insert(client, {
@@ -237,7 +237,7 @@ describe("Context Builder", () => {
 
     test("should handle deeply nested threads", async () => {
       await withTestTransaction(pool, async (client) => {
-        const ownerUserId = userId()
+        const workosUserId = userId()
         const wsId = workspaceId()
         const channelId = streamId()
         const thread1Id = streamId()
@@ -246,9 +246,9 @@ describe("Context Builder", () => {
           id: wsId,
           name: "Deep Thread Context Workspace",
           slug: `deep-thread-ws-${wsId}`,
-          createdBy: ownerUserId,
+          createdBy: workosUserId,
         })
-        const ownerUserId = (await addTestMember(client, wsId, ownerUserId)).id
+        const ownerUserId = (await addTestMember(client, wsId, workosUserId)).id
 
         // Create channel -> thread1 -> thread2
         await StreamRepository.insert(client, {
