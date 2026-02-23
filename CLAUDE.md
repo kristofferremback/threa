@@ -87,7 +87,8 @@ Relational integrity is enforced in application code, not in PostgreSQL schema d
 - All product/domain data persisted in PostgreSQL must be workspace-scoped via `workspace_id`
   and must be queried/mutated with a workspace filter. Global-only infra/auth tables are the
   explicit exception (e.g. auth sessions, queue internals, outbox listeners, migration metadata).
-- Outside auth and `users`, reference `MemberId`, not `UserId` (INV-50)
+- Use `UserId` for workspace-scoped identity.
+  `MemberId` is reserved for stream membership surfaces (`stream_members` and stream member APIs/events) (INV-50)
 
 Migrations are append-only (INV-17). Never edit existing migration files.
 
