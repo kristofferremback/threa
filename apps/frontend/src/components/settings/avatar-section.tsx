@@ -53,7 +53,7 @@ export function AvatarSection({ workspaceId, memberName, avatarUrl }: AvatarSect
     }
   }
 
-  const imageUrl = getAvatarUrl(avatarUrl, 256)
+  const imageUrl = getAvatarUrl(workspaceId, avatarUrl, 256)
 
   return (
     <div className="flex items-center gap-4">

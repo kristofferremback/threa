@@ -7,11 +7,12 @@ interface MockResponse {
   body: unknown
 }
 
-function createReq(ip: string, headers: Request["headers"] = {}): Request {
+function createReq(remoteAddress: string, headers: Request["headers"] = {}): Request {
   return {
-    ip,
+    ip: "should-not-be-used",
     headers,
-  } as Request
+    socket: { remoteAddress },
+  } as unknown as Request
 }
 
 function createRes(): Response & MockResponse {
@@ -75,8 +76,10 @@ describe("createOpsAccessMiddleware", () => {
     expect(res.statusCode).toBe(200)
   })
 
-  test("does not trust spoofed x-forwarded-for header", () => {
+  test("uses TCP peer address, not req.ip (which trusts X-Forwarded-For via trust proxy)", () => {
     const middleware = createOpsAccessMiddleware()
+    // socket.remoteAddress is the real TCP peer (public IP),
+    // even if req.ip is spoofed to loopback via X-Forwarded-For
     const req = createReq("8.8.8.8", { "x-forwarded-for": "127.0.0.1" } as Request["headers"])
     const res = createRes()
     let nextCalled = false

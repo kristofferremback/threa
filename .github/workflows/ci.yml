@@ -97,5 +97,8 @@ jobs:
           S3_ACCESS_KEY_ID: minioadmin
           S3_SECRET_ACCESS_KEY: minioadmin
 
+      - name: Run workspace-router tests
+        run: bun run --cwd apps/workspace-router test
+
       - name: Run frontend tests
         run: bun run --cwd apps/frontend test

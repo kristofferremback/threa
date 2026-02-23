@@ -22,6 +22,9 @@ export function createApp(options: CreateAppOptions): Express {
   // Configure JSON serialization to handle BigInt values
   app.set("json replacer", bigIntReplacer)
 
+  // Trust X-Forwarded-For from the workspace router proxy so req.ip reflects the real client
+  app.set("trust proxy", 1)
+
   app.disable("x-powered-by")
 
   // Metrics middleware (before everything else to capture all requests)

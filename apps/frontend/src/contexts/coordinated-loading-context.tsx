@@ -77,7 +77,7 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
   const avatarUrls = useMemo(() => {
     if (!workspaceQuery.data) return []
     return workspaceQuery.data.members
-      .map((m) => getAvatarUrl(m.avatarUrl, 64))
+      .map((m) => getAvatarUrl(workspaceId, m.avatarUrl, 64))
       .filter((url): url is string => url !== undefined)
   }, [workspaceQuery.data])
   const avatarsReady = usePreloadImages(avatarUrls)

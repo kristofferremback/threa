@@ -32,20 +32,6 @@ export default defineConfig({
         target: backendTarget,
         changeOrigin: true,
       },
-      "/socket.io": {
-        target: backendTarget,
-        changeOrigin: true,
-        ws: true,
-        configure: (proxy) => {
-          // Silence expected WebSocket errors when browser tabs close during tests
-          proxy.on("error", (err) => {
-            if (err.message.includes("ECONNRESET") || err.message.includes("ended by the other party")) {
-              return
-            }
-            console.error("[proxy error]", err)
-          })
-        },
-      },
       "/test-auth-login": {
         target: backendTarget,
         changeOrigin: true,

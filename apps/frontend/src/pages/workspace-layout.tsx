@@ -7,6 +7,7 @@ import { MentionableMarkdownWrapper } from "@/components/ui/markdown-content"
 import { WorkspaceEmojiProvider } from "@/components/workspace-emoji"
 import { ChannelLinkProvider } from "@/lib/markdown/channel-link-context"
 import {
+  SocketProvider,
   PanelProvider,
   QuickSwitcherProvider,
   PreferencesProvider,
@@ -25,6 +26,7 @@ import {
   useKeyboardShortcuts,
   useMentionables,
   useReconnectBootstrap,
+  usePendingMessageRetry,
 } from "@/hooks"
 import { QuickSwitcher, type QuickSwitcherMode } from "@/components/quick-switcher"
 import { SettingsDialog } from "@/components/settings"
@@ -64,6 +66,23 @@ function WorkspaceKeyboardHandler({
   })
 
   return <>{children}</>
+}
+
+interface WorkspaceSocketHandlerProps {
+  workspaceId: string
+  streamIds: string[]
+  children: ReactNode
+}
+
+function WorkspaceSocketHandler({ workspaceId, streamIds, children }: WorkspaceSocketHandlerProps) {
+  useSocketEvents(workspaceId)
+  useReconnectBootstrap(workspaceId, streamIds)
+  return <>{children}</>
+}
+
+function PendingMessageRetryHandler() {
+  usePendingMessageRetry()
+  return null
 }
 
 function TraceDialogContainer() {
@@ -107,11 +126,6 @@ export function WorkspaceLayout() {
     }
   }, [workspaceError, navigate])
 
-  useSocketEvents(workspaceId ?? "")
-
-  // Handle reconnection: re-bootstrap workspace and streams when socket reconnects
-  useReconnectBootstrap(workspaceId ?? "", streamIds)
-
   const openSwitcher = useCallback((mode: QuickSwitcherMode) => {
     setSwitcherMode(mode)
     setSwitcherOpen(true)
@@ -126,50 +140,55 @@ export function WorkspaceLayout() {
   }
 
   return (
-    <CoordinatedLoadingProvider workspaceId={workspaceId} streamIds={streamIds}>
-      <ChannelLinkProvider workspaceId={workspaceId} streams={streams}>
-        <MentionableMarkdownWrapper mentionables={mentionables}>
-          <WorkspaceEmojiProvider workspaceId={workspaceId}>
-            <PreferencesProvider workspaceId={workspaceId}>
-              <SettingsProvider>
-                <WorkspaceKeyboardHandler
-                  switcherOpen={switcherOpen}
-                  onOpenSwitcher={openSwitcher}
-                  onCloseSwitcher={closeSwitcher}
-                >
-                  <QuickSwitcherProvider openSwitcher={openSwitcher}>
-                    <PanelProvider>
-                      <TraceProvider>
-                        <SidebarProvider>
-                          <CoordinatedLoadingGate>
-                            <AppShell sidebar={<Sidebar workspaceId={workspaceId} />}>
-                              <MainContentGate>
-                                <Outlet />
-                              </MainContentGate>
-                            </AppShell>
-                          </CoordinatedLoadingGate>
-                        </SidebarProvider>
-                        <QuickSwitcher
-                          workspaceId={workspaceId}
-                          open={switcherOpen}
-                          onOpenChange={setSwitcherOpen}
-                          initialMode={switcherMode}
-                        />
-                        <SettingsDialog />
-                        <WorkspaceSettingsDialog workspaceId={workspaceId} />
-                        <StreamSettingsDialog workspaceId={workspaceId} />
-                        <CreateChannelDialog workspaceId={workspaceId} />
-                        <TraceDialogContainer />
-                        <Toaster />
-                      </TraceProvider>
-                    </PanelProvider>
-                  </QuickSwitcherProvider>
-                </WorkspaceKeyboardHandler>
-              </SettingsProvider>
-            </PreferencesProvider>
-          </WorkspaceEmojiProvider>
-        </MentionableMarkdownWrapper>
-      </ChannelLinkProvider>
-    </CoordinatedLoadingProvider>
+    <SocketProvider workspaceId={workspaceId}>
+      <WorkspaceSocketHandler workspaceId={workspaceId} streamIds={streamIds}>
+        <PendingMessageRetryHandler />
+        <CoordinatedLoadingProvider workspaceId={workspaceId} streamIds={streamIds}>
+          <ChannelLinkProvider workspaceId={workspaceId} streams={streams}>
+            <MentionableMarkdownWrapper mentionables={mentionables}>
+              <WorkspaceEmojiProvider workspaceId={workspaceId}>
+                <PreferencesProvider workspaceId={workspaceId}>
+                  <SettingsProvider>
+                    <WorkspaceKeyboardHandler
+                      switcherOpen={switcherOpen}
+                      onOpenSwitcher={openSwitcher}
+                      onCloseSwitcher={closeSwitcher}
+                    >
+                      <QuickSwitcherProvider openSwitcher={openSwitcher}>
+                        <PanelProvider>
+                          <TraceProvider>
+                            <SidebarProvider>
+                              <CoordinatedLoadingGate>
+                                <AppShell sidebar={<Sidebar workspaceId={workspaceId} />}>
+                                  <MainContentGate>
+                                    <Outlet />
+                                  </MainContentGate>
+                                </AppShell>
+                              </CoordinatedLoadingGate>
+                            </SidebarProvider>
+                            <QuickSwitcher
+                              workspaceId={workspaceId}
+                              open={switcherOpen}
+                              onOpenChange={setSwitcherOpen}
+                              initialMode={switcherMode}
+                            />
+                            <SettingsDialog />
+                            <WorkspaceSettingsDialog workspaceId={workspaceId} />
+                            <StreamSettingsDialog workspaceId={workspaceId} />
+                            <CreateChannelDialog workspaceId={workspaceId} />
+                            <TraceDialogContainer />
+                            <Toaster />
+                          </TraceProvider>
+                        </PanelProvider>
+                      </QuickSwitcherProvider>
+                    </WorkspaceKeyboardHandler>
+                  </SettingsProvider>
+                </PreferencesProvider>
+              </WorkspaceEmojiProvider>
+            </MentionableMarkdownWrapper>
+          </ChannelLinkProvider>
+        </CoordinatedLoadingProvider>
+      </WorkspaceSocketHandler>
+    </SocketProvider>
   )
 }

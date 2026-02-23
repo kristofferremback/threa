@@ -137,7 +137,7 @@ export function useActors(workspaceId: string): ActorLookup {
 
       if (actorId) {
         const member = getMember(actorId)
-        const avatarUrl = getAvatarUrl(member?.avatarUrl, 64)
+        const avatarUrl = getAvatarUrl(workspaceId, member?.avatarUrl, 64)
         if (avatarUrl) return { fallback, avatarUrl }
       }
 
