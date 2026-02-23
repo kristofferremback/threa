@@ -1,3 +1,3 @@
 export { createMockStream, mockStreams, mockStreamsList } from "./streams"
-export { createMockMember, mockMembers, mockMembersList } from "./users"
+export { createMockUser, mockUsers, mockUsersList } from "./users"
 export { createMockSearchResult, mockSearchResults, mockSearchResultsList, type MockSearchResult } from "./messages"

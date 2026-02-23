@@ -175,7 +175,7 @@ function VisibilitySection({ workspaceId, stream }: { workspaceId: string; strea
             <AlertDialogDescription>
               {pendingVisibility === Visibilities.PRIVATE
                 ? "Making this channel private will hide it from non-members. They won't be able to find or join it."
-                : "Making this channel public will make it visible to all workspace members. Anyone will be able to join."}
+                : "Making this channel public will make it visible to all workspace users. Anyone will be able to join."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

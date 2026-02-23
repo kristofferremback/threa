@@ -1,7 +1,7 @@
 import { vi } from "vitest"
 import type { Stream, User, Persona } from "@threa/types"
 import { mockStreamsList } from "../fixtures/streams"
-import { mockMembersList } from "../fixtures/users"
+import { mockUsersList } from "../fixtures/users"
 import type { MockSearchResult } from "../fixtures/messages"
 
 /**
@@ -18,7 +18,7 @@ export interface MockBootstrapData {
  */
 export const defaultBootstrapData: MockBootstrapData = {
   streams: mockStreamsList,
-  users: mockMembersList,
+  users: mockUsersList,
   personas: [],
 }
 

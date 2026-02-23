@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { QuickSwitcher } from "./quick-switcher"
 import { mockStreamsList } from "@/test/fixtures"
-import { mockMembersList } from "@/test/fixtures/users"
+import { mockUsersList } from "@/test/fixtures/users"
 import { mockSearchResultsList } from "@/test/fixtures/messages"
 
 // Create a fresh QueryClient for each test to avoid shared state
@@ -172,7 +172,7 @@ describe("QuickSwitcher Integration Tests", () => {
     mockWorkspaceBootstrap.data = {
       streams: mockStreamsList,
       streamMemberships: [],
-      users: mockMembersList,
+      users: mockUsersList,
       personas: [],
       dmPeers: undefined,
     }

@@ -92,7 +92,7 @@ interface WorkspaceUserAddedPayload {
 
 interface WorkspaceUserRemovedPayload {
   workspaceId: string
-  userId: string
+  removedUserId: string
 }
 
 interface WorkspaceUserUpdatedPayload {

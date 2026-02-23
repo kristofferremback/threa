@@ -3,13 +3,13 @@ import type { User } from "@threa/types"
 /**
  * Factory for creating mock User objects.
  */
-export function createMockMember(overrides: Partial<User> & { id: string; workosUserId: string }): User {
+export function createMockUser(overrides: Partial<User> & { id: string; workosUserId: string }): User {
   return {
     workspaceId: "workspace_1",
     email: `${overrides.workosUserId}@test.com`,
     role: "member",
     slug: overrides.workosUserId.replace("workos_", ""),
-    name: "Test Member",
+    name: "Test User",
     description: null,
     avatarUrl: null,
     timezone: null,
@@ -21,10 +21,10 @@ export function createMockMember(overrides: Partial<User> & { id: string; workos
 }
 
 /**
- * Pre-built mock workspace members.
+ * Pre-built mock workspace users.
  */
-export const mockMembers = {
-  martin: createMockMember({
+export const mockUsers = {
+  martin: createMockUser({
     id: "member_1",
     workosUserId: "workos_user_1",
     role: "admin",
@@ -32,7 +32,7 @@ export const mockMembers = {
     name: "Martin",
     email: "martin@test.com",
   }),
-  kate: createMockMember({
+  kate: createMockUser({
     id: "member_2",
     workosUserId: "workos_user_2",
     role: "member",
@@ -40,7 +40,7 @@ export const mockMembers = {
     name: "Kate",
     email: "kate@test.com",
   }),
-  alice: createMockMember({
+  alice: createMockUser({
     id: "member_3",
     workosUserId: "workos_user_3",
     role: "member",
@@ -51,6 +51,6 @@ export const mockMembers = {
 }
 
 /**
- * Array of all mock members.
+ * Array of all mock users.
  */
-export const mockMembersList: User[] = Object.values(mockMembers)
+export const mockUsersList: User[] = Object.values(mockUsers)
