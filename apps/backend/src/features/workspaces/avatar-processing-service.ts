@@ -39,7 +39,13 @@ export class AvatarProcessingService {
     // Phase 4: Transaction — atomically update user if this is still the latest upload (INV-20)
     let variantsUsed = false
     await withTransaction(this.pool, async (client) => {
-      const updated = await UserRepository.updateAvatarIfLatestUpload(client, userId, avatarUploadId, basePath)
+      const updated = await UserRepository.updateAvatarIfLatestUpload(
+        client,
+        workspaceId,
+        userId,
+        avatarUploadId,
+        basePath
+      )
 
       if (updated) {
         variantsUsed = true

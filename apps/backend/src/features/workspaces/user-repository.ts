@@ -295,13 +295,14 @@ export const UserRepository = {
 
   async updateAvatarIfLatestUpload(
     db: Querier,
+    workspaceId: string,
     userId: string,
     avatarUploadId: string,
     avatarUrl: string
   ): Promise<User | null> {
     const result = await db.query<UserRow>(sql`
       UPDATE users SET avatar_url = ${avatarUrl}
-      WHERE id = ${userId}
+      WHERE workspace_id = ${workspaceId} AND id = ${userId}
         AND ${avatarUploadId} = (
           SELECT id FROM avatar_uploads
           WHERE user_id = ${userId}
