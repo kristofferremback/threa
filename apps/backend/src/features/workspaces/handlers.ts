@@ -10,6 +10,7 @@ import type { AvatarService } from "./avatar-service"
 import { getEmojiList } from "../emoji"
 import { getEffectiveLevel } from "../streams"
 import { displayNameFromWorkos } from "../../auth/display-name"
+import { HttpError } from "../../lib/errors"
 
 const createWorkspaceSchema = z.object({
   name: z.string().min(1, "name is required"),
@@ -85,7 +86,7 @@ export function createWorkspaceHandlers({
       }
 
       if (!authUser) {
-        return res.status(401).json({ error: "Not authenticated" })
+        throw new HttpError("Not authenticated", { status: 401, code: "NOT_AUTHENTICATED" })
       }
 
       const userName = displayNameFromWorkos(authUser)
@@ -284,7 +285,7 @@ export function createWorkspaceHandlers({
       }
 
       try {
-        const stream = await avatarService.streamAvatarFile({ workspaceId, memberId: userId, file })
+        const stream = await avatarService.streamAvatarFile({ workspaceId, userId, file })
         if (!stream) return res.status(404).end()
 
         res.set("Content-Type", "image/webp")

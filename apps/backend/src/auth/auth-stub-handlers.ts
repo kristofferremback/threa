@@ -6,6 +6,7 @@ import type { InvitationService } from "../features/invitations"
 import { renderLoginPage } from "./auth-stub-login-page"
 import { decodeAndSanitizeRedirectState } from "./redirect"
 import { displayNameFromWorkos } from "./display-name"
+import { HttpError } from "../lib/errors"
 
 interface Dependencies {
   authStubService: StubAuthService
@@ -80,7 +81,7 @@ export function createAuthStubHandlers(deps: Dependencies): AuthStubHandlers {
     const { role } = req.body as { role?: "member" | "admin" }
 
     if (!authUser) {
-      return res.status(401).json({ error: "Not authenticated" })
+      throw new HttpError("Not authenticated", { status: 401, code: "NOT_AUTHENTICATED" })
     }
 
     const name = displayNameFromWorkos(authUser)

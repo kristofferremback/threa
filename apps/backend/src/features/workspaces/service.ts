@@ -193,7 +193,7 @@ export class WorkspaceService {
 
       await OutboxRepository.insert(client, "workspace_member:removed", {
         workspaceId,
-        memberId: userId,
+        userId,
       })
     })
   }
@@ -329,7 +329,7 @@ export class WorkspaceService {
     }
 
     // Phase 2: Upload raw buffer to S3 (single fast PUT, no processing)
-    const rawS3Key = await this.avatarService.uploadRaw({ buffer, workspaceId, memberId: userId })
+    const rawS3Key = await this.avatarService.uploadRaw({ buffer, workspaceId, userId })
 
     // Phase 3: Create upload tracking row and enqueue job
     const uploadId = avatarUploadId()

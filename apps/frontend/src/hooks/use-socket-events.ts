@@ -92,7 +92,7 @@ interface WorkspaceMemberAddedPayload {
 
 interface WorkspaceMemberRemovedPayload {
   workspaceId: string
-  memberId: string
+  userId: string
 }
 
 interface MemberUpdatedPayload {
@@ -398,12 +398,12 @@ export function useSocketEvents(workspaceId: string) {
         const users = getWorkspaceUsers(bootstrap)
         return withWorkspaceUsers(
           bootstrap,
-          users.filter((u) => u.id !== payload.memberId)
+          users.filter((u) => u.id !== payload.userId)
         )
       })
 
       // Remove from IndexedDB workspace members
-      db.workspaceMembers.delete(payload.memberId)
+      db.workspaceMembers.delete(payload.userId)
     })
 
     // Handle member updated

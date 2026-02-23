@@ -5,6 +5,7 @@ import { SESSION_COOKIE_CONFIG } from "../lib/cookies"
 import { decodeAndSanitizeRedirectState } from "./redirect"
 import { displayNameFromWorkos } from "./display-name"
 import { logger } from "../lib/logger"
+import { HttpError } from "../lib/errors"
 
 const SESSION_COOKIE_NAME = "wos_session"
 
@@ -89,7 +90,7 @@ export function createAuthHandlers({ authService, invitationService }: Dependenc
     async me(req: Request, res: Response) {
       const authUser = req.authUser
       if (!authUser) {
-        return res.status(401).json({ error: "Not authenticated" })
+        throw new HttpError("Not authenticated", { status: 401, code: "NOT_AUTHENTICATED" })
       }
 
       const name = displayNameFromWorkos(authUser)

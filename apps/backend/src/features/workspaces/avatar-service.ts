@@ -50,10 +50,10 @@ export class AvatarService {
    * Upload the raw (unprocessed) image buffer to S3.
    * Returns the S3 key for later retrieval by the worker.
    */
-  async uploadRaw(params: { buffer: Buffer; workspaceId: string; memberId: string }): Promise<string> {
-    const { buffer, workspaceId, memberId } = params
+  async uploadRaw(params: { buffer: Buffer; workspaceId: string; userId: string }): Promise<string> {
+    const { buffer, workspaceId, userId } = params
     const timestamp = Date.now()
-    const key = `avatars/${workspaceId}/${memberId}/${timestamp}.original`
+    const key = `avatars/${workspaceId}/${userId}/${timestamp}.original`
     await this.storage.putObject(key, buffer, "application/octet-stream")
     return key
   }
@@ -78,7 +78,7 @@ export class AvatarService {
 
   /**
    * Derive the base path for processed avatar variants from a raw S3 key.
-   * Centralizes knowledge of the raw key format (avatars/{ws}/{member}/{ts}.original).
+   * Centralizes knowledge of the raw key format (avatars/{ws}/{user}/{ts}.original).
    */
   rawKeyToBasePath(rawS3Key: string): string {
     return rawS3Key.replace(/\.original$/, "")
@@ -91,9 +91,9 @@ export class AvatarService {
    * the S3 key internally — callers don't need to know the storage layout.
    * Returns null if the filename doesn't match the expected pattern.
    */
-  async streamAvatarFile(params: { workspaceId: string; memberId: string; file: string }): Promise<Readable | null> {
+  async streamAvatarFile(params: { workspaceId: string; userId: string; file: string }): Promise<Readable | null> {
     if (!AvatarService.AVATAR_FILE_PATTERN.test(params.file)) return null
-    const s3Key = `avatars/${params.workspaceId}/${params.memberId}/${params.file}`
+    const s3Key = `avatars/${params.workspaceId}/${params.userId}/${params.file}`
     return this.storage.getObjectStream(s3Key)
   }
 
