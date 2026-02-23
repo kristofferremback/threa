@@ -84,6 +84,9 @@ Relational integrity is enforced in application code, not in PostgreSQL schema d
 - No DB enums; use `TEXT` and validate in code (INV-3)
 - All entities use prefixed ULIDs like `stream_xxx` (INV-2)
 - Workspace is the data ownership and sharding boundary (INV-8)
+- All product/domain data persisted in PostgreSQL must be workspace-scoped via `workspace_id`
+  and must be queried/mutated with a workspace filter. Global-only infra/auth tables are the
+  explicit exception (e.g. auth sessions, queue internals, outbox listeners, migration metadata).
 - Outside auth and `users`, reference `MemberId`, not `UserId` (INV-50)
 
 Migrations are append-only (INV-17). Never edit existing migration files.
