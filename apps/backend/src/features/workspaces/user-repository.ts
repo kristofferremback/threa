@@ -143,14 +143,6 @@ export const UserRepository = {
     `)
   },
 
-  async isMember(db: Querier, workspaceId: string, workosUserId: string): Promise<boolean> {
-    const result = await db.query(sql`
-      SELECT 1 FROM workspace_members
-      WHERE workspace_id = ${workspaceId} AND workos_user_id = ${workosUserId}
-    `)
-    return result.rows.length > 0
-  },
-
   async updateSlug(db: Querier, id: string, slug: string): Promise<void> {
     await db.query(sql`
       UPDATE workspace_members SET slug = ${slug}

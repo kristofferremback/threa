@@ -300,13 +300,4 @@ export const WorkspaceRepository = {
       WHERE id = ${workspaceId} AND workos_organization_id IS NULL
     `)
   },
-
-  async findUserByWorkosUserId(db: Querier, workspaceId: string, workosUserId: string): Promise<WorkspaceUser | null> {
-    const result = await db.query<WorkspaceUserRow>(sql`
-      SELECT id, workspace_id, workos_user_id, email, role, slug, name, description, avatar_url, timezone, locale, setup_completed, joined_at
-      FROM workspace_members
-      WHERE workspace_id = ${workspaceId} AND workos_user_id = ${workosUserId}
-    `)
-    return result.rows[0] ? mapRowToUser(result.rows[0]) : null
-  },
 }
