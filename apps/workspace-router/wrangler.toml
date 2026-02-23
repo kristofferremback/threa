@@ -9,6 +9,7 @@ id = "workspace-regions-kv"
 [vars]
 DEFAULT_REGION = "local"
 REGIONS = '{"local":{"apiUrl":"http://localhost:3002","wsUrl":"ws://localhost:3002"}}'
+CONTROL_PLANE_URL = "http://localhost:3003"
 
 [dev]
 port = 3001

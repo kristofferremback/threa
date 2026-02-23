@@ -19,8 +19,10 @@ import { createAIUsageHandlers } from "./features/ai-usage"
 import { createInvitationHandlers } from "./features/invitations"
 import { createActivityHandlers } from "./features/activity"
 import { createDebugHandlers } from "./handlers/debug-handlers"
+import { createInternalHandlers } from "./handlers/internal-handlers"
 import { createAuthStubHandlers } from "./auth/auth-stub-handlers"
 import { createAgentSessionHandlers } from "./features/agents"
+import { createInternalAuthMiddleware } from "./middleware/internal-auth"
 import { errorHandler } from "./lib/error-handler"
 import type { AuthService } from "./auth/auth-service"
 import { StubAuthService } from "./auth/auth-service.stub"
@@ -57,6 +59,7 @@ interface Dependencies {
   avatarService: AvatarService
   rateLimiterConfig: RateLimiterConfig
   allowDevAuthRoutes: boolean
+  internalApiKey: string | null
 }
 
 export function registerRoutes(app: Express, deps: Dependencies) {
@@ -78,6 +81,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     avatarService,
     rateLimiterConfig,
     allowDevAuthRoutes,
+    internalApiKey,
   } = deps
 
   const auth = createAuthMiddleware({ authService })
@@ -118,6 +122,15 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/readyz", opsAccess, debug.readiness)
   app.get("/debug/pool", opsAccess, debug.poolState)
   app.get("/metrics", opsAccess, debug.metrics)
+
+  // Internal API — control-plane → regional backend, protected by shared secret
+  if (internalApiKey) {
+    const internalAuth = createInternalAuthMiddleware(internalApiKey)
+    const internal = createInternalHandlers({ workspaceService, invitationService })
+
+    app.post("/internal/workspaces", internalAuth, internal.createWorkspace)
+    app.post("/internal/invitations/:id/accept", internalAuth, internal.acceptInvitation)
+  }
 
   // Global baseline rate limit
   app.use(rateLimits.globalBaseline)

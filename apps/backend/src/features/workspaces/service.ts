@@ -66,6 +66,42 @@ export class WorkspaceService {
     return WorkspaceRepository.list(this.pool, { workosUserId })
   }
 
+  /**
+   * Create a workspace from a control-plane instruction.
+   * Accepts a pre-generated ID and slug — skips invite validation and slug generation
+   * since the control-plane already handled those.
+   */
+  async createWorkspaceFromControlPlane(params: {
+    id: string
+    name: string
+    slug: string
+    ownerWorkosUserId: string
+    ownerEmail: string
+    ownerName: string
+  }): Promise<Workspace> {
+    return withTransaction(this.pool, async (client) => {
+      const ownerUserId = generateUserId()
+
+      const ws = await WorkspaceRepository.insert(client, {
+        id: params.id,
+        name: params.name,
+        slug: params.slug,
+        createdBy: ownerUserId,
+      })
+
+      await this.createUserInTransaction(client, {
+        id: ownerUserId,
+        workspaceId: params.id,
+        workosUserId: params.ownerWorkosUserId,
+        email: params.ownerEmail,
+        name: params.ownerName,
+        role: "owner",
+      })
+
+      return ws
+    })
+  }
+
   async createWorkspace(params: CreateWorkspaceParams): Promise<Workspace> {
     if (this.requireWorkspaceCreationInvite) {
       await this.assertWorkspaceCreationAllowed(params.email)

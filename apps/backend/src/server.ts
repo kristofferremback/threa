@@ -325,6 +325,7 @@ export async function startServer(): Promise<ServerInstance> {
     avatarService,
     rateLimiterConfig: config.rateLimits,
     allowDevAuthRoutes: config.useStubAuth && !isProduction,
+    internalApiKey: config.internalApiKey,
   })
 
   app.use(errorHandler)

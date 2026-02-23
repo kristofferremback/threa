@@ -4,6 +4,8 @@ interface Env {
   REGIONS: string
   /** Fallback region when workspace is not in KV (required for local dev) */
   DEFAULT_REGION?: string
+  /** Base URL for the control-plane service (handles auth, workspace list/create) */
+  CONTROL_PLANE_URL?: string
 }
 
 interface RegionConfig {
@@ -12,6 +14,13 @@ interface RegionConfig {
 }
 
 type RegionsMap = Record<string, RegionConfig>
+
+/** Routes that should go to the control-plane (auth, workspace collection, regions) */
+const AUTH_ROUTE_RE = /^\/api\/auth\//
+const WORKSPACES_COLLECTION_RE = /^\/api\/workspaces\/?$/
+const REGIONS_ROUTE_RE = /^\/api\/regions\/?$/
+/** Dev auth routes that the control-plane handles in stub mode */
+const DEV_AUTH_ROUTE_RE = /^\/(?:test-auth-login|api\/dev\/login)\/?$/
 
 /** Matches /api/workspaces/:workspaceId with optional trailing path */
 const WORKSPACE_ROUTE_RE = /^\/api\/workspaces\/([^/]+)(?:\/.+)?$/
@@ -39,6 +48,19 @@ export default {
     // Router health check (handled locally, not proxied)
     if (path === "/readyz" && request.method === "GET") {
       return new Response("OK", { status: 200 })
+    }
+
+    // Control-plane routes (auth, workspace list/create, regions, dev auth)
+    if (env.CONTROL_PLANE_URL) {
+      const method = request.method
+      if (
+        AUTH_ROUTE_RE.test(path) ||
+        (WORKSPACES_COLLECTION_RE.test(path) && (method === "GET" || method === "POST")) ||
+        REGIONS_ROUTE_RE.test(path) ||
+        DEV_AUTH_ROUTE_RE.test(path)
+      ) {
+        return proxyRequest(request, env.CONTROL_PLANE_URL)
+      }
     }
 
     // Config endpoint: returns the direct WebSocket URL for a workspace

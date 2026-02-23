@@ -61,14 +61,16 @@ function getOrAllocatePort(envVar: string): number {
 // Find free ports for this test run (allows parallel execution across worktrees)
 // Ports are cached in env vars so worker processes use the same ports
 const backendPort = getOrAllocatePort("PLAYWRIGHT_BACKEND_PORT")
+const controlPlanePort = getOrAllocatePort("PLAYWRIGHT_CONTROL_PLANE_PORT")
 const routerPort = getOrAllocatePort("PLAYWRIGHT_ROUTER_PORT")
 const frontendPort = getOrAllocatePort("PLAYWRIGHT_FRONTEND_PORT")
 const dbName = deriveTestDatabaseName()
+const cpDbName = `${dbName}_cp`
 
 // Only log once (when ports are first allocated)
 if (!process.env.PLAYWRIGHT_PORTS_LOGGED) {
   console.log(
-    `Playwright config: backend=${backendPort}, router=${routerPort}, frontend=${frontendPort}, db=${dbName}, postgres=${DB_PORT}, minio=${MINIO_PORT}`
+    `Playwright config: backend=${backendPort}, control-plane=${controlPlanePort}, router=${routerPort}, frontend=${frontendPort}, db=${dbName}, cp_db=${cpDbName}, postgres=${DB_PORT}, minio=${MINIO_PORT}`
   )
   process.env.PLAYWRIGHT_PORTS_LOGGED = "true"
 }
@@ -130,10 +132,29 @@ export default defineConfig({
         CORS_ALLOWED_ORIGINS: `http://localhost:${backendPort},http://localhost:${frontendPort}`,
         GLOBAL_RATE_LIMIT_MAX: "10000",
         AUTH_RATE_LIMIT_MAX: "10000",
+        CONTROL_PLANE_URL: `http://localhost:${controlPlanePort}`,
+        INTERNAL_API_KEY: "test-internal-key",
+        REGION: "local",
       },
     },
     {
-      command: `bunx wrangler dev --port ${routerPort} --var DEFAULT_REGION:local --var 'REGIONS:${JSON.stringify({ local: { apiUrl: `http://localhost:${backendPort}`, wsUrl: `ws://localhost:${backendPort}` } })}'`,
+      command: "bun run test:browser:control-plane",
+      url: `http://localhost:${controlPlanePort}/readyz`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 30000,
+      env: {
+        PORT: String(controlPlanePort),
+        DATABASE_URL: `postgresql://threa:threa@localhost:${DB_PORT}/${cpDbName}`,
+        USE_STUB_AUTH: "true",
+        INTERNAL_API_KEY: "test-internal-key",
+        REGIONS: JSON.stringify({ local: { internalUrl: `http://localhost:${backendPort}` } }),
+        CORS_ALLOWED_ORIGINS: `http://localhost:${controlPlanePort},http://localhost:${frontendPort}`,
+        GLOBAL_RATE_LIMIT_MAX: "10000",
+        WORKSPACE_CREATION_SKIP_INVITE: "true",
+      },
+    },
+    {
+      command: `bunx wrangler dev --port ${routerPort} --var DEFAULT_REGION:local --var CONTROL_PLANE_URL:http://localhost:${controlPlanePort} --var 'REGIONS:${JSON.stringify({ local: { apiUrl: `http://localhost:${backendPort}`, wsUrl: `ws://localhost:${backendPort}` } })}'`,
       cwd: "./apps/workspace-router",
       url: `http://localhost:${routerPort}/readyz`,
       reuseExistingServer: !process.env.CI,

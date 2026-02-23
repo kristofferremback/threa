@@ -12,7 +12,14 @@ const REGIONS_JSON = JSON.stringify({
   },
 })
 
-function makeEnv(overrides: Partial<{ WORKSPACE_REGIONS: any; REGIONS: string; DEFAULT_REGION: string }> = {}) {
+function makeEnv(
+  overrides: Partial<{
+    WORKSPACE_REGIONS: any
+    REGIONS: string
+    DEFAULT_REGION: string
+    CONTROL_PLANE_URL: string
+  }> = {}
+) {
   return {
     WORKSPACE_REGIONS: {
       get: mock(() => Promise.resolve(null)),
@@ -182,8 +189,8 @@ describe("workspace-router", () => {
     })
   })
 
-  describe("non-workspace routes", () => {
-    test("proxies auth routes to default region", async () => {
+  describe("non-workspace routes (no control-plane)", () => {
+    test("proxies auth routes to default region when no CONTROL_PLANE_URL", async () => {
       const originalFetch = globalThis.fetch
       const fn = mockFetchFn()
       try {
@@ -201,12 +208,126 @@ describe("workspace-router", () => {
       expect(await res.json()).toEqual({ error: "No default region configured" })
     })
 
-    test("proxies /api/workspaces (list) to default region", async () => {
+    test("proxies /api/workspaces (list) to default region when no CONTROL_PLANE_URL", async () => {
       const originalFetch = globalThis.fetch
       const fn = mockFetchFn(new Response("[]"))
       try {
         await worker.fetch(makeRequest("/api/workspaces"), makeEnv())
         expect(getProxiedUrl(fn)).toBe("http://localhost:3002/api/workspaces")
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+  })
+
+  describe("control-plane routing", () => {
+    const CP_URL = "http://localhost:3003"
+
+    test("proxies /api/auth/login to control-plane", async () => {
+      const originalFetch = globalThis.fetch
+      const fn = mockFetchFn()
+      try {
+        await worker.fetch(makeRequest("/api/auth/login"), makeEnv({ CONTROL_PLANE_URL: CP_URL }))
+        expect(getProxiedUrl(fn)).toBe("http://localhost:3003/api/auth/login")
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+
+    test("proxies /api/auth/callback to control-plane", async () => {
+      const originalFetch = globalThis.fetch
+      const fn = mockFetchFn()
+      try {
+        await worker.fetch(makeRequest("/api/auth/callback?code=abc"), makeEnv({ CONTROL_PLANE_URL: CP_URL }))
+        expect(getProxiedUrl(fn)).toBe("http://localhost:3003/api/auth/callback?code=abc")
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+
+    test("proxies /api/auth/logout to control-plane", async () => {
+      const originalFetch = globalThis.fetch
+      const fn = mockFetchFn()
+      try {
+        await worker.fetch(makeRequest("/api/auth/logout"), makeEnv({ CONTROL_PLANE_URL: CP_URL }))
+        expect(getProxiedUrl(fn)).toBe("http://localhost:3003/api/auth/logout")
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+
+    test("proxies /api/auth/me to control-plane", async () => {
+      const originalFetch = globalThis.fetch
+      const fn = mockFetchFn()
+      try {
+        await worker.fetch(makeRequest("/api/auth/me"), makeEnv({ CONTROL_PLANE_URL: CP_URL }))
+        expect(getProxiedUrl(fn)).toBe("http://localhost:3003/api/auth/me")
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+
+    test("proxies GET /api/workspaces to control-plane", async () => {
+      const originalFetch = globalThis.fetch
+      const fn = mockFetchFn()
+      try {
+        await worker.fetch(makeRequest("/api/workspaces"), makeEnv({ CONTROL_PLANE_URL: CP_URL }))
+        expect(getProxiedUrl(fn)).toBe("http://localhost:3003/api/workspaces")
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+
+    test("proxies POST /api/workspaces to control-plane", async () => {
+      const originalFetch = globalThis.fetch
+      const fn = mockFetchFn()
+      try {
+        await worker.fetch(makeRequest("/api/workspaces", "POST"), makeEnv({ CONTROL_PLANE_URL: CP_URL }))
+        expect(getProxiedUrl(fn)).toBe("http://localhost:3003/api/workspaces")
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+
+    test("proxies GET /api/regions to control-plane", async () => {
+      const originalFetch = globalThis.fetch
+      const fn = mockFetchFn()
+      try {
+        await worker.fetch(makeRequest("/api/regions"), makeEnv({ CONTROL_PLANE_URL: CP_URL }))
+        expect(getProxiedUrl(fn)).toBe("http://localhost:3003/api/regions")
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+
+    test("proxies /test-auth-login to control-plane", async () => {
+      const originalFetch = globalThis.fetch
+      const fn = mockFetchFn()
+      try {
+        await worker.fetch(makeRequest("/test-auth-login"), makeEnv({ CONTROL_PLANE_URL: CP_URL }))
+        expect(getProxiedUrl(fn)).toBe("http://localhost:3003/test-auth-login")
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+
+    test("proxies /api/dev/login to control-plane", async () => {
+      const originalFetch = globalThis.fetch
+      const fn = mockFetchFn()
+      try {
+        await worker.fetch(makeRequest("/api/dev/login", "POST"), makeEnv({ CONTROL_PLANE_URL: CP_URL }))
+        expect(getProxiedUrl(fn)).toBe("http://localhost:3003/api/dev/login")
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+
+    test("does NOT proxy workspace-scoped routes to control-plane", async () => {
+      const originalFetch = globalThis.fetch
+      const fn = mockFetchFn()
+      try {
+        await worker.fetch(makeRequest("/api/workspaces/ws_123/messages"), makeEnv({ CONTROL_PLANE_URL: CP_URL }))
+        expect(getProxiedUrl(fn)).toBe("http://localhost:3002/api/workspaces/ws_123/messages")
       } finally {
         globalThis.fetch = originalFetch
       }

@@ -284,11 +284,46 @@ async function main() {
     await ensureMinioBucket()
   }
 
-  console.log("Starting workspace-router, backend and frontend...")
+  console.log("Starting control-plane, workspace-router, backend and frontend...")
 
   // Load backend's .env file (worktree-specific DATABASE_URL, etc.)
   const backendEnvPath = path.join(process.cwd(), "apps/backend/.env")
   const backendEnv = loadEnvFile(backendEnvPath)
+
+  const dbBase = backendEnv.DATABASE_URL ?? process.env.DATABASE_URL ?? "postgresql://threa:threa@localhost:5454/threa"
+  const useStubAuth = backendEnv.USE_STUB_AUTH ?? process.env.USE_STUB_AUTH ?? "false"
+
+  // Derive control-plane DB URL from the backend's DATABASE_URL by appending _cp
+  const cpDbUrl = dbBase.replace(/\/([^/?]+)(\?.*)?$/, "/$1_cp$2")
+
+  // Ensure control-plane database exists
+  if (await isPostgresReachable()) {
+    const cpDbName = cpDbUrl.match(/\/([^/?]+?)(?:\?.*)?$/)?.[1] ?? "threa_cp"
+    const checkResult =
+      await $`docker exec threa-postgres-1 psql -U threa -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='${cpDbName}'"`
+        .quiet()
+        .nothrow()
+    if (checkResult.stdout.toString().trim() !== "1") {
+      console.log(`Creating control-plane database '${cpDbName}'...`)
+      await $`docker exec threa-postgres-1 psql -U threa -d postgres -c "CREATE DATABASE ${cpDbName}"`.quiet()
+    }
+  }
+
+  const controlPlane = Bun.spawn(["bun", "--hot", "apps/control-plane/src/index.ts"], {
+    stdout: "inherit",
+    stderr: "inherit",
+    env: {
+      ...process.env,
+      FAST_SHUTDOWN: "true",
+      PORT: "3003",
+      DATABASE_URL: cpDbUrl,
+      USE_STUB_AUTH: useStubAuth,
+      INTERNAL_API_KEY: "dev-internal-key",
+      REGIONS: JSON.stringify({ local: { internalUrl: "http://localhost:3002" } }),
+      CORS_ALLOWED_ORIGINS: "http://localhost:3000,http://localhost:5173,http://127.0.0.1:5173",
+      WORKSPACE_CREATION_SKIP_INVITE: "true",
+    },
+  })
 
   const backend = Bun.spawn(["bun", "--hot", "apps/backend/src/index.ts"], {
     stdout: "inherit",
@@ -298,10 +333,11 @@ async function main() {
       ...backendEnv,
       FAST_SHUTDOWN: "true",
       PORT: "3002",
-      // Fallback DATABASE_URL only if not in .env
-      DATABASE_URL:
-        backendEnv.DATABASE_URL ?? process.env.DATABASE_URL ?? "postgresql://threa:threa@localhost:5454/threa",
-      USE_STUB_AUTH: backendEnv.USE_STUB_AUTH ?? process.env.USE_STUB_AUTH ?? "false",
+      DATABASE_URL: dbBase,
+      USE_STUB_AUTH: useStubAuth,
+      CONTROL_PLANE_URL: "http://localhost:3003",
+      INTERNAL_API_KEY: "dev-internal-key",
+      REGION: "local",
     },
   })
 
@@ -327,19 +363,20 @@ async function main() {
     console.log("\nShutting down...")
 
     // Use SIGKILL for immediate termination in development
+    controlPlane.kill("SIGKILL")
     backend.kill("SIGKILL")
     router.kill("SIGKILL")
     frontend.kill("SIGKILL")
 
     // Wait for processes to fully terminate
-    await Promise.all([backend.exited, router.exited, frontend.exited])
+    await Promise.all([controlPlane.exited, backend.exited, router.exited, frontend.exited])
     process.exit(0)
   }
 
   process.on("SIGINT", shutdown)
   process.on("SIGTERM", shutdown)
 
-  await Promise.all([backend.exited, router.exited, frontend.exited])
+  await Promise.all([controlPlane.exited, backend.exited, router.exited, frontend.exited])
 }
 
 main()
