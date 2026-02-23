@@ -6,7 +6,7 @@ import { OutboxRepository } from "../../lib/outbox"
 import { StreamRepository, StreamMemberRepository } from "../streams"
 import { EmojiUsageRepository } from "../emoji"
 import { PersonaRepository, type Persona } from "../agents"
-import { workspaceId, memberId as generateMemberId, streamId, avatarUploadId } from "../../lib/id"
+import { workspaceId, userId as generateUserId, streamId, avatarUploadId } from "../../lib/id"
 import { generateSlug, generateUniqueSlug } from "../../lib/slug"
 import { serializeBigInt } from "../../lib/serialization"
 import { HttpError, isUniqueViolation } from "../../lib/errors"
@@ -73,7 +73,7 @@ export class WorkspaceService {
 
     return withTransaction(this.pool, async (client) => {
       const id = workspaceId()
-      const ownerUserId = generateMemberId()
+      const ownerUserId = generateUserId()
       const slug = await generateUniqueSlug(params.name, (slug) => WorkspaceRepository.slugExists(client, slug))
 
       const ws = await WorkspaceRepository.insert(client, {
@@ -156,7 +156,7 @@ export class WorkspaceService {
     )
 
     const user = await UserRepository.insert(client, {
-      id: params.id ?? generateMemberId(),
+      id: params.id ?? generateUserId(),
       workspaceId: params.workspaceId,
       workosUserId: params.workosUserId,
       email: normalizedEmail,
@@ -166,9 +166,9 @@ export class WorkspaceService {
       setupCompleted: params.setupCompleted,
     })
 
-    await OutboxRepository.insert(client, "workspace_member:added", {
+    await OutboxRepository.insert(client, "workspace_user:added", {
       workspaceId: params.workspaceId,
-      member: serializeBigInt(user),
+      user: serializeBigInt(user),
     })
 
     const sId = streamId()
@@ -191,7 +191,7 @@ export class WorkspaceService {
     return withTransaction(this.pool, async (client) => {
       await UserRepository.remove(client, workspaceId, userId)
 
-      await OutboxRepository.insert(client, "workspace_member:removed", {
+      await OutboxRepository.insert(client, "workspace_user:removed", {
         workspaceId,
         removedUserId: userId,
       })
@@ -210,8 +210,8 @@ export class WorkspaceService {
     return PersonaRepository.listForWorkspace(this.pool, workspaceId)
   }
 
-  async getEmojiWeights(workspaceId: string, memberId: string): Promise<Record<string, number>> {
-    return EmojiUsageRepository.getWeights(this.pool, workspaceId, memberId)
+  async getEmojiWeights(workspaceId: string, userId: string): Promise<Record<string, number>> {
+    return EmojiUsageRepository.getWeights(this.pool, workspaceId, userId)
   }
 
   async isSlugAvailable(workspaceId: string, slug: string): Promise<boolean> {
@@ -228,11 +228,11 @@ export class WorkspaceService {
     const { user, orgId } = await withClient(this.pool, async (client) => {
       const user = await UserRepository.findById(client, userId)
       if (!user || user.workspaceId !== workspaceId) {
-        throw new HttpError("Member not found", { status: 404, code: "MEMBER_NOT_FOUND" })
+        throw new HttpError("User not found", { status: 404, code: "USER_NOT_FOUND" })
       }
 
       if (user.setupCompleted) {
-        throw new HttpError("Member setup already completed", { status: 400, code: "SETUP_ALREADY_COMPLETED" })
+        throw new HttpError("User setup already completed", { status: 400, code: "SETUP_ALREADY_COMPLETED" })
       }
 
       const orgId = await WorkspaceRepository.getWorkosOrganizationId(client, workspaceId)
@@ -253,7 +253,7 @@ export class WorkspaceService {
           // Re-read user inside transaction to get fresh slug (Phase 1 value may be stale)
           const currentUser = await UserRepository.findById(client, userId)
           if (!currentUser || currentUser.setupCompleted) {
-            throw new HttpError("Member setup already completed", { status: 400, code: "SETUP_ALREADY_COMPLETED" })
+            throw new HttpError("User setup already completed", { status: 400, code: "SETUP_ALREADY_COMPLETED" })
           }
 
           let slug: string
@@ -283,12 +283,12 @@ export class WorkspaceService {
           })
 
           if (!updated) {
-            throw new HttpError("Member setup already completed", { status: 400, code: "SETUP_ALREADY_COMPLETED" })
+            throw new HttpError("User setup already completed", { status: 400, code: "SETUP_ALREADY_COMPLETED" })
           }
 
-          await OutboxRepository.insert(client, "member:updated", {
+          await OutboxRepository.insert(client, "workspace_user:updated", {
             workspaceId,
-            member: serializeBigInt(updated),
+            user: serializeBigInt(updated),
           })
 
           return updated
@@ -309,12 +309,12 @@ export class WorkspaceService {
     return withTransaction(this.pool, async (client) => {
       const updated = await UserRepository.update(client, userId, params)
       if (!updated) {
-        throw new HttpError("Member not found", { status: 404, code: "MEMBER_NOT_FOUND" })
+        throw new HttpError("User not found", { status: 404, code: "USER_NOT_FOUND" })
       }
 
-      await OutboxRepository.insert(client, "member:updated", {
+      await OutboxRepository.insert(client, "workspace_user:updated", {
         workspaceId,
-        member: serializeBigInt(updated),
+        user: serializeBigInt(updated),
       })
 
       return updated
@@ -325,7 +325,7 @@ export class WorkspaceService {
     // Phase 1: Verify user exists and capture current avatar for replacement tracking
     const user = await UserRepository.findById(this.pool, userId)
     if (!user || user.workspaceId !== workspaceId) {
-      throw new HttpError("Member not found", { status: 404, code: "MEMBER_NOT_FOUND" })
+      throw new HttpError("User not found", { status: 404, code: "USER_NOT_FOUND" })
     }
 
     // Phase 2: Upload raw buffer to S3 (single fast PUT, no processing)
@@ -368,12 +368,12 @@ export class WorkspaceService {
         avatarUrl: null,
       })
       if (!result) {
-        throw new HttpError("Member not found", { status: 404, code: "MEMBER_NOT_FOUND" })
+        throw new HttpError("User not found", { status: 404, code: "USER_NOT_FOUND" })
       }
 
-      await OutboxRepository.insert(client, "member:updated", {
+      await OutboxRepository.insert(client, "workspace_user:updated", {
         workspaceId,
-        member: serializeBigInt(result),
+        user: serializeBigInt(result),
       })
 
       return result

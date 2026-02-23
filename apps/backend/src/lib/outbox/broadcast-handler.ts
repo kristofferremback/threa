@@ -7,7 +7,7 @@ import {
   isOutboxEventType,
   isOneOfOutboxEventType,
   isAuthorScopedEvent,
-  isMemberScopedEvent,
+  isUserScopedEvent,
   type OutboxEvent,
   type StreamCreatedOutboxPayload,
   type StreamMemberAddedOutboxPayload,
@@ -44,10 +44,10 @@ const DEFAULT_CONFIG = {
  *
  * Stream-scoped events (messages, reactions) are broadcast to stream rooms: `ws:${workspaceId}:stream:${streamId}`
  * Workspace-scoped events (stream metadata, attachments) are broadcast to workspace rooms: `ws:${workspaceId}`
- * Member-scoped events (activity) are broadcast to member rooms: `ws:${workspaceId}:member:${memberId}`
- * Author-scoped events (commands, read state) are broadcast to member rooms: `ws:${workspaceId}:member:${authorId}`
+ * User-scoped events (activity) are broadcast to user rooms: `ws:${workspaceId}:user:${userId}`
+ * Author-scoped events (commands, read state) are broadcast to user rooms: `ws:${workspaceId}:user:${authorId}`
  *
- * Member rooms eliminate DB queries during broadcast — the memberId→userId mapping
+ * User rooms eliminate DB queries during broadcast — the workosUserId→userId mapping
  * is resolved once at socket connect time, not per-event.
  *
  * Uses time-based cursor locking for exclusive access without
@@ -125,17 +125,17 @@ export class BroadcastHandler implements OutboxHandler {
   private broadcastEvent(event: OutboxEvent): void {
     const { workspaceId } = event.payload
 
-    // Member-scoped events: emit to the target member's room
-    if (isMemberScopedEvent(event)) {
-      const { targetMemberId } = event.payload as ActivityCreatedOutboxPayload
-      this.io.to(`ws:${workspaceId}:member:${targetMemberId}`).emit(event.eventType, event.payload)
+    // User-scoped events: emit to the target user's room
+    if (isUserScopedEvent(event)) {
+      const { targetUserId } = event.payload as ActivityCreatedOutboxPayload
+      this.io.to(`ws:${workspaceId}:user:${targetUserId}`).emit(event.eventType, event.payload)
       return
     }
 
-    // Author-scoped events: emit to the author's member room
+    // Author-scoped events: emit to the author's user room
     if (isAuthorScopedEvent(event)) {
       const { authorId } = event.payload as { authorId: string }
-      this.io.to(`ws:${workspaceId}:member:${authorId}`).emit(event.eventType, event.payload)
+      this.io.to(`ws:${workspaceId}:user:${authorId}`).emit(event.eventType, event.payload)
       return
     }
 
@@ -145,8 +145,8 @@ export class BroadcastHandler implements OutboxHandler {
       if (payload.stream.parentMessageId) {
         this.io.to(`ws:${workspaceId}:stream:${payload.streamId}`).emit(event.eventType, event.payload)
       } else if (payload.stream.type === StreamTypes.DM && payload.dmMemberIds?.length === 2) {
-        for (const memberId of new Set(payload.dmMemberIds)) {
-          this.io.to(`ws:${workspaceId}:member:${memberId}`).emit(event.eventType, event.payload)
+        for (const userId of new Set(payload.dmMemberIds)) {
+          this.io.to(`ws:${workspaceId}:user:${userId}`).emit(event.eventType, event.payload)
         }
       } else {
         this.io.to(`ws:${workspaceId}`).emit(event.eventType, event.payload)
@@ -155,11 +155,11 @@ export class BroadcastHandler implements OutboxHandler {
     }
 
     // stream:member_added: emit to stream room (existing members) AND the added
-    // member's room directly — they haven't joined the stream room yet.
+    // user's room directly — they haven't joined the stream room yet.
     if (isOutboxEventType(event, "stream:member_added")) {
       const { streamId, memberId } = event.payload as StreamMemberAddedOutboxPayload
       this.io.to(`ws:${workspaceId}:stream:${streamId}`).emit(event.eventType, event.payload)
-      this.io.to(`ws:${workspaceId}:member:${memberId}`).emit(event.eventType, event.payload)
+      this.io.to(`ws:${workspaceId}:user:${memberId}`).emit(event.eventType, event.payload)
       return
     }
 
@@ -174,7 +174,7 @@ export class BroadcastHandler implements OutboxHandler {
     }
 
     // Display name updates for public streams go to the workspace room so all
-    // workspace members can update their bootstrap cache (e.g. for activity/search
+    // workspace users can update their bootstrap cache (e.g. for activity/search
     // name resolution on streams the user isn't a member of). Private stream names
     // stay stream-scoped to avoid leaking DM/scratchpad thread names.
     if (isOutboxEventType(event, "stream:display_name_updated")) {

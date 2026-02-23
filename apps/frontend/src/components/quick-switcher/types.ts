@@ -28,7 +28,7 @@ export interface ModeContext {
   streamMemberships: StreamMember[]
   users?: User[]
   currentUserId?: string | null
-  dmPeers?: Array<{ memberId: string; streamId: string }>
+  dmPeers?: Array<{ userId: string; streamId: string }>
 }
 
 export interface ModeResult {

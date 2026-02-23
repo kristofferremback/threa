@@ -28,8 +28,8 @@ export {
   COMMAND_EVENT_TYPES,
   type CommandEventType,
   // Workspace roles
-  WORKSPACE_MEMBER_ROLES,
-  type WorkspaceMemberRole,
+  WORKSPACE_USER_ROLES,
+  type WorkspaceUserRole,
   // Invitation statuses
   INVITATION_STATUSES,
   type InvitationStatus,
@@ -206,7 +206,7 @@ export type {
   SendInvitationsInput,
   SendInvitationsResponse,
   InvitationSkipReason,
-  CompleteMemberSetupInput,
+  CompleteUserSetupInput,
   // Activity
   Activity,
   ActivityCreatedPayload,
@@ -224,7 +224,7 @@ export type {
   AIUsageSummary,
   AIUsageOrigin,
   AIUsageByOrigin,
-  AIUsageByMember,
+  AIUsageByUser,
   AIUsageRecord,
   AIUsageResponse,
   AIRecentUsageResponse,

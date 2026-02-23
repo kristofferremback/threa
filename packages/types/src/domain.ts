@@ -15,7 +15,7 @@ import type {
   CompanionMode,
   AuthorType,
   EventType,
-  WorkspaceMemberRole,
+  WorkspaceUserRole,
   InvitationStatus,
   NotificationLevel,
   PersonaManagedBy,
@@ -52,7 +52,7 @@ export interface User {
   workspaceId: string
   workosUserId: string
   email: string
-  role: WorkspaceMemberRole
+  role: WorkspaceUserRole
   slug: string
   name: string
   description: string | null
@@ -94,7 +94,7 @@ export interface WorkspaceInvitation {
   id: string
   workspaceId: string
   email: string
-  role: WorkspaceMemberRole
+  role: WorkspaceUserRole
   invitedBy: string
   status: InvitationStatus
   createdAt: string

@@ -23,7 +23,7 @@ export type {
   UsageSummary,
   ModelBreakdown,
   FunctionBreakdown,
-  MemberBreakdown,
+  UserBreakdown,
   OriginBreakdown,
 } from "./usage-repository"
 

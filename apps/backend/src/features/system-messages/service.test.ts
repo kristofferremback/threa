@@ -228,7 +228,7 @@ describe("SystemMessageService", () => {
         invitationId: INVITATION_ID,
         email: "newuser@test.com",
         workosUserId: "workos_user_2",
-        memberName: "New User",
+        userName: "New User",
       })
 
       expect(createMessage).toHaveBeenCalledWith(
@@ -265,7 +265,7 @@ describe("SystemMessageService", () => {
         invitationId: INVITATION_ID,
         email: "anonymous@test.com",
         workosUserId: "workos_user_3",
-        memberName: "",
+        userName: "",
       })
 
       expect(createMessage).toHaveBeenCalledWith(
@@ -284,7 +284,7 @@ describe("SystemMessageService", () => {
         invitationId: "inv_nonexistent",
         email: "test@test.com",
         workosUserId: "workos_user_9",
-        memberName: "Test",
+        userName: "Test",
       })
 
       expect(createMessage).not.toHaveBeenCalled()

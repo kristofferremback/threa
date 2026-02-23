@@ -104,9 +104,9 @@ export class ActivityFeedHandler implements OutboxHandler {
           }
 
           // Sequential: mentions first, then notification-level activities.
-          // A mentioned member gets a "mention" activity (more specific) instead of both
+          // A mentioned user gets a "mention" activity (more specific) instead of both
           // "mention" + "message". The dedup index allows both types per message, so we
-          // exclude mentioned members explicitly rather than relying on the DB constraint.
+          // exclude mentioned users explicitly rather than relying on the DB constraint.
           const mentionActivities = await this.activityService.processMessageMentions({
             workspaceId,
             streamId,
@@ -115,9 +115,9 @@ export class ActivityFeedHandler implements OutboxHandler {
             actorType: messageEvent.actorType,
             contentMarkdown: messageEvent.payload.contentMarkdown,
           })
-          const mentionedMemberIds = new Set(mentionActivities.map((a) => a.memberId))
+          const mentionedUserIds = new Set(mentionActivities.map((a) => a.userId))
 
-          // 2. Notification-level activities, excluding already-mentioned members
+          // 2. Notification-level activities, excluding already-mentioned users
           const notificationActivities = await this.activityService.processMessageNotifications({
             workspaceId,
             streamId,
@@ -125,7 +125,7 @@ export class ActivityFeedHandler implements OutboxHandler {
             actorId: messageEvent.actorId,
             actorType: messageEvent.actorType,
             contentMarkdown: messageEvent.payload.contentMarkdown,
-            excludeMemberIds: mentionedMemberIds,
+            excludeUserIds: mentionedUserIds,
           })
 
           const activities = [...mentionActivities, ...notificationActivities]
@@ -136,7 +136,7 @@ export class ActivityFeedHandler implements OutboxHandler {
               for (const activity of activities) {
                 await OutboxRepository.insert(client, "activity:created", {
                   workspaceId,
-                  targetMemberId: activity.memberId,
+                  targetUserId: activity.userId,
                   activity: {
                     id: activity.id,
                     activityType: activity.activityType,

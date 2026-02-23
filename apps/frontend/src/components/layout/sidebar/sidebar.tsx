@@ -64,7 +64,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   // Build set of muted streams (for suppressing unread badges)
   const mutedStreamIdSet = useMemo(() => new Set(bootstrap?.mutedStreamIds ?? []), [bootstrap?.mutedStreamIds])
   const dmPeerByStreamId = useMemo(
-    () => new Map((bootstrap?.dmPeers ?? []).map((peer) => [peer.streamId, peer.memberId])),
+    () => new Map((bootstrap?.dmPeers ?? []).map((peer) => [peer.streamId, peer.userId])),
     [bootstrap?.dmPeers]
   )
 
@@ -85,13 +85,13 @@ export function Sidebar({ workspaceId }: SidebarProps) {
         const isMuted = mutedStreamIdSet.has(stream.id)
         const urgency = calculateUrgency(stream, unreadCount, mentionCount, isMuted)
         const section = categorizeStream(stream, unreadCount, urgency)
-        const dmPeerMemberId = stream.type === StreamTypes.DM ? dmPeerByStreamId.get(stream.id) : undefined
+        const dmPeerUserId = stream.type === StreamTypes.DM ? dmPeerByStreamId.get(stream.id) : undefined
 
         return {
           ...stream,
           urgency,
           section,
-          dmPeerMemberId,
+          dmPeerUserId,
         }
       })
   }, [bootstrap?.streams, memberStreamIds, mutedStreamIdSet, getUnreadCount, getMentionCount, dmPeerByStreamId])
@@ -103,7 +103,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   const virtualDmStreams = useMemo(() => {
     if (workspaceUsers.length === 0 || !currentUser) return []
 
-    const dmPeerIds = new Set((bootstrap?.dmPeers ?? []).map((peer) => peer.memberId))
+    const dmPeerIds = new Set((bootstrap?.dmPeers ?? []).map((peer) => peer.userId))
     const now = new Date().toISOString()
 
     return workspaceUsers
@@ -130,7 +130,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
           lastMessagePreview: null,
           urgency: "quiet",
           section: "other",
-          dmPeerMemberId: workspaceUser.id,
+          dmPeerUserId: workspaceUser.id,
         })
       )
       .sort((a, b) => (a.displayName ?? "").localeCompare(b.displayName ?? ""))

@@ -155,7 +155,7 @@ export interface WorkspaceBootstrap {
   users: User[]
   streams: StreamWithPreview[]
   streamMemberships: StreamMember[]
-  dmPeers: Array<{ memberId: string; streamId: string }>
+  dmPeers: Array<{ userId: string; streamId: string }>
   personas: Persona[]
   emojis: EmojiEntry[]
   emojiWeights: Record<string, number>
@@ -178,14 +178,14 @@ export interface SendInvitationsInput {
   role?: "admin" | "member"
 }
 
-export type InvitationSkipReason = "already_member" | "pending_invitation"
+export type InvitationSkipReason = "already_user" | "pending_invitation"
 
 export interface SendInvitationsResponse {
   sent: WorkspaceInvitation[]
   skipped: Array<{ email: string; reason: InvitationSkipReason }>
 }
 
-export interface CompleteMemberSetupInput {
+export interface CompleteUserSetupInput {
   name?: string
   slug?: string
   timezone: string
@@ -200,7 +200,7 @@ export interface CompleteMemberSetupInput {
 export interface Activity {
   id: string
   workspaceId: string
-  memberId: string
+  userId: string
   activityType: string
   streamId: string
   messageId: string
@@ -214,7 +214,7 @@ export interface Activity {
 /** Socket event payload for activity:created */
 export interface ActivityCreatedPayload {
   workspaceId: string
-  targetMemberId: string
+  targetUserId: string
   activity: {
     id: string
     activityType: string
@@ -304,8 +304,8 @@ export interface AIUsageByOrigin {
   recordCount: number
 }
 
-export interface AIUsageByMember {
-  memberId: string | null
+export interface AIUsageByUser {
+  userId: string | null
   totalCostUsd: number
   totalTokens: number
   recordCount: number
@@ -320,7 +320,7 @@ export interface AIUsageRecord {
   completionTokens: number | null
   totalTokens: number | null
   costUsd: number
-  memberId: string | null
+  userId: string | null
   sessionId: string | null
   createdAt: string
 }
@@ -332,7 +332,7 @@ export interface AIUsageResponse {
   }
   total: AIUsageSummary
   byOrigin: AIUsageByOrigin[]
-  byMember: AIUsageByMember[]
+  byUser: AIUsageByUser[]
 }
 
 export interface AIRecentUsageResponse {

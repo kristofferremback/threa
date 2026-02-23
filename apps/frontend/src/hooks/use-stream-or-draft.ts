@@ -24,18 +24,18 @@ export function isDraftId(id: string): boolean {
   return id.startsWith("draft_")
 }
 
-export function createDmDraftId(memberId: string): string {
-  return `${DM_DRAFT_PREFIX}${memberId}`
+export function createDmDraftId(userId: string): string {
+  return `${DM_DRAFT_PREFIX}${userId}`
 }
 
 export function isDmDraftId(id: string): boolean {
   return id.startsWith(DM_DRAFT_PREFIX)
 }
 
-export function getDmDraftMemberId(id: string): string | null {
+export function getDmDraftUserId(id: string): string | null {
   if (!isDmDraftId(id)) return null
-  const memberId = id.slice(DM_DRAFT_PREFIX.length)
-  return memberId.length > 0 ? memberId : null
+  const userId = id.slice(DM_DRAFT_PREFIX.length)
+  return userId.length > 0 ? userId : null
 }
 
 function resolveRealDmDisplayName(
@@ -192,14 +192,12 @@ function useDraftDmStream(workspaceId: string, streamId: string, enabled: boolea
   const { data: wsBootstrap, isLoading } = useWorkspaceBootstrap(workspaceId)
   const workspaceUsers = wsBootstrap?.users ?? []
 
-  const targetMemberId = getDmDraftMemberId(streamId)
-  const targetMember = workspaceUsers.find((u) => u.id === targetMemberId) ?? null
-  const targetMemberName = targetMember?.name ?? null
+  const targetUserId = getDmDraftUserId(streamId)
+  const targetUser = workspaceUsers.find((u) => u.id === targetUserId) ?? null
+  const targetUserName = targetUser?.name ?? null
   const currentMemberId = workspaceUsers.find((u) => u.workosUserId === user?.id)?.id ?? null
   const existingDmStreamId =
-    targetMemberId && currentMemberId
-      ? wsBootstrap?.dmPeers.find((peer) => peer.memberId === targetMemberId)?.streamId
-      : null
+    targetUserId && currentMemberId ? wsBootstrap?.dmPeers.find((peer) => peer.userId === targetUserId)?.streamId : null
 
   useEffect(() => {
     if (!enabled || !existingDmStreamId) return
@@ -232,12 +230,12 @@ function useDraftDmStream(workspaceId: string, streamId: string, enabled: boolea
   }, [enabled, existingDmStreamId, navigate, streamId, workspaceId])
 
   const stream: VirtualStream | undefined =
-    enabled && targetMemberId
+    enabled && targetUserId
       ? {
           id: streamId,
           workspaceId,
           type: StreamTypes.DM,
-          displayName: targetMember?.name ?? "Direct message",
+          displayName: targetUser?.name ?? "Direct message",
           companionMode: "off",
           isDraft: true,
           parentStreamId: null,
@@ -256,13 +254,13 @@ function useDraftDmStream(workspaceId: string, streamId: string, enabled: boolea
 
   const sendMessage = useCallback(
     async (input: SendMessageInput): Promise<{ navigateTo?: string; replace?: boolean }> => {
-      if (!targetMemberId) {
+      if (!targetUserId) {
         throw new Error("Invalid DM draft target")
       }
 
       const contentMarkdown = serializeToMarkdown(input.contentJson)
-      const message = await messageService.createDm(workspaceId, targetMemberId, {
-        dmMemberId: targetMemberId,
+      const message = await messageService.createDm(workspaceId, targetUserId, {
+        dmMemberId: targetUserId,
         contentJson: input.contentJson,
         contentMarkdown,
         attachmentIds: input.attachmentIds,
@@ -273,9 +271,7 @@ function useDraftDmStream(workspaceId: string, streamId: string, enabled: boolea
       queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
         if (!old) return old
 
-        const hasPeer = old.dmPeers.some(
-          (peer) => peer.memberId === targetMemberId && peer.streamId === message.streamId
-        )
+        const hasPeer = old.dmPeers.some((peer) => peer.userId === targetUserId && peer.streamId === message.streamId)
 
         const streamExists = old.streams.some((stream) => stream.id === message.streamId)
         const optimisticStream = streamExists
@@ -286,7 +282,7 @@ function useDraftDmStream(workspaceId: string, streamId: string, enabled: boolea
                 id: message.streamId,
                 workspaceId,
                 type: StreamTypes.DM,
-                displayName: targetMemberName ?? "Direct message",
+                displayName: targetUserName ?? "Direct message",
                 slug: null,
                 description: null,
                 visibility: Visibilities.PRIVATE,
@@ -312,10 +308,10 @@ function useDraftDmStream(workspaceId: string, streamId: string, enabled: boolea
 
         return {
           ...old,
-          dmPeers: hasPeer ? old.dmPeers : [...old.dmPeers, { memberId: targetMemberId, streamId: message.streamId }],
+          dmPeers: hasPeer ? old.dmPeers : [...old.dmPeers, { userId: targetUserId, streamId: message.streamId }],
           streams: optimisticStream.map((stream) =>
             stream.id === message.streamId && stream.type === StreamTypes.DM
-              ? { ...stream, displayName: targetMemberName ?? stream.displayName }
+              ? { ...stream, displayName: targetUserName ?? stream.displayName }
               : stream
           ),
           streamMemberships:
@@ -339,7 +335,7 @@ function useDraftDmStream(workspaceId: string, streamId: string, enabled: boolea
 
       return { navigateTo: `/w/${workspaceId}/s/${message.streamId}`, replace: true }
     },
-    [targetMemberId, workspaceId, messageService, queryClient, targetMemberName, currentMemberId]
+    [targetUserId, workspaceId, messageService, queryClient, targetUserName, currentMemberId]
   )
 
   return {

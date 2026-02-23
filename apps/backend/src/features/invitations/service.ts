@@ -17,7 +17,7 @@ const WORKOS_ERROR_CODES = {
 
 interface SendInvitationsParams {
   workspaceId: string
-  invitedBy: string // member_id
+  invitedBy: string // user_id
   emails: string[]
   role: "admin" | "member"
 }
@@ -58,7 +58,7 @@ export class InvitationService {
     const inviterWorkosUserId = (await this.getInviterWorkosUserId(invitedBy)) ?? undefined
 
     // Batch-fetch: existing members + pending invitations
-    const existingMemberEmails = await UserRepository.findEmails(this.pool, workspaceId, emails)
+    const existingUserEmails = await UserRepository.findEmails(this.pool, workspaceId, emails)
 
     const pendingInvitations = await InvitationRepository.findPendingByEmailsAndWorkspace(
       this.pool,
@@ -70,8 +70,8 @@ export class InvitationService {
     // Build list of emails to send (filter skipped)
     const emailsToSend: string[] = []
     for (const email of emails) {
-      if (existingMemberEmails.has(email)) {
-        skipped.push({ email, reason: "already_member" })
+      if (existingUserEmails.has(email)) {
+        skipped.push({ email, reason: "already_user" })
         continue
       }
       if (pendingEmails.has(email)) {
@@ -135,7 +135,7 @@ export class InvitationService {
           if (isKnownStateConflict) {
             logger.warn(
               { errorCode, email: sent[i].email, invitationId: sent[i].id },
-              "WorkOS state conflict when sending invitation (user already member)"
+              "WorkOS state conflict when sending invitation (user already in workspace)"
             )
           } else {
             logger.error(
@@ -174,7 +174,7 @@ export class InvitationService {
     const invitation = await InvitationRepository.findById(client, invitationId)
     if (!invitation) return null
 
-    // Check if already a member (race condition safety)
+    // Check if already in the workspace (race condition safety)
     const isMember = await UserRepository.isMember(client, invitation.workspaceId, identity.workosUserId)
     if (isMember) return invitation.workspaceId
 
@@ -192,7 +192,7 @@ export class InvitationService {
       invitationId: invitation.id,
       email: invitation.email,
       workosUserId: identity.workosUserId,
-      memberName: identity.name,
+      userName: identity.name,
     })
 
     return invitation.workspaceId

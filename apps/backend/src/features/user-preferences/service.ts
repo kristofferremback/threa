@@ -15,13 +15,13 @@ import {
  */
 function mergeOverrides(
   workspaceId: string,
-  memberId: string,
+  userId: string,
   overrides: Array<{ key: string; value: unknown }>
 ): UserPreferences {
   // Start with defaults
   const result: UserPreferences = {
     workspaceId,
-    memberId,
+    userId,
     ...structuredClone(DEFAULT_USER_PREFERENCES),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -113,12 +113,12 @@ export class UserPreferencesService {
   constructor(private pool: Pool) {}
 
   /**
-   * Get user preferences for a member, merging overrides with defaults.
+   * Get user preferences for a user, merging overrides with defaults.
    */
-  async getPreferences(workspaceId: string, memberId: string): Promise<UserPreferences> {
+  async getPreferences(workspaceId: string, userId: string): Promise<UserPreferences> {
     // Single query, INV-30
-    const overrides = await UserPreferencesRepository.findOverrides(this.pool, memberId)
-    return mergeOverrides(workspaceId, memberId, overrides)
+    const overrides = await UserPreferencesRepository.findOverrides(this.pool, userId)
+    return mergeOverrides(workspaceId, userId, overrides)
   }
 
   /**
@@ -127,7 +127,7 @@ export class UserPreferencesService {
    */
   async updatePreferences(
     workspaceId: string,
-    memberId: string,
+    userId: string,
     updates: UpdateUserPreferencesInput
   ): Promise<UserPreferences> {
     return withTransaction(this.pool, async (client) => {
@@ -147,20 +147,20 @@ export class UserPreferencesService {
 
       // Apply changes
       if (toSet.length > 0) {
-        await UserPreferencesRepository.bulkSetOverrides(client, memberId, toSet)
+        await UserPreferencesRepository.bulkSetOverrides(client, userId, toSet)
       }
       if (toDelete.length > 0) {
-        await UserPreferencesRepository.bulkDeleteOverrides(client, memberId, toDelete)
+        await UserPreferencesRepository.bulkDeleteOverrides(client, userId, toDelete)
       }
 
       // Fetch current state and merge with defaults
-      const overrides = await UserPreferencesRepository.findOverrides(client, memberId)
-      const preferences = mergeOverrides(workspaceId, memberId, overrides)
+      const overrides = await UserPreferencesRepository.findOverrides(client, userId)
+      const preferences = mergeOverrides(workspaceId, userId, overrides)
 
-      // Publish outbox event for real-time sync across all member's devices
+      // Publish outbox event for real-time sync across all user's devices
       await OutboxRepository.insert(client, "user_preferences:updated", {
         workspaceId,
-        authorId: memberId,
+        authorId: userId,
         preferences,
       })
 

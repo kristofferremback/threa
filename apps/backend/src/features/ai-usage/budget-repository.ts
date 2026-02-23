@@ -50,7 +50,7 @@ export interface AIBudget {
 export interface AIUserQuota {
   id: string
   workspaceId: string
-  memberId: string
+  userId: string
   monthlyQuotaUsd: number | null
   createdAt: Date
   updatedAt: Date
@@ -59,7 +59,7 @@ export interface AIUserQuota {
 export interface AIAlert {
   id: string
   workspaceId: string
-  memberId: string | null
+  userId: string | null
   alertType: string
   thresholdPercent: number
   periodStart: Date
@@ -91,14 +91,14 @@ export interface UpdateAIBudgetParams {
 export interface UpsertAIUserQuotaParams {
   id: string
   workspaceId: string
-  memberId: string
+  userId: string
   monthlyQuotaUsd: number | null
 }
 
 export interface InsertAIAlertParams {
   id: string
   workspaceId: string
-  memberId?: string
+  userId?: string
   alertType: string
   thresholdPercent: number
   periodStart: Date
@@ -124,7 +124,7 @@ function mapRowToQuota(row: AIUserQuotaRow): AIUserQuota {
   return {
     id: row.id,
     workspaceId: row.workspace_id,
-    memberId: row.user_id,
+    userId: row.user_id,
     monthlyQuotaUsd: row.monthly_quota_usd ? parseFloat(row.monthly_quota_usd) : null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -135,7 +135,7 @@ function mapRowToAlert(row: AIAlertRow): AIAlert {
   return {
     id: row.id,
     workspaceId: row.workspace_id,
-    memberId: row.user_id,
+    userId: row.user_id,
     alertType: row.alert_type,
     thresholdPercent: row.threshold_percent,
     periodStart: row.period_start,
@@ -297,10 +297,10 @@ export const AIBudgetRepository = {
   },
 
   // User quotas
-  async findUserQuota(db: Querier, workspaceId: string, memberId: string): Promise<AIUserQuota | null> {
+  async findUserQuota(db: Querier, workspaceId: string, userId: string): Promise<AIUserQuota | null> {
     const result = await db.query<AIUserQuotaRow>(sql`
       SELECT ${sql.raw(QUOTA_FIELDS)} FROM ai_user_quotas
-      WHERE workspace_id = ${workspaceId} AND user_id = ${memberId}
+      WHERE workspace_id = ${workspaceId} AND user_id = ${userId}
     `)
     if (!result.rows[0]) return null
     return mapRowToQuota(result.rows[0])
@@ -318,7 +318,7 @@ export const AIBudgetRepository = {
   async upsertUserQuota(db: Querier, params: UpsertAIUserQuotaParams): Promise<AIUserQuota> {
     const result = await db.query<AIUserQuotaRow>(sql`
       INSERT INTO ai_user_quotas (id, workspace_id, user_id, monthly_quota_usd)
-      VALUES (${params.id}, ${params.workspaceId}, ${params.memberId}, ${params.monthlyQuotaUsd})
+      VALUES (${params.id}, ${params.workspaceId}, ${params.userId}, ${params.monthlyQuotaUsd})
       ON CONFLICT (workspace_id, user_id) DO UPDATE SET
         monthly_quota_usd = EXCLUDED.monthly_quota_usd,
         updated_at = NOW()
@@ -327,10 +327,10 @@ export const AIBudgetRepository = {
     return mapRowToQuota(result.rows[0])
   },
 
-  async deleteUserQuota(db: Querier, workspaceId: string, memberId: string): Promise<boolean> {
+  async deleteUserQuota(db: Querier, workspaceId: string, userId: string): Promise<boolean> {
     const result = await db.query(sql`
       DELETE FROM ai_user_quotas
-      WHERE workspace_id = ${workspaceId} AND user_id = ${memberId}
+      WHERE workspace_id = ${workspaceId} AND user_id = ${userId}
     `)
     return result.rowCount !== null && result.rowCount > 0
   },
@@ -341,14 +341,14 @@ export const AIBudgetRepository = {
     workspaceId: string,
     alertType: string,
     periodStart: Date,
-    memberId?: string
+    userId?: string
   ): Promise<AIAlert | null> {
     const result = await db.query<AIAlertRow>(sql`
       SELECT ${sql.raw(ALERT_FIELDS)} FROM ai_alerts
       WHERE workspace_id = ${workspaceId}
         AND alert_type = ${alertType}
         AND period_start = ${periodStart}
-        AND COALESCE(user_id, '') = COALESCE(${memberId ?? null}, '')
+        AND COALESCE(user_id, '') = COALESCE(${userId ?? null}, '')
     `)
     if (!result.rows[0]) return null
     return mapRowToAlert(result.rows[0])
@@ -360,7 +360,7 @@ export const AIBudgetRepository = {
       VALUES (
         ${params.id},
         ${params.workspaceId},
-        ${params.memberId ?? null},
+        ${params.userId ?? null},
         ${params.alertType},
         ${params.thresholdPercent},
         ${params.periodStart}
@@ -374,14 +374,14 @@ export const AIBudgetRepository = {
     db: Querier,
     workspaceId: string,
     periodStart: Date,
-    options?: { memberId?: string }
+    options?: { userId?: string }
   ): Promise<AIAlert[]> {
-    if (options?.memberId) {
+    if (options?.userId) {
       const result = await db.query<AIAlertRow>(sql`
         SELECT ${sql.raw(ALERT_FIELDS)} FROM ai_alerts
         WHERE workspace_id = ${workspaceId}
           AND period_start = ${periodStart}
-          AND user_id = ${options.memberId}
+          AND user_id = ${options.userId}
         ORDER BY created_at DESC
       `)
       return result.rows.map(mapRowToAlert)

@@ -1,5 +1,5 @@
 import { api } from "./client"
-import type { Workspace, WorkspaceBootstrap, User, CreateWorkspaceInput, CompleteMemberSetupInput } from "@threa/types"
+import type { Workspace, WorkspaceBootstrap, User, CreateWorkspaceInput, CompleteUserSetupInput } from "@threa/types"
 
 export type { WorkspaceBootstrap, CreateWorkspaceInput }
 
@@ -29,7 +29,7 @@ export const workspacesApi = {
     return res.updatedStreamIds
   },
 
-  async completeUserSetup(workspaceId: string, data: CompleteMemberSetupInput): Promise<User> {
+  async completeUserSetup(workspaceId: string, data: CompleteUserSetupInput): Promise<User> {
     const res = await api.post<{ user?: User }>(`/api/workspaces/${workspaceId}/setup`, data)
     if (!res.user) {
       throw new Error("Setup response missing user payload")

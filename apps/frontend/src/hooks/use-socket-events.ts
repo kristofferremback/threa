@@ -87,7 +87,7 @@ interface StreamPayload {
 
 interface WorkspaceUserAddedPayload {
   workspaceId: string
-  member: WorkspaceUserPayload
+  user: WorkspaceUserPayload
 }
 
 interface WorkspaceUserRemovedPayload {
@@ -97,7 +97,7 @@ interface WorkspaceUserRemovedPayload {
 
 interface WorkspaceUserUpdatedPayload {
   workspaceId: string
-  member: WorkspaceUserPayload
+  user: WorkspaceUserPayload
 }
 
 interface StreamReadPayload {
@@ -369,9 +369,9 @@ export function useSocketEvents(workspaceId: string) {
     })
 
     // Handle workspace user added
-    socket.on("workspace_member:added", (payload: WorkspaceUserAddedPayload) => {
+    socket.on("workspace_user:added", (payload: WorkspaceUserAddedPayload) => {
       const now = Date.now()
-      const { member: user } = payload
+      const { user } = payload
 
       // Update workspace bootstrap cache with user if not already present.
       updateBootstrapOrInvalidate(queryClient, workspaceId, (old) => {
@@ -390,7 +390,7 @@ export function useSocketEvents(workspaceId: string) {
     })
 
     // Handle workspace user removed
-    socket.on("workspace_member:removed", (payload: WorkspaceUserRemovedPayload) => {
+    socket.on("workspace_user:removed", (payload: WorkspaceUserRemovedPayload) => {
       // Update workspace bootstrap cache
       queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), (old: unknown) => {
         if (!old || typeof old !== "object") return old
@@ -407,9 +407,9 @@ export function useSocketEvents(workspaceId: string) {
     })
 
     // Handle workspace user updated
-    socket.on("member:updated", (payload: WorkspaceUserUpdatedPayload) => {
+    socket.on("workspace_user:updated", (payload: WorkspaceUserUpdatedPayload) => {
       const now = Date.now()
-      const { member: user } = payload
+      const { user } = payload
 
       // Update workspace bootstrap cache.
       queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), (old: unknown) => {
@@ -718,9 +718,9 @@ export function useSocketEvents(workspaceId: string) {
       socket.off("stream:archived")
       socket.off("stream:unarchived")
       socket.off("stream:display_name_updated")
-      socket.off("workspace_member:added")
-      socket.off("workspace_member:removed")
-      socket.off("member:updated")
+      socket.off("workspace_user:added")
+      socket.off("workspace_user:removed")
+      socket.off("workspace_user:updated")
       socket.off("stream:read")
       socket.off("stream:read_all")
       socket.off("stream:activity")

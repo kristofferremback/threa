@@ -61,7 +61,7 @@ export class SystemMessageService {
   }
 
   async sendInvitationAccepted(payload: InvitationAcceptedOutboxPayload): Promise<void> {
-    const { workspaceId, invitationId, memberName } = payload
+    const { workspaceId, invitationId, userName } = payload
 
     const invitation = await InvitationRepository.findById(this.pool, invitationId)
     if (!invitation) {
@@ -69,7 +69,7 @@ export class SystemMessageService {
       return
     }
 
-    const name = memberName || invitation.email
+    const name = userName || invitation.email
 
     const content = `**${name}** accepted your invitation and joined the workspace.`
     await this.notifyMember(workspaceId, invitation.invitedBy, content)

@@ -131,7 +131,7 @@ export interface KeyboardShortcuts {
  */
 export interface UserPreferences {
   workspaceId: string
-  memberId: string
+  userId: string
   theme: Theme
   messageDisplay: MessageDisplay
   dateFormat: DateFormat
@@ -150,7 +150,7 @@ export interface UserPreferences {
 /**
  * Default user preferences (matches database defaults)
  */
-export const DEFAULT_USER_PREFERENCES: Omit<UserPreferences, "workspaceId" | "memberId" | "createdAt" | "updatedAt"> = {
+export const DEFAULT_USER_PREFERENCES: Omit<UserPreferences, "workspaceId" | "userId" | "createdAt" | "updatedAt"> = {
   theme: "system",
   messageDisplay: "comfortable",
   dateFormat: "YYYY-MM-DD",
@@ -205,7 +205,7 @@ export interface PreferenceOverride {
 /**
  * Valid top-level preference keys that can be overridden.
  */
-export type PreferenceKey = keyof Omit<UserPreferences, "workspaceId" | "memberId" | "createdAt" | "updatedAt">
+export type PreferenceKey = keyof Omit<UserPreferences, "workspaceId" | "userId" | "createdAt" | "updatedAt">
 
 /**
  * Valid nested preference keys (dot notation).

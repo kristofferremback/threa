@@ -19,7 +19,7 @@ interface ActivityRow {
 export interface Activity {
   id: string
   workspaceId: string
-  memberId: string
+  userId: string
   activityType: string
   streamId: string
   messageId: string
@@ -32,7 +32,7 @@ export interface Activity {
 
 export interface InsertActivityParams {
   workspaceId: string
-  memberId: string
+  userId: string
   activityType: string
   streamId: string
   messageId: string
@@ -43,7 +43,7 @@ export interface InsertActivityParams {
 
 export interface InsertActivityBatchParams {
   workspaceId: string
-  memberIds: string[]
+  userIds: string[]
   activityType: string
   streamId: string
   messageId: string
@@ -56,7 +56,7 @@ function mapRowToActivity(row: ActivityRow): Activity {
   return {
     id: row.id,
     workspaceId: row.workspace_id,
-    memberId: row.user_id,
+    userId: row.user_id,
     activityType: row.activity_type,
     streamId: row.stream_id,
     messageId: row.message_id,
@@ -76,7 +76,7 @@ export const ActivityRepository = {
       VALUES (
         ${id},
         ${params.workspaceId},
-        ${params.memberId},
+        ${params.userId},
         ${params.activityType},
         ${params.streamId},
         ${params.messageId},
@@ -92,27 +92,27 @@ export const ActivityRepository = {
   },
 
   /**
-   * Batch insert activities for multiple members sharing the same message context.
+   * Batch insert activities for multiple users sharing the same message context.
    * Single UNNEST query replaces N sequential inserts. ON CONFLICT deduplicates.
    */
   async insertBatch(db: Querier, params: InsertActivityBatchParams): Promise<Activity[]> {
-    if (params.memberIds.length === 0) return []
+    if (params.userIds.length === 0) return []
 
-    const ids = params.memberIds.map(() => activityId())
+    const ids = params.userIds.map(() => activityId())
     const contextJson = JSON.stringify(params.context ?? {})
 
     const result = await db.query<ActivityRow>(sql`
       INSERT INTO user_activity (id, workspace_id, user_id, activity_type, stream_id, message_id, actor_id, actor_type, context)
       SELECT * FROM UNNEST(
         ${ids}::text[],
-        ${params.memberIds.map(() => params.workspaceId)}::text[],
-        ${params.memberIds}::text[],
-        ${params.memberIds.map(() => params.activityType)}::text[],
-        ${params.memberIds.map(() => params.streamId)}::text[],
-        ${params.memberIds.map(() => params.messageId)}::text[],
-        ${params.memberIds.map(() => params.actorId)}::text[],
-        ${params.memberIds.map(() => params.actorType)}::text[],
-        ${params.memberIds.map(() => contextJson)}::jsonb[]
+        ${params.userIds.map(() => params.workspaceId)}::text[],
+        ${params.userIds}::text[],
+        ${params.userIds.map(() => params.activityType)}::text[],
+        ${params.userIds.map(() => params.streamId)}::text[],
+        ${params.userIds.map(() => params.messageId)}::text[],
+        ${params.userIds.map(() => params.actorId)}::text[],
+        ${params.userIds.map(() => params.actorType)}::text[],
+        ${params.userIds.map(() => contextJson)}::jsonb[]
       )
       ON CONFLICT (user_id, message_id, activity_type, actor_id)
       DO UPDATE SET id = user_activity.id
@@ -121,9 +121,9 @@ export const ActivityRepository = {
     return result.rows.map(mapRowToActivity)
   },
 
-  async listByMember(
+  async listByUser(
     db: Querier,
-    memberId: string,
+    userId: string,
     workspaceId: string,
     opts?: { limit?: number; cursor?: string; unreadOnly?: boolean }
   ): Promise<Activity[]> {
@@ -135,12 +135,12 @@ export const ActivityRepository = {
     const result = await db.query<ActivityRow>(sql`
       SELECT id, workspace_id, user_id, activity_type, stream_id, message_id, actor_id, actor_type, context, read_at, created_at
       FROM user_activity
-      WHERE user_id = ${memberId}
+      WHERE user_id = ${userId}
         AND workspace_id = ${workspaceId}
         AND (${!unreadOnly} OR read_at IS NULL)
         AND (${!hasCursor} OR created_at < (
           SELECT created_at FROM user_activity
-          WHERE id = ${cursor} AND user_id = ${memberId} AND workspace_id = ${workspaceId}
+          WHERE id = ${cursor} AND user_id = ${userId} AND workspace_id = ${workspaceId}
         ))
       ORDER BY created_at DESC
       LIMIT ${limit}
@@ -154,7 +154,7 @@ export const ActivityRepository = {
    */
   async countUnreadGrouped(
     db: Querier,
-    memberId: string,
+    userId: string,
     workspaceId: string
   ): Promise<{ mentionsByStream: Map<string, number>; totalByStream: Map<string, number>; total: number }> {
     const result = await db.query<{ stream_id: string; mention_count: string; total_count: string }>(sql`
@@ -163,7 +163,7 @@ export const ActivityRepository = {
         COUNT(*) FILTER (WHERE activity_type = 'mention')::text AS mention_count,
         COUNT(*)::text AS total_count
       FROM user_activity
-      WHERE user_id = ${memberId}
+      WHERE user_id = ${userId}
         AND workspace_id = ${workspaceId}
         AND read_at IS NULL
       GROUP BY stream_id
@@ -181,32 +181,32 @@ export const ActivityRepository = {
     return { mentionsByStream, totalByStream, total }
   },
 
-  async markAsRead(db: Querier, activityId: string, memberId: string): Promise<void> {
+  async markAsRead(db: Querier, activityId: string, userId: string): Promise<void> {
     await db.query(sql`
       UPDATE user_activity
       SET read_at = NOW()
       WHERE id = ${activityId}
-        AND user_id = ${memberId}
+        AND user_id = ${userId}
         AND read_at IS NULL
     `)
   },
 
-  async markStreamAsRead(db: Querier, memberId: string, streamId: string): Promise<number> {
+  async markStreamAsRead(db: Querier, userId: string, streamId: string): Promise<number> {
     const result = await db.query(sql`
       UPDATE user_activity
       SET read_at = NOW()
-      WHERE user_id = ${memberId}
+      WHERE user_id = ${userId}
         AND stream_id = ${streamId}
         AND read_at IS NULL
     `)
     return result.rowCount ?? 0
   },
 
-  async markAllAsRead(db: Querier, memberId: string, workspaceId: string): Promise<number> {
+  async markAllAsRead(db: Querier, userId: string, workspaceId: string): Promise<number> {
     const result = await db.query(sql`
       UPDATE user_activity
       SET read_at = NOW()
-      WHERE user_id = ${memberId}
+      WHERE user_id = ${userId}
         AND workspace_id = ${workspaceId}
         AND read_at IS NULL
     `)

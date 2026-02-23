@@ -12,5 +12,5 @@ export type SectionKey = (typeof SMART_SECTION_KEYS)[number]
 export interface StreamItemData extends StreamWithPreview {
   urgency: UrgencyLevel
   section: SectionKey
-  dmPeerMemberId?: string
+  dmPeerUserId?: string
 }

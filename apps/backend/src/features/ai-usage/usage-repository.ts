@@ -22,7 +22,7 @@ interface AIUsageRecordRow {
 export interface AIUsageRecord {
   id: string
   workspaceId: string
-  memberId: string | null
+  userId: string | null
   sessionId: string | null
   functionId: string
   model: string
@@ -39,7 +39,7 @@ export interface AIUsageRecord {
 export interface InsertAIUsageRecordParams {
   id: string
   workspaceId: string
-  memberId?: string
+  userId?: string
   sessionId?: string
   functionId: string
   model: string
@@ -74,8 +74,8 @@ export interface FunctionBreakdown {
   recordCount: number
 }
 
-export interface MemberBreakdown {
-  memberId: string | null
+export interface UserBreakdown {
+  userId: string | null
   totalCostUsd: number
   totalTokens: number
   recordCount: number
@@ -92,7 +92,7 @@ function mapRowToRecord(row: AIUsageRecordRow): AIUsageRecord {
   return {
     id: row.id,
     workspaceId: row.workspace_id,
-    memberId: row.user_id,
+    userId: row.user_id,
     sessionId: row.session_id,
     functionId: row.function_id,
     model: row.model,
@@ -124,7 +124,7 @@ export const AIUsageRepository = {
       VALUES (
         ${params.id},
         ${params.workspaceId},
-        ${params.memberId ?? null},
+        ${params.userId ?? null},
         ${params.sessionId ?? null},
         ${params.functionId},
         ${params.model},
@@ -180,10 +180,10 @@ export const AIUsageRepository = {
     }
   },
 
-  async getMemberUsage(
+  async getUserUsage(
     db: Querier,
     workspaceId: string,
-    memberId: string,
+    userId: string,
     periodStart: Date,
     periodEnd: Date
   ): Promise<UsageSummary> {
@@ -202,7 +202,7 @@ export const AIUsageRepository = {
         COUNT(*) as record_count
       FROM ai_usage_records
       WHERE workspace_id = ${workspaceId}
-        AND user_id = ${memberId}
+        AND user_id = ${userId}
         AND created_at >= ${periodStart}
         AND created_at < ${periodEnd}
     `)
@@ -283,12 +283,7 @@ export const AIUsageRepository = {
     }))
   },
 
-  async getUsageByMember(
-    db: Querier,
-    workspaceId: string,
-    periodStart: Date,
-    periodEnd: Date
-  ): Promise<MemberBreakdown[]> {
+  async getUsageByUser(db: Querier, workspaceId: string, periodStart: Date, periodEnd: Date): Promise<UserBreakdown[]> {
     const result = await db.query<{
       user_id: string | null
       total_cost_usd: string
@@ -309,7 +304,7 @@ export const AIUsageRepository = {
     `)
 
     return result.rows.map((row) => ({
-      memberId: row.user_id,
+      userId: row.user_id,
       totalCostUsd: parseFloat(row.total_cost_usd),
       totalTokens: parseInt(row.total_tokens, 10),
       recordCount: parseInt(row.record_count, 10),
@@ -319,16 +314,16 @@ export const AIUsageRepository = {
   async listRecent(
     db: Querier,
     workspaceId: string,
-    options?: { limit?: number; memberId?: string }
+    options?: { limit?: number; userId?: string }
   ): Promise<AIUsageRecord[]> {
     const limit = options?.limit ?? 50
     const conditions: string[] = [`workspace_id = $1`]
     const values: unknown[] = [workspaceId]
     let paramIndex = 2
 
-    if (options?.memberId) {
+    if (options?.userId) {
       conditions.push(`user_id = $${paramIndex++}`)
-      values.push(options.memberId)
+      values.push(options.userId)
     }
 
     values.push(limit)

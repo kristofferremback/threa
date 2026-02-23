@@ -41,7 +41,7 @@ const { mockNavigate, mockSearchState, mockWorkspaceBootstrap } = vi.hoisted(() 
       streamMemberships: unknown[]
       users: unknown[]
       personas: unknown[]
-      dmPeers?: Array<{ memberId: string; streamId: string }>
+      dmPeers?: Array<{ userId: string; streamId: string }>
     },
   },
 }))
@@ -300,8 +300,8 @@ describe("QuickSwitcher Integration Tests", () => {
       it("should not go below last item with ArrowDown", async () => {
         const user = userEvent.setup()
         mockWorkspaceBootstrap.data.dmPeers = [
-          { memberId: "member_2", streamId: "stream_dm_existing_2" },
-          { memberId: "member_3", streamId: "stream_dm_existing_3" },
+          { userId: "member_2", streamId: "stream_dm_existing_2" },
+          { userId: "member_3", streamId: "stream_dm_existing_3" },
         ]
         renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
@@ -1292,7 +1292,7 @@ describe("QuickSwitcher Integration Tests", () => {
 
     it("should include virtual DM targets for members without DM streams", async () => {
       const user = userEvent.setup()
-      mockWorkspaceBootstrap.data.dmPeers = [{ memberId: "member_2", streamId: "stream_dm_existing" }]
+      mockWorkspaceBootstrap.data.dmPeers = [{ userId: "member_2", streamId: "stream_dm_existing" }]
 
       renderWithProviders(<QuickSwitcher {...defaultProps} />)
 

@@ -138,7 +138,7 @@ export function useStreamItems(context: ModeContext): ModeResult {
   const items = useMemo(() => {
     const lowerQuery = searchText.toLowerCase()
     const usersById = new Map((users ?? []).map((workspaceUser) => [workspaceUser.id, workspaceUser]))
-    const dmPeerByStreamId = new Map((dmPeers ?? []).map((peer) => [peer.streamId, peer.memberId]))
+    const dmPeerByStreamId = new Map((dmPeers ?? []).map((peer) => [peer.streamId, peer.userId]))
 
     // Combine streams based on filters
     const allStreams: Stream[] = [
@@ -219,7 +219,7 @@ export function useStreamItems(context: ModeContext): ModeResult {
       return streamItems
     }
 
-    const existingDmPeerIds = new Set((dmPeers ?? []).map((peer) => peer.memberId))
+    const existingDmPeerIds = new Set((dmPeers ?? []).map((peer) => peer.userId))
     const virtualDmItems = users!
       .filter((workspaceUser) => workspaceUser.id !== currentUserId)
       .filter((workspaceUser) => !existingDmPeerIds.has(workspaceUser.id))

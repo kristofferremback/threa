@@ -54,10 +54,10 @@ describe("BroadcastHandler", () => {
     mock.restore()
   })
 
-  it("should emit member-scoped event to member room", async () => {
+  it("should emit user-scoped event to user room", async () => {
     const event = makeEvent(1n, "activity:created", {
       workspaceId: "ws_1",
-      targetMemberId: "member_alice",
+      targetUserId: "member_alice",
       activity: { id: "act_1" },
     })
 
@@ -68,13 +68,13 @@ describe("BroadcastHandler", () => {
     await new Promise((r) => setTimeout(r, 300))
 
     expect(emitChains).toContainEqual({
-      room: "ws:ws_1:member:member_alice",
+      room: "ws:ws_1:user:member_alice",
       eventType: "activity:created",
       payload: event.payload,
     })
   })
 
-  it("should emit author-scoped event to member room", async () => {
+  it("should emit author-scoped event to user room", async () => {
     const event = makeEvent(1n, "command:dispatched", {
       workspaceId: "ws_1",
       streamId: "stream_1",
@@ -89,13 +89,13 @@ describe("BroadcastHandler", () => {
     await new Promise((r) => setTimeout(r, 300))
 
     expect(emitChains).toContainEqual({
-      room: "ws:ws_1:member:member_bob",
+      room: "ws:ws_1:user:member_bob",
       eventType: "command:dispatched",
       payload: event.payload,
     })
   })
 
-  it("should emit stream:read to author member room", async () => {
+  it("should emit stream:read to author user room", async () => {
     const event = makeEvent(1n, "stream:read", {
       workspaceId: "ws_1",
       authorId: "member_carol",
@@ -110,13 +110,13 @@ describe("BroadcastHandler", () => {
     await new Promise((r) => setTimeout(r, 300))
 
     expect(emitChains).toContainEqual({
-      room: "ws:ws_1:member:member_carol",
+      room: "ws:ws_1:user:member_carol",
       eventType: "stream:read",
       payload: event.payload,
     })
   })
 
-  it("should emit stream:member_added to both stream room and member room", async () => {
+  it("should emit stream:member_added to both stream room and user room", async () => {
     const event = makeEvent(1n, "stream:member_added", {
       workspaceId: "ws_1",
       streamId: "stream_1",
@@ -136,7 +136,7 @@ describe("BroadcastHandler", () => {
       payload: event.payload,
     })
     expect(emitChains).toContainEqual({
-      room: "ws:ws_1:member:member_dave",
+      room: "ws:ws_1:user:member_dave",
       eventType: "stream:member_added",
       payload: event.payload,
     })
@@ -222,7 +222,7 @@ describe("BroadcastHandler", () => {
     })
   })
 
-  it("should emit stream:created DM to member rooms", async () => {
+  it("should emit stream:created DM to user rooms", async () => {
     const event = makeEvent(1n, "stream:created", {
       workspaceId: "ws_1",
       streamId: "stream_dm",
@@ -237,12 +237,12 @@ describe("BroadcastHandler", () => {
     await new Promise((r) => setTimeout(r, 300))
 
     expect(emitChains).toContainEqual({
-      room: "ws:ws_1:member:member_alice",
+      room: "ws:ws_1:user:member_alice",
       eventType: "stream:created",
       payload: event.payload,
     })
     expect(emitChains).toContainEqual({
-      room: "ws:ws_1:member:member_bob",
+      room: "ws:ws_1:user:member_bob",
       eventType: "stream:created",
       payload: event.payload,
     })

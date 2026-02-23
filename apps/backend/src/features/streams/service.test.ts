@@ -323,6 +323,6 @@ describe("StreamService.findOrCreateDm", () => {
 
     expect(error).toBeInstanceOf(HttpError)
     expect((error as HttpError).status).toBe(404)
-    expect((error as HttpError).message).toBe("Both members must belong to this workspace")
+    expect((error as HttpError).message).toBe("Both users must belong to this workspace")
   })
 })

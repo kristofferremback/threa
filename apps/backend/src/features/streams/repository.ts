@@ -88,7 +88,7 @@ export interface StreamWithPreview extends Stream {
 }
 
 export interface DmPeer {
-  memberId: string
+  userId: string
   streamId: string
 }
 
@@ -192,7 +192,7 @@ export const StreamRepository = {
     return result.rows[0] ? mapRowToStream(result.rows[0]) : null
   },
 
-  async listDmPeersForMember(db: Querier, workspaceId: string, memberId: string): Promise<DmPeer[]> {
+  async listDmPeersForMember(db: Querier, workspaceId: string, userId: string): Promise<DmPeer[]> {
     const result = await db.query<{ stream_id: string; member_id: string }>(sql`
       WITH dm_members AS (
         SELECT
@@ -205,19 +205,19 @@ export const StreamRepository = {
           AND s.archived_at IS NULL
         GROUP BY sm.stream_id
         HAVING COUNT(DISTINCT sm.member_id) = 2
-          AND bool_or(sm.member_id = ${memberId})
+          AND bool_or(sm.member_id = ${userId})
       )
       SELECT
         stream_id,
         CASE
-          WHEN member_ids[1] = ${memberId} THEN member_ids[2]
+          WHEN member_ids[1] = ${userId} THEN member_ids[2]
           ELSE member_ids[1]
         END AS member_id
       FROM dm_members
     `)
 
     return result.rows.map((row) => ({
-      memberId: row.member_id,
+      userId: row.member_id,
       streamId: row.stream_id,
     }))
   },

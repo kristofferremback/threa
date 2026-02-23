@@ -32,9 +32,9 @@ export class ActivityService {
     if (mentionSlugs.length === 0) return []
 
     return withClient(this.pool, async (client) => {
-      const members = await UserRepository.findBySlugs(client, workspaceId, mentionSlugs)
+      const users = await UserRepository.findBySlugs(client, workspaceId, mentionSlugs)
 
-      const candidates = members.filter((m) => m.id !== actorId)
+      const candidates = users.filter((u) => u.id !== actorId)
       if (candidates.length === 0) return []
 
       const stream = await StreamRepository.findById(client, streamId)
@@ -53,11 +53,11 @@ export class ActivityService {
 
       const streamContext = resolveStreamContext(stream, rootStream)
       const contentPreview = contentMarkdown.slice(0, 200)
-      const eligibleMemberIds = candidates.filter((m) => eligible.has(m.id)).map((m) => m.id)
+      const eligibleUserIds = candidates.filter((u) => eligible.has(u.id)).map((u) => u.id)
 
       return ActivityRepository.insertBatch(client, {
         workspaceId,
-        memberIds: eligibleMemberIds,
+        userIds: eligibleUserIds,
         activityType: "mention",
         streamId,
         messageId,
@@ -75,19 +75,19 @@ export class ActivityService {
     actorId: string
     actorType: string
     contentMarkdown: string
-    excludeMemberIds: Set<string>
+    excludeUserIds: Set<string>
   }): Promise<Activity[]> {
-    const { workspaceId, streamId, messageId, actorId, actorType, contentMarkdown, excludeMemberIds } = params
+    const { workspaceId, streamId, messageId, actorId, actorType, contentMarkdown, excludeUserIds } = params
 
     return withClient(this.pool, async (client) => {
       const stream = await StreamRepository.findById(client, streamId)
       if (!stream || stream.workspaceId !== workspaceId) return []
 
-      const members = await StreamMemberRepository.list(client, { streamId })
-      if (members.length === 0) return []
+      const streamMembers = await StreamMemberRepository.list(client, { streamId })
+      if (streamMembers.length === 0) return []
 
       // Resolve effective notification levels for all members
-      const resolved = await resolveNotificationLevelsForStream(client, stream, members)
+      const resolved = await resolveNotificationLevelsForStream(client, stream, streamMembers)
 
       // Fetch root stream once for context
       const rootStream = stream.rootStreamId ? await StreamRepository.findById(client, stream.rootStreamId) : null
@@ -95,17 +95,17 @@ export class ActivityService {
       const streamContext = resolveStreamContext(stream, rootStream)
       const contentPreview = contentMarkdown.slice(0, 200)
 
-      const eligibleMemberIds = resolved
+      const eligibleUserIds = resolved
         .filter((r) => {
           if (r.memberId === actorId) return false
-          if (excludeMemberIds.has(r.memberId)) return false
+          if (excludeUserIds.has(r.memberId)) return false
           return r.effectiveLevel === NotificationLevels.ACTIVITY || r.effectiveLevel === NotificationLevels.EVERYTHING
         })
         .map((r) => r.memberId)
 
       return ActivityRepository.insertBatch(client, {
         workspaceId,
-        memberIds: eligibleMemberIds,
+        userIds: eligibleUserIds,
         activityType: "message",
         streamId,
         messageId,
@@ -117,7 +117,7 @@ export class ActivityService {
   }
 
   /**
-   * Batch-check which memberIds have access to a stream.
+   * Batch-check which user IDs have access to a stream.
    * Public streams: all pass. Private: single batch membership query.
    */
   private async filterByAccess(
@@ -137,35 +137,35 @@ export class ActivityService {
   }
 
   async listFeed(
-    memberId: string,
+    userId: string,
     workspaceId: string,
     opts?: { limit?: number; cursor?: string; unreadOnly?: boolean }
-  ): Promise<Activity[]> {
-    return ActivityRepository.listByMember(this.pool, memberId, workspaceId, opts)
+  ) {
+    return ActivityRepository.listByUser(this.pool, userId, workspaceId, opts)
   }
 
   async getUnreadCounts(
-    memberId: string,
+    userId: string,
     workspaceId: string
   ): Promise<{ mentionsByStream: Map<string, number>; totalByStream: Map<string, number>; total: number }> {
-    return ActivityRepository.countUnreadGrouped(this.pool, memberId, workspaceId)
+    return ActivityRepository.countUnreadGrouped(this.pool, userId, workspaceId)
   }
 
-  async markAsRead(activityId: string, memberId: string): Promise<void> {
-    await ActivityRepository.markAsRead(this.pool, activityId, memberId)
+  async markAsRead(activityId: string, userId: string): Promise<void> {
+    await ActivityRepository.markAsRead(this.pool, activityId, userId)
   }
 
-  async markStreamActivityAsRead(memberId: string, streamId: string): Promise<void> {
-    const count = await ActivityRepository.markStreamAsRead(this.pool, memberId, streamId)
+  async markStreamActivityAsRead(userId: string, streamId: string): Promise<void> {
+    const count = await ActivityRepository.markStreamAsRead(this.pool, userId, streamId)
     if (count > 0) {
-      logger.debug({ memberId, streamId, count }, "Marked stream activity as read")
+      logger.debug({ userId, streamId, count }, "Marked stream activity as read")
     }
   }
 
-  async markAllAsRead(memberId: string, workspaceId: string): Promise<void> {
-    const count = await ActivityRepository.markAllAsRead(this.pool, memberId, workspaceId)
+  async markAllAsRead(userId: string, workspaceId: string): Promise<void> {
+    const count = await ActivityRepository.markAllAsRead(this.pool, userId, workspaceId)
     if (count > 0) {
-      logger.debug({ memberId, workspaceId, count }, "Marked all activity as read")
+      logger.debug({ userId, workspaceId, count }, "Marked all activity as read")
     }
   }
 }

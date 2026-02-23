@@ -10,7 +10,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
 import { useAIUsage, useAIBudget, useUpdateAIBudget, useWorkspaceBootstrap } from "@/hooks"
-import type { UpdateAIBudgetInput, AIUsageByMember } from "@threa/types"
+import type { UpdateAIBudgetInput, AIUsageByUser } from "@threa/types"
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", {
@@ -171,24 +171,24 @@ function AssistantUsageCard({
   totalCost,
   isLoading,
 }: {
-  byUser: AIUsageByMember[]
+  byUser: AIUsageByUser[]
   userNames: Map<string, string>
   totalCost: number
   isLoading: boolean
 }) {
   const items = useMemo(() => {
-    const userUsage = byUser.filter((u) => u.memberId !== null)
+    const userUsage = byUser.filter((u) => u.userId !== null)
     const maxCost = Math.max(...userUsage.map((u) => u.totalCostUsd), 0.0001)
 
     return userUsage.map((u) => ({
-      label: userNames.get(u.memberId!) ?? "Unknown User",
+      label: userNames.get(u.userId!) ?? "Unknown User",
       cost: u.totalCostUsd,
       percentage: (u.totalCostUsd / maxCost) * 100,
     }))
   }, [byUser, userNames])
 
   const assistantTotal = useMemo(() => {
-    return byUser.filter((u) => u.memberId !== null).reduce((sum, u) => sum + u.totalCostUsd, 0)
+    return byUser.filter((u) => u.userId !== null).reduce((sum, u) => sum + u.totalCostUsd, 0)
   }, [byUser])
 
   if (isLoading) {
@@ -488,7 +488,7 @@ export function AIUsageAdminPage() {
               isLoading={usageLoading}
             />
             <AssistantUsageCard
-              byUser={usage?.byMember ?? []}
+              byUser={usage?.byUser ?? []}
               userNames={userNames}
               totalCost={usage?.total.totalCostUsd ?? 0}
               isLoading={usageLoading}

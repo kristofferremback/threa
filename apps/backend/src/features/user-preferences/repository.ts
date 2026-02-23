@@ -21,14 +21,14 @@ export interface PreferenceOverrideRecord {
 
 export const UserPreferencesRepository = {
   /**
-   * Fetch all preference overrides for a member.
+   * Fetch all preference overrides for a user.
    * Returns only the overrides - merge with defaults in service layer.
    */
-  async findOverrides(db: Querier, memberId: string): Promise<PreferenceOverrideRecord[]> {
+  async findOverrides(db: Querier, userId: string): Promise<PreferenceOverrideRecord[]> {
     const result = await db.query<PreferenceOverrideRow>(sql`
       SELECT key, value
       FROM user_preference_overrides
-      WHERE user_id = ${memberId}
+      WHERE user_id = ${userId}
     `)
     return result.rows.map((row) => ({
       key: row.key,
@@ -40,10 +40,10 @@ export const UserPreferencesRepository = {
    * Set a single preference override.
    * Uses upsert to handle both insert and update.
    */
-  async setOverride(db: Querier, memberId: string, key: string, value: unknown): Promise<void> {
+  async setOverride(db: Querier, userId: string, key: string, value: unknown): Promise<void> {
     await db.query(sql`
       INSERT INTO user_preference_overrides (user_id, key, value)
-      VALUES (${memberId}, ${key}, ${JSON.stringify(value)}::jsonb)
+      VALUES (${userId}, ${key}, ${JSON.stringify(value)}::jsonb)
       ON CONFLICT (user_id, key) DO UPDATE SET
         value = ${JSON.stringify(value)}::jsonb,
         updated_at = NOW()
@@ -53,10 +53,10 @@ export const UserPreferencesRepository = {
   /**
    * Remove a preference override (revert to default).
    */
-  async deleteOverride(db: Querier, memberId: string, key: string): Promise<void> {
+  async deleteOverride(db: Querier, userId: string, key: string): Promise<void> {
     await db.query(sql`
       DELETE FROM user_preference_overrides
-      WHERE user_id = ${memberId}
+      WHERE user_id = ${userId}
         AND key = ${key}
     `)
   },
@@ -67,7 +67,7 @@ export const UserPreferencesRepository = {
    */
   async bulkSetOverrides(
     db: Querier,
-    memberId: string,
+    userId: string,
     overrides: Array<{ key: string; value: unknown }>
   ): Promise<void> {
     if (overrides.length === 0) return
@@ -79,7 +79,7 @@ export const UserPreferencesRepository = {
 
     for (const { key, value } of overrides) {
       placeholders.push(`($${idx++}, $${idx++}, $${idx++}::jsonb)`)
-      values.push(memberId, key, JSON.stringify(value))
+      values.push(userId, key, JSON.stringify(value))
     }
 
     await db.query(
@@ -95,23 +95,23 @@ export const UserPreferencesRepository = {
   /**
    * Delete multiple overrides by key.
    */
-  async bulkDeleteOverrides(db: Querier, memberId: string, keys: string[]): Promise<void> {
+  async bulkDeleteOverrides(db: Querier, userId: string, keys: string[]): Promise<void> {
     if (keys.length === 0) return
 
     await db.query(sql`
       DELETE FROM user_preference_overrides
-      WHERE user_id = ${memberId}
+      WHERE user_id = ${userId}
         AND key = ANY(${keys})
     `)
   },
 
   /**
-   * Delete all overrides for a member (reset to defaults).
+   * Delete all overrides for a user (reset to defaults).
    */
-  async deleteAllOverrides(db: Querier, memberId: string): Promise<void> {
+  async deleteAllOverrides(db: Querier, userId: string): Promise<void> {
     await db.query(sql`
       DELETE FROM user_preference_overrides
-      WHERE user_id = ${memberId}
+      WHERE user_id = ${userId}
     `)
   },
 }

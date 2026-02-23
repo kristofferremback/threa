@@ -161,7 +161,7 @@ describe("ActivityFeedHandler", () => {
     const createdActivity = {
       id: "activity_test123",
       workspaceId: "ws_test",
-      memberId: "member_alice",
+      userId: "member_alice",
       activityType: "mention",
       streamId: "stream_test",
       messageId: "msg_test",
@@ -191,7 +191,7 @@ describe("ActivityFeedHandler", () => {
 
     expect(insertSpy).toHaveBeenCalledWith({}, "activity:created", {
       workspaceId: "ws_test",
-      targetMemberId: "member_alice",
+      targetUserId: "member_alice",
       activity: {
         id: "activity_test123",
         activityType: "mention",
@@ -230,7 +230,7 @@ describe("ActivityFeedHandler", () => {
     const preExistingActivity = {
       id: "activity_existing",
       workspaceId: "ws_test",
-      memberId: "member_bob",
+      userId: "member_bob",
       activityType: "mention",
       streamId: "stream_test",
       messageId: "msg_test",
@@ -261,7 +261,7 @@ describe("ActivityFeedHandler", () => {
 
     const want = {
       workspaceId: "ws_test",
-      targetMemberId: "member_bob",
+      targetUserId: "member_bob",
       activity: {
         id: "activity_existing",
         activityType: "mention",

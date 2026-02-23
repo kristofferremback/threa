@@ -204,7 +204,7 @@ export class StreamService {
    */
   async resolveDmDisplayNames(
     streams: StreamWithPreview[],
-    workspaceMembers: { id: string; name: string }[],
+    workspaceUsers: { id: string; name: string }[],
     viewingMemberId: string
   ): Promise<StreamWithPreview[]> {
     const dmStreams = streams.filter((s) => s.type === "dm")
@@ -213,11 +213,11 @@ export class StreamService {
     const dmStreamIds = dmStreams.map((s) => s.id)
     const allDmMembers = await StreamMemberRepository.list(this.pool, { streamIds: dmStreamIds })
 
-    const memberNameMap = new Map(workspaceMembers.map((m) => [m.id, m.name]))
+    const userNameMap = new Map(workspaceUsers.map((u) => [u.id, u.name]))
 
     const membersByStream = new Map<string, { id: string; name: string }[]>()
     for (const sm of allDmMembers) {
-      const name = memberNameMap.get(sm.memberId)
+      const name = userNameMap.get(sm.memberId)
       if (!name) continue
       const list = membersByStream.get(sm.streamId) ?? []
       list.push({ id: sm.memberId, name })
@@ -233,8 +233,8 @@ export class StreamService {
     return streams.map((s) => (dmNameMap.has(s.id) ? { ...s, displayName: dmNameMap.get(s.id)! } : s))
   }
 
-  async listDmPeers(workspaceId: string, memberId: string): Promise<DmPeer[]> {
-    return StreamRepository.listDmPeersForMember(this.pool, workspaceId, memberId)
+  async listDmPeers(workspaceId: string, userId: string): Promise<DmPeer[]> {
+    return StreamRepository.listDmPeersForMember(this.pool, workspaceId, userId)
   }
 
   async resolveWritableMessageStream(params: ResolveWritableMessageStreamParams): Promise<Stream> {
@@ -284,11 +284,11 @@ export class StreamService {
 
     return withTransaction(this.pool, async (client) => {
       const members = await UserRepository.findByIds(client, params.workspaceId, [memberAId, memberBId])
-      const workspaceMemberIds = new Set(
+      const workspaceUserIds = new Set(
         members.filter((member) => member.workspaceId === params.workspaceId).map((member) => member.id)
       )
-      if (!workspaceMemberIds.has(memberAId) || !workspaceMemberIds.has(memberBId)) {
-        throw new HttpError("Both members must belong to this workspace", {
+      if (!workspaceUserIds.has(memberAId) || !workspaceUserIds.has(memberBId)) {
+        throw new HttpError("Both users must belong to this workspace", {
           status: 404,
           code: "MEMBER_NOT_FOUND",
         })

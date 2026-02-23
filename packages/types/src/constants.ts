@@ -70,9 +70,9 @@ export type EventType = (typeof EVENT_TYPES)[number]
 export const COMMAND_EVENT_TYPES = ["command_dispatched", "command_completed", "command_failed"] as const
 export type CommandEventType = (typeof COMMAND_EVENT_TYPES)[number]
 
-// Workspace member roles
-export const WORKSPACE_MEMBER_ROLES = ["owner", "admin", "member"] as const
-export type WorkspaceMemberRole = (typeof WORKSPACE_MEMBER_ROLES)[number]
+// Workspace user roles
+export const WORKSPACE_USER_ROLES = ["owner", "admin", "member"] as const
+export type WorkspaceUserRole = (typeof WORKSPACE_USER_ROLES)[number]
 
 // Notification levels (per-stream member preference)
 export const NOTIFICATION_LEVELS = ["everything", "activity", "mentions", "muted"] as const

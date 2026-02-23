@@ -78,7 +78,7 @@ describe("InvitationService.acceptInvitation", () => {
       invitationId: "inv_1",
       email: "test@example.com",
       workosUserId: "workos_user_1",
-      memberName: "Test User",
+      userName: "Test User",
     })
   })
 

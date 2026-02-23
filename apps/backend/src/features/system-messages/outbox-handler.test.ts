@@ -70,7 +70,7 @@ describe("SystemMessageOutboxHandler", () => {
       invitationId: "inv_123",
       email: "new@test.com",
       workosUserId: "workos_user_456",
-      memberName: "New User",
+      userName: "New User",
     }
 
     spyOn(OutboxRepository, "fetchAfterId").mockResolvedValue([

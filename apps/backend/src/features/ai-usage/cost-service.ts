@@ -16,7 +16,7 @@ const ALERT_THRESHOLDS = [
 
 export interface RecordUsageParams {
   workspaceId: string
-  memberId?: string
+  userId?: string
   sessionId?: string
   functionId: string
   model: string
@@ -69,7 +69,7 @@ export class AICostService implements AICostServiceLike {
       await AIUsageRepository.insert(client, {
         id: aiUsageId(),
         workspaceId: params.workspaceId,
-        memberId: params.memberId,
+        userId: params.userId,
         sessionId: params.sessionId,
         functionId: params.functionId,
         model: params.model,
@@ -199,11 +199,11 @@ export class AICostService implements AICostServiceLike {
   /**
    * Get usage summary for a user within current billing month.
    */
-  async getMemberCurrentMonthUsage(workspaceId: string, memberId: string): Promise<UsageSummary> {
+  async getUserCurrentMonthUsage(workspaceId: string, userId: string): Promise<UsageSummary> {
     const { periodStart, periodEnd } = this.getCurrentMonthPeriod()
 
     return withClient(this.pool, (client) =>
-      AIUsageRepository.getMemberUsage(client, workspaceId, memberId, periodStart, periodEnd)
+      AIUsageRepository.getUserUsage(client, workspaceId, userId, periodStart, periodEnd)
     )
   }
 
@@ -228,11 +228,11 @@ export class AICostService implements AICostServiceLike {
   /**
    * Get usage breakdown by user for current month.
    */
-  async getUsageByMember(workspaceId: string) {
+  async getUsageByUser(workspaceId: string) {
     const { periodStart, periodEnd } = this.getCurrentMonthPeriod()
 
     return withClient(this.pool, (client) =>
-      AIUsageRepository.getUsageByMember(client, workspaceId, periodStart, periodEnd)
+      AIUsageRepository.getUsageByUser(client, workspaceId, periodStart, periodEnd)
     )
   }
 
@@ -248,7 +248,7 @@ export class AICostService implements AICostServiceLike {
   /**
    * Get recent usage records.
    */
-  async getRecentUsage(workspaceId: string, options?: { limit?: number; memberId?: string }) {
+  async getRecentUsage(workspaceId: string, options?: { limit?: number; userId?: string }) {
     return withClient(this.pool, (client) => AIUsageRepository.listRecent(client, workspaceId, options))
   }
 
