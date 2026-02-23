@@ -166,30 +166,30 @@ function SystemUsageCard({
 }
 
 function AssistantUsageCard({
-  byMember,
-  memberNames,
+  byUser,
+  userNames,
   totalCost,
   isLoading,
 }: {
-  byMember: AIUsageByMember[]
-  memberNames: Map<string, string>
+  byUser: AIUsageByMember[]
+  userNames: Map<string, string>
   totalCost: number
   isLoading: boolean
 }) {
   const items = useMemo(() => {
-    const memberUsage = byMember.filter((u) => u.memberId !== null)
-    const maxCost = Math.max(...memberUsage.map((u) => u.totalCostUsd), 0.0001)
+    const userUsage = byUser.filter((u) => u.memberId !== null)
+    const maxCost = Math.max(...userUsage.map((u) => u.totalCostUsd), 0.0001)
 
-    return memberUsage.map((u) => ({
-      label: memberNames.get(u.memberId!) ?? "Unknown Member",
+    return userUsage.map((u) => ({
+      label: userNames.get(u.memberId!) ?? "Unknown User",
       cost: u.totalCostUsd,
       percentage: (u.totalCostUsd / maxCost) * 100,
     }))
-  }, [byMember, memberNames])
+  }, [byUser, userNames])
 
   const assistantTotal = useMemo(() => {
-    return byMember.filter((u) => u.memberId !== null).reduce((sum, u) => sum + u.totalCostUsd, 0)
-  }, [byMember])
+    return byUser.filter((u) => u.memberId !== null).reduce((sum, u) => sum + u.totalCostUsd, 0)
+  }, [byUser])
 
   if (isLoading) {
     return (
@@ -199,7 +199,7 @@ function AssistantUsageCard({
             <Bot className="h-5 w-5" />
             AI Assistant Usage
           </CardTitle>
-          <CardDescription>Companion responses by team member</CardDescription>
+          <CardDescription>Companion responses by user</CardDescription>
         </CardHeader>
         <CardContent>
           <Skeleton className="h-[280px] w-full" />
@@ -440,7 +440,7 @@ export function AIUsageAdminPage() {
   const { data: budget, isLoading: budgetLoading } = useAIBudget(workspaceId ?? "")
 
   // Build workspace user name lookup map (userId -> display name).
-  const memberNames = useMemo(() => {
+  const userNames = useMemo(() => {
     const map = new Map<string, string>()
     for (const user of bootstrap?.users ?? []) {
       map.set(user.id, user.name || user.email || user.slug)
@@ -488,8 +488,8 @@ export function AIUsageAdminPage() {
               isLoading={usageLoading}
             />
             <AssistantUsageCard
-              byMember={usage?.byMember ?? []}
-              memberNames={memberNames}
+              byUser={usage?.byMember ?? []}
+              userNames={userNames}
               totalCost={usage?.total.totalCostUsd ?? 0}
               isLoading={usageLoading}
             />

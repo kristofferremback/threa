@@ -48,7 +48,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   const { user } = useAuth()
   const navigate = useNavigate()
   const workspaceUsers = bootstrap?.users ?? []
-  const currentMember = workspaceUsers.find((u) => u.workosUserId === user?.id) ?? null
+  const currentUser = workspaceUsers.find((u) => u.workosUserId === user?.id) ?? null
 
   const draftCount = allDrafts.length
   const isDraftsPage = splat === "drafts" || window.location.pathname.endsWith("/drafts")
@@ -99,22 +99,22 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   // System streams are auto-created infrastructure — don't count toward "has content"
   const hasUserStreamsFromStreams = processedStreams.some((s) => s.type !== StreamTypes.SYSTEM)
 
-  // Members without existing DM streams are shown as virtual DM drafts.
+  // Users without existing DM streams are shown as virtual DM drafts.
   const virtualDmStreams = useMemo(() => {
-    if (workspaceUsers.length === 0 || !currentMember) return []
+    if (workspaceUsers.length === 0 || !currentUser) return []
 
     const dmPeerIds = new Set((bootstrap?.dmPeers ?? []).map((peer) => peer.memberId))
     const now = new Date().toISOString()
 
     return workspaceUsers
-      .filter((member) => member.id !== currentMember.id)
-      .filter((member) => !dmPeerIds.has(member.id))
+      .filter((workspaceUser) => workspaceUser.id !== currentUser.id)
+      .filter((workspaceUser) => !dmPeerIds.has(workspaceUser.id))
       .map(
-        (member): StreamItemData => ({
-          id: createDmDraftId(member.id),
+        (workspaceUser): StreamItemData => ({
+          id: createDmDraftId(workspaceUser.id),
           workspaceId,
           type: StreamTypes.DM,
-          displayName: member.name,
+          displayName: workspaceUser.name,
           slug: null,
           description: null,
           visibility: Visibilities.PRIVATE,
@@ -123,18 +123,18 @@ export function Sidebar({ workspaceId }: SidebarProps) {
           rootStreamId: null,
           companionMode: "off",
           companionPersonaId: null,
-          createdBy: currentMember.id,
+          createdBy: currentUser.id,
           createdAt: now,
           updatedAt: now,
           archivedAt: null,
           lastMessagePreview: null,
           urgency: "quiet",
           section: "other",
-          dmPeerMemberId: member.id,
+          dmPeerMemberId: workspaceUser.id,
         })
       )
       .sort((a, b) => (a.displayName ?? "").localeCompare(b.displayName ?? ""))
-  }, [workspaceUsers, bootstrap?.dmPeers, currentMember, workspaceId])
+  }, [workspaceUsers, bootstrap?.dmPeers, currentUser, workspaceId])
 
   const hasUserStreams = hasUserStreamsFromStreams || virtualDmStreams.length > 0
 
@@ -338,7 +338,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
           scrollContainerRef={scrollContainerRef}
         />
       }
-      footer={<SidebarFooter workspaceId={workspaceId} currentUser={currentMember} />}
+      footer={<SidebarFooter workspaceId={workspaceId} currentUser={currentUser} />}
     />
   )
 }

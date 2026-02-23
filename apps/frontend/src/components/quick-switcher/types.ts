@@ -26,8 +26,8 @@ export interface ModeContext {
   closeDialog: () => void
   streams: Stream[]
   streamMemberships: StreamMember[]
-  members?: User[]
-  currentMemberId?: string | null
+  users?: User[]
+  currentUserId?: string | null
   dmPeers?: Array<{ memberId: string; streamId: string }>
 }
 

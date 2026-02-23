@@ -7,11 +7,11 @@ import { workspaceKeys } from "@/hooks/use-workspaces"
 import { InviteDialog } from "./invite-dialog"
 import type { User, WorkspaceInvitation } from "@threa/types"
 
-interface MembersTabProps {
+interface UsersTabProps {
   workspaceId: string
 }
 
-export function MembersTab({ workspaceId }: MembersTabProps) {
+export function UsersTab({ workspaceId }: UsersTabProps) {
   const [inviteOpen, setInviteOpen] = useState(false)
   const queryClient = useQueryClient()
 
@@ -20,7 +20,7 @@ export function MembersTab({ workspaceId }: MembersTabProps) {
     invitations?: WorkspaceInvitation[]
   }>(workspaceKeys.bootstrap(workspaceId))
 
-  const members = bootstrapData?.users ?? []
+  const users = bootstrapData?.users ?? []
 
   const invitationsQuery = useQuery({
     queryKey: ["invitations", workspaceId],
@@ -42,20 +42,20 @@ export function MembersTab({ workspaceId }: MembersTabProps) {
   return (
     <div className="space-y-6 p-1">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium">Members ({members.length})</h3>
+        <h3 className="text-sm font-medium">Users ({users.length})</h3>
         <Button size="sm" onClick={() => setInviteOpen(true)}>
           Invite
         </Button>
       </div>
 
       <div className="space-y-2">
-        {members.map((member) => (
-          <div key={member.id} className="flex items-center justify-between rounded-md border px-3 py-2">
+        {users.map((user) => (
+          <div key={user.id} className="flex items-center justify-between rounded-md border px-3 py-2">
             <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">{member.name || member.slug}</span>
-              <span className="text-xs text-muted-foreground">@{member.slug}</span>
+              <span className="text-sm font-medium">{user.name || user.slug}</span>
+              <span className="text-xs text-muted-foreground">@{user.slug}</span>
             </div>
-            <Badge variant={member.role === "owner" ? "default" : "secondary"}>{member.role}</Badge>
+            <Badge variant={user.role === "owner" ? "default" : "secondary"}>{user.role}</Badge>
           </div>
         ))}
       </div>

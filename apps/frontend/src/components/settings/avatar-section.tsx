@@ -11,11 +11,11 @@ const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB
 
 interface AvatarSectionProps {
   workspaceId: string
-  memberName: string
+  userName: string
   avatarUrl: string | null
 }
 
-export function AvatarSection({ workspaceId, memberName, avatarUrl }: AvatarSectionProps) {
+export function AvatarSection({ workspaceId, userName, avatarUrl }: AvatarSectionProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const uploadAvatar = useUploadAvatar(workspaceId)
@@ -59,8 +59,8 @@ export function AvatarSection({ workspaceId, memberName, avatarUrl }: AvatarSect
     <div className="flex items-center gap-4">
       <div className="relative">
         <Avatar className="h-20 w-20">
-          {imageUrl && <AvatarImage src={imageUrl} alt={memberName} />}
-          <AvatarFallback className="text-lg">{getInitials(memberName)}</AvatarFallback>
+          {imageUrl && <AvatarImage src={imageUrl} alt={userName} />}
+          <AvatarFallback className="text-lg">{getInitials(userName)}</AvatarFallback>
         </Avatar>
         {uploading && (
           <div className="absolute inset-0 flex items-center justify-center rounded-full bg-background/60">

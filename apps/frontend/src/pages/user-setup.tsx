@@ -17,7 +17,7 @@ function generateSlug(name: string): string {
 
 type SlugStatus = "idle" | "checking" | "available" | "taken"
 
-export function MemberSetupPage() {
+export function UserSetupPage() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const navigate = useNavigate()
   const user = useUser()

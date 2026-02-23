@@ -18,7 +18,7 @@ interface ArchiveStatusOption {
 
 interface FilterSelectProps {
   type: "from" | "with" | "type" | "status" | "in" | "after" | "before"
-  members: User[]
+  users: User[]
   streams: Stream[]
   streamTypes: StreamTypeOption[]
   statusOptions?: ArchiveStatusOption[]
@@ -28,7 +28,7 @@ interface FilterSelectProps {
 
 export function FilterSelect({
   type,
-  members,
+  users,
   streams,
   streamTypes,
   statusOptions,
@@ -59,7 +59,7 @@ export function FilterSelect({
   let content: React.ReactNode = null
 
   if (type === "from" || type === "with") {
-    content = <UserSelect members={members} onSelect={onSelect} />
+    content = <UserSelect users={users} onSelect={onSelect} />
   } else if (type === "type") {
     content = <StreamTypeSelect streamTypes={streamTypes} onSelect={onSelect} />
   } else if (type === "status" && statusOptions) {
@@ -76,32 +76,36 @@ export function FilterSelect({
 }
 
 interface UserSelectProps {
-  members: User[]
+  users: User[]
   onSelect: (value: string, label: string) => void
 }
 
-function UserSelect({ members, onSelect }: UserSelectProps) {
+function UserSelect({ users, onSelect }: UserSelectProps) {
   const [search, setSearch] = useState("")
 
   const filtered = useMemo(() => {
     const searchLower = search.toLowerCase()
-    return members.filter((m) => {
-      const name = m.name || m.slug
-      return name.toLowerCase().includes(searchLower) || m.slug.toLowerCase().includes(searchLower)
+    return users.filter((u) => {
+      const name = u.name || u.slug
+      return name.toLowerCase().includes(searchLower) || u.slug.toLowerCase().includes(searchLower)
     })
-  }, [members, search])
+  }, [users, search])
 
   return (
     <div className="w-48">
       <Command className="border rounded-md">
-        <CommandInput placeholder="Search members..." value={search} onValueChange={setSearch} className="h-8" />
+        <CommandInput placeholder="Search users..." value={search} onValueChange={setSearch} className="h-8" />
         <CommandList className="max-h-32">
-          <CommandEmpty>No members found.</CommandEmpty>
+          <CommandEmpty>No users found.</CommandEmpty>
           <CommandGroup>
-            {filtered.slice(0, 10).map((member) => {
-              const name = member.name || member.slug
+            {filtered.slice(0, 10).map((workspaceUser) => {
+              const name = workspaceUser.name || workspaceUser.slug
               return (
-                <CommandItem key={member.id} value={member.id} onSelect={() => onSelect(member.id, name)}>
+                <CommandItem
+                  key={workspaceUser.id}
+                  value={workspaceUser.id}
+                  onSelect={() => onSelect(workspaceUser.id, name)}
+                >
                   {name}
                 </CommandItem>
               )

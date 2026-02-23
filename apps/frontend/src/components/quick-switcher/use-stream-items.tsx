@@ -64,8 +64,8 @@ export function useStreamItems(context: ModeContext): ModeResult {
   const {
     streams: activeStreams,
     streamMemberships,
-    members,
-    currentMemberId,
+    users,
+    currentUserId,
     dmPeers,
     query,
     onQueryChange,
@@ -137,7 +137,7 @@ export function useStreamItems(context: ModeContext): ModeResult {
 
   const items = useMemo(() => {
     const lowerQuery = searchText.toLowerCase()
-    const memberById = new Map((members ?? []).map((member) => [member.id, member]))
+    const usersById = new Map((users ?? []).map((workspaceUser) => [workspaceUser.id, workspaceUser]))
     const dmPeerByStreamId = new Map((dmPeers ?? []).map((peer) => [peer.streamId, peer.memberId]))
 
     // Combine streams based on filters
@@ -190,9 +190,9 @@ export function useStreamItems(context: ModeContext): ModeResult {
 
         let avatarUrl: string | undefined
         if (stream.type === StreamTypes.DM) {
-          const peerMemberId = dmPeerByStreamId.get(stream.id)
-          const peerMember = peerMemberId ? memberById.get(peerMemberId) : undefined
-          avatarUrl = getAvatarUrl(workspaceId, peerMember?.avatarUrl, 64)
+          const peerUserId = dmPeerByStreamId.get(stream.id)
+          const peerUser = peerUserId ? usersById.get(peerUserId) : undefined
+          avatarUrl = getAvatarUrl(workspaceId, peerUser?.avatarUrl, 64)
         }
 
         return {
@@ -210,8 +210,8 @@ export function useStreamItems(context: ModeContext): ModeResult {
       })
 
     const canShowVirtualDms =
-      Boolean(currentMemberId) &&
-      Boolean(members) &&
+      Boolean(currentUserId) &&
+      Boolean(users) &&
       showActive &&
       (typeFilters.length === 0 || typeFilters.includes(StreamTypes.DM))
 
@@ -220,28 +220,28 @@ export function useStreamItems(context: ModeContext): ModeResult {
     }
 
     const existingDmPeerIds = new Set((dmPeers ?? []).map((peer) => peer.memberId))
-    const virtualDmItems = members!
-      .filter((member) => member.id !== currentMemberId)
-      .filter((member) => !existingDmPeerIds.has(member.id))
-      .map((member) => {
-        const name = member.name
+    const virtualDmItems = users!
+      .filter((workspaceUser) => workspaceUser.id !== currentUserId)
+      .filter((workspaceUser) => !existingDmPeerIds.has(workspaceUser.id))
+      .map((workspaceUser) => {
+        const name = workspaceUser.name
         const score = searchText ? (name.toLowerCase().includes(lowerQuery) ? 0 : Infinity) : 0
-        return { member, score }
+        return { workspaceUser, score }
       })
       .filter(({ score }) => score !== Infinity)
-      .sort((a, b) => a.member.name.localeCompare(b.member.name))
+      .sort((a, b) => a.workspaceUser.name.localeCompare(b.workspaceUser.name))
       .map(
-        ({ member }): QuickSwitcherItem => ({
-          id: createDmDraftId(member.id),
-          label: member.name,
+        ({ workspaceUser }): QuickSwitcherItem => ({
+          id: createDmDraftId(workspaceUser.id),
+          label: workspaceUser.name,
           description: "Direct Message · Start conversation",
           icon: STREAM_ICONS[StreamTypes.DM],
-          avatarUrl: getAvatarUrl(workspaceId, member.avatarUrl, 64),
-          group: "Members",
-          href: `/w/${workspaceId}/s/${createDmDraftId(member.id)}`,
+          avatarUrl: getAvatarUrl(workspaceId, workspaceUser.avatarUrl, 64),
+          group: "Users",
+          href: `/w/${workspaceId}/s/${createDmDraftId(workspaceUser.id)}`,
           onSelect: () => {
             closeDialog()
-            navigate(`/w/${workspaceId}/s/${createDmDraftId(member.id)}`)
+            navigate(`/w/${workspaceId}/s/${createDmDraftId(workspaceUser.id)}`)
           },
         })
       )
@@ -250,9 +250,9 @@ export function useStreamItems(context: ModeContext): ModeResult {
   }, [
     activeStreams,
     archivedStreams,
-    currentMemberId,
+    currentUserId,
     dmPeers,
-    members,
+    users,
     searchText,
     showActive,
     showArchived,
@@ -284,7 +284,7 @@ export function useStreamItems(context: ModeContext): ModeResult {
           {addingFilter && (
             <FilterSelect
               type={addingFilter}
-              members={[]} // Not needed for stream status/type
+              users={[]} // Not needed for stream status/type
               streams={[]} // Not needed
               streamTypes={STREAM_TYPE_OPTIONS}
               statusOptions={ARCHIVE_STATUS_OPTIONS}

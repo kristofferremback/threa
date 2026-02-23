@@ -28,7 +28,7 @@ export function SidebarFooter({ workspaceId, currentUser }: SidebarFooterProps) 
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev)
-        next.set("ws-settings", "members")
+        next.set("ws-settings", "users")
         return next
       },
       { replace: true }

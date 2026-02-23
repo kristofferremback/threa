@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import { SearchableList } from "@/components/ui/searchable-list"
-import { renderMemberItem, type MemberItem } from "@/components/ui/member-list-item"
+import { renderUserListItem, type UserListItem } from "@/components/ui/user-list-item"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -81,7 +81,7 @@ export function MembersTab({ workspaceId, streamId, currentMemberId }: MembersTa
     return enrichedMembers.filter((m) => m.name.toLowerCase().includes(q) || m.slug.toLowerCase().includes(q))
   }, [enrichedMembers, search])
 
-  const availableToAdd = useMemo((): MemberItem[] => {
+  const availableToAdd = useMemo((): UserListItem[] => {
     if (!addSearch) return []
     const q = addSearch.toLowerCase()
     return workspaceUsers
@@ -98,7 +98,7 @@ export function MembersTab({ workspaceId, streamId, currentMemberId }: MembersTa
   }, [workspaceUsers, streamMemberIds, addSearch])
 
   const handleAdd = useCallback(
-    (item: MemberItem) => {
+    (item: UserListItem) => {
       addMutation.mutate(item.id, {
         onSuccess: () => {
           toast.success("Member added")
@@ -184,12 +184,12 @@ export function MembersTab({ workspaceId, streamId, currentMemberId }: MembersTa
           <Label className="text-sm font-medium">Add member</Label>
           <SearchableList
             items={availableToAdd}
-            renderItem={renderMemberItem}
+            renderItem={renderUserListItem}
             onSelect={handleAdd}
             search={addSearch}
             onSearchChange={setAddSearch}
             placeholder="Search workspace users..."
-            emptyMessage="No matching members"
+            emptyMessage="No matching users"
             icon={UserPlus}
           />
         </div>

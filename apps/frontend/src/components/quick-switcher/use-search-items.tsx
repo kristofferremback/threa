@@ -48,19 +48,19 @@ export function useSearchItems(context: ModeContext): ModeResult {
 
   const [addingFilter, setAddingFilter] = useState<FilterType | null>(null)
 
-  const members = useMemo(() => bootstrap?.users ?? [], [bootstrap?.users])
+  const users = useMemo(() => bootstrap?.users ?? [], [bootstrap?.users])
   const streams = useMemo(() => bootstrap?.streams ?? [], [bootstrap?.streams])
 
   // Parse filters from query string (single source of truth)
   const { filters: parsedFilters, text: searchText } = useMemo(() => parseSearchQuery(query), [query])
 
-  // Resolve slug to member ID (slugs live on workspace user records).
+  // Resolve slug to user ID (slugs live on workspace user records).
   const resolveUserSlug = useCallback(
     (slug: string): string | null => {
-      const member = members.find((m) => m.slug === slug)
-      return member?.id ?? null
+      const workspaceUser = users.find((u) => u.slug === slug)
+      return workspaceUser?.id ?? null
     },
-    [members]
+    [users]
   )
 
   // Resolve slug to stream ID
@@ -200,7 +200,7 @@ export function useSearchItems(context: ModeContext): ModeResult {
           {addingFilter && (
             <FilterSelect
               type={addingFilter}
-              members={members}
+              users={users}
               streams={streams}
               streamTypes={STREAM_TYPE_OPTIONS}
               statusOptions={ARCHIVE_STATUS_OPTIONS}

@@ -20,20 +20,20 @@ function useCurrentUser(workspaceId: string): User | null {
 
 export function ProfileSettings() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
-  const member = useCurrentUser(workspaceId!)
+  const currentUser = useCurrentUser(workspaceId!)
   const updateProfile = useUpdateProfile(workspaceId!)
 
   const [name, setName] = useState<string | null>(null)
   const [description, setDescription] = useState<string | null>(null)
 
-  if (!member) return null
+  if (!currentUser) return null
 
   // Use local state if edited, otherwise show server value
-  const currentName = name ?? member.name
-  const currentDescription = description ?? member.description ?? ""
+  const currentName = name ?? currentUser.name
+  const currentDescription = description ?? currentUser.description ?? ""
 
-  const nameChanged = name !== null && name !== member.name
-  const descriptionChanged = description !== null && (description || null) !== (member.description || null)
+  const nameChanged = name !== null && name !== currentUser.name
+  const descriptionChanged = description !== null && (description || null) !== (currentUser.description || null)
   const nameValid = currentName.trim().length > 0
 
   const handleSaveName = async () => {
@@ -69,7 +69,7 @@ export function ProfileSettings() {
     <div className="space-y-6">
       <div>
         <h3 className="text-sm font-medium mb-3">Photo</h3>
-        <AvatarSection workspaceId={workspaceId!} memberName={member.name} avatarUrl={member.avatarUrl} />
+        <AvatarSection workspaceId={workspaceId!} userName={currentUser.name} avatarUrl={currentUser.avatarUrl} />
       </div>
 
       <div>

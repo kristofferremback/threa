@@ -38,7 +38,7 @@ export function useMentionables() {
   const mentionables = useMemo<Mentionable[]>(() => {
     if (!bootstrap) return BROADCAST_MENTIONS
 
-    // Build member mentionables from workspace-scoped member profile.
+    // Build user mentionables from workspace-scoped user profiles.
     const currentUserId = currentUser?.id
     const workspaceUsers = bootstrap.users
     const users: Mentionable[] = workspaceUsers.map((u) => ({

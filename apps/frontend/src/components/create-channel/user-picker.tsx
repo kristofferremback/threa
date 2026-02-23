@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import { SearchableList } from "@/components/ui/searchable-list"
-import { renderMemberItem, type MemberItem } from "@/components/ui/member-list-item"
+import { renderUserListItem, type UserListItem } from "@/components/ui/user-list-item"
 import { UserPlus, X } from "lucide-react"
 import { workspaceKeys } from "@/hooks"
 import { getInitials } from "@/lib/initials"
@@ -33,7 +33,7 @@ export function UserPicker({ workspaceId, currentUserId, selectedUserIds, onChan
   const selectedSet = useMemo(() => new Set(selectedUserIds), [selectedUserIds])
 
   // Users available to add: not current user, not already selected
-  const availableToAdd = useMemo((): MemberItem[] => {
+  const availableToAdd = useMemo((): UserListItem[] => {
     if (!search) return []
     const q = search.toLowerCase()
     return workspaceUsers
@@ -58,7 +58,7 @@ export function UserPicker({ workspaceId, currentUserId, selectedUserIds, onChan
   }, [selectedUserIds, workspaceUsers])
 
   const handleSelect = useCallback(
-    (item: MemberItem) => {
+    (item: UserListItem) => {
       onChange([...selectedUserIds, item.id])
       setSearch("")
     },
@@ -103,10 +103,10 @@ export function UserPicker({ workspaceId, currentUserId, selectedUserIds, onChan
         </div>
       )}
 
-      {/* Searchable member list with keyboard navigation */}
+      {/* Searchable user list with keyboard navigation */}
       <SearchableList
         items={availableToAdd}
-        renderItem={renderMemberItem}
+        renderItem={renderUserListItem}
         onSelect={handleSelect}
         search={search}
         onSearchChange={setSearch}

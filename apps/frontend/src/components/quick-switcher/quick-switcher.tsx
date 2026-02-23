@@ -90,10 +90,10 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
 
   const streams = useMemo(() => bootstrap?.streams ?? [], [bootstrap?.streams])
   const streamMemberships = useMemo(() => bootstrap?.streamMemberships ?? [], [bootstrap?.streamMemberships])
-  const members = useMemo(() => bootstrap?.users ?? [], [bootstrap?.users])
-  const currentMemberId = useMemo(
-    () => members.find((member) => member.workosUserId === user?.id)?.id ?? null,
-    [members, user?.id]
+  const users = useMemo(() => bootstrap?.users ?? [], [bootstrap?.users])
+  const currentUserId = useMemo(
+    () => users.find((workspaceUser) => workspaceUser.workosUserId === user?.id)?.id ?? null,
+    [users, user?.id]
   )
   const dmPeers = bootstrap?.dmPeers
 
@@ -147,8 +147,8 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
     closeDialog: handleClose,
     streams,
     streamMemberships,
-    members,
-    currentMemberId,
+    users,
+    currentUserId,
     dmPeers,
   })
 

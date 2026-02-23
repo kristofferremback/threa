@@ -7,7 +7,7 @@ import { DraftsPage } from "@/pages/drafts"
 import { ThreadsPage } from "@/pages/threads"
 import { ActivityPage } from "@/pages/activity"
 import { AIUsageAdminPage } from "@/pages/ai-usage-admin"
-import { MemberSetupPage } from "@/pages/member-setup"
+import { UserSetupPage } from "@/pages/user-setup"
 import { ErrorBoundary } from "@/components/error-boundary"
 
 export const router = createBrowserRouter([
@@ -53,7 +53,7 @@ export const router = createBrowserRouter([
       },
       {
         path: "setup",
-        element: <MemberSetupPage />,
+        element: <UserSetupPage />,
       },
       {
         path: "admin/ai-usage",
