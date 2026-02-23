@@ -88,7 +88,7 @@ export function useWorkspaceBootstrap(workspaceId: string) {
       // Cache all data to IndexedDB
       await Promise.all([
         db.workspaces.put({ ...bootstrap.workspace, _cachedAt: now }),
-        db.workspaceMembers.bulkPut(
+        db.workspaceUsers.bulkPut(
           users.map((u) => ({
             ...u,
             _cachedAt: now,
@@ -171,7 +171,7 @@ function updateUserInBootstrap(queryClient: ReturnType<typeof useQueryClient>, w
     }
   })
 
-  db.workspaceMembers.put({ ...updatedUser, _cachedAt: Date.now() })
+  db.workspaceUsers.put({ ...updatedUser, _cachedAt: Date.now() })
 }
 
 export function useUpdateProfile(workspaceId: string) {

@@ -1,7 +1,7 @@
 export { db, clearAllCachedData, clearPendingMessages } from "./database"
 export type {
   CachedWorkspace,
-  CachedWorkspaceMember,
+  CachedWorkspaceUser,
   CachedStream,
   CachedEvent,
   PendingMessage,

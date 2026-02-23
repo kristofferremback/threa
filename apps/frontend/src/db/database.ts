@@ -12,8 +12,8 @@ export interface CachedWorkspace {
   _cachedAt: number
 }
 
-export interface CachedWorkspaceMember {
-  id: string // member ID (member_xxx)
+export interface CachedWorkspaceUser {
+  id: string // workspace user ID (legacy prefix: member_xxx)
   workspaceId: string
   workosUserId: string
   email: string
@@ -131,7 +131,7 @@ export interface DraftMessage {
 // Database class with typed tables
 class ThreaDatabase extends Dexie {
   workspaces!: EntityTable<CachedWorkspace, "id">
-  workspaceMembers!: EntityTable<CachedWorkspaceMember, "id">
+  workspaceUsers!: EntityTable<CachedWorkspaceUser, "id">
   streams!: EntityTable<CachedStream, "id">
   events!: EntityTable<CachedEvent, "id">
   personas!: EntityTable<CachedPersona, "id">
@@ -177,8 +177,8 @@ class ThreaDatabase extends Dexie {
         return tx.table("draftMessages").clear()
       })
 
-    // v7: Member identity refactor — members now have their own ID, slug, timezone, locale.
-    // Users no longer have slug. Clear workspace members cache to re-fetch with new shape.
+    // v7: Workspace user identity refactor — users now have their own ID, slug, timezone, locale.
+    // Global users cache no longer has slug. Clear workspace user cache to re-fetch with new shape.
     this.version(7)
       .stores({
         workspaceMembers: "id, workspaceId, userId, slug, _cachedAt",
@@ -188,31 +188,31 @@ class ThreaDatabase extends Dexie {
         return Promise.all([tx.table("workspaceMembers").clear(), tx.table("users").clear()])
       })
 
-    // v8: Added setupCompleted to workspace members for invitation flow.
-    // Clear members cache to re-fetch with new shape.
+    // v8: Added setupCompleted to workspace users for invitation flow.
+    // Clear workspace user cache to re-fetch with new shape.
     this.version(8)
       .stores({})
       .upgrade((tx) => {
         return tx.table("workspaceMembers").clear()
       })
 
-    // v9: Added name to workspace members (workspace-scoped display name).
-    // Clear members cache to re-fetch with new shape.
+    // v9: Added name to workspace users (workspace-scoped display name).
+    // Clear workspace user cache to re-fetch with new shape.
     this.version(9)
       .stores({})
       .upgrade((tx) => {
         return tx.table("workspaceMembers").clear()
       })
 
-    // v10: Added description and avatarUrl to workspace members (profile fields).
-    // Clear members cache to re-fetch with new shape.
+    // v10: Added description and avatarUrl to workspace users (profile fields).
+    // Clear workspace user cache to re-fetch with new shape.
     this.version(10)
       .stores({})
       .upgrade((tx) => {
         return tx.table("workspaceMembers").clear()
       })
 
-    // v11: Remove cached users table and move WorkOS identity/email onto members.
+    // v11: Remove cached global users table and move WorkOS identity/email onto workspace users.
     this.version(11)
       .stores({
         workspaceMembers: "id, workspaceId, workosUserId, email, slug, _cachedAt",
@@ -221,6 +221,9 @@ class ThreaDatabase extends Dexie {
       .upgrade((tx) => {
         return tx.table("workspaceMembers").clear()
       })
+
+    // Workspace users are stored in IndexedDB object store "workspaceMembers" for migration compatibility.
+    this.workspaceUsers = this.table("workspaceMembers") as EntityTable<CachedWorkspaceUser, "id">
   }
 }
 
@@ -231,7 +234,7 @@ export const db = new ThreaDatabase()
 export async function clearAllCachedData(): Promise<void> {
   await Promise.all([
     db.workspaces.clear(),
-    db.workspaceMembers.clear(),
+    db.workspaceUsers.clear(),
     db.streams.clear(),
     db.events.clear(),
     db.personas.clear(),

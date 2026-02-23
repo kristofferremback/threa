@@ -58,20 +58,22 @@ export function MembersTab({ workspaceId, streamId, currentMemberId }: MembersTa
   const streamType = bootstrap?.stream?.type
   const canAddMembers = streamType === StreamTypes.CHANNEL || streamType === StreamTypes.THREAD
   const streamMembers = bootstrap?.members ?? []
-  const workspaceMembers = wsBootstrap?.users ?? []
-  const currentWorkspaceMember = workspaceMembers.find((m) => m.id === currentMemberId)
-  const canManageMembers = currentWorkspaceMember?.role === "owner" || currentWorkspaceMember?.role === "admin"
+  const workspaceUsers = wsBootstrap?.users ?? []
+  const currentWorkspaceUser = workspaceUsers.find((u) => u.id === currentMemberId)
+  const canManageMembers = currentWorkspaceUser?.role === "owner" || currentWorkspaceUser?.role === "admin"
 
   const streamMemberIds = useMemo(() => new Set(streamMembers.map((m) => m.memberId)), [streamMembers])
 
   const enrichedMembers = useMemo(() => {
     return streamMembers
       .map((sm) => {
-        const wm = workspaceMembers.find((m) => m.id === sm.memberId)
-        return wm ? { ...sm, name: wm.name, slug: wm.slug, role: wm.role } : null
+        const workspaceUser = workspaceUsers.find((u) => u.id === sm.memberId)
+        return workspaceUser
+          ? { ...sm, name: workspaceUser.name, slug: workspaceUser.slug, role: workspaceUser.role }
+          : null
       })
       .filter(Boolean) as (StreamMember & { name: string; slug: string; role: string })[]
-  }, [streamMembers, workspaceMembers])
+  }, [streamMembers, workspaceUsers])
 
   const filteredMembers = useMemo(() => {
     if (!search) return enrichedMembers
@@ -82,7 +84,7 @@ export function MembersTab({ workspaceId, streamId, currentMemberId }: MembersTa
   const availableToAdd = useMemo((): MemberItem[] => {
     if (!addSearch) return []
     const q = addSearch.toLowerCase()
-    return workspaceMembers
+    return workspaceUsers
       .filter(
         (m) => !streamMemberIds.has(m.id) && (m.name.toLowerCase().includes(q) || m.slug.toLowerCase().includes(q))
       )
@@ -93,7 +95,7 @@ export function MembersTab({ workspaceId, streamId, currentMemberId }: MembersTa
         slug: m.slug,
         name: m.name,
       }))
-  }, [workspaceMembers, streamMemberIds, addSearch])
+  }, [workspaceUsers, streamMemberIds, addSearch])
 
   const handleAdd = useCallback(
     (item: MemberItem) => {
@@ -186,7 +188,7 @@ export function MembersTab({ workspaceId, streamId, currentMemberId }: MembersTa
             onSelect={handleAdd}
             search={addSearch}
             onSearchChange={setAddSearch}
-            placeholder="Search workspace members..."
+            placeholder="Search workspace users..."
             emptyMessage="No matching members"
             icon={UserPlus}
           />

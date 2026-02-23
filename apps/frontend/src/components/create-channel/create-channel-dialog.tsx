@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Hash, Loader2 } from "lucide-react"
 import { ChannelSlugInput } from "@/components/stream-settings/channel-slug-input"
 import { VisibilityPicker } from "@/components/ui/visibility-picker"
-import { MemberPicker } from "./member-picker"
+import { UserPicker } from "./user-picker"
 import { useCreateChannel } from "./use-create-channel"
 import { useCreateStream, workspaceKeys } from "@/hooks"
 import { useAuth } from "@/auth"
@@ -139,9 +139,9 @@ export function CreateChannelDialog({ workspaceId }: CreateChannelDialogProps) {
   const [slugValid, setSlugValid] = useState(false)
   const [visibility, setVisibility] = useState<Visibility>("public")
   const [description, setDescription] = useState("")
-  const [memberIds, setMemberIds] = useState<string[]>([])
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([])
 
-  // Cache-only observer for workspace bootstrap to get current member
+  // Cache-only observer for workspace bootstrap to get current workspace user
   const { data: wsBootstrap } = useQuery({
     queryKey: workspaceKeys.bootstrap(workspaceId),
     queryFn: () => queryClient.getQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId)) ?? null,
@@ -149,7 +149,7 @@ export function CreateChannelDialog({ workspaceId }: CreateChannelDialogProps) {
     staleTime: Infinity,
   })
 
-  const currentMemberId = useMemo(() => {
+  const currentUserId = useMemo(() => {
     if (!wsBootstrap || !user) return null
     const users = wsBootstrap.users
     return users.find((u) => u.workosUserId === user.id)?.id ?? null
@@ -160,7 +160,7 @@ export function CreateChannelDialog({ workspaceId }: CreateChannelDialogProps) {
     setSlugValid(false)
     setVisibility("public")
     setDescription("")
-    setMemberIds([])
+    setSelectedUserIds([])
   }, [])
 
   const handleOpenChange = useCallback(
@@ -182,7 +182,7 @@ export function CreateChannelDialog({ workspaceId }: CreateChannelDialogProps) {
         slug,
         description: description || undefined,
         visibility,
-        memberIds: memberIds.length > 0 ? memberIds : undefined,
+        memberIds: selectedUserIds.length > 0 ? selectedUserIds : undefined,
       })
       closeCreateChannel()
       resetForm()
@@ -196,7 +196,7 @@ export function CreateChannelDialog({ workspaceId }: CreateChannelDialogProps) {
     slugValid,
     description,
     visibility,
-    memberIds,
+    selectedUserIds,
     createStream,
     closeCreateChannel,
     resetForm,
@@ -215,12 +215,12 @@ export function CreateChannelDialog({ workspaceId }: CreateChannelDialogProps) {
           <SlugField workspaceId={workspaceId} value={slug} onChange={setSlug} onValidityChange={setSlugValid} />
           <VisibilityField value={visibility} onChange={setVisibility} />
           <DescriptionField value={description} onChange={setDescription} />
-          {currentMemberId && (
-            <MemberPicker
+          {currentUserId && (
+            <UserPicker
               workspaceId={workspaceId}
-              currentMemberId={currentMemberId}
-              selectedMemberIds={memberIds}
-              onChange={setMemberIds}
+              currentUserId={currentUserId}
+              selectedUserIds={selectedUserIds}
+              onChange={setSelectedUserIds}
             />
           )}
         </div>

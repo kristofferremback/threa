@@ -57,12 +57,12 @@ function withWorkspaceUsers(bootstrap: WorkspaceBootstrap, users: User[]): Works
   }
 }
 
-function toWorkspaceUser(member: MemberWithDisplay): User {
-  return { ...member }
+function toWorkspaceUser(user: WorkspaceUserPayload): User {
+  return { ...user }
 }
 
-/** Member shape from MemberRepository. */
-interface MemberWithDisplay {
+/** Workspace user shape from backend user repository. */
+interface WorkspaceUserPayload {
   id: string
   workspaceId: string
   workosUserId: string
@@ -85,19 +85,19 @@ interface StreamPayload {
   dmMemberIds?: [string, string]
 }
 
-interface WorkspaceMemberAddedPayload {
+interface WorkspaceUserAddedPayload {
   workspaceId: string
-  member: MemberWithDisplay
+  member: WorkspaceUserPayload
 }
 
-interface WorkspaceMemberRemovedPayload {
+interface WorkspaceUserRemovedPayload {
   workspaceId: string
   userId: string
 }
 
-interface MemberUpdatedPayload {
+interface WorkspaceUserUpdatedPayload {
   workspaceId: string
-  member: MemberWithDisplay
+  member: WorkspaceUserPayload
 }
 
 interface StreamReadPayload {
@@ -368,29 +368,29 @@ export function useSocketEvents(workspaceId: string) {
       db.streams.put({ ...payload.stream, _cachedAt: Date.now() })
     })
 
-    // Handle workspace member added
-    socket.on("workspace_member:added", (payload: WorkspaceMemberAddedPayload) => {
+    // Handle workspace user added
+    socket.on("workspace_member:added", (payload: WorkspaceUserAddedPayload) => {
       const now = Date.now()
-      const { member } = payload
+      const { member: user } = payload
 
-      // Update workspace bootstrap cache - add member and user if not present
+      // Update workspace bootstrap cache with user if not already present.
       updateBootstrapOrInvalidate(queryClient, workspaceId, (old) => {
         const users = getWorkspaceUsers(old)
-        const incomingUser = toWorkspaceUser(member)
-        const updatedUsers = users.some((u) => u.id === member.id) ? users : [...users, incomingUser]
+        const incomingUser = toWorkspaceUser(user)
+        const updatedUsers = users.some((u) => u.id === user.id) ? users : [...users, incomingUser]
 
         return withWorkspaceUsers(old, updatedUsers)
       })
 
-      // Cache member to IndexedDB
-      db.workspaceMembers.put({
-        ...toWorkspaceUser(member),
+      // Cache user to IndexedDB
+      db.workspaceUsers.put({
+        ...toWorkspaceUser(user),
         _cachedAt: now,
       })
     })
 
-    // Handle workspace member removed
-    socket.on("workspace_member:removed", (payload: WorkspaceMemberRemovedPayload) => {
+    // Handle workspace user removed
+    socket.on("workspace_member:removed", (payload: WorkspaceUserRemovedPayload) => {
       // Update workspace bootstrap cache
       queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), (old: unknown) => {
         if (!old || typeof old !== "object") return old
@@ -398,33 +398,33 @@ export function useSocketEvents(workspaceId: string) {
         const users = getWorkspaceUsers(bootstrap)
         return withWorkspaceUsers(
           bootstrap,
-          users.filter((u) => u.id !== payload.userId)
+          users.filter((u) => u.id !== payload.removedUserId)
         )
       })
 
-      // Remove from IndexedDB workspace members
-      db.workspaceMembers.delete(payload.userId)
+      // Remove from IndexedDB workspace users
+      db.workspaceUsers.delete(payload.removedUserId)
     })
 
-    // Handle member updated
-    socket.on("member:updated", (payload: MemberUpdatedPayload) => {
+    // Handle workspace user updated
+    socket.on("member:updated", (payload: WorkspaceUserUpdatedPayload) => {
       const now = Date.now()
-      const { member } = payload
+      const { member: user } = payload
 
       // Update workspace bootstrap cache.
       queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), (old: unknown) => {
         if (!old || typeof old !== "object") return old
         const bootstrap = old as WorkspaceBootstrap
         const users = getWorkspaceUsers(bootstrap)
-        const incomingUser = toWorkspaceUser(member)
-        const updatedUsers = users.map((u) => (u.id === member.id ? incomingUser : u))
+        const incomingUser = toWorkspaceUser(user)
+        const updatedUsers = users.map((u) => (u.id === user.id ? incomingUser : u))
 
         return withWorkspaceUsers(bootstrap, updatedUsers)
       })
 
       // Update IndexedDB
-      db.workspaceMembers.put({
-        ...toWorkspaceUser(member),
+      db.workspaceUsers.put({
+        ...toWorkspaceUser(user),
         _cachedAt: now,
       })
     })
