@@ -4,7 +4,7 @@ import { sql, type Querier } from "../../db"
  * Internal row type for preference overrides (snake_case)
  */
 interface PreferenceOverrideRow {
-  member_id: string
+  user_id: string
   key: string
   value: unknown
   created_at: Date
@@ -28,7 +28,7 @@ export const UserPreferencesRepository = {
     const result = await db.query<PreferenceOverrideRow>(sql`
       SELECT key, value
       FROM user_preference_overrides
-      WHERE member_id = ${memberId}
+      WHERE user_id = ${memberId}
     `)
     return result.rows.map((row) => ({
       key: row.key,
@@ -42,9 +42,9 @@ export const UserPreferencesRepository = {
    */
   async setOverride(db: Querier, memberId: string, key: string, value: unknown): Promise<void> {
     await db.query(sql`
-      INSERT INTO user_preference_overrides (member_id, key, value)
+      INSERT INTO user_preference_overrides (user_id, key, value)
       VALUES (${memberId}, ${key}, ${JSON.stringify(value)}::jsonb)
-      ON CONFLICT (member_id, key) DO UPDATE SET
+      ON CONFLICT (user_id, key) DO UPDATE SET
         value = ${JSON.stringify(value)}::jsonb,
         updated_at = NOW()
     `)
@@ -56,7 +56,7 @@ export const UserPreferencesRepository = {
   async deleteOverride(db: Querier, memberId: string, key: string): Promise<void> {
     await db.query(sql`
       DELETE FROM user_preference_overrides
-      WHERE member_id = ${memberId}
+      WHERE user_id = ${memberId}
         AND key = ${key}
     `)
   },
@@ -83,9 +83,9 @@ export const UserPreferencesRepository = {
     }
 
     await db.query(
-      `INSERT INTO user_preference_overrides (member_id, key, value)
+      `INSERT INTO user_preference_overrides (user_id, key, value)
        VALUES ${placeholders.join(", ")}
-       ON CONFLICT (member_id, key) DO UPDATE SET
+       ON CONFLICT (user_id, key) DO UPDATE SET
          value = EXCLUDED.value,
          updated_at = NOW()`,
       values
@@ -100,7 +100,7 @@ export const UserPreferencesRepository = {
 
     await db.query(sql`
       DELETE FROM user_preference_overrides
-      WHERE member_id = ${memberId}
+      WHERE user_id = ${memberId}
         AND key = ANY(${keys})
     `)
   },
@@ -111,7 +111,7 @@ export const UserPreferencesRepository = {
   async deleteAllOverrides(db: Querier, memberId: string): Promise<void> {
     await db.query(sql`
       DELETE FROM user_preference_overrides
-      WHERE member_id = ${memberId}
+      WHERE user_id = ${memberId}
     `)
   },
 }

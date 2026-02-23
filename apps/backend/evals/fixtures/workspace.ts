@@ -6,7 +6,7 @@
 
 import type { Pool } from "pg"
 import { withTransaction } from "../../src/db"
-import { WorkspaceRepository } from "../../src/features/workspaces"
+import { WorkspaceRepository, UserRepository } from "../../src/features/workspaces"
 import { workspaceId, memberId } from "../../src/lib/id"
 
 /**
@@ -47,7 +47,7 @@ export async function createWorkspaceFixture(pool: Pool): Promise<WorkspaceFixtu
     })
 
     // Add owner user
-    await WorkspaceRepository.addUser(client, {
+    await UserRepository.insert(client, {
       id: ownerMemberId,
       workspaceId: workspace.id,
       workosUserId,
@@ -90,7 +90,7 @@ export async function createAdditionalUser(
 
   const result = await withTransaction(pool, async (client) => {
     // Add to workspace as user
-    await WorkspaceRepository.addUser(client, {
+    await UserRepository.insert(client, {
       id: memberId(),
       workspaceId,
       workosUserId,

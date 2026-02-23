@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from "express"
 import type { Pool } from "pg"
-import { UserRepository, type User, WorkspaceRepository } from "../features/workspaces"
+import { UserRepository, type User } from "../features/workspaces"
 
 declare global {
   namespace Express {
@@ -28,12 +28,12 @@ export function createWorkspaceUserMiddleware({ pool }: Dependencies) {
       return res.status(401).json({ error: "Not authenticated" })
     }
 
-    const workspace = await WorkspaceRepository.findById(pool, workspaceId)
-    if (!workspace) {
+    const access = await UserRepository.findWorkspaceUserAccess(pool, workspaceId, workosUserId)
+    if (!access.workspaceExists) {
       return res.status(404).json({ error: "Workspace not found" })
     }
 
-    const user = await UserRepository.findByWorkosUserIdInWorkspace(pool, workspaceId, workosUserId)
+    const user = access.user
     if (!user) {
       return res.status(403).json({ error: "Not a member of this workspace" })
     }

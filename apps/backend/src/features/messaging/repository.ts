@@ -19,7 +19,7 @@ interface MessageRow {
 
 interface ReactionRow {
   message_id: string
-  member_id: string
+  user_id: string
   emoji: string
 }
 
@@ -72,7 +72,7 @@ function aggregateReactions(rows: ReactionRow[]): Record<string, string[]> {
     if (!result[row.emoji]) {
       result[row.emoji] = []
     }
-    result[row.emoji].push(row.member_id)
+    result[row.emoji].push(row.user_id)
   }
   // Filter out empty arrays (shouldn't happen, but defensive)
   for (const emoji of Object.keys(result)) {
@@ -118,7 +118,7 @@ export const MessageRepository = {
     if (!result.rows[0]) return null
 
     const reactionsResult = await db.query<ReactionRow>(
-      sql`SELECT message_id, member_id, emoji FROM reactions WHERE message_id = ${id}`
+      sql`SELECT message_id, user_id, emoji FROM reactions WHERE message_id = ${id}`
     )
     const reactions = aggregateReactions(reactionsResult.rows)
 
@@ -136,7 +136,7 @@ export const MessageRepository = {
     if (result.rows.length === 0) return new Map()
 
     const reactionsResult = await db.query<ReactionRow>(sql`
-      SELECT message_id, member_id, emoji FROM reactions
+      SELECT message_id, user_id, emoji FROM reactions
       WHERE message_id = ANY(${ids})
     `)
     const reactionsByMessage = aggregateReactionsByMessage(reactionsResult.rows)
@@ -177,7 +177,7 @@ export const MessageRepository = {
 
     const messageIds = messageRows.map((r) => r.id)
     const reactionsResult = await db.query<ReactionRow>(sql`
-      SELECT message_id, member_id, emoji FROM reactions
+      SELECT message_id, user_id, emoji FROM reactions
       WHERE message_id = ANY(${messageIds})
     `)
     const reactionsByMessage = aggregateReactionsByMessage(reactionsResult.rows)
@@ -231,7 +231,7 @@ export const MessageRepository = {
 
   async addReaction(db: Querier, messageId: string, emoji: string, memberId: string): Promise<Message | null> {
     await db.query(sql`
-      INSERT INTO reactions (message_id, member_id, emoji)
+      INSERT INTO reactions (message_id, user_id, emoji)
       VALUES (${messageId}, ${memberId}, ${emoji})
       ON CONFLICT DO NOTHING
     `)
@@ -242,7 +242,7 @@ export const MessageRepository = {
     await db.query(sql`
       DELETE FROM reactions
       WHERE message_id = ${messageId}
-        AND member_id = ${memberId}
+        AND user_id = ${memberId}
         AND emoji = ${emoji}
     `)
     return this.findById(db, messageId)
@@ -323,7 +323,7 @@ export const MessageRepository = {
     // Fetch reactions for all messages
     const messageIds = result.rows.map((r) => r.id)
     const reactionsResult = await db.query<ReactionRow>(sql`
-      SELECT message_id, member_id, emoji FROM reactions
+      SELECT message_id, user_id, emoji FROM reactions
       WHERE message_id = ANY(${messageIds})
     `)
     const reactionsByMessage = aggregateReactionsByMessage(reactionsResult.rows)
@@ -386,7 +386,7 @@ export const MessageRepository = {
 
     const messageIds = result.rows.map((r) => r.id)
     const reactionsResult = await db.query<ReactionRow>(sql`
-      SELECT message_id, member_id, emoji FROM reactions
+      SELECT message_id, user_id, emoji FROM reactions
       WHERE message_id = ANY(${messageIds})
     `)
     const reactionsByMessage = aggregateReactionsByMessage(reactionsResult.rows)
@@ -435,7 +435,7 @@ export const MessageRepository = {
 
     const messageIds = messageRows.map((r) => r.id)
     const reactionsResult = await db.query<ReactionRow>(sql`
-      SELECT message_id, member_id, emoji FROM reactions
+      SELECT message_id, user_id, emoji FROM reactions
       WHERE message_id = ANY(${messageIds})
     `)
     const reactionsByMessage = aggregateReactionsByMessage(reactionsResult.rows)
@@ -471,7 +471,7 @@ export const MessageRepository = {
 
     const messageIds = result.rows.map((r) => r.id)
     const reactionsResult = await db.query<ReactionRow>(sql`
-      SELECT message_id, member_id, emoji FROM reactions
+      SELECT message_id, user_id, emoji FROM reactions
       WHERE message_id = ANY(${messageIds})
     `)
     const reactionsByMessage = aggregateReactionsByMessage(reactionsResult.rows)

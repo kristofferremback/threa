@@ -27,7 +27,7 @@ describe("InvitationService.acceptInvitation", () => {
 
   const mockUpdateStatus = spyOn(InvitationRepository, "updateStatus")
   const mockFindInvitationById = spyOn(InvitationRepository, "findById")
-  const mockIsMember = spyOn(WorkspaceRepository, "isMember")
+  const mockIsMember = spyOn(UserRepository, "isMember")
   const mockInsertOutbox = spyOn(OutboxRepository, "insert")
 
   spyOn(db, "withTransaction").mockImplementation((_pool, fn) => fn({} as PoolClient))
@@ -111,7 +111,7 @@ describe("InvitationService.sendInvitations", () => {
   const mockLoggerWarn = spyOn(logger, "warn")
   const mockLoggerError = spyOn(logger, "error")
   const mockFindById = spyOn(UserRepository, "findById")
-  const mockFindUserEmails = spyOn(WorkspaceRepository, "findUserEmails")
+  const mockFindUserEmails = spyOn(UserRepository, "findEmails")
   const mockFindPendingByEmailsAndWorkspace = spyOn(InvitationRepository, "findPendingByEmailsAndWorkspace")
   const mockInsertInvitation = spyOn(InvitationRepository, "insert")
   const mockInsertOutbox = spyOn(OutboxRepository, "insert")
@@ -199,7 +199,7 @@ describe("InvitationService.acceptPendingForEmail", () => {
   const mockFindPendingByEmail = spyOn(InvitationRepository, "findPendingByEmail")
   const mockUpdateStatus = spyOn(InvitationRepository, "updateStatus")
   const mockFindInvitationById = spyOn(InvitationRepository, "findById")
-  const mockIsMember = spyOn(WorkspaceRepository, "isMember")
+  const mockIsMember = spyOn(UserRepository, "isMember")
   const mockInsertOutbox = spyOn(OutboxRepository, "insert")
   const mockLoggerError = spyOn(logger, "error")
 

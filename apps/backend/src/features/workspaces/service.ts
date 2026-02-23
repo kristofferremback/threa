@@ -1,7 +1,7 @@
 import { Pool } from "pg"
 import { withTransaction, withClient, type Querier } from "../../db"
-import { WorkspaceRepository, Workspace, WorkspaceUser } from "./repository"
-import { UserRepository } from "./user-repository"
+import { WorkspaceRepository, Workspace } from "./repository"
+import { UserRepository, type User } from "./user-repository"
 import { OutboxRepository } from "../../lib/outbox"
 import { StreamRepository, StreamMemberRepository } from "../streams"
 import { EmojiUsageRepository } from "../emoji"
@@ -122,10 +122,10 @@ export class WorkspaceService {
       workosUserId: string
       email: string
       name: string
-      role?: WorkspaceUser["role"]
+      role?: User["role"]
       setupCompleted?: boolean
     }
-  ): Promise<WorkspaceUser> {
+  ): Promise<User> {
     return withTransaction(this.pool, async (client) => {
       return this.createUserInTransaction(client, {
         workspaceId: wsId,
@@ -146,16 +146,16 @@ export class WorkspaceService {
       workosUserId: string
       email: string
       name: string
-      role: WorkspaceUser["role"]
+      role: User["role"]
       setupCompleted?: boolean
     }
-  ): Promise<WorkspaceUser> {
+  ): Promise<User> {
     const normalizedEmail = params.email.trim().toLowerCase()
     const userSlug = await generateUniqueSlug(params.name, (s) =>
-      WorkspaceRepository.userSlugExists(client, params.workspaceId, s)
+      UserRepository.slugExistsInWorkspace(client, params.workspaceId, s)
     )
 
-    const user = await WorkspaceRepository.addUser(client, {
+    const user = await UserRepository.insert(client, {
       id: params.id ?? generateMemberId(),
       workspaceId: params.workspaceId,
       workosUserId: params.workosUserId,
@@ -189,7 +189,7 @@ export class WorkspaceService {
 
   async removeUser(workspaceId: string, userId: string): Promise<void> {
     return withTransaction(this.pool, async (client) => {
-      await WorkspaceRepository.removeUserById(client, workspaceId, userId)
+      await UserRepository.remove(client, workspaceId, userId)
 
       await OutboxRepository.insert(client, "workspace_member:removed", {
         workspaceId,
@@ -198,12 +198,12 @@ export class WorkspaceService {
     })
   }
 
-  async getUsers(workspaceId: string): Promise<WorkspaceUser[]> {
-    return WorkspaceRepository.listUsers(this.pool, workspaceId)
+  async getUsers(workspaceId: string): Promise<User[]> {
+    return UserRepository.listByWorkspace(this.pool, workspaceId)
   }
 
   async isMember(workspaceId: string, workosUserId: string): Promise<boolean> {
-    return WorkspaceRepository.isMember(this.pool, workspaceId, workosUserId)
+    return UserRepository.isMember(this.pool, workspaceId, workosUserId)
   }
 
   async getPersonasForWorkspace(workspaceId: string): Promise<Persona[]> {
@@ -215,7 +215,7 @@ export class WorkspaceService {
   }
 
   async isSlugAvailable(workspaceId: string, slug: string): Promise<boolean> {
-    const exists = await WorkspaceRepository.userSlugExists(this.pool, workspaceId, slug)
+    const exists = await UserRepository.slugExistsInWorkspace(this.pool, workspaceId, slug)
     return !exists
   }
 
@@ -223,7 +223,7 @@ export class WorkspaceService {
     userId: string,
     workspaceId: string,
     params: { name?: string; slug?: string; timezone: string; locale: string }
-  ): Promise<WorkspaceUser> {
+  ): Promise<User> {
     // Phase 1: Fast reads
     const { user, orgId } = await withClient(this.pool, async (client) => {
       const user = await UserRepository.findById(client, userId)
@@ -265,16 +265,16 @@ export class WorkspaceService {
           } else {
             const slugBaseName = params.name ?? currentUser.name
             slug = await generateUniqueSlug(slugBaseName, (s) =>
-              WorkspaceRepository.userSlugExists(client, workspaceId, s)
+              UserRepository.slugExistsInWorkspace(client, workspaceId, s)
             )
           }
 
-          const slugExists = await WorkspaceRepository.userSlugExists(client, workspaceId, slug)
+          const slugExists = await UserRepository.slugExistsInWorkspace(client, workspaceId, slug)
           if (slugExists && slug !== currentUser.slug) {
-            slug = await generateUniqueSlug(slug, (s) => WorkspaceRepository.userSlugExists(client, workspaceId, s))
+            slug = await generateUniqueSlug(slug, (s) => UserRepository.slugExistsInWorkspace(client, workspaceId, s))
           }
 
-          const updated = await WorkspaceRepository.updateUser(client, userId, {
+          const updated = await UserRepository.update(client, userId, {
             slug,
             name: params.name,
             timezone: params.timezone,
@@ -294,7 +294,7 @@ export class WorkspaceService {
           return updated
         })
       } catch (error) {
-        if (attempt >= MAX_SLUG_ATTEMPTS || !isUniqueViolation(error, "workspace_members_ws_slug_key")) {
+        if (attempt >= MAX_SLUG_ATTEMPTS || !isUniqueViolation(error, "users_workspace_slug_key")) {
           throw error
         }
       }
@@ -305,9 +305,9 @@ export class WorkspaceService {
     userId: string,
     workspaceId: string,
     params: { name?: string; description?: string | null }
-  ): Promise<WorkspaceUser> {
+  ): Promise<User> {
     return withTransaction(this.pool, async (client) => {
-      const updated = await WorkspaceRepository.updateUser(client, userId, params)
+      const updated = await UserRepository.update(client, userId, params)
       if (!updated) {
         throw new HttpError("Member not found", { status: 404, code: "MEMBER_NOT_FOUND" })
       }
@@ -321,7 +321,7 @@ export class WorkspaceService {
     })
   }
 
-  async uploadAvatar(userId: string, workspaceId: string, buffer: Buffer): Promise<WorkspaceUser> {
+  async uploadAvatar(userId: string, workspaceId: string, buffer: Buffer): Promise<User> {
     // Phase 1: Verify user exists and capture current avatar for replacement tracking
     const user = await UserRepository.findById(this.pool, userId)
     if (!user || user.workspaceId !== workspaceId) {
@@ -337,7 +337,7 @@ export class WorkspaceService {
       await AvatarUploadRepository.insert(this.pool, {
         id: uploadId,
         workspaceId,
-        memberId: userId,
+        userId,
         rawS3Key,
         replacesAvatarUrl: user.avatarUrl,
       })
@@ -354,7 +354,7 @@ export class WorkspaceService {
     return user
   }
 
-  async removeUserAvatar(userId: string, workspaceId: string): Promise<WorkspaceUser> {
+  async removeUserAvatar(userId: string, workspaceId: string): Promise<User> {
     let oldAvatarUrl: string | null = null
 
     const updated = await withTransaction(this.pool, async (client) => {
@@ -362,9 +362,9 @@ export class WorkspaceService {
       oldAvatarUrl = currentUser?.avatarUrl ?? null
 
       // Delete any in-flight upload rows — racing workers will see their row gone and skip
-      await AvatarUploadRepository.deleteByMemberId(client, userId)
+      await AvatarUploadRepository.deleteByUserId(client, userId)
 
-      const result = await WorkspaceRepository.updateUser(client, userId, {
+      const result = await UserRepository.update(client, userId, {
         avatarUrl: null,
       })
       if (!result) {

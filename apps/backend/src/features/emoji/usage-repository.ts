@@ -5,7 +5,7 @@ type InteractionType = "message" | "message_reaction"
 interface EmojiUsageRow {
   id: string
   workspace_id: string
-  member_id: string
+  user_id: string
   interaction_type: string
   shortcode: string
   occurrence_count: number
@@ -38,7 +38,7 @@ function mapRowToEmojiUsage(row: EmojiUsageRow): EmojiUsage {
   return {
     id: row.id,
     workspaceId: row.workspace_id,
-    memberId: row.member_id,
+    memberId: row.user_id,
     interactionType: row.interaction_type as InteractionType,
     shortcode: row.shortcode,
     occurrenceCount: row.occurrence_count,
@@ -47,14 +47,14 @@ function mapRowToEmojiUsage(row: EmojiUsageRow): EmojiUsage {
   }
 }
 
-const SELECT_FIELDS = `id, workspace_id, member_id, interaction_type, shortcode, occurrence_count, source_id, created_at`
+const SELECT_FIELDS = `id, workspace_id, user_id, interaction_type, shortcode, occurrence_count, source_id, created_at`
 
 export const EmojiUsageRepository = {
   async insertBatch(db: Querier, items: InsertEmojiUsageParams[]): Promise<EmojiUsage[]> {
     if (items.length === 0) return []
 
     const result = await db.query<EmojiUsageRow>(sql`
-      INSERT INTO emoji_usage (id, workspace_id, member_id, interaction_type, shortcode, occurrence_count, source_id)
+      INSERT INTO emoji_usage (id, workspace_id, user_id, interaction_type, shortcode, occurrence_count, source_id)
       SELECT * FROM UNNEST(
         ${items.map((i) => i.id)}::text[],
         ${items.map((i) => i.workspaceId)}::text[],
@@ -71,7 +71,7 @@ export const EmojiUsageRepository = {
 
   async insert(db: Querier, params: InsertEmojiUsageParams): Promise<EmojiUsage> {
     const result = await db.query<EmojiUsageRow>(sql`
-      INSERT INTO emoji_usage (id, workspace_id, member_id, interaction_type, shortcode, occurrence_count, source_id)
+      INSERT INTO emoji_usage (id, workspace_id, user_id, interaction_type, shortcode, occurrence_count, source_id)
       VALUES (${params.id}, ${params.workspaceId}, ${params.memberId}, ${params.interactionType}, ${params.shortcode}, ${params.occurrenceCount}, ${params.sourceId})
       RETURNING ${sql.raw(SELECT_FIELDS)}
     `)
@@ -86,7 +86,7 @@ export const EmojiUsageRepository = {
           occurrence_count,
           ROW_NUMBER() OVER (PARTITION BY interaction_type ORDER BY created_at DESC) as rn
         FROM emoji_usage
-        WHERE workspace_id = ${workspaceId} AND member_id = ${memberId}
+        WHERE workspace_id = ${workspaceId} AND user_id = ${memberId}
       )
       SELECT shortcode, SUM(occurrence_count)::text as weight
       FROM recent_usage

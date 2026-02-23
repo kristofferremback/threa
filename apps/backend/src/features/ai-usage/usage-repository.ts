@@ -5,7 +5,7 @@ export type AIUsageOrigin = "system" | "user"
 interface AIUsageRecordRow {
   id: string
   workspace_id: string
-  member_id: string | null
+  user_id: string | null
   session_id: string | null
   function_id: string
   model: string
@@ -92,7 +92,7 @@ function mapRowToRecord(row: AIUsageRecordRow): AIUsageRecord {
   return {
     id: row.id,
     workspaceId: row.workspace_id,
-    memberId: row.member_id,
+    memberId: row.user_id,
     sessionId: row.session_id,
     functionId: row.function_id,
     model: row.model,
@@ -108,7 +108,7 @@ function mapRowToRecord(row: AIUsageRecordRow): AIUsageRecord {
 }
 
 const SELECT_FIELDS = `
-  id, workspace_id, member_id, session_id, function_id,
+  id, workspace_id, user_id, session_id, function_id,
   model, provider, prompt_tokens, completion_tokens,
   total_tokens, cost_usd, origin, metadata, created_at
 `
@@ -117,7 +117,7 @@ export const AIUsageRepository = {
   async insert(db: Querier, params: InsertAIUsageRecordParams): Promise<AIUsageRecord> {
     const result = await db.query<AIUsageRecordRow>(sql`
       INSERT INTO ai_usage_records (
-        id, workspace_id, member_id, session_id, function_id,
+        id, workspace_id, user_id, session_id, function_id,
         model, provider, prompt_tokens, completion_tokens,
         total_tokens, cost_usd, origin, metadata
       )
@@ -202,7 +202,7 @@ export const AIUsageRepository = {
         COUNT(*) as record_count
       FROM ai_usage_records
       WHERE workspace_id = ${workspaceId}
-        AND member_id = ${memberId}
+        AND user_id = ${memberId}
         AND created_at >= ${periodStart}
         AND created_at < ${periodEnd}
     `)
@@ -290,13 +290,13 @@ export const AIUsageRepository = {
     periodEnd: Date
   ): Promise<MemberBreakdown[]> {
     const result = await db.query<{
-      member_id: string | null
+      user_id: string | null
       total_cost_usd: string
       total_tokens: string
       record_count: string
     }>(sql`
       SELECT
-        member_id,
+        user_id,
         SUM(cost_usd) as total_cost_usd,
         SUM(total_tokens) as total_tokens,
         COUNT(*) as record_count
@@ -304,12 +304,12 @@ export const AIUsageRepository = {
       WHERE workspace_id = ${workspaceId}
         AND created_at >= ${periodStart}
         AND created_at < ${periodEnd}
-      GROUP BY member_id
+      GROUP BY user_id
       ORDER BY total_cost_usd DESC
     `)
 
     return result.rows.map((row) => ({
-      memberId: row.member_id,
+      memberId: row.user_id,
       totalCostUsd: parseFloat(row.total_cost_usd),
       totalTokens: parseInt(row.total_tokens, 10),
       recordCount: parseInt(row.record_count, 10),
@@ -327,7 +327,7 @@ export const AIUsageRepository = {
     let paramIndex = 2
 
     if (options?.memberId) {
-      conditions.push(`member_id = $${paramIndex++}`)
+      conditions.push(`user_id = $${paramIndex++}`)
       values.push(options.memberId)
     }
 

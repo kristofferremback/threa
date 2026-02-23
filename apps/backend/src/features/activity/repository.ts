@@ -5,7 +5,7 @@ import { activityId } from "../../lib/id"
 interface ActivityRow {
   id: string
   workspace_id: string
-  member_id: string
+  user_id: string
   activity_type: string
   stream_id: string
   message_id: string
@@ -56,7 +56,7 @@ function mapRowToActivity(row: ActivityRow): Activity {
   return {
     id: row.id,
     workspaceId: row.workspace_id,
-    memberId: row.member_id,
+    memberId: row.user_id,
     activityType: row.activity_type,
     streamId: row.stream_id,
     messageId: row.message_id,
@@ -72,7 +72,7 @@ export const ActivityRepository = {
   async insert(db: Querier, params: InsertActivityParams): Promise<Activity | null> {
     const id = activityId()
     const result = await db.query<ActivityRow>(sql`
-      INSERT INTO member_activity (id, workspace_id, member_id, activity_type, stream_id, message_id, actor_id, actor_type, context)
+      INSERT INTO user_activity (id, workspace_id, user_id, activity_type, stream_id, message_id, actor_id, actor_type, context)
       VALUES (
         ${id},
         ${params.workspaceId},
@@ -84,9 +84,9 @@ export const ActivityRepository = {
         ${params.actorType},
         ${JSON.stringify(params.context ?? {})}
       )
-      ON CONFLICT (member_id, message_id, activity_type, actor_id)
-      DO UPDATE SET id = member_activity.id
-      RETURNING id, workspace_id, member_id, activity_type, stream_id, message_id, actor_id, actor_type, context, read_at, created_at
+      ON CONFLICT (user_id, message_id, activity_type, actor_id)
+      DO UPDATE SET id = user_activity.id
+      RETURNING id, workspace_id, user_id, activity_type, stream_id, message_id, actor_id, actor_type, context, read_at, created_at
     `)
     return result.rows[0] ? mapRowToActivity(result.rows[0]) : null
   },
@@ -102,7 +102,7 @@ export const ActivityRepository = {
     const contextJson = JSON.stringify(params.context ?? {})
 
     const result = await db.query<ActivityRow>(sql`
-      INSERT INTO member_activity (id, workspace_id, member_id, activity_type, stream_id, message_id, actor_id, actor_type, context)
+      INSERT INTO user_activity (id, workspace_id, user_id, activity_type, stream_id, message_id, actor_id, actor_type, context)
       SELECT * FROM UNNEST(
         ${ids}::text[],
         ${params.memberIds.map(() => params.workspaceId)}::text[],
@@ -114,9 +114,9 @@ export const ActivityRepository = {
         ${params.memberIds.map(() => params.actorType)}::text[],
         ${params.memberIds.map(() => contextJson)}::jsonb[]
       )
-      ON CONFLICT (member_id, message_id, activity_type, actor_id)
-      DO UPDATE SET id = member_activity.id
-      RETURNING id, workspace_id, member_id, activity_type, stream_id, message_id, actor_id, actor_type, context, read_at, created_at
+      ON CONFLICT (user_id, message_id, activity_type, actor_id)
+      DO UPDATE SET id = user_activity.id
+      RETURNING id, workspace_id, user_id, activity_type, stream_id, message_id, actor_id, actor_type, context, read_at, created_at
     `)
     return result.rows.map(mapRowToActivity)
   },
@@ -133,14 +133,14 @@ export const ActivityRepository = {
     const unreadOnly = opts?.unreadOnly ?? false
 
     const result = await db.query<ActivityRow>(sql`
-      SELECT id, workspace_id, member_id, activity_type, stream_id, message_id, actor_id, actor_type, context, read_at, created_at
-      FROM member_activity
-      WHERE member_id = ${memberId}
+      SELECT id, workspace_id, user_id, activity_type, stream_id, message_id, actor_id, actor_type, context, read_at, created_at
+      FROM user_activity
+      WHERE user_id = ${memberId}
         AND workspace_id = ${workspaceId}
         AND (${!unreadOnly} OR read_at IS NULL)
         AND (${!hasCursor} OR created_at < (
-          SELECT created_at FROM member_activity
-          WHERE id = ${cursor} AND member_id = ${memberId} AND workspace_id = ${workspaceId}
+          SELECT created_at FROM user_activity
+          WHERE id = ${cursor} AND user_id = ${memberId} AND workspace_id = ${workspaceId}
         ))
       ORDER BY created_at DESC
       LIMIT ${limit}
@@ -162,8 +162,8 @@ export const ActivityRepository = {
         stream_id,
         COUNT(*) FILTER (WHERE activity_type = 'mention')::text AS mention_count,
         COUNT(*)::text AS total_count
-      FROM member_activity
-      WHERE member_id = ${memberId}
+      FROM user_activity
+      WHERE user_id = ${memberId}
         AND workspace_id = ${workspaceId}
         AND read_at IS NULL
       GROUP BY stream_id
@@ -183,19 +183,19 @@ export const ActivityRepository = {
 
   async markAsRead(db: Querier, activityId: string, memberId: string): Promise<void> {
     await db.query(sql`
-      UPDATE member_activity
+      UPDATE user_activity
       SET read_at = NOW()
       WHERE id = ${activityId}
-        AND member_id = ${memberId}
+        AND user_id = ${memberId}
         AND read_at IS NULL
     `)
   },
 
   async markStreamAsRead(db: Querier, memberId: string, streamId: string): Promise<number> {
     const result = await db.query(sql`
-      UPDATE member_activity
+      UPDATE user_activity
       SET read_at = NOW()
-      WHERE member_id = ${memberId}
+      WHERE user_id = ${memberId}
         AND stream_id = ${streamId}
         AND read_at IS NULL
     `)
@@ -204,9 +204,9 @@ export const ActivityRepository = {
 
   async markAllAsRead(db: Querier, memberId: string, workspaceId: string): Promise<number> {
     const result = await db.query(sql`
-      UPDATE member_activity
+      UPDATE user_activity
       SET read_at = NOW()
-      WHERE member_id = ${memberId}
+      WHERE user_id = ${memberId}
         AND workspace_id = ${workspaceId}
         AND read_at IS NULL
     `)

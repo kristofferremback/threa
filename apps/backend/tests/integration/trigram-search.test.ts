@@ -42,7 +42,7 @@ describe("Trigram Search", () => {
         slug: `trgm-test-${testWorkspaceId}`,
         createdBy: testMemberIds[0],
       })
-      await WorkspaceRepository.addUser(client, {
+      await UserRepository.insert(client, {
         id: testMemberIds[0],
         workspaceId: testWorkspaceId,
         workosUserId: testWorkosUserIds[0],
@@ -52,7 +52,7 @@ describe("Trigram Search", () => {
         role: "owner",
       })
 
-      await WorkspaceRepository.addUser(client, {
+      await UserRepository.insert(client, {
         id: testMemberIds[1],
         workspaceId: testWorkspaceId,
         workosUserId: testWorkosUserIds[1],
@@ -62,7 +62,7 @@ describe("Trigram Search", () => {
         role: "member",
       })
 
-      await WorkspaceRepository.addUser(client, {
+      await UserRepository.insert(client, {
         id: testMemberIds[2],
         workspaceId: testWorkspaceId,
         workosUserId: testWorkosUserIds[2],

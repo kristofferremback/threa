@@ -84,7 +84,7 @@ Relational integrity is enforced in application code, not in PostgreSQL schema d
 - No DB enums; use `TEXT` and validate in code (INV-3)
 - All entities use prefixed ULIDs like `stream_xxx` (INV-2)
 - Workspace is the data ownership and sharding boundary (INV-8)
-- Outside auth and `workspace_members`, reference `MemberId`, not `UserId` (INV-50)
+- Outside auth and `users`, reference `MemberId`, not `UserId` (INV-50)
 
 Migrations are append-only (INV-17). Never edit existing migration files.
 
@@ -100,15 +100,15 @@ Example: race-safe upsert instead of check-then-act.
 
 ```sql
 -- Preferred (INV-20)
-INSERT INTO workspace_members (id, workspace_id, user_id)
-VALUES ($1, $2, $3)
-ON CONFLICT (workspace_id, user_id)
-DO UPDATE SET updated_at = NOW();
+INSERT INTO users (id, workspace_id, workos_user_id, email, role, slug, name)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (workspace_id, workos_user_id)
+DO UPDATE SET email = EXCLUDED.email, name = EXCLUDED.name;
 ```
 
 ```sql
 -- Avoid (INV-20)
-SELECT id FROM workspace_members WHERE workspace_id = $1 AND user_id = $2;
+SELECT id FROM users WHERE workspace_id = $1 AND workos_user_id = $2;
 -- then conditionally INSERT or UPDATE in app code
 ```
 

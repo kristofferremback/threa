@@ -11,7 +11,7 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test"
 import { Pool } from "pg"
 import { addTestMember, withTestTransaction } from "./setup"
-import { WorkspaceRepository } from "../../src/features/workspaces"
+import { WorkspaceRepository, UserRepository } from "../../src/features/workspaces"
 import { StreamRepository, StreamMemberRepository } from "../../src/features/streams"
 import { MessageRepository } from "../../src/features/messaging"
 import { buildStreamContext } from "../../src/features/agents"
@@ -106,8 +106,8 @@ describe("Context Builder", () => {
         const memberMember = await addTestMember(client, wsId, memberUserId)
         const ownerMemberId = ownerMember.id
         const memberMemberId = memberMember.id
-        await WorkspaceRepository.updateUser(client, ownerMemberId, { name: "Channel Owner" })
-        await WorkspaceRepository.updateUser(client, memberMemberId, { name: "Channel Member" })
+        await UserRepository.update(client, ownerMemberId, { name: "Channel Owner" })
+        await UserRepository.update(client, memberMemberId, { name: "Channel Member" })
 
         const channel = await StreamRepository.insert(client, {
           id: channelId,
@@ -348,8 +348,8 @@ describe("Context Builder", () => {
         const member2 = await addTestMember(client, wsId, user2Id)
         const member1Id = member1.id
         const member2Id = member2.id
-        await WorkspaceRepository.updateUser(client, member1Id, { name: "Alice" })
-        await WorkspaceRepository.updateUser(client, member2Id, { name: "Bob" })
+        await UserRepository.update(client, member1Id, { name: "Alice" })
+        await UserRepository.update(client, member2Id, { name: "Bob" })
 
         const dm = await StreamRepository.insert(client, {
           id: dmId,

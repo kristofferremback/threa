@@ -58,7 +58,7 @@ export class InvitationService {
     const inviterWorkosUserId = (await this.getInviterWorkosUserId(invitedBy)) ?? undefined
 
     // Batch-fetch: existing members + pending invitations
-    const existingMemberEmails = await WorkspaceRepository.findUserEmails(this.pool, workspaceId, emails)
+    const existingMemberEmails = await UserRepository.findEmails(this.pool, workspaceId, emails)
 
     const pendingInvitations = await InvitationRepository.findPendingByEmailsAndWorkspace(
       this.pool,
@@ -175,7 +175,7 @@ export class InvitationService {
     if (!invitation) return null
 
     // Check if already a member (race condition safety)
-    const isMember = await WorkspaceRepository.isMember(client, invitation.workspaceId, identity.workosUserId)
+    const isMember = await UserRepository.isMember(client, invitation.workspaceId, identity.workosUserId)
     if (isMember) return invitation.workspaceId
 
     await this.workspaceService.createUserInTransaction(client, {
