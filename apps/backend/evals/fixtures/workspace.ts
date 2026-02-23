@@ -16,7 +16,7 @@ export interface WorkspaceFixture {
   workspaceId: string
   workspaceName: string
   workspaceSlug: string
-  userId: string // WorkOS user ID
+  userId: string // Internal usr_xxx ULID
   userName: string
   userEmail: string
 }
@@ -61,7 +61,7 @@ export async function createWorkspaceFixture(pool: Pool): Promise<WorkspaceFixtu
       workspaceId: workspace.id,
       workspaceName: workspace.name,
       workspaceSlug: workspace.slug,
-      userId: workosUserId,
+      userId: ownerUserId,
       userName,
       userEmail,
     }
@@ -88,10 +88,12 @@ export async function createAdditionalUser(
   const userName = options.name ?? `Eval User ${timestamp}`
   const userEmail = options.email ?? `eval-user-${timestamp}@test.local`
 
+  const internalUserId = userId()
+
   const result = await withTransaction(pool, async (client) => {
     // Add to workspace as user
     await UserRepository.insert(client, {
-      id: userId(),
+      id: internalUserId,
       workspaceId,
       workosUserId,
       email: userEmail,
@@ -102,7 +104,7 @@ export async function createAdditionalUser(
     })
 
     return {
-      userId: workosUserId,
+      userId: internalUserId,
       userName,
       userEmail,
     }
