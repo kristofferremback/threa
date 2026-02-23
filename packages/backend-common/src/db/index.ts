@@ -224,6 +224,7 @@ export async function withTransaction<T>(
   // Retry once on recoverable connection errors
   for (let attempt = 0; attempt < 2; attempt++) {
     const client = await db.connect()
+    let released = false
     try {
       await client.query("BEGIN")
       const result = await callback(client)
@@ -242,13 +243,14 @@ export async function withTransaction<T>(
           { err: error, attempt: attempt + 1 },
           "Transaction failed with recoverable connection error, retrying..."
         )
+        released = true
         client.release(true) // Destroy the bad connection
         continue
       }
 
       throw error
     } finally {
-      client.release()
+      if (!released) client.release()
     }
   }
 
@@ -261,6 +263,7 @@ export async function withClient<T>(pool: Pool, callback: (client: PoolClient) =
   // Retry once on recoverable connection errors
   for (let attempt = 0; attempt < 2; attempt++) {
     const client = await pool.connect()
+    let released = false
     try {
       return await callback(client)
     } catch (error) {
@@ -272,13 +275,14 @@ export async function withClient<T>(pool: Pool, callback: (client: PoolClient) =
           { err: error, attempt: attempt + 1 },
           "Query failed with recoverable connection error, retrying..."
         )
+        released = true
         client.release(true) // Destroy the bad connection
         continue
       }
 
       throw error
     } finally {
-      client.release()
+      if (!released) client.release()
     }
   }
 

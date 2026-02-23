@@ -67,10 +67,10 @@ export class ControlPlaneWorkspaceService {
     }
 
     const id = generateWorkspaceId()
-    const slug = await generateUniqueSlug(name, (s) => WorkspaceRegistryRepository.slugExists(this.pool, s))
 
-    // Insert into control-plane DB
+    // Insert into control-plane DB (slug generated inside transaction per INV-20)
     const workspace = await withTransaction(this.pool, async (client) => {
+      const slug = await generateUniqueSlug(name, (s) => WorkspaceRegistryRepository.slugExists(client, s))
       const ws = await WorkspaceRegistryRepository.insert(client, {
         id,
         name,
@@ -87,7 +87,7 @@ export class ControlPlaneWorkspaceService {
       await this.regionalClient.createWorkspace(region, {
         id,
         name,
-        slug,
+        slug: workspace.slug,
         ownerWorkosUserId: workosUserId,
         ownerEmail: email,
         ownerName: displayName,

@@ -1,7 +1,16 @@
 import type { Request, Response } from "express"
-import { SESSION_COOKIE_CONFIG, type StubAuthService } from "@threa/backend-common"
+import { SESSION_COOKIE_CONFIG, decodeAndSanitizeRedirectState, type StubAuthService } from "@threa/backend-common"
 
 const SESSION_COOKIE_NAME = "wos_session"
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#x27;")
+}
 
 interface Dependencies {
   authStubService: StubAuthService
@@ -16,7 +25,7 @@ export function createAuthStubHandlers({ authStubService }: Dependencies) {
           <body>
             <h1>Test Auth Login (Control Plane)</h1>
             <form method="POST" action="/test-auth-login">
-              <input type="hidden" name="state" value="${state}" />
+              <input type="hidden" name="state" value="${escapeHtml(state)}" />
               <label>Email: <input name="email" value="test@example.com" /></label><br/>
               <label>Name: <input name="name" value="Test User" /></label><br/>
               <button type="submit">Login</button>
@@ -32,8 +41,8 @@ export function createAuthStubHandlers({ authStubService }: Dependencies) {
       res.cookie(SESSION_COOKIE_NAME, result.session, SESSION_COOKIE_CONFIG)
 
       if (state) {
-        const decoded = Buffer.from(state, "base64").toString("utf-8")
-        return res.redirect(decoded || "/")
+        const redirectTo = decodeAndSanitizeRedirectState(state)
+        return res.redirect(redirectTo)
       }
       res.redirect("/")
     },
