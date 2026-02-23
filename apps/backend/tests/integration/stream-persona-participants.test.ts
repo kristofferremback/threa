@@ -257,9 +257,8 @@ describe("Stream Persona Participants", () => {
   describe("Search Integration", () => {
     test("should get accessible streams filtered by persona participation", async () => {
       const testWorkspaceId = workspaceId()
-      const testUserId = userId()
+      const workosUserId = userId()
       const testPersonaId = personaId()
-      let testUserId: string
 
       // Create 2 streams - user is member of both
       const stream1 = streamId()
@@ -268,9 +267,9 @@ describe("Stream Persona Participants", () => {
         id: testWorkspaceId,
         name: "Search Integration Workspace",
         slug: `search-integ-${testWorkspaceId}`,
-        createdBy: testUserId,
+        createdBy: workosUserId,
       })
-      testUserId = (await addTestMember(pool, testWorkspaceId, testUserId)).id
+      const testUserId = (await addTestMember(pool, testWorkspaceId, workosUserId)).id
 
       for (const sid of [stream1, stream2]) {
         await pool.query(
@@ -310,8 +309,8 @@ describe("Stream Persona Participants", () => {
       // Get accessible streams with persona filter
       const streamsWithPersona = await SearchRepository.getAccessibleStreamsWithMembers(pool, {
         workspaceId: testWorkspaceId,
-        memberId: testUserId,
-        memberIds: [testPersonaId],
+        userId: testUserId,
+        userIds: [testPersonaId],
       })
 
       // Only stream1 should be returned (where persona participated)
@@ -379,8 +378,8 @@ describe("Stream Persona Participants", () => {
       // Filter for streams where user2 is member AND persona1 has participated
       const result = await SearchRepository.getAccessibleStreamsWithMembers(pool, {
         workspaceId: testWorkspaceId,
-        memberId: member1,
-        memberIds: [member2, persona1], // Mixed member + persona IDs
+        userId: member1,
+        userIds: [member2, persona1], // Mixed user + persona IDs
       })
 
       // Only stream1 matches: user2 is member AND persona1 participated

@@ -451,11 +451,11 @@ describe("ConversationRepository", () => {
   describe("addParticipant", () => {
     test("adds new participant to conversation", async () => {
       const convId = conversationId()
-      const user2UserId = userId()
+      const user2WorkosId = userId()
       let user2UserId = ""
 
       await withTransaction(pool, async (client) => {
-        user2UserId = (await addTestMember(client, testWorkspaceId, user2UserId)).id
+        user2UserId = (await addTestMember(client, testWorkspaceId, user2WorkosId)).id
 
         await ConversationRepository.insert(client, {
           id: convId,
