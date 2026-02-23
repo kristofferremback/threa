@@ -47,7 +47,7 @@ describe("MessageFormatter", () => {
   })
 
   test("should return empty wrapper for empty message list", async () => {
-    const result = await formatter.formatMessages(mockClient, [])
+    const result = await formatter.formatMessages(mockClient, "ws_test", [])
 
     expect(result).toBe("<messages></messages>")
     expect(mockFindMembersByIds).not.toHaveBeenCalled()
@@ -67,7 +67,7 @@ describe("MessageFormatter", () => {
 
     mockFindMembersByIds.mockResolvedValue([{ id: "member_123", name: "Alice" }])
 
-    const result = await formatter.formatMessages(mockClient, messages)
+    const result = await formatter.formatMessages(mockClient, "ws_test", messages)
 
     expect(result).toBe(
       '<messages>\n<message authorType="member" authorId="member_123" authorName="Alice" createdAt="2024-01-01T10:00:00.000Z">Hello!</message>\n</messages>'
@@ -87,7 +87,7 @@ describe("MessageFormatter", () => {
 
     mockFindPersonasByIds.mockResolvedValue([{ id: "persona_456", name: "Ariadne" }])
 
-    const result = await formatter.formatMessages(mockClient, messages)
+    const result = await formatter.formatMessages(mockClient, "ws_test", messages)
 
     expect(result).toBe(
       '<messages>\n<message authorType="persona" authorId="persona_456" authorName="Ariadne" createdAt="2024-01-01T10:00:01.000Z">I can help with that!</message>\n</messages>'
@@ -123,10 +123,10 @@ describe("MessageFormatter", () => {
     mockFindMembersByIds.mockResolvedValue([{ id: "member_123", name: "Alice" }])
     mockFindPersonasByIds.mockResolvedValue([{ id: "persona_456", name: "Ariadne" }])
 
-    const result = await formatter.formatMessages(mockClient, messages)
+    const result = await formatter.formatMessages(mockClient, "ws_test", messages)
 
     // Verify batch efficiency: only 1 call per author type despite 3 messages
-    expect(mockFindMembersByIds).toHaveBeenCalledWith(mockClient, ["member_123"])
+    expect(mockFindMembersByIds).toHaveBeenCalledWith(mockClient, "ws_test", ["member_123"])
     expect(mockFindPersonasByIds).toHaveBeenCalledWith(mockClient, ["persona_456"])
 
     expect(result).toBe(
@@ -150,7 +150,7 @@ describe("MessageFormatter", () => {
 
     mockFindMembersByIds.mockResolvedValue([])
 
-    const result = await formatter.formatMessages(mockClient, messages)
+    const result = await formatter.formatMessages(mockClient, "ws_test", messages)
 
     expect(result).toContain('authorName="Unknown"')
   })
@@ -164,7 +164,7 @@ describe("MessageFormatter", () => {
 
     mockFindMembersByIds.mockResolvedValue([{ id: "member_123", name: "Alice" }])
 
-    const result = await formatter.formatMessages(mockClient, messages)
+    const result = await formatter.formatMessages(mockClient, "ws_test", messages)
 
     const firstIndex = result.indexOf("First")
     const secondIndex = result.indexOf("Second")
@@ -184,7 +184,7 @@ describe("MessageFormatter", () => {
 
     mockFindMembersByIds.mockResolvedValue([{ id: "member_123", name: "Alice" }])
 
-    const result = await formatter.formatMessages(mockClient, messages)
+    const result = await formatter.formatMessages(mockClient, "ws_test", messages)
 
     expect(result).toContain('createdAt="2024-01-01T10:00:00.000Z"')
   })
@@ -199,7 +199,7 @@ describe("MessageFormatter", () => {
 
     mockFindMembersByIds.mockResolvedValue([{ id: "member_123", name: "Alice" }])
 
-    const result = await formatter.formatMessages(mockClient, messages)
+    const result = await formatter.formatMessages(mockClient, "ws_test", messages)
 
     expect(result).toContain("if (a &lt; b &amp;&amp; c &gt; d) { return &lt;tag&gt;; }")
     expect(result).not.toContain("<tag>")
@@ -217,7 +217,7 @@ describe("MessageFormatter", () => {
 
     mockFindMembersByIds.mockResolvedValue([{ id: "member_123", name: 'Bob "The Builder" Smith' }])
 
-    const result = await formatter.formatMessages(mockClient, messages)
+    const result = await formatter.formatMessages(mockClient, "ws_test", messages)
 
     expect(result).toContain('authorName="Bob &quot;The Builder&quot; Smith"')
     expect(result).not.toContain('authorName="Bob "The Builder" Smith"')
@@ -225,7 +225,7 @@ describe("MessageFormatter", () => {
 
   describe("formatMessagesInline", () => {
     test("should return empty string for empty message list", async () => {
-      const result = await formatter.formatMessagesInline(mockClient, [])
+      const result = await formatter.formatMessagesInline(mockClient, "ws_test", [])
 
       expect(result).toBe("")
       expect(mockFindMembersByIds).not.toHaveBeenCalled()
@@ -253,7 +253,7 @@ describe("MessageFormatter", () => {
       mockFindMembersByIds.mockResolvedValue([{ id: "member_123", name: "Alice" }])
       mockFindPersonasByIds.mockResolvedValue([{ id: "persona_456", name: "Ariadne" }])
 
-      const result = await formatter.formatMessagesInline(mockClient, messages)
+      const result = await formatter.formatMessagesInline(mockClient, "ws_test", messages)
 
       expect(result).toBe(
         "[2024-01-01T10:00:00.000Z] [member] Alice: Hello!\n\n[2024-01-01T10:00:01.000Z] [persona] Ariadne: Hi there!"
@@ -273,7 +273,7 @@ describe("MessageFormatter", () => {
 
       mockFindMembersByIds.mockResolvedValue([{ id: "member_123", name: "Alice" }])
 
-      const result = await formatter.formatMessagesInline(mockClient, messages, { includeIds: true })
+      const result = await formatter.formatMessagesInline(mockClient, "ws_test", messages, { includeIds: true })
 
       expect(result).toBe("[ID:msg_abc123] [2024-01-01T10:00:00.000Z] [member] Alice: Hello!")
     })
@@ -291,7 +291,7 @@ describe("MessageFormatter", () => {
 
       mockFindMembersByIds.mockResolvedValue([])
 
-      const result = await formatter.formatMessagesInline(mockClient, messages)
+      const result = await formatter.formatMessagesInline(mockClient, "ws_test", messages)
 
       expect(result).toBe("[2024-01-01T10:00:00.000Z] [member] Unknown: Message from deleted user")
     })
@@ -304,7 +304,7 @@ describe("MessageFormatter", () => {
 
       mockFindMembersByIds.mockResolvedValue([{ id: "member_123", name: "Alice" }])
 
-      const result = await formatter.formatMessagesInline(mockClient, messages)
+      const result = await formatter.formatMessagesInline(mockClient, "ws_test", messages)
 
       expect(result).toBe(
         "[2024-01-01T10:00:00.000Z] [member] Alice: First\n\n[2024-01-01T10:00:01.000Z] [member] Alice: Second"
@@ -334,7 +334,7 @@ describe("MessageFormatter", () => {
     }
 
     test("should return empty wrapper for empty message list", async () => {
-      const result = await formatter.formatMessagesWithAttachments(mockClient, [], new Map())
+      const result = await formatter.formatMessagesWithAttachments(mockClient, "ws_test", [], new Map())
 
       expect(result).toBe("<messages></messages>")
     })
@@ -352,7 +352,7 @@ describe("MessageFormatter", () => {
 
       mockFindMembersByIds.mockResolvedValue([{ id: "member_123", name: "Alice" }])
 
-      const result = await formatter.formatMessagesWithAttachments(mockClient, messages, new Map())
+      const result = await formatter.formatMessagesWithAttachments(mockClient, "ws_test", messages, new Map())
 
       expect(result).toContain('authorName="Alice"')
       expect(result).toContain("Hello!")
@@ -386,7 +386,7 @@ describe("MessageFormatter", () => {
 
       mockFindMembersByIds.mockResolvedValue([{ id: "member_123", name: "Alice" }])
 
-      const result = await formatter.formatMessagesWithAttachments(mockClient, messages, attachmentsMap)
+      const result = await formatter.formatMessagesWithAttachments(mockClient, "ws_test", messages, attachmentsMap)
 
       expect(result).toContain("What's in this image?")
       expect(result).toContain('<attachment filename="fish.jpg" contentType="photo">')
@@ -430,7 +430,7 @@ describe("MessageFormatter", () => {
 
       mockFindMembersByIds.mockResolvedValue([{ id: "member_123", name: "Alice" }])
 
-      const result = await formatter.formatMessagesWithAttachments(mockClient, messages, attachmentsMap)
+      const result = await formatter.formatMessagesWithAttachments(mockClient, "ws_test", messages, attachmentsMap)
 
       expect(result).toContain('<attachment filename="cat.jpg" contentType="photo">')
       expect(result).toContain("An orange tabby cat sleeping on a couch</attachment>")
@@ -461,7 +461,7 @@ describe("MessageFormatter", () => {
 
       mockFindMembersByIds.mockResolvedValue([{ id: "member_123", name: "Alice" }])
 
-      const result = await formatter.formatMessagesWithAttachments(mockClient, messages, attachmentsMap)
+      const result = await formatter.formatMessagesWithAttachments(mockClient, "ws_test", messages, attachmentsMap)
 
       expect(result).toContain("Check this file")
       expect(result).not.toContain("<attachment")
@@ -494,7 +494,7 @@ describe("MessageFormatter", () => {
 
       mockFindMembersByIds.mockResolvedValue([{ id: "member_123", name: "Alice" }])
 
-      const result = await formatter.formatMessagesWithAttachments(mockClient, messages, attachmentsMap)
+      const result = await formatter.formatMessagesWithAttachments(mockClient, "ws_test", messages, attachmentsMap)
 
       expect(result).toContain('filename="file&quot;with&quot;quotes.jpg"')
       expect(result).toContain("Image with &lt;brackets&gt; &amp; ampersand</attachment>")

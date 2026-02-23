@@ -179,7 +179,7 @@ export interface WorkspaceMemberAddedOutboxPayload extends WorkspaceScopedPayloa
 }
 
 export interface WorkspaceMemberRemovedOutboxPayload extends WorkspaceScopedPayload {
-  userId: string
+  removedUserId: string
 }
 
 export interface MemberUpdatedOutboxPayload extends WorkspaceScopedPayload {

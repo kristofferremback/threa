@@ -782,7 +782,7 @@ Each query must have:
         }
 
         // Enrich results with author names and stream names
-        return enrichMessageSearchResults(client, [...dedupedResultsById.values()])
+        return enrichMessageSearchResults(client, workspaceId, [...dedupedResultsById.values()])
       })
     } catch (error) {
       logger.warn({ error, query: query.query }, "Message search failed")

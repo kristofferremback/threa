@@ -283,7 +283,7 @@ export class StreamService {
     const uniquenessKey = buildDmUniquenessKey(memberAId, memberBId)
 
     return withTransaction(this.pool, async (client) => {
-      const members = await UserRepository.findByIds(client, [memberAId, memberBId])
+      const members = await UserRepository.findByIds(client, params.workspaceId, [memberAId, memberBId])
       const workspaceMemberIds = new Set(
         members.filter((member) => member.workspaceId === params.workspaceId).map((member) => member.id)
       )
@@ -424,7 +424,7 @@ export class StreamService {
       const additionalMemberIds = (params.memberIds ?? []).filter((mid) => mid !== params.createdBy)
       if (additionalMemberIds.length > 0) {
         // Validate members belong to this workspace (INV-20: batch lookup)
-        const members = await UserRepository.findByIds(client, additionalMemberIds)
+        const members = await UserRepository.findByIds(client, params.workspaceId, additionalMemberIds)
         const validMemberIds = members.filter((m) => m.workspaceId === params.workspaceId).map((m) => m.id)
 
         // INV-11: warn on invalid member IDs rather than silently dropping

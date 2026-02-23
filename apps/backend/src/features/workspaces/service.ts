@@ -193,7 +193,7 @@ export class WorkspaceService {
 
       await OutboxRepository.insert(client, "workspace_member:removed", {
         workspaceId,
-        userId,
+        removedUserId: userId,
       })
     })
   }

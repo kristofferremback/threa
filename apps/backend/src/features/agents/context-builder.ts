@@ -253,6 +253,7 @@ async function buildChannelContext(db: Querier, stream: Stream, temporal?: Tempo
   const memberIds = members.map((m) => m.memberId)
   const { participants, participantTimezones } = await resolveParticipantsWithTimezones(
     db,
+    stream.workspaceId,
     memberIds,
     temporal !== undefined
   )
@@ -283,6 +284,7 @@ async function buildDmContext(db: Querier, stream: Stream, temporal?: TemporalCo
   const memberIds = members.map((m) => m.memberId)
   const { participants, participantTimezones } = await resolveParticipantsWithTimezones(
     db,
+    stream.workspaceId,
     memberIds,
     temporal !== undefined
   )
@@ -389,6 +391,7 @@ async function buildThreadPath(db: Querier, stream: Stream): Promise<ThreadPathE
  */
 async function resolveParticipantsWithTimezones(
   db: Querier,
+  workspaceId: string,
   memberIds: string[],
   includeTimezones: boolean
 ): Promise<{ participants: Participant[]; participantTimezones?: ParticipantTemporal[] }> {
@@ -397,7 +400,7 @@ async function resolveParticipantsWithTimezones(
   }
 
   // Batch fetch all members in one query
-  const members = await UserRepository.findByIds(db, memberIds)
+  const members = await UserRepository.findByIds(db, workspaceId, memberIds)
 
   const participants: Participant[] = members.map((member) => ({
     id: member.id,

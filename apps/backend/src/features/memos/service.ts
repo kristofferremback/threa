@@ -145,7 +145,7 @@ export class MemoService implements MemoServiceLike {
       for (const [convId, msgs] of conversationMessages) {
         const messagesArray = Array.from(msgs.values()).filter((m): m is Message => m !== null)
         if (messagesArray.length > 0) {
-          const formatted = await this.messageFormatter.formatMessages(client, messagesArray)
+          const formatted = await this.messageFormatter.formatMessages(client, workspaceId, messagesArray)
           formattedConversations.set(convId, formatted)
         }
       }
@@ -166,7 +166,7 @@ export class MemoService implements MemoServiceLike {
 
       const authorTimezones = new Map<string, string | null>()
       if (authorIds.size > 0) {
-        const members = await UserRepository.findByIds(client, Array.from(authorIds))
+        const members = await UserRepository.findByIds(client, workspaceId, Array.from(authorIds))
         for (const member of members) {
           authorTimezones.set(member.id, member.timezone)
         }

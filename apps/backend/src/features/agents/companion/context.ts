@@ -111,7 +111,7 @@ export async function buildAgentContext(deps: ContextDeps, params: ContextParams
     ),
   ]
   if (memberAuthorIds.length > 0) {
-    const members = await UserRepository.findByIds(db, memberAuthorIds)
+    const members = await UserRepository.findByIds(db, workspaceId, memberAuthorIds)
     for (const m of members) authorNames.set(m.id, m.name)
   }
 

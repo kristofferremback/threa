@@ -132,7 +132,7 @@ Optionally filter by stream using ID (stream_xxx), slug (general), or prefixed s
           exact: input.exact,
         })
 
-        const enriched = await enrichMessageSearchResults(db, searchResults)
+        const enriched = await enrichMessageSearchResults(db, workspaceId, searchResults)
         const results: MessageSearchResult[] = enriched.map((r) => ({
           id: r.id,
           content: r.content,
@@ -355,7 +355,7 @@ You can reference streams by their ID (stream_xxx), slug (general), or prefixed 
         const memberIds = [...new Set(messages.filter((m) => m.authorType === "member").map((m) => m.authorId))]
         const personaIds = [...new Set(messages.filter((m) => m.authorType === "persona").map((m) => m.authorId))]
         const [members, personas] = await Promise.all([
-          memberIds.length > 0 ? UserRepository.findByIds(db, memberIds) : Promise.resolve([]),
+          memberIds.length > 0 ? UserRepository.findByIds(db, workspaceId, memberIds) : Promise.resolve([]),
           personaIds.length > 0 ? PersonaRepository.findByIds(db, personaIds) : Promise.resolve([]),
         ])
 

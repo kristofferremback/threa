@@ -148,6 +148,7 @@ export interface RawMessageSearchResult {
  */
 export async function enrichMessageSearchResults(
   db: Querier,
+  workspaceId: string,
   results: RawMessageSearchResult[]
 ): Promise<EnrichedMessageResult[]> {
   if (results.length === 0) return []
@@ -168,7 +169,7 @@ export async function enrichMessageSearchResults(
 
   // Batch fetch members, personas, streams
   const [members, personas, streams] = await Promise.all([
-    memberIds.size > 0 ? UserRepository.findByIds(db, [...memberIds]) : Promise.resolve([]),
+    memberIds.size > 0 ? UserRepository.findByIds(db, workspaceId, [...memberIds]) : Promise.resolve([]),
     personaIds.size > 0 ? PersonaRepository.findByIds(db, [...personaIds]) : Promise.resolve([]),
     StreamRepository.findByIds(db, [...streamIds]),
   ])

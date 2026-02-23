@@ -167,13 +167,13 @@ export const UserRepository = {
     return result.rows.map(mapRowToUser)
   },
 
-  async findByIds(db: Querier, ids: string[]): Promise<User[]> {
+  async findByIds(db: Querier, workspaceId: string, ids: string[]): Promise<User[]> {
     if (ids.length === 0) return []
 
     const result = await db.query<UserRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS_WITH_ALIAS)}
       FROM users u
-      WHERE u.id = ANY(${ids})
+      WHERE u.workspace_id = ${workspaceId} AND u.id = ANY(${ids})
     `)
     return result.rows.map(mapRowToUser)
   },

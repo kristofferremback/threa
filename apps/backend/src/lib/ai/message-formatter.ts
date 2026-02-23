@@ -30,10 +30,10 @@ export class MessageFormatter {
    * // <message authorType="persona" authorId="persona_456" authorName="Ariadne" createdAt="2021-01-01T00:00:01Z">Hi there!</message>
    * // </messages>
    */
-  async formatMessages(client: Querier, messages: Message[]): Promise<string> {
+  async formatMessages(client: Querier, workspaceId: string, messages: Message[]): Promise<string> {
     if (messages.length === 0) return "<messages></messages>"
 
-    const nameById = await this.resolveAuthorNames(client, messages)
+    const nameById = await this.resolveAuthorNames(client, workspaceId, messages)
 
     const formatted = messages.map((m) => this.formatSingleMessage(m, nameById))
 
@@ -44,7 +44,11 @@ export class MessageFormatter {
    * Batch-resolve author names for a set of messages.
    * Returns a map from authorId to name.
    */
-  private async resolveAuthorNames(client: Querier, messages: Message[]): Promise<Map<string, string>> {
+  private async resolveAuthorNames(
+    client: Querier,
+    workspaceId: string,
+    messages: Message[]
+  ): Promise<Map<string, string>> {
     const memberIds = new Set<string>()
     const personaIds = new Set<string>()
 
@@ -57,7 +61,7 @@ export class MessageFormatter {
     }
 
     const [members, personas] = await Promise.all([
-      UserRepository.findByIds(client, [...memberIds]),
+      UserRepository.findByIds(client, workspaceId, [...memberIds]),
       PersonaRepository.findByIds(client, [...personaIds]),
     ])
 
@@ -93,12 +97,13 @@ export class MessageFormatter {
    */
   async formatMessagesInline(
     client: Querier,
+    workspaceId: string,
     messages: Message[],
     options?: { includeIds?: boolean }
   ): Promise<string> {
     if (messages.length === 0) return ""
 
-    const nameById = await this.resolveAuthorNames(client, messages)
+    const nameById = await this.resolveAuthorNames(client, workspaceId, messages)
 
     const formatted = messages.map((m) => {
       const authorName = nameById.get(m.authorId) ?? "Unknown"
@@ -132,12 +137,13 @@ export class MessageFormatter {
    */
   async formatMessagesWithAttachments(
     client: Querier,
+    workspaceId: string,
     messages: Message[],
     attachmentsByMessageId: Map<string, AttachmentWithExtraction[]>
   ): Promise<string> {
     if (messages.length === 0) return "<messages></messages>"
 
-    const nameById = await this.resolveAuthorNames(client, messages)
+    const nameById = await this.resolveAuthorNames(client, workspaceId, messages)
 
     const formatted = messages.map((m) => {
       const authorName = nameById.get(m.authorId) ?? "Unknown"

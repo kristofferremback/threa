@@ -178,6 +178,7 @@ export class StreamNamingService {
     // Format messages with attachment extractions (quick read for author names)
     const conversationText = await this.messageFormatter.formatMessagesWithAttachments(
       this.pool,
+      stream.workspaceId,
       messages,
       attachmentsByMessageId
     )
