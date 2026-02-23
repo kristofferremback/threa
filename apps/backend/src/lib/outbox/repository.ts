@@ -2,7 +2,7 @@ import { sql, type Querier } from "../../db"
 import { bigIntReplacer } from "../serialization"
 import type { Stream } from "../../features/streams"
 import type { StreamEvent } from "../../features/streams"
-import type { Member } from "../../features/workspaces"
+import type { User } from "../../features/workspaces"
 import type { ConversationWithStaleness } from "../../features/conversations"
 import type { Memo as WireMemo, UserPreferences, LastMessagePreview } from "@threa/types"
 
@@ -26,9 +26,9 @@ export type OutboxEventType =
   | "stream:read_all"
   | "stream:activity"
   | "attachment:uploaded"
-  | "workspace_member:added"
-  | "workspace_member:removed"
-  | "member:updated"
+  | "workspace_user:added"
+  | "workspace_user:removed"
+  | "workspace_user:updated"
   | "conversation:created"
   | "conversation:updated"
   | "memo:created"
@@ -76,9 +76,9 @@ export type WorkspaceScopedEventType =
   | "stream:archived"
   | "stream:unarchived"
   | "attachment:uploaded"
-  | "workspace_member:added"
-  | "workspace_member:removed"
-  | "member:updated"
+  | "workspace_user:added"
+  | "workspace_user:removed"
+  | "workspace_user:updated"
 
 /**
  * Base fields for stream-scoped events.
@@ -119,7 +119,7 @@ export interface MessageUpdatedOutboxPayload extends StreamScopedPayload {
 export interface ReactionOutboxPayload extends StreamScopedPayload {
   messageId: string
   emoji: string
-  memberId: string
+  userId: string
 }
 
 export interface StreamDisplayNameUpdatedPayload extends StreamScopedPayload {
@@ -148,7 +148,7 @@ export interface StreamMemberRemovedOutboxPayload extends StreamScopedPayload {
 export interface StreamCreatedOutboxPayload extends WorkspaceScopedPayload {
   streamId: string
   stream: Stream
-  dmMemberIds?: [string, string]
+  dmUserIds?: [string, string]
 }
 
 export interface StreamUpdatedOutboxPayload extends WorkspaceScopedPayload {
@@ -174,16 +174,16 @@ export interface AttachmentUploadedOutboxPayload extends WorkspaceScopedPayload 
   storagePath: string
 }
 
-export interface WorkspaceMemberAddedOutboxPayload extends WorkspaceScopedPayload {
-  member: Member
+export interface WorkspaceUserAddedOutboxPayload extends WorkspaceScopedPayload {
+  user: User
 }
 
-export interface WorkspaceMemberRemovedOutboxPayload extends WorkspaceScopedPayload {
-  memberId: string
+export interface WorkspaceUserRemovedOutboxPayload extends WorkspaceScopedPayload {
+  removedUserId: string
 }
 
-export interface MemberUpdatedOutboxPayload extends WorkspaceScopedPayload {
-  member: Member
+export interface WorkspaceUserUpdatedOutboxPayload extends WorkspaceScopedPayload {
+  user: User
 }
 
 /** Stream-scoped event for sidebar updates when new messages arrive.
@@ -282,12 +282,13 @@ export interface InvitationSentOutboxPayload extends WorkspaceScopedPayload {
 export interface InvitationAcceptedOutboxPayload extends WorkspaceScopedPayload {
   invitationId: string
   email: string
-  userId: string
+  workosUserId: string
+  userName: string
 }
 
-// Member-scoped event payloads (delivered to a specific target member)
+// User-scoped event payloads (delivered to a specific target user)
 export interface ActivityCreatedOutboxPayload extends WorkspaceScopedPayload {
-  targetMemberId: string
+  targetUserId: string
   activity: {
     id: string
     activityType: string
@@ -331,9 +332,9 @@ export interface OutboxEventPayloadMap {
   "stream:read_all": StreamsReadAllOutboxPayload
   "stream:activity": StreamActivityOutboxPayload
   "attachment:uploaded": AttachmentUploadedOutboxPayload
-  "workspace_member:added": WorkspaceMemberAddedOutboxPayload
-  "workspace_member:removed": WorkspaceMemberRemovedOutboxPayload
-  "member:updated": MemberUpdatedOutboxPayload
+  "workspace_user:added": WorkspaceUserAddedOutboxPayload
+  "workspace_user:removed": WorkspaceUserRemovedOutboxPayload
+  "workspace_user:updated": WorkspaceUserUpdatedOutboxPayload
   "conversation:created": ConversationCreatedOutboxPayload
   "conversation:updated": ConversationUpdatedOutboxPayload
   "memo:created": MemoCreatedOutboxPayload
@@ -434,16 +435,16 @@ export function isAuthorScopedEvent(event: OutboxEvent): event is OutboxEvent<Au
   return AUTHOR_SCOPED_EVENTS.includes(event.eventType as AuthorScopedEventType)
 }
 
-/** Events that are scoped to a specific target member (delivered to that member's sockets) */
-export type MemberScopedEventType = "activity:created"
+/** Events that are scoped to a specific target user (delivered to that user's sockets) */
+export type UserScopedEventType = "activity:created"
 
-const MEMBER_SCOPED_EVENTS: MemberScopedEventType[] = ["activity:created"]
+const USER_SCOPED_EVENTS: UserScopedEventType[] = ["activity:created"]
 
 /**
- * Type guard to check if an event is member-scoped (delivered to a specific target member).
+ * Type guard to check if an event is user-scoped (delivered to a specific target user).
  */
-export function isMemberScopedEvent(event: OutboxEvent): event is OutboxEvent<MemberScopedEventType> {
-  return MEMBER_SCOPED_EVENTS.includes(event.eventType as MemberScopedEventType)
+export function isUserScopedEvent(event: OutboxEvent): event is OutboxEvent<UserScopedEventType> {
+  return USER_SCOPED_EVENTS.includes(event.eventType as UserScopedEventType)
 }
 
 interface OutboxRow {

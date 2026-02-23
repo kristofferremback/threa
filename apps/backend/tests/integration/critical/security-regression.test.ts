@@ -172,7 +172,7 @@ describe("P0 Security Regression Coverage", () => {
       const workspace = await createWorkspace(ownerClient, `Budget Workspace ${runId}`)
 
       await loginAs(memberClient, `budget-member-${runId}@example.com`, "Budget Member")
-      await joinWorkspace(memberClient, workspace.id, "member")
+      await joinWorkspace(memberClient, workspace.id, "user")
 
       await loginAs(adminClient, `budget-admin-${runId}@example.com`, "Budget Admin")
       await joinWorkspace(adminClient, workspace.id, "admin")
@@ -213,11 +213,11 @@ describe("P0 Security Regression Coverage", () => {
       }
     })
 
-    test("does not deliver stream:activity preview content to workspace members outside the stream", async () => {
+    test("does not deliver stream:activity preview content to workspace users outside the stream", async () => {
       const workspace = await createWorkspace(ownerClient, `Privacy Workspace ${runId}`)
       const privateStream = await createScratchpad(ownerClient, workspace.id, "off")
 
-      await joinWorkspace(outsiderClient, workspace.id, "member")
+      await joinWorkspace(outsiderClient, workspace.id, "user")
 
       ownerSocket = createSocket(ownerClient)
       await connectSocket(ownerSocket)

@@ -1,6 +1,9 @@
 import Dexie, { type EntityTable } from "dexie"
 import type { AuthorType, EventType, JSONContent, StreamType } from "@threa/types"
 
+const WORKSPACE_USERS_STORE = "workspaceUsers"
+const LEGACY_WORKSPACE_USERS_STORE = "workspaceMembers"
+
 // Cached entity types - mirror backend domain types
 
 export interface CachedWorkspace {
@@ -12,11 +15,12 @@ export interface CachedWorkspace {
   _cachedAt: number
 }
 
-export interface CachedWorkspaceMember {
-  id: string // member ID (member_xxx)
+export interface CachedWorkspaceUser {
+  id: string // workspace user ID (legacy prefix: member_xxx)
   workspaceId: string
-  userId: string
-  role: "owner" | "admin" | "member"
+  workosUserId: string
+  email: string
+  role: "owner" | "admin" | "user"
   slug: string
   name: string
   description: string | null
@@ -60,13 +64,6 @@ export interface CachedEvent {
   // Optimistic sending state (for message_created events)
   _clientId?: string
   _status?: "pending" | "sent" | "failed"
-  _cachedAt: number
-}
-
-export interface CachedUser {
-  id: string
-  email: string
-  name: string
   _cachedAt: number
 }
 
@@ -137,10 +134,9 @@ export interface DraftMessage {
 // Database class with typed tables
 class ThreaDatabase extends Dexie {
   workspaces!: EntityTable<CachedWorkspace, "id">
-  workspaceMembers!: EntityTable<CachedWorkspaceMember, "id">
+  workspaceUsers!: EntityTable<CachedWorkspaceUser, "id">
   streams!: EntityTable<CachedStream, "id">
   events!: EntityTable<CachedEvent, "id">
-  users!: EntityTable<CachedUser, "id">
   personas!: EntityTable<CachedPersona, "id">
   pendingMessages!: EntityTable<PendingMessage, "clientId">
   syncCursors!: EntityTable<SyncCursor, "key">
@@ -152,7 +148,7 @@ class ThreaDatabase extends Dexie {
 
     this.version(1).stores({
       workspaces: "id, slug, _cachedAt",
-      workspaceMembers: "id, workspaceId, userId, _cachedAt",
+      [LEGACY_WORKSPACE_USERS_STORE]: "id, workspaceId, userId, _cachedAt",
       streams: "id, workspaceId, type, [workspaceId+type], _cachedAt",
       events: "id, streamId, sequence, [streamId+sequence], eventType, _clientId, _cachedAt",
       users: "id, email, _cachedAt",
@@ -184,40 +180,61 @@ class ThreaDatabase extends Dexie {
         return tx.table("draftMessages").clear()
       })
 
-    // v7: Member identity refactor — members now have their own ID, slug, timezone, locale.
-    // Users no longer have slug. Clear workspace members cache to re-fetch with new shape.
+    // v7: Workspace user identity refactor — users now have their own ID, slug, timezone, locale.
+    // Global users cache no longer has slug. Clear workspace user cache to re-fetch with new shape.
     this.version(7)
       .stores({
-        workspaceMembers: "id, workspaceId, userId, slug, _cachedAt",
+        [LEGACY_WORKSPACE_USERS_STORE]: "id, workspaceId, userId, slug, _cachedAt",
         users: "id, email, _cachedAt",
       })
       .upgrade((tx) => {
-        return Promise.all([tx.table("workspaceMembers").clear(), tx.table("users").clear()])
+        return Promise.all([tx.table(LEGACY_WORKSPACE_USERS_STORE).clear(), tx.table("users").clear()])
       })
 
-    // v8: Added setupCompleted to workspace members for invitation flow.
-    // Clear members cache to re-fetch with new shape.
+    // v8: Added setupCompleted to workspace users for invitation flow.
+    // Clear workspace user cache to re-fetch with new shape.
     this.version(8)
       .stores({})
       .upgrade((tx) => {
-        return tx.table("workspaceMembers").clear()
+        return tx.table(LEGACY_WORKSPACE_USERS_STORE).clear()
       })
 
-    // v9: Added name to workspace members (workspace-scoped display name).
-    // Clear members cache to re-fetch with new shape.
+    // v9: Added name to workspace users (workspace-scoped display name).
+    // Clear workspace user cache to re-fetch with new shape.
     this.version(9)
       .stores({})
       .upgrade((tx) => {
-        return tx.table("workspaceMembers").clear()
+        return tx.table(LEGACY_WORKSPACE_USERS_STORE).clear()
       })
 
-    // v10: Added description and avatarUrl to workspace members (profile fields).
-    // Clear members cache to re-fetch with new shape.
+    // v10: Added description and avatarUrl to workspace users (profile fields).
+    // Clear workspace user cache to re-fetch with new shape.
     this.version(10)
       .stores({})
       .upgrade((tx) => {
-        return tx.table("workspaceMembers").clear()
+        return tx.table(LEGACY_WORKSPACE_USERS_STORE).clear()
       })
+
+    // v11: Remove cached global users table and move WorkOS identity/email onto workspace users.
+    this.version(11)
+      .stores({
+        [LEGACY_WORKSPACE_USERS_STORE]: "id, workspaceId, workosUserId, email, slug, _cachedAt",
+        users: null,
+      })
+      .upgrade((tx) => {
+        return tx.table(LEGACY_WORKSPACE_USERS_STORE).clear()
+      })
+
+    // v12: Rename local cache store from workspaceMembers -> workspaceUsers.
+    // We intentionally reset cache during this rename; bootstrap refetch repopulates it.
+    this.version(12)
+      .stores({
+        [WORKSPACE_USERS_STORE]: "id, workspaceId, workosUserId, email, slug, _cachedAt",
+        [LEGACY_WORKSPACE_USERS_STORE]: null,
+      })
+      .upgrade((tx) => tx.table(WORKSPACE_USERS_STORE).clear())
+
+    this.workspaceUsers = this.table(WORKSPACE_USERS_STORE) as EntityTable<CachedWorkspaceUser, "id">
   }
 }
 
@@ -228,10 +245,9 @@ export const db = new ThreaDatabase()
 export async function clearAllCachedData(): Promise<void> {
   await Promise.all([
     db.workspaces.clear(),
-    db.workspaceMembers.clear(),
+    db.workspaceUsers.clear(),
     db.streams.clear(),
     db.events.clear(),
-    db.users.clear(),
     db.personas.clear(),
     db.syncCursors.clear(),
     // Note: we keep pendingMessages to retry sending after re-login

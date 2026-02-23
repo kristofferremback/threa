@@ -14,7 +14,7 @@ export type ArchiveStatus = "active" | "archived"
  */
 export interface SearchFilters {
   authorId?: string // Single author (from:@user)
-  memberIds?: string[] // Multiple users/personas, AND logic (with:@user or with:@persona)
+  userIds?: string[] // Multiple users/personas, AND logic (with:@user or with:@persona)
   streamIds?: string[] // Stream IDs (in:#channel)
   streamTypes?: StreamType[] // Stream types, OR logic (type:scratchpad)
   archiveStatus?: ArchiveStatus[] // Archive status (is:archived, is:active)
@@ -24,7 +24,7 @@ export interface SearchFilters {
 
 export interface SearchParams {
   workspaceId: string
-  memberId: string
+  userId: string
   query: string
   filters?: SearchFilters
   limit?: number
@@ -56,17 +56,17 @@ export class SearchService {
    * This is useful for error messages, IDs, or other literal text.
    */
   async search(params: SearchParams): Promise<SearchResult[]> {
-    const { workspaceId, memberId, query, filters = {}, limit = DEFAULT_LIMIT, exact = false } = params
+    const { workspaceId, userId, query, filters = {}, limit = DEFAULT_LIMIT, exact = false } = params
 
-    logger.debug({ query, filters, workspaceId, memberId, exact }, "Search request")
+    logger.debug({ query, filters, workspaceId, userId, exact }, "Search request")
 
     // For exact matching, skip embedding generation - use ILIKE directly
     if (exact) {
       return withClient(this.pool, async (client) => {
-        const streamIds = await this.getAccessibleStreamIds(client, workspaceId, memberId, filters)
+        const streamIds = await this.getAccessibleStreamIds(client, workspaceId, userId, filters)
 
         if (streamIds.length === 0) {
-          logger.debug({ workspaceId, memberId }, "No accessible streams for member")
+          logger.debug({ workspaceId, userId }, "No accessible streams for user")
           return []
         }
 
@@ -97,11 +97,11 @@ export class SearchService {
     }
 
     return withClient(this.pool, async (client) => {
-      // 1. Get accessible stream IDs for this member
-      const streamIds = await this.getAccessibleStreamIds(client, workspaceId, memberId, filters)
+      // 1. Get accessible stream IDs for this user
+      const streamIds = await this.getAccessibleStreamIds(client, workspaceId, userId, filters)
 
       if (streamIds.length === 0) {
-        logger.debug({ workspaceId, memberId }, "No accessible streams for member")
+        logger.debug({ workspaceId, userId }, "No accessible streams for user")
         return []
       }
 
@@ -141,19 +141,19 @@ export class SearchService {
 
   /**
    * Get stream IDs the user can access, optionally filtered by search filters.
-   * Uses combined query for access control + member filtering.
+   * Uses combined query for access control + participant filtering.
    */
   private async getAccessibleStreamIds(
     client: PoolClient,
     workspaceId: string,
-    memberId: string,
+    userId: string,
     filters: SearchFilters
   ): Promise<string[]> {
-    // Use combined query for access + member filtering
+    // Use combined query for access + participant filtering
     const accessibleStreamIds = await SearchRepository.getAccessibleStreamsWithMembers(client, {
       workspaceId,
-      memberId,
-      memberIds: filters.memberIds,
+      userId,
+      userIds: filters.userIds,
       streamTypes: filters.streamTypes,
       archiveStatus: filters.archiveStatus,
     })

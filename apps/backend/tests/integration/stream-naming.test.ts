@@ -11,7 +11,6 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test"
 import { Pool } from "pg"
 import { withTestTransaction, addTestMember } from "./setup"
-import { UserRepository } from "../../src/auth/user-repository"
 import { WorkspaceRepository } from "../../src/features/workspaces"
 import { StreamService, StreamRepository, type Stream } from "../../src/features/streams"
 import {
@@ -258,12 +257,6 @@ describe("Stream Naming", () => {
       const wsId = workspaceId()
 
       await withTestTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `name-update-owner-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Name Update Workspace",
@@ -294,12 +287,6 @@ describe("Stream Naming", () => {
       const wsId = workspaceId()
 
       await withTestTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `manual-name-owner-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Manual Name Workspace",

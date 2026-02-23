@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { QuickSwitcher } from "./quick-switcher"
 import { mockStreamsList } from "@/test/fixtures"
-import { mockUsersList, mockMembersList } from "@/test/fixtures/users"
+import { mockUsersList } from "@/test/fixtures/users"
 import { mockSearchResultsList } from "@/test/fixtures/messages"
 
 // Create a fresh QueryClient for each test to avoid shared state
@@ -40,9 +40,8 @@ const { mockNavigate, mockSearchState, mockWorkspaceBootstrap } = vi.hoisted(() 
       streams: unknown[]
       streamMemberships: unknown[]
       users: unknown[]
-      members: unknown[]
       personas: unknown[]
-      dmPeers?: Array<{ memberId: string; streamId: string }>
+      dmPeers?: Array<{ userId: string; streamId: string }>
     },
   },
 }))
@@ -131,7 +130,7 @@ vi.mock("@/hooks/use-mentionables", () => {
 
 // Mock auth - called by RichInput's useMentionSuggestion
 vi.mock("@/auth", () => ({
-  useUser: () => ({ id: "user_1", name: "Martin", slug: "martin" }),
+  useUser: () => ({ id: "workos_user_1", name: "Martin", slug: "martin" }),
 }))
 
 // Mock use-workspaces - called by useChannelSuggestion
@@ -174,7 +173,6 @@ describe("QuickSwitcher Integration Tests", () => {
       streams: mockStreamsList,
       streamMemberships: [],
       users: mockUsersList,
-      members: mockMembersList,
       personas: [],
       dmPeers: undefined,
     }
@@ -302,8 +300,8 @@ describe("QuickSwitcher Integration Tests", () => {
       it("should not go below last item with ArrowDown", async () => {
         const user = userEvent.setup()
         mockWorkspaceBootstrap.data.dmPeers = [
-          { memberId: "member_2", streamId: "stream_dm_existing_2" },
-          { memberId: "member_3", streamId: "stream_dm_existing_3" },
+          { userId: "member_2", streamId: "stream_dm_existing_2" },
+          { userId: "member_3", streamId: "stream_dm_existing_3" },
         ]
         renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
@@ -1294,12 +1292,12 @@ describe("QuickSwitcher Integration Tests", () => {
 
     it("should include virtual DM targets for members without DM streams", async () => {
       const user = userEvent.setup()
-      mockWorkspaceBootstrap.data.dmPeers = [{ memberId: "member_2", streamId: "stream_dm_existing" }]
+      mockWorkspaceBootstrap.data.dmPeers = [{ userId: "member_2", streamId: "stream_dm_existing" }]
 
       renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
       const input = screen.getByLabelText("Quick switcher input")
-      await user.type(input, "test")
+      await user.type(input, "alice")
 
       await waitFor(() => {
         expect(document.querySelector('a[href="/w/workspace_1/s/draft_dm_member_3"]')).toBeInTheDocument()
@@ -1313,7 +1311,7 @@ describe("QuickSwitcher Integration Tests", () => {
       renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
       const input = screen.getByLabelText("Quick switcher input")
-      await user.type(input, "test")
+      await user.type(input, "alice")
 
       await waitFor(() => {
         expect(document.querySelector('a[href="/w/workspace_1/s/draft_dm_member_3"]')).toBeInTheDocument()

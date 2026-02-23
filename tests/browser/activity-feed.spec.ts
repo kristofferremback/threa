@@ -80,11 +80,11 @@ test.describe("Activity Feed", () => {
       ctxB = await loginInNewContext(browser, userBEmail, userBName)
 
       const joinWsRes = await ctxB.page.request.post(`/api/dev/workspaces/${workspaceId}/join`, {
-        data: { role: "member" },
+        data: { role: "user" },
       })
       expect(joinWsRes.ok()).toBeTruthy()
-      const { member: memberB } = (await joinWsRes.json()) as { member: { id: string; slug: string } }
-      const userBSlug = memberB.slug
+      const { user: userB } = (await joinWsRes.json()) as { user: { id: string; slug: string } }
+      const userBSlug = userB.slug
 
       await ctxB.page.request.post(`/api/dev/workspaces/${workspaceId}/streams/${streamId}/join`)
 
@@ -182,10 +182,10 @@ test.describe("Activity Feed", () => {
       // User B joins workspace + channel
       ctxB = await loginInNewContext(browser, userBEmail, userBName)
       const joinWsRes = await ctxB.page.request.post(`/api/dev/workspaces/${workspaceId}/join`, {
-        data: { role: "member" },
+        data: { role: "user" },
       })
       expect(joinWsRes.ok()).toBeTruthy()
-      const { member: memberB } = (await joinWsRes.json()) as { member: { id: string; slug: string } }
+      const { user: userB } = (await joinWsRes.json()) as { user: { id: string; slug: string } }
 
       await ctxB.page.request.post(`/api/dev/workspaces/${workspaceId}/streams/${streamId}/join`)
 
@@ -203,7 +203,7 @@ test.describe("Activity Feed", () => {
 
       // ──── User A: Send message mentioning User B while B is viewing the stream ────
 
-      const mentionText = `Hey @${memberB.slug} check this out ${testId}`
+      const mentionText = `Hey @${userB.slug} check this out ${testId}`
       const sendMsgRes = await ctxA.page.request.post(`/api/workspaces/${workspaceId}/messages`, {
         data: { streamId, content: mentionText },
       })
@@ -260,10 +260,10 @@ test.describe("Activity Feed", () => {
       // User B joins workspace + channel
       ctxB = await loginInNewContext(browser, userBEmail, userBName)
       const joinWsRes = await ctxB.page.request.post(`/api/dev/workspaces/${workspaceId}/join`, {
-        data: { role: "member" },
+        data: { role: "user" },
       })
       expect(joinWsRes.ok()).toBeTruthy()
-      const { member: memberB } = (await joinWsRes.json()) as { member: { id: string; slug: string } }
+      const { user: userB } = (await joinWsRes.json()) as { user: { id: string; slug: string } }
 
       await ctxB.page.request.post(`/api/dev/workspaces/${workspaceId}/streams/${streamId}/join`)
 
@@ -274,7 +274,7 @@ test.describe("Activity Feed", () => {
       await switchToAllView(ctxB.page)
 
       // User A sends two messages mentioning User B
-      for (const msg of [`First mention @${memberB.slug} ${testId}`, `Second mention @${memberB.slug} ${testId}`]) {
+      for (const msg of [`First mention @${userB.slug} ${testId}`, `Second mention @${userB.slug} ${testId}`]) {
         const res = await ctxA.page.request.post(`/api/workspaces/${workspaceId}/messages`, {
           data: { streamId, content: msg },
         })

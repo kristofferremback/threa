@@ -1,5 +1,4 @@
 import type { AuthResult, AuthService } from "./auth-service"
-import type { UserService } from "./user-service"
 
 export interface DevLoginResult {
   user: { id: string; email: string; name: string }
@@ -15,28 +14,26 @@ export class StubAuthService implements AuthService {
     new Map()
 
   /**
-   * Dev login endpoint - creates/ensures user in DB and registers for auth.
+   * Dev login endpoint - creates/ensures in-memory auth user and registers session.
    * Returns user data and session token for cookie.
    */
-  async devLogin(userService: UserService, options: { email?: string; name?: string } = {}): Promise<DevLoginResult> {
+  async devLogin(options: { email?: string; name?: string } = {}): Promise<DevLoginResult> {
     const email = options.email || "test@example.com"
     const name = options.name || "Test User"
 
     // Generate a fake WorkOS user ID for testing - this mimics how real auth works
     const fakeWorkosUserId = `workos_test_${email.replace(/[^a-z0-9]/gi, "_")}`
 
-    const user = await userService.ensureUser({ email, name, workosUserId: fakeWorkosUserId })
-
     // Register with the fake WorkOS ID - this is what authenticateSession will return
     // and what socket.ts will use to look up the user
     const session = this.registerTestUser({
       id: fakeWorkosUserId,
-      email: user.email,
+      email,
       firstName: name,
     })
 
     return {
-      user: { id: user.id, email: user.email, name: user.name },
+      user: { id: fakeWorkosUserId, email, name },
       session,
     }
   }

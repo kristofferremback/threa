@@ -4,7 +4,7 @@ import { withTransaction, withTestTransaction } from "./setup"
 import { EventService, MessageRepository } from "../../src/features/messaging"
 import { StreamEventRepository } from "../../src/features/streams"
 import { OutboxRepository } from "../../src/lib/outbox"
-import { streamId, memberId, workspaceId } from "../../src/lib/id"
+import { streamId, userId, workspaceId } from "../../src/lib/id"
 import { setupTestDatabase, testMessageContent } from "./setup"
 
 describe("Event Sourcing", () => {
@@ -36,13 +36,13 @@ describe("Event Sourcing", () => {
     test("should create event, projection, and outbox entry atomically", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = memberId()
+      const testUserId = userId()
 
       const message = await eventService.createMessage({
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("Hello, world!"),
       })
 
@@ -62,7 +62,7 @@ describe("Event Sourcing", () => {
         sequence: 1n,
         eventType: "message_created",
         actorId: testUserId,
-        actorType: "member",
+        actorType: "user",
       })
       expect(events[0].payload).toMatchObject({
         messageId: message.id,
@@ -73,13 +73,13 @@ describe("Event Sourcing", () => {
     test("should assign sequential sequence numbers", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = memberId()
+      const testUserId = userId()
 
       const msg1 = await eventService.createMessage({
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("First"),
       })
 
@@ -87,7 +87,7 @@ describe("Event Sourcing", () => {
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("Second"),
       })
 
@@ -95,7 +95,7 @@ describe("Event Sourcing", () => {
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("Third"),
       })
 
@@ -112,14 +112,14 @@ describe("Event Sourcing", () => {
       const stream1 = streamId()
       const stream2 = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = memberId()
+      const testUserId = userId()
 
       // Create messages in interleaved order
       await eventService.createMessage({
         workspaceId: testWorkspaceId,
         streamId: stream1,
         authorId: testUserId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("Stream 1 - First"),
       })
 
@@ -127,7 +127,7 @@ describe("Event Sourcing", () => {
         workspaceId: testWorkspaceId,
         streamId: stream2,
         authorId: testUserId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("Stream 2 - First"),
       })
 
@@ -135,7 +135,7 @@ describe("Event Sourcing", () => {
         workspaceId: testWorkspaceId,
         streamId: stream1,
         authorId: testUserId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("Stream 1 - Second"),
       })
 
@@ -143,7 +143,7 @@ describe("Event Sourcing", () => {
         workspaceId: testWorkspaceId,
         streamId: stream2,
         authorId: testUserId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("Stream 2 - Second"),
       })
 
@@ -175,7 +175,7 @@ describe("Event Sourcing", () => {
     test("should publish to outbox for real-time delivery", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = memberId()
+      const testUserId = userId()
 
       // Get baseline outbox id
       const baselineResult = await pool.query("SELECT COALESCE(MAX(id), 0) as max_id FROM outbox")
@@ -185,7 +185,7 @@ describe("Event Sourcing", () => {
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("Test message"),
       })
 
@@ -213,13 +213,13 @@ describe("Event Sourcing", () => {
     test("should create edit event and update projection", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = memberId()
+      const testUserId = userId()
 
       const original = await eventService.createMessage({
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("Original content"),
       })
 
@@ -251,13 +251,13 @@ describe("Event Sourcing", () => {
     test("should preserve sequence on edit", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = memberId()
+      const testUserId = userId()
 
       const original = await eventService.createMessage({
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("Original"),
       })
 
@@ -276,13 +276,13 @@ describe("Event Sourcing", () => {
     test("should publish edit event to outbox", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = memberId()
+      const testUserId = userId()
 
       const original = await eventService.createMessage({
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("Original"),
       })
 
@@ -309,13 +309,13 @@ describe("Event Sourcing", () => {
     test("should create delete event and soft-delete projection", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = memberId()
+      const testUserId = userId()
 
       const message = await eventService.createMessage({
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("To be deleted"),
       })
 
@@ -343,13 +343,13 @@ describe("Event Sourcing", () => {
     test("should exclude deleted messages from list queries", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = memberId()
+      const testUserId = userId()
 
       const msg1 = await eventService.createMessage({
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("Keep me"),
       })
 
@@ -357,7 +357,7 @@ describe("Event Sourcing", () => {
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("Delete me"),
       })
 
@@ -377,13 +377,13 @@ describe("Event Sourcing", () => {
     test("should publish delete event to outbox", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = memberId()
+      const testUserId = userId()
 
       const message = await eventService.createMessage({
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("To delete"),
       })
 
@@ -411,13 +411,13 @@ describe("Event Sourcing", () => {
     test("should add reaction event and update projection", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = memberId()
+      const testUserId = userId()
 
       const message = await eventService.createMessage({
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("React to me"),
       })
 
@@ -426,7 +426,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         messageId: message.id,
         emoji: "👍",
-        memberId: testUserId,
+        userId: testUserId,
       })
 
       expect(updated).not.toBeNull()
@@ -442,21 +442,21 @@ describe("Event Sourcing", () => {
       expect(reactionEvent!.payload).toMatchObject({
         messageId: message.id,
         emoji: "👍",
-        memberId: testUserId,
+        userId: testUserId,
       })
     })
 
     test("should aggregate multiple reactions correctly", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const user1 = memberId()
-      const user2 = memberId()
+      const user1 = userId()
+      const user2 = userId()
 
       const message = await eventService.createMessage({
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: user1,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("Popular message"),
       })
 
@@ -465,7 +465,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         messageId: message.id,
         emoji: "👍",
-        memberId: user1,
+        userId: user1,
       })
 
       await eventService.addReaction({
@@ -473,7 +473,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         messageId: message.id,
         emoji: "👍",
-        memberId: user2,
+        userId: user2,
       })
 
       await eventService.addReaction({
@@ -481,7 +481,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         messageId: message.id,
         emoji: "❤️",
-        memberId: user1,
+        userId: user1,
       })
 
       const updated = await eventService.getMessageById(message.id)
@@ -495,13 +495,13 @@ describe("Event Sourcing", () => {
     test("should remove reaction event and update projection", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = memberId()
+      const testUserId = userId()
 
       const message = await eventService.createMessage({
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("React then unreact"),
       })
 
@@ -510,7 +510,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         messageId: message.id,
         emoji: "👍",
-        memberId: testUserId,
+        userId: testUserId,
       })
 
       const afterRemove = await eventService.removeReaction({
@@ -518,7 +518,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         messageId: message.id,
         emoji: "👍",
-        memberId: testUserId,
+        userId: testUserId,
       })
 
       // Reaction should be gone from projection
@@ -535,13 +535,13 @@ describe("Event Sourcing", () => {
     test("should handle duplicate reaction gracefully", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = memberId()
+      const testUserId = userId()
 
       const message = await eventService.createMessage({
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("Double react"),
       })
 
@@ -550,7 +550,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         messageId: message.id,
         emoji: "👍",
-        memberId: testUserId,
+        userId: testUserId,
       })
 
       // Add same reaction again - should not duplicate in projection
@@ -559,7 +559,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         messageId: message.id,
         emoji: "👍",
-        memberId: testUserId,
+        userId: testUserId,
       })
 
       const final = await eventService.getMessageById(message.id)
@@ -571,13 +571,13 @@ describe("Event Sourcing", () => {
     test("should publish reaction events to outbox", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = memberId()
+      const testUserId = userId()
 
       const message = await eventService.createMessage({
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("Outbox test"),
       })
 
@@ -589,7 +589,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         messageId: message.id,
         emoji: "👍",
-        memberId: testUserId,
+        userId: testUserId,
       })
 
       await eventService.removeReaction({
@@ -597,7 +597,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         messageId: message.id,
         emoji: "👍",
-        memberId: testUserId,
+        userId: testUserId,
       })
 
       const outboxEvents = await OutboxRepository.fetchAfterId(pool, baselineId)
@@ -612,13 +612,13 @@ describe("Event Sourcing", () => {
     test("should list events in sequence order", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = memberId()
+      const testUserId = userId()
 
       await eventService.createMessage({
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("First"),
       })
 
@@ -626,7 +626,7 @@ describe("Event Sourcing", () => {
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("Second"),
       })
 
@@ -634,7 +634,7 @@ describe("Event Sourcing", () => {
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("Third"),
       })
 
@@ -649,13 +649,13 @@ describe("Event Sourcing", () => {
     test("should filter events by type", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = memberId()
+      const testUserId = userId()
 
       const message = await eventService.createMessage({
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         authorId: testUserId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("Test"),
       })
 
@@ -664,7 +664,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         messageId: message.id,
         emoji: "👍",
-        memberId: testUserId,
+        userId: testUserId,
       })
 
       await eventService.editMessage({
@@ -687,14 +687,14 @@ describe("Event Sourcing", () => {
     test("should paginate events with afterSequence", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = memberId()
+      const testUserId = userId()
 
       for (let i = 0; i < 5; i++) {
         await eventService.createMessage({
           workspaceId: testWorkspaceId,
           streamId: testStreamId,
           authorId: testUserId,
-          authorType: "member",
+          authorType: "user",
           ...testMessageContent(`Message ${i + 1}`),
         })
       }
@@ -713,14 +713,14 @@ describe("Event Sourcing", () => {
     test("should respect limit parameter", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = memberId()
+      const testUserId = userId()
 
       for (let i = 0; i < 10; i++) {
         await eventService.createMessage({
           workspaceId: testWorkspaceId,
           streamId: testStreamId,
           authorId: testUserId,
-          authorType: "member",
+          authorType: "user",
           ...testMessageContent(`Message ${i + 1}`),
         })
       }
@@ -735,7 +735,7 @@ describe("Event Sourcing", () => {
     test("should rollback all changes on failure", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testUserId = memberId()
+      const testUserId = userId()
 
       // Get baseline counts
       const beforeEvents = await pool.query("SELECT COUNT(*) as count FROM stream_events")
@@ -753,7 +753,7 @@ describe("Event Sourcing", () => {
             eventType: "message_created",
             payload: { messageId: "msg_test", content: "Test", contentFormat: "markdown" },
             actorId: testUserId,
-            actorType: "member",
+            actorType: "user",
           })
 
           // Insert message
@@ -762,7 +762,7 @@ describe("Event Sourcing", () => {
             streamId: testStreamId,
             sequence: 1n,
             authorId: testUserId,
-            authorType: "member",
+            authorType: "user",
             ...testMessageContent("Test"),
           })
 

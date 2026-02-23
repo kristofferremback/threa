@@ -1,4 +1,4 @@
-/** Deterministic color from member ID for avatar backgrounds */
+/** Deterministic color from user ID for avatar backgrounds */
 const AVATAR_COLORS = [
   "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
   "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",

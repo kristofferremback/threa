@@ -1,6 +1,6 @@
 import type { AuthorType } from "@threa/types"
 import type { Querier } from "../../../db"
-import { MemberRepository } from "../../workspaces"
+import { UserRepository } from "../../workspaces"
 import { StreamRepository } from "../../streams"
 import type { Memo } from "../../memos"
 import { PersonaRepository } from "../persona-repository"
@@ -97,7 +97,7 @@ function formatMessagesSection(messages: EnrichedMessageResult[]): string {
   const messageEntries = messages
     .map((msg) => {
       const relativeDate = formatRelativeDate(msg.createdAt)
-      const author = msg.authorType === "member" ? `@${msg.authorName}` : msg.authorName
+      const author = msg.authorType === "user" ? `@${msg.authorName}` : msg.authorName
       const content = msg.content.replace(/\s+/g, " ").trim()
 
       return `> **${author}** in _${msg.streamName}_ (${relativeDate}):
@@ -148,27 +148,28 @@ export interface RawMessageSearchResult {
  */
 export async function enrichMessageSearchResults(
   db: Querier,
+  workspaceId: string,
   results: RawMessageSearchResult[]
 ): Promise<EnrichedMessageResult[]> {
   if (results.length === 0) return []
 
   // Collect unique IDs for batch lookup
-  const memberIds = new Set<string>()
+  const userIds = new Set<string>()
   const personaIds = new Set<string>()
   const streamIds = new Set<string>()
 
   for (const r of results) {
-    if (r.authorType === "member") {
-      memberIds.add(r.authorId)
+    if (r.authorType === "user") {
+      userIds.add(r.authorId)
     } else {
       personaIds.add(r.authorId)
     }
     streamIds.add(r.streamId)
   }
 
-  // Batch fetch members, personas, streams
+  // Batch fetch users, personas, streams
   const [members, personas, streams] = await Promise.all([
-    memberIds.size > 0 ? MemberRepository.findByIds(db, [...memberIds]) : Promise.resolve([]),
+    userIds.size > 0 ? UserRepository.findByIds(db, workspaceId, [...userIds]) : Promise.resolve([]),
     personaIds.size > 0 ? PersonaRepository.findByIds(db, [...personaIds]) : Promise.resolve([]),
     StreamRepository.findByIds(db, [...streamIds]),
   ])
@@ -181,7 +182,7 @@ export async function enrichMessageSearchResults(
   // Enrich results
   return results.map((r) => {
     const authorName =
-      r.authorType === "member"
+      r.authorType === "user"
         ? (memberMap.get(r.authorId)?.name ?? "Unknown")
         : (personaMap.get(r.authorId)?.name ?? "Assistant")
 

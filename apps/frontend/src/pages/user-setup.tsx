@@ -17,7 +17,7 @@ function generateSlug(name: string): string {
 
 type SlugStatus = "idle" | "checking" | "available" | "taken"
 
-export function MemberSetupPage() {
+export function UserSetupPage() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const navigate = useNavigate()
   const user = useUser()
@@ -103,7 +103,7 @@ export function MemberSetupPage() {
 
   const setupMutation = useMutation({
     mutationFn: () =>
-      workspacesApi.completeMemberSetup(workspaceId!, {
+      workspacesApi.completeUserSetup(workspaceId!, {
         name: name || undefined,
         slug: trimmedSlug || undefined,
         timezone,

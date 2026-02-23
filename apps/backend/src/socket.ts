@@ -1,11 +1,10 @@
 import type { Server, Socket } from "socket.io"
 import { parseCookies } from "./lib/cookies"
 import type { AuthService } from "./auth/auth-service"
-import type { UserService } from "./auth/user-service"
 import type { StreamService } from "./features/streams"
 import type { UserSocketRegistry } from "./lib/user-socket-registry"
 import { AgentSessionRepository } from "./features/agents"
-import { MemberRepository } from "./features/workspaces"
+import { UserRepository } from "./features/workspaces"
 import { HttpError } from "./lib/errors"
 import { logger } from "./lib/logger"
 import { wsConnectionsActive, wsConnectionDuration, wsMessagesTotal } from "./lib/observability"
@@ -25,7 +24,7 @@ function normalizeRoomPattern(room: string): string {
     .replace(/stream:[\w]+/, "stream:{streamId}")
     .replace(/thread:[\w]+/, "thread:{threadId}")
     .replace(/agent_session:[\w]+/, "agent_session:{sessionId}")
-    .replace(/member:[\w]+/, "member:{memberId}")
+    .replace(/user:[\w]+/, "user:{userId}")
 }
 
 /**
@@ -51,13 +50,12 @@ interface SocketMetricsState {
 interface Dependencies {
   pool: import("pg").Pool
   authService: AuthService
-  userService: UserService
   streamService: StreamService
   userSocketRegistry: UserSocketRegistry
 }
 
 export function registerSocketHandlers(io: Server, deps: Dependencies) {
-  const { pool, authService, userService, streamService, userSocketRegistry } = deps
+  const { pool, authService, streamService, userSocketRegistry } = deps
 
   // ===========================================================================
   // Authentication middleware
@@ -75,12 +73,7 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
       return next(new Error("Authentication failed"))
     }
 
-    const user = await userService.getUserByWorkosUserId(result.user.id)
-    if (!user) {
-      return next(new Error("User not found"))
-    }
-
-    socket.data.userId = user.id
+    socket.data.workosUserId = result.user.id
     return next()
   })
 
@@ -88,9 +81,9 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
   // Connection handlers
   // ===========================================================================
   io.on("connection", (socket) => {
-    const userId = socket.data.userId
-    userSocketRegistry.register(userId, socket)
-    logger.debug({ userId, socketId: socket.id }, "Socket connected")
+    const workosUserId = socket.data.workosUserId
+    userSocketRegistry.register(workosUserId, socket)
+    logger.debug({ workosUserId, socketId: socket.id }, "Socket connected")
 
     // Initialize metrics state for this socket
     const metricsState: SocketMetricsState = {
@@ -98,8 +91,8 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
       joinedRooms: new Map(),
     }
 
-    // Track member rooms per workspace for auto-leave on workspace leave
-    const memberRooms = new Map<string, { memberId: string; memberRoom: string }>()
+    // Track user rooms per workspace for auto-leave on workspace leave
+    const userRooms = new Map<string, { userId: string; userRoom: string }>()
 
     // =========================================================================
     // Room management
@@ -118,8 +111,8 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
       const workspaceMatch = room.match(/^ws:([^:]+)$/)
       if (workspaceMatch) {
         const wsId = workspaceMatch[1]
-        const member = await MemberRepository.findByUserIdInWorkspace(pool, wsId, userId)
-        if (!member) {
+        const workspaceUser = await UserRepository.findByWorkosUserIdInWorkspace(pool, wsId, workosUserId)
+        if (!workspaceUser) {
           socket.emit("error", { message: "Not authorized to join this workspace" })
           wsMessagesTotal.inc({ workspace_id: wsId, direction: "sent", event_type: "error", room_pattern: roomPattern })
           callback?.({ ok: false, error: "Not authorized to join this workspace" })
@@ -127,16 +120,16 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
         }
         socket.join(room)
 
-        // Auto-join member room for targeted event delivery (activity, commands, read state)
-        const memberRoom = `ws:${wsId}:member:${member.id}`
-        socket.join(memberRoom)
-        memberRooms.set(wsId, { memberId: member.id, memberRoom })
+        // Auto-join user room for targeted event delivery (activity, commands, read state)
+        const userRoom = `ws:${wsId}:user:${workspaceUser.id}`
+        socket.join(userRoom)
+        userRooms.set(wsId, { userId: workspaceUser.id, userRoom })
 
         // Track metrics
         wsConnectionsActive.inc({ workspace_id: wsId, room_pattern: roomPattern })
         metricsState.joinedRooms.set(room, { workspaceId: wsId, roomPattern })
 
-        logger.debug({ userId, room, memberRoom }, "Joined workspace room")
+        logger.debug({ workosUserId, room, userRoom }, "Joined workspace room")
         callback?.({ ok: true })
         return
       }
@@ -145,19 +138,19 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
       const streamMatch = room.match(/^ws:([^:]+):stream:(.+)$/)
       if (streamMatch) {
         const [, wsId, streamId] = streamMatch
-        // Resolve user -> member for stream access validation
-        const member = await MemberRepository.findByUserIdInWorkspace(pool, wsId, userId)
-        if (!member) {
+        // Resolve user for stream access validation
+        const workspaceUser = await UserRepository.findByWorkosUserIdInWorkspace(pool, wsId, workosUserId)
+        if (!workspaceUser) {
           socket.emit("error", { message: "Not authorized to join this stream" })
           wsMessagesTotal.inc({ workspace_id: wsId, direction: "sent", event_type: "error", room_pattern: roomPattern })
           callback?.({ ok: false, error: "Not authorized to join this stream" })
           return
         }
         try {
-          await streamService.validateStreamAccess(streamId, wsId, member.id)
+          await streamService.validateStreamAccess(streamId, wsId, workspaceUser.id)
         } catch (error) {
           if (!isJoinAccessError(error)) {
-            logger.error({ error, userId, room, wsId, streamId }, "Unexpected error during stream room join")
+            logger.error({ error, workosUserId, room, wsId, streamId }, "Unexpected error during stream room join")
           }
           socket.emit("error", { message: "Not authorized to join this stream" })
           wsMessagesTotal.inc({ workspace_id: wsId, direction: "sent", event_type: "error", room_pattern: roomPattern })
@@ -170,7 +163,7 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
         wsConnectionsActive.inc({ workspace_id: wsId, room_pattern: roomPattern })
         metricsState.joinedRooms.set(room, { workspaceId: wsId, roomPattern })
 
-        logger.debug({ userId, room }, "Joined stream room")
+        logger.debug({ workosUserId, room }, "Joined stream room")
         callback?.({ ok: true })
         return
       }
@@ -187,20 +180,20 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
           callback?.({ ok: false, error: "Session not found" })
           return
         }
-        // Resolve user -> member for stream access validation
-        const member = await MemberRepository.findByUserIdInWorkspace(pool, wsId, userId)
-        if (!member) {
+        // Resolve user for stream access validation
+        const workspaceUser = await UserRepository.findByWorkosUserIdInWorkspace(pool, wsId, workosUserId)
+        if (!workspaceUser) {
           socket.emit("error", { message: "Not authorized to join this session" })
           wsMessagesTotal.inc({ workspace_id: wsId, direction: "sent", event_type: "error", room_pattern: roomPattern })
           callback?.({ ok: false, error: "Not authorized to join this session" })
           return
         }
         try {
-          await streamService.validateStreamAccess(session.streamId, wsId, member.id)
+          await streamService.validateStreamAccess(session.streamId, wsId, workspaceUser.id)
         } catch (error) {
           if (!isJoinAccessError(error)) {
             logger.error(
-              { error, userId, room, wsId, streamId: session.streamId },
+              { error, workosUserId, room, wsId, streamId: session.streamId },
               "Unexpected error during agent session room join"
             )
           }
@@ -212,7 +205,7 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
         socket.join(room)
         wsConnectionsActive.inc({ workspace_id: wsId, room_pattern: roomPattern })
         metricsState.joinedRooms.set(room, { workspaceId: wsId, roomPattern })
-        logger.debug({ userId, room }, "Joined agent session room")
+        logger.debug({ workosUserId, room }, "Joined agent session room")
         callback?.({ ok: true })
         return
       }
@@ -240,14 +233,14 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
 
       socket.leave(room)
 
-      // Auto-leave member room when leaving a workspace room
+      // Auto-leave user room when leaving a workspace room
       const wsMatch = room.match(/^ws:([^:]+)$/)
       if (wsMatch) {
         const wsId = wsMatch[1]
-        const entry = memberRooms.get(wsId)
+        const entry = userRooms.get(wsId)
         if (entry) {
-          socket.leave(entry.memberRoom)
-          memberRooms.delete(wsId)
+          socket.leave(entry.userRoom)
+          userRooms.delete(wsId)
         }
       }
 
@@ -258,7 +251,7 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
         metricsState.joinedRooms.delete(room)
       }
 
-      logger.debug({ userId, room }, "Left room")
+      logger.debug({ workosUserId, room }, "Left room")
     })
 
     // =========================================================================
@@ -266,7 +259,7 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
     // =========================================================================
 
     socket.on("disconnect", () => {
-      userSocketRegistry.unregister(userId, socket)
+      userSocketRegistry.unregister(workosUserId, socket)
 
       // Clean up metrics for all joined rooms
       const connectionDurationSeconds = Number(process.hrtime.bigint() - metricsState.connectTime) / 1e9
@@ -283,7 +276,7 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
       }
 
       metricsState.joinedRooms.clear()
-      logger.debug({ userId, socketId: socket.id }, "Socket disconnected")
+      logger.debug({ workosUserId, socketId: socket.id }, "Socket disconnected")
     })
   })
 }

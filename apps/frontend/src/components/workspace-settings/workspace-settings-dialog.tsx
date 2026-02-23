@@ -2,14 +2,14 @@ import { useEffect, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { MembersTab } from "./members-tab"
+import { UsersTab } from "./users-tab"
 
-const WORKSPACE_SETTINGS_TABS = ["general", "members"] as const
+const WORKSPACE_SETTINGS_TABS = ["general", "users"] as const
 type WorkspaceSettingsTab = (typeof WORKSPACE_SETTINGS_TABS)[number]
 
 const TAB_LABELS: Record<WorkspaceSettingsTab, string> = {
   general: "General",
-  members: "Members",
+  users: "Users",
 }
 
 interface WorkspaceSettingsDialogProps {
@@ -21,10 +21,11 @@ export function WorkspaceSettingsDialog({ workspaceId }: WorkspaceSettingsDialog
   const [mounted, setMounted] = useState(false)
 
   const settingsParam = searchParams.get("ws-settings")
+  const normalizedSettingsParam = settingsParam === "members" ? "users" : settingsParam
   const isOpen = settingsParam !== null
   const activeTab: WorkspaceSettingsTab =
-    settingsParam && WORKSPACE_SETTINGS_TABS.includes(settingsParam as WorkspaceSettingsTab)
-      ? (settingsParam as WorkspaceSettingsTab)
+    normalizedSettingsParam && WORKSPACE_SETTINGS_TABS.includes(normalizedSettingsParam as WorkspaceSettingsTab)
+      ? (normalizedSettingsParam as WorkspaceSettingsTab)
       : "general"
 
   useEffect(() => {
@@ -67,8 +68,8 @@ export function WorkspaceSettingsDialog({ workspaceId }: WorkspaceSettingsDialog
                 <p className="text-sm text-muted-foreground">Workspace general settings will be available here.</p>
               </div>
             </TabsContent>
-            <TabsContent value="members" className="mt-0">
-              <MembersTab workspaceId={workspaceId} />
+            <TabsContent value="users" className="mt-0">
+              <UsersTab workspaceId={workspaceId} />
             </TabsContent>
           </div>
         </Tabs>

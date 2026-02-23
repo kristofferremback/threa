@@ -81,7 +81,7 @@ export interface CommandExecuteJobData {
   args: string
   workspaceId: string
   streamId: string
-  memberId: string
+  userId: string
 }
 
 export interface ImageCaptionJobData {

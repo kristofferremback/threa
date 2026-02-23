@@ -2,14 +2,13 @@ import { afterEach, describe, expect, it, mock, spyOn } from "bun:test"
 import { AuthorTypes, CompanionModes, StreamTypes, Visibilities } from "@threa/types"
 import { StreamRepository } from "../streams"
 import { InvitationRepository } from "../invitations"
-import { MemberRepository } from "../workspaces"
-import { UserRepository } from "../../auth/user-repository"
+import { UserRepository } from "../workspaces"
 import { SystemMessageService } from "./service"
 import type { Stream } from "../streams"
 
 const WORKSPACE_ID = `ws_${crypto.randomUUID().replace(/-/g, "").slice(0, 26)}`
-const MEMBER_A = `mem_${crypto.randomUUID().replace(/-/g, "").slice(0, 26)}`
-const MEMBER_B = `mem_${crypto.randomUUID().replace(/-/g, "").slice(0, 26)}`
+const USER_A = `usr_${crypto.randomUUID().replace(/-/g, "").slice(0, 26)}`
+const USER_B = `usr_${crypto.randomUUID().replace(/-/g, "").slice(0, 26)}`
 
 function fakeStream(overrides: Partial<Stream> = {}): Stream {
   return {
@@ -25,12 +24,31 @@ function fakeStream(overrides: Partial<Stream> = {}): Stream {
     rootStreamId: null,
     companionMode: CompanionModes.OFF,
     companionPersonaId: null,
-    createdBy: MEMBER_A,
+    createdBy: USER_A,
     createdAt: new Date(),
     updatedAt: new Date(),
     archivedAt: null,
     displayNameGeneratedAt: null,
     ...overrides,
+  }
+}
+
+function fakeUser(overrides: Partial<Awaited<ReturnType<typeof UserRepository.findById>>> = {}) {
+  return {
+    id: USER_A,
+    workspaceId: WORKSPACE_ID,
+    workosUserId: "workos_user_1",
+    email: "alice@test.com",
+    role: "owner" as const,
+    slug: "alice",
+    name: "Alice",
+    description: null,
+    avatarUrl: null,
+    timezone: null,
+    locale: null,
+    setupCompleted: true,
+    joinedAt: new Date(),
+    ...(overrides as object),
   }
 }
 
@@ -48,13 +66,13 @@ describe("SystemMessageService", () => {
     mock.restore()
   })
 
-  describe("notifyMember", () => {
+  describe("notifyUser", () => {
     it("should send message to existing system stream", async () => {
-      const systemStream = fakeStream({ createdBy: MEMBER_A })
+      const systemStream = fakeStream({ createdBy: USER_A })
       spyOn(StreamRepository, "findByTypeAndOwner").mockResolvedValue(systemStream)
 
       const { service, createMessage } = createService()
-      await service.notifyMember(WORKSPACE_ID, MEMBER_A, "Hello from the system")
+      await service.notifyUser(WORKSPACE_ID, USER_A, "Hello from the system")
 
       expect(createMessage).toHaveBeenCalledWith({
         workspaceId: WORKSPACE_ID,
@@ -69,7 +87,7 @@ describe("SystemMessageService", () => {
       spyOn(StreamRepository, "findByTypeAndOwner").mockResolvedValue(null)
 
       const { service, createMessage } = createService()
-      await service.notifyMember(WORKSPACE_ID, MEMBER_A, "Test notification")
+      await service.notifyUser(WORKSPACE_ID, USER_A, "Test notification")
 
       expect(createMessage).not.toHaveBeenCalled()
     })
@@ -77,26 +95,9 @@ describe("SystemMessageService", () => {
 
   describe("sendBudgetAlert", () => {
     it("should format budget data as markdown and delegate to notifyOwners", async () => {
-      const streamA = fakeStream({ createdBy: MEMBER_A })
+      const streamA = fakeStream({ createdBy: USER_A })
 
-      spyOn(MemberRepository, "listByWorkspace").mockResolvedValue([
-        {
-          id: MEMBER_A,
-          workspaceId: WORKSPACE_ID,
-          userId: "usr_1",
-          role: "owner",
-          slug: "alice",
-          timezone: null,
-          locale: null,
-          name: "Alice",
-          description: null,
-          avatarUrl: null,
-
-          email: "alice@test.com",
-          setupCompleted: true,
-          joinedAt: new Date(),
-        },
-      ])
+      spyOn(UserRepository, "listByWorkspace").mockResolvedValue([fakeUser({ id: USER_A })] as never)
       spyOn(StreamRepository, "list").mockResolvedValue([streamA])
 
       const { service, createMessage } = createService()
@@ -119,43 +120,13 @@ describe("SystemMessageService", () => {
 
   describe("notifyOwners", () => {
     it("should send message to each owner's system stream", async () => {
-      const streamA = fakeStream({ createdBy: MEMBER_A })
-      const streamB = fakeStream({ createdBy: MEMBER_B })
+      const streamA = fakeStream({ createdBy: USER_A })
+      const streamB = fakeStream({ createdBy: USER_B })
 
-      spyOn(MemberRepository, "listByWorkspace").mockResolvedValue([
-        {
-          id: MEMBER_A,
-          workspaceId: WORKSPACE_ID,
-          userId: "usr_1",
-          role: "owner",
-          slug: "alice",
-          timezone: null,
-          locale: null,
-          name: "Alice",
-          description: null,
-          avatarUrl: null,
-
-          email: "alice@test.com",
-          setupCompleted: true,
-          joinedAt: new Date(),
-        },
-        {
-          id: MEMBER_B,
-          workspaceId: WORKSPACE_ID,
-          userId: "usr_2",
-          role: "owner",
-          slug: "bob",
-          timezone: null,
-          locale: null,
-          name: "Bob",
-          description: null,
-          avatarUrl: null,
-
-          email: "bob@test.com",
-          setupCompleted: true,
-          joinedAt: new Date(),
-        },
-      ])
+      spyOn(UserRepository, "listByWorkspace").mockResolvedValue([
+        fakeUser({ id: USER_A, role: "owner", name: "Alice", email: "alice@test.com" }),
+        fakeUser({ id: USER_B, role: "owner", name: "Bob", email: "bob@test.com" }),
+      ] as never)
       spyOn(StreamRepository, "list").mockResolvedValue([streamA, streamB])
 
       const { service, createMessage } = createService()
@@ -173,43 +144,13 @@ describe("SystemMessageService", () => {
       )
     })
 
-    it("should only notify owners, not regular members", async () => {
-      const streamA = fakeStream({ createdBy: MEMBER_A })
+    it("should only notify owners, not regular users", async () => {
+      const streamA = fakeStream({ createdBy: USER_A })
 
-      spyOn(MemberRepository, "listByWorkspace").mockResolvedValue([
-        {
-          id: MEMBER_A,
-          workspaceId: WORKSPACE_ID,
-          userId: "usr_1",
-          role: "owner",
-          slug: "alice",
-          timezone: null,
-          locale: null,
-          name: "Alice",
-          description: null,
-          avatarUrl: null,
-
-          email: "alice@test.com",
-          setupCompleted: true,
-          joinedAt: new Date(),
-        },
-        {
-          id: MEMBER_B,
-          workspaceId: WORKSPACE_ID,
-          userId: "usr_2",
-          role: "member",
-          slug: "bob",
-          timezone: null,
-          locale: null,
-          name: "Bob",
-          description: null,
-          avatarUrl: null,
-
-          email: "bob@test.com",
-          setupCompleted: true,
-          joinedAt: new Date(),
-        },
-      ])
+      spyOn(UserRepository, "listByWorkspace").mockResolvedValue([
+        fakeUser({ id: USER_A, role: "owner", name: "Alice" }),
+        fakeUser({ id: USER_B, role: "user", name: "Bob" }),
+      ] as never)
       spyOn(StreamRepository, "list").mockResolvedValue([streamA])
 
       const { service, createMessage } = createService()
@@ -220,42 +161,12 @@ describe("SystemMessageService", () => {
     })
 
     it("should skip owners with missing streams and continue notifying others", async () => {
-      const streamB = fakeStream({ createdBy: MEMBER_B })
+      const streamB = fakeStream({ createdBy: USER_B })
 
-      spyOn(MemberRepository, "listByWorkspace").mockResolvedValue([
-        {
-          id: MEMBER_A,
-          workspaceId: WORKSPACE_ID,
-          userId: "usr_1",
-          role: "owner",
-          slug: "alice",
-          timezone: null,
-          locale: null,
-          name: "Alice",
-          description: null,
-          avatarUrl: null,
-
-          email: "alice@test.com",
-          setupCompleted: true,
-          joinedAt: new Date(),
-        },
-        {
-          id: MEMBER_B,
-          workspaceId: WORKSPACE_ID,
-          userId: "usr_2",
-          role: "owner",
-          slug: "bob",
-          timezone: null,
-          locale: null,
-          name: "Bob",
-          description: null,
-          avatarUrl: null,
-
-          email: "bob@test.com",
-          setupCompleted: true,
-          joinedAt: new Date(),
-        },
-      ])
+      spyOn(UserRepository, "listByWorkspace").mockResolvedValue([
+        fakeUser({ id: USER_A, role: "owner", name: "Alice" }),
+        fakeUser({ id: USER_B, role: "owner", name: "Bob" }),
+      ] as never)
 
       // Only owner B has a system stream
       spyOn(StreamRepository, "list").mockResolvedValue([streamB])
@@ -268,43 +179,13 @@ describe("SystemMessageService", () => {
     })
 
     it("should continue notifying remaining owners when one fails", async () => {
-      const streamA = fakeStream({ createdBy: MEMBER_A })
-      const streamB = fakeStream({ createdBy: MEMBER_B })
+      const streamA = fakeStream({ createdBy: USER_A })
+      const streamB = fakeStream({ createdBy: USER_B })
 
-      spyOn(MemberRepository, "listByWorkspace").mockResolvedValue([
-        {
-          id: MEMBER_A,
-          workspaceId: WORKSPACE_ID,
-          userId: "usr_1",
-          role: "owner",
-          slug: "alice",
-          timezone: null,
-          locale: null,
-          name: "Alice",
-          description: null,
-          avatarUrl: null,
-
-          email: "alice@test.com",
-          setupCompleted: true,
-          joinedAt: new Date(),
-        },
-        {
-          id: MEMBER_B,
-          workspaceId: WORKSPACE_ID,
-          userId: "usr_2",
-          role: "owner",
-          slug: "bob",
-          timezone: null,
-          locale: null,
-          name: "Bob",
-          description: null,
-          avatarUrl: null,
-
-          email: "bob@test.com",
-          setupCompleted: true,
-          joinedAt: new Date(),
-        },
-      ])
+      spyOn(UserRepository, "listByWorkspace").mockResolvedValue([
+        fakeUser({ id: USER_A, role: "owner", name: "Alice" }),
+        fakeUser({ id: USER_B, role: "owner", name: "Bob" }),
+      ] as never)
 
       spyOn(StreamRepository, "list").mockResolvedValue([streamA, streamB])
 
@@ -319,8 +200,7 @@ describe("SystemMessageService", () => {
   })
 
   describe("sendInvitationAccepted", () => {
-    const INVITER_ID = MEMBER_A
-    const INVITEE_USER_ID = `usr_${crypto.randomUUID().replace(/-/g, "").slice(0, 26)}`
+    const INVITER_ID = USER_A
     const INVITATION_ID = `inv_${crypto.randomUUID().replace(/-/g, "").slice(0, 26)}`
 
     it("should notify the inviter with the accepting user's name", async () => {
@@ -330,7 +210,7 @@ describe("SystemMessageService", () => {
         id: INVITATION_ID,
         workspaceId: WORKSPACE_ID,
         email: "newuser@test.com",
-        role: "member",
+        role: "user",
         invitedBy: INVITER_ID,
         workosInvitationId: null,
         status: "accepted",
@@ -338,16 +218,7 @@ describe("SystemMessageService", () => {
         expiresAt: new Date(),
         acceptedAt: new Date(),
         revokedAt: null,
-      })
-
-      spyOn(UserRepository, "findById").mockResolvedValue({
-        id: INVITEE_USER_ID,
-        email: "newuser@test.com",
-        name: "New User",
-        workosUserId: "wos_123",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      })
+      } as never)
 
       spyOn(StreamRepository, "findByTypeAndOwner").mockResolvedValue(inviterStream)
 
@@ -356,7 +227,8 @@ describe("SystemMessageService", () => {
         workspaceId: WORKSPACE_ID,
         invitationId: INVITATION_ID,
         email: "newuser@test.com",
-        userId: INVITEE_USER_ID,
+        workosUserId: "workos_user_2",
+        userName: "New User",
       })
 
       expect(createMessage).toHaveBeenCalledWith(
@@ -368,14 +240,14 @@ describe("SystemMessageService", () => {
       )
     })
 
-    it("should fall back to email when user has no name", async () => {
+    it("should fall back to email when payload has no user name", async () => {
       const inviterStream = fakeStream({ createdBy: INVITER_ID })
 
       spyOn(InvitationRepository, "findById").mockResolvedValue({
         id: INVITATION_ID,
         workspaceId: WORKSPACE_ID,
         email: "anonymous@test.com",
-        role: "member",
+        role: "user",
         invitedBy: INVITER_ID,
         workosInvitationId: null,
         status: "accepted",
@@ -383,9 +255,8 @@ describe("SystemMessageService", () => {
         expiresAt: new Date(),
         acceptedAt: new Date(),
         revokedAt: null,
-      })
+      } as never)
 
-      spyOn(UserRepository, "findById").mockResolvedValue(null)
       spyOn(StreamRepository, "findByTypeAndOwner").mockResolvedValue(inviterStream)
 
       const { service, createMessage } = createService()
@@ -393,7 +264,8 @@ describe("SystemMessageService", () => {
         workspaceId: WORKSPACE_ID,
         invitationId: INVITATION_ID,
         email: "anonymous@test.com",
-        userId: INVITEE_USER_ID,
+        workosUserId: "workos_user_3",
+        userName: "",
       })
 
       expect(createMessage).toHaveBeenCalledWith(
@@ -411,7 +283,8 @@ describe("SystemMessageService", () => {
         workspaceId: WORKSPACE_ID,
         invitationId: "inv_nonexistent",
         email: "test@test.com",
-        userId: INVITEE_USER_ID,
+        workosUserId: "workos_user_9",
+        userName: "Test",
       })
 
       expect(createMessage).not.toHaveBeenCalled()

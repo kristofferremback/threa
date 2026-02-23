@@ -13,7 +13,7 @@ function makeDeps(overrides?: Partial<WorkspaceToolDeps>): WorkspaceToolDeps {
     db: {} as WorkspaceToolDeps["db"],
     workspaceId: "workspace_test",
     accessibleStreamIds: ["stream_1", "stream_2"],
-    invokingMemberId: "member_test",
+    invokingUserId: "usr_test",
     searchService: {} as WorkspaceToolDeps["searchService"],
     storage: { getObject: async () => Buffer.from("test") } as unknown as WorkspaceToolDeps["storage"],
     ...overrides,

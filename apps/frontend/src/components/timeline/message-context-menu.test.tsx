@@ -25,7 +25,7 @@ vi.mock("react-router-dom", () => ({
 function createContext(overrides: Partial<MessageActionContext> = {}): MessageActionContext {
   return {
     contentMarkdown: "Hello world",
-    actorType: "member",
+    actorType: "user",
     replyUrl: "/panel/draft:stream_1:msg_1",
     ...overrides,
   }
@@ -91,7 +91,7 @@ describe("MessageContextMenu", () => {
       <MessageContextMenu
         context={createContext({
           authorId: "member_1",
-          currentMemberId: "member_1",
+          currentUserId: "member_1",
         })}
       />
     )
@@ -108,7 +108,7 @@ describe("MessageContextMenu", () => {
       <MessageContextMenu
         context={createContext({
           authorId: "member_other",
-          currentMemberId: "member_1",
+          currentUserId: "member_1",
         })}
       />
     )

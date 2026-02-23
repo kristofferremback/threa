@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { createElement, type ReactNode } from "react"
 import { useActors } from "./use-actors"
 import { workspaceKeys } from "./use-workspaces"
-import type { WorkspaceBootstrap, User, WorkspaceMember, Persona } from "@threa/types"
+import type { WorkspaceBootstrap, User, Persona } from "@threa/types"
 
 function createTestWrapper(queryClient: QueryClient) {
   return function Wrapper({ children }: { children: ReactNode }) {
@@ -12,24 +12,13 @@ function createTestWrapper(queryClient: QueryClient) {
   }
 }
 
-function createUser(overrides: Partial<User> = {}): User {
-  return {
-    id: "usr_123",
-    email: "test@example.com",
-    name: "Test User",
-    workosUserId: null,
-    createdAt: "2024-01-01T00:00:00.000Z",
-    updatedAt: "2024-01-01T00:00:00.000Z",
-    ...overrides,
-  }
-}
-
-function createMember(overrides: Partial<WorkspaceMember> = {}): WorkspaceMember {
+function createMember(overrides: Partial<User> = {}): User {
   return {
     id: "mem_123",
     workspaceId: "ws_123",
-    userId: "usr_123",
-    role: "member",
+    workosUserId: "workos_user_123",
+    email: "test@example.com",
+    role: "user",
     slug: "test-user",
     name: "Test User",
     description: null,
@@ -84,10 +73,9 @@ describe("useActors", () => {
       expect(result.current.getActorName(null, null)).toBe("Unknown")
     })
 
-    it("should return member display name when found in cache", () => {
+    it("should return user display name when found in cache", () => {
       const bootstrap: Partial<WorkspaceBootstrap> = {
-        members: [createMember({ id: "mem_123", userId: "usr_123", name: "John Doe" })],
-        users: [createUser({ id: "usr_123", name: "John Doe", email: "john@example.com" })],
+        users: [createMember({ id: "mem_123", name: "John Doe" })],
         personas: [],
       }
       queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
@@ -96,12 +84,11 @@ describe("useActors", () => {
         wrapper: createTestWrapper(queryClient),
       })
 
-      expect(result.current.getActorName("mem_123", "member")).toBe("John Doe")
+      expect(result.current.getActorName("mem_123", "user")).toBe("John Doe")
     })
 
-    it("should return truncated ID when member not in cache", () => {
+    it("should return truncated ID when user not in cache", () => {
       const bootstrap: Partial<WorkspaceBootstrap> = {
-        members: [],
         users: [],
         personas: [],
       }
@@ -111,12 +98,11 @@ describe("useActors", () => {
         wrapper: createTestWrapper(queryClient),
       })
 
-      expect(result.current.getActorName("mem_12345678", "member")).toBe("mem_1234")
+      expect(result.current.getActorName("mem_12345678", "user")).toBe("mem_1234")
     })
 
     it("should return persona name for persona actor type", () => {
       const bootstrap: Partial<WorkspaceBootstrap> = {
-        users: [],
         personas: [createPersona({ id: "persona_123", slug: "ariadne", name: "Ariadne", avatarEmoji: "🧵" })],
       }
       queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
@@ -130,7 +116,6 @@ describe("useActors", () => {
 
     it("should return 'AI Companion' when persona not found", () => {
       const bootstrap: Partial<WorkspaceBootstrap> = {
-        users: [],
         personas: [],
       }
       queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
@@ -160,10 +145,9 @@ describe("useActors", () => {
       expect(result.current.getActorInitials(null, null)).toBe("?")
     })
 
-    it("should return initials from member display name", () => {
+    it("should return initials from user display name", () => {
       const bootstrap: Partial<WorkspaceBootstrap> = {
-        members: [createMember({ id: "mem_123", userId: "usr_123", name: "John Doe" })],
-        users: [createUser({ id: "usr_123", name: "John Doe", email: "john@example.com" })],
+        users: [createMember({ id: "mem_123", name: "John Doe" })],
         personas: [],
       }
       queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
@@ -172,13 +156,11 @@ describe("useActors", () => {
         wrapper: createTestWrapper(queryClient),
       })
 
-      expect(result.current.getActorInitials("mem_123", "member")).toBe("JD")
+      expect(result.current.getActorInitials("mem_123", "user")).toBe("JD")
     })
 
     it("should return avatar emoji for persona", () => {
       const bootstrap: Partial<WorkspaceBootstrap> = {
-        users: [],
-        // avatarEmoji is stored as shortcode format in the database
         personas: [createPersona({ id: "persona_123", slug: "ariadne", name: "Ariadne", avatarEmoji: ":thread:" })],
         emojis: [
           { shortcode: "thread", emoji: "🧵", type: "native" as const, group: "objects", order: 0, aliases: [] },
@@ -195,7 +177,6 @@ describe("useActors", () => {
 
     it("should return persona initials when no avatar emoji", () => {
       const bootstrap: Partial<WorkspaceBootstrap> = {
-        users: [],
         personas: [
           createPersona({
             id: "persona_456",
@@ -216,9 +197,8 @@ describe("useActors", () => {
       expect(result.current.getActorInitials("persona_456", "persona")).toBe("CB")
     })
 
-    it("should return truncated ID when member not found", () => {
+    it("should return truncated ID when user not found", () => {
       const bootstrap: Partial<WorkspaceBootstrap> = {
-        members: [],
         users: [],
         personas: [],
       }
@@ -228,7 +208,7 @@ describe("useActors", () => {
         wrapper: createTestWrapper(queryClient),
       })
 
-      expect(result.current.getActorInitials("ab_12345678", "member")).toBe("AB")
+      expect(result.current.getActorInitials("ab_12345678", "user")).toBe("AB")
     })
 
     it("should return 'T' for system actor type", () => {
@@ -240,44 +220,10 @@ describe("useActors", () => {
     })
   })
 
-  describe("getUser", () => {
-    it("should return user when found", () => {
-      const user = createUser({ id: "usr_123", name: "Jane Doe", email: "jane@example.com" })
-      const bootstrap: Partial<WorkspaceBootstrap> = {
-        users: [user],
-        personas: [],
-      }
-      queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
-
-      const { result } = renderHook(() => useActors(workspaceId), {
-        wrapper: createTestWrapper(queryClient),
-      })
-
-      const foundUser = result.current.getUser("usr_123")
-      expect(foundUser?.id).toBe("usr_123")
-      expect(foundUser?.name).toBe("Jane Doe")
-    })
-
-    it("should return undefined when user not found", () => {
-      const bootstrap: Partial<WorkspaceBootstrap> = {
-        users: [],
-        personas: [],
-      }
-      queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
-
-      const { result } = renderHook(() => useActors(workspaceId), {
-        wrapper: createTestWrapper(queryClient),
-      })
-
-      expect(result.current.getUser("usr_nonexistent")).toBeUndefined()
-    })
-  })
-
   describe("getPersona", () => {
     it("should return persona when found", () => {
       const persona = createPersona({ id: "persona_123", slug: "ariadne", name: "Ariadne", avatarEmoji: "🧵" })
       const bootstrap: Partial<WorkspaceBootstrap> = {
-        users: [],
         personas: [persona],
       }
       queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
@@ -293,7 +239,6 @@ describe("useActors", () => {
 
     it("should return undefined when persona not found", () => {
       const bootstrap: Partial<WorkspaceBootstrap> = {
-        users: [],
         personas: [],
       }
       queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)

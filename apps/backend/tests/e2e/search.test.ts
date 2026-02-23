@@ -17,7 +17,7 @@ import {
   joinStream,
   archiveStream,
   unarchiveStream,
-  getMemberId,
+  getUserId,
 } from "../client"
 
 const testRunId = Math.random().toString(36).substring(7)
@@ -197,7 +197,7 @@ describe("Search E2E Tests", () => {
       const clientA = new TestClient()
       const userA = await loginAs(clientA, testEmail("fromA"), "From User A")
       const workspace = await createWorkspace(clientA, `From WS ${testRunId}`)
-      const memberAId = await getMemberId(clientA, workspace.id, userA.id)
+      const userAId = await getUserId(clientA, workspace.id, userA.id)
       const channel = await createChannel(clientA, workspace.id, `from-${testRunId}`, "public")
 
       const keyword = `dragon${testRunId}`
@@ -210,11 +210,11 @@ describe("Search E2E Tests", () => {
       await joinStream(clientB, workspace.id, channel.id)
       await sendMessage(clientB, workspace.id, channel.id, `User B says ${keyword}`)
 
-      // Search for messages from User A only - pass member ID
-      const results = await search(clientA, workspace.id, { query: keyword, from: memberAId })
+      // Search for messages from User A only - pass workspace user ID
+      const results = await search(clientA, workspace.id, { query: keyword, from: userAId })
 
       expect(results.length).toBe(1)
-      expect(results[0].authorId).toBe(memberAId)
+      expect(results[0].authorId).toBe(userAId)
     })
 
     test("should filter by co-member with with filter", async () => {

@@ -4,7 +4,7 @@ import type { UserPreferences } from "@threa/types"
 import { AgentTriggers, StreamTypes, AuthorTypes } from "@threa/types"
 import type { UserPreferencesService } from "../../user-preferences"
 import { MessageRepository, type Message } from "../../messaging"
-import { MemberRepository } from "../../workspaces"
+import { UserRepository } from "../../workspaces"
 import { PersonaRepository } from "../persona-repository"
 import type { Persona } from "../persona-repository"
 import { AttachmentRepository } from "../../attachments"
@@ -35,7 +35,7 @@ export interface AgentContext {
   systemPrompt: string
   messages: ModelMessage[]
   triggerMessage: Message | null
-  invokingMemberId: string | undefined
+  invokingUserId: string | undefined
   preferences: UserPreferences | undefined
   authorNames: Map<string, string>
   dmParticipantIds: string[] | undefined
@@ -52,11 +52,11 @@ export async function buildAgentContext(deps: ContextDeps, params: ContextParams
   const { workspaceId, streamId, stream, messageId, persona, trigger } = params
 
   const triggerMessage = await MessageRepository.findById(db, messageId)
-  const invokingMemberId = triggerMessage?.authorType === AuthorTypes.MEMBER ? triggerMessage.authorId : undefined
+  const invokingUserId = triggerMessage?.authorType === AuthorTypes.USER ? triggerMessage.authorId : undefined
 
   let preferences: UserPreferences | undefined
-  if (invokingMemberId) {
-    preferences = await userPreferencesService.getPreferences(workspaceId, invokingMemberId)
+  if (invokingUserId) {
+    preferences = await userPreferencesService.getPreferences(workspaceId, invokingUserId)
   }
 
   // Await attachment processing for trigger message so agent can access extracted content
@@ -106,12 +106,12 @@ export async function buildAgentContext(deps: ContextDeps, params: ContextParams
   const memberAuthorIds = [
     ...new Set(
       streamContext.conversationHistory
-        .filter((m) => m.authorType === AuthorTypes.MEMBER && !authorNames.has(m.authorId))
+        .filter((m) => m.authorType === AuthorTypes.USER && !authorNames.has(m.authorId))
         .map((m) => m.authorId)
     ),
   ]
   if (memberAuthorIds.length > 0) {
-    const members = await MemberRepository.findByIds(db, memberAuthorIds)
+    const members = await UserRepository.findByIds(db, workspaceId, memberAuthorIds)
     for (const m of members) authorNames.set(m.id, m.name)
   }
 
@@ -126,8 +126,8 @@ export async function buildAgentContext(deps: ContextDeps, params: ContextParams
   }
 
   let mentionerName: string | undefined
-  if (trigger === AgentTriggers.MENTION && triggerMessage?.authorType === AuthorTypes.MEMBER) {
-    const mentioner = await MemberRepository.findById(db, triggerMessage.authorId)
+  if (trigger === AgentTriggers.MENTION && triggerMessage?.authorType === AuthorTypes.USER) {
+    const mentioner = await UserRepository.findById(db, workspaceId, triggerMessage.authorId)
     mentionerName = mentioner?.name ?? undefined
   }
 
@@ -143,7 +143,7 @@ export async function buildAgentContext(deps: ContextDeps, params: ContextParams
     trigger,
     mentionerName,
     rollingConversationSummary,
-    invokingMemberId !== undefined
+    invokingUserId !== undefined
   )
 
   const messages = formatMessagesWithTemporal(streamContext.conversationHistory, streamContext)
@@ -152,7 +152,7 @@ export async function buildAgentContext(deps: ContextDeps, params: ContextParams
     systemPrompt,
     messages,
     triggerMessage,
-    invokingMemberId,
+    invokingUserId,
     preferences,
     authorNames,
     dmParticipantIds,

@@ -2,7 +2,7 @@ import { z } from "zod"
 import { AgentStepTypes, STREAM_TYPES } from "@threa/types"
 import { logger } from "../../../lib/logger"
 import { StreamRepository } from "../../streams"
-import { MemberRepository } from "../../workspaces"
+import { UserRepository } from "../../workspaces"
 import { MessageRepository } from "../../messaging"
 import { PersonaRepository } from "../persona-repository"
 import { enrichMessageSearchResults } from "../researcher"
@@ -92,7 +92,7 @@ const MAX_RESULTS = 10
 const MAX_STREAM_MESSAGES = 20
 
 export function createSearchMessagesTool(deps: WorkspaceToolDeps) {
-  const { db, workspaceId, accessibleStreamIds, invokingMemberId, searchService } = deps
+  const { db, workspaceId, accessibleStreamIds, invokingUserId, searchService } = deps
 
   return defineAgentTool({
     name: "search_messages",
@@ -125,14 +125,14 @@ Optionally filter by stream using ID (stream_xxx), slug (general), or prefixed s
 
         const searchResults = await searchService.search({
           workspaceId,
-          memberId: invokingMemberId,
+          userId: invokingUserId,
           query: input.query,
           filters: { streamIds: filterStreamIds },
           limit: 10,
           exact: input.exact,
         })
 
-        const enriched = await enrichMessageSearchResults(db, searchResults)
+        const enriched = await enrichMessageSearchResults(db, workspaceId, searchResults)
         const results: MessageSearchResult[] = enriched.map((r) => ({
           id: r.id,
           content: r.content,
@@ -278,7 +278,7 @@ export function createSearchUsersTool(deps: WorkspaceToolDeps) {
 
     execute: async (input): Promise<AgentToolResult> => {
       try {
-        const members = await MemberRepository.searchByNameOrSlug(db, workspaceId, input.query, 10)
+        const members = await UserRepository.searchByNameOrSlug(db, workspaceId, input.query, 10)
         const results: UserSearchResult[] = members.map((m) => ({ id: m.id, name: m.name, email: m.email }))
 
         if (results.length === 0) {
@@ -352,10 +352,10 @@ You can reference streams by their ID (stream_xxx), slug (general), or prefixed 
         const messages = await MessageRepository.list(db, resolved.id, { limit })
         messages.reverse()
 
-        const memberIds = [...new Set(messages.filter((m) => m.authorType === "member").map((m) => m.authorId))]
+        const userIds = [...new Set(messages.filter((m) => m.authorType === "user").map((m) => m.authorId))]
         const personaIds = [...new Set(messages.filter((m) => m.authorType === "persona").map((m) => m.authorId))]
         const [members, personas] = await Promise.all([
-          memberIds.length > 0 ? MemberRepository.findByIds(db, memberIds) : Promise.resolve([]),
+          userIds.length > 0 ? UserRepository.findByIds(db, workspaceId, userIds) : Promise.resolve([]),
           personaIds.length > 0 ? PersonaRepository.findByIds(db, personaIds) : Promise.resolve([]),
         ])
 
@@ -366,7 +366,7 @@ You can reference streams by their ID (stream_xxx), slug (general), or prefixed 
           id: m.id,
           content: m.contentMarkdown,
           authorName:
-            m.authorType === "member"
+            m.authorType === "user"
               ? (memberMap.get(m.authorId) ?? "Unknown Member")
               : (personaMap.get(m.authorId) ?? "Unknown Persona"),
           authorType: m.authorType,

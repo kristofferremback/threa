@@ -3,21 +3,21 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import { SearchableList } from "@/components/ui/searchable-list"
-import { renderMemberItem, type MemberItem } from "@/components/ui/member-list-item"
+import { renderUserListItem, type UserListItem } from "@/components/ui/user-list-item"
 import { UserPlus, X } from "lucide-react"
 import { workspaceKeys } from "@/hooks"
 import { getInitials } from "@/lib/initials"
 import { getAvatarColor } from "@/lib/avatar-color"
 import type { WorkspaceBootstrap } from "@threa/types"
 
-interface MemberPickerProps {
+interface UserPickerProps {
   workspaceId: string
-  currentMemberId: string
-  selectedMemberIds: string[]
-  onChange: (memberIds: string[]) => void
+  currentUserId: string
+  selectedUserIds: string[]
+  onChange: (userIds: string[]) => void
 }
 
-export function MemberPicker({ workspaceId, currentMemberId, selectedMemberIds, onChange }: MemberPickerProps) {
+export function UserPicker({ workspaceId, currentUserId, selectedUserIds, onChange }: UserPickerProps) {
   const queryClient = useQueryClient()
   const [search, setSearch] = useState("")
 
@@ -29,17 +29,17 @@ export function MemberPicker({ workspaceId, currentMemberId, selectedMemberIds, 
     staleTime: Infinity,
   })
 
-  const workspaceMembers = wsBootstrap?.members ?? []
-  const selectedSet = useMemo(() => new Set(selectedMemberIds), [selectedMemberIds])
+  const workspaceUsers = wsBootstrap?.users ?? []
+  const selectedSet = useMemo(() => new Set(selectedUserIds), [selectedUserIds])
 
-  // Members available to add: not current user, not already selected
-  const availableToAdd = useMemo((): MemberItem[] => {
+  // Users available to add: not current user, not already selected
+  const availableToAdd = useMemo((): UserListItem[] => {
     if (!search) return []
     const q = search.toLowerCase()
-    return workspaceMembers
+    return workspaceUsers
       .filter(
         (m) =>
-          m.id !== currentMemberId &&
+          m.id !== currentUserId &&
           !selectedSet.has(m.id) &&
           (m.name.toLowerCase().includes(q) || m.slug.toLowerCase().includes(q))
       )
@@ -50,51 +50,49 @@ export function MemberPicker({ workspaceId, currentMemberId, selectedMemberIds, 
         slug: m.slug,
         name: m.name,
       }))
-  }, [workspaceMembers, currentMemberId, selectedSet, search])
+  }, [workspaceUsers, currentUserId, selectedSet, search])
 
-  // Resolve selected member details for chips
-  const selectedMembers = useMemo(() => {
-    return selectedMemberIds
-      .map((id) => workspaceMembers.find((m) => m.id === id))
-      .filter(Boolean) as typeof workspaceMembers
-  }, [selectedMemberIds, workspaceMembers])
+  // Resolve selected user details for chips
+  const selectedUsers = useMemo(() => {
+    return selectedUserIds.map((id) => workspaceUsers.find((u) => u.id === id)).filter(Boolean) as typeof workspaceUsers
+  }, [selectedUserIds, workspaceUsers])
 
   const handleSelect = useCallback(
-    (item: MemberItem) => {
-      onChange([...selectedMemberIds, item.id])
+    (item: UserListItem) => {
+      onChange([...selectedUserIds, item.id])
       setSearch("")
     },
-    [selectedMemberIds, onChange]
+    [selectedUserIds, onChange]
   )
 
-  const handleRemove = (memberId: string) => {
-    onChange(selectedMemberIds.filter((id) => id !== memberId))
+  const handleRemove = (userId: string) => {
+    onChange(selectedUserIds.filter((id) => id !== userId))
   }
 
   return (
     <div className="space-y-3">
-      <Label className="text-sm font-medium">Members</Label>
+      <Label className="text-sm font-medium">Users</Label>
       <p className="text-xs text-muted-foreground -mt-1.5">You'll be added automatically as the creator</p>
 
-      {/* Selected members as removable chips */}
-      {selectedMembers.length > 0 && (
+      {/* Selected users as removable chips */}
+      {selectedUsers.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
-          {selectedMembers.map((member) => {
-            const initials = getInitials(member.name || member.slug)
-            const color = getAvatarColor(member.id)
+          {selectedUsers.map((user) => {
+            const initials = getInitials(user.name || user.slug)
+            const color = getAvatarColor(user.id)
 
             return (
-              <Badge key={member.id} variant="secondary" className="gap-1.5 pl-1 pr-1.5 py-0.5 text-xs font-medium">
+              <Badge key={user.id} variant="secondary" className="gap-1.5 pl-1 pr-1.5 py-0.5 text-xs font-medium">
                 <span
                   className={`inline-flex items-center justify-center h-4.5 w-4.5 rounded-full text-[9px] font-semibold leading-none shrink-0 ${color}`}
                   style={{ width: 18, height: 18 }}
                 >
                   {initials}
                 </span>
-                {member.name || member.slug}
+                {user.name || user.slug}
                 <button
                   type="button"
-                  onClick={() => handleRemove(member.id)}
+                  onClick={() => handleRemove(user.id)}
                   className="rounded-full hover:bg-muted-foreground/20 p-0.5 -mr-0.5"
                 >
                   <X className="h-3 w-3" />
@@ -105,15 +103,15 @@ export function MemberPicker({ workspaceId, currentMemberId, selectedMemberIds, 
         </div>
       )}
 
-      {/* Searchable member list with keyboard navigation */}
+      {/* Searchable user list with keyboard navigation */}
       <SearchableList
         items={availableToAdd}
-        renderItem={renderMemberItem}
+        renderItem={renderUserListItem}
         onSelect={handleSelect}
         search={search}
         onSearchChange={setSearch}
         placeholder="Search by name or handle..."
-        emptyMessage="No matching members"
+        emptyMessage="No matching users"
         icon={UserPlus}
       />
     </div>

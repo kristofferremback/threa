@@ -12,7 +12,6 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test"
 import { Pool } from "pg"
 import { withTransaction, addTestMember } from "./setup"
-import { UserRepository } from "../../src/auth/user-repository"
 import { WorkspaceRepository, WorkspaceService } from "../../src/features/workspaces"
 import { StreamEventRepository, StreamService } from "../../src/features/streams"
 import { EventService } from "../../src/features/messaging"
@@ -30,7 +29,7 @@ describe("Access Control", () => {
   beforeAll(async () => {
     pool = await setupTestDatabase()
     streamService = new StreamService(pool)
-    workspaceService = new WorkspaceService(pool, {} as any)
+    workspaceService = new WorkspaceService(pool, {} as any, {} as any)
     eventService = new EventService(pool)
   })
 
@@ -39,18 +38,11 @@ describe("Access Control", () => {
   })
 
   describe("Workspace Membership", () => {
-    test("isMember returns true for workspace members", async () => {
+    test("isMember returns true for workspace users", async () => {
       const user1Id = userId()
       const wsId = workspaceId()
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: user1Id,
-          email: `workspace-member-${user1Id}@test.com`,
-          name: "Test User",
-          workosUserId: `workos_${user1Id}`,
-        })
-
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Test Workspace",
@@ -70,18 +62,6 @@ describe("Access Control", () => {
       const wsId = workspaceId()
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `owner-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
-        await UserRepository.insert(client, {
-          id: nonMemberId,
-          email: `non-member-${nonMemberId}@test.com`,
-          name: "Non-Member",
-          workosUserId: `workos_${nonMemberId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Test Workspace",
@@ -100,18 +80,6 @@ describe("Access Control", () => {
       const wsId = workspaceId()
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `owner-join-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
-        await UserRepository.insert(client, {
-          id: joiningUserId,
-          email: `joining-${joiningUserId}@test.com`,
-          name: "Joining User",
-          workosUserId: `workos_${joiningUserId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Test Workspace",
@@ -124,7 +92,11 @@ describe("Access Control", () => {
       expect(await workspaceService.isMember(wsId, joiningUserId)).toBe(false)
 
       // Join the workspace
-      await workspaceService.addMember(wsId, joiningUserId)
+      await workspaceService.addUser(wsId, {
+        workosUserId: joiningUserId,
+        email: `joining-user-${joiningUserId}@test.com`,
+        name: "Joining User",
+      })
 
       // Now a member
       expect(await workspaceService.isMember(wsId, joiningUserId)).toBe(true)
@@ -132,34 +104,22 @@ describe("Access Control", () => {
   })
 
   describe("Stream Visibility", () => {
-    test("public streams are visible to all workspace members", async () => {
+    test("public streams are visible to all workspace users", async () => {
       const ownerId = userId()
-      const memberId = userId()
+      const workspaceUserId = userId()
       const wsId = workspaceId()
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `public-owner-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
-        await UserRepository.insert(client, {
-          id: memberId,
-          email: `public-member-${memberId}@test.com`,
-          name: "Member",
-          workosUserId: `workos_${memberId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Public Test Workspace",
           slug: `public-test-ws-${wsId}`,
           createdBy: ownerId,
         })
-        await addTestMember(client, wsId, memberId)
+        await addTestMember(client, wsId, workspaceUserId)
       })
 
-      // Create a public channel (not adding memberId as stream member)
+      // Create a public channel (not adding workspaceUserId as stream member)
       const channel = await streamService.createChannel({
         workspaceId: wsId,
         slug: `public-channel-${Date.now()}`,
@@ -169,39 +129,27 @@ describe("Access Control", () => {
       })
 
       // Member should be able to access the public stream
-      const stream = await streamService.validateStreamAccess(channel.id, wsId, memberId)
+      const stream = await streamService.validateStreamAccess(channel.id, wsId, workspaceUserId)
       expect(stream.id).toBe(channel.id)
       expect(stream.visibility).toBe(Visibilities.PUBLIC)
     })
 
     test("private streams are not visible to non-members", async () => {
       const ownerId = userId()
-      const memberId = userId()
+      const workspaceUserId = userId()
       const wsId = workspaceId()
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `private-owner-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
-        await UserRepository.insert(client, {
-          id: memberId,
-          email: `private-member-${memberId}@test.com`,
-          name: "Member",
-          workosUserId: `workos_${memberId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Private Test Workspace",
           slug: `private-test-ws-${wsId}`,
           createdBy: ownerId,
         })
-        await addTestMember(client, wsId, memberId)
+        await addTestMember(client, wsId, workspaceUserId)
       })
 
-      // Create a private channel (not adding memberId as stream member)
+      // Create a private channel (not adding workspaceUserId as stream member)
       const channel = await streamService.createChannel({
         workspaceId: wsId,
         slug: `private-channel-${Date.now()}`,
@@ -211,7 +159,9 @@ describe("Access Control", () => {
       })
 
       // Member should NOT be able to access the private stream
-      await expect(streamService.validateStreamAccess(channel.id, wsId, memberId)).rejects.toThrow(StreamNotFoundError)
+      await expect(streamService.validateStreamAccess(channel.id, wsId, workspaceUserId)).rejects.toThrow(
+        StreamNotFoundError
+      )
     })
 
     test("private streams are accessible to stream members", async () => {
@@ -221,18 +171,6 @@ describe("Access Control", () => {
       let streamMemberWorkspaceId = ""
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `priv-access-owner-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
-        await UserRepository.insert(client, {
-          id: streamMemberId,
-          email: `priv-access-member-${streamMemberId}@test.com`,
-          name: "Stream Member",
-          workosUserId: `workos_${streamMemberId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Private Access Workspace",
@@ -265,18 +203,6 @@ describe("Access Control", () => {
       const wsId = workspaceId()
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `scratch-owner-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
-        await UserRepository.insert(client, {
-          id: otherId,
-          email: `scratch-other-${otherId}@test.com`,
-          name: "Other",
-          workosUserId: `workos_${otherId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Scratchpad Test Workspace",
@@ -300,7 +226,7 @@ describe("Access Control", () => {
       const ownerAccess = await streamService.validateStreamAccess(scratchpad.id, wsId, ownerId)
       expect(ownerAccess.id).toBe(scratchpad.id)
 
-      // Other workspace member cannot access
+      // Other workspace user cannot access
       await expect(streamService.validateStreamAccess(scratchpad.id, wsId, otherId)).rejects.toThrow(
         StreamNotFoundError
       )
@@ -314,18 +240,6 @@ describe("Access Control", () => {
       const wsId = workspaceId()
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: user1Id,
-          email: `list-user1-${user1Id}@test.com`,
-          name: "User 1",
-          workosUserId: `workos_${user1Id}`,
-        })
-        await UserRepository.insert(client, {
-          id: user2Id,
-          email: `list-user2-${user2Id}@test.com`,
-          name: "User 2",
-          workosUserId: `workos_${user2Id}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "List Test Workspace",
@@ -380,18 +294,6 @@ describe("Access Control", () => {
       let newMemberWorkspaceId = ""
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `add-member-owner-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
-        await UserRepository.insert(client, {
-          id: newMemberId,
-          email: `add-member-new-${newMemberId}@test.com`,
-          name: "New Member",
-          workosUserId: `workos_${newMemberId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Add Member Workspace",
@@ -430,18 +332,6 @@ describe("Access Control", () => {
       let removedMemberWorkspaceId = ""
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `rm-member-owner-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
-        await UserRepository.insert(client, {
-          id: removedMemberId,
-          email: `rm-member-removed-${removedMemberId}@test.com`,
-          name: "Removed Member",
-          workosUserId: `workos_${removedMemberId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Remove Member Workspace",
@@ -483,18 +373,6 @@ describe("Access Control", () => {
       const ws2Id = workspaceId()
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: user1Id,
-          email: `cross-ws-user1-${user1Id}@test.com`,
-          name: "User 1",
-          workosUserId: `workos_${user1Id}`,
-        })
-        await UserRepository.insert(client, {
-          id: user2Id,
-          email: `cross-ws-user2-${user2Id}@test.com`,
-          name: "User 2",
-          workosUserId: `workos_${user2Id}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: ws1Id,
           name: "Workspace 1",
@@ -532,29 +410,17 @@ describe("Access Control", () => {
   describe("Thread Visibility", () => {
     test("thread inherits visibility from parent channel", async () => {
       const ownerId = userId()
-      const memberId = userId()
+      const workspaceUserId = userId()
       const wsId = workspaceId()
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `thread-vis-owner-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
-        await UserRepository.insert(client, {
-          id: memberId,
-          email: `thread-vis-member-${memberId}@test.com`,
-          name: "Member",
-          workosUserId: `workos_${memberId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Thread Visibility Workspace",
           slug: `thread-vis-ws-${wsId}`,
           createdBy: ownerId,
         })
-        await addTestMember(client, wsId, memberId)
+        await addTestMember(client, wsId, workspaceUserId)
       })
 
       // Create a public channel
@@ -571,7 +437,7 @@ describe("Access Control", () => {
         workspaceId: wsId,
         streamId: channel.id,
         authorId: ownerId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("Parent message for thread visibility test"),
       })
 
@@ -589,35 +455,23 @@ describe("Access Control", () => {
 
       // Member of workspace (who can see public channel) should be able to access thread
       // via root stream membership check
-      const access = await streamService.validateStreamAccess(thread.id, wsId, memberId)
+      const access = await streamService.validateStreamAccess(thread.id, wsId, workspaceUserId)
       expect(access.id).toBe(thread.id)
     })
 
     test("deeply nested threads are visible to root stream members", async () => {
       const ownerId = userId()
-      const memberId = userId()
+      const workspaceUserId = userId()
       const wsId = workspaceId()
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `deep-thread-owner-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
-        await UserRepository.insert(client, {
-          id: memberId,
-          email: `deep-thread-member-${memberId}@test.com`,
-          name: "Member",
-          workosUserId: `workos_${memberId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Deep Thread Workspace",
           slug: `deep-thread-ws-${wsId}`,
           createdBy: ownerId,
         })
-        await addTestMember(client, wsId, memberId)
+        await addTestMember(client, wsId, workspaceUserId)
       })
 
       // Create channel -> thread1 -> thread2 -> thread3
@@ -634,7 +488,7 @@ describe("Access Control", () => {
         workspaceId: wsId,
         streamId: channel.id,
         authorId: ownerId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("Deep message 1"),
       })
 
@@ -649,7 +503,7 @@ describe("Access Control", () => {
         workspaceId: wsId,
         streamId: thread1.id,
         authorId: ownerId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("Deep message 2"),
       })
 
@@ -664,7 +518,7 @@ describe("Access Control", () => {
         workspaceId: wsId,
         streamId: thread2.id,
         authorId: ownerId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("Deep message 3"),
       })
 
@@ -681,7 +535,7 @@ describe("Access Control", () => {
       expect(thread3.rootStreamId).toBe(channel.id)
 
       // Workspace member (with access to public channel) should be able to access deeply nested thread
-      const access = await streamService.validateStreamAccess(thread3.id, wsId, memberId)
+      const access = await streamService.validateStreamAccess(thread3.id, wsId, workspaceUserId)
       expect(access.id).toBe(thread3.id)
     })
 
@@ -692,18 +546,6 @@ describe("Access Control", () => {
       let nonMemberWorkspaceId = ""
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `priv-thread-owner-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
-        await UserRepository.insert(client, {
-          id: nonMemberId,
-          email: `priv-thread-nonmember-${nonMemberId}@test.com`,
-          name: "Non-Member",
-          workosUserId: `workos_${nonMemberId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Private Thread Workspace",
@@ -727,7 +569,7 @@ describe("Access Control", () => {
         workspaceId: wsId,
         streamId: channel.id,
         authorId: ownerId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("Private channel message for thread"),
       })
 
@@ -760,24 +602,6 @@ describe("Access Control", () => {
       let channelMemberWorkspaceId = ""
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: channelOwnerId,
-          email: `thread-ismember-owner-${channelOwnerId}@test.com`,
-          name: "Channel Owner",
-          workosUserId: `workos_${channelOwnerId}`,
-        })
-        await UserRepository.insert(client, {
-          id: channelMemberId,
-          email: `thread-ismember-member-${channelMemberId}@test.com`,
-          name: "Channel Member",
-          workosUserId: `workos_${channelMemberId}`,
-        })
-        await UserRepository.insert(client, {
-          id: threadCreatorId,
-          email: `thread-ismember-creator-${threadCreatorId}@test.com`,
-          name: "Thread Creator",
-          workosUserId: `workos_${threadCreatorId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Thread isMember Workspace",
@@ -802,7 +626,7 @@ describe("Access Control", () => {
         workspaceId: wsId,
         streamId: channel.id,
         authorId: channelMemberWorkspaceId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("Message that will spawn a thread"),
       })
       const thread = await streamService.createThread({
@@ -825,18 +649,6 @@ describe("Access Control", () => {
       let newMemberWorkspaceId = ""
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `thread-add-member-owner-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
-        await UserRepository.insert(client, {
-          id: newMemberId,
-          email: `thread-add-member-new-${newMemberId}@test.com`,
-          name: "New Member",
-          workosUserId: `workos_${newMemberId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Thread Add Member Workspace",
@@ -860,7 +672,7 @@ describe("Access Control", () => {
         workspaceId: wsId,
         streamId: channel.id,
         authorId: ownerId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("Message for add member to thread test"),
       })
 
@@ -887,42 +699,24 @@ describe("Access Control", () => {
   describe("Member-Only Operations", () => {
     test("isMember correctly identifies stream members", async () => {
       const ownerId = userId()
-      const memberId = userId()
+      const workspaceUserId = userId()
       const nonMemberId = userId()
       const wsId = workspaceId()
       let memberWorkspaceId = ""
       let nonMemberWorkspaceId = ""
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: ownerId,
-          email: `is-member-owner-${ownerId}@test.com`,
-          name: "Owner",
-          workosUserId: `workos_${ownerId}`,
-        })
-        await UserRepository.insert(client, {
-          id: memberId,
-          email: `is-member-member-${memberId}@test.com`,
-          name: "Member",
-          workosUserId: `workos_${memberId}`,
-        })
-        await UserRepository.insert(client, {
-          id: nonMemberId,
-          email: `is-member-non-${nonMemberId}@test.com`,
-          name: "Non-Member",
-          workosUserId: `workos_${nonMemberId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "isMember Test Workspace",
           slug: `is-member-ws-${wsId}`,
           createdBy: ownerId,
         })
-        memberWorkspaceId = (await addTestMember(client, wsId, memberId)).id
+        memberWorkspaceId = (await addTestMember(client, wsId, workspaceUserId)).id
         nonMemberWorkspaceId = (await addTestMember(client, wsId, nonMemberId)).id
       })
 
-      // Create channel and add memberId
+      // Create channel and add workspaceUserId
       const channel = await streamService.createChannel({
         workspaceId: wsId,
         slug: `is-member-channel-${Date.now()}`,
@@ -951,18 +745,6 @@ describe("Access Control", () => {
       let userBMemberId = ""
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: userAId,
-          email: `cmd-vis-userA-${userAId}@test.com`,
-          name: "User A",
-          workosUserId: `workos_${userAId}`,
-        })
-        await UserRepository.insert(client, {
-          id: userBId,
-          email: `cmd-vis-userB-${userBId}@test.com`,
-          name: "User B",
-          workosUserId: `workos_${userBId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Command Visibility Workspace",
@@ -987,7 +769,7 @@ describe("Access Control", () => {
         workspaceId: wsId,
         streamId: channel.id,
         authorId: userAId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("Regular message visible to all"),
       })
 
@@ -1005,7 +787,7 @@ describe("Access Control", () => {
             status: "dispatched",
           },
           actorId: userAId,
-          actorType: "member",
+          actorType: "user",
         })
 
         await StreamEventRepository.insert(client, {
@@ -1017,7 +799,7 @@ describe("Access Control", () => {
             result: "test result",
           },
           actorId: userAId,
-          actorType: "member",
+          actorType: "user",
         })
       })
 
@@ -1043,18 +825,6 @@ describe("Access Control", () => {
       let userBMemberId = ""
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: userAId,
-          email: `cmd-fail-vis-userA-${userAId}@test.com`,
-          name: "User A",
-          workosUserId: `workos_${userAId}`,
-        })
-        await UserRepository.insert(client, {
-          id: userBId,
-          email: `cmd-fail-vis-userB-${userBId}@test.com`,
-          name: "User B",
-          workosUserId: `workos_${userBId}`,
-        })
         await WorkspaceRepository.insert(client, {
           id: wsId,
           name: "Command Failed Visibility Workspace",
@@ -1087,7 +857,7 @@ describe("Access Control", () => {
             status: "dispatched",
           },
           actorId: userAId,
-          actorType: "member",
+          actorType: "user",
         })
 
         await StreamEventRepository.insert(client, {
@@ -1099,7 +869,7 @@ describe("Access Control", () => {
             error: "Something went wrong",
           },
           actorId: userAId,
-          actorType: "member",
+          actorType: "user",
         })
       })
 

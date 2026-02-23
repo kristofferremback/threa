@@ -1,7 +1,6 @@
 import { Pool } from "pg"
 import { withTransaction } from "../../db"
-import { WorkspaceRepository } from "./repository"
-import { MemberRepository } from "./member-repository"
+import { UserRepository } from "./user-repository"
 import { AvatarUploadRepository } from "./avatar-upload-repository"
 import { OutboxRepository } from "../../lib/outbox"
 import { serializeBigInt } from "../../lib/serialization"
@@ -25,9 +24,9 @@ export class AvatarProcessingService {
       return
     }
 
-    const { workspaceId, memberId, rawS3Key, replacesAvatarUrl } = upload
+    const { workspaceId, userId, rawS3Key, replacesAvatarUrl } = upload
 
-    logger.info({ avatarUploadId, memberId }, "Processing avatar")
+    logger.info({ avatarUploadId, userId }, "Processing avatar")
 
     // Phase 2: Download raw from S3 (no DB connection — INV-41)
     const buffer = await this.avatarService.downloadRaw(rawS3Key)
@@ -37,27 +36,28 @@ export class AvatarProcessingService {
     const images = await this.avatarService.processImages(buffer)
     await this.avatarService.uploadImages(basePath, images)
 
-    // Phase 4: Transaction — atomically update member if this is still the latest upload (INV-20)
+    // Phase 4: Transaction — atomically update user if this is still the latest upload (INV-20)
     let variantsUsed = false
     await withTransaction(this.pool, async (client) => {
-      const updated = await WorkspaceRepository.updateMemberAvatarIfLatestUpload(
+      const updated = await UserRepository.updateAvatarIfLatestUpload(
         client,
-        memberId,
+        workspaceId,
+        userId,
         avatarUploadId,
         basePath
       )
 
       if (updated) {
         variantsUsed = true
-        const fullMember = await MemberRepository.findById(client, memberId)
-        if (fullMember) {
-          await OutboxRepository.insert(client, "member:updated", {
+        const fullUser = await UserRepository.findById(client, workspaceId, userId)
+        if (fullUser) {
+          await OutboxRepository.insert(client, "workspace_user:updated", {
             workspaceId,
-            member: serializeBigInt(fullMember),
+            user: serializeBigInt(fullUser),
           })
         }
       } else {
-        logger.info({ avatarUploadId, memberId }, "Upload gone or superseded, skipping member update")
+        logger.info({ avatarUploadId, userId }, "Upload gone or superseded, skipping user update")
       }
 
       // Delete our upload row regardless (no-op if already gone)
@@ -73,6 +73,6 @@ export class AvatarProcessingService {
       this.avatarService.deleteAvatarFiles(basePath)
     }
 
-    logger.info({ avatarUploadId, memberId }, "Avatar processing completed")
+    logger.info({ avatarUploadId, userId }, "Avatar processing completed")
   }
 }

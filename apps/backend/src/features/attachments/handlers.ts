@@ -15,7 +15,7 @@ export function createAttachmentHandlers({ attachmentService, streamService }: D
      * Workspace membership is checked by middleware.
      */
     async upload(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const userId = req.user!.id
       const workspaceId = req.workspaceId!
 
       // File was uploaded to S3 by multer-s3 middleware
@@ -30,7 +30,7 @@ export function createAttachmentHandlers({ attachmentService, streamService }: D
       const uploadResult = await attachmentService.createForUpload({
         id: attachmentId,
         workspaceId,
-        uploadedBy: memberId,
+        uploadedBy: userId,
         filename: file.originalname,
         mimeType: file.mimetype,
         sizeBytes: file.size,
@@ -54,10 +54,10 @@ export function createAttachmentHandlers({ attachmentService, streamService }: D
     /**
      * Get a presigned download URL for an attachment.
      * For attached files, checks stream membership.
-     * For pending files (not yet attached), workspace membership is sufficient.
+     * For pending files (not yet attached), workspace usership is sufficient.
      */
     async getDownloadUrl(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const userId = req.user!.id
       const workspaceId = req.workspaceId!
       const { attachmentId } = req.params
 
@@ -72,9 +72,9 @@ export function createAttachmentHandlers({ attachmentService, streamService }: D
       }
 
       // For attached files, verify stream membership
-      // Pending files (no stream) are accessible to any workspace member
+      // Pending files (no stream) are accessible to any workspace user
       if (attachment.streamId) {
-        const isMember = await streamService.isMember(attachment.streamId, memberId)
+        const isMember = await streamService.isMember(attachment.streamId, userId)
         if (!isMember) {
           return res.status(403).json({ error: "Access denied" })
         }
@@ -90,7 +90,7 @@ export function createAttachmentHandlers({ attachmentService, streamService }: D
      * Attached files cannot be deleted.
      */
     async delete(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const userId = req.user!.id
       const workspaceId = req.workspaceId!
       const { attachmentId } = req.params
 
@@ -105,7 +105,7 @@ export function createAttachmentHandlers({ attachmentService, streamService }: D
       }
 
       // Only the uploader can delete their own pending files
-      if (attachment.uploadedBy && attachment.uploadedBy !== memberId) {
+      if (attachment.uploadedBy && attachment.uploadedBy !== userId) {
         return res.status(403).json({ error: "Cannot delete files uploaded by other users" })
       }
 

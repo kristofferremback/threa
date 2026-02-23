@@ -22,7 +22,7 @@ import {
   updateMessage,
   deleteMessage,
   getWorkspaceBootstrap,
-  getMemberId,
+  getUserId,
 } from "../client"
 
 // Generate unique identifier for this test run to avoid collisions
@@ -66,7 +66,7 @@ describe("API E2E Tests", () => {
       const client = new TestClient()
       const user = await loginAs(client, testEmail("auth"), "Auth Test User")
 
-      expect(user.id).toMatch(/^usr_/)
+      expect(user.id).toMatch(/^workos_test_/)
       expect(user.email).toBe(testEmail("auth"))
 
       // Verify session works
@@ -123,12 +123,12 @@ describe("API E2E Tests", () => {
 
       const bootstrap = await getWorkspaceBootstrap(client, workspace.id)
 
-      // Should include the logged-in user in users array
+      // Should include the logged-in user as a workspace user
       expect(bootstrap.users).toBeInstanceOf(Array)
       expect(bootstrap.users.length).toBeGreaterThan(0)
-      const foundUser = bootstrap.users.find((u) => u.id === user.id)
-      expect(foundUser).toBeDefined()
-      expect(foundUser?.name).toBe("WS Bootstrap Test")
+      const foundMember = bootstrap.users.find((m) => m.workosUserId === user.id)
+      expect(foundMember).toBeDefined()
+      expect(foundMember?.name).toBe("WS Bootstrap Test")
 
       // Should include system personas (Ariadne at minimum)
       expect(bootstrap.personas).toBeInstanceOf(Array)
@@ -185,7 +185,7 @@ describe("API E2E Tests", () => {
       const client = new TestClient()
       const user = await loginAs(client, testEmail("messages"), "Messages Test")
       const workspace = await createWorkspace(client, `Msg WS ${testRunId}`)
-      const memberId = await getMemberId(client, workspace.id, user.id)
+      const userId = await getUserId(client, workspace.id, user.id)
       const scratchpad = await createScratchpad(client, workspace.id)
 
       const message = await sendMessage(client, workspace.id, scratchpad.id, `Hello ${testRunId}!`)
@@ -193,7 +193,7 @@ describe("API E2E Tests", () => {
       expect(message.id).toMatch(/^msg_/)
       expect(message.contentMarkdown).toBe(`Hello ${testRunId}!`)
       expect(message.sequence).toBe("1")
-      expect(message.authorId).toBe(memberId)
+      expect(message.authorId).toBe(userId)
 
       const events = await listEvents(client, workspace.id, scratchpad.id, ["message_created"])
       expect(events.length).toBe(1)
@@ -270,7 +270,7 @@ describe("API E2E Tests", () => {
       // Send raw emoji, expect shortcode in response
       const updated = await addReaction(client, workspace.id, message.id, "👍")
 
-      expect(updated.reactions).toEqual({ ":+1:": [expect.stringMatching(/^member_/)] })
+      expect(updated.reactions).toEqual({ ":+1:": [expect.stringMatching(/^usr_/)] })
     })
 
     test("should accept shortcode input directly", async () => {
@@ -283,7 +283,7 @@ describe("API E2E Tests", () => {
       // Send shortcode directly
       const updated = await addReaction(client, workspace.id, message.id, ":heart:")
 
-      expect(updated.reactions).toEqual({ ":heart:": [expect.stringMatching(/^member_/)] })
+      expect(updated.reactions).toEqual({ ":heart:": [expect.stringMatching(/^usr_/)] })
     })
 
     test("should remove reaction from message", async () => {
@@ -356,7 +356,7 @@ describe("API E2E Tests", () => {
       const updated = await addReaction(client1, workspace.id, message.id, "👍")
 
       expect(updated.reactions[":+1:"]).toHaveLength(1)
-      expect(updated.reactions[":+1:"][0]).toMatch(/^member_/)
+      expect(updated.reactions[":+1:"][0]).toMatch(/^usr_/)
     })
 
     test("should reject invalid emoji", async () => {
@@ -520,7 +520,7 @@ describe("API E2E Tests", () => {
       const { status, data } = await client2.get<{ error: string }>(`/api/workspaces/${workspace.id}`)
 
       expect(status).toBe(403)
-      expect(data.error).toBe("Not a member of this workspace")
+      expect(data.error).toBe("Not a user in this workspace")
     })
 
     test("should return 403 when accessing stream user is not member of", async () => {
@@ -539,7 +539,7 @@ describe("API E2E Tests", () => {
       )
 
       expect(status).toBe(403)
-      expect(data.error).toBe("Not a member of this workspace")
+      expect(data.error).toBe("Not a user in this workspace")
     })
 
     test("should return 404 for non-existent workspace", async () => {
@@ -577,7 +577,7 @@ describe("API E2E Tests", () => {
       const scratchpad = await createScratchpad(client1, workspace.id)
       const message = await sendMessage(client1, workspace.id, scratchpad.id, "User 1's message")
 
-      // User 2 tries to edit user 1's message but is not a workspace member
+      // User 2 tries to edit user 1's message but is not a workspace user
       // so they get 403 on workspace check first
       const { status, data } = await client2.patch<{ error: string }>(
         `/api/workspaces/${workspace.id}/messages/${message.id}`,
@@ -585,7 +585,7 @@ describe("API E2E Tests", () => {
       )
 
       expect(status).toBe(403)
-      expect(data.error).toBe("Not a member of this workspace")
+      expect(data.error).toBe("Not a user in this workspace")
     })
 
     test("should return 400 for missing required fields", async () => {
@@ -766,7 +766,7 @@ describe("API E2E Tests", () => {
 
       // 1. Login
       const user = await loginAs(client, testEmail("journey"), "Journey User")
-      expect(user.id).toMatch(/^usr_/)
+      expect(user.id).toMatch(/^workos_test_/)
 
       // 2. Create workspace
       const workspace = await createWorkspace(client, `Journey WS ${testRunId}`)

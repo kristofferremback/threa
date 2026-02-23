@@ -13,7 +13,7 @@ import type {
 import { StreamTypes, AuthorTypes, ExtractionSourceTypes, PdfSizeTiers, InjectionStrategies } from "@threa/types"
 import { StreamRepository, StreamMemberRepository, type Stream } from "../streams"
 import { MessageRepository, type Message } from "../messaging"
-import { MemberRepository } from "../workspaces"
+import { UserRepository } from "../workspaces"
 import { AttachmentRepository } from "../attachments"
 import { AttachmentExtractionRepository, type PdfMetadata, type PdfSection } from "../attachments"
 import { getUtcOffset, type TemporalContext, type ParticipantTemporal } from "../../lib/temporal"
@@ -250,10 +250,11 @@ async function buildChannelContext(db: Querier, stream: Stream, temporal?: Tempo
     StreamMemberRepository.list(db, { streamId: stream.id }),
   ])
 
-  const memberIds = members.map((m) => m.memberId)
+  const userIds = members.map((m) => m.memberId)
   const { participants, participantTimezones } = await resolveParticipantsWithTimezones(
     db,
-    memberIds,
+    stream.workspaceId,
+    userIds,
     temporal !== undefined
   )
 
@@ -280,10 +281,11 @@ async function buildDmContext(db: Querier, stream: Stream, temporal?: TemporalCo
     StreamMemberRepository.list(db, { streamId: stream.id }),
   ])
 
-  const memberIds = members.map((m) => m.memberId)
+  const userIds = members.map((m) => m.memberId)
   const { participants, participantTimezones } = await resolveParticipantsWithTimezones(
     db,
-    memberIds,
+    stream.workspaceId,
+    userIds,
     temporal !== undefined
   )
 
@@ -357,7 +359,7 @@ async function buildThreadPath(db: Querier, stream: Stream): Promise<ThreadPathE
     if (current.parentMessageId) {
       const message = await MessageRepository.findById(db, current.parentMessageId)
       if (message) {
-        const authorName = await resolveAuthorName(db, message.authorId, message.authorType)
+        const authorName = await resolveAuthorName(db, current.workspaceId, message.authorId, message.authorType)
         anchorMessage = {
           id: message.id,
           content: message.contentMarkdown.slice(0, 200), // Truncate for context
@@ -389,15 +391,16 @@ async function buildThreadPath(db: Querier, stream: Stream): Promise<ThreadPathE
  */
 async function resolveParticipantsWithTimezones(
   db: Querier,
-  memberIds: string[],
+  workspaceId: string,
+  userIds: string[],
   includeTimezones: boolean
 ): Promise<{ participants: Participant[]; participantTimezones?: ParticipantTemporal[] }> {
-  if (memberIds.length === 0) {
+  if (userIds.length === 0) {
     return { participants: [], participantTimezones: includeTimezones ? [] : undefined }
   }
 
-  // Batch fetch all members in one query
-  const members = await MemberRepository.findByIds(db, memberIds)
+  // Batch fetch all users in one query
+  const members = await UserRepository.findByIds(db, workspaceId, userIds)
 
   const participants: Participant[] = members.map((member) => ({
     id: member.id,
@@ -425,13 +428,18 @@ async function resolveParticipantsWithTimezones(
 /**
  * Resolve author name for a message.
  */
-async function resolveAuthorName(db: Querier, authorId: string, authorType: AuthorType): Promise<string> {
+async function resolveAuthorName(
+  db: Querier,
+  workspaceId: string,
+  authorId: string,
+  authorType: AuthorType
+): Promise<string> {
   if (authorType === "system") {
     return "Threa"
   }
 
-  if (authorType === "member") {
-    const member = await MemberRepository.findById(db, authorId)
+  if (authorType === "user") {
+    const member = await UserRepository.findById(db, workspaceId, authorId)
     return member?.name ?? "Unknown"
   }
 
@@ -514,7 +522,7 @@ export async function enrichMessagesWithAttachments(
   // Find indices of last N user messages before trigger
   const userMessageIndicesBeforeTrigger: number[] = []
   for (let i = triggerIdx - 1; i >= 0 && userMessageIndicesBeforeTrigger.length < FULL_EXTRACTION_USER_MESSAGES; i--) {
-    if (messages[i].authorType === AuthorTypes.MEMBER) {
+    if (messages[i].authorType === AuthorTypes.USER) {
       userMessageIndicesBeforeTrigger.push(i)
     }
   }

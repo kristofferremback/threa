@@ -33,7 +33,7 @@ export {
   isDraftId,
   createDmDraftId,
   isDmDraftId,
-  getDmDraftMemberId,
+  getDmDraftUserId,
   type VirtualStream,
   type UseStreamOrDraftReturn,
 } from "./use-stream-or-draft"

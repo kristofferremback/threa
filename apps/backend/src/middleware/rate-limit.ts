@@ -83,7 +83,7 @@ export function createRateLimit(options: RateLimitOptions): RequestHandler {
 }
 
 function userScopeKey(req: Request): string {
-  return req.userId || getClientIp(req, "unknown")
+  return req.workosUserId || getClientIp(req, "unknown")
 }
 
 export function createRateLimiters(config: RateLimiterConfig): RateLimiterSet {

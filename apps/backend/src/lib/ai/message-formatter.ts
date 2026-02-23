@@ -1,7 +1,7 @@
 import type { Querier } from "../../db"
 import type { Message } from "../../features/messaging"
 import type { AttachmentWithExtraction } from "../../features/attachments"
-import { MemberRepository } from "../../features/workspaces"
+import { UserRepository } from "../../features/workspaces"
 import { PersonaRepository } from "../../features/agents"
 
 function escapeXml(s: string): string {
@@ -26,14 +26,14 @@ export class MessageFormatter {
    * @example
    * const formatted = await messageFormatter.formatMessages(client, messages)
    * // <messages>
-   * // <message authorType="member" authorId="user_123" authorName="Alice" createdAt="2021-01-01T00:00:00Z">Hello!</message>
+   * // <message authorType="user" authorId="user_123" authorName="Alice" createdAt="2021-01-01T00:00:00Z">Hello!</message>
    * // <message authorType="persona" authorId="persona_456" authorName="Ariadne" createdAt="2021-01-01T00:00:01Z">Hi there!</message>
    * // </messages>
    */
-  async formatMessages(client: Querier, messages: Message[]): Promise<string> {
+  async formatMessages(client: Querier, workspaceId: string, messages: Message[]): Promise<string> {
     if (messages.length === 0) return "<messages></messages>"
 
-    const nameById = await this.resolveAuthorNames(client, messages)
+    const nameById = await this.resolveAuthorNames(client, workspaceId, messages)
 
     const formatted = messages.map((m) => this.formatSingleMessage(m, nameById))
 
@@ -44,25 +44,29 @@ export class MessageFormatter {
    * Batch-resolve author names for a set of messages.
    * Returns a map from authorId to name.
    */
-  private async resolveAuthorNames(client: Querier, messages: Message[]): Promise<Map<string, string>> {
-    const memberIds = new Set<string>()
+  private async resolveAuthorNames(
+    client: Querier,
+    workspaceId: string,
+    messages: Message[]
+  ): Promise<Map<string, string>> {
+    const userIds = new Set<string>()
     const personaIds = new Set<string>()
 
     for (const m of messages) {
-      if (m.authorType === "member") {
-        memberIds.add(m.authorId)
+      if (m.authorType === "user") {
+        userIds.add(m.authorId)
       } else {
         personaIds.add(m.authorId)
       }
     }
 
-    const [members, personas] = await Promise.all([
-      MemberRepository.findByIds(client, [...memberIds]),
+    const [users, personas] = await Promise.all([
+      UserRepository.findByIds(client, workspaceId, [...userIds]),
       PersonaRepository.findByIds(client, [...personaIds]),
     ])
 
     const nameById = new Map<string, string>()
-    for (const m of members) nameById.set(m.id, m.name)
+    for (const u of users) nameById.set(u.id, u.name)
     for (const p of personas) nameById.set(p.id, p.name)
 
     return nameById
@@ -93,12 +97,13 @@ export class MessageFormatter {
    */
   async formatMessagesInline(
     client: Querier,
+    workspaceId: string,
     messages: Message[],
     options?: { includeIds?: boolean }
   ): Promise<string> {
     if (messages.length === 0) return ""
 
-    const nameById = await this.resolveAuthorNames(client, messages)
+    const nameById = await this.resolveAuthorNames(client, workspaceId, messages)
 
     const formatted = messages.map((m) => {
       const authorName = nameById.get(m.authorId) ?? "Unknown"
@@ -124,7 +129,7 @@ export class MessageFormatter {
    * @example
    * const formatted = await messageFormatter.formatMessagesWithAttachments(client, messages, attachmentsMap)
    * // <messages>
-   * // <message authorType="member" authorId="user_123" authorName="Alice" createdAt="...">
+   * // <message authorType="user" authorId="user_123" authorName="Alice" createdAt="...">
    * // What's in this image?
    * // <attachment filename="photo.jpg" contentType="photo">A colorful tropical fish swimming in a coral reef</attachment>
    * // </message>
@@ -132,12 +137,13 @@ export class MessageFormatter {
    */
   async formatMessagesWithAttachments(
     client: Querier,
+    workspaceId: string,
     messages: Message[],
     attachmentsByMessageId: Map<string, AttachmentWithExtraction[]>
   ): Promise<string> {
     if (messages.length === 0) return "<messages></messages>"
 
-    const nameById = await this.resolveAuthorNames(client, messages)
+    const nameById = await this.resolveAuthorNames(client, workspaceId, messages)
 
     const formatted = messages.map((m) => {
       const authorName = nameById.get(m.authorId) ?? "Unknown"

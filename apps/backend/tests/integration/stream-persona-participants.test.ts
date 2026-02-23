@@ -12,9 +12,8 @@ import { Pool } from "pg"
 import { EventService } from "../../src/features/messaging"
 import { StreamPersonaParticipantRepository } from "../../src/features/agents"
 import { SearchRepository } from "../../src/features/search"
-import { UserRepository } from "../../src/auth/user-repository"
 import { WorkspaceRepository } from "../../src/features/workspaces"
-import { streamId, userId, memberId, workspaceId, personaId } from "../../src/lib/id"
+import { streamId, userId, workspaceId, personaId } from "../../src/lib/id"
 import { addTestMember, setupTestDatabase, testMessageContent } from "./setup"
 import { Visibilities } from "@threa/types"
 
@@ -51,7 +50,7 @@ describe("Stream Persona Participants", () => {
       await pool.query(
         `INSERT INTO streams (id, workspace_id, type, visibility, created_by)
          VALUES ($1, $2, 'scratchpad', 'private', $3)`,
-        [testStreamId, testWorkspaceId, memberId()]
+        [testStreamId, testWorkspaceId, userId()]
       )
 
       // Send a message as persona
@@ -75,21 +74,21 @@ describe("Stream Persona Participants", () => {
     test("should NOT record participation for user messages", async () => {
       const testStreamId = streamId()
       const testWorkspaceId = workspaceId()
-      const testMemberId = memberId()
+      const testUserId = userId()
 
       // Create a stream first
       await pool.query(
         `INSERT INTO streams (id, workspace_id, type, visibility, created_by)
          VALUES ($1, $2, 'scratchpad', 'private', $3)`,
-        [testStreamId, testWorkspaceId, testMemberId]
+        [testStreamId, testWorkspaceId, testUserId]
       )
 
       // Send a message as user
       await eventService.createMessage({
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
-        authorId: testMemberId,
-        authorType: "member",
+        authorId: testUserId,
+        authorType: "user",
         ...testMessageContent("Hello from user!"),
       })
 
@@ -107,7 +106,7 @@ describe("Stream Persona Participants", () => {
       await pool.query(
         `INSERT INTO streams (id, workspace_id, type, visibility, created_by)
          VALUES ($1, $2, 'scratchpad', 'private', $3)`,
-        [testStreamId, testWorkspaceId, memberId()]
+        [testStreamId, testWorkspaceId, userId()]
       )
 
       // Send multiple messages as the same persona
@@ -146,7 +145,7 @@ describe("Stream Persona Participants", () => {
     test("should find all streams where a persona has participated", async () => {
       const testWorkspaceId = workspaceId()
       const testPersonaId = personaId()
-      const creatorId = memberId()
+      const creatorId = userId()
 
       // Create 3 streams
       const stream1 = streamId()
@@ -190,7 +189,7 @@ describe("Stream Persona Participants", () => {
       const testWorkspaceId = workspaceId()
       const persona1 = personaId()
       const persona2 = personaId()
-      const creatorId = memberId()
+      const creatorId = userId()
 
       // Create 3 streams
       const stream1 = streamId()
@@ -258,35 +257,27 @@ describe("Stream Persona Participants", () => {
   describe("Search Integration", () => {
     test("should get accessible streams filtered by persona participation", async () => {
       const testWorkspaceId = workspaceId()
-      const testUserId = userId()
+      const workosUserId = userId()
       const testPersonaId = personaId()
-      let testMemberId: string
 
       // Create 2 streams - user is member of both
       const stream1 = streamId()
       const stream2 = streamId()
-
-      await UserRepository.insert(pool, {
-        id: testUserId,
-        email: `search-integ-${testUserId}@test.com`,
-        name: "Search Member",
-        workosUserId: `workos_${testUserId}`,
-      })
       await WorkspaceRepository.insert(pool, {
         id: testWorkspaceId,
         name: "Search Integration Workspace",
         slug: `search-integ-${testWorkspaceId}`,
-        createdBy: testUserId,
+        createdBy: workosUserId,
       })
-      testMemberId = (await addTestMember(pool, testWorkspaceId, testUserId)).id
+      const testUserId = (await addTestMember(pool, testWorkspaceId, workosUserId)).id
 
       for (const sid of [stream1, stream2]) {
         await pool.query(
           `INSERT INTO streams (id, workspace_id, type, visibility, created_by)
            VALUES ($1, $2, 'scratchpad', 'private', $3)`,
-          [sid, testWorkspaceId, testMemberId]
+          [sid, testWorkspaceId, testUserId]
         )
-        await pool.query(`INSERT INTO stream_members (stream_id, member_id) VALUES ($1, $2)`, [sid, testMemberId])
+        await pool.query(`INSERT INTO stream_members (stream_id, member_id) VALUES ($1, $2)`, [sid, testUserId])
       }
 
       // Persona only participates in stream1
@@ -302,24 +293,24 @@ describe("Stream Persona Participants", () => {
       await eventService.createMessage({
         workspaceId: testWorkspaceId,
         streamId: stream1,
-        authorId: testMemberId,
-        authorType: "member",
+        authorId: testUserId,
+        authorType: "user",
         ...testMessageContent("User in stream 1"),
       })
 
       await eventService.createMessage({
         workspaceId: testWorkspaceId,
         streamId: stream2,
-        authorId: testMemberId,
-        authorType: "member",
+        authorId: testUserId,
+        authorType: "user",
         ...testMessageContent("User in stream 2"),
       })
 
       // Get accessible streams with persona filter
       const streamsWithPersona = await SearchRepository.getAccessibleStreamsWithMembers(pool, {
         workspaceId: testWorkspaceId,
-        memberId: testMemberId,
-        memberIds: [testPersonaId],
+        userId: testUserId,
+        userIds: [testPersonaId],
       })
 
       // Only stream1 should be returned (where persona participated)
@@ -340,19 +331,6 @@ describe("Stream Persona Participants", () => {
       const stream1 = streamId()
       const stream2 = streamId()
       const stream3 = streamId()
-
-      await UserRepository.insert(pool, {
-        id: user1,
-        email: `search-mixed-u1-${user1}@test.com`,
-        name: "Mixed User 1",
-        workosUserId: `workos_${user1}`,
-      })
-      await UserRepository.insert(pool, {
-        id: user2,
-        email: `search-mixed-u2-${user2}@test.com`,
-        name: "Mixed User 2",
-        workosUserId: `workos_${user2}`,
-      })
       await WorkspaceRepository.insert(pool, {
         id: testWorkspaceId,
         name: "Search Mixed Workspace",
@@ -400,8 +378,8 @@ describe("Stream Persona Participants", () => {
       // Filter for streams where user2 is member AND persona1 has participated
       const result = await SearchRepository.getAccessibleStreamsWithMembers(pool, {
         workspaceId: testWorkspaceId,
-        memberId: member1,
-        memberIds: [member2, persona1], // Mixed member + persona IDs
+        userId: member1,
+        userIds: [member2, persona1], // Mixed user + persona IDs
       })
 
       // Only stream1 matches: user2 is member AND persona1 participated

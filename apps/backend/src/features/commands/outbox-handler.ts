@@ -111,7 +111,7 @@ export class CommandHandler implements OutboxHandler {
             args: eventPayload.args,
             workspaceId,
             streamId,
-            memberId: authorId,
+            userId: authorId,
           })
 
           seen.push(event.id)

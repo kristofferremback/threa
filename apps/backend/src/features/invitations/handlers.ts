@@ -7,7 +7,7 @@ const sendInvitationsSchema = z.object({
     .array(z.string().email("Invalid email address"))
     .min(1, "At least one email is required")
     .max(20, "Maximum 20 emails per request"),
-  role: z.enum(["admin", "member"]).optional().default("member"),
+  role: z.enum(["admin", "user"]).optional().default("user"),
 })
 
 interface Dependencies {
@@ -18,7 +18,7 @@ export function createInvitationHandlers({ invitationService }: Dependencies) {
   return {
     async send(req: Request, res: Response) {
       const workspaceId = req.workspaceId!
-      const memberId = req.member!.id
+      const userId = req.user!.id
 
       const result = sendInvitationsSchema.safeParse(req.body)
       if (!result.success) {
@@ -32,7 +32,7 @@ export function createInvitationHandlers({ invitationService }: Dependencies) {
 
       const sendResult = await invitationService.sendInvitations({
         workspaceId,
-        invitedBy: memberId,
+        invitedBy: userId,
         emails,
         role,
       })

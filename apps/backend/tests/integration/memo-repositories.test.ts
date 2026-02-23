@@ -10,7 +10,6 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test"
 import { Pool } from "pg"
 import { withTransaction, addTestMember } from "./setup"
-import { UserRepository } from "../../src/auth/user-repository"
 import { WorkspaceRepository } from "../../src/features/workspaces"
 import { StreamRepository } from "../../src/features/streams"
 import { ConversationRepository } from "../../src/features/conversations"
@@ -18,12 +17,11 @@ import { PendingItemRepository } from "../../src/features/memos"
 import { StreamStateRepository } from "../../src/features/streams"
 import { MemoRepository } from "../../src/features/memos"
 import { setupTestDatabase } from "./setup"
-import { userId, memberId, workspaceId, streamId, memoId, pendingItemId, conversationId } from "../../src/lib/id"
+import { userId, workspaceId, streamId, memoId, pendingItemId, conversationId } from "../../src/lib/id"
 
 describe("Memo Repositories", () => {
   let pool: Pool
   let testUserId: string
-  let testMemberId: string
   let testWorkspaceId: string
   let testStreamId: string
 
@@ -35,26 +33,20 @@ describe("Memo Repositories", () => {
     testStreamId = streamId()
 
     await withTransaction(pool, async (client) => {
-      await UserRepository.insert(client, {
-        id: testUserId,
-        email: `memo-test-${testUserId}@test.com`,
-        name: "Memo Test User",
-        workosUserId: `workos_${testUserId}`,
-      })
       await WorkspaceRepository.insert(client, {
         id: testWorkspaceId,
         name: "Memo Test Workspace",
         slug: `memo-test-${testWorkspaceId}`,
         createdBy: testUserId,
       })
-      testMemberId = (await addTestMember(client, testWorkspaceId, testUserId)).id
+      testUserId = (await addTestMember(client, testWorkspaceId, testUserId)).id
       await StreamRepository.insert(client, {
         id: testStreamId,
         workspaceId: testWorkspaceId,
         type: "scratchpad",
         visibility: "private",
         companionMode: "off",
-        createdBy: testMemberId,
+        createdBy: testUserId,
       })
     })
   })
@@ -178,7 +170,7 @@ describe("Memo Repositories", () => {
             type: "channel",
             visibility: "public",
             companionMode: "off",
-            createdBy: testMemberId,
+            createdBy: testUserId,
           })
 
           await PendingItemRepository.queue(client, [
@@ -219,7 +211,7 @@ describe("Memo Repositories", () => {
             type: "channel",
             visibility: "public",
             companionMode: "off",
-            createdBy: testMemberId,
+            createdBy: testUserId,
           })
 
           // Queue 5 items
@@ -289,7 +281,7 @@ describe("Memo Repositories", () => {
             type: "channel",
             visibility: "public",
             companionMode: "off",
-            createdBy: testMemberId,
+            createdBy: testUserId,
           })
           await StreamStateRepository.upsertActivity(client, testWorkspaceId, localStreamId)
         })
@@ -313,7 +305,7 @@ describe("Memo Repositories", () => {
             type: "channel",
             visibility: "public",
             companionMode: "off",
-            createdBy: testMemberId,
+            createdBy: testUserId,
           })
           await StreamStateRepository.upsertActivity(client, testWorkspaceId, localStreamId)
         })
@@ -347,7 +339,7 @@ describe("Memo Repositories", () => {
             type: "channel",
             visibility: "public",
             companionMode: "off",
-            createdBy: testMemberId,
+            createdBy: testUserId,
           })
           await StreamStateRepository.markProcessed(client, testWorkspaceId, localStreamId)
         })
@@ -371,7 +363,7 @@ describe("Memo Repositories", () => {
             type: "channel",
             visibility: "public",
             companionMode: "off",
-            createdBy: testMemberId,
+            createdBy: testUserId,
           })
 
           // Queue a pending item (required for stream to appear)
@@ -403,7 +395,7 @@ describe("Memo Repositories", () => {
             type: "channel",
             visibility: "public",
             companionMode: "off",
-            createdBy: testMemberId,
+            createdBy: testUserId,
           })
 
           // Mark as processed (simulates recent processing)
@@ -445,7 +437,7 @@ describe("Memo Repositories", () => {
             type: "channel",
             visibility: "public",
             companionMode: "off",
-            createdBy: testMemberId,
+            createdBy: testUserId,
           })
 
           // Mark as just processed
@@ -494,7 +486,7 @@ describe("Memo Repositories", () => {
             type: "channel",
             visibility: "public",
             companionMode: "off",
-            createdBy: testMemberId,
+            createdBy: testUserId,
           })
 
           // Set lastProcessedAt to 10 seconds ago (use short cap for test)
@@ -542,7 +534,7 @@ describe("Memo Repositories", () => {
             type: "channel",
             visibility: "public",
             companionMode: "off",
-            createdBy: testMemberId,
+            createdBy: testUserId,
           })
 
           // Only create state, no pending items
@@ -574,7 +566,7 @@ describe("Memo Repositories", () => {
             abstract: "This is a test abstract for the memo.",
             keyPoints: ["Point 1", "Point 2"],
             sourceMessageIds: [sourceMessageId],
-            participantIds: [testMemberId],
+            participantIds: [testUserId],
             knowledgeType: "decision",
             tags: ["test", "memo"],
             status: "active",
@@ -612,7 +604,7 @@ describe("Memo Repositories", () => {
             abstract: "Summary of the conversation.",
             keyPoints: [],
             sourceMessageIds: ["msg1", "msg2"],
-            participantIds: [testMemberId],
+            participantIds: [testUserId],
             knowledgeType: "learning",
             tags: [],
             status: "active",
@@ -773,12 +765,6 @@ describe("Memo Repositories", () => {
         let localMemberId = ""
 
         await withTransaction(pool, async (client) => {
-          await UserRepository.insert(client, {
-            id: localUserId,
-            email: `tags-test-${localUserId}@test.com`,
-            name: "Tags Test User",
-            workosUserId: `workos_${localUserId}`,
-          })
           await WorkspaceRepository.insert(client, {
             id: localWorkspaceId,
             name: "Tags Test Workspace",
@@ -853,7 +839,7 @@ describe("Memo Repositories", () => {
             type: "channel",
             visibility: "public",
             companionMode: "off",
-            createdBy: testMemberId,
+            createdBy: testUserId,
           })
 
           await ConversationRepository.insert(client, {
@@ -924,7 +910,7 @@ describe("Memo Repositories", () => {
             type: "channel",
             visibility: "public",
             companionMode: "off",
-            createdBy: testMemberId,
+            createdBy: testUserId,
           })
 
           for (let i = 0; i < 5; i++) {

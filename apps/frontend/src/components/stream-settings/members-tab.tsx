@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import { SearchableList } from "@/components/ui/searchable-list"
-import { renderMemberItem, type MemberItem } from "@/components/ui/member-list-item"
+import { renderUserListItem, type UserListItem } from "@/components/ui/user-list-item"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,10 +27,10 @@ import { toast } from "sonner"
 interface MembersTabProps {
   workspaceId: string
   streamId: string
-  currentMemberId: string
+  currentUserId: string
 }
 
-export function MembersTab({ workspaceId, streamId, currentMemberId }: MembersTabProps) {
+export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabProps) {
   const queryClient = useQueryClient()
   const streamService = useStreamService()
   const [search, setSearch] = useState("")
@@ -58,20 +58,22 @@ export function MembersTab({ workspaceId, streamId, currentMemberId }: MembersTa
   const streamType = bootstrap?.stream?.type
   const canAddMembers = streamType === StreamTypes.CHANNEL || streamType === StreamTypes.THREAD
   const streamMembers = bootstrap?.members ?? []
-  const workspaceMembers = wsBootstrap?.members ?? []
-  const currentWorkspaceMember = workspaceMembers.find((m) => m.id === currentMemberId)
-  const canManageMembers = currentWorkspaceMember?.role === "owner" || currentWorkspaceMember?.role === "admin"
+  const workspaceUsers = wsBootstrap?.users ?? []
+  const currentWorkspaceUser = workspaceUsers.find((u) => u.id === currentUserId)
+  const canManageMembers = currentWorkspaceUser?.role === "owner" || currentWorkspaceUser?.role === "admin"
 
   const streamMemberIds = useMemo(() => new Set(streamMembers.map((m) => m.memberId)), [streamMembers])
 
   const enrichedMembers = useMemo(() => {
     return streamMembers
       .map((sm) => {
-        const wm = workspaceMembers.find((m) => m.id === sm.memberId)
-        return wm ? { ...sm, name: wm.name, slug: wm.slug, role: wm.role } : null
+        const workspaceUser = workspaceUsers.find((u) => u.id === sm.memberId)
+        return workspaceUser
+          ? { ...sm, name: workspaceUser.name, slug: workspaceUser.slug, role: workspaceUser.role }
+          : null
       })
       .filter(Boolean) as (StreamMember & { name: string; slug: string; role: string })[]
-  }, [streamMembers, workspaceMembers])
+  }, [streamMembers, workspaceUsers])
 
   const filteredMembers = useMemo(() => {
     if (!search) return enrichedMembers
@@ -79,10 +81,10 @@ export function MembersTab({ workspaceId, streamId, currentMemberId }: MembersTa
     return enrichedMembers.filter((m) => m.name.toLowerCase().includes(q) || m.slug.toLowerCase().includes(q))
   }, [enrichedMembers, search])
 
-  const availableToAdd = useMemo((): MemberItem[] => {
+  const availableToAdd = useMemo((): UserListItem[] => {
     if (!addSearch) return []
     const q = addSearch.toLowerCase()
-    return workspaceMembers
+    return workspaceUsers
       .filter(
         (m) => !streamMemberIds.has(m.id) && (m.name.toLowerCase().includes(q) || m.slug.toLowerCase().includes(q))
       )
@@ -93,10 +95,10 @@ export function MembersTab({ workspaceId, streamId, currentMemberId }: MembersTa
         slug: m.slug,
         name: m.name,
       }))
-  }, [workspaceMembers, streamMemberIds, addSearch])
+  }, [workspaceUsers, streamMemberIds, addSearch])
 
   const handleAdd = useCallback(
-    (item: MemberItem) => {
+    (item: UserListItem) => {
       addMutation.mutate(item.id, {
         onSuccess: () => {
           toast.success("Member added")
@@ -158,7 +160,7 @@ export function MembersTab({ workspaceId, streamId, currentMemberId }: MembersTa
                   <Badge variant={member.role === "owner" ? "default" : "secondary"} className="text-xs">
                     {member.role}
                   </Badge>
-                  {canManageMembers && member.memberId !== currentMemberId && (
+                  {canManageMembers && member.memberId !== currentUserId && (
                     <Button
                       variant="ghost"
                       size="icon"
@@ -182,12 +184,12 @@ export function MembersTab({ workspaceId, streamId, currentMemberId }: MembersTa
           <Label className="text-sm font-medium">Add member</Label>
           <SearchableList
             items={availableToAdd}
-            renderItem={renderMemberItem}
+            renderItem={renderUserListItem}
             onSelect={handleAdd}
             search={addSearch}
             onSearchChange={setAddSearch}
-            placeholder="Search workspace members..."
-            emptyMessage="No matching members"
+            placeholder="Search workspace users..."
+            emptyMessage="No matching users"
             icon={UserPlus}
           />
         </div>

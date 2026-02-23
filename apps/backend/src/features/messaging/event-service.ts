@@ -50,7 +50,7 @@ export interface MessageDeletedPayload {
 export interface ReactionPayload {
   messageId: string
   emoji: string
-  memberId: string
+  userId: string
 }
 
 export interface ThreadCreatedPayload {
@@ -94,7 +94,7 @@ export interface AddReactionParams {
   messageId: string
   streamId: string
   emoji: string
-  memberId: string
+  userId: string
 }
 
 export interface RemoveReactionParams {
@@ -102,7 +102,7 @@ export interface RemoveReactionParams {
   messageId: string
   streamId: string
   emoji: string
-  memberId: string
+  userId: string
 }
 
 export class EventService {
@@ -129,7 +129,7 @@ export class EventService {
     if (isMember && isPersona) {
       throw new Error(`Actor ${actorId} has ambiguous type in stream ${streamId}`)
     }
-    if (isMember) return AuthorTypes.MEMBER
+    if (isMember) return AuthorTypes.USER
     if (isPersona) return AuthorTypes.PERSONA
 
     throw new Error(`Actor ${actorId} has no resolved type in stream ${streamId}`)
@@ -206,7 +206,7 @@ export class EventService {
 
       // 4. Update author's read position to include their own message
       // This ensures the sender's own message is never counted as unread
-      if (params.authorType === "member") {
+      if (params.authorType === "user") {
         await StreamMemberRepository.update(client, params.streamId, params.authorId, {
           lastReadEventId: evtId,
         })
@@ -394,14 +394,14 @@ export class EventService {
         payload: {
           messageId: params.messageId,
           emoji: params.emoji,
-          memberId: params.memberId,
+          userId: params.userId,
         } satisfies ReactionPayload,
-        actorId: params.memberId,
-        actorType: "member",
+        actorId: params.userId,
+        actorType: "user",
       })
 
       // 2. Update projection
-      const message = await MessageRepository.addReaction(client, params.messageId, params.emoji, params.memberId)
+      const message = await MessageRepository.addReaction(client, params.messageId, params.emoji, params.userId)
 
       if (message) {
         // 3. Publish to outbox
@@ -410,7 +410,7 @@ export class EventService {
           streamId: params.streamId,
           messageId: params.messageId,
           emoji: params.emoji,
-          memberId: params.memberId,
+          userId: params.userId,
         })
       }
 
@@ -428,14 +428,14 @@ export class EventService {
         payload: {
           messageId: params.messageId,
           emoji: params.emoji,
-          memberId: params.memberId,
+          userId: params.userId,
         } satisfies ReactionPayload,
-        actorId: params.memberId,
-        actorType: "member",
+        actorId: params.userId,
+        actorType: "user",
       })
 
       // 2. Update projection
-      const message = await MessageRepository.removeReaction(client, params.messageId, params.emoji, params.memberId)
+      const message = await MessageRepository.removeReaction(client, params.messageId, params.emoji, params.userId)
 
       if (message) {
         // 3. Publish to outbox
@@ -444,7 +444,7 @@ export class EventService {
           streamId: params.streamId,
           messageId: params.messageId,
           emoji: params.emoji,
-          memberId: params.memberId,
+          userId: params.userId,
         })
       }
 

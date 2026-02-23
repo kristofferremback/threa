@@ -217,15 +217,15 @@ export const StreamEventRepository = {
   },
 
   /**
-   * Get the latest sequence number for member messages only.
-   * Used to check if new member messages arrived while excluding persona responses.
+   * Get the latest sequence number for user messages only.
+   * Used to check if new user messages arrived while excluding persona responses.
    */
-  async getLatestMemberMessageSequence(db: Querier, streamId: string): Promise<bigint | null> {
+  async getLatestUserMessageSequence(db: Querier, streamId: string): Promise<bigint | null> {
     const result = await db.query<{ sequence: string }>(sql`
       SELECT sequence FROM stream_events
       WHERE stream_id = ${streamId}
         AND event_type = 'message_created'
-        AND actor_type = 'member'
+        AND actor_type = 'user'
       ORDER BY sequence DESC
       LIMIT 1
     `)

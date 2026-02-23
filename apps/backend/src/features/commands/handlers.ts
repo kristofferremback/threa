@@ -36,7 +36,7 @@ export function createCommandHandlers({ pool, commandRegistry, streamService }: 
      * queues the command for execution, and returns an ack.
      */
     async dispatch(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const userId = req.user!.id
       const workspaceId = req.workspaceId!
 
       const result = dispatchCommandSchema.safeParse(req.body)
@@ -53,7 +53,7 @@ export function createCommandHandlers({ pool, commandRegistry, streamService }: 
       // Validate stream access
       const [stream, isStreamMember] = await Promise.all([
         streamService.getStreamById(streamId),
-        streamService.isMember(streamId, memberId),
+        streamService.isMember(streamId, userId),
       ])
 
       if (!stream || stream.workspaceId !== workspaceId) {
@@ -107,8 +107,8 @@ export function createCommandHandlers({ pool, commandRegistry, streamService }: 
             args: parsed.args,
             status: "dispatched",
           } satisfies CommandDispatchedPayload,
-          actorId: memberId,
-          actorType: "member",
+          actorId: userId,
+          actorType: "user",
         })
 
         // Publish to outbox for:
@@ -118,7 +118,7 @@ export function createCommandHandlers({ pool, commandRegistry, streamService }: 
           workspaceId,
           streamId,
           event: serializeBigInt(evt),
-          authorId: memberId,
+          authorId: userId,
         })
 
         return evt

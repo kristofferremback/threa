@@ -8,7 +8,7 @@ interface Dependencies {
 export function createActivityHandlers({ activityService }: Dependencies) {
   return {
     async list(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const userId = req.user!.id
       const workspaceId = req.workspaceId!
 
       const rawLimit = req.query.limit ? Number(req.query.limit) : 50
@@ -16,7 +16,7 @@ export function createActivityHandlers({ activityService }: Dependencies) {
       const cursor = typeof req.query.cursor === "string" ? req.query.cursor : undefined
       const unreadOnly = req.query.unreadOnly === "true"
 
-      const activities = await activityService.listFeed(memberId, workspaceId, {
+      const activities = await activityService.listFeed(userId, workspaceId, {
         limit,
         cursor,
         unreadOnly,
@@ -26,19 +26,19 @@ export function createActivityHandlers({ activityService }: Dependencies) {
     },
 
     async markAllAsRead(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const userId = req.user!.id
       const workspaceId = req.workspaceId!
 
-      await activityService.markAllAsRead(memberId, workspaceId)
+      await activityService.markAllAsRead(userId, workspaceId)
 
       res.json({ ok: true })
     },
 
     async markOneAsRead(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const userId = req.user!.id
       const activityId = req.params.id
 
-      await activityService.markAsRead(activityId, memberId)
+      await activityService.markAsRead(activityId, userId)
 
       res.json({ ok: true })
     },

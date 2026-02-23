@@ -12,7 +12,6 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach, afterEach } from "bun:test"
 import { Pool } from "pg"
 import { withTransaction, addTestMember } from "./setup"
-import { UserRepository } from "../../src/auth/user-repository"
 import { WorkspaceRepository } from "../../src/features/workspaces"
 import { StreamRepository } from "../../src/features/streams"
 import { MessageRepository } from "../../src/features/messaging"
@@ -55,7 +54,6 @@ describe("BoundaryExtractionService", () => {
   let service: BoundaryExtractionService
   let stubExtractor: StubBoundaryExtractor
   let testUserId: string
-  let testMemberId: string
   let testWorkspaceId: string
   let testStreamId: string
 
@@ -68,26 +66,20 @@ describe("BoundaryExtractionService", () => {
     testStreamId = streamId()
 
     await withTransaction(pool, async (client) => {
-      await UserRepository.insert(client, {
-        id: testUserId,
-        email: `boundary-test-${testUserId}@test.com`,
-        name: "Test User",
-        workosUserId: `workos_${testUserId}`,
-      })
       await WorkspaceRepository.insert(client, {
         id: testWorkspaceId,
         name: "Test Workspace",
         slug: `test-ws-${testWorkspaceId}`,
         createdBy: testUserId,
       })
-      testMemberId = (await addTestMember(client, testWorkspaceId, testUserId)).id
+      testUserId = (await addTestMember(client, testWorkspaceId, testUserId)).id
       await StreamRepository.insert(client, {
         id: testStreamId,
         workspaceId: testWorkspaceId,
         type: "channel",
         visibility: "private",
         companionMode: "off",
-        createdBy: testMemberId,
+        createdBy: testUserId,
       })
     })
 
@@ -129,8 +121,8 @@ describe("BoundaryExtractionService", () => {
           id: msgId,
           streamId: testStreamId,
           sequence: BigInt(1),
-          authorId: testMemberId,
-          authorType: "member",
+          authorId: testUserId,
+          authorType: "user",
           ...testMessageContent("Starting a new topic"),
         })
       })
@@ -145,7 +137,7 @@ describe("BoundaryExtractionService", () => {
 
       expect(result).not.toBeNull()
       expect(result?.messageIds).toContain(msgId)
-      expect(result?.participantIds).toContain(testMemberId)
+      expect(result?.participantIds).toContain(testUserId)
       expect(result?.topicSummary).toBe("Starting a new topic")
       expect(result?.confidence).toBe(0.85)
       expect(result?.status).toBe(ConversationStatuses.ACTIVE)
@@ -162,8 +154,8 @@ describe("BoundaryExtractionService", () => {
           id: msg1Id,
           streamId: testStreamId,
           sequence: BigInt(10),
-          authorId: testMemberId,
-          authorType: "member",
+          authorId: testUserId,
+          authorType: "user",
           ...testMessageContent("First message"),
         })
 
@@ -172,7 +164,7 @@ describe("BoundaryExtractionService", () => {
           streamId: testStreamId,
           workspaceId: testWorkspaceId,
           messageIds: [msg1Id],
-          participantIds: [testMemberId],
+          participantIds: [testUserId],
           topicSummary: "Existing conversation",
         })
 
@@ -180,8 +172,8 @@ describe("BoundaryExtractionService", () => {
           id: msg2Id,
           streamId: testStreamId,
           sequence: BigInt(11),
-          authorId: testMemberId,
-          authorType: "member",
+          authorId: testUserId,
+          authorType: "user",
           ...testMessageContent("Continuation of topic"),
         })
       })
@@ -211,8 +203,8 @@ describe("BoundaryExtractionService", () => {
           id: msg1Id,
           streamId: testStreamId,
           sequence: BigInt(20),
-          authorId: testMemberId,
-          authorType: "member",
+          authorId: testUserId,
+          authorType: "user",
           ...testMessageContent("Question about X"),
         })
 
@@ -220,8 +212,8 @@ describe("BoundaryExtractionService", () => {
           id: msg2Id,
           streamId: testStreamId,
           sequence: BigInt(21),
-          authorId: testMemberId,
-          authorType: "member",
+          authorId: testUserId,
+          authorType: "user",
           ...testMessageContent("Working on Y"),
         })
 
@@ -247,8 +239,8 @@ describe("BoundaryExtractionService", () => {
           id: msg3Id,
           streamId: testStreamId,
           sequence: BigInt(22),
-          authorId: testMemberId,
-          authorType: "member",
+          authorId: testUserId,
+          authorType: "user",
           ...testMessageContent("Answer to X"),
         })
       })
@@ -281,15 +273,15 @@ describe("BoundaryExtractionService", () => {
           type: "scratchpad",
           visibility: "private",
           companionMode: "off",
-          createdBy: testMemberId,
+          createdBy: testUserId,
         })
 
         await MessageRepository.insert(client, {
           id: msgId,
           streamId: localStreamId,
           sequence: BigInt(1),
-          authorId: testMemberId,
-          authorType: "member",
+          authorId: testUserId,
+          authorType: "user",
           ...testMessageContent("New conversation starter"),
         })
       })
@@ -332,15 +324,15 @@ describe("BoundaryExtractionService", () => {
           type: "scratchpad",
           visibility: "private",
           companionMode: "off",
-          createdBy: testMemberId,
+          createdBy: testUserId,
         })
 
         await MessageRepository.insert(client, {
           id: msg1Id,
           streamId: localStreamId,
           sequence: BigInt(1),
-          authorId: testMemberId,
-          authorType: "member",
+          authorId: testUserId,
+          authorType: "user",
           ...testMessageContent("First message"),
         })
 
@@ -355,8 +347,8 @@ describe("BoundaryExtractionService", () => {
           id: msg2Id,
           streamId: localStreamId,
           sequence: BigInt(2),
-          authorId: testMemberId,
-          authorType: "member",
+          authorId: testUserId,
+          authorType: "user",
           ...testMessageContent("Second message"),
         })
       })
@@ -395,8 +387,8 @@ describe("BoundaryExtractionService", () => {
           id: msgId,
           streamId: testStreamId,
           sequence: BigInt(100),
-          authorId: testMemberId,
-          authorType: "member",
+          authorId: testUserId,
+          authorType: "user",
           ...testMessageContent("Test message"),
         })
       })
@@ -408,25 +400,19 @@ describe("BoundaryExtractionService", () => {
     test("adds new participant when different user messages", async () => {
       const existingConvId = conversationId()
       const user2Id = userId()
-      let user2MemberId = ""
+      let user2UserId = ""
       const msg1Id = messageId()
       const msg2Id = messageId()
 
       await withTransaction(pool, async (client) => {
-        await UserRepository.insert(client, {
-          id: user2Id,
-          email: `boundary-test-user2-${user2Id}@test.com`,
-          name: "Second User",
-          workosUserId: `workos_${user2Id}`,
-        })
-        user2MemberId = (await addTestMember(client, testWorkspaceId, user2Id)).id
+        user2UserId = (await addTestMember(client, testWorkspaceId, user2Id)).id
 
         await MessageRepository.insert(client, {
           id: msg1Id,
           streamId: testStreamId,
           sequence: BigInt(50),
-          authorId: testMemberId,
-          authorType: "member",
+          authorId: testUserId,
+          authorType: "user",
           ...testMessageContent("User 1 message"),
         })
 
@@ -435,15 +421,15 @@ describe("BoundaryExtractionService", () => {
           streamId: testStreamId,
           workspaceId: testWorkspaceId,
           messageIds: [msg1Id],
-          participantIds: [testMemberId],
+          participantIds: [testUserId],
         })
 
         await MessageRepository.insert(client, {
           id: msg2Id,
           streamId: testStreamId,
           sequence: BigInt(51),
-          authorId: user2MemberId,
-          authorType: "member",
+          authorId: user2UserId,
+          authorType: "user",
           ...testMessageContent("User 2 reply"),
         })
       })
@@ -455,8 +441,8 @@ describe("BoundaryExtractionService", () => {
 
       const result = await service.processMessage(msg2Id, testStreamId, testWorkspaceId)
 
-      expect(result?.participantIds).toContain(testMemberId)
-      expect(result?.participantIds).toContain(user2MemberId)
+      expect(result?.participantIds).toContain(testUserId)
+      expect(result?.participantIds).toContain(user2UserId)
     })
   })
 
@@ -472,15 +458,15 @@ describe("BoundaryExtractionService", () => {
           type: "scratchpad",
           visibility: "private",
           companionMode: "off",
-          createdBy: testMemberId,
+          createdBy: testUserId,
         })
 
         await MessageRepository.insert(client, {
           id: msgId,
           streamId: localStreamId,
           sequence: BigInt(1),
-          authorId: testMemberId,
-          authorType: "member",
+          authorId: testUserId,
+          authorType: "user",
           ...testMessageContent("Scratchpad message"),
         })
       })
@@ -504,15 +490,15 @@ describe("BoundaryExtractionService", () => {
           displayName: "My Notes",
           visibility: "private",
           companionMode: "off",
-          createdBy: testMemberId,
+          createdBy: testUserId,
         })
 
         await MessageRepository.insert(client, {
           id: msg1Id,
           streamId: localStreamId,
           sequence: BigInt(1),
-          authorId: testMemberId,
-          authorType: "member",
+          authorId: testUserId,
+          authorType: "user",
           ...testMessageContent("First note"),
         })
       })
@@ -529,8 +515,8 @@ describe("BoundaryExtractionService", () => {
           id: msg2Id,
           streamId: localStreamId,
           sequence: BigInt(2),
-          authorId: testMemberId,
-          authorType: "member",
+          authorId: testUserId,
+          authorType: "user",
           ...testMessageContent("Second note"),
         })
 
@@ -538,8 +524,8 @@ describe("BoundaryExtractionService", () => {
           id: msg3Id,
           streamId: localStreamId,
           sequence: BigInt(3),
-          authorId: testMemberId,
-          authorType: "member",
+          authorId: testUserId,
+          authorType: "user",
           ...testMessageContent("Third note"),
         })
       })
@@ -573,15 +559,15 @@ describe("BoundaryExtractionService", () => {
           displayName: "Project Ideas",
           visibility: "private",
           companionMode: "off",
-          createdBy: testMemberId,
+          createdBy: testUserId,
         })
 
         await MessageRepository.insert(client, {
           id: msgId,
           streamId: localStreamId,
           sequence: BigInt(1),
-          authorId: testMemberId,
-          authorType: "member",
+          authorId: testUserId,
+          authorType: "user",
           ...testMessageContent("Some ideas"),
         })
       })
@@ -603,15 +589,15 @@ describe("BoundaryExtractionService", () => {
           // No displayName set
           visibility: "private",
           companionMode: "off",
-          createdBy: testMemberId,
+          createdBy: testUserId,
         })
 
         await MessageRepository.insert(client, {
           id: msgId,
           streamId: localStreamId,
           sequence: BigInt(1),
-          authorId: testMemberId,
-          authorType: "member",
+          authorId: testUserId,
+          authorType: "user",
           ...testMessageContent("Test message"),
         })
       })

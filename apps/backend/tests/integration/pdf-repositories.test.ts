@@ -10,7 +10,6 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test"
 import { Pool } from "pg"
 import { setupTestDatabase, withTestTransaction, addTestMember } from "./setup"
-import { UserRepository } from "../../src/auth/user-repository"
 import { WorkspaceRepository } from "../../src/features/workspaces"
 import { StreamRepository } from "../../src/features/streams"
 import {
@@ -37,12 +36,6 @@ describe("PDF Repositories", () => {
     testAttachmentId = attachmentId()
 
     await withTestTransaction(pool, async (client) => {
-      await UserRepository.insert(client, {
-        id: testUserId,
-        email: `pdf-test-${testUserId}@test.com`,
-        name: "PDF Test User",
-        workosUserId: `workos_${testUserId}`,
-      })
       await WorkspaceRepository.insert(client, {
         id: testWorkspaceId,
         name: "PDF Test Workspace",

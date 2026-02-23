@@ -130,7 +130,7 @@ function serializeEvent(event: StreamEvent) {
 export function createStreamHandlers({ streamService, eventService, activityService }: Dependencies) {
   return {
     async list(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const userId = req.user!.id
       const workspaceId = req.workspaceId!
       const { stream_type, status } = req.query
 
@@ -142,12 +142,12 @@ export function createStreamHandlers({ streamService, eventService, activityServ
         ? ((Array.isArray(status) ? status : [status]) as ("active" | "archived")[])
         : undefined
 
-      const streams = await streamService.list(workspaceId, memberId, { types, archiveStatus })
+      const streams = await streamService.list(workspaceId, userId, { types, archiveStatus })
       res.json({ streams })
     },
 
     async create(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const userId = req.user!.id
       const workspaceId = req.workspaceId!
 
       const result = createStreamSchema.safeParse(req.body)
@@ -183,27 +183,27 @@ export function createStreamHandlers({ streamService, eventService, activityServ
         parentStreamId,
         parentMessageId,
         memberIds,
-        createdBy: memberId,
+        createdBy: userId,
       })
 
       res.status(201).json({ stream })
     },
 
     async get(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const userId = req.user!.id
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
 
-      const stream = await streamService.validateStreamAccess(streamId, workspaceId, memberId)
+      const stream = await streamService.validateStreamAccess(streamId, workspaceId, userId)
       res.json({ stream })
     },
 
     async update(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const userId = req.user!.id
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
 
-      const stream = await streamService.validateStreamAccess(streamId, workspaceId, memberId)
+      const stream = await streamService.validateStreamAccess(streamId, workspaceId, userId)
 
       const schema = updateSchemaForType(stream.type)
       if (!schema) {
@@ -225,12 +225,12 @@ export function createStreamHandlers({ streamService, eventService, activityServ
     },
 
     async listEvents(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const userId = req.user!.id
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
       const { type, limit, after } = req.query
 
-      await streamService.validateStreamAccess(streamId, workspaceId, memberId)
+      await streamService.validateStreamAccess(streamId, workspaceId, userId)
 
       const types = type ? ((Array.isArray(type) ? type : [type]) as EventType[]) : undefined
 
@@ -238,14 +238,14 @@ export function createStreamHandlers({ streamService, eventService, activityServ
         types,
         limit: limit ? parseInt(limit as string, 10) : undefined,
         afterSequence: after ? BigInt(after as string) : undefined,
-        viewerId: memberId,
+        viewerId: userId,
       })
 
       res.json({ events: events.map(serializeEvent) })
     },
 
     async updateCompanionMode(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const userId = req.user!.id
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
 
@@ -259,9 +259,9 @@ export function createStreamHandlers({ streamService, eventService, activityServ
 
       const { companionMode, companionPersonaId } = result.data
 
-      await streamService.validateStreamAccess(streamId, workspaceId, memberId)
+      await streamService.validateStreamAccess(streamId, workspaceId, userId)
 
-      const isMember = await streamService.isMember(streamId, memberId)
+      const isMember = await streamService.isMember(streamId, userId)
       if (!isMember) {
         return res.status(403).json({ error: "Not a member of this stream" })
       }
@@ -272,7 +272,7 @@ export function createStreamHandlers({ streamService, eventService, activityServ
     },
 
     async pin(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const userId = req.user!.id
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
 
@@ -284,9 +284,9 @@ export function createStreamHandlers({ streamService, eventService, activityServ
         })
       }
 
-      await streamService.validateStreamAccess(streamId, workspaceId, memberId)
+      await streamService.validateStreamAccess(streamId, workspaceId, userId)
 
-      const membership = await streamService.pinStream(streamId, memberId, result.data.pinned)
+      const membership = await streamService.pinStream(streamId, userId, result.data.pinned)
       if (!membership) {
         return res.status(404).json({ error: "Not a member of this stream" })
       }
@@ -295,7 +295,7 @@ export function createStreamHandlers({ streamService, eventService, activityServ
     },
 
     async setNotificationLevel(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const userId = req.user!.id
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
 
@@ -307,9 +307,9 @@ export function createStreamHandlers({ streamService, eventService, activityServ
         })
       }
 
-      await streamService.validateStreamAccess(streamId, workspaceId, memberId)
+      await streamService.validateStreamAccess(streamId, workspaceId, userId)
 
-      const membership = await streamService.setNotificationLevel(streamId, memberId, result.data.notificationLevel)
+      const membership = await streamService.setNotificationLevel(streamId, userId, result.data.notificationLevel)
       if (!membership) {
         return res.status(404).json({ error: "Not a member of this stream" })
       }
@@ -318,7 +318,7 @@ export function createStreamHandlers({ streamService, eventService, activityServ
     },
 
     async markAsRead(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const userId = req.user!.id
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
 
@@ -330,70 +330,70 @@ export function createStreamHandlers({ streamService, eventService, activityServ
         })
       }
 
-      await streamService.validateStreamAccess(streamId, workspaceId, memberId)
+      await streamService.validateStreamAccess(streamId, workspaceId, userId)
 
-      const membership = await streamService.markAsRead(workspaceId, streamId, memberId, result.data.lastEventId)
+      const membership = await streamService.markAsRead(workspaceId, streamId, userId, result.data.lastEventId)
       if (!membership) {
         return res.status(404).json({ error: "Not a member of this stream" })
       }
 
       // Clear mention badges for this stream
-      await activityService?.markStreamActivityAsRead(memberId, streamId)
+      await activityService?.markStreamActivityAsRead(userId, streamId)
 
       res.json({ membership })
     },
 
     async archive(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const userId = req.user!.id
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
 
-      const stream = await streamService.validateStreamAccess(streamId, workspaceId, memberId)
+      const stream = await streamService.validateStreamAccess(streamId, workspaceId, userId)
 
-      if (stream.createdBy !== memberId) {
+      if (stream.createdBy !== userId) {
         return res.status(403).json({ error: "Only the creator can archive this stream" })
       }
 
-      const archived = await streamService.archiveStream(streamId, memberId)
+      const archived = await streamService.archiveStream(streamId, userId)
       res.json({ stream: archived })
     },
 
     async unarchive(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const userId = req.user!.id
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
 
-      const stream = await streamService.validateStreamAccess(streamId, workspaceId, memberId)
+      const stream = await streamService.validateStreamAccess(streamId, workspaceId, userId)
 
-      if (stream.createdBy !== memberId) {
+      if (stream.createdBy !== userId) {
         return res.status(403).json({ error: "Only the creator can unarchive this stream" })
       }
 
-      const unarchived = await streamService.unarchiveStream(streamId, memberId)
+      const unarchived = await streamService.unarchiveStream(streamId, userId)
       res.json({ stream: unarchived })
     },
 
     async join(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const userId = req.user!.id
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
 
-      const membership = await streamService.joinPublicChannel(streamId, workspaceId, memberId)
+      const membership = await streamService.joinPublicChannel(streamId, workspaceId, userId)
       res.json({ data: { membership } })
     },
 
     async bootstrap(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const userId = req.user!.id
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
 
-      const stream = await streamService.validateStreamAccess(streamId, workspaceId, memberId)
+      const stream = await streamService.validateStreamAccess(streamId, workspaceId, userId)
 
       // Fetch all data in parallel - threads with counts is a single optimized query
       const [events, members, membership, threadDataMap] = await Promise.all([
-        eventService.listEvents(streamId, { limit: 50, viewerId: memberId }),
+        eventService.listEvents(streamId, { limit: 50, viewerId: userId }),
         streamService.getMembers(streamId),
-        streamService.getMembership(streamId, memberId),
+        streamService.getMembership(streamId, userId),
         streamService.getThreadsWithReplyCounts(streamId),
       ])
 
@@ -429,7 +429,7 @@ export function createStreamHandlers({ streamService, eventService, activityServ
     },
 
     async addMember(req: Request, res: Response) {
-      const actorId = req.member!.id
+      const actorId = req.user!.id
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
 
@@ -452,7 +452,7 @@ export function createStreamHandlers({ streamService, eventService, activityServ
     },
 
     async removeMember(req: Request, res: Response) {
-      const actor = req.member!
+      const actor = req.user!
       const workspaceId = req.workspaceId!
       const { streamId, memberId } = req.params
 

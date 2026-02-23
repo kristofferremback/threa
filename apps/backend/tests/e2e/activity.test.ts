@@ -15,7 +15,7 @@ import {
   joinWorkspace,
   joinStream,
   getWorkspaceBootstrap,
-  getMemberId,
+  getUserId,
 } from "../client"
 
 const testRunId = Math.random().toString(36).substring(7)
@@ -24,7 +24,7 @@ const testEmail = (name: string) => `${name}-act-${testRunId}@test.com`
 interface ActivityItem {
   id: string
   workspaceId: string
-  memberId: string
+  userId: string
   activityType: string
   streamId: string
   messageId: string
@@ -95,8 +95,8 @@ describe("Activity Feed E2E", () => {
     let aliceClient: TestClient
     let workspaceId: string
     let channelId: string
-    let ownerMemberId: string
-    let aliceMemberId: string
+    let ownerUserId: string
+    let aliceUserId: string
     let aliceSlug: string
 
     beforeAll(async () => {
@@ -108,14 +108,14 @@ describe("Activity Feed E2E", () => {
       workspaceId = workspace.id
 
       const alice = await loginAs(aliceClient, testEmail("alice"), "Alice User")
-      await joinWorkspace(aliceClient, workspaceId, "member")
+      await joinWorkspace(aliceClient, workspaceId, "user")
 
-      ownerMemberId = await getMemberId(ownerClient, workspaceId, owner.id)
-      aliceMemberId = await getMemberId(aliceClient, workspaceId, alice.id)
+      ownerUserId = await getUserId(ownerClient, workspaceId, owner.id)
+      aliceUserId = await getUserId(aliceClient, workspaceId, alice.id)
 
-      // Get Alice's slug from the bootstrap members list
+      // Get Alice's slug from the bootstrap users list
       const bootstrap = await getWorkspaceBootstrap(ownerClient, workspaceId)
-      const aliceMember = bootstrap.members.find((m) => m.id === aliceMemberId)
+      const aliceMember = bootstrap.users.find((m) => m.id === aliceUserId)
       aliceSlug = (aliceMember as unknown as { slug: string }).slug
 
       const channel = await createChannel(ownerClient, workspaceId, `general-${testRunId}`, "public")
@@ -134,8 +134,8 @@ describe("Activity Feed E2E", () => {
       const mention = activities.find((a) => a.activityType === "mention")
       expect(mention).toBeDefined()
       expect(mention!.streamId).toBe(channelId)
-      expect(mention!.actorId).toBe(ownerMemberId)
-      expect(mention!.memberId).toBe(aliceMemberId)
+      expect(mention!.actorId).toBe(ownerUserId)
+      expect(mention!.userId).toBe(aliceUserId)
       expect(mention!.readAt).toBeNull()
       expect(mention!.context.contentPreview).toBeDefined()
     })
@@ -143,8 +143,8 @@ describe("Activity Feed E2E", () => {
     test("should not create activity for self-mentions", async () => {
       // Get owner's slug
       const bootstrap = await getWorkspaceBootstrap(ownerClient, workspaceId)
-      const ownerMember = bootstrap.members.find((m) => m.id === ownerMemberId)
-      const ownerSlug = (ownerMember as unknown as { slug: string }).slug
+      const ownerUser = bootstrap.users.find((m) => m.id === ownerUserId)
+      const ownerSlug = (ownerUser as unknown as { slug: string }).slug
 
       // Owner mentions themselves
       await sendMessage(ownerClient, workspaceId, channelId, `Note to @${ownerSlug}: remember this`)
@@ -154,7 +154,7 @@ describe("Activity Feed E2E", () => {
 
       // Owner should have no activity from self-mention
       const activities = await getActivity(ownerClient, workspaceId)
-      const selfMention = activities.find((a) => a.actorId === ownerMemberId && a.memberId === ownerMemberId)
+      const selfMention = activities.find((a) => a.actorId === ownerUserId && a.userId === ownerUserId)
       expect(selfMention).toBeUndefined()
     })
 
@@ -172,7 +172,7 @@ describe("Activity Feed E2E", () => {
       // If a mention was created, it wouldn't be for a fake user
       // The existing activities should only be legitimate mentions
       if (fakeMention) {
-        expect(fakeMention.memberId).toBe(aliceMemberId)
+        expect(fakeMention.userId).toBe(aliceUserId)
       }
     })
   })
@@ -193,12 +193,12 @@ describe("Activity Feed E2E", () => {
       workspaceId = workspace.id
 
       const bob = await loginAs(bobClient, testEmail("read-bob"), "Bob User")
-      await joinWorkspace(bobClient, workspaceId, "member")
+      await joinWorkspace(bobClient, workspaceId, "user")
 
-      const bobMemberId = await getMemberId(bobClient, workspaceId, bob.id)
+      const bobUserId = await getUserId(bobClient, workspaceId, bob.id)
 
       const bootstrap = await getWorkspaceBootstrap(ownerClient, workspaceId)
-      const bobMember = bootstrap.members.find((m) => m.id === bobMemberId)
+      const bobMember = bootstrap.users.find((m) => m.id === bobUserId)
       bobSlug = (bobMember as unknown as { slug: string }).slug
 
       const channel = await createChannel(ownerClient, workspaceId, `readstate-${testRunId}`, "public")
@@ -269,12 +269,12 @@ describe("Activity Feed E2E", () => {
       const workspace = await createWorkspace(ownerClient, `Boot WS ${testRunId}`)
 
       const charlie = await loginAs(charlieClient, testEmail("boot-charlie"), "Charlie User")
-      await joinWorkspace(charlieClient, workspace.id, "member")
+      await joinWorkspace(charlieClient, workspace.id, "user")
 
-      const charlieMemberId = await getMemberId(charlieClient, workspace.id, charlie.id)
+      const charlieUserId = await getUserId(charlieClient, workspace.id, charlie.id)
 
-      const membersBootstrap = await getWorkspaceBootstrap(ownerClient, workspace.id)
-      const charlieMember = membersBootstrap.members.find((m) => m.id === charlieMemberId)
+      const usersBootstrap = await getWorkspaceBootstrap(ownerClient, workspace.id)
+      const charlieMember = usersBootstrap.users.find((m) => m.id === charlieUserId)
       const charlieSlug = (charlieMember as unknown as { slug: string }).slug
 
       const channel = await createChannel(ownerClient, workspace.id, `bootstrap-${testRunId}`, "public")
@@ -309,12 +309,12 @@ describe("Activity Feed E2E", () => {
       const workspace = await createWorkspace(ownerClient, `Dedup WS ${testRunId}`)
 
       const dupe = await loginAs(dupeClient, testEmail("dedup-target"), "Dedup Target")
-      await joinWorkspace(dupeClient, workspace.id, "member")
+      await joinWorkspace(dupeClient, workspace.id, "user")
 
-      const dupeMemberId = await getMemberId(dupeClient, workspace.id, dupe.id)
+      const dupeUserId = await getUserId(dupeClient, workspace.id, dupe.id)
 
       const bootstrap = await getWorkspaceBootstrap(ownerClient, workspace.id)
-      const dupeMember = bootstrap.members.find((m) => m.id === dupeMemberId)
+      const dupeMember = bootstrap.users.find((m) => m.id === dupeUserId)
       const dupeSlug = (dupeMember as unknown as { slug: string }).slug
 
       const channel = await createChannel(ownerClient, workspace.id, `dedup-${testRunId}`, "public")

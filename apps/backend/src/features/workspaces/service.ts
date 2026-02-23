@@ -1,13 +1,12 @@
 import { Pool } from "pg"
 import { withTransaction, withClient, type Querier } from "../../db"
-import { WorkspaceRepository, Workspace, WorkspaceMember } from "./repository"
-import { MemberRepository, Member } from "./member-repository"
+import { WorkspaceRepository, Workspace } from "./repository"
+import { UserRepository, type User } from "./user-repository"
 import { OutboxRepository } from "../../lib/outbox"
 import { StreamRepository, StreamMemberRepository } from "../streams"
 import { EmojiUsageRepository } from "../emoji"
-import { UserRepository, User } from "../../auth/user-repository"
 import { PersonaRepository, type Persona } from "../agents"
-import { workspaceId, memberId as generateMemberId, streamId, avatarUploadId } from "../../lib/id"
+import { workspaceId, userId as generateUserId, streamId, avatarUploadId } from "../../lib/id"
 import { generateSlug, generateUniqueSlug } from "../../lib/slug"
 import { serializeBigInt } from "../../lib/serialization"
 import { HttpError, isUniqueViolation } from "../../lib/errors"
@@ -24,7 +23,10 @@ function deriveSlugFromEmail(email: string): string {
 
 export interface CreateWorkspaceParams {
   name: string
-  createdBy: string
+  workosUserId: string
+  email: string
+  userName: string
+  setupCompleted?: boolean
 }
 
 interface WorkspaceServiceOptions {
@@ -60,37 +62,42 @@ export class WorkspaceService {
     return WorkspaceRepository.findBySlug(this.pool, slug)
   }
 
-  async getWorkspacesByUserId(userId: string): Promise<Workspace[]> {
-    return WorkspaceRepository.list(this.pool, { userId })
+  async getWorkspacesByWorkosUserId(workosUserId: string): Promise<Workspace[]> {
+    return WorkspaceRepository.list(this.pool, { workosUserId })
   }
 
   async createWorkspace(params: CreateWorkspaceParams): Promise<Workspace> {
     if (this.requireWorkspaceCreationInvite) {
-      await this.assertWorkspaceCreationAllowed(params.createdBy)
+      await this.assertWorkspaceCreationAllowed(params.email)
     }
 
     return withTransaction(this.pool, async (client) => {
       const id = workspaceId()
+      const ownerUserId = generateUserId()
       const slug = await generateUniqueSlug(params.name, (slug) => WorkspaceRepository.slugExists(client, slug))
 
       const ws = await WorkspaceRepository.insert(client, {
         id,
         name: params.name,
         slug,
-        createdBy: params.createdBy,
+        createdBy: ownerUserId,
       })
 
-      await this.createMemberInTransaction(client, {
+      await this.createUserInTransaction(client, {
+        id: ownerUserId,
         workspaceId: id,
-        userId: params.createdBy,
+        workosUserId: params.workosUserId,
+        email: params.email,
+        name: params.userName,
         role: "owner",
+        setupCompleted: params.setupCompleted,
       })
 
       return ws
     })
   }
 
-  private async assertWorkspaceCreationAllowed(userId: string): Promise<void> {
+  private async assertWorkspaceCreationAllowed(email: string): Promise<void> {
     if (!this.workosOrgService) {
       throw new HttpError("Workspace invite validation is not configured", {
         status: 500,
@@ -98,12 +105,9 @@ export class WorkspaceService {
       })
     }
 
-    const user = await UserRepository.findById(this.pool, userId)
-    if (!user) {
-      throw new HttpError("User not found", { status: 404, code: "USER_NOT_FOUND" })
-    }
-
-    const hasWorkspaceCreationInvite = await this.workosOrgService.hasAcceptedWorkspaceCreationInvitation(user.email)
+    const normalizedEmail = email.trim().toLowerCase()
+    const hasWorkspaceCreationInvite =
+      await this.workosOrgService.hasAcceptedWorkspaceCreationInvitation(normalizedEmail)
     if (!hasWorkspaceCreationInvite) {
       throw new HttpError("Workspace creation requires a dedicated workspace invite.", {
         status: 403,
@@ -112,118 +116,131 @@ export class WorkspaceService {
     }
   }
 
-  async addMember(wsId: string, userId: string, role: WorkspaceMember["role"] = "member"): Promise<WorkspaceMember> {
+  async addUser(
+    wsId: string,
+    params: {
+      workosUserId: string
+      email: string
+      name: string
+      role?: User["role"]
+      setupCompleted?: boolean
+    }
+  ): Promise<User> {
     return withTransaction(this.pool, async (client) => {
-      return this.createMemberInTransaction(client, { workspaceId: wsId, userId, role })
+      return this.createUserInTransaction(client, {
+        workspaceId: wsId,
+        workosUserId: params.workosUserId,
+        email: params.email,
+        name: params.name,
+        role: params.role ?? "user",
+        setupCompleted: params.setupCompleted,
+      })
     })
   }
 
-  async createMemberInTransaction(
+  async createUserInTransaction(
     client: Querier,
-    params: { workspaceId: string; userId: string; role: WorkspaceMember["role"]; setupCompleted?: boolean }
-  ): Promise<WorkspaceMember> {
-    const user = await UserRepository.findById(client, params.userId)
-    const memberSlug = user
-      ? await generateUniqueSlug(user.name, (s) => WorkspaceRepository.memberSlugExists(client, params.workspaceId, s))
-      : `member-${generateMemberId().slice(7, 15)}`
+    params: {
+      id?: string
+      workspaceId: string
+      workosUserId: string
+      email: string
+      name: string
+      role: User["role"]
+      setupCompleted?: boolean
+    }
+  ): Promise<User> {
+    const normalizedEmail = params.email.trim().toLowerCase()
+    const userSlug = await generateUniqueSlug(params.name, (s) =>
+      UserRepository.slugExistsInWorkspace(client, params.workspaceId, s)
+    )
 
-    const m = await WorkspaceRepository.addMember(client, {
-      id: generateMemberId(),
+    const user = await UserRepository.insert(client, {
+      id: params.id ?? generateUserId(),
       workspaceId: params.workspaceId,
-      userId: params.userId,
-      slug: memberSlug,
-      name: user?.name ?? "",
+      workosUserId: params.workosUserId,
+      email: normalizedEmail,
+      slug: userSlug,
+      name: params.name,
       role: params.role,
       setupCompleted: params.setupCompleted,
     })
 
-    const fullMember = await MemberRepository.findById(client, m.id)
-    if (fullMember) {
-      await OutboxRepository.insert(client, "workspace_member:added", {
-        workspaceId: params.workspaceId,
-        member: serializeBigInt(fullMember),
-      })
-    }
+    await OutboxRepository.insert(client, "workspace_user:added", {
+      workspaceId: params.workspaceId,
+      user: serializeBigInt(user),
+    })
 
     const sId = streamId()
     const stream = await StreamRepository.insertSystemStream(client, {
       id: sId,
       workspaceId: params.workspaceId,
-      createdBy: m.id,
+      createdBy: user.id,
     })
-    await StreamMemberRepository.insert(client, sId, m.id)
+    await StreamMemberRepository.insert(client, sId, user.id)
     await OutboxRepository.insert(client, "stream:created", {
       workspaceId: params.workspaceId,
       streamId: sId,
       stream,
     })
 
-    return m
+    return user
   }
 
-  async removeMember(workspaceId: string, memberId: string): Promise<void> {
+  async removeUser(workspaceId: string, userId: string): Promise<void> {
     return withTransaction(this.pool, async (client) => {
-      await WorkspaceRepository.removeMemberById(client, workspaceId, memberId)
+      await UserRepository.remove(client, workspaceId, userId)
 
-      await OutboxRepository.insert(client, "workspace_member:removed", {
+      await OutboxRepository.insert(client, "workspace_user:removed", {
         workspaceId,
-        memberId,
+        removedUserId: userId,
       })
     })
   }
 
-  async getMembers(workspaceId: string): Promise<WorkspaceMember[]> {
-    return WorkspaceRepository.listMembers(this.pool, workspaceId)
+  async getUsers(workspaceId: string): Promise<User[]> {
+    return UserRepository.listByWorkspace(this.pool, workspaceId)
   }
 
-  async isMember(workspaceId: string, userId: string): Promise<boolean> {
-    return WorkspaceRepository.isMember(this.pool, workspaceId, userId)
-  }
-
-  async getUsersForMembers(members: WorkspaceMember[]): Promise<User[]> {
-    if (members.length === 0) return []
-    const userIds = members.map((m) => m.userId)
-    return UserRepository.findByIds(this.pool, userIds)
+  async isMember(workspaceId: string, workosUserId: string): Promise<boolean> {
+    return UserRepository.isMember(this.pool, workspaceId, workosUserId)
   }
 
   async getPersonasForWorkspace(workspaceId: string): Promise<Persona[]> {
     return PersonaRepository.listForWorkspace(this.pool, workspaceId)
   }
 
-  async getEmojiWeights(workspaceId: string, memberId: string): Promise<Record<string, number>> {
-    return EmojiUsageRepository.getWeights(this.pool, workspaceId, memberId)
+  async getEmojiWeights(workspaceId: string, userId: string): Promise<Record<string, number>> {
+    return EmojiUsageRepository.getWeights(this.pool, workspaceId, userId)
   }
 
   async isSlugAvailable(workspaceId: string, slug: string): Promise<boolean> {
-    const exists = await WorkspaceRepository.memberSlugExists(this.pool, workspaceId, slug)
+    const exists = await UserRepository.slugExistsInWorkspace(this.pool, workspaceId, slug)
     return !exists
   }
 
-  async completeMemberSetup(
-    memberId: string,
+  async completeUserSetup(
+    userId: string,
     workspaceId: string,
     params: { name?: string; slug?: string; timezone: string; locale: string }
-  ): Promise<WorkspaceMember> {
+  ): Promise<User> {
     // Phase 1: Fast reads
-    const { member, user, orgId } = await withClient(this.pool, async (client) => {
-      const member = await MemberRepository.findById(client, memberId)
-      if (!member || member.workspaceId !== workspaceId) {
-        throw new HttpError("Member not found", { status: 404, code: "MEMBER_NOT_FOUND" })
+    const { user, orgId } = await withClient(this.pool, async (client) => {
+      const user = await UserRepository.findById(client, workspaceId, userId)
+      if (!user) {
+        throw new HttpError("User not found", { status: 404, code: "USER_NOT_FOUND" })
       }
 
-      if (member.setupCompleted) {
-        throw new HttpError("Member setup already completed", { status: 400, code: "SETUP_ALREADY_COMPLETED" })
+      if (user.setupCompleted) {
+        throw new HttpError("User setup already completed", { status: 400, code: "SETUP_ALREADY_COMPLETED" })
       }
-
-      const user = await UserRepository.findById(client, member.userId)
-      if (!user) throw new HttpError("User not found", { status: 404, code: "USER_NOT_FOUND" })
 
       const orgId = await WorkspaceRepository.getWorkosOrganizationId(client, workspaceId)
-      return { member, user, orgId }
+      return { user, orgId }
     })
 
     // Phase 2: External API call — no DB connection held
-    const preferEmailSlug = await this.shouldPreferEmailSlug(orgId, user)
+    const preferEmailSlug = await this.shouldPreferEmailSlug(orgId, user.email)
 
     // Phase 3: Transaction with retry on slug collision.
     // generateUniqueSlug checks availability within the transaction, but a concurrent
@@ -233,30 +250,31 @@ export class WorkspaceService {
     for (let attempt = 1; ; attempt++) {
       try {
         return await withTransaction(this.pool, async (client) => {
-          // Re-read member inside transaction to get fresh slug (Phase 1 value may be stale)
-          const currentMember = await MemberRepository.findById(client, memberId)
-          if (!currentMember || currentMember.setupCompleted) {
-            throw new HttpError("Member setup already completed", { status: 400, code: "SETUP_ALREADY_COMPLETED" })
+          // Re-read user inside transaction to get fresh slug (Phase 1 value may be stale)
+          const currentUser = await UserRepository.findById(client, workspaceId, userId)
+          if (!currentUser || currentUser.setupCompleted) {
+            throw new HttpError("User setup already completed", { status: 400, code: "SETUP_ALREADY_COMPLETED" })
           }
 
           let slug: string
 
           if (preferEmailSlug) {
-            slug = deriveSlugFromEmail(user.email)
+            slug = deriveSlugFromEmail(currentUser.email)
           } else if (params.slug) {
             slug = generateSlug(params.slug)
           } else {
-            slug = await generateUniqueSlug(user.name, (s) =>
-              WorkspaceRepository.memberSlugExists(client, workspaceId, s)
+            const slugBaseName = params.name ?? currentUser.name
+            slug = await generateUniqueSlug(slugBaseName, (s) =>
+              UserRepository.slugExistsInWorkspace(client, workspaceId, s)
             )
           }
 
-          const slugExists = await WorkspaceRepository.memberSlugExists(client, workspaceId, slug)
-          if (slugExists && slug !== currentMember.slug) {
-            slug = await generateUniqueSlug(slug, (s) => WorkspaceRepository.memberSlugExists(client, workspaceId, s))
+          const slugExists = await UserRepository.slugExistsInWorkspace(client, workspaceId, slug)
+          if (slugExists && slug !== currentUser.slug) {
+            slug = await generateUniqueSlug(slug, (s) => UserRepository.slugExistsInWorkspace(client, workspaceId, s))
           }
 
-          const updated = await WorkspaceRepository.updateMember(client, memberId, {
+          const updated = await UserRepository.update(client, workspaceId, userId, {
             slug,
             name: params.name,
             timezone: params.timezone,
@@ -265,59 +283,53 @@ export class WorkspaceService {
           })
 
           if (!updated) {
-            throw new HttpError("Member setup already completed", { status: 400, code: "SETUP_ALREADY_COMPLETED" })
+            throw new HttpError("User setup already completed", { status: 400, code: "SETUP_ALREADY_COMPLETED" })
           }
 
-          const fullMember = await MemberRepository.findById(client, memberId)
-          if (fullMember) {
-            await OutboxRepository.insert(client, "member:updated", {
-              workspaceId,
-              member: serializeBigInt(fullMember),
-            })
-          }
+          await OutboxRepository.insert(client, "workspace_user:updated", {
+            workspaceId,
+            user: serializeBigInt(updated),
+          })
 
           return updated
         })
       } catch (error) {
-        if (attempt >= MAX_SLUG_ATTEMPTS || !isUniqueViolation(error, "workspace_members_ws_slug_key")) {
+        if (attempt >= MAX_SLUG_ATTEMPTS || !isUniqueViolation(error, "users_workspace_slug_key")) {
           throw error
         }
       }
     }
   }
 
-  async updateMemberProfile(
-    memberId: string,
+  async updateUserProfile(
+    userId: string,
     workspaceId: string,
     params: { name?: string; description?: string | null }
-  ): Promise<WorkspaceMember> {
+  ): Promise<User> {
     return withTransaction(this.pool, async (client) => {
-      const updated = await WorkspaceRepository.updateMember(client, memberId, params)
+      const updated = await UserRepository.update(client, workspaceId, userId, params)
       if (!updated) {
-        throw new HttpError("Member not found", { status: 404, code: "MEMBER_NOT_FOUND" })
+        throw new HttpError("User not found", { status: 404, code: "USER_NOT_FOUND" })
       }
 
-      const fullMember = await MemberRepository.findById(client, memberId)
-      if (fullMember) {
-        await OutboxRepository.insert(client, "member:updated", {
-          workspaceId,
-          member: serializeBigInt(fullMember),
-        })
-      }
+      await OutboxRepository.insert(client, "workspace_user:updated", {
+        workspaceId,
+        user: serializeBigInt(updated),
+      })
 
       return updated
     })
   }
 
-  async uploadAvatar(memberId: string, workspaceId: string, buffer: Buffer): Promise<WorkspaceMember> {
-    // Phase 1: Verify member exists and capture current avatar for replacement tracking
-    const member = await MemberRepository.findById(this.pool, memberId)
-    if (!member || member.workspaceId !== workspaceId) {
-      throw new HttpError("Member not found", { status: 404, code: "MEMBER_NOT_FOUND" })
+  async uploadAvatar(userId: string, workspaceId: string, buffer: Buffer): Promise<User> {
+    // Phase 1: Verify user exists and capture current avatar for replacement tracking
+    const user = await UserRepository.findById(this.pool, workspaceId, userId)
+    if (!user) {
+      throw new HttpError("User not found", { status: 404, code: "USER_NOT_FOUND" })
     }
 
     // Phase 2: Upload raw buffer to S3 (single fast PUT, no processing)
-    const rawS3Key = await this.avatarService.uploadRaw({ buffer, workspaceId, memberId })
+    const rawS3Key = await this.avatarService.uploadRaw({ buffer, workspaceId, userId })
 
     // Phase 3: Create upload tracking row and enqueue job
     const uploadId = avatarUploadId()
@@ -325,9 +337,9 @@ export class WorkspaceService {
       await AvatarUploadRepository.insert(this.pool, {
         id: uploadId,
         workspaceId,
-        memberId,
+        userId,
         rawS3Key,
-        replacesAvatarUrl: member.avatarUrl,
+        replacesAvatarUrl: user.avatarUrl,
       })
     } catch (error) {
       this.avatarService.deleteRawFile(rawS3Key)
@@ -339,33 +351,30 @@ export class WorkspaceService {
       avatarUploadId: uploadId,
     })
 
-    return member
+    return user
   }
 
-  async removeMemberAvatar(memberId: string, workspaceId: string): Promise<WorkspaceMember> {
+  async removeUserAvatar(userId: string, workspaceId: string): Promise<User> {
     let oldAvatarUrl: string | null = null
 
     const updated = await withTransaction(this.pool, async (client) => {
-      const currentMember = await MemberRepository.findById(client, memberId)
-      oldAvatarUrl = currentMember?.avatarUrl ?? null
+      const currentUser = await UserRepository.findById(client, workspaceId, userId)
+      oldAvatarUrl = currentUser?.avatarUrl ?? null
 
       // Delete any in-flight upload rows — racing workers will see their row gone and skip
-      await AvatarUploadRepository.deleteByMemberId(client, memberId)
+      await AvatarUploadRepository.deleteByUserId(client, userId)
 
-      const result = await WorkspaceRepository.updateMember(client, memberId, {
+      const result = await UserRepository.update(client, workspaceId, userId, {
         avatarUrl: null,
       })
       if (!result) {
-        throw new HttpError("Member not found", { status: 404, code: "MEMBER_NOT_FOUND" })
+        throw new HttpError("User not found", { status: 404, code: "USER_NOT_FOUND" })
       }
 
-      const fullMember = await MemberRepository.findById(client, memberId)
-      if (fullMember) {
-        await OutboxRepository.insert(client, "member:updated", {
-          workspaceId,
-          member: serializeBigInt(fullMember),
-        })
-      }
+      await OutboxRepository.insert(client, "workspace_user:updated", {
+        workspaceId,
+        user: serializeBigInt(result),
+      })
 
       return result
     })
@@ -377,13 +386,13 @@ export class WorkspaceService {
     return updated
   }
 
-  private async shouldPreferEmailSlug(orgId: string | null, user: User): Promise<boolean> {
+  private async shouldPreferEmailSlug(orgId: string | null, email: string): Promise<boolean> {
     if (!this.workosOrgService || !orgId) return false
 
     const org = await this.workosOrgService.getOrganization(orgId)
     if (!org || org.domains.length === 0) return false
 
-    const emailDomain = user.email.split("@")[1]?.toLowerCase()
+    const emailDomain = email.split("@")[1]?.toLowerCase()
     return org.domains.some((d) => d.toLowerCase() === emailDomain)
   }
 }

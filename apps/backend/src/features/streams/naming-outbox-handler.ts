@@ -115,7 +115,7 @@ export class NamingHandler implements OutboxHandler {
           }
 
           const { streamId, event: messageEvent } = payload
-          const isAgentMessage = messageEvent.actorType !== AuthorTypes.MEMBER
+          const isAgentMessage = messageEvent.actorType !== AuthorTypes.USER
 
           const stream = await StreamRepository.findById(this.db, streamId)
           if (!stream) {

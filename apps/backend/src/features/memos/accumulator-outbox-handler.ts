@@ -128,7 +128,7 @@ export class MemoAccumulatorHandler implements OutboxHandler {
 
     const { streamId, workspaceId, event } = payload
 
-    if (event.actorType !== AuthorTypes.MEMBER) {
+    if (event.actorType !== AuthorTypes.USER) {
       return
     }
 

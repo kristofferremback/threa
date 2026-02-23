@@ -48,18 +48,18 @@ export function createAIUsageHandlers({ pool }: Dependencies) {
      * Response includes:
      * - total: overall usage summary
      * - byOrigin: breakdown by origin (system vs user)
-     * - byMember: breakdown by member (for member-origin calls)
+     * - byUser: breakdown by user (for user-origin calls)
      */
     async getUsage(req: Request, res: Response) {
       const workspaceId = req.workspaceId!
 
       const { start, end } = getCurrentMonthRange()
 
-      const [total, byOrigin, byMember] = await withClient(pool, async (client) =>
+      const [total, byOrigin, byUser] = await withClient(pool, async (client) =>
         Promise.all([
           AIUsageRepository.getWorkspaceUsage(client, workspaceId, start, end),
           AIUsageRepository.getUsageByOrigin(client, workspaceId, start, end),
-          AIUsageRepository.getUsageByMember(client, workspaceId, start, end),
+          AIUsageRepository.getUsageByUser(client, workspaceId, start, end),
         ])
       )
 
@@ -70,7 +70,7 @@ export function createAIUsageHandlers({ pool }: Dependencies) {
         },
         total,
         byOrigin,
-        byMember,
+        byUser,
       })
     },
 
@@ -98,7 +98,7 @@ export function createAIUsageHandlers({ pool }: Dependencies) {
           completionTokens: r.completionTokens,
           totalTokens: r.totalTokens,
           costUsd: r.costUsd,
-          memberId: r.memberId,
+          userId: r.userId,
           sessionId: r.sessionId,
           createdAt: r.createdAt.toISOString(),
         })),

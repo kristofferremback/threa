@@ -6,9 +6,9 @@
 import { Pool, type PoolClient } from "pg"
 import { createDatabasePool } from "../../src/db"
 import { createMigrator } from "../../src/db/migrations"
-import { memberId } from "../../src/lib/id"
+import { userId } from "../../src/lib/id"
 import type { Querier } from "../../src/db"
-import { MemberRepository } from "../../src/features/workspaces"
+import { UserRepository } from "../../src/features/workspaces"
 
 // Re-export production helpers for tests that need to persist data
 export { withClient, withTransaction } from "../../src/db"
@@ -105,20 +105,23 @@ export function testMessageContent(content: string) {
 }
 
 /**
- * Adds a workspace member with auto-generated id/slug for test convenience.
- * Wraps MemberRepository.insert with sensible defaults.
+ * Adds a workspace user with auto-generated id/slug for test convenience.
+ * Wraps UserRepository.insert with sensible defaults.
  */
 export async function addTestMember(
   db: Querier,
   workspaceId: string,
-  userId: string,
-  role: "owner" | "admin" | "member" = "member"
+  workosUserId: string,
+  role: "owner" | "admin" | "user" = "user"
 ) {
-  const id = memberId()
-  return MemberRepository.insert(db, {
+  const id = userId()
+  const normalizedWorkosUserId = workosUserId.toLowerCase()
+  return UserRepository.insert(db, {
     id,
     workspaceId,
-    userId,
+    workosUserId,
+    email: `${normalizedWorkosUserId}@test.local`,
+    name: `Test ${normalizedWorkosUserId.slice(-8)}`,
     role,
     slug: `test-${id}`,
   })

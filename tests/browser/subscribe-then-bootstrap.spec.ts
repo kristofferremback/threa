@@ -86,7 +86,7 @@ test.describe("Subscribe Then Bootstrap", () => {
       memberContext = await loginInNewContext(browser, `member-${testId}@example.com`, `Member ${testId}`)
 
       const joinWorkspaceResponse = await memberContext.page.request.post(`/api/dev/workspaces/${workspaceId}/join`, {
-        data: { role: "member" },
+        data: { role: "user" },
       })
       expect(joinWorkspaceResponse.ok()).toBeTruthy()
 

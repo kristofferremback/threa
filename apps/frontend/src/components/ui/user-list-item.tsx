@@ -2,12 +2,12 @@ import { getInitials } from "@/lib/initials"
 import { getAvatarColor } from "@/lib/avatar-color"
 import type { SearchableListItem } from "./searchable-list"
 
-export interface MemberItem extends SearchableListItem {
+export interface UserListItem extends SearchableListItem {
   slug: string
   name: string
 }
 
-export function MemberListItem({ item }: { item: MemberItem }) {
+export function UserListItemRow({ item }: { item: UserListItem }) {
   const initials = getInitials(item.name || item.slug)
   const color = getAvatarColor(item.id)
 
@@ -24,6 +24,6 @@ export function MemberListItem({ item }: { item: MemberItem }) {
   )
 }
 
-export function renderMemberItem(item: MemberItem, _highlighted: boolean) {
-  return <MemberListItem item={item} />
+export function renderUserListItem(item: UserListItem, _highlighted: boolean) {
+  return <UserListItemRow item={item} />
 }

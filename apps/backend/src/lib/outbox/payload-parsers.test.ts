@@ -11,8 +11,8 @@ describe("parseMessageCreatedPayload", () => {
         event: {
           id: "event_789",
           sequence: "42",
-          actorType: "member",
-          actorId: "member_abc",
+          actorType: "user",
+          actorId: "usr_abc",
           payload: {
             messageId: "msg_def",
             contentMarkdown: "Hello world",
@@ -28,8 +28,8 @@ describe("parseMessageCreatedPayload", () => {
         event: {
           id: "event_789",
           sequence: "42",
-          actorType: "member",
-          actorId: "member_abc",
+          actorType: "user",
+          actorId: "usr_abc",
           payload: {
             messageId: "msg_def",
             contentMarkdown: "Hello world",
@@ -79,7 +79,7 @@ describe("parseMessageCreatedPayload", () => {
         event: {
           id: "",
           sequence: "0",
-          actorType: "member",
+          actorType: "user",
           actorId: null,
           payload: {
             messageId: "msg_def",

@@ -90,7 +90,6 @@ async function cleanupStaleData(): Promise<void> {
         stream_event_projections,
         stream_members,
         streams,
-        workspace_members,
         workspaces,
         users,
         messages,
@@ -113,7 +112,7 @@ async function cleanupStaleData(): Promise<void> {
         queue_tokens,
         schedules,
         schedule_ticks,
-        member_activity
+        user_activity
       CASCADE
     `)
   } catch {

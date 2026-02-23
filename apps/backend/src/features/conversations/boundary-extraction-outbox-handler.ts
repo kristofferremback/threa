@@ -103,7 +103,7 @@ export class BoundaryExtractionHandler implements OutboxHandler {
 
           const { streamId, workspaceId, event: messageEvent } = payload
 
-          if (messageEvent.actorType !== AuthorTypes.MEMBER) {
+          if (messageEvent.actorType !== AuthorTypes.USER) {
             seen.push(event.id)
             continue
           }

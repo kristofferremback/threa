@@ -50,7 +50,7 @@ function createMockMessage(overrides: Partial<Message> = {}): Message {
     streamId: "stream_test",
     sequence: BigInt(1),
     authorId: "usr_test",
-    authorType: "member",
+    authorType: "user",
     contentJson: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: contentMarkdown }] }] },
     contentMarkdown,
     replyCount: 0,

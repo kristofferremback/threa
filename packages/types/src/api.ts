@@ -12,9 +12,8 @@ import type {
   StreamEvent,
   StreamMember,
   Workspace,
-  WorkspaceMember,
-  WorkspaceInvitation,
   User,
+  WorkspaceInvitation,
   Persona,
 } from "./domain"
 import type { UserPreferences } from "./preferences"
@@ -75,7 +74,7 @@ export interface CreateMessageInputJson {
 }
 
 export interface CreateDmMessageInputJson {
-  dmMemberId: string
+  dmUserId: string
   /** ProseMirror JSON content from TipTap editor */
   contentJson: JSONContent
   /** Optional pre-computed markdown (backend derives if missing) */
@@ -94,7 +93,7 @@ export interface CreateMessageInputMarkdown {
 }
 
 export interface CreateDmMessageInputMarkdown {
-  dmMemberId: string
+  dmUserId: string
   /** Markdown text content */
   content: string
   attachmentIds?: string[]
@@ -153,11 +152,10 @@ export interface CommandInfo {
 
 export interface WorkspaceBootstrap {
   workspace: Workspace
-  members: WorkspaceMember[]
+  users: User[]
   streams: StreamWithPreview[]
   streamMemberships: StreamMember[]
-  dmPeers: Array<{ memberId: string; streamId: string }>
-  users: User[]
+  dmPeers: Array<{ userId: string; streamId: string }>
   personas: Persona[]
   emojis: EmojiEntry[]
   emojiWeights: Record<string, number>
@@ -177,17 +175,17 @@ export interface WorkspaceBootstrap {
 
 export interface SendInvitationsInput {
   emails: string[]
-  role?: "admin" | "member"
+  role?: "admin" | "user"
 }
 
-export type InvitationSkipReason = "already_member" | "pending_invitation"
+export type InvitationSkipReason = "already_user" | "pending_invitation"
 
 export interface SendInvitationsResponse {
   sent: WorkspaceInvitation[]
   skipped: Array<{ email: string; reason: InvitationSkipReason }>
 }
 
-export interface CompleteMemberSetupInput {
+export interface CompleteUserSetupInput {
   name?: string
   slug?: string
   timezone: string
@@ -202,7 +200,7 @@ export interface CompleteMemberSetupInput {
 export interface Activity {
   id: string
   workspaceId: string
-  memberId: string
+  userId: string
   activityType: string
   streamId: string
   messageId: string
@@ -216,7 +214,7 @@ export interface Activity {
 /** Socket event payload for activity:created */
 export interface ActivityCreatedPayload {
   workspaceId: string
-  targetMemberId: string
+  targetUserId: string
   activity: {
     id: string
     activityType: string
@@ -306,8 +304,8 @@ export interface AIUsageByOrigin {
   recordCount: number
 }
 
-export interface AIUsageByMember {
-  memberId: string | null
+export interface AIUsageByUser {
+  userId: string | null
   totalCostUsd: number
   totalTokens: number
   recordCount: number
@@ -322,7 +320,7 @@ export interface AIUsageRecord {
   completionTokens: number | null
   totalTokens: number | null
   costUsd: number
-  memberId: string | null
+  userId: string | null
   sessionId: string | null
   createdAt: string
 }
@@ -334,7 +332,7 @@ export interface AIUsageResponse {
   }
   total: AIUsageSummary
   byOrigin: AIUsageByOrigin[]
-  byMember: AIUsageByMember[]
+  byUser: AIUsageByUser[]
 }
 
 export interface AIRecentUsageResponse {

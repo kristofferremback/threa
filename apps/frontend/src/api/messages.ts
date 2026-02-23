@@ -22,10 +22,10 @@ export const messagesApi = {
     return res.message
   },
 
-  async createDm(workspaceId: string, dmMemberId: string, data: CreateDmMessageInput): Promise<Message> {
+  async createDm(workspaceId: string, dmUserId: string, data: CreateDmMessageInput): Promise<Message> {
     const res = await api.post<{ message: Message }>(`/api/workspaces/${workspaceId}/messages`, {
       ...data,
-      dmMemberId,
+      dmUserId,
     })
     return res.message
   },

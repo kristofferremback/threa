@@ -59,7 +59,7 @@ describe("AgentMessageMutationHandler", () => {
           workspaceId: "ws_1",
           streamId: "stream_1",
           event: {
-            actorId: "member_editor",
+            actorId: "usr_editor",
             payload: {
               messageId: "msg_invoke_1",
             },
@@ -130,7 +130,7 @@ describe("AgentMessageMutationHandler", () => {
         streamId: "stream_thread_1",
         messageId: "msg_invoke_1",
         personaId: "persona_1",
-        triggeredBy: "member_editor",
+        triggeredBy: "usr_editor",
         supersedesSessionId: "session_old",
         rerunContext: expect.objectContaining({
           cause: "invoking_message_edited",
@@ -154,7 +154,7 @@ describe("AgentMessageMutationHandler", () => {
           workspaceId: "ws_1",
           streamId: "stream_1",
           event: {
-            actorId: "member_editor",
+            actorId: "usr_editor",
             payload: {
               messageId: "msg_invoke_1",
             },
@@ -216,7 +216,7 @@ describe("AgentMessageMutationHandler", () => {
           workspaceId: "ws_1",
           streamId: "stream_1",
           event: {
-            actorId: "member_editor",
+            actorId: "usr_editor",
             payload: {
               messageId: "msg_invoke_1",
             },
@@ -278,7 +278,7 @@ describe("AgentMessageMutationHandler", () => {
           workspaceId: "ws_1",
           streamId: "stream_1",
           event: {
-            actorId: "member_editor",
+            actorId: "usr_editor",
             payload: {
               messageId: "msg_invoke_1",
             },
@@ -325,7 +325,7 @@ describe("AgentMessageMutationHandler", () => {
         streamId: "stream_thread_1",
         messageId: "msg_invoke_1",
         personaId: "persona_1",
-        triggeredBy: "member_editor",
+        triggeredBy: "usr_editor",
         supersedesSessionId: "session_old",
         rerunContext: expect.objectContaining({
           cause: "invoking_message_edited",
@@ -349,7 +349,7 @@ describe("AgentMessageMutationHandler", () => {
           workspaceId: "ws_1",
           streamId: "stream_1",
           event: {
-            actorId: "member_editor",
+            actorId: "usr_editor",
             payload: {
               messageId: "msg_invoke_1",
             },
@@ -420,7 +420,7 @@ describe("AgentMessageMutationHandler", () => {
         streamId: "stream_thread_1",
         messageId: "msg_invoke_1",
         personaId: "persona_1",
-        triggeredBy: "member_editor",
+        triggeredBy: "usr_editor",
         supersedesSessionId: "session_failed",
         rerunContext: expect.objectContaining({
           cause: "invoking_message_edited",
@@ -443,7 +443,7 @@ describe("AgentMessageMutationHandler", () => {
           workspaceId: "ws_1",
           streamId: "stream_1",
           event: {
-            actorId: "member_editor",
+            actorId: "usr_editor",
             payload: {
               messageId: "msg_invoke_1",
             },
@@ -496,7 +496,7 @@ describe("AgentMessageMutationHandler", () => {
           workspaceId: "ws_1",
           streamId: "stream_1",
           event: {
-            actorId: "member_editor",
+            actorId: "usr_editor",
             payload: {
               messageId: "msg_invoke_1",
             },
@@ -548,8 +548,8 @@ describe("AgentMessageMutationHandler", () => {
           workspaceId: "ws_1",
           streamId: "stream_thread_1",
           event: {
-            actorId: "member_editor",
-            actorType: AuthorTypes.MEMBER,
+            actorId: "usr_editor",
+            actorType: AuthorTypes.USER,
             sequence: "21",
             payload: {
               messageId: "msg_referenced_1",
@@ -622,7 +622,7 @@ describe("AgentMessageMutationHandler", () => {
         streamId: "stream_thread_1",
         messageId: "msg_invoke_latest",
         personaId: "persona_1",
-        triggeredBy: "member_editor",
+        triggeredBy: "usr_editor",
         supersedesSessionId: "session_latest",
         rerunContext: expect.objectContaining({
           cause: "referenced_message_edited",
@@ -644,8 +644,8 @@ describe("AgentMessageMutationHandler", () => {
           workspaceId: "ws_1",
           streamId: "stream_thread_1",
           event: {
-            actorId: "member_editor",
-            actorType: AuthorTypes.MEMBER,
+            actorId: "usr_editor",
+            actorType: AuthorTypes.USER,
             sequence: "20",
             payload: {
               messageId: "msg_referenced_1",

@@ -48,7 +48,7 @@ export function StreamItemAvatar({ icon, className, avatarUrl, avatarAlt, badge 
         <MessageSquareText className="h-3.5 w-3.5 text-muted-foreground" />
       ) : avatarUrl ? (
         <Avatar className="h-8 w-8 rounded-lg">
-          <AvatarImage src={avatarUrl} alt={avatarAlt ?? "Member avatar"} />
+          <AvatarImage src={avatarUrl} alt={avatarAlt ?? "User avatar"} />
           <AvatarFallback className="rounded-lg">{icon}</AvatarFallback>
         </Avatar>
       ) : (
@@ -191,7 +191,7 @@ export function StreamItem({
 
   const avatar = getAvatar()
   const name = getStreamName(stream) ?? streamFallbackLabel(stream.type, "sidebar")
-  const dmPeerAvatar = stream.type === StreamTypes.DM ? getActorAvatar(stream.dmPeerMemberId ?? null, "member") : null
+  const dmPeerAvatar = stream.type === StreamTypes.DM ? getActorAvatar(stream.dmPeerUserId ?? null, "user") : null
 
   const threadRootContext = stream.type === StreamTypes.THREAD ? getThreadRootContext(stream, allStreams) : null
 

@@ -50,7 +50,7 @@ interface MessageLayoutProps {
   actorInitials: string
   /** Persona slug for SVG icon support (e.g., "ariadne") */
   personaSlug?: string
-  /** Member avatar image URL */
+  /** User avatar image URL */
   actorAvatarUrl?: string
   statusIndicator: ReactNode
   actions?: ReactNode
@@ -165,9 +165,10 @@ function SentMessageEvent({
   const messageService = useMessageService()
   const user = useUser()
   const { data: wsBootstrap } = useWorkspaceBootstrap(workspaceId)
-  const currentMemberId = useMemo(
-    () => wsBootstrap?.members?.find((m) => m.userId === user?.id)?.id ?? null,
-    [wsBootstrap?.members, user?.id]
+  const workspaceUsers = wsBootstrap?.users
+  const currentUserId = useMemo(
+    () => workspaceUsers?.find((m) => m.workosUserId === user?.id)?.id ?? null,
+    [workspaceUsers, user?.id]
   )
   const { getTraceUrl } = useTrace()
   const replyCount = payload.replyCount ?? 0
@@ -300,7 +301,7 @@ function SentMessageEvent({
                     : undefined,
                 messageId: payload.messageId,
                 authorId: event.actorId ?? undefined,
-                currentMemberId: currentMemberId ?? undefined,
+                currentUserId: currentUserId ?? undefined,
                 onEdit: () => setIsEditing(true),
                 onDelete: () => setDeleteDialogOpen(true),
               }}

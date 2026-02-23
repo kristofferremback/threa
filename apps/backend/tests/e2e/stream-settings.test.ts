@@ -10,7 +10,7 @@ import {
   getStream,
   getBootstrap,
   joinWorkspace,
-  getMemberId,
+  getUserId,
   updateStream,
   addStreamMember,
   removeStreamMember,
@@ -166,7 +166,7 @@ describe("Stream Settings E2E", () => {
     let ownerClient: TestClient
     let memberClient: TestClient
     let workspaceId: string
-    let memberMemberId: string
+    let memberUserId: string
 
     beforeAll(async () => {
       ownerClient = new TestClient()
@@ -177,36 +177,41 @@ describe("Stream Settings E2E", () => {
       workspaceId = workspace.id
 
       const memberUser = await loginAs(memberClient, testEmail("add-member"), "Add Member")
-      await joinWorkspace(memberClient, workspaceId, "member")
-      memberMemberId = await getMemberId(memberClient, workspaceId, memberUser.id)
+      await joinWorkspace(memberClient, workspaceId, "user")
+      memberUserId = await getUserId(memberClient, workspaceId, memberUser.id)
     })
 
     test("should add member to channel", async () => {
       const channel = await createChannel(ownerClient, workspaceId, `add-ch-${testRunId}`, "private")
 
-      const { status } = await addStreamMember(ownerClient, workspaceId, channel.id, memberMemberId)
+      const { status } = await addStreamMember(ownerClient, workspaceId, channel.id, memberUserId)
       expect(status).toBe(201)
 
       // Verify member appears in bootstrap (member client can now access)
       const bootstrap = await getBootstrap(memberClient, workspaceId, channel.id)
-      const memberIds = bootstrap.members.map((m: { memberId?: string; userId?: string }) => m.memberId ?? m.userId)
-      expect(memberIds).toContain(memberMemberId)
+      const memberIds = bootstrap.members.map((m: { memberId: string }) => m.memberId)
+      expect(memberIds).toContain(memberUserId)
     })
 
     test("should reject adding member to scratchpad", async () => {
       const scratchpad = await createScratchpad(ownerClient, workspaceId)
 
-      const { status, data } = await addStreamMember(ownerClient, workspaceId, scratchpad.id, memberMemberId)
+      const { status, data } = await addStreamMember(ownerClient, workspaceId, scratchpad.id, memberUserId)
 
       expect(status).toBe(400)
       const body = data as { error: string }
       expect(body.error).toContain("Cannot add members")
     })
 
-    test("should reject adding non-workspace member", async () => {
+    test("should reject adding non-workspace user", async () => {
       const channel = await createChannel(ownerClient, workspaceId, `add-nonmember-${testRunId}`)
 
-      const { status, data } = await addStreamMember(ownerClient, workspaceId, channel.id, "member_fake_00000000")
+      const { status, data } = await addStreamMember(
+        ownerClient,
+        workspaceId,
+        channel.id,
+        "usr_fake_00000000000000000000"
+      )
 
       expect(status).toBe(404)
       const body = data as { error: string }
@@ -219,15 +224,13 @@ describe("Stream Settings E2E", () => {
       const thread = await createThread(ownerClient, workspaceId, channel.id, message.id)
 
       // Add member to thread — should auto-add to root channel
-      const { status } = await addStreamMember(ownerClient, workspaceId, thread.id, memberMemberId)
+      const { status } = await addStreamMember(ownerClient, workspaceId, thread.id, memberUserId)
       expect(status).toBe(201)
 
       // Verify member also in root channel bootstrap
       const channelBootstrap = await getBootstrap(memberClient, workspaceId, channel.id)
-      const channelMemberIds = channelBootstrap.members.map(
-        (m: { memberId?: string; userId?: string }) => m.memberId ?? m.userId
-      )
-      expect(channelMemberIds).toContain(memberMemberId)
+      const channelMemberIds = channelBootstrap.members.map((m: { memberId: string }) => m.memberId)
+      expect(channelMemberIds).toContain(memberUserId)
     })
   })
 
@@ -236,9 +239,9 @@ describe("Stream Settings E2E", () => {
     let adminClient: TestClient
     let memberClient: TestClient
     let workspaceId: string
-    let ownerMemberId: string
-    let adminMemberId: string
-    let memberMemberId: string
+    let ownerUserId: string
+    let adminUserId: string
+    let memberUserId: string
 
     beforeAll(async () => {
       ownerClient = new TestClient()
@@ -248,27 +251,27 @@ describe("Stream Settings E2E", () => {
       const ownerUser = await loginAs(ownerClient, testEmail("rm-owner"), "Remove Owner")
       const workspace = await createWorkspace(ownerClient, `Remove Member WS ${testRunId}`)
       workspaceId = workspace.id
-      ownerMemberId = await getMemberId(ownerClient, workspaceId, ownerUser.id)
+      ownerUserId = await getUserId(ownerClient, workspaceId, ownerUser.id)
 
       const adminUser = await loginAs(adminClient, testEmail("rm-admin"), "Remove Admin")
       await joinWorkspace(adminClient, workspaceId, "admin")
-      adminMemberId = await getMemberId(adminClient, workspaceId, adminUser.id)
+      adminUserId = await getUserId(adminClient, workspaceId, adminUser.id)
 
       const memberUser = await loginAs(memberClient, testEmail("rm-member"), "Remove Member")
-      await joinWorkspace(memberClient, workspaceId, "member")
-      memberMemberId = await getMemberId(memberClient, workspaceId, memberUser.id)
+      await joinWorkspace(memberClient, workspaceId, "user")
+      memberUserId = await getUserId(memberClient, workspaceId, memberUser.id)
     })
 
     test("should remove member from channel", async () => {
       const channel = await createChannel(ownerClient, workspaceId, `rm-ch-${testRunId}`, "private")
 
-      const addAdmin = await addStreamMember(ownerClient, workspaceId, channel.id, adminMemberId)
+      const addAdmin = await addStreamMember(ownerClient, workspaceId, channel.id, adminUserId)
       expect(addAdmin.status).toBe(201)
-      const addMember = await addStreamMember(ownerClient, workspaceId, channel.id, memberMemberId)
+      const addMember = await addStreamMember(ownerClient, workspaceId, channel.id, memberUserId)
       expect(addMember.status).toBe(201)
 
       // Admin removes member
-      const { status } = await removeStreamMember(adminClient, workspaceId, channel.id, memberMemberId)
+      const { status } = await removeStreamMember(adminClient, workspaceId, channel.id, memberUserId)
       expect(status).toBe(204)
 
       // Removed member can no longer access channel
@@ -281,17 +284,17 @@ describe("Stream Settings E2E", () => {
     test("should cascade removal to descendant threads", async () => {
       const channel = await createChannel(ownerClient, workspaceId, `rm-cascade-${testRunId}`, "private")
 
-      const addResult = await addStreamMember(ownerClient, workspaceId, channel.id, memberMemberId)
+      const addResult = await addStreamMember(ownerClient, workspaceId, channel.id, memberUserId)
       expect(addResult.status).toBe(201)
 
       const message = await sendMessage(ownerClient, workspaceId, channel.id, "Thread parent for cascade")
       const thread = await createThread(ownerClient, workspaceId, channel.id, message.id)
 
-      const addThreadResult = await addStreamMember(ownerClient, workspaceId, thread.id, memberMemberId)
+      const addThreadResult = await addStreamMember(ownerClient, workspaceId, thread.id, memberUserId)
       expect(addThreadResult.status).toBe(201)
 
       // Remove member from channel — should cascade to thread
-      const { status } = await removeStreamMember(ownerClient, workspaceId, channel.id, memberMemberId)
+      const { status } = await removeStreamMember(ownerClient, workspaceId, channel.id, memberUserId)
       expect(status).toBe(204)
 
       // Member can no longer access thread either
@@ -303,10 +306,10 @@ describe("Stream Settings E2E", () => {
 
     test("should reject removal by regular member", async () => {
       const channel = await createChannel(ownerClient, workspaceId, `rm-noauth-${testRunId}`, "private")
-      await addStreamMember(ownerClient, workspaceId, channel.id, memberMemberId)
-      await addStreamMember(ownerClient, workspaceId, channel.id, adminMemberId)
+      await addStreamMember(ownerClient, workspaceId, channel.id, memberUserId)
+      await addStreamMember(ownerClient, workspaceId, channel.id, adminUserId)
 
-      const { status, data } = await removeStreamMember(memberClient, workspaceId, channel.id, adminMemberId)
+      const { status, data } = await removeStreamMember(memberClient, workspaceId, channel.id, adminUserId)
 
       expect(status).toBe(403)
       const body = data as { error: string }
@@ -316,7 +319,7 @@ describe("Stream Settings E2E", () => {
     test("should reject removing the only member", async () => {
       const channel = await createChannel(ownerClient, workspaceId, `rm-last-${testRunId}`, "private")
 
-      const { status, data } = await removeStreamMember(ownerClient, workspaceId, channel.id, ownerMemberId)
+      const { status, data } = await removeStreamMember(ownerClient, workspaceId, channel.id, ownerUserId)
 
       expect(status).toBe(400)
       const body = data as { error: string }

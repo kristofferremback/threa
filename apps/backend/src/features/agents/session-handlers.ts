@@ -20,7 +20,7 @@ export function createAgentSessionHandlers({ pool }: Dependencies) {
      * User must have access to the session's stream.
      */
     async getSession(req: Request, res: Response) {
-      const memberId = req.member!.id
+      const userId = req.user!.id
       const workspaceId = req.workspaceId!
       const { sessionId } = req.params
 
@@ -32,7 +32,7 @@ export function createAgentSessionHandlers({ pool }: Dependencies) {
 
         const [stream, membership, persona, steps] = await Promise.all([
           StreamRepository.findById(db, session.streamId),
-          StreamMemberRepository.findByStreamAndMember(db, session.streamId, memberId),
+          StreamMemberRepository.findByStreamAndMember(db, session.streamId, userId),
           PersonaRepository.findById(db, session.personaId),
           AgentSessionRepository.findStepsBySession(db, sessionId),
         ])

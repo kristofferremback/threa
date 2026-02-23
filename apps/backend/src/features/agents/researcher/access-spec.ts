@@ -17,14 +17,14 @@ import { StreamMemberRepository } from "../../streams"
  * - Private channel: agent sees public content + current channel
  */
 export type AgentAccessSpec =
-  | { type: "member_full_access"; memberId: string }
+  | { type: "user_full_access"; userId: string }
   | { type: "public_only" }
   | { type: "public_plus_stream"; streamId: string }
-  | { type: "member_union"; memberIds: string[] }
+  | { type: "user_union"; userIds: string[] }
 
 export interface ComputeAccessSpecParams {
   stream: Stream
-  invokingMemberId: string
+  invokingUserId: string
 }
 
 /**
@@ -39,7 +39,7 @@ export interface ComputeAccessSpecParams {
  * - Thread: Inherits from root stream
  */
 export async function computeAgentAccessSpec(db: Querier, params: ComputeAccessSpecParams): Promise<AgentAccessSpec> {
-  const { stream, invokingMemberId } = params
+  const { stream, invokingUserId } = params
 
   // For threads, compute based on root stream
   const effectiveStream = stream.rootStreamId ? await StreamRepository.findById(db, stream.rootStreamId) : stream
@@ -51,10 +51,10 @@ export async function computeAgentAccessSpec(db: Querier, params: ComputeAccessS
 
   switch (effectiveStream.type) {
     case StreamTypes.SCRATCHPAD:
-      // Private scratchpad: member sees everything they can access
+      // Private scratchpad: user sees everything they can access
       // Public scratchpad: anyone can see, so agent only sees public
       return effectiveStream.visibility === Visibilities.PRIVATE
-        ? { type: "member_full_access", memberId: invokingMemberId }
+        ? { type: "user_full_access", userId: invokingUserId }
         : { type: "public_only" }
 
     case StreamTypes.CHANNEL:
@@ -67,8 +67,8 @@ export async function computeAgentAccessSpec(db: Querier, params: ComputeAccessS
     case StreamTypes.DM: {
       // DM: Union of all participants' access
       const members = await StreamMemberRepository.list(db, { streamId: effectiveStream.id })
-      const memberIds = members.map((m) => m.memberId)
-      return { type: "member_union", memberIds }
+      const userIds = members.map((m) => m.memberId)
+      return { type: "user_union", userIds }
     }
 
     default:
@@ -81,14 +81,14 @@ export async function computeAgentAccessSpec(db: Querier, params: ComputeAccessS
  */
 export function describeAccessSpec(spec: AgentAccessSpec): string {
   switch (spec.type) {
-    case "member_full_access":
-      return `full access for member ${spec.memberId}`
+    case "user_full_access":
+      return `full access for user ${spec.userId}`
     case "public_only":
       return "public streams only"
     case "public_plus_stream":
       return `public streams + stream ${spec.streamId}`
-    case "member_union":
-      return `union of ${spec.memberIds.length} members' access`
+    case "user_union":
+      return `union of ${spec.userIds.length} users' access`
   }
 }
 

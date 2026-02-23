@@ -19,10 +19,10 @@ export interface MessageActionContext {
   traceUrl?: string
   /** Message ID for edit/delete operations */
   messageId?: string
-  /** Author's member ID */
+  /** Author's user ID */
   authorId?: string
-  /** Current user's member ID */
-  currentMemberId?: string
+  /** Current user's user ID */
+  currentUserId?: string
   /** Callback to enter edit mode */
   onEdit?: () => void
   /** Callback to open delete confirmation */
@@ -83,7 +83,7 @@ export const messageActions: MessageAction[] = [
     id: "edit-message",
     label: "Edit message",
     icon: Pencil,
-    when: (ctx) => ctx.actorType === "member" && !!ctx.authorId && ctx.authorId === ctx.currentMemberId,
+    when: (ctx) => ctx.actorType === "user" && !!ctx.authorId && ctx.authorId === ctx.currentUserId,
     action: (ctx) => ctx.onEdit?.(),
   },
   {
@@ -127,7 +127,7 @@ export const messageActions: MessageAction[] = [
     icon: Trash2,
     separatorBefore: true,
     variant: "destructive",
-    when: (ctx) => ctx.actorType === "member" && !!ctx.authorId && ctx.authorId === ctx.currentMemberId,
+    when: (ctx) => ctx.actorType === "user" && !!ctx.authorId && ctx.authorId === ctx.currentUserId,
     action: (ctx) => ctx.onDelete?.(),
   },
 ]
