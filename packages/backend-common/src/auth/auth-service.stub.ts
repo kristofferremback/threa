@@ -71,7 +71,22 @@ export class StubAuthService implements AuthService {
     }
 
     const userId = match[1]
-    const user = this.users.get(userId)
+    let user = this.users.get(userId)
+
+    // Auto-register from session token for cross-process stub auth.
+    // When the control-plane sets the session cookie, the regional backend
+    // (a separate process with its own StubAuthService) needs to trust it.
+    if (!user && userId?.startsWith("workos_test_")) {
+      const emailPart = userId.slice("workos_test_".length)
+      // Best-effort email reconstruction: last segment is TLD, second-to-last is domain
+      const segments = emailPart.split("_")
+      const email =
+        segments.length >= 3
+          ? `${segments.slice(0, -2).join("_")}@${segments.slice(-2).join(".")}`
+          : `${emailPart}@stub.local`
+      user = { id: userId, email, firstName: null, lastName: null }
+      this.users.set(userId, user)
+    }
 
     if (!user) {
       return { success: false, refreshed: false, reason: "user_not_found" }

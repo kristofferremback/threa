@@ -6,6 +6,7 @@ import { OutboxRepository } from "../../lib/outbox"
 import { invitationId } from "../../lib/id"
 import { logger } from "../../lib/logger"
 import { getWorkosErrorCode, type WorkosOrgService } from "../../auth/workos-org-service"
+import type { ControlPlaneClient } from "../../lib/control-plane-client"
 import type { InvitationSkipReason, InvitationStatus } from "@threa/types"
 
 const INVITATION_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
@@ -39,11 +40,18 @@ export interface WorkosIdentity {
 }
 
 export class InvitationService {
+  private controlPlaneClient: ControlPlaneClient | null
+  private region: string | null
+
   constructor(
     private pool: Pool,
     private workosOrgService: WorkosOrgService,
-    private workspaceService: WorkspaceService
-  ) {}
+    private workspaceService: WorkspaceService,
+    options?: { controlPlaneClient?: ControlPlaneClient | null; region?: string | null }
+  ) {
+    this.controlPlaneClient = options?.controlPlaneClient ?? null
+    this.region = options?.region ?? null
+  }
 
   async sendInvitations(params: SendInvitationsParams): Promise<SendResult> {
     const { workspaceId, invitedBy, role } = params
@@ -143,6 +151,23 @@ export class InvitationService {
               "Failed to send WorkOS invitation"
             )
           }
+        }
+      }
+    }
+
+    // Phase 4: Sync invitation shadows to control-plane (best-effort)
+    if (this.controlPlaneClient && this.region) {
+      for (const inv of sent) {
+        try {
+          await this.controlPlaneClient.createInvitationShadow({
+            id: inv.id,
+            workspaceId: inv.workspaceId,
+            email: inv.email,
+            region: this.region,
+            expiresAt: inv.expiresAt,
+          })
+        } catch (err) {
+          logger.error({ err, invitationId: inv.id, email: inv.email }, "Failed to sync invitation shadow")
         }
       }
     }
@@ -247,7 +272,16 @@ export class InvitationService {
 
     if (!invitation) return false
 
-    // Phase 2: Revoke in WorkOS (no DB connection held)
+    // Phase 2: Revoke shadow in control-plane (best-effort)
+    if (this.controlPlaneClient) {
+      try {
+        await this.controlPlaneClient.revokeInvitationShadow(invitationId)
+      } catch (err) {
+        logger.error({ err, invitationId }, "Failed to revoke invitation shadow in control-plane")
+      }
+    }
+
+    // Phase 3: Revoke in WorkOS (no DB connection held)
     if (invitation.workosInvitationId) {
       try {
         await this.workosOrgService.revokeInvitation(invitation.workosInvitationId)

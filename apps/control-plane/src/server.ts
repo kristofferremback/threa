@@ -68,8 +68,10 @@ export async function startServer(): Promise<ControlPlaneInstance> {
 
   const server = createServer(app)
 
-  await new Promise<void>((resolve) => {
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject)
     server.listen(config.port, () => {
+      server.removeListener("error", reject)
       logger.info({ port: config.port }, "Control plane started")
       resolve()
     })
@@ -79,6 +81,7 @@ export async function startServer(): Promise<ControlPlaneInstance> {
     if (config.fastShutdown) {
       logger.info("Fast shutdown - skipping graceful shutdown")
       server.close()
+      await pool.end()
       return
     }
 

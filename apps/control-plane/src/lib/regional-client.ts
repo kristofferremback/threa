@@ -1,6 +1,8 @@
 import { logger } from "@threa/backend-common"
 import type { RegionConfig } from "../config"
 
+const REGIONAL_REQUEST_TIMEOUT_MS = 15_000
+
 export class RegionalClient {
   constructor(
     private regions: Record<string, RegionConfig>,
@@ -34,6 +36,7 @@ export class RegionalClient {
         "X-Internal-Api-Key": this.internalApiKey,
       },
       body: JSON.stringify(data),
+      signal: AbortSignal.timeout(REGIONAL_REQUEST_TIMEOUT_MS),
     })
 
     if (!res.ok) {
@@ -58,6 +61,7 @@ export class RegionalClient {
         "X-Internal-Api-Key": this.internalApiKey,
       },
       body: JSON.stringify(data),
+      signal: AbortSignal.timeout(REGIONAL_REQUEST_TIMEOUT_MS),
     })
 
     if (!res.ok) {

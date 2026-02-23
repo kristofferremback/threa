@@ -54,7 +54,12 @@ export function registerRoutes(app: Express, deps: Dependencies) {
       throw new Error("StubAuthService is active but dev auth routes are not allowed in this environment")
     }
 
-    const authStub = createAuthStubHandlers({ authStubService: authService })
+    const authStub = createAuthStubHandlers({
+      authStubService: authService,
+      shadowService,
+      regionalClient,
+      pool,
+    })
     app.get("/test-auth-login", authStub.getLoginPage)
     app.post("/test-auth-login", authStub.handleLogin)
     app.post("/api/dev/login", authStub.handleDevLogin)

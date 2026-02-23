@@ -1,44 +1,64 @@
 import type { Request, Response } from "express"
-import { SESSION_COOKIE_CONFIG, decodeAndSanitizeRedirectState, type StubAuthService } from "@threa/backend-common"
+import {
+  SESSION_COOKIE_CONFIG,
+  decodeAndSanitizeRedirectState,
+  logger,
+  type StubAuthService,
+} from "@threa/backend-common"
+import { renderLoginPage } from "./stub-login-page"
+import type { InvitationShadowService } from "../invitation-shadows/service"
+import type { RegionalClient } from "../../lib/regional-client"
+import { WorkspaceRegistryRepository } from "../workspaces/repository"
+import type { Pool } from "pg"
 
 const SESSION_COOKIE_NAME = "wos_session"
 
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#x27;")
-}
-
 interface Dependencies {
   authStubService: StubAuthService
+  shadowService: InvitationShadowService
+  regionalClient: RegionalClient
+  pool: Pool
 }
 
-export function createAuthStubHandlers({ authStubService }: Dependencies) {
+export function createAuthStubHandlers({ authStubService, shadowService, regionalClient, pool }: Dependencies) {
   return {
     async getLoginPage(req: Request, res: Response) {
       const state = (req.query.state as string) || ""
-      res.send(`
-        <html>
-          <body>
-            <h1>Test Auth Login (Control Plane)</h1>
-            <form method="POST" action="/test-auth-login">
-              <input type="hidden" name="state" value="${escapeHtml(state)}" />
-              <label>Email: <input name="email" value="test@example.com" /></label><br/>
-              <label>Name: <input name="name" value="Test User" /></label><br/>
-              <button type="submit">Login</button>
-            </form>
-          </body>
-        </html>
-      `)
+      res.send(renderLoginPage(state))
     },
 
     async handleLogin(req: Request, res: Response) {
       const { email, name, state } = req.body
       const result = await authStubService.devLogin({ email, name })
+
+      // Auto-accept pending invitation shadows (mirrors real callback flow)
+      const pendingShadows = await shadowService.findPendingByEmail(result.user.email)
+      const acceptedWorkspaceIds: string[] = []
+
+      for (const shadow of pendingShadows) {
+        try {
+          await regionalClient.acceptInvitation(shadow.region, shadow.id, {
+            workosUserId: result.user.id,
+            email: result.user.email,
+            name: result.user.name,
+          })
+          await shadowService.updateStatus(shadow.id, "accepted")
+          await WorkspaceRegistryRepository.insertMembership(pool, shadow.workspace_id, result.user.id)
+          acceptedWorkspaceIds.push(shadow.workspace_id)
+        } catch (error) {
+          logger.error(
+            { err: error, shadowId: shadow.id, workspaceId: shadow.workspace_id },
+            "Failed to auto-accept invitation shadow during stub login"
+          )
+        }
+      }
+
       res.cookie(SESSION_COOKIE_NAME, result.session, SESSION_COOKIE_CONFIG)
+
+      // If user was accepted into exactly one workspace, redirect to setup
+      if (acceptedWorkspaceIds.length === 1) {
+        return res.redirect(`/w/${acceptedWorkspaceIds[0]}/setup`)
+      }
 
       if (state) {
         const redirectTo = decodeAndSanitizeRedirectState(state)

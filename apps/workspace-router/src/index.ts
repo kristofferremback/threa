@@ -59,7 +59,11 @@ export default {
         REGIONS_ROUTE_RE.test(path) ||
         DEV_AUTH_ROUTE_RE.test(path)
       ) {
-        return proxyRequest(request, env.CONTROL_PLANE_URL)
+        try {
+          return await proxyRequest(request, env.CONTROL_PLANE_URL)
+        } catch {
+          return errorResponse(502, "Control plane unavailable")
+        }
       }
     }
 

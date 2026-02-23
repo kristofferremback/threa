@@ -57,6 +57,7 @@ export function createApp(options: CreateAppOptions): Express {
   app.use(cors({ origin: createCorsOriginChecker(options.corsAllowedOrigins), credentials: true }))
   app.use(cookieParser())
   app.use(express.json())
+  app.use(express.urlencoded({ extended: false }))
 
   app.use(
     pinoHttp({

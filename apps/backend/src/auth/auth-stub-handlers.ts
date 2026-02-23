@@ -78,13 +78,13 @@ export function createAuthStubHandlers(deps: Dependencies): AuthStubHandlers {
     const workosUserId = req.workosUserId!
     const authUser = req.authUser
     const { workspaceId } = req.params
-    const { role } = req.body as { role?: "user" | "admin" }
+    const { role, name: nameOverride } = req.body as { role?: "user" | "admin"; name?: string }
 
     if (!authUser) {
       throw new HttpError("Not authenticated", { status: 401, code: "NOT_AUTHENTICATED" })
     }
 
-    const name = displayNameFromWorkos(authUser)
+    const name = nameOverride || displayNameFromWorkos(authUser)
     const user = await workspaceService.addUser(workspaceId, {
       workosUserId,
       email: authUser.email,

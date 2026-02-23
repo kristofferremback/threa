@@ -95,8 +95,17 @@ export class ControlPlaneWorkspaceService {
     } catch (error) {
       // Compensating transaction: delete from control-plane DB
       logger.error({ err: error, workspaceId: id, region }, "Regional workspace creation failed, rolling back")
-      await WorkspaceRegistryRepository.deleteMembershipsByWorkspace(this.pool, id)
-      await WorkspaceRegistryRepository.deleteById(this.pool, id)
+      try {
+        await withTransaction(this.pool, async (client) => {
+          await WorkspaceRegistryRepository.deleteMembershipsByWorkspace(client, id)
+          await WorkspaceRegistryRepository.deleteById(client, id)
+        })
+      } catch (cleanupError) {
+        logger.error(
+          { err: cleanupError, workspaceId: id },
+          "Failed to clean up workspace registry after regional failure"
+        )
+      }
       throw new HttpError("Failed to create workspace in regional backend", { status: 502, code: "REGIONAL_FAILURE" })
     }
 

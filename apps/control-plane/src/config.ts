@@ -90,12 +90,19 @@ export function loadControlPlaneConfig(): ControlPlaneConfig {
     },
   }
 
-  // Optional Cloudflare KV config
+  // Optional Cloudflare KV config — all three vars must be present together (INV-11)
   if (process.env.CLOUDFLARE_KV_ACCOUNT_ID) {
+    const namespaceId = process.env.CLOUDFLARE_KV_NAMESPACE_ID
+    const apiToken = process.env.CLOUDFLARE_KV_API_TOKEN
+    if (!namespaceId || !apiToken) {
+      throw new Error(
+        "CLOUDFLARE_KV_ACCOUNT_ID is set but CLOUDFLARE_KV_NAMESPACE_ID and CLOUDFLARE_KV_API_TOKEN are also required"
+      )
+    }
     config.cloudflareKv = {
       accountId: process.env.CLOUDFLARE_KV_ACCOUNT_ID,
-      namespaceId: process.env.CLOUDFLARE_KV_NAMESPACE_ID || "",
-      apiToken: process.env.CLOUDFLARE_KV_API_TOKEN || "",
+      namespaceId,
+      apiToken,
     }
   }
 

@@ -121,6 +121,7 @@ import { createStaticConfigResolver } from "./lib/ai/static-config-resolver"
 import { QueueManager, ScheduleManager, CleanupWorker, QueueRepository, TokenPoolRepository } from "./lib/queue"
 import { UserSocketRegistry } from "./lib/user-socket-registry"
 import { PoolMonitor } from "./lib/observability"
+import { ControlPlaneClient } from "./lib/control-plane-client"
 
 export interface ServerInstance {
   server: Server
@@ -226,7 +227,14 @@ export async function startServer(): Promise<ServerInstance> {
   const workspaceService = new WorkspaceService(pool, avatarService, jobQueue, workosOrgService, {
     requireWorkspaceCreationInvite: config.workspaceCreationRequiresInvite,
   })
-  const invitationService = new InvitationService(pool, workosOrgService, workspaceService)
+  const controlPlaneClient =
+    config.controlPlaneUrl && config.internalApiKey
+      ? new ControlPlaneClient(config.controlPlaneUrl, config.internalApiKey)
+      : null
+  const invitationService = new InvitationService(pool, workosOrgService, workspaceService, {
+    controlPlaneClient,
+    region: config.region,
+  })
 
   // Schedule manager for cron tick generation
   const scheduleManager = new ScheduleManager(pool, {

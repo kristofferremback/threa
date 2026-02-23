@@ -286,9 +286,11 @@ async function main() {
 
   console.log("Starting control-plane, workspace-router, backend and frontend...")
 
-  // Load backend's .env file (worktree-specific DATABASE_URL, etc.)
+  // Load .env files (worktree-specific DATABASE_URL, etc.)
   const backendEnvPath = path.join(process.cwd(), "apps/backend/.env")
   const backendEnv = loadEnvFile(backendEnvPath)
+  const cpEnvPath = path.join(process.cwd(), "apps/control-plane/.env")
+  const cpEnv = loadEnvFile(cpEnvPath)
 
   const dbBase = backendEnv.DATABASE_URL ?? process.env.DATABASE_URL ?? "postgresql://threa:threa@localhost:5454/threa"
   const useStubAuth = backendEnv.USE_STUB_AUTH ?? process.env.USE_STUB_AUTH ?? "false"
@@ -314,6 +316,7 @@ async function main() {
     stderr: "inherit",
     env: {
       ...process.env,
+      ...cpEnv,
       FAST_SHUTDOWN: "true",
       PORT: "3003",
       DATABASE_URL: cpDbUrl,

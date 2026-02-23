@@ -4,6 +4,7 @@ import * as path from "path"
 import * as net from "net"
 
 const TEST_DB_NAME = "threa_test"
+const TEST_CP_DB_NAME = "threa_test_cp"
 
 /**
  * Find an available port by attempting to bind to port 0 (OS assigns random available port)
@@ -61,8 +62,23 @@ async function main() {
     // Create test database if it doesn't exist
     await createTestDatabase()
 
+    // Create control-plane test database if needed
+    const cpContainer = await findPostgresContainer()
+    if (cpContainer) {
+      const cpCheck =
+        await $`docker exec ${cpContainer} psql -U threa -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='${TEST_CP_DB_NAME}'"`
+          .quiet()
+          .nothrow()
+      if (cpCheck.stdout.toString().trim() !== "1") {
+        console.log(`Creating control-plane test database '${TEST_CP_DB_NAME}'...`)
+        await $`docker exec ${cpContainer} psql -U threa -d postgres -c "CREATE DATABASE ${TEST_CP_DB_NAME}"`
+        console.log(`Control-plane test database '${TEST_CP_DB_NAME}' created`)
+      }
+    }
+
     // Get random available ports
     const backendPort = await findAvailablePort()
+    const controlPlanePort = await findAvailablePort()
     const routerPort = await findAvailablePort()
     const frontendPort = await findAvailablePort()
 
@@ -92,6 +108,22 @@ async function main() {
       FAST_SHUTDOWN: "true",
       PORT: String(backendPort),
       CORS_ALLOWED_ORIGINS: `http://localhost:${frontendPort},http://127.0.0.1:${frontendPort}`,
+      CONTROL_PLANE_URL: `http://localhost:${controlPlanePort}`,
+      INTERNAL_API_KEY: "dev-internal-key",
+      REGION: "local",
+    }
+
+    // Set environment variables for control-plane
+    const controlPlaneEnvVars = {
+      ...process.env,
+      FAST_SHUTDOWN: "true",
+      PORT: String(controlPlanePort),
+      DATABASE_URL: `postgresql://threa:threa@localhost:5454/${TEST_CP_DB_NAME}`,
+      USE_STUB_AUTH: "true",
+      INTERNAL_API_KEY: "dev-internal-key",
+      REGIONS: JSON.stringify({ local: { internalUrl: `http://localhost:${backendPort}` } }),
+      CORS_ALLOWED_ORIGINS: `http://localhost:${frontendPort},http://127.0.0.1:${frontendPort}`,
+      WORKSPACE_CREATION_SKIP_INVITE: "true",
     }
 
     // Set environment variables for frontend (proxies API calls through the router)
@@ -111,11 +143,20 @@ async function main() {
 
     console.log("\nStarting dev server in test mode:")
     console.log(`  - Database: ${TEST_DB_NAME}`)
+    console.log(`  - Control Plane DB: ${TEST_CP_DB_NAME}`)
     console.log(`  - Stub Auth: enabled`)
     console.log(`  - Workspace Invite Check: skipped`)
     console.log(`  - Frontend: http://localhost:${frontendPort}`)
     console.log(`  - Router: http://localhost:${routerPort}`)
+    console.log(`  - Control Plane: http://localhost:${controlPlanePort}`)
     console.log(`  - Backend: http://localhost:${backendPort}\n`)
+
+    // Run control-plane without --hot (more stable for testing)
+    const controlPlane = Bun.spawn(["bun", "apps/control-plane/src/index.ts"], {
+      stdout: "inherit",
+      stderr: "inherit",
+      env: controlPlaneEnvVars,
+    })
 
     // Run backend without --hot (more stable for testing)
     const backend = Bun.spawn(["bun", "apps/backend/src/index.ts"], {
@@ -134,6 +175,8 @@ async function main() {
         String(routerPort),
         "--var",
         "DEFAULT_REGION:local",
+        "--var",
+        `CONTROL_PLANE_URL:http://localhost:${controlPlanePort}`,
         "--var",
         `REGIONS:${regionsJson}`,
       ],
@@ -156,17 +199,18 @@ async function main() {
       if (isShuttingDown) return
       isShuttingDown = true
       console.log("\nShutting down test server...")
+      controlPlane.kill("SIGKILL")
       backend.kill("SIGKILL")
       router.kill("SIGKILL")
       frontend.kill("SIGKILL")
-      await Promise.all([backend.exited, router.exited, frontend.exited])
+      await Promise.all([controlPlane.exited, backend.exited, router.exited, frontend.exited])
       process.exit(0)
     }
 
     process.on("SIGINT", shutdown)
     process.on("SIGTERM", shutdown)
 
-    await Promise.all([backend.exited, router.exited, frontend.exited])
+    await Promise.all([controlPlane.exited, backend.exited, router.exited, frontend.exited])
   } catch (err) {
     console.error("Failed to start test server:", err)
     process.exit(1)

@@ -10,7 +10,7 @@ interface Dependencies {
 
 const createWorkspaceSchema = z.object({
   name: z.string().min(1).max(100),
-  region: z.string().min(1),
+  region: z.string().min(1).optional(),
 })
 
 export function createWorkspaceHandlers({ workspaceService, availableRegions }: Dependencies) {
@@ -34,9 +34,14 @@ export function createWorkspaceHandlers({ workspaceService, availableRegions }: 
         throw new HttpError("Invalid request body", { status: 400, code: "VALIDATION_ERROR" })
       }
 
+      const region = parsed.data.region ?? availableRegions[0]
+      if (!region) {
+        throw new HttpError("No regions available", { status: 500, code: "NO_REGIONS" })
+      }
+
       const workspace = await workspaceService.create({
         name: parsed.data.name,
-        region: parsed.data.region,
+        region,
         workosUserId: req.workosUserId,
         email: req.authUser.email,
         displayName: displayNameFromWorkos(req.authUser),
