@@ -35,8 +35,16 @@ export const InvitationShadowRepository = {
     return result.rows[0]
   },
 
-  async updateStatus(db: Querier, id: string, status: string): Promise<boolean> {
-    const result = await db.query("UPDATE invitation_shadows SET status = $1 WHERE id = $2", [status, id])
+  /**
+   * Transition a shadow from 'pending' to a terminal status ('accepted' or 'revoked').
+   * Returns false if the shadow doesn't exist or is not in 'pending' state,
+   * making this safe for replay (idempotent).
+   */
+  async updateStatus(db: Querier, id: string, status: "accepted" | "revoked"): Promise<boolean> {
+    const result = await db.query("UPDATE invitation_shadows SET status = $1 WHERE id = $2 AND status = 'pending'", [
+      status,
+      id,
+    ])
     return (result.rowCount ?? 0) > 0
   },
 }

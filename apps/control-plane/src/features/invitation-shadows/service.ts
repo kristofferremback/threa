@@ -20,7 +20,7 @@ export class InvitationShadowService {
     return InvitationShadowRepository.insert(this.pool, params)
   }
 
-  async updateStatus(id: string, status: string) {
+  async updateStatus(id: string, status: "accepted" | "revoked") {
     return InvitationShadowRepository.updateStatus(this.pool, id, status)
   }
 }
