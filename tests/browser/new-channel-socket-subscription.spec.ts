@@ -129,7 +129,7 @@ test.describe("New Channel Socket Subscription", () => {
     await channelLink.click()
     await expect(userA.page).toHaveURL(new RegExp(`/w/${workspaceId}/s/${streamId}`), { timeout: 10000 })
     await expect(userA.page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 10000 })
-    await expect(userA.page.getByRole("main").getByText(testMessage)).toBeVisible({ timeout: 15000 })
+    await expect(userA.page.getByRole("main").getByText(testMessage).first()).toBeVisible({ timeout: 15000 })
 
     // Cleanup
     await userA.context.close()

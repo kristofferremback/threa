@@ -53,15 +53,15 @@ test.describe("Invitation Flow", () => {
     await pageA.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
     await expect(pageA.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
-    // Open user menu → Workspace Settings → Members tab
+    // Open user menu → Workspace Settings → Users tab
     await pageA.getByRole("button", { name: new RegExp(userAName) }).click()
     await pageA.getByRole("menuitem", { name: "Workspace Settings" }).click()
     await expect(pageA.getByRole("heading", { name: "Workspace Settings" })).toBeVisible()
-    await pageA.getByRole("tab", { name: "Members" }).click()
+    await pageA.getByRole("tab", { name: "Users" }).click()
 
     // Click Invite button
     await pageA.getByRole("button", { name: "Invite" }).click()
-    await expect(pageA.getByRole("heading", { name: "Invite Members" })).toBeVisible()
+    await expect(pageA.getByRole("heading", { name: "Invite Users" })).toBeVisible()
 
     // Enter User B's email and send
     await pageA.getByLabel("Email addresses").fill(userBEmail)
