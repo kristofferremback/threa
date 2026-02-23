@@ -29,4 +29,11 @@ describe("getAvatarUrl", () => {
     expect(spy).toHaveBeenCalledTimes(1)
     spy.mockRestore()
   })
+
+  test("returns undefined and logs error on workspaceId mismatch", () => {
+    const spy = spyOn(console, "error").mockImplementation(() => {})
+    expect(getAvatarUrl("ws_999", "avatars/ws_123/mem_456/1700000000000", 256)).toBeUndefined()
+    expect(spy).toHaveBeenCalledTimes(1)
+    spy.mockRestore()
+  })
 })

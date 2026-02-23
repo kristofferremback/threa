@@ -88,7 +88,11 @@ export function getAvatarUrl(
     console.error(`Malformed avatarUrl: "${avatarUrl}" (expected avatars/:workspaceId/:memberId/:timestamp)`)
     return undefined
   }
-  const [, , memberId, file] = parts
+  const [, embeddedWorkspaceId, memberId, file] = parts
+  if (embeddedWorkspaceId !== workspaceId) {
+    console.error(`avatarUrl workspaceId mismatch: key has "${embeddedWorkspaceId}" but received "${workspaceId}"`)
+    return undefined
+  }
   return `/api/workspaces/${workspaceId}/files/avatars/${memberId}/${file}.${size}.webp`
 }
 

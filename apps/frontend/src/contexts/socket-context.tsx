@@ -129,6 +129,7 @@ export function SocketProvider({ workspaceId, children }: SocketProviderProps) {
       newSocket?.close()
       setSocket(null)
       setStatus("connecting")
+      setReconnectCount(0)
     }
   }, [workspaceId])
 
