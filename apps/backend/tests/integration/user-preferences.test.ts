@@ -34,7 +34,7 @@ describe("User Preferences - Sparse Override Pattern", () => {
 
       expect(prefs).toMatchObject({
         workspaceId: testWorkspaceId,
-        memberId: testUserId,
+        userId: testUserId,
         theme: DEFAULT_USER_PREFERENCES.theme,
         messageDisplay: DEFAULT_USER_PREFERENCES.messageDisplay,
         dateFormat: DEFAULT_USER_PREFERENCES.dateFormat,

@@ -54,7 +54,6 @@ describe("BoundaryExtractionService", () => {
   let service: BoundaryExtractionService
   let stubExtractor: StubBoundaryExtractor
   let testUserId: string
-  let testUserId: string
   let testWorkspaceId: string
   let testStreamId: string
 

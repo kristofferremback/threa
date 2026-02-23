@@ -426,7 +426,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         messageId: message.id,
         emoji: "👍",
-        memberId: testUserId,
+        userId: testUserId,
       })
 
       expect(updated).not.toBeNull()
@@ -442,7 +442,7 @@ describe("Event Sourcing", () => {
       expect(reactionEvent!.payload).toMatchObject({
         messageId: message.id,
         emoji: "👍",
-        memberId: testUserId,
+        userId: testUserId,
       })
     })
 
@@ -465,7 +465,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         messageId: message.id,
         emoji: "👍",
-        memberId: user1,
+        userId: user1,
       })
 
       await eventService.addReaction({
@@ -473,7 +473,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         messageId: message.id,
         emoji: "👍",
-        memberId: user2,
+        userId: user2,
       })
 
       await eventService.addReaction({
@@ -481,7 +481,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         messageId: message.id,
         emoji: "❤️",
-        memberId: user1,
+        userId: user1,
       })
 
       const updated = await eventService.getMessageById(message.id)
@@ -510,7 +510,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         messageId: message.id,
         emoji: "👍",
-        memberId: testUserId,
+        userId: testUserId,
       })
 
       const afterRemove = await eventService.removeReaction({
@@ -518,7 +518,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         messageId: message.id,
         emoji: "👍",
-        memberId: testUserId,
+        userId: testUserId,
       })
 
       // Reaction should be gone from projection
@@ -550,7 +550,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         messageId: message.id,
         emoji: "👍",
-        memberId: testUserId,
+        userId: testUserId,
       })
 
       // Add same reaction again - should not duplicate in projection
@@ -559,7 +559,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         messageId: message.id,
         emoji: "👍",
-        memberId: testUserId,
+        userId: testUserId,
       })
 
       const final = await eventService.getMessageById(message.id)
@@ -589,7 +589,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         messageId: message.id,
         emoji: "👍",
-        memberId: testUserId,
+        userId: testUserId,
       })
 
       await eventService.removeReaction({
@@ -597,7 +597,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         messageId: message.id,
         emoji: "👍",
-        memberId: testUserId,
+        userId: testUserId,
       })
 
       const outboxEvents = await OutboxRepository.fetchAfterId(pool, baselineId)
@@ -664,7 +664,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         messageId: message.id,
         emoji: "👍",
-        memberId: testUserId,
+        userId: testUserId,
       })
 
       await eventService.editMessage({
