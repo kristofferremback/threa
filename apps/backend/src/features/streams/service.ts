@@ -757,8 +757,8 @@ export class StreamService {
       }
 
       // Verify the target member belongs to this workspace
-      const member = await UserRepository.findById(client, memberId)
-      if (!member || member.workspaceId !== workspaceId) {
+      const member = await UserRepository.findById(client, workspaceId, memberId)
+      if (!member) {
         throw new HttpError("Member not found in this workspace", { status: 404, code: "MEMBER_NOT_FOUND" })
       }
 

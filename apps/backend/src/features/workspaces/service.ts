@@ -226,8 +226,8 @@ export class WorkspaceService {
   ): Promise<User> {
     // Phase 1: Fast reads
     const { user, orgId } = await withClient(this.pool, async (client) => {
-      const user = await UserRepository.findById(client, userId)
-      if (!user || user.workspaceId !== workspaceId) {
+      const user = await UserRepository.findById(client, workspaceId, userId)
+      if (!user) {
         throw new HttpError("User not found", { status: 404, code: "USER_NOT_FOUND" })
       }
 
@@ -251,7 +251,7 @@ export class WorkspaceService {
       try {
         return await withTransaction(this.pool, async (client) => {
           // Re-read user inside transaction to get fresh slug (Phase 1 value may be stale)
-          const currentUser = await UserRepository.findById(client, userId)
+          const currentUser = await UserRepository.findById(client, workspaceId, userId)
           if (!currentUser || currentUser.setupCompleted) {
             throw new HttpError("User setup already completed", { status: 400, code: "SETUP_ALREADY_COMPLETED" })
           }
@@ -274,7 +274,7 @@ export class WorkspaceService {
             slug = await generateUniqueSlug(slug, (s) => UserRepository.slugExistsInWorkspace(client, workspaceId, s))
           }
 
-          const updated = await UserRepository.update(client, userId, {
+          const updated = await UserRepository.update(client, workspaceId, userId, {
             slug,
             name: params.name,
             timezone: params.timezone,
@@ -307,7 +307,7 @@ export class WorkspaceService {
     params: { name?: string; description?: string | null }
   ): Promise<User> {
     return withTransaction(this.pool, async (client) => {
-      const updated = await UserRepository.update(client, userId, params)
+      const updated = await UserRepository.update(client, workspaceId, userId, params)
       if (!updated) {
         throw new HttpError("User not found", { status: 404, code: "USER_NOT_FOUND" })
       }
@@ -323,8 +323,8 @@ export class WorkspaceService {
 
   async uploadAvatar(userId: string, workspaceId: string, buffer: Buffer): Promise<User> {
     // Phase 1: Verify user exists and capture current avatar for replacement tracking
-    const user = await UserRepository.findById(this.pool, userId)
-    if (!user || user.workspaceId !== workspaceId) {
+    const user = await UserRepository.findById(this.pool, workspaceId, userId)
+    if (!user) {
       throw new HttpError("User not found", { status: 404, code: "USER_NOT_FOUND" })
     }
 
@@ -358,13 +358,13 @@ export class WorkspaceService {
     let oldAvatarUrl: string | null = null
 
     const updated = await withTransaction(this.pool, async (client) => {
-      const currentUser = await UserRepository.findById(client, userId)
+      const currentUser = await UserRepository.findById(client, workspaceId, userId)
       oldAvatarUrl = currentUser?.avatarUrl ?? null
 
       // Delete any in-flight upload rows — racing workers will see their row gone and skip
       await AvatarUploadRepository.deleteByUserId(client, userId)
 
-      const result = await UserRepository.update(client, userId, {
+      const result = await UserRepository.update(client, workspaceId, userId, {
         avatarUrl: null,
       })
       if (!result) {

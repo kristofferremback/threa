@@ -106,8 +106,8 @@ describe("Context Builder", () => {
         const memberMember = await addTestMember(client, wsId, memberUserId)
         const ownerUserId = ownerUser.id
         const memberUserId = memberMember.id
-        await UserRepository.update(client, ownerUserId, { name: "Channel Owner" })
-        await UserRepository.update(client, memberUserId, { name: "Channel Member" })
+        await UserRepository.update(client, wsId, ownerUserId, { name: "Channel Owner" })
+        await UserRepository.update(client, wsId, memberUserId, { name: "Channel Member" })
 
         const channel = await StreamRepository.insert(client, {
           id: channelId,
@@ -348,8 +348,8 @@ describe("Context Builder", () => {
         const member2 = await addTestMember(client, wsId, user2Id)
         const member1Id = member1.id
         const member2Id = member2.id
-        await UserRepository.update(client, member1Id, { name: "Alice" })
-        await UserRepository.update(client, member2Id, { name: "Bob" })
+        await UserRepository.update(client, wsId, member1Id, { name: "Alice" })
+        await UserRepository.update(client, wsId, member2Id, { name: "Bob" })
 
         const dm = await StreamRepository.insert(client, {
           id: dmId,

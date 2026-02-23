@@ -270,7 +270,7 @@ describe("API E2E Tests", () => {
       // Send raw emoji, expect shortcode in response
       const updated = await addReaction(client, workspace.id, message.id, "👍")
 
-      expect(updated.reactions).toEqual({ ":+1:": [expect.stringMatching(/^member_/)] })
+      expect(updated.reactions).toEqual({ ":+1:": [expect.stringMatching(/^usr_/)] })
     })
 
     test("should accept shortcode input directly", async () => {
@@ -283,7 +283,7 @@ describe("API E2E Tests", () => {
       // Send shortcode directly
       const updated = await addReaction(client, workspace.id, message.id, ":heart:")
 
-      expect(updated.reactions).toEqual({ ":heart:": [expect.stringMatching(/^member_/)] })
+      expect(updated.reactions).toEqual({ ":heart:": [expect.stringMatching(/^usr_/)] })
     })
 
     test("should remove reaction from message", async () => {
@@ -356,7 +356,7 @@ describe("API E2E Tests", () => {
       const updated = await addReaction(client1, workspace.id, message.id, "👍")
 
       expect(updated.reactions[":+1:"]).toHaveLength(1)
-      expect(updated.reactions[":+1:"][0]).toMatch(/^member_/)
+      expect(updated.reactions[":+1:"][0]).toMatch(/^usr_/)
     })
 
     test("should reject invalid emoji", async () => {

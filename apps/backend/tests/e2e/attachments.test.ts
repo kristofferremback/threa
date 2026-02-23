@@ -98,7 +98,7 @@ describe("File Attachments E2E", () => {
       )
 
       expect(status).toBe(403)
-      expect(data.error).toContain("Not a member")
+      expect(data.error).toContain("Not a user in this workspace")
     })
   })
 

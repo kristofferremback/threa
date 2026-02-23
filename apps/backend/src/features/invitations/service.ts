@@ -55,7 +55,7 @@ export class InvitationService {
     const orgId = await this.ensureWorkosOrganization(workspaceId)
 
     // Look up the inviter's WorkOS user ID for WorkOS API
-    const inviterWorkosUserId = (await this.getInviterWorkosUserId(invitedBy)) ?? undefined
+    const inviterWorkosUserId = (await this.getInviterWorkosUserId(workspaceId, invitedBy)) ?? undefined
 
     // Batch-fetch: existing members + pending invitations
     const existingUserEmails = await UserRepository.findEmails(this.pool, workspaceId, emails)
@@ -324,8 +324,8 @@ export class InvitationService {
     return WorkspaceRepository.getWorkosOrganizationId(this.pool, workspaceId)
   }
 
-  private async getInviterWorkosUserId(invitedBy: string): Promise<string | null> {
-    const inviterUser = await UserRepository.findById(this.pool, invitedBy)
+  private async getInviterWorkosUserId(workspaceId: string, invitedBy: string): Promise<string | null> {
+    const inviterUser = await UserRepository.findById(this.pool, workspaceId, invitedBy)
     return inviterUser?.workosUserId ?? null
   }
 }

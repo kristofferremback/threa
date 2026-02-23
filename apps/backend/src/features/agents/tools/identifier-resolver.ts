@@ -28,10 +28,9 @@ function isStreamId(value: string): boolean {
 
 /**
  * Check if a string looks like a user ID.
- * Supports current `usr_` IDs and legacy `member_` IDs for compatibility.
  */
 function isUserId(value: string): boolean {
-  return value.startsWith("usr_") || value.startsWith("member_")
+  return value.startsWith("usr_")
 }
 
 /**
@@ -132,8 +131,8 @@ export async function resolveUserIdentifier(
 
   // If it looks like a user ID, validate it exists in this workspace
   if (isUserId(trimmed)) {
-    const user = await UserRepository.findById(db, trimmed)
-    if (!user || user.workspaceId !== workspaceId) {
+    const user = await UserRepository.findById(db, workspaceId, trimmed)
+    if (!user) {
       return { resolved: false, reason: `No user found with ID: ${trimmed}` }
     }
     return { resolved: true, id: trimmed }

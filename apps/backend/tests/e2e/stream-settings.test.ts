@@ -206,7 +206,12 @@ describe("Stream Settings E2E", () => {
     test("should reject adding non-workspace user", async () => {
       const channel = await createChannel(ownerClient, workspaceId, `add-nonmember-${testRunId}`)
 
-      const { status, data } = await addStreamMember(ownerClient, workspaceId, channel.id, "member_fake_00000000")
+      const { status, data } = await addStreamMember(
+        ownerClient,
+        workspaceId,
+        channel.id,
+        "usr_fake_00000000000000000000"
+      )
 
       expect(status).toBe(404)
       const body = data as { error: string }

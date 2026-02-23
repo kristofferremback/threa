@@ -359,7 +359,7 @@ async function buildThreadPath(db: Querier, stream: Stream): Promise<ThreadPathE
     if (current.parentMessageId) {
       const message = await MessageRepository.findById(db, current.parentMessageId)
       if (message) {
-        const authorName = await resolveAuthorName(db, message.authorId, message.authorType)
+        const authorName = await resolveAuthorName(db, current.workspaceId, message.authorId, message.authorType)
         anchorMessage = {
           id: message.id,
           content: message.contentMarkdown.slice(0, 200), // Truncate for context
@@ -428,13 +428,18 @@ async function resolveParticipantsWithTimezones(
 /**
  * Resolve author name for a message.
  */
-async function resolveAuthorName(db: Querier, authorId: string, authorType: AuthorType): Promise<string> {
+async function resolveAuthorName(
+  db: Querier,
+  workspaceId: string,
+  authorId: string,
+  authorType: AuthorType
+): Promise<string> {
   if (authorType === "system") {
     return "Threa"
   }
 
   if (authorType === "user") {
-    const member = await UserRepository.findById(db, authorId)
+    const member = await UserRepository.findById(db, workspaceId, authorId)
     return member?.name ?? "Unknown"
   }
 

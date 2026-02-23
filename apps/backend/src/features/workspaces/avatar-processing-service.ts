@@ -43,7 +43,7 @@ export class AvatarProcessingService {
 
       if (updated) {
         variantsUsed = true
-        const fullUser = await UserRepository.findById(client, userId)
+        const fullUser = await UserRepository.findById(client, workspaceId, userId)
         if (fullUser) {
           await OutboxRepository.insert(client, "workspace_user:updated", {
             workspaceId,

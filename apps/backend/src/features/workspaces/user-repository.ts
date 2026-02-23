@@ -89,11 +89,11 @@ function mapRowToUser(row: UserRow): User {
 }
 
 export const UserRepository = {
-  async findById(db: Querier, id: string): Promise<User | null> {
+  async findById(db: Querier, workspaceId: string, id: string): Promise<User | null> {
     const result = await db.query<UserRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS_WITH_ALIAS)}
       FROM users u
-      WHERE u.id = ${id}
+      WHERE u.workspace_id = ${workspaceId} AND u.id = ${id}
     `)
     return result.rows[0] ? mapRowToUser(result.rows[0]) : null
   },
@@ -240,7 +240,7 @@ export const UserRepository = {
     return new Set(result.rows.map((r) => r.email))
   },
 
-  async update(db: Querier, userId: string, params: UpdateUserParams): Promise<User | null> {
+  async update(db: Querier, workspaceId: string, userId: string, params: UpdateUserParams): Promise<User | null> {
     const sets: string[] = []
     const values: unknown[] = []
     let paramIndex = 1
@@ -276,8 +276,9 @@ export const UserRepository = {
 
     if (sets.length === 0) return null
 
+    values.push(workspaceId)
     values.push(userId)
-    let whereClause = `WHERE id = $${paramIndex}`
+    let whereClause = `WHERE workspace_id = $${paramIndex++} AND id = $${paramIndex}`
     if (params.setupCompleted === true) {
       whereClause += ` AND setup_completed = false`
     }

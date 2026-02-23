@@ -127,7 +127,7 @@ export async function buildAgentContext(deps: ContextDeps, params: ContextParams
 
   let mentionerName: string | undefined
   if (trigger === AgentTriggers.MENTION && triggerMessage?.authorType === AuthorTypes.USER) {
-    const mentioner = await UserRepository.findById(db, triggerMessage.authorId)
+    const mentioner = await UserRepository.findById(db, workspaceId, triggerMessage.authorId)
     mentionerName = mentioner?.name ?? undefined
   }
 
