@@ -24,6 +24,15 @@ UPDATE stream_events
 SET actor_type = 'user'
 WHERE actor_type = 'member';
 
-UPDATE member_activity
-SET actor_type = 'user'
-WHERE actor_type = 'member';
+DO $$
+BEGIN
+  IF to_regclass('public.user_activity') IS NOT NULL THEN
+    UPDATE user_activity
+    SET actor_type = 'user'
+    WHERE actor_type = 'member';
+  ELSIF to_regclass('public.member_activity') IS NOT NULL THEN
+    UPDATE member_activity
+    SET actor_type = 'user'
+    WHERE actor_type = 'member';
+  END IF;
+END $$;
