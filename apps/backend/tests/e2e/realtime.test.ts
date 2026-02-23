@@ -20,7 +20,7 @@ import {
   removeReaction,
   updateMessage,
   deleteMessage,
-  getMemberId,
+  getUserId,
   getBootstrap,
   joinWorkspace,
   joinRoom,
@@ -99,14 +99,14 @@ describe("Real-time Events", () => {
   let client: TestClient
   let socket: Socket
   let workspaceId: string
-  let memberId: string
+  let userId: string
 
   beforeAll(async () => {
     client = new TestClient()
     const user = await loginAs(client, "realtime-test@example.com", "Realtime Test User")
     const workspace = await createWorkspace(client, "Realtime Test Workspace")
     workspaceId = workspace.id
-    memberId = await getMemberId(client, workspaceId, user.id)
+    userId = await getUserId(client, workspaceId, user.id)
   })
 
   beforeEach(async () => {
@@ -170,12 +170,12 @@ describe("Real-time Events", () => {
       await joinRoom(socket, `ws:${workspaceId}:stream:${stream.id}`)
     })
 
-    test("should allow joining public stream room when workspace member but not stream member", async () => {
+    test("should allow joining public stream room when workspace user but not stream member", async () => {
       const stream = await createChannel(client, workspaceId, `public-room-${Date.now()}`, "public")
 
       const otherClient = new TestClient()
       await loginAs(otherClient, `public-room-member-${Date.now()}@example.com`, "Public Room Member")
-      await joinWorkspace(otherClient, workspaceId, "member")
+      await joinWorkspace(otherClient, workspaceId, "user")
 
       // HTTP bootstrap already uses validateStreamAccess, so this should succeed.
       const bootstrap = await getBootstrap(otherClient, workspaceId, stream.id)
@@ -209,7 +209,7 @@ describe("Real-time Events", () => {
       })
       expect(event.event).toMatchObject({
         eventType: "message_created",
-        actorId: memberId,
+        actorId: userId,
       })
       expect(event.event.payload).toMatchObject({
         contentMarkdown: "Hello, real-time!",
@@ -265,7 +265,7 @@ describe("Real-time Events", () => {
 
       const message = await sendMessage(client, workspaceId, stream.id, "React to me")
 
-      const eventPromise = waitForEvent<{ emoji: string; memberId: string }>(socket, "reaction:added")
+      const eventPromise = waitForEvent<{ emoji: string; userId: string }>(socket, "reaction:added")
 
       await addReaction(client, workspaceId, message.id, "👍")
 
@@ -277,7 +277,7 @@ describe("Real-time Events", () => {
         messageId: message.id,
         // Emoji gets normalized to shortcode format
         emoji: ":+1:",
-        memberId,
+        userId,
       })
     })
 
@@ -288,7 +288,7 @@ describe("Real-time Events", () => {
       const message = await sendMessage(client, workspaceId, stream.id, "Unreact from me")
       await addReaction(client, workspaceId, message.id, "❤️")
 
-      const eventPromise = waitForEvent<{ emoji: string; memberId: string }>(socket, "reaction:removed")
+      const eventPromise = waitForEvent<{ emoji: string; userId: string }>(socket, "reaction:removed")
 
       await removeReaction(client, workspaceId, message.id, "❤️")
 
@@ -300,7 +300,7 @@ describe("Real-time Events", () => {
         messageId: message.id,
         // Emoji gets normalized to shortcode format
         emoji: ":heart:",
-        memberId,
+        userId,
       })
     })
   })
@@ -406,7 +406,7 @@ describe("Real-time Events", () => {
       expect(result).toBe("no-event")
     })
 
-    test("should not deliver stream:activity to workspace members outside the stream", async () => {
+    test("should not deliver stream:activity to workspace users outside the stream", async () => {
       const privateStream = await createScratchpad(client, workspaceId, "off")
       const outsiderClient = new TestClient()
       await loginAs(outsiderClient, "workspace-outsider@example.com", "Workspace Outsider")
@@ -450,7 +450,7 @@ describe("Real-time Events", () => {
       expect(activity).toMatchObject({
         workspaceId,
         streamId: privateStream.id,
-        authorId: memberId,
+        authorId: userId,
         lastMessagePreview: {
           content: "Private stream activity test",
         },

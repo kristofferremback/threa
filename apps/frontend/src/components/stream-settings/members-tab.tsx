@@ -27,10 +27,10 @@ import { toast } from "sonner"
 interface MembersTabProps {
   workspaceId: string
   streamId: string
-  currentMemberId: string
+  currentUserId: string
 }
 
-export function MembersTab({ workspaceId, streamId, currentMemberId }: MembersTabProps) {
+export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabProps) {
   const queryClient = useQueryClient()
   const streamService = useStreamService()
   const [search, setSearch] = useState("")
@@ -59,7 +59,7 @@ export function MembersTab({ workspaceId, streamId, currentMemberId }: MembersTa
   const canAddMembers = streamType === StreamTypes.CHANNEL || streamType === StreamTypes.THREAD
   const streamMembers = bootstrap?.members ?? []
   const workspaceUsers = wsBootstrap?.users ?? []
-  const currentWorkspaceUser = workspaceUsers.find((u) => u.id === currentMemberId)
+  const currentWorkspaceUser = workspaceUsers.find((u) => u.id === currentUserId)
   const canManageMembers = currentWorkspaceUser?.role === "owner" || currentWorkspaceUser?.role === "admin"
 
   const streamMemberIds = useMemo(() => new Set(streamMembers.map((m) => m.memberId)), [streamMembers])
@@ -160,7 +160,7 @@ export function MembersTab({ workspaceId, streamId, currentMemberId }: MembersTa
                   <Badge variant={member.role === "owner" ? "default" : "secondary"} className="text-xs">
                     {member.role}
                   </Badge>
-                  {canManageMembers && member.memberId !== currentMemberId && (
+                  {canManageMembers && member.memberId !== currentUserId && (
                     <Button
                       variant="ghost"
                       size="icon"

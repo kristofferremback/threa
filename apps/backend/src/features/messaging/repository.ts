@@ -229,20 +229,20 @@ export const MessageRepository = {
     return this.findById(db, id)
   },
 
-  async addReaction(db: Querier, messageId: string, emoji: string, memberId: string): Promise<Message | null> {
+  async addReaction(db: Querier, messageId: string, emoji: string, userId: string): Promise<Message | null> {
     await db.query(sql`
       INSERT INTO reactions (message_id, user_id, emoji)
-      VALUES (${messageId}, ${memberId}, ${emoji})
+      VALUES (${messageId}, ${userId}, ${emoji})
       ON CONFLICT DO NOTHING
     `)
     return this.findById(db, messageId)
   },
 
-  async removeReaction(db: Querier, messageId: string, emoji: string, memberId: string): Promise<Message | null> {
+  async removeReaction(db: Querier, messageId: string, emoji: string, userId: string): Promise<Message | null> {
     await db.query(sql`
       DELETE FROM reactions
       WHERE message_id = ${messageId}
-        AND user_id = ${memberId}
+        AND user_id = ${userId}
         AND emoji = ${emoji}
     `)
     return this.findById(db, messageId)

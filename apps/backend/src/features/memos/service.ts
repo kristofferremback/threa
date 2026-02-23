@@ -154,7 +154,7 @@ export class MemoService implements MemoServiceLike {
       // Collect all unique member IDs from messages and conversation participants
       const authorIds = new Set<string>()
       for (const msg of messages.values()) {
-        if (msg && msg.authorType === "member") {
+        if (msg && msg.authorType === "user") {
           authorIds.add(msg.authorId)
         }
       }
@@ -208,7 +208,7 @@ export class MemoService implements MemoServiceLike {
           continue
         }
 
-        if (message.authorType !== "member") {
+        if (message.authorType !== "user") {
           continue
         }
 
@@ -317,7 +317,7 @@ export class MemoService implements MemoServiceLike {
 
         if (existingMemo && classification.shouldReviseExisting) {
           // Use the first user message author's timezone for date anchoring
-          const firstUserMsg = messagesArray.find((m) => m.authorType === "member")
+          const firstUserMsg = messagesArray.find((m) => m.authorType === "user")
           const authorTimezone = firstUserMsg
             ? (fetchedData.authorTimezones.get(firstUserMsg.authorId) ?? undefined)
             : undefined
@@ -382,7 +382,7 @@ export class MemoService implements MemoServiceLike {
           )
         } else if (!existingMemo) {
           // Use the first user message author's timezone for date anchoring
-          const firstUserMsg = messagesArray.find((m) => m.authorType === "member")
+          const firstUserMsg = messagesArray.find((m) => m.authorType === "user")
           const authorTimezone = firstUserMsg
             ? (fetchedData.authorTimezones.get(firstUserMsg.authorId) ?? undefined)
             : undefined

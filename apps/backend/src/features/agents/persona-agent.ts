@@ -239,15 +239,15 @@ export class PersonaAgent {
 
         // Build workspace agent callback for on-demand workspace research
         let runWorkspaceAgent: ((query: string) => Promise<WorkspaceAgentResult>) | undefined
-        if (agentContext.triggerMessage && agentContext.invokingMemberId) {
-          const capturedInvokingMemberId = agentContext.invokingMemberId
+        if (agentContext.triggerMessage && agentContext.invokingUserId) {
+          const capturedInvokingUserId = agentContext.invokingUserId
           runWorkspaceAgent = (query: string) =>
             workspaceAgent.search({
               workspaceId,
               streamId,
               query,
               conversationHistory: agentContext.streamContext.conversationHistory,
-              invokingMemberId: capturedInvokingMemberId,
+              invokingUserId: capturedInvokingUserId,
               dmParticipantIds: agentContext.dmParticipantIds,
             })
         }
@@ -304,17 +304,17 @@ export class PersonaAgent {
 
         // Build workspace tool deps (requires invoking member for access control)
         let workspaceDeps: import("./tools/tool-deps").WorkspaceToolDeps | undefined
-        if (agentContext.invokingMemberId) {
+        if (agentContext.invokingUserId) {
           const accessSpec = await computeAgentAccessSpec(db, {
             stream,
-            invokingMemberId: agentContext.invokingMemberId,
+            invokingUserId: agentContext.invokingUserId,
           })
           const accessibleStreamIds = await SearchRepository.getAccessibleStreamsForAgent(db, accessSpec, workspaceId)
           workspaceDeps = {
             db,
             workspaceId,
             accessibleStreamIds,
-            invokingMemberId: agentContext.invokingMemberId,
+            invokingUserId: agentContext.invokingUserId,
             searchService,
             storage,
           }
@@ -407,10 +407,10 @@ export class PersonaAgent {
 
               const messagesById = await MessageRepository.findByIds(db, changedMessageIds)
 
-              const memberIds = [
+              const userIds = [
                 ...new Set(
                   filteredEvents
-                    .filter((event) => event.actorType === "member" && event.actorId)
+                    .filter((event) => event.actorType === "user" && event.actorId)
                     .map((event) => event.actorId!)
                 ),
               ]
@@ -423,7 +423,7 @@ export class PersonaAgent {
               ]
 
               const [members, personas] = await Promise.all([
-                memberIds.length > 0 ? UserRepository.findByIds(db, workspaceId, memberIds) : Promise.resolve([]),
+                userIds.length > 0 ? UserRepository.findByIds(db, workspaceId, userIds) : Promise.resolve([]),
                 personaIds.length > 0 ? PersonaRepository.findByIds(db, personaIds) : Promise.resolve([]),
               ])
 

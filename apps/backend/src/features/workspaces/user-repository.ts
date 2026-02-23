@@ -26,7 +26,7 @@ export interface User {
   workspaceId: string
   workosUserId: string
   email: string
-  role: "owner" | "admin" | "member"
+  role: "owner" | "admin" | "user"
   slug: string
   name: string
   description: string | null
@@ -43,7 +43,7 @@ export interface InsertUserParams {
   workosUserId: string
   email: string
   name: string
-  role: "owner" | "admin" | "member"
+  role: "owner" | "admin" | "user"
   slug: string
   timezone?: string | null
   locale?: string | null

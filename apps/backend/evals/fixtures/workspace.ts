@@ -7,7 +7,7 @@
 import type { Pool } from "pg"
 import { withTransaction } from "../../src/db"
 import { WorkspaceRepository, UserRepository } from "../../src/features/workspaces"
-import { workspaceId, memberId } from "../../src/lib/id"
+import { workspaceId, userId } from "../../src/lib/id"
 
 /**
  * Workspace fixture data created for evals.
@@ -33,7 +33,7 @@ export async function createWorkspaceFixture(pool: Pool): Promise<WorkspaceFixtu
   const wsId = workspaceId()
   const timestamp = Date.now()
   const workosUserId = `workos_eval_${timestamp}`
-  const ownerMemberId = memberId()
+  const ownerUserId = userId()
   const userName = `Eval User ${timestamp}`
   const userEmail = `eval-user-${timestamp}@test.local`
 
@@ -43,12 +43,12 @@ export async function createWorkspaceFixture(pool: Pool): Promise<WorkspaceFixtu
       id: wsId,
       name: `Eval Workspace ${timestamp}`,
       slug: `eval-workspace-${timestamp}`,
-      createdBy: ownerMemberId,
+      createdBy: ownerUserId,
     })
 
     // Add owner user
     await UserRepository.insert(client, {
-      id: ownerMemberId,
+      id: ownerUserId,
       workspaceId: workspace.id,
       workosUserId,
       email: userEmail,
@@ -91,13 +91,13 @@ export async function createAdditionalUser(
   const result = await withTransaction(pool, async (client) => {
     // Add to workspace as user
     await UserRepository.insert(client, {
-      id: memberId(),
+      id: userId(),
       workspaceId,
       workosUserId,
       email: userEmail,
       slug: `eval-user-${timestamp}`,
       name: userName,
-      role: "member",
+      role: "user",
       timezone: options.timezone,
     })
 

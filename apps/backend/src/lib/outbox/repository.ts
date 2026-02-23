@@ -119,7 +119,7 @@ export interface MessageUpdatedOutboxPayload extends StreamScopedPayload {
 export interface ReactionOutboxPayload extends StreamScopedPayload {
   messageId: string
   emoji: string
-  memberId: string
+  userId: string
 }
 
 export interface StreamDisplayNameUpdatedPayload extends StreamScopedPayload {
@@ -148,7 +148,7 @@ export interface StreamMemberRemovedOutboxPayload extends StreamScopedPayload {
 export interface StreamCreatedOutboxPayload extends WorkspaceScopedPayload {
   streamId: string
   stream: Stream
-  dmMemberIds?: [string, string]
+  dmUserIds?: [string, string]
 }
 
 export interface StreamUpdatedOutboxPayload extends WorkspaceScopedPayload {

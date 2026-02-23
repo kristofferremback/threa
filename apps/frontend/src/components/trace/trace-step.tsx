@@ -106,7 +106,7 @@ function StepContent({
 interface MessageInfo {
   messageId: string
   authorName: string
-  authorType: "member" | "persona" | "system"
+  authorType: "user" | "persona" | "system"
   changeType?: "message_created" | "message_edited" | "message_deleted"
   createdAt: string
   content: string

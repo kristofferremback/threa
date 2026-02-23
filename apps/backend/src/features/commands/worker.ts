@@ -32,7 +32,7 @@ export function createCommandWorker(deps: CommandWorkerDeps): JobHandler<Command
   const { pool, commandRegistry } = deps
 
   return async (job) => {
-    const { commandId, commandName, args, workspaceId, streamId, memberId } = job.data
+    const { commandId, commandName, args, workspaceId, streamId, userId } = job.data
 
     logger.info({ jobId: job.id, commandId, commandName }, "Processing command job")
 
@@ -43,7 +43,7 @@ export function createCommandWorker(deps: CommandWorkerDeps): JobHandler<Command
         commandId,
         workspaceId,
         streamId,
-        memberId,
+        userId,
         error: `Unknown command: ${commandName}`,
       })
       return
@@ -54,7 +54,7 @@ export function createCommandWorker(deps: CommandWorkerDeps): JobHandler<Command
       commandName,
       workspaceId,
       streamId,
-      memberId,
+      userId,
       args,
     }
 
@@ -66,7 +66,7 @@ export function createCommandWorker(deps: CommandWorkerDeps): JobHandler<Command
           commandId,
           workspaceId,
           streamId,
-          memberId,
+          userId,
           result: result.result,
         })
         logger.info({ jobId: job.id, commandId, commandName }, "Command completed successfully")
@@ -75,7 +75,7 @@ export function createCommandWorker(deps: CommandWorkerDeps): JobHandler<Command
           commandId,
           workspaceId,
           streamId,
-          memberId,
+          userId,
           error: result.error || "Command failed",
         })
         logger.warn({ jobId: job.id, commandId, commandName, error: result.error }, "Command failed")
@@ -86,7 +86,7 @@ export function createCommandWorker(deps: CommandWorkerDeps): JobHandler<Command
         commandId,
         workspaceId,
         streamId,
-        memberId,
+        userId,
         error,
       })
       logger.error({ jobId: job.id, commandId, commandName, err }, "Command threw exception")
@@ -99,12 +99,12 @@ interface CompletedEventParams {
   commandId: string
   workspaceId: string
   streamId: string
-  memberId: string
+  userId: string
   result?: unknown
 }
 
 async function createCompletedEvent(pool: Pool, params: CompletedEventParams): Promise<void> {
-  const { commandId, workspaceId, streamId, memberId, result } = params
+  const { commandId, workspaceId, streamId, userId, result } = params
 
   await withTransaction(pool, async (client) => {
     const evtId = eventId()
@@ -116,14 +116,14 @@ async function createCompletedEvent(pool: Pool, params: CompletedEventParams): P
         commandId,
         result,
       } satisfies CommandCompletedPayload,
-      actorId: memberId,
-      actorType: "member",
+      actorId: userId,
+      actorType: "user",
     })
 
     await OutboxRepository.insert(client, "command:completed", {
       workspaceId,
       streamId,
-      authorId: memberId,
+      authorId: userId,
       event: serializeBigInt(evt),
     })
   })
@@ -133,12 +133,12 @@ interface FailedEventParams {
   commandId: string
   workspaceId: string
   streamId: string
-  memberId: string
+  userId: string
   error: string
 }
 
 async function createFailedEvent(pool: Pool, params: FailedEventParams): Promise<void> {
-  const { commandId, workspaceId, streamId, memberId, error } = params
+  const { commandId, workspaceId, streamId, userId, error } = params
 
   await withTransaction(pool, async (client) => {
     const evtId = eventId()
@@ -150,14 +150,14 @@ async function createFailedEvent(pool: Pool, params: FailedEventParams): Promise
         commandId,
         error,
       } satisfies CommandFailedPayload,
-      actorId: memberId,
-      actorType: "member",
+      actorId: userId,
+      actorType: "user",
     })
 
     await OutboxRepository.insert(client, "command:failed", {
       workspaceId,
       streamId,
-      authorId: memberId,
+      authorId: userId,
       event: serializeBigInt(evt),
     })
   })

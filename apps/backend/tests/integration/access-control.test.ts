@@ -38,7 +38,7 @@ describe("Access Control", () => {
   })
 
   describe("Workspace Membership", () => {
-    test("isMember returns true for workspace members", async () => {
+    test("isMember returns true for workspace users", async () => {
       const user1Id = userId()
       const wsId = workspaceId()
 
@@ -104,9 +104,9 @@ describe("Access Control", () => {
   })
 
   describe("Stream Visibility", () => {
-    test("public streams are visible to all workspace members", async () => {
+    test("public streams are visible to all workspace users", async () => {
       const ownerId = userId()
-      const memberId = userId()
+      const workspaceUserId = userId()
       const wsId = workspaceId()
 
       await withTransaction(pool, async (client) => {
@@ -116,10 +116,10 @@ describe("Access Control", () => {
           slug: `public-test-ws-${wsId}`,
           createdBy: ownerId,
         })
-        await addTestMember(client, wsId, memberId)
+        await addTestMember(client, wsId, workspaceUserId)
       })
 
-      // Create a public channel (not adding memberId as stream member)
+      // Create a public channel (not adding workspaceUserId as stream member)
       const channel = await streamService.createChannel({
         workspaceId: wsId,
         slug: `public-channel-${Date.now()}`,
@@ -129,14 +129,14 @@ describe("Access Control", () => {
       })
 
       // Member should be able to access the public stream
-      const stream = await streamService.validateStreamAccess(channel.id, wsId, memberId)
+      const stream = await streamService.validateStreamAccess(channel.id, wsId, workspaceUserId)
       expect(stream.id).toBe(channel.id)
       expect(stream.visibility).toBe(Visibilities.PUBLIC)
     })
 
     test("private streams are not visible to non-members", async () => {
       const ownerId = userId()
-      const memberId = userId()
+      const workspaceUserId = userId()
       const wsId = workspaceId()
 
       await withTransaction(pool, async (client) => {
@@ -146,10 +146,10 @@ describe("Access Control", () => {
           slug: `private-test-ws-${wsId}`,
           createdBy: ownerId,
         })
-        await addTestMember(client, wsId, memberId)
+        await addTestMember(client, wsId, workspaceUserId)
       })
 
-      // Create a private channel (not adding memberId as stream member)
+      // Create a private channel (not adding workspaceUserId as stream member)
       const channel = await streamService.createChannel({
         workspaceId: wsId,
         slug: `private-channel-${Date.now()}`,
@@ -159,7 +159,9 @@ describe("Access Control", () => {
       })
 
       // Member should NOT be able to access the private stream
-      await expect(streamService.validateStreamAccess(channel.id, wsId, memberId)).rejects.toThrow(StreamNotFoundError)
+      await expect(streamService.validateStreamAccess(channel.id, wsId, workspaceUserId)).rejects.toThrow(
+        StreamNotFoundError
+      )
     })
 
     test("private streams are accessible to stream members", async () => {
@@ -224,7 +226,7 @@ describe("Access Control", () => {
       const ownerAccess = await streamService.validateStreamAccess(scratchpad.id, wsId, ownerId)
       expect(ownerAccess.id).toBe(scratchpad.id)
 
-      // Other workspace member cannot access
+      // Other workspace user cannot access
       await expect(streamService.validateStreamAccess(scratchpad.id, wsId, otherId)).rejects.toThrow(
         StreamNotFoundError
       )
@@ -408,7 +410,7 @@ describe("Access Control", () => {
   describe("Thread Visibility", () => {
     test("thread inherits visibility from parent channel", async () => {
       const ownerId = userId()
-      const memberId = userId()
+      const workspaceUserId = userId()
       const wsId = workspaceId()
 
       await withTransaction(pool, async (client) => {
@@ -418,7 +420,7 @@ describe("Access Control", () => {
           slug: `thread-vis-ws-${wsId}`,
           createdBy: ownerId,
         })
-        await addTestMember(client, wsId, memberId)
+        await addTestMember(client, wsId, workspaceUserId)
       })
 
       // Create a public channel
@@ -435,7 +437,7 @@ describe("Access Control", () => {
         workspaceId: wsId,
         streamId: channel.id,
         authorId: ownerId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("Parent message for thread visibility test"),
       })
 
@@ -453,13 +455,13 @@ describe("Access Control", () => {
 
       // Member of workspace (who can see public channel) should be able to access thread
       // via root stream membership check
-      const access = await streamService.validateStreamAccess(thread.id, wsId, memberId)
+      const access = await streamService.validateStreamAccess(thread.id, wsId, workspaceUserId)
       expect(access.id).toBe(thread.id)
     })
 
     test("deeply nested threads are visible to root stream members", async () => {
       const ownerId = userId()
-      const memberId = userId()
+      const workspaceUserId = userId()
       const wsId = workspaceId()
 
       await withTransaction(pool, async (client) => {
@@ -469,7 +471,7 @@ describe("Access Control", () => {
           slug: `deep-thread-ws-${wsId}`,
           createdBy: ownerId,
         })
-        await addTestMember(client, wsId, memberId)
+        await addTestMember(client, wsId, workspaceUserId)
       })
 
       // Create channel -> thread1 -> thread2 -> thread3
@@ -486,7 +488,7 @@ describe("Access Control", () => {
         workspaceId: wsId,
         streamId: channel.id,
         authorId: ownerId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("Deep message 1"),
       })
 
@@ -501,7 +503,7 @@ describe("Access Control", () => {
         workspaceId: wsId,
         streamId: thread1.id,
         authorId: ownerId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("Deep message 2"),
       })
 
@@ -516,7 +518,7 @@ describe("Access Control", () => {
         workspaceId: wsId,
         streamId: thread2.id,
         authorId: ownerId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("Deep message 3"),
       })
 
@@ -533,7 +535,7 @@ describe("Access Control", () => {
       expect(thread3.rootStreamId).toBe(channel.id)
 
       // Workspace member (with access to public channel) should be able to access deeply nested thread
-      const access = await streamService.validateStreamAccess(thread3.id, wsId, memberId)
+      const access = await streamService.validateStreamAccess(thread3.id, wsId, workspaceUserId)
       expect(access.id).toBe(thread3.id)
     })
 
@@ -567,7 +569,7 @@ describe("Access Control", () => {
         workspaceId: wsId,
         streamId: channel.id,
         authorId: ownerId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("Private channel message for thread"),
       })
 
@@ -624,7 +626,7 @@ describe("Access Control", () => {
         workspaceId: wsId,
         streamId: channel.id,
         authorId: channelMemberWorkspaceId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("Message that will spawn a thread"),
       })
       const thread = await streamService.createThread({
@@ -670,7 +672,7 @@ describe("Access Control", () => {
         workspaceId: wsId,
         streamId: channel.id,
         authorId: ownerId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("Message for add member to thread test"),
       })
 
@@ -697,7 +699,7 @@ describe("Access Control", () => {
   describe("Member-Only Operations", () => {
     test("isMember correctly identifies stream members", async () => {
       const ownerId = userId()
-      const memberId = userId()
+      const workspaceUserId = userId()
       const nonMemberId = userId()
       const wsId = workspaceId()
       let memberWorkspaceId = ""
@@ -710,11 +712,11 @@ describe("Access Control", () => {
           slug: `is-member-ws-${wsId}`,
           createdBy: ownerId,
         })
-        memberWorkspaceId = (await addTestMember(client, wsId, memberId)).id
+        memberWorkspaceId = (await addTestMember(client, wsId, workspaceUserId)).id
         nonMemberWorkspaceId = (await addTestMember(client, wsId, nonMemberId)).id
       })
 
-      // Create channel and add memberId
+      // Create channel and add workspaceUserId
       const channel = await streamService.createChannel({
         workspaceId: wsId,
         slug: `is-member-channel-${Date.now()}`,
@@ -767,7 +769,7 @@ describe("Access Control", () => {
         workspaceId: wsId,
         streamId: channel.id,
         authorId: userAId,
-        authorType: "member",
+        authorType: "user",
         ...testMessageContent("Regular message visible to all"),
       })
 
@@ -785,7 +787,7 @@ describe("Access Control", () => {
             status: "dispatched",
           },
           actorId: userAId,
-          actorType: "member",
+          actorType: "user",
         })
 
         await StreamEventRepository.insert(client, {
@@ -797,7 +799,7 @@ describe("Access Control", () => {
             result: "test result",
           },
           actorId: userAId,
-          actorType: "member",
+          actorType: "user",
         })
       })
 
@@ -855,7 +857,7 @@ describe("Access Control", () => {
             status: "dispatched",
           },
           actorId: userAId,
-          actorType: "member",
+          actorType: "user",
         })
 
         await StreamEventRepository.insert(client, {
@@ -867,7 +869,7 @@ describe("Access Control", () => {
             error: "Something went wrong",
           },
           actorId: userAId,
-          actorType: "member",
+          actorType: "user",
         })
       })
 

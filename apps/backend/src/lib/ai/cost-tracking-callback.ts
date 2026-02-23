@@ -36,8 +36,8 @@ export interface CostTrackingCallbackParams {
   costRecorder: CostRecorder
   /** Workspace ID - required for cost attribution */
   workspaceId: string
-  /** Optional member ID - the member who initiated this action (for user-origin calls) */
-  memberId?: string
+  /** Optional user ID - the user who initiated this action (for user-origin calls) */
+  userId?: string
   /** Optional session ID for grouping related calls */
   sessionId?: string
   /** Function ID for categorizing the operation */
@@ -86,7 +86,7 @@ export class CostTrackingCallback extends BaseCallbackHandler {
     try {
       await this.params.costRecorder.recordUsage({
         workspaceId: this.params.workspaceId,
-        memberId: this.params.memberId,
+        userId: this.params.userId,
         sessionId: this.params.sessionId,
         functionId: this.params.functionId,
         model,
@@ -151,7 +151,7 @@ export function getCostTrackingCallbacks(
     new CostTrackingCallback({
       costRecorder: params.costRecorder,
       workspaceId: params.workspaceId,
-      memberId: params.memberId,
+      userId: params.userId,
       sessionId: params.sessionId,
       functionId: params.functionId,
       origin: params.origin ?? "system",

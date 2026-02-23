@@ -19,7 +19,7 @@ interface SendInvitationsParams {
   workspaceId: string
   invitedBy: string // user_id
   emails: string[]
-  role: "admin" | "member"
+  role: "admin" | "user"
 }
 
 interface SendResult {

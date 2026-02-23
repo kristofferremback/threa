@@ -25,7 +25,7 @@ interface ReactionPayload {
   streamId: string
   messageId: string
   emoji: string
-  memberId: string
+  userId: string
 }
 
 interface StreamCreatedPayload {
@@ -153,7 +153,7 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
             if (stream.id !== streamId) return stream
             const newPreview: LastMessagePreview = {
               authorId: newEvent.actorId ?? "",
-              authorType: newEvent.actorType ?? "member",
+              authorType: newEvent.actorType ?? "user",
               content: newPayload.contentJson as string, // ProseMirror JSONContent stored as string
               createdAt: newEvent.createdAt,
             }
@@ -244,7 +244,7 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
             const eventPayload = e.payload as { messageId: string; reactions?: Record<string, string[]> }
             if (eventPayload.messageId !== payload.messageId) return e
             const reactions = { ...(eventPayload.reactions ?? {}) }
-            reactions[payload.emoji] = [...(reactions[payload.emoji] || []), payload.memberId]
+            reactions[payload.emoji] = [...(reactions[payload.emoji] || []), payload.userId]
             return { ...e, payload: { ...eventPayload, reactions } }
           }),
         }
@@ -265,7 +265,7 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
             if (eventPayload.messageId !== payload.messageId) return e
             const reactions = { ...(eventPayload.reactions ?? {}) }
             if (reactions[payload.emoji]) {
-              reactions[payload.emoji] = reactions[payload.emoji].filter((id) => id !== payload.memberId)
+              reactions[payload.emoji] = reactions[payload.emoji].filter((id) => id !== payload.userId)
               if (reactions[payload.emoji].length === 0) {
                 delete reactions[payload.emoji]
               }

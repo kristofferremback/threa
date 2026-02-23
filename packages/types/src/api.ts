@@ -74,7 +74,7 @@ export interface CreateMessageInputJson {
 }
 
 export interface CreateDmMessageInputJson {
-  dmMemberId: string
+  dmUserId: string
   /** ProseMirror JSON content from TipTap editor */
   contentJson: JSONContent
   /** Optional pre-computed markdown (backend derives if missing) */
@@ -93,7 +93,7 @@ export interface CreateMessageInputMarkdown {
 }
 
 export interface CreateDmMessageInputMarkdown {
-  dmMemberId: string
+  dmUserId: string
   /** Markdown text content */
   content: string
   attachmentIds?: string[]
@@ -175,7 +175,7 @@ export interface WorkspaceBootstrap {
 
 export interface SendInvitationsInput {
   emails: string[]
-  role?: "admin" | "member"
+  role?: "admin" | "user"
 }
 
 export type InvitationSkipReason = "already_user" | "pending_invitation"

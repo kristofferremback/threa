@@ -6,7 +6,7 @@ export interface WorkspaceToolDeps {
   db: Pool
   workspaceId: string
   accessibleStreamIds: string[]
-  invokingMemberId: string
+  invokingUserId: string
   searchService: SearchService
   storage: StorageProvider
 }

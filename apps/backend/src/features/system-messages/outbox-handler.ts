@@ -18,7 +18,7 @@ const DEFAULT_CONFIG = {
 }
 
 /**
- * Converts outbox events into system messages posted to each member's system stream.
+ * Converts outbox events into system messages posted to each user's system stream.
  * Listens for events like budget:alert and formats them as messages.
  */
 export class SystemMessageOutboxHandler implements OutboxHandler {

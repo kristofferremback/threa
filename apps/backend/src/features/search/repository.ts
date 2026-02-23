@@ -6,8 +6,8 @@ import type { AgentAccessSpec } from "../agents"
 
 export interface GetAccessibleStreamsParams {
   workspaceId: string
-  memberId: string
-  memberIds?: string[] // Can mix member_xxx and persona_xxx - ID prefix distinguishes
+  userId: string
+  userIds?: string[] // Can mix user IDs and persona IDs; prefix distinguishes
   streamTypes?: StreamType[]
   archiveStatus?: ArchiveStatus[] // ["active"] = active only, ["archived"] = archived only, ["active", "archived"] = all
 }
@@ -77,17 +77,17 @@ export interface HybridSearchParams {
 
 export const SearchRepository = {
   /**
-   * Get stream IDs that a user can access, optionally filtered by required members.
-   * Combines access control + member filtering in ONE query.
+   * Get stream IDs that a user can access, optionally filtered by required participants.
+   * Combines access control + participant filtering in ONE query.
    *
    * Access rules:
-   * - User is a member of the stream, OR
+   * - User is in the stream, OR
    * - Stream is public, OR
    * - For threads: user can access the root stream (member OR root is public)
    *
-   * Member filtering (AND logic):
-   * - If memberIds provided, stream must have ALL specified members
-   * - Members can be users (stream_members) or personas (stream_persona_participants)
+   * Participant filtering (AND logic):
+   * - If userIds provided, stream must have ALL specified participants
+   * - Participants can be users (stream_members) or personas (stream_persona_participants)
    *
    * Archive status:
    * - ["active"] (default) → only non-archived streams
@@ -95,20 +95,20 @@ export const SearchRepository = {
    * - ["active", "archived"] → all streams
    */
   async getAccessibleStreamsWithMembers(db: Querier, params: GetAccessibleStreamsParams): Promise<string[]> {
-    const { workspaceId, memberId, memberIds, streamTypes, archiveStatus } = params
-    const hasMemberFilter = memberIds && memberIds.length > 0
+    const { workspaceId, userId, userIds, streamTypes, archiveStatus } = params
+    const hasParticipantFilter = userIds && userIds.length > 0
     const hasTypeFilter = streamTypes && streamTypes.length > 0
 
     const { includeActive, includeArchived, filterAll } = parseArchiveStatusFilter(archiveStatus)
 
-    // If no member filter, simpler query
-    if (!hasMemberFilter) {
+    // If no participant filter, simpler query
+    if (!hasParticipantFilter) {
       const result = await db.query<{ id: string }>(sql`
         SELECT DISTINCT s.id
         FROM streams s
-        LEFT JOIN stream_members sm ON s.id = sm.stream_id AND sm.member_id = ${memberId}
+        LEFT JOIN stream_members sm ON s.id = sm.stream_id AND sm.member_id = ${userId}
         LEFT JOIN streams root ON s.root_stream_id = root.id
-        LEFT JOIN stream_members root_sm ON root.id = root_sm.stream_id AND root_sm.member_id = ${memberId}
+        LEFT JOIN stream_members root_sm ON root.id = root_sm.stream_id AND root_sm.member_id = ${userId}
         WHERE s.workspace_id = ${workspaceId}
           AND (
             sm.member_id IS NOT NULL
@@ -121,14 +121,14 @@ export const SearchRepository = {
       return result.rows.map((r) => r.id)
     }
 
-    // With member filter: combined query using UNION for members + personas
+    // With participant filter: combined query using UNION for users + personas
     const result = await db.query<{ id: string }>(sql`
       WITH accessible AS (
         SELECT DISTINCT s.id
         FROM streams s
-        LEFT JOIN stream_members sm ON s.id = sm.stream_id AND sm.member_id = ${memberId}
+        LEFT JOIN stream_members sm ON s.id = sm.stream_id AND sm.member_id = ${userId}
         LEFT JOIN streams root ON s.root_stream_id = root.id
-        LEFT JOIN stream_members root_sm ON root.id = root_sm.stream_id AND root_sm.member_id = ${memberId}
+        LEFT JOIN stream_members root_sm ON root.id = root_sm.stream_id AND root_sm.member_id = ${userId}
         WHERE s.workspace_id = ${workspaceId}
           AND (
             sm.member_id IS NOT NULL
@@ -143,14 +143,14 @@ export const SearchRepository = {
         FROM (
           SELECT stream_id, member_id
           FROM stream_members
-          WHERE member_id = ANY(${memberIds})
+          WHERE member_id = ANY(${userIds})
           UNION ALL
           SELECT stream_id, persona_id AS member_id
           FROM stream_persona_participants
-          WHERE persona_id = ANY(${memberIds})
+          WHERE persona_id = ANY(${userIds})
         ) t
         GROUP BY stream_id
-        HAVING COUNT(DISTINCT member_id) = ${memberIds.length}
+        HAVING COUNT(DISTINCT member_id) = ${userIds.length}
       )
       SELECT a.id
       FROM accessible a
@@ -414,10 +414,10 @@ export const SearchRepository = {
     options?: { streamTypes?: StreamType[]; archiveStatus?: ArchiveStatus[] }
   ): Promise<string[]> {
     switch (spec.type) {
-      case "member_full_access":
+      case "user_full_access":
         return this.getAccessibleStreamsWithMembers(db, {
           workspaceId,
-          memberId: spec.memberId,
+          userId: spec.userId,
           streamTypes: options?.streamTypes,
           archiveStatus: options?.archiveStatus,
         })
@@ -436,13 +436,13 @@ export const SearchRepository = {
         return [...new Set([...publicIds, ...streamTreeIds])]
       }
 
-      case "member_union": {
+      case "user_union": {
         // Get accessible streams for each member and union them
         const allResults = await Promise.all(
-          spec.memberIds.map((memberId) =>
+          spec.userIds.map((userId) =>
             this.getAccessibleStreamsWithMembers(db, {
               workspaceId,
-              memberId,
+              userId,
               streamTypes: options?.streamTypes,
               archiveStatus: options?.archiveStatus,
             })

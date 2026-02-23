@@ -94,14 +94,17 @@ export class ActivityService {
 
       const streamContext = resolveStreamContext(stream, rootStream)
       const contentPreview = contentMarkdown.slice(0, 200)
+      const resolvedUsers = resolved.map((row) => ({ userId: row.memberId, effectiveLevel: row.effectiveLevel }))
 
-      const eligibleUserIds = resolved
-        .filter((r) => {
-          if (r.memberId === actorId) return false
-          if (excludeUserIds.has(r.memberId)) return false
-          return r.effectiveLevel === NotificationLevels.ACTIVITY || r.effectiveLevel === NotificationLevels.EVERYTHING
+      const eligibleUserIds = resolvedUsers
+        .filter((row) => {
+          if (row.userId === actorId) return false
+          if (excludeUserIds.has(row.userId)) return false
+          return (
+            row.effectiveLevel === NotificationLevels.ACTIVITY || row.effectiveLevel === NotificationLevels.EVERYTHING
+          )
         })
-        .map((r) => r.memberId)
+        .map((row) => row.userId)
 
       return ActivityRepository.insertBatch(client, {
         workspaceId,
@@ -124,16 +127,16 @@ export class ActivityService {
     client: PoolClient,
     stream: Stream,
     rootStream: Stream | null,
-    memberIds: string[]
+    userIds: string[]
   ): Promise<Set<string>> {
     if (stream.rootStreamId) {
       if (!rootStream) return new Set()
-      if (rootStream.visibility === Visibilities.PUBLIC) return new Set(memberIds)
-      return StreamMemberRepository.filterMemberIds(client, rootStream.id, memberIds)
+      if (rootStream.visibility === Visibilities.PUBLIC) return new Set(userIds)
+      return StreamMemberRepository.filterMemberIds(client, rootStream.id, userIds)
     }
 
-    if (stream.visibility === Visibilities.PUBLIC) return new Set(memberIds)
-    return StreamMemberRepository.filterMemberIds(client, stream.id, memberIds)
+    if (stream.visibility === Visibilities.PUBLIC) return new Set(userIds)
+    return StreamMemberRepository.filterMemberIds(client, stream.id, userIds)
   }
 
   async listFeed(

@@ -19,7 +19,7 @@ export function formatMessagesWithTemporal(messages: MessageWithAttachments[], c
   if (!temporal) {
     // No temporal context - return messages with original content + attachment context
     return messages.map((m) => ({
-      role: m.authorType === AuthorTypes.MEMBER ? ("user" as const) : ("assistant" as const),
+      role: m.authorType === AuthorTypes.USER ? ("user" as const) : ("assistant" as const),
       content: formatMessageContent(m),
     }))
   }
@@ -36,9 +36,9 @@ export function formatMessagesWithTemporal(messages: MessageWithAttachments[], c
   let currentDateKey: string | null = null
 
   for (const msg of messages) {
-    const role = msg.authorType === AuthorTypes.MEMBER ? ("user" as const) : ("assistant" as const)
+    const role = msg.authorType === AuthorTypes.USER ? ("user" as const) : ("assistant" as const)
 
-    if (msg.authorType === AuthorTypes.MEMBER) {
+    if (msg.authorType === AuthorTypes.USER) {
       // Check for date boundary - only on user messages to avoid model mimicking the format
       const msgDateKey = getDateKey(msg.createdAt, temporal.timezone)
       let dateBoundaryPrefix = ""

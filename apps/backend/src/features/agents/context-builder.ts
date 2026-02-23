@@ -250,11 +250,11 @@ async function buildChannelContext(db: Querier, stream: Stream, temporal?: Tempo
     StreamMemberRepository.list(db, { streamId: stream.id }),
   ])
 
-  const memberIds = members.map((m) => m.memberId)
+  const userIds = members.map((m) => m.memberId)
   const { participants, participantTimezones } = await resolveParticipantsWithTimezones(
     db,
     stream.workspaceId,
-    memberIds,
+    userIds,
     temporal !== undefined
   )
 
@@ -281,11 +281,11 @@ async function buildDmContext(db: Querier, stream: Stream, temporal?: TemporalCo
     StreamMemberRepository.list(db, { streamId: stream.id }),
   ])
 
-  const memberIds = members.map((m) => m.memberId)
+  const userIds = members.map((m) => m.memberId)
   const { participants, participantTimezones } = await resolveParticipantsWithTimezones(
     db,
     stream.workspaceId,
-    memberIds,
+    userIds,
     temporal !== undefined
   )
 
@@ -392,15 +392,15 @@ async function buildThreadPath(db: Querier, stream: Stream): Promise<ThreadPathE
 async function resolveParticipantsWithTimezones(
   db: Querier,
   workspaceId: string,
-  memberIds: string[],
+  userIds: string[],
   includeTimezones: boolean
 ): Promise<{ participants: Participant[]; participantTimezones?: ParticipantTemporal[] }> {
-  if (memberIds.length === 0) {
+  if (userIds.length === 0) {
     return { participants: [], participantTimezones: includeTimezones ? [] : undefined }
   }
 
-  // Batch fetch all members in one query
-  const members = await UserRepository.findByIds(db, workspaceId, memberIds)
+  // Batch fetch all users in one query
+  const members = await UserRepository.findByIds(db, workspaceId, userIds)
 
   const participants: Participant[] = members.map((member) => ({
     id: member.id,
@@ -433,7 +433,7 @@ async function resolveAuthorName(db: Querier, authorId: string, authorType: Auth
     return "Threa"
   }
 
-  if (authorType === "member") {
+  if (authorType === "user") {
     const member = await UserRepository.findById(db, authorId)
     return member?.name ?? "Unknown"
   }
@@ -517,7 +517,7 @@ export async function enrichMessagesWithAttachments(
   // Find indices of last N user messages before trigger
   const userMessageIndicesBeforeTrigger: number[] = []
   for (let i = triggerIdx - 1; i >= 0 && userMessageIndicesBeforeTrigger.length < FULL_EXTRACTION_USER_MESSAGES; i--) {
-    if (messages[i].authorType === AuthorTypes.MEMBER) {
+    if (messages[i].authorType === AuthorTypes.USER) {
       userMessageIndicesBeforeTrigger.push(i)
     }
   }

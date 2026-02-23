@@ -81,25 +81,23 @@ export type CreateStreamParams = z.infer<typeof createStreamParamsSchema>
 
 interface FindOrCreateDmParams {
   workspaceId: string
-  memberOneId: string
-  memberTwoId: string
+  userOneId: string
+  userTwoId: string
 }
 
 interface ResolveWritableMessageStreamParams {
   workspaceId: string
-  memberId: string
-  target: { streamId: string } | { dmMemberId: string }
+  userId: string
+  target: { streamId: string } | { dmUserId: string }
 }
 
-function normalizeDmMemberPair(memberOneId: string, memberTwoId: string): { memberAId: string; memberBId: string } {
-  return memberOneId < memberTwoId
-    ? { memberAId: memberOneId, memberBId: memberTwoId }
-    : { memberAId: memberTwoId, memberBId: memberOneId }
+function normalizeDmUserPair(userOneId: string, userTwoId: string): { userAId: string; userBId: string } {
+  return userOneId < userTwoId ? { userAId: userOneId, userBId: userTwoId } : { userAId: userTwoId, userBId: userOneId }
 }
 
-function buildDmUniquenessKey(memberOneId: string, memberTwoId: string): string {
-  const { memberAId, memberBId } = normalizeDmMemberPair(memberOneId, memberTwoId)
-  return `${DM_UNIQUENESS_KEY_PREFIX}:${memberAId}:${memberBId}`
+function buildDmUniquenessKey(userOneId: string, userTwoId: string): string {
+  const { userAId, userBId } = normalizeDmUserPair(userOneId, userTwoId)
+  return `${DM_UNIQUENESS_KEY_PREFIX}:${userAId}:${userBId}`
 }
 
 export class StreamService {
@@ -109,13 +107,13 @@ export class StreamService {
     return StreamRepository.findById(this.pool, id)
   }
 
-  async validateStreamAccess(streamId: string, workspaceId: string, memberId: string): Promise<Stream> {
-    const stream = await this.checkAccess(streamId, workspaceId, memberId)
+  async validateStreamAccess(streamId: string, workspaceId: string, userId: string): Promise<Stream> {
+    const stream = await this.checkAccess(streamId, workspaceId, userId)
     if (!stream) throw new StreamNotFoundError()
     return stream
   }
 
-  private async checkAccess(streamId: string, workspaceId: string, memberId: string): Promise<Stream | null> {
+  private async checkAccess(streamId: string, workspaceId: string, userId: string): Promise<Stream | null> {
     return withClient(this.pool, async (client) => {
       const stream = await StreamRepository.findById(client, streamId)
       if (!stream || stream.workspaceId !== workspaceId) return null
@@ -125,7 +123,7 @@ export class StreamService {
         if (!rootStream) return null
 
         if (rootStream.visibility !== Visibilities.PUBLIC) {
-          const isRootMember = await StreamMemberRepository.isMember(client, stream.rootStreamId, memberId)
+          const isRootMember = await StreamMemberRepository.isMember(client, stream.rootStreamId, userId)
           if (!isRootMember) return null
         }
 
@@ -133,7 +131,7 @@ export class StreamService {
       }
 
       if (stream.visibility !== Visibilities.PUBLIC) {
-        const isMember = await StreamMemberRepository.isMember(client, streamId, memberId)
+        const isMember = await StreamMemberRepository.isMember(client, streamId, userId)
         if (!isMember) return null
       }
 
@@ -141,9 +139,9 @@ export class StreamService {
     })
   }
 
-  async getScratchpadsByMember(workspaceId: string, memberId: string): Promise<Stream[]> {
+  async getScratchpadsByUser(workspaceId: string, userId: string): Promise<Stream[]> {
     return withClient(this.pool, async (client) => {
-      const memberships = await StreamMemberRepository.list(client, { memberId })
+      const memberships = await StreamMemberRepository.list(client, { memberId: userId })
       const streamIds = memberships.map((m) => m.streamId)
 
       if (streamIds.length === 0) return []
@@ -161,11 +159,11 @@ export class StreamService {
 
   async list(
     workspaceId: string,
-    memberId: string,
+    userId: string,
     filters?: { types?: StreamType[]; archiveStatus?: ("active" | "archived")[] }
   ): Promise<Stream[]> {
     return withClient(this.pool, async (client) => {
-      const memberships = await StreamMemberRepository.list(client, { memberId })
+      const memberships = await StreamMemberRepository.list(client, { memberId: userId })
       const memberStreamIds = memberships.map((m) => m.streamId)
 
       return StreamRepository.list(client, workspaceId, {
@@ -182,11 +180,11 @@ export class StreamService {
    */
   async listWithPreviews(
     workspaceId: string,
-    memberId: string,
+    userId: string,
     filters?: { types?: StreamType[]; archiveStatus?: ("active" | "archived")[] }
   ): Promise<StreamWithPreview[]> {
     return withClient(this.pool, async (client) => {
-      const memberships = await StreamMemberRepository.list(client, { memberId })
+      const memberships = await StreamMemberRepository.list(client, { memberId: userId })
       const memberStreamIds = memberships.map((m) => m.streamId)
 
       return StreamRepository.listWithPreviews(client, workspaceId, {
@@ -205,7 +203,7 @@ export class StreamService {
   async resolveDmDisplayNames(
     streams: StreamWithPreview[],
     workspaceUsers: { id: string; name: string }[],
-    viewingMemberId: string
+    viewingUserId: string
   ): Promise<StreamWithPreview[]> {
     const dmStreams = streams.filter((s) => s.type === "dm")
     if (dmStreams.length === 0) return streams
@@ -227,7 +225,7 @@ export class StreamService {
     const dmNameMap = new Map<string, string>()
     for (const dm of dmStreams) {
       const participants = membersByStream.get(dm.id) ?? []
-      dmNameMap.set(dm.id, formatParticipantNames(participants, viewingMemberId))
+      dmNameMap.set(dm.id, formatParticipantNames(participants, viewingUserId))
     }
 
     return streams.map((s) => (dmNameMap.has(s.id) ? { ...s, displayName: dmNameMap.get(s.id)! } : s))
@@ -238,11 +236,11 @@ export class StreamService {
   }
 
   async resolveWritableMessageStream(params: ResolveWritableMessageStreamParams): Promise<Stream> {
-    if ("dmMemberId" in params.target) {
+    if ("dmUserId" in params.target) {
       const stream = await this.findOrCreateDm({
         workspaceId: params.workspaceId,
-        memberOneId: params.memberId,
-        memberTwoId: params.target.dmMemberId,
+        userOneId: params.userId,
+        userTwoId: params.target.dmUserId,
       })
 
       if (stream.workspaceId !== params.workspaceId) {
@@ -266,7 +264,7 @@ export class StreamService {
       throw new HttpError("Cannot send messages to an archived stream", { status: 403 })
     }
 
-    const isMember = await this.isMember(stream.id, params.memberId)
+    const isMember = await this.isMember(stream.id, params.userId)
     if (!isMember) {
       throw new HttpError("Not a member of this stream", { status: 403 })
     }
@@ -275,19 +273,19 @@ export class StreamService {
   }
 
   async findOrCreateDm(params: FindOrCreateDmParams): Promise<Stream> {
-    if (params.memberOneId === params.memberTwoId) {
+    if (params.userOneId === params.userTwoId) {
       throw new HttpError("Cannot create a DM with yourself", { status: 400, code: "DM_SELF_NOT_ALLOWED" })
     }
 
-    const { memberAId, memberBId } = normalizeDmMemberPair(params.memberOneId, params.memberTwoId)
-    const uniquenessKey = buildDmUniquenessKey(memberAId, memberBId)
+    const { userAId, userBId } = normalizeDmUserPair(params.userOneId, params.userTwoId)
+    const uniquenessKey = buildDmUniquenessKey(userAId, userBId)
 
     return withTransaction(this.pool, async (client) => {
-      const members = await UserRepository.findByIds(client, params.workspaceId, [memberAId, memberBId])
+      const users = await UserRepository.findByIds(client, params.workspaceId, [userAId, userBId])
       const workspaceUserIds = new Set(
-        members.filter((member) => member.workspaceId === params.workspaceId).map((member) => member.id)
+        users.filter((user) => user.workspaceId === params.workspaceId).map((user) => user.id)
       )
-      if (!workspaceUserIds.has(memberAId) || !workspaceUserIds.has(memberBId)) {
+      if (!workspaceUserIds.has(userAId) || !workspaceUserIds.has(userBId)) {
         throw new HttpError("Both users must belong to this workspace", {
           status: 404,
           code: "MEMBER_NOT_FOUND",
@@ -300,7 +298,7 @@ export class StreamService {
         type: StreamTypes.DM,
         visibility: Visibilities.PRIVATE,
         uniquenessKey,
-        createdBy: params.memberOneId,
+        createdBy: params.userOneId,
       })
 
       if (stream.type !== StreamTypes.DM) {
@@ -308,12 +306,12 @@ export class StreamService {
       }
 
       if (created) {
-        await StreamMemberRepository.insertMany(client, stream.id, [memberAId, memberBId])
+        await StreamMemberRepository.insertMany(client, stream.id, [userAId, userBId])
         await OutboxRepository.insert(client, "stream:created", {
           workspaceId: params.workspaceId,
           streamId: stream.id,
           stream,
-          dmMemberIds: [memberAId, memberBId],
+          dmUserIds: [userAId, userBId],
         })
       }
 
@@ -447,7 +445,7 @@ export class StreamService {
             eventType: "member_added" as const,
             payload: { addedBy: params.createdBy },
             actorId: memberId,
-            actorType: "member" as const,
+            actorType: "user" as const,
           }))
           const events = await StreamEventRepository.insertMany(client, eventParams)
 
@@ -520,7 +518,7 @@ export class StreamService {
       }
 
       // Add parent message author as member so they can participate in the thread
-      if (parentMessage.authorType === "member" && parentMessage.authorId !== params.createdBy) {
+      if (parentMessage.authorType === "user" && parentMessage.authorId !== params.createdBy) {
         const authorIsMember = await StreamMemberRepository.isMember(client, stream.id, parentMessage.authorId)
         if (!authorIsMember) {
           await StreamMemberRepository.insert(client, stream.id, parentMessage.authorId)
@@ -578,7 +576,7 @@ export class StreamService {
             archivedAt: stream.archivedAt,
           },
           actorId: archivedBy,
-          actorType: "member",
+          actorType: "user",
         })
 
         // Notify real-time subscribers
@@ -604,7 +602,7 @@ export class StreamService {
           eventType: "stream_unarchived",
           payload: {},
           actorId: unarchivedBy,
-          actorType: "member",
+          actorType: "user",
         })
 
         // Notify real-time subscribers
@@ -697,7 +695,7 @@ export class StreamService {
         eventType: "member_joined",
         payload: {},
         actorId: memberId,
-        actorType: "member",
+        actorType: "user",
       })
 
       await OutboxRepository.insert(client, "stream:member_joined", {
@@ -727,7 +725,7 @@ export class StreamService {
       eventType: "member_added",
       payload: { addedBy: actorId },
       actorId: memberId,
-      actorType: "member",
+      actorType: "user",
     })
 
     // Set read cursor *after* inserting the member_added event so it's not shown as unread

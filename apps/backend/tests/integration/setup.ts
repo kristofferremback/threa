@@ -6,7 +6,7 @@
 import { Pool, type PoolClient } from "pg"
 import { createDatabasePool } from "../../src/db"
 import { createMigrator } from "../../src/db/migrations"
-import { memberId } from "../../src/lib/id"
+import { userId } from "../../src/lib/id"
 import type { Querier } from "../../src/db"
 import { UserRepository } from "../../src/features/workspaces"
 
@@ -105,16 +105,16 @@ export function testMessageContent(content: string) {
 }
 
 /**
- * Adds a workspace member with auto-generated id/slug for test convenience.
+ * Adds a workspace user with auto-generated id/slug for test convenience.
  * Wraps UserRepository.insert with sensible defaults.
  */
 export async function addTestMember(
   db: Querier,
   workspaceId: string,
   workosUserId: string,
-  role: "owner" | "admin" | "member" = "member"
+  role: "owner" | "admin" | "user" = "user"
 ) {
-  const id = memberId()
+  const id = userId()
   const normalizedWorkosUserId = workosUserId.toLowerCase()
   return UserRepository.insert(db, {
     id,

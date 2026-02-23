@@ -55,7 +55,7 @@ export function StreamSettingsDialog({ workspaceId }: StreamSettingsDialogProps)
     return wsBootstrap.streamMemberships.find((m) => m.streamId === streamId) ?? null
   }, [wsBootstrap, streamId])
 
-  const currentMemberId = currentMembership?.memberId ?? null
+  const currentUserId = currentMembership?.memberId ?? null
   const currentNotificationLevel: NotificationLevel | null = currentMembership?.notificationLevel ?? null
 
   // Determine available tabs based on stream type
@@ -89,7 +89,7 @@ export function StreamSettingsDialog({ workspaceId }: StreamSettingsDialogProps)
           <DialogTitle>{streamName} Settings</DialogTitle>
         </DialogHeader>
 
-        {resolvedStream && streamId && currentMemberId ? (
+        {resolvedStream && streamId && currentUserId ? (
           <Tabs value={effectiveTab} onValueChange={setTab} className="flex-1 flex flex-col overflow-hidden">
             <TabsList
               className={cn(
@@ -111,7 +111,7 @@ export function StreamSettingsDialog({ workspaceId }: StreamSettingsDialogProps)
                 <GeneralTab
                   workspaceId={workspaceId}
                   stream={resolvedStream}
-                  currentMemberId={currentMemberId}
+                  currentUserId={currentUserId}
                   notificationLevel={currentNotificationLevel}
                 />
               </TabsContent>
@@ -119,7 +119,7 @@ export function StreamSettingsDialog({ workspaceId }: StreamSettingsDialogProps)
                 <CompanionTab stream={resolvedStream} />
               </TabsContent>
               <TabsContent value="members" className="mt-0">
-                <MembersTab workspaceId={workspaceId} streamId={streamId} currentMemberId={currentMemberId} />
+                <MembersTab workspaceId={workspaceId} streamId={streamId} currentUserId={currentUserId} />
               </TabsContent>
             </div>
           </Tabs>

@@ -17,7 +17,7 @@ describe("RBAC Enforcement", () => {
     workspaceId = workspace.id
 
     await loginAs(memberClient, "rbac-member@example.com", "RBAC Member")
-    await joinWorkspace(memberClient, workspaceId, "member")
+    await joinWorkspace(memberClient, workspaceId, "user")
 
     await loginAs(adminClient, "rbac-admin@example.com", "RBAC Admin")
     await joinWorkspace(adminClient, workspaceId, "admin")

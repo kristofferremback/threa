@@ -27,10 +27,11 @@ function isStreamId(value: string): boolean {
 }
 
 /**
- * Check if a string looks like a member ID (starts with member_ prefix).
+ * Check if a string looks like a user ID.
+ * Supports current `usr_` IDs and legacy `member_` IDs for compatibility.
  */
-function isMemberId(value: string): boolean {
-  return value.startsWith("member_")
+function isUserId(value: string): boolean {
+  return value.startsWith("usr_") || value.startsWith("member_")
 }
 
 /**
@@ -42,10 +43,10 @@ function normalizeStreamRef(value: string): string {
 }
 
 /**
- * Strip common prefixes from member references.
+ * Strip common prefixes from user references.
  * "@kristoffer-remback" -> "kristoffer-remback"
  */
-function normalizeMemberRef(value: string): string {
+function normalizeUserRef(value: string): string {
   return value.replace(/^@/, "").trim()
 }
 
@@ -105,20 +106,20 @@ export async function resolveStreamIdentifier(
 }
 
 /**
- * Resolve a member identifier to their ID.
+ * Resolve a user identifier to their ID.
  *
  * @param db - Database client
  * @param workspaceId - Workspace to scope the lookup to
- * @param identifier - Member ID, slug, or @slug
- * @returns The resolved member ID or an error reason
+ * @param identifier - User ID, slug, or @slug
+ * @returns The resolved user ID or an error reason
  *
  * @example
- * // All of these should resolve to the same member:
- * resolveMemberIdentifier(db, workspaceId, "member_01KEM8751NC7E01NTKF00A47BM")
- * resolveMemberIdentifier(db, workspaceId, "kristoffer-remback")
- * resolveMemberIdentifier(db, workspaceId, "@kristoffer-remback")
+ * // All of these should resolve to the same user:
+ * resolveUserIdentifier(db, workspaceId, "usr_01KEM8751NC7E01NTKF00A47BM")
+ * resolveUserIdentifier(db, workspaceId, "kristoffer-remback")
+ * resolveUserIdentifier(db, workspaceId, "@kristoffer-remback")
  */
-export async function resolveMemberIdentifier(
+export async function resolveUserIdentifier(
   db: Querier,
   workspaceId: string,
   identifier: string
@@ -129,25 +130,25 @@ export async function resolveMemberIdentifier(
     return { resolved: false, reason: "Empty identifier" }
   }
 
-  // If it looks like a member ID, validate it exists in this workspace
-  if (isMemberId(trimmed)) {
-    const member = await UserRepository.findById(db, trimmed)
-    if (!member || member.workspaceId !== workspaceId) {
-      return { resolved: false, reason: `No member found with ID: ${trimmed}` }
+  // If it looks like a user ID, validate it exists in this workspace
+  if (isUserId(trimmed)) {
+    const user = await UserRepository.findById(db, trimmed)
+    if (!user || user.workspaceId !== workspaceId) {
+      return { resolved: false, reason: `No user found with ID: ${trimmed}` }
     }
     return { resolved: true, id: trimmed }
   }
 
   // Otherwise, treat as slug (strip @ prefix if present)
-  const slug = normalizeMemberRef(trimmed)
+  const slug = normalizeUserRef(trimmed)
 
-  const member = await UserRepository.findBySlug(db, workspaceId, slug)
+  const user = await UserRepository.findBySlug(db, workspaceId, slug)
 
-  if (!member) {
-    return { resolved: false, reason: `No member found with slug: ${slug}` }
+  if (!user) {
+    return { resolved: false, reason: `No user found with slug: ${slug}` }
   }
 
-  logger.debug({ identifier, resolvedId: member.id, slug }, "Resolved member identifier")
+  logger.debug({ identifier, resolvedId: user.id, slug }, "Resolved user identifier")
 
-  return { resolved: true, id: member.id }
+  return { resolved: true, id: user.id }
 }

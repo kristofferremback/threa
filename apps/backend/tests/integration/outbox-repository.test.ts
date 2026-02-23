@@ -36,7 +36,7 @@ describe("OutboxRepository", () => {
         eventType: "message_created" as const,
         payload: { messageId: `msg_test_${Date.now()}`, content: "test" },
         actorId: "usr_test",
-        actorType: "member" as const,
+        actorType: "user" as const,
         createdAt: new Date(),
       },
     })
@@ -126,7 +126,7 @@ describe("OutboxRepository", () => {
         eventType: "message_created" as const,
         payload: { messageId: `msg_test_${Date.now()}`, content: "test" },
         actorId: "usr_test",
-        actorType: "member" as const,
+        actorType: "user" as const,
         createdAt: new Date(),
       },
     })

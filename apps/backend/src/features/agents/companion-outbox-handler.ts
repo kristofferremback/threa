@@ -112,7 +112,7 @@ export class CompanionHandler implements OutboxHandler {
           const { streamId, event: messageEvent } = payload
 
           // Ignore persona messages (avoid infinite loops)
-          if (messageEvent.actorType !== AuthorTypes.MEMBER) {
+          if (messageEvent.actorType !== AuthorTypes.USER) {
             seen.push(event.id)
             continue
           }

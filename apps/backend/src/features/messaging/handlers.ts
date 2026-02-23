@@ -32,9 +32,9 @@ const createMessageMarkdownToStreamSchema = z.object({
   attachmentIds: z.array(z.string()).optional(),
 })
 
-// Schema for JSON input to a DM target member (lazy stream creation on first message)
+// Schema for JSON input to a DM target user (lazy stream creation on first message)
 const createMessageJsonToDmSchema = z.object({
-  dmMemberId: z.string().min(1, "dmMemberId is required"),
+  dmUserId: z.string().min(1, "dmUserId is required"),
   contentJson: z.object({
     type: z.literal("doc"),
     content: z.array(z.any()),
@@ -43,9 +43,9 @@ const createMessageJsonToDmSchema = z.object({
   attachmentIds: z.array(z.string()).optional(),
 })
 
-// Schema for markdown input to a DM target member (lazy stream creation on first message)
+// Schema for markdown input to a DM target user (lazy stream creation on first message)
 const createMessageMarkdownToDmSchema = z.object({
-  dmMemberId: z.string().min(1, "dmMemberId is required"),
+  dmUserId: z.string().min(1, "dmUserId is required"),
   content: z.string().min(1, "content is required"),
   attachmentIds: z.array(z.string()).optional(),
 })
@@ -140,7 +140,7 @@ interface Dependencies {
 export function createMessageHandlers({ pool, eventService, streamService, commandRegistry }: Dependencies) {
   return {
     async create(req: Request, res: Response) {
-      const memberId = req.user!.id
+      const userId = req.user!.id
       const workspaceId = req.workspaceId!
 
       const result = createMessageSchema.safeParse(req.body)
@@ -156,8 +156,8 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
 
       const stream = await streamService.resolveWritableMessageStream({
         workspaceId,
-        memberId,
-        target: "dmMemberId" in data ? { dmMemberId: data.dmMemberId } : { streamId: data.streamId },
+        userId: userId,
+        target: "dmUserId" in data ? { dmUserId: data.dmUserId } : { streamId: data.streamId },
       })
       const streamId = stream.id
 
@@ -181,15 +181,15 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
               args: detectedCommand.args,
               status: "dispatched",
             } satisfies CommandDispatchedPayload,
-            actorId: memberId,
-            actorType: "member",
+            actorId: userId,
+            actorType: "user",
           })
 
           await OutboxRepository.insert(client, "command:dispatched", {
             workspaceId,
             streamId,
             event: serializeBigInt(evt),
-            authorId: memberId,
+            authorId: userId,
           })
 
           return evt
@@ -213,8 +213,8 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
       const message = await eventService.createMessage({
         workspaceId,
         streamId,
-        authorId: memberId,
-        authorType: "member",
+        authorId: userId,
+        authorType: "user",
         contentJson,
         contentMarkdown,
         attachmentIds,
@@ -224,7 +224,7 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
     },
 
     async update(req: Request, res: Response) {
-      const memberId = req.user!.id
+      const userId = req.user!.id
       const workspaceId = req.workspaceId!
       const { messageId } = req.params
 
@@ -243,7 +243,7 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
 
       const [stream, isMember] = await Promise.all([
         streamService.getStreamById(existing.streamId),
-        streamService.isMember(existing.streamId, memberId),
+        streamService.isMember(existing.streamId, userId),
       ])
 
       if (!stream || stream.workspaceId !== workspaceId) {
@@ -254,7 +254,7 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
         return res.status(403).json({ error: "Not a member of this stream" })
       }
 
-      if (existing.authorId !== memberId) {
+      if (existing.authorId !== userId) {
         return res.status(403).json({ error: "Can only edit your own messages" })
       }
 
@@ -267,7 +267,7 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
         streamId: existing.streamId,
         contentJson,
         contentMarkdown,
-        actorId: memberId,
+        actorId: userId,
       })
 
       if (!message) {
@@ -278,7 +278,7 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
     },
 
     async delete(req: Request, res: Response) {
-      const memberId = req.user!.id
+      const userId = req.user!.id
       const workspaceId = req.workspaceId!
       const { messageId } = req.params
 
@@ -289,7 +289,7 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
 
       const [stream, isMember] = await Promise.all([
         streamService.getStreamById(existing.streamId),
-        streamService.isMember(existing.streamId, memberId),
+        streamService.isMember(existing.streamId, userId),
       ])
 
       if (!stream || stream.workspaceId !== workspaceId) {
@@ -300,7 +300,7 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
         return res.status(403).json({ error: "Not a member of this stream" })
       }
 
-      if (existing.authorId !== memberId) {
+      if (existing.authorId !== userId) {
         return res.status(403).json({ error: "Can only delete your own messages" })
       }
 
@@ -308,14 +308,14 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
         workspaceId,
         messageId,
         streamId: existing.streamId,
-        actorId: memberId,
+        actorId: userId,
       })
 
       res.status(204).send()
     },
 
     async addReaction(req: Request, res: Response) {
-      const memberId = req.user!.id
+      const userId = req.user!.id
       const workspaceId = req.workspaceId!
       const { messageId } = req.params
 
@@ -339,7 +339,7 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
 
       const [stream, isMember] = await Promise.all([
         streamService.getStreamById(existing.streamId),
-        streamService.isMember(existing.streamId, memberId),
+        streamService.isMember(existing.streamId, userId),
       ])
 
       if (!stream || stream.workspaceId !== workspaceId) {
@@ -355,7 +355,7 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
         messageId,
         streamId: existing.streamId,
         emoji: shortcode,
-        memberId,
+        userId,
       })
 
       if (!message) {
@@ -366,7 +366,7 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
     },
 
     async removeReaction(req: Request, res: Response) {
-      const memberId = req.user!.id
+      const userId = req.user!.id
       const workspaceId = req.workspaceId!
       const { messageId, emoji } = req.params
 
@@ -382,7 +382,7 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
 
       const [stream, isMember] = await Promise.all([
         streamService.getStreamById(existing.streamId),
-        streamService.isMember(existing.streamId, memberId),
+        streamService.isMember(existing.streamId, userId),
       ])
 
       if (!stream || stream.workspaceId !== workspaceId) {
@@ -398,7 +398,7 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
         messageId,
         streamId: existing.streamId,
         emoji: shortcode,
-        memberId,
+        userId,
       })
 
       if (!message) {
@@ -409,7 +409,7 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
     },
 
     async getHistory(req: Request, res: Response) {
-      const memberId = req.user!.id
+      const userId = req.user!.id
       const workspaceId = req.workspaceId!
       const { messageId } = req.params
 
@@ -420,7 +420,7 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
 
       const [stream, isMember] = await Promise.all([
         streamService.getStreamById(existing.streamId),
-        streamService.isMember(existing.streamId, memberId),
+        streamService.isMember(existing.streamId, userId),
       ])
 
       if (!stream || stream.workspaceId !== workspaceId) {

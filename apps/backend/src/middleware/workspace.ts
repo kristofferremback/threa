@@ -35,7 +35,7 @@ export function createWorkspaceUserMiddleware({ pool }: Dependencies) {
 
     const user = access.user
     if (!user) {
-      return res.status(403).json({ error: "Not a member of this workspace" })
+      return res.status(403).json({ error: "Not a user in this workspace" })
     }
 
     req.workspaceId = workspaceId

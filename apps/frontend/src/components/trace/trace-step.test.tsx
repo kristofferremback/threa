@@ -50,7 +50,7 @@ describe("TraceStep", () => {
                   messageId: "msg_edited",
                   changeType: "message_edited",
                   authorName: "Kris",
-                  authorType: "member",
+                  authorType: "user",
                   createdAt: "2026-02-19T18:00:00.000Z",
                   content: "Updated message content",
                 },

@@ -43,8 +43,8 @@ describe("EventService attachment safety checks", () => {
       service.createMessage({
         workspaceId: "ws_1",
         streamId: "stream_1",
-        authorId: "member_1",
-        authorType: "member",
+        authorId: "usr_1",
+        authorType: "user",
         contentJson: { type: "doc", content: [] },
         contentMarkdown: "hello",
         attachmentIds: ["attach_1"],
@@ -61,8 +61,8 @@ describe("EventService.editMessage version capture", () => {
     streamId: "stream_1",
     contentJson: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "original" }] }] },
     contentMarkdown: "original",
-    authorId: "member_1",
-    authorType: "member",
+    authorId: "usr_1",
+    authorType: "user",
   }
   let findByIdForUpdateSpy: ReturnType<typeof spyOn>
   let isMemberSpy: ReturnType<typeof spyOn>
@@ -81,7 +81,7 @@ describe("EventService.editMessage version capture", () => {
       versionNumber: 1,
       contentJson: existingMessage.contentJson,
       contentMarkdown: "original",
-      editedBy: "member_1",
+      editedBy: "usr_1",
       createdAt: new Date(),
     })
     spyOn(StreamEventRepository, "insert").mockResolvedValue({
@@ -90,8 +90,8 @@ describe("EventService.editMessage version capture", () => {
       sequence: 2n,
       eventType: "message_edited",
       payload: {},
-      actorId: "member_1",
-      actorType: "member",
+      actorId: "usr_1",
+      actorType: "user",
       createdAt: new Date(),
     } as any)
     spyOn(MessageRepository, "updateContent").mockResolvedValue({
@@ -115,7 +115,7 @@ describe("EventService.editMessage version capture", () => {
       streamId: "stream_1",
       contentJson: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "edited" }] }] },
       contentMarkdown: "edited",
-      actorId: "member_1",
+      actorId: "usr_1",
     })
 
     expect(MessageVersionRepository.insert).toHaveBeenCalledWith(
@@ -124,7 +124,7 @@ describe("EventService.editMessage version capture", () => {
         messageId: "msg_1",
         contentJson: existingMessage.contentJson,
         contentMarkdown: "original",
-        editedBy: "member_1",
+        editedBy: "usr_1",
       })
     )
   })
@@ -140,7 +140,7 @@ describe("EventService.editMessage version capture", () => {
       streamId: "stream_1",
       contentJson: { type: "doc", content: [] },
       contentMarkdown: "edited",
-      actorId: "member_1",
+      actorId: "usr_1",
     })
 
     expect(MessageVersionRepository.insert).not.toHaveBeenCalled()
@@ -202,13 +202,13 @@ describe("EventService.editMessage version capture", () => {
       streamId: "stream_1",
       contentJson: { type: "doc", content: [] },
       contentMarkdown: "edited",
-      actorId: "member_1",
+      actorId: "usr_1",
     })
 
     expect(StreamEventRepository.insert).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        actorType: "member",
+        actorType: "user",
       })
     )
   })

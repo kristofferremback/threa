@@ -44,7 +44,7 @@ export function createSearchHandlers({ searchService }: Dependencies) {
      * Body:
      * - query: string (optional) - text search terms
      * - from: string (optional) - filter by author ID
-     * - with: string[] (optional) - filter to streams where these users/personas are members/participants
+     * - with: string[] (optional) - filter to streams where these users/personas participated
      * - in: string[] (optional) - filter to specific stream IDs
      * - type: StreamType[] (optional) - filter by stream type
      * - status: ("active" | "archived")[] (optional) - filter by archive status
@@ -53,7 +53,7 @@ export function createSearchHandlers({ searchService }: Dependencies) {
      * - limit: number (optional) - max results (1-100)
      */
     async search(req: Request, res: Response) {
-      const memberId = req.user!.id
+      const userId = req.user!.id
       const workspaceId = req.workspaceId!
 
       const result = searchQuerySchema.safeParse(req.body)
@@ -64,15 +64,15 @@ export function createSearchHandlers({ searchService }: Dependencies) {
         })
       }
 
-      const { query, from, with: withMembers, in: inStreams, type, status, before, after, limit } = result.data
+      const { query, from, with: withParticipants, in: inStreams, type, status, before, after, limit } = result.data
 
       const results = await searchService.search({
         workspaceId,
-        memberId,
+        userId,
         query,
         filters: {
           authorId: from,
-          memberIds: withMembers,
+          userIds: withParticipants,
           streamIds: inStreams,
           streamTypes: type,
           archiveStatus: status,

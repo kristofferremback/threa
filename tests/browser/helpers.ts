@@ -82,8 +82,8 @@ export async function switchToAllView(page: Page): Promise<void> {
  * Mirrors the frontend's createDmDraftId so E2E tests reference the same route shape
  * without duplicating the raw string literal at call sites.
  */
-export function createDmDraftId(memberId: string): string {
-  return `draft_dm_${memberId}`
+export function createDmDraftId(userId: string): string {
+  return `draft_dm_${userId}`
 }
 
 /**

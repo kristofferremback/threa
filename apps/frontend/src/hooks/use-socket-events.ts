@@ -82,7 +82,7 @@ interface StreamPayload {
   workspaceId: string
   streamId: string
   stream: Stream
-  dmMemberIds?: [string, string]
+  dmUserIds?: [string, string]
 }
 
 interface WorkspaceUserAddedPayload {
@@ -209,14 +209,14 @@ export function useSocketEvents(workspaceId: string) {
         const streamExists = old.streams.some((s) => s.id === payload.stream.id)
         const currentUser = userRef.current
         const currentMember = currentUser && getWorkspaceUsers(old).find((u) => u.workosUserId === currentUser.id)
-        const currentMemberId = currentMember?.id ?? null
+        const currentUserId = currentMember?.id ?? null
         const isCreator = Boolean(currentMember && payload.stream.createdBy === currentMember.id)
         const isDmParticipant =
           payload.stream.type === StreamTypes.DM &&
-          currentMemberId !== null &&
-          payload.dmMemberIds?.includes(currentMemberId) === true
+          currentUserId !== null &&
+          payload.dmUserIds?.includes(currentUserId) === true
         const hasMembership = old.streamMemberships.some((m: StreamMember) => m.streamId === payload.stream.id)
-        const shouldAddMembership = Boolean(currentMemberId && !hasMembership && (isCreator || isDmParticipant))
+        const shouldAddMembership = Boolean(currentUserId && !hasMembership && (isCreator || isDmParticipant))
         const shouldAddStream = !streamExists && payload.stream.type !== StreamTypes.DM
 
         // Ensure members are subscribed immediately for follow-up stream activity.
@@ -234,7 +234,7 @@ export function useSocketEvents(workspaceId: string) {
                 ...old.streamMemberships,
                 {
                   streamId: payload.stream.id,
-                  memberId: currentMemberId!,
+                  memberId: currentUserId!,
                   pinned: false,
                   pinnedAt: null,
                   notificationLevel: null,
@@ -516,7 +516,7 @@ export function useSocketEvents(workspaceId: string) {
         if (!isMember) return old
 
         // Determine if we should increment unread count:
-        // - Not for own messages (authorId is now a memberId — match via member.workosUserId)
+        // - Not for own messages (authorId is a userId — match via user.workosUserId)
         // - Not when currently viewing the stream
         const currentUser = userRef.current
         const currentMember = currentUser && getWorkspaceUsers(old).find((u) => u.workosUserId === currentUser.id)

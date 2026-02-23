@@ -45,7 +45,7 @@ describe("StreamService.joinPublicChannel", () => {
       eventType: "member_joined",
       payload: {},
       actorId: "member_1",
-      actorType: "member",
+      actorType: "user",
       createdAt: new Date(),
     } as never)
     mockInsertOutbox.mockReset().mockResolvedValue({
@@ -89,7 +89,7 @@ describe("StreamService.joinPublicChannel", () => {
         eventType: "member_joined",
         payload: {},
         actorId: "member_1",
-        actorType: "member",
+        actorType: "user",
       }
     )
 
@@ -172,14 +172,14 @@ describe("StreamService.resolveWritableMessageStream", () => {
 
     const resolved = await service.resolveWritableMessageStream({
       workspaceId: "ws_1",
-      memberId: "member_1",
-      target: { dmMemberId: "member_2" },
+      userId: "usr_1",
+      target: { dmUserId: "usr_2" },
     })
 
     expect(findOrCreateDmSpy).toHaveBeenCalledWith({
       workspaceId: "ws_1",
-      memberOneId: "member_1",
-      memberTwoId: "member_2",
+      userOneId: "usr_1",
+      userTwoId: "usr_2",
     })
     expect(isMemberSpy).not.toHaveBeenCalled()
     expect(resolved).toBe(dmStream)
@@ -196,7 +196,7 @@ describe("StreamService.resolveWritableMessageStream", () => {
     const error = await service
       .resolveWritableMessageStream({
         workspaceId: "ws_1",
-        memberId: "member_1",
+        userId: "usr_1",
         target: { streamId: "stream_1" },
       })
       .catch((e) => e)
@@ -218,7 +218,7 @@ describe("StreamService.resolveWritableMessageStream", () => {
     const error = await service
       .resolveWritableMessageStream({
         workspaceId: "ws_1",
-        memberId: "member_1",
+        userId: "usr_1",
         target: { streamId: "stream_1" },
       })
       .catch((e) => e)
@@ -254,15 +254,15 @@ describe("StreamService.findOrCreateDm", () => {
     } as never
 
     mockFindMembersByIds.mockResolvedValue([
-      { id: "member_1", workspaceId: "ws_1" },
-      { id: "member_2", workspaceId: "ws_1" },
+      { id: "usr_1", workspaceId: "ws_1" },
+      { id: "usr_2", workspaceId: "ws_1" },
     ] as never)
     mockInsertOrFindByUniquenessKey.mockResolvedValue({ stream, created: true } as never)
 
     const result = await service.findOrCreateDm({
       workspaceId: "ws_1",
-      memberOneId: "member_2",
-      memberTwoId: "member_1",
+      userOneId: "usr_2",
+      userTwoId: "usr_1",
     })
 
     expect(mockInsertOrFindByUniquenessKey).toHaveBeenCalledWith(
@@ -270,18 +270,18 @@ describe("StreamService.findOrCreateDm", () => {
       expect.objectContaining({
         workspaceId: "ws_1",
         type: "dm",
-        uniquenessKey: "dm:member_1:member_2",
-        createdBy: "member_2",
+        uniquenessKey: "dm:usr_1:usr_2",
+        createdBy: "usr_2",
       })
     )
-    expect(mockInsertManyMembers).toHaveBeenCalledWith({}, "stream_dm_1", ["member_1", "member_2"])
+    expect(mockInsertManyMembers).toHaveBeenCalledWith({}, "stream_dm_1", ["usr_1", "usr_2"])
     expect(mockInsertOutbox).toHaveBeenCalledWith(
       {},
       "stream:created",
       expect.objectContaining({
         workspaceId: "ws_1",
         streamId: "stream_dm_1",
-        dmMemberIds: ["member_1", "member_2"],
+        dmUserIds: ["usr_1", "usr_2"],
       })
     )
     expect(result).toBe(stream)
@@ -296,28 +296,28 @@ describe("StreamService.findOrCreateDm", () => {
     } as never
 
     mockFindMembersByIds.mockResolvedValue([
-      { id: "member_1", workspaceId: "ws_1" },
-      { id: "member_2", workspaceId: "ws_1" },
+      { id: "usr_1", workspaceId: "ws_1" },
+      { id: "usr_2", workspaceId: "ws_1" },
     ] as never)
     mockInsertOrFindByUniquenessKey.mockResolvedValue({ stream, created: false } as never)
 
     await service.findOrCreateDm({
       workspaceId: "ws_1",
-      memberOneId: "member_1",
-      memberTwoId: "member_2",
+      userOneId: "usr_1",
+      userTwoId: "usr_2",
     })
 
     expect(mockInsertOutbox).not.toHaveBeenCalled()
   })
 
   test("should throw when either member is outside the workspace", async () => {
-    mockFindMembersByIds.mockResolvedValue([{ id: "member_1", workspaceId: "ws_1" }] as never)
+    mockFindMembersByIds.mockResolvedValue([{ id: "usr_1", workspaceId: "ws_1" }] as never)
 
     const error = await service
       .findOrCreateDm({
         workspaceId: "ws_1",
-        memberOneId: "member_1",
-        memberTwoId: "member_2",
+        userOneId: "usr_1",
+        userTwoId: "usr_2",
       })
       .catch((e) => e)
 

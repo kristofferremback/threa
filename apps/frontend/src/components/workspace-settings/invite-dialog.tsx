@@ -17,7 +17,7 @@ interface InviteDialogProps {
 
 export function InviteDialog({ workspaceId, open, onOpenChange, onSuccess }: InviteDialogProps) {
   const [emailsText, setEmailsText] = useState("")
-  const [role, setRole] = useState<"admin" | "member">("member")
+  const [role, setRole] = useState<"admin" | "user">("user")
   const [result, setResult] = useState<SendInvitationsResponse | null>(null)
 
   const sendMutation = useMutation({
@@ -37,7 +37,7 @@ export function InviteDialog({ workspaceId, open, onOpenChange, onSuccess }: Inv
 
   const handleClose = () => {
     setEmailsText("")
-    setRole("member")
+    setRole("user")
     setResult(null)
     onOpenChange(false)
   }
@@ -94,12 +94,12 @@ export function InviteDialog({ workspaceId, open, onOpenChange, onSuccess }: Inv
 
             <div className="space-y-2">
               <Label htmlFor="role">Role</Label>
-              <Select value={role} onValueChange={(v) => setRole(v as "admin" | "member")}>
+              <Select value={role} onValueChange={(v) => setRole(v as "admin" | "user")}>
                 <SelectTrigger id="role">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="member">Member</SelectItem>
+                  <SelectItem value="user">User</SelectItem>
                   <SelectItem value="admin">Admin</SelectItem>
                 </SelectContent>
               </Select>

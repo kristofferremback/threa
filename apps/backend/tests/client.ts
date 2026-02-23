@@ -497,7 +497,7 @@ export interface StreamMember {
 export async function joinWorkspace(
   client: TestClient,
   workspaceId: string,
-  role: "member" | "admin" = "member"
+  role: "user" | "admin" = "user"
 ): Promise<WorkspaceUser> {
   const { status, data } = await client.post<{ user: WorkspaceUser }>(`/api/dev/workspaces/${workspaceId}/join`, {
     role,
@@ -597,16 +597,16 @@ export async function getWorkspaceBootstrap(client: TestClient, workspaceId: str
 }
 
 /**
- * Get the current user's member ID in a workspace.
- * Fetches workspace bootstrap and finds the member matching the given WorkOS user ID.
+ * Get the current user's workspace user ID in a workspace.
+ * Fetches workspace bootstrap and finds the user matching the given WorkOS user ID.
  */
-export async function getMemberId(client: TestClient, workspaceId: string, workosUserId: string): Promise<string> {
+export async function getUserId(client: TestClient, workspaceId: string, workosUserId: string): Promise<string> {
   const bootstrap = await getWorkspaceBootstrap(client, workspaceId)
-  const member = bootstrap.users.find((u) => u.workosUserId === workosUserId)
-  if (!member) {
-    throw new Error(`Member not found for WorkOS user ${workosUserId} in workspace ${workspaceId}`)
+  const workspaceUser = bootstrap.users.find((u) => u.workosUserId === workosUserId)
+  if (!workspaceUser) {
+    throw new Error(`User not found for WorkOS user ${workosUserId} in workspace ${workspaceId}`)
   }
-  return member.id
+  return workspaceUser.id
 }
 
 export interface Conversation {

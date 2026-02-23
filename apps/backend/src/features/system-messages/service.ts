@@ -27,14 +27,14 @@ export class SystemMessageService {
     this.createMessage = deps.createMessage
   }
 
-  async findSystemStream(workspaceId: string, memberId: string): Promise<Stream | null> {
-    return StreamRepository.findByTypeAndOwner(this.pool, workspaceId, StreamTypes.SYSTEM, memberId)
+  async findSystemStream(workspaceId: string, userId: string): Promise<Stream | null> {
+    return StreamRepository.findByTypeAndOwner(this.pool, workspaceId, StreamTypes.SYSTEM, userId)
   }
 
-  async notifyMember(workspaceId: string, memberId: string, contentMarkdown: string): Promise<void> {
-    const stream = await this.findSystemStream(workspaceId, memberId)
+  async notifyUser(workspaceId: string, userId: string, contentMarkdown: string): Promise<void> {
+    const stream = await this.findSystemStream(workspaceId, userId)
     if (!stream) {
-      logger.error({ workspaceId, memberId }, "System stream missing for member — should have been created on join")
+      logger.error({ workspaceId, userId }, "System stream missing for user — should have been created on join")
       return
     }
 
@@ -72,25 +72,25 @@ export class SystemMessageService {
     const name = userName || invitation.email
 
     const content = `**${name}** accepted your invitation and joined the workspace.`
-    await this.notifyMember(workspaceId, invitation.invitedBy, content)
+    await this.notifyUser(workspaceId, invitation.invitedBy, content)
   }
 
   async notifyOwners(workspaceId: string, contentMarkdown: string): Promise<void> {
-    const allMembers = await UserRepository.listByWorkspace(this.pool, workspaceId)
-    const members = allMembers.filter((m) => m.role === "owner")
+    const allUsers = await UserRepository.listByWorkspace(this.pool, workspaceId)
+    const owners = allUsers.filter((u) => u.role === "owner")
 
     const existingStreams = await StreamRepository.list(this.pool, workspaceId, {
       types: [StreamTypes.SYSTEM],
     })
     const streamByCreator = new Map(existingStreams.map((s) => [s.createdBy, s]))
 
-    for (const member of members) {
+    for (const owner of owners) {
       try {
-        const stream = streamByCreator.get(member.id)
+        const stream = streamByCreator.get(owner.id)
         if (!stream) {
           logger.error(
-            { workspaceId, memberId: member.id },
-            "System stream missing for member — should have been created on join"
+            { workspaceId, userId: owner.id },
+            "System stream missing for user — should have been created on join"
           )
           continue
         }
@@ -103,7 +103,7 @@ export class SystemMessageService {
           content: contentMarkdown,
         })
       } catch (err) {
-        logger.error({ err, workspaceId, memberId: member.id }, "Failed to notify member")
+        logger.error({ err, workspaceId, userId: owner.id }, "Failed to notify user")
       }
     }
   }

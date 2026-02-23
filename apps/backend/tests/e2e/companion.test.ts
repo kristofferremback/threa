@@ -205,7 +205,7 @@ describe("Companion Agent", () => {
       expect(personaEvents.length).toBe(0)
 
       // Verify we have exactly one member message
-      const memberEvents = events.filter((e: StreamEvent) => e.actorType === "member")
+      const memberEvents = events.filter((e: StreamEvent) => e.actorType === "user")
       expect(memberEvents.length).toBe(1)
     })
   })

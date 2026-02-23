@@ -62,7 +62,7 @@ export interface WorkspaceAgentInput {
   /** What the main agent wants to find */
   query: string
   conversationHistory: Message[]
-  invokingMemberId: string
+  invokingUserId: string
   /** For DMs: all participant member IDs */
   dmParticipantIds?: string[]
 }
@@ -173,7 +173,7 @@ export class WorkspaceAgent {
    */
   async search(input: WorkspaceAgentInput): Promise<WorkspaceAgentResult> {
     const { pool } = this.deps
-    const { workspaceId, streamId, invokingMemberId, dmParticipantIds } = input
+    const { workspaceId, streamId, invokingUserId, dmParticipantIds } = input
 
     // Phase 1: Fetch all setup data with withClient (no transaction, fast reads ~100-200ms)
     const fetchedData = await withClient(pool, async (client) => {
@@ -184,12 +184,12 @@ export class WorkspaceAgent {
 
       const accessSpec = await computeAgentAccessSpec(client, {
         stream,
-        invokingMemberId,
+        invokingUserId,
       })
 
       // For DMs, we need to pass participant IDs
       const effectiveAccessSpec: AgentAccessSpec =
-        stream.type === "dm" && dmParticipantIds ? { type: "member_union", memberIds: dmParticipantIds } : accessSpec
+        stream.type === "dm" && dmParticipantIds ? { type: "user_union", userIds: dmParticipantIds } : accessSpec
 
       // Get accessible streams for searches
       const accessibleStreamIds = await SearchRepository.getAccessibleStreamsForAgent(
@@ -242,7 +242,7 @@ export class WorkspaceAgent {
     accessibleStreamIds: string[]
   ): Promise<WorkspaceAgentResult> {
     const { configResolver, embeddingService } = this.deps
-    const { workspaceId, query, conversationHistory, invokingMemberId } = input
+    const { workspaceId, query, conversationHistory, invokingUserId } = input
 
     // Resolve config for workspace agent
     const config = (await configResolver.resolve(COMPONENT_PATHS.COMPANION_RESEARCHER)) as ResearcherConfig
@@ -301,7 +301,7 @@ export class WorkspaceAgent {
         workspaceId,
         accessibleStreamIds,
         embeddingService,
-        invokingMemberId,
+        invokingUserId,
         true,
         excludedMessageIds
       )
@@ -500,7 +500,7 @@ Each query must have:
     workspaceId: string,
     accessibleStreamIds: string[],
     embeddingService: EmbeddingServiceLike,
-    invokingMemberId: string,
+    invokingUserId: string,
     includeSurroundingContext: boolean,
     excludedMessageIds: Set<string>
   ): Promise<{

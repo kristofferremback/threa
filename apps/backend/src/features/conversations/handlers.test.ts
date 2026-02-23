@@ -4,7 +4,7 @@ import { StreamNotFoundError } from "../../lib/errors"
 
 function mockReq(overrides: Record<string, unknown> = {}) {
   return {
-    user: { id: "member_1" },
+    user: { id: "usr_1" },
     workspaceId: "ws_1",
     params: { streamId: "stream_1" },
     query: {},
@@ -66,7 +66,7 @@ describe("Conversation Handlers", () => {
       const res = mockRes()
       await handlers.listByStream(mockReq(), res)
 
-      expect(mockValidateStreamAccess).toHaveBeenCalledWith("stream_1", "ws_1", "member_1")
+      expect(mockValidateStreamAccess).toHaveBeenCalledWith("stream_1", "ws_1", "usr_1")
     })
 
     test("should return conversations when access is valid", async () => {
@@ -91,7 +91,7 @@ describe("Conversation Handlers", () => {
       const res = mockRes()
       await handlers.getById(mockReq({ params: { conversationId: "conv_1" } }), res)
 
-      expect(mockValidateStreamAccess).toHaveBeenCalledWith("stream_1", "ws_1", "member_1")
+      expect(mockValidateStreamAccess).toHaveBeenCalledWith("stream_1", "ws_1", "usr_1")
     })
 
     test("should propagate StreamNotFoundError for unauthorized access", async () => {
@@ -108,7 +108,7 @@ describe("Conversation Handlers", () => {
       const res = mockRes()
       await handlers.getMessages(mockReq({ params: { conversationId: "conv_1" } }), res)
 
-      expect(mockValidateStreamAccess).toHaveBeenCalledWith("stream_1", "ws_1", "member_1")
+      expect(mockValidateStreamAccess).toHaveBeenCalledWith("stream_1", "ws_1", "usr_1")
     })
   })
 })

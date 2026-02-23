@@ -31,11 +31,11 @@ import { toast } from "sonner"
 interface GeneralTabProps {
   workspaceId: string
   stream: Stream
-  currentMemberId: string
+  currentUserId: string
   notificationLevel: NotificationLevel | null
 }
 
-export function GeneralTab({ workspaceId, stream, currentMemberId, notificationLevel }: GeneralTabProps) {
+export function GeneralTab({ workspaceId, stream, currentUserId, notificationLevel }: GeneralTabProps) {
   const isChannel = stream.type === StreamTypes.CHANNEL
   const isScratchpad = stream.type === StreamTypes.SCRATCHPAD
 
@@ -66,7 +66,7 @@ export function GeneralTab({ workspaceId, stream, currentMemberId, notificationL
       )}
 
       <Separator />
-      <ArchiveSection workspaceId={workspaceId} stream={stream} currentMemberId={currentMemberId} />
+      <ArchiveSection workspaceId={workspaceId} stream={stream} currentUserId={currentUserId} />
     </div>
   )
 }
@@ -305,16 +305,16 @@ function DescriptionSection({ workspaceId, stream }: { workspaceId: string; stre
 function ArchiveSection({
   workspaceId,
   stream,
-  currentMemberId,
+  currentUserId,
 }: {
   workspaceId: string
   stream: Stream
-  currentMemberId: string
+  currentUserId: string
 }) {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const archiveMutation = useArchiveStream(workspaceId)
   const unarchiveMutation = useUnarchiveStream(workspaceId)
-  const isCreator = stream.createdBy === currentMemberId
+  const isCreator = stream.createdBy === currentUserId
   const isArchived = stream.archivedAt !== null
 
   if (!isCreator) return null

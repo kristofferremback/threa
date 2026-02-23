@@ -16,8 +16,8 @@ export interface CommandContext {
   workspaceId: string
   /** Stream the command was dispatched in */
   streamId: string
-  /** Member who dispatched the command */
-  memberId: string
+  /** User who dispatched the command */
+  userId: string
   /** Arguments after the command name */
   args: string
 }

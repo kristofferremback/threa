@@ -3,7 +3,7 @@ import type { User } from "../features/workspaces"
 
 type WorkspaceRole = User["role"]
 
-const ROLE_HIERARCHY: Record<WorkspaceRole, number> = { member: 0, admin: 1, owner: 2 }
+const ROLE_HIERARCHY: Record<WorkspaceRole, number> = { user: 0, admin: 1, owner: 2 }
 
 export function requireRole(minimumRole: WorkspaceRole): RequestHandler {
   const minimumLevel = ROLE_HIERARCHY[minimumRole]

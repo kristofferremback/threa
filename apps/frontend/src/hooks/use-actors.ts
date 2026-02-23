@@ -69,7 +69,7 @@ export function useActors(workspaceId: string): ActorLookup {
         return persona?.name ?? "AI Companion"
       }
 
-      // actorType === "member" — resolve workspace-scoped name
+      // actorType === "user" — resolve workspace-scoped name
       const bootstrap = getBootstrapData()
       const users = bootstrap?.users
       const name = resolveUserName(actorId, users)

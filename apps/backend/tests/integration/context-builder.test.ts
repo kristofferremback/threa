@@ -42,7 +42,7 @@ describe("Context Builder", () => {
           slug: `ctx-ws-${wsId}`,
           createdBy: ownerUserId,
         })
-        const ownerMemberId = (await addTestMember(client, wsId, ownerUserId)).id
+        const ownerUserId = (await addTestMember(client, wsId, ownerUserId)).id
 
         const scratchpad = await StreamRepository.insert(client, {
           id: scratchpadId,
@@ -51,7 +51,7 @@ describe("Context Builder", () => {
           displayName: "My Scratchpad",
           description: "Personal notes",
           visibility: Visibilities.PRIVATE,
-          createdBy: ownerMemberId,
+          createdBy: ownerUserId,
         })
 
         // Add some messages
@@ -61,16 +61,16 @@ describe("Context Builder", () => {
           id: msg1Id,
           streamId: scratchpadId,
           sequence: BigInt(1),
-          authorId: ownerMemberId,
-          authorType: "member",
+          authorId: ownerUserId,
+          authorType: "user",
           ...testMessageContent("Hello world"),
         })
         await MessageRepository.insert(client, {
           id: msg2Id,
           streamId: scratchpadId,
           sequence: BigInt(2),
-          authorId: ownerMemberId,
-          authorType: "member",
+          authorId: ownerUserId,
+          authorType: "user",
           ...testMessageContent("Second message"),
         })
 
@@ -102,12 +102,12 @@ describe("Context Builder", () => {
           slug: `channel-ctx-ws-${wsId}`,
           createdBy: ownerUserId,
         })
-        const ownerMember = await addTestMember(client, wsId, ownerUserId)
+        const ownerUser = await addTestMember(client, wsId, ownerUserId)
         const memberMember = await addTestMember(client, wsId, memberUserId)
-        const ownerMemberId = ownerMember.id
-        const memberMemberId = memberMember.id
-        await UserRepository.update(client, ownerMemberId, { name: "Channel Owner" })
-        await UserRepository.update(client, memberMemberId, { name: "Channel Member" })
+        const ownerUserId = ownerUser.id
+        const memberUserId = memberMember.id
+        await UserRepository.update(client, ownerUserId, { name: "Channel Owner" })
+        await UserRepository.update(client, memberUserId, { name: "Channel Member" })
 
         const channel = await StreamRepository.insert(client, {
           id: channelId,
@@ -117,12 +117,12 @@ describe("Context Builder", () => {
           slug: "general",
           description: "General discussion",
           visibility: Visibilities.PUBLIC,
-          createdBy: ownerMemberId,
+          createdBy: ownerUserId,
         })
 
         // Add members
-        await StreamMemberRepository.insert(client, channelId, ownerMemberId)
-        await StreamMemberRepository.insert(client, channelId, memberMemberId)
+        await StreamMemberRepository.insert(client, channelId, ownerUserId)
+        await StreamMemberRepository.insert(client, channelId, memberUserId)
 
         // Add a message
         const msgId = messageId()
@@ -130,8 +130,8 @@ describe("Context Builder", () => {
           id: msgId,
           streamId: channelId,
           sequence: BigInt(1),
-          authorId: ownerMemberId,
-          authorType: "member",
+          authorId: ownerUserId,
+          authorType: "user",
           ...testMessageContent("Welcome to the channel!"),
         })
 
@@ -163,7 +163,7 @@ describe("Context Builder", () => {
           slug: `thread-ctx-ws-${wsId}`,
           createdBy: ownerUserId,
         })
-        const ownerMemberId = (await addTestMember(client, wsId, ownerUserId)).id
+        const ownerUserId = (await addTestMember(client, wsId, ownerUserId)).id
 
         // Create channel
         await StreamRepository.insert(client, {
@@ -173,7 +173,7 @@ describe("Context Builder", () => {
           displayName: "Discussions",
           slug: "discussions",
           visibility: Visibilities.PUBLIC,
-          createdBy: ownerMemberId,
+          createdBy: ownerUserId,
         })
 
         // Add parent message
@@ -182,8 +182,8 @@ describe("Context Builder", () => {
           id: parentMsgId,
           streamId: channelId,
           sequence: BigInt(1),
-          authorId: ownerMemberId,
-          authorType: "member",
+          authorId: ownerUserId,
+          authorType: "user",
           ...testMessageContent("This is the parent message that spawned the thread"),
         })
 
@@ -197,7 +197,7 @@ describe("Context Builder", () => {
           parentStreamId: channelId,
           parentMessageId: parentMsgId,
           rootStreamId: channelId,
-          createdBy: ownerMemberId,
+          createdBy: ownerUserId,
         })
 
         // Add thread message
@@ -206,8 +206,8 @@ describe("Context Builder", () => {
           id: threadMsgId,
           streamId: threadId,
           sequence: BigInt(1),
-          authorId: ownerMemberId,
-          authorType: "member",
+          authorId: ownerUserId,
+          authorType: "user",
           ...testMessageContent("Reply in thread"),
         })
 
@@ -248,7 +248,7 @@ describe("Context Builder", () => {
           slug: `deep-thread-ws-${wsId}`,
           createdBy: ownerUserId,
         })
-        const ownerMemberId = (await addTestMember(client, wsId, ownerUserId)).id
+        const ownerUserId = (await addTestMember(client, wsId, ownerUserId)).id
 
         // Create channel -> thread1 -> thread2
         await StreamRepository.insert(client, {
@@ -258,7 +258,7 @@ describe("Context Builder", () => {
           displayName: "Root Channel",
           slug: "root",
           visibility: Visibilities.PUBLIC,
-          createdBy: ownerMemberId,
+          createdBy: ownerUserId,
         })
 
         const msg1Id = messageId()
@@ -266,8 +266,8 @@ describe("Context Builder", () => {
           id: msg1Id,
           streamId: channelId,
           sequence: BigInt(1),
-          authorId: ownerMemberId,
-          authorType: "member",
+          authorId: ownerUserId,
+          authorType: "user",
           ...testMessageContent("First level message"),
         })
 
@@ -280,7 +280,7 @@ describe("Context Builder", () => {
           parentStreamId: channelId,
           parentMessageId: msg1Id,
           rootStreamId: channelId,
-          createdBy: ownerMemberId,
+          createdBy: ownerUserId,
         })
 
         const msg2Id = messageId()
@@ -288,8 +288,8 @@ describe("Context Builder", () => {
           id: msg2Id,
           streamId: thread1Id,
           sequence: BigInt(1),
-          authorId: ownerMemberId,
-          authorType: "member",
+          authorId: ownerUserId,
+          authorType: "user",
           ...testMessageContent("Second level message"),
         })
 
@@ -302,7 +302,7 @@ describe("Context Builder", () => {
           parentStreamId: thread1Id,
           parentMessageId: msg2Id,
           rootStreamId: channelId,
-          createdBy: ownerMemberId,
+          createdBy: ownerUserId,
         })
 
         const msg3Id = messageId()
@@ -310,8 +310,8 @@ describe("Context Builder", () => {
           id: msg3Id,
           streamId: thread2Id,
           sequence: BigInt(1),
-          authorId: ownerMemberId,
-          authorType: "member",
+          authorId: ownerUserId,
+          authorType: "user",
           ...testMessageContent("Third level message"),
         })
 
@@ -370,7 +370,7 @@ describe("Context Builder", () => {
           streamId: dmId,
           sequence: BigInt(1),
           authorId: member1Id,
-          authorType: "member",
+          authorType: "user",
           ...testMessageContent("Hey Bob!"),
         })
 

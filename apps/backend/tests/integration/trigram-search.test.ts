@@ -14,12 +14,12 @@ import { withTestTransaction, withTransaction } from "./setup"
 import { UserRepository, WorkspaceRepository } from "../../src/features/workspaces"
 import { StreamRepository } from "../../src/features/streams"
 import { setupTestDatabase } from "./setup"
-import { memberId, userId, workspaceId, streamId } from "../../src/lib/id"
+import { userId, userId, workspaceId, streamId } from "../../src/lib/id"
 
 describe("Trigram Search", () => {
   let pool: Pool
   let testWorkspaceId: string
-  let testMemberIds: string[]
+  let testUserIds: string[]
   let testWorkosUserIds: string[]
   let testStreamIds: string[]
 
@@ -27,7 +27,7 @@ describe("Trigram Search", () => {
     pool = await setupTestDatabase()
 
     testWorkspaceId = workspaceId()
-    testMemberIds = [memberId(), memberId(), memberId()]
+    testUserIds = [userId(), userId(), userId()]
     testWorkosUserIds = [userId(), userId(), userId()]
     testStreamIds = [streamId(), streamId(), streamId()]
 
@@ -40,10 +40,10 @@ describe("Trigram Search", () => {
         id: testWorkspaceId,
         name: "Trigram Test Workspace",
         slug: `trgm-test-${testWorkspaceId}`,
-        createdBy: testMemberIds[0],
+        createdBy: testUserIds[0],
       })
       await UserRepository.insert(client, {
-        id: testMemberIds[0],
+        id: testUserIds[0],
         workspaceId: testWorkspaceId,
         workosUserId: testWorkosUserIds[0],
         email: `john.smith.${suffix}@example.com`,
@@ -53,23 +53,23 @@ describe("Trigram Search", () => {
       })
 
       await UserRepository.insert(client, {
-        id: testMemberIds[1],
+        id: testUserIds[1],
         workspaceId: testWorkspaceId,
         workosUserId: testWorkosUserIds[1],
         email: `kristoffer.${suffix}@example.com`,
         slug: `kristoffer-${suffix}`,
         name: "Kristoffer Remback",
-        role: "member",
+        role: "user",
       })
 
       await UserRepository.insert(client, {
-        id: testMemberIds[2],
+        id: testUserIds[2],
         workspaceId: testWorkspaceId,
         workosUserId: testWorkosUserIds[2],
         email: `jane.doe.${suffix}@example.com`,
         slug: `jane-doe-${suffix}`,
         name: "Jane Doe",
-        role: "member",
+        role: "user",
       })
 
       // Create streams with various names
@@ -81,7 +81,7 @@ describe("Trigram Search", () => {
         slug: "general-discussion",
         visibility: "public",
         companionMode: "off",
-        createdBy: testMemberIds[0],
+        createdBy: testUserIds[0],
       })
       await StreamRepository.insert(client, {
         id: testStreamIds[1],
@@ -91,7 +91,7 @@ describe("Trigram Search", () => {
         slug: "project-alpha",
         visibility: "public",
         companionMode: "off",
-        createdBy: testMemberIds[0],
+        createdBy: testUserIds[0],
       })
       await StreamRepository.insert(client, {
         id: testStreamIds[2],
@@ -101,7 +101,7 @@ describe("Trigram Search", () => {
         slug: "engineering",
         visibility: "public",
         companionMode: "off",
-        createdBy: testMemberIds[0],
+        createdBy: testUserIds[0],
       })
     })
   })

@@ -23,7 +23,7 @@ describe("WorkspaceService.createWorkspace invite gating", () => {
     id: "ws_1",
     name: "Test Workspace",
     slug: "test-workspace",
-    createdBy: "member_1",
+    createdBy: "usr_1",
     createdAt: new Date(),
     updatedAt: new Date(),
   }

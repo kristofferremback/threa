@@ -58,8 +58,8 @@ function makeMessageCreatedEvent(
       event: {
         id: "event_1",
         sequence: "1",
-        actorType: overrides?.actorType ?? AuthorTypes.MEMBER,
-        actorId: "actorId" in (overrides ?? {}) ? overrides!.actorId : "member_author",
+        actorType: overrides?.actorType ?? AuthorTypes.USER,
+        actorId: "actorId" in (overrides ?? {}) ? overrides!.actorId : "usr_author",
         payload: {
           messageId: overrides?.messageId ?? "msg_test",
           contentMarkdown: overrides?.contentMarkdown ?? "hello @alice check this",
@@ -91,8 +91,8 @@ describe("ActivityFeedHandler", () => {
       workspaceId: "ws_test",
       streamId: "stream_test",
       messageId: "msg_test",
-      actorId: "member_author",
-      actorType: "member",
+      actorId: "usr_author",
+      actorType: "user",
       contentMarkdown: "hey @alice look at this",
     })
   })
@@ -161,12 +161,12 @@ describe("ActivityFeedHandler", () => {
     const createdActivity = {
       id: "activity_test123",
       workspaceId: "ws_test",
-      userId: "member_alice",
+      userId: "usr_alice",
       activityType: "mention",
       streamId: "stream_test",
       messageId: "msg_test",
-      actorId: "member_author",
-      actorType: "member",
+      actorId: "usr_author",
+      actorType: "user",
       context: { contentPreview: "hey @alice" },
       readAt: null,
       createdAt: new Date("2025-01-01T00:00:00Z"),
@@ -191,14 +191,14 @@ describe("ActivityFeedHandler", () => {
 
     expect(insertSpy).toHaveBeenCalledWith({}, "activity:created", {
       workspaceId: "ws_test",
-      targetUserId: "member_alice",
+      targetUserId: "usr_alice",
       activity: {
         id: "activity_test123",
         activityType: "mention",
         streamId: "stream_test",
         messageId: "msg_test",
-        actorId: "member_author",
-        actorType: "member",
+        actorId: "usr_author",
+        actorType: "user",
         context: { contentPreview: "hey @alice" },
         createdAt: "2025-01-01T00:00:00.000Z",
       },
@@ -230,12 +230,12 @@ describe("ActivityFeedHandler", () => {
     const preExistingActivity = {
       id: "activity_existing",
       workspaceId: "ws_test",
-      userId: "member_bob",
+      userId: "usr_bob",
       activityType: "mention",
       streamId: "stream_test",
       messageId: "msg_test",
-      actorId: "member_author",
-      actorType: "member",
+      actorId: "usr_author",
+      actorType: "user",
       context: { contentPreview: "hey @bob" },
       readAt: null,
       createdAt: new Date("2025-01-01T00:00:00Z"),
@@ -261,14 +261,14 @@ describe("ActivityFeedHandler", () => {
 
     const want = {
       workspaceId: "ws_test",
-      targetUserId: "member_bob",
+      targetUserId: "usr_bob",
       activity: {
         id: "activity_existing",
         activityType: "mention",
         streamId: "stream_test",
         messageId: "msg_test",
-        actorId: "member_author",
-        actorType: "member",
+        actorId: "usr_author",
+        actorType: "user",
         context: { contentPreview: "hey @bob" },
         createdAt: "2025-01-01T00:00:00.000Z",
       },

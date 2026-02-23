@@ -77,7 +77,7 @@ const createMessageEvent = (messageId: string, contentMarkdown: string): StreamE
   streamId: "stream_123",
   sequence: "1",
   eventType: "message_created",
-  actorType: "member",
+  actorType: "user",
   actorId: "member_123",
   createdAt: new Date().toISOString(),
   payload: { messageId, contentMarkdown },

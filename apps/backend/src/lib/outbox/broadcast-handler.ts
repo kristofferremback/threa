@@ -144,8 +144,8 @@ export class BroadcastHandler implements OutboxHandler {
       const payload = event.payload as StreamCreatedOutboxPayload
       if (payload.stream.parentMessageId) {
         this.io.to(`ws:${workspaceId}:stream:${payload.streamId}`).emit(event.eventType, event.payload)
-      } else if (payload.stream.type === StreamTypes.DM && payload.dmMemberIds?.length === 2) {
-        for (const userId of new Set(payload.dmMemberIds)) {
+      } else if (payload.stream.type === StreamTypes.DM && payload.dmUserIds?.length === 2) {
+        for (const userId of new Set(payload.dmUserIds)) {
           this.io.to(`ws:${workspaceId}:user:${userId}`).emit(event.eventType, event.payload)
         }
       } else {

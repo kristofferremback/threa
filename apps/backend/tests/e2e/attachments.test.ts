@@ -78,7 +78,7 @@ describe("File Attachments E2E", () => {
       expect(attachment.sizeBytes).toBe(pngData.length)
     })
 
-    test("should require workspace membership", async () => {
+    test("should require workspace usership", async () => {
       const client1 = new TestClient()
       const client2 = new TestClient()
 
@@ -300,9 +300,9 @@ describe("File Attachments E2E", () => {
      * This enables:
      * 1. Uploads in draft mode (before stream exists)
      * 2. Unified upload flow for all stream types
-     * 3. Simpler authorization model (workspace membership for upload)
+     * 3. Simpler authorization model (workspace usership for upload)
      */
-    test("workspace member can upload file without specifying stream", async () => {
+    test("workspace user can upload file without specifying stream", async () => {
       // Setup: Create workspace and channel with owner
       const ownerClient = new TestClient()
       await loginAs(ownerClient, testEmail("tl-owner"), "TL Owner")

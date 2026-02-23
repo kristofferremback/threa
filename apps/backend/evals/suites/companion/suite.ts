@@ -177,7 +177,7 @@ async function setupTestData(
   ): Promise<void> => {
     for (const msg of history) {
       const authorId = msg.role === "user" ? ctx.userId : testPersonaId
-      const authorType = msg.role === "user" ? AuthorTypes.MEMBER : AuthorTypes.PERSONA
+      const authorType = msg.role === "user" ? AuthorTypes.USER : AuthorTypes.PERSONA
       await eventService.createMessage({
         workspaceId: ctx.workspaceId,
         streamId: targetStreamId,
@@ -220,7 +220,7 @@ async function setupTestData(
     workspaceId: ctx.workspaceId,
     streamId: testStreamId,
     authorId: ctx.userId,
-    authorType: AuthorTypes.MEMBER,
+    authorType: AuthorTypes.USER,
     contentJson: parseMarkdown(input.message),
     contentMarkdown: input.message,
   })

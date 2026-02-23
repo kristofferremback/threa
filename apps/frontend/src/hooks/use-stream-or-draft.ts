@@ -43,12 +43,12 @@ function resolveRealDmDisplayName(
   streamDisplayName: string | null,
   streamMembers: Array<{ memberId: string }>,
   workspaceBootstrap: WorkspaceBootstrap | undefined,
-  currentMemberId: string | null
+  currentUserId: string | null
 ): string | null {
   const workspaceName = workspaceBootstrap?.streams.find((stream) => stream.id === streamId)?.displayName
   if (workspaceName) return workspaceName
 
-  const otherMemberId = streamMembers.find((member) => member.memberId !== currentMemberId)?.memberId
+  const otherMemberId = streamMembers.find((member) => member.memberId !== currentUserId)?.memberId
   if (!otherMemberId) return streamDisplayName
 
   const workspaceUsers = workspaceBootstrap?.users ?? []
@@ -195,9 +195,9 @@ function useDraftDmStream(workspaceId: string, streamId: string, enabled: boolea
   const targetUserId = getDmDraftUserId(streamId)
   const targetUser = workspaceUsers.find((u) => u.id === targetUserId) ?? null
   const targetUserName = targetUser?.name ?? null
-  const currentMemberId = workspaceUsers.find((u) => u.workosUserId === user?.id)?.id ?? null
+  const currentUserId = workspaceUsers.find((u) => u.workosUserId === user?.id)?.id ?? null
   const existingDmStreamId =
-    targetUserId && currentMemberId ? wsBootstrap?.dmPeers.find((peer) => peer.userId === targetUserId)?.streamId : null
+    targetUserId && currentUserId ? wsBootstrap?.dmPeers.find((peer) => peer.userId === targetUserId)?.streamId : null
 
   useEffect(() => {
     if (!enabled || !existingDmStreamId) return
@@ -260,7 +260,7 @@ function useDraftDmStream(workspaceId: string, streamId: string, enabled: boolea
 
       const contentMarkdown = serializeToMarkdown(input.contentJson)
       const message = await messageService.createDm(workspaceId, targetUserId, {
-        dmMemberId: targetUserId,
+        dmUserId: targetUserId,
         contentJson: input.contentJson,
         contentMarkdown,
         attachmentIds: input.attachmentIds,
@@ -315,12 +315,12 @@ function useDraftDmStream(workspaceId: string, streamId: string, enabled: boolea
               : stream
           ),
           streamMemberships:
-            !membershipExists && currentMemberId
+            !membershipExists && currentUserId
               ? [
                   ...old.streamMemberships,
                   {
                     streamId: message.streamId,
-                    memberId: currentMemberId,
+                    memberId: currentUserId,
                     pinned: false,
                     pinnedAt: null,
                     notificationLevel: null,
@@ -335,7 +335,7 @@ function useDraftDmStream(workspaceId: string, streamId: string, enabled: boolea
 
       return { navigateTo: `/w/${workspaceId}/s/${message.streamId}`, replace: true }
     },
-    [targetUserId, workspaceId, messageService, queryClient, targetUserName, currentMemberId]
+    [targetUserId, workspaceId, messageService, queryClient, targetUserName, currentUserId]
   )
 
   return {
@@ -360,7 +360,7 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
   const user = useUser()
   const { data: wsBootstrap } = useWorkspaceBootstrap(workspaceId)
   const workspaceUsers = wsBootstrap?.users ?? []
-  const currentMemberId = workspaceUsers.find((u) => u.workosUserId === user?.id)?.id ?? null
+  const currentUserId = workspaceUsers.find((u) => u.workosUserId === user?.id)?.id ?? null
 
   const { data: bootstrap, isLoading, error } = useStreamBootstrap(workspaceId, streamId, { enabled })
   const displayName =
@@ -370,7 +370,7 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
           bootstrap.stream.displayName,
           bootstrap.members,
           wsBootstrap,
-          currentMemberId
+          currentUserId
         )
       : (bootstrap?.stream?.displayName ?? null)
 
@@ -463,8 +463,8 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
           messageId: clientId,
           contentMarkdown,
         },
-        actorId: currentMemberId,
-        actorType: "member",
+        actorId: currentUserId,
+        actorType: "user",
         createdAt: now,
       }
 
@@ -530,7 +530,7 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
 
       return {}
     },
-    [streamId, workspaceId, messageService, queryClient, markPending, markFailed, markSent, currentMemberId]
+    [streamId, workspaceId, messageService, queryClient, markPending, markFailed, markSent, currentUserId]
   )
 
   return {

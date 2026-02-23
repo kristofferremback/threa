@@ -20,8 +20,8 @@ describe("InvitationService.acceptInvitation", () => {
     id: "inv_1",
     workspaceId: "ws_1",
     email: "test@example.com",
-    role: "member",
-    invitedBy: "member_owner",
+    role: "user",
+    invitedBy: "usr_owner",
     status: "pending",
   }
 
@@ -44,7 +44,7 @@ describe("InvitationService.acceptInvitation", () => {
       payload: {},
       createdAt: new Date(),
     } as never)
-    mockCreateUser.mockReset().mockResolvedValue({ id: "member_new", workspaceId: "ws_1" })
+    mockCreateUser.mockReset().mockResolvedValue({ id: "usr_new", workspaceId: "ws_1" })
 
     service = new InvitationService(
       {} as never,
@@ -55,7 +55,7 @@ describe("InvitationService.acceptInvitation", () => {
     )
   })
 
-  test("should delegate member creation to workspaceService when accepting invitation", async () => {
+  test("should delegate user creation to workspaceService when accepting invitation", async () => {
     await service.acceptInvitation("inv_1", identity)
 
     expect(mockCreateUser).toHaveBeenCalledWith({} as PoolClient, {
@@ -63,7 +63,7 @@ describe("InvitationService.acceptInvitation", () => {
       workosUserId: "workos_user_1",
       email: "test@example.com",
       name: "Test User",
-      role: "member",
+      role: "user",
       setupCompleted: false,
     })
   })
@@ -82,7 +82,7 @@ describe("InvitationService.acceptInvitation", () => {
     })
   })
 
-  test("should not create member when user is already a member", async () => {
+  test("should not create user when WorkOS user is already in the workspace", async () => {
     mockIsMember.mockResolvedValue(true)
 
     await service.acceptInvitation("inv_1", identity)
@@ -123,7 +123,7 @@ describe("InvitationService.sendInvitations", () => {
   beforeEach(() => {
     mockLoggerWarn.mockReset()
     mockLoggerError.mockReset()
-    mockFindById.mockReset().mockResolvedValue({ id: "member_1", workosUserId: "workos_user_1" } as never)
+    mockFindById.mockReset().mockResolvedValue({ id: "usr_1", workosUserId: "workos_user_1" } as never)
     mockFindUserEmails.mockReset().mockResolvedValue(new Set())
     mockFindPendingByEmailsAndWorkspace.mockReset().mockResolvedValue([])
     mockInsertInvitation
@@ -151,9 +151,9 @@ describe("InvitationService.sendInvitations", () => {
 
     await service.sendInvitations({
       workspaceId: "ws_1",
-      invitedBy: "member_1",
+      invitedBy: "usr_1",
       emails: ["test@example.com"],
-      role: "member",
+      role: "user",
     })
 
     expect(mockLoggerWarn).toHaveBeenCalledWith(
@@ -172,9 +172,9 @@ describe("InvitationService.sendInvitations", () => {
 
     await service.sendInvitations({
       workspaceId: "ws_1",
-      invitedBy: "member_1",
+      invitedBy: "usr_1",
       emails: ["test@example.com"],
-      role: "member",
+      role: "user",
     })
 
     expect(mockLoggerError).toHaveBeenCalledWith(
@@ -192,7 +192,7 @@ describe("InvitationService.acceptPendingForEmail", () => {
   let service: InvitationService
 
   const pendingInvitations = [
-    { id: "inv_1", workspaceId: "ws_1", email: "test@example.com", role: "member", status: "pending" },
+    { id: "inv_1", workspaceId: "ws_1", email: "test@example.com", role: "user", status: "pending" },
     { id: "inv_2", workspaceId: "ws_2", email: "test@example.com", role: "admin", status: "pending" },
   ]
 
@@ -222,7 +222,7 @@ describe("InvitationService.acceptPendingForEmail", () => {
       .mockReset()
       .mockResolvedValue({ id: 1n, eventType: "test", payload: {}, createdAt: new Date() } as never)
     mockLoggerError.mockReset()
-    mockCreateUser.mockReset().mockResolvedValue({ id: "member_new", workspaceId: "ws_1" })
+    mockCreateUser.mockReset().mockResolvedValue({ id: "usr_new", workspaceId: "ws_1" })
 
     service = new InvitationService(
       {} as never,
@@ -258,7 +258,7 @@ describe("InvitationService.acceptPendingForEmail", () => {
 
   test("should capture failed invitations without aborting others", async () => {
     mockCreateUser
-      .mockResolvedValueOnce({ id: "member_1", workspaceId: "ws_1" })
+      .mockResolvedValueOnce({ id: "usr_1", workspaceId: "ws_1" })
       .mockRejectedValueOnce(new Error("DB constraint violation"))
 
     const result = await service.acceptPendingForEmail("test@example.com", identity)

@@ -42,7 +42,7 @@ describe("AttachmentService", () => {
         workspaceId: "ws_1",
         streamId: null,
         messageId: null,
-        uploadedBy: "member_1",
+        uploadedBy: "usr_1",
         filename: "unsafe.exe",
         mimeType: "application/octet-stream",
         sizeBytes: 10,
