@@ -143,12 +143,22 @@ export function useWorkspaceBootstrap(workspaceId: string) {
   return { ...query, loadState, retryBootstrap }
 }
 
+export function useRegions() {
+  const workspaceService = useWorkspaceService()
+
+  return useQuery({
+    queryKey: ["regions"] as const,
+    queryFn: () => workspaceService.listRegions(),
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  })
+}
+
 export function useCreateWorkspace() {
   const workspaceService = useWorkspaceService()
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (data: { name: string; slug: string }) => workspaceService.create(data),
+    mutationFn: (data: { name: string; slug: string; region?: string }) => workspaceService.create(data),
     onSuccess: (newWorkspace) => {
       // Update cache
       queryClient.setQueryData<Workspace[]>(workspaceKeys.list(), (old) =>

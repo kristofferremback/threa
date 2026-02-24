@@ -42,6 +42,7 @@ export interface Workspace {
   id: string
   name: string
   slug: string
+  region?: string
   createdBy: string
   createdAt: string
   updatedAt: string

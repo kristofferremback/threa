@@ -133,6 +133,7 @@ export type UpdateMessageInput = UpdateMessageInputJson | UpdateMessageInputMark
 export interface CreateWorkspaceInput {
   name: string
   slug?: string
+  region?: string
 }
 
 export interface EmojiEntry {
