@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "crypto"
 import type { NextFunction, Request, Response } from "express"
+import { HttpError } from "../errors"
 
 /** Header name for inter-service authentication (control-plane ↔ regional backend). */
 export const INTERNAL_API_KEY_HEADER = "X-Internal-Api-Key"
@@ -14,12 +15,12 @@ export function createInternalAuthMiddleware(internalApiKey: string) {
   return function internalAuthMiddleware(req: Request, res: Response, next: NextFunction): void {
     const provided = req.headers[INTERNAL_API_KEY_HEADER.toLowerCase()]
     if (typeof provided !== "string") {
-      res.status(401).json({ error: "Invalid or missing internal API key" })
+      next(new HttpError("Invalid or missing internal API key", { status: 401, code: "UNAUTHORIZED" }))
       return
     }
     const providedBuf = Buffer.from(provided)
     if (expectedBuf.length !== providedBuf.length || !timingSafeEqual(expectedBuf, providedBuf)) {
-      res.status(401).json({ error: "Invalid or missing internal API key" })
+      next(new HttpError("Invalid or missing internal API key", { status: 401, code: "UNAUTHORIZED" }))
       return
     }
     next()

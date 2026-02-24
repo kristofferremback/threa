@@ -29,6 +29,7 @@ export const InvitationShadowRepository = {
     const result = await db.query<InvitationShadowRow>(
       `INSERT INTO invitation_shadows (id, workspace_id, email, region, expires_at)
        VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (id) DO UPDATE SET id = EXCLUDED.id
        RETURNING id, workspace_id, email, region, status, created_at, expires_at`,
       [shadow.id, shadow.workspaceId, shadow.email.toLowerCase(), shadow.region, shadow.expiresAt]
     )
