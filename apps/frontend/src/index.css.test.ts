@@ -12,4 +12,8 @@ describe("index.css accessibility font families", () => {
     expect(css).toMatch(/\[data-font-family="monospace"] body/)
     expect(css).toMatch(/\[data-font-family="dyslexic"] body/)
   })
+
+  it("keeps the app default font stack for the system accessibility option", () => {
+    expect(css).toMatch(/\[data-font-family="system"],\s*\[data-font-family="system"] body\s*{[\s\S]*"Space Grotesk"/)
+  })
 })
