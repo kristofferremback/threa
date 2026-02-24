@@ -424,21 +424,24 @@
 }
 
 /* Font Families */
-[data-font-family="system"] {
+[data-font-family="system"],
+[data-font-family="system"] body {
   font-family:
+    "Space Grotesk",
     system-ui,
     -apple-system,
     BlinkMacSystemFont,
     "Segoe UI",
-    Roboto,
     sans-serif;
 }
 
-[data-font-family="monospace"] {
+[data-font-family="monospace"],
+[data-font-family="monospace"] body {
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
 }
 
-[data-font-family="dyslexic"] {
+[data-font-family="dyslexic"],
+[data-font-family="dyslexic"] body {
   font-family: "OpenDyslexic", system-ui, sans-serif;
 }
 
