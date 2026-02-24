@@ -29,6 +29,13 @@ export const WorkspaceRegistryRepository = {
     return result.rows
   },
 
+  async getRegion(db: Querier, workspaceId: string): Promise<string | null> {
+    const result = await db.query<{ region: string }>("SELECT region FROM workspace_registry WHERE id = $1", [
+      workspaceId,
+    ])
+    return result.rows[0]?.region ?? null
+  },
+
   async findBySlug(db: Querier, slug: string): Promise<WorkspaceRegistryRow | null> {
     const result = await db.query<WorkspaceRegistryRow>(
       `SELECT id, name, slug, region, created_by_workos_user_id, created_at, updated_at

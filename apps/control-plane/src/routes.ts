@@ -79,6 +79,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/regions", workspace.listRegions)
 
   // Internal API (inter-service)
+  app.get("/internal/workspaces/:workspaceId/region", internalAuth, workspace.getRegion)
   app.post("/internal/invitation-shadows", internalAuth, shadow.create)
   app.patch("/internal/invitation-shadows/:id", internalAuth, shadow.update)
 

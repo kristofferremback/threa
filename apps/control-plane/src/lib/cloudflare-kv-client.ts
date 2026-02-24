@@ -1,7 +1,11 @@
 import { logger } from "@threa/backend-common"
 import type { CloudflareKvConfig } from "../config"
 
-export class CloudflareKvClient {
+export interface KvClient {
+  putWorkspaceRegion(workspaceId: string, region: string): Promise<void>
+}
+
+export class CloudflareKvClient implements KvClient {
   constructor(private config: CloudflareKvConfig) {}
 
   async putWorkspaceRegion(workspaceId: string, region: string): Promise<void> {
@@ -23,5 +27,11 @@ export class CloudflareKvClient {
     }
 
     logger.info({ workspaceId, region }, "Wrote workspace-to-region mapping to Cloudflare KV")
+  }
+}
+
+export class NoopKvClient implements KvClient {
+  async putWorkspaceRegion(workspaceId: string, region: string): Promise<void> {
+    logger.debug({ workspaceId, region }, "NoopKvClient: skipping KV write (no Cloudflare KV configured)")
   }
 }

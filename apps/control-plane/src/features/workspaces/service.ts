@@ -3,6 +3,7 @@ import {
   HttpError,
   isUniqueViolation,
   workspaceId as generateWorkspaceId,
+  taskId as generateTaskId,
   generateUniqueSlug,
   withTransaction,
   logger,
@@ -11,12 +12,13 @@ import {
 } from "@threa/backend-common"
 import { WorkspaceRegistryRepository } from "./repository"
 import type { RegionalClient } from "../../lib/regional-client"
-import type { CloudflareKvClient } from "../../lib/cloudflare-kv-client"
+import { enqueueTask } from "../../lib/task-processor"
+
+export const TASK_KV_SYNC = "kv_sync_workspace_region"
 
 interface Dependencies {
   pool: Pool
   regionalClient: RegionalClient
-  kvClient: CloudflareKvClient | null
   workosOrgService: WorkosOrgService
   availableRegions: string[]
   requireWorkspaceCreationInvite: boolean
@@ -25,7 +27,6 @@ interface Dependencies {
 export class ControlPlaneWorkspaceService {
   private pool: Pool
   private regionalClient: RegionalClient
-  private kvClient: CloudflareKvClient | null
   private workosOrgService: WorkosOrgService
   private availableRegions: Set<string>
   private requireInvite: boolean
@@ -33,7 +34,6 @@ export class ControlPlaneWorkspaceService {
   constructor(deps: Dependencies) {
     this.pool = deps.pool
     this.regionalClient = deps.regionalClient
-    this.kvClient = deps.kvClient
     this.workosOrgService = deps.workosOrgService
     this.availableRegions = new Set(deps.availableRegions)
     this.requireInvite = deps.requireWorkspaceCreationInvite
@@ -49,6 +49,10 @@ export class ControlPlaneWorkspaceService {
 
   listRegions(): string[] {
     return [...this.availableRegions]
+  }
+
+  async getRegion(workspaceId: string): Promise<string | null> {
+    return WorkspaceRegistryRepository.getRegion(this.pool, workspaceId)
   }
 
   async listForUser(workosUserId: string) {
@@ -108,6 +112,14 @@ export class ControlPlaneWorkspaceService {
             createdByWorkosUserId: workosUserId,
           })
           await WorkspaceRegistryRepository.insertMembership(client, id, workosUserId)
+
+          // Enqueue KV sync in the same transaction — guaranteed to persist
+          await enqueueTask(client, {
+            id: generateTaskId(),
+            taskType: TASK_KV_SYNC,
+            payload: { workspaceId: id, region },
+          })
+
           return ws
         })
         break
@@ -143,16 +155,6 @@ export class ControlPlaneWorkspaceService {
         )
       }
       throw new HttpError("Failed to create workspace in regional backend", { status: 502, code: "REGIONAL_FAILURE" })
-    }
-
-    // Write to Cloudflare KV (best-effort)
-    if (this.kvClient) {
-      try {
-        await this.kvClient.putWorkspaceRegion(id, region)
-      } catch (error) {
-        logger.error({ err: error, workspaceId: id, region }, "Failed to write workspace-to-region KV mapping")
-        // Non-fatal: router can fall back to other resolution
-      }
     }
 
     return {

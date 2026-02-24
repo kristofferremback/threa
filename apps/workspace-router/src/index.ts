@@ -2,10 +2,10 @@ interface Env {
   WORKSPACE_REGIONS: KVNamespace
   /** JSON map of region name → { apiUrl, wsUrl } */
   REGIONS: string
-  /** Fallback region when workspace is not in KV (required for local dev) */
-  DEFAULT_REGION?: string
   /** Base URL for the control-plane service (handles auth, workspace list/create) */
   CONTROL_PLANE_URL?: string
+  /** Shared secret for control-plane internal API */
+  INTERNAL_API_KEY?: string
 }
 
 interface RegionConfig {
@@ -79,8 +79,9 @@ export default {
       return routeWorkspaceRequest(request, workspaceMatch[1], regions, env)
     }
 
-    // Non-workspace routes (auth, workspace list/create, ops) → default region
-    return routeToDefaultRegion(request, regions, env)
+    // All meaningful non-workspace routes are handled above (control-plane, config).
+    // Anything else is an unrecognized path.
+    return errorResponse(404, "Not found")
   },
 }
 
@@ -94,9 +95,23 @@ function parseRegions(raw: string): RegionsMap {
 }
 
 async function resolveRegion(workspaceId: string, env: Env): Promise<string | null> {
-  const kvRegion = await env.WORKSPACE_REGIONS.get(workspaceId)
-  if (kvRegion) return kvRegion
-  return env.DEFAULT_REGION ?? null
+  // Fast path: KV cache hit
+  const cached = await env.WORKSPACE_REGIONS.get(workspaceId)
+  if (cached) return cached
+
+  // Slow path: ask the control-plane (source of truth) and cache the result
+  if (!env.CONTROL_PLANE_URL || !env.INTERNAL_API_KEY) return null
+
+  // Must match INTERNAL_API_KEY_HEADER in packages/backend-common/src/middleware/internal-auth.ts
+  const res = await fetch(`${env.CONTROL_PLANE_URL}/internal/workspaces/${workspaceId}/region`, {
+    headers: { "X-Internal-Api-Key": env.INTERNAL_API_KEY },
+  })
+  if (!res.ok) return null
+
+  const { region } = (await res.json()) as { region: string }
+  // Cache in KV so subsequent requests are fast
+  await env.WORKSPACE_REGIONS.put(workspaceId, region)
+  return region
 }
 
 function getRegionConfig(region: string, regions: RegionsMap): RegionConfig | null {
@@ -131,19 +146,6 @@ async function routeWorkspaceRequest(
   const config = getRegionConfig(region, regions)
   if (!config) {
     return errorResponse(502, "Region not configured")
-  }
-
-  return proxyRequest(request, config.apiUrl)
-}
-
-function routeToDefaultRegion(request: Request, regions: RegionsMap, env: Env): Response | Promise<Response> {
-  if (!env.DEFAULT_REGION) {
-    return errorResponse(404, "No default region configured")
-  }
-
-  const config = getRegionConfig(env.DEFAULT_REGION, regions)
-  if (!config) {
-    return errorResponse(502, "Default region not configured")
   }
 
   return proxyRequest(request, config.apiUrl)

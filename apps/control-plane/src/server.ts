@@ -14,8 +14,9 @@ import { createApp } from "./app"
 import { registerRoutes } from "./routes"
 import { loadControlPlaneConfig, type ControlPlaneConfig } from "./config"
 import { RegionalClient } from "./lib/regional-client"
-import { CloudflareKvClient } from "./lib/cloudflare-kv-client"
-import { ControlPlaneWorkspaceService } from "./features/workspaces"
+import { CloudflareKvClient, NoopKvClient, type KvClient } from "./lib/cloudflare-kv-client"
+import { TaskProcessor } from "./lib/task-processor"
+import { ControlPlaneWorkspaceService, TASK_KV_SYNC } from "./features/workspaces"
 import { InvitationShadowService } from "./features/invitation-shadows"
 
 const MIGRATIONS_GLOB = path.join(import.meta.dirname, "db/migrations/*.sql")
@@ -39,18 +40,25 @@ export async function startServer(): Promise<ControlPlaneInstance> {
   const workosOrgService = config.useStubAuth ? new StubWorkosOrgService() : new WorkosOrgServiceImpl(config.workos)
 
   const regionalClient = new RegionalClient(config.regions, config.internalApiKey)
-  const kvClient = config.cloudflareKv ? new CloudflareKvClient(config.cloudflareKv) : null
+  const kvClient: KvClient = config.cloudflareKv ? new CloudflareKvClient(config.cloudflareKv) : new NoopKvClient()
 
   const availableRegions = Object.keys(config.regions)
   const workspaceService = new ControlPlaneWorkspaceService({
     pool,
     regionalClient,
-    kvClient,
     workosOrgService,
     availableRegions,
     requireWorkspaceCreationInvite: config.workspaceCreationRequiresInvite,
   })
   const shadowService = new InvitationShadowService({ pool, regionalClient })
+
+  // Task processor — durable async work queue
+  const taskProcessor = new TaskProcessor({ pool })
+  taskProcessor.registerHandler(TASK_KV_SYNC, async (payload) => {
+    const { workspaceId, region } = payload as { workspaceId: string; region: string }
+    await kvClient.putWorkspaceRegion(workspaceId, region)
+  })
+  taskProcessor.start()
 
   const isProduction = process.env.NODE_ENV === "production"
   const app = createApp({ corsAllowedOrigins: config.corsAllowedOrigins })
@@ -79,6 +87,7 @@ export async function startServer(): Promise<ControlPlaneInstance> {
     if (config.fastShutdown) {
       logger.info("Fast shutdown - skipping graceful shutdown")
       server.close()
+      await taskProcessor.stop()
       await pool.end()
       return
     }
@@ -89,6 +98,7 @@ export async function startServer(): Promise<ControlPlaneInstance> {
         server.close((err) => (err ? reject(err) : resolve()))
       })
     }
+    await taskProcessor.stop()
     await pool.end()
     logger.info("Control plane stopped")
   }

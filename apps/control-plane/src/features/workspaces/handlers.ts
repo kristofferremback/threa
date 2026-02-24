@@ -46,5 +46,13 @@ export function createWorkspaceHandlers({ workspaceService }: Dependencies) {
     async listRegions(_req: Request, res: Response) {
       res.json({ regions: workspaceService.listRegions() })
     },
+
+    async getRegion(req: Request, res: Response) {
+      const region = await workspaceService.getRegion(req.params.workspaceId)
+      if (!region) {
+        throw new HttpError("Workspace not found", { status: 404, code: "NOT_FOUND" })
+      }
+      res.json({ region })
+    },
   }
 }

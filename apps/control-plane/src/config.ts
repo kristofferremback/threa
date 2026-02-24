@@ -18,7 +18,7 @@ export interface ControlPlaneConfig {
   workos: WorkosConfig
   internalApiKey: string
   regions: Record<string, RegionConfig>
-  cloudflareKv?: CloudflareKvConfig
+  cloudflareKv: CloudflareKvConfig | null
   workspaceCreationRequiresInvite: boolean
   fastShutdown: boolean
   rateLimits: {
@@ -69,6 +69,25 @@ export function loadControlPlaneConfig(): ControlPlaneConfig {
     ? process.env.CORS_ALLOWED_ORIGINS.split(",").map((s) => s.trim())
     : ["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:5173"]
 
+  // Cloudflare KV — required in production, noop client in dev
+  let cloudflareKv: CloudflareKvConfig | null = null
+  if (process.env.CLOUDFLARE_KV_ACCOUNT_ID) {
+    const namespaceId = process.env.CLOUDFLARE_KV_NAMESPACE_ID
+    const apiToken = process.env.CLOUDFLARE_KV_API_TOKEN
+    if (!namespaceId || !apiToken) {
+      throw new Error(
+        "CLOUDFLARE_KV_ACCOUNT_ID is set but CLOUDFLARE_KV_NAMESPACE_ID and CLOUDFLARE_KV_API_TOKEN are also required"
+      )
+    }
+    cloudflareKv = {
+      accountId: process.env.CLOUDFLARE_KV_ACCOUNT_ID,
+      namespaceId,
+      apiToken,
+    }
+  } else if (isProduction) {
+    throw new Error("CLOUDFLARE_KV_ACCOUNT_ID is required in production")
+  }
+
   const config: ControlPlaneConfig = {
     port: Number(process.env.PORT) || 3003,
     databaseUrl: process.env.DATABASE_URL,
@@ -82,28 +101,13 @@ export function loadControlPlaneConfig(): ControlPlaneConfig {
     },
     internalApiKey: process.env.INTERNAL_API_KEY,
     regions,
+    cloudflareKv,
     workspaceCreationRequiresInvite: process.env.WORKSPACE_CREATION_SKIP_INVITE !== "true",
     fastShutdown: process.env.FAST_SHUTDOWN === "true",
     rateLimits: {
       globalMax: Number(process.env.GLOBAL_RATE_LIMIT_MAX) || 300,
       authMax: Number(process.env.AUTH_RATE_LIMIT_MAX) || 20,
     },
-  }
-
-  // Optional Cloudflare KV config — all three vars must be present together (INV-11)
-  if (process.env.CLOUDFLARE_KV_ACCOUNT_ID) {
-    const namespaceId = process.env.CLOUDFLARE_KV_NAMESPACE_ID
-    const apiToken = process.env.CLOUDFLARE_KV_API_TOKEN
-    if (!namespaceId || !apiToken) {
-      throw new Error(
-        "CLOUDFLARE_KV_ACCOUNT_ID is set but CLOUDFLARE_KV_NAMESPACE_ID and CLOUDFLARE_KV_API_TOKEN are also required"
-      )
-    }
-    config.cloudflareKv = {
-      accountId: process.env.CLOUDFLARE_KV_ACCOUNT_ID,
-      namespaceId,
-      apiToken,
-    }
   }
 
   if (useStubAuth) {
