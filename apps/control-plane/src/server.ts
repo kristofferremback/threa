@@ -17,7 +17,10 @@ import { RegionalClient } from "./lib/regional-client"
 import { CloudflareKvClient, NoopKvClient, type KvClient } from "./lib/cloudflare-kv-client"
 import { TaskProcessor } from "./lib/task-processor"
 import { ControlPlaneWorkspaceService, TASK_KV_SYNC } from "./features/workspaces"
-import { InvitationShadowService } from "./features/invitation-shadows"
+import { InvitationShadowService, TASK_ACCEPT_SHADOW } from "./features/invitation-shadows"
+import { InvitationShadowRepository } from "./features/invitation-shadows"
+import { WorkspaceRegistryRepository } from "./features/workspaces"
+import { withTransaction } from "@threa/backend-common"
 
 const MIGRATIONS_GLOB = path.join(import.meta.dirname, "db/migrations/*.sql")
 
@@ -57,6 +60,21 @@ export async function startServer(): Promise<ControlPlaneInstance> {
   taskProcessor.registerHandler(TASK_KV_SYNC, async (payload) => {
     const { workspaceId, region } = payload as { workspaceId: string; region: string }
     await kvClient.putWorkspaceRegion(workspaceId, region)
+  })
+  taskProcessor.registerHandler(TASK_ACCEPT_SHADOW, async (payload) => {
+    const { shadowId, workspaceId, region, workosUserId, email, name } = payload as {
+      shadowId: string
+      workspaceId: string
+      region: string
+      workosUserId: string
+      email: string
+      name: string
+    }
+    await regionalClient.acceptInvitation(region, shadowId, { workosUserId, email, name })
+    await withTransaction(pool, async (client) => {
+      await InvitationShadowRepository.updateStatus(client, shadowId, "accepted")
+      await WorkspaceRegistryRepository.insertMembership(client, workspaceId, workosUserId)
+    })
   })
   taskProcessor.start()
 

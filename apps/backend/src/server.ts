@@ -16,7 +16,7 @@ import {
   createAvatarProcessWorker,
   createAvatarProcessOnDLQ,
 } from "./features/workspaces"
-import { InvitationService } from "./features/invitations"
+import { InvitationService, InvitationShadowSyncHandler } from "./features/invitations"
 import { WorkosOrgServiceImpl, StubWorkosOrgService } from "@threa/backend-common"
 import {
   StreamService,
@@ -52,7 +52,7 @@ import {
 } from "./features/conversations"
 import { UserPreferencesService } from "./features/user-preferences"
 import { createS3Storage } from "./lib/storage/s3-client"
-import { OutboxDispatcher, BroadcastHandler, OutboxRetentionWorker } from "./lib/outbox"
+import { OutboxDispatcher, BroadcastHandler, OutboxRetentionWorker, type OutboxHandler } from "./lib/outbox"
 import {
   CompanionHandler,
   MentionInvokeHandler,
@@ -229,10 +229,7 @@ export async function startServer(): Promise<ServerInstance> {
     config.controlPlaneUrl && config.internalApiKey
       ? new ControlPlaneClient(config.controlPlaneUrl, config.internalApiKey)
       : null
-  const invitationService = new InvitationService(pool, workosOrgService, workspaceService, {
-    controlPlaneClient,
-    region: config.region,
-  })
+  const invitationService = new InvitationService(pool, workosOrgService, workspaceService)
 
   // Schedule manager for cron tick generation
   const scheduleManager = new ScheduleManager(pool, {
@@ -526,7 +523,11 @@ export async function startServer(): Promise<ServerInstance> {
   const attachmentUploadedHandler = new AttachmentUploadedHandler(pool, jobQueue)
   const systemMessageOutboxHandler = new SystemMessageOutboxHandler(pool, systemMessageService)
   const activityFeedHandler = new ActivityFeedHandler(pool, activityService)
-  const outboxHandlers = [
+  const shadowSyncHandler =
+    controlPlaneClient && config.region
+      ? new InvitationShadowSyncHandler(pool, controlPlaneClient, config.region)
+      : null
+  const outboxHandlers: (OutboxHandler & { ensureListener(): Promise<void> })[] = [
     broadcastHandler,
     companionHandler,
     namingHandler,
@@ -540,6 +541,7 @@ export async function startServer(): Promise<ServerInstance> {
     attachmentUploadedHandler,
     systemMessageOutboxHandler,
     activityFeedHandler,
+    ...(shadowSyncHandler ? [shadowSyncHandler] : []),
   ]
 
   // Ensure listeners exist in database, then register all handlers

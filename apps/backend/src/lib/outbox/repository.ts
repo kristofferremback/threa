@@ -47,6 +47,7 @@ export type OutboxEventType =
   | "stream:member_removed"
   | "invitation:sent"
   | "invitation:accepted"
+  | "invitation:revoked"
   | "activity:created"
 
 /** Events that are scoped to a stream (have streamId) */
@@ -286,6 +287,10 @@ export interface InvitationAcceptedOutboxPayload extends WorkspaceScopedPayload 
   userName: string
 }
 
+export interface InvitationRevokedOutboxPayload extends WorkspaceScopedPayload {
+  invitationId: string
+}
+
 // User-scoped event payloads (delivered to a specific target user)
 export interface ActivityCreatedOutboxPayload extends WorkspaceScopedPayload {
   targetUserId: string
@@ -350,6 +355,7 @@ export interface OutboxEventPayloadMap {
   "budget:alert": BudgetAlertOutboxPayload
   "invitation:sent": InvitationSentOutboxPayload
   "invitation:accepted": InvitationAcceptedOutboxPayload
+  "invitation:revoked": InvitationRevokedOutboxPayload
   "activity:created": ActivityCreatedOutboxPayload
 }
 

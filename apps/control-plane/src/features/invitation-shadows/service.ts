@@ -1,8 +1,17 @@
 import type { Pool } from "pg"
-import { withTransaction, decodeAndSanitizeRedirectState, displayNameFromWorkos, logger } from "@threa/backend-common"
+import {
+  withTransaction,
+  decodeAndSanitizeRedirectState,
+  displayNameFromWorkos,
+  taskId as generateTaskId,
+  logger,
+} from "@threa/backend-common"
 import { InvitationShadowRepository } from "./repository"
 import { WorkspaceRegistryRepository } from "../workspaces/repository"
+import { enqueueTask } from "../../lib/task-processor"
 import type { RegionalClient } from "../../lib/regional-client"
+
+export const TASK_ACCEPT_SHADOW = "accept_invitation_shadow"
 
 /** User info for shadow acceptance — accepts either pre-derived name (stub) or WorkOS fields */
 type ShadowUser =
@@ -30,11 +39,8 @@ export class InvitationShadowService {
 
   /**
    * Auto-accept all pending invitation shadows for a user.
-   * Regional calls are fanned out in parallel via Promise.allSettled.
-   * Per shadow: (1) regional call (idempotent), (2) local DB transaction.
-   * If phase 1 succeeds but phase 2 fails, the shadow stays pending and will
-   * be retried on the next login — the regional endpoint is idempotent.
-   * Returns the list of workspace IDs that were successfully accepted.
+   * Attempts synchronous acceptance for fast redirect, enqueues a durable
+   * retry task on failure so no shadow is silently lost.
    */
   async acceptPendingForUser(user: ShadowUser): Promise<string[]> {
     const pendingShadows = await InvitationShadowRepository.findPendingByEmail(this.pool, user.email)
@@ -66,8 +72,25 @@ export class InvitationShadowService {
         const shadow = pendingShadows[i]
         logger.error(
           { err: result.reason, shadowId: shadow.id, workspaceId: shadow.workspace_id },
-          "Failed to auto-accept invitation shadow"
+          "Failed to auto-accept invitation shadow, enqueuing retry"
         )
+        // Enqueue a durable retry — the task processor will retry with backoff
+        try {
+          await enqueueTask(this.pool, {
+            id: generateTaskId(),
+            taskType: TASK_ACCEPT_SHADOW,
+            payload: {
+              shadowId: shadow.id,
+              workspaceId: shadow.workspace_id,
+              region: shadow.region,
+              workosUserId: user.id,
+              email: user.email,
+              name,
+            },
+          })
+        } catch (enqueueErr) {
+          logger.error({ err: enqueueErr, shadowId: shadow.id }, "Failed to enqueue shadow acceptance retry")
+        }
       }
     }
 

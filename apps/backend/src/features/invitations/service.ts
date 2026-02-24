@@ -6,7 +6,6 @@ import { OutboxRepository } from "../../lib/outbox"
 import { invitationId } from "../../lib/id"
 import { logger } from "../../lib/logger"
 import { getWorkosErrorCode, type WorkosOrgService } from "@threa/backend-common"
-import type { ControlPlaneClient } from "../../lib/control-plane-client"
 import type { InvitationSkipReason, InvitationStatus } from "@threa/types"
 
 const INVITATION_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
@@ -40,18 +39,11 @@ export interface WorkosIdentity {
 }
 
 export class InvitationService {
-  private controlPlaneClient: ControlPlaneClient | null
-  private region: string | null
-
   constructor(
     private pool: Pool,
     private workosOrgService: WorkosOrgService,
-    private workspaceService: WorkspaceService,
-    options?: { controlPlaneClient?: ControlPlaneClient | null; region?: string | null }
-  ) {
-    this.controlPlaneClient = options?.controlPlaneClient ?? null
-    this.region = options?.region ?? null
-  }
+    private workspaceService: WorkspaceService
+  ) {}
 
   async sendInvitations(params: SendInvitationsParams): Promise<SendResult> {
     const { workspaceId, invitedBy, role } = params
@@ -155,29 +147,6 @@ export class InvitationService {
       }
     }
 
-    // Phase 4: Sync invitation shadows to control-plane (best-effort, parallel)
-    if (this.controlPlaneClient && this.region) {
-      const results = await Promise.allSettled(
-        sent.map((inv) =>
-          this.controlPlaneClient!.createInvitationShadow({
-            id: inv.id,
-            workspaceId: inv.workspaceId,
-            email: inv.email,
-            region: this.region!,
-            expiresAt: inv.expiresAt,
-          })
-        )
-      )
-      for (let i = 0; i < results.length; i++) {
-        if (results[i].status === "rejected") {
-          logger.error(
-            { err: (results[i] as PromiseRejectedResult).reason, invitationId: sent[i].id, email: sent[i].email },
-            "Failed to sync invitation shadow"
-          )
-        }
-      }
-    }
-
     return { sent, skipped }
   }
 
@@ -273,7 +242,7 @@ export class InvitationService {
   }
 
   async revokeInvitation(invitationId: string, workspaceId: string): Promise<boolean> {
-    // Phase 1: Update local status in transaction
+    // Phase 1: Update local status + outbox event in one transaction
     const invitation = await withTransaction(this.pool, async (client) => {
       const inv = await InvitationRepository.findById(client, invitationId)
       if (!inv || inv.workspaceId !== workspaceId) return null
@@ -282,21 +251,19 @@ export class InvitationService {
         revokedAt: new Date(),
       })
 
+      if (updated) {
+        await OutboxRepository.insert(client, "invitation:revoked", {
+          workspaceId,
+          invitationId,
+        })
+      }
+
       return updated ? inv : null
     })
 
     if (!invitation) return false
 
-    // Phase 2: Revoke shadow in control-plane (best-effort)
-    if (this.controlPlaneClient) {
-      try {
-        await this.controlPlaneClient.revokeInvitationShadow(invitationId)
-      } catch (err) {
-        logger.error({ err, invitationId }, "Failed to revoke invitation shadow in control-plane")
-      }
-    }
-
-    // Phase 3: Revoke in WorkOS (no DB connection held)
+    // Phase 2: Revoke in WorkOS (no DB connection held)
     if (invitation.workosInvitationId) {
       try {
         await this.workosOrgService.revokeInvitation(invitation.workosInvitationId)
