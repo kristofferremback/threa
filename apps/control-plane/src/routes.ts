@@ -1,42 +1,26 @@
 import type { Express } from "express"
 import { createAuthMiddleware, errorHandler, type AuthService, StubAuthService } from "@threa/backend-common"
-import { createControlPlaneAuthHandlers } from "./features/auth/handlers"
-import { createWorkspaceHandlers } from "./features/workspaces/handlers"
-import { createInvitationShadowHandlers } from "./features/invitation-shadows/handlers"
+import { createControlPlaneAuthHandlers, createAuthStubHandlers } from "./features/auth"
+import { createWorkspaceHandlers, type ControlPlaneWorkspaceService } from "./features/workspaces"
+import { createInvitationShadowHandlers, type InvitationShadowService } from "./features/invitation-shadows"
 import { createInternalAuthMiddleware } from "./lib/internal-auth"
-import { createAuthStubHandlers } from "./features/auth/stub-handlers"
-import type { ControlPlaneWorkspaceService } from "./features/workspaces/service"
-import type { InvitationShadowService } from "./features/invitation-shadows/service"
-import type { RegionalClient } from "./lib/regional-client"
-import type { Pool } from "pg"
 
 interface Dependencies {
-  pool: Pool
   authService: AuthService
   workspaceService: ControlPlaneWorkspaceService
   shadowService: InvitationShadowService
-  regionalClient: RegionalClient
   internalApiKey: string
   availableRegions: string[]
   allowDevAuthRoutes: boolean
 }
 
 export function registerRoutes(app: Express, deps: Dependencies) {
-  const {
-    pool,
-    authService,
-    workspaceService,
-    shadowService,
-    regionalClient,
-    internalApiKey,
-    availableRegions,
-    allowDevAuthRoutes,
-  } = deps
+  const { authService, workspaceService, shadowService, internalApiKey, availableRegions, allowDevAuthRoutes } = deps
 
   const auth = createAuthMiddleware({ authService })
   const internalAuth = createInternalAuthMiddleware(internalApiKey)
 
-  const authHandlers = createControlPlaneAuthHandlers({ authService, regionalClient, pool })
+  const authHandlers = createControlPlaneAuthHandlers({ authService, shadowService })
   const workspace = createWorkspaceHandlers({ workspaceService, availableRegions })
   const shadow = createInvitationShadowHandlers({ shadowService })
 
@@ -56,8 +40,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
 
     const authStub = createAuthStubHandlers({
       authStubService: authService,
-      regionalClient,
-      pool,
+      shadowService,
     })
     app.get("/test-auth-login", authStub.getLoginPage)
     app.post("/test-auth-login", authStub.handleLogin)

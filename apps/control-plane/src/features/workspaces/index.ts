@@ -1,0 +1,4 @@
+export { ControlPlaneWorkspaceService } from "./service"
+export { createWorkspaceHandlers } from "./handlers"
+export { WorkspaceRegistryRepository } from "./repository"
+export type { WorkspaceRegistryRow, WorkspaceMembershipRow } from "./repository"

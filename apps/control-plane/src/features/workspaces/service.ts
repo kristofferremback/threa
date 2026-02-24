@@ -1,6 +1,7 @@
 import type { Pool } from "pg"
 import {
   HttpError,
+  isUniqueViolation,
   workspaceId as generateWorkspaceId,
   generateUniqueSlug,
   withTransaction,
@@ -68,19 +69,33 @@ export class ControlPlaneWorkspaceService {
 
     const id = generateWorkspaceId()
 
-    // Insert into control-plane DB (slug generated inside transaction per INV-20)
-    const workspace = await withTransaction(this.pool, async (client) => {
-      const slug = await generateUniqueSlug(name, (s) => WorkspaceRegistryRepository.slugExists(client, s))
-      const ws = await WorkspaceRegistryRepository.insert(client, {
-        id,
-        name,
-        slug,
-        region,
-        createdByWorkosUserId: workosUserId,
-      })
-      await WorkspaceRegistryRepository.insertMembership(client, id, workosUserId)
-      return ws
-    })
+    // Insert into control-plane DB with slug collision retry (INV-20).
+    // generateUniqueSlug checks availability inside the transaction, but a concurrent
+    // transaction can claim the same slug before COMMIT. The UNIQUE constraint catches
+    // this — retry with a fresh slug check so the next attempt sees the committed slug.
+    const MAX_SLUG_ATTEMPTS = 3
+    let workspace: Awaited<ReturnType<typeof WorkspaceRegistryRepository.insert>>
+    for (let attempt = 1; ; attempt++) {
+      try {
+        workspace = await withTransaction(this.pool, async (client) => {
+          const slug = await generateUniqueSlug(name, (s) => WorkspaceRegistryRepository.slugExists(client, s))
+          const ws = await WorkspaceRegistryRepository.insert(client, {
+            id,
+            name,
+            slug,
+            region,
+            createdByWorkosUserId: workosUserId,
+          })
+          await WorkspaceRegistryRepository.insertMembership(client, id, workosUserId)
+          return ws
+        })
+        break
+      } catch (error) {
+        if (attempt >= MAX_SLUG_ATTEMPTS || !isUniqueViolation(error, "workspace_registry_slug_key")) {
+          throw error
+        }
+      }
+    }
 
     // Create in regional backend
     try {

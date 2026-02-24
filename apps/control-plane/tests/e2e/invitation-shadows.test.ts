@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test"
-import { TestClient, loginAs, createShadow } from "../client"
+import { TestClient, loginAs, createShadow, createWorkspace } from "../client"
 
 describe("Invitation Shadows", () => {
   const futureDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
@@ -146,6 +146,136 @@ describe("Invitation Shadows", () => {
       const loginRes = await client.post("/test-auth-login", { email, name: "Expired User" })
       expect(loginRes.status).toBe(302)
       expect(loginRes.headers.get("location")).toBe("/")
+    })
+  })
+
+  describe("Idempotency and replay safety", () => {
+    test("second login does not re-accept already accepted shadow", async () => {
+      // Owner creates workspace
+      const owner = new TestClient()
+      await loginAs(owner, "idem-owner@example.com", "Idem Owner")
+      const ws = await createWorkspace(owner, "Idem Workspace")
+
+      // Create shadow for invitee
+      const invitee = new TestClient()
+      const email = "idempotent-accept@example.com"
+      await createShadow(invitee, {
+        id: "inv_idempotent",
+        workspaceId: ws.id,
+        email,
+        region: "local",
+        expiresAt: futureDate,
+      })
+
+      // First login — accepts shadow, redirects to workspace setup
+      const login1 = await invitee.post("/test-auth-login", { email, name: "Idem User" })
+      expect(login1.status).toBe(302)
+      expect(login1.headers.get("location")).toContain(`/w/${ws.id}/setup`)
+
+      // Second login — shadow is already accepted, no pending shadows left
+      const login2 = await invitee.post("/test-auth-login", { email, name: "Idem User" })
+      expect(login2.status).toBe(302)
+      // Should redirect to root (not to workspace setup, since no NEW acceptances)
+      expect(login2.headers.get("location")).toBe("/")
+    })
+
+    test("accepted shadow creates membership that persists across logins", async () => {
+      // Owner creates workspace
+      const owner = new TestClient()
+      await loginAs(owner, "persist-owner@example.com", "Persist Owner")
+      const ws = await createWorkspace(owner, "Persist Workspace")
+
+      // Create shadow and login as invitee
+      const invitee = new TestClient()
+      const email = "persist-member@example.com"
+      await createShadow(invitee, {
+        id: "inv_persist",
+        workspaceId: ws.id,
+        email,
+        region: "local",
+        expiresAt: futureDate,
+      })
+      await invitee.post("/test-auth-login", { email, name: "Persist User" })
+
+      // Check workspace list — should include the accepted workspace
+      const res1 = await invitee.get<{ workspaces: Array<{ id: string }> }>("/api/workspaces")
+      expect(res1.status).toBe(200)
+      expect(res1.data.workspaces.some((w) => w.id === ws.id)).toBe(true)
+
+      // Login again — membership should still be there
+      await invitee.post("/api/dev/login", { email, name: "Persist User" })
+      const res2 = await invitee.get<{ workspaces: Array<{ id: string }> }>("/api/workspaces")
+      expect(res2.status).toBe(200)
+      expect(res2.data.workspaces.some((w) => w.id === ws.id)).toBe(true)
+    })
+
+    test("multiple shadows for same user accepted in single login", async () => {
+      // Owner creates two workspaces
+      const owner = new TestClient()
+      await loginAs(owner, "multi-owner@example.com", "Multi Owner")
+      const ws1 = await createWorkspace(owner, "Multi WS 1")
+      const ws2 = await createWorkspace(owner, "Multi WS 2")
+
+      // Create shadows for invitee pointing to both workspaces
+      const invitee = new TestClient()
+      const email = "multi-shadow@example.com"
+      await createShadow(invitee, {
+        id: "inv_multi_1",
+        workspaceId: ws1.id,
+        email,
+        region: "local",
+        expiresAt: futureDate,
+      })
+      await createShadow(invitee, {
+        id: "inv_multi_2",
+        workspaceId: ws2.id,
+        email,
+        region: "local",
+        expiresAt: futureDate,
+      })
+
+      // Login — should accept both shadows (>1 accepted → redirect to root, not setup)
+      const loginRes = await invitee.post("/test-auth-login", { email, name: "Multi User" })
+      expect(loginRes.status).toBe(302)
+      expect(loginRes.headers.get("location")).toBe("/")
+
+      // Both workspaces should appear in the list
+      const res = await invitee.get<{ workspaces: Array<{ id: string }> }>("/api/workspaces")
+      expect(res.status).toBe(200)
+      const ids = res.data.workspaces.map((w) => w.id)
+      expect(ids).toContain(ws1.id)
+      expect(ids).toContain(ws2.id)
+    })
+
+    test("revoking shadow after it was accepted has no effect on membership", async () => {
+      // Owner creates workspace
+      const owner = new TestClient()
+      await loginAs(owner, "revoke-after-owner@example.com", "Revoke Owner")
+      const ws = await createWorkspace(owner, "Revoke After WS")
+
+      // Create shadow and login as invitee
+      const invitee = new TestClient()
+      const email = "revoke-after@example.com"
+      await createShadow(invitee, {
+        id: "inv_revoke_after",
+        workspaceId: ws.id,
+        email,
+        region: "local",
+        expiresAt: futureDate,
+      })
+      await invitee.post("/test-auth-login", { email, name: "Revoke After" })
+
+      // Try to revoke the already-accepted shadow
+      const revokeRes = await invitee.internalRequest("PATCH", "/internal/invitation-shadows/inv_revoke_after", {
+        status: "revoked",
+      })
+      // Should return 404 — shadow is no longer in 'pending' state
+      expect(revokeRes.status).toBe(404)
+
+      // Workspace membership should still exist
+      const wsRes = await invitee.get<{ workspaces: Array<{ id: string }> }>("/api/workspaces")
+      expect(wsRes.status).toBe(200)
+      expect(wsRes.data.workspaces.some((w) => w.id === ws.id)).toBe(true)
     })
   })
 })

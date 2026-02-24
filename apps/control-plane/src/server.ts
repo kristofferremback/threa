@@ -15,8 +15,8 @@ import { registerRoutes } from "./routes"
 import { loadControlPlaneConfig, type ControlPlaneConfig } from "./config"
 import { RegionalClient } from "./lib/regional-client"
 import { CloudflareKvClient } from "./lib/cloudflare-kv-client"
-import { ControlPlaneWorkspaceService } from "./features/workspaces/service"
-import { InvitationShadowService } from "./features/invitation-shadows/service"
+import { ControlPlaneWorkspaceService } from "./features/workspaces"
+import { InvitationShadowService } from "./features/invitation-shadows"
 
 const MIGRATIONS_GLOB = path.join(import.meta.dirname, "db/migrations/*.sql")
 
@@ -50,17 +50,15 @@ export async function startServer(): Promise<ControlPlaneInstance> {
     availableRegions,
     requireWorkspaceCreationInvite: config.workspaceCreationRequiresInvite,
   })
-  const shadowService = new InvitationShadowService({ pool })
+  const shadowService = new InvitationShadowService({ pool, regionalClient })
 
   const isProduction = process.env.NODE_ENV === "production"
   const app = createApp({ corsAllowedOrigins: config.corsAllowedOrigins })
 
   registerRoutes(app, {
-    pool,
     authService,
     workspaceService,
     shadowService,
-    regionalClient,
     internalApiKey: config.internalApiKey,
     availableRegions,
     allowDevAuthRoutes: config.useStubAuth && !isProduction,

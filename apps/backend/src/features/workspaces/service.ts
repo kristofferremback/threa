@@ -70,6 +70,9 @@ export class WorkspaceService {
    * Create a workspace from a control-plane instruction.
    * Accepts a pre-generated ID and slug — skips invite validation and slug generation
    * since the control-plane already handled those.
+   *
+   * Idempotent: if the workspace already exists (e.g. control-plane retrying after
+   * its local DB commit failed), returns the existing workspace instead of failing.
    */
   async createWorkspaceFromControlPlane(params: {
     id: string
@@ -79,27 +82,36 @@ export class WorkspaceService {
     ownerEmail: string
     ownerName: string
   }): Promise<Workspace> {
-    return withTransaction(this.pool, async (client) => {
-      const ownerUserId = generateUserId()
+    try {
+      return await withTransaction(this.pool, async (client) => {
+        const ownerUserId = generateUserId()
 
-      const ws = await WorkspaceRepository.insert(client, {
-        id: params.id,
-        name: params.name,
-        slug: params.slug,
-        createdBy: ownerUserId,
+        const ws = await WorkspaceRepository.insert(client, {
+          id: params.id,
+          name: params.name,
+          slug: params.slug,
+          createdBy: ownerUserId,
+        })
+
+        await this.createUserInTransaction(client, {
+          id: ownerUserId,
+          workspaceId: params.id,
+          workosUserId: params.ownerWorkosUserId,
+          email: params.ownerEmail,
+          name: params.ownerName,
+          role: "owner",
+        })
+
+        return ws
       })
-
-      await this.createUserInTransaction(client, {
-        id: ownerUserId,
-        workspaceId: params.id,
-        workosUserId: params.ownerWorkosUserId,
-        email: params.ownerEmail,
-        name: params.ownerName,
-        role: "owner",
-      })
-
-      return ws
-    })
+    } catch (error) {
+      // Idempotency guard: if workspace already exists, return it
+      if (isUniqueViolation(error)) {
+        const existing = await WorkspaceRepository.findById(this.pool, params.id)
+        if (existing) return existing
+      }
+      throw error
+    }
   }
 
   async createWorkspace(params: CreateWorkspaceParams): Promise<Workspace> {
