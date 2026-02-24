@@ -42,10 +42,9 @@ export function createControlPlaneAuthHandlers({ authService, shadowService }: D
       }
 
       const user = result.user
-      const name = displayNameFromWorkos(user)
 
       const redirectUrl = await shadowService.acceptPendingAndGetRedirect({
-        user: { id: user.id, email: user.email, name },
+        user,
         state,
       })
 

@@ -1,8 +1,13 @@
 import type { Pool } from "pg"
-import { withTransaction, decodeAndSanitizeRedirectState, logger } from "@threa/backend-common"
+import { withTransaction, decodeAndSanitizeRedirectState, displayNameFromWorkos, logger } from "@threa/backend-common"
 import { InvitationShadowRepository } from "./repository"
 import { WorkspaceRegistryRepository } from "../workspaces/repository"
 import type { RegionalClient } from "../../lib/regional-client"
+
+/** User info for shadow acceptance — accepts either pre-derived name (stub) or WorkOS fields */
+type ShadowUser =
+  | { id: string; email: string; name: string }
+  | { id: string; email: string; firstName?: string | null; lastName?: string | null }
 
 interface Dependencies {
   pool: Pool
@@ -18,6 +23,11 @@ export class InvitationShadowService {
     this.regionalClient = regionalClient
   }
 
+  private resolveDisplayName(user: ShadowUser): string {
+    if ("name" in user && user.name) return user.name
+    return displayNameFromWorkos(user)
+  }
+
   /**
    * Auto-accept all pending invitation shadows for a user.
    * Regional calls are fanned out in parallel via Promise.allSettled.
@@ -26,16 +36,18 @@ export class InvitationShadowService {
    * be retried on the next login — the regional endpoint is idempotent.
    * Returns the list of workspace IDs that were successfully accepted.
    */
-  async acceptPendingForUser(user: { id: string; email: string; name: string }): Promise<string[]> {
+  async acceptPendingForUser(user: ShadowUser): Promise<string[]> {
     const pendingShadows = await InvitationShadowRepository.findPendingByEmail(this.pool, user.email)
     if (pendingShadows.length === 0) return []
+
+    const name = this.resolveDisplayName(user)
 
     const results = await Promise.allSettled(
       pendingShadows.map(async (shadow) => {
         await this.regionalClient.acceptInvitation(shadow.region, shadow.id, {
           workosUserId: user.id,
           email: user.email,
-          name: user.name,
+          name,
         })
         await withTransaction(this.pool, async (client) => {
           await InvitationShadowRepository.updateStatus(client, shadow.id, "accepted")
@@ -67,10 +79,7 @@ export class InvitationShadowService {
    * Exactly one accepted workspace → redirect to its setup page.
    * Otherwise → use the state-encoded redirect or fall back to root.
    */
-  async acceptPendingAndGetRedirect(params: {
-    user: { id: string; email: string; name: string }
-    state?: string
-  }): Promise<string> {
+  async acceptPendingAndGetRedirect(params: { user: ShadowUser; state?: string }): Promise<string> {
     const acceptedWorkspaceIds = await this.acceptPendingForUser(params.user)
 
     if (acceptedWorkspaceIds.length === 1) {

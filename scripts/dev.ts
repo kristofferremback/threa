@@ -321,7 +321,7 @@ async function main() {
       PORT: "3003",
       DATABASE_URL: cpDbUrl,
       USE_STUB_AUTH: useStubAuth,
-      INTERNAL_API_KEY: "dev-internal-key",
+      INTERNAL_API_KEY: cpEnv.INTERNAL_API_KEY ?? "dev-internal-key",
       REGIONS: JSON.stringify({ local: { internalUrl: "http://localhost:3002" } }),
       CORS_ALLOWED_ORIGINS: "http://localhost:3000,http://localhost:5173,http://127.0.0.1:5173",
       WORKSPACE_CREATION_SKIP_INVITE: "true",
@@ -339,7 +339,7 @@ async function main() {
       DATABASE_URL: dbBase,
       USE_STUB_AUTH: useStubAuth,
       CONTROL_PLANE_URL: "http://localhost:3003",
-      INTERNAL_API_KEY: "dev-internal-key",
+      INTERNAL_API_KEY: backendEnv.INTERNAL_API_KEY ?? "dev-internal-key",
       REGION: "local",
     },
   })

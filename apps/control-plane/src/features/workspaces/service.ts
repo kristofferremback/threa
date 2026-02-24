@@ -6,6 +6,7 @@ import {
   generateUniqueSlug,
   withTransaction,
   logger,
+  displayNameFromWorkos,
   type WorkosOrgService,
 } from "@threa/backend-common"
 import { WorkspaceRegistryRepository } from "./repository"
@@ -58,8 +59,15 @@ export class ControlPlaneWorkspaceService {
     }))
   }
 
-  async create(params: { name: string; region?: string; workosUserId: string; email: string; displayName: string }) {
-    const { name, workosUserId, email, displayName } = params
+  async create(params: {
+    name: string
+    region?: string
+    workosUserId: string
+    authUser: { email: string; firstName?: string | null; lastName?: string | null }
+  }) {
+    const { name, workosUserId, authUser } = params
+    const email = authUser.email
+    const displayName = displayNameFromWorkos(authUser)
 
     const region = params.region ?? this.defaultRegion()
     if (!this.availableRegions.has(region)) {

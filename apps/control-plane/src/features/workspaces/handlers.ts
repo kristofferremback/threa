@@ -1,6 +1,6 @@
 import type { Request, Response } from "express"
 import { z } from "zod/v4"
-import { HttpError, displayNameFromWorkos } from "@threa/backend-common"
+import { HttpError } from "@threa/backend-common"
 import type { ControlPlaneWorkspaceService } from "./service"
 
 interface Dependencies {
@@ -38,8 +38,7 @@ export function createWorkspaceHandlers({ workspaceService, availableRegions }: 
         name: parsed.data.name,
         region: parsed.data.region,
         workosUserId: req.workosUserId,
-        email: req.authUser.email,
-        displayName: displayNameFromWorkos(req.authUser),
+        authUser: req.authUser,
       })
 
       res.status(201).json({ workspace })

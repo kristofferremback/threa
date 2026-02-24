@@ -133,10 +133,15 @@ export function loadConfig(): Config {
     region: process.env.REGION || null,
   }
 
-  // Validate co-presence: REGION is required when CONTROL_PLANE_URL is set (INV-11)
+  // Validate co-presence: REGION and INTERNAL_API_KEY are required when CONTROL_PLANE_URL is set (INV-11)
   if (config.controlPlaneUrl && !config.region) {
     throw new Error(
       "REGION is required when CONTROL_PLANE_URL is set — shadow sync needs to know this instance's region"
+    )
+  }
+  if (config.controlPlaneUrl && !config.internalApiKey) {
+    throw new Error(
+      "INTERNAL_API_KEY is required when CONTROL_PLANE_URL is set — inter-service calls need authentication"
     )
   }
 

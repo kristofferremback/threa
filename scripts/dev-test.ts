@@ -109,7 +109,7 @@ async function main() {
       PORT: String(backendPort),
       CORS_ALLOWED_ORIGINS: `http://localhost:${frontendPort},http://127.0.0.1:${frontendPort}`,
       CONTROL_PLANE_URL: `http://localhost:${controlPlanePort}`,
-      INTERNAL_API_KEY: "dev-internal-key",
+      INTERNAL_API_KEY: backendEnv.INTERNAL_API_KEY ?? "dev-internal-key",
       REGION: "local",
     }
 
@@ -120,7 +120,7 @@ async function main() {
       PORT: String(controlPlanePort),
       DATABASE_URL: `postgresql://threa:threa@localhost:5454/${TEST_CP_DB_NAME}`,
       USE_STUB_AUTH: "true",
-      INTERNAL_API_KEY: "dev-internal-key",
+      INTERNAL_API_KEY: backendEnv.INTERNAL_API_KEY ?? "dev-internal-key",
       REGIONS: JSON.stringify({ local: { internalUrl: `http://localhost:${backendPort}` } }),
       CORS_ALLOWED_ORIGINS: `http://localhost:${frontendPort},http://127.0.0.1:${frontendPort}`,
       WORKSPACE_CREATION_SKIP_INVITE: "true",
