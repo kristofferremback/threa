@@ -46,6 +46,9 @@ const DEFAULT_POOL_CONFIG: Partial<PoolConfig> = {
  */
 const ALIVE_BYPASS_WINDOW_MS = 500
 
+/** Track last validation time per PoolClient without monkey-patching */
+const validatedAt = new WeakMap<PoolClient, number>()
+
 /**
  * Validates a PoolClient before use.
  *
@@ -56,7 +59,7 @@ const ALIVE_BYPASS_WINDOW_MS = 500
 async function validateClient(client: PoolClient, pool: Pool): Promise<PoolClient> {
   // Check if connection needs validation based on last use
   const now = Date.now()
-  const lastQueryTime = (client as any)._validatedAt || 0
+  const lastQueryTime = validatedAt.get(client) ?? 0
   const idleTime = now - lastQueryTime
 
   // Only validate if connection hasn't been validated recently
@@ -65,7 +68,7 @@ async function validateClient(client: PoolClient, pool: Pool): Promise<PoolClien
       // Validate with simple query
       await client.query("SELECT 1")
       // Mark validation time
-      ;(client as any)._validatedAt = Date.now()
+      validatedAt.set(client, Date.now())
     } catch (err) {
       // Connection is stale - destroy it and retry
       logger.debug({ err, idleMs: idleTime }, "Stale connection detected, destroying and retrying")
@@ -312,6 +315,8 @@ export async function warmPool(pool: Pool, count: number = 10): Promise<void> {
     await Promise.all(clients.map((client) => client.query("SELECT 1")))
   } finally {
     // Release all connections back to pool
-    clients.forEach((client) => client.release())
+    for (const client of clients) {
+      client.release()
+    }
   }
 }

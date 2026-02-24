@@ -3,7 +3,8 @@ const isProduction = process.env.NODE_ENV === "production"
 export const parseCookies = (cookieHeader: string): Record<string, string> => {
   return cookieHeader.split(";").reduce(
     (acc, cookie) => {
-      const [key, value] = cookie.trim().split("=")
+      const [key, ...rest] = cookie.trim().split("=")
+      const value = rest.join("=")
       if (key && value) {
         acc[key] = decodeURIComponent(value)
       }
