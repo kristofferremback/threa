@@ -91,6 +91,9 @@ export type {
   CompactState,
 } from "./outbox/index"
 
+// CORS
+export { createCorsOriginChecker } from "./cors"
+
 // Shared utilities
 export { DebounceWithMaxWait } from "./debounce"
 export { calculateBackoffMs, type BackoffOptions } from "./backoff"

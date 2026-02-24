@@ -111,6 +111,19 @@ export class InvitationShadowService {
     return "/"
   }
 
+  /** Outbox handler: accept a shadow invitation via the regional backend */
+  async acceptFromOutbox(payload: ShadowAcceptPayload): Promise<void> {
+    await this.regionalClient.acceptInvitation(payload.region, payload.shadowId, {
+      workosUserId: payload.workosUserId,
+      email: payload.email,
+      name: payload.name,
+    })
+    await withTransaction(this.pool, async (client) => {
+      await InvitationShadowRepository.updateStatus(client, payload.shadowId, "accepted")
+      await WorkspaceRegistryRepository.insertMembership(client, payload.workspaceId, payload.workosUserId)
+    })
+  }
+
   async createShadow(params: { id: string; workspaceId: string; email: string; region: string; expiresAt: Date }) {
     return InvitationShadowRepository.insert(this.pool, params)
   }
@@ -118,4 +131,13 @@ export class InvitationShadowService {
   async updateStatus(id: string, status: "accepted" | "revoked") {
     return InvitationShadowRepository.updateStatus(this.pool, id, status)
   }
+}
+
+export interface ShadowAcceptPayload {
+  shadowId: string
+  workspaceId: string
+  region: string
+  workosUserId: string
+  email: string
+  name: string
 }

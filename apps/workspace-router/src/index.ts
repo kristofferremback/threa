@@ -1,3 +1,6 @@
+// Must match INTERNAL_API_KEY_HEADER in packages/backend-common/src/middleware/internal-auth.ts
+const INTERNAL_API_KEY_HEADER = "X-Internal-Api-Key"
+
 interface Env {
   WORKSPACE_REGIONS: KVNamespace
   /** JSON map of region name → { apiUrl, wsUrl } */
@@ -102,9 +105,8 @@ async function resolveRegion(workspaceId: string, env: Env): Promise<string | nu
   // Slow path: ask the control-plane (source of truth) and cache the result
   if (!env.CONTROL_PLANE_URL || !env.INTERNAL_API_KEY) return null
 
-  // Must match INTERNAL_API_KEY_HEADER in packages/backend-common/src/middleware/internal-auth.ts
   const res = await fetch(`${env.CONTROL_PLANE_URL}/internal/workspaces/${workspaceId}/region`, {
-    headers: { "X-Internal-Api-Key": env.INTERNAL_API_KEY },
+    headers: { [INTERNAL_API_KEY_HEADER]: env.INTERNAL_API_KEY },
   })
   if (!res.ok) return null
 

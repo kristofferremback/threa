@@ -11,7 +11,6 @@ import {
   CursorLock,
   DebounceWithMaxWait,
   ensureListenerFromLatest,
-  withTransaction,
   logger,
   type OutboxEvent,
   type ProcessResult,
@@ -23,10 +22,14 @@ import { registerRoutes } from "./routes"
 import { loadControlPlaneConfig } from "./config"
 import { RegionalClient } from "./lib/regional-client"
 import { CloudflareKvClient, NoopKvClient, type KvClient } from "./lib/cloudflare-kv-client"
-import { ControlPlaneWorkspaceService, OUTBOX_KV_SYNC } from "./features/workspaces"
-import { InvitationShadowService, OUTBOX_SHADOW_ACCEPT } from "./features/invitation-shadows"
-import { InvitationShadowRepository } from "./features/invitation-shadows"
-import { WorkspaceRegistryRepository } from "./features/workspaces"
+import {
+  ControlPlaneWorkspaceService,
+  OUTBOX_KV_SYNC,
+  OUTBOX_REGIONAL_CREATE,
+  type KvSyncPayload,
+  type RegionalCreatePayload,
+} from "./features/workspaces"
+import { InvitationShadowService, OUTBOX_SHADOW_ACCEPT, type ShadowAcceptPayload } from "./features/invitation-shadows"
 
 const MIGRATIONS_GLOB = path.join(import.meta.dirname, "db/migrations/*.sql")
 const LISTENER_ID = "control-plane"
@@ -58,6 +61,7 @@ export async function startServer(): Promise<ControlPlaneInstance> {
     pool,
     regionalClient,
     workosOrgService,
+    kvClient,
     availableRegions,
     requireWorkspaceCreationInvite: config.workspaceCreationRequiresInvite,
   })
@@ -81,9 +85,15 @@ export async function startServer(): Promise<ControlPlaneInstance> {
 
       const seen: bigint[] = []
       for (const event of events) {
-        await handleEvent(event, { kvClient, regionalClient, pool })
-        seen.push(event.id)
+        try {
+          await dispatchEvent(event, { workspaceService, shadowService })
+          seen.push(event.id)
+        } catch (err) {
+          // Per-event isolation: log and skip so one failing event doesn't block the batch
+          logger.error({ err, eventId: event.id, eventType: event.eventType }, "Outbox event processing failed")
+        }
       }
+      if (seen.length === 0) return { status: "no_events" } as ProcessResult
       return { status: "processed", processedIds: seen } as ProcessResult
     })
   }
@@ -150,35 +160,22 @@ export async function startServer(): Promise<ControlPlaneInstance> {
   return { server, pool, port: config.port, fastShutdown: config.fastShutdown, stop }
 }
 
-async function handleEvent(
+/** Dispatch a single outbox event to the appropriate service method (INV-34) */
+async function dispatchEvent(
   event: OutboxEvent,
-  deps: { kvClient: KvClient; regionalClient: RegionalClient; pool: Pool }
+  deps: { workspaceService: ControlPlaneWorkspaceService; shadowService: InvitationShadowService }
 ): Promise<void> {
-  const { kvClient, regionalClient, pool } = deps
-  const payload = event.payload
-
+  const payload = event.payload as unknown
   switch (event.eventType) {
-    case OUTBOX_KV_SYNC: {
-      const { workspaceId, region } = payload as { workspaceId: string; region: string }
-      await kvClient.putWorkspaceRegion(workspaceId, region)
+    case OUTBOX_REGIONAL_CREATE:
+      await deps.workspaceService.provisionRegional(payload as RegionalCreatePayload)
       break
-    }
-    case OUTBOX_SHADOW_ACCEPT: {
-      const { shadowId, workspaceId, region, workosUserId, email, name } = payload as {
-        shadowId: string
-        workspaceId: string
-        region: string
-        workosUserId: string
-        email: string
-        name: string
-      }
-      await regionalClient.acceptInvitation(region, shadowId, { workosUserId, email, name })
-      await withTransaction(pool, async (client) => {
-        await InvitationShadowRepository.updateStatus(client, shadowId, "accepted")
-        await WorkspaceRegistryRepository.insertMembership(client, workspaceId, workosUserId)
-      })
+    case OUTBOX_KV_SYNC:
+      await deps.workspaceService.syncToKv(payload as KvSyncPayload)
       break
-    }
+    case OUTBOX_SHADOW_ACCEPT:
+      await deps.shadowService.acceptFromOutbox(payload as ShadowAcceptPayload)
+      break
     default:
       logger.warn({ eventType: event.eventType }, "Unknown outbox event type")
   }

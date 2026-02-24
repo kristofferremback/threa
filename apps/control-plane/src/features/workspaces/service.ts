@@ -12,13 +12,16 @@ import {
 } from "@threa/backend-common"
 import { WorkspaceRegistryRepository } from "./repository"
 import type { RegionalClient } from "../../lib/regional-client"
+import type { KvClient } from "../../lib/cloudflare-kv-client"
 
 export const OUTBOX_KV_SYNC = "kv_sync"
+export const OUTBOX_REGIONAL_CREATE = "regional_create"
 
 interface Dependencies {
   pool: Pool
   regionalClient: RegionalClient
   workosOrgService: WorkosOrgService
+  kvClient: KvClient
   availableRegions: string[]
   requireWorkspaceCreationInvite: boolean
 }
@@ -27,6 +30,7 @@ export class ControlPlaneWorkspaceService {
   private pool: Pool
   private regionalClient: RegionalClient
   private workosOrgService: WorkosOrgService
+  private kvClient: KvClient
   private availableRegions: Set<string>
   private requireInvite: boolean
 
@@ -34,6 +38,7 @@ export class ControlPlaneWorkspaceService {
     this.pool = deps.pool
     this.regionalClient = deps.regionalClient
     this.workosOrgService = deps.workosOrgService
+    this.kvClient = deps.kvClient
     this.availableRegions = new Set(deps.availableRegions)
     this.requireInvite = deps.requireWorkspaceCreationInvite
   }
@@ -61,6 +66,7 @@ export class ControlPlaneWorkspaceService {
       name: row.name,
       slug: row.slug,
       region: row.region,
+      createdBy: row.created_by_workos_user_id,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     }))
@@ -112,7 +118,16 @@ export class ControlPlaneWorkspaceService {
           })
           await WorkspaceRegistryRepository.insertMembership(client, id, workosUserId)
 
-          // Outbox event for KV sync — committed with the domain write
+          // Durable outbox events — regional creation + KV sync both committed atomically
+          await OutboxRepository.insert(client, OUTBOX_REGIONAL_CREATE, {
+            workspaceId: id,
+            name,
+            slug,
+            region,
+            ownerWorkosUserId: workosUserId,
+            ownerEmail: email,
+            ownerName: displayName,
+          })
           await OutboxRepository.insert(client, OUTBOX_KV_SYNC, { workspaceId: id, region })
 
           return ws
@@ -125,40 +140,48 @@ export class ControlPlaneWorkspaceService {
       }
     }
 
-    // Create in regional backend
-    try {
-      await this.regionalClient.createWorkspace(region, {
-        id,
-        name,
-        slug: workspace.slug,
-        ownerWorkosUserId: workosUserId,
-        ownerEmail: email,
-        ownerName: displayName,
-      })
-    } catch (error) {
-      // Compensating transaction: delete from control-plane DB
-      logger.error({ err: error, workspaceId: id, region }, "Regional workspace creation failed, rolling back")
-      try {
-        await withTransaction(this.pool, async (client) => {
-          await WorkspaceRegistryRepository.deleteMembershipsByWorkspace(client, id)
-          await WorkspaceRegistryRepository.deleteById(client, id)
-        })
-      } catch (cleanupError) {
-        logger.error(
-          { err: cleanupError, workspaceId: id },
-          "Failed to clean up workspace registry after regional failure"
-        )
-      }
-      throw new HttpError("Failed to create workspace in regional backend", { status: 502, code: "REGIONAL_FAILURE" })
-    }
-
     return {
       id: workspace.id,
       name: workspace.name,
       slug: workspace.slug,
       region: workspace.region,
+      createdBy: workspace.created_by_workos_user_id,
       createdAt: workspace.created_at,
       updatedAt: workspace.updated_at,
     }
   }
+
+  /** Outbox handler: provision workspace in the regional backend */
+  async provisionRegional(payload: RegionalCreatePayload): Promise<void> {
+    await this.regionalClient.createWorkspace(payload.region, {
+      id: payload.workspaceId,
+      name: payload.name,
+      slug: payload.slug,
+      ownerWorkosUserId: payload.ownerWorkosUserId,
+      ownerEmail: payload.ownerEmail,
+      ownerName: payload.ownerName,
+    })
+    logger.info({ workspaceId: payload.workspaceId, region: payload.region }, "Workspace provisioned in region")
+  }
+
+  /** Outbox handler: sync workspace-to-region mapping to Cloudflare KV */
+  async syncToKv(payload: KvSyncPayload): Promise<void> {
+    await this.kvClient.putWorkspaceRegion(payload.workspaceId, payload.region)
+  }
+}
+
+// Typed payload definitions for control-plane outbox events
+export interface KvSyncPayload {
+  workspaceId: string
+  region: string
+}
+
+export interface RegionalCreatePayload {
+  workspaceId: string
+  name: string
+  slug: string
+  region: string
+  ownerWorkosUserId: string
+  ownerEmail: string
+  ownerName: string
 }

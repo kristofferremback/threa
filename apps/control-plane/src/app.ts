@@ -4,28 +4,7 @@ import helmet from "helmet"
 import cookieParser from "cookie-parser"
 import pinoHttp from "pino-http"
 import { randomUUID } from "crypto"
-import { logger } from "@threa/backend-common"
-
-type CorsOriginCallback = (err: Error | null, origin?: boolean) => void
-type CorsOriginChecker = (origin: string | undefined, callback: CorsOriginCallback) => void
-
-function createCorsOriginChecker(allowedOrigins: string[]): CorsOriginChecker {
-  const allowlist = new Set(allowedOrigins)
-
-  return (origin, callback) => {
-    if (!origin) {
-      callback(null, true)
-      return
-    }
-
-    if (allowlist.has(origin)) {
-      callback(null, true)
-      return
-    }
-
-    callback(new Error("CORS origin not allowed"), false)
-  }
-}
+import { logger, createCorsOriginChecker } from "@threa/backend-common"
 
 interface CreateAppOptions {
   corsAllowedOrigins: string[]
