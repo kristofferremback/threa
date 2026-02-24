@@ -55,12 +55,8 @@ export function createControlPlaneAuthHandlers({ authService, shadowService }: D
     async logout(req: Request, res: Response) {
       const session = req.cookies[SESSION_COOKIE_NAME]
 
-      res.clearCookie(SESSION_COOKIE_NAME, {
-        path: SESSION_COOKIE_CONFIG.path,
-        httpOnly: SESSION_COOKIE_CONFIG.httpOnly,
-        secure: SESSION_COOKIE_CONFIG.secure,
-        sameSite: SESSION_COOKIE_CONFIG.sameSite,
-      })
+      const { maxAge: _, ...clearOpts } = SESSION_COOKIE_CONFIG
+      res.clearCookie(SESSION_COOKIE_NAME, clearOpts)
 
       if (session) {
         const logoutUrl = await authService.getLogoutUrl(session)

@@ -5,7 +5,6 @@ import type { ControlPlaneWorkspaceService } from "./service"
 
 interface Dependencies {
   workspaceService: ControlPlaneWorkspaceService
-  availableRegions: string[]
 }
 
 const createWorkspaceSchema = z.object({
@@ -13,7 +12,7 @@ const createWorkspaceSchema = z.object({
   region: z.string().min(1).optional(),
 })
 
-export function createWorkspaceHandlers({ workspaceService, availableRegions }: Dependencies) {
+export function createWorkspaceHandlers({ workspaceService }: Dependencies) {
   return {
     async list(req: Request, res: Response) {
       if (!req.workosUserId) {
@@ -45,7 +44,7 @@ export function createWorkspaceHandlers({ workspaceService, availableRegions }: 
     },
 
     async listRegions(_req: Request, res: Response) {
-      res.json({ regions: availableRegions })
+      res.json({ regions: workspaceService.listRegions() })
     },
   }
 }

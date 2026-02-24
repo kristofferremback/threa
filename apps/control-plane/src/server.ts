@@ -60,7 +60,6 @@ export async function startServer(): Promise<ControlPlaneInstance> {
     workspaceService,
     shadowService,
     internalApiKey: config.internalApiKey,
-    availableRegions,
     allowDevAuthRoutes: config.useStubAuth && !isProduction,
     rateLimits: config.rateLimits,
   })

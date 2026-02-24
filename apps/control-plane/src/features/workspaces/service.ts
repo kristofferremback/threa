@@ -47,6 +47,10 @@ export class ControlPlaneWorkspaceService {
     return first
   }
 
+  listRegions(): string[] {
+    return [...this.availableRegions]
+  }
+
   async listForUser(workosUserId: string) {
     const rows = await WorkspaceRegistryRepository.listByUser(this.pool, workosUserId)
     return rows.map((row) => ({

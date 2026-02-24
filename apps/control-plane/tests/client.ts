@@ -1,6 +1,7 @@
 /**
  * HTTP client for control-plane E2E tests with cookie jar support.
  */
+import { INTERNAL_API_KEY_HEADER } from "@threa/backend-common"
 
 function getBaseUrl(): string {
   return process.env.TEST_BASE_URL || "http://localhost:3003"
@@ -84,7 +85,7 @@ export class TestClient {
 
   /** Convenience: POST /api/dev/login and return the user */
   internalRequest<T = unknown>(method: string, path: string, body?: unknown) {
-    return this.request<T>(method, path, body, { "X-Internal-Api-Key": getInternalApiKey() })
+    return this.request<T>(method, path, body, { [INTERNAL_API_KEY_HEADER]: getInternalApiKey() })
   }
 }
 

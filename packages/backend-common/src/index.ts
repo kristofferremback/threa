@@ -22,7 +22,7 @@ export { HttpError, isUniqueViolation } from "./errors"
 
 // Middleware
 export { errorHandler } from "./middleware/error-handler"
-export { createInternalAuthMiddleware } from "./middleware/internal-auth"
+export { createInternalAuthMiddleware, INTERNAL_API_KEY_HEADER } from "./middleware/internal-auth"
 export { createRateLimit, getClientIp } from "./middleware/rate-limit"
 export type { RateLimitOptions } from "./middleware/rate-limit"
 

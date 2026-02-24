@@ -1,4 +1,4 @@
-import { logger } from "@threa/backend-common"
+import { logger, INTERNAL_API_KEY_HEADER } from "@threa/backend-common"
 import type { RegionConfig } from "../config"
 
 const REGIONAL_REQUEST_TIMEOUT_MS = 15_000
@@ -35,7 +35,7 @@ export class RegionalClient {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Internal-Api-Key": this.internalApiKey,
+          [INTERNAL_API_KEY_HEADER]: this.internalApiKey,
         },
         body: JSON.stringify(data),
         signal: AbortSignal.timeout(REGIONAL_REQUEST_TIMEOUT_MS),
@@ -66,7 +66,7 @@ export class RegionalClient {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Internal-Api-Key": this.internalApiKey,
+          [INTERNAL_API_KEY_HEADER]: this.internalApiKey,
         },
         body: JSON.stringify(data),
         signal: AbortSignal.timeout(REGIONAL_REQUEST_TIMEOUT_MS),

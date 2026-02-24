@@ -1,4 +1,5 @@
 import { logger } from "./logger"
+import { INTERNAL_API_KEY_HEADER } from "@threa/backend-common"
 
 const REQUEST_TIMEOUT_MS = 10_000
 
@@ -20,7 +21,7 @@ export class ControlPlaneClient {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Internal-Api-Key": this.internalApiKey,
+        [INTERNAL_API_KEY_HEADER]: this.internalApiKey,
       },
       body: JSON.stringify({
         ...params,
@@ -42,7 +43,7 @@ export class ControlPlaneClient {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
-        "X-Internal-Api-Key": this.internalApiKey,
+        [INTERNAL_API_KEY_HEADER]: this.internalApiKey,
       },
       body: JSON.stringify({ status: "revoked" }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),

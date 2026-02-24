@@ -93,7 +93,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const rateLimits = createRateLimiters(rateLimiterConfig)
   const opsAccess = createOpsAccessMiddleware()
 
-  const authHandlers = createAuthHandlers({ authService, invitationService })
+  const authHandlers = createAuthHandlers()
   const avatarUpload = createAvatarUploadMiddleware()
   const workspace = createWorkspaceHandlers({
     workspaceService,

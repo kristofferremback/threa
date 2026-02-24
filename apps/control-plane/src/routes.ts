@@ -22,13 +22,12 @@ interface Dependencies {
   workspaceService: ControlPlaneWorkspaceService
   shadowService: InvitationShadowService
   internalApiKey: string
-  availableRegions: string[]
   allowDevAuthRoutes: boolean
   rateLimits: RateLimitConfig
 }
 
 export function registerRoutes(app: Express, deps: Dependencies) {
-  const { authService, workspaceService, shadowService, internalApiKey, availableRegions, allowDevAuthRoutes } = deps
+  const { authService, workspaceService, shadowService, internalApiKey, allowDevAuthRoutes } = deps
 
   const auth = createAuthMiddleware({ authService })
   const internalAuth = createInternalAuthMiddleware(internalApiKey)
@@ -43,7 +42,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const authLimit = createRateLimit({ name: "cp-auth", windowMs: 60_000, max: deps.rateLimits.authMax, key: ipKey })
 
   const authHandlers = createControlPlaneAuthHandlers({ authService, shadowService })
-  const workspace = createWorkspaceHandlers({ workspaceService, availableRegions })
+  const workspace = createWorkspaceHandlers({ workspaceService })
   const shadow = createInvitationShadowHandlers({ shadowService })
 
   // Readiness probe

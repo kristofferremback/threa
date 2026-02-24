@@ -4,6 +4,7 @@
  */
 
 import type { Socket } from "socket.io-client"
+import { INTERNAL_API_KEY_HEADER } from "@threa/backend-common"
 
 function getBaseUrl(): string {
   // Read at call time, not import time, so setup.ts can set it
@@ -126,7 +127,7 @@ export class TestClient {
 
   /** Request with internal API key header for inter-service endpoints */
   internalRequest<T = unknown>(method: string, path: string, body?: unknown) {
-    return this.request<T>(method, path, body, { "X-Internal-Api-Key": getInternalApiKey() })
+    return this.request<T>(method, path, body, { [INTERNAL_API_KEY_HEADER]: getInternalApiKey() })
   }
 }
 
