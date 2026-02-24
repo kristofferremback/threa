@@ -6,7 +6,7 @@
     "dev": "bun --hot src/index.ts",
     "start": "bun src/index.ts",
     "typecheck": "tsc --noEmit",
-    "test": "[ -d tests ] && bun test tests/ || echo 'No tests yet'",
+    "test": "bun test --preload ./tests/setup.ts tests/",
     "test:e2e": "bun test --preload ./tests/setup.ts tests/e2e/",
     "test:integration": "bun test tests/integration/"
   },

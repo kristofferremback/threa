@@ -1,0 +1,71 @@
+import { describe, test, expect } from "bun:test"
+import { TestClient, loginAs } from "../client"
+
+describe("Auth", () => {
+  test("GET /api/auth/me returns 401 without session", async () => {
+    const client = new TestClient()
+    const res = await client.get("/api/auth/me")
+    expect(res.status).toBe(401)
+  })
+
+  test("POST /api/dev/login sets session cookie and returns user", async () => {
+    const client = new TestClient()
+    const user = await loginAs(client, "auth-test@example.com", "Auth Tester")
+
+    expect(user.id).toBeTruthy()
+    expect(user.email).toBe("auth-test@example.com")
+  })
+
+  test("GET /api/auth/me returns user after login", async () => {
+    const client = new TestClient()
+    await loginAs(client, "me-test@example.com", "Me Tester")
+
+    const res = await client.get<{ id: string; email: string; name: string }>("/api/auth/me")
+    expect(res.status).toBe(200)
+    expect(res.data.email).toBe("me-test@example.com")
+    expect(res.data.name).toBe("Me Tester")
+  })
+
+  test("GET /api/auth/logout clears session", async () => {
+    const client = new TestClient()
+    await loginAs(client, "logout-test@example.com", "Logout Tester")
+
+    // Verify logged in
+    const meRes = await client.get("/api/auth/me")
+    expect(meRes.status).toBe(200)
+
+    // Logout (returns redirect)
+    const logoutRes = await client.get("/api/auth/logout")
+    expect(logoutRes.status).toBe(302)
+
+    // Session should be cleared — me should fail
+    const afterRes = await client.get("/api/auth/me")
+    expect(afterRes.status).toBe(401)
+  })
+
+  test("GET /readyz returns ok", async () => {
+    const client = new TestClient()
+    const res = await client.get<{ status: string }>("/readyz")
+    expect(res.status).toBe(200)
+    expect(res.data.status).toBe("ok")
+  })
+
+  test("GET /api/regions returns available regions", async () => {
+    const client = new TestClient()
+    const res = await client.get<{ regions: string[] }>("/api/regions")
+    expect(res.status).toBe(200)
+    expect(res.data.regions).toContain("local")
+  })
+
+  test("POST /test-auth-login redirects with session cookie", async () => {
+    const client = new TestClient()
+    const res = await client.post("/test-auth-login", { email: "stub-login@example.com", name: "Stub User" })
+    // Stub login redirects to / after setting cookie
+    expect(res.status).toBe(302)
+
+    // Session should be set — me should work
+    const meRes = await client.get<{ email: string }>("/api/auth/me")
+    expect(meRes.status).toBe(200)
+    expect(meRes.data.email).toBe("stub-login@example.com")
+  })
+})

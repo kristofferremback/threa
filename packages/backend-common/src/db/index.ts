@@ -35,84 +35,12 @@ const DEFAULT_POOL_CONFIG: Partial<PoolConfig> = {
   connectionTimeoutMillis: 10000, // 10 seconds - was 2000ms, too short for startup stampede
 }
 
-/**
- * Alive bypass window for connection validation (inspired by HikariCP).
- * If a connection was used within this window, skip validation (assume it's alive).
- *
- * This optimization prevents validating every connection on every borrow while
- * still catching stale connections that PostgreSQL killed (e.g., idle_session_timeout).
- *
- * @see https://github.com/brettwooldridge/HikariCP/issues/1050
- */
-const ALIVE_BYPASS_WINDOW_MS = 500
-
-/** Track last validation time per PoolClient without monkey-patching */
-const validatedAt = new WeakMap<PoolClient, number>()
-
-/**
- * Validates a PoolClient before use.
- *
- * @param client The PoolClient to validate
- * @param pool The pool for retry logic
- * @returns Validated client (or new client if stale)
- */
-async function validateClient(client: PoolClient, pool: Pool): Promise<PoolClient> {
-  // Check if connection needs validation based on last use
-  const now = Date.now()
-  const lastQueryTime = validatedAt.get(client) ?? 0
-  const idleTime = now - lastQueryTime
-
-  // Only validate if connection hasn't been validated recently
-  if (idleTime > ALIVE_BYPASS_WINDOW_MS) {
-    try {
-      // Validate with simple query
-      await client.query("SELECT 1")
-      // Mark validation time
-      validatedAt.set(client, Date.now())
-    } catch (err) {
-      // Connection is stale - destroy it and retry
-      logger.debug({ err, idleMs: idleTime }, "Stale connection detected, destroying and retrying")
-      client.release(true) // true = destroy, don't return to pool
-      return pool.connect() // Recursive retry will go through validation again
-    }
-  }
-
-  return client
-}
-
-/**
- * Wraps a pool to validate connections before use (HikariCP pattern).
- *
- * Problem: PostgreSQL can kill connections server-side (idle_session_timeout),
- * but pg-pool's client._connected flag stays true. When code tries to use the
- * "connected" client, queries fail with "timeout exceeded" or connection errors.
- *
- * Solution: Validate connections on borrow with an optimization - skip validation
- * if the connection was used recently (< 500ms ago). This catches stale connections
- * without impacting performance for active workloads.
- *
- * @param pool Pool to wrap with validation
- * @returns Pool with transparent connection validation
- */
-function wrapPoolWithValidation(pool: Pool): Pool {
-  const originalConnect = pool.connect.bind(pool)
-
-  // Override connect() with validation
-  pool.connect = function (): Promise<PoolClient> {
-    return originalConnect().then((client) => validateClient(client, pool))
-  }
-
-  return pool
-}
-
 export function createDatabasePool(connectionString: string, config?: Partial<PoolConfig>): Pool {
-  const pool = wrapPoolWithValidation(
-    new Pool({
-      connectionString,
-      ...DEFAULT_POOL_CONFIG,
-      ...config,
-    })
-  )
+  const pool = new Pool({
+    connectionString,
+    ...DEFAULT_POOL_CONFIG,
+    ...config,
+  })
 
   pool.on("error", (err: Error & { code?: string }) => {
     // 57P05 = idle-session timeout - PostgreSQL killed an idle connection
