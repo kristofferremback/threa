@@ -13,13 +13,29 @@ import type {
 } from "../../src/lib/queue"
 import type { Querier } from "../../src/db"
 import { ProcessingStatuses, type ProcessingStatus } from "@threa/types"
-import { JobQueues } from "../../src/lib/queue"
 
 const TEST_QUEUE = "test.dlq-hook" as JobQueueName
+const IMAGE_CAPTION_TEST_QUEUE = "test.image-caption.dlq-hook" as JobQueueName
 
 interface TestJobData {
   workspaceId: string
   testValue: string
+}
+
+async function waitForCondition(
+  check: () => Promise<boolean>,
+  timeoutMs: number,
+  errorMessage: string,
+  intervalMs = 25
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+
+  while (Date.now() < deadline) {
+    if (await check()) return
+    await new Promise((resolve) => setTimeout(resolve, intervalMs))
+  }
+
+  throw new Error(errorMessage)
 }
 
 describe("QueueManager", () => {
@@ -401,7 +417,7 @@ describe("QueueManager", () => {
         baseBackoffMs: 10,
       })
 
-      manager.registerHandler(JobQueues.IMAGE_CAPTION, handler as JobHandler<unknown>, {
+      manager.registerHandler(IMAGE_CAPTION_TEST_QUEUE, handler as JobHandler<unknown>, {
         hooks: { onDLQ: onDLQHook as OnDLQHook<unknown> },
       })
 
@@ -409,7 +425,7 @@ describe("QueueManager", () => {
       const now = new Date()
       await QueueRepository.insert(pool, {
         id: messageId,
-        queueName: JobQueues.IMAGE_CAPTION,
+        queueName: IMAGE_CAPTION_TEST_QUEUE,
         workspaceId,
         payload: {
           attachmentId,
@@ -425,8 +441,23 @@ describe("QueueManager", () => {
       manager.start()
 
       try {
-        // Wait for DLQ (2 failures with 10ms backoff + processing time)
-        await new Promise((resolve) => setTimeout(resolve, 100))
+        await waitForCondition(
+          async () => {
+            const attachment = await AttachmentRepository.findById(pool, attachmentId)
+            return attachment?.processingStatus === ProcessingStatuses.FAILED
+          },
+          5000,
+          "Timeout waiting for attachment to be marked FAILED"
+        )
+
+        await waitForCondition(
+          async () => {
+            const message = await QueueRepository.getById(pool, messageId)
+            return message?.dlqAt !== null
+          },
+          5000,
+          "Timeout waiting for message to be moved to DLQ"
+        )
 
         // Verify attachment is FAILED
         const failedAttachment = await AttachmentRepository.findById(pool, attachmentId)
@@ -440,8 +471,14 @@ describe("QueueManager", () => {
         shouldSucceed = true
         await QueueRepository.unDlq(pool, { messageId, processAfter: new Date() })
 
-        // Wait for successful processing (poll interval + processing time)
-        await new Promise((resolve) => setTimeout(resolve, 100))
+        await waitForCondition(
+          async () => {
+            const attachment = await AttachmentRepository.findById(pool, attachmentId)
+            return attachment?.processingStatus === ProcessingStatuses.COMPLETED
+          },
+          5000,
+          "Timeout waiting for attachment to be marked COMPLETED after un-DLQ"
+        )
 
         // Verify attachment is COMPLETED
         const completedAttachment = await AttachmentRepository.findById(pool, attachmentId)
