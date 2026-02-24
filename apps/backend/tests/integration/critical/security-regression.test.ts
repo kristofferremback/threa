@@ -14,14 +14,6 @@ function getBaseUrl(): string {
   return process.env.TEST_BASE_URL || "http://localhost:3001"
 }
 
-function encodeState(value: string): string {
-  return Buffer.from(value, "utf-8").toString("base64")
-}
-
-function toStubWorkosUserId(email: string): string {
-  return `workos_test_${email.replace(/[^a-z0-9]/gi, "_")}`
-}
-
 function buildCookieHeader(client: TestClient): string {
   const cookies = (client as unknown as { cookies?: Map<string, string> }).cookies
   if (!cookies) return ""
@@ -96,52 +88,8 @@ describe("P0 Security Regression Coverage", () => {
   const runId = Math.random().toString(36).slice(2)
 
   describe("Auth Redirect Sanitization", () => {
-    test("auth callback falls back to / for external redirect target", async () => {
-      const client = new TestClient()
-      const email = `redirect-callback-${runId}@example.com`
-      await loginAs(client, email, "Redirect Callback User")
-
-      const code = `test_code_${toStubWorkosUserId(email)}`
-      const state = encodeState("https://evil.example/phish")
-
-      const response = await fetch(
-        `${getBaseUrl()}/api/auth/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`,
-        {
-          method: "GET",
-          headers: {
-            Cookie: buildCookieHeader(client),
-          },
-          redirect: "manual",
-        }
-      )
-
-      expect(response.status).toBe(302)
-      expect(response.headers.get("location")).toBe("/")
-    })
-
-    test("auth callback preserves internal relative redirect target", async () => {
-      const client = new TestClient()
-      const email = `redirect-safe-${runId}@example.com`
-      await loginAs(client, email, "Redirect Safe User")
-
-      const code = `test_code_${toStubWorkosUserId(email)}`
-      const safePath = "/workspaces/ws_123?tab=streams#latest"
-      const state = encodeState(safePath)
-
-      const response = await fetch(
-        `${getBaseUrl()}/api/auth/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`,
-        {
-          method: "GET",
-          headers: {
-            Cookie: buildCookieHeader(client),
-          },
-          redirect: "manual",
-        }
-      )
-
-      expect(response.status).toBe(302)
-      expect(response.headers.get("location")).toBe(safePath)
-    })
+    // Auth callback redirect tests moved to control-plane (apps/control-plane/tests/e2e/auth.test.ts)
+    // since /api/auth/callback is now handled by the control-plane service.
 
     test("stub auth login falls back to / for external redirect target", async () => {
       const response = await fetch(`${getBaseUrl()}/test-auth-login`, {
@@ -152,7 +100,7 @@ describe("P0 Security Regression Coverage", () => {
         body: JSON.stringify({
           email: `redirect-stub-${runId}@example.com`,
           name: "Redirect Stub User",
-          state: encodeState("https://evil.example/stub-phish"),
+          state: Buffer.from("https://evil.example/stub-phish", "utf-8").toString("base64"),
         }),
         redirect: "manual",
       })

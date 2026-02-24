@@ -159,6 +159,9 @@ export async function startTestServer(): Promise<TestServer> {
   process.env.USE_STUB_BOUNDARY_EXTRACTION = "true"
   process.env.USE_STUB_AI = "true"
 
+  // Enable internal API endpoints (control-plane → regional backend pattern)
+  process.env.INTERNAL_API_KEY = "test-internal-key"
+
   // Disable rate limits for tests (prevent flaky 429s)
   process.env.GLOBAL_RATE_LIMIT_MAX = "10000"
   process.env.AUTH_RATE_LIMIT_MAX = "10000"

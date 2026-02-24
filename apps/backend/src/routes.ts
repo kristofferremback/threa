@@ -135,9 +135,8 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   // Global baseline rate limit
   app.use(rateLimits.globalBaseline)
 
-  app.get("/api/auth/login", rateLimits.auth, authHandlers.login)
-  app.all("/api/auth/callback", rateLimits.auth, authHandlers.callback)
-  app.get("/api/auth/logout", rateLimits.auth, authHandlers.logout)
+  // Auth login/callback/logout moved to control-plane.
+  // The router proxies /api/auth/* to the control-plane in production.
 
   if (authService instanceof StubAuthService) {
     if (!allowDevAuthRoutes) {
@@ -160,6 +159,9 @@ export function registerRoutes(app: Express, deps: Dependencies) {
 
   app.get("/api/auth/me", auth, authHandlers.me)
 
+  // Workspace list/create are also on the control-plane. The router proxies
+  // GET/POST /api/workspaces to the control-plane in production. These stay
+  // here for direct backend testing and single-region dev without the router.
   app.get("/api/workspaces", auth, workspace.list)
   app.post("/api/workspaces", auth, workspace.create)
   app.get("/api/workspaces/:workspaceId", ...authed, workspace.get)
