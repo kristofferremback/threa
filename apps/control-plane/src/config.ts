@@ -106,6 +106,10 @@ export function loadControlPlaneConfig(): ControlPlaneConfig {
     }
   }
 
+  if (!process.env.INTERNAL_API_KEY && !isProduction) {
+    logger.warn("INTERNAL_API_KEY not set — using hardcoded default. Set this in staging/CI environments.")
+  }
+
   if (useStubAuth) {
     logger.warn("Control plane: Using stub auth service - NOT FOR PRODUCTION")
   }

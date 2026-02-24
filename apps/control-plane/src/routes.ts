@@ -36,7 +36,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const auth = createAuthMiddleware({ authService })
   const internalAuth = createInternalAuthMiddleware(internalApiKey)
 
-  const authHandlers = createControlPlaneAuthHandlers({ authService, shadowService, regionalClient, pool })
+  const authHandlers = createControlPlaneAuthHandlers({ authService, regionalClient, pool })
   const workspace = createWorkspaceHandlers({ workspaceService, availableRegions })
   const shadow = createInvitationShadowHandlers({ shadowService })
 
@@ -56,7 +56,6 @@ export function registerRoutes(app: Express, deps: Dependencies) {
 
     const authStub = createAuthStubHandlers({
       authStubService: authService,
-      shadowService,
       regionalClient,
       pool,
     })

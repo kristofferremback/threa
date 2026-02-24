@@ -2,11 +2,12 @@ import type { Request, Response } from "express"
 import {
   SESSION_COOKIE_CONFIG,
   decodeAndSanitizeRedirectState,
+  withTransaction,
   logger,
   type StubAuthService,
 } from "@threa/backend-common"
 import { renderLoginPage } from "./stub-login-page"
-import type { InvitationShadowService } from "../invitation-shadows/service"
+import { InvitationShadowRepository } from "../invitation-shadows/repository"
 import type { RegionalClient } from "../../lib/regional-client"
 import { WorkspaceRegistryRepository } from "../workspaces/repository"
 import type { Pool } from "pg"
@@ -15,12 +16,11 @@ const SESSION_COOKIE_NAME = "wos_session"
 
 interface Dependencies {
   authStubService: StubAuthService
-  shadowService: InvitationShadowService
   regionalClient: RegionalClient
   pool: Pool
 }
 
-export function createAuthStubHandlers({ authStubService, shadowService, regionalClient, pool }: Dependencies) {
+export function createAuthStubHandlers({ authStubService, regionalClient, pool }: Dependencies) {
   return {
     async getLoginPage(req: Request, res: Response) {
       const state = (req.query.state as string) || ""
@@ -31,8 +31,9 @@ export function createAuthStubHandlers({ authStubService, shadowService, regiona
       const { email, name, state } = req.body
       const result = await authStubService.devLogin({ email, name })
 
-      // Auto-accept pending invitation shadows (mirrors real callback flow)
-      const pendingShadows = await shadowService.findPendingByEmail(result.user.email)
+      // Auto-accept pending invitation shadows (mirrors real callback flow).
+      // Two-phase per shadow: (1) regional call (idempotent), (2) local DB transaction.
+      const pendingShadows = await InvitationShadowRepository.findPendingByEmail(pool, result.user.email)
       const acceptedWorkspaceIds: string[] = []
 
       for (const shadow of pendingShadows) {
@@ -42,8 +43,10 @@ export function createAuthStubHandlers({ authStubService, shadowService, regiona
             email: result.user.email,
             name: result.user.name,
           })
-          await shadowService.updateStatus(shadow.id, "accepted")
-          await WorkspaceRegistryRepository.insertMembership(pool, shadow.workspace_id, result.user.id)
+          await withTransaction(pool, async (client) => {
+            await InvitationShadowRepository.updateStatus(client, shadow.id, "accepted")
+            await WorkspaceRegistryRepository.insertMembership(client, shadow.workspace_id, result.user.id)
+          })
           acceptedWorkspaceIds.push(shadow.workspace_id)
         } catch (error) {
           logger.error(

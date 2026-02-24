@@ -4,10 +4,11 @@ import {
   SESSION_COOKIE_CONFIG,
   decodeAndSanitizeRedirectState,
   displayNameFromWorkos,
+  withTransaction,
   logger,
   type AuthService,
 } from "@threa/backend-common"
-import type { InvitationShadowService } from "../invitation-shadows/service"
+import { InvitationShadowRepository } from "../invitation-shadows/repository"
 import type { RegionalClient } from "../../lib/regional-client"
 import { WorkspaceRegistryRepository } from "../workspaces/repository"
 import type { Pool } from "pg"
@@ -16,12 +17,11 @@ const SESSION_COOKIE_NAME = "wos_session"
 
 interface Dependencies {
   authService: AuthService
-  shadowService: InvitationShadowService
   regionalClient: RegionalClient
   pool: Pool
 }
 
-export function createControlPlaneAuthHandlers({ authService, shadowService, regionalClient, pool }: Dependencies) {
+export function createControlPlaneAuthHandlers({ authService, regionalClient, pool }: Dependencies) {
   return {
     async login(req: Request, res: Response) {
       const redirectTo = req.query.redirect_to as string | undefined
@@ -43,21 +43,27 @@ export function createControlPlaneAuthHandlers({ authService, shadowService, reg
         return res.status(401).json({ error: "Authentication failed" })
       }
 
-      const name = displayNameFromWorkos(result.user)
+      const user = result.user
+      const name = displayNameFromWorkos(user)
 
-      // Auto-accept pending invitation shadows
-      const pendingShadows = await shadowService.findPendingByEmail(result.user.email)
+      // Auto-accept pending invitation shadows.
+      // Two-phase per shadow: (1) regional call (idempotent), (2) local DB transaction.
+      // If phase 1 succeeds but phase 2 fails, the shadow stays pending and will
+      // be retried on the next login — the regional endpoint is idempotent.
+      const pendingShadows = await InvitationShadowRepository.findPendingByEmail(pool, user.email)
       const acceptedWorkspaceIds: string[] = []
 
       for (const shadow of pendingShadows) {
         try {
           await regionalClient.acceptInvitation(shadow.region, shadow.id, {
-            workosUserId: result.user.id,
-            email: result.user.email,
+            workosUserId: user.id,
+            email: user.email,
             name,
           })
-          await shadowService.updateStatus(shadow.id, "accepted")
-          await WorkspaceRegistryRepository.insertMembership(pool, shadow.workspace_id, result.user.id)
+          await withTransaction(pool, async (client) => {
+            await InvitationShadowRepository.updateStatus(client, shadow.id, "accepted")
+            await WorkspaceRegistryRepository.insertMembership(client, shadow.workspace_id, user.id)
+          })
           acceptedWorkspaceIds.push(shadow.workspace_id)
         } catch (error) {
           logger.error(

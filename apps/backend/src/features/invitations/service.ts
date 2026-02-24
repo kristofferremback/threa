@@ -199,7 +199,16 @@ export class InvitationService {
     })
 
     if (!updated) {
-      return null // Already accepted, expired, or revoked
+      // Invitation not in pending state — check if this is an idempotent replay.
+      // The control-plane retries acceptance if its local DB write failed after the
+      // regional call succeeded, so we must return success when the user is already
+      // a workspace member (rather than 404, which would leave the shadow stuck).
+      const invitation = await InvitationRepository.findById(client, invitationId)
+      if (invitation?.status === "accepted") {
+        const isMember = await UserRepository.isMember(client, invitation.workspaceId, identity.workosUserId)
+        if (isMember) return invitation.workspaceId
+      }
+      return null
     }
 
     const invitation = await InvitationRepository.findById(client, invitationId)

@@ -16,6 +16,7 @@ vi.mock("@/auth", () => ({
 vi.mock("@/hooks", () => ({
   useWorkspaces: () => mockUseWorkspaces(),
   useCreateWorkspace: () => mockUseCreateWorkspace(),
+  useRegions: () => ({ data: undefined, isLoading: false }),
 }))
 
 function WorkspaceRouteProbe() {

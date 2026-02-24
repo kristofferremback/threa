@@ -21,6 +21,7 @@ export { HttpError, isUniqueViolation } from "./errors"
 
 // Middleware
 export { errorHandler } from "./middleware/error-handler"
+export { createInternalAuthMiddleware } from "./middleware/internal-auth"
 
 // Utilities
 export { logger } from "./logger"
