@@ -1,12 +1,14 @@
 import type { RequestHandler } from "express"
 import { z } from "zod"
-import type { StubAuthService } from "./auth-service.stub"
+import {
+  renderLoginPage,
+  decodeAndSanitizeRedirectState,
+  displayNameFromWorkos,
+  type StubAuthService,
+} from "@threa/backend-common"
 import type { WorkspaceService } from "../features/workspaces"
 import type { StreamService } from "../features/streams"
 import type { InvitationService } from "../features/invitations"
-import { renderLoginPage } from "@threa/backend-common"
-import { decodeAndSanitizeRedirectState } from "./redirect"
-import { displayNameFromWorkos } from "./display-name"
 import { HttpError } from "../lib/errors"
 
 const workspaceJoinSchema = z.object({

@@ -5,7 +5,7 @@ import { WorkspaceRepository, UserRepository, type WorkspaceService } from "../w
 import { OutboxRepository } from "../../lib/outbox"
 import { invitationId } from "../../lib/id"
 import { logger } from "../../lib/logger"
-import { getWorkosErrorCode, type WorkosOrgService } from "../../auth/workos-org-service"
+import { getWorkosErrorCode, type WorkosOrgService } from "@threa/backend-common"
 import type { ControlPlaneClient } from "../../lib/control-plane-client"
 import type { InvitationSkipReason, InvitationStatus } from "@threa/types"
 

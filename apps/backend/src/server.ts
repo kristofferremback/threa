@@ -8,8 +8,7 @@ import { errorHandler } from "./middleware/error-handler"
 import { registerSocketHandlers } from "./socket"
 import { createDatabasePools, warmPool, type DatabasePools } from "./db"
 import { runMigrations } from "./db/migrations"
-import { WorkosAuthService } from "./auth/auth-service"
-import { StubAuthService } from "./auth/auth-service.stub"
+import { WorkosAuthService, StubAuthService } from "@threa/backend-common"
 import {
   WorkspaceService,
   AvatarService,
@@ -18,8 +17,7 @@ import {
   createAvatarProcessOnDLQ,
 } from "./features/workspaces"
 import { InvitationService } from "./features/invitations"
-import { WorkosOrgServiceImpl } from "./auth/workos-org-service"
-import { StubWorkosOrgService } from "./auth/workos-org-service.stub"
+import { WorkosOrgServiceImpl, StubWorkosOrgService } from "@threa/backend-common"
 import {
   StreamService,
   StreamNamingService,

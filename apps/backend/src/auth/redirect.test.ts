@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { decodeAndSanitizeRedirectState } from "./redirect"
+import { decodeAndSanitizeRedirectState } from "@threa/backend-common"
 
 function encodeState(value: string): string {
   return Buffer.from(value, "utf-8").toString("base64")

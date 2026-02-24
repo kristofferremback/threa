@@ -1,6 +1,6 @@
 import type { Server, Socket } from "socket.io"
-import { parseCookies } from "./lib/cookies"
-import type { AuthService } from "./auth/auth-service"
+import { parseCookies } from "@threa/backend-common"
+import type { AuthService } from "@threa/backend-common"
 import type { StreamService } from "./features/streams"
 import type { UserSocketRegistry } from "./lib/user-socket-registry"
 import { AgentSessionRepository } from "./features/agents"
