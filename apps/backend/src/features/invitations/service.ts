@@ -155,19 +155,25 @@ export class InvitationService {
       }
     }
 
-    // Phase 4: Sync invitation shadows to control-plane (best-effort)
+    // Phase 4: Sync invitation shadows to control-plane (best-effort, parallel)
     if (this.controlPlaneClient && this.region) {
-      for (const inv of sent) {
-        try {
-          await this.controlPlaneClient.createInvitationShadow({
+      const results = await Promise.allSettled(
+        sent.map((inv) =>
+          this.controlPlaneClient!.createInvitationShadow({
             id: inv.id,
             workspaceId: inv.workspaceId,
             email: inv.email,
-            region: this.region,
+            region: this.region!,
             expiresAt: inv.expiresAt,
           })
-        } catch (err) {
-          logger.error({ err, invitationId: inv.id, email: inv.email }, "Failed to sync invitation shadow")
+        )
+      )
+      for (let i = 0; i < results.length; i++) {
+        if (results[i].status === "rejected") {
+          logger.error(
+            { err: (results[i] as PromiseRejectedResult).reason, invitationId: sent[i].id, email: sent[i].email },
+            "Failed to sync invitation shadow"
+          )
         }
       }
     }

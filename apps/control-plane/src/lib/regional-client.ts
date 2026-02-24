@@ -29,15 +29,21 @@ export class RegionalClient {
     }
   ): Promise<{ workspace: unknown }> {
     const url = `${this.getRegionUrl(region)}/internal/workspaces`
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Internal-Api-Key": this.internalApiKey,
-      },
-      body: JSON.stringify(data),
-      signal: AbortSignal.timeout(REGIONAL_REQUEST_TIMEOUT_MS),
-    })
+    let res: Response
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Internal-Api-Key": this.internalApiKey,
+        },
+        body: JSON.stringify(data),
+        signal: AbortSignal.timeout(REGIONAL_REQUEST_TIMEOUT_MS),
+      })
+    } catch (err) {
+      logger.error({ err, region, url }, "Regional workspace creation request failed")
+      throw err
+    }
 
     if (!res.ok) {
       const body = await res.text().catch(() => "")
@@ -54,15 +60,21 @@ export class RegionalClient {
     data: { workosUserId: string; email: string; name: string }
   ): Promise<{ workspaceId: string }> {
     const url = `${this.getRegionUrl(region)}/internal/invitations/${invitationId}/accept`
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Internal-Api-Key": this.internalApiKey,
-      },
-      body: JSON.stringify(data),
-      signal: AbortSignal.timeout(REGIONAL_REQUEST_TIMEOUT_MS),
-    })
+    let res: Response
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Internal-Api-Key": this.internalApiKey,
+        },
+        body: JSON.stringify(data),
+        signal: AbortSignal.timeout(REGIONAL_REQUEST_TIMEOUT_MS),
+      })
+    } catch (err) {
+      logger.error({ err, region, url, invitationId }, "Regional invitation acceptance request failed")
+      throw err
+    }
 
     if (!res.ok) {
       const body = await res.text().catch(() => "")

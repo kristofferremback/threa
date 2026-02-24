@@ -1,4 +1,5 @@
 import type { RequestHandler } from "express"
+import { z } from "zod"
 import type { StubAuthService } from "./auth-service.stub"
 import type { WorkspaceService } from "../features/workspaces"
 import type { StreamService } from "../features/streams"
@@ -7,6 +8,11 @@ import { renderLoginPage } from "./auth-stub-login-page"
 import { decodeAndSanitizeRedirectState } from "./redirect"
 import { displayNameFromWorkos } from "./display-name"
 import { HttpError } from "../lib/errors"
+
+const workspaceJoinSchema = z.object({
+  role: z.enum(["user", "admin"]).optional(),
+  name: z.string().optional(),
+})
 
 interface Dependencies {
   authStubService: StubAuthService
@@ -78,18 +84,23 @@ export function createAuthStubHandlers(deps: Dependencies): AuthStubHandlers {
     const workosUserId = req.workosUserId!
     const authUser = req.authUser
     const { workspaceId } = req.params
-    const { role, name: nameOverride } = req.body as { role?: "user" | "admin"; name?: string }
+
+    const parsed = workspaceJoinSchema.safeParse(req.body)
+    if (!parsed.success) {
+      throw new HttpError("Invalid request body", { status: 400, code: "VALIDATION_ERROR" })
+    }
+    const { role, name: nameOverride } = parsed.data
 
     if (!authUser) {
       throw new HttpError("Not authenticated", { status: 401, code: "NOT_AUTHENTICATED" })
     }
 
-    const name = nameOverride || displayNameFromWorkos(authUser)
+    const name = nameOverride ?? displayNameFromWorkos(authUser)
     const user = await workspaceService.addUser(workspaceId, {
       workosUserId,
       email: authUser.email,
       name,
-      role: role || "user",
+      role: role ?? "user",
     })
     res.json({ user })
   }
