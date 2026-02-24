@@ -38,6 +38,14 @@ export class ControlPlaneWorkspaceService {
     this.requireInvite = deps.requireWorkspaceCreationInvite
   }
 
+  private defaultRegion(): string {
+    const first = this.availableRegions.values().next().value
+    if (!first) {
+      throw new HttpError("No regions available", { status: 500, code: "NO_REGIONS" })
+    }
+    return first
+  }
+
   async listForUser(workosUserId: string) {
     const rows = await WorkspaceRegistryRepository.listByUser(this.pool, workosUserId)
     return rows.map((row) => ({
@@ -50,9 +58,10 @@ export class ControlPlaneWorkspaceService {
     }))
   }
 
-  async create(params: { name: string; region: string; workosUserId: string; email: string; displayName: string }) {
-    const { name, region, workosUserId, email, displayName } = params
+  async create(params: { name: string; region?: string; workosUserId: string; email: string; displayName: string }) {
+    const { name, workosUserId, email, displayName } = params
 
+    const region = params.region ?? this.defaultRegion()
     if (!this.availableRegions.has(region)) {
       throw new HttpError(`Invalid region: ${region}`, { status: 400, code: "INVALID_REGION" })
     }

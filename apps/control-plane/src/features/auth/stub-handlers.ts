@@ -1,7 +1,12 @@
 import type { Request, Response } from "express"
 import { z } from "zod/v4"
-import { HttpError, SESSION_COOKIE_NAME, SESSION_COOKIE_CONFIG, type StubAuthService } from "@threa/backend-common"
-import { renderLoginPage } from "./stub-login-page"
+import {
+  HttpError,
+  SESSION_COOKIE_NAME,
+  SESSION_COOKIE_CONFIG,
+  renderLoginPage,
+  type StubAuthService,
+} from "@threa/backend-common"
 import type { InvitationShadowService } from "../invitation-shadows/service"
 
 const stubLoginSchema = z.object({

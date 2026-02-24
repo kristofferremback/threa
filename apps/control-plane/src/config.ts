@@ -61,9 +61,8 @@ export function loadControlPlaneConfig(): ControlPlaneConfig {
     }
   }
 
-  const hasRegions = Object.keys(regions).length > 0
-  if (!process.env.INTERNAL_API_KEY && (isProduction || hasRegions)) {
-    throw new Error("INTERNAL_API_KEY is required in production or when REGIONS is configured")
+  if (!process.env.INTERNAL_API_KEY) {
+    throw new Error("INTERNAL_API_KEY is required")
   }
 
   const corsAllowedOrigins = process.env.CORS_ALLOWED_ORIGINS
@@ -81,7 +80,7 @@ export function loadControlPlaneConfig(): ControlPlaneConfig {
       redirectUri: process.env.WORKOS_REDIRECT_URI || "",
       cookiePassword: process.env.WORKOS_COOKIE_PASSWORD || "",
     },
-    internalApiKey: process.env.INTERNAL_API_KEY || "dev-internal-key",
+    internalApiKey: process.env.INTERNAL_API_KEY,
     regions,
     workspaceCreationRequiresInvite: process.env.WORKSPACE_CREATION_SKIP_INVITE !== "true",
     fastShutdown: process.env.FAST_SHUTDOWN === "true",
@@ -105,10 +104,6 @@ export function loadControlPlaneConfig(): ControlPlaneConfig {
       namespaceId,
       apiToken,
     }
-  }
-
-  if (!process.env.INTERNAL_API_KEY) {
-    logger.warn("INTERNAL_API_KEY not set — using hardcoded dev default. Only valid for local development.")
   }
 
   if (useStubAuth) {

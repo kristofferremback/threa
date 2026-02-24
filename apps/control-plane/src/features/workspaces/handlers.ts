@@ -34,14 +34,9 @@ export function createWorkspaceHandlers({ workspaceService, availableRegions }: 
         throw new HttpError("Invalid request body", { status: 400, code: "VALIDATION_ERROR" })
       }
 
-      const region = parsed.data.region ?? availableRegions[0]
-      if (!region) {
-        throw new HttpError("No regions available", { status: 500, code: "NO_REGIONS" })
-      }
-
       const workspace = await workspaceService.create({
         name: parsed.data.name,
-        region,
+        region: parsed.data.region,
         workosUserId: req.workosUserId,
         email: req.authUser.email,
         displayName: displayNameFromWorkos(req.authUser),

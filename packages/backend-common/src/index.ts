@@ -9,6 +9,7 @@ export { StubWorkosOrgService } from "./auth/workos-org-service.stub"
 export { createAuthMiddleware } from "./auth/middleware"
 export { displayNameFromWorkos } from "./auth/display-name"
 export { decodeAndSanitizeRedirectState } from "./auth/redirect"
+export { renderLoginPage } from "./auth/stub-login-page"
 export type { WorkosConfig } from "./auth/types"
 
 // Database
