@@ -106,11 +106,13 @@ function wrapPoolWithValidation(pool: Pool): Pool {
 }
 
 export function createDatabasePool(connectionString: string, config?: Partial<PoolConfig>): Pool {
-  const pool = new Pool({
-    connectionString,
-    ...DEFAULT_POOL_CONFIG,
-    ...config,
-  })
+  const pool = wrapPoolWithValidation(
+    new Pool({
+      connectionString,
+      ...DEFAULT_POOL_CONFIG,
+      ...config,
+    })
+  )
 
   pool.on("error", (err: Error & { code?: string }) => {
     // 57P05 = idle-session timeout - PostgreSQL killed an idle connection
