@@ -3,15 +3,14 @@ import {
   withTransaction,
   decodeAndSanitizeRedirectState,
   displayNameFromWorkos,
-  taskId as generateTaskId,
+  OutboxRepository,
   logger,
 } from "@threa/backend-common"
 import { InvitationShadowRepository } from "./repository"
 import { WorkspaceRegistryRepository } from "../workspaces/repository"
-import { enqueueTask } from "../../lib/task-processor"
 import type { RegionalClient } from "../../lib/regional-client"
 
-export const TASK_ACCEPT_SHADOW = "accept_invitation_shadow"
+export const OUTBOX_SHADOW_ACCEPT = "shadow_accept"
 
 /** User info for shadow acceptance — accepts either pre-derived name (stub) or WorkOS fields */
 type ShadowUser =
@@ -40,7 +39,7 @@ export class InvitationShadowService {
   /**
    * Auto-accept all pending invitation shadows for a user.
    * Attempts synchronous acceptance for fast redirect, enqueues a durable
-   * retry task on failure so no shadow is silently lost.
+   * outbox retry on failure so no shadow is silently lost.
    */
   async acceptPendingForUser(user: ShadowUser): Promise<string[]> {
     const pendingShadows = await InvitationShadowRepository.findPendingByEmail(this.pool, user.email)
@@ -72,21 +71,17 @@ export class InvitationShadowService {
         const shadow = pendingShadows[i]
         logger.error(
           { err: result.reason, shadowId: shadow.id, workspaceId: shadow.workspace_id },
-          "Failed to auto-accept invitation shadow, enqueuing retry"
+          "Failed to auto-accept invitation shadow, enqueuing retry via outbox"
         )
-        // Enqueue a durable retry — the task processor will retry with backoff
+        // Enqueue a durable retry — the outbox handler will retry with backoff
         try {
-          await enqueueTask(this.pool, {
-            id: generateTaskId(),
-            taskType: TASK_ACCEPT_SHADOW,
-            payload: {
-              shadowId: shadow.id,
-              workspaceId: shadow.workspace_id,
-              region: shadow.region,
-              workosUserId: user.id,
-              email: user.email,
-              name,
-            },
+          await OutboxRepository.insert(this.pool, OUTBOX_SHADOW_ACCEPT, {
+            shadowId: shadow.id,
+            workspaceId: shadow.workspace_id,
+            region: shadow.region,
+            workosUserId: user.id,
+            email: user.email,
+            name,
           })
         } catch (enqueueErr) {
           logger.error({ err: enqueueErr, shadowId: shadow.id }, "Failed to enqueue shadow acceptance retry")
@@ -99,8 +94,8 @@ export class InvitationShadowService {
 
   /**
    * Accept pending shadows and compute the post-auth redirect URL.
-   * Exactly one accepted workspace → redirect to its setup page.
-   * Otherwise → use the state-encoded redirect or fall back to root.
+   * Exactly one accepted workspace -> redirect to its setup page.
+   * Otherwise -> use the state-encoded redirect or fall back to root.
    */
   async acceptPendingAndGetRedirect(params: { user: ShadowUser; state?: string }): Promise<string> {
     const acceptedWorkspaceIds = await this.acceptPendingForUser(params.user)

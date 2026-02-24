@@ -3,11 +3,15 @@ import { AuthorTypes, type AgentSessionRerunContext } from "@threa/types"
 import { withTransaction } from "../../db"
 import { eventId } from "../../lib/id"
 import { logger } from "../../lib/logger"
-import { CursorLock, ensureListenerFromLatest, type ProcessResult } from "../../lib/cursor-lock"
-import { DebounceWithMaxWait } from "../../lib/debounce"
+import {
+  CursorLock,
+  ensureListenerFromLatest,
+  DebounceWithMaxWait,
+  serializeBigInt,
+  type ProcessResult,
+} from "@threa/backend-common"
 import { OutboxRepository } from "../../lib/outbox"
 import type { OutboxHandler } from "../../lib/outbox"
-import { serializeBigInt } from "../../lib/serialization"
 import { JobQueues, type QueueManager } from "../../lib/queue"
 import type { EventService } from "../messaging"
 import { MessageVersionRepository } from "../messaging"

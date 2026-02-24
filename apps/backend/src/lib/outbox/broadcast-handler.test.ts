@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, mock, spyOn } from "bun:test"
 import { OutboxRepository } from "./repository"
-import * as cursorLockModule from "../cursor-lock"
+import * as cursorLockModule from "@threa/backend-common"
 import { BroadcastHandler } from "./broadcast-handler"
-import type { ProcessResult } from "../cursor-lock"
+import type { ProcessResult } from "@threa/backend-common"
 import type { OutboxEvent } from "./repository"
 
 function makeFakeCursorLock(onRun?: (result: ProcessResult) => void) {

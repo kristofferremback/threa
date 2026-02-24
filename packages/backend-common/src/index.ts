@@ -67,3 +67,32 @@ export {
 } from "./id"
 export { parseCookies, SESSION_COOKIE_NAME, SESSION_COOKIE_CONFIG } from "./cookies"
 export { generateSlug, generateUniqueSlug } from "./slug"
+
+// Outbox infrastructure
+export {
+  OutboxDispatcher,
+  OutboxRetentionWorker,
+  OutboxRepository,
+  CursorLock,
+  ensureListener,
+  ensureListenerFromLatest,
+  compact,
+  OUTBOX_CHANNEL,
+} from "./outbox/index"
+export type {
+  OutboxHandler,
+  OutboxDispatcherConfig,
+  OutboxRetentionWorkerConfig,
+  OutboxEvent,
+  DeleteRetainedOutboxEventsParams,
+  CursorLockConfig,
+  ProcessResult,
+  ProcessedIdsMap,
+  CompactState,
+} from "./outbox/index"
+
+// Shared utilities
+export { DebounceWithMaxWait } from "./debounce"
+export { calculateBackoffMs, type BackoffOptions } from "./backoff"
+export { bigIntReplacer, serializeBigInt } from "./serialization"
+export { Ticker, type TickerConfig } from "./ticker"

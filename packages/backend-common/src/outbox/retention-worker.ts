@@ -1,5 +1,5 @@
 import type { Pool } from "pg"
-import { Ticker } from "../queue/ticker"
+import { Ticker } from "../ticker"
 import { logger } from "../logger"
 import { OutboxRepository } from "./repository"
 

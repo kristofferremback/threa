@@ -15,9 +15,8 @@ import {
   type StreamDisplayNameUpdatedPayload,
 } from "./repository"
 import { logger } from "../logger"
-import { CursorLock, ensureListenerFromLatest, type ProcessResult } from "../cursor-lock"
-import { DebounceWithMaxWait } from "../debounce"
-import type { OutboxHandler } from "./dispatcher"
+import { CursorLock, ensureListenerFromLatest, DebounceWithMaxWait, type ProcessResult } from "@threa/backend-common"
+import type { OutboxHandler } from "@threa/backend-common"
 
 export interface BroadcastHandlerConfig {
   batchSize?: number

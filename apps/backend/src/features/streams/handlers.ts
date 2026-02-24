@@ -6,7 +6,7 @@ import type { ActivityService } from "../activity"
 import type { StreamEvent } from "./event-repository"
 import type { EventType, StreamType } from "@threa/types"
 import { StreamTypes, SLUG_PATTERN } from "@threa/types"
-import { serializeBigInt } from "../../lib/serialization"
+import { serializeBigInt } from "@threa/backend-common"
 import { HttpError } from "../../lib/errors"
 import { streamTypeSchema, visibilitySchema, companionModeSchema, notificationLevelSchema } from "../../lib/schemas"
 

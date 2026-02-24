@@ -6,23 +6,30 @@ import {
   StubAuthService,
   WorkosOrgServiceImpl,
   StubWorkosOrgService,
+  OutboxDispatcher,
+  OutboxRepository,
+  CursorLock,
+  DebounceWithMaxWait,
+  ensureListenerFromLatest,
+  withTransaction,
   logger,
+  type OutboxEvent,
+  type ProcessResult,
 } from "@threa/backend-common"
 import type { Pool } from "pg"
 import path from "path"
 import { createApp } from "./app"
 import { registerRoutes } from "./routes"
-import { loadControlPlaneConfig, type ControlPlaneConfig } from "./config"
+import { loadControlPlaneConfig } from "./config"
 import { RegionalClient } from "./lib/regional-client"
 import { CloudflareKvClient, NoopKvClient, type KvClient } from "./lib/cloudflare-kv-client"
-import { TaskProcessor } from "./lib/task-processor"
-import { ControlPlaneWorkspaceService, TASK_KV_SYNC } from "./features/workspaces"
-import { InvitationShadowService, TASK_ACCEPT_SHADOW } from "./features/invitation-shadows"
+import { ControlPlaneWorkspaceService, OUTBOX_KV_SYNC } from "./features/workspaces"
+import { InvitationShadowService, OUTBOX_SHADOW_ACCEPT } from "./features/invitation-shadows"
 import { InvitationShadowRepository } from "./features/invitation-shadows"
 import { WorkspaceRegistryRepository } from "./features/workspaces"
-import { withTransaction } from "@threa/backend-common"
 
 const MIGRATIONS_GLOB = path.join(import.meta.dirname, "db/migrations/*.sql")
+const LISTENER_ID = "control-plane"
 
 export interface ControlPlaneInstance {
   server: Server
@@ -36,6 +43,7 @@ export async function startServer(): Promise<ControlPlaneInstance> {
   const config = loadControlPlaneConfig()
 
   const pool = createDatabasePool(config.databaseUrl, { max: 10 })
+  const listenPool = createDatabasePool(config.databaseUrl, { max: 2, idleTimeoutMillis: 60_000 })
   await runMigrations(pool, MIGRATIONS_GLOB)
   logger.info("Control plane database migrations complete")
 
@@ -55,28 +63,44 @@ export async function startServer(): Promise<ControlPlaneInstance> {
   })
   const shadowService = new InvitationShadowService({ pool, regionalClient })
 
-  // Task processor — durable async work queue
-  const taskProcessor = new TaskProcessor({ pool })
-  taskProcessor.registerHandler(TASK_KV_SYNC, async (payload) => {
-    const { workspaceId, region } = payload as { workspaceId: string; region: string }
-    await kvClient.putWorkspaceRegion(workspaceId, region)
+  // Outbox — single handler for all control-plane events (no sharding needed)
+  const cursorLock = new CursorLock({
+    pool,
+    listenerId: LISTENER_ID,
+    lockDurationMs: 10_000,
+    refreshIntervalMs: 5_000,
+    maxRetries: 5,
+    baseBackoffMs: 1_000,
+    batchSize: 50,
   })
-  taskProcessor.registerHandler(TASK_ACCEPT_SHADOW, async (payload) => {
-    const { shadowId, workspaceId, region, workosUserId, email, name } = payload as {
-      shadowId: string
-      workspaceId: string
-      region: string
-      workosUserId: string
-      email: string
-      name: string
-    }
-    await regionalClient.acceptInvitation(region, shadowId, { workosUserId, email, name })
-    await withTransaction(pool, async (client) => {
-      await InvitationShadowRepository.updateStatus(client, shadowId, "accepted")
-      await WorkspaceRegistryRepository.insertMembership(client, workspaceId, workosUserId)
+
+  const processEvents = async () => {
+    await cursorLock.run(async (cursor, processedIds) => {
+      const events = await OutboxRepository.fetchAfterId(pool, cursor, cursorLock.batchSize, processedIds)
+      if (events.length === 0) return { status: "no_events" } as ProcessResult
+
+      const seen: bigint[] = []
+      for (const event of events) {
+        await handleEvent(event, { kvClient, regionalClient, pool })
+        seen.push(event.id)
+      }
+      return { status: "processed", processedIds: seen } as ProcessResult
     })
+  }
+
+  const debouncer = new DebounceWithMaxWait(processEvents, 50, 200, (err) => {
+    logger.error({ err }, "Control-plane outbox handler error")
   })
-  taskProcessor.start()
+
+  const outboxHandler = {
+    listenerId: LISTENER_ID,
+    handle: () => debouncer.trigger(),
+  }
+
+  await ensureListenerFromLatest(pool, LISTENER_ID)
+  const outboxDispatcher = new OutboxDispatcher({ listenPool })
+  outboxDispatcher.register(outboxHandler)
+  await outboxDispatcher.start()
 
   const isProduction = process.env.NODE_ENV === "production"
   const app = createApp({ corsAllowedOrigins: config.corsAllowedOrigins })
@@ -105,7 +129,8 @@ export async function startServer(): Promise<ControlPlaneInstance> {
     if (config.fastShutdown) {
       logger.info("Fast shutdown - skipping graceful shutdown")
       server.close()
-      await taskProcessor.stop()
+      await outboxDispatcher.stop()
+      await listenPool.end()
       await pool.end()
       return
     }
@@ -116,10 +141,45 @@ export async function startServer(): Promise<ControlPlaneInstance> {
         server.close((err) => (err ? reject(err) : resolve()))
       })
     }
-    await taskProcessor.stop()
+    await outboxDispatcher.stop()
+    await listenPool.end()
     await pool.end()
     logger.info("Control plane stopped")
   }
 
   return { server, pool, port: config.port, fastShutdown: config.fastShutdown, stop }
+}
+
+async function handleEvent(
+  event: OutboxEvent,
+  deps: { kvClient: KvClient; regionalClient: RegionalClient; pool: Pool }
+): Promise<void> {
+  const { kvClient, regionalClient, pool } = deps
+  const payload = event.payload
+
+  switch (event.eventType) {
+    case OUTBOX_KV_SYNC: {
+      const { workspaceId, region } = payload as { workspaceId: string; region: string }
+      await kvClient.putWorkspaceRegion(workspaceId, region)
+      break
+    }
+    case OUTBOX_SHADOW_ACCEPT: {
+      const { shadowId, workspaceId, region, workosUserId, email, name } = payload as {
+        shadowId: string
+        workspaceId: string
+        region: string
+        workosUserId: string
+        email: string
+        name: string
+      }
+      await regionalClient.acceptInvitation(region, shadowId, { workosUserId, email, name })
+      await withTransaction(pool, async (client) => {
+        await InvitationShadowRepository.updateStatus(client, shadowId, "accepted")
+        await WorkspaceRegistryRepository.insertMembership(client, workspaceId, workosUserId)
+      })
+      break
+    }
+    default:
+      logger.warn({ eventType: event.eventType }, "Unknown outbox event type")
+  }
 }

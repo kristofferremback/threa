@@ -3,18 +3,17 @@ import {
   HttpError,
   isUniqueViolation,
   workspaceId as generateWorkspaceId,
-  taskId as generateTaskId,
   generateUniqueSlug,
   withTransaction,
   logger,
   displayNameFromWorkos,
+  OutboxRepository,
   type WorkosOrgService,
 } from "@threa/backend-common"
 import { WorkspaceRegistryRepository } from "./repository"
 import type { RegionalClient } from "../../lib/regional-client"
-import { enqueueTask } from "../../lib/task-processor"
 
-export const TASK_KV_SYNC = "kv_sync_workspace_region"
+export const OUTBOX_KV_SYNC = "kv_sync"
 
 interface Dependencies {
   pool: Pool
@@ -113,12 +112,8 @@ export class ControlPlaneWorkspaceService {
           })
           await WorkspaceRegistryRepository.insertMembership(client, id, workosUserId)
 
-          // Enqueue KV sync in the same transaction — guaranteed to persist
-          await enqueueTask(client, {
-            id: generateTaskId(),
-            taskType: TASK_KV_SYNC,
-            payload: { workspaceId: id, region },
-          })
+          // Outbox event for KV sync — committed with the domain write
+          await OutboxRepository.insert(client, OUTBOX_KV_SYNC, { workspaceId: id, region })
 
           return ws
         })

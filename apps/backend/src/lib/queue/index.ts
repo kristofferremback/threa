@@ -27,7 +27,7 @@ export {
 } from "./job-queue"
 export { ScheduleManager, type ScheduleManagerConfig } from "./schedule-manager"
 export { CleanupWorker, type CleanupWorkerConfig } from "./cleanup-worker"
-export { Ticker, type TickerConfig } from "./ticker"
+export { Ticker, type TickerConfig } from "@threa/backend-common"
 export { QueueRepository } from "./repository"
 export type { QueueMessage, InsertQueueMessageParams } from "./repository"
 export { TokenPoolRepository } from "./token-pool-repository"

@@ -1,9 +1,9 @@
 import { Pool } from "pg"
 import { ulid } from "ulid"
-import { sql, withClient } from "../db"
-import { calculateBackoffMs } from "./backoff"
-import { logger } from "./logger"
-import { OutboxRepository } from "./outbox"
+import { sql, withClient } from "../db/index"
+import { calculateBackoffMs } from "../backoff"
+import { logger } from "../logger"
+import { OutboxRepository } from "./repository"
 
 export interface CursorLockConfig {
   pool: Pool
@@ -21,7 +21,7 @@ export type ProcessResult =
   | { status: "no_events" }
   | { status: "error"; error: Error; processedIds?: bigint[] }
 
-/** Map of eventId → readAt ISO string */
+/** Map of eventId -> readAt ISO string */
 export type ProcessedIdsMap = Record<string, string>
 
 interface ListenerLockRow {
@@ -120,8 +120,8 @@ export function compact(
  * the gap window expires, the base cursor advances past them.
  *
  * Flow:
- * 1. Check if in backoff (retry_after > now) → return false
- * 2. Try to claim lock → if failed, return false
+ * 1. Check if in backoff (retry_after > now) -> return false
+ * 2. Try to claim lock -> if failed, return false
  * 3. Start refresh timer
  * 4. Exhaust loop: repeatedly call processor until no_events or error
  *    - After each batch: compact + persist (one DB write)
