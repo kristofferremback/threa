@@ -51,10 +51,6 @@ export function loadControlPlaneConfig(): ControlPlaneConfig {
     }
   }
 
-  if (!process.env.INTERNAL_API_KEY && isProduction) {
-    throw new Error("INTERNAL_API_KEY is required in production")
-  }
-
   const regionsRaw = process.env.REGIONS
   let regions: Record<string, RegionConfig> = {}
   if (regionsRaw) {
@@ -63,6 +59,11 @@ export function loadControlPlaneConfig(): ControlPlaneConfig {
     } catch {
       throw new Error("REGIONS must be valid JSON: Record<string, { internalUrl: string }>")
     }
+  }
+
+  const hasRegions = Object.keys(regions).length > 0
+  if (!process.env.INTERNAL_API_KEY && (isProduction || hasRegions)) {
+    throw new Error("INTERNAL_API_KEY is required in production or when REGIONS is configured")
   }
 
   const corsAllowedOrigins = process.env.CORS_ALLOWED_ORIGINS
@@ -106,8 +107,8 @@ export function loadControlPlaneConfig(): ControlPlaneConfig {
     }
   }
 
-  if (!process.env.INTERNAL_API_KEY && !isProduction) {
-    logger.warn("INTERNAL_API_KEY not set — using hardcoded default. Set this in staging/CI environments.")
+  if (!process.env.INTERNAL_API_KEY) {
+    logger.warn("INTERNAL_API_KEY not set — using hardcoded dev default. Only valid for local development.")
   }
 
   if (useStubAuth) {

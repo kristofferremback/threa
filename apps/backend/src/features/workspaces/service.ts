@@ -105,8 +105,9 @@ export class WorkspaceService {
         return ws
       })
     } catch (error) {
-      // Idempotency guard: if workspace already exists, return it
-      if (isUniqueViolation(error)) {
+      // Idempotency guard: if this exact workspace PK already exists, return it.
+      // Only catch PK collisions — slug or other constraint violations are real errors.
+      if (isUniqueViolation(error, "workspaces_pkey")) {
         const existing = await WorkspaceRepository.findById(this.pool, params.id)
         if (existing) return existing
       }

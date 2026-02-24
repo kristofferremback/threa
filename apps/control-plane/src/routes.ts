@@ -1,9 +1,21 @@
-import type { Express } from "express"
-import { createAuthMiddleware, errorHandler, type AuthService, StubAuthService } from "@threa/backend-common"
+import type { Express, Request } from "express"
+import {
+  createAuthMiddleware,
+  createRateLimit,
+  getClientIp,
+  errorHandler,
+  type AuthService,
+  StubAuthService,
+} from "@threa/backend-common"
 import { createControlPlaneAuthHandlers, createAuthStubHandlers } from "./features/auth"
 import { createWorkspaceHandlers, type ControlPlaneWorkspaceService } from "./features/workspaces"
 import { createInvitationShadowHandlers, type InvitationShadowService } from "./features/invitation-shadows"
 import { createInternalAuthMiddleware } from "./lib/internal-auth"
+
+interface RateLimitConfig {
+  globalMax: number
+  authMax: number
+}
 
 interface Dependencies {
   authService: AuthService
@@ -12,6 +24,7 @@ interface Dependencies {
   internalApiKey: string
   availableRegions: string[]
   allowDevAuthRoutes: boolean
+  rateLimits: RateLimitConfig
 }
 
 export function registerRoutes(app: Express, deps: Dependencies) {
@@ -20,6 +33,15 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const auth = createAuthMiddleware({ authService })
   const internalAuth = createInternalAuthMiddleware(internalApiKey)
 
+  const ipKey = (req: Request) => getClientIp(req, "unknown")
+  const globalLimit = createRateLimit({
+    name: "cp-global",
+    windowMs: 60_000,
+    max: deps.rateLimits.globalMax,
+    key: ipKey,
+  })
+  const authLimit = createRateLimit({ name: "cp-auth", windowMs: 60_000, max: deps.rateLimits.authMax, key: ipKey })
+
   const authHandlers = createControlPlaneAuthHandlers({ authService, shadowService })
   const workspace = createWorkspaceHandlers({ workspaceService, availableRegions })
   const shadow = createInvitationShadowHandlers({ shadowService })
@@ -27,9 +49,12 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   // Readiness probe
   app.get("/readyz", (_, res) => res.json({ status: "ok" }))
 
-  // Auth routes
-  app.get("/api/auth/login", authHandlers.login)
-  app.all("/api/auth/callback", authHandlers.callback)
+  // Global rate limit on all routes
+  app.use(globalLimit)
+
+  // Auth routes (auth-specific rate limit on login/callback)
+  app.get("/api/auth/login", authLimit, authHandlers.login)
+  app.all("/api/auth/callback", authLimit, authHandlers.callback)
   app.get("/api/auth/logout", authHandlers.logout)
 
   // Dev/test auth stub routes
@@ -43,7 +68,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
       shadowService,
     })
     app.get("/test-auth-login", authStub.getLoginPage)
-    app.post("/test-auth-login", authStub.handleLogin)
+    app.post("/test-auth-login", authLimit, authStub.handleLogin)
     app.post("/api/dev/login", authStub.handleDevLogin)
   }
 

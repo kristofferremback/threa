@@ -22,6 +22,8 @@ export { HttpError, isUniqueViolation } from "./errors"
 // Middleware
 export { errorHandler } from "./middleware/error-handler"
 export { createInternalAuthMiddleware } from "./middleware/internal-auth"
+export { createRateLimit, getClientIp } from "./middleware/rate-limit"
+export type { RateLimitOptions } from "./middleware/rate-limit"
 
 // Utilities
 export { logger } from "./logger"
@@ -61,5 +63,5 @@ export {
   avatarUploadId,
   messageVersionId,
 } from "./id"
-export { parseCookies, SESSION_COOKIE_CONFIG } from "./cookies"
+export { parseCookies, SESSION_COOKIE_NAME, SESSION_COOKIE_CONFIG } from "./cookies"
 export { generateSlug, generateUniqueSlug } from "./slug"

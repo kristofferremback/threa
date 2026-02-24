@@ -1,8 +1,6 @@
 import type { Request, Response, NextFunction } from "express"
 import type { AuthService } from "./auth-service"
-import { SESSION_COOKIE_CONFIG } from "../cookies"
-
-const SESSION_COOKIE_NAME = "wos_session"
+import { SESSION_COOKIE_NAME, SESSION_COOKIE_CONFIG } from "../cookies"
 
 interface AuthenticatedUser {
   id: string

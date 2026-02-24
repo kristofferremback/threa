@@ -2,14 +2,12 @@ import type { Request, Response } from "express"
 import { z } from "zod/v4"
 import {
   HttpError,
+  SESSION_COOKIE_NAME,
   SESSION_COOKIE_CONFIG,
-  decodeAndSanitizeRedirectState,
   displayNameFromWorkos,
   type AuthService,
 } from "@threa/backend-common"
 import type { InvitationShadowService } from "../invitation-shadows/service"
-
-const SESSION_COOKIE_NAME = "wos_session"
 
 const callbackSchema = z.object({
   code: z.string().min(1),
@@ -45,21 +43,14 @@ export function createControlPlaneAuthHandlers({ authService, shadowService }: D
 
       const user = result.user
       const name = displayNameFromWorkos(user)
-      const acceptedWorkspaceIds = await shadowService.acceptPendingForUser({
-        id: user.id,
-        email: user.email,
-        name,
+
+      const redirectUrl = await shadowService.acceptPendingAndGetRedirect({
+        user: { id: user.id, email: user.email, name },
+        state,
       })
 
       res.cookie(SESSION_COOKIE_NAME, result.sealedSession, SESSION_COOKIE_CONFIG)
-
-      // If user was accepted into exactly one workspace, redirect to setup
-      if (acceptedWorkspaceIds.length === 1) {
-        return res.redirect(`/w/${acceptedWorkspaceIds[0]}/setup`)
-      }
-
-      const redirectTo = decodeAndSanitizeRedirectState(state)
-      res.redirect(redirectTo)
+      res.redirect(redirectUrl)
     },
 
     async logout(req: Request, res: Response) {

@@ -62,6 +62,7 @@ export async function startServer(): Promise<ControlPlaneInstance> {
     internalApiKey: config.internalApiKey,
     availableRegions,
     allowDevAuthRoutes: config.useStubAuth && !isProduction,
+    rateLimits: config.rateLimits,
   })
 
   const server = createServer(app)

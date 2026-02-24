@@ -14,6 +14,8 @@ export const parseCookies = (cookieHeader: string): Record<string, string> => {
   )
 }
 
+export const SESSION_COOKIE_NAME = "wos_session"
+
 export const SESSION_COOKIE_CONFIG = {
   path: "/",
   httpOnly: true,
