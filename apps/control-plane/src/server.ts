@@ -22,13 +22,7 @@ import { registerRoutes } from "./routes"
 import { loadControlPlaneConfig } from "./config"
 import { RegionalClient } from "./lib/regional-client"
 import { CloudflareKvClient, NoopKvClient, type KvClient } from "./lib/cloudflare-kv-client"
-import {
-  ControlPlaneWorkspaceService,
-  OUTBOX_KV_SYNC,
-  OUTBOX_REGIONAL_CREATE,
-  type KvSyncPayload,
-  type RegionalCreatePayload,
-} from "./features/workspaces"
+import { ControlPlaneWorkspaceService, OUTBOX_KV_SYNC, type KvSyncPayload } from "./features/workspaces"
 import { InvitationShadowService, OUTBOX_SHADOW_ACCEPT, type ShadowAcceptPayload } from "./features/invitation-shadows"
 
 const MIGRATIONS_GLOB = path.join(import.meta.dirname, "db/migrations/*.sql")
@@ -172,9 +166,6 @@ async function dispatchEvent(
 ): Promise<void> {
   const payload = event.payload as unknown
   switch (event.eventType) {
-    case OUTBOX_REGIONAL_CREATE:
-      await deps.workspaceService.provisionRegional(payload as RegionalCreatePayload)
-      break
     case OUTBOX_KV_SYNC:
       await deps.workspaceService.syncToKv(payload as KvSyncPayload)
       break

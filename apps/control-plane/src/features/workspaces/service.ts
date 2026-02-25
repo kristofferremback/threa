@@ -15,7 +15,6 @@ import type { RegionalClient } from "../../lib/regional-client"
 import type { KvClient } from "../../lib/cloudflare-kv-client"
 
 export const OUTBOX_KV_SYNC = "kv_sync"
-export const OUTBOX_REGIONAL_CREATE = "regional_create"
 
 interface Dependencies {
   pool: Pool
@@ -118,16 +117,7 @@ export class ControlPlaneWorkspaceService {
           })
           await WorkspaceRegistryRepository.insertMembership(client, id, workosUserId)
 
-          // Durable outbox events — regional creation + KV sync both committed atomically
-          await OutboxRepository.insert(client, OUTBOX_REGIONAL_CREATE, {
-            workspaceId: id,
-            name,
-            slug,
-            region,
-            ownerWorkosUserId: workosUserId,
-            ownerEmail: email,
-            ownerName: displayName,
-          })
+          // KV sync is async — the router falls back to the control-plane internal API
           await OutboxRepository.insert(client, OUTBOX_KV_SYNC, { workspaceId: id, region })
 
           return ws
@@ -138,6 +128,28 @@ export class ControlPlaneWorkspaceService {
           throw error
         }
       }
+    }
+
+    // Regional provisioning must be synchronous — the user navigates to the workspace
+    // immediately after creation and needs it to exist on the regional backend.
+    try {
+      await this.regionalClient.createWorkspace(region, {
+        id,
+        name: workspace.name,
+        slug: workspace.slug,
+        ownerWorkosUserId: workosUserId,
+        ownerEmail: email,
+        ownerName: displayName,
+      })
+    } catch (err) {
+      logger.error({ err, workspaceId: id, region }, "Regional provisioning failed, cleaning up registry")
+      try {
+        await WorkspaceRegistryRepository.deleteMembershipsByWorkspace(this.pool, id)
+        await WorkspaceRegistryRepository.deleteById(this.pool, id)
+      } catch (cleanupErr) {
+        logger.error({ cleanupErr, workspaceId: id }, "Registry cleanup also failed — orphaned entry")
+      }
+      throw new HttpError("Failed to provision workspace in region", { status: 502, code: "REGIONAL_ERROR" })
     }
 
     return {
@@ -151,37 +163,13 @@ export class ControlPlaneWorkspaceService {
     }
   }
 
-  /** Outbox handler: provision workspace in the regional backend */
-  async provisionRegional(payload: RegionalCreatePayload): Promise<void> {
-    await this.regionalClient.createWorkspace(payload.region, {
-      id: payload.workspaceId,
-      name: payload.name,
-      slug: payload.slug,
-      ownerWorkosUserId: payload.ownerWorkosUserId,
-      ownerEmail: payload.ownerEmail,
-      ownerName: payload.ownerName,
-    })
-    logger.info({ workspaceId: payload.workspaceId, region: payload.region }, "Workspace provisioned in region")
-  }
-
   /** Outbox handler: sync workspace-to-region mapping to Cloudflare KV */
   async syncToKv(payload: KvSyncPayload): Promise<void> {
     await this.kvClient.putWorkspaceRegion(payload.workspaceId, payload.region)
   }
 }
 
-// Typed payload definitions for control-plane outbox events
 export interface KvSyncPayload {
   workspaceId: string
   region: string
-}
-
-export interface RegionalCreatePayload {
-  workspaceId: string
-  name: string
-  slug: string
-  region: string
-  ownerWorkosUserId: string
-  ownerEmail: string
-  ownerName: string
 }
