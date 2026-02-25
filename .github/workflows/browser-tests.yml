@@ -8,6 +8,12 @@ on:
     paths:
       - "apps/**"
       - "packages/**"
+      - "tests/browser/**"
+      - "playwright.config.ts"
+      - "scripts/test-silent.ts"
+      - "package.json"
+      - "bun.lock"
+      - ".github/workflows/browser-tests.yml"
 
 jobs:
   browser-tests:
