@@ -132,7 +132,6 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   // Global baseline rate limit
   app.use(rateLimits.globalBaseline)
 
-  // Auth login/callback/logout moved to control-plane.
   // The router proxies /api/auth/* to the control-plane in production.
 
   if (authService instanceof StubAuthService) {

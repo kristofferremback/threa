@@ -84,16 +84,21 @@ export async function startServer(): Promise<ControlPlaneInstance> {
       if (events.length === 0) return { status: "no_events" } as ProcessResult
 
       const seen: bigint[] = []
+      let lastError: Error | undefined
       for (const event of events) {
         try {
           await dispatchEvent(event, { workspaceService, shadowService })
           seen.push(event.id)
         } catch (err) {
-          // Per-event isolation: log and skip so one failing event doesn't block the batch
+          lastError = err instanceof Error ? err : new Error(String(err))
           logger.error({ err, eventId: event.id, eventType: event.eventType }, "Outbox event processing failed")
         }
       }
-      if (seen.length === 0) return { status: "no_events" } as ProcessResult
+      // Signal error to CursorLock so it applies backoff + DLQ for poison events,
+      // while still saving partial progress for successfully processed events.
+      if (lastError) {
+        return { status: "error", error: lastError, processedIds: seen } as ProcessResult
+      }
       return { status: "processed", processedIds: seen } as ProcessResult
     })
   }

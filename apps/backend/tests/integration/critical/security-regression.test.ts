@@ -88,8 +88,8 @@ describe("P0 Security Regression Coverage", () => {
   const runId = Math.random().toString(36).slice(2)
 
   describe("Auth Redirect Sanitization", () => {
-    // Auth callback redirect tests moved to control-plane (apps/control-plane/tests/e2e/auth.test.ts)
-    // since /api/auth/callback is now handled by the control-plane service.
+    // Auth callback redirect is tested in apps/control-plane/tests/e2e/auth.test.ts
+    // because the control-plane owns the /api/auth/* routes.
 
     test("stub auth login falls back to / for external redirect target", async () => {
       const response = await fetch(`${getBaseUrl()}/test-auth-login`, {
