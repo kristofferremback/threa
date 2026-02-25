@@ -8,7 +8,7 @@ import {
   type ProcessResult,
   type CursorLockConfig,
   type ProcessedIdsMap,
-} from "../../src/lib/cursor-lock"
+} from "@threa/backend-common"
 import { OutboxRepository } from "../../src/lib/outbox"
 
 describe("CursorLock", () => {

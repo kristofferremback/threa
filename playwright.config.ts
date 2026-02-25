@@ -154,7 +154,7 @@ export default defineConfig({
       },
     },
     {
-      command: `bunx wrangler dev --port ${routerPort} --var DEFAULT_REGION:local --var CONTROL_PLANE_URL:http://localhost:${controlPlanePort} --var 'REGIONS:${JSON.stringify({ local: { apiUrl: `http://localhost:${backendPort}`, wsUrl: `ws://localhost:${backendPort}` } })}'`,
+      command: `bunx wrangler dev --port ${routerPort} --var CONTROL_PLANE_URL:http://localhost:${controlPlanePort} --var INTERNAL_API_KEY:test-internal-key --var 'REGIONS:${JSON.stringify({ local: { apiUrl: `http://localhost:${backendPort}`, wsUrl: `ws://localhost:${backendPort}` } })}'`,
       cwd: "./apps/workspace-router",
       url: `http://localhost:${routerPort}/readyz`,
       reuseExistingServer: !process.env.CI,
