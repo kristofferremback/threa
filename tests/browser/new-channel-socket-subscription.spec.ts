@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test"
-import { createChannel, loginInNewContext } from "./helpers"
+import { createChannel, expectApiOk, loginInNewContext } from "./helpers"
 
 /**
  * Tests that newly created channels receive real-time socket events.
@@ -26,7 +26,7 @@ test.describe("New Channel Socket Subscription", () => {
     const createWorkspaceRes = await userA.page.request.post("/api/workspaces", {
       data: { name: `Socket Sub Test ${testId}` },
     })
-    expect(createWorkspaceRes.ok()).toBeTruthy()
+    await expectApiOk(createWorkspaceRes, "Create workspace for socket subscription test")
     const workspaceBody = (await createWorkspaceRes.json()) as { workspace: { id: string } }
     const workspaceId = workspaceBody.workspace.id
 
@@ -130,7 +130,7 @@ test.describe("New Channel Socket Subscription", () => {
     const createWorkspaceRes = await userA.page.request.post("/api/workspaces", {
       data: { name: `Preview Sub Test ${testId}` },
     })
-    expect(createWorkspaceRes.ok()).toBeTruthy()
+    await expectApiOk(createWorkspaceRes, "Create workspace for preview subscription test")
     const workspaceBody = (await createWorkspaceRes.json()) as { workspace: { id: string } }
     const workspaceId = workspaceBody.workspace.id
 

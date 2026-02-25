@@ -12,13 +12,14 @@ import { createChannel, loginAndCreateWorkspace } from "./helpers"
  */
 
 test.describe("Thread Replies", () => {
+  let testId: string
+
   test.beforeEach(async ({ page }) => {
-    await loginAndCreateWorkspace(page, "thread-test")
+    const result = await loginAndCreateWorkspace(page, "thread-test")
+    testId = result.testId
   })
 
   test("should send a reply in a thread", async ({ page }) => {
-    const testId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
-
     // Create a channel
     const channelName = `thread-reply-${testId}`
     await createChannel(page, channelName)
@@ -66,8 +67,6 @@ test.describe("Thread Replies", () => {
   })
 
   test("should show reply count in main stream after sending thread reply", async ({ page }) => {
-    const testId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
-
     // Create a channel
     const channelName = `reply-count-${testId}`
     await createChannel(page, channelName)
@@ -111,8 +110,6 @@ test.describe("Thread Replies", () => {
   })
 
   test("should send multiple replies in a thread", async ({ page }) => {
-    const testId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
-
     // Create a channel
     const channelName = `multi-reply-${testId}`
     await createChannel(page, channelName)
@@ -170,8 +167,6 @@ test.describe("Thread Replies", () => {
   })
 
   test("should reopen existing thread and send additional reply", async ({ page }) => {
-    const testId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
-
     // Create a channel
     const channelName = `reopen-thread-${testId}`
     await createChannel(page, channelName)

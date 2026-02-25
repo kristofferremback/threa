@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test"
-import { createChannel, loginAndCreateWorkspace } from "./helpers"
+import { createChannel, generateTestId, loginAndCreateWorkspace } from "./helpers"
 
 /**
  * Tests for thread breadcrumb display, navigation, and sidebar context.
@@ -11,13 +11,13 @@ import { createChannel, loginAndCreateWorkspace } from "./helpers"
  */
 
 test.describe("Thread Breadcrumbs", () => {
-  const testId = Date.now().toString(36)
-
   test.beforeEach(async ({ page }) => {
     await loginAndCreateWorkspace(page, "breadcrumb")
   })
 
   test("should show ancestor chain in breadcrumbs and navigate via breadcrumb click", async ({ page }) => {
+    const testId = generateTestId()
+
     // Create a channel
     const channelName = `bc-nav-${testId}`
     await createChannel(page, channelName, { switchToAll: false })
@@ -77,7 +77,7 @@ test.describe("Thread Breadcrumbs", () => {
     // Navigate to the channel by clicking its breadcrumb link.
     // Since the channel is the main view, clicking it should close the panel.
     const channelBreadcrumb = breadcrumbNav.getByRole("link", { name: `#${channelName}` }).first()
-    if (await channelBreadcrumb.isVisible().catch(() => false)) {
+    if (await channelBreadcrumb.isVisible()) {
       await channelBreadcrumb.click()
     } else {
       // Breadcrumb might be a button (for main-view streams that close the panel)
@@ -90,6 +90,8 @@ test.describe("Thread Breadcrumbs", () => {
   })
 
   test("should show thread with root context suffix in sidebar", async ({ page }) => {
+    const testId = generateTestId()
+
     // Create a channel
     const channelName = `sidebar-${testId}`
     await createChannel(page, channelName, { switchToAll: false })

@@ -10,7 +10,7 @@ import { expect, type Page, type Browser, type BrowserContext, type APIResponse 
 /**
  * Assert API requests succeed with actionable error details.
  */
-async function expectApiOk(response: APIResponse, action: string): Promise<void> {
+export async function expectApiOk(response: APIResponse, action: string): Promise<void> {
   if (response.ok()) {
     return
   }
