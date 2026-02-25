@@ -220,6 +220,9 @@
     },
     "apps/workspace-router": {
       "name": "workspace-router",
+      "dependencies": {
+        "@threa/types": "workspace:*",
+      },
       "devDependencies": {
         "@cloudflare/workers-types": "^4.20250214.0",
         "@types/bun": "^1.3.9",
@@ -230,6 +233,7 @@
       "name": "@threa/backend-common",
       "version": "0.1.0",
       "dependencies": {
+        "@threa/types": "workspace:*",
         "@workos-inc/node": "^7",
         "cookie-parser": "^1",
         "express": "^5",

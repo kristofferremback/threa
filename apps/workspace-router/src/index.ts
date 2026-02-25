@@ -1,5 +1,4 @@
-// Must match INTERNAL_API_KEY_HEADER in packages/backend-common/src/middleware/internal-auth.ts
-const INTERNAL_API_KEY_HEADER = "X-Internal-Api-Key"
+import { INTERNAL_API_KEY_HEADER } from "@threa/types"
 
 interface Env {
   WORKSPACE_REGIONS: KVNamespace

@@ -1,9 +1,9 @@
 import { timingSafeEqual } from "crypto"
 import type { NextFunction, Request, Response } from "express"
+import { INTERNAL_API_KEY_HEADER } from "@threa/types"
 import { HttpError } from "../errors"
 
-/** Header name for inter-service authentication (control-plane ↔ regional backend). */
-export const INTERNAL_API_KEY_HEADER = "X-Internal-Api-Key"
+export { INTERNAL_API_KEY_HEADER }
 
 /**
  * Middleware that validates inter-service requests using a shared secret.
