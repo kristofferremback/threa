@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test"
+import { createChannel, loginAndCreateWorkspace } from "./helpers"
 
 /**
  * Tests for editor auto-focus behavior:
@@ -11,41 +12,6 @@ import { test, expect, type Page } from "@playwright/test"
  * 6. Focus restoration after inline edit cancel
  */
 
-async function setupWorkspace(page: Page) {
-  const setupId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
-  const testEmail = `focus-test-${setupId}@example.com`
-  const testName = `Focus Test ${setupId}`
-  const workspaceName = `Focus WS ${setupId}`
-
-  await page.goto("/login")
-  await page.getByRole("button", { name: "Sign in with WorkOS" }).click()
-  await expect(page.getByRole("heading", { name: "Test Login" })).toBeVisible()
-
-  await page.getByLabel("Email").fill(testEmail)
-  await page.getByLabel("Name").fill(testName)
-  await page.getByRole("button", { name: "Sign In" }).click()
-
-  await expect(page.getByRole("heading", { name: /Welcome/ })).toBeVisible()
-
-  const workspaceInput = page.getByPlaceholder("New workspace name")
-  await workspaceInput.fill(workspaceName)
-  const createButton = page.getByRole("button", { name: "Create Workspace" })
-  await expect(createButton).toBeEnabled()
-  await createButton.click()
-
-  await expect(page.getByRole("button", { name: "+ New Channel" })).toBeVisible({ timeout: 10000 })
-
-  return { setupId, testName }
-}
-
-async function createChannel(page: Page, name: string) {
-  await page.getByRole("button", { name: "+ New Channel" }).click()
-  await page.getByRole("dialog").getByPlaceholder("channel-name").fill(name)
-  await page.waitForTimeout(400)
-  await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
-  await expect(page.getByRole("heading", { name: `#${name}`, level: 1 })).toBeVisible({ timeout: 5000 })
-}
-
 async function sendMessage(page: Page, text: string) {
   const editor = page.locator("[data-editor-zone='main'] [contenteditable='true']")
   await editor.click()
@@ -56,13 +22,13 @@ async function sendMessage(page: Page, text: string) {
 
 test.describe("Editor Auto-Focus", () => {
   test.beforeEach(async ({ page }) => {
-    await setupWorkspace(page)
+    await loginAndCreateWorkspace(page, "focus-test")
   })
 
   test("main editor is focused on page load", async ({ page }) => {
     const testId = Date.now().toString(36)
     const channelName = `focus-load-${testId}`
-    await createChannel(page, channelName)
+    await createChannel(page, channelName, { switchToAll: false })
 
     // The editor should already be focused — type and verify
     const mainEditor = page.locator("[data-editor-zone='main'] [contenteditable='true']")
@@ -74,7 +40,7 @@ test.describe("Editor Auto-Focus", () => {
 
     // Create a channel then navigate away and back
     const channelName = `focus-nav-${testId}`
-    await createChannel(page, channelName)
+    await createChannel(page, channelName, { switchToAll: false })
 
     // Switch to "All" sidebar view so channels are always visible
     await page.locator("button", { hasText: /^All$/ }).click()
@@ -97,7 +63,7 @@ test.describe("Editor Auto-Focus", () => {
   test("thread panel editor is focused on panel open", async ({ page }) => {
     const testId = Date.now().toString(36)
     const channelName = `focus-panel-${testId}`
-    await createChannel(page, channelName)
+    await createChannel(page, channelName, { switchToAll: false })
 
     // Send a message to get a thread target
     await sendMessage(page, `Panel focus test ${testId}`)
@@ -124,7 +90,7 @@ test.describe("Editor Auto-Focus", () => {
   test("type-to-focus: typing focuses main editor and inserts character", async ({ page }) => {
     const testId = Date.now().toString(36)
     const channelName = `focus-type-${testId}`
-    await createChannel(page, channelName)
+    await createChannel(page, channelName, { switchToAll: false })
 
     // Click somewhere outside the editor to blur it (e.g. the header)
     await page.locator("header").first().click()
@@ -143,7 +109,7 @@ test.describe("Editor Auto-Focus", () => {
   test("type-to-focus: typing with panel focuses panel editor when last clicked", async ({ page }) => {
     const testId = Date.now().toString(36)
     const channelName = `focus-type-panel-${testId}`
-    await createChannel(page, channelName)
+    await createChannel(page, channelName, { switchToAll: false })
 
     // Send a message and open thread
     await sendMessage(page, `Type panel test ${testId}`)
@@ -178,7 +144,7 @@ test.describe("Editor Auto-Focus", () => {
   test("focus restores to zone editor after inline edit cancel", async ({ page }) => {
     const testId = Date.now().toString(36)
     const channelName = `focus-edit-${testId}`
-    await createChannel(page, channelName)
+    await createChannel(page, channelName, { switchToAll: false })
 
     // Send a message from current user
     const messageText = `Edit restore test ${testId}`
