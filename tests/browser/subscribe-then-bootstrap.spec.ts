@@ -1,5 +1,5 @@
 import { expect, test, type BrowserContext, type Page, type Request } from "@playwright/test"
-import { loginAndCreateWorkspace, loginInNewContext } from "./helpers"
+import { createChannel, loginAndCreateWorkspace, loginInNewContext } from "./helpers"
 
 test.describe("Subscribe Then Bootstrap", () => {
   test("should request workspace and stream bootstrap during normal navigation", async ({ page }) => {
@@ -29,11 +29,7 @@ test.describe("Subscribe Then Bootstrap", () => {
       .toBeGreaterThan(0)
 
     const channelName = `bootstrap-e2e-${testId}`
-    await page.getByRole("button", { name: "+ New Channel" }).click()
-    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
-    await page.waitForTimeout(400)
-    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
-    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 10000 })
+    await createChannel(page, channelName, { switchToAll: false })
 
     const streamMatch = page.url().match(/\/s\/([^/?]+)/)
     expect(streamMatch).toBeTruthy()

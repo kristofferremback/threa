@@ -43,9 +43,6 @@ test.describe("Agent Activity", () => {
     // Wait for reply indicator — means the agent completed and sent a message to the thread
     await expect(replyIndicator).toBeVisible({ timeout: AGENT_COMPLETION_TIMEOUT })
 
-    // Let events settle (bootstrap fetch may race with the last outbox events)
-    await page.waitForTimeout(1000)
-
     // Click the reply indicator to open the thread panel
     await replyIndicator.click()
 
@@ -81,7 +78,6 @@ test.describe("Agent Activity", () => {
     await expect(page.getByText("Session complete")).not.toBeVisible({ timeout: 2000 })
 
     // Open thread
-    await page.waitForTimeout(1000)
     await replyIndicator.click()
 
     // Session card SHOULD be visible in the thread

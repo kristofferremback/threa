@@ -83,9 +83,6 @@ test.describe("Nested Thread Navigation", () => {
     await expect(breadcrumb).toBeVisible({ timeout: 2000 })
     await breadcrumb.click()
 
-    // Wait for navigation to complete
-    await page.waitForTimeout(1000)
-
     // Verify we're back in the first-level thread by checking for the firstReply message
     await expect(page.getByTestId("panel").getByText(firstReply).first()).toBeVisible({ timeout: 5000 })
 
@@ -149,11 +146,10 @@ test.describe("Nested Thread Navigation", () => {
     await expect(page.getByTestId("panel").getByText(nestedReply)).toBeVisible({ timeout: 5000 })
     await expect(page.getByText(/Start a new thread/)).not.toBeVisible({ timeout: 3000 })
 
-    // Close the thread panel
-    await page.keyboard.press("Escape")
-
-    // Wait for panel to close
-    await page.waitForTimeout(500)
+    // Close the thread panel via explicit close control for deterministic behavior
+    const panel = page.getByTestId("panel")
+    await panel.getByRole("button", { name: "Close" }).click()
+    await expect(panel).not.toBeVisible({ timeout: 5000 })
 
     // Reopen the first-level thread by clicking on the reply count in the main stream
     const channelMessageInMain = page.getByRole("main").locator(".group").filter({ hasText: channelMessage }).first()
@@ -221,7 +217,6 @@ test.describe("Nested Thread Navigation", () => {
     // Navigate back via breadcrumb
     const breadcrumb = page.locator("nav[aria-label='breadcrumb'] a").first()
     await breadcrumb.click()
-    await page.waitForTimeout(1000)
 
     // Verify reply count shows
     const level1InPanel = page.getByRole("main").locator(".group").filter({ hasText: level1Message }).first()
@@ -233,7 +228,6 @@ test.describe("Nested Thread Navigation", () => {
 
     // Navigate back again
     await breadcrumb.click()
-    await page.waitForTimeout(1000)
 
     // Reply count should still show correctly
     await expect(level1InPanel.getByText(/1 reply/i)).toBeVisible({ timeout: 3000 })

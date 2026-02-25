@@ -51,8 +51,9 @@ test.describe("User Journey", () => {
     // Step 8: Create a channel via the modal dialog
     await page.getByRole("button", { name: "+ New Channel" }).click()
     await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
-    await page.waitForTimeout(400)
-    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
+    const createChannelButton = page.getByRole("dialog").getByRole("button", { name: "Create Channel" })
+    await expect(createChannelButton).toBeEnabled({ timeout: 5000 })
+    await createChannelButton.click()
 
     // Step 9: Verify we're in the channel view (channel heading and empty state)
     await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
@@ -104,8 +105,9 @@ test.describe("User Journey", () => {
     const quickSwitchChannel = `qs-test-${testId}`
     await page.getByRole("button", { name: "+ New Channel" }).click()
     await page.getByRole("dialog").getByPlaceholder("channel-name").fill(quickSwitchChannel)
-    await page.waitForTimeout(400)
-    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
+    const createChannelButton = page.getByRole("dialog").getByRole("button", { name: "Create Channel" })
+    await expect(createChannelButton).toBeEnabled({ timeout: 5000 })
+    await createChannelButton.click()
 
     // Creating a channel navigates to it - verify via main content heading
     await expect(page.getByRole("heading", { name: `#${quickSwitchChannel}`, level: 1 })).toBeVisible({ timeout: 5000 })
@@ -127,8 +129,8 @@ test.describe("User Journey", () => {
     // Type the channel name to search (focus should already be in the input)
     await page.keyboard.type(quickSwitchChannel)
 
-    // Wait a moment for search results to appear, then press Enter to select
-    await page.waitForTimeout(500)
+    const quickSwitcherResult = page.getByRole("option", { name: new RegExp(`#${quickSwitchChannel}`) }).first()
+    await expect(quickSwitcherResult).toBeVisible({ timeout: 5000 })
     await page.keyboard.press("Enter")
 
     // Should navigate to the channel (quick switcher closes)

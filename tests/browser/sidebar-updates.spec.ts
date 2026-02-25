@@ -69,9 +69,6 @@ test.describe("Sidebar Updates", () => {
       const streamId = streamIdMatch?.[1]
       expect(streamId).toBeTruthy()
 
-      // Wait for auto-naming to potentially complete (async via worker)
-      await page.waitForTimeout(5000)
-
       // BUG: Currently `stream:display_name_updated` is stream-scoped, meaning it only
       // goes to the stream room (users viewing that stream). The sidebar is subscribed
       // to the workspace room, so it never receives the update.

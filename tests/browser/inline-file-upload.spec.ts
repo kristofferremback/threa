@@ -206,9 +206,6 @@ test.describe("Inline File Uploads", () => {
     const attachmentPill = page.locator("button:has(img[alt='pasted-image-1.png'])")
     await expect(attachmentPill).toBeVisible({ timeout: 10000 })
 
-    // Small delay to ensure React handlers are attached
-    await page.waitForTimeout(100)
-
     // Click on the image link
     await imageLink.click()
 
@@ -255,7 +252,6 @@ test.describe("Inline File Uploads", () => {
     // Wait for message to appear
     const imageLink = page.locator(".markdown-content button:has-text('Image #1')")
     await expect(imageLink).toBeVisible({ timeout: 10000 })
-    await page.waitForTimeout(100)
 
     // Find the attachment pill (the image button with the filename)
     const attachmentPill = page.locator("button:has(img[alt='pasted-image-1.png'])")

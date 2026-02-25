@@ -205,9 +205,7 @@ test.describe("Thread Replies", () => {
     // Close the thread panel
     const panel = page.getByTestId("panel")
     await panel.getByRole("button", { name: "Close" }).click()
-
-    // Wait a moment for UI to settle
-    await page.waitForTimeout(500)
+    await expect(panel).not.toBeVisible({ timeout: 5000 })
 
     // Reopen the thread by clicking the reply count indicator
     const parentInStream = page.getByRole("main").locator(".group").filter({ hasText: parentMessage }).first()

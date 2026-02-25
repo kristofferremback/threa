@@ -84,7 +84,6 @@ test.describe("Thread Breadcrumbs", () => {
       const channelButton = breadcrumbNav.getByRole("button", { name: `#${channelName}` }).first()
       await channelButton.click()
     }
-    await page.waitForTimeout(500)
 
     // Should be back viewing the channel with the original message visible
     await expect(page.getByRole("main").getByText(channelMessage).first()).toBeVisible({ timeout: 3000 })

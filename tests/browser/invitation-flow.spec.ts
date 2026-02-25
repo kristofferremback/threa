@@ -49,8 +49,9 @@ test.describe("Invitation Flow", () => {
     // Create a public channel
     await pageA.getByRole("button", { name: "+ New Channel" }).click()
     await pageA.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
-    await pageA.waitForTimeout(400)
-    await pageA.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
+    const createChannelButton = pageA.getByRole("dialog").getByRole("button", { name: "Create Channel" })
+    await expect(createChannelButton).toBeEnabled({ timeout: 5000 })
+    await createChannelButton.click()
     await expect(pageA.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Open user menu → Workspace Settings → Users tab
