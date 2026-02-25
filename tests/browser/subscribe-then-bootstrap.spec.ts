@@ -1,5 +1,11 @@
 import { expect, test, type BrowserContext, type Page, type Request } from "@playwright/test"
-import { createChannel, loginAndCreateWorkspace, loginInNewContext } from "./helpers"
+import {
+  createChannel,
+  generateTestId,
+  loginAndCreateWorkspace,
+  loginInNewContext,
+  waitForWorkspaceProvisioned,
+} from "./helpers"
 
 test.describe("Subscribe Then Bootstrap", () => {
   test("should request workspace and stream bootstrap during normal navigation", async ({ page }) => {
@@ -50,7 +56,7 @@ test.describe("Subscribe Then Bootstrap", () => {
   })
 
   test("should bootstrap public stream for workspace member who is not stream member", async ({ browser }) => {
-    const testId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
+    const testId = generateTestId()
     const owner = await loginInNewContext(browser, `owner-${testId}@example.com`, `Owner ${testId}`)
 
     let memberContext: { context: BrowserContext; page: Page } | undefined
@@ -66,6 +72,7 @@ test.describe("Subscribe Then Bootstrap", () => {
       expect(createWorkspaceResponse.ok()).toBeTruthy()
       const workspaceBody = (await createWorkspaceResponse.json()) as { workspace: { id: string } }
       const workspaceId = workspaceBody.workspace.id
+      await waitForWorkspaceProvisioned(owner.page, workspaceId)
 
       const publicChannelSlug = `public-${testId}`
       const createStreamResponse = await owner.page.request.post(`/api/workspaces/${workspaceId}/streams`, {

@@ -184,6 +184,32 @@ describe("workspace-router", () => {
     })
   })
 
+  describe("dev workspace routing", () => {
+    test("proxies /api/dev/workspaces/:id/join to regional backend", async () => {
+      const originalFetch = globalThis.fetch
+      const fn = mockFetchFn()
+      try {
+        const env = makeEnvWithKv("eu-north-1")
+        await worker.fetch(makeRequest("/api/dev/workspaces/ws_123/join", "POST"), env)
+        expect(getProxiedUrl(fn)).toBe("http://eu-north-1.backend:3002/api/dev/workspaces/ws_123/join")
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+
+    test("proxies /api/dev/workspaces/:id/streams/:streamId/join to regional backend", async () => {
+      const originalFetch = globalThis.fetch
+      const fn = mockFetchFn()
+      try {
+        const env = makeEnvWithKv("local")
+        await worker.fetch(makeRequest("/api/dev/workspaces/ws_123/streams/stream_456/join", "POST"), env)
+        expect(getProxiedUrl(fn)).toBe("http://localhost:3002/api/dev/workspaces/ws_123/streams/stream_456/join")
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+  })
+
   describe("non-workspace routes (no control-plane)", () => {
     test("auth routes return 404 when no CONTROL_PLANE_URL", async () => {
       const res = await worker.fetch(makeRequest("/api/auth/login"), makeEnv())

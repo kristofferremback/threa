@@ -26,6 +26,8 @@ const DEV_AUTH_ROUTE_RE = /^\/(?:test-auth-login|api\/dev\/login)\/?$/
 
 /** Matches /api/workspaces/:workspaceId with optional trailing path */
 const WORKSPACE_ROUTE_RE = /^\/api\/workspaces\/([^/]+)(?:\/.+)?$/
+/** Dev workspace routes (workspace/stream join — test only) */
+const DEV_WORKSPACE_ROUTE_RE = /^\/api\/dev\/workspaces\/([^/]+)(?:\/.+)?$/
 
 /** Matches /api/workspaces/:workspaceId/config exactly */
 const CONFIG_ROUTE_RE = /^\/api\/workspaces\/([^/]+)\/config$/
@@ -79,6 +81,12 @@ export default {
     const workspaceMatch = path.match(WORKSPACE_ROUTE_RE)
     if (workspaceMatch) {
       return routeWorkspaceRequest(request, workspaceMatch[1], regions, env)
+    }
+
+    // Dev workspace routes (e.g. /api/dev/workspaces/:id/join) — test only
+    const devWorkspaceMatch = path.match(DEV_WORKSPACE_ROUTE_RE)
+    if (devWorkspaceMatch) {
+      return routeWorkspaceRequest(request, devWorkspaceMatch[1], regions, env)
     }
 
     // All meaningful non-workspace routes are handled above (control-plane, config).
