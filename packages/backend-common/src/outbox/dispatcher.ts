@@ -39,7 +39,7 @@ const DEFAULT_CONFIG = {
  *
  * This is a simple fan-out mechanism:
  * - Single LISTEN connection per worker process
- * - On NOTIFY → calls handle() on all registered handlers
+ * - On NOTIFY -> calls handle() on all registered handlers
  * - Fallback polling ensures delivery even if NOTIFY is missed
  *
  * The dispatcher is intentionally "dumb" - it doesn't know about:

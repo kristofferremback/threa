@@ -9,7 +9,7 @@ import type { CommandRegistry } from "../commands"
 import type { AvatarService } from "./avatar-service"
 import { getEmojiList } from "../emoji"
 import { getEffectiveLevel } from "../streams"
-import { displayNameFromWorkos } from "../../auth/display-name"
+import { displayNameFromWorkos } from "@threa/backend-common"
 import { HttpError } from "../../lib/errors"
 
 const createWorkspaceSchema = z.object({

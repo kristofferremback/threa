@@ -1,0 +1,5 @@
+export { ControlPlaneWorkspaceService, OUTBOX_KV_SYNC, OUTBOX_REGIONAL_CREATE } from "./service"
+export type { KvSyncPayload, RegionalCreatePayload } from "./service"
+export { createWorkspaceHandlers } from "./handlers"
+export { WorkspaceRegistryRepository } from "./repository"
+export type { WorkspaceRegistryRow, WorkspaceMembershipRow } from "./repository"

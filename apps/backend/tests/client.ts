@@ -4,10 +4,15 @@
  */
 
 import type { Socket } from "socket.io-client"
+import { INTERNAL_API_KEY_HEADER } from "@threa/backend-common"
 
 function getBaseUrl(): string {
   // Read at call time, not import time, so setup.ts can set it
   return process.env.TEST_BASE_URL || "http://localhost:3001"
+}
+
+function getInternalApiKey(): string {
+  return process.env.TEST_INTERNAL_API_KEY || "test-internal-key"
 }
 
 export class TestClient {
@@ -16,9 +21,10 @@ export class TestClient {
   async request<T = unknown>(
     method: string,
     path: string,
-    body?: unknown
+    body?: unknown,
+    extraHeaders?: Record<string, string>
   ): Promise<{ status: number; data: T; headers: Headers }> {
-    const headers: Record<string, string> = {}
+    const headers: Record<string, string> = { ...extraHeaders }
 
     if (body) {
       headers["Content-Type"] = "application/json"
@@ -117,6 +123,11 @@ export class TestClient {
 
   clearCookies() {
     this.cookies.clear()
+  }
+
+  /** Request with internal API key header for inter-service endpoints */
+  internalRequest<T = unknown>(method: string, path: string, body?: unknown) {
+    return this.request<T>(method, path, body, { [INTERNAL_API_KEY_HEADER]: getInternalApiKey() })
   }
 }
 

@@ -1,5 +1,5 @@
 import type { Pool } from "pg"
-import { Ticker } from "./ticker"
+import { Ticker } from "@threa/backend-common"
 import { CronRepository } from "./cron-repository"
 import { logger } from "../logger"
 

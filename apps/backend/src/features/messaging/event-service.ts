@@ -9,7 +9,7 @@ import { OutboxRepository } from "../../lib/outbox"
 import { StreamPersonaParticipantRepository } from "../agents"
 import { eventId, messageId, messageVersionId } from "../../lib/id"
 import { MessageVersionRepository, type MessageVersion } from "./version-repository"
-import { serializeBigInt } from "../../lib/serialization"
+import { serializeBigInt } from "@threa/backend-common"
 import { messagesTotal } from "../../lib/observability"
 import {
   AttachmentSafetyStatuses,

@@ -126,6 +126,8 @@ export {
   INJECTION_STRATEGIES,
   type InjectionStrategy,
   InjectionStrategies,
+  // Inter-service authentication
+  INTERNAL_API_KEY_HEADER,
 } from "./constants"
 
 // Domain entities (wire format)

@@ -1,5 +1,5 @@
 import type { Express, RequestHandler } from "express"
-import { createAuthMiddleware } from "./auth/middleware"
+import { createAuthMiddleware } from "@threa/backend-common"
 import { createWorkspaceUserMiddleware } from "./middleware/workspace"
 import { createUploadMiddleware, createAvatarUploadMiddleware } from "./middleware/upload"
 import { createRateLimiters, type RateLimiterConfig } from "./middleware/rate-limit"
@@ -19,11 +19,10 @@ import { createAIUsageHandlers } from "./features/ai-usage"
 import { createInvitationHandlers } from "./features/invitations"
 import { createActivityHandlers } from "./features/activity"
 import { createDebugHandlers } from "./handlers/debug-handlers"
+import { createInternalHandlers } from "./handlers/internal-handlers"
 import { createAuthStubHandlers } from "./auth/auth-stub-handlers"
 import { createAgentSessionHandlers } from "./features/agents"
-import { errorHandler } from "./lib/error-handler"
-import type { AuthService } from "./auth/auth-service"
-import { StubAuthService } from "./auth/auth-service.stub"
+import { createInternalAuthMiddleware, errorHandler, StubAuthService, type AuthService } from "@threa/backend-common"
 import type { WorkspaceService } from "./features/workspaces"
 import type { StreamService } from "./features/streams"
 import type { EventService } from "./features/messaging"
@@ -57,6 +56,7 @@ interface Dependencies {
   avatarService: AvatarService
   rateLimiterConfig: RateLimiterConfig
   allowDevAuthRoutes: boolean
+  internalApiKey: string | null
 }
 
 export function registerRoutes(app: Express, deps: Dependencies) {
@@ -78,6 +78,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     avatarService,
     rateLimiterConfig,
     allowDevAuthRoutes,
+    internalApiKey,
   } = deps
 
   const auth = createAuthMiddleware({ authService })
@@ -89,7 +90,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const rateLimits = createRateLimiters(rateLimiterConfig)
   const opsAccess = createOpsAccessMiddleware()
 
-  const authHandlers = createAuthHandlers({ authService, invitationService })
+  const authHandlers = createAuthHandlers()
   const avatarUpload = createAvatarUploadMiddleware()
   const workspace = createWorkspaceHandlers({
     workspaceService,
@@ -119,12 +120,19 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/debug/pool", opsAccess, debug.poolState)
   app.get("/metrics", opsAccess, debug.metrics)
 
+  // Internal API — control-plane → regional backend, protected by shared secret
+  if (internalApiKey) {
+    const internalAuth = createInternalAuthMiddleware(internalApiKey)
+    const internal = createInternalHandlers({ workspaceService, invitationService })
+
+    app.post("/internal/workspaces", internalAuth, internal.createWorkspace)
+    app.post("/internal/invitations/:id/accept", internalAuth, internal.acceptInvitation)
+  }
+
   // Global baseline rate limit
   app.use(rateLimits.globalBaseline)
 
-  app.get("/api/auth/login", rateLimits.auth, authHandlers.login)
-  app.all("/api/auth/callback", rateLimits.auth, authHandlers.callback)
-  app.get("/api/auth/logout", rateLimits.auth, authHandlers.logout)
+  // The router proxies /api/auth/* to the control-plane in production.
 
   if (authService instanceof StubAuthService) {
     if (!allowDevAuthRoutes) {
@@ -147,6 +155,9 @@ export function registerRoutes(app: Express, deps: Dependencies) {
 
   app.get("/api/auth/me", auth, authHandlers.me)
 
+  // Workspace list/create are also on the control-plane. The router proxies
+  // GET/POST /api/workspaces to the control-plane in production. These stay
+  // here for direct backend testing and single-region dev without the router.
   app.get("/api/workspaces", auth, workspace.list)
   app.post("/api/workspaces", auth, workspace.create)
   app.get("/api/workspaces/:workspaceId", ...authed, workspace.get)

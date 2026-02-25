@@ -5,7 +5,7 @@ import { withTransaction } from "../../db"
 import { StreamEventRepository } from "../streams"
 import { OutboxRepository } from "../../lib/outbox"
 import { eventId } from "../../lib/id"
-import { serializeBigInt } from "../../lib/serialization"
+import { serializeBigInt } from "@threa/backend-common"
 import { logger } from "../../lib/logger"
 
 export interface CommandCompletedPayload {

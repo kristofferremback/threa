@@ -1,5 +1,5 @@
 import { ulid } from "ulid"
-import { logger } from "../lib/logger"
+import { logger } from "../logger"
 import type { WorkosOrgService } from "./workos-org-service"
 
 export class StubWorkosOrgService implements WorkosOrgService {

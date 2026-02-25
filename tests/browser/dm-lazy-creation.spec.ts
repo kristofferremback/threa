@@ -20,7 +20,7 @@ test.describe("DM Lazy Creation", () => {
       expect(workspaceId).toBeTruthy()
 
       const joinWorkspaceResponse = await invitee.page.request.post(`/api/dev/workspaces/${workspaceId}/join`, {
-        data: { role: "user" },
+        data: { role: "user", name: inviteeName },
       })
       expect(joinWorkspaceResponse.ok()).toBeTruthy()
 

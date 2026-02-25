@@ -21,8 +21,8 @@ export class StubAuthService implements AuthService {
     const email = options.email || "test@example.com"
     const name = options.name || "Test User"
 
-    // Generate a fake WorkOS user ID for testing - this mimics how real auth works
-    const fakeWorkosUserId = `workos_test_${email.replace(/[^a-z0-9]/gi, "_")}`
+    // Generate a fake WorkOS user ID — base64url-encode the email so it's safely reversible
+    const fakeWorkosUserId = `workos_test_${Buffer.from(email).toString("base64url")}`
 
     // Register with the fake WorkOS ID - this is what authenticateSession will return
     // and what socket.ts will use to look up the user
@@ -71,7 +71,17 @@ export class StubAuthService implements AuthService {
     }
 
     const userId = match[1]
-    const user = this.users.get(userId)
+    let user = this.users.get(userId)
+
+    // Auto-register from session token for cross-process stub auth.
+    // When the control-plane sets the session cookie, the regional backend
+    // (a separate process with its own StubAuthService) needs to trust it.
+    if (!user && userId?.startsWith("workos_test_")) {
+      const emailPart = userId.slice("workos_test_".length)
+      const email = Buffer.from(emailPart, "base64url").toString()
+      user = { id: userId, email, firstName: null, lastName: null }
+      this.users.set(userId, user)
+    }
 
     if (!user) {
       return { success: false, refreshed: false, reason: "user_not_found" }

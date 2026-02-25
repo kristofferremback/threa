@@ -233,7 +233,7 @@ async function main() {
   console.log("Installing dependencies...")
   await $`bun install`
 
-  // Step 3: Copy .env from main worktree
+  // Step 3: Copy .env files from main worktree
   const sourceEnvPath = path.join(mainWorktree.path, "apps/backend/.env")
   const targetEnvPath = path.join(cwd, "apps/backend/.env")
 
@@ -241,6 +241,14 @@ async function main() {
     console.error(`No .env file found at ${sourceEnvPath}`)
     console.log("Please ensure the main worktree has apps/backend/.env configured")
     process.exit(1)
+  }
+
+  // Copy control-plane .env (WorkOS config shared between worktrees)
+  const cpSourceEnvPath = path.join(mainWorktree.path, "apps/control-plane/.env")
+  const cpTargetEnvPath = path.join(cwd, "apps/control-plane/.env")
+  if (fs.existsSync(cpSourceEnvPath)) {
+    console.log(`Copying control-plane .env from ${cpSourceEnvPath}...`)
+    fs.copyFileSync(cpSourceEnvPath, cpTargetEnvPath)
   }
 
   console.log(`Copying .env from ${sourceEnvPath}...`)
@@ -284,6 +292,10 @@ async function main() {
       console.log(`Skipping clone because database '${dbName}' already exists`)
       console.log(`Set FORCE_DB_CLONE=1 to force clone into existing database`)
     }
+
+    // Create control-plane database (dev.ts derives it as {dbName}_cp)
+    const cpDbName = `${dbName}_cp`
+    await createDatabaseIfNotExists(cpDbName)
   } catch (err) {
     if (err instanceof Error) {
       console.warn(`Clone error: ${err.message}`)

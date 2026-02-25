@@ -104,5 +104,7 @@ export function createHooksMock(options?: {
       mutateAsync: vi.fn().mockResolvedValue({ id: "stream_new", type: "channel" }),
       isPending: false,
     }),
+
+    useRegions: () => ({ data: undefined, isLoading: false }),
   }
 }

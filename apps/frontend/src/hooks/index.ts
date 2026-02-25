@@ -3,6 +3,7 @@ export {
   useWorkspace,
   useWorkspaceBootstrap,
   useCreateWorkspace,
+  useRegions,
   useUpdateProfile,
   useUploadAvatar,
   useRemoveAvatar,

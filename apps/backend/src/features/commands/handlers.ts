@@ -7,7 +7,7 @@ import type { StreamService } from "../streams"
 import { StreamEventRepository } from "../streams"
 import { OutboxRepository } from "../../lib/outbox"
 import { eventId, commandId as generateCommandId } from "../../lib/id"
-import { serializeBigInt } from "../../lib/serialization"
+import { serializeBigInt } from "@threa/backend-common"
 
 const dispatchCommandSchema = z.object({
   command: z.string().min(1, "command is required"),

@@ -4,6 +4,7 @@ import { workspacesApi, streamsApi, messagesApi, conversationsApi, activityApi }
 // Service interfaces - components depend on these, not implementations
 export interface WorkspaceService {
   list: typeof workspacesApi.list
+  listRegions: typeof workspacesApi.listRegions
   get: typeof workspacesApi.get
   bootstrap: typeof workspacesApi.bootstrap
   create: typeof workspacesApi.create

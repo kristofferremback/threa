@@ -409,3 +409,6 @@ export const InjectionStrategies = {
   FULL_WITH_NOTE: "full_with_note",
   SUMMARY: "summary",
 } as const satisfies Record<string, InjectionStrategy>
+
+// Inter-service authentication header (control-plane ↔ regional backend ↔ workspace-router)
+export const INTERNAL_API_KEY_HEADER = "X-Internal-Api-Key"

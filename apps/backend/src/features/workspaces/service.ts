@@ -7,12 +7,11 @@ import { StreamRepository, StreamMemberRepository } from "../streams"
 import { EmojiUsageRepository } from "../emoji"
 import { PersonaRepository, type Persona } from "../agents"
 import { workspaceId, userId as generateUserId, streamId, avatarUploadId } from "../../lib/id"
-import { generateSlug, generateUniqueSlug } from "../../lib/slug"
-import { serializeBigInt } from "../../lib/serialization"
+import { generateSlug, generateUniqueSlug, serializeBigInt } from "@threa/backend-common"
 import { HttpError, isUniqueViolation } from "../../lib/errors"
 import { JobQueues } from "../../lib/queue"
 import type { QueueManager } from "../../lib/queue"
-import type { WorkosOrgService } from "../../auth/workos-org-service"
+import type { WorkosOrgService } from "@threa/backend-common"
 import { AvatarUploadRepository } from "./avatar-upload-repository"
 import type { AvatarService } from "./avatar-service"
 
@@ -64,6 +63,55 @@ export class WorkspaceService {
 
   async getWorkspacesByWorkosUserId(workosUserId: string): Promise<Workspace[]> {
     return WorkspaceRepository.list(this.pool, { workosUserId })
+  }
+
+  /**
+   * Create a workspace from a control-plane instruction.
+   * Accepts a pre-generated ID and slug — skips invite validation and slug generation
+   * since the control-plane already handled those.
+   *
+   * Idempotent: if the workspace already exists (e.g. control-plane retrying after
+   * its local DB commit failed), returns the existing workspace instead of failing.
+   */
+  async createWorkspaceFromControlPlane(params: {
+    id: string
+    name: string
+    slug: string
+    ownerWorkosUserId: string
+    ownerEmail: string
+    ownerName: string
+  }): Promise<Workspace> {
+    try {
+      return await withTransaction(this.pool, async (client) => {
+        const ownerUserId = generateUserId()
+
+        const ws = await WorkspaceRepository.insert(client, {
+          id: params.id,
+          name: params.name,
+          slug: params.slug,
+          createdBy: ownerUserId,
+        })
+
+        await this.createUserInTransaction(client, {
+          id: ownerUserId,
+          workspaceId: params.id,
+          workosUserId: params.ownerWorkosUserId,
+          email: params.ownerEmail,
+          name: params.ownerName,
+          role: "owner",
+        })
+
+        return ws
+      })
+    } catch (error) {
+      // Idempotency guard: if this exact workspace PK already exists, return it.
+      // Only catch PK collisions — slug or other constraint violations are real errors.
+      if (isUniqueViolation(error, "workspaces_pkey")) {
+        const existing = await WorkspaceRepository.findById(this.pool, params.id)
+        if (existing) return existing
+      }
+      throw error
+    }
   }
 
   async createWorkspace(params: CreateWorkspaceParams): Promise<Workspace> {

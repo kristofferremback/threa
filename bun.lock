@@ -37,6 +37,7 @@
         "@opentelemetry/sdk-node": "^0.208.0",
         "@opentelemetry/sdk-trace-base": "^2.0.1",
         "@socket.io/postgres-adapter": "^0.4",
+        "@threa/backend-common": "workspace:*",
         "@threa/prosemirror": "workspace:*",
         "@threa/types": "workspace:*",
         "@types/multer-s3": "^3.0.3",
@@ -85,6 +86,30 @@
         "bun-types": "latest",
         "eslint": "^10.0.0",
         "socket.io-client": "^4.8.1",
+        "typescript": "^5",
+      },
+    },
+    "apps/control-plane": {
+      "name": "@threa/control-plane",
+      "dependencies": {
+        "@threa/backend-common": "workspace:*",
+        "@threa/types": "workspace:*",
+        "cookie-parser": "^1",
+        "cors": "^2",
+        "express": "^5",
+        "helmet": "^8.1.0",
+        "pg": "^8",
+        "pino": "^9",
+        "pino-http": "^10",
+        "pino-pretty": "^13",
+        "zod": "^4.2.0",
+      },
+      "devDependencies": {
+        "@types/cookie-parser": "^1",
+        "@types/cors": "^2",
+        "@types/express": "^5",
+        "@types/pg": "^8",
+        "bun-types": "latest",
         "typescript": "^5",
       },
     },
@@ -195,10 +220,37 @@
     },
     "apps/workspace-router": {
       "name": "workspace-router",
+      "dependencies": {
+        "@threa/types": "workspace:*",
+      },
       "devDependencies": {
         "@cloudflare/workers-types": "^4.20250214.0",
         "@types/bun": "^1.3.9",
         "wrangler": "^4.0.0",
+      },
+    },
+    "packages/backend-common": {
+      "name": "@threa/backend-common",
+      "version": "0.1.0",
+      "dependencies": {
+        "@threa/types": "workspace:*",
+        "@workos-inc/node": "^7",
+        "cookie-parser": "^1",
+        "express": "^5",
+        "limax": "^4.2.2",
+        "pg": "^8",
+        "pino": "^9",
+        "pino-pretty": "^13",
+        "squid": "^0.5",
+        "ulid": "^2",
+        "umzug": "^3",
+      },
+      "devDependencies": {
+        "@types/cookie-parser": "^1",
+        "@types/express": "^5",
+        "@types/pg": "^8",
+        "bun-types": "latest",
+        "typescript": "^5",
       },
     },
     "packages/prosemirror": {
@@ -1080,6 +1132,10 @@
     "@testing-library/user-event": ["@testing-library/user-event@14.6.1", "", { "peerDependencies": { "@testing-library/dom": ">=7.21.4" } }, "sha512-vq7fv0rnt+QTXgPxr5Hjc210p6YKq2kmdziLgnsZGgLJ9e6VAShx1pACLuRjd/AS/sr7phAR58OIIpf0LlmQNw=="],
 
     "@threa/backend": ["@threa/backend@workspace:apps/backend"],
+
+    "@threa/backend-common": ["@threa/backend-common@workspace:packages/backend-common"],
+
+    "@threa/control-plane": ["@threa/control-plane@workspace:apps/control-plane"],
 
     "@threa/frontend": ["@threa/frontend@workspace:apps/frontend"],
 

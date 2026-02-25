@@ -183,6 +183,7 @@ export default async function globalSetup(): Promise<void> {
     console.log(`Using postgres container: ${containers.postgres}`)
     console.log(`Using minio container: ${containers.minio}`)
     await ensureTestDatabase(dbName, containers.postgres)
+    await ensureTestDatabase(`${dbName}_cp`, containers.postgres)
     await ensureMinioBucket(containers.minio)
   }
 

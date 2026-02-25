@@ -9,6 +9,11 @@ export const workspacesApi = {
     return res.workspaces
   },
 
+  async listRegions(): Promise<string[]> {
+    const res = await api.get<{ regions: string[] }>("/api/regions")
+    return res.regions
+  },
+
   async get(workspaceId: string): Promise<Workspace> {
     const res = await api.get<{ workspace: Workspace }>(`/api/workspaces/${workspaceId}`)
     return res.workspace

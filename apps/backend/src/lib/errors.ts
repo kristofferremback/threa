@@ -1,20 +1,7 @@
-interface HttpErrorOptions {
-  status: number
-  code?: string
-  cause?: Error
-}
+import { HttpError } from "@threa/backend-common"
 
-export class HttpError extends Error {
-  readonly status: number
-  readonly code?: string
-
-  constructor(message: string, { status, code, cause }: HttpErrorOptions) {
-    super(message, { cause })
-    this.status = status
-    this.code = code
-    this.name = "HttpError"
-  }
-}
+// Re-export shared errors for backward compatibility with existing imports
+export { HttpError, isUniqueViolation } from "@threa/backend-common"
 
 export class DuplicateSlugError extends HttpError {
   constructor(slug: string) {
@@ -44,13 +31,4 @@ export class MessageNotFoundError extends HttpError {
     })
     this.name = "MessageNotFoundError"
   }
-}
-
-/** Check if a PostgreSQL error is a unique constraint violation (code 23505). */
-export function isUniqueViolation(error: unknown, constraintName?: string): boolean {
-  if (!error || typeof error !== "object") return false
-  const pgError = error as { code?: string; constraint?: string }
-  if (pgError.code !== "23505") return false
-  if (constraintName && pgError.constraint !== constraintName) return false
-  return true
 }

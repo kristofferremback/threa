@@ -1,9 +1,10 @@
 import { useState } from "react"
 import { Link, Navigate, useNavigate } from "react-router-dom"
 import { useAuth } from "@/auth"
-import { useWorkspaces, useCreateWorkspace } from "@/hooks"
+import { useWorkspaces, useCreateWorkspace, useRegions } from "@/hooks"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ThreaLogo } from "@/components/threa-logo"
 import { ApiError } from "@/api/client"
 
@@ -21,10 +22,13 @@ function getCreateWorkspaceErrorMessage(error: unknown): string | null {
 export function WorkspaceSelectPage() {
   const { user, loading: authLoading } = useAuth()
   const { data: workspaces, isLoading: workspacesLoading, error } = useWorkspaces()
+  const { data: regions } = useRegions()
   const createWorkspace = useCreateWorkspace()
   const navigate = useNavigate()
   const [newWorkspaceName, setNewWorkspaceName] = useState("")
+  const [selectedRegion, setSelectedRegion] = useState<string | undefined>()
   const createWorkspaceErrorMessage = getCreateWorkspaceErrorMessage(createWorkspace.error)
+  const showRegionPicker = regions && regions.length > 1
 
   const handleCreateWorkspace = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -32,7 +36,7 @@ export function WorkspaceSelectPage() {
     if (!name) return
 
     const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-")
-    const workspace = await createWorkspace.mutateAsync({ name, slug })
+    const workspace = await createWorkspace.mutateAsync({ name, slug, region: selectedRegion })
     navigate(`/w/${workspace.id}`)
   }
 
@@ -97,6 +101,20 @@ export function WorkspaceSelectPage() {
             onChange={(e) => setNewWorkspaceName(e.target.value)}
             disabled={createWorkspace.isPending}
           />
+          {showRegionPicker && (
+            <Select value={selectedRegion} onValueChange={setSelectedRegion} disabled={createWorkspace.isPending}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select region" />
+              </SelectTrigger>
+              <SelectContent>
+                {regions.map((region) => (
+                  <SelectItem key={region} value={region}>
+                    {region}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           <Button type="submit" disabled={!newWorkspaceName.trim() || createWorkspace.isPending}>
             {createWorkspace.isPending ? "Creating..." : "Create Workspace"}
           </Button>

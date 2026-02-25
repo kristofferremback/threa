@@ -1,6 +1,6 @@
 import { WorkOS } from "@workos-inc/node"
-import { logger } from "../lib/logger"
-import type { WorkosConfig } from "../lib/env"
+import { logger } from "../logger"
+import type { WorkosConfig } from "./types"
 
 /**
  * Extract error code from WorkOS SDK exceptions.

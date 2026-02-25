@@ -6,8 +6,7 @@ import { AuthorTypes } from "@threa/types"
 import { logger } from "../../lib/logger"
 import { emojiUsageId } from "../../lib/id"
 import { isValidShortcode } from "./emoji"
-import { CursorLock, ensureListenerFromLatest, type ProcessResult } from "../../lib/cursor-lock"
-import { DebounceWithMaxWait } from "../../lib/debounce"
+import { CursorLock, ensureListenerFromLatest, DebounceWithMaxWait, type ProcessResult } from "@threa/backend-common"
 import type { OutboxHandler } from "../../lib/outbox"
 
 export interface EmojiUsageHandlerConfig {

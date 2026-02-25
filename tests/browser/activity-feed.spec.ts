@@ -1,5 +1,5 @@
 import { test, expect, type BrowserContext, type Page } from "@playwright/test"
-import { loginInNewContext, switchToAllView } from "./helpers"
+import { loginInNewContext, switchToAllView, waitForWorkspaceProvisioned } from "./helpers"
 
 /**
  * Activity feed E2E tests.
@@ -66,6 +66,7 @@ test.describe("Activity Feed", () => {
       expect(createWsRes.ok()).toBeTruthy()
       const { workspace } = (await createWsRes.json()) as { workspace: { id: string } }
       const workspaceId = workspace.id
+      await waitForWorkspaceProvisioned(ctxA.page, workspaceId)
 
       const channelSlug = `mentions-${testId}`
       const createStreamRes = await ctxA.page.request.post(`/api/workspaces/${workspaceId}/streams`, {
@@ -170,6 +171,7 @@ test.describe("Activity Feed", () => {
       expect(createWsRes.ok()).toBeTruthy()
       const { workspace } = (await createWsRes.json()) as { workspace: { id: string } }
       const workspaceId = workspace.id
+      await waitForWorkspaceProvisioned(ctxA.page, workspaceId)
 
       const channelSlug = `live-${testId}`
       const createStreamRes = await ctxA.page.request.post(`/api/workspaces/${workspaceId}/streams`, {
@@ -248,6 +250,7 @@ test.describe("Activity Feed", () => {
       expect(createWsRes.ok()).toBeTruthy()
       const { workspace } = (await createWsRes.json()) as { workspace: { id: string } }
       const workspaceId = workspace.id
+      await waitForWorkspaceProvisioned(ctxA.page, workspaceId)
 
       const channelSlug = `chat-${testId}`
       const createStreamRes = await ctxA.page.request.post(`/api/workspaces/${workspaceId}/streams`, {

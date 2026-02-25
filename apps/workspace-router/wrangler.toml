@@ -7,8 +7,9 @@ binding = "WORKSPACE_REGIONS"
 id = "workspace-regions-kv"
 
 [vars]
-DEFAULT_REGION = "local"
 REGIONS = '{"local":{"apiUrl":"http://localhost:3002","wsUrl":"ws://localhost:3002"}}'
+CONTROL_PLANE_URL = "http://localhost:3003"
+INTERNAL_API_KEY = "dev-internal-key"
 
 [dev]
 port = 3001

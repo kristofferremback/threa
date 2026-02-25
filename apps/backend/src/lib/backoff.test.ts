@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test"
-import { calculateBackoffMs } from "./backoff"
+import { calculateBackoffMs } from "@threa/backend-common"
 
 describe("calculateBackoffMs", () => {
   test("should calculate exponential backoff without jitter when random=0", () => {

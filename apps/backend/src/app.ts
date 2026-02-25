@@ -5,7 +5,7 @@ import cookieParser from "cookie-parser"
 import pinoHttp from "pino-http"
 import { randomUUID } from "crypto"
 import { logger } from "./lib/logger"
-import { bigIntReplacer } from "./lib/serialization"
+import { bigIntReplacer } from "@threa/backend-common"
 import { createMetricsMiddleware } from "./middleware/metrics"
 import { createCorsOriginChecker } from "./lib/cors"
 

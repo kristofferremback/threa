@@ -1,6 +1,9 @@
-export { OutboxDispatcher, type OutboxHandler, type OutboxDispatcherConfig } from "./dispatcher"
+// Generic outbox infrastructure — re-exported from @threa/backend-common
+export { OutboxDispatcher, type OutboxHandler, type OutboxDispatcherConfig } from "@threa/backend-common"
+export { OutboxRetentionWorker, type OutboxRetentionWorkerConfig } from "@threa/backend-common"
+
+// Domain-specific outbox code
 export { BroadcastHandler, type BroadcastHandlerConfig } from "./broadcast-handler"
-export { OutboxRetentionWorker, type OutboxRetentionWorkerConfig } from "./retention-worker"
 export { parseMessageCreatedPayload, type NormalizedMessageCreatedPayload } from "./payload-parsers"
 export {
   OutboxRepository,

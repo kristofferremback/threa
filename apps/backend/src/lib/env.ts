@@ -1,11 +1,7 @@
 import { logger } from "./logger"
+import type { WorkosConfig } from "@threa/backend-common"
 
-export interface WorkosConfig {
-  apiKey: string
-  clientId: string
-  redirectUri: string
-  cookiePassword: string
-}
+export type { WorkosConfig } from "@threa/backend-common"
 
 export interface AIConfig {
   openRouterApiKey: string
@@ -54,6 +50,12 @@ export interface Config {
   ai: AIConfig
   s3: S3Config
   attachments: AttachmentSafetyConfig
+  /** Control-plane URL for inter-service communication (optional — only needed in multi-region) */
+  controlPlaneUrl: string | null
+  /** Shared secret for authenticating internal API calls from the control-plane */
+  internalApiKey: string | null
+  /** This instance's region name (e.g., "eu-north-1") */
+  region: string | null
 }
 
 export function loadConfig(): Config {
@@ -126,6 +128,21 @@ export function loadConfig(): Config {
     attachments: {
       malwareScanEnabled: process.env.ATTACHMENT_MALWARE_SCAN_ENABLED !== "false",
     },
+    controlPlaneUrl: process.env.CONTROL_PLANE_URL || null,
+    internalApiKey: process.env.INTERNAL_API_KEY || null,
+    region: process.env.REGION || null,
+  }
+
+  // Validate co-presence: REGION and INTERNAL_API_KEY are required when CONTROL_PLANE_URL is set (INV-11)
+  if (config.controlPlaneUrl && !config.region) {
+    throw new Error(
+      "REGION is required when CONTROL_PLANE_URL is set — shadow sync needs to know this instance's region"
+    )
+  }
+  if (config.controlPlaneUrl && !config.internalApiKey) {
+    throw new Error(
+      "INTERNAL_API_KEY is required when CONTROL_PLANE_URL is set — inter-service calls need authentication"
+    )
   }
 
   if (useStubAuth) {

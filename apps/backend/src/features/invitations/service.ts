@@ -5,7 +5,7 @@ import { WorkspaceRepository, UserRepository, type WorkspaceService } from "../w
 import { OutboxRepository } from "../../lib/outbox"
 import { invitationId } from "../../lib/id"
 import { logger } from "../../lib/logger"
-import { getWorkosErrorCode, type WorkosOrgService } from "../../auth/workos-org-service"
+import { getWorkosErrorCode, type WorkosOrgService } from "@threa/backend-common"
 import type { InvitationSkipReason, InvitationStatus } from "@threa/types"
 
 const INVITATION_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
@@ -168,7 +168,16 @@ export class InvitationService {
     })
 
     if (!updated) {
-      return null // Already accepted, expired, or revoked
+      // Invitation not in pending state — check if this is an idempotent replay.
+      // The control-plane retries acceptance if its local DB write failed after the
+      // regional call succeeded, so we must return success when the user is already
+      // a workspace member (rather than 404, which would leave the shadow stuck).
+      const invitation = await InvitationRepository.findById(client, invitationId)
+      if (invitation?.status === "accepted") {
+        const isMember = await UserRepository.isMember(client, invitation.workspaceId, identity.workosUserId)
+        if (isMember) return invitation.workspaceId
+      }
+      return null
     }
 
     const invitation = await InvitationRepository.findById(client, invitationId)
@@ -233,7 +242,7 @@ export class InvitationService {
   }
 
   async revokeInvitation(invitationId: string, workspaceId: string): Promise<boolean> {
-    // Phase 1: Update local status in transaction
+    // Phase 1: Update local status + outbox event in one transaction
     const invitation = await withTransaction(this.pool, async (client) => {
       const inv = await InvitationRepository.findById(client, invitationId)
       if (!inv || inv.workspaceId !== workspaceId) return null
@@ -241,6 +250,13 @@ export class InvitationService {
       const updated = await InvitationRepository.updateStatus(client, invitationId, "revoked", {
         revokedAt: new Date(),
       })
+
+      if (updated) {
+        await OutboxRepository.insert(client, "invitation:revoked", {
+          workspaceId,
+          invitationId,
+        })
+      }
 
       return updated ? inv : null
     })

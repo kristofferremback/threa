@@ -8,8 +8,7 @@ import { errorHandler } from "./middleware/error-handler"
 import { registerSocketHandlers } from "./socket"
 import { createDatabasePools, warmPool, type DatabasePools } from "./db"
 import { runMigrations } from "./db/migrations"
-import { WorkosAuthService } from "./auth/auth-service"
-import { StubAuthService } from "./auth/auth-service.stub"
+import { WorkosAuthService, StubAuthService } from "@threa/backend-common"
 import {
   WorkspaceService,
   AvatarService,
@@ -17,9 +16,8 @@ import {
   createAvatarProcessWorker,
   createAvatarProcessOnDLQ,
 } from "./features/workspaces"
-import { InvitationService } from "./features/invitations"
-import { WorkosOrgServiceImpl } from "./auth/workos-org-service"
-import { StubWorkosOrgService } from "./auth/workos-org-service.stub"
+import { InvitationService, InvitationShadowSyncHandler } from "./features/invitations"
+import { WorkosOrgServiceImpl, StubWorkosOrgService } from "@threa/backend-common"
 import {
   StreamService,
   StreamNamingService,
@@ -54,7 +52,7 @@ import {
 } from "./features/conversations"
 import { UserPreferencesService } from "./features/user-preferences"
 import { createS3Storage } from "./lib/storage/s3-client"
-import { OutboxDispatcher, BroadcastHandler, OutboxRetentionWorker } from "./lib/outbox"
+import { OutboxDispatcher, BroadcastHandler, OutboxRetentionWorker, type OutboxHandler } from "./lib/outbox"
 import {
   CompanionHandler,
   MentionInvokeHandler,
@@ -121,6 +119,7 @@ import { createStaticConfigResolver } from "./lib/ai/static-config-resolver"
 import { QueueManager, ScheduleManager, CleanupWorker, QueueRepository, TokenPoolRepository } from "./lib/queue"
 import { UserSocketRegistry } from "./lib/user-socket-registry"
 import { PoolMonitor } from "./lib/observability"
+import { ControlPlaneClient } from "./lib/control-plane-client"
 
 export interface ServerInstance {
   server: Server
@@ -226,6 +225,10 @@ export async function startServer(): Promise<ServerInstance> {
   const workspaceService = new WorkspaceService(pool, avatarService, jobQueue, workosOrgService, {
     requireWorkspaceCreationInvite: config.workspaceCreationRequiresInvite,
   })
+  const controlPlaneClient =
+    config.controlPlaneUrl && config.internalApiKey
+      ? new ControlPlaneClient(config.controlPlaneUrl, config.internalApiKey)
+      : null
   const invitationService = new InvitationService(pool, workosOrgService, workspaceService)
 
   // Schedule manager for cron tick generation
@@ -325,6 +328,7 @@ export async function startServer(): Promise<ServerInstance> {
     avatarService,
     rateLimiterConfig: config.rateLimits,
     allowDevAuthRoutes: config.useStubAuth && !isProduction,
+    internalApiKey: config.internalApiKey,
   })
 
   app.use(errorHandler)
@@ -519,7 +523,11 @@ export async function startServer(): Promise<ServerInstance> {
   const attachmentUploadedHandler = new AttachmentUploadedHandler(pool, jobQueue)
   const systemMessageOutboxHandler = new SystemMessageOutboxHandler(pool, systemMessageService)
   const activityFeedHandler = new ActivityFeedHandler(pool, activityService)
-  const outboxHandlers = [
+  const shadowSyncHandler =
+    controlPlaneClient && config.region
+      ? new InvitationShadowSyncHandler(pool, controlPlaneClient, config.region)
+      : null
+  const outboxHandlers: (OutboxHandler & { ensureListener(): Promise<void> })[] = [
     broadcastHandler,
     companionHandler,
     namingHandler,
@@ -533,6 +541,7 @@ export async function startServer(): Promise<ServerInstance> {
     attachmentUploadedHandler,
     systemMessageOutboxHandler,
     activityFeedHandler,
+    ...(shadowSyncHandler ? [shadowSyncHandler] : []),
   ]
 
   // Ensure listeners exist in database, then register all handlers

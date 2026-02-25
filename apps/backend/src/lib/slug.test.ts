@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test"
-import { generateSlug, generateUniqueSlug } from "./slug"
+import { generateSlug, generateUniqueSlug } from "@threa/backend-common"
 
 describe("Slug Generation", () => {
   describe("generateSlug", () => {

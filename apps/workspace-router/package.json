@@ -7,6 +7,9 @@
     "deploy": "wrangler deploy",
     "test": "bun test src/"
   },
+  "dependencies": {
+    "@threa/types": "workspace:*"
+  },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250214.0",
     "@types/bun": "^1.3.9",

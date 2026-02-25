@@ -101,6 +101,22 @@ export async function switchToAllView(page: Page): Promise<void> {
 }
 
 /**
+ * Wait for a workspace to be provisioned on the regional backend.
+ * After the control-plane creates a workspace, the outbox asynchronously
+ * provisions it in the regional backend. Poll until a workspace-scoped
+ * request succeeds (the router resolves the region and the backend has data).
+ */
+export async function waitForWorkspaceProvisioned(page: Page, workspaceId: string): Promise<void> {
+  await expect
+    .poll(async () => (await page.request.get(`/api/workspaces/${workspaceId}`)).ok(), {
+      message: `Workspace ${workspaceId} not provisioned on regional backend within timeout`,
+      timeout: 10000,
+      intervals: [100, 200, 500, 1000],
+    })
+    .toBe(true)
+}
+
+/**
  * Mirrors the frontend's createDmDraftId so E2E tests reference the same route shape
  * without duplicating the raw string literal at call sites.
  */
