@@ -1,4 +1,4 @@
-import { expect, type Page, type Browser, type BrowserContext } from "@playwright/test"
+import { expect, type Page, type Browser, type BrowserContext, type APIResponse } from "@playwright/test"
 
 /**
  * Shared helpers for browser E2E tests.
@@ -6,6 +6,29 @@ import { expect, type Page, type Browser, type BrowserContext } from "@playwrigh
  * Every test creates a unique user + workspace for full isolation,
  * enabling parallel execution across workers without DB conflicts.
  */
+
+/**
+ * Assert API requests succeed with actionable error details.
+ */
+export async function expectApiOk(response: APIResponse, action: string): Promise<void> {
+  if (response.ok()) {
+    return
+  }
+
+  const body = await response.text().catch(() => "<failed to read response body>")
+  throw new Error(`${action} failed: ${response.status()} ${response.statusText()} - ${body}`)
+}
+
+/**
+ * Login using the test-only stub auth API route.
+ * Faster and less flaky than driving the UI login form for every test.
+ */
+async function devLogin(page: Page, email: string, name: string): Promise<void> {
+  const loginResponse = await page.request.post("/api/dev/login", {
+    data: { email, name },
+  })
+  await expectApiOk(loginResponse, "Stub auth login")
+}
 
 /**
  * Generate a unique test ID combining timestamp and random suffix.
@@ -17,8 +40,8 @@ export function generateTestId(): string {
 
 /**
  * Login as a new unique user and create a workspace.
- * This is the standard setup for most browser tests — each test gets
- * a fresh user + workspace so tests can run in parallel safely.
+ * Uses test-only API routes for speed; equivalent auth + workspace state
+ * is created without UI form interactions.
  */
 export async function loginAndCreateWorkspace(
   page: Page,
@@ -29,15 +52,19 @@ export async function loginAndCreateWorkspace(
   const name = `${prefix} ${testId}`
   const workspaceName = `${prefix} WS ${testId}`
 
-  await page.goto("/login")
-  await page.getByRole("button", { name: "Sign in with WorkOS" }).click()
-  await page.getByLabel("Email").fill(email)
-  await page.getByLabel("Name").fill(name)
-  await page.getByRole("button", { name: "Sign In" }).click()
-  await expect(page.getByText(/Welcome/)).toBeVisible()
+  await devLogin(page, email, name)
 
-  await page.getByPlaceholder("New workspace name").fill(workspaceName)
-  await page.getByRole("button", { name: "Create Workspace" }).click()
+  const createWorkspaceResponse = await page.request.post("/api/workspaces", {
+    data: { name: workspaceName },
+  })
+  await expectApiOk(createWorkspaceResponse, "Workspace creation")
+  const createWorkspaceBody = (await createWorkspaceResponse.json()) as { workspace?: { id?: string } }
+  const workspaceId = createWorkspaceBody.workspace?.id
+  if (!workspaceId) {
+    throw new Error("Workspace creation response is missing workspace.id")
+  }
+
+  await page.goto(`/w/${workspaceId}`)
   await expect(page.getByRole("button", { name: "+ New Scratchpad" })).toBeVisible({ timeout: 10000 })
 
   return { testId, email, name, workspaceName }
@@ -45,7 +72,7 @@ export async function loginAndCreateWorkspace(
 
 /**
  * Login as a new user in a separate browser context.
- * Useful for multi-user tests (e.g., invitation flows, cross-user messaging).
+ * Uses test-only API route so tests can navigate directly to target pages.
  */
 export async function loginInNewContext(
   browser: Browser,
@@ -55,12 +82,7 @@ export async function loginInNewContext(
   const context = await browser.newContext()
   const page = await context.newPage()
 
-  await page.goto("/login")
-  await page.getByRole("button", { name: "Sign in with WorkOS" }).click()
-  await page.getByLabel("Email").fill(email)
-  await page.getByLabel("Name").fill(name)
-  await page.getByRole("button", { name: "Sign In" }).click()
-  await expect(page.getByText(/Welcome|Select a stream/)).toBeVisible()
+  await devLogin(page, email, name)
 
   return { context, page }
 }
@@ -88,15 +110,22 @@ export function createDmDraftId(userId: string): string {
 
 /**
  * Create a channel via the create channel modal and wait for it to load.
- * Switches to "All" view after creation so the channel appears in sidebar.
+ * By default switches to "All" view after creation so the channel appears in sidebar.
  */
-export async function createChannel(page: Page, channelName: string): Promise<void> {
+export async function createChannel(
+  page: Page,
+  channelName: string,
+  options?: { switchToAll?: boolean }
+): Promise<void> {
+  const shouldSwitchToAll = options?.switchToAll ?? true
   await page.getByRole("button", { name: "+ New Channel" }).click()
   await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
-  // Wait for slug validation to clear (debounced availability check)
-  await page.waitForTimeout(400)
-  await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
+  const createButton = page.getByRole("dialog").getByRole("button", { name: "Create Channel" })
+  await expect(createButton).toBeEnabled({ timeout: 5000 })
+  await createButton.click()
   await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
-  await switchToAllView(page)
-  await expect(page.getByRole("link", { name: `#${channelName}` })).toBeVisible({ timeout: 5000 })
+  if (shouldSwitchToAll) {
+    await switchToAllView(page)
+    await expect(page.getByRole("link", { name: `#${channelName}` })).toBeVisible({ timeout: 5000 })
+  }
 }

@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test"
+import { createChannel, loginAndCreateWorkspace } from "./helpers"
 
 /**
  * Tests for thread reply functionality.
@@ -11,45 +12,17 @@ import { test, expect } from "@playwright/test"
  */
 
 test.describe("Thread Replies", () => {
+  let testId: string
+
   test.beforeEach(async ({ page }) => {
-    const setupId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
-    const testEmail = `thread-test-${setupId}@example.com`
-    const testName = `Thread Test ${setupId}`
-    const workspaceName = `Thread Test WS ${setupId}`
-
-    // Login and create workspace
-    await page.goto("/login")
-    await page.getByRole("button", { name: "Sign in with WorkOS" }).click()
-    await expect(page.getByRole("heading", { name: "Test Login" })).toBeVisible()
-
-    await page.getByLabel("Email").fill(testEmail)
-    await page.getByLabel("Name").fill(testName)
-    await page.getByRole("button", { name: "Sign In" }).click()
-
-    // Wait for workspace selection page
-    await expect(page.getByRole("heading", { name: /Welcome/ })).toBeVisible()
-
-    // Create workspace
-    const workspaceInput = page.getByPlaceholder("New workspace name")
-    await workspaceInput.fill(workspaceName)
-    const createButton = page.getByRole("button", { name: "Create Workspace" })
-    await expect(createButton).toBeEnabled()
-    await createButton.click()
-
-    // Wait for sidebar to be visible (workspace loaded)
-    await expect(page.getByRole("button", { name: "+ New Channel" })).toBeVisible({ timeout: 10000 })
+    const result = await loginAndCreateWorkspace(page, "thread-test")
+    testId = result.testId
   })
 
   test("should send a reply in a thread", async ({ page }) => {
-    const testId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
-
     // Create a channel
     const channelName = `thread-reply-${testId}`
-    await page.getByRole("button", { name: "+ New Channel" }).click()
-    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
-    await page.waitForTimeout(400)
-    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
-    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
+    await createChannel(page, channelName)
 
     // Send a parent message in the channel
     const editor = page.locator("[contenteditable='true']")
@@ -90,19 +63,13 @@ test.describe("Thread Replies", () => {
     await expect(page.getByTestId("panel").getByText(replyMessage)).toBeVisible({ timeout: 5000 })
 
     // Verify author name appears with the reply (use last instance since it's in the panel)
-    await expect(page.getByText(/Thread Test /).last()).toBeVisible()
+    await expect(page.getByText(/thread-test/i).last()).toBeVisible()
   })
 
   test("should show reply count in main stream after sending thread reply", async ({ page }) => {
-    const testId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
-
     // Create a channel
     const channelName = `reply-count-${testId}`
-    await page.getByRole("button", { name: "+ New Channel" }).click()
-    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
-    await page.waitForTimeout(400)
-    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
-    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
+    await createChannel(page, channelName)
 
     // Send a parent message
     const editor = page.locator("[contenteditable='true']")
@@ -143,15 +110,9 @@ test.describe("Thread Replies", () => {
   })
 
   test("should send multiple replies in a thread", async ({ page }) => {
-    const testId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
-
     // Create a channel
     const channelName = `multi-reply-${testId}`
-    await page.getByRole("button", { name: "+ New Channel" }).click()
-    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
-    await page.waitForTimeout(400)
-    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
-    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
+    await createChannel(page, channelName)
 
     // Send a parent message
     const editor = page.locator("[contenteditable='true']")
@@ -206,15 +167,9 @@ test.describe("Thread Replies", () => {
   })
 
   test("should reopen existing thread and send additional reply", async ({ page }) => {
-    const testId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
-
     // Create a channel
     const channelName = `reopen-thread-${testId}`
-    await page.getByRole("button", { name: "+ New Channel" }).click()
-    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
-    await page.waitForTimeout(400)
-    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
-    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
+    await createChannel(page, channelName)
 
     // Send a parent message
     const editor = page.locator("[contenteditable='true']")
@@ -245,9 +200,7 @@ test.describe("Thread Replies", () => {
     // Close the thread panel
     const panel = page.getByTestId("panel")
     await panel.getByRole("button", { name: "Close" }).click()
-
-    // Wait a moment for UI to settle
-    await page.waitForTimeout(500)
+    await expect(panel).not.toBeVisible({ timeout: 5000 })
 
     // Reopen the thread by clicking the reply count indicator
     const parentInStream = page.getByRole("main").locator(".group").filter({ hasText: parentMessage }).first()

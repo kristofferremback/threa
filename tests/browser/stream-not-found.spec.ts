@@ -10,6 +10,25 @@ import { loginAndCreateWorkspace } from "./helpers"
  */
 
 test.describe("Stream Not Found", () => {
+  async function waitForStableRequestCount(getCount: () => number): Promise<void> {
+    let previousCount = getCount()
+    let lastChangeAt = Date.now()
+
+    await expect
+      .poll(
+        () => {
+          const currentCount = getCount()
+          if (currentCount !== previousCount) {
+            previousCount = currentCount
+            lastChangeAt = Date.now()
+          }
+          return Date.now() - lastChangeAt
+        },
+        { timeout: 5000 }
+      )
+      .toBeGreaterThanOrEqual(1000)
+  }
+
   test("should show error page for non-existent stream without continuous requests", async ({ page }) => {
     // Track all bootstrap requests
     const bootstrapRequests: Request[] = []
@@ -44,16 +63,16 @@ test.describe("Stream Not Found", () => {
     await expect(page.getByText("The Thread Has Broken")).toBeVisible({ timeout: 10000 })
     await expect(page.getByText("The path you seek has faded")).toBeVisible()
 
-    // Wait a bit to see if more requests come in
-    await page.waitForTimeout(2000)
-
     // Count how many bootstrap requests were made for the non-existent stream
-    const nonExistentStreamRequests = bootstrapRequests.filter((r) => r.url().includes(nonExistentStreamId))
+    const getNonExistentRequestCount = () =>
+      bootstrapRequests.filter((r) => r.url().includes(nonExistentStreamId)).length
+    await waitForStableRequestCount(getNonExistentRequestCount)
+    const nonExistentRequestCount = getNonExistentRequestCount()
 
     // Should only have 1 request (the initial fetch that returned 404)
     // If there are more, we have a continuous request loop bug
-    console.log(`Bootstrap requests for non-existent stream: ${nonExistentStreamRequests.length}`)
-    expect(nonExistentStreamRequests.length).toBeLessThanOrEqual(2) // Allow 2 for potential StrictMode double-render
+    console.log(`Bootstrap requests for non-existent stream: ${nonExistentRequestCount}`)
+    expect(nonExistentRequestCount).toBeLessThanOrEqual(2) // Allow 2 for potential StrictMode double-render
 
     // Verify we can navigate back to a working page (Button asChild wraps a Link, so role is "link")
     await page.getByRole("link", { name: "Return to Workspace" }).click()
@@ -99,13 +118,13 @@ test.describe("Stream Not Found", () => {
     // The panel should show an error
     await expect(page.getByText("The Thread Has Broken")).toBeVisible({ timeout: 5000 })
 
-    // Wait to check for continuous requests
-    await page.waitForTimeout(2000)
-
     // Count requests for the non-existent stream
-    const nonExistentStreamRequests = bootstrapRequests.filter((r) => r.url().includes(nonExistentStreamId))
+    const getPanelNonExistentRequestCount = () =>
+      bootstrapRequests.filter((r) => r.url().includes(nonExistentStreamId)).length
+    await waitForStableRequestCount(getPanelNonExistentRequestCount)
+    const panelNonExistentRequestCount = getPanelNonExistentRequestCount()
 
-    console.log(`Panel bootstrap requests for non-existent stream: ${nonExistentStreamRequests.length}`)
-    expect(nonExistentStreamRequests.length).toBeLessThanOrEqual(2)
+    console.log(`Panel bootstrap requests for non-existent stream: ${panelNonExistentRequestCount}`)
+    expect(panelNonExistentRequestCount).toBeLessThanOrEqual(2)
   })
 })

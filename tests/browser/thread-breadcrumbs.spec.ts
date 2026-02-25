@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test"
+import { createChannel, generateTestId, loginAndCreateWorkspace } from "./helpers"
 
 /**
  * Tests for thread breadcrumb display, navigation, and sidebar context.
@@ -10,39 +11,16 @@ import { test, expect } from "@playwright/test"
  */
 
 test.describe("Thread Breadcrumbs", () => {
-  const testId = Date.now().toString(36)
-  const testEmail = `breadcrumb-${testId}@example.com`
-  const testName = `BC Test ${testId}`
-  const workspaceName = `Breadcrumb WS ${testId}`
-
   test.beforeEach(async ({ page }) => {
-    await page.goto("/login")
-    await page.getByRole("button", { name: "Sign in with WorkOS" }).click()
-    await expect(page.getByRole("heading", { name: "Test Login" })).toBeVisible()
-
-    await page.getByLabel("Email").fill(testEmail)
-    await page.getByLabel("Name").fill(testName)
-    await page.getByRole("button", { name: "Sign In" }).click()
-
-    await expect(page.getByRole("heading", { name: /Welcome/ })).toBeVisible()
-
-    const workspaceInput = page.getByPlaceholder("New workspace name")
-    await workspaceInput.fill(workspaceName)
-    const createButton = page.getByRole("button", { name: "Create Workspace" })
-    await expect(createButton).toBeEnabled()
-    await createButton.click()
-
-    await expect(page.getByRole("button", { name: "+ New Channel" })).toBeVisible({ timeout: 10000 })
+    await loginAndCreateWorkspace(page, "breadcrumb")
   })
 
   test("should show ancestor chain in breadcrumbs and navigate via breadcrumb click", async ({ page }) => {
+    const testId = generateTestId()
+
     // Create a channel
     const channelName = `bc-nav-${testId}`
-    await page.getByRole("button", { name: "+ New Channel" }).click()
-    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
-    await page.waitForTimeout(400)
-    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
-    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
+    await createChannel(page, channelName, { switchToAll: false })
 
     // Post a message in the channel
     const editor = page.locator("[contenteditable='true']")
@@ -99,27 +77,24 @@ test.describe("Thread Breadcrumbs", () => {
     // Navigate to the channel by clicking its breadcrumb link.
     // Since the channel is the main view, clicking it should close the panel.
     const channelBreadcrumb = breadcrumbNav.getByRole("link", { name: `#${channelName}` }).first()
-    if (await channelBreadcrumb.isVisible().catch(() => false)) {
+    if (await channelBreadcrumb.isVisible()) {
       await channelBreadcrumb.click()
     } else {
       // Breadcrumb might be a button (for main-view streams that close the panel)
       const channelButton = breadcrumbNav.getByRole("button", { name: `#${channelName}` }).first()
       await channelButton.click()
     }
-    await page.waitForTimeout(500)
 
     // Should be back viewing the channel with the original message visible
     await expect(page.getByRole("main").getByText(channelMessage).first()).toBeVisible({ timeout: 3000 })
   })
 
   test("should show thread with root context suffix in sidebar", async ({ page }) => {
+    const testId = generateTestId()
+
     // Create a channel
     const channelName = `sidebar-${testId}`
-    await page.getByRole("button", { name: "+ New Channel" }).click()
-    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
-    await page.waitForTimeout(400)
-    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
-    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
+    await createChannel(page, channelName, { switchToAll: false })
 
     // Post a message
     const editor = page.locator("[contenteditable='true']")

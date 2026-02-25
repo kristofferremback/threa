@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test"
-import { loginAndCreateWorkspace, switchToAllView } from "./helpers"
+import { createChannel, loginAndCreateWorkspace, switchToAllView } from "./helpers"
 
 /**
  * Tests for the Drafts page feature.
@@ -50,11 +50,7 @@ test.describe("Drafts Page", () => {
   test("should highlight drafts link when draft exists in channel", async ({ page }) => {
     // Create a channel
     const channelName = `draft-channel-${testId}`
-    await page.getByRole("button", { name: "+ New Channel" }).click()
-    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
-    await page.waitForTimeout(400)
-    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
-    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
+    await createChannel(page, channelName, { switchToAll: false })
 
     // Type something in the editor to create a draft
     const editor = page.locator("[contenteditable='true']")
@@ -81,11 +77,7 @@ test.describe("Drafts Page", () => {
   test("should show draft content on drafts page", async ({ page }) => {
     // Create a channel and draft
     const channelName = `page-test-${testId}`
-    await page.getByRole("button", { name: "+ New Channel" }).click()
-    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
-    await page.waitForTimeout(400)
-    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
-    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
+    await createChannel(page, channelName, { switchToAll: false })
 
     // Create draft
     const editor = page.locator("[contenteditable='true']")
@@ -117,11 +109,7 @@ test.describe("Drafts Page", () => {
   test("should navigate to draft location when clicking draft on page", async ({ page }) => {
     // Create a channel and draft
     const channelName = `nav-test-${testId}`
-    await page.getByRole("button", { name: "+ New Channel" }).click()
-    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
-    await page.waitForTimeout(400)
-    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
-    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
+    await createChannel(page, channelName, { switchToAll: false })
 
     // Create draft
     const editor = page.locator("[contenteditable='true']")
@@ -148,11 +136,7 @@ test.describe("Drafts Page", () => {
   test("should delete draft with confirmation when clicking delete button", async ({ page }) => {
     // Create a channel and draft
     const channelName = `delete-test-${testId}`
-    await page.getByRole("button", { name: "+ New Channel" }).click()
-    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
-    await page.waitForTimeout(400)
-    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
-    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
+    await createChannel(page, channelName, { switchToAll: false })
 
     // Create draft
     const editor = page.locator("[contenteditable='true']")
@@ -189,11 +173,7 @@ test.describe("Drafts Page", () => {
   test("should keep draft when canceling delete confirmation", async ({ page }) => {
     // Create a channel and draft
     const channelName = `cancel-delete-${testId}`
-    await page.getByRole("button", { name: "+ New Channel" }).click()
-    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
-    await page.waitForTimeout(400)
-    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
-    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
+    await createChannel(page, channelName, { switchToAll: false })
 
     // Create draft
     const editor = page.locator("[contenteditable='true']")
@@ -221,11 +201,7 @@ test.describe("Drafts Page", () => {
   test("should navigate to drafts page via quick switcher command", async ({ page }) => {
     // Create a channel and draft first
     const channelName = `qs-drafts-${testId}`
-    await page.getByRole("button", { name: "+ New Channel" }).click()
-    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
-    await page.waitForTimeout(400)
-    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
-    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
+    await createChannel(page, channelName, { switchToAll: false })
 
     // Create draft
     const editor = page.locator("[contenteditable='true']")
@@ -246,9 +222,6 @@ test.describe("Drafts Page", () => {
 
     // Type command prefix and search for drafts
     await page.keyboard.type("> drafts")
-    await page.waitForTimeout(300)
-
-    // Should see "View Drafts" command
     await expect(page.getByText("View Drafts")).toBeVisible({ timeout: 2000 })
 
     // Select the command
@@ -262,11 +235,7 @@ test.describe("Drafts Page", () => {
   test("should show attachment-only draft on page", async ({ page }) => {
     // Create a channel
     const channelName = `attach-only-${testId}`
-    await page.getByRole("button", { name: "+ New Channel" }).click()
-    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
-    await page.waitForTimeout(400)
-    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
-    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
+    await createChannel(page, channelName, { switchToAll: false })
 
     // Focus editor and paste an image (no text)
     const editor = page.locator("[contenteditable='true']")
@@ -301,7 +270,6 @@ test.describe("Drafts Page", () => {
     // The post-upload debounce captures the attachment metadata — wait for it to fire (5ms)
     // and the IndexedDB write to land before navigating away.
     await waitForDraftSaved(page)
-    await page.waitForTimeout(200)
 
     // Navigate away (switch to All view to access button)
     await switchToAllView(page)
@@ -327,11 +295,7 @@ test.describe("Drafts Page", () => {
   test("should auto-delete draft when clearing input (no confirmation)", async ({ page }) => {
     // Create a channel
     const channelName = `auto-clear-${testId}`
-    await page.getByRole("button", { name: "+ New Channel" }).click()
-    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
-    await page.waitForTimeout(400)
-    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
-    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
+    await createChannel(page, channelName, { switchToAll: false })
 
     // Type draft content
     const editor = page.locator("[contenteditable='true']")
@@ -372,11 +336,7 @@ test.describe("Drafts Page", () => {
 
     // Create a channel to navigate away
     const channelName = `sp-draft-test-${testId}`
-    await page.getByRole("button", { name: "+ New Channel" }).click()
-    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
-    await page.waitForTimeout(400)
-    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
-    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
+    await createChannel(page, channelName, { switchToAll: false })
 
     // Drafts link should not be greyed
     const draftsLink = page.locator('a[href*="/drafts"]')
@@ -394,11 +354,7 @@ test.describe("Drafts Page", () => {
   test("should navigate to thread draft and open draft panel", async ({ page }) => {
     // Create a channel
     const channelName = `thread-draft-${testId}`
-    await page.getByRole("button", { name: "+ New Channel" }).click()
-    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
-    await page.waitForTimeout(400)
-    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
-    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
+    await createChannel(page, channelName, { switchToAll: false })
 
     // Send a message to reply to
     const editor = page.locator("[contenteditable='true']")
@@ -436,11 +392,7 @@ test.describe("Drafts Page", () => {
     // Navigate away by creating another channel (switch to All view to access button)
     await switchToAllView(page)
     const otherChannelName = `other-channel-${testId}`
-    await page.getByRole("button", { name: "+ New Channel" }).click()
-    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(otherChannelName)
-    await page.waitForTimeout(400)
-    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
-    await expect(page.getByRole("heading", { name: `#${otherChannelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
+    await createChannel(page, otherChannelName, { switchToAll: false })
 
     // Drafts link should not be greyed (has thread draft)
     const draftsLink = page.locator('a[href*="/drafts"]')

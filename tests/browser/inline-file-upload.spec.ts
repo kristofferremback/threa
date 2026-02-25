@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test"
 import * as path from "path"
 import * as fs from "fs"
+import { createChannel, loginAndCreateWorkspace } from "./helpers"
 
 /**
  * Tests for inline file uploads via paste and drag-drop.
@@ -27,39 +28,11 @@ test.describe("Inline File Uploads", () => {
 
   test.beforeEach(async ({ page }) => {
     const testId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
-    const testEmail = `upload-test-${testId}@example.com`
-    const testName = `Upload Test ${testId}`
-    const workspaceName = `Upload Test WS ${testId}`
-
-    // Login and create workspace
-    await page.goto("/login")
-    await page.getByRole("button", { name: "Sign in with WorkOS" }).click()
-    await expect(page.getByRole("heading", { name: "Test Login" })).toBeVisible()
-
-    await page.getByLabel("Email").fill(testEmail)
-    await page.getByLabel("Name").fill(testName)
-    await page.getByRole("button", { name: "Sign In" }).click()
-
-    // Wait for workspace selection page
-    await expect(page.getByRole("heading", { name: /Welcome/ })).toBeVisible()
-
-    // Create workspace (new user flow)
-    const workspaceInput = page.getByPlaceholder("New workspace name")
-    await workspaceInput.fill(workspaceName)
-    const createButton = page.getByRole("button", { name: "Create Workspace" })
-    await expect(createButton).toBeEnabled()
-    await createButton.click()
-
-    // Wait for sidebar to be visible (empty state shows buttons)
-    await expect(page.getByRole("button", { name: "+ New Channel" })).toBeVisible({ timeout: 10000 })
+    await loginAndCreateWorkspace(page, "upload-test")
 
     // Create a channel for testing (creating navigates to it)
     const channelName = `upload-${testId}`
-    await page.getByRole("button", { name: "+ New Channel" }).click()
-    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
-    await page.waitForTimeout(400)
-    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
-    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
+    await createChannel(page, channelName)
   })
 
   test("should insert [Image #1] reference when pasting an image with sequential name", async ({ page }) => {
@@ -233,9 +206,6 @@ test.describe("Inline File Uploads", () => {
     const attachmentPill = page.locator("button:has(img[alt='pasted-image-1.png'])")
     await expect(attachmentPill).toBeVisible({ timeout: 10000 })
 
-    // Small delay to ensure React handlers are attached
-    await page.waitForTimeout(100)
-
     // Click on the image link
     await imageLink.click()
 
@@ -282,7 +252,6 @@ test.describe("Inline File Uploads", () => {
     // Wait for message to appear
     const imageLink = page.locator(".markdown-content button:has-text('Image #1')")
     await expect(imageLink).toBeVisible({ timeout: 10000 })
-    await page.waitForTimeout(100)
 
     // Find the attachment pill (the image button with the filename)
     const attachmentPill = page.locator("button:has(img[alt='pasted-image-1.png'])")

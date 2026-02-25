@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test"
+import { createChannel, loginAndCreateWorkspace } from "./helpers"
 
 /**
  * Tests for nested thread navigation and bootstrapping.
@@ -12,29 +13,7 @@ import { test, expect } from "@playwright/test"
 
 test.describe("Nested Thread Navigation", () => {
   test.beforeEach(async ({ page }) => {
-    const setupId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
-    const testEmail = `nested-thread-${setupId}@example.com`
-    const testName = `Nested Test ${setupId}`
-    const workspaceName = `Nested Thread WS ${setupId}`
-
-    // Login and create workspace
-    await page.goto("/login")
-    await page.getByRole("button", { name: "Sign in with WorkOS" }).click()
-    await expect(page.getByRole("heading", { name: "Test Login" })).toBeVisible()
-
-    await page.getByLabel("Email").fill(testEmail)
-    await page.getByLabel("Name").fill(testName)
-    await page.getByRole("button", { name: "Sign In" }).click()
-
-    await expect(page.getByRole("heading", { name: /Welcome/ })).toBeVisible()
-
-    const workspaceInput = page.getByPlaceholder("New workspace name")
-    await workspaceInput.fill(workspaceName)
-    const createButton = page.getByRole("button", { name: "Create Workspace" })
-    await expect(createButton).toBeEnabled()
-    await createButton.click()
-
-    await expect(page.getByRole("button", { name: "+ New Channel" })).toBeVisible({ timeout: 10000 })
+    await loginAndCreateWorkspace(page, "nested-thread")
   })
 
   test("should show nested thread reply count when navigating back via breadcrumbs", async ({ page }) => {
@@ -42,11 +21,7 @@ test.describe("Nested Thread Navigation", () => {
 
     // Create a channel (creating navigates to it)
     const channelName = `nested-breadcrumb-${testId}`
-    await page.getByRole("button", { name: "+ New Channel" }).click()
-    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
-    await page.waitForTimeout(400)
-    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
-    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
+    await createChannel(page, channelName)
 
     // Post a message in the channel
     const editor = page.locator("[contenteditable='true']")
@@ -108,9 +83,6 @@ test.describe("Nested Thread Navigation", () => {
     await expect(breadcrumb).toBeVisible({ timeout: 2000 })
     await breadcrumb.click()
 
-    // Wait for navigation to complete
-    await page.waitForTimeout(1000)
-
     // Verify we're back in the first-level thread by checking for the firstReply message
     await expect(page.getByTestId("panel").getByText(firstReply).first()).toBeVisible({ timeout: 5000 })
 
@@ -125,11 +97,7 @@ test.describe("Nested Thread Navigation", () => {
 
     // Create a channel (creating navigates to it)
     const channelName = `nested-reopen-${testId}`
-    await page.getByRole("button", { name: "+ New Channel" }).click()
-    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
-    await page.waitForTimeout(400)
-    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
-    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
+    await createChannel(page, channelName)
 
     // Post a message in the channel
     const editor = page.locator("[contenteditable='true']")
@@ -178,11 +146,10 @@ test.describe("Nested Thread Navigation", () => {
     await expect(page.getByTestId("panel").getByText(nestedReply)).toBeVisible({ timeout: 5000 })
     await expect(page.getByText(/Start a new thread/)).not.toBeVisible({ timeout: 3000 })
 
-    // Close the thread panel
-    await page.keyboard.press("Escape")
-
-    // Wait for panel to close
-    await page.waitForTimeout(500)
+    // Close the thread panel via explicit close control for deterministic behavior
+    const panel = page.getByTestId("panel")
+    await panel.getByRole("button", { name: "Close" }).click()
+    await expect(panel).not.toBeVisible({ timeout: 5000 })
 
     // Reopen the first-level thread by clicking on the reply count in the main stream
     const channelMessageInMain = page.getByRole("main").locator(".group").filter({ hasText: channelMessage }).first()
@@ -206,11 +173,7 @@ test.describe("Nested Thread Navigation", () => {
 
     // Create a channel (creating navigates to it)
     const channelName = `nav-cycles-${testId}`
-    await page.getByRole("button", { name: "+ New Channel" }).click()
-    await page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
-    await page.waitForTimeout(400)
-    await page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
-    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
+    await createChannel(page, channelName)
 
     // Post in channel
     const editor = page.locator("[contenteditable='true']")
@@ -254,7 +217,6 @@ test.describe("Nested Thread Navigation", () => {
     // Navigate back via breadcrumb
     const breadcrumb = page.locator("nav[aria-label='breadcrumb'] a").first()
     await breadcrumb.click()
-    await page.waitForTimeout(1000)
 
     // Verify reply count shows
     const level1InPanel = page.getByRole("main").locator(".group").filter({ hasText: level1Message }).first()
@@ -266,7 +228,6 @@ test.describe("Nested Thread Navigation", () => {
 
     // Navigate back again
     await breadcrumb.click()
-    await page.waitForTimeout(1000)
 
     // Reply count should still show correctly
     await expect(level1InPanel.getByText(/1 reply/i)).toBeVisible({ timeout: 3000 })

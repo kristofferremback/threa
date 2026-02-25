@@ -6,6 +6,11 @@ on:
     paths:
       - "apps/**"
       - "packages/**"
+      - "tests/**"
+      - "scripts/**"
+      - "package.json"
+      - "bun.lock"
+      - ".github/workflows/ci.yml"
   push:
     branches: [main]
 

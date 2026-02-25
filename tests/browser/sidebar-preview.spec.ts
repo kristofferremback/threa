@@ -74,7 +74,6 @@ test.describe("Sidebar Preview Behavior", () => {
 
     // Move mouse away - sidebar should stay open because it's pinned
     await moveAwayFromSidebar(page)
-    await page.waitForTimeout(500)
     await expect(sidebar).not.toHaveCSS("width", "6px")
   })
 })

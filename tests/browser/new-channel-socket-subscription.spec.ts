@@ -1,4 +1,5 @@
-import { test, expect, type Browser, type BrowserContext, type Page } from "@playwright/test"
+import { test, expect } from "@playwright/test"
+import { createChannel, expectApiOk, loginInNewContext } from "./helpers"
 
 /**
  * Tests that newly created channels receive real-time socket events.
@@ -7,25 +8,6 @@ import { test, expect, type Browser, type BrowserContext, type Page } from "@pla
  * client doesn't join the Socket.io room for it. Messages from other users
  * don't update the unread counter or preview until a page refresh.
  */
-
-interface UserSession {
-  context: BrowserContext
-  page: Page
-}
-
-async function loginAs(browser: Browser, email: string, name: string): Promise<UserSession> {
-  const context = await browser.newContext()
-  const page = await context.newPage()
-
-  await page.goto("/login")
-  await page.getByRole("button", { name: "Sign in with WorkOS" }).click()
-  await page.getByLabel("Email").fill(email)
-  await page.getByLabel("Name").fill(name)
-  await page.getByRole("button", { name: "Sign In" }).click()
-  await expect(page.getByText(/Welcome|Select a stream/)).toBeVisible()
-
-  return { context, page }
-}
 
 test.describe("New Channel Socket Subscription", () => {
   test("should make remote channel messages visible without a full page refresh", async ({ browser }) => {
@@ -40,23 +22,19 @@ test.describe("New Channel Socket Subscription", () => {
 
     // ──── User A: Create workspace and channel ────
 
-    const userA = await loginAs(browser, userAEmail, userAName)
+    const userA = await loginInNewContext(browser, userAEmail, userAName)
+    const createWorkspaceRes = await userA.page.request.post("/api/workspaces", {
+      data: { name: `Socket Sub Test ${testId}` },
+    })
+    await expectApiOk(createWorkspaceRes, "Create workspace for socket subscription test")
+    const workspaceBody = (await createWorkspaceRes.json()) as { workspace: { id: string } }
+    const workspaceId = workspaceBody.workspace.id
 
-    // Create workspace
-    await userA.page.getByPlaceholder("New workspace name").fill(`Socket Sub Test ${testId}`)
-    await userA.page.getByRole("button", { name: "Create Workspace" }).click()
+    await userA.page.goto(`/w/${workspaceId}`)
     await expect(userA.page.getByRole("button", { name: "+ New Channel" })).toBeVisible({ timeout: 10000 })
 
-    const workspaceMatch = userA.page.url().match(/\/w\/([^/]+)/)
-    expect(workspaceMatch).toBeTruthy()
-    const workspaceId = workspaceMatch![1]
-
     // Create a channel
-    await userA.page.getByRole("button", { name: "+ New Channel" }).click()
-    await userA.page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
-    await userA.page.waitForTimeout(400)
-    await userA.page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
-    await expect(userA.page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
+    await createChannel(userA.page, channelName, { switchToAll: false })
 
     // Grab the stream ID from the URL
     const streamMatch = userA.page.url().match(/\/s\/([^/?]+)/)
@@ -88,7 +66,7 @@ test.describe("New Channel Socket Subscription", () => {
 
     // ──── User B: Join workspace and channel, send a message ────
 
-    const userB = await loginAs(browser, userBEmail, userBName)
+    const userB = await loginInNewContext(browser, userBEmail, userBName)
 
     // Join workspace via dev endpoint
     const joinWorkspaceRes = await userB.page.request.post(`/api/dev/workspaces/${workspaceId}/join`, {
@@ -148,21 +126,19 @@ test.describe("New Channel Socket Subscription", () => {
 
     // ──── User A: Create workspace and channel ────
 
-    const userA = await loginAs(browser, userAEmail, userAName)
+    const userA = await loginInNewContext(browser, userAEmail, userAName)
+    const createWorkspaceRes = await userA.page.request.post("/api/workspaces", {
+      data: { name: `Preview Sub Test ${testId}` },
+    })
+    await expectApiOk(createWorkspaceRes, "Create workspace for preview subscription test")
+    const workspaceBody = (await createWorkspaceRes.json()) as { workspace: { id: string } }
+    const workspaceId = workspaceBody.workspace.id
 
-    await userA.page.getByPlaceholder("New workspace name").fill(`Preview Sub Test ${testId}`)
-    await userA.page.getByRole("button", { name: "Create Workspace" }).click()
+    await userA.page.goto(`/w/${workspaceId}`)
     await expect(userA.page.getByRole("button", { name: "+ New Channel" })).toBeVisible({ timeout: 10000 })
 
-    const workspaceMatch = userA.page.url().match(/\/w\/([^/]+)/)
-    const workspaceId = workspaceMatch![1]
-
     // Create channel
-    await userA.page.getByRole("button", { name: "+ New Channel" }).click()
-    await userA.page.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
-    await userA.page.waitForTimeout(400)
-    await userA.page.getByRole("dialog").getByRole("button", { name: "Create Channel" }).click()
-    await expect(userA.page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
+    await createChannel(userA.page, channelName, { switchToAll: false })
 
     const streamMatch = userA.page.url().match(/\/s\/([^/?]+)/)
     const streamId = streamMatch![1]
@@ -178,7 +154,7 @@ test.describe("New Channel Socket Subscription", () => {
 
     // ──── User B: Join and send a message ────
 
-    const userB = await loginAs(browser, userBEmail, userBName)
+    const userB = await loginInNewContext(browser, userBEmail, userBName)
 
     await userB.page.request.post(`/api/dev/workspaces/${workspaceId}/join`, {
       data: { role: "user" },
