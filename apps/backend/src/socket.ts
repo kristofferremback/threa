@@ -61,7 +61,17 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
   // Authentication middleware
   // ===========================================================================
   io.use(async (socket, next) => {
-    const cookies = parseCookies(socket.handshake.headers.cookie || "")
+    const rawCookie = socket.handshake.headers.cookie || ""
+    logger.info(
+      {
+        hasCookie: !!rawCookie,
+        cookieLength: rawCookie.length,
+        cookieNames: rawCookie ? rawCookie.split(";").map((c) => c.trim().split("=")[0]) : [],
+        origin: socket.handshake.headers.origin,
+      },
+      "Socket auth: incoming handshake"
+    )
+    const cookies = parseCookies(rawCookie)
     const session = cookies[SESSION_COOKIE_NAME]
 
     if (!session) {
