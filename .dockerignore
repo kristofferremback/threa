@@ -1,0 +1,15 @@
+node_modules
+.git
+tests/
+docs/
+.agents/
+.claude/
+apps/frontend/
+!apps/frontend/package.json
+apps/workspace-router/
+!apps/workspace-router/package.json
+**/*.test.ts
+**/*.spec.ts
+**/tsconfig.tests.json
+docker-compose*.yml
+.env*

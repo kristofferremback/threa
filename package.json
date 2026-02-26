@@ -33,7 +33,11 @@
     "test:db:start": "docker compose -f docker-compose.test.yml up -d --wait",
     "test:db:stop": "docker compose -f docker-compose.test.yml stop",
     "test:db:reset": "docker compose -f docker-compose.test.yml down -v && docker compose -f docker-compose.test.yml up -d --wait",
-    "prepare": "husky"
+    "prepare": "husky",
+    "docker:build:backend": "docker build -f Dockerfile.backend -t threa-backend .",
+    "docker:build:control-plane": "docker build -f Dockerfile.control-plane -t threa-control-plane .",
+    "docker:build": "bun run docker:build:backend && bun run docker:build:control-plane",
+    "infra:validate": "cd infra/aws && terraform validate"
   },
   "devDependencies": {
     "@playwright/test": "^1.57.0",
