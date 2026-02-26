@@ -22,4 +22,5 @@ export const SESSION_COOKIE_CONFIG = {
   secure: isProduction,
   sameSite: "lax" as const,
   maxAge: 60 * 60 * 24 * 30 * 1000, // 30 days
+  ...(isProduction && process.env.COOKIE_DOMAIN ? { domain: process.env.COOKIE_DOMAIN } : {}),
 }
