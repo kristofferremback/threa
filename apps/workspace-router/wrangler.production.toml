@@ -1,0 +1,12 @@
+name = "workspace-router"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+[[kv_namespaces]]
+binding = "WORKSPACE_REGIONS"
+id = "ac56700481b241a7994807a05828cb26"
+
+[vars]
+REGIONS = '{"eu-north-1":{"apiUrl":"https://backend-production-6634.up.railway.app","wsUrl":"wss://backend-production-6634.up.railway.app"}}'
+CONTROL_PLANE_URL = "https://control-plane-production-7495.up.railway.app"
+# INTERNAL_API_KEY is set via `wrangler secret put` — not in this file
