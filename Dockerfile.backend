@@ -10,7 +10,8 @@ COPY apps/backend/package.json apps/backend/
 COPY apps/frontend/package.json apps/frontend/
 COPY apps/workspace-router/package.json apps/workspace-router/
 COPY apps/control-plane/package.json apps/control-plane/
-RUN bun install --frozen-lockfile --production --ignore-scripts
+# Remove prepare script (husky) so post-install scripts still run (sharp needs native binaries)
+RUN sed -i '/"prepare"/d' package.json && bun install --frozen-lockfile --production
 
 # Copy source
 COPY packages/types/ packages/types/
