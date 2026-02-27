@@ -3,8 +3,6 @@ import { useState, useEffect } from "react"
 interface VisualViewportState {
   /** Visual viewport height in px (shrinks when keyboard opens) */
   height: number
-  /** Offset from top of layout viewport to top of visual viewport */
-  offsetTop: number
 }
 
 /**
@@ -24,10 +22,7 @@ export function useVisualViewport(enabled: boolean): VisualViewportState | null 
     const vv = window.visualViewport
 
     const update = () => {
-      setState({
-        height: vv.height,
-        offsetTop: vv.offsetTop,
-      })
+      setState({ height: vv.height })
     }
 
     // Set initial state

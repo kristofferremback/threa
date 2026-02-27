@@ -13,8 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
 import { useStreamOrDraft, useStreamError, usePanelLayout, isDmDraftId, useTypeToFocus } from "@/hooks"
-import { useIsMobile } from "@/hooks/use-mobile"
-import { usePanel } from "@/contexts"
+import { usePanel, useSidebar } from "@/contexts"
 import { TimelineView } from "@/components/timeline"
 import { StreamPanel, ThreadHeader } from "@/components/thread"
 import { ThreadPanelSlot } from "@/components/layout"
@@ -42,7 +41,7 @@ export function StreamPage() {
   const { workspaceId, streamId } = useParams<{ workspaceId: string; streamId: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
   const { stream, isDraft, error, rename, archive, unarchive } = useStreamOrDraft(workspaceId!, streamId!)
-  const isMobile = useIsMobile()
+  const { isMobile } = useSidebar()
   const { panelId, isPanelOpen, closePanel } = usePanel()
   const {
     containerRef,

@@ -133,14 +133,7 @@ export function AppShell({ sidebar, children }: AppShellProps) {
   return (
     <div
       className="flex h-dvh w-screen flex-col overflow-hidden"
-      style={
-        visualViewport
-          ? {
-              height: `${visualViewport.height}px`,
-              transform: `translateY(${visualViewport.offsetTop}px)`,
-            }
-          : undefined
-      }
+      style={visualViewport ? { height: `${visualViewport.height}px` } : undefined}
     >
       {/* Topbar - spans full width */}
       <Topbar isPinned={isPinned} onToggleSidebar={togglePinned} />
