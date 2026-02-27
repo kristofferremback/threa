@@ -157,6 +157,10 @@
       "Segoe UI",
       sans-serif;
   }
+  /* Safe area padding for notched devices (iPhone X+) */
+  #root {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
 }
 
 /*

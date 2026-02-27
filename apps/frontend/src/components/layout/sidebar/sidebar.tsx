@@ -37,6 +37,8 @@ export function Sidebar({ workspaceId }: SidebarProps) {
     toggleSectionCollapsed,
     setSidebarHeight,
     setScrollContainerOffset,
+    isMobile,
+    collapse,
   } = useSidebar()
   const { streamId: activeStreamId, "*": splat } = useParams<{ streamId: string; "*": string }>()
   const { data: bootstrap, isLoading, error, retryBootstrap } = useWorkspaceBootstrap(workspaceId)
@@ -291,6 +293,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
 
   const handleCreateScratchpad = async () => {
     const draftId = await createDraft("on")
+    if (isMobile) collapse()
     navigate(`/w/${workspaceId}/s/${draftId}`)
   }
 

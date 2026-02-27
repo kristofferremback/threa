@@ -178,7 +178,7 @@ export function DocumentEditorModal({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
-        className="w-[90vw] max-w-[800px] h-[80vh] max-h-[700px] flex flex-col gap-0 p-0"
+        className="w-[90vw] max-w-[800px] h-[80vh] max-h-[700px] max-sm:w-full max-sm:h-full max-sm:max-w-none max-sm:max-h-none flex flex-col gap-0 p-0"
         onPointerDownOutside={(e) => {
           // Prevent closing when clicking on suggestion popover
           const target = e.target as HTMLElement
@@ -313,14 +313,14 @@ export function DocumentEditorModal({
         {/* Footer */}
         <DialogFooter className="px-4 py-3 border-t">
           <div className="flex items-center gap-3 w-full justify-between">
-            <span className="text-xs text-muted-foreground">
+            <span className="hidden sm:inline text-xs text-muted-foreground">
               <kbd className="kbd-hint">{navigator.platform?.includes("Mac") ? "⌘" : "Ctrl+"}↵</kbd> to send
             </span>
-            <div className="flex gap-2">
+            <div className="flex gap-2 max-sm:flex-1 max-sm:justify-end">
               <Button variant="ghost" onClick={handleDismiss}>
                 Cancel
               </Button>
-              <Button onClick={handleSubmit} disabled={isEmpty}>
+              <Button onClick={handleSubmit} disabled={isEmpty} className="max-sm:flex-1">
                 Send
               </Button>
             </div>

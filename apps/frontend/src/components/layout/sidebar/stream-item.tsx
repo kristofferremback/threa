@@ -220,10 +220,13 @@ export function StreamItem({
     )
   }
 
+  const { isMobile, collapse } = useSidebar()
+
   return (
     <Link
       ref={itemRef}
       to={`/w/${workspaceId}/s/${stream.id}`}
+      onClick={isMobile ? collapse : undefined}
       className={cn(
         "group relative flex items-stretch rounded-lg text-sm transition-colors",
         isActive ? "bg-primary/10" : "hover:bg-muted/50",
