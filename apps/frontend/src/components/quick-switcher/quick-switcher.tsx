@@ -277,7 +277,7 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         ref={dialogRef}
-        className="overflow-hidden p-0 max-sm:p-0 shadow-lg sm:!fixed sm:!top-[20%] sm:!translate-y-0 sm:max-w-[600px] sm:rounded-2xl sm:border"
+        className="overflow-hidden p-0 max-sm:p-0 max-sm:gap-0 max-sm:overflow-hidden shadow-lg sm:!fixed sm:!top-[20%] sm:!translate-y-0 sm:max-w-[600px] sm:rounded-2xl sm:border"
         onPointerDownOutside={(e) => {
           // Prevent closing when clicking on suggestion popover (rendered via portal)
           const target = e.target as HTMLElement
