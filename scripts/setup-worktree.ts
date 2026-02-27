@@ -134,10 +134,11 @@ async function cloneDatabase(container: string, sourceDb: string, targetDb: stri
   console.log(`Cloning database '${sourceDb}' to '${targetDb}'...`)
   const lockWaitTimeout = "10s"
 
-  // Use pg_dump piped to psql for the clone.
+  // Use pg_dump --clean --if-exists so the clone works whether the target DB
+  // is empty or already has schema from a previous run / migration.
   // Fail fast on lock contention to avoid an apparent "hang" with no output.
   const result =
-    await $`docker exec ${container} bash -o pipefail -c "pg_dump -U threa --lock-wait-timeout=${lockWaitTimeout} ${sourceDb} | PGOPTIONS='-c lock_timeout=${lockWaitTimeout}' psql -U threa ${targetDb}"`
+    await $`docker exec ${container} bash -o pipefail -c "pg_dump -U threa --clean --if-exists --lock-wait-timeout=${lockWaitTimeout} ${sourceDb} | PGOPTIONS='-c lock_timeout=${lockWaitTimeout}' psql -U threa ${targetDb}"`
       .quiet()
       .nothrow()
 
@@ -243,14 +244,6 @@ async function main() {
     process.exit(1)
   }
 
-  // Copy control-plane .env (WorkOS config shared between worktrees)
-  const cpSourceEnvPath = path.join(mainWorktree.path, "apps/control-plane/.env")
-  const cpTargetEnvPath = path.join(cwd, "apps/control-plane/.env")
-  if (fs.existsSync(cpSourceEnvPath)) {
-    console.log(`Copying control-plane .env from ${cpSourceEnvPath}...`)
-    fs.copyFileSync(cpSourceEnvPath, cpTargetEnvPath)
-  }
-
   console.log(`Copying .env from ${sourceEnvPath}...`)
   const originalEnvContent = fs.readFileSync(sourceEnvPath, "utf-8")
 
@@ -266,12 +259,38 @@ async function main() {
   console.log(`Database name for this worktree: ${dbName}`)
   console.log(`Source database to clone: ${sourceDbName}`)
 
-  // Step 5: Update DATABASE_URL
+  // Step 5: Update DATABASE_URL in backend .env
   const envContent = updateDatabaseUrl(originalEnvContent, dbName)
-
-  // Write the modified .env
   fs.writeFileSync(targetEnvPath, envContent)
   console.log(`Created ${targetEnvPath}`)
+
+  // Extract the actual target DB name from the written .env (source of truth for CP derivation)
+  const targetDbName = extractDatabaseName(envContent)
+  if (!targetDbName) {
+    console.error("Could not extract database name from written backend .env")
+    process.exit(1)
+  }
+
+  // Step 5b: Copy control-plane .env and set its DATABASE_URL
+  // CP database is always {backend_db_name}_cp — same derivation as dev.ts
+  const cpSourceEnvPath = path.join(mainWorktree.path, "apps/control-plane/.env")
+  const cpTargetEnvPath = path.join(cwd, "apps/control-plane/.env")
+  const cpDbUrl = `postgresql://threa:threa@localhost:5454/${targetDbName}_cp`
+  if (fs.existsSync(cpSourceEnvPath)) {
+    console.log(`Copying control-plane .env from ${cpSourceEnvPath}...`)
+    let cpEnvContent = fs.readFileSync(cpSourceEnvPath, "utf-8")
+    // Replace existing DATABASE_URL or append it
+    if (cpEnvContent.includes("DATABASE_URL=")) {
+      cpEnvContent = cpEnvContent.replace(/DATABASE_URL=.*/, `DATABASE_URL=${cpDbUrl}`)
+    } else {
+      cpEnvContent = `DATABASE_URL=${cpDbUrl}\n${cpEnvContent}`
+    }
+    fs.writeFileSync(cpTargetEnvPath, cpEnvContent)
+  } else {
+    // No source .env — create a minimal one with DATABASE_URL
+    fs.writeFileSync(cpTargetEnvPath, `DATABASE_URL=${cpDbUrl}\nFAST_SHUTDOWN=true\n`)
+  }
+  console.log(`Control-plane DATABASE_URL: ${cpDbUrl}`)
 
   // Step 6: Create database and clone data from main worktree
   try {
@@ -280,22 +299,32 @@ async function main() {
       throw new Error("No running postgres container found")
     }
 
-    const created = await createDatabaseIfNotExists(dbName)
+    const created = await createDatabaseIfNotExists(targetDbName)
     const forceClone = process.env.FORCE_DB_CLONE === "1"
 
     if (created || forceClone) {
       if (!created && forceClone) {
-        console.log(`FORCE_DB_CLONE=1 set, cloning into existing database '${dbName}'...`)
+        console.log(`FORCE_DB_CLONE=1 set, cloning into existing database '${targetDbName}'...`)
       }
-      await cloneDatabase(container, sourceDbName, dbName)
+      await cloneDatabase(container, sourceDbName, targetDbName)
     } else {
-      console.log(`Skipping clone because database '${dbName}' already exists`)
+      console.log(`Skipping clone because database '${targetDbName}' already exists`)
       console.log(`Set FORCE_DB_CLONE=1 to force clone into existing database`)
     }
 
-    // Create control-plane database (dev.ts derives it as {dbName}_cp)
-    const cpDbName = `${dbName}_cp`
-    await createDatabaseIfNotExists(cpDbName)
+    // Create and clone control-plane database ({backend_db}_cp, same as dev.ts)
+    const cpDbName = `${targetDbName}_cp`
+    const sourceCpDbName = `${sourceDbName}_cp`
+    const cpCreated = await createDatabaseIfNotExists(cpDbName)
+
+    if (cpCreated || forceClone) {
+      if (!cpCreated && forceClone) {
+        console.log(`FORCE_DB_CLONE=1 set, cloning into existing database '${cpDbName}'...`)
+      }
+      await cloneDatabase(container, sourceCpDbName, cpDbName)
+    } else {
+      console.log(`Skipping clone because database '${cpDbName}' already exists`)
+    }
   } catch (err) {
     if (err instanceof Error) {
       console.warn(`Clone error: ${err.message}`)
