@@ -70,7 +70,7 @@ import {
 import { EmojiUsageHandler } from "./features/emoji"
 import { SystemMessageService, SystemMessageOutboxHandler } from "./features/system-messages"
 import { ActivityService, ActivityFeedHandler } from "./features/activity"
-import { PushService, PushNotificationHandler, UserSessionRepository } from "./features/push"
+import { PushService, PushNotificationHandler } from "./features/push"
 import { AttachmentUploadedHandler } from "./features/attachments"
 import { AICostService, AIBudgetService } from "./features/ai-usage"
 import { CommandRegistry, EchoCommand, createCommandWorker, CommandHandler } from "./features/commands"
@@ -311,6 +311,16 @@ export async function startServer(): Promise<ServerInstance> {
           subject: config.push.vapidSubject,
         }
       : null,
+    lookups: {
+      getUserNotificationLevel: async (workspaceId, userId) => {
+        const prefs = await userPreferencesService.getPreferences(workspaceId, userId)
+        return prefs.notificationLevel
+      },
+      getStreamType: async (streamId) => {
+        const stream = await streamService.getStreamById(streamId)
+        return stream?.type ?? null
+      },
+    },
   })
   const systemMessageService = new SystemMessageService({ pool, createMessage })
 
@@ -535,7 +545,7 @@ export async function startServer(): Promise<ServerInstance> {
   const attachmentUploadedHandler = new AttachmentUploadedHandler(pool, jobQueue)
   const systemMessageOutboxHandler = new SystemMessageOutboxHandler(pool, systemMessageService)
   const activityFeedHandler = new ActivityFeedHandler(pool, activityService)
-  const pushNotificationHandler = config.push.enabled ? new PushNotificationHandler({ pool, pushService }) : null
+  const pushNotificationHandler = pushService.isEnabled() ? new PushNotificationHandler({ pool, pushService }) : null
   const shadowSyncHandler =
     controlPlaneClient && config.region
       ? new InvitationShadowSyncHandler(pool, controlPlaneClient, config.region)
@@ -585,7 +595,7 @@ export async function startServer(): Promise<ServerInstance> {
   const PUSH_SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
   const pushSessionCleanupInterval = setInterval(async () => {
     try {
-      const deleted = await UserSessionRepository.cleanupStale(pools.main, PUSH_SESSION_MAX_AGE_MS)
+      const deleted = await pushService.cleanupStaleSessions(PUSH_SESSION_MAX_AGE_MS)
       if (deleted > 0) {
         logger.info({ deleted }, "Cleaned up stale push user sessions")
       }

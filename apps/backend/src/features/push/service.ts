@@ -2,14 +2,26 @@ import type { Pool } from "pg"
 import webpush from "web-push"
 import { PushSubscriptionRepository, type PushSubscription, type InsertPushSubscriptionParams } from "./repository"
 import { UserSessionRepository, type UserSession } from "./session-repository"
-import { UserPreferencesRepository } from "../user-preferences"
-import { StreamRepository } from "../streams"
-import { PrefNotificationLevels, ActivityTypes, StreamTypes, type PrefNotificationLevel } from "@threa/types"
+import {
+  PrefNotificationLevels,
+  ActivityTypes,
+  StreamTypes,
+  type PrefNotificationLevel,
+  type StreamType,
+} from "@threa/types"
 import { logger } from "../../lib/logger"
 import type { ActivityCreatedOutboxPayload } from "../../lib/outbox"
 
 /** Session is "active" if heartbeat within this window (2x the 30s heartbeat interval) */
 const ACTIVE_SESSION_WINDOW_MS = 60_000
+
+/** Callbacks for resolving cross-feature data (INV-52: access via service layer, not repos) */
+interface CrossFeatureLookups {
+  /** Resolve a user's notification level preference. */
+  getUserNotificationLevel: (workspaceId: string, userId: string) => Promise<PrefNotificationLevel>
+  /** Resolve a stream's type by ID. Returns null if not found. */
+  getStreamType: (streamId: string) => Promise<StreamType | null>
+}
 
 interface PushServiceDeps {
   pool: Pool
@@ -18,6 +30,7 @@ interface PushServiceDeps {
     privateKey: string
     subject: string
   } | null
+  lookups: CrossFeatureLookups
 }
 
 /**
@@ -30,9 +43,11 @@ export class PushService {
   private readonly pool: Pool
   private readonly vapidPublicKey: string
   private readonly canSend: boolean
+  private readonly lookups: CrossFeatureLookups
 
   constructor(deps: PushServiceDeps) {
     this.pool = deps.pool
+    this.lookups = deps.lookups
 
     if (deps.vapidConfig) {
       // Module-level side-effect — only one PushService instance is created per process (INV-9 acknowledged)
@@ -43,6 +58,10 @@ export class PushService {
       this.vapidPublicKey = ""
       this.canSend = false
     }
+  }
+
+  isEnabled(): boolean {
+    return this.canSend
   }
 
   getVapidPublicKey(): string {
@@ -66,18 +85,28 @@ export class PushService {
   }
 
   /**
+   * Delete user sessions that haven't sent a heartbeat within the retention window.
+   * Intentionally cross-workspace: stale session cleanup is a global housekeeping task,
+   * not a workspace-scoped operation (similar to orphan session cleanup).
+   */
+  async cleanupStaleSessions(olderThanMs: number): Promise<number> {
+    return UserSessionRepository.cleanupStale(this.pool, olderThanMs)
+  }
+
+  /**
    * Core delivery method: evaluates an activity:created event and sends push
    * notifications to the target user's eligible devices.
+   *
+   * Sends structured data in the push payload (INV-46); the service worker
+   * formats display text client-side.
    */
   async deliverPushForActivity(payload: ActivityCreatedOutboxPayload): Promise<void> {
     if (!this.canSend) return
 
     const { workspaceId, targetUserId, activity } = payload
 
-    // 1. Load user's global notification preference
-    // Cross-feature repo access: user_preference_overrides is keyed by userId (workspace-scoped)
-    // so no additional workspace filter is needed.
-    const prefLevel = await this.getUserNotificationLevel(targetUserId)
+    // 1. Load user's global notification preference (via injected lookup)
+    const prefLevel = await this.lookups.getUserNotificationLevel(workspaceId, targetUserId)
 
     // 2. Filter by preference
     if (prefLevel === PrefNotificationLevels.NONE) {
@@ -97,19 +126,21 @@ export class PushService {
       return
     }
 
-    // 4. Build push payload
+    // 4. Build structured push payload — display text is formatted by the service worker (INV-46)
+    const context = activity.context as { contentPreview?: string; streamName?: string } | null | undefined
     const pushPayload = JSON.stringify({
-      title: this.buildTitle(activity.activityType),
-      body: this.buildBody(activity),
       data: {
         workspaceId,
         streamId: activity.streamId,
         messageId: activity.messageId,
         activityType: activity.activityType,
+        contentPreview: context?.contentPreview?.slice(0, 200),
+        streamName: context?.streamName,
       },
     })
 
     // 5. Send to all target subscriptions
+    const staleIds: string[] = []
     await Promise.allSettled(
       subscriptions.map(async (sub) => {
         try {
@@ -123,32 +154,23 @@ export class PushService {
         } catch (err: unknown) {
           const statusCode = (err as { statusCode?: number }).statusCode
           if (statusCode === 404 || statusCode === 410) {
-            logger.info({ subscriptionId: sub.id, statusCode }, "Removing stale push subscription")
-            try {
-              await PushSubscriptionRepository.deleteById(this.pool, workspaceId, sub.id)
-            } catch (deleteErr) {
-              logger.warn({ err: deleteErr, subscriptionId: sub.id }, "Failed to delete stale subscription")
-            }
+            logger.info({ subscriptionId: sub.id, statusCode }, "Marking stale push subscription for removal")
+            staleIds.push(sub.id)
           } else {
             logger.warn({ err, subscriptionId: sub.id }, "Failed to send push notification")
           }
         }
       })
     )
-  }
 
-  private async getUserNotificationLevel(userId: string): Promise<PrefNotificationLevel> {
-    const overrides = await UserPreferencesRepository.findOverrides(this.pool, userId)
-    const notifOverride = overrides.find((o) => o.key === "notificationLevel")
-    const value = notifOverride?.value
-    if (
-      value === PrefNotificationLevels.ALL ||
-      value === PrefNotificationLevels.MENTIONS ||
-      value === PrefNotificationLevels.NONE
-    ) {
-      return value
+    // 6. Batch-delete stale subscriptions (INV-56)
+    if (staleIds.length > 0) {
+      try {
+        await PushSubscriptionRepository.deleteByIds(this.pool, workspaceId, staleIds)
+      } catch (deleteErr) {
+        logger.warn({ err: deleteErr, count: staleIds.length }, "Failed to delete stale subscriptions")
+      }
     }
-    return PrefNotificationLevels.ALL
   }
 
   /**
@@ -161,8 +183,8 @@ export class PushService {
     }
 
     if (activityType === ActivityTypes.MESSAGE) {
-      const stream = await StreamRepository.findById(this.pool, streamId)
-      if (stream && (stream.type === StreamTypes.DM || stream.type === StreamTypes.SCRATCHPAD)) {
+      const streamType = await this.lookups.getStreamType(streamId)
+      if (streamType === StreamTypes.DM || streamType === StreamTypes.SCRATCHPAD) {
         return true
       }
     }
@@ -196,27 +218,5 @@ export class PushService {
     }
 
     return allSubscriptions
-  }
-
-  private buildTitle(activityType: string): string {
-    switch (activityType) {
-      case ActivityTypes.MENTION:
-        return "You were mentioned"
-      case ActivityTypes.MESSAGE:
-        return "New message"
-      default:
-        return "New activity"
-    }
-  }
-
-  private buildBody(activity: ActivityCreatedOutboxPayload["activity"]): string {
-    const context = activity.context as { contentPreview?: string; streamName?: string } | null | undefined
-    if (context?.contentPreview) {
-      return context.contentPreview.slice(0, 200)
-    }
-    if (context?.streamName) {
-      return `Activity in ${context.streamName}`
-    }
-    return "You have new activity in Threa"
   }
 }

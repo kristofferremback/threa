@@ -49,7 +49,7 @@ export const UserSessionRepository = {
       SELECT * FROM user_sessions
       WHERE workspace_id = ${workspaceId}
         AND user_id = ${userId}
-        AND last_active_at > now() - (${windowMs} || ' milliseconds')::interval
+        AND last_active_at > now() - (${windowMs}::text || ' milliseconds')::interval
     `)
     return result.rows.map(mapRowToSession)
   },
@@ -66,7 +66,7 @@ export const UserSessionRepository = {
   async cleanupStale(db: Querier, olderThanMs: number): Promise<number> {
     const result = await db.query(sql`
       DELETE FROM user_sessions
-      WHERE last_active_at < now() - (${olderThanMs} || ' milliseconds')::interval
+      WHERE last_active_at < now() - (${olderThanMs}::text || ' milliseconds')::interval
     `)
     return result.rowCount ?? 0
   },

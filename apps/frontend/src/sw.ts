@@ -10,36 +10,61 @@ precacheAndRoute(self.__WB_MANIFEST)
 // Push notification handling
 // ============================================================================
 
-interface PushPayload {
-  title: string
-  body: string
-  data?: {
-    workspaceId?: string
-    streamId?: string
-    messageId?: string
-    activityType?: string
+/** Structured push payload — display text is formatted here, not on the backend (INV-46). */
+interface PushData {
+  workspaceId?: string
+  streamId?: string
+  messageId?: string
+  activityType?: string
+  contentPreview?: string
+  streamName?: string
+}
+
+function formatTitle(activityType: string | undefined): string {
+  switch (activityType) {
+    case "mention":
+      return "You were mentioned"
+    case "message":
+      return "New message"
+    default:
+      return "New activity"
   }
+}
+
+function formatBody(data: PushData): string {
+  if (data.contentPreview) {
+    return data.contentPreview
+  }
+  if (data.streamName) {
+    return `Activity in ${data.streamName}`
+  }
+  return "You have new activity in Threa"
 }
 
 self.addEventListener("push", (event) => {
   if (!event.data) return
 
-  let payload: PushPayload
+  let data: PushData
   try {
-    payload = event.data.json() as PushPayload
+    const payload = event.data.json() as { data?: PushData }
+    data = payload.data ?? {}
   } catch {
-    payload = { title: "Threa", body: event.data.text() }
+    // Fallback for malformed payloads
+    data = {}
   }
+
+  const title = formatTitle(data.activityType)
+  const body = formatBody(data)
 
   const options: NotificationOptions = {
-    body: payload.body,
+    body,
     icon: "/threa-logo-192.png",
     badge: "/threa-logo-192.png",
-    data: payload.data,
-    tag: payload.data?.messageId ?? "threa-notification",
+    data,
+    tag: data.messageId ?? "threa-notification",
   }
 
-  event.waitUntil(self.registration.showNotification(payload.title, options))
+  event.waitUntil(self.registration.showNotification(title, options))
 })
 
 // ============================================================================
@@ -49,7 +74,7 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close()
 
-  const data = event.notification.data as PushPayload["data"]
+  const data = event.notification.data as PushData | undefined
   let targetUrl = "/"
 
   if (data?.workspaceId && data?.streamId) {

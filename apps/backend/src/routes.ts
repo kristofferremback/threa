@@ -256,7 +256,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.post("/api/workspaces/:workspaceId/activity/:id/read", ...authed, activity.markOneAsRead)
 
   // Push notifications (only register routes when VAPID is configured)
-  if (pushService.getVapidPublicKey()) {
+  if (pushService.isEnabled()) {
     const push = createPushHandlers({ pushService })
     app.post("/api/workspaces/:workspaceId/push/subscribe", ...authed, push.subscribe)
     app.delete("/api/workspaces/:workspaceId/push/subscribe", ...authed, push.unsubscribe)
