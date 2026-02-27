@@ -70,6 +70,7 @@ import {
 import { EmojiUsageHandler } from "./features/emoji"
 import { SystemMessageService, SystemMessageOutboxHandler } from "./features/system-messages"
 import { ActivityService, ActivityFeedHandler } from "./features/activity"
+import { PushService, PushNotificationHandler } from "./features/push"
 import { AttachmentUploadedHandler } from "./features/attachments"
 import { AICostService, AIBudgetService } from "./features/ai-usage"
 import { CommandRegistry, EchoCommand, createCommandWorker, CommandHandler } from "./features/commands"
@@ -301,6 +302,7 @@ export async function startServer(): Promise<ServerInstance> {
   const createThread = (params: Parameters<typeof streamService.createThread>[0]) => streamService.createThread(params)
 
   const activityService = new ActivityService({ pool })
+  const pushService = config.push.enabled ? new PushService({ pool }) : null
   const systemMessageService = new SystemMessageService({ pool, createMessage })
 
   // Command infrastructure - created early for route registration
@@ -323,6 +325,8 @@ export async function startServer(): Promise<ServerInstance> {
     userPreferencesService,
     invitationService,
     activityService,
+    pushService,
+    vapidPublicKey: config.push.vapidPublicKey,
     s3Config: config.s3,
     commandRegistry,
     avatarService,
@@ -346,7 +350,7 @@ export async function startServer(): Promise<ServerInstance> {
   io.adapter(createAdapter(pool))
 
   const userSocketRegistry = new UserSocketRegistry()
-  registerSocketHandlers(io, { pool, authService, streamService, userSocketRegistry })
+  registerSocketHandlers(io, { pool, authService, streamService, pushService, userSocketRegistry })
 
   const serverId = `server_${ulid()}`
 
@@ -523,6 +527,14 @@ export async function startServer(): Promise<ServerInstance> {
   const attachmentUploadedHandler = new AttachmentUploadedHandler(pool, jobQueue)
   const systemMessageOutboxHandler = new SystemMessageOutboxHandler(pool, systemMessageService)
   const activityFeedHandler = new ActivityFeedHandler(pool, activityService)
+  const pushNotificationHandler = config.push.enabled
+    ? new PushNotificationHandler({
+        pool,
+        vapidPublicKey: config.push.vapidPublicKey,
+        vapidPrivateKey: config.push.vapidPrivateKey,
+        vapidSubject: config.push.vapidSubject,
+      })
+    : null
   const shadowSyncHandler =
     controlPlaneClient && config.region
       ? new InvitationShadowSyncHandler(pool, controlPlaneClient, config.region)
@@ -541,6 +553,7 @@ export async function startServer(): Promise<ServerInstance> {
     attachmentUploadedHandler,
     systemMessageOutboxHandler,
     activityFeedHandler,
+    ...(pushNotificationHandler ? [pushNotificationHandler] : []),
     ...(shadowSyncHandler ? [shadowSyncHandler] : []),
   ]
 

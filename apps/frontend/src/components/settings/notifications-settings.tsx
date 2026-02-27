@@ -1,7 +1,10 @@
+import { useParams } from "react-router-dom"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { Button } from "@/components/ui/button"
 import { usePreferences } from "@/contexts"
+import { usePushNotifications } from "@/hooks/use-push-notifications"
 import { PREF_NOTIFICATION_LEVEL_OPTIONS, type PrefNotificationLevel } from "@threa/types"
 
 const NOTIFICATION_LABELS: Record<PrefNotificationLevel, string> = {
@@ -16,7 +19,69 @@ const NOTIFICATION_DESCRIPTIONS: Record<PrefNotificationLevel, string> = {
   none: "Don't send any notifications",
 }
 
+function PushNotificationCard({ workspaceId }: { workspaceId: string }) {
+  const { permission, isSubscribed, requestPermission } = usePushNotifications(workspaceId)
+
+  if (permission === "unsupported") {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Push Notifications</CardTitle>
+          <CardDescription>Get notified even when you're away from the app</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">Push notifications are not supported in this browser.</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (permission === "denied") {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Push Notifications</CardTitle>
+          <CardDescription>Get notified even when you're away from the app</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            Push notifications are blocked. Enable them in your browser settings to receive notifications.
+          </p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Push Notifications</CardTitle>
+        <CardDescription>Get notified even when you're away from the app</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {permission === "default" && (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Enable push notifications to get notified when you receive messages and mentions.
+            </p>
+            <Button onClick={requestPermission} variant="outline" size="sm">
+              Enable push notifications
+            </Button>
+          </div>
+        )}
+        {permission === "granted" && isSubscribed && (
+          <p className="text-sm text-muted-foreground">Push notifications are enabled for this device.</p>
+        )}
+        {permission === "granted" && !isSubscribed && (
+          <p className="text-sm text-muted-foreground">Subscribing to push notifications...</p>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 export function NotificationsSettings() {
+  const { workspaceId } = useParams<{ workspaceId: string }>()
   const { preferences, updatePreference } = usePreferences()
 
   const notificationLevel = preferences?.notificationLevel ?? "all"
@@ -48,6 +113,8 @@ export function NotificationsSettings() {
           </RadioGroup>
         </CardContent>
       </Card>
+
+      {workspaceId && <PushNotificationCard workspaceId={workspaceId} />}
 
       <Card>
         <CardHeader>

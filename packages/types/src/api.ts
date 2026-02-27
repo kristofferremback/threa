@@ -366,3 +366,15 @@ export interface UpdateAIBudgetInput {
   hardLimitEnabled?: boolean
   hardLimitPercent?: number
 }
+
+// ============================================================================
+// Push Notifications API
+// ============================================================================
+
+export interface PushSubscriptionInput {
+  endpoint: string
+  p256dh: string
+  auth: string
+  deviceKey: string
+  userAgent?: string
+}

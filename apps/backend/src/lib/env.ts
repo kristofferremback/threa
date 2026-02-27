@@ -29,6 +29,14 @@ export interface AttachmentSafetyConfig {
   malwareScanEnabled: boolean
 }
 
+export interface PushConfig {
+  vapidPublicKey: string
+  vapidPrivateKey: string
+  /** mailto: URI for VAPID identification */
+  vapidSubject: string
+  enabled: boolean
+}
+
 export interface Config {
   port: number
   databaseUrl: string
@@ -50,6 +58,7 @@ export interface Config {
   ai: AIConfig
   s3: S3Config
   attachments: AttachmentSafetyConfig
+  push: PushConfig
   /** Control-plane URL for inter-service communication (optional — only needed in multi-region) */
   controlPlaneUrl: string | null
   /** Shared secret for authenticating internal API calls from the control-plane */
@@ -127,6 +136,12 @@ export function loadConfig(): Config {
     },
     attachments: {
       malwareScanEnabled: process.env.ATTACHMENT_MALWARE_SCAN_ENABLED !== "false",
+    },
+    push: {
+      vapidPublicKey: process.env.VAPID_PUBLIC_KEY || "",
+      vapidPrivateKey: process.env.VAPID_PRIVATE_KEY || "",
+      vapidSubject: process.env.VAPID_SUBJECT || "mailto:push@threa.app",
+      enabled: !!process.env.VAPID_PUBLIC_KEY && !!process.env.VAPID_PRIVATE_KEY,
     },
     controlPlaneUrl: process.env.CONTROL_PLANE_URL || null,
     internalApiKey: process.env.INTERNAL_API_KEY || null,

@@ -33,4 +33,6 @@ export {
   activityId,
   avatarUploadId,
   messageVersionId,
+  pushSubscriptionId,
+  userSessionId,
 } from "@threa/backend-common"

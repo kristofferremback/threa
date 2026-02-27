@@ -1,7 +1,9 @@
 import type { Server, Socket } from "socket.io"
+import crypto from "crypto"
 import { parseCookies } from "@threa/backend-common"
 import type { AuthService } from "@threa/backend-common"
 import type { StreamService } from "./features/streams"
+import type { PushService } from "./features/push"
 import type { UserSocketRegistry } from "./lib/user-socket-registry"
 import { AgentSessionRepository } from "./features/agents"
 import { UserRepository } from "./features/workspaces"
@@ -51,11 +53,17 @@ interface Dependencies {
   pool: import("pg").Pool
   authService: AuthService
   streamService: StreamService
+  pushService: PushService | null
   userSocketRegistry: UserSocketRegistry
 }
 
+function deriveDeviceKey(userAgent: string | undefined): string {
+  const input = userAgent || "unknown"
+  return crypto.createHash("sha256").update(input).digest("hex").slice(0, 16)
+}
+
 export function registerSocketHandlers(io: Server, deps: Dependencies) {
-  const { pool, authService, streamService, userSocketRegistry } = deps
+  const { pool, authService, streamService, pushService, userSocketRegistry } = deps
 
   // ===========================================================================
   // Authentication middleware
@@ -125,6 +133,14 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
         const userRoom = `ws:${wsId}:user:${workspaceUser.id}`
         socket.join(userRoom)
         userRooms.set(wsId, { userId: workspaceUser.id, userRoom })
+
+        // Upsert session for push notification suppression
+        if (pushService) {
+          const deviceKey = deriveDeviceKey(socket.handshake.headers["user-agent"])
+          pushService.upsertSession({ workspaceId: wsId, userId: workspaceUser.id, deviceKey }).catch((err) => {
+            logger.warn({ err, wsId, userId: workspaceUser.id }, "Failed to upsert user session on join")
+          })
+        }
 
         // Track metrics
         wsConnectionsActive.inc({ workspace_id: wsId, room_pattern: roomPattern })
@@ -256,8 +272,18 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
     })
 
     // =========================================================================
-    // Add more event handlers here...
+    // Heartbeat for push notification session tracking
     // =========================================================================
+    if (pushService) {
+      socket.on("heartbeat", () => {
+        const deviceKey = deriveDeviceKey(socket.handshake.headers["user-agent"])
+        for (const [wsId, entry] of userRooms) {
+          pushService.upsertSession({ workspaceId: wsId, userId: entry.userId, deviceKey }).catch((err) => {
+            logger.warn({ err }, "Failed to upsert session on heartbeat")
+          })
+        }
+      })
+    }
 
     socket.on("disconnect", () => {
       userSocketRegistry.unregister(workosUserId, socket)

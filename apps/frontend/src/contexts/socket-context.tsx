@@ -133,6 +133,40 @@ export function SocketProvider({ workspaceId, children }: SocketProviderProps) {
     }
   }, [workspaceId])
 
+  // Heartbeat for push notification session tracking
+  const lastInteractionHeartbeatRef = useRef(0)
+
+  useEffect(() => {
+    if (!socket || status !== "connected") return
+
+    const heartbeatInterval = setInterval(() => {
+      socket.emit("heartbeat")
+    }, 30_000)
+
+    const emitThrottledHeartbeat = () => {
+      const now = Date.now()
+      if (now - lastInteractionHeartbeatRef.current > 10_000) {
+        lastInteractionHeartbeatRef.current = now
+        socket.emit("heartbeat")
+      }
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        emitThrottledHeartbeat()
+      }
+    }
+
+    window.addEventListener("focus", emitThrottledHeartbeat)
+    document.addEventListener("visibilitychange", handleVisibilityChange)
+
+    return () => {
+      clearInterval(heartbeatInterval)
+      window.removeEventListener("focus", emitThrottledHeartbeat)
+      document.removeEventListener("visibilitychange", handleVisibilityChange)
+    }
+  }, [socket, status])
+
   return <SocketContext.Provider value={{ socket, status, reconnectCount }}>{children}</SocketContext.Provider>
 }
 

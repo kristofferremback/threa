@@ -112,6 +112,8 @@
     "tailwindcss-animate": "^1.0.7",
     "typescript": "^5",
     "vite": "^6",
-    "vitest": "^4.0.16"
+    "vite-plugin-pwa": "^1.2.0",
+    "vitest": "^4.0.16",
+    "workbox-precaching": "^7.4.0"
   }
 }

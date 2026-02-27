@@ -233,6 +233,8 @@ export type {
   AIBudgetConfig,
   AIBudgetResponse,
   UpdateAIBudgetInput,
+  // Push Notifications
+  PushSubscriptionInput,
 } from "./api"
 
 // ProseMirror / TipTap JSON types
