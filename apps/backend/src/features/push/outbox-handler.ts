@@ -92,6 +92,11 @@ export class PushNotificationHandler implements OutboxHandler {
           }
 
           const payload = event.payload as ActivityCreatedOutboxPayload
+          if (!payload?.workspaceId || !payload?.targetUserId || !payload?.activity) {
+            logger.warn({ eventId: event.id }, "Skipping malformed activity:created payload")
+            seen.push(event.id)
+            continue
+          }
           await this.handleActivityCreated(payload)
           seen.push(event.id)
         }
@@ -175,7 +180,15 @@ export class PushNotificationHandler implements OutboxHandler {
   private async getUserNotificationLevel(userId: string): Promise<PrefNotificationLevel> {
     const overrides = await UserPreferencesRepository.findOverrides(this.db, userId)
     const notifOverride = overrides.find((o) => o.key === "notificationLevel")
-    return (notifOverride?.value as PrefNotificationLevel) ?? "all"
+    const value = notifOverride?.value
+    if (
+      value === PrefNotificationLevels.ALL ||
+      value === PrefNotificationLevels.MENTIONS ||
+      value === PrefNotificationLevels.NONE
+    ) {
+      return value
+    }
+    return PrefNotificationLevels.ALL
   }
 
   /**
@@ -236,11 +249,11 @@ export class PushNotificationHandler implements OutboxHandler {
   }
 
   private buildBody(activity: ActivityCreatedOutboxPayload["activity"]): string {
-    const context = activity.context as { contentPreview?: string; streamName?: string }
-    if (context.contentPreview) {
+    const context = activity.context as { contentPreview?: string; streamName?: string } | null | undefined
+    if (context?.contentPreview) {
       return context.contentPreview.slice(0, 200)
     }
-    if (context.streamName) {
+    if (context?.streamName) {
       return `Activity in ${context.streamName}`
     }
     return "You have new activity in Threa"

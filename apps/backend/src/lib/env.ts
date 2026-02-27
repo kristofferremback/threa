@@ -148,6 +148,15 @@ export function loadConfig(): Config {
     region: process.env.REGION || null,
   }
 
+  // Validate co-presence: VAPID keys must both be set or both be absent (INV-11)
+  const hasPublicKey = !!process.env.VAPID_PUBLIC_KEY
+  const hasPrivateKey = !!process.env.VAPID_PRIVATE_KEY
+  if (hasPublicKey !== hasPrivateKey) {
+    throw new Error(
+      "Both VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY must be set together — push notifications require both keys"
+    )
+  }
+
   // Validate co-presence: REGION and INTERNAL_API_KEY are required when CONTROL_PLANE_URL is set (INV-11)
   if (config.controlPlaneUrl && !config.region) {
     throw new Error(
