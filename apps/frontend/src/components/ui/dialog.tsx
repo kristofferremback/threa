@@ -36,8 +36,6 @@ const DialogContent = React.forwardRef<React.ElementRef<typeof DialogPrimitive.C
           "max-sm:inset-0 max-sm:flex max-sm:flex-col max-sm:gap-4 max-sm:max-w-none max-sm:max-h-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none max-sm:border-0 max-sm:overflow-y-auto max-sm:p-4",
           // Desktop: centered grid modal
           "sm:grid sm:gap-4 sm:left-[50%] sm:top-[50%] sm:max-w-lg sm:translate-x-[-50%] sm:translate-y-[-50%] sm:rounded-modal sm:border sm:p-6",
-          // Desktop: centered modal
-          "sm:left-[50%] sm:top-[50%] sm:max-w-lg sm:translate-x-[-50%] sm:translate-y-[-50%] sm:rounded-modal sm:border sm:p-6",
           className
         )}
         {...props}

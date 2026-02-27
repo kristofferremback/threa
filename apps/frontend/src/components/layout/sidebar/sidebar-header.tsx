@@ -1,6 +1,7 @@
 import { Search as SearchIcon } from "lucide-react"
 import { Link } from "react-router-dom"
 import { useQuickSwitcher, type ViewMode } from "@/contexts"
+import { useSidebar } from "@/contexts"
 import { cn } from "@/lib/utils"
 import { ThemeDropdown } from "@/components/theme-dropdown"
 import { ThreaLogo } from "@/components/threa-logo"
@@ -15,6 +16,12 @@ interface SidebarHeaderProps {
 
 export function SidebarHeader({ workspaceName, viewMode, onViewModeChange, hideViewToggle }: SidebarHeaderProps) {
   const { openSwitcher } = useQuickSwitcher()
+  const { isMobile, collapse } = useSidebar()
+
+  const handleOpenSearch = () => {
+    if (isMobile) collapse()
+    openSwitcher("search")
+  }
 
   return (
     <div className="flex-shrink-0 border-b px-4 py-3">
@@ -29,7 +36,7 @@ export function SidebarHeader({ workspaceName, viewMode, onViewModeChange, hideV
 
       {/* Search box */}
       <button
-        onClick={() => openSwitcher("search")}
+        onClick={handleOpenSearch}
         className="w-full flex items-center gap-2 px-3 py-2 bg-background border border-border rounded-lg text-sm text-muted-foreground hover:bg-muted/50 transition-colors"
       >
         <SearchIcon className="h-3.5 w-3.5" />

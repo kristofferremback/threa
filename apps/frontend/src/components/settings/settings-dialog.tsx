@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { ChevronDown } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useSettings } from "@/contexts"
@@ -32,7 +33,7 @@ export function SettingsDialog() {
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && closeSettings()}>
-      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+      <DialogContent className="max-w-2xl max-h-[85vh] max-sm:max-h-none flex flex-col">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
         </DialogHeader>
@@ -43,17 +44,20 @@ export function SettingsDialog() {
           className="flex-1 flex flex-col overflow-hidden"
         >
           {/* Mobile: native select dropdown */}
-          <select
-            value={activeTab}
-            onChange={(e) => setActiveTab(e.target.value as SettingsTab)}
-            className="sm:hidden w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
-          >
-            {SETTINGS_TABS.map((tab: SettingsTab) => (
-              <option key={tab} value={tab}>
-                {TAB_LABELS[tab]}
-              </option>
-            ))}
-          </select>
+          <div className="relative sm:hidden">
+            <select
+              value={activeTab}
+              onChange={(e) => setActiveTab(e.target.value as SettingsTab)}
+              className="w-full h-9 rounded-md border border-input bg-background pl-3 pr-10 text-sm appearance-none"
+            >
+              {SETTINGS_TABS.map((tab: SettingsTab) => (
+                <option key={tab} value={tab}>
+                  {TAB_LABELS[tab]}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          </div>
           {/* Desktop: tab grid */}
           <TabsList className="hidden sm:grid w-full grid-cols-6">
             {SETTINGS_TABS.map((tab: SettingsTab) => (

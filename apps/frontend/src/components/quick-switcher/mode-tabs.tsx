@@ -1,4 +1,5 @@
 import { useRef, useEffect } from "react"
+import { ChevronDown } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { QuickSwitcherMode } from "./quick-switcher"
 
@@ -75,18 +76,21 @@ export function ModeTabs({
   return (
     <div className="p-2 border-b">
       {/* Mobile: native select dropdown */}
-      <select
-        value={currentMode}
-        onChange={(e) => handleTabClick(e.target.value as QuickSwitcherMode)}
-        className="sm:hidden w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
-        aria-label="Quick switcher modes"
-      >
-        {MODES.map(({ mode, label, shortcut }) => (
-          <option key={mode} value={mode}>
-            {shortcut ? `(${shortcut}) ${label}` : label}
-          </option>
-        ))}
-      </select>
+      <div className="relative sm:hidden">
+        <select
+          value={currentMode}
+          onChange={(e) => handleTabClick(e.target.value as QuickSwitcherMode)}
+          className="w-full h-9 rounded-md border border-input bg-background pl-3 pr-10 text-sm appearance-none"
+          aria-label="Quick switcher modes"
+        >
+          {MODES.map(({ mode, label, shortcut }) => (
+            <option key={mode} value={mode}>
+              {shortcut ? `(${shortcut}) ${label}` : label}
+            </option>
+          ))}
+        </select>
+        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+      </div>
       {/* Desktop: pill buttons */}
       <div className="hidden sm:flex gap-1" role="tablist" aria-label="Quick switcher modes">
         {MODES.map(({ mode, label, shortcut }, index) => {

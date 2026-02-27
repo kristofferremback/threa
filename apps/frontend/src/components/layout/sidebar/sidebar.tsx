@@ -298,6 +298,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   }
 
   const handleCreateChannel = () => {
+    if (isMobile) collapse()
     openCreateChannel()
   }
 

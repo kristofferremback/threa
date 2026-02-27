@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 import { useSearchParams } from "react-router-dom"
+import { ChevronDown } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { UsersTab } from "./users-tab"
@@ -48,13 +49,29 @@ export function WorkspaceSettingsDialog({ workspaceId }: WorkspaceSettingsDialog
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && close()}>
-      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+      <DialogContent className="max-w-2xl max-h-[85vh] max-sm:max-h-none flex flex-col">
         <DialogHeader>
           <DialogTitle>Workspace Settings</DialogTitle>
         </DialogHeader>
 
         <Tabs value={activeTab} onValueChange={setTab} className="flex-1 flex flex-col overflow-hidden">
-          <TabsList className="grid w-full grid-cols-2">
+          {/* Mobile: native select dropdown */}
+          <div className="relative sm:hidden">
+            <select
+              value={activeTab}
+              onChange={(e) => setTab(e.target.value)}
+              className="w-full h-9 rounded-md border border-input bg-background pl-3 pr-10 text-sm appearance-none"
+            >
+              {WORKSPACE_SETTINGS_TABS.map((tab) => (
+                <option key={tab} value={tab}>
+                  {TAB_LABELS[tab]}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          </div>
+          {/* Desktop: tab grid */}
+          <TabsList className="hidden sm:grid w-full grid-cols-2">
             {WORKSPACE_SETTINGS_TABS.map((tab) => (
               <TabsTrigger key={tab} value={tab}>
                 {TAB_LABELS[tab]}

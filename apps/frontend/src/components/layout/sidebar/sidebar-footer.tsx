@@ -1,7 +1,7 @@
 import { ChevronUp, DollarSign, LogOut, Settings, User as UserIcon } from "lucide-react"
 import { Link, useSearchParams } from "react-router-dom"
 import { useAuth } from "@/auth"
-import { useSettings } from "@/contexts"
+import { useSettings, useSidebar } from "@/contexts"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
   DropdownMenu,
@@ -23,8 +23,15 @@ export function SidebarFooter({ workspaceId, currentUser }: SidebarFooterProps) 
   const [, setSearchParams] = useSearchParams()
   const { openSettings } = useSettings()
   const { logout } = useAuth()
+  const { isMobile, collapse } = useSidebar()
+
+  const handleOpenSettings = (tab: "profile" | "appearance") => {
+    if (isMobile) collapse()
+    openSettings(tab)
+  }
 
   const openWorkspaceSettings = () => {
+    if (isMobile) collapse()
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev)
@@ -57,11 +64,11 @@ export function SidebarFooter({ workspaceId, currentUser }: SidebarFooterProps) 
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent side="top" align="start" className="w-56">
-        <DropdownMenuItem onClick={() => openSettings("profile")}>
+        <DropdownMenuItem onClick={() => handleOpenSettings("profile")}>
           <UserIcon className="mr-2 h-4 w-4" />
           Profile
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => openSettings("appearance")}>
+        <DropdownMenuItem onClick={() => handleOpenSettings("appearance")}>
           <Settings className="mr-2 h-4 w-4" />
           Settings
         </DropdownMenuItem>
