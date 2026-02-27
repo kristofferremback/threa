@@ -123,8 +123,9 @@ Production config lives in `apps/workspace-router/wrangler.production.toml`:
 | ----------------------------- | ----------------------------------------- |
 | `/api/auth/*`                 | Control-plane                             |
 | `/api/workspaces` (GET, POST) | Control-plane                             |
-| `/api/workspaces/:id/*`       | Regional backend (looked up via KV cache) |
+| `/api/regions`                | Control-plane                             |
 | `/api/workspaces/:id/config`  | Returns `{ region, wsUrl }` directly      |
+| `/api/workspaces/:id/*`       | Regional backend (looked up via KV cache) |
 | `/readyz`                     | Returns 200 (local health check)          |
 
 ## Cloudflare Pages (Frontend)
