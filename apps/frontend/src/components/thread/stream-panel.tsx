@@ -200,6 +200,7 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
         {isMobile && (
           <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={onClose}>
             <ChevronLeft className="h-4 w-4" />
+            <span className="sr-only">Back</span>
           </Button>
         )}
         {isDraft && parentBootstrap?.stream ? (
