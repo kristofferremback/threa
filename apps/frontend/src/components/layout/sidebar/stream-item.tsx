@@ -149,6 +149,7 @@ export function StreamItem({
 }: StreamItemProps) {
   const { getActorName, getActorAvatar } = useActors(workspaceId)
   const { openStreamSettings } = useStreamSettings()
+  const { isMobile, collapse } = useSidebar()
   const itemRef = useRef<HTMLAnchorElement>(null)
   const hasUnread = unreadCount > 0
   const preview = stream.lastMessagePreview
@@ -219,8 +220,6 @@ export function StreamItem({
       />
     )
   }
-
-  const { isMobile, collapse } = useSidebar()
 
   return (
     <Link
