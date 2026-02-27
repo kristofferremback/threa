@@ -85,7 +85,7 @@ export function StreamSettingsDialog({ workspaceId }: StreamSettingsDialogProps)
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && closeStreamSettings()}>
-      <DialogContent className="max-w-2xl max-h-[85vh] max-sm:max-h-none flex flex-col">
+      <DialogContent className="max-w-2xl max-h-[85vh] max-sm:max-h-none sm:flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>{streamName} Settings</DialogTitle>
         </DialogHeader>

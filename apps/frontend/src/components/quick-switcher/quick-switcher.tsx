@@ -362,8 +362,8 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
           }
         }}
       >
-        {/* Input area — pr-10 leaves room for the dialog close button */}
-        <div className="p-4 pr-10 border-b border-border">
+        {/* Input area — extra right padding on mobile for close button */}
+        <div className="p-4 max-sm:pr-10 border-b border-border">
           <div className="flex items-center gap-3 px-4 py-3 rounded-[10px] border border-border bg-background transition-all focus-within:border-primary/60 focus-within:shadow-[0_0_0_2px_hsl(var(--primary)/0.06)]">
             <ModeIcon className="h-4 w-4 shrink-0 opacity-50" />
             {inputRequest ? (

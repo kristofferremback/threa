@@ -49,7 +49,7 @@ export function WorkspaceSettingsDialog({ workspaceId }: WorkspaceSettingsDialog
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && close()}>
-      <DialogContent className="max-w-2xl max-h-[85vh] max-sm:max-h-none flex flex-col">
+      <DialogContent className="max-w-2xl max-h-[85vh] max-sm:max-h-none sm:flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>Workspace Settings</DialogTitle>
         </DialogHeader>
