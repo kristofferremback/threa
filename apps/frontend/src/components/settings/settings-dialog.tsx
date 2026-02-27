@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
-import { ChevronDown } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useSettings } from "@/contexts"
 import { SETTINGS_TABS, type SettingsTab } from "@threa/types"
@@ -43,20 +43,20 @@ export function SettingsDialog() {
           onValueChange={(value) => setActiveTab(value as SettingsTab)}
           className="flex-1 flex flex-col overflow-hidden"
         >
-          {/* Mobile: native select dropdown */}
-          <div className="relative sm:hidden">
-            <select
-              value={activeTab}
-              onChange={(e) => setActiveTab(e.target.value as SettingsTab)}
-              className="w-full h-9 rounded-md border border-input bg-background pl-3 pr-10 text-sm appearance-none"
-            >
-              {SETTINGS_TABS.map((tab: SettingsTab) => (
-                <option key={tab} value={tab}>
-                  {TAB_LABELS[tab]}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          {/* Mobile: Shadcn Select dropdown */}
+          <div className="sm:hidden">
+            <Select value={activeTab} onValueChange={(value) => setActiveTab(value as SettingsTab)}>
+              <SelectTrigger className="h-9 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SETTINGS_TABS.map((tab: SettingsTab) => (
+                  <SelectItem key={tab} value={tab}>
+                    {TAB_LABELS[tab]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           {/* Desktop: tab grid */}
           <TabsList className="hidden sm:grid w-full grid-cols-6">

@@ -108,4 +108,4 @@ export { useResizeDrag } from "./use-resize-drag"
 
 export { useTypeToFocus, focusAtEnd } from "./use-type-to-focus"
 
-export { useVisualViewport } from "./use-visual-viewport"
+export { useVisualViewport, type VisualViewportState } from "./use-visual-viewport"

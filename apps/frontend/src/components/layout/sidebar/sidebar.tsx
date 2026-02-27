@@ -292,9 +292,14 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   }
 
   const handleCreateScratchpad = async () => {
-    const draftId = await createDraft("on")
-    if (isMobile) collapse()
-    navigate(`/w/${workspaceId}/s/${draftId}`)
+    try {
+      const draftId = await createDraft("on")
+      if (isMobile) collapse()
+      navigate(`/w/${workspaceId}/s/${draftId}`)
+    } catch {
+      const { toast } = await import("sonner")
+      toast.error("Failed to create scratchpad")
+    }
   }
 
   const handleCreateChannel = () => {

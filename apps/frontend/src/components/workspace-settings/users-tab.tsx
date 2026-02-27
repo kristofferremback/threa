@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { invitationsApi } from "@/api/invitations"
 import { workspaceKeys } from "@/hooks/use-workspaces"
+import { useFormattedDate } from "@/hooks"
 import { InviteDialog } from "./invite-dialog"
 import type { User, WorkspaceInvitation } from "@threa/types"
 
@@ -14,6 +15,7 @@ interface UsersTabProps {
 export function UsersTab({ workspaceId }: UsersTabProps) {
   const [inviteOpen, setInviteOpen] = useState(false)
   const queryClient = useQueryClient()
+  const { formatDate } = useFormattedDate()
 
   const bootstrapData = queryClient.getQueryData<{
     users: User[]
@@ -76,7 +78,7 @@ export function UsersTab({ workspaceId }: UsersTabProps) {
                   <div className="flex items-center gap-2">
                     <Badge variant="outline">{invitation.role}</Badge>
                     <span className="text-xs text-muted-foreground">
-                      Expires {new Date(invitation.expiresAt).toLocaleDateString()}
+                      Expires {formatDate(new Date(invitation.expiresAt))}
                     </span>
                   </div>
                 </div>

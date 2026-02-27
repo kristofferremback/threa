@@ -124,7 +124,7 @@ test.describe("User Journey", () => {
     await page.keyboard.press("Meta+k")
 
     // Quick switcher dialog should appear - look for the mode tabs as indicator
-    await expect(page.getByText("Stream search")).toBeVisible({ timeout: 2000 })
+    await expect(page.getByRole("tab", { name: "Stream search" })).toBeVisible({ timeout: 2000 })
 
     // Type the channel name to search (focus should already be in the input)
     await page.keyboard.type(quickSwitchChannel)
@@ -134,7 +134,7 @@ test.describe("User Journey", () => {
     await page.keyboard.press("Enter")
 
     // Should navigate to the channel (quick switcher closes)
-    await expect(page.getByText("Stream search")).not.toBeVisible({ timeout: 2000 })
+    await expect(page.getByRole("tab", { name: "Stream search" })).not.toBeVisible({ timeout: 2000 })
 
     // Verify we're in the channel by checking the URL or channel content
     await expect(page.getByText("No messages yet")).toBeVisible({ timeout: 5000 })

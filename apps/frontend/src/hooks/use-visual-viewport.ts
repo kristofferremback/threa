@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 
-interface VisualViewportState {
+export interface VisualViewportState {
   /** Visual viewport height in px (shrinks when keyboard opens) */
   height: number
 }
@@ -22,7 +22,7 @@ export function useVisualViewport(enabled: boolean): VisualViewportState | null 
     const vv = window.visualViewport
 
     const update = () => {
-      setState({ height: vv.height })
+      setState((prev) => (prev?.height === vv.height ? prev : { height: vv.height }))
     }
 
     // Set initial state
