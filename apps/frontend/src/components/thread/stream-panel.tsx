@@ -18,6 +18,7 @@ import {
   streamKeys,
   useThreadAncestors,
 } from "@/hooks"
+import { useIsMobile } from "@/hooks/use-mobile"
 import { usePanel, isDraftPanel, parseDraftPanel } from "@/contexts"
 import { useStreamService, useMessageService } from "@/contexts"
 import { StreamLoadingIndicator } from "@/components/loading"
@@ -38,6 +39,7 @@ interface StreamPanelProps {
 }
 
 export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
+  const isMobile = useIsMobile()
   const [searchParams] = useSearchParams()
   const highlightMessageId = searchParams.get("m")
   const { panelId, openPanel, getPanelUrl, closePanel } = usePanel()
@@ -194,12 +196,20 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
     <SidePanel data-editor-zone="panel">
       <SidePanelHeader className="relative">
         <StreamLoadingIndicator isLoading={showLoadingIndicator} />
+        {/* Mobile back button — replaces X close on small screens */}
+        {isMobile && (
+          <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={onClose}>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+        )}
         {isDraft && parentBootstrap?.stream ? (
           // Draft thread header with responsive breadcrumbs
           <div className="flex items-center gap-1 min-w-0 flex-1 overflow-hidden pr-2">
-            <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={onClose}>
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
+            {!isMobile && (
+              <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={onClose}>
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+            )}
             <ResponsiveBreadcrumbs
               ancestors={fullChain}
               currentLabel="New thread"
@@ -215,7 +225,8 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
             {stream ? (getStreamName(stream) ?? streamFallbackLabel(stream.type as StreamType, "generic")) : "Stream"}
           </SidePanelTitle>
         )}
-        <SidePanelClose onClose={onClose} />
+        {/* Hide X close button on mobile (back button used instead) */}
+        {!isMobile && <SidePanelClose onClose={onClose} />}
       </SidePanelHeader>
 
       <SidePanelContent className="flex flex-col">

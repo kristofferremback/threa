@@ -1,7 +1,7 @@
 import { type ReactNode, useCallback } from "react"
 import { PanelLeftClose, PanelLeft, Command } from "lucide-react"
 import { useSidebar, useQuickSwitcher, useCoordinatedLoading } from "@/contexts"
-import { useResizeDrag } from "@/hooks"
+import { useResizeDrag, useVisualViewport } from "@/hooks"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { TopbarLoadingIndicator } from "./topbar-loading-indicator"
@@ -103,6 +103,9 @@ export function AppShell({ sidebar, children }: AppShellProps) {
     onResizeEnd: stopResizing,
   })
 
+  // Track visual viewport for keyboard-aware layout on mobile
+  const visualViewport = useVisualViewport(isMobile)
+
   const isCollapsed = state === "collapsed"
   const isPreview = state === "preview"
   const isPinned = state === "pinned"
@@ -128,7 +131,17 @@ export function AppShell({ sidebar, children }: AppShellProps) {
   }, [collapse])
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden">
+    <div
+      className="flex h-dvh w-screen flex-col overflow-hidden"
+      style={
+        visualViewport
+          ? {
+              height: `${visualViewport.height}px`,
+              transform: `translateY(${visualViewport.offsetTop}px)`,
+            }
+          : undefined
+      }
+    >
       {/* Topbar - spans full width */}
       <Topbar isPinned={isPinned} onToggleSidebar={togglePinned} />
 

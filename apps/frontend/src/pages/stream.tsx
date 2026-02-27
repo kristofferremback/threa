@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
 import { useStreamOrDraft, useStreamError, usePanelLayout, isDmDraftId, useTypeToFocus } from "@/hooks"
+import { useIsMobile } from "@/hooks/use-mobile"
 import { usePanel } from "@/contexts"
 import { TimelineView } from "@/components/timeline"
 import { StreamPanel, ThreadHeader } from "@/components/thread"
@@ -41,6 +42,7 @@ export function StreamPage() {
   const { workspaceId, streamId } = useParams<{ workspaceId: string; streamId: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
   const { stream, isDraft, error, rename, archive, unarchive } = useStreamOrDraft(workspaceId!, streamId!)
+  const isMobile = useIsMobile()
   const { panelId, isPanelOpen, closePanel } = usePanel()
   const {
     containerRef,
@@ -254,6 +256,18 @@ export function StreamPage() {
       </div>
     </>
   )
+
+  // On mobile, thread panel takes over the full screen
+  if (isMobile && isPanelOpen) {
+    return (
+      <>
+        <div className="flex h-full flex-col">
+          <StreamPanel key={panelId} workspaceId={workspaceId} onClose={closePanel} />
+        </div>
+        {conversationPanel}
+      </>
+    )
+  }
 
   return (
     <>
