@@ -15,7 +15,7 @@ const NOTIFICATION_LABELS: Record<PrefNotificationLevel, string> = {
 
 const NOTIFICATION_DESCRIPTIONS: Record<PrefNotificationLevel, string> = {
   all: "Get notified for all new messages",
-  mentions: "Only get notified when you're @mentioned",
+  mentions: "Get notified for @mentions, DMs, and scratchpad messages",
   none: "Don't send any notifications",
 }
 

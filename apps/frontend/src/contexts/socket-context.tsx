@@ -139,6 +139,9 @@ export function SocketProvider({ workspaceId, children }: SocketProviderProps) {
   useEffect(() => {
     if (!socket || status !== "connected") return
 
+    // Emit immediately so the backend knows this tab is active right away
+    socket.emit("heartbeat")
+
     const heartbeatInterval = setInterval(() => {
       socket.emit("heartbeat")
     }, 30_000)

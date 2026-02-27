@@ -302,7 +302,16 @@ export async function startServer(): Promise<ServerInstance> {
   const createThread = (params: Parameters<typeof streamService.createThread>[0]) => streamService.createThread(params)
 
   const activityService = new ActivityService({ pool })
-  const pushService = config.push.enabled ? new PushService({ pool }) : null
+  const pushService = new PushService({
+    pool,
+    vapidConfig: config.push.enabled
+      ? {
+          publicKey: config.push.vapidPublicKey,
+          privateKey: config.push.vapidPrivateKey,
+          subject: config.push.vapidSubject,
+        }
+      : null,
+  })
   const systemMessageService = new SystemMessageService({ pool, createMessage })
 
   // Command infrastructure - created early for route registration
@@ -326,7 +335,6 @@ export async function startServer(): Promise<ServerInstance> {
     invitationService,
     activityService,
     pushService,
-    vapidPublicKey: config.push.vapidPublicKey,
     s3Config: config.s3,
     commandRegistry,
     avatarService,
@@ -527,14 +535,7 @@ export async function startServer(): Promise<ServerInstance> {
   const attachmentUploadedHandler = new AttachmentUploadedHandler(pool, jobQueue)
   const systemMessageOutboxHandler = new SystemMessageOutboxHandler(pool, systemMessageService)
   const activityFeedHandler = new ActivityFeedHandler(pool, activityService)
-  const pushNotificationHandler = config.push.enabled
-    ? new PushNotificationHandler({
-        pool,
-        vapidPublicKey: config.push.vapidPublicKey,
-        vapidPrivateKey: config.push.vapidPrivateKey,
-        vapidSubject: config.push.vapidSubject,
-      })
-    : null
+  const pushNotificationHandler = config.push.enabled ? new PushNotificationHandler({ pool, pushService }) : null
   const shadowSyncHandler =
     controlPlaneClient && config.region
       ? new InvitationShadowSyncHandler(pool, controlPlaneClient, config.region)

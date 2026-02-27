@@ -13,10 +13,9 @@ navigator.serviceWorker?.addEventListener("message", (event) => {
     }
   }
   if (event.data?.type === "PUSH_SUBSCRIPTION_CHANGED") {
-    // The push subscription was rotated by the browser. Re-register on next page load
-    // by clearing the cached subscription state so the hook re-subscribes.
-    // For now, just reload the page to trigger the hook's mount logic.
-    window.location.reload()
+    // The push subscription was rotated by the browser. Dispatch a custom event
+    // so the push notifications hook can re-register without a full page reload.
+    window.dispatchEvent(new CustomEvent("pushsubscriptionchanged"))
   }
 })
 

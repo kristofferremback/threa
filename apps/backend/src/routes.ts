@@ -53,8 +53,7 @@ interface Dependencies {
   userPreferencesService: UserPreferencesService
   invitationService: InvitationService
   activityService: ActivityService
-  pushService: PushService | null
-  vapidPublicKey: string
+  pushService: PushService
   s3Config: S3Config
   commandRegistry: CommandRegistry
   avatarService: AvatarService
@@ -78,7 +77,6 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     invitationService,
     activityService,
     pushService,
-    vapidPublicKey,
     s3Config,
     commandRegistry,
     avatarService,
@@ -257,9 +255,9 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.post("/api/workspaces/:workspaceId/activity/read", ...authed, activity.markAllAsRead)
   app.post("/api/workspaces/:workspaceId/activity/:id/read", ...authed, activity.markOneAsRead)
 
-  // Push notifications
-  if (pushService) {
-    const push = createPushHandlers({ pushService, vapidPublicKey })
+  // Push notifications (only register routes when VAPID is configured)
+  if (pushService.getVapidPublicKey()) {
+    const push = createPushHandlers({ pushService })
     app.post("/api/workspaces/:workspaceId/push/subscribe", ...authed, push.subscribe)
     app.delete("/api/workspaces/:workspaceId/push/subscribe", ...authed, push.unsubscribe)
     app.get("/api/workspaces/:workspaceId/push/vapid-key", ...authed, push.getVapidKey)

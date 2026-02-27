@@ -53,7 +53,7 @@ interface Dependencies {
   pool: import("pg").Pool
   authService: AuthService
   streamService: StreamService
-  pushService: PushService | null
+  pushService: PushService
   userSocketRegistry: UserSocketRegistry
 }
 
@@ -135,12 +135,10 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
         userRooms.set(wsId, { userId: workspaceUser.id, userRoom })
 
         // Upsert session for push notification suppression
-        if (pushService) {
-          const deviceKey = deriveDeviceKey(socket.handshake.headers["user-agent"])
-          pushService.upsertSession({ workspaceId: wsId, userId: workspaceUser.id, deviceKey }).catch((err) => {
-            logger.warn({ err, wsId, userId: workspaceUser.id }, "Failed to upsert user session on join")
-          })
-        }
+        const deviceKey = deriveDeviceKey(socket.handshake.headers["user-agent"])
+        pushService.upsertSession({ workspaceId: wsId, userId: workspaceUser.id, deviceKey }).catch((err) => {
+          logger.warn({ err, wsId, userId: workspaceUser.id }, "Failed to upsert user session on join")
+        })
 
         // Track metrics
         wsConnectionsActive.inc({ workspace_id: wsId, room_pattern: roomPattern })
@@ -274,16 +272,14 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
     // =========================================================================
     // Heartbeat for push notification session tracking
     // =========================================================================
-    if (pushService) {
-      socket.on("heartbeat", () => {
-        const deviceKey = deriveDeviceKey(socket.handshake.headers["user-agent"])
-        for (const [wsId, entry] of userRooms) {
-          pushService.upsertSession({ workspaceId: wsId, userId: entry.userId, deviceKey }).catch((err) => {
-            logger.warn({ err }, "Failed to upsert session on heartbeat")
-          })
-        }
-      })
-    }
+    socket.on("heartbeat", () => {
+      const deviceKey = deriveDeviceKey(socket.handshake.headers["user-agent"])
+      for (const [wsId, entry] of userRooms) {
+        pushService.upsertSession({ workspaceId: wsId, userId: entry.userId, deviceKey }).catch((err) => {
+          logger.warn({ err }, "Failed to upsert session on heartbeat")
+        })
+      }
+    })
 
     socket.on("disconnect", () => {
       userSocketRegistry.unregister(workosUserId, socket)

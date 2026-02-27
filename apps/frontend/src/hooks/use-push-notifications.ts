@@ -81,15 +81,24 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
   useEffect(() => {
     if (permission !== "granted" || !workspaceId) return
 
-    navigator.serviceWorker?.ready
-      .then(async (registration) => {
-        // Always call subscribe — it upserts on the backend, so it handles both
-        // new subscriptions and re-registering after pushsubscriptionchange events.
-        await subscribe(registration)
-      })
-      .catch((err) => {
-        console.error("[Push] Failed to check subscription:", err)
-      })
+    const doSubscribe = () => {
+      navigator.serviceWorker?.ready
+        .then(async (registration) => {
+          // Always call subscribe — it upserts on the backend, so it handles both
+          // new subscriptions and re-registering after pushsubscriptionchange events.
+          await subscribe(registration)
+        })
+        .catch((err) => {
+          console.error("[Push] Failed to check subscription:", err)
+        })
+    }
+
+    doSubscribe()
+
+    // Re-register when the SW notifies us of a subscription change (avoids full page reload)
+    const handleSubscriptionChange = () => doSubscribe()
+    window.addEventListener("pushsubscriptionchanged", handleSubscriptionChange)
+    return () => window.removeEventListener("pushsubscriptionchanged", handleSubscriptionChange)
   }, [permission, workspaceId, subscribe])
 
   // Request permission and subscribe
@@ -99,12 +108,16 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
       return
     }
 
-    const result = await Notification.requestPermission()
-    setPermission(result)
+    try {
+      const result = await Notification.requestPermission()
+      setPermission(result)
 
-    if (result === "granted") {
-      const registration = await navigator.serviceWorker.ready
-      await subscribe(registration)
+      if (result === "granted") {
+        const registration = await navigator.serviceWorker.ready
+        await subscribe(registration)
+      }
+    } catch (err) {
+      console.error("[Push] Failed to request permission:", err)
     }
   }, [subscribe])
 

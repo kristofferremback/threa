@@ -17,10 +17,9 @@ const unsubscribeSchema = z.object({
 
 interface Dependencies {
   pushService: PushService
-  vapidPublicKey: string
 }
 
-export function createPushHandlers({ pushService, vapidPublicKey }: Dependencies) {
+export function createPushHandlers({ pushService }: Dependencies) {
   return {
     async subscribe(req: Request, res: Response) {
       const userId = req.user!.id
@@ -54,7 +53,7 @@ export function createPushHandlers({ pushService, vapidPublicKey }: Dependencies
     },
 
     async getVapidKey(_req: Request, res: Response) {
-      res.json({ vapidPublicKey })
+      res.json({ vapidPublicKey: pushService.getVapidPublicKey() })
     },
   }
 }
