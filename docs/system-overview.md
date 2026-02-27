@@ -63,7 +63,7 @@ WebSocket connections bypass the router entirely. The frontend fetches `/api/wor
 
 **Deployed on:** Cloudflare Pages at `app.threa.io`.
 
-**Deploy trigger:** Manual (`bun run build && bunx wrangler pages deploy dist`).
+**Deploy trigger:** Manual (`bun run build && bunx wrangler pages deploy dist --project-name threa`).
 
 **Key infrastructure dependencies:**
 - Cloudflare Pages (static hosting + SPA routing via `_redirects`)
@@ -155,6 +155,7 @@ WebSocket connections bypass the router entirely. The frontend fetches `/api/wor
 - PostgreSQL 17 + pgvector (regional `railway` database) — all domain data, event sourcing, job queue, outbox
 - AWS S3 (regional bucket, e.g. `eu-north-1`) — file uploads (avatars, attachments)
 - OpenRouter — AI model gateway (routes to Anthropic, OpenAI, etc.)
+- WorkOS — session cookie validation (shared auth with control plane)
 - Langfuse — AI observability/telemetry (OTEL-based)
 
 **Talks to:**
