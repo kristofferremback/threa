@@ -1,7 +1,7 @@
 import { useMemo } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { ChevronDown } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
 import { useStreamSettings, STREAM_SETTINGS_TABS, type StreamSettingsTab } from "./use-stream-settings"
@@ -92,20 +92,20 @@ export function StreamSettingsDialog({ workspaceId }: StreamSettingsDialogProps)
 
         {resolvedStream && streamId && currentUserId ? (
           <Tabs value={effectiveTab} onValueChange={setTab} className="flex-1 flex flex-col overflow-hidden">
-            {/* Mobile: native select dropdown */}
-            <div className="relative sm:hidden">
-              <select
-                value={effectiveTab}
-                onChange={(e) => setTab(e.target.value)}
-                className="w-full h-9 rounded-md border border-input bg-background pl-3 pr-10 text-sm appearance-none"
-              >
-                {availableTabs.map((tab) => (
-                  <option key={tab} value={tab}>
-                    {TAB_LABELS[tab]}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+            {/* Mobile: Shadcn Select dropdown */}
+            <div className="sm:hidden">
+              <Select value={effectiveTab} onValueChange={setTab}>
+                <SelectTrigger className="h-9 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableTabs.map((tab) => (
+                    <SelectItem key={tab} value={tab}>
+                      {TAB_LABELS[tab]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             {/* Desktop: tab grid */}
             <TabsList

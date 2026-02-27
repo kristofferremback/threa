@@ -227,12 +227,14 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
     })
   }, [clearHideTimeout, isMobile, updatePersistedState])
 
-  // Collapse the sidebar
+  // Collapse the sidebar (skip localStorage persist on mobile to preserve desktop preference)
   const collapse = useCallback(() => {
     clearHideTimeout()
     setState("collapsed")
-    updatePersistedState({ openState: "collapsed" })
-  }, [clearHideTimeout, updatePersistedState])
+    if (!isMobile) {
+      updatePersistedState({ openState: "collapsed" })
+    }
+  }, [clearHideTimeout, isMobile, updatePersistedState])
 
   // Track hovering state (don't hide when resizing or menu is open)
   const setHovering = useCallback(

@@ -29,11 +29,9 @@ export function useVisualViewport(enabled: boolean): VisualViewportState | null 
     update()
 
     vv.addEventListener("resize", update)
-    vv.addEventListener("scroll", update)
 
     return () => {
       vv.removeEventListener("resize", update)
-      vv.removeEventListener("scroll", update)
     }
   }, [enabled])
 
