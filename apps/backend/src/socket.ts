@@ -134,11 +134,13 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
         socket.join(userRoom)
         userRooms.set(wsId, { userId: workspaceUser.id, userRoom })
 
-        // Upsert session for push notification suppression
-        const deviceKey = deriveDeviceKey(socket.handshake.headers["user-agent"])
-        pushService.upsertSession({ workspaceId: wsId, userId: workspaceUser.id, deviceKey }).catch((err) => {
-          logger.warn({ err, wsId, userId: workspaceUser.id }, "Failed to upsert user session on join")
-        })
+        // Upsert session for push notification suppression (only when push is enabled)
+        if (pushService.isEnabled()) {
+          const deviceKey = deriveDeviceKey(socket.handshake.headers["user-agent"])
+          pushService.upsertSession({ workspaceId: wsId, userId: workspaceUser.id, deviceKey }).catch((err) => {
+            logger.warn({ err, wsId, userId: workspaceUser.id }, "Failed to upsert user session on join")
+          })
+        }
 
         // Track metrics
         wsConnectionsActive.inc({ workspace_id: wsId, room_pattern: roomPattern })
@@ -273,6 +275,7 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
     // Heartbeat for push notification session tracking
     // =========================================================================
     socket.on("heartbeat", () => {
+      if (!pushService.isEnabled()) return
       const deviceKey = deriveDeviceKey(socket.handshake.headers["user-agent"])
       for (const [wsId, entry] of userRooms) {
         pushService.upsertSession({ workspaceId: wsId, userId: entry.userId, deviceKey }).catch((err) => {

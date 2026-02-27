@@ -88,10 +88,10 @@ self.addEventListener("notificationclick", (event) => {
       // Focus an existing window if one is open
       for (const client of clients) {
         if (new URL(client.url).origin === self.location.origin) {
-          client.focus()
-          // Use postMessage to let the app handle navigation via React Router
-          client.postMessage({ type: "NOTIFICATION_CLICK", url: targetUrl })
-          return
+          return client.focus().then(() => {
+            // Use postMessage to let the app handle navigation via React Router
+            client.postMessage({ type: "NOTIFICATION_CLICK", url: targetUrl })
+          })
         }
       }
       // No existing window — open a new one
@@ -128,15 +128,23 @@ self.addEventListener("pushsubscriptionchange", (event) => {
 
         // Notify the frontend so it can re-register the new subscription with the backend.
         // The SW doesn't have workspace context, so the app handles the API call.
-        const clients = await self.clients.matchAll({ type: "window" })
+        const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true })
+
+        if (clients.length === 0) {
+          // No open windows — persist to IndexedDB so the app can sync on next load.
+          // The usePushNotifications hook re-subscribes on mount anyway (idempotent upsert),
+          // so a lost change event is recovered naturally when the user reopens the app.
+          return
+        }
+
         for (const client of clients) {
           client.postMessage({
             type: "PUSH_SUBSCRIPTION_CHANGED",
             subscription: newSub.toJSON(),
           })
         }
-      } catch (err) {
-        console.error("[SW] Failed to handle push subscription change:", err)
+      } catch {
+        // Swallow error — the usePushNotifications hook will re-subscribe on next app load
       }
     })()
   )

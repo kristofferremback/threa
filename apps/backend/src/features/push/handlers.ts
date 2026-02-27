@@ -3,8 +3,35 @@ import { z } from "zod"
 import { HttpError } from "../../lib/errors"
 import type { PushService } from "./service"
 
+/**
+ * Validate that a push endpoint URL is HTTPS and not targeting a private/loopback address.
+ * Web Push endpoints are always HTTPS URLs from browser push services (FCM, Mozilla, etc.).
+ */
+const pushEndpointSchema = z
+  .string()
+  .url()
+  .refine(
+    (url) => {
+      try {
+        const parsed = new URL(url)
+        if (parsed.protocol !== "https:") return false
+        const host = parsed.hostname
+        // Reject loopback and private IP ranges
+        if (host === "localhost" || host === "127.0.0.1" || host === "::1") return false
+        if (host.startsWith("10.")) return false
+        if (host.startsWith("192.168.")) return false
+        if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return false
+        if (host.startsWith("0.")) return false
+        return true
+      } catch {
+        return false
+      }
+    },
+    { message: "Push endpoint must be an HTTPS URL and must not target a private network address" }
+  )
+
 const subscribeSchema = z.object({
-  endpoint: z.string().url(),
+  endpoint: pushEndpointSchema,
   p256dh: z.string().min(1),
   auth: z.string().min(1),
   deviceKey: z.string().min(1),
@@ -12,7 +39,7 @@ const subscribeSchema = z.object({
 })
 
 const unsubscribeSchema = z.object({
-  endpoint: z.string().url(),
+  endpoint: pushEndpointSchema,
 })
 
 interface Dependencies {
