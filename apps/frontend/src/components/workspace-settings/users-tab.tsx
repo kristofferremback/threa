@@ -50,12 +50,14 @@ export function UsersTab({ workspaceId }: UsersTabProps) {
 
       <div className="space-y-2">
         {users.map((user) => (
-          <div key={user.id} className="flex items-center justify-between rounded-md border px-3 py-2">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">{user.name || user.slug}</span>
-              <span className="text-xs text-muted-foreground">@{user.slug}</span>
+          <div key={user.id} className="flex items-center justify-between gap-2 rounded-md border px-3 py-2">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-2 min-w-0">
+              <span className="text-sm font-medium truncate">{user.name || user.slug}</span>
+              <span className="text-xs text-muted-foreground truncate">@{user.slug}</span>
             </div>
-            <Badge variant={user.role === "owner" ? "default" : "secondary"}>{user.role}</Badge>
+            <Badge variant={user.role === "owner" ? "default" : "secondary"} className="shrink-0">
+              {user.role}
+            </Badge>
           </div>
         ))}
       </div>
@@ -65,15 +67,20 @@ export function UsersTab({ workspaceId }: UsersTabProps) {
           <h3 className="text-sm font-medium">Pending Invitations ({pendingInvitations.length})</h3>
           <div className="space-y-2">
             {pendingInvitations.map((invitation) => (
-              <div key={invitation.id} className="flex items-center justify-between rounded-md border px-3 py-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm">{invitation.email}</span>
-                  <Badge variant="outline">{invitation.role}</Badge>
-                  <span className="text-xs text-muted-foreground">
-                    Expires {new Date(invitation.expiresAt).toLocaleDateString()}
-                  </span>
+              <div
+                key={invitation.id}
+                className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-md border px-3 py-2"
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-2 min-w-0">
+                  <span className="text-sm truncate">{invitation.email}</span>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline">{invitation.role}</Badge>
+                    <span className="text-xs text-muted-foreground">
+                      Expires {new Date(invitation.expiresAt).toLocaleDateString()}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex gap-1">
+                <div className="flex gap-1 shrink-0">
                   <Button
                     size="sm"
                     variant="ghost"

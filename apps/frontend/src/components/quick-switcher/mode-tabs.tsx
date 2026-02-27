@@ -73,46 +73,62 @@ export function ModeTabs({
   }
 
   return (
-    <div className="flex gap-1 p-2 border-b" role="tablist" aria-label="Quick switcher modes">
-      {MODES.map(({ mode, label, shortcut }, index) => {
-        const isSelected = mode === currentMode
+    <div className="p-2 border-b">
+      {/* Mobile: native select dropdown */}
+      <select
+        value={currentMode}
+        onChange={(e) => handleTabClick(e.target.value as QuickSwitcherMode)}
+        className="sm:hidden w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+        aria-label="Quick switcher modes"
+      >
+        {MODES.map(({ mode, label, shortcut }) => (
+          <option key={mode} value={mode}>
+            {shortcut ? `(${shortcut}) ${label}` : label}
+          </option>
+        ))}
+      </select>
+      {/* Desktop: pill buttons */}
+      <div className="hidden sm:flex gap-1" role="tablist" aria-label="Quick switcher modes">
+        {MODES.map(({ mode, label, shortcut }, index) => {
+          const isSelected = mode === currentMode
 
-        return (
-          <button
-            key={mode}
-            ref={(el) => {
-              tabRefs.current[index] = el
-            }}
-            role="tab"
-            aria-selected={isSelected}
-            tabIndex={0}
-            onClick={() => handleTabClick(mode)}
-            onKeyDown={(e) => handleTabKeyDown(e, index)}
-            onFocus={() => onFocusedTabIndexChange(index)}
-            onBlur={() => {
-              // Only clear if we're not moving to another tab
-              requestAnimationFrame(() => {
-                if (!isMountedRef.current) return
-                const activeElement = document.activeElement
-                const isTabFocused = tabRefs.current.some((ref) => ref === activeElement)
-                if (!isTabFocused) {
-                  onFocusedTabIndexChange(null)
-                }
-              })
-            }}
-            className={cn(
-              "px-3 py-1.5 text-xs font-medium transition-colors rounded-pill",
-              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
-              isSelected
-                ? "bg-primary/15 text-primary border border-primary/40"
-                : "text-muted-foreground hover:text-foreground hover:bg-secondary border border-transparent"
-            )}
-          >
-            {shortcut && <span className="text-muted-foreground mr-1">({shortcut})</span>}
-            {label}
-          </button>
-        )
-      })}
+          return (
+            <button
+              key={mode}
+              ref={(el) => {
+                tabRefs.current[index] = el
+              }}
+              role="tab"
+              aria-selected={isSelected}
+              tabIndex={0}
+              onClick={() => handleTabClick(mode)}
+              onKeyDown={(e) => handleTabKeyDown(e, index)}
+              onFocus={() => onFocusedTabIndexChange(index)}
+              onBlur={() => {
+                // Only clear if we're not moving to another tab
+                requestAnimationFrame(() => {
+                  if (!isMountedRef.current) return
+                  const activeElement = document.activeElement
+                  const isTabFocused = tabRefs.current.some((ref) => ref === activeElement)
+                  if (!isTabFocused) {
+                    onFocusedTabIndexChange(null)
+                  }
+                })
+              }}
+              className={cn(
+                "px-3 py-1.5 text-xs font-medium transition-colors rounded-pill",
+                "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+                isSelected
+                  ? "bg-primary/15 text-primary border border-primary/40"
+                  : "text-muted-foreground hover:text-foreground hover:bg-secondary border border-transparent"
+              )}
+            >
+              {shortcut && <span className="text-muted-foreground mr-1">({shortcut})</span>}
+              {label}
+            </button>
+          )
+        })}
+      </div>
     </div>
   )
 }

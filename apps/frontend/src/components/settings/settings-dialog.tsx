@@ -42,7 +42,20 @@ export function SettingsDialog() {
           onValueChange={(value) => setActiveTab(value as SettingsTab)}
           className="flex-1 flex flex-col overflow-hidden"
         >
-          <TabsList className="grid w-full grid-cols-6">
+          {/* Mobile: native select dropdown */}
+          <select
+            value={activeTab}
+            onChange={(e) => setActiveTab(e.target.value as SettingsTab)}
+            className="sm:hidden w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+          >
+            {SETTINGS_TABS.map((tab: SettingsTab) => (
+              <option key={tab} value={tab}>
+                {TAB_LABELS[tab]}
+              </option>
+            ))}
+          </select>
+          {/* Desktop: tab grid */}
+          <TabsList className="hidden sm:grid w-full grid-cols-6">
             {SETTINGS_TABS.map((tab: SettingsTab) => (
               <TabsTrigger key={tab} value={tab}>
                 {TAB_LABELS[tab]}
