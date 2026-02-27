@@ -90,8 +90,11 @@ export const PushSubscriptionRepository = {
     return (result.rowCount ?? 0) > 0
   },
 
-  async deleteById(db: Querier, id: string): Promise<void> {
-    await db.query(sql`DELETE FROM push_subscriptions WHERE id = ${id}`)
+  async deleteById(db: Querier, workspaceId: string, id: string): Promise<void> {
+    await db.query(sql`
+      DELETE FROM push_subscriptions
+      WHERE workspace_id = ${workspaceId} AND id = ${id}
+    `)
   },
 
   async findByUserId(db: Querier, workspaceId: string, userId: string): Promise<PushSubscription[]> {
@@ -100,22 +103,6 @@ export const PushSubscriptionRepository = {
       WHERE workspace_id = ${workspaceId}
         AND user_id = ${userId}
       ORDER BY created_at DESC
-    `)
-    return result.rows.map(mapRowToSubscription)
-  },
-
-  async findByUserIdAndDeviceKeys(
-    db: Querier,
-    workspaceId: string,
-    userId: string,
-    deviceKeys: string[]
-  ): Promise<PushSubscription[]> {
-    if (deviceKeys.length === 0) return []
-    const result = await db.query<PushSubscriptionRow>(sql`
-      SELECT * FROM push_subscriptions
-      WHERE workspace_id = ${workspaceId}
-        AND user_id = ${userId}
-        AND device_key = ANY(${deviceKeys})
     `)
     return result.rows.map(mapRowToSubscription)
   },

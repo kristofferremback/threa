@@ -159,7 +159,11 @@ export class PushNotificationHandler implements OutboxHandler {
           if (statusCode === 404 || statusCode === 410) {
             // Subscription expired or unsubscribed — clean up
             logger.info({ subscriptionId: sub.id, statusCode }, "Removing stale push subscription")
-            await PushSubscriptionRepository.deleteById(this.db, sub.id)
+            try {
+              await PushSubscriptionRepository.deleteById(this.db, workspaceId, sub.id)
+            } catch (deleteErr) {
+              logger.warn({ err: deleteErr, subscriptionId: sub.id }, "Failed to delete stale subscription")
+            }
           } else {
             logger.warn({ err, subscriptionId: sub.id }, "Failed to send push notification")
           }
@@ -196,10 +200,13 @@ export class PushNotificationHandler implements OutboxHandler {
 
   /**
    * Session-aware delivery:
-   * - If 1+ sessions are active: push only to subscriptions matching those active device keys
+   * - If 1+ sessions are active: suppress push on those devices, push only to offline ones
    * - If 0 sessions are active (user fully offline): push to ALL subscriptions
    */
   private async getTargetSubscriptions(workspaceId: string, userId: string) {
+    const allSubscriptions = await PushSubscriptionRepository.findByUserId(this.db, workspaceId, userId)
+    if (allSubscriptions.length === 0) return []
+
     const activeSessions = await UserSessionRepository.getActiveSessions(
       this.db,
       workspaceId,
@@ -208,13 +215,13 @@ export class PushNotificationHandler implements OutboxHandler {
     )
 
     if (activeSessions.length > 0) {
-      // Push only to devices with active sessions
-      const activeDeviceKeys = activeSessions.map((s) => s.deviceKey)
-      return PushSubscriptionRepository.findByUserIdAndDeviceKeys(this.db, workspaceId, userId, activeDeviceKeys)
+      // Suppress push on devices where the user is currently active
+      const activeDeviceKeys = new Set(activeSessions.map((s) => s.deviceKey))
+      return allSubscriptions.filter((s) => !activeDeviceKeys.has(s.deviceKey))
     }
 
     // Fully offline — push to all devices
-    return PushSubscriptionRepository.findByUserId(this.db, workspaceId, userId)
+    return allSubscriptions
   }
 
   private buildTitle(activityType: string): string {

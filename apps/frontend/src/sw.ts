@@ -64,11 +64,12 @@ self.addEventListener("notificationclick", (event) => {
       for (const client of clients) {
         if (new URL(client.url).origin === self.location.origin) {
           client.focus()
-          client.navigate(targetUrl)
+          // Use postMessage to let the app handle navigation via React Router
+          client.postMessage({ type: "NOTIFICATION_CLICK", url: targetUrl })
           return
         }
       }
-      // Open a new window
+      // No existing window — open a new one
       return self.clients.openWindow(targetUrl)
     })
   )
@@ -100,10 +101,15 @@ self.addEventListener("pushsubscriptionchange", (event) => {
 
         if (!newSub) return
 
-        // We don't have workspace context in the SW, so we POST to a well-known
-        // endpoint and the backend resolves workspace from the old endpoint.
-        // For now, log and let the frontend re-subscribe on next load.
-        console.log("[SW] Push subscription changed, new subscription:", newSub.endpoint)
+        // Notify the frontend so it can re-register the new subscription with the backend.
+        // The SW doesn't have workspace context, so the app handles the API call.
+        const clients = await self.clients.matchAll({ type: "window" })
+        for (const client of clients) {
+          client.postMessage({
+            type: "PUSH_SUBSCRIPTION_CHANGED",
+            subscription: newSub.toJSON(),
+          })
+        }
       } catch (err) {
         console.error("[SW] Failed to handle push subscription change:", err)
       }

@@ -9,32 +9,17 @@ interface UsePushNotificationsResult {
   requestPermission: () => Promise<void>
 }
 
-function deriveDeviceKey(): string {
-  // Match the backend's device key derivation: sha256(userAgent).slice(0, 16)
-  // In the browser we use a simpler approach - hash the user agent string
-  const ua = navigator.userAgent
-  let hash = 0
-  for (let i = 0; i < ua.length; i++) {
-    const char = ua.charCodeAt(i)
-    hash = (hash << 5) - hash + char
-    hash |= 0 // Convert to 32-bit int
-  }
-  return Math.abs(hash).toString(16).padStart(8, "0")
-}
-
 async function getDeviceKey(): Promise<string> {
-  // Use SubtleCrypto when available for consistency with backend's SHA-256
-  if (crypto.subtle) {
-    const encoder = new TextEncoder()
-    const data = encoder.encode(navigator.userAgent)
-    const hashBuffer = await crypto.subtle.digest("SHA-256", data)
-    const hashArray = Array.from(new Uint8Array(hashBuffer))
-    return hashArray
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("")
-      .slice(0, 16)
-  }
-  return deriveDeviceKey()
+  // Must match backend's deriveDeviceKey: sha256(userAgent).hex().slice(0, 16)
+  // crypto.subtle is always available in secure contexts (HTTPS + localhost)
+  const encoder = new TextEncoder()
+  const data = encoder.encode(navigator.userAgent)
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data)
+  const hashArray = Array.from(new Uint8Array(hashBuffer))
+  return hashArray
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("")
+    .slice(0, 16)
 }
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
@@ -92,18 +77,15 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
     [workspaceId]
   )
 
-  // Check existing subscription on mount
+  // Ensure subscription is registered with backend on mount (idempotent upsert)
   useEffect(() => {
     if (permission !== "granted" || !workspaceId) return
 
     navigator.serviceWorker?.ready
       .then(async (registration) => {
-        const existing = await registration.pushManager.getSubscription()
-        if (existing) {
-          setIsSubscribed(true)
-        } else {
-          await subscribe(registration)
-        }
+        // Always call subscribe — it upserts on the backend, so it handles both
+        // new subscriptions and re-registering after pushsubscriptionchange events.
+        await subscribe(registration)
       })
       .catch((err) => {
         console.error("[Push] Failed to check subscription:", err)

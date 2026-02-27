@@ -25,8 +25,8 @@ export class PushService {
     return PushSubscriptionRepository.findByUserId(this.pool, workspaceId, userId)
   }
 
-  async removeSubscription(id: string): Promise<void> {
-    return PushSubscriptionRepository.deleteById(this.pool, id)
+  async removeSubscription(workspaceId: string, id: string): Promise<void> {
+    return PushSubscriptionRepository.deleteById(this.pool, workspaceId, id)
   }
 
   async upsertSession(params: { workspaceId: string; userId: string; deviceKey: string }): Promise<UserSession> {
