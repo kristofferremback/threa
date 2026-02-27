@@ -277,7 +277,6 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         ref={dialogRef}
-        hideCloseButton
         className="overflow-hidden p-0 max-sm:p-0 max-sm:gap-0 max-sm:overflow-hidden shadow-lg sm:!fixed sm:!top-[20%] sm:!translate-y-0 sm:max-w-[600px] sm:rounded-2xl sm:border"
         onPointerDownOutside={(e) => {
           // Prevent closing when clicking on suggestion popover (rendered via portal)
@@ -363,8 +362,8 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
           }
         }}
       >
-        {/* Input area */}
-        <div className="p-4 border-b border-border">
+        {/* Input area — pr-10 leaves room for the dialog close button */}
+        <div className="p-4 pr-10 border-b border-border">
           <div className="flex items-center gap-3 px-4 py-3 rounded-[10px] border border-border bg-background transition-all focus-within:border-primary/60 focus-within:shadow-[0_0_0_2px_hsl(var(--primary)/0.06)]">
             <ModeIcon className="h-4 w-4 shrink-0 opacity-50" />
             {inputRequest ? (

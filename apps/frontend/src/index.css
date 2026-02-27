@@ -13,6 +13,11 @@
  */
 
 @layer base {
+  /* Disable double-tap zoom on mobile — the app is not zoomable */
+  html {
+    touch-action: manipulation;
+  }
+
   :root {
     /* Base canvas - very subtle warm tint */
     --background: 40 20% 98%;
