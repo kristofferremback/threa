@@ -89,15 +89,15 @@ function MessageLayout({
         "message-item group relative flex gap-[14px] mb-5",
         // AI/Persona messages get full-width gradient with gold accent
         isPersona &&
-          "bg-gradient-to-r from-primary/[0.06] to-transparent -mx-6 px-6 py-4 shadow-[inset_3px_0_0_hsl(var(--primary))]",
+          "bg-gradient-to-r from-primary/[0.06] to-transparent -mx-3 px-3 sm:-mx-6 sm:px-6 py-4 shadow-[inset_3px_0_0_hsl(var(--primary))]",
         // System messages get a subtle info-toned accent
         isSystem &&
-          "bg-gradient-to-r from-blue-500/[0.04] to-transparent -mx-6 px-6 py-4 shadow-[inset_3px_0_0_hsl(210_100%_55%)]",
+          "bg-gradient-to-r from-blue-500/[0.04] to-transparent -mx-3 px-3 sm:-mx-6 sm:px-6 py-4 shadow-[inset_3px_0_0_hsl(210_100%_55%)]",
         // Edit mode: pseudo-element background so no layout shift — zero padding/margin changes
         isEditing &&
           !isPersona &&
           !isSystem &&
-          "before:content-[''] before:absolute before:-top-4 before:-bottom-4 before:-left-6 before:-right-6 before:bg-primary/[0.04] before:-z-10",
+          "before:content-[''] before:absolute before:-top-4 before:-bottom-4 before:-left-3 before:-right-3 sm:before:-left-6 sm:before:-right-6 before:bg-primary/[0.04] before:-z-10",
         isHighlighted && "animate-highlight-flash",
         containerClassName
       )}
@@ -230,7 +230,7 @@ function SentMessageEvent({
           to={draftPanelUrl}
           className={cn(
             "text-muted-foreground hover:text-foreground hover:underline transition-opacity",
-            !activityLabel && "opacity-0 group-hover:opacity-100"
+            !activityLabel && "opacity-0 group-hover:opacity-100 max-sm:opacity-100"
           )}
         >
           Reply in thread
@@ -284,7 +284,7 @@ function SentMessageEvent({
         actions={
           <div
             className={cn(
-              "opacity-0 group-hover:opacity-100 has-[[data-state=open]]:opacity-100 transition-opacity ml-auto flex items-center gap-1",
+              "opacity-0 group-hover:opacity-100 max-sm:opacity-100 has-[[data-state=open]]:opacity-100 transition-opacity ml-auto flex items-center gap-1",
               isEditing && "!opacity-0 pointer-events-none"
             )}
           >

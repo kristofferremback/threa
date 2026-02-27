@@ -253,7 +253,7 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
               </Empty>
             </div>
             <div className="border-t">
-              <div className="p-6 mx-auto max-w-[800px] w-full min-w-0">
+              <div className="p-3 sm:p-6 mx-auto max-w-[800px] w-full min-w-0">
                 <MessageComposer
                   content={composer.content}
                   onContentChange={composer.handleContentChange}

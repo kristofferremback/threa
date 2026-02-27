@@ -1,5 +1,6 @@
 import { useMemo } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { ChevronDown } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
@@ -84,16 +85,32 @@ export function StreamSettingsDialog({ workspaceId }: StreamSettingsDialogProps)
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && closeStreamSettings()}>
-      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+      <DialogContent className="max-w-2xl max-h-[85vh] max-sm:max-h-none flex flex-col">
         <DialogHeader>
           <DialogTitle>{streamName} Settings</DialogTitle>
         </DialogHeader>
 
         {resolvedStream && streamId && currentUserId ? (
           <Tabs value={effectiveTab} onValueChange={setTab} className="flex-1 flex flex-col overflow-hidden">
+            {/* Mobile: native select dropdown */}
+            <div className="relative sm:hidden">
+              <select
+                value={effectiveTab}
+                onChange={(e) => setTab(e.target.value)}
+                className="w-full h-9 rounded-md border border-input bg-background pl-3 pr-10 text-sm appearance-none"
+              >
+                {availableTabs.map((tab) => (
+                  <option key={tab} value={tab}>
+                    {TAB_LABELS[tab]}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+            </div>
+            {/* Desktop: tab grid */}
             <TabsList
               className={cn(
-                "grid w-full",
+                "hidden sm:grid w-full",
                 availableTabs.length === 1 && "grid-cols-1",
                 availableTabs.length === 2 && "grid-cols-2",
                 availableTabs.length === 3 && "grid-cols-3"

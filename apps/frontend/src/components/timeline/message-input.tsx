@@ -160,7 +160,7 @@ export function MessageInput({
       {/* Message composer - hidden when doc editor is open */}
       <div
         className={cn(
-          "p-6 mx-auto max-w-[800px] w-full min-w-0 transition-all duration-200",
+          "p-3 sm:p-6 mx-auto max-w-[800px] w-full min-w-0 transition-all duration-200",
           docEditorOpen && "h-0 p-0 overflow-hidden opacity-0"
         )}
       >

@@ -103,7 +103,7 @@ export function StreamItemContextMenu({ children }: { children: ReactNode }) {
         <Button
           variant="ghost"
           size="icon"
-          className="absolute right-1 top-1 h-6 w-6 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
+          className="absolute right-1 top-1 h-6 w-6 opacity-0 group-hover:opacity-100 max-sm:opacity-100 data-[state=open]:opacity-100"
           onClick={(e) => {
             e.preventDefault()
             e.stopPropagation()

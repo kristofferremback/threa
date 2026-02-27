@@ -135,7 +135,7 @@ export function StreamPage() {
   const mainStreamContent = (
     <div className="flex h-full flex-col">
       <header className="flex h-11 items-center justify-between border-b px-4">
-        <div className="flex items-center gap-2 flex-1">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
           {isEditing ? (
             <Input
               ref={inputRef}
@@ -151,17 +151,17 @@ export function StreamPage() {
             <ThreadHeader workspaceId={workspaceId} stream={stream} />
           ) : isScratchpad ? (
             <div
-              className="group inline-flex items-center gap-1 rounded-md px-2 py-1 -ml-2 hover:bg-accent/50 hover:outline hover:outline-1 hover:outline-border cursor-pointer transition-colors"
+              className="group inline-flex items-center gap-1 rounded-md px-2 py-1 -ml-2 hover:bg-accent/50 hover:outline hover:outline-1 hover:outline-border cursor-pointer transition-colors min-w-0"
               onClick={handleStartRename}
             >
-              <h1 className="font-semibold">
+              <h1 className="font-semibold truncate">
                 {streamName}
                 {isDraft && <span className="ml-2 text-xs font-normal text-muted-foreground">(draft)</span>}
               </h1>
-              <Pencil className="h-3.5 w-3.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+              <Pencil className="h-3.5 w-3.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>
           ) : (
-            <h1 className="font-semibold">{streamName}</h1>
+            <h1 className="font-semibold truncate">{streamName}</h1>
           )}
           {stream && !isThread && !isDraft && !isChannel && !isUnnamedScratchpad && (
             <Badge variant="secondary">{getStreamTypeLabel(stream.type)}</Badge>
@@ -234,7 +234,7 @@ export function StreamPage() {
       {/* Panel */}
       <div
         className={cn(
-          "fixed inset-y-0 right-0 z-50 w-80 sm:w-96 bg-background border-l shadow-lg flex flex-col",
+          "fixed inset-y-0 right-0 z-50 w-full sm:w-96 bg-background border-l shadow-lg flex flex-col",
           "transition-transform duration-300 ease-out",
           isConversationViewOpen ? "translate-x-0" : "translate-x-full"
         )}

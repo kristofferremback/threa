@@ -104,7 +104,7 @@ export function MessageEditForm({
         />
       </div>
       <div className="flex items-center gap-1.5 mt-1">
-        <span className="text-[11px] text-muted-foreground/70 flex items-center gap-1.5 mr-auto">
+        <span className="text-[11px] text-muted-foreground/70 hidden sm:flex items-center gap-1.5 mr-auto">
           <kbd className="kbd-hint">Esc</kbd> cancel
           <span className="text-muted-foreground/30">·</span>
           <kbd className="kbd-hint">↵</kbd> save
