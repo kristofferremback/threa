@@ -221,7 +221,7 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
         ) : isThread && stream ? (
           <ThreadHeader workspaceId={workspaceId} stream={stream} inPanel />
         ) : (
-          <SidePanelTitle>
+          <SidePanelTitle className="flex-1">
             {stream ? (getStreamName(stream) ?? streamFallbackLabel(stream.type as StreamType, "generic")) : "Stream"}
           </SidePanelTitle>
         )}

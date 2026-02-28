@@ -1,7 +1,6 @@
 import type { ReactNode } from "react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./select"
 import { TabsList, TabsTrigger } from "./tabs"
-import { cn } from "@/lib/utils"
 
 interface ResponsiveTabsProps<T extends string> {
   tabs: readonly T[]
@@ -48,17 +47,7 @@ export function ResponsiveTabs<T extends string>({
       </div>
       {/* Desktop: custom children or default tab grid */}
       {children ?? (
-        <TabsList
-          className={cn(
-            "hidden sm:grid w-full",
-            cols === 1 && "grid-cols-1",
-            cols === 2 && "grid-cols-2",
-            cols === 3 && "grid-cols-3",
-            cols === 4 && "grid-cols-4",
-            cols === 5 && "grid-cols-5",
-            cols === 6 && "grid-cols-6"
-          )}
-        >
+        <TabsList className="hidden sm:grid w-full" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
           {tabs.map((tab) => (
             <TabsTrigger key={tab} value={tab}>
               {labels[tab]}

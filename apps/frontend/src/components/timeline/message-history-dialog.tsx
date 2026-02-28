@@ -52,7 +52,7 @@ export function MessageHistoryDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+      <DialogContent className="max-w-2xl max-h-[80vh] max-sm:max-h-none flex flex-col">
         <DialogHeader>
           <DialogTitle>Edit history</DialogTitle>
         </DialogHeader>
