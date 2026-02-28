@@ -23,11 +23,10 @@ test.describe("Push Notification Settings", () => {
     const dialog = page.getByRole("dialog", { name: "Settings" })
     await expect(dialog).toBeVisible({ timeout: 10000 })
 
-    // Verify all three notification cards are present
+    // Verify notification cards are present
     await expect(dialog.getByText("Notification Level")).toBeVisible()
     await expect(dialog.getByText("Push Notifications", { exact: true })).toBeVisible()
     await expect(dialog.getByText("Get notified even when you're away from the app")).toBeVisible()
-    await expect(dialog.getByText("Coming Soon")).toBeVisible()
   })
 
   test("shows blocked message in headless browser (default denied permission)", async ({ page }) => {

@@ -20,7 +20,7 @@ const NOTIFICATION_DESCRIPTIONS: Record<PrefNotificationLevel, string> = {
 }
 
 function PushNotificationCard({ workspaceId }: { workspaceId: string }) {
-  const { permission, isSubscribed, requestPermission } = usePushNotifications(workspaceId)
+  const { permission, isSubscribed, pushDisabledOnServer, requestPermission } = usePushNotifications(workspaceId)
 
   if (permission === "unsupported") {
     return (
@@ -72,7 +72,10 @@ function PushNotificationCard({ workspaceId }: { workspaceId: string }) {
         {permission === "granted" && isSubscribed && (
           <p className="text-sm text-muted-foreground">Push notifications are enabled for this device.</p>
         )}
-        {permission === "granted" && !isSubscribed && (
+        {permission === "granted" && !isSubscribed && pushDisabledOnServer && (
+          <p className="text-sm text-muted-foreground">Push notifications are not available on this server.</p>
+        )}
+        {permission === "granted" && !isSubscribed && !pushDisabledOnServer && (
           <p className="text-sm text-muted-foreground">Subscribing to push notifications...</p>
         )}
       </CardContent>
@@ -115,18 +118,6 @@ export function NotificationsSettings() {
       </Card>
 
       {workspaceId && <PushNotificationCard workspaceId={workspaceId} />}
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Coming Soon</CardTitle>
-          <CardDescription>More notification settings are on the way</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">
-            Per-stream notification overrides, quiet hours, and sound preferences will be available in a future update.
-          </p>
-        </CardContent>
-      </Card>
     </div>
   )
 }

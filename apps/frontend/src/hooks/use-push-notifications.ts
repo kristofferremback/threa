@@ -12,6 +12,8 @@ interface VapidConfig {
 interface UsePushNotificationsResult {
   permission: PushPermission
   isSubscribed: boolean
+  /** True when push is disabled on the backend (no VAPID keys configured). */
+  pushDisabledOnServer: boolean
   requestPermission: () => Promise<void>
 }
 
@@ -49,6 +51,7 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
     return Notification.permission
   })
   const [isSubscribed, setIsSubscribed] = useState(false)
+  const [pushDisabledOnServer, setPushDisabledOnServer] = useState(false)
   const vapidCacheRef = useRef<{ workspaceId: string; config: VapidConfig } | null>(null)
 
   // Subscribe to push notifications
@@ -70,8 +73,10 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
 
         if (!enabled || !vapidPublicKey) {
           setIsSubscribed(false)
+          setPushDisabledOnServer(true)
           return
         }
+        setPushDisabledOnServer(false)
 
         // Reuse existing browser subscription if available to avoid redundant push service round-trips.
         // Only call pushManager.subscribe() when no subscription exists (first-time or after revocation).
@@ -157,5 +162,5 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
     }
   }, [subscribe])
 
-  return { permission, isSubscribed, requestPermission }
+  return { permission, isSubscribed, pushDisabledOnServer, requestPermission }
 }

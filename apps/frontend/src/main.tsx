@@ -1,15 +1,16 @@
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { App } from "./App"
+import { router } from "./routes"
 import "./index.css"
 
 // Handle messages from the service worker
 navigator.serviceWorker?.addEventListener("message", (event) => {
   if (event.data?.type === "NOTIFICATION_CLICK" && event.data.url) {
-    // Only navigate to same-origin paths to prevent open redirect
+    // Client-side navigation preserves React tree, TanStack Query cache, and socket connection
     const url = event.data.url as string
     if (url.startsWith("/")) {
-      window.location.href = url
+      router.navigate(url)
     }
   }
   if (event.data?.type === "PUSH_SUBSCRIPTION_CHANGED") {
