@@ -17,17 +17,18 @@ const pushEndpointSchema = z
         if (parsed.protocol !== "https:") return false
         const host = parsed.hostname
         // Reject loopback, private IP ranges, and link-local addresses (IPv4 + IPv6)
-        if (host === "localhost" || /^127\./.test(host) || host === "::1") return false
+        // URL.hostname retains brackets for IPv6: new URL("https://[::1]/").hostname → "[::1]"
+        if (host === "localhost" || /^127\./.test(host) || host === "[::1]") return false
         if (host.startsWith("10.")) return false
         if (host.startsWith("192.168.")) return false
         if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return false
         if (host.startsWith("169.254.")) return false
         if (host.startsWith("0.")) return false
-        // IPv6 private ranges — URL.hostname strips brackets from IPv6 addresses
+        // IPv6 private ranges: IPv4-mapped (::ffff:), unique local (fc/fd), link-local (fe80)
         const hostLower = host.toLowerCase()
-        if (hostLower.startsWith("::ffff:")) return false
-        if (hostLower.startsWith("fc") || hostLower.startsWith("fd")) return false
-        if (hostLower.startsWith("fe80")) return false
+        if (hostLower.startsWith("[::ffff:")) return false
+        if (hostLower.startsWith("[fc") || hostLower.startsWith("[fd")) return false
+        if (hostLower.startsWith("[fe80")) return false
         return true
       } catch {
         return false

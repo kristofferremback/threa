@@ -1,6 +1,6 @@
 import type { Pool } from "pg"
 import webpush from "web-push"
-import { withTransaction } from "../../db"
+import { withClient, withTransaction } from "../../db"
 import { PushSubscriptionRepository, type PushSubscription, type InsertPushSubscriptionParams } from "./repository"
 import { UserSessionRepository, type UserSession } from "./session-repository"
 import {
@@ -230,15 +230,16 @@ export class PushService {
    * This is acceptable since same-UA instances are typically on the same physical device.
    */
   private async getTargetSubscriptions(workspaceId: string, userId: string) {
-    const allSubscriptions = await PushSubscriptionRepository.findByUserId(this.pool, workspaceId, userId)
+    // Multiple related reads: use withClient for connection consistency (INV-30)
+    const { allSubscriptions, activeSessions } = await withClient(this.pool, async (client) => {
+      const allSubscriptions = await PushSubscriptionRepository.findByUserId(client, workspaceId, userId)
+      const activeSessions =
+        allSubscriptions.length > 0
+          ? await UserSessionRepository.getActiveSessions(client, workspaceId, userId, ACTIVE_SESSION_WINDOW_MS)
+          : []
+      return { allSubscriptions, activeSessions }
+    })
     if (allSubscriptions.length === 0) return []
-
-    const activeSessions = await UserSessionRepository.getActiveSessions(
-      this.pool,
-      workspaceId,
-      userId,
-      ACTIVE_SESSION_WINDOW_MS
-    )
 
     if (activeSessions.length > 0) {
       const activeDeviceKeys = new Set(activeSessions.map((s) => s.deviceKey))

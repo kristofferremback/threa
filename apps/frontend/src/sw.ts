@@ -1,21 +1,12 @@
 /// <reference lib="webworker" />
 import { precacheAndRoute } from "workbox-precaching"
 import { ActivityTypes } from "@threa/types"
+import { SW_MSG_NOTIFICATION_CLICK, SW_MSG_SUBSCRIPTION_CHANGED } from "./lib/sw-messages"
 
 declare const self: ServiceWorkerGlobalScope
 
 // Precache app shell assets injected by vite-plugin-pwa
 precacheAndRoute(self.__WB_MANIFEST)
-
-// ============================================================================
-// Service worker ↔ app message types (INV-33)
-// ============================================================================
-
-/** Posted to the focused window when user clicks a notification. */
-const SW_MSG_NOTIFICATION_CLICK = "NOTIFICATION_CLICK"
-
-/** Posted to all windows when the push subscription is rotated by the browser. */
-const SW_MSG_SUBSCRIPTION_CHANGED = "PUSH_SUBSCRIPTION_CHANGED"
 
 // ============================================================================
 // Push notification handling
