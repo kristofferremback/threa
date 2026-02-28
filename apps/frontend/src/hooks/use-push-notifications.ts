@@ -15,6 +15,7 @@ interface UsePushNotificationsResult {
   /** True when push is disabled on the backend (no VAPID keys configured). */
   pushDisabledOnServer: boolean
   requestPermission: () => Promise<void>
+  unsubscribe: () => Promise<void>
 }
 
 /**
@@ -142,6 +143,33 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
     return () => window.removeEventListener("pushsubscriptionchanged", handleSubscriptionChange)
   }, [permission, workspaceId, subscribe])
 
+  // Unsubscribe from push notifications
+  const unsubscribe = useCallback(async () => {
+    if (!workspaceId) return
+
+    try {
+      const registration = await navigator.serviceWorker?.ready
+      if (!registration) return
+
+      const subscription = await registration.pushManager.getSubscription()
+      if (!subscription) {
+        setIsSubscribed(false)
+        return
+      }
+
+      // Remove from backend
+      await api.post(`/api/workspaces/${workspaceId}/push/unsubscribe`, {
+        endpoint: subscription.endpoint,
+      })
+
+      // Unsubscribe from browser push service
+      await subscription.unsubscribe()
+      setIsSubscribed(false)
+    } catch (err) {
+      console.error("[Push] Failed to unsubscribe:", err)
+    }
+  }, [workspaceId])
+
   // Request permission and subscribe
   const requestPermission = useCallback(async () => {
     if (!("Notification" in window) || !("serviceWorker" in navigator)) {
@@ -162,5 +190,5 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
     }
   }, [subscribe])
 
-  return { permission, isSubscribed, pushDisabledOnServer, requestPermission }
+  return { permission, isSubscribed, pushDisabledOnServer, requestPermission, unsubscribe }
 }

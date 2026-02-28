@@ -386,6 +386,9 @@ describe("Push Notifications", () => {
       )
 
       expect(sendSpy).toHaveBeenCalledTimes(1)
+      expect(sendSpy.mock.calls[0][0]).toMatchObject({
+        endpoint: "https://push.example.com/sub/mentions-mention",
+      })
     })
 
     test("pref=mentions, activityType=message in DM pushes", async () => {
@@ -413,6 +416,9 @@ describe("Push Notifications", () => {
       )
 
       expect(sendSpy).toHaveBeenCalledTimes(1)
+      expect(sendSpy.mock.calls[0][0]).toMatchObject({
+        endpoint: "https://push.example.com/sub/mentions-dm",
+      })
     })
 
     test("pref=all pushes for any activity", async () => {
@@ -439,6 +445,9 @@ describe("Push Notifications", () => {
       )
 
       expect(sendSpy).toHaveBeenCalledTimes(1)
+      expect(sendSpy.mock.calls[0][0]).toMatchObject({
+        endpoint: "https://push.example.com/sub/all-activity",
+      })
     })
 
     test("session-aware: user active on device skips that device", async () => {
@@ -503,6 +512,11 @@ describe("Push Notifications", () => {
       await service.deliverPushForActivity(makePayload())
 
       expect(sendSpy).toHaveBeenCalledTimes(2)
+      const calledEndpoints = sendSpy.mock.calls.map((c) => c[0].endpoint).sort()
+      expect(calledEndpoints).toEqual([
+        "https://push.example.com/sub/offline-1",
+        "https://push.example.com/sub/offline-2",
+      ])
     })
 
     test("stale subscription cleanup on 410 response", async () => {

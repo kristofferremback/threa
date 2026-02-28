@@ -259,7 +259,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const push = createPushHandlers({ pushService })
   app.get("/api/workspaces/:workspaceId/push/vapid-key", ...authed, push.getVapidKey)
   app.post("/api/workspaces/:workspaceId/push/subscribe", ...authed, push.subscribe)
-  app.delete("/api/workspaces/:workspaceId/push/subscribe", ...authed, push.unsubscribe)
+  app.post("/api/workspaces/:workspaceId/push/unsubscribe", ...authed, push.unsubscribe)
 
   // Agent Sessions (trace viewing)
   app.get("/api/workspaces/:workspaceId/agent-sessions/:sessionId", ...authed, agentSession.getSession)
