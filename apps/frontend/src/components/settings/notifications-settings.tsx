@@ -20,7 +20,7 @@ const NOTIFICATION_DESCRIPTIONS: Record<PrefNotificationLevel, string> = {
 }
 
 function PushNotificationCard({ workspaceId }: { workspaceId: string }) {
-  const { permission, isSubscribed, pushDisabledOnServer, requestPermission, unsubscribe } =
+  const { permission, isSubscribed, optedOut, pushDisabledOnServer, requestPermission, unsubscribe } =
     usePushNotifications(workspaceId)
 
   if (permission === "unsupported") {
@@ -78,10 +78,18 @@ function PushNotificationCard({ workspaceId }: { workspaceId: string }) {
             </Button>
           </div>
         )}
-        {permission === "granted" && !isSubscribed && pushDisabledOnServer && (
+        {permission === "granted" && !isSubscribed && optedOut && (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">Push notifications are disabled for this device.</p>
+            <Button onClick={requestPermission} variant="outline" size="sm">
+              Enable push notifications
+            </Button>
+          </div>
+        )}
+        {permission === "granted" && !isSubscribed && !optedOut && pushDisabledOnServer && (
           <p className="text-sm text-muted-foreground">Push notifications are not available on this server.</p>
         )}
-        {permission === "granted" && !isSubscribed && !pushDisabledOnServer && (
+        {permission === "granted" && !isSubscribed && !optedOut && !pushDisabledOnServer && (
           <p className="text-sm text-muted-foreground">Subscribing to push notifications...</p>
         )}
       </CardContent>

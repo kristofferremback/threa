@@ -12,6 +12,8 @@ interface VapidConfig {
 interface UsePushNotificationsResult {
   permission: PushPermission
   isSubscribed: boolean
+  /** True when the user has explicitly opted out of push for this workspace. */
+  optedOut: boolean
   /** True when push is disabled on the backend (no VAPID keys configured). */
   pushDisabledOnServer: boolean
   requestPermission: () => Promise<void>
@@ -56,12 +58,19 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return outputArray
 }
 
+function pushOptOutKey(workspaceId: string): string {
+  return `threa:push-opted-out:${workspaceId}`
+}
+
 export function usePushNotifications(workspaceId: string | undefined): UsePushNotificationsResult {
   const [permission, setPermission] = useState<PushPermission>(() => {
     if (typeof window === "undefined" || !("Notification" in window)) return "unsupported"
     return Notification.permission
   })
   const [isSubscribed, setIsSubscribed] = useState(false)
+  const [optedOut, setOptedOut] = useState(() =>
+    workspaceId ? localStorage.getItem(pushOptOutKey(workspaceId)) === "1" : false
+  )
   const [pushDisabledOnServer, setPushDisabledOnServer] = useState(false)
   const vapidCacheRef = useRef<{ workspaceId: string; config: VapidConfig } | null>(null)
 
@@ -137,9 +146,10 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
     }
   }, [permission, workspaceId])
 
-  // Ensure subscription is registered with backend on mount (idempotent upsert)
+  // Ensure subscription is registered with backend on mount (idempotent upsert).
+  // Skipped if user has explicitly opted out for this workspace.
   useEffect(() => {
-    if (permission !== "granted" || !workspaceId) return
+    if (permission !== "granted" || !workspaceId || optedOut) return
 
     const doSubscribe = () => {
       navigator.serviceWorker?.ready
@@ -159,7 +169,7 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
     const handleSubscriptionChange = () => doSubscribe()
     window.addEventListener("pushsubscriptionchanged", handleSubscriptionChange)
     return () => window.removeEventListener("pushsubscriptionchanged", handleSubscriptionChange)
-  }, [permission, workspaceId, subscribe])
+  }, [permission, workspaceId, subscribe, optedOut])
 
   // Unsubscribe from push notifications
   const unsubscribe = useCallback(async () => {
@@ -183,6 +193,10 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
       // Unsubscribe from browser push service
       await subscription.unsubscribe()
       setIsSubscribed(false)
+
+      // Persist opt-out so auto-subscribe doesn't re-register on next mount
+      setOptedOut(true)
+      localStorage.setItem(pushOptOutKey(workspaceId), "1")
     } catch (err) {
       console.error("[Push] Failed to unsubscribe:", err)
     }
@@ -196,6 +210,12 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
     }
 
     try {
+      // Clear opt-out — user is explicitly re-enabling
+      if (workspaceId) {
+        setOptedOut(false)
+        localStorage.removeItem(pushOptOutKey(workspaceId))
+      }
+
       const result = await Notification.requestPermission()
       setPermission(result)
 
@@ -206,7 +226,7 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
     } catch (err) {
       console.error("[Push] Failed to request permission:", err)
     }
-  }, [subscribe])
+  }, [subscribe, workspaceId])
 
-  return { permission, isSubscribed, pushDisabledOnServer, requestPermission, unsubscribe }
+  return { permission, isSubscribed, optedOut, pushDisabledOnServer, requestPermission, unsubscribe }
 }
