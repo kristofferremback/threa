@@ -70,7 +70,7 @@ import {
 import { EmojiUsageHandler } from "./features/emoji"
 import { SystemMessageService, SystemMessageOutboxHandler } from "./features/system-messages"
 import { ActivityService, ActivityFeedHandler } from "./features/activity"
-import { PushService, PushNotificationHandler } from "./features/push"
+import { PushService, PushNotificationHandler, createPushSessionCleanup } from "./features/push"
 import { AttachmentUploadedHandler } from "./features/attachments"
 import { AICostService, AIBudgetService } from "./features/ai-usage"
 import { CommandRegistry, EchoCommand, createCommandWorker, CommandHandler } from "./features/commands"
@@ -593,23 +593,8 @@ export async function startServer(): Promise<ServerInstance> {
   const orphanSessionCleanup = createOrphanSessionCleanup(pools.main)
   orphanSessionCleanup.start()
 
-  // Periodic cleanup for push notification user_sessions (7-day retention, runs hourly)
-  // Only run when push is enabled — no sessions are written when disabled
-  let pushSessionCleanupInterval: ReturnType<typeof setInterval> | undefined
-  if (pushService.isEnabled()) {
-    const PUSH_SESSION_CLEANUP_INTERVAL_MS = 60 * 60 * 1000
-    const PUSH_SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
-    pushSessionCleanupInterval = setInterval(async () => {
-      try {
-        const deleted = await pushService.cleanupStaleSessions(PUSH_SESSION_MAX_AGE_MS)
-        if (deleted > 0) {
-          logger.info({ deleted }, "Cleaned up stale push user sessions")
-        }
-      } catch (err) {
-        logger.warn({ err }, "Failed to clean up stale push user sessions")
-      }
-    }, PUSH_SESSION_CLEANUP_INTERVAL_MS)
-  }
+  const pushSessionCleanup = createPushSessionCleanup(pushService)
+  pushSessionCleanup.start()
 
   await new Promise<void>((resolve) => {
     server.listen(config.port, () => {
@@ -632,7 +617,7 @@ export async function startServer(): Promise<ServerInstance> {
     logger.info("Shutting down server...")
     poolMonitor.stop()
     orphanSessionCleanup.stop()
-    clearInterval(pushSessionCleanupInterval)
+    pushSessionCleanup.stop()
     agentSessionMetrics.stop()
     await scheduleManager.stop()
     await cleanupWorker.stop()

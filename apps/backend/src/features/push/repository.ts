@@ -98,10 +98,12 @@ export const PushSubscriptionRepository = {
     `)
   },
 
-  async countByUser(db: Querier, workspaceId: string, userId: string): Promise<number> {
+  /** Count user subscriptions with row locks to prevent concurrent cap violations (INV-20). */
+  async countByUserForUpdate(db: Querier, workspaceId: string, userId: string): Promise<number> {
     const result = await db.query<{ count: string }>(sql`
       SELECT count(*) AS count FROM push_subscriptions
       WHERE workspace_id = ${workspaceId} AND user_id = ${userId}
+      FOR UPDATE
     `)
     return parseInt(result.rows[0].count, 10)
   },

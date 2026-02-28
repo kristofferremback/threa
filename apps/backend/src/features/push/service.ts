@@ -1,5 +1,6 @@
 import type { Pool } from "pg"
 import webpush from "web-push"
+import { withTransaction } from "../../db"
 import { PushSubscriptionRepository, type PushSubscription, type InsertPushSubscriptionParams } from "./repository"
 import { UserSessionRepository, type UserSession } from "./session-repository"
 import {
@@ -73,12 +74,14 @@ export class PushService {
   }
 
   async subscribe(params: InsertPushSubscriptionParams): Promise<PushSubscription> {
-    // Evict the oldest subscription if at the per-user cap to bound parallel delivery
-    const count = await PushSubscriptionRepository.countByUser(this.pool, params.workspaceId, params.userId)
-    if (count >= MAX_SUBSCRIPTIONS_PER_USER) {
-      await PushSubscriptionRepository.deleteOldestByUser(this.pool, params.workspaceId, params.userId)
-    }
-    return PushSubscriptionRepository.insert(this.pool, params)
+    // Atomic cap enforcement (INV-20): count + evict + insert in one transaction
+    return withTransaction(this.pool, async (client) => {
+      const count = await PushSubscriptionRepository.countByUserForUpdate(client, params.workspaceId, params.userId)
+      if (count >= MAX_SUBSCRIPTIONS_PER_USER) {
+        await PushSubscriptionRepository.deleteOldestByUser(client, params.workspaceId, params.userId)
+      }
+      return PushSubscriptionRepository.insert(client, params)
+    })
   }
 
   async unsubscribe(workspaceId: string, userId: string, endpoint: string): Promise<boolean> {

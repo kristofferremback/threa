@@ -371,5 +371,15 @@ export interface UpdateAIBudgetInput {
 // Push Notifications API
 // ============================================================================
 
-/** Length of the hex-encoded device key prefix used to correlate push subscriptions with sessions. */
+/**
+ * Length of the hex-encoded device key prefix used to correlate push subscriptions with sessions.
+ *
+ * Algorithm contract (must match in both frontend and backend implementations):
+ *   1. Input: navigator.userAgent string
+ *   2. Hash: SHA-256
+ *   3. Encode: hex
+ *   4. Slice: first DEVICE_KEY_LENGTH characters
+ *
+ * Implementations: frontend `getDeviceKey` (use-push-notifications.ts), backend `deriveDeviceKey` (socket.ts).
+ */
 export const DEVICE_KEY_LENGTH = 16

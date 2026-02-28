@@ -1,0 +1,49 @@
+import type { PushService } from "./service"
+import { logger } from "../../lib/logger"
+
+export interface PushSessionCleanup {
+  start(): void
+  stop(): void
+}
+
+/**
+ * Periodically cleans up stale push notification user sessions.
+ * Sessions older than `maxAgeMs` are deleted to prevent unbounded table growth.
+ * Only runs when push is enabled — no sessions are written when disabled.
+ */
+export function createPushSessionCleanup(
+  pushService: PushService,
+  options: {
+    intervalMs?: number
+    maxAgeMs?: number
+  } = {}
+): PushSessionCleanup {
+  const { intervalMs = 60 * 60 * 1000, maxAgeMs = 7 * 24 * 60 * 60 * 1000 } = options
+
+  let timer: ReturnType<typeof setInterval> | null = null
+
+  const cleanup = async () => {
+    try {
+      const deleted = await pushService.cleanupStaleSessions(maxAgeMs)
+      if (deleted > 0) {
+        logger.info({ deleted }, "Cleaned up stale push user sessions")
+      }
+    } catch (err) {
+      logger.warn({ err }, "Failed to clean up stale push user sessions")
+    }
+  }
+
+  return {
+    start() {
+      if (timer || !pushService.isEnabled()) return
+      timer = setInterval(cleanup, intervalMs)
+    },
+
+    stop() {
+      if (timer) {
+        clearInterval(timer)
+        timer = null
+      }
+    },
+  }
+}
