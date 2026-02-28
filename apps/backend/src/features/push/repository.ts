@@ -98,6 +98,26 @@ export const PushSubscriptionRepository = {
     `)
   },
 
+  async countByUser(db: Querier, workspaceId: string, userId: string): Promise<number> {
+    const result = await db.query<{ count: string }>(sql`
+      SELECT count(*) AS count FROM push_subscriptions
+      WHERE workspace_id = ${workspaceId} AND user_id = ${userId}
+    `)
+    return parseInt(result.rows[0].count, 10)
+  },
+
+  async deleteOldestByUser(db: Querier, workspaceId: string, userId: string): Promise<void> {
+    await db.query(sql`
+      DELETE FROM push_subscriptions
+      WHERE id = (
+        SELECT id FROM push_subscriptions
+        WHERE workspace_id = ${workspaceId} AND user_id = ${userId}
+        ORDER BY updated_at ASC
+        LIMIT 1
+      )
+    `)
+  },
+
   async findByUserId(db: Querier, workspaceId: string, userId: string): Promise<PushSubscription[]> {
     const result = await db.query<PushSubscriptionRow>(sql`
       SELECT * FROM push_subscriptions

@@ -15,6 +15,9 @@ import type { ActivityCreatedOutboxPayload } from "../../lib/outbox"
 /** Session is "active" if heartbeat within this window (2x the 30s heartbeat interval) */
 const ACTIVE_SESSION_WINDOW_MS = 60_000
 
+/** Maximum push subscriptions per user per workspace to bound parallel delivery calls */
+const MAX_SUBSCRIPTIONS_PER_USER = 10
+
 /** Callbacks for resolving cross-feature data (INV-52: access via service layer, not repos) */
 interface CrossFeatureLookups {
   /** Resolve a user's notification level preference. */
@@ -70,6 +73,11 @@ export class PushService {
   }
 
   async subscribe(params: InsertPushSubscriptionParams): Promise<PushSubscription> {
+    // Evict the oldest subscription if at the per-user cap to bound parallel delivery
+    const count = await PushSubscriptionRepository.countByUser(this.pool, params.workspaceId, params.userId)
+    if (count >= MAX_SUBSCRIPTIONS_PER_USER) {
+      await PushSubscriptionRepository.deleteOldestByUser(this.pool, params.workspaceId, params.userId)
+    }
     return PushSubscriptionRepository.insert(this.pool, params)
   }
 
@@ -83,10 +91,6 @@ export class PushService {
 
   async upsertSessionsBatch(entries: Array<{ workspaceId: string; userId: string; deviceKey: string }>): Promise<void> {
     return UserSessionRepository.upsertBatch(this.pool, entries)
-  }
-
-  async getActiveSessions(workspaceId: string, userId: string, windowMs: number): Promise<UserSession[]> {
-    return UserSessionRepository.getActiveSessions(this.pool, workspaceId, userId, windowMs)
   }
 
   /**
