@@ -97,10 +97,11 @@ export function ActivityPage() {
               size="sm"
               onClick={() => markAllRead.mutate()}
               disabled={markAllRead.isPending}
-              className="text-xs gap-1.5 max-sm:hidden"
+              className="text-xs gap-1.5 max-sm:h-8 max-sm:w-8 max-sm:p-0"
+              title="Mark all read"
             >
               <Check className="h-3.5 w-3.5" />
-              Mark all read
+              <span className="max-sm:hidden">Mark all read</span>
             </Button>
           )}
         </div>
