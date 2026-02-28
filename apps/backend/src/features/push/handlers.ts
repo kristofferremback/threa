@@ -23,12 +23,11 @@ const pushEndpointSchema = z
         if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return false
         if (host.startsWith("169.254.")) return false
         if (host.startsWith("0.")) return false
-        // IPv6 private ranges: IPv4-mapped (::ffff:), unique local (fc/fd), link-local (fe80)
+        // IPv6 private ranges — URL.hostname strips brackets from IPv6 addresses
         const hostLower = host.toLowerCase()
-        if (hostLower.startsWith("[::ffff:")) return false
-        if (hostLower.startsWith("[fc") || hostLower.startsWith("[fd")) return false
-        if (hostLower.startsWith("[fe80")) return false
-        if (hostLower.startsWith("[::1]") || hostLower === "[::1]") return false
+        if (hostLower.startsWith("::ffff:")) return false
+        if (hostLower.startsWith("fc") || hostLower.startsWith("fd")) return false
+        if (hostLower.startsWith("fe80")) return false
         return true
       } catch {
         return false

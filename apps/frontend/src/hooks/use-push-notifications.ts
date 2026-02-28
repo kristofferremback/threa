@@ -88,17 +88,17 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
             applicationServerKey: urlBase64ToUint8Array(vapidPublicKey).buffer as ArrayBuffer,
           }))
 
-        const key = subscription.getKey("p256dh")
-        const auth = subscription.getKey("auth")
-        if (!key || !auth) return
+        const json = subscription.toJSON()
+        if (!json.keys?.p256dh || !json.keys?.auth) return
 
         const deviceKey = await getDeviceKey()
 
         // Backend upsert (ON CONFLICT DO UPDATE) — idempotent for re-registrations
+        // toJSON().keys returns base64url encoding, matching web-push library's contract
         await api.post(`/api/workspaces/${workspaceId}/push/subscribe`, {
           endpoint: subscription.endpoint,
-          p256dh: btoa(String.fromCharCode(...new Uint8Array(key))),
-          auth: btoa(String.fromCharCode(...new Uint8Array(auth))),
+          p256dh: json.keys.p256dh,
+          auth: json.keys.auth,
           deviceKey,
           userAgent: navigator.userAgent,
         })
