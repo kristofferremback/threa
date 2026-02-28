@@ -64,7 +64,8 @@ export function createPushHandlers({ pushService }: Dependencies) {
 
       const parsed = subscribeSchema.safeParse(req.body)
       if (!parsed.success) {
-        throw new HttpError("Invalid subscription data", { status: 400, code: "VALIDATION_ERROR" })
+        res.status(400).json({ error: "Validation failed", details: z.flattenError(parsed.error).fieldErrors })
+        return
       }
 
       const subscription = await pushService.subscribe({
@@ -85,7 +86,8 @@ export function createPushHandlers({ pushService }: Dependencies) {
 
       const parsed = unsubscribeSchema.safeParse(req.body)
       if (!parsed.success) {
-        throw new HttpError("Invalid unsubscribe data", { status: 400, code: "VALIDATION_ERROR" })
+        res.status(400).json({ error: "Validation failed", details: z.flattenError(parsed.error).fieldErrors })
+        return
       }
 
       await pushService.unsubscribe(workspaceId, userId, parsed.data.endpoint)
