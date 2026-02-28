@@ -75,17 +75,18 @@ export class PushService {
 
   async subscribe(params: InsertPushSubscriptionParams): Promise<PushSubscription> {
     // Atomic cap enforcement (INV-20): count + evict + insert in one transaction.
-    // Skip eviction when re-registering an existing endpoint (upsert won't add a new row).
+    // The FOR UPDATE lock serializes concurrent subscribe calls for the same user.
+    // Existence check runs after locking to prevent double-eviction races.
     return withTransaction(this.pool, async (client) => {
-      const isReRegister = await PushSubscriptionRepository.existsByEndpoint(
-        client,
-        params.workspaceId,
-        params.userId,
-        params.endpoint
-      )
-      if (!isReRegister) {
-        const count = await PushSubscriptionRepository.countByUserForUpdate(client, params.workspaceId, params.userId)
-        if (count >= MAX_SUBSCRIPTIONS_PER_USER) {
+      const count = await PushSubscriptionRepository.countByUserForUpdate(client, params.workspaceId, params.userId)
+      if (count >= MAX_SUBSCRIPTIONS_PER_USER) {
+        const isReRegister = await PushSubscriptionRepository.existsByEndpoint(
+          client,
+          params.workspaceId,
+          params.userId,
+          params.endpoint
+        )
+        if (!isReRegister) {
           await PushSubscriptionRepository.deleteOldestByUser(client, params.workspaceId, params.userId)
         }
       }
