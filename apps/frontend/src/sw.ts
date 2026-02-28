@@ -89,9 +89,9 @@ self.addEventListener("notificationclick", (event) => {
   let targetUrl = "/"
 
   if (data?.workspaceId && data?.streamId) {
-    targetUrl = `/${data.workspaceId}/${data.streamId}`
+    targetUrl = `/w/${data.workspaceId}/s/${data.streamId}`
   } else if (data?.workspaceId) {
-    targetUrl = `/${data.workspaceId}`
+    targetUrl = `/w/${data.workspaceId}`
   }
 
   event.waitUntil(
@@ -127,11 +127,18 @@ self.addEventListener("pushsubscriptionchange", (event) => {
     (async () => {
       try {
         const oldSub = evt.oldSubscription
+        const applicationServerKey = oldSub?.options.applicationServerKey
+        if (!applicationServerKey && !evt.newSubscription) {
+          // No VAPID key available and no new subscription provided — can't re-subscribe.
+          // The hook will re-subscribe with the correct key on next app load.
+          return
+        }
+
         const newSub =
           evt.newSubscription ??
           (await self.registration.pushManager.subscribe({
             userVisibleOnly: true,
-            applicationServerKey: oldSub?.options.applicationServerKey ?? undefined,
+            applicationServerKey,
           }))
 
         if (!newSub) return

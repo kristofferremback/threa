@@ -17,7 +17,7 @@ const pushEndpointSchema = z
         if (parsed.protocol !== "https:") return false
         const host = parsed.hostname
         // Reject loopback, private IP ranges, and link-local addresses (IPv4 + IPv6)
-        if (host === "localhost" || host === "127.0.0.1" || host === "::1") return false
+        if (host === "localhost" || /^127\./.test(host) || host === "::1") return false
         if (host.startsWith("10.")) return false
         if (host.startsWith("192.168.")) return false
         if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return false
