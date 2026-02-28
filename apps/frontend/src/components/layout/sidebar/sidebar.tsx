@@ -37,8 +37,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
     toggleSectionCollapsed,
     setSidebarHeight,
     setScrollContainerOffset,
-    isMobile,
-    collapse,
+    collapseOnMobile,
   } = useSidebar()
   const { streamId: activeStreamId, "*": splat } = useParams<{ streamId: string; "*": string }>()
   const { data: bootstrap, isLoading, error, retryBootstrap } = useWorkspaceBootstrap(workspaceId)
@@ -294,7 +293,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   const handleCreateScratchpad = async () => {
     try {
       const draftId = await createDraft("on")
-      if (isMobile) collapse()
+      collapseOnMobile()
       navigate(`/w/${workspaceId}/s/${draftId}`)
     } catch {
       const { toast } = await import("sonner")
@@ -303,7 +302,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   }
 
   const handleCreateChannel = () => {
-    if (isMobile) collapse()
+    collapseOnMobile()
     openCreateChannel()
   }
 

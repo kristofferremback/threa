@@ -37,7 +37,7 @@ export function ScratchpadItem({
 }: ScratchpadItemProps) {
   const { stream, isDraft, archive } = useStreamOrDraft(workspaceId, streamWithPreview.id)
   const { getActorName } = useActors(workspaceId)
-  const { isMobile, collapse } = useSidebar()
+  const { collapseOnMobile } = useSidebar()
   const { openStreamSettings } = useStreamSettings()
   const itemRef = useRef<HTMLAnchorElement>(null)
   const hasUnread = unreadCount > 0
@@ -56,7 +56,7 @@ export function ScratchpadItem({
     <Link
       ref={itemRef}
       to={`/w/${workspaceId}/s/${streamWithPreview.id}`}
-      onClick={isMobile ? collapse : undefined}
+      onClick={collapseOnMobile}
       className={cn(
         "group relative flex items-stretch rounded-lg text-sm transition-colors",
         isActive ? "bg-primary/10" : "hover:bg-muted/50",

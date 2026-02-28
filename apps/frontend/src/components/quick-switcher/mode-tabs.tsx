@@ -1,6 +1,6 @@
 import { useRef, useEffect } from "react"
 import { cn } from "@/lib/utils"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { ResponsiveTabs } from "@/components/ui/responsive-tabs"
 import type { QuickSwitcherMode } from "./quick-switcher"
 
 interface ModeTabsProps {
@@ -16,6 +16,12 @@ const MODES: { mode: QuickSwitcherMode; label: string; shortcut: string | null }
   { mode: "command", label: "Command palette", shortcut: ">" },
   { mode: "search", label: "Message search", shortcut: "?" },
 ]
+
+const TAB_VALUES = MODES.map((m) => m.mode) as readonly QuickSwitcherMode[]
+
+const TAB_LABELS = Object.fromEntries(
+  MODES.map((m) => [m.mode, m.shortcut ? `(${m.shortcut}) ${m.label}` : m.label])
+) as Record<QuickSwitcherMode, string>
 
 export function ModeTabs({
   currentMode,
@@ -75,63 +81,55 @@ export function ModeTabs({
 
   return (
     <div className="p-2 border-b">
-      {/* Mobile: Shadcn Select dropdown */}
-      <div className="sm:hidden">
-        <Select value={currentMode} onValueChange={(value) => handleTabClick(value as QuickSwitcherMode)}>
-          <SelectTrigger className="h-9 text-sm" aria-label="Quick switcher modes">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {MODES.map(({ mode, label, shortcut }) => (
-              <SelectItem key={mode} value={mode}>
-                {shortcut ? `(${shortcut}) ${label}` : label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      {/* Desktop: pill buttons */}
-      <div className="hidden sm:flex gap-1" role="tablist" aria-label="Quick switcher modes">
-        {MODES.map(({ mode, label, shortcut }, index) => {
-          const isSelected = mode === currentMode
+      <ResponsiveTabs
+        tabs={TAB_VALUES}
+        labels={TAB_LABELS}
+        value={currentMode}
+        onValueChange={(v) => handleTabClick(v)}
+      >
+        {/* Desktop: custom pill buttons with keyboard navigation */}
+        <div className="hidden sm:flex gap-1" role="tablist" aria-label="Quick switcher modes">
+          {MODES.map(({ mode, label, shortcut }, index) => {
+            const isSelected = mode === currentMode
 
-          return (
-            <button
-              key={mode}
-              ref={(el) => {
-                tabRefs.current[index] = el
-              }}
-              role="tab"
-              aria-selected={isSelected}
-              tabIndex={0}
-              onClick={() => handleTabClick(mode)}
-              onKeyDown={(e) => handleTabKeyDown(e, index)}
-              onFocus={() => onFocusedTabIndexChange(index)}
-              onBlur={() => {
-                // Only clear if we're not moving to another tab
-                requestAnimationFrame(() => {
-                  if (!isMountedRef.current) return
-                  const activeElement = document.activeElement
-                  const isTabFocused = tabRefs.current.some((ref) => ref === activeElement)
-                  if (!isTabFocused) {
-                    onFocusedTabIndexChange(null)
-                  }
-                })
-              }}
-              className={cn(
-                "px-3 py-1.5 text-xs font-medium transition-colors rounded-pill",
-                "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
-                isSelected
-                  ? "bg-primary/15 text-primary border border-primary/40"
-                  : "text-muted-foreground hover:text-foreground hover:bg-secondary border border-transparent"
-              )}
-            >
-              {shortcut && <span className="text-muted-foreground mr-1">({shortcut})</span>}
-              {label}
-            </button>
-          )
-        })}
-      </div>
+            return (
+              <button
+                key={mode}
+                ref={(el) => {
+                  tabRefs.current[index] = el
+                }}
+                role="tab"
+                aria-selected={isSelected}
+                tabIndex={0}
+                onClick={() => handleTabClick(mode)}
+                onKeyDown={(e) => handleTabKeyDown(e, index)}
+                onFocus={() => onFocusedTabIndexChange(index)}
+                onBlur={() => {
+                  // Only clear if we're not moving to another tab
+                  requestAnimationFrame(() => {
+                    if (!isMountedRef.current) return
+                    const activeElement = document.activeElement
+                    const isTabFocused = tabRefs.current.some((ref) => ref === activeElement)
+                    if (!isTabFocused) {
+                      onFocusedTabIndexChange(null)
+                    }
+                  })
+                }}
+                className={cn(
+                  "px-3 py-1.5 text-xs font-medium transition-colors rounded-pill",
+                  "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+                  isSelected
+                    ? "bg-primary/15 text-primary border border-primary/40"
+                    : "text-muted-foreground hover:text-foreground hover:bg-secondary border border-transparent"
+                )}
+              >
+                {shortcut && <span className="text-muted-foreground mr-1">({shortcut})</span>}
+                {label}
+              </button>
+            )
+          })}
+        </div>
+      </ResponsiveTabs>
     </div>
   )
 }

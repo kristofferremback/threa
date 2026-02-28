@@ -75,6 +75,8 @@ interface SidebarContextValue {
   togglePinned: () => void
   /** Collapse the sidebar (from pinned) */
   collapse: () => void
+  /** Collapse the sidebar only when on mobile (no-op on desktop) */
+  collapseOnMobile: () => void
   /** Set hovering state */
   setHovering: (hovering: boolean) => void
   /** Start resizing */
@@ -237,6 +239,11 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
     }
   }, [clearHideTimeout, isMobile, updatePersistedState])
 
+  // Collapse only when on mobile — safe to call unconditionally from click handlers
+  const collapseOnMobile = useCallback(() => {
+    if (isMobile) collapse()
+  }, [isMobile, collapse])
+
   // Track hovering state (don't hide when resizing or menu is open)
   const setHovering = useCallback(
     (hovering: boolean) => {
@@ -391,6 +398,7 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
         hidePreview,
         togglePinned,
         collapse,
+        collapseOnMobile,
         setHovering,
         startResizing,
         stopResizing,

@@ -23,15 +23,15 @@ export function SidebarFooter({ workspaceId, currentUser }: SidebarFooterProps) 
   const [, setSearchParams] = useSearchParams()
   const { openSettings } = useSettings()
   const { logout } = useAuth()
-  const { isMobile, collapse } = useSidebar()
+  const { collapseOnMobile } = useSidebar()
 
   const handleOpenSettings = (tab: "profile" | "appearance") => {
-    if (isMobile) collapse()
+    collapseOnMobile()
     openSettings(tab)
   }
 
   const openWorkspaceSettings = () => {
-    if (isMobile) collapse()
+    collapseOnMobile()
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev)

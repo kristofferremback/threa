@@ -1,3 +1,4 @@
+import type { ReactNode } from "react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./select"
 import { TabsList, TabsTrigger } from "./tabs"
 import { cn } from "@/lib/utils"
@@ -7,13 +8,16 @@ interface ResponsiveTabsProps<T extends string> {
   labels: Record<T, string>
   value: T
   onValueChange: (value: T) => void
-  /** Number of columns for the desktop grid (defaults to tabs.length) */
+  /** Number of columns for the desktop grid (defaults to tabs.length). Ignored when children is provided. */
   columns?: number
+  /** Custom desktop content. When provided, replaces the default TabsList grid on screens >= sm. */
+  children?: ReactNode
 }
 
 /**
- * Mobile: Shadcn Select dropdown. Desktop: TabsList grid.
- * Must be rendered inside a Radix Tabs root.
+ * Mobile: Shadcn Select dropdown. Desktop: TabsList grid (or custom children).
+ * When used with a Radix Tabs root, omit `children` to get the default TabsList.
+ * When the desktop UI differs (e.g. pill buttons), pass custom `children`.
  */
 export function ResponsiveTabs<T extends string>({
   tabs,
@@ -21,6 +25,7 @@ export function ResponsiveTabs<T extends string>({
   value,
   onValueChange,
   columns,
+  children,
 }: ResponsiveTabsProps<T>) {
   const cols = columns ?? tabs.length
 
@@ -41,24 +46,26 @@ export function ResponsiveTabs<T extends string>({
           </SelectContent>
         </Select>
       </div>
-      {/* Desktop: tab grid */}
-      <TabsList
-        className={cn(
-          "hidden sm:grid w-full",
-          cols === 1 && "grid-cols-1",
-          cols === 2 && "grid-cols-2",
-          cols === 3 && "grid-cols-3",
-          cols === 4 && "grid-cols-4",
-          cols === 5 && "grid-cols-5",
-          cols === 6 && "grid-cols-6"
-        )}
-      >
-        {tabs.map((tab) => (
-          <TabsTrigger key={tab} value={tab}>
-            {labels[tab]}
-          </TabsTrigger>
-        ))}
-      </TabsList>
+      {/* Desktop: custom children or default tab grid */}
+      {children ?? (
+        <TabsList
+          className={cn(
+            "hidden sm:grid w-full",
+            cols === 1 && "grid-cols-1",
+            cols === 2 && "grid-cols-2",
+            cols === 3 && "grid-cols-3",
+            cols === 4 && "grid-cols-4",
+            cols === 5 && "grid-cols-5",
+            cols === 6 && "grid-cols-6"
+          )}
+        >
+          {tabs.map((tab) => (
+            <TabsTrigger key={tab} value={tab}>
+              {labels[tab]}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      )}
     </>
   )
 }

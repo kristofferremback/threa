@@ -16,10 +16,10 @@ interface SidebarHeaderProps {
 
 export function SidebarHeader({ workspaceName, viewMode, onViewModeChange, hideViewToggle }: SidebarHeaderProps) {
   const { openSwitcher } = useQuickSwitcher()
-  const { isMobile, collapse } = useSidebar()
+  const { collapseOnMobile } = useSidebar()
 
   const handleOpenSearch = () => {
-    if (isMobile) collapse()
+    collapseOnMobile()
     openSwitcher("search")
   }
 
@@ -30,7 +30,7 @@ export function SidebarHeader({ workspaceName, viewMode, onViewModeChange, hideV
         <Link
           to="/workspaces"
           className="flex items-center gap-2 hover:opacity-80 transition-opacity truncate"
-          onClick={isMobile ? collapse : undefined}
+          onClick={collapseOnMobile}
         >
           <ThreaLogo size="sm" />
           <span className="font-semibold text-sm truncate">{workspaceName}</span>

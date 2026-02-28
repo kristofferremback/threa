@@ -149,7 +149,7 @@ export function StreamItem({
 }: StreamItemProps) {
   const { getActorName, getActorAvatar } = useActors(workspaceId)
   const { openStreamSettings } = useStreamSettings()
-  const { isMobile, collapse } = useSidebar()
+  const { collapseOnMobile } = useSidebar()
   const itemRef = useRef<HTMLAnchorElement>(null)
   const hasUnread = unreadCount > 0
   const preview = stream.lastMessagePreview
@@ -225,7 +225,7 @@ export function StreamItem({
     <Link
       ref={itemRef}
       to={`/w/${workspaceId}/s/${stream.id}`}
-      onClick={isMobile ? collapse : undefined}
+      onClick={collapseOnMobile}
       className={cn(
         "group relative flex items-stretch rounded-lg text-sm transition-colors",
         isActive ? "bg-primary/10" : "hover:bg-muted/50",
