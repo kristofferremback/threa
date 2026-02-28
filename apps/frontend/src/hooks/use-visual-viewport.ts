@@ -23,6 +23,7 @@ export function useVisualViewport(enabled: boolean): VisualViewportState | null 
     if (!enabled || !window.visualViewport) return
 
     const vv = window.visualViewport
+    let rafId = 0
 
     const update = () => {
       const keyboardOpen = vv.height < window.innerHeight - KEYBOARD_THRESHOLD
@@ -33,15 +34,22 @@ export function useVisualViewport(enabled: boolean): VisualViewportState | null 
       }
     }
 
+    // Coalesce scroll events via rAF to avoid per-tick JS execution
+    const onScroll = () => {
+      cancelAnimationFrame(rafId)
+      rafId = requestAnimationFrame(update)
+    }
+
     // Set initial state
     update()
 
     vv.addEventListener("resize", update)
-    vv.addEventListener("scroll", update)
+    vv.addEventListener("scroll", onScroll)
 
     return () => {
+      cancelAnimationFrame(rafId)
       vv.removeEventListener("resize", update)
-      vv.removeEventListener("scroll", update)
+      vv.removeEventListener("scroll", onScroll)
     }
   }, [enabled])
 
