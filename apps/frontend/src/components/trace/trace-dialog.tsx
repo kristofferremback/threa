@@ -55,7 +55,7 @@ export function TraceDialog() {
 
   return (
     <Dialog open onOpenChange={(open) => !open && closeTraceModal()}>
-      <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col p-0 gap-0 [&>button:last-child]:hidden">
+      <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col p-0 max-sm:p-0 gap-0 max-sm:gap-0 [&>button:last-child]:hidden">
         <TraceHeader
           isLoading={isLoading}
           personaName={persona?.name}

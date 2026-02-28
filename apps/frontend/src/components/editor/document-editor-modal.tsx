@@ -178,7 +178,7 @@ export function DocumentEditorModal({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
-        className="w-[90vw] max-w-[800px] h-[80vh] max-h-[700px] max-sm:w-full max-sm:h-full max-sm:max-w-none max-sm:max-h-none flex flex-col gap-0 p-0"
+        className="w-[90vw] max-w-[800px] h-[80vh] max-h-[700px] max-sm:w-full max-sm:h-full max-sm:max-w-none max-sm:max-h-none flex flex-col gap-0 max-sm:gap-0 p-0 max-sm:p-0"
         onPointerDownOutside={(e) => {
           // Prevent closing when clicking on suggestion popover
           const target = e.target as HTMLElement

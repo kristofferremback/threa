@@ -208,7 +208,7 @@ export function CreateChannelDialog({ workspaceId }: CreateChannelDialogProps) {
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-[480px] gap-0 p-0 overflow-hidden">
+      <DialogContent className="max-w-[480px] gap-0 max-sm:gap-0 p-0 max-sm:p-0 overflow-hidden">
         <ChannelDialogHeader />
         <div className="border-t border-border" />
         <div className="pl-6 pr-4 py-5 space-y-5 max-h-[60vh] overflow-y-auto scrollbar-thin">
