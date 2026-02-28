@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useCallback, useRef, useEffect, type ReactNode } from "react"
+import { MOBILE_BREAKPOINT } from "@/hooks/use-mobile"
 
 /**
  * Sidebar states:
@@ -37,7 +38,6 @@ const MIN_SIDEBAR_WIDTH = 200
 const MAX_SIDEBAR_WIDTH = 400
 const DEFAULT_SIDEBAR_WIDTH = 260
 const SIDEBAR_STATE_KEY = "threa-sidebar-state"
-const MOBILE_BREAKPOINT = 640
 
 const DEFAULT_PERSISTED_STATE: SidebarPersistedState = {
   openState: "open",
@@ -164,10 +164,11 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
     })
   }, [])
 
-  // Track viewport size for mobile responsiveness
+  // Track viewport size for mobile responsiveness (matchMedia fires only on threshold crossing)
   useEffect(() => {
-    const handleResize = () => {
-      const mobile = window.innerWidth < MOBILE_BREAKPOINT
+    const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`)
+    const onChange = () => {
+      const mobile = mql.matches
       setIsMobile(mobile)
       // Auto-collapse when transitioning to mobile
       if (mobile) {
@@ -175,11 +176,11 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
       }
     }
 
-    window.addEventListener("resize", handleResize)
+    mql.addEventListener("change", onChange)
     // Initial check
-    handleResize()
+    onChange()
 
-    return () => window.removeEventListener("resize", handleResize)
+    return () => mql.removeEventListener("change", onChange)
   }, [])
 
   // Clear any pending hide timeout

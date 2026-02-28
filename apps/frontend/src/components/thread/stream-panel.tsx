@@ -17,8 +17,9 @@ import {
   createOptimisticBootstrap,
   streamKeys,
   useThreadAncestors,
+  useIsMobile,
 } from "@/hooks"
-import { usePanel, isDraftPanel, parseDraftPanel, useSidebar } from "@/contexts"
+import { usePanel, isDraftPanel, parseDraftPanel } from "@/contexts"
 import { useStreamService, useMessageService } from "@/contexts"
 import { StreamLoadingIndicator } from "@/components/loading"
 import { StreamContent } from "@/components/timeline"
@@ -38,7 +39,7 @@ interface StreamPanelProps {
 }
 
 export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
-  const { isMobile } = useSidebar()
+  const isMobile = useIsMobile()
   const [searchParams] = useSearchParams()
   const highlightMessageId = searchParams.get("m")
   const { panelId, openPanel, getPanelUrl, closePanel } = usePanel()

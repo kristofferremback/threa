@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { ResponsiveTabs } from "@/components/ui/responsive-tabs"
+import { Tabs, TabsContent } from "@/components/ui/tabs"
 import { UsersTab } from "./users-tab"
 
 const WORKSPACE_SETTINGS_TABS = ["general", "users"] as const
@@ -55,29 +55,7 @@ export function WorkspaceSettingsDialog({ workspaceId }: WorkspaceSettingsDialog
         </DialogHeader>
 
         <Tabs value={activeTab} onValueChange={setTab} className="flex-1 flex flex-col overflow-hidden">
-          {/* Mobile: Shadcn Select dropdown */}
-          <div className="sm:hidden">
-            <Select value={activeTab} onValueChange={setTab}>
-              <SelectTrigger className="h-9 text-sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {WORKSPACE_SETTINGS_TABS.map((tab) => (
-                  <SelectItem key={tab} value={tab}>
-                    {TAB_LABELS[tab]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          {/* Desktop: tab grid */}
-          <TabsList className="hidden sm:grid w-full grid-cols-2">
-            {WORKSPACE_SETTINGS_TABS.map((tab) => (
-              <TabsTrigger key={tab} value={tab}>
-                {TAB_LABELS[tab]}
-              </TabsTrigger>
-            ))}
-          </TabsList>
+          <ResponsiveTabs tabs={WORKSPACE_SETTINGS_TABS} labels={TAB_LABELS} value={activeTab} onValueChange={setTab} />
 
           <div className="flex-1 overflow-y-auto mt-4">
             <TabsContent value="general" className="mt-0">
