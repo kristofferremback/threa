@@ -205,6 +205,7 @@ export type {
   CreateWorkspaceInput,
   WorkspaceBootstrap,
   // Invitations
+  PendingInvitation,
   SendInvitationsInput,
   SendInvitationsResponse,
   InvitationSkipReason,

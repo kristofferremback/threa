@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { Link, Navigate, useNavigate } from "react-router-dom"
 import { useAuth } from "@/auth"
-import { useWorkspaces, useCreateWorkspace, useRegions } from "@/hooks"
+import { useWorkspaces, useCreateWorkspace, useAcceptInvitation, useRegions } from "@/hooks"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -21,9 +21,10 @@ function getCreateWorkspaceErrorMessage(error: unknown): string | null {
 
 export function WorkspaceSelectPage() {
   const { user, loading: authLoading } = useAuth()
-  const { data: workspaces, isLoading: workspacesLoading, error } = useWorkspaces()
+  const { workspaces, pendingInvitations, isLoading: workspacesLoading, error } = useWorkspaces()
   const { data: regions } = useRegions()
   const createWorkspace = useCreateWorkspace()
+  const acceptInvitation = useAcceptInvitation()
   const navigate = useNavigate()
   const [newWorkspaceName, setNewWorkspaceName] = useState("")
   const [selectedRegion, setSelectedRegion] = useState<string | undefined>()
@@ -38,6 +39,11 @@ export function WorkspaceSelectPage() {
     const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-")
     const workspace = await createWorkspace.mutateAsync({ name, slug, region: selectedRegion })
     navigate(`/w/${workspace.id}`)
+  }
+
+  const handleAcceptInvitation = async (invitationId: string) => {
+    const { workspaceId } = await acceptInvitation.mutateAsync(invitationId)
+    navigate(`/w/${workspaceId}/setup`)
   }
 
   // Redirect to login if not authenticated
@@ -69,7 +75,8 @@ export function WorkspaceSelectPage() {
     )
   }
 
-  if (workspaces?.length === 1) {
+  // Only auto-redirect when there are no pending invitations
+  if (workspaces?.length === 1 && pendingInvitations.length === 0) {
     return <Navigate to={`/w/${workspaces[0].id}`} replace />
   }
 
@@ -81,6 +88,26 @@ export function WorkspaceSelectPage() {
           <h1 className="text-xl font-medium">Welcome, {user?.name || "User"}</h1>
           <p className="mt-1 text-muted-foreground text-sm">Select a workspace to continue</p>
         </div>
+
+        {pendingInvitations.length > 0 && (
+          <div className="flex flex-col gap-2 w-64">
+            <p className="text-sm font-medium text-muted-foreground">Pending invitations</p>
+            {pendingInvitations.map((invitation) => (
+              <div key={invitation.id} className="flex items-center justify-between rounded-md border px-3 py-2">
+                <span className="truncate text-sm">{invitation.workspaceName}</span>
+                <Button
+                  size="sm"
+                  variant="default"
+                  onClick={() => handleAcceptInvitation(invitation.id)}
+                  disabled={acceptInvitation.isPending}
+                >
+                  Accept
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+
         {workspaces && workspaces.length > 0 && (
           <div className="flex flex-col gap-2">
             {workspaces.map((workspace) => (

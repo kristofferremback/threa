@@ -15,6 +15,7 @@ export class ControlPlaneClient {
     email: string
     region: string
     expiresAt: Date
+    inviterWorkosUserId?: string
   }): Promise<void> {
     const url = `${this.baseUrl}/internal/invitation-shadows`
     const res = await fetch(url, {

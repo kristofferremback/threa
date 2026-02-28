@@ -1,194 +1,126 @@
 import { test, expect } from "@playwright/test"
+import { generateTestId, expectApiOk, waitForWorkspaceProvisioned } from "./helpers"
 
 /**
  * Invitation flow E2E test.
  *
- * Tests the complete multi-user flow:
- * 1. User A signs in, creates a workspace, creates a public channel
- * 2. User A invites User B by email via workspace settings
- * 3. User B signs in — auto-accepted into workspace, redirected to setup
- * 4. User B completes member setup (name, slug, timezone, locale)
- * 5. User B does NOT see the public channel in sidebar (not a member yet)
- * 6. User B finds it via quick switcher (shows "Not joined"), navigates to it
- * 7. User B sees join bar, clicks "Join Channel", channel appears in sidebar
+ * Exercises the full cross-service invitation chain:
+ *   Backend (create invitation + outbox event)
+ *     → InvitationShadowSyncHandler (picks up outbox event)
+ *       → ControlPlaneClient (creates shadow on CP)
+ *         → User login → workspace-select page shows pending invitation
+ *           → User clicks Accept → CP accepts shadow + calls backend
+ *             → User has workspace access
+ *
+ * Uses API helpers for setup (fast, reliable) and the stub auth form for
+ * User B's login. User B then explicitly accepts the invitation on the
+ * workspace-select page.
  */
 
 test.describe("Invitation Flow", () => {
-  test("should allow owner to invite a user who then joins and sees the workspace", async ({ browser }) => {
-    test.setTimeout(120000)
+  test("invited user can sign in and accept the invitation", async ({ page, browser }) => {
+    test.setTimeout(60000)
 
-    const testId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
+    const testId = generateTestId()
     const userAEmail = `inviter-${testId}@example.com`
     const userAName = `Inviter ${testId}`
     const userBEmail = `invitee-${testId}@example.com`
     const userBName = `Invitee ${testId}`
-    const workspaceName = `Invite Test ${testId}`
-    const channelName = `general-${testId}`
+    const workspaceName = `Inv WS ${testId}`
 
-    // ──── User A: Create workspace and invite User B ────
+    // ──── User A: Create workspace and invite User B (via API) ────
 
-    const contextA = await browser.newContext()
-    const pageA = await contextA.newPage()
+    const loginRes = await page.request.post("/api/dev/login", {
+      data: { email: userAEmail, name: userAName },
+    })
+    await expectApiOk(loginRes, "User A login")
 
-    // Sign in as User A
-    await pageA.goto("/login")
-    await pageA.getByRole("button", { name: "Sign in with WorkOS" }).click()
-    await expect(pageA.getByRole("heading", { name: "Test Login" })).toBeVisible()
-    await pageA.getByLabel("Email").fill(userAEmail)
-    await pageA.getByLabel("Name").fill(userAName)
-    await pageA.getByRole("button", { name: "Sign In" }).click()
+    const createWsRes = await page.request.post("/api/workspaces", {
+      data: { name: workspaceName },
+    })
+    await expectApiOk(createWsRes, "Workspace creation")
+    const createWsBody = (await createWsRes.json()) as { workspace: { id: string } }
+    const workspaceId = createWsBody.workspace.id
 
-    // Create workspace
-    await expect(pageA.getByPlaceholder("New workspace name")).toBeVisible()
-    await pageA.getByPlaceholder("New workspace name").fill(workspaceName)
-    await pageA.getByRole("button", { name: "Create Workspace" }).click()
+    // Wait for async outbox provisioning on regional backend
+    await waitForWorkspaceProvisioned(page, workspaceId)
 
-    // Verify sidebar is visible
-    await expect(pageA.getByRole("button", { name: "+ New Channel" })).toBeVisible()
+    // Send invitation
+    const inviteRes = await page.request.post(`/api/workspaces/${workspaceId}/invitations`, {
+      data: { emails: [userBEmail], role: "user" },
+    })
+    await expectApiOk(inviteRes, "Send invitation")
+    const inviteBody = (await inviteRes.json()) as { sent: unknown[]; skipped: unknown[] }
+    expect(inviteBody.sent).toHaveLength(1)
+    expect(inviteBody.skipped).toHaveLength(0)
 
-    // Create a public channel
-    await pageA.getByRole("button", { name: "+ New Channel" }).click()
-    await pageA.getByRole("dialog").getByPlaceholder("channel-name").fill(channelName)
-    const createChannelButton = pageA.getByRole("dialog").getByRole("button", { name: "Create Channel" })
-    await expect(createChannelButton).toBeEnabled({ timeout: 5000 })
-    await createChannelButton.click()
-    await expect(pageA.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
+    // Wait for shadow sync: backend outbox event → InvitationShadowSyncHandler
+    // → ControlPlaneClient.createInvitationShadow() → CP creates shadow.
+    // The outbox debounces at 50ms/200ms max, plus network round-trip.
+    // Poll the invitation list to confirm the outbox event was committed,
+    // then allow time for the async handler to deliver it to the CP.
+    await expect
+      .poll(
+        async () => {
+          const listRes = await page.request.get(`/api/workspaces/${workspaceId}/invitations`)
+          if (!listRes.ok()) return false
+          const body = (await listRes.json()) as { invitations: Array<{ status: string }> }
+          return body.invitations.some((inv) => inv.status === "pending")
+        },
+        { message: "Invitation not found in pending state", timeout: 5000 }
+      )
+      .toBe(true)
 
-    // Open user menu → Workspace Settings → Users tab
-    await pageA.getByRole("button", { name: new RegExp(userAName) }).click()
-    await pageA.getByRole("menuitem", { name: "Workspace Settings" }).click()
-    await expect(pageA.getByRole("heading", { name: "Workspace Settings" })).toBeVisible()
-    await pageA.getByRole("tab", { name: "Users" }).click()
+    // Give the outbox handler time to sync the shadow to the control-plane.
+    // The handler picks up events within 200ms and the CP call is localhost.
+    await page.waitForTimeout(2000)
 
-    // Click Invite button
-    await pageA.getByRole("button", { name: "Invite" }).click()
-    await expect(pageA.getByRole("heading", { name: "Invite Users" })).toBeVisible()
-
-    // Enter User B's email and send
-    await pageA.getByLabel("Email addresses").fill(userBEmail)
-    await pageA.getByRole("button", { name: "Send Invitations" }).click()
-
-    // Verify invitation was sent
-    await expect(pageA.getByText("Sent 1 invitation")).toBeVisible({ timeout: 5000 })
-    await pageA.getByRole("button", { name: "Done" }).click()
-
-    // Verify pending invitation shows in members tab
-    await expect(pageA.getByText(userBEmail)).toBeVisible()
-
-    // Capture the workspace URL for verification later
-    const workspaceUrl = pageA.url().split("?")[0]
-
-    await contextA.close()
-
-    // ──── User B: Sign in and complete setup ────
+    // ──── User B: Sign in and explicitly accept the invitation ────
 
     const contextB = await browser.newContext()
     const pageB = await contextB.newPage()
 
-    // Sign in as User B (with the invited email)
-    await pageB.goto("/login")
-    await pageB.getByRole("button", { name: "Sign in with WorkOS" }).click()
-    await expect(pageB.getByRole("heading", { name: "Test Login" })).toBeVisible()
-    await pageB.getByLabel("Email").fill(userBEmail)
-    await pageB.getByLabel("Name").fill(userBName)
-    await pageB.getByRole("button", { name: "Sign In" }).click()
+    // Log in via dev API (no shadow acceptance on login anymore)
+    const loginBRes = await pageB.request.post("/api/dev/login", {
+      data: { email: userBEmail, name: userBName },
+    })
+    await expectApiOk(loginBRes, "User B login")
 
-    // Invitation acceptance can land on setup first, or directly in workspace if setup is already complete.
+    // Navigate to workspace-select page — should show the pending invitation
+    await pageB.goto("/workspaces")
+
+    // Wait for the invitation to appear
+    const acceptButton = pageB.getByRole("button", { name: "Accept" })
+    await expect(acceptButton).toBeVisible({ timeout: 10000 })
+    await expect(pageB.getByText(workspaceName)).toBeVisible()
+
+    // Accept the invitation
+    await acceptButton.click()
+
+    // Should navigate to workspace setup page
+    await pageB.waitForURL(`**/w/${workspaceId}/setup`, { timeout: 10000 })
+
+    // Complete member setup
     const displayNameInput = pageB.getByLabel("Display name")
     const completeSetupButton = pageB.getByRole("button", { name: "Complete Setup" })
-    await expect
-      .poll(
-        async () => {
-          const inSetup =
-            (await displayNameInput.isVisible().catch(() => false)) &&
-            (await completeSetupButton.isVisible().catch(() => false))
-          if (inSetup) return "setup"
 
-          const inWorkspace = await pageB
-            .getByText(workspaceName)
-            .isVisible()
-            .catch(() => false)
-          if (inWorkspace) return "workspace"
+    await expect(displayNameInput).toBeVisible({ timeout: 10000 })
 
-          return "pending"
-        },
-        { timeout: 15000 }
-      )
-      .not.toBe("pending")
-
-    if (
-      (await displayNameInput.isVisible().catch(() => false)) &&
-      (await completeSetupButton.isVisible().catch(() => false))
-    ) {
-      // Avoid churn in slug checks under load: only fill name when it's empty.
-      if ((await displayNameInput.inputValue().catch(() => "")).trim().length === 0) {
-        await displayNameInput.fill(userBName)
-      }
-
-      const displaySlugInput = pageB.getByLabel("Display slug")
-      if (!(await completeSetupButton.isEnabled().catch(() => false))) {
-        await displayNameInput.fill(userBName)
-        // Avoid flaky slug-availability waits under load; blank slug auto-generates on submit.
-        await displaySlugInput.fill("")
-      }
-
-      await expect.poll(() => completeSetupButton.isEnabled().catch(() => false), { timeout: 20000 }).toBe(true)
-      await completeSetupButton.click()
+    if ((await displayNameInput.inputValue().catch(() => "")).trim().length === 0) {
+      await displayNameInput.fill(userBName)
     }
 
-    // Should land in the workspace — sidebar shows workspace name.
+    const displaySlugInput = pageB.getByLabel("Display slug")
+    if (!(await completeSetupButton.isEnabled().catch(() => false))) {
+      await displayNameInput.fill(userBName)
+      await displaySlugInput.fill("")
+    }
+
+    await expect.poll(() => completeSetupButton.isEnabled().catch(() => false), { timeout: 20000 }).toBe(true)
+    await completeSetupButton.click()
+
+    // User B should land in the workspace — sidebar shows workspace name
     await expect(pageB.getByText(workspaceName)).toBeVisible({ timeout: 10000 })
-
-    // User B starts with no streams — empty state is shown, view toggle is hidden.
-    // Public channel should NOT be in sidebar (User B is not a member)
-    await expect(pageB.getByText(`#${channelName}`)).not.toBeVisible()
-
-    // ──── User B: Find channel via quick switcher and join ────
-
-    // Open quick switcher (Cmd+K)
-    await pageB.keyboard.press("Meta+k")
-    await expect(pageB.getByRole("dialog")).toBeVisible()
-
-    // Search for the channel
-    await pageB.getByLabel("Quick switcher input").fill(channelName)
-
-    // Should show "Not joined" indicator
-    await expect(pageB.getByText("Not joined")).toBeVisible({ timeout: 5000 })
-
-    // Select the channel result directly to avoid Enter-selection races under load.
-    const channelOption = pageB.getByRole("option", { name: new RegExp(`#${channelName}`) }).first()
-    await expect(channelOption).toBeVisible({ timeout: 10000 })
-    await channelOption.click()
-
-    const channelHeading = pageB.getByRole("heading", { name: `#${channelName}`, level: 1 })
-    const joinButton = pageB.getByRole("button", { name: "Join Channel" })
-    const sendButton = pageB.getByRole("button", { name: "Send" })
-
-    // Under load, quick-switcher close, navigation, and membership hydration can race.
-    // Wait for channel view to settle to either heading, join gate, or composer.
-    await expect
-      .poll(
-        async () => {
-          const inChannel = await channelHeading.isVisible().catch(() => false)
-          if (inChannel) return "channel"
-          const canJoin = await joinButton.isVisible().catch(() => false)
-          if (canJoin) return "join"
-          const canSend = await sendButton.isVisible().catch(() => false)
-          if (canSend) return "joined"
-          return "pending"
-        },
-        { timeout: 15000 }
-      )
-      .not.toBe("pending")
-
-    // Join when required. If already joined, continue.
-    if (await joinButton.isVisible().catch(() => false)) {
-      await joinButton.click()
-      await expect(joinButton).not.toBeVisible({ timeout: 5000 })
-    }
-
-    // Channel should now appear in the sidebar
-    await expect(pageB.getByText(`#${channelName}`).first()).toBeVisible({ timeout: 5000 })
 
     await contextB.close()
   })

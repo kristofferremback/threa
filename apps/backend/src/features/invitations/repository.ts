@@ -74,14 +74,6 @@ export const InvitationRepository = {
     return result.rows[0] ? mapRow(result.rows[0]) : null
   },
 
-  async findByWorkosInvitationId(db: Querier, workosId: string): Promise<Invitation | null> {
-    const result = await db.query<InvitationRow>(sql`
-      SELECT ${sql.raw(SELECT_FIELDS)} FROM workspace_invitations
-      WHERE workos_invitation_id = ${workosId}
-    `)
-    return result.rows[0] ? mapRow(result.rows[0]) : null
-  },
-
   async listByWorkspace(
     db: Querier,
     workspaceId: string,
@@ -147,13 +139,6 @@ export const InvitationRepository = {
         AND (${notExpiredAt}::timestamptz IS NULL OR expires_at > ${notExpiredAt})
     `)
     return (result.rowCount ?? 0) > 0
-  },
-
-  async setWorkosInvitationId(db: Querier, id: string, workosInvitationId: string): Promise<void> {
-    await db.query(sql`
-      UPDATE workspace_invitations SET workos_invitation_id = ${workosInvitationId}
-      WHERE id = ${id}
-    `)
   },
 
   async markExpired(db: Querier, workspaceId: string): Promise<number> {

@@ -2,9 +2,11 @@ import type { Request, Response } from "express"
 import { z } from "zod/v4"
 import { HttpError } from "@threa/backend-common"
 import type { ControlPlaneWorkspaceService } from "./service"
+import type { InvitationShadowService } from "../invitation-shadows/service"
 
 interface Dependencies {
   workspaceService: ControlPlaneWorkspaceService
+  shadowService: InvitationShadowService
 }
 
 const createWorkspaceSchema = z.object({
@@ -12,7 +14,7 @@ const createWorkspaceSchema = z.object({
   region: z.string().min(1).optional(),
 })
 
-export function createWorkspaceHandlers({ workspaceService }: Dependencies) {
+export function createWorkspaceHandlers({ workspaceService, shadowService }: Dependencies) {
   return {
     async list(req: Request, res: Response) {
       if (!req.workosUserId) {
@@ -20,7 +22,8 @@ export function createWorkspaceHandlers({ workspaceService }: Dependencies) {
       }
 
       const workspaces = await workspaceService.listForUser(req.workosUserId)
-      res.json({ workspaces })
+      const pendingInvitations = req.authUser?.email ? await shadowService.listPendingForEmail(req.authUser.email) : []
+      res.json({ workspaces, pendingInvitations })
     },
 
     async create(req: Request, res: Response) {

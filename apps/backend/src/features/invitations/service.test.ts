@@ -2,7 +2,7 @@ import { describe, test, expect, spyOn, beforeEach, mock } from "bun:test"
 import type { PoolClient } from "pg"
 import { InvitationService } from "./service"
 import { InvitationRepository } from "./repository"
-import { WorkspaceRepository, UserRepository } from "../workspaces"
+import { UserRepository } from "../workspaces"
 import { OutboxRepository } from "../../lib/outbox"
 import { logger } from "../../lib/logger"
 import * as db from "../../db"
@@ -48,7 +48,6 @@ describe("InvitationService.acceptInvitation", () => {
 
     service = new InvitationService(
       {} as never,
-      {} as never,
       {
         createUserInTransaction: mockCreateUser,
       } as never
@@ -90,8 +89,9 @@ describe("InvitationService.acceptInvitation", () => {
     expect(mockCreateUser).not.toHaveBeenCalled()
   })
 
-  test("should return null when invitation update fails", async () => {
+  test("should return null when invitation is no longer pending and not previously accepted", async () => {
     mockUpdateStatus.mockResolvedValue(false)
+    mockFindInvitationById.mockResolvedValue({ ...invitation, status: "revoked" } as never)
 
     const result = await service.acceptInvitation("inv_1", identity)
 
@@ -99,30 +99,43 @@ describe("InvitationService.acceptInvitation", () => {
     expect(mockInsertOutbox).not.toHaveBeenCalled()
     expect(mockCreateUser).not.toHaveBeenCalled()
   })
+
+  test("should return workspaceId on idempotent replay when invitation already accepted and user is member", async () => {
+    mockUpdateStatus.mockResolvedValue(false)
+    mockFindInvitationById.mockResolvedValue({ ...invitation, status: "accepted" } as never)
+    mockIsMember.mockResolvedValue(true)
+
+    const result = await service.acceptInvitation("inv_1", identity)
+
+    expect(result).toBe("ws_1")
+    expect(mockCreateUser).not.toHaveBeenCalled()
+    expect(mockInsertOutbox).not.toHaveBeenCalled()
+  })
+
+  test("should return null when invitation already accepted but user is not a member", async () => {
+    mockUpdateStatus.mockResolvedValue(false)
+    mockFindInvitationById.mockResolvedValue({ ...invitation, status: "accepted" } as never)
+    mockIsMember.mockResolvedValue(false)
+
+    const result = await service.acceptInvitation("inv_1", identity)
+
+    expect(result).toBeNull()
+    expect(mockCreateUser).not.toHaveBeenCalled()
+  })
 })
 
 describe("InvitationService.sendInvitations", () => {
   let service: InvitationService
-  let mockWorkosOrgService: {
-    sendInvitation: ReturnType<typeof mock>
-    getOrganizationByExternalId: ReturnType<typeof mock>
-  }
 
-  const mockLoggerWarn = spyOn(logger, "warn")
-  const mockLoggerError = spyOn(logger, "error")
   const mockFindById = spyOn(UserRepository, "findById")
   const mockFindUserEmails = spyOn(UserRepository, "findEmails")
   const mockFindPendingByEmailsAndWorkspace = spyOn(InvitationRepository, "findPendingByEmailsAndWorkspace")
   const mockInsertInvitation = spyOn(InvitationRepository, "insert")
   const mockInsertOutbox = spyOn(OutboxRepository, "insert")
-  const mockSetWorkosInvitationId = spyOn(InvitationRepository, "setWorkosInvitationId")
-  const mockGetWorkosOrgId = spyOn(WorkspaceRepository, "getWorkosOrganizationId")
 
   spyOn(db, "withTransaction").mockImplementation((_pool, fn) => fn({} as PoolClient))
 
   beforeEach(() => {
-    mockLoggerWarn.mockReset()
-    mockLoggerError.mockReset()
     mockFindById.mockReset().mockResolvedValue({ id: "usr_1", workosUserId: "workos_user_1" } as never)
     mockFindUserEmails.mockReset().mockResolvedValue(new Set())
     mockFindPendingByEmailsAndWorkspace.mockReset().mockResolvedValue([])
@@ -134,21 +147,11 @@ describe("InvitationService.sendInvitations", () => {
     mockInsertOutbox
       .mockReset()
       .mockResolvedValue({ id: 1n, eventType: "test", payload: {}, createdAt: new Date() } as never)
-    mockSetWorkosInvitationId.mockReset().mockResolvedValue(undefined as never)
-    mockGetWorkosOrgId.mockReset().mockResolvedValue("org_123")
 
-    mockWorkosOrgService = {
-      sendInvitation: mock(() => Promise.resolve({ id: "workos_inv_1", expiresAt: new Date() })),
-      getOrganizationByExternalId: mock(() => Promise.resolve({ id: "org_123" })),
-    }
-
-    service = new InvitationService({} as never, mockWorkosOrgService as never, {} as never)
+    service = new InvitationService({} as never, {} as never)
   })
 
-  test("should log warning when WorkOS returns user_already_organization_member error", async () => {
-    const workosError = { code: "user_already_organization_member" }
-    mockWorkosOrgService.sendInvitation.mockRejectedValue(workosError)
-
+  test("should include inviterWorkosUserId in outbox event payload", async () => {
     await service.sendInvitations({
       workspaceId: "ws_1",
       invitedBy: "usr_1",
@@ -156,35 +159,43 @@ describe("InvitationService.sendInvitations", () => {
       role: "user",
     })
 
-    expect(mockLoggerWarn).toHaveBeenCalledWith(
-      expect.objectContaining({
-        errorCode: "user_already_organization_member",
-        email: "test@example.com",
-      }),
-      expect.stringContaining("WorkOS state conflict")
-    )
-    expect(mockLoggerError).not.toHaveBeenCalled()
+    const sentCall = mockInsertOutbox.mock.calls.find((call) => call[1] === "invitation:sent")
+    expect(sentCall).toBeDefined()
+    expect(sentCall![2]).toMatchObject({
+      workspaceId: "ws_1",
+      email: "test@example.com",
+      role: "user",
+      inviterWorkosUserId: "workos_user_1",
+    })
   })
 
-  test("should log error when WorkOS returns unknown error during send", async () => {
-    const workosError = new Error("Network timeout")
-    mockWorkosOrgService.sendInvitation.mockRejectedValue(workosError)
+  test("should skip emails that are already workspace members", async () => {
+    mockFindUserEmails.mockResolvedValue(new Set(["existing@example.com"]))
 
-    await service.sendInvitations({
+    const result = await service.sendInvitations({
       workspaceId: "ws_1",
       invitedBy: "usr_1",
-      emails: ["test@example.com"],
+      emails: ["existing@example.com", "new@example.com"],
       role: "user",
     })
 
-    expect(mockLoggerError).toHaveBeenCalledWith(
-      expect.objectContaining({
-        err: workosError,
-        email: "test@example.com",
-      }),
-      expect.stringContaining("Failed to send WorkOS invitation")
-    )
-    expect(mockLoggerWarn).not.toHaveBeenCalled()
+    expect(result.skipped).toEqual([{ email: "existing@example.com", reason: "already_user" }])
+    expect(result.sent).toHaveLength(1)
+    expect(result.sent[0].email).toBe("new@example.com")
+  })
+
+  test("should skip emails with pending invitations", async () => {
+    mockFindPendingByEmailsAndWorkspace.mockResolvedValue([{ email: "pending@example.com" } as never])
+
+    const result = await service.sendInvitations({
+      workspaceId: "ws_1",
+      invitedBy: "usr_1",
+      emails: ["pending@example.com"],
+      role: "user",
+    })
+
+    expect(result.skipped).toEqual([{ email: "pending@example.com", reason: "pending_invitation" }])
+    expect(result.sent).toHaveLength(0)
   })
 })
 
@@ -225,7 +236,6 @@ describe("InvitationService.acceptPendingForEmail", () => {
     mockCreateUser.mockReset().mockResolvedValue({ id: "usr_new", workspaceId: "ws_1" })
 
     service = new InvitationService(
-      {} as never,
       {} as never,
       {
         createUserInTransaction: mockCreateUser,
@@ -286,62 +296,58 @@ describe("InvitationService.acceptPendingForEmail", () => {
 
 describe("InvitationService.revokeInvitation", () => {
   let service: InvitationService
-  let mockWorkosOrgService: { revokeInvitation: ReturnType<typeof mock> }
 
-  const mockLoggerWarn = spyOn(logger, "warn")
-  const mockLoggerError = spyOn(logger, "error")
   const mockFindById = spyOn(InvitationRepository, "findById")
   const mockUpdateStatus = spyOn(InvitationRepository, "updateStatus")
+  const mockInsertOutbox = spyOn(OutboxRepository, "insert")
 
   spyOn(db, "withTransaction").mockImplementation((_pool, fn) => fn({} as PoolClient))
 
   beforeEach(() => {
-    mockLoggerWarn.mockReset()
-    mockLoggerError.mockReset()
     mockFindById.mockReset().mockResolvedValue({
       id: "inv_1",
       workspaceId: "ws_1",
       email: "test@example.com",
-      workosInvitationId: "workos_inv_1",
     } as never)
     mockUpdateStatus.mockReset().mockResolvedValue(true)
+    mockInsertOutbox
+      .mockReset()
+      .mockResolvedValue({ id: 1n, eventType: "test", payload: {}, createdAt: new Date() } as never)
 
-    mockWorkosOrgService = {
-      revokeInvitation: mock(() => Promise.resolve()),
-    }
-
-    service = new InvitationService({} as never, mockWorkosOrgService as never, {} as never)
+    service = new InvitationService({} as never, {} as never)
   })
 
-  test("should log warning when WorkOS returns invite_not_pending error", async () => {
-    const workosError = { code: "invite_not_pending" }
-    mockWorkosOrgService.revokeInvitation.mockRejectedValue(workosError)
+  test("should create outbox event when revoking", async () => {
+    const result = await service.revokeInvitation("inv_1", "ws_1")
 
-    await service.revokeInvitation("inv_1", "ws_1")
-
-    expect(mockLoggerWarn).toHaveBeenCalledWith(
-      expect.objectContaining({
-        errorCode: "invite_not_pending",
-        invitationId: "inv_1",
-      }),
-      expect.stringContaining("WorkOS state conflict")
-    )
-    expect(mockLoggerError).not.toHaveBeenCalled()
+    expect(result).toBe(true)
+    const revokedCall = mockInsertOutbox.mock.calls.find((call) => call[1] === "invitation:revoked")
+    expect(revokedCall).toBeDefined()
+    expect(revokedCall![2]).toMatchObject({
+      workspaceId: "ws_1",
+      invitationId: "inv_1",
+    })
   })
 
-  test("should log error when WorkOS returns unknown error during revoke", async () => {
-    const workosError = new Error("Network timeout")
-    mockWorkosOrgService.revokeInvitation.mockRejectedValue(workosError)
+  test("should return false when invitation not found", async () => {
+    mockFindById.mockResolvedValue(null)
 
-    await service.revokeInvitation("inv_1", "ws_1")
+    const result = await service.revokeInvitation("inv_1", "ws_1")
 
-    expect(mockLoggerError).toHaveBeenCalledWith(
-      expect.objectContaining({
-        err: workosError,
-        invitationId: "inv_1",
-      }),
-      expect.stringContaining("Failed to revoke WorkOS invitation")
-    )
-    expect(mockLoggerWarn).not.toHaveBeenCalled()
+    expect(result).toBe(false)
+    expect(mockInsertOutbox).not.toHaveBeenCalled()
+  })
+
+  test("should return false when invitation belongs to different workspace", async () => {
+    mockFindById.mockResolvedValue({
+      id: "inv_1",
+      workspaceId: "ws_other",
+      email: "test@example.com",
+    } as never)
+
+    const result = await service.revokeInvitation("inv_1", "ws_1")
+
+    expect(result).toBe(false)
+    expect(mockInsertOutbox).not.toHaveBeenCalled()
   })
 })

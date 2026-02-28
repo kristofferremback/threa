@@ -3,6 +3,7 @@ export {
   useWorkspace,
   useWorkspaceBootstrap,
   useCreateWorkspace,
+  useAcceptInvitation,
   useRegions,
   useUpdateProfile,
   useUploadAvatar,

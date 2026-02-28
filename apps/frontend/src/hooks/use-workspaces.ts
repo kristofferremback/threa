@@ -20,21 +20,39 @@ export const workspaceKeys = {
 export function useWorkspaces() {
   const workspaceService = useWorkspaceService()
 
-  return useQuery({
+  const query = useQuery({
     queryKey: workspaceKeys.list(),
     queryFn: async () => {
-      const workspaces = await workspaceService.list()
+      const result = await workspaceService.list()
 
       // Cache to IndexedDB
       const now = Date.now()
-      await db.workspaces.bulkPut(workspaces.map((w) => ({ ...w, _cachedAt: now })))
+      await db.workspaces.bulkPut(result.workspaces.map((w) => ({ ...w, _cachedAt: now })))
 
-      return workspaces
+      return result
     },
     // Try to use cached data while fetching fresh
     placeholderData: () => {
       // Sync read from IndexedDB for immediate display
       return undefined // Will be populated by initialData if available
+    },
+  })
+
+  return {
+    ...query,
+    workspaces: query.data?.workspaces,
+    pendingInvitations: query.data?.pendingInvitations ?? [],
+  }
+}
+
+export function useAcceptInvitation() {
+  const workspaceService = useWorkspaceService()
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (invitationId: string) => workspaceService.acceptInvitation(invitationId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: workspaceKeys.list() })
     },
   })
 }

@@ -6,17 +6,37 @@ export interface InvitationShadowRow {
   email: string
   region: string
   status: string
+  workos_invitation_id: string | null
+  inviter_workos_user_id: string | null
   created_at: Date
   expires_at: Date
 }
 
+export interface PendingInvitationRow {
+  id: string
+  workspace_id: string
+  workspace_name: string
+  expires_at: Date
+}
+
+const SELECT_FIELDS = `id, workspace_id, email, region, status, workos_invitation_id, inviter_workos_user_id, created_at, expires_at`
+
 export const InvitationShadowRepository = {
-  async findPendingByEmail(db: Querier, email: string): Promise<InvitationShadowRow[]> {
+  async findById(db: Querier, id: string): Promise<InvitationShadowRow | null> {
     const result = await db.query<InvitationShadowRow>(
-      `SELECT id, workspace_id, email, region, status, created_at, expires_at
-       FROM invitation_shadows
-       WHERE email = $1 AND status = 'pending' AND expires_at > NOW()
-       ORDER BY created_at DESC`,
+      `SELECT ${SELECT_FIELDS} FROM invitation_shadows WHERE id = $1`,
+      [id]
+    )
+    return result.rows[0] ?? null
+  },
+
+  async findPendingByEmailWithWorkspace(db: Querier, email: string): Promise<PendingInvitationRow[]> {
+    const result = await db.query<PendingInvitationRow>(
+      `SELECT s.id, s.workspace_id, wr.name AS workspace_name, s.expires_at
+       FROM invitation_shadows s
+       JOIN workspace_registry wr ON wr.id = s.workspace_id
+       WHERE s.email = $1 AND s.status = 'pending' AND s.expires_at > NOW()
+       ORDER BY s.created_at DESC`,
       [email.toLowerCase()]
     )
     return result.rows
@@ -24,16 +44,34 @@ export const InvitationShadowRepository = {
 
   async insert(
     db: Querier,
-    shadow: { id: string; workspaceId: string; email: string; region: string; expiresAt: Date }
+    shadow: {
+      id: string
+      workspaceId: string
+      email: string
+      region: string
+      expiresAt: Date
+      inviterWorkosUserId?: string
+    }
   ): Promise<InvitationShadowRow> {
     const result = await db.query<InvitationShadowRow>(
-      `INSERT INTO invitation_shadows (id, workspace_id, email, region, expires_at)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO invitation_shadows (id, workspace_id, email, region, expires_at, inviter_workos_user_id)
+       VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (id) DO UPDATE SET id = EXCLUDED.id
-       RETURNING id, workspace_id, email, region, status, created_at, expires_at`,
-      [shadow.id, shadow.workspaceId, shadow.email.toLowerCase(), shadow.region, shadow.expiresAt]
+       RETURNING ${SELECT_FIELDS}`,
+      [
+        shadow.id,
+        shadow.workspaceId,
+        shadow.email.toLowerCase(),
+        shadow.region,
+        shadow.expiresAt,
+        shadow.inviterWorkosUserId ?? null,
+      ]
     )
     return result.rows[0]
+  },
+
+  async setWorkosInvitationId(db: Querier, id: string, workosInvitationId: string): Promise<void> {
+    await db.query("UPDATE invitation_shadows SET workos_invitation_id = $1 WHERE id = $2", [workosInvitationId, id])
   },
 
   /**

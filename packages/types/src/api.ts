@@ -174,6 +174,13 @@ export interface WorkspaceBootstrap {
 // Invitations API
 // ============================================================================
 
+export interface PendingInvitation {
+  id: string
+  workspaceId: string
+  workspaceName: string
+  expiresAt: string
+}
+
 export interface SendInvitationsInput {
   emails: string[]
   role?: "admin" | "user"

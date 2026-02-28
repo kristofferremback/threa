@@ -41,8 +41,8 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   })
   const authLimit = createRateLimit({ name: "cp-auth", windowMs: 60_000, max: deps.rateLimits.authMax, key: ipKey })
 
-  const authHandlers = createControlPlaneAuthHandlers({ authService, shadowService })
-  const workspace = createWorkspaceHandlers({ workspaceService })
+  const authHandlers = createControlPlaneAuthHandlers({ authService })
+  const workspace = createWorkspaceHandlers({ workspaceService, shadowService })
   const shadow = createInvitationShadowHandlers({ shadowService })
 
   // Readiness probe
@@ -64,7 +64,6 @@ export function registerRoutes(app: Express, deps: Dependencies) {
 
     const authStub = createAuthStubHandlers({
       authStubService: authService,
-      shadowService,
     })
     app.get("/test-auth-login", authStub.getLoginPage)
     app.post("/test-auth-login", authLimit, authStub.handleLogin)
@@ -77,6 +76,9 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/workspaces", auth, workspace.list)
   app.post("/api/workspaces", auth, workspace.create)
   app.get("/api/regions", workspace.listRegions)
+
+  // User-facing invitation acceptance
+  app.post("/api/invitations/:id/accept", auth, shadow.accept)
 
   // Internal API (inter-service)
   app.get("/internal/workspaces/:workspaceId/region", internalAuth, workspace.getRegion)
