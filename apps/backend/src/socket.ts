@@ -2,6 +2,7 @@ import type { Server, Socket } from "socket.io"
 import crypto from "crypto"
 import { parseCookies } from "@threa/backend-common"
 import type { AuthService } from "@threa/backend-common"
+import { DEVICE_KEY_LENGTH } from "@threa/types"
 import type { StreamService } from "./features/streams"
 import type { PushService } from "./features/push"
 import type { UserSocketRegistry } from "./lib/user-socket-registry"
@@ -57,9 +58,10 @@ interface Dependencies {
   userSocketRegistry: UserSocketRegistry
 }
 
+/** Derives a device key from user-agent — must match frontend's getDeviceKey (use-push-notifications.ts). */
 function deriveDeviceKey(userAgent: string | undefined): string {
   const input = userAgent || "unknown"
-  return crypto.createHash("sha256").update(input).digest("hex").slice(0, 16)
+  return crypto.createHash("sha256").update(input).digest("hex").slice(0, DEVICE_KEY_LENGTH)
 }
 
 export function registerSocketHandlers(io: Server, deps: Dependencies) {

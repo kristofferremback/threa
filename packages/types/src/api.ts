@@ -371,10 +371,5 @@ export interface UpdateAIBudgetInput {
 // Push Notifications API
 // ============================================================================
 
-export interface PushSubscriptionInput {
-  endpoint: string
-  p256dh: string
-  auth: string
-  deviceKey: string
-  userAgent?: string
-}
+/** Length of the hex-encoded device key prefix used to correlate push subscriptions with sessions. */
+export const DEVICE_KEY_LENGTH = 16

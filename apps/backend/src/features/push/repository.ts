@@ -90,13 +90,6 @@ export const PushSubscriptionRepository = {
     return (result.rowCount ?? 0) > 0
   },
 
-  async deleteById(db: Querier, workspaceId: string, id: string): Promise<void> {
-    await db.query(sql`
-      DELETE FROM push_subscriptions
-      WHERE workspace_id = ${workspaceId} AND id = ${id}
-    `)
-  },
-
   async deleteByIds(db: Querier, workspaceId: string, ids: string[]): Promise<void> {
     if (ids.length === 0) return
     await db.query(sql`

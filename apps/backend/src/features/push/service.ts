@@ -90,8 +90,10 @@ export class PushService {
 
   /**
    * Delete user sessions that haven't sent a heartbeat within the retention window.
-   * Intentionally cross-workspace: stale session cleanup is a global housekeeping task,
-   * not a workspace-scoped operation (similar to orphan session cleanup).
+   * Cross-workspace by design (INV-8 infra exception): user_sessions is ephemeral
+   * delivery-infrastructure data (heartbeat timestamps for push suppression), not
+   * user-facing product data. Scoping cleanup per-workspace would require iterating
+   * all workspaces for a simple time-based GC — same pattern as orphan session cleanup.
    */
   async cleanupStaleSessions(olderThanMs: number): Promise<number> {
     return UserSessionRepository.cleanupStale(this.pool, olderThanMs)

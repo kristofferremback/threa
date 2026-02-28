@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
+import { DEVICE_KEY_LENGTH } from "@threa/types"
 import { api } from "@/api/client"
 
 type PushPermission = NotificationPermission | "unsupported"
@@ -9,8 +10,8 @@ interface UsePushNotificationsResult {
   requestPermission: () => Promise<void>
 }
 
+/** Derives a device key from user-agent — must match backend's deriveDeviceKey (socket.ts). */
 async function getDeviceKey(): Promise<string> {
-  // Must match backend's deriveDeviceKey: sha256(userAgent).hex().slice(0, 16)
   // crypto.subtle is always available in secure contexts (HTTPS + localhost)
   const encoder = new TextEncoder()
   const data = encoder.encode(navigator.userAgent)
@@ -19,7 +20,7 @@ async function getDeviceKey(): Promise<string> {
   return hashArray
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("")
-    .slice(0, 16)
+    .slice(0, DEVICE_KEY_LENGTH)
 }
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
@@ -51,7 +52,10 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
           enabled: boolean
         }>(`/api/workspaces/${workspaceId}/push/vapid-key`)
 
-        if (!enabled || !vapidPublicKey) return
+        if (!enabled || !vapidPublicKey) {
+          setIsSubscribed(false)
+          return
+        }
 
         const subscription = await registration.pushManager.subscribe({
           userVisibleOnly: true,
@@ -79,6 +83,13 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
     },
     [workspaceId]
   )
+
+  // Reset subscription state when permission is revoked or workspaceId changes
+  useEffect(() => {
+    if (permission !== "granted" || !workspaceId) {
+      setIsSubscribed(false)
+    }
+  }, [permission, workspaceId])
 
   // Ensure subscription is registered with backend on mount (idempotent upsert)
   useEffect(() => {

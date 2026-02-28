@@ -233,9 +233,10 @@ export type {
   AIBudgetConfig,
   AIBudgetResponse,
   UpdateAIBudgetInput,
-  // Push Notifications
-  PushSubscriptionInput,
 } from "./api"
+
+// Push Notifications
+export { DEVICE_KEY_LENGTH } from "./api"
 
 // ProseMirror / TipTap JSON types
 export type {

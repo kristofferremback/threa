@@ -81,15 +81,6 @@ export const UserSessionRepository = {
     return result.rows.map(mapRowToSession)
   },
 
-  async deleteSession(db: Querier, workspaceId: string, userId: string, deviceKey: string): Promise<void> {
-    await db.query(sql`
-      DELETE FROM user_sessions
-      WHERE workspace_id = ${workspaceId}
-        AND user_id = ${userId}
-        AND device_key = ${deviceKey}
-    `)
-  },
-
   async cleanupStale(db: Querier, olderThanMs: number): Promise<number> {
     const result = await db.query(sql`
       DELETE FROM user_sessions
