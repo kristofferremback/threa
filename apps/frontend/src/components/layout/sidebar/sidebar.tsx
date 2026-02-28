@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from "react"
+import { toast } from "sonner"
 import { RefreshCw } from "lucide-react"
 import { useNavigate, useParams } from "react-router-dom"
 import { useAuth } from "@/auth"
@@ -296,7 +297,6 @@ export function Sidebar({ workspaceId }: SidebarProps) {
       collapseOnMobile()
       navigate(`/w/${workspaceId}/s/${draftId}`)
     } catch {
-      const { toast } = await import("sonner")
       toast.error("Failed to create scratchpad")
     }
   }

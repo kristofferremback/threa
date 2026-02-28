@@ -136,7 +136,7 @@ export function AppShell({ sidebar, children }: AppShellProps) {
       style={visualViewport ? { height: `${visualViewport.height}px` } : undefined}
     >
       {/* Topbar - spans full width */}
-      <Topbar isPinned={isPinned} onToggleSidebar={togglePinned} />
+      <Topbar isPinned={isMobile ? isOpen : isPinned} onToggleSidebar={togglePinned} />
 
       {/* Main area with sidebar and content */}
       <div className="flex flex-1 overflow-hidden">
