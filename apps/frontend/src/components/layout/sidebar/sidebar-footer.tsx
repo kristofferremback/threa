@@ -78,7 +78,7 @@ export function SidebarFooter({ workspaceId, currentUser }: SidebarFooterProps) 
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
-          <Link to={`/w/${workspaceId}/admin/ai-usage`}>
+          <Link to={`/w/${workspaceId}/admin/ai-usage`} onClick={collapseOnMobile}>
             <DollarSign className="mr-2 h-4 w-4" />
             AI Usage
           </Link>
