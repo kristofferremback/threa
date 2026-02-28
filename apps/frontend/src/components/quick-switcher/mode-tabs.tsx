@@ -19,9 +19,7 @@ const MODES: { mode: QuickSwitcherMode; label: string; shortcut: string | null }
 
 const TAB_VALUES = MODES.map((m) => m.mode) as readonly QuickSwitcherMode[]
 
-const TAB_LABELS = Object.fromEntries(
-  MODES.map((m) => [m.mode, m.shortcut ? `(${m.shortcut}) ${m.label}` : m.label])
-) as Record<QuickSwitcherMode, string>
+const TAB_LABELS = Object.fromEntries(MODES.map((m) => [m.mode, m.label])) as Record<QuickSwitcherMode, string>
 
 export function ModeTabs({
   currentMode,
