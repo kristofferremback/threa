@@ -259,12 +259,9 @@ export function StreamPage() {
   // On mobile, thread panel takes over the full screen
   if (isMobile && isPanelOpen) {
     return (
-      <>
-        <div className="flex h-full flex-col">
-          <StreamPanel key={panelId} workspaceId={workspaceId} onClose={closePanel} />
-        </div>
-        {conversationPanel}
-      </>
+      <div className="flex h-full flex-col">
+        <StreamPanel key={panelId} workspaceId={workspaceId} onClose={closePanel} />
+      </div>
     )
   }
 

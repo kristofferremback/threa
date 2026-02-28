@@ -30,7 +30,7 @@ export function SidebarHeader({ workspaceName, viewMode, onViewModeChange, hideV
         <Link
           to="/workspaces"
           className="flex items-center gap-2 hover:opacity-80 transition-opacity truncate"
-          onClick={() => isMobile && collapse()}
+          onClick={isMobile ? collapse : undefined}
         >
           <ThreaLogo size="sm" />
           <span className="font-semibold text-sm truncate">{workspaceName}</span>
