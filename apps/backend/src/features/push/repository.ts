@@ -109,14 +109,18 @@ export const PushSubscriptionRepository = {
     return result.rows[0].exists
   },
 
-  /** Count user subscriptions with row locks to prevent concurrent cap violations (INV-20). */
+  /**
+   * Lock and count user subscriptions to prevent concurrent cap violations (INV-20).
+   * FOR UPDATE can't be combined with aggregate functions in PostgreSQL,
+   * so we lock the rows first and count in application code.
+   */
   async countByUserForUpdate(db: Querier, workspaceId: string, userId: string): Promise<number> {
-    const result = await db.query<{ count: string }>(sql`
-      SELECT count(*) AS count FROM push_subscriptions
+    const result = await db.query<{ id: string }>(sql`
+      SELECT id FROM push_subscriptions
       WHERE workspace_id = ${workspaceId} AND user_id = ${userId}
       FOR UPDATE
     `)
-    return parseInt(result.rows[0].count, 10)
+    return result.rows.length
   },
 
   async deleteOldestByUser(db: Querier, workspaceId: string, userId: string): Promise<void> {
