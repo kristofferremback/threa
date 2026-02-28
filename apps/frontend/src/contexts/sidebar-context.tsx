@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useCallback, useRef, useEffect, type ReactNode } from "react"
+import { useIsMobile } from "@/hooks/use-mobile"
 
 /**
  * Sidebar states:
@@ -37,7 +38,6 @@ const MIN_SIDEBAR_WIDTH = 200
 const MAX_SIDEBAR_WIDTH = 400
 const DEFAULT_SIDEBAR_WIDTH = 260
 const SIDEBAR_STATE_KEY = "threa-sidebar-state"
-const MOBILE_BREAKPOINT = 640
 
 const DEFAULT_PERSISTED_STATE: SidebarPersistedState = {
   openState: "open",
@@ -75,6 +75,8 @@ interface SidebarContextValue {
   togglePinned: () => void
   /** Collapse the sidebar (from pinned) */
   collapse: () => void
+  /** Collapse the sidebar only when on mobile (no-op on desktop) */
+  collapseOnMobile: () => void
   /** Set hovering state */
   setHovering: (hovering: boolean) => void
   /** Start resizing */
@@ -141,10 +143,10 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
   const [persistedState, setPersistedState] = useState<SidebarPersistedState>(getStoredState)
 
   // Runtime state (preview is transient, not persisted)
+  const isMobile = useIsMobile()
   const [state, setState] = useState<SidebarState>(() =>
-    persistedState.openState === "collapsed" ? "collapsed" : "pinned"
+    isMobile || persistedState.openState === "collapsed" ? "collapsed" : "pinned"
   )
-  const [isMobile, setIsMobile] = useState(() => window.innerWidth < MOBILE_BREAKPOINT)
   const [isHovering, setIsHovering] = useState(false)
   const isHoveringRef = useRef(false)
   const [isResizing, setIsResizing] = useState(false)
@@ -164,23 +166,12 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
     })
   }, [])
 
-  // Track viewport size for mobile responsiveness
+  // Auto-collapse when transitioning to mobile
   useEffect(() => {
-    const handleResize = () => {
-      const mobile = window.innerWidth < MOBILE_BREAKPOINT
-      setIsMobile(mobile)
-      // Auto-collapse when transitioning to mobile
-      if (mobile) {
-        setState("collapsed")
-      }
+    if (isMobile) {
+      setState("collapsed")
     }
-
-    window.addEventListener("resize", handleResize)
-    // Initial check
-    handleResize()
-
-    return () => window.removeEventListener("resize", handleResize)
-  }, [])
+  }, [isMobile])
 
   // Clear any pending hide timeout
   const clearHideTimeout = useCallback(() => {
@@ -227,12 +218,19 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
     })
   }, [clearHideTimeout, isMobile, updatePersistedState])
 
-  // Collapse the sidebar
+  // Collapse the sidebar (skip localStorage persist on mobile to preserve desktop preference)
   const collapse = useCallback(() => {
     clearHideTimeout()
     setState("collapsed")
-    updatePersistedState({ openState: "collapsed" })
-  }, [clearHideTimeout, updatePersistedState])
+    if (!isMobile) {
+      updatePersistedState({ openState: "collapsed" })
+    }
+  }, [clearHideTimeout, isMobile, updatePersistedState])
+
+  // Collapse only when on mobile — safe to call unconditionally from click handlers
+  const collapseOnMobile = useCallback(() => {
+    if (isMobile) collapse()
+  }, [isMobile, collapse])
 
   // Track hovering state (don't hide when resizing or menu is open)
   const setHovering = useCallback(
@@ -388,6 +386,7 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
         hidePreview,
         togglePinned,
         collapse,
+        collapseOnMobile,
         setHovering,
         startResizing,
         stopResizing,

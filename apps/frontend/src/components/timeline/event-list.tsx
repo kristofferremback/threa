@@ -206,7 +206,7 @@ export function EventList({
   }
 
   return (
-    <div className="flex flex-col p-6 mx-auto max-w-[800px] w-full min-w-0">
+    <div className="flex flex-col p-3 sm:p-6 mx-auto max-w-[800px] w-full min-w-0">
       {timelineItems.map((item) => {
         const showUnreadDivider = isFirstUnread(item)
         let eventId: string

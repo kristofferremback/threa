@@ -1,7 +1,7 @@
 import { type ReactNode, useCallback } from "react"
 import { PanelLeftClose, PanelLeft, Command } from "lucide-react"
 import { useSidebar, useQuickSwitcher, useCoordinatedLoading } from "@/contexts"
-import { useResizeDrag } from "@/hooks"
+import { useResizeDrag, useVisualViewport } from "@/hooks"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { TopbarLoadingIndicator } from "./topbar-loading-indicator"
@@ -103,6 +103,9 @@ export function AppShell({ sidebar, children }: AppShellProps) {
     onResizeEnd: stopResizing,
   })
 
+  // Track visual viewport for keyboard-aware layout on mobile
+  const visualViewport = useVisualViewport(isMobile)
+
   const isCollapsed = state === "collapsed"
   const isPreview = state === "preview"
   const isPinned = state === "pinned"
@@ -128,9 +131,12 @@ export function AppShell({ sidebar, children }: AppShellProps) {
   }, [collapse])
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden">
+    <div
+      className="flex h-dvh w-screen flex-col overflow-hidden"
+      style={visualViewport ? { height: `${visualViewport.height}px` } : undefined}
+    >
       {/* Topbar - spans full width */}
-      <Topbar isPinned={isPinned} onToggleSidebar={togglePinned} />
+      <Topbar isPinned={isMobile ? isOpen : isPinned} onToggleSidebar={togglePinned} />
 
       {/* Main area with sidebar and content */}
       <div className="flex flex-1 overflow-hidden">
@@ -280,8 +286,13 @@ export function AppShell({ sidebar, children }: AppShellProps) {
           </aside>
         </div>
 
-        {/* Main content area */}
-        <main className="flex flex-1 flex-col overflow-hidden">{children}</main>
+        {/* Main content area — safe-area padding for notched devices when keyboard is closed */}
+        <main
+          className="flex flex-1 flex-col overflow-hidden"
+          style={!visualViewport ? { paddingBottom: "env(safe-area-inset-bottom)" } : undefined}
+        >
+          {children}
+        </main>
       </div>
     </div>
   )

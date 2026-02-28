@@ -103,7 +103,7 @@ export function StreamItemContextMenu({ children }: { children: ReactNode }) {
         <Button
           variant="ghost"
           size="icon"
-          className="absolute right-1 top-1 h-6 w-6 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
+          className="absolute right-1 top-1 h-6 w-6 max-sm:h-8 max-sm:w-8 max-sm:right-0 max-sm:top-0 opacity-0 group-hover:opacity-100 max-sm:opacity-100 data-[state=open]:opacity-100"
           onClick={(e) => {
             e.preventDefault()
             e.stopPropagation()
@@ -149,6 +149,7 @@ export function StreamItem({
 }: StreamItemProps) {
   const { getActorName, getActorAvatar } = useActors(workspaceId)
   const { openStreamSettings } = useStreamSettings()
+  const { collapseOnMobile } = useSidebar()
   const itemRef = useRef<HTMLAnchorElement>(null)
   const hasUnread = unreadCount > 0
   const preview = stream.lastMessagePreview
@@ -224,6 +225,7 @@ export function StreamItem({
     <Link
       ref={itemRef}
       to={`/w/${workspaceId}/s/${stream.id}`}
+      onClick={collapseOnMobile}
       className={cn(
         "group relative flex items-stretch rounded-lg text-sm transition-colors",
         isActive ? "bg-primary/10" : "hover:bg-muted/50",

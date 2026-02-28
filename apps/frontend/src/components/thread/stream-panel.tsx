@@ -18,7 +18,7 @@ import {
   streamKeys,
   useThreadAncestors,
 } from "@/hooks"
-import { usePanel, isDraftPanel, parseDraftPanel } from "@/contexts"
+import { usePanel, isDraftPanel, parseDraftPanel, useSidebar } from "@/contexts"
 import { useStreamService, useMessageService } from "@/contexts"
 import { StreamLoadingIndicator } from "@/components/loading"
 import { StreamContent } from "@/components/timeline"
@@ -38,6 +38,7 @@ interface StreamPanelProps {
 }
 
 export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
+  const { isMobile } = useSidebar()
   const [searchParams] = useSearchParams()
   const highlightMessageId = searchParams.get("m")
   const { panelId, openPanel, getPanelUrl, closePanel } = usePanel()
@@ -194,12 +195,21 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
     <SidePanel data-editor-zone="panel">
       <SidePanelHeader className="relative">
         <StreamLoadingIndicator isLoading={showLoadingIndicator} />
+        {/* Mobile back button — replaces X close on small screens */}
+        {isMobile && (
+          <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={onClose}>
+            <ChevronLeft className="h-4 w-4" />
+            <span className="sr-only">Back</span>
+          </Button>
+        )}
         {isDraft && parentBootstrap?.stream ? (
           // Draft thread header with responsive breadcrumbs
           <div className="flex items-center gap-1 min-w-0 flex-1 overflow-hidden pr-2">
-            <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={onClose}>
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
+            {!isMobile && (
+              <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={onClose}>
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+            )}
             <ResponsiveBreadcrumbs
               ancestors={fullChain}
               currentLabel="New thread"
@@ -211,11 +221,12 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
         ) : isThread && stream ? (
           <ThreadHeader workspaceId={workspaceId} stream={stream} inPanel />
         ) : (
-          <SidePanelTitle>
+          <SidePanelTitle className="flex-1">
             {stream ? (getStreamName(stream) ?? streamFallbackLabel(stream.type as StreamType, "generic")) : "Stream"}
           </SidePanelTitle>
         )}
-        <SidePanelClose onClose={onClose} />
+        {/* Hide X close button on mobile (back button used instead) */}
+        {!isMobile && <SidePanelClose onClose={onClose} />}
       </SidePanelHeader>
 
       <SidePanelContent className="flex flex-col">
@@ -242,7 +253,7 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
               </Empty>
             </div>
             <div className="border-t">
-              <div className="p-6 mx-auto max-w-[800px] w-full min-w-0">
+              <div className="p-3 sm:p-6 mx-auto max-w-[800px] w-full min-w-0">
                 <MessageComposer
                   content={composer.content}
                   onContentChange={composer.handleContentChange}

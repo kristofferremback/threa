@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { ResponsiveTabs } from "@/components/ui/responsive-tabs"
+import { Tabs, TabsContent } from "@/components/ui/tabs"
 import { useSettings } from "@/contexts"
 import { SETTINGS_TABS, type SettingsTab } from "@threa/types"
 import { ProfileSettings } from "./profile-settings"
@@ -32,7 +33,7 @@ export function SettingsDialog() {
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && closeSettings()}>
-      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+      <DialogContent className="max-w-2xl max-h-[85vh] max-sm:max-h-none sm:flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
         </DialogHeader>
@@ -42,13 +43,12 @@ export function SettingsDialog() {
           onValueChange={(value) => setActiveTab(value as SettingsTab)}
           className="flex-1 flex flex-col overflow-hidden"
         >
-          <TabsList className="grid w-full grid-cols-6">
-            {SETTINGS_TABS.map((tab: SettingsTab) => (
-              <TabsTrigger key={tab} value={tab}>
-                {TAB_LABELS[tab]}
-              </TabsTrigger>
-            ))}
-          </TabsList>
+          <ResponsiveTabs
+            tabs={SETTINGS_TABS}
+            labels={TAB_LABELS}
+            value={activeTab}
+            onValueChange={(value) => setActiveTab(value as SettingsTab)}
+          />
 
           <div className="flex-1 overflow-y-auto mt-4">
             <TabsContent value="profile" className="mt-0">

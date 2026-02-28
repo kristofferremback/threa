@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from "react"
+import { toast } from "sonner"
 import { RefreshCw } from "lucide-react"
 import { useNavigate, useParams } from "react-router-dom"
 import { useAuth } from "@/auth"
@@ -37,6 +38,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
     toggleSectionCollapsed,
     setSidebarHeight,
     setScrollContainerOffset,
+    collapseOnMobile,
   } = useSidebar()
   const { streamId: activeStreamId, "*": splat } = useParams<{ streamId: string; "*": string }>()
   const { data: bootstrap, isLoading, error, retryBootstrap } = useWorkspaceBootstrap(workspaceId)
@@ -290,11 +292,17 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   }
 
   const handleCreateScratchpad = async () => {
-    const draftId = await createDraft("on")
-    navigate(`/w/${workspaceId}/s/${draftId}`)
+    try {
+      const draftId = await createDraft("on")
+      collapseOnMobile()
+      navigate(`/w/${workspaceId}/s/${draftId}`)
+    } catch {
+      toast.error("Failed to create scratchpad")
+    }
   }
 
   const handleCreateChannel = () => {
+    collapseOnMobile()
     openCreateChannel()
   }
 

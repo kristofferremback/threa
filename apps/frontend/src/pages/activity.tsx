@@ -66,20 +66,20 @@ export function ActivityPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex h-11 items-center justify-between border-b px-4">
-        <div className="flex items-center gap-3">
+      <header className="flex h-11 items-center justify-between border-b px-4 gap-2">
+        <div className="flex items-center gap-3 min-w-0">
           <Link to={`/w/${workspaceId}`}>
-            <Button variant="ghost" size="icon" className="h-8 w-8">
+            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
               <ArrowLeft className="h-4 w-4" />
             </Button>
           </Link>
-          <div className="flex items-center gap-2">
-            <Bell className="h-5 w-5 text-muted-foreground" />
-            <h1 className="font-semibold">Activity</h1>
+          <div className="flex items-center gap-2 min-w-0">
+            <Bell className="h-5 w-5 text-muted-foreground shrink-0" />
+            <h1 className="font-semibold truncate">Activity</h1>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <Tabs value={unreadOnly ? "unread" : "all"} onValueChange={(v) => setUnreadOnly(v === "unread")}>
             <TabsList className="h-8">
               <TabsTrigger value="all" className="text-xs px-2.5 py-1">
@@ -97,10 +97,11 @@ export function ActivityPage() {
               size="sm"
               onClick={() => markAllRead.mutate()}
               disabled={markAllRead.isPending}
-              className="text-xs gap-1.5"
+              className="text-xs gap-1.5 max-sm:h-8 max-sm:w-8 max-sm:p-0"
+              title="Mark all read"
             >
               <Check className="h-3.5 w-3.5" />
-              Mark all read
+              <span className="max-sm:hidden">Mark all read</span>
             </Button>
           )}
         </div>

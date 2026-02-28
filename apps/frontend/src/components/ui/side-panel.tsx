@@ -5,7 +5,7 @@ import { Button } from "./button"
 
 const SidePanel = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => (
-    <div ref={ref} className={cn("flex h-full flex-col border-l bg-background", className)} {...props} />
+    <div ref={ref} className={cn("flex h-full flex-col sm:border-l bg-background", className)} {...props} />
   )
 )
 SidePanel.displayName = "SidePanel"

@@ -1,8 +1,8 @@
 import { useMemo } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { cn } from "@/lib/utils"
+import { ResponsiveTabs } from "@/components/ui/responsive-tabs"
+import { Tabs, TabsContent } from "@/components/ui/tabs"
 import { useStreamSettings, STREAM_SETTINGS_TABS, type StreamSettingsTab } from "./use-stream-settings"
 import { GeneralTab } from "./general-tab"
 import { CompanionTab } from "./companion-tab"
@@ -84,27 +84,20 @@ export function StreamSettingsDialog({ workspaceId }: StreamSettingsDialogProps)
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && closeStreamSettings()}>
-      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+      <DialogContent className="max-w-2xl max-h-[85vh] max-sm:max-h-none sm:flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>{streamName} Settings</DialogTitle>
         </DialogHeader>
 
         {resolvedStream && streamId && currentUserId ? (
           <Tabs value={effectiveTab} onValueChange={setTab} className="flex-1 flex flex-col overflow-hidden">
-            <TabsList
-              className={cn(
-                "grid w-full",
-                availableTabs.length === 1 && "grid-cols-1",
-                availableTabs.length === 2 && "grid-cols-2",
-                availableTabs.length === 3 && "grid-cols-3"
-              )}
-            >
-              {availableTabs.map((tab) => (
-                <TabsTrigger key={tab} value={tab}>
-                  {TAB_LABELS[tab]}
-                </TabsTrigger>
-              ))}
-            </TabsList>
+            <ResponsiveTabs
+              tabs={availableTabs}
+              labels={TAB_LABELS}
+              value={effectiveTab}
+              onValueChange={setTab}
+              columns={availableTabs.length}
+            />
 
             <div className="flex-1 overflow-y-auto mt-4 pr-2 scrollbar-thin">
               <TabsContent value="general" className="mt-0">

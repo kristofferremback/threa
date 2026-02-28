@@ -208,10 +208,10 @@ export function CreateChannelDialog({ workspaceId }: CreateChannelDialogProps) {
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-[480px] gap-0 p-0 overflow-hidden">
+      <DialogContent className="max-w-[480px] gap-0 max-sm:gap-0 p-0 max-sm:p-0 overflow-hidden max-sm:overflow-hidden">
         <ChannelDialogHeader />
         <div className="border-t border-border" />
-        <div className="pl-6 pr-4 py-5 space-y-5 max-h-[60vh] overflow-y-auto scrollbar-thin">
+        <div className="pl-6 pr-4 py-5 space-y-5 max-h-[60vh] max-sm:max-h-none max-sm:flex-1 max-sm:min-h-0 overflow-y-auto scrollbar-thin">
           <SlugField workspaceId={workspaceId} value={slug} onChange={setSlug} onValidityChange={setSlugValid} />
           <VisibilityField value={visibility} onChange={setVisibility} />
           <DescriptionField value={description} onChange={setDescription} />

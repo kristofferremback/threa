@@ -55,7 +55,7 @@ export function TraceDialog() {
 
   return (
     <Dialog open onOpenChange={(open) => !open && closeTraceModal()}>
-      <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col p-0 gap-0 [&>button:last-child]:hidden">
+      <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col p-0 max-sm:p-0 gap-0 max-sm:gap-0 [&>button:last-child]:hidden">
         <TraceHeader
           isLoading={isLoading}
           personaName={persona?.name}
@@ -111,44 +111,46 @@ function TraceHeader({
   onSessionChange: (sessionId: string) => void
 }) {
   return (
-    <div className="px-6 py-4 border-b shrink-0 flex items-center justify-between">
-      <div>
-        <DialogTitle className="text-lg font-semibold">
+    <div className="px-4 sm:px-6 py-4 border-b shrink-0 flex items-center justify-between gap-2">
+      <div className="min-w-0 flex-1">
+        <DialogTitle className="text-lg font-semibold truncate">
           {isLoading ? <Skeleton className="h-5 w-48" /> : "Agent Session Trace"}
         </DialogTitle>
         {personaName && sessionCreatedAt && (
           <div className="mt-1 space-y-1">
-            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
               <span>{personaName}</span>
-              <span>•</span>
+              <span className="max-sm:hidden">•</span>
               <RelativeTime date={sessionCreatedAt} className="text-xs text-muted-foreground" />
               {sessionDuration && (
                 <>
-                  <span>•</span>
+                  <span className="max-sm:hidden">•</span>
                   <span>{sessionDuration}</span>
                 </>
               )}
               {rerunReasonLabel && (
                 <>
-                  <span>•</span>
-                  <span>{rerunReasonLabel}</span>
+                  <span className="max-sm:hidden">•</span>
+                  <span className="max-sm:hidden">{rerunReasonLabel}</span>
                 </>
               )}
               {supersededByVersion && (
                 <>
-                  <span>•</span>
-                  <span>Superseded by {supersededByVersion}</span>
+                  <span className="max-sm:hidden">•</span>
+                  <span className="max-sm:hidden">Superseded by {supersededByVersion}</span>
                 </>
               )}
             </div>
-            {rerunReasonDetail && <div className="text-[11px] text-muted-foreground">{rerunReasonDetail}</div>}
+            {rerunReasonDetail && (
+              <div className="text-[11px] text-muted-foreground max-sm:hidden">{rerunReasonDetail}</div>
+            )}
           </div>
         )}
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 shrink-0">
         {!isLoading && sessionOptions.length > 1 && (
           <Select value={selectedSessionId} onValueChange={onSessionChange}>
-            <SelectTrigger className="h-8 w-[220px] text-xs">
+            <SelectTrigger className="h-8 w-auto sm:w-[220px] text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent align="end">

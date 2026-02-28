@@ -1,6 +1,7 @@
 import { Bell, FileEdit, MessageSquareText } from "lucide-react"
 import { Link } from "react-router-dom"
 import { UnreadBadge } from "@/components/unread-badge"
+import { useSidebar } from "@/contexts"
 import { cn } from "@/lib/utils"
 
 interface SidebarQuickLinksProps {
@@ -18,10 +19,13 @@ export function SidebarQuickLinks({
   isActivityPage,
   unreadActivityCount,
 }: SidebarQuickLinksProps) {
+  const { collapseOnMobile } = useSidebar()
+
   return (
     <div className="space-y-1">
       <Link
         to={`/w/${workspaceId}/drafts`}
+        onClick={collapseOnMobile}
         className={cn(
           "flex items-center gap-2.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
           isDraftsPage ? "bg-primary/10" : "hover:bg-muted/50",
@@ -34,6 +38,7 @@ export function SidebarQuickLinks({
       </Link>
       <Link
         to={`/w/${workspaceId}/threads`}
+        onClick={collapseOnMobile}
         className={cn(
           "flex items-center gap-2.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
           "hover:bg-muted/50 text-muted-foreground"
@@ -44,6 +49,7 @@ export function SidebarQuickLinks({
       </Link>
       <Link
         to={`/w/${workspaceId}/activity`}
+        onClick={collapseOnMobile}
         className={cn(
           "flex items-center gap-2.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
           isActivityPage ? "bg-primary/10" : "hover:bg-muted/50",

@@ -107,3 +107,7 @@ export { usePanelLayout } from "./use-panel-layout"
 export { useResizeDrag } from "./use-resize-drag"
 
 export { useTypeToFocus, focusAtEnd } from "./use-type-to-focus"
+
+export { useVisualViewport, type VisualViewportState } from "./use-visual-viewport"
+
+export { useIsMobile, MOBILE_BREAKPOINT } from "./use-mobile"

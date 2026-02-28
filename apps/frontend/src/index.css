@@ -13,6 +13,11 @@
  */
 
 @layer base {
+  /* Disable double-tap zoom on mobile — the app is not zoomable */
+  html {
+    touch-action: manipulation;
+  }
+
   :root {
     /* Base canvas - very subtle warm tint */
     --background: 40 20% 98%;
@@ -157,6 +162,9 @@
       "Segoe UI",
       sans-serif;
   }
+  /* Safe area padding for notched devices (iPhone X+).
+     Applied to main content rather than #root to avoid double-counting
+     with visualViewport height adjustments. */
 }
 
 /*

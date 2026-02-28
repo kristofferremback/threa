@@ -47,7 +47,7 @@ function SectionHeader({ label, icon, isCollapsed, onToggle, onAdd, addTooltip }
             e.stopPropagation()
             onAdd()
           }}
-          className="h-5 w-5 flex items-center justify-center rounded opacity-0 group-hover/section:opacity-100 hover:bg-muted transition-all"
+          className="h-5 w-5 max-sm:h-8 max-sm:w-8 flex items-center justify-center rounded opacity-0 group-hover/section:opacity-100 max-sm:opacity-100 hover:bg-muted transition-all"
           title={addTooltip}
         >
           <Plus className="h-3.5 w-3.5" />

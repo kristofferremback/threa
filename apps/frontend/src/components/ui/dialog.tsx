@@ -31,7 +31,14 @@ const DialogContent = React.forwardRef<React.ElementRef<typeof DialogPrimitive.C
       <DialogPrimitive.Content
         ref={ref}
         className={cn(
-          "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg sm:rounded-modal",
+          "fixed z-50 w-full max-w-lg gap-4 border bg-background p-6 shadow-lg",
+          // Mobile: full-screen, flex layout for proper overflow/scroll
+          // NOTE: twMerge does not merge across breakpoint prefixes. Callers that
+          // pass `p-0` or `gap-0` must also pass `max-sm:p-0` / `max-sm:gap-0`
+          // to cancel these mobile defaults.
+          "max-sm:inset-0 max-sm:flex max-sm:flex-col max-sm:gap-4 max-sm:max-w-none max-sm:max-h-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none max-sm:border-0 max-sm:overflow-y-auto max-sm:p-4",
+          // Desktop: centered grid modal
+          "sm:grid sm:left-[50%] sm:top-[50%] sm:translate-x-[-50%] sm:translate-y-[-50%] sm:rounded-modal",
           className
         )}
         {...props}

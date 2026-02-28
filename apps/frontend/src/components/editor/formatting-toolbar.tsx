@@ -101,7 +101,7 @@ export function FormattingToolbar({
   return (
     <TooltipProvider delayDuration={300}>
       <div className="flex flex-col">
-        <div className="flex items-center gap-1 border-b border-border/50 py-2 mb-2">
+        <div className="flex items-center gap-1 border-b border-border/50 py-2 mb-2 overflow-x-auto">
           {/* Text formatting */}
           <ToolbarBtn
             onClick={() => editor.chain().focus().toggleBold().run()}

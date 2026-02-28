@@ -68,7 +68,11 @@ export function ItemList({
   }
 
   return (
-    <div ref={listRef} role="listbox" className="max-h-[400px] overflow-y-auto p-2">
+    <div
+      ref={listRef}
+      role="listbox"
+      className="max-h-[400px] overflow-y-auto p-2 max-sm:max-h-none max-sm:flex-1 max-sm:min-h-0"
+    >
       {Object.entries(groups).map(([groupName, groupItems]) => (
         <div key={groupName || "_ungrouped"} role="group" aria-label={groupName || undefined} className="mb-1">
           {groupName && <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">{groupName}</div>}
@@ -102,7 +106,7 @@ export function ItemList({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-7 w-7 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="h-7 w-7 shrink-0 opacity-0 group-hover:opacity-100 max-sm:opacity-100 transition-opacity"
                     onClick={(e) => {
                       e.preventDefault()
                       e.stopPropagation()

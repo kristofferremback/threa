@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { ResponsiveTabs } from "@/components/ui/responsive-tabs"
+import { Tabs, TabsContent } from "@/components/ui/tabs"
 import { UsersTab } from "./users-tab"
 
 const WORKSPACE_SETTINGS_TABS = ["general", "users"] as const
@@ -48,19 +49,13 @@ export function WorkspaceSettingsDialog({ workspaceId }: WorkspaceSettingsDialog
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && close()}>
-      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+      <DialogContent className="max-w-2xl max-h-[85vh] max-sm:max-h-none sm:flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>Workspace Settings</DialogTitle>
         </DialogHeader>
 
         <Tabs value={activeTab} onValueChange={setTab} className="flex-1 flex flex-col overflow-hidden">
-          <TabsList className="grid w-full grid-cols-2">
-            {WORKSPACE_SETTINGS_TABS.map((tab) => (
-              <TabsTrigger key={tab} value={tab}>
-                {TAB_LABELS[tab]}
-              </TabsTrigger>
-            ))}
-          </TabsList>
+          <ResponsiveTabs tabs={WORKSPACE_SETTINGS_TABS} labels={TAB_LABELS} value={activeTab} onValueChange={setTab} />
 
           <div className="flex-1 overflow-y-auto mt-4">
             <TabsContent value="general" className="mt-0">

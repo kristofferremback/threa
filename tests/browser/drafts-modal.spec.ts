@@ -218,7 +218,7 @@ test.describe("Drafts Page", () => {
 
     // Open quick switcher with Cmd+K
     await page.keyboard.press("Meta+k")
-    await expect(page.getByText("Stream search")).toBeVisible({ timeout: 2000 })
+    await expect(page.getByRole("tab", { name: "Stream search" })).toBeVisible({ timeout: 2000 })
 
     // Type command prefix and search for drafts
     await page.keyboard.type("> drafts")
@@ -228,7 +228,7 @@ test.describe("Drafts Page", () => {
     await page.keyboard.press("Enter")
 
     // Quick switcher should close and we should be on the drafts page
-    await expect(page.getByText("Stream search")).not.toBeVisible({ timeout: 2000 })
+    await expect(page.getByRole("tab", { name: "Stream search" })).not.toBeVisible({ timeout: 2000 })
     await expect(page).toHaveURL(/\/drafts$/, { timeout: 2000 })
   })
 
