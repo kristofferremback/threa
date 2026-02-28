@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useRef, useEffect, type ReactNode } from "react"
-import { MOBILE_BREAKPOINT } from "@/hooks/use-mobile"
+import { useIsMobile } from "@/hooks/use-mobile"
 
 /**
  * Sidebar states:
@@ -143,10 +143,10 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
   const [persistedState, setPersistedState] = useState<SidebarPersistedState>(getStoredState)
 
   // Runtime state (preview is transient, not persisted)
+  const isMobile = useIsMobile()
   const [state, setState] = useState<SidebarState>(() =>
-    persistedState.openState === "collapsed" ? "collapsed" : "pinned"
+    isMobile || persistedState.openState === "collapsed" ? "collapsed" : "pinned"
   )
-  const [isMobile, setIsMobile] = useState(() => window.innerWidth < MOBILE_BREAKPOINT)
   const [isHovering, setIsHovering] = useState(false)
   const isHoveringRef = useRef(false)
   const [isResizing, setIsResizing] = useState(false)
@@ -166,24 +166,12 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
     })
   }, [])
 
-  // Track viewport size for mobile responsiveness (matchMedia fires only on threshold crossing)
+  // Auto-collapse when transitioning to mobile
   useEffect(() => {
-    const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`)
-    const onChange = () => {
-      const mobile = mql.matches
-      setIsMobile(mobile)
-      // Auto-collapse when transitioning to mobile
-      if (mobile) {
-        setState("collapsed")
-      }
+    if (isMobile) {
+      setState("collapsed")
     }
-
-    mql.addEventListener("change", onChange)
-    // Initial check
-    onChange()
-
-    return () => mql.removeEventListener("change", onChange)
-  }, [])
+  }, [isMobile])
 
   // Clear any pending hide timeout
   const clearHideTimeout = useCallback(() => {
