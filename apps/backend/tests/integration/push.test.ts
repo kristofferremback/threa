@@ -281,6 +281,125 @@ describe("Push Notifications", () => {
     })
   })
 
+  describe("PushService.subscribe (cap enforcement)", () => {
+    function createService() {
+      return new PushService({
+        pool,
+        vapidConfig: {
+          publicKey: "BM1RQ2UEVpAlbEgYOQ3bDrGAOrJGBmmh4_4UkmtGRzhi-5WPFmPuJbA6zv4kCp0iycvTaH6eveCXedCE0xSnZbk",
+          privateKey: "eHUfakWGHrS4ft0HiSGyhTOBCQJ9VAKWl4XK53qsjMg",
+          subject: "mailto:test@threa.app",
+        },
+        lookups: {
+          getUserNotificationLevel: async () => PrefNotificationLevels.ALL,
+          getStreamType: async () => StreamTypes.CHANNEL,
+        },
+      })
+    }
+
+    test("evicts oldest subscription when at cap", async () => {
+      const service = createService()
+
+      // Fill to cap (10 subscriptions)
+      for (let i = 0; i < 10; i++) {
+        await service.subscribe({
+          workspaceId: testWorkspaceId,
+          userId: testUserId,
+          endpoint: `https://push.example.com/sub/cap-${i}`,
+          p256dh: `p${i}`,
+          auth: `a${i}`,
+          deviceKey: `d${i}`,
+        })
+      }
+
+      // Mark the first subscription as oldest
+      const allBefore = await PushSubscriptionRepository.findByUserId(pool, testWorkspaceId, testUserId)
+      expect(allBefore).toHaveLength(10)
+      const oldestId = allBefore[allBefore.length - 1].id // findByUserId orders DESC by created_at
+      await pool.query(`UPDATE push_subscriptions SET updated_at = now() - interval '1 hour' WHERE id = $1`, [oldestId])
+
+      // Subscribe with a new endpoint — should evict the oldest
+      const newSub = await service.subscribe({
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        endpoint: "https://push.example.com/sub/cap-new",
+        p256dh: "pNew",
+        auth: "aNew",
+        deviceKey: "dNew",
+      })
+
+      const allAfter = await PushSubscriptionRepository.findByUserId(pool, testWorkspaceId, testUserId)
+      expect(allAfter).toHaveLength(10)
+      expect(allAfter.map((s) => s.id)).toContain(newSub.id)
+      expect(allAfter.map((s) => s.id)).not.toContain(oldestId)
+    })
+
+    test("re-register at cap does not evict", async () => {
+      const service = createService()
+
+      // Fill to cap
+      for (let i = 0; i < 10; i++) {
+        await service.subscribe({
+          workspaceId: testWorkspaceId,
+          userId: testUserId,
+          endpoint: `https://push.example.com/sub/reregister-${i}`,
+          p256dh: `p${i}`,
+          auth: `a${i}`,
+          deviceKey: `d${i}`,
+        })
+      }
+
+      const allBefore = await PushSubscriptionRepository.findByUserId(pool, testWorkspaceId, testUserId)
+      expect(allBefore).toHaveLength(10)
+      const beforeIds = allBefore.map((s) => s.id).sort()
+
+      // Re-register an existing endpoint with updated keys — should upsert, not evict
+      await service.subscribe({
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        endpoint: "https://push.example.com/sub/reregister-0",
+        p256dh: "updated-p256dh",
+        auth: "updated-auth",
+        deviceKey: "d0",
+      })
+
+      const allAfter = await PushSubscriptionRepository.findByUserId(pool, testWorkspaceId, testUserId)
+      expect(allAfter).toHaveLength(10)
+      // Same subscription IDs — no eviction happened
+      expect(allAfter.map((s) => s.id).sort()).toEqual(beforeIds)
+      // Keys were updated
+      const updated = allAfter.find((s) => s.endpoint === "https://push.example.com/sub/reregister-0")
+      expect(updated).toMatchObject({ p256dh: "updated-p256dh", auth: "updated-auth" })
+    })
+
+    test("below cap adds without eviction", async () => {
+      const service = createService()
+
+      const sub1 = await service.subscribe({
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        endpoint: "https://push.example.com/sub/below-cap-1",
+        p256dh: "p1",
+        auth: "a1",
+        deviceKey: "d1",
+      })
+
+      const sub2 = await service.subscribe({
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        endpoint: "https://push.example.com/sub/below-cap-2",
+        p256dh: "p2",
+        auth: "a2",
+        deviceKey: "d2",
+      })
+
+      const all = await PushSubscriptionRepository.findByUserId(pool, testWorkspaceId, testUserId)
+      expect(all).toHaveLength(2)
+      expect(all.map((s) => s.id)).toContain(sub1.id)
+      expect(all.map((s) => s.id)).toContain(sub2.id)
+    })
+  })
+
   describe("PushService.deliverPushForActivity", () => {
     function makePayload(overrides?: Partial<ActivityCreatedOutboxPayload>): ActivityCreatedOutboxPayload {
       return {

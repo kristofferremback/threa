@@ -35,6 +35,16 @@ async function getDeviceKey(): Promise<string> {
     .slice(0, DEVICE_KEY_LENGTH)
 }
 
+function arrayBuffersEqual(a: ArrayBuffer, b: ArrayBuffer): boolean {
+  if (a.byteLength !== b.byteLength) return false
+  const viewA = new Uint8Array(a)
+  const viewB = new Uint8Array(b)
+  for (let i = 0; i < viewA.length; i++) {
+    if (viewA[i] !== viewB[i]) return false
+  }
+  return true
+}
+
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4)
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/")
@@ -79,14 +89,22 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
         }
         setPushDisabledOnServer(false)
 
-        // Reuse existing browser subscription if available to avoid redundant push service round-trips.
-        // Only call pushManager.subscribe() when no subscription exists (first-time or after revocation).
-        const existing = await registration.pushManager.getSubscription()
+        // Reuse existing browser subscription if its VAPID key matches the server's.
+        // If VAPID keys were rotated, unsubscribe the stale one and create a fresh subscription.
+        const expectedKey = urlBase64ToUint8Array(vapidPublicKey).buffer as ArrayBuffer
+        let existing = await registration.pushManager.getSubscription()
+        if (existing) {
+          const existingKey = existing.options.applicationServerKey
+          if (!existingKey || !arrayBuffersEqual(existingKey, expectedKey)) {
+            await existing.unsubscribe()
+            existing = null
+          }
+        }
         const subscription =
           existing ??
           (await registration.pushManager.subscribe({
             userVisibleOnly: true,
-            applicationServerKey: urlBase64ToUint8Array(vapidPublicKey).buffer as ArrayBuffer,
+            applicationServerKey: expectedKey,
           }))
 
         const json = subscription.toJSON()
