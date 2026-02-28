@@ -53,7 +53,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
     window.location.href = url
   }, [])
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    // Unsubscribe from browser push service before logging out.
+    // The backend cleans up stale subscriptions on next delivery attempt (404/410),
+    // but removing the browser subscription immediately prevents notifications
+    // from arriving after the user has logged out.
+    try {
+      const registration = await navigator.serviceWorker?.ready
+      const subscription = await registration?.pushManager.getSubscription()
+      await subscription?.unsubscribe()
+    } catch {
+      // Best-effort — don't block logout if push cleanup fails
+    }
     window.location.href = "/api/auth/logout"
   }, [])
 

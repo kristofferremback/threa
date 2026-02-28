@@ -66,7 +66,15 @@ self.addEventListener("push", (event) => {
     tag: data.messageId ?? "threa-notification",
   }
 
-  event.waitUntil(self.registration.showNotification(title, options))
+  // Suppress notification if the user has a focused app window — they can already see the message.
+  // Backend always sends the push; the SW decides whether to display it.
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      const hasFocusedWindow = clients.some((c) => c.focused && new URL(c.url).origin === self.location.origin)
+      if (hasFocusedWindow) return
+      return self.registration.showNotification(title, options)
+    })
+  )
 })
 
 // ============================================================================

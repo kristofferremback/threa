@@ -86,25 +86,31 @@ export class ActivityService {
       const streamMembers = await StreamMemberRepository.list(client, { streamId })
       if (streamMembers.length === 0) return []
 
-      // Resolve effective notification levels for all members
-      const resolved = await resolveNotificationLevelsForStream(client, stream, streamMembers)
+      // DMs and scratchpads are direct communication — always create activities,
+      // like mentions. Notification levels only gate channel messages.
+      const isDirectStream = stream.type === StreamTypes.DM || stream.type === StreamTypes.SCRATCHPAD
 
       // Fetch root stream once for context
       const rootStream = stream.rootStreamId ? await StreamRepository.findById(client, stream.rootStreamId) : null
 
       const streamContext = resolveStreamContext(stream, rootStream)
       const contentPreview = contentMarkdown.slice(0, 200)
-      const resolvedUsers = resolved.map((row) => ({ userId: row.memberId, effectiveLevel: row.effectiveLevel }))
 
-      const eligibleUserIds = resolvedUsers
-        .filter((row) => {
-          if (row.userId === actorId) return false
-          if (excludeUserIds.has(row.userId)) return false
-          return (
-            row.effectiveLevel === NotificationLevels.ACTIVITY || row.effectiveLevel === NotificationLevels.EVERYTHING
-          )
-        })
-        .map((row) => row.userId)
+      let eligibleUserIds: string[]
+      if (isDirectStream) {
+        eligibleUserIds = streamMembers.map((m) => m.memberId).filter((id) => id !== actorId && !excludeUserIds.has(id))
+      } else {
+        const resolved = await resolveNotificationLevelsForStream(client, stream, streamMembers)
+        eligibleUserIds = resolved
+          .filter((row) => {
+            if (row.memberId === actorId) return false
+            if (excludeUserIds.has(row.memberId)) return false
+            return (
+              row.effectiveLevel === NotificationLevels.ACTIVITY || row.effectiveLevel === NotificationLevels.EVERYTHING
+            )
+          })
+          .map((row) => row.memberId)
+      }
 
       return ActivityRepository.insertBatch(client, {
         workspaceId,

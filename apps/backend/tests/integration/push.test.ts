@@ -569,51 +569,14 @@ describe("Push Notifications", () => {
       })
     })
 
-    test("session-aware: user active on device skips that device", async () => {
+    test("pushes to all devices regardless of active sessions", async () => {
       const service = createServiceWithLookups()
 
       // Two subscriptions on different devices
       await PushSubscriptionRepository.insert(pool, {
         workspaceId: testWorkspaceId,
         userId: testUserId,
-        endpoint: "https://push.example.com/sub/active-device",
-        p256dh: "p1",
-        auth: "a1",
-        deviceKey: "device-active",
-      })
-      await PushSubscriptionRepository.insert(pool, {
-        workspaceId: testWorkspaceId,
-        userId: testUserId,
-        endpoint: "https://push.example.com/sub/offline-device",
-        p256dh: "p2",
-        auth: "a2",
-        deviceKey: "device-offline",
-      })
-
-      // Mark device-active as having an active session
-      await UserSessionRepository.upsert(pool, {
-        workspaceId: testWorkspaceId,
-        userId: testUserId,
-        deviceKey: "device-active",
-      })
-
-      await service.deliverPushForActivity(makePayload())
-
-      // Should only push to the offline device
-      expect(sendSpy).toHaveBeenCalledTimes(1)
-      const calledEndpoint = sendSpy.mock.calls[0][0]
-      expect(calledEndpoint).toMatchObject({
-        endpoint: "https://push.example.com/sub/offline-device",
-      })
-    })
-
-    test("session-aware: user fully offline pushes to all devices", async () => {
-      const service = createServiceWithLookups()
-
-      await PushSubscriptionRepository.insert(pool, {
-        workspaceId: testWorkspaceId,
-        userId: testUserId,
-        endpoint: "https://push.example.com/sub/offline-1",
+        endpoint: "https://push.example.com/sub/device-1",
         p256dh: "p1",
         auth: "a1",
         deviceKey: "device-1",
@@ -621,20 +584,28 @@ describe("Push Notifications", () => {
       await PushSubscriptionRepository.insert(pool, {
         workspaceId: testWorkspaceId,
         userId: testUserId,
-        endpoint: "https://push.example.com/sub/offline-2",
+        endpoint: "https://push.example.com/sub/device-2",
         p256dh: "p2",
         auth: "a2",
         deviceKey: "device-2",
       })
 
-      // No active sessions — user is fully offline
+      // Mark device-1 as having an active session — should NOT suppress push.
+      // The service worker handles display suppression client-side.
+      await UserSessionRepository.upsert(pool, {
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        deviceKey: "device-1",
+      })
+
       await service.deliverPushForActivity(makePayload())
 
+      // Both devices receive push — SW decides whether to show notification
       expect(sendSpy).toHaveBeenCalledTimes(2)
       const calledEndpoints = sendSpy.mock.calls.map((c) => c[0].endpoint).sort()
       expect(calledEndpoints).toEqual([
-        "https://push.example.com/sub/offline-1",
-        "https://push.example.com/sub/offline-2",
+        "https://push.example.com/sub/device-1",
+        "https://push.example.com/sub/device-2",
       ])
     })
 

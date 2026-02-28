@@ -1,6 +1,6 @@
 import type { Pool } from "pg"
 import webpush from "web-push"
-import { withClient, withTransaction } from "../../db"
+import { withTransaction } from "../../db"
 import { PushSubscriptionRepository, type PushSubscription, type InsertPushSubscriptionParams } from "./repository"
 import { UserSessionRepository, type UserSession } from "./session-repository"
 import {
@@ -12,9 +12,6 @@ import {
 } from "@threa/types"
 import { logger } from "../../lib/logger"
 import type { ActivityCreatedOutboxPayload } from "../../lib/outbox"
-
-/** Session is "active" if heartbeat within this window (2x the 30s heartbeat interval) */
-const ACTIVE_SESSION_WINDOW_MS = 60_000
 
 /** Maximum push subscriptions per user per workspace to bound parallel delivery calls */
 const MAX_SUBSCRIPTIONS_PER_USER = 10
@@ -221,31 +218,13 @@ export class PushService {
   }
 
   /**
-   * Session-aware delivery:
-   * - If 1+ sessions are active: suppress push on those devices, push only to offline ones
-   * - If 0 sessions are active (user fully offline): push to ALL subscriptions
+   * Returns all push subscriptions for the user.
    *
-   * Note: device keys are derived from User-Agent hashes. Two browser instances with
-   * identical UAs share a device key — when either is active, both are considered active.
-   * This is acceptable since same-UA instances are typically on the same physical device.
+   * Push delivery is not session-gated on the backend — the service worker checks
+   * whether any app window is focused and suppresses the notification display if so.
+   * This ensures notifications arrive instantly when the user tabs away.
    */
   private async getTargetSubscriptions(workspaceId: string, userId: string) {
-    // Multiple related reads: use withClient for connection consistency (INV-30)
-    const { allSubscriptions, activeSessions } = await withClient(this.pool, async (client) => {
-      const allSubscriptions = await PushSubscriptionRepository.findByUserId(client, workspaceId, userId)
-      const activeSessions =
-        allSubscriptions.length > 0
-          ? await UserSessionRepository.getActiveSessions(client, workspaceId, userId, ACTIVE_SESSION_WINDOW_MS)
-          : []
-      return { allSubscriptions, activeSessions }
-    })
-    if (allSubscriptions.length === 0) return []
-
-    if (activeSessions.length > 0) {
-      const activeDeviceKeys = new Set(activeSessions.map((s) => s.deviceKey))
-      return allSubscriptions.filter((s) => !activeDeviceKeys.has(s.deviceKey))
-    }
-
-    return allSubscriptions
+    return PushSubscriptionRepository.findByUserId(this.pool, workspaceId, userId)
   }
 }
