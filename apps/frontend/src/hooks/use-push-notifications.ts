@@ -171,7 +171,9 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
     return () => window.removeEventListener("pushsubscriptionchanged", handleSubscriptionChange)
   }, [permission, workspaceId, subscribe, optedOut])
 
-  // Unsubscribe from push notifications
+  // Unsubscribe from push notifications for this workspace.
+  // Only removes the backend record — the browser subscription stays alive
+  // so other workspaces sharing the same origin keep receiving push.
   const unsubscribe = useCallback(async () => {
     if (!workspaceId) return
 
@@ -180,18 +182,12 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
       if (!registration) return
 
       const subscription = await registration.pushManager.getSubscription()
-      if (!subscription) {
-        setIsSubscribed(false)
-        return
+      if (subscription) {
+        await api.post(`/api/workspaces/${workspaceId}/push/unsubscribe`, {
+          endpoint: subscription.endpoint,
+        })
       }
 
-      // Remove from backend
-      await api.post(`/api/workspaces/${workspaceId}/push/unsubscribe`, {
-        endpoint: subscription.endpoint,
-      })
-
-      // Unsubscribe from browser push service
-      await subscription.unsubscribe()
       setIsSubscribed(false)
 
       // Persist opt-out so auto-subscribe doesn't re-register on next mount
