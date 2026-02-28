@@ -16,11 +16,12 @@ const pushEndpointSchema = z
         const parsed = new URL(url)
         if (parsed.protocol !== "https:") return false
         const host = parsed.hostname
-        // Reject loopback and private IP ranges
+        // Reject loopback, private IP ranges, and link-local addresses
         if (host === "localhost" || host === "127.0.0.1" || host === "::1") return false
         if (host.startsWith("10.")) return false
         if (host.startsWith("192.168.")) return false
         if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return false
+        if (host.startsWith("169.254.")) return false
         if (host.startsWith("0.")) return false
         return true
       } catch {
@@ -80,7 +81,10 @@ export function createPushHandlers({ pushService }: Dependencies) {
     },
 
     async getVapidKey(_req: Request, res: Response) {
-      res.json({ vapidPublicKey: pushService.getVapidPublicKey() })
+      res.json({
+        vapidPublicKey: pushService.getVapidPublicKey() || null,
+        enabled: pushService.isEnabled(),
+      })
     },
   }
 }

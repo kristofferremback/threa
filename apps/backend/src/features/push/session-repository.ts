@@ -44,6 +44,33 @@ export const UserSessionRepository = {
     return mapRowToSession(result.rows[0])
   },
 
+  /**
+   * Batch upsert sessions in a single SQL statement (INV-56).
+   * Used by heartbeat handler to avoid N individual upserts per workspace.
+   */
+  async upsertBatch(
+    db: Querier,
+    entries: Array<{ workspaceId: string; userId: string; deviceKey: string }>
+  ): Promise<void> {
+    if (entries.length === 0) return
+    if (entries.length === 1) {
+      await this.upsert(db, entries[0])
+      return
+    }
+
+    const ids = entries.map(() => userSessionId())
+    const workspaceIds = entries.map((e) => e.workspaceId)
+    const userIds = entries.map((e) => e.userId)
+    const deviceKeys = entries.map((e) => e.deviceKey)
+
+    await db.query(sql`
+      INSERT INTO user_sessions (id, workspace_id, user_id, device_key, last_active_at)
+      SELECT unnest(${ids}::text[]), unnest(${workspaceIds}::text[]), unnest(${userIds}::text[]), unnest(${deviceKeys}::text[]), now()
+      ON CONFLICT (workspace_id, user_id, device_key)
+      DO UPDATE SET last_active_at = now()
+    `)
+  },
+
   async getActiveSessions(db: Querier, workspaceId: string, userId: string, windowMs: number): Promise<UserSession[]> {
     const result = await db.query<UserSessionRow>(sql`
       SELECT * FROM user_sessions

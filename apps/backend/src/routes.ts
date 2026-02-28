@@ -255,12 +255,13 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.post("/api/workspaces/:workspaceId/activity/read", ...authed, activity.markAllAsRead)
   app.post("/api/workspaces/:workspaceId/activity/:id/read", ...authed, activity.markOneAsRead)
 
-  // Push notifications (only register routes when VAPID is configured)
+  // Push notifications
+  const push = createPushHandlers({ pushService })
+  // VAPID key route is always available so the frontend can detect push support (INV-11)
+  app.get("/api/workspaces/:workspaceId/push/vapid-key", ...authed, push.getVapidKey)
   if (pushService.isEnabled()) {
-    const push = createPushHandlers({ pushService })
     app.post("/api/workspaces/:workspaceId/push/subscribe", ...authed, push.subscribe)
     app.delete("/api/workspaces/:workspaceId/push/subscribe", ...authed, push.unsubscribe)
-    app.get("/api/workspaces/:workspaceId/push/vapid-key", ...authed, push.getVapidKey)
   }
 
   // Agent Sessions (trace viewing)

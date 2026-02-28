@@ -46,9 +46,12 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
       if (!workspaceId) return
 
       try {
-        const { vapidPublicKey } = await api.get<{ vapidPublicKey: string }>(
-          `/api/workspaces/${workspaceId}/push/vapid-key`
-        )
+        const { vapidPublicKey, enabled } = await api.get<{
+          vapidPublicKey: string | null
+          enabled: boolean
+        }>(`/api/workspaces/${workspaceId}/push/vapid-key`)
+
+        if (!enabled || !vapidPublicKey) return
 
         const subscription = await registration.pushManager.subscribe({
           userVisibleOnly: true,

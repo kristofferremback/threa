@@ -277,11 +277,15 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
     socket.on("heartbeat", () => {
       if (!pushService.isEnabled()) return
       const deviceKey = deriveDeviceKey(socket.handshake.headers["user-agent"])
-      for (const [wsId, entry] of userRooms) {
-        pushService.upsertSession({ workspaceId: wsId, userId: entry.userId, deviceKey }).catch((err) => {
-          logger.warn({ err }, "Failed to upsert session on heartbeat")
-        })
-      }
+      const entries = Array.from(userRooms, ([wsId, entry]) => ({
+        workspaceId: wsId,
+        userId: entry.userId,
+        deviceKey,
+      }))
+      if (entries.length === 0) return
+      pushService.upsertSessionsBatch(entries).catch((err) => {
+        logger.warn({ err }, "Failed to upsert sessions on heartbeat")
+      })
     })
 
     socket.on("disconnect", () => {

@@ -56,9 +56,10 @@ test.describe("Push Notification Settings", () => {
     const response = await page.request.get(`/api/workspaces/${workspaceId}/push/vapid-key`)
     expect(response.ok()).toBeTruthy()
 
-    const body = (await response.json()) as { vapidPublicKey: string }
+    const body = (await response.json()) as { vapidPublicKey: string | null; enabled: boolean }
     expect(body.vapidPublicKey).toBeTruthy()
     expect(typeof body.vapidPublicKey).toBe("string")
+    expect(body.enabled).toBe(true)
   })
 
   test("subscribe endpoint accepts subscription", async ({ page }) => {

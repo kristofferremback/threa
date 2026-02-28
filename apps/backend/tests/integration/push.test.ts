@@ -313,7 +313,7 @@ describe("Push Notifications", () => {
         },
         lookups: {
           getUserNotificationLevel: async () => overrides?.notificationLevel ?? PrefNotificationLevels.ALL,
-          getStreamType: async () => overrides?.streamType ?? StreamTypes.CHANNEL,
+          getStreamType: async (_workspaceId) => overrides?.streamType ?? StreamTypes.CHANNEL,
         },
       })
     }

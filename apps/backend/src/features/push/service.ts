@@ -19,8 +19,8 @@ const ACTIVE_SESSION_WINDOW_MS = 60_000
 interface CrossFeatureLookups {
   /** Resolve a user's notification level preference. */
   getUserNotificationLevel: (workspaceId: string, userId: string) => Promise<PrefNotificationLevel>
-  /** Resolve a stream's type by ID. Returns null if not found. */
-  getStreamType: (streamId: string) => Promise<StreamType | null>
+  /** Resolve a stream's type by ID within a workspace. Returns null if not found. */
+  getStreamType: (workspaceId: string, streamId: string) => Promise<StreamType | null>
 }
 
 interface PushServiceDeps {
@@ -80,6 +80,10 @@ export class PushService {
     return UserSessionRepository.upsert(this.pool, params)
   }
 
+  async upsertSessionsBatch(entries: Array<{ workspaceId: string; userId: string; deviceKey: string }>): Promise<void> {
+    return UserSessionRepository.upsertBatch(this.pool, entries)
+  }
+
   async getActiveSessions(workspaceId: string, userId: string, windowMs: number): Promise<UserSession[]> {
     return UserSessionRepository.getActiveSessions(this.pool, workspaceId, userId, windowMs)
   }
@@ -114,7 +118,7 @@ export class PushService {
     }
 
     if (prefLevel === PrefNotificationLevels.MENTIONS) {
-      const shouldPush = await this.shouldPushForMentionsMode(activity.activityType, activity.streamId)
+      const shouldPush = await this.shouldPushForMentionsMode(workspaceId, activity.activityType, activity.streamId)
       if (!shouldPush) {
         return
       }
@@ -177,13 +181,17 @@ export class PushService {
    * For "mentions" mode: push if activityType is "mention", or if the message
    * is from a DM or scratchpad (direct communication channels).
    */
-  private async shouldPushForMentionsMode(activityType: string, streamId: string): Promise<boolean> {
+  private async shouldPushForMentionsMode(
+    workspaceId: string,
+    activityType: string,
+    streamId: string
+  ): Promise<boolean> {
     if (activityType === ActivityTypes.MENTION) {
       return true
     }
 
     if (activityType === ActivityTypes.MESSAGE) {
-      const streamType = await this.lookups.getStreamType(streamId)
+      const streamType = await this.lookups.getStreamType(workspaceId, streamId)
       if (streamType === StreamTypes.DM || streamType === StreamTypes.SCRATCHPAD) {
         return true
       }

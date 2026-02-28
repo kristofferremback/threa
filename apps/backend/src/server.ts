@@ -316,7 +316,10 @@ export async function startServer(): Promise<ServerInstance> {
         const prefs = await userPreferencesService.getPreferences(workspaceId, userId)
         return prefs.notificationLevel
       },
-      getStreamType: async (streamId) => {
+      getStreamType: async (_workspaceId, streamId) => {
+        // Stream IDs are globally unique ULIDs; getStreamById is safe without workspace filter.
+        // The workspaceId parameter is accepted for API correctness (INV-8) even though
+        // StreamRepository.findById does not currently filter by workspace.
         const stream = await streamService.getStreamById(streamId)
         return stream?.type ?? null
       },

@@ -1,5 +1,6 @@
 /// <reference lib="webworker" />
 import { precacheAndRoute } from "workbox-precaching"
+import { ActivityTypes } from "@threa/types"
 
 declare const self: ServiceWorkerGlobalScope
 
@@ -22,9 +23,9 @@ interface PushData {
 
 function formatTitle(activityType: string | undefined): string {
   switch (activityType) {
-    case "mention":
+    case ActivityTypes.MENTION:
       return "You were mentioned"
-    case "message":
+    case ActivityTypes.MESSAGE:
       return "New message"
     default:
       return "New activity"
@@ -84,18 +85,17 @@ self.addEventListener("notificationclick", (event) => {
   }
 
   event.waitUntil(
-    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(async (clients) => {
       // Focus an existing window if one is open
       for (const client of clients) {
         if (new URL(client.url).origin === self.location.origin) {
-          return client.focus().then(() => {
-            // Use postMessage to let the app handle navigation via React Router
-            client.postMessage({ type: "NOTIFICATION_CLICK", url: targetUrl })
-          })
+          await client.focus()
+          client.postMessage({ type: "NOTIFICATION_CLICK", url: targetUrl })
+          return
         }
       }
       // No existing window — open a new one
-      return self.clients.openWindow(targetUrl)
+      await self.clients.openWindow(targetUrl)
     })
   )
 })
