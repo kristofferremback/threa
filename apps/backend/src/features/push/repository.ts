@@ -98,6 +98,17 @@ export const PushSubscriptionRepository = {
     `)
   },
 
+  /** Check if a subscription already exists for this user+endpoint (used for cap-safe upserts). */
+  async existsByEndpoint(db: Querier, workspaceId: string, userId: string, endpoint: string): Promise<boolean> {
+    const result = await db.query<{ exists: boolean }>(sql`
+      SELECT EXISTS(
+        SELECT 1 FROM push_subscriptions
+        WHERE workspace_id = ${workspaceId} AND user_id = ${userId} AND endpoint = ${endpoint}
+      ) AS exists
+    `)
+    return result.rows[0].exists
+  },
+
   /** Count user subscriptions with row locks to prevent concurrent cap violations (INV-20). */
   async countByUserForUpdate(db: Querier, workspaceId: string, userId: string): Promise<number> {
     const result = await db.query<{ count: string }>(sql`

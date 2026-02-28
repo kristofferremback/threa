@@ -73,10 +73,15 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
           return
         }
 
-        const subscription = await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(vapidPublicKey).buffer as ArrayBuffer,
-        })
+        // Reuse existing browser subscription if available to avoid redundant push service round-trips.
+        // Only call pushManager.subscribe() when no subscription exists (first-time or after revocation).
+        const existing = await registration.pushManager.getSubscription()
+        const subscription =
+          existing ??
+          (await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(vapidPublicKey).buffer as ArrayBuffer,
+          }))
 
         const key = subscription.getKey("p256dh")
         const auth = subscription.getKey("auth")
@@ -84,6 +89,7 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
 
         const deviceKey = await getDeviceKey()
 
+        // Backend upsert (ON CONFLICT DO UPDATE) — idempotent for re-registrations
         await api.post(`/api/workspaces/${workspaceId}/push/subscribe`, {
           endpoint: subscription.endpoint,
           p256dh: btoa(String.fromCharCode(...new Uint8Array(key))),
