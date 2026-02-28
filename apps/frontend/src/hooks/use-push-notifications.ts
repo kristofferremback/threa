@@ -1,8 +1,13 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { DEVICE_KEY_LENGTH } from "@threa/types"
 import { api } from "@/api/client"
 
 type PushPermission = NotificationPermission | "unsupported"
+
+interface VapidConfig {
+  vapidPublicKey: string | null
+  enabled: boolean
+}
 
 interface UsePushNotificationsResult {
   permission: PushPermission
@@ -10,7 +15,11 @@ interface UsePushNotificationsResult {
   requestPermission: () => Promise<void>
 }
 
-/** Derives a device key from user-agent — must match backend's deriveDeviceKey (socket.ts). */
+/**
+ * Derives a device key from user-agent.
+ * Algorithm contract documented in @threa/types (DEVICE_KEY_LENGTH).
+ * Must match backend's deriveDeviceKey (socket.ts).
+ */
 async function getDeviceKey(): Promise<string> {
   // crypto.subtle is always available in secure contexts (HTTPS + localhost)
   const encoder = new TextEncoder()
@@ -40,6 +49,7 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
     return Notification.permission
   })
   const [isSubscribed, setIsSubscribed] = useState(false)
+  const vapidCacheRef = useRef<{ workspaceId: string; config: VapidConfig } | null>(null)
 
   // Subscribe to push notifications
   const subscribe = useCallback(
@@ -47,10 +57,16 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
       if (!workspaceId) return
 
       try {
-        const { vapidPublicKey, enabled } = await api.get<{
-          vapidPublicKey: string | null
-          enabled: boolean
-        }>(`/api/workspaces/${workspaceId}/push/vapid-key`)
+        // Cache VAPID config per workspace to avoid redundant fetches (key doesn't change)
+        let vapidPublicKey: string | null
+        let enabled: boolean
+        if (vapidCacheRef.current?.workspaceId === workspaceId) {
+          ;({ vapidPublicKey, enabled } = vapidCacheRef.current.config)
+        } else {
+          const config = await api.get<VapidConfig>(`/api/workspaces/${workspaceId}/push/vapid-key`)
+          vapidCacheRef.current = { workspaceId, config }
+          ;({ vapidPublicKey, enabled } = config)
+        }
 
         if (!enabled || !vapidPublicKey) {
           setIsSubscribed(false)

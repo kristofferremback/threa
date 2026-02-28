@@ -8,6 +8,16 @@ declare const self: ServiceWorkerGlobalScope
 precacheAndRoute(self.__WB_MANIFEST)
 
 // ============================================================================
+// Service worker ↔ app message types (INV-33)
+// ============================================================================
+
+/** Posted to the focused window when user clicks a notification. */
+const SW_MSG_NOTIFICATION_CLICK = "NOTIFICATION_CLICK"
+
+/** Posted to all windows when the push subscription is rotated by the browser. */
+const SW_MSG_SUBSCRIPTION_CHANGED = "PUSH_SUBSCRIPTION_CHANGED"
+
+// ============================================================================
 // Push notification handling
 // ============================================================================
 
@@ -90,7 +100,7 @@ self.addEventListener("notificationclick", (event) => {
       for (const client of clients) {
         if (new URL(client.url).origin === self.location.origin) {
           await client.focus()
-          client.postMessage({ type: "NOTIFICATION_CLICK", url: targetUrl })
+          client.postMessage({ type: SW_MSG_NOTIFICATION_CLICK, url: targetUrl })
           return
         }
       }
@@ -139,7 +149,7 @@ self.addEventListener("pushsubscriptionchange", (event) => {
 
         for (const client of clients) {
           client.postMessage({
-            type: "PUSH_SUBSCRIPTION_CHANGED",
+            type: SW_MSG_SUBSCRIPTION_CHANGED,
             subscription: newSub.toJSON(),
           })
         }

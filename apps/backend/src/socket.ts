@@ -58,7 +58,11 @@ interface Dependencies {
   userSocketRegistry: UserSocketRegistry
 }
 
-/** Derives a device key from user-agent — must match frontend's getDeviceKey (use-push-notifications.ts). */
+/**
+ * Derives a device key from user-agent.
+ * Algorithm contract documented in @threa/types (DEVICE_KEY_LENGTH).
+ * Must match frontend's getDeviceKey (use-push-notifications.ts).
+ */
 function deriveDeviceKey(userAgent: string | undefined): string {
   const input = userAgent || "unknown"
   return crypto.createHash("sha256").update(input).digest("hex").slice(0, DEVICE_KEY_LENGTH)
