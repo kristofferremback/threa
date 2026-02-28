@@ -50,6 +50,9 @@ interface Dependencies {
 export function createPushHandlers({ pushService }: Dependencies) {
   return {
     async subscribe(req: Request, res: Response) {
+      if (!pushService.isEnabled()) {
+        throw new HttpError("Push notifications are not enabled", { status: 503, code: "PUSH_DISABLED" })
+      }
       const userId = req.user!.id
       const workspaceId = req.workspaceId!
 
@@ -68,6 +71,9 @@ export function createPushHandlers({ pushService }: Dependencies) {
     },
 
     async unsubscribe(req: Request, res: Response) {
+      if (!pushService.isEnabled()) {
+        throw new HttpError("Push notifications are not enabled", { status: 503, code: "PUSH_DISABLED" })
+      }
       const userId = req.user!.id
       const workspaceId = req.workspaceId!
 

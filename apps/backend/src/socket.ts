@@ -276,8 +276,13 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
     // =========================================================================
     // Heartbeat for push notification session tracking
     // =========================================================================
+    let lastHeartbeatAt = 0
+    const HEARTBEAT_MIN_INTERVAL_MS = 15_000 // Server-side throttle: ignore heartbeats faster than 15s
     socket.on("heartbeat", () => {
       if (!pushService.isEnabled()) return
+      const now = Date.now()
+      if (now - lastHeartbeatAt < HEARTBEAT_MIN_INTERVAL_MS) return
+      lastHeartbeatAt = now
       const deviceKey = deriveDeviceKey(socket.handshake.headers["user-agent"])
       const entries = Array.from(userRooms, ([wsId, entry]) => ({
         workspaceId: wsId,

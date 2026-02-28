@@ -257,12 +257,9 @@ export function registerRoutes(app: Express, deps: Dependencies) {
 
   // Push notifications
   const push = createPushHandlers({ pushService })
-  // VAPID key route is always available so the frontend can detect push support (INV-11)
   app.get("/api/workspaces/:workspaceId/push/vapid-key", ...authed, push.getVapidKey)
-  if (pushService.isEnabled()) {
-    app.post("/api/workspaces/:workspaceId/push/subscribe", ...authed, push.subscribe)
-    app.delete("/api/workspaces/:workspaceId/push/subscribe", ...authed, push.unsubscribe)
-  }
+  app.post("/api/workspaces/:workspaceId/push/subscribe", ...authed, push.subscribe)
+  app.delete("/api/workspaces/:workspaceId/push/subscribe", ...authed, push.unsubscribe)
 
   // Agent Sessions (trace viewing)
   app.get("/api/workspaces/:workspaceId/agent-sessions/:sessionId", ...authed, agentSession.getSession)

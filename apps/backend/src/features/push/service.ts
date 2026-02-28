@@ -50,7 +50,8 @@ export class PushService {
     this.lookups = deps.lookups
 
     if (deps.vapidConfig) {
-      // Module-level side-effect — only one PushService instance is created per process (INV-9 acknowledged)
+      // INV-9 approved exception: web-push requires module-level VAPID config (same class as
+      // Langfuse/OTEL — external library bootstrap constraint). Only one PushService per process.
       webpush.setVapidDetails(deps.vapidConfig.subject, deps.vapidConfig.publicKey, deps.vapidConfig.privateKey)
       this.vapidPublicKey = deps.vapidConfig.publicKey
       this.canSend = true
