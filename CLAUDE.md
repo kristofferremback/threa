@@ -50,17 +50,23 @@ Monorepo with Bun workspaces:
 ```text
 threa/
 |- apps/
-|  |- backend/     # Express API + Socket.io + workers
-|  `- frontend/    # React 19 + Vite + Shadcn UI
+|  |- backend/          # Regional Express API + Socket.io + workers
+|  |- frontend/         # React 19 + Vite + Shadcn UI
+|  |- control-plane/    # Global auth, workspace creation, region assignment
+|  `- workspace-router/ # Cloudflare Worker edge router
 |- packages/
-|  |- types/       # Shared domain types and API contracts
-|  `- prosemirror/ # Editor state wrapper
-|- scripts/        # Dev orchestration and utilities
-|- tests/          # Cross-app tests (Playwright)
-|- docs/           # Design docs and exploration notes
-|- .agents/skills/ # Shared agent skills (Claude + Codex)
-`- package.json    # Root workspace config
+|  |- types/            # Shared domain types and API contracts
+|  |- prosemirror/      # Editor state wrapper
+|  `- backend-common/   # Shared backend infra (DB, auth, outbox, middleware)
+|- infra/aws/           # Terraform for per-region S3 buckets
+|- scripts/             # Dev orchestration and utilities
+|- tests/               # Cross-app tests (Playwright)
+|- docs/                # Design docs and exploration notes
+|- .agents/skills/      # Shared agent skills (Claude + Codex)
+`- package.json         # Root workspace config
 ```
+
+For a high-level view of how the four services interact, their responsibilities, infrastructure dependencies, and deployment targets, see [`docs/system-overview.md`](docs/system-overview.md).
 
 Agent skills live in `.agents/skills/<name>/SKILL.md`. `.claude/skills` is a symlink to `.agents/skills/`.
 

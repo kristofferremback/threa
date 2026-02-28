@@ -316,12 +316,19 @@ io.to(`ws:${workspaceId}`).emit('stream:created', {...})
 ### Available Handlers
 
 - **BroadcastHandler**: WebSocket broadcasting to connected clients
-- **NamingHandler**: Auto-naming streams from first message
 - **CompanionHandler**: AI companion responses
+- **NamingHandler**: Auto-naming streams from first message
 - **EmojiUsageHandler**: Track emoji usage statistics
 - **EmbeddingHandler**: Generate embeddings for search
 - **BoundaryExtractionHandler**: Extract conversation boundaries
 - **MemoAccumulatorHandler**: Queue messages for memo creation
+- **CommandHandler**: Slash command execution
+- **MentionInvokeHandler**: AI persona invocation on @-mention
+- **AgentMessageMutationHandler**: Agent message state updates
+- **AttachmentUploadedHandler**: Attachment processing pipeline
+- **SystemMessageOutboxHandler**: System-generated messages
+- **ActivityFeedHandler**: Activity feed projection
+- **InvitationShadowSyncHandler**: Cross-region invitation sync (conditional)
 
 ### Debouncing
 
