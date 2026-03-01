@@ -376,7 +376,8 @@ export function RichEditor({
     }
   }, [editor])
 
-  // Re-focus after disabled transitions (e.g., after sending)
+  // Re-focus after external disabled transitions (e.g., stream un-archived).
+  // Send-completion focus is handled by the setContent sync effect above (line ~308).
   // Track previous value so this only fires on true→false transitions, not on mount.
   const prevDisabledRef = useRef(disabled)
   useEffect(() => {
