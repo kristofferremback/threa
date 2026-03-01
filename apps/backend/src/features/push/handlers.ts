@@ -106,7 +106,7 @@ export function createPushHandlers({ pushService }: Dependencies) {
         return
       }
 
-      await pushService.unsubscribeAllWorkspaces(parsed.data.endpoint)
+      await pushService.unsubscribeAllWorkspaces(parsed.data.endpoint, req.workosUserId!)
       res.json({ ok: true })
     },
 

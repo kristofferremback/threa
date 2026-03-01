@@ -102,8 +102,8 @@ export class PushService {
   }
 
   /** Remove all push subscriptions for a browser endpoint across all workspaces (used on logout). */
-  async unsubscribeAllWorkspaces(endpoint: string): Promise<number> {
-    return PushSubscriptionRepository.deleteByEndpointAllWorkspaces(this.pool, endpoint)
+  async unsubscribeAllWorkspaces(endpoint: string, workosUserId: string): Promise<number> {
+    return PushSubscriptionRepository.deleteByEndpointForUser(this.pool, endpoint, workosUserId)
   }
 
   async upsertSession(params: {
