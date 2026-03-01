@@ -53,7 +53,11 @@ export function SocketProvider({ workspaceId, children }: SocketProviderProps) {
         const config = await api.get<WorkspaceConfig>(`/api/workspaces/${workspaceId}/config`)
         if (cancelled) return
 
-        newSocket = io(config.wsUrl, {
+        // In dev, the router returns ws://localhost:PORT but we may be accessing
+        // from a different host (e.g. phone over WiFi). Rewrite to match the actual host.
+        const wsUrl = import.meta.env.DEV ? config.wsUrl.replace("localhost", window.location.hostname) : config.wsUrl
+
+        newSocket = io(wsUrl, {
           path: "/socket.io/",
           withCredentials: true,
           autoConnect: true,

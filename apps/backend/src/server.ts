@@ -597,7 +597,7 @@ export async function startServer(): Promise<ServerInstance> {
   pushSessionCleanup.start()
 
   await new Promise<void>((resolve) => {
-    server.listen(config.port, () => {
+    server.listen(config.port, "0.0.0.0", () => {
       logger.info({ port: config.port }, "Server started")
       resolve()
     })
