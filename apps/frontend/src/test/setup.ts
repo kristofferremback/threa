@@ -3,6 +3,21 @@ import "@testing-library/jest-dom/vitest"
 // Mock scrollIntoView (not available in jsdom)
 Element.prototype.scrollIntoView = () => {}
 
+// Mock matchMedia (not available in jsdom, needed by useIsMobile)
+Object.defineProperty(window, "matchMedia", {
+  writable: true,
+  value: (query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => false,
+  }),
+})
+
 // ResizeObserver for cmdk and other components
 global.ResizeObserver = class ResizeObserver {
   observe() {}

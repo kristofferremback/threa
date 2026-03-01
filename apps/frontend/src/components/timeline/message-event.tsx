@@ -11,8 +11,11 @@ import { usePendingMessages, usePanel, createDraftPanelId, useTrace, useMessageS
 import { useActors, useWorkspaceBootstrap, getStepLabel, focusAtEnd, type MessageAgentActivity } from "@/hooks"
 import { useUser } from "@/auth"
 import { cn } from "@/lib/utils"
+import { useIsMobile } from "@/hooks/use-mobile"
+import { useLongPress } from "@/hooks/use-long-press"
 import { AttachmentList } from "./attachment-list"
 import { MessageContextMenu } from "./message-context-menu"
+import { MessageActionDrawer } from "./message-action-drawer"
 import { ThreadIndicator } from "./thread-indicator"
 import { DeleteMessageDialog } from "./delete-message-dialog"
 import { MessageEditForm } from "./message-edit-form"
@@ -60,6 +63,13 @@ interface MessageLayoutProps {
   isHighlighted?: boolean
   isEditing?: boolean
   containerRef?: React.RefObject<HTMLDivElement | null>
+  /** Touch event handlers for mobile long-press */
+  touchHandlers?: {
+    onTouchStart: (e: React.TouchEvent) => void
+    onTouchEnd: () => void
+    onTouchMove: (e: React.TouchEvent) => void
+    onContextMenu: (e: React.MouseEvent) => void
+  }
 }
 
 function MessageLayout({
@@ -78,6 +88,7 @@ function MessageLayout({
   isHighlighted,
   isEditing,
   containerRef,
+  touchHandlers,
 }: MessageLayoutProps) {
   const isPersona = event.actorType === "persona"
   const isSystem = event.actorType === "system"
@@ -85,6 +96,7 @@ function MessageLayout({
   return (
     <div
       ref={containerRef}
+      {...touchHandlers}
       className={cn(
         "message-item group relative flex gap-[14px] mb-5",
         // AI/Persona messages get full-width gradient with gold accent
@@ -180,6 +192,14 @@ function SentMessageEvent({
   const [isDeleting, setIsDeleting] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
 
+  // Mobile: long-press opens action drawer instead of dropdown
+  const isMobile = useIsMobile()
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const longPress = useLongPress({
+    onLongPress: () => setDrawerOpen(true),
+    enabled: isMobile && !isEditing,
+  })
+
   // Restore focus to the zone's editor after exiting inline edit mode
   const stopEditing = useCallback(() => {
     setIsEditing(false)
@@ -262,6 +282,41 @@ function SentMessageEvent({
     }
   }
 
+  // Shared action context for both desktop dropdown and mobile drawer
+  const actionContext = useMemo(
+    () => ({
+      contentMarkdown: payload.contentMarkdown,
+      actorType: event.actorType,
+      sessionId: payload.sessionId,
+      isThreadParent: panelId === threadId || isThreadParentProp,
+      replyUrl: effectiveThreadId ? getPanelUrl(effectiveThreadId) : draftPanelUrl,
+      traceUrl:
+        event.actorType === "persona" && payload.sessionId
+          ? getTraceUrl(payload.sessionId, payload.messageId)
+          : undefined,
+      messageId: payload.messageId,
+      authorId: event.actorId ?? undefined,
+      currentUserId: currentUserId ?? undefined,
+      onEdit: () => setIsEditing(true),
+      onDelete: () => setDeleteDialogOpen(true),
+    }),
+    [
+      payload.contentMarkdown,
+      payload.sessionId,
+      payload.messageId,
+      event.actorType,
+      event.actorId,
+      panelId,
+      threadId,
+      isThreadParentProp,
+      effectiveThreadId,
+      getPanelUrl,
+      draftPanelUrl,
+      getTraceUrl,
+      currentUserId,
+    ]
+  )
+
   return (
     <>
       <MessageLayout
@@ -282,35 +337,24 @@ function SentMessageEvent({
         }
         isEditing={isEditing}
         actions={
+          // Desktop: hover-reveal dropdown menu. Mobile: hidden (long-press opens drawer instead).
           <div
             className={cn(
-              "opacity-0 group-hover:opacity-100 max-sm:opacity-100 has-[[data-state=open]]:opacity-100 transition-opacity ml-auto flex items-center gap-1",
+              "opacity-0 group-hover:opacity-100 has-[[data-state=open]]:opacity-100 transition-opacity ml-auto hidden sm:flex items-center gap-1",
               isEditing && "!opacity-0 pointer-events-none"
             )}
           >
-            <MessageContextMenu
-              context={{
-                contentMarkdown: payload.contentMarkdown,
-                actorType: event.actorType,
-                sessionId: payload.sessionId,
-                isThreadParent: panelId === threadId || isThreadParentProp,
-                replyUrl: effectiveThreadId ? getPanelUrl(effectiveThreadId) : draftPanelUrl,
-                traceUrl:
-                  event.actorType === "persona" && payload.sessionId
-                    ? getTraceUrl(payload.sessionId, payload.messageId)
-                    : undefined,
-                messageId: payload.messageId,
-                authorId: event.actorId ?? undefined,
-                currentUserId: currentUserId ?? undefined,
-                onEdit: () => setIsEditing(true),
-                onDelete: () => setDeleteDialogOpen(true),
-              }}
-            />
+            <MessageContextMenu context={actionContext} />
           </div>
         }
         footer={isEditing ? undefined : threadFooter}
         containerRef={containerRef}
         isHighlighted={isHighlighted}
+        containerClassName={cn(
+          isMobile && "select-none",
+          longPress.isPressed && "opacity-70 transition-opacity duration-100"
+        )}
+        touchHandlers={isMobile ? longPress.handlers : undefined}
       >
         {isEditing ? (
           <MessageEditForm
@@ -340,6 +384,14 @@ function SentMessageEvent({
             contentMarkdown: payload.contentMarkdown,
             editedAt: payload.editedAt,
           }}
+        />
+      )}
+      {isMobile && (
+        <MessageActionDrawer
+          open={drawerOpen}
+          onOpenChange={setDrawerOpen}
+          context={actionContext}
+          authorName={actorName}
         />
       )}
     </>
