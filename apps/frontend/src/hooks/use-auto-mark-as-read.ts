@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react"
 import { useUnreadCounts } from "./use-unread-counts"
 import { useActivityCounts } from "./use-activity-counts"
+import { SW_MSG_CLEAR_NOTIFICATIONS } from "../lib/sw-messages"
 
 interface UseAutoMarkAsReadOptions {
   enabled?: boolean
@@ -60,6 +61,11 @@ export function useAutoMarkAsRead(
       if (currentLastEventId) {
         markAsRead(currentStreamId, currentLastEventId)
         lastMarkedRef.current = currentLastEventId
+        // Dismiss any push notification for this stream — the user is reading it
+        navigator.serviceWorker?.controller?.postMessage({
+          type: SW_MSG_CLEAR_NOTIFICATIONS,
+          streamId: currentStreamId,
+        })
       }
     }, debounceMs)
 

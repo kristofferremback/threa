@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 import { precacheAndRoute } from "workbox-precaching"
 import { ActivityTypes } from "@threa/types"
-import { SW_MSG_NOTIFICATION_CLICK, SW_MSG_SUBSCRIPTION_CHANGED } from "./lib/sw-messages"
+import { SW_MSG_NOTIFICATION_CLICK, SW_MSG_SUBSCRIPTION_CHANGED, SW_MSG_CLEAR_NOTIFICATIONS } from "./lib/sw-messages"
 
 declare const self: ServiceWorkerGlobalScope
 
@@ -135,6 +135,22 @@ self.addEventListener("notificationclick", (event) => {
       }
       // No existing window — open a new one
       await self.clients.openWindow(targetUrl)
+    })
+  )
+})
+
+// ============================================================================
+// Clear notifications when the user reads a stream in the app
+// ============================================================================
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type !== SW_MSG_CLEAR_NOTIFICATIONS) return
+  const streamId = event.data.streamId as string | undefined
+  if (!streamId) return
+
+  event.waitUntil(
+    self.registration.getNotifications({ tag: streamId }).then((notifications) => {
+      for (const n of notifications) n.close()
     })
   )
 })
