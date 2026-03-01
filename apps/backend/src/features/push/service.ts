@@ -1,6 +1,6 @@
 import type { Pool } from "pg"
 import webpush from "web-push"
-import { withTransaction } from "../../db"
+import { withTransaction, withClient } from "../../db"
 import { PushSubscriptionRepository, type PushSubscription, type InsertPushSubscriptionParams } from "./repository"
 import { UserSessionRepository, type UserSession } from "./session-repository"
 import {
@@ -99,6 +99,11 @@ export class PushService {
 
   async unsubscribe(workspaceId: string, userId: string, endpoint: string): Promise<boolean> {
     return PushSubscriptionRepository.deleteByEndpoint(this.pool, workspaceId, userId, endpoint)
+  }
+
+  /** Remove all push subscriptions for a browser endpoint across all workspaces (used on logout). */
+  async unsubscribeAllWorkspaces(endpoint: string): Promise<number> {
+    return PushSubscriptionRepository.deleteByEndpointAllWorkspaces(this.pool, endpoint)
   }
 
   async upsertSession(params: {
@@ -241,15 +246,23 @@ export class PushService {
    * 4. Offline 60s+                  → push to ALL devices (no active sessions)
    */
   private async getTargetSubscriptions(workspaceId: string, userId: string) {
-    const allSubs = await PushSubscriptionRepository.findByUserId(this.pool, workspaceId, userId)
+    // INV-30: multiple related reads share a client; INV-41: release before network I/O
+    const { allSubs, activeSessions } = await withClient(this.pool, async (client) => {
+      const subs = await PushSubscriptionRepository.findByUserId(client, workspaceId, userId)
+      if (subs.length === 0)
+        return {
+          allSubs: subs,
+          activeSessions: [] as Awaited<ReturnType<typeof UserSessionRepository.getActiveSessions>>,
+        }
+      const sessions = await UserSessionRepository.getActiveSessions(
+        client,
+        workspaceId,
+        userId,
+        ACTIVE_SESSION_WINDOW_MS
+      )
+      return { allSubs: subs, activeSessions: sessions }
+    })
     if (allSubs.length === 0) return []
-
-    const activeSessions = await UserSessionRepository.getActiveSessions(
-      this.pool,
-      workspaceId,
-      userId,
-      ACTIVE_SESSION_WINDOW_MS
-    )
 
     // Tier 4: No active sessions → user is fully offline → push to all devices
     if (activeSessions.length === 0) return allSubs

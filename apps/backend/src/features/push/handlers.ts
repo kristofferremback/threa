@@ -18,7 +18,7 @@ const pushEndpointSchema = z
         const host = parsed.hostname
         // Reject loopback, private IP ranges, and link-local addresses (IPv4 + IPv6)
         // URL.hostname retains brackets for IPv6: new URL("https://[::1]/").hostname → "[::1]"
-        if (host === "localhost" || /^127\./.test(host) || host === "[::1]") return false
+        if (host === "localhost" || /^127\./.test(host) || host === "[::1]" || host === "[::]") return false
         if (host.startsWith("10.")) return false
         if (host.startsWith("192.168.")) return false
         if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return false
@@ -91,6 +91,22 @@ export function createPushHandlers({ pushService }: Dependencies) {
       }
 
       await pushService.unsubscribe(workspaceId, userId, parsed.data.endpoint)
+      res.json({ ok: true })
+    },
+
+    /**
+     * Clean up all push subscriptions matching an endpoint across all workspaces.
+     * Called during logout before the browser-side unsubscribe to prevent stale records.
+     * Not workspace-scoped — uses auth-only middleware.
+     */
+    async cleanupEndpoint(req: Request, res: Response) {
+      const parsed = unsubscribeSchema.safeParse(req.body)
+      if (!parsed.success) {
+        res.status(400).json({ error: "Validation failed", details: z.flattenError(parsed.error).fieldErrors })
+        return
+      }
+
+      await pushService.unsubscribeAllWorkspaces(parsed.data.endpoint)
       res.json({ ok: true })
     },
 

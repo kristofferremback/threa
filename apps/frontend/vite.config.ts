@@ -22,7 +22,7 @@ export default defineConfig({
       registerType: "autoUpdate",
       manifest: false, // use existing public/manifest.json
       injectManifest: {
-        globPatterns: ["**/*.{css,html,ico,png,svg}"],
+        globPatterns: ["**/*.{js,css,html,ico,png,svg}"],
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
       },
       devOptions: {

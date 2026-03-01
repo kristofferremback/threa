@@ -135,6 +135,20 @@ export const PushSubscriptionRepository = {
     `)
   },
 
+  /**
+   * Delete all push subscriptions matching an endpoint across all workspaces.
+   * Used during logout to clean up backend records for a browser-scoped subscription.
+   * Endpoint URLs are unguessable secrets assigned by the push service (FCM/Mozilla),
+   * so endpoint-only scoping is safe (INV-8 infra exception: same pattern as
+   * cross-workspace session cleanup).
+   */
+  async deleteByEndpointAllWorkspaces(db: Querier, endpoint: string): Promise<number> {
+    const result = await db.query(sql`
+      DELETE FROM push_subscriptions WHERE endpoint = ${endpoint}
+    `)
+    return result.rowCount ?? 0
+  },
+
   async findByUserId(db: Querier, workspaceId: string, userId: string): Promise<PushSubscription[]> {
     const result = await db.query<PushSubscriptionRow>(sql`
       SELECT * FROM push_subscriptions

@@ -54,14 +54,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, [])
 
   const logout = useCallback(async () => {
-    // Unsubscribe from browser push service before logging out.
-    // The backend cleans up stale subscriptions on next delivery attempt (404/410),
-    // but removing the browser subscription immediately prevents notifications
-    // from arriving after the user has logged out.
+    // Clean up push subscriptions on logout:
+    // 1. Tell backend to remove all records for this browser's endpoint (cross-workspace)
+    // 2. Unsubscribe from the browser push service to prevent post-logout notifications
     try {
       const registration = await navigator.serviceWorker?.ready
       const subscription = await registration?.pushManager.getSubscription()
-      await subscription?.unsubscribe()
+      if (subscription) {
+        await fetch("/api/push/cleanup-endpoint", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ endpoint: subscription.endpoint }),
+        }).catch(() => {})
+        await subscription.unsubscribe()
+      }
     } catch {
       // Best-effort — don't block logout if push cleanup fails
     }

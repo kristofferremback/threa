@@ -6,7 +6,9 @@ import { CursorLock, ensureListenerFromLatest, DebounceWithMaxWait, type Process
 import type { OutboxHandler } from "../../lib/outbox"
 
 const DEFAULT_CONFIG = {
-  batchSize: 100,
+  // Smaller batch than other outbox handlers: each event triggers external HTTP calls
+  // (webpush.sendNotification) that hold the cursor lock during network I/O.
+  batchSize: 10,
   debounceMs: 50,
   maxWaitMs: 200,
   lockDurationMs: 10_000,
