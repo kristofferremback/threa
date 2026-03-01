@@ -1,18 +1,22 @@
-import * as React from "react"
+import { useSyncExternalStore } from "react"
 
 export const MOBILE_BREAKPOINT = 640
 
 const mobileQuery = `(max-width: ${MOBILE_BREAKPOINT - 1}px)`
 
+// Shared subscription — one matchMedia listener regardless of how many
+// components call useIsMobile (avoids N listeners in long message lists).
+const mql = typeof window !== "undefined" ? window.matchMedia(mobileQuery) : null
+
+function subscribe(onChange: () => void) {
+  mql?.addEventListener("change", onChange)
+  return () => mql?.removeEventListener("change", onChange)
+}
+
+function getSnapshot() {
+  return mql?.matches ?? false
+}
+
 export function useIsMobile() {
-  const [isMobile, setIsMobile] = React.useState(() => window.matchMedia(mobileQuery).matches)
-
-  React.useEffect(() => {
-    const mql = window.matchMedia(mobileQuery)
-    const onChange = () => setIsMobile(mql.matches)
-    mql.addEventListener("change", onChange)
-    return () => mql.removeEventListener("change", onChange)
-  }, [])
-
-  return isMobile
+  return useSyncExternalStore(subscribe, getSnapshot)
 }

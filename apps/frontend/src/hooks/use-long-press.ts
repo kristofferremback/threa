@@ -1,4 +1,4 @@
-import { useRef, useCallback, useState } from "react"
+import { useRef, useCallback, useState, useEffect } from "react"
 
 interface UseLongPressOptions {
   /** Duration in ms before long press fires (default: 500) */
@@ -57,9 +57,9 @@ export function useLongPress({
       setIsPressed(true)
       timerRef.current = setTimeout(() => {
         timerRef.current = null
+        setIsPressed(false)
         if (!enabledRef.current) return
         firedRef.current = true
-        setIsPressed(false)
         // Haptic feedback (Android; silent no-op on iOS)
         try {
           navigator.vibrate?.(10)
@@ -106,6 +106,9 @@ export function useLongPress({
     },
     [enabled]
   )
+
+  // Cancel pending timer on unmount to avoid firing on stale closures.
+  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current) }, [])
 
   return {
     handlers: { onTouchStart, onTouchEnd, onTouchMove, onContextMenu },
