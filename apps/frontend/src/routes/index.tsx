@@ -1,4 +1,4 @@
-import { useEffect } from "react"
+import { useEffect, useRef } from "react"
 import { createBrowserRouter, Navigate, useParams } from "react-router-dom"
 import { LoginPage } from "@/pages/login"
 import { WorkspaceSelectPage } from "@/pages/workspace-select"
@@ -74,9 +74,11 @@ function WorkspaceHome() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const { state, togglePinned } = useSidebar()
   const { redirectStreamId, shouldOpenSidebar } = useLastStream(workspaceId ?? "")
+  const sidebarOpenedRef = useRef(false)
 
   useEffect(() => {
-    if (shouldOpenSidebar && state === "collapsed") {
+    if (shouldOpenSidebar && state === "collapsed" && !sidebarOpenedRef.current) {
+      sidebarOpenedRef.current = true
       togglePinned()
     }
   }, [shouldOpenSidebar, state, togglePinned])

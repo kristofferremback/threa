@@ -27,6 +27,7 @@ import {
   useMentionables,
   useReconnectBootstrap,
   usePendingMessageRetry,
+  usePersistLastStream,
 } from "@/hooks"
 import { QuickSwitcher, type QuickSwitcherMode } from "@/components/quick-switcher"
 import { SettingsDialog } from "@/components/settings"
@@ -35,8 +36,6 @@ import { StreamSettingsDialog } from "@/components/stream-settings/stream-settin
 import { CreateChannelDialog } from "@/components/create-channel"
 import { TraceDialog } from "@/components/trace"
 import { ApiError } from "@/api/client"
-import { useAuth } from "@/auth"
-import { setLastStreamId } from "@/lib/last-stream"
 
 interface WorkspaceKeyboardHandlerProps {
   switcherOpen: boolean
@@ -114,18 +113,11 @@ export function WorkspaceLayout() {
     return [streamId, ...panelIds].filter((id): id is string => Boolean(id))
   }, [streamId, searchParams])
 
-  const { user } = useAuth()
-
   const { data: bootstrap, error: workspaceError } = useWorkspaceBootstrap(workspaceId ?? "")
   const { mentionables } = useMentionables()
   const streams = useMemo(() => bootstrap?.streams ?? [], [bootstrap])
 
-  // Persist last-opened stream for restore-on-return
-  useEffect(() => {
-    if (streamId && user && workspaceId) {
-      setLastStreamId(user.id, workspaceId, streamId)
-    }
-  }, [streamId, user, workspaceId])
+  usePersistLastStream(workspaceId, streamId)
 
   useEffect(() => {
     if (

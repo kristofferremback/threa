@@ -1,7 +1,7 @@
-import { useMemo } from "react"
+import { useEffect, useMemo } from "react"
 import { useAuth } from "@/auth"
 import { useWorkspaceBootstrap } from "./use-workspaces"
-import { getLastStreamId, clearLastStreamId } from "@/lib/last-stream"
+import { getLastStreamId, setLastStreamId, clearLastStreamId } from "@/lib/last-stream"
 import type { StreamWithPreview } from "@threa/types"
 
 interface UseLastStreamResult {
@@ -30,33 +30,53 @@ export function useLastStream(workspaceId: string): UseLastStreamResult {
   const { user } = useAuth()
   const { data: bootstrap } = useWorkspaceBootstrap(workspaceId)
 
-  return useMemo(() => {
-    // Wait for bootstrap before making any decisions
+  const result = useMemo(() => {
     if (!bootstrap) {
-      return { redirectStreamId: null, shouldOpenSidebar: false }
+      return { redirectStreamId: null, shouldOpenSidebar: false, staleStoredId: false }
     }
 
     const streams = bootstrap.streams
     const storedId = user ? getLastStreamId(user.id, workspaceId) : null
 
-    // Validate stored ID against current workspace streams
     if (storedId) {
       const stillExists = streams.some((s) => s.id === storedId)
       if (stillExists) {
-        return { redirectStreamId: storedId, shouldOpenSidebar: false }
+        return { redirectStreamId: storedId, shouldOpenSidebar: false, staleStoredId: false }
       }
-      // Evict stale entry
-      if (user) clearLastStreamId(user.id, workspaceId)
+      // Mark as stale — eviction happens in useEffect below
+      return {
+        redirectStreamId: streams.length > 0 ? getMostRecentStreamId(streams) : null,
+        shouldOpenSidebar: streams.length === 0,
+        staleStoredId: true,
+      }
     }
 
-    // Fall back to most recently active stream
     if (streams.length > 0) {
-      return { redirectStreamId: getMostRecentStreamId(streams), shouldOpenSidebar: false }
+      return { redirectStreamId: getMostRecentStreamId(streams), shouldOpenSidebar: false, staleStoredId: false }
     }
 
-    // Empty workspace — signal sidebar should open
-    return { redirectStreamId: null, shouldOpenSidebar: true }
+    return { redirectStreamId: null, shouldOpenSidebar: true, staleStoredId: false }
   }, [user, workspaceId, bootstrap])
+
+  // Evict stale localStorage entry as a proper side effect
+  useEffect(() => {
+    if (result.staleStoredId && user) {
+      clearLastStreamId(user.id, workspaceId)
+    }
+  }, [result.staleStoredId, user, workspaceId])
+
+  return result
+}
+
+/** Persists the currently viewed stream to localStorage for restore-on-return. */
+export function usePersistLastStream(workspaceId: string | undefined, streamId: string | undefined) {
+  const { user } = useAuth()
+
+  useEffect(() => {
+    if (streamId && user && workspaceId) {
+      setLastStreamId(user.id, workspaceId, streamId)
+    }
+  }, [streamId, user, workspaceId])
 }
 
 function getMostRecentStreamId(streams: StreamWithPreview[]): string {

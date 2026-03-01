@@ -115,4 +115,4 @@ export { useIsMobile, MOBILE_BREAKPOINT } from "./use-mobile"
 
 export { useSidebarSwipe } from "./use-sidebar-swipe"
 
-export { useLastStream } from "./use-last-stream"
+export { useLastStream, usePersistLastStream } from "./use-last-stream"
