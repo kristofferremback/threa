@@ -62,6 +62,9 @@ export class InvitationShadowService {
     if (!shadow || shadow.status !== "pending") {
       throw new HttpError("Invitation not found", { status: 404, code: "NOT_FOUND" })
     }
+    if (shadow.email.toLowerCase() !== user.email.toLowerCase()) {
+      throw new HttpError("Invitation not found", { status: 404, code: "NOT_FOUND" })
+    }
 
     const name = this.resolveDisplayName(user)
 

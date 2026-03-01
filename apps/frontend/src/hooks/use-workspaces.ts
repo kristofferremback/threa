@@ -52,8 +52,8 @@ export function useAcceptInvitation() {
 
   return useMutation({
     mutationFn: (invitationId: string) => workspaceService.acceptInvitation(invitationId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: workspaceKeys.list() })
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: workspaceKeys.list() })
     },
   })
 }

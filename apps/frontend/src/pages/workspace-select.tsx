@@ -41,9 +41,12 @@ export function WorkspaceSelectPage() {
     navigate(`/w/${workspace.id}`)
   }
 
-  const handleAcceptInvitation = async (invitationId: string) => {
-    const { workspaceId } = await acceptInvitation.mutateAsync(invitationId)
-    navigate(`/w/${workspaceId}/setup`)
+  const handleAcceptInvitation = (invitationId: string) => {
+    acceptInvitation.mutate(invitationId, {
+      onSuccess: ({ workspaceId }) => {
+        navigate(`/w/${workspaceId}/setup`)
+      },
+    })
   }
 
   // Redirect to login if not authenticated

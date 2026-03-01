@@ -27,6 +27,13 @@ export const router = createBrowserRouter([
     errorElement: <ErrorBoundary />,
   },
   {
+    // Setup page lives outside WorkspaceLayout — it's a lightweight form that
+    // doesn't need the full workspace bootstrap (socket, sidebar, etc.)
+    path: "/w/:workspaceId/setup",
+    element: <UserSetupPage />,
+    errorElement: <ErrorBoundary />,
+  },
+  {
     path: "/w/:workspaceId",
     element: <WorkspaceLayout />,
     errorElement: <ErrorBoundary />,
@@ -50,10 +57,6 @@ export const router = createBrowserRouter([
       {
         path: "s/:streamId",
         element: <StreamPage />,
-      },
-      {
-        path: "setup",
-        element: <UserSetupPage />,
       },
       {
         path: "admin/ai-usage",
