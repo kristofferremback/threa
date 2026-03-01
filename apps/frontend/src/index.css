@@ -13,7 +13,16 @@
  */
 
 @layer base {
-  /* Disable double-tap zoom on mobile — the app is not zoomable */
+  /* Disable double-tap zoom on mobile — the app is not zoomable.
+     Lock html/body scroll to prevent mobile browsers from scrolling
+     the page-level viewport when the keyboard is open (which lets the
+     message input slide past the top of the screen). */
+  html,
+  body {
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
   html {
     touch-action: manipulation;
   }
