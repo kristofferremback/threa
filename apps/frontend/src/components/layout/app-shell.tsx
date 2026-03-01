@@ -1,7 +1,7 @@
 import { type ReactNode, useCallback } from "react"
-import { PanelLeftClose, PanelLeft, Command } from "lucide-react"
+import { PanelLeftClose, PanelLeft, Command, RefreshCw } from "lucide-react"
 import { useSidebar, useQuickSwitcher, useCoordinatedLoading } from "@/contexts"
-import { useResizeDrag, useVisualViewport, useSidebarSwipe } from "@/hooks"
+import { useResizeDrag, useVisualViewport, useSidebarSwipe, usePullToRefresh } from "@/hooks"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { TopbarLoadingIndicator } from "./topbar-loading-indicator"
@@ -108,6 +108,16 @@ export function AppShell({ sidebar, children }: AppShellProps) {
   // Sets --viewport-height CSS variable imperatively for smooth tracking;
   // returns a boolean for conditional rendering (safe-area padding).
   const isKeyboardOpen = useVisualViewport(isMobile)
+
+  // Pull-to-refresh for mobile (Chrome disables built-in refresh in standalone PWA;
+  // our global overscroll-behavior: none disables it in regular mobile browsers too).
+  const {
+    ref: pullRef,
+    distance: pullDistance,
+    progress: pullProgress,
+    pulling,
+    refreshing,
+  } = usePullToRefresh(isMobile && !isKeyboardOpen)
 
   const isCollapsed = state === "collapsed"
   const isPreview = state === "preview"
@@ -327,13 +337,40 @@ export function AppShell({ sidebar, children }: AppShellProps) {
           </aside>
         </div>
 
-        {/* Main content area — safe-area padding for notched devices when keyboard is closed */}
-        <main
-          className="flex flex-1 flex-col overflow-hidden"
-          style={!isKeyboardOpen ? { paddingBottom: "env(safe-area-inset-bottom)" } : undefined}
-        >
-          {children}
-        </main>
+        {/* Main content area — wraps <main> for pull-to-refresh gesture on mobile */}
+        <div ref={pullRef} className="relative flex flex-1 flex-col overflow-hidden">
+          {/* Pull-to-refresh indicator — sits in the space revealed by translating main down */}
+          <div
+            className="absolute inset-x-0 top-0 z-10 flex items-center justify-center pointer-events-none"
+            style={{ height: `${pullDistance}px` }}
+          >
+            {pullDistance > 5 && (
+              <RefreshCw
+                className={cn("h-5 w-5 text-muted-foreground", refreshing && "animate-spin")}
+                style={
+                  refreshing
+                    ? undefined
+                    : {
+                        opacity: pullProgress,
+                        transform: `rotate(${pullProgress * 180}deg)`,
+                      }
+                }
+              />
+            )}
+          </div>
+
+          {/* Safe-area padding for notched devices when keyboard is closed */}
+          <main
+            className="flex flex-1 flex-col overflow-hidden"
+            style={{
+              transform: `translateY(${pullDistance}px)`,
+              transition: pulling ? "none" : "transform 0.3s ease-out",
+              paddingBottom: !isKeyboardOpen ? "env(safe-area-inset-bottom)" : undefined,
+            }}
+          >
+            {children}
+          </main>
+        </div>
       </div>
     </div>
   )
