@@ -56,7 +56,9 @@ export const InvitationShadowRepository = {
     const result = await db.query<InvitationShadowRow>(
       `INSERT INTO invitation_shadows (id, workspace_id, email, region, expires_at, inviter_workos_user_id)
        VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT (id) DO UPDATE SET id = EXCLUDED.id
+       ON CONFLICT (id) DO UPDATE SET
+         expires_at = EXCLUDED.expires_at,
+         inviter_workos_user_id = EXCLUDED.inviter_workos_user_id
        RETURNING ${SELECT_FIELDS}`,
       [
         shadow.id,
@@ -75,15 +77,17 @@ export const InvitationShadowRepository = {
   },
 
   /**
-   * Transition a shadow from 'pending' to a terminal status ('accepted' or 'revoked').
-   * Returns false if the shadow doesn't exist or is not in 'pending' state,
-   * making this safe for replay (idempotent).
+   * Atomically claim a pending shadow by transitioning to a terminal status.
+   * Returns the full row if the claim succeeded, or null if the shadow doesn't
+   * exist or was already claimed (INV-20: no select-then-act).
    */
-  async updateStatus(db: Querier, id: string, status: "accepted" | "revoked"): Promise<boolean> {
-    const result = await db.query("UPDATE invitation_shadows SET status = $1 WHERE id = $2 AND status = 'pending'", [
-      status,
-      id,
-    ])
-    return (result.rowCount ?? 0) > 0
+  async claimPending(db: Querier, id: string, status: "accepted" | "revoked"): Promise<InvitationShadowRow | null> {
+    const result = await db.query<InvitationShadowRow>(
+      `UPDATE invitation_shadows SET status = $1
+       WHERE id = $2 AND status = 'pending'
+       RETURNING ${SELECT_FIELDS}`,
+      [status, id]
+    )
+    return result.rows[0] ?? null
   },
 }

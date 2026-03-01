@@ -58,6 +58,7 @@ export class InvitationShadowService {
 
   /** Accept a single shadow invitation on behalf of a user */
   async acceptShadow(shadowId: string, user: ShadowUser): Promise<{ workspaceId: string }> {
+    // Validate shadow exists and belongs to this user (read-only check)
     const shadow = await InvitationShadowRepository.findById(this.pool, shadowId)
     if (!shadow || shadow.status !== "pending") {
       throw new HttpError("Invitation not found", { status: 404, code: "NOT_FOUND" })
@@ -68,15 +69,25 @@ export class InvitationShadowService {
 
     const name = this.resolveDisplayName(user)
 
+    // Regional backend handles idempotent acceptance — safe if two requests race here
     await this.regionalClient.acceptInvitation(shadow.region, shadow.id, {
       workosUserId: user.id,
       email: user.email,
       name,
     })
-    await withTransaction(this.pool, async (client) => {
-      await InvitationShadowRepository.updateStatus(client, shadow.id, "accepted")
+
+    // Atomic claim: only one concurrent request wins (INV-20)
+    const claimed = await withTransaction(this.pool, async (client) => {
+      const row = await InvitationShadowRepository.claimPending(client, shadow.id, "accepted")
+      if (!row) return false
       await WorkspaceRegistryRepository.insertMembership(client, shadow.workspace_id, user.id)
+      return true
     })
+
+    if (!claimed) {
+      // Another request won the race — still a success since the user is now a member
+      return { workspaceId: shadow.workspace_id }
+    }
 
     return { workspaceId: shadow.workspace_id }
   }
@@ -130,27 +141,28 @@ export class InvitationShadowService {
 
   /**
    * Update shadow status. When revoking, also revoke the WorkOS invitation
-   * if one was sent.
+   * if one was sent. Uses atomic claim to prevent accept/revoke races (INV-20).
    */
   async updateStatus(id: string, status: "accepted" | "revoked") {
-    if (status === "revoked") {
-      // Look up shadow to get workos_invitation_id for revocation
-      const shadow = await InvitationShadowRepository.findById(this.pool, id)
-      if (shadow?.workos_invitation_id) {
-        try {
-          await this.workosOrgService.revokeInvitation(shadow.workos_invitation_id)
-        } catch (error) {
-          const errorCode = getWorkosErrorCode(error)
-          if (errorCode === WORKOS_ERROR_CODES.INVITE_NOT_PENDING) {
-            logger.warn({ errorCode, shadowId: id }, "WorkOS state conflict when revoking invitation (noop)")
-          } else {
-            logger.error({ err: error, shadowId: id }, "Failed to revoke WorkOS invitation")
-          }
+    // Atomic claim: prevents race where accept commits membership while revoke wins status
+    const claimed = await InvitationShadowRepository.claimPending(this.pool, id, status)
+    if (!claimed) return false
+
+    // Best-effort WorkOS revocation after the local claim is durable
+    if (status === "revoked" && claimed.workos_invitation_id) {
+      try {
+        await this.workosOrgService.revokeInvitation(claimed.workos_invitation_id)
+      } catch (error) {
+        const errorCode = getWorkosErrorCode(error)
+        if (errorCode === WORKOS_ERROR_CODES.INVITE_NOT_PENDING) {
+          logger.warn({ errorCode, shadowId: id }, "WorkOS state conflict when revoking invitation (noop)")
+        } else {
+          logger.error({ err: error, shadowId: id }, "Failed to revoke WorkOS invitation")
         }
       }
     }
 
-    return InvitationShadowRepository.updateStatus(this.pool, id, status)
+    return true
   }
 
   /**

@@ -21,8 +21,10 @@ export function createWorkspaceHandlers({ workspaceService, shadowService }: Dep
         throw new HttpError("Not authenticated", { status: 401, code: "NOT_AUTHENTICATED" })
       }
 
-      const workspaces = await workspaceService.listForUser(req.workosUserId)
-      const pendingInvitations = req.authUser?.email ? await shadowService.listPendingForEmail(req.authUser.email) : []
+      const [workspaces, pendingInvitations] = await Promise.all([
+        workspaceService.listForUser(req.workosUserId),
+        req.authUser?.email ? shadowService.listPendingForEmail(req.authUser.email) : [],
+      ])
       res.json({ workspaces, pendingInvitations })
     },
 
