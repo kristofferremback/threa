@@ -1,5 +1,5 @@
 import type { Pool } from "pg"
-import { OutboxRepository, isOneOfOutboxEventType } from "../../lib/outbox"
+import { OutboxRepository, isOneOfOutboxEventType, isOutboxEventType } from "../../lib/outbox"
 import { logger } from "../../lib/logger"
 import { CursorLock, ensureListenerFromLatest, DebounceWithMaxWait, type ProcessResult } from "@threa/backend-common"
 import type { OutboxHandler } from "../../lib/outbox"
@@ -79,7 +79,7 @@ export class InvitationShadowSyncHandler implements OutboxHandler {
             continue
           }
 
-          if (event.eventType === "invitation:sent") {
+          if (isOutboxEventType(event, "invitation:sent")) {
             const { invitationId, workspaceId, inviterWorkosUserId } = event.payload
             const invitation = await InvitationRepository.findById(this.db, invitationId)
             if (!invitation) {

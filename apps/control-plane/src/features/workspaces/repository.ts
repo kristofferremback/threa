@@ -95,21 +95,13 @@ export const WorkspaceRegistryRepository = {
     await db.query("DELETE FROM workspace_registry WHERE id = $1", [id])
   },
 
-  async insertMembership(db: Querier, workspaceId: string, workosUserId: string): Promise<boolean> {
-    const result = await db.query(
+  async insertMembership(db: Querier, workspaceId: string, workosUserId: string): Promise<void> {
+    await db.query(
       `INSERT INTO workspace_memberships (workspace_id, workos_user_id)
        VALUES ($1, $2)
        ON CONFLICT (workspace_id, workos_user_id) DO NOTHING`,
       [workspaceId, workosUserId]
     )
-    return (result.rowCount ?? 0) > 0
-  },
-
-  async removeMembership(db: Querier, workspaceId: string, workosUserId: string): Promise<void> {
-    await db.query("DELETE FROM workspace_memberships WHERE workspace_id = $1 AND workos_user_id = $2", [
-      workspaceId,
-      workosUserId,
-    ])
   },
 
   async deleteMembershipsByWorkspace(db: Querier, workspaceId: string): Promise<void> {

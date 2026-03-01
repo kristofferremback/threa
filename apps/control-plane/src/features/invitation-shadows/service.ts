@@ -60,52 +60,49 @@ export class InvitationShadowService {
   async acceptShadow(shadowId: string, user: ShadowUser): Promise<{ workspaceId: string }> {
     // Validate shadow exists and belongs to this user (read-only check)
     const shadow = await InvitationShadowRepository.findById(this.pool, shadowId)
-    if (!shadow || shadow.status !== "pending") {
+    if (!shadow) {
       throw new HttpError("Invitation not found", { status: 404, code: "NOT_FOUND" })
     }
     if (shadow.email.toLowerCase() !== user.email.toLowerCase()) {
       throw new HttpError("Invitation not found", { status: 404, code: "NOT_FOUND" })
     }
 
-    // Atomic claim + membership insert BEFORE regional call (INV-20).
-    // This prevents accept-vs-revoke races: once claimed, revoke can't interleave.
-    const { claimed, membershipInserted } = await withTransaction(this.pool, async (client) => {
-      const row = await InvitationShadowRepository.claimPending(client, shadow.id, "accepted")
-      if (!row) return { claimed: false, membershipInserted: false }
-      const inserted = await WorkspaceRegistryRepository.insertMembership(client, shadow.workspace_id, user.id)
-      return { claimed: true, membershipInserted: inserted }
-    })
-
-    if (!claimed) {
-      // Claim failed — distinguish between duplicate-accept (benign) and revoke-won (error).
-      // Re-read to check actual status (INV-11: fail loudly, don't mask revocation).
-      const current = await InvitationShadowRepository.findById(this.pool, shadow.id)
-      if (current?.status === "accepted") {
-        return { workspaceId: shadow.workspace_id }
-      }
+    // Early return for already-terminal states before opening a transaction.
+    if (shadow.status === "accepted") {
+      return { workspaceId: shadow.workspace_id }
+    }
+    if (shadow.status !== "pending") {
       throw new HttpError("Invitation is no longer available", { status: 409, code: "INVITATION_REVOKED" })
     }
 
-    // Provision user on regional backend. If this fails, revert the optimistic claim
-    // so the user can retry (INV-41: no DB connection held during network call).
-    const name = this.resolveDisplayName(user)
-    try {
+    // Single transaction: claim → regional call → membership insert.
+    // The regional call is a fast localhost hop, so holding the connection is acceptable.
+    // On any failure the transaction auto-rollbacks — shadow stays pending, no revert needed.
+    return await withTransaction(this.pool, async (client) => {
+      // Atomic claim prevents accept-vs-revoke races (INV-20)
+      const claimed = await InvitationShadowRepository.claimPending(client, shadow.id, "accepted")
+      if (!claimed) {
+        // Race: another accept or revoke won between our read and the claim.
+        const current = await InvitationShadowRepository.findById(client, shadow.id)
+        if (current?.status === "accepted") {
+          return { workspaceId: shadow.workspace_id }
+        }
+        throw new HttpError("Invitation is no longer available", { status: 409, code: "INVITATION_REVOKED" })
+      }
+
+      // Provision user on regional backend inside the transaction.
+      // Failure here auto-rollbacks the claim — shadow stays pending for retry.
+      const name = this.resolveDisplayName(user)
       await this.regionalClient.acceptInvitation(shadow.region, shadow.id, {
         workosUserId: user.id,
         email: user.email,
         name,
       })
-    } catch (error) {
-      await withTransaction(this.pool, async (client) => {
-        await InvitationShadowRepository.revertClaim(client, shadow.id)
-        if (membershipInserted) {
-          await WorkspaceRegistryRepository.removeMembership(client, shadow.workspace_id, user.id)
-        }
-      })
-      throw error
-    }
 
-    return { workspaceId: shadow.workspace_id }
+      // Regional call succeeded — commit membership alongside the claim
+      await WorkspaceRegistryRepository.insertMembership(client, shadow.workspace_id, user.id)
+      return { workspaceId: shadow.workspace_id }
+    })
   }
 
   /**

@@ -90,13 +90,4 @@ export const InvitationShadowRepository = {
     )
     return result.rows[0] ?? null
   },
-
-  /** Revert an accepted claim back to pending (used when the regional call fails after an optimistic claim). */
-  async revertClaim(db: Querier, id: string): Promise<boolean> {
-    const result = await db.query(
-      "UPDATE invitation_shadows SET status = 'pending' WHERE id = $1 AND status = 'accepted'",
-      [id]
-    )
-    return (result.rowCount ?? 0) > 0
-  },
 }
