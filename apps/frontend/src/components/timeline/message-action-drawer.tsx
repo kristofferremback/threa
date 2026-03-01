@@ -1,5 +1,5 @@
 import { useCallback } from "react"
-import { useNavigate } from "react-router-dom"
+import { Link } from "react-router-dom"
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
 import { MarkdownContent } from "@/components/ui/markdown-content"
 import { cn } from "@/lib/utils"
@@ -14,22 +14,14 @@ interface MessageActionDrawerProps {
 }
 
 export function MessageActionDrawer({ open, onOpenChange, context, authorName }: MessageActionDrawerProps) {
-  const navigate = useNavigate()
   const actions = getVisibleActions(context)
 
   const handleAction = useCallback(
     (action: MessageAction) => {
       onOpenChange(false)
-
-      const href = action.getHref?.(context)
-      if (href) {
-        // Small delay so drawer close animation starts before navigation
-        requestAnimationFrame(() => navigate(href))
-        return
-      }
       action.action?.(context)
     },
-    [context, navigate, onOpenChange]
+    [context, onOpenChange]
   )
 
   const handleSubAction = useCallback(
@@ -40,7 +32,7 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
     [context, onOpenChange]
   )
 
-  if (actions.length === 0) return null
+  if (!open && actions.length === 0) return null
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange}>
@@ -86,26 +78,35 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
 
             const Icon = action.icon
             const isDestructive = action.variant === "destructive"
+            const href = action.getHref?.(context)
+
+            const rowClassName = cn(
+              "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors",
+              isDestructive ? "text-destructive active:bg-destructive/10" : "active:bg-muted/80"
+            )
+            const iconEl = (
+              <Icon
+                className={cn(
+                  "h-[18px] w-[18px] shrink-0",
+                  isDestructive ? "text-destructive" : "text-muted-foreground"
+                )}
+              />
+            )
 
             return (
               <div key={action.id}>
                 {action.separatorBefore && <Divider />}
-                <button
-                  type="button"
-                  className={cn(
-                    "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors",
-                    isDestructive ? "text-destructive active:bg-destructive/10" : "active:bg-muted/80"
-                  )}
-                  onClick={() => handleAction(action)}
-                >
-                  <Icon
-                    className={cn(
-                      "h-[18px] w-[18px] shrink-0",
-                      isDestructive ? "text-destructive" : "text-muted-foreground"
-                    )}
-                  />
-                  <span>{action.label}</span>
-                </button>
+                {href ? (
+                  <Link to={href} className={rowClassName} onClick={() => onOpenChange(false)}>
+                    {iconEl}
+                    <span>{action.label}</span>
+                  </Link>
+                ) : (
+                  <button type="button" className={rowClassName} onClick={() => handleAction(action)}>
+                    {iconEl}
+                    <span>{action.label}</span>
+                  </button>
+                )}
               </div>
             )
           })}

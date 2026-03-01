@@ -195,8 +195,9 @@ function SentMessageEvent({
   // Mobile: long-press opens action drawer instead of dropdown
   const isMobile = useIsMobile()
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const openDrawer = useCallback(() => setDrawerOpen(true), [])
   const longPress = useLongPress({
-    onLongPress: () => setDrawerOpen(true),
+    onLongPress: openDrawer,
     enabled: isMobile && !isEditing,
   })
 

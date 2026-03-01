@@ -32,6 +32,11 @@ export function useLongPress({
   const firedRef = useRef(false)
   const [isPressed, setIsPressed] = useState(false)
 
+  // Read onLongPress from a ref so the callback identity doesn't
+  // invalidate touch handler memoization on every render.
+  const onLongPressRef = useRef(onLongPress)
+  onLongPressRef.current = onLongPress
+
   const clear = useCallback(() => {
     if (timerRef.current) {
       clearTimeout(timerRef.current)
@@ -49,6 +54,7 @@ export function useLongPress({
       startPos.current = { x: touch.clientX, y: touch.clientY }
       setIsPressed(true)
       timerRef.current = setTimeout(() => {
+        timerRef.current = null
         firedRef.current = true
         setIsPressed(false)
         // Haptic feedback (Android; silent no-op on iOS)
@@ -57,10 +63,10 @@ export function useLongPress({
         } catch {
           // Ignore
         }
-        onLongPress()
+        onLongPressRef.current()
       }, threshold)
     },
-    [enabled, onLongPress, threshold]
+    [enabled, threshold]
   )
 
   const onTouchEnd = useCallback(() => {
@@ -71,6 +77,10 @@ export function useLongPress({
     (e: React.TouchEvent) => {
       if (!startPos.current) return
       const touch = e.touches[0]
+      if (!touch) {
+        clear()
+        return
+      }
       const dx = touch.clientX - startPos.current.x
       const dy = touch.clientY - startPos.current.y
       // Cancel if moved more than 10px (user is scrolling)
@@ -81,11 +91,14 @@ export function useLongPress({
     [clear]
   )
 
-  // Prevent native context menu on long press (mobile text selection menu)
+  // Suppress native context menu when a long-press is in progress
+  // (timer running) or has just fired. Mobile browsers fire contextmenu
+  // synchronously during the hold, before the threshold timeout.
   const onContextMenu = useCallback(
     (e: React.MouseEvent) => {
-      if (enabled && firedRef.current) {
+      if (enabled && (timerRef.current !== null || firedRef.current)) {
         e.preventDefault()
+        firedRef.current = false
       }
     },
     [enabled]

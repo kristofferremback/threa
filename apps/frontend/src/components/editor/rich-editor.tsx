@@ -392,8 +392,8 @@ export function RichEditor({
   }, [scopeId, autoFocus, focus])
 
   // Re-focus after external disabled transitions (e.g., stream un-archived).
-  // Send-completion focus is handled by the setContent sync effect above (line ~308).
-  // Track previous value so this only fires on true→false transitions, not on mount.
+  // Only fires on true→false transitions — mount is excluded so we don't
+  // race with TipTap's autofocus option.
   const prevDisabledRef = useRef(disabled)
   useEffect(() => {
     const wasDisabled = prevDisabledRef.current
