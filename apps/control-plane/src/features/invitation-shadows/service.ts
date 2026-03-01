@@ -69,16 +69,21 @@ export class InvitationShadowService {
 
     // Atomic claim + membership insert BEFORE regional call (INV-20).
     // This prevents accept-vs-revoke races: once claimed, revoke can't interleave.
-    const claimed = await withTransaction(this.pool, async (client) => {
+    const { claimed, membershipInserted } = await withTransaction(this.pool, async (client) => {
       const row = await InvitationShadowRepository.claimPending(client, shadow.id, "accepted")
-      if (!row) return false
-      await WorkspaceRegistryRepository.insertMembership(client, shadow.workspace_id, user.id)
-      return true
+      if (!row) return { claimed: false, membershipInserted: false }
+      const inserted = await WorkspaceRegistryRepository.insertMembership(client, shadow.workspace_id, user.id)
+      return { claimed: true, membershipInserted: inserted }
     })
 
     if (!claimed) {
-      // Another accept won the race — user is already a member
-      return { workspaceId: shadow.workspace_id }
+      // Claim failed — distinguish between duplicate-accept (benign) and revoke-won (error).
+      // Re-read to check actual status (INV-11: fail loudly, don't mask revocation).
+      const current = await InvitationShadowRepository.findById(this.pool, shadow.id)
+      if (current?.status === "accepted") {
+        return { workspaceId: shadow.workspace_id }
+      }
+      throw new HttpError("Invitation is no longer available", { status: 409, code: "INVITATION_REVOKED" })
     }
 
     // Provision user on regional backend. If this fails, revert the optimistic claim
@@ -93,7 +98,9 @@ export class InvitationShadowService {
     } catch (error) {
       await withTransaction(this.pool, async (client) => {
         await InvitationShadowRepository.revertClaim(client, shadow.id)
-        await WorkspaceRegistryRepository.removeMembership(client, shadow.workspace_id, user.id)
+        if (membershipInserted) {
+          await WorkspaceRegistryRepository.removeMembership(client, shadow.workspace_id, user.id)
+        }
       })
       throw error
     }

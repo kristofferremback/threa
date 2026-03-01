@@ -58,7 +58,7 @@ export const InvitationShadowRepository = {
        VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (id) DO UPDATE SET
          expires_at = EXCLUDED.expires_at,
-         inviter_workos_user_id = EXCLUDED.inviter_workos_user_id
+         inviter_workos_user_id = COALESCE(EXCLUDED.inviter_workos_user_id, invitation_shadows.inviter_workos_user_id)
        RETURNING ${SELECT_FIELDS}`,
       [
         shadow.id,

@@ -48,6 +48,7 @@ export function WorkspaceSelectPage() {
     setAcceptError(null)
     acceptInvitation.mutate(invitationId, {
       onSuccess: ({ workspaceId }) => {
+        setAcceptingId(null)
         navigate(`/w/${workspaceId}/setup`)
       },
       onError: () => {
