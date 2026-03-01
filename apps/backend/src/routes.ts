@@ -18,6 +18,7 @@ import { createUserPreferencesHandlers } from "./features/user-preferences"
 import { createAIUsageHandlers } from "./features/ai-usage"
 import { createInvitationHandlers } from "./features/invitations"
 import { createActivityHandlers } from "./features/activity"
+import { createPushHandlers } from "./features/push"
 import { createDebugHandlers } from "./handlers/debug-handlers"
 import { createInternalHandlers } from "./handlers/internal-handlers"
 import { createAuthStubHandlers } from "./auth/auth-stub-handlers"
@@ -31,6 +32,7 @@ import type { SearchService } from "./features/search"
 import type { ConversationService } from "./features/conversations"
 import type { InvitationService } from "./features/invitations"
 import type { ActivityService } from "./features/activity"
+import type { PushService } from "./features/push"
 import type { S3Config } from "./lib/env"
 import type { CommandRegistry } from "./features/commands"
 import type { UserPreferencesService } from "./features/user-preferences"
@@ -51,6 +53,7 @@ interface Dependencies {
   userPreferencesService: UserPreferencesService
   invitationService: InvitationService
   activityService: ActivityService
+  pushService: PushService
   s3Config: S3Config
   commandRegistry: CommandRegistry
   avatarService: AvatarService
@@ -73,6 +76,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     userPreferencesService,
     invitationService,
     activityService,
+    pushService,
     s3Config,
     commandRegistry,
     avatarService,
@@ -250,6 +254,14 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/workspaces/:workspaceId/activity", ...authed, activity.list)
   app.post("/api/workspaces/:workspaceId/activity/read", ...authed, activity.markAllAsRead)
   app.post("/api/workspaces/:workspaceId/activity/:id/read", ...authed, activity.markOneAsRead)
+
+  // Push notifications
+  const push = createPushHandlers({ pushService })
+  app.get("/api/workspaces/:workspaceId/push/vapid-key", ...authed, push.getVapidKey)
+  app.post("/api/workspaces/:workspaceId/push/subscribe", ...authed, push.subscribe)
+  app.post("/api/workspaces/:workspaceId/push/unsubscribe", ...authed, push.unsubscribe)
+  // Non-workspace-scoped: cleans up all push subscriptions for a browser endpoint (used on logout)
+  app.post("/api/push/cleanup-endpoint", auth, push.cleanupEndpoint)
 
   // Agent Sessions (trace viewing)
   app.get("/api/workspaces/:workspaceId/agent-sessions/:sessionId", ...authed, agentSession.getSession)

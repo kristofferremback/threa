@@ -135,7 +135,7 @@ Repository pattern expectations:
 
 Dependency rules are strict:
 
-- No hidden singletons (except approved logger and Langfuse/OTEL bootstrap constraints) (INV-9)
+- No hidden singletons (except approved logger, Langfuse/OTEL, and web-push bootstrap constraints) (INV-9)
 - Dependency names must describe what they are (INV-10)
 - Fail loudly; no silent fallback defaults (INV-11)
 - Pass constructed dependencies, not raw config values (INV-12)

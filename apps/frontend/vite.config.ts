@@ -1,6 +1,7 @@
 /// <reference types="vitest" />
 import { defineConfig } from "vite"
 import react from "@vitejs/plugin-react"
+import { VitePWA } from "vite-plugin-pwa"
 import path from "path"
 
 // Ports can be configured via env vars for browser E2E tests
@@ -12,7 +13,24 @@ const backendTarget = `http://localhost:${backendPort}`
 const isE2ETest = !!process.env.VITE_BACKEND_PORT
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    VitePWA({
+      strategies: "injectManifest",
+      srcDir: "src",
+      filename: "sw.ts",
+      registerType: "autoUpdate",
+      manifest: false, // use existing public/manifest.json
+      injectManifest: {
+        globPatterns: ["**/*.{js,css,html,ico,png,svg}"],
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
+      },
+      devOptions: {
+        enabled: true,
+        type: "module",
+      },
+    }),
+  ],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

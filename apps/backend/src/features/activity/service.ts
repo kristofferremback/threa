@@ -86,25 +86,29 @@ export class ActivityService {
       const streamMembers = await StreamMemberRepository.list(client, { streamId })
       if (streamMembers.length === 0) return []
 
-      // Resolve effective notification levels for all members
-      const resolved = await resolveNotificationLevelsForStream(client, stream, streamMembers)
+      // DMs and scratchpads are direct communication — create activities for all
+      // non-muted members (more permissive than channels which require ACTIVITY/EVERYTHING).
+      const isDirectStream = stream.type === StreamTypes.DM || stream.type === StreamTypes.SCRATCHPAD
 
       // Fetch root stream once for context
       const rootStream = stream.rootStreamId ? await StreamRepository.findById(client, stream.rootStreamId) : null
 
       const streamContext = resolveStreamContext(stream, rootStream)
       const contentPreview = contentMarkdown.slice(0, 200)
-      const resolvedUsers = resolved.map((row) => ({ userId: row.memberId, effectiveLevel: row.effectiveLevel }))
 
-      const eligibleUserIds = resolvedUsers
+      const resolved = await resolveNotificationLevelsForStream(client, stream, streamMembers)
+      const eligibleUserIds = resolved
         .filter((row) => {
-          if (row.userId === actorId) return false
-          if (excludeUserIds.has(row.userId)) return false
+          if (row.memberId === actorId) return false
+          if (excludeUserIds.has(row.memberId)) return false
+          if (isDirectStream) {
+            return row.effectiveLevel !== NotificationLevels.MUTED
+          }
           return (
             row.effectiveLevel === NotificationLevels.ACTIVITY || row.effectiveLevel === NotificationLevels.EVERYTHING
           )
         })
-        .map((row) => row.userId)
+        .map((row) => row.memberId)
 
       return ActivityRepository.insertBatch(client, {
         workspaceId,

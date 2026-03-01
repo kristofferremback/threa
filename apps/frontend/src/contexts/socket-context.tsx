@@ -133,6 +133,44 @@ export function SocketProvider({ workspaceId, children }: SocketProviderProps) {
     }
   }, [workspaceId])
 
+  // Heartbeat for push notification session tracking.
+  // Sends { focused } so the backend can distinguish "user is here" from "tab is open but idle."
+  const lastInteractionHeartbeatRef = useRef(0)
+
+  useEffect(() => {
+    if (!socket || status !== "connected") return
+
+    const emitHeartbeat = () => socket.emit("heartbeat", { focused: document.hasFocus() })
+
+    // Emit immediately so the backend knows this tab is active right away
+    emitHeartbeat()
+
+    const heartbeatInterval = setInterval(emitHeartbeat, 30_000)
+
+    const emitThrottledHeartbeat = () => {
+      const now = Date.now()
+      if (now - lastInteractionHeartbeatRef.current > 10_000) {
+        lastInteractionHeartbeatRef.current = now
+        emitHeartbeat()
+      }
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        emitThrottledHeartbeat()
+      }
+    }
+
+    window.addEventListener("focus", emitThrottledHeartbeat)
+    document.addEventListener("visibilitychange", handleVisibilityChange)
+
+    return () => {
+      clearInterval(heartbeatInterval)
+      window.removeEventListener("focus", emitThrottledHeartbeat)
+      document.removeEventListener("visibilitychange", handleVisibilityChange)
+    }
+  }, [socket, status])
+
   return <SocketContext.Provider value={{ socket, status, reconnectCount }}>{children}</SocketContext.Provider>
 }
 

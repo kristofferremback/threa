@@ -1,7 +1,10 @@
+import { useParams } from "react-router-dom"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { Button } from "@/components/ui/button"
 import { usePreferences } from "@/contexts"
+import { usePushNotifications } from "@/hooks/use-push-notifications"
 import { PREF_NOTIFICATION_LEVEL_OPTIONS, type PrefNotificationLevel } from "@threa/types"
 
 const NOTIFICATION_LABELS: Record<PrefNotificationLevel, string> = {
@@ -12,11 +15,90 @@ const NOTIFICATION_LABELS: Record<PrefNotificationLevel, string> = {
 
 const NOTIFICATION_DESCRIPTIONS: Record<PrefNotificationLevel, string> = {
   all: "Get notified for all new messages",
-  mentions: "Only get notified when you're @mentioned",
+  mentions: "Get notified for @mentions, DMs, and scratchpad messages",
   none: "Don't send any notifications",
 }
 
+function PushNotificationCard({ workspaceId }: { workspaceId: string }) {
+  const { permission, isSubscribed, optedOut, pushDisabledOnServer, requestPermission, unsubscribe } =
+    usePushNotifications(workspaceId)
+
+  if (permission === "unsupported") {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Push Notifications</CardTitle>
+          <CardDescription>Get notified even when you're away from the app</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">Push notifications are not supported in this browser.</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (permission === "denied") {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Push Notifications</CardTitle>
+          <CardDescription>Get notified even when you're away from the app</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            Push notifications are blocked. Enable them in your browser settings to receive notifications.
+          </p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Push Notifications</CardTitle>
+        <CardDescription>Get notified even when you're away from the app</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {permission === "default" && (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Enable push notifications to get notified when you receive messages and mentions.
+            </p>
+            <Button onClick={requestPermission} variant="outline" size="sm">
+              Enable push notifications
+            </Button>
+          </div>
+        )}
+        {permission === "granted" && isSubscribed && (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">Push notifications are enabled for this device.</p>
+            <Button onClick={unsubscribe} variant="outline" size="sm">
+              Disable push notifications
+            </Button>
+          </div>
+        )}
+        {permission === "granted" && !isSubscribed && optedOut && (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">Push notifications are disabled for this device.</p>
+            <Button onClick={requestPermission} variant="outline" size="sm">
+              Enable push notifications
+            </Button>
+          </div>
+        )}
+        {permission === "granted" && !isSubscribed && !optedOut && pushDisabledOnServer && (
+          <p className="text-sm text-muted-foreground">Push notifications are not available on this server.</p>
+        )}
+        {permission === "granted" && !isSubscribed && !optedOut && !pushDisabledOnServer && (
+          <p className="text-sm text-muted-foreground">Subscribing to push notifications...</p>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 export function NotificationsSettings() {
+  const { workspaceId } = useParams<{ workspaceId: string }>()
   const { preferences, updatePreference } = usePreferences()
 
   const notificationLevel = preferences?.notificationLevel ?? "all"
@@ -49,17 +131,7 @@ export function NotificationsSettings() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Coming Soon</CardTitle>
-          <CardDescription>More notification settings are on the way</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">
-            Per-stream notification overrides, quiet hours, and sound preferences will be available in a future update.
-          </p>
-        </CardContent>
-      </Card>
+      {workspaceId && <PushNotificationCard workspaceId={workspaceId} />}
     </div>
   )
 }

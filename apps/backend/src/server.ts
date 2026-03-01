@@ -70,6 +70,7 @@ import {
 import { EmojiUsageHandler } from "./features/emoji"
 import { SystemMessageService, SystemMessageOutboxHandler } from "./features/system-messages"
 import { ActivityService, ActivityFeedHandler } from "./features/activity"
+import { PushService, PushNotificationHandler, createPushSessionCleanup } from "./features/push"
 import { AttachmentUploadedHandler } from "./features/attachments"
 import { AICostService, AIBudgetService } from "./features/ai-usage"
 import { CommandRegistry, EchoCommand, createCommandWorker, CommandHandler } from "./features/commands"
@@ -301,6 +302,29 @@ export async function startServer(): Promise<ServerInstance> {
   const createThread = (params: Parameters<typeof streamService.createThread>[0]) => streamService.createThread(params)
 
   const activityService = new ActivityService({ pool })
+  const pushService = new PushService({
+    pool,
+    vapidConfig: config.push.enabled
+      ? {
+          publicKey: config.push.vapidPublicKey,
+          privateKey: config.push.vapidPrivateKey,
+          subject: config.push.vapidSubject,
+        }
+      : null,
+    lookups: {
+      getUserNotificationLevel: async (workspaceId, userId) => {
+        const prefs = await userPreferencesService.getPreferences(workspaceId, userId)
+        return prefs.notificationLevel
+      },
+      getStreamType: async (workspaceId, streamId) => {
+        // StreamRepository.findById queries by ULID only; we verify workspace ownership
+        // at the application layer (INV-8) — consistent with checkAccess in StreamService.
+        const stream = await streamService.getStreamById(streamId)
+        if (!stream || stream.workspaceId !== workspaceId) return null
+        return stream.type
+      },
+    },
+  })
   const systemMessageService = new SystemMessageService({ pool, createMessage })
 
   // Command infrastructure - created early for route registration
@@ -323,6 +347,7 @@ export async function startServer(): Promise<ServerInstance> {
     userPreferencesService,
     invitationService,
     activityService,
+    pushService,
     s3Config: config.s3,
     commandRegistry,
     avatarService,
@@ -346,7 +371,7 @@ export async function startServer(): Promise<ServerInstance> {
   io.adapter(createAdapter(pool))
 
   const userSocketRegistry = new UserSocketRegistry()
-  registerSocketHandlers(io, { pool, authService, streamService, userSocketRegistry })
+  registerSocketHandlers(io, { pool, authService, streamService, pushService, userSocketRegistry })
 
   const serverId = `server_${ulid()}`
 
@@ -523,6 +548,7 @@ export async function startServer(): Promise<ServerInstance> {
   const attachmentUploadedHandler = new AttachmentUploadedHandler(pool, jobQueue)
   const systemMessageOutboxHandler = new SystemMessageOutboxHandler(pool, systemMessageService)
   const activityFeedHandler = new ActivityFeedHandler(pool, activityService)
+  const pushNotificationHandler = pushService.isEnabled() ? new PushNotificationHandler({ pool, pushService }) : null
   const shadowSyncHandler =
     controlPlaneClient && config.region
       ? new InvitationShadowSyncHandler(pool, controlPlaneClient, config.region)
@@ -541,6 +567,7 @@ export async function startServer(): Promise<ServerInstance> {
     attachmentUploadedHandler,
     systemMessageOutboxHandler,
     activityFeedHandler,
+    ...(pushNotificationHandler ? [pushNotificationHandler] : []),
     ...(shadowSyncHandler ? [shadowSyncHandler] : []),
   ]
 
@@ -566,6 +593,9 @@ export async function startServer(): Promise<ServerInstance> {
   const orphanSessionCleanup = createOrphanSessionCleanup(pools.main)
   orphanSessionCleanup.start()
 
+  const pushSessionCleanup = createPushSessionCleanup(pushService)
+  pushSessionCleanup.start()
+
   await new Promise<void>((resolve) => {
     server.listen(config.port, () => {
       logger.info({ port: config.port }, "Server started")
@@ -587,6 +617,7 @@ export async function startServer(): Promise<ServerInstance> {
     logger.info("Shutting down server...")
     poolMonitor.stop()
     orphanSessionCleanup.stop()
+    pushSessionCleanup.stop()
     agentSessionMetrics.stop()
     await scheduleManager.stop()
     await cleanupWorker.stop()

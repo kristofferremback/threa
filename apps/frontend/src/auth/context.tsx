@@ -53,7 +53,25 @@ export function AuthProvider({ children }: AuthProviderProps) {
     window.location.href = url
   }, [])
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    // Clean up push subscriptions on logout:
+    // 1. Tell backend to remove all records for this browser's endpoint (cross-workspace)
+    // 2. Unsubscribe from the browser push service to prevent post-logout notifications
+    try {
+      const registration = await navigator.serviceWorker?.ready
+      const subscription = await registration?.pushManager.getSubscription()
+      if (subscription) {
+        await fetch("/api/push/cleanup-endpoint", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ endpoint: subscription.endpoint }),
+        }).catch(() => {})
+        await subscription.unsubscribe()
+      }
+    } catch {
+      // Best-effort — don't block logout if push cleanup fails
+    }
     window.location.href = "/api/auth/logout"
   }, [])
 

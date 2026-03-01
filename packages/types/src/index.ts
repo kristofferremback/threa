@@ -235,6 +235,9 @@ export type {
   UpdateAIBudgetInput,
 } from "./api"
 
+// Push Notifications
+export { DEVICE_KEY_LENGTH } from "./api"
+
 // ProseMirror / TipTap JSON types
 export type {
   // Loose input type (compatible with TipTap)
