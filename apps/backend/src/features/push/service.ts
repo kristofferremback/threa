@@ -179,38 +179,8 @@ export class PushService {
       },
     })
 
-    // 5. Send to all target subscriptions
-    const staleIds: string[] = []
-    await Promise.allSettled(
-      subscriptions.map(async (sub) => {
-        try {
-          await webpush.sendNotification(
-            {
-              endpoint: sub.endpoint,
-              keys: { p256dh: sub.p256dh, auth: sub.auth },
-            },
-            pushPayload
-          )
-        } catch (err: unknown) {
-          const statusCode = (err as { statusCode?: number }).statusCode
-          if (statusCode === 404 || statusCode === 410) {
-            logger.info({ subscriptionId: sub.id, statusCode }, "Marking stale push subscription for removal")
-            staleIds.push(sub.id)
-          } else {
-            logger.warn({ err, subscriptionId: sub.id }, "Failed to send push notification")
-          }
-        }
-      })
-    )
-
-    // 6. Batch-delete stale subscriptions (INV-56)
-    if (staleIds.length > 0) {
-      try {
-        await PushSubscriptionRepository.deleteByIds(this.pool, workspaceId, staleIds)
-      } catch (deleteErr) {
-        logger.warn({ err: deleteErr, count: staleIds.length }, "Failed to delete stale subscriptions")
-      }
-    }
+    // 5. Send to all target subscriptions and evict stale ones
+    await this.sendAndEvictStale(workspaceId, subscriptions, pushPayload)
   }
 
   /**
@@ -234,6 +204,69 @@ export class PushService {
     }
 
     return false
+  }
+
+  /**
+   * Sends a "clear" push to all of a user's devices so the service worker
+   * dismisses any notification for the given stream(s). Called when the user
+   * reads a stream on one device so other devices clear the notification too.
+   */
+  async deliverClearForStream(workspaceId: string, userId: string, streamId: string): Promise<void> {
+    return this.deliverClearForStreams(workspaceId, userId, [streamId])
+  }
+
+  /** Batch variant: clears notifications for multiple streams at once (e.g. mark-all-read). */
+  async deliverClearForStreams(workspaceId: string, userId: string, streamIds: string[]): Promise<void> {
+    if (!this.canSend || streamIds.length === 0) return
+
+    const subscriptions = await PushSubscriptionRepository.findByUserId(this.pool, workspaceId, userId)
+    if (subscriptions.length === 0) return
+
+    // Send one clear push per stream — each stream has its own notification tag in the SW
+    await Promise.all(
+      streamIds.map((streamId) => {
+        const pushPayload = JSON.stringify({ data: { action: "clear", streamId } })
+        return this.sendAndEvictStale(workspaceId, subscriptions, pushPayload)
+      })
+    )
+  }
+
+  /**
+   * Sends a push payload to the given subscriptions and batch-deletes any
+   * that return 404/410 (INV-56). Shared by delivery and clear paths (INV-35).
+   */
+  private async sendAndEvictStale(
+    workspaceId: string,
+    subscriptions: PushSubscription[],
+    pushPayload: string
+  ): Promise<void> {
+    const staleIds: string[] = []
+    await Promise.allSettled(
+      subscriptions.map(async (sub) => {
+        try {
+          await webpush.sendNotification(
+            { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+            pushPayload
+          )
+        } catch (err: unknown) {
+          const statusCode = (err as { statusCode?: number }).statusCode
+          if (statusCode === 404 || statusCode === 410) {
+            logger.info({ subscriptionId: sub.id, statusCode }, "Marking stale push subscription for removal")
+            staleIds.push(sub.id)
+          } else {
+            logger.warn({ err, subscriptionId: sub.id }, "Failed to send push notification")
+          }
+        }
+      })
+    )
+
+    if (staleIds.length > 0) {
+      try {
+        await PushSubscriptionRepository.deleteByIds(this.pool, workspaceId, staleIds)
+      } catch (deleteErr) {
+        logger.warn({ err: deleteErr, count: staleIds.length }, "Failed to delete stale subscriptions")
+      }
+    }
   }
 
   /**

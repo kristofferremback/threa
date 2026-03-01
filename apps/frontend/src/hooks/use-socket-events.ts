@@ -6,6 +6,7 @@ import { useAuth } from "@/auth"
 import { debugBootstrap } from "@/lib/bootstrap-debug"
 import { db } from "@/db"
 import { joinRoomFireAndForget } from "@/lib/socket-room"
+import { SW_MSG_CLEAR_NOTIFICATIONS } from "@/lib/sw-messages"
 import { streamKeys } from "./use-streams"
 import { workspaceKeys } from "./use-workspaces"
 import type {
@@ -461,6 +462,12 @@ export function useSocketEvents(workspaceId: string) {
       if (hadActivity) {
         queryClient.invalidateQueries({ queryKey: ["activity", workspaceId] })
       }
+
+      // Dismiss push notification for this stream (fast path when the app is open)
+      navigator.serviceWorker?.controller?.postMessage({
+        type: SW_MSG_CLEAR_NOTIFICATIONS,
+        streamId: payload.streamId,
+      })
     })
 
     // Handle all streams read (from other sessions of the same user)
@@ -490,6 +497,14 @@ export function useSocketEvents(workspaceId: string) {
       })
 
       queryClient.invalidateQueries({ queryKey: ["activity", workspaceId] })
+
+      // Dismiss push notifications for all read streams (fast path when the app is open)
+      for (const streamId of payload.streamIds) {
+        navigator.serviceWorker?.controller?.postMessage({
+          type: SW_MSG_CLEAR_NOTIFICATIONS,
+          streamId,
+        })
+      }
     })
 
     // Handle stream activity (when a new message is created in any stream)

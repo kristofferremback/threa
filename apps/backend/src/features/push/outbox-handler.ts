@@ -1,5 +1,10 @@
 import type { Pool } from "pg"
-import { OutboxRepository, type ActivityCreatedOutboxPayload } from "../../lib/outbox"
+import {
+  OutboxRepository,
+  type ActivityCreatedOutboxPayload,
+  type StreamReadOutboxPayload,
+  type StreamsReadAllOutboxPayload,
+} from "../../lib/outbox"
 import type { PushService } from "./service"
 import { logger } from "../../lib/logger"
 import { CursorLock, ensureListenerFromLatest, DebounceWithMaxWait, type ProcessResult } from "@threa/backend-common"
@@ -23,7 +28,8 @@ interface PushNotificationHandlerDeps {
 }
 
 /**
- * Listens for activity:created outbox events and delegates push delivery to PushService.
+ * Listens for outbox events and delegates push delivery to PushService.
+ * Handles activity:created (show notification) and stream:read (clear notifications).
  * Infrastructure-only: cursor management, batching, and error handling (INV-34).
  */
 export class PushNotificationHandler implements OutboxHandler {
@@ -78,19 +84,32 @@ export class PushNotificationHandler implements OutboxHandler {
 
       try {
         for (const event of events) {
-          if (event.eventType !== "activity:created") {
-            seen.push(event.id)
-            continue
+          if (event.eventType === "activity:created") {
+            const payload = event.payload as ActivityCreatedOutboxPayload
+            if (!payload?.workspaceId || !payload?.targetUserId || !payload?.activity) {
+              logger.warn({ eventId: event.id }, "Skipping malformed activity:created payload")
+              seen.push(event.id)
+              continue
+            }
+            await this.pushService.deliverPushForActivity(payload)
+          } else if (event.eventType === "stream:read") {
+            const payload = event.payload as StreamReadOutboxPayload
+            if (!payload?.workspaceId || !payload?.authorId || !payload?.streamId) {
+              logger.warn({ eventId: event.id }, "Skipping malformed stream:read payload")
+              seen.push(event.id)
+              continue
+            }
+            await this.pushService.deliverClearForStream(payload.workspaceId, payload.authorId, payload.streamId)
+          } else if (event.eventType === "stream:read_all") {
+            const payload = event.payload as StreamsReadAllOutboxPayload
+            if (!payload?.workspaceId || !payload?.authorId || !payload?.streamIds?.length) {
+              logger.warn({ eventId: event.id }, "Skipping malformed stream:read_all payload")
+              seen.push(event.id)
+              continue
+            }
+            await this.pushService.deliverClearForStreams(payload.workspaceId, payload.authorId, payload.streamIds)
           }
 
-          const payload = event.payload as ActivityCreatedOutboxPayload
-          if (!payload?.workspaceId || !payload?.targetUserId || !payload?.activity) {
-            logger.warn({ eventId: event.id }, "Skipping malformed activity:created payload")
-            seen.push(event.id)
-            continue
-          }
-
-          await this.pushService.deliverPushForActivity(payload)
           seen.push(event.id)
         }
 
