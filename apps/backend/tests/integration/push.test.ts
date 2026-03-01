@@ -630,6 +630,36 @@ describe("Push Notifications", () => {
       })
     })
 
+    test("active session on device without subscription → falls back to all subscriptions", async () => {
+      const service = createServiceWithLookups()
+
+      // Subscription on device-1, but active session only on device-2
+      await PushSubscriptionRepository.insert(pool, {
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        endpoint: "https://push.example.com/sub/device-1",
+        p256dh: "p1",
+        auth: "a1",
+        deviceKey: "device-1",
+      })
+
+      // Active, recently focused session on device-2 (no subscription here)
+      await UserSessionRepository.upsert(pool, {
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        deviceKey: "device-2",
+        focused: true,
+      })
+
+      await service.deliverPushForActivity(makePayload())
+
+      // Intersection is empty (device-2 has session, device-1 has sub) → falls back to all
+      expect(sendSpy).toHaveBeenCalledTimes(1)
+      expect(sendSpy.mock.calls[0][0]).toMatchObject({
+        endpoint: "https://push.example.com/sub/device-1",
+      })
+    })
+
     test("active session but not focused for 10m+ → pushes to all devices", async () => {
       const service = createServiceWithLookups()
 

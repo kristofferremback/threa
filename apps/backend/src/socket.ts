@@ -141,14 +141,13 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
         userRooms.set(wsId, { userId: workspaceUser.id, userRoom })
 
         // Upsert session for push notification suppression (only when push is enabled).
-        // On join the tab is likely focused — heartbeats will refine this.
+        // Don't set focused — the first heartbeat (emitted immediately on connect)
+        // will report the correct document.hasFocus() state.
         if (pushService.isEnabled()) {
           const deviceKey = deriveDeviceKey(socket.handshake.headers["user-agent"])
-          pushService
-            .upsertSession({ workspaceId: wsId, userId: workspaceUser.id, deviceKey, focused: true })
-            .catch((err) => {
-              logger.warn({ err, wsId, userId: workspaceUser.id }, "Failed to upsert user session on join")
-            })
+          pushService.upsertSession({ workspaceId: wsId, userId: workspaceUser.id, deviceKey }).catch((err) => {
+            logger.warn({ err, wsId, userId: workspaceUser.id }, "Failed to upsert user session on join")
+          })
         }
 
         // Track metrics

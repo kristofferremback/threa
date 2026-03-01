@@ -140,20 +140,20 @@ export function loadConfig(): Config {
     push: {
       vapidPublicKey: process.env.VAPID_PUBLIC_KEY || "",
       vapidPrivateKey: process.env.VAPID_PRIVATE_KEY || "",
-      vapidSubject: process.env.VAPID_SUBJECT || "mailto:push@threa.app",
-      enabled: !!process.env.VAPID_PUBLIC_KEY && !!process.env.VAPID_PRIVATE_KEY,
+      vapidSubject: process.env.VAPID_SUBJECT || "",
+      enabled: !!(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY && process.env.VAPID_SUBJECT),
     },
     controlPlaneUrl: process.env.CONTROL_PLANE_URL || null,
     internalApiKey: process.env.INTERNAL_API_KEY || null,
     region: process.env.REGION || null,
   }
 
-  // Validate co-presence: VAPID keys must both be set or both be absent (INV-11)
-  const hasPublicKey = !!process.env.VAPID_PUBLIC_KEY
-  const hasPrivateKey = !!process.env.VAPID_PRIVATE_KEY
-  if (hasPublicKey !== hasPrivateKey) {
+  // Validate co-presence: VAPID vars must all be set or all be absent (INV-11)
+  const vapidVars = [process.env.VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY, process.env.VAPID_SUBJECT]
+  const vapidSetCount = vapidVars.filter(Boolean).length
+  if (vapidSetCount > 0 && vapidSetCount < 3) {
     throw new Error(
-      "Both VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY must be set together — push notifications require both keys"
+      "VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, and VAPID_SUBJECT must all be set together — push notifications require all three"
     )
   }
 

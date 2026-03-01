@@ -264,9 +264,13 @@ export class PushService {
     // Tier 3: Active sessions but none focused recently → user walked away → push to all
     if (!hasRecentlyFocused) return allSubs
 
-    // Tiers 1 & 2: User is at their computer → only push to active devices.
+    // Tiers 1 & 2: User is at their computer → push to devices with active sessions.
     // The SW on each device decides whether to display (focused = suppress).
+    // Fall back to all subscriptions if the intersection is empty — a session can
+    // exist on a device without a subscription (e.g. second browser, or subscription
+    // registered on a device that no longer has an active socket).
     const activeDeviceKeys = new Set(activeSessions.map((s) => s.deviceKey))
-    return allSubs.filter((sub) => activeDeviceKeys.has(sub.deviceKey))
+    const matched = allSubs.filter((sub) => activeDeviceKeys.has(sub.deviceKey))
+    return matched.length > 0 ? matched : allSubs
   }
 }
