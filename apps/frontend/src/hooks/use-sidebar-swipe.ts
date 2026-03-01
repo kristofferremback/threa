@@ -248,11 +248,15 @@ export function useSidebarSwipe({ isOpen, isMobile, onOpen, onClose }: UseSideba
       unfreezeScrolling()
 
       if (!t || !t.locked || !t.horizontal) {
-        setIsSwiping(false)
+        // Only clear isSwiping if no snap animation is pending from a previous
+        // gesture — otherwise we'd prematurely trigger the clear-styles effect
+        // and cause a visible jump mid-animation.
+        if (snapTimeoutRef.current === null) {
+          setIsSwiping(false)
+        }
         return
       }
 
-      const { onOpen, onClose } = stateRef.current
       const w = sidebarWidth()
       const dx = t.currentX - t.startX
 
@@ -273,13 +277,16 @@ export function useSidebarSwipe({ isOpen, isMobile, onOpen, onClose }: UseSideba
       // Wait for snap animation, then update React state.
       // Batching onOpen/onClose with setIsSwiping(false) ensures CSS classes
       // are evaluated with both isOpen and isSwiping correct in a single render.
-      // Inline styles are cleared by the useEffect above after isSwiping becomes false.
+      // Read callbacks from stateRef inside the timeout (not before) so they
+      // reflect any re-renders that happened during the snap animation.
       const opening = t.opening
       window.clearTimeout(snapTimeoutRef.current ?? undefined)
       snapTimeoutRef.current = window.setTimeout(() => {
         if (shouldComplete) {
+          const { onOpen, onClose } = stateRef.current
           opening ? onOpen() : onClose()
         }
+        snapTimeoutRef.current = null
         setIsSwiping(false)
       }, SNAP_MS + 20)
     }
