@@ -186,6 +186,7 @@ export function MessageInput({
           messageSendMode={messageSendMode}
           onExpandClick={() => setDocEditorOpen(true)}
           autoFocus={autoFocus}
+          scopeId={streamId}
         />
         {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
       </div>

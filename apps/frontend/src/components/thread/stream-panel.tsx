@@ -271,6 +271,7 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
                   submittingLabel="Creating..."
                   placeholder="Write your reply..."
                   autoFocus={!isMobile}
+                  scopeId={panelId}
                 />
               </div>
             </div>

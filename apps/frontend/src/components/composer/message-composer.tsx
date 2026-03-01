@@ -49,6 +49,9 @@ export interface MessageComposerProps {
 
   /** Auto-focus the editor when mounted */
   autoFocus?: boolean
+
+  /** Scope identifier — when it changes, re-focus the editor (if autoFocus) */
+  scopeId?: string
 }
 
 export function MessageComposer({
@@ -72,6 +75,7 @@ export function MessageComposer({
   messageSendMode = "enter",
   onExpandClick,
   autoFocus = false,
+  scopeId,
 }: MessageComposerProps) {
   // Controls (buttons, file input) are disabled during both external disable and sending.
   // The editor itself stays editable during sending so mobile keyboards don't close/reopen.
@@ -150,6 +154,7 @@ export function MessageComposer({
                   showFormattingToolbar
                   onAttachClick={handleAttachClick}
                   autoFocus={autoFocus}
+                  scopeId={scopeId}
                 />
               </div>
 
