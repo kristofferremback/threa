@@ -5,6 +5,11 @@ import { SW_MSG_NOTIFICATION_CLICK, SW_MSG_SUBSCRIPTION_CHANGED } from "./lib/sw
 
 declare const self: ServiceWorkerGlobalScope
 
+// Activate new service worker immediately so users get fresh code
+// without needing to close all tabs (pairs with registerType: "autoUpdate")
+self.addEventListener("install", () => self.skipWaiting())
+self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()))
+
 // Precache app shell assets injected by vite-plugin-pwa
 precacheAndRoute(self.__WB_MANIFEST)
 
