@@ -5,6 +5,12 @@ import { SW_MSG_NOTIFICATION_CLICK, SW_MSG_SUBSCRIPTION_CHANGED } from "./lib/sw
 
 declare const self: ServiceWorkerGlobalScope
 
+/** Extend NotificationOptions with properties supported by browsers but missing from TS lib types. */
+interface ExtendedNotificationOptions extends NotificationOptions {
+  /** Re-alert the user (vibrate/sound) when replacing an existing notification with the same tag. */
+  renotify?: boolean
+}
+
 // Activate new service worker immediately so users get fresh code
 // without needing to close all tabs (pairs with registerType: "autoUpdate")
 self.addEventListener("install", () => self.skipWaiting())
@@ -25,6 +31,8 @@ interface PushData {
   activityType?: string
   contentPreview?: string
   streamName?: string
+  /** Accumulated count of messages in this notification group (set by the SW, not the backend). */
+  messageCount?: number
 }
 
 function formatTitle(activityType: string | undefined): string {
@@ -60,23 +68,40 @@ self.addEventListener("push", (event) => {
     data = {}
   }
 
-  const title = formatTitle(data.activityType)
-  const body = formatBody(data)
-
-  const options: NotificationOptions = {
-    body,
-    icon: "/threa-logo-192.png",
-    badge: "/threa-logo-192.png",
-    data,
-    tag: data.messageId ?? "threa-notification",
-  }
+  // Tag by stream so notifications from the same stream replace each other
+  // instead of stacking as separate entries (e.g. 5 messages from Pierre → one grouped notification).
+  const tag = data.streamId ?? "threa-notification"
 
   // Suppress notification if the user has a focused app window — they can already see the message.
   // Backend always sends the push; the SW decides whether to display it.
   event.waitUntil(
-    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(async (clients) => {
       const hasFocusedWindow = clients.some((c) => c.focused && new URL(c.url).origin === self.location.origin)
       if (hasFocusedWindow) return
+
+      // Check for an existing notification from the same stream to accumulate a count
+      const existing = await self.registration.getNotifications({ tag })
+      const previousCount = (existing[0]?.data as PushData | undefined)?.messageCount ?? 1
+      const messageCount = existing.length > 0 ? previousCount + 1 : 1
+
+      const title =
+        messageCount === 1
+          ? formatTitle(data.activityType)
+          : data.streamName
+            ? `${messageCount} new messages in ${data.streamName}`
+            : `${messageCount} new messages`
+
+      const body = messageCount === 1 ? formatBody(data) : (data.contentPreview ?? formatBody(data))
+
+      const options: ExtendedNotificationOptions = {
+        body,
+        icon: "/threa-logo-192.png",
+        badge: "/threa-logo-192.png",
+        data: { ...data, messageCount },
+        tag,
+        renotify: true, // Re-alert (vibrate/sound) even when replacing an existing notification
+      }
+
       return self.registration.showNotification(title, options)
     })
   )
