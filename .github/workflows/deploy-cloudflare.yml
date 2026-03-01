@@ -38,6 +38,7 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy dist --project-name threa
           workingDirectory: apps/frontend
+          packageManager: bun
 
   deploy-workspace-router:
     name: Deploy Workspace Router
@@ -67,3 +68,4 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy --config wrangler.production.toml
           workingDirectory: apps/workspace-router
+          packageManager: bun
