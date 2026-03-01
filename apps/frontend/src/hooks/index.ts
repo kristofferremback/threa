@@ -114,3 +114,5 @@ export { useVisualViewport } from "./use-visual-viewport"
 export { useIsMobile, MOBILE_BREAKPOINT } from "./use-mobile"
 
 export { useSidebarSwipe } from "./use-sidebar-swipe"
+
+export { useLastStream } from "./use-last-stream"

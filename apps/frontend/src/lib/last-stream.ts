@@ -19,3 +19,11 @@ export function setLastStreamId(userId: string, workspaceId: string, streamId: s
     // Storage unavailable
   }
 }
+
+export function clearLastStreamId(userId: string, workspaceId: string): void {
+  try {
+    localStorage.removeItem(getKey(userId, workspaceId))
+  } catch {
+    // Storage unavailable
+  }
+}
