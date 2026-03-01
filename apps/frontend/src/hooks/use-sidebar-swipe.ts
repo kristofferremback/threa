@@ -200,6 +200,13 @@ export function useSidebarSwipe({ isOpen, isMobile, onOpen, onClose }: UseSideba
           return
         }
 
+        // Cancel any pending snap timeout from a previous gesture so it
+        // doesn't fire setIsSwiping(false) mid-swipe and clear our styles
+        if (snapTimeoutRef.current !== null) {
+          window.clearTimeout(snapTimeoutRef.current)
+          snapTimeoutRef.current = null
+        }
+
         // Prevent scrolling: call preventDefault on the locking frame AND
         // freeze the nearest scroll container (the compositor may have already
         // started scrolling before our JS handler ran)
@@ -302,7 +309,9 @@ export function useSidebarSwipe({ isOpen, isMobile, onOpen, onClose }: UseSideba
       document.removeEventListener("touchend", onTouchEnd)
       document.removeEventListener("touchcancel", onTouchEnd)
       window.clearTimeout(snapTimeoutRef.current ?? undefined)
+      snapTimeoutRef.current = null
       unfreezeScrolling()
+      setIsSwiping(false)
       if (sidebarRef.current) {
         sidebarRef.current.style.transform = ""
         sidebarRef.current.style.transition = ""
