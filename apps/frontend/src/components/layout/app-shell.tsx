@@ -91,6 +91,7 @@ export function AppShell({ sidebar, children }: AppShellProps) {
     setHovering,
     collapse,
     togglePinned,
+    showPreview,
     startResizing,
     stopResizing,
     setWidth,
@@ -115,10 +116,12 @@ export function AppShell({ sidebar, children }: AppShellProps) {
   const isOpen = isPreview || isPinned
 
   // Swipe gestures for mobile sidebar (open/close by dragging)
+  // Use showPreview (idempotent) instead of togglePinned (a toggle) to avoid
+  // double-call races on fast swipes collapsing the sidebar right after opening.
   const { isSwiping, sidebarRef, backdropRef } = useSidebarSwipe({
     isOpen,
     isMobile,
-    onOpen: togglePinned,
+    onOpen: showPreview,
     onClose: collapse,
   })
 
@@ -141,6 +144,17 @@ export function AppShell({ sidebar, children }: AppShellProps) {
     collapse()
   }, [collapse])
 
+  // Derive mobile sidebar/backdrop classes outside JSX to avoid nested ternaries (INV-47)
+  let backdropVisibility: string | undefined
+  if (!isSwiping) {
+    backdropVisibility = isOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+  }
+
+  let sidebarTransform: string | undefined
+  if (!isSwiping) {
+    sidebarTransform = isOpen ? "translate-x-0" : "-translate-x-full"
+  }
+
   return (
     <div
       className="flex w-screen flex-col overflow-hidden"
@@ -158,7 +172,7 @@ export function AppShell({ sidebar, children }: AppShellProps) {
             className={cn(
               "fixed inset-0 z-30 bg-black/50",
               !isSwiping && "transition-opacity duration-200",
-              isOpen && !isSwiping ? "opacity-100" : !isSwiping ? "opacity-0 pointer-events-none" : undefined
+              backdropVisibility
             )}
             onClick={!isSwiping ? handleBackdropClick : undefined}
             aria-hidden="true"
@@ -246,7 +260,7 @@ export function AppShell({ sidebar, children }: AppShellProps) {
               // Positioning - preview is absolute, or always absolute on mobile
               (isPreview || isMobile) && "absolute left-0 top-0 shadow-[4px_0_24px_hsl(var(--foreground)/0.08)]",
               // Mobile: transform-based positioning (GPU-composited, swipe-compatible)
-              isMobile && (isOpen && !isSwiping ? "translate-x-0" : !isSwiping ? "-translate-x-full" : undefined),
+              isMobile && sidebarTransform,
               // Transitions - disable during resize/swipe for smooth dragging
               isMobile
                 ? !isSwiping && "transition-transform duration-200 ease-out"

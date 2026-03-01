@@ -247,15 +247,20 @@ export function useSidebarSwipe({ isOpen, isMobile, onOpen, onClose }: UseSideba
 
       if (shouldComplete) {
         applyVisuals(t.opening ? 1 : 0)
-        requestAnimationFrame(() => (t.opening ? onOpen() : onClose()))
       } else {
         applyVisuals(t.opening ? 0 : 1)
       }
 
-      // Wait for snap animation, then let React/CSS take over.
+      // Wait for snap animation, then update React state.
+      // Batching onOpen/onClose with setIsSwiping(false) ensures CSS classes
+      // are evaluated with both isOpen and isSwiping correct in a single render.
       // Inline styles are cleared by the useEffect above after isSwiping becomes false.
+      const opening = t.opening
       window.clearTimeout(snapTimeoutRef.current ?? undefined)
       snapTimeoutRef.current = window.setTimeout(() => {
+        if (shouldComplete) {
+          opening ? onOpen() : onClose()
+        }
         setIsSwiping(false)
       }, SNAP_MS + 20)
     }
