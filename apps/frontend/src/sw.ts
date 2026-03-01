@@ -70,20 +70,21 @@ self.addEventListener("push", (event) => {
     data = {}
   }
 
-  // Tag by stream so notifications from the same stream replace each other
-  // instead of stacking as separate entries (e.g. 5 messages from Pierre → one grouped notification).
-  const tag = data.streamId ?? "threa-notification"
-
   // Backend-driven clear: dismiss notifications for this stream across all devices
   // (e.g. user read the stream on their laptop → phone notification disappears).
   if (data.action === "clear") {
+    if (!data.streamId) return
     event.waitUntil(
-      self.registration.getNotifications({ tag }).then((notifications) => {
+      self.registration.getNotifications({ tag: data.streamId }).then((notifications) => {
         for (const n of notifications) n.close()
       })
     )
     return
   }
+
+  // Tag by stream so notifications from the same stream replace each other
+  // instead of stacking as separate entries (e.g. 5 messages from Pierre → one grouped notification).
+  const tag = data.streamId ?? "threa-notification"
 
   // Suppress notification if the user has a focused app window — they can already see the message.
   // Backend always sends the push; the SW decides whether to display it.

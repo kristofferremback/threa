@@ -89,9 +89,12 @@ export class PushNotificationHandler implements OutboxHandler {
             await this.pushService.deliverPushForActivity(payload)
           } else if (event.eventType === "stream:read") {
             const payload = event.payload as StreamReadOutboxPayload
-            if (payload?.workspaceId && payload?.authorId && payload?.streamId) {
-              await this.pushService.deliverClearForStream(payload.workspaceId, payload.authorId, payload.streamId)
+            if (!payload?.workspaceId || !payload?.authorId || !payload?.streamId) {
+              logger.warn({ eventId: event.id }, "Skipping malformed stream:read payload")
+              seen.push(event.id)
+              continue
             }
+            await this.pushService.deliverClearForStream(payload.workspaceId, payload.authorId, payload.streamId)
           }
 
           seen.push(event.id)

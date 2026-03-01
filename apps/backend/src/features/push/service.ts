@@ -263,8 +263,9 @@ export class PushService {
           const statusCode = (err as { statusCode?: number }).statusCode
           if (statusCode === 404 || statusCode === 410) {
             staleIds.push(sub.id)
+          } else {
+            logger.warn({ err, subscriptionId: sub.id }, "Failed to send clear push notification")
           }
-          // Silently ignore other errors — clearing is best-effort
         }
       })
     )
