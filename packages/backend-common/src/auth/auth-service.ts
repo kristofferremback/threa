@@ -142,7 +142,8 @@ export class WorkosAuthService implements AuthService {
         cookiePassword: this.cookiePassword,
       })
 
-      return await session.getLogoutUrl()
+      const returnTo = new URL(this.redirectUri).origin
+      return await session.getLogoutUrl({ returnTo })
     } catch (error) {
       logger.error({ err: error }, "Failed to get logout URL")
       return null

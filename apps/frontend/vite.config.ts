@@ -43,6 +43,7 @@ export default defineConfig({
     include: ["src/**/*.test.{ts,tsx}"],
   },
   server: {
+    host: "0.0.0.0",
     port: frontendPort,
     hmr: isE2ETest ? false : undefined,
     proxy: {

@@ -1,5 +1,6 @@
 import { $ } from "bun"
 import * as fs from "fs"
+import * as os from "os"
 import * as path from "path"
 
 const POSTGRES_HOST = "localhost"
@@ -311,19 +312,45 @@ async function main() {
     }
   }
 
+  // LAN mode: bind to WiFi IP so the app is reachable from phones
+  const lanMode = process.env.LAN_MODE === "true" || process.argv.includes("--lan")
+  let lanIp: string | undefined
+
+  if (lanMode) {
+    lanIp = Object.values(os.networkInterfaces())
+      .flat()
+      .find((i) => i && i.family === "IPv4" && !i.internal)?.address
+
+    if (!lanIp) {
+      console.error("LAN_MODE enabled but no LAN IP found — are you connected to WiFi?")
+      process.exit(1)
+    }
+
+    console.log(`LAN mode: http://${lanIp}:3000`)
+  }
+
+  const corsOrigins = ["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:5173"]
+  if (lanIp) corsOrigins.push(`http://${lanIp}:3000`)
+
+  const cpEnvOverrides: Record<string, string> = {}
+  if (lanIp && cpEnv.WORKOS_REDIRECT_URI) {
+    cpEnvOverrides.WORKOS_REDIRECT_URI = cpEnv.WORKOS_REDIRECT_URI.replace("localhost", lanIp)
+  }
+
   const controlPlane = Bun.spawn(["bun", "--hot", "apps/control-plane/src/index.ts"], {
     stdout: "inherit",
     stderr: "inherit",
     env: {
       ...process.env,
       ...cpEnv,
+      ...cpEnvOverrides,
       FAST_SHUTDOWN: "true",
       PORT: "3003",
       DATABASE_URL: cpDbUrl,
       USE_STUB_AUTH: useStubAuth,
       INTERNAL_API_KEY: cpEnv.INTERNAL_API_KEY ?? "dev-internal-key",
       REGIONS: JSON.stringify({ local: { internalUrl: "http://localhost:3002" } }),
-      CORS_ALLOWED_ORIGINS: "http://localhost:3000,http://localhost:5173,http://127.0.0.1:5173",
+      CORS_ALLOWED_ORIGINS: corsOrigins.join(","),
       WORKSPACE_CREATION_SKIP_INVITE: "true",
     },
   })
@@ -340,6 +367,7 @@ async function main() {
       USE_STUB_AUTH: useStubAuth,
       CONTROL_PLANE_URL: "http://localhost:3003",
       INTERNAL_API_KEY: backendEnv.INTERNAL_API_KEY ?? "dev-internal-key",
+      CORS_ALLOWED_ORIGINS: corsOrigins.join(","),
       REGION: "local",
     },
   })

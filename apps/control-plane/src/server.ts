@@ -133,7 +133,7 @@ export async function startServer(): Promise<ControlPlaneInstance> {
 
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject)
-    server.listen(config.port, () => {
+    server.listen(config.port, "0.0.0.0", () => {
       server.removeListener("error", reject)
       logger.info({ port: config.port }, "Control plane started")
       resolve()
