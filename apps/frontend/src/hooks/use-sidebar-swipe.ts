@@ -51,6 +51,7 @@ export function useSidebarSwipe({ isOpen, isMobile, onOpen, onClose }: UseSideba
   const backdropRef = useRef<HTMLDivElement>(null)
   const trackerRef = useRef<SwipeTracker | null>(null)
   const snapTimeoutRef = useRef<number | null>(null)
+  const clearStylesRafRef = useRef<number | null>(null)
 
   // Latest values in a ref so event handlers always read current state
   const stateRef = useRef({ isOpen, onOpen, onClose })
@@ -61,7 +62,8 @@ export function useSidebarSwipe({ isOpen, isMobile, onOpen, onClose }: UseSideba
   // styles that were set during the gesture is safe (no flash).
   useEffect(() => {
     if (!isSwiping && isMobile) {
-      requestAnimationFrame(() => {
+      clearStylesRafRef.current = requestAnimationFrame(() => {
+        clearStylesRafRef.current = null
         if (sidebarRef.current) {
           sidebarRef.current.style.transform = ""
           sidebarRef.current.style.transition = ""
@@ -72,6 +74,12 @@ export function useSidebarSwipe({ isOpen, isMobile, onOpen, onClose }: UseSideba
           backdropRef.current.style.transition = ""
         }
       })
+    }
+    return () => {
+      if (clearStylesRafRef.current !== null) {
+        cancelAnimationFrame(clearStylesRafRef.current)
+        clearStylesRafRef.current = null
+      }
     }
   }, [isSwiping, isMobile])
 
@@ -127,8 +135,8 @@ export function useSidebarSwipe({ isOpen, isMobile, onOpen, onClose }: UseSideba
       if (!isOpen && touch.clientX < OS_GESTURE_ZONE) return
 
       // Don't capture swipes that start on horizontally scrollable elements
-      // (e.g. editor style bar, code blocks) — let them scroll natively
-      if (!isOpen && hasHorizontalScroll(touch.target as Element | null)) return
+      // (e.g. editor style bar, code blocks inside the sidebar) — let them scroll natively
+      if (hasHorizontalScroll(touch.target as Element | null)) return
 
       trackerRef.current = {
         startX: touch.clientX,
@@ -197,6 +205,17 @@ export function useSidebarSwipe({ isOpen, isMobile, onOpen, onClose }: UseSideba
         // started scrolling before our JS handler ran)
         e.preventDefault()
         freezeScrolling(e.target)
+
+        // Update tracker on the locking frame so touchend has valid
+        // position/velocity even for fast single-frame flicks
+        const now = performance.now()
+        const dt = now - t.lastTime
+        if (dt > 0) {
+          t.velocity = (touch.clientX - t.lastX) / dt
+        }
+        t.currentX = touch.clientX
+        t.lastX = touch.clientX
+        t.lastTime = now
 
         // Set initial visuals before React re-render to prevent flash
         const w = sidebarWidth()
