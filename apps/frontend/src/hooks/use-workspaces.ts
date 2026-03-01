@@ -5,7 +5,8 @@ import { debugBootstrap } from "@/lib/bootstrap-debug"
 import { getQueryLoadState, isTerminalBootstrapError } from "@/lib/query-load-state"
 import { db } from "@/db"
 import { joinRoomBestEffort } from "@/lib/socket-room"
-import type { Workspace, WorkspaceBootstrap, User } from "@threa/types"
+import type { WorkspaceBootstrap, User } from "@threa/types"
+import type { WorkspaceListResult } from "@/api/workspaces"
 
 // Query keys for cache management
 export const workspaceKeys = {
@@ -178,10 +179,11 @@ export function useCreateWorkspace() {
   return useMutation({
     mutationFn: (data: { name: string; slug: string; region?: string }) => workspaceService.create(data),
     onSuccess: (newWorkspace) => {
-      // Update cache
-      queryClient.setQueryData<Workspace[]>(workspaceKeys.list(), (old) =>
-        old ? [...old, newWorkspace] : [newWorkspace]
-      )
+      // Update cache with correct WorkspaceListResult shape
+      queryClient.setQueryData<WorkspaceListResult>(workspaceKeys.list(), (old) => ({
+        workspaces: old ? [...old.workspaces, newWorkspace] : [newWorkspace],
+        pendingInvitations: old?.pendingInvitations ?? [],
+      }))
 
       // Cache to IndexedDB
       db.workspaces.put({ ...newWorkspace, _cachedAt: Date.now() })
