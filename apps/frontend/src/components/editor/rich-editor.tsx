@@ -305,9 +305,15 @@ export function RichEditor({
     const currentJson = JSON.stringify(editor.getJSON())
     const newJson = JSON.stringify(value)
     if (newJson !== currentJson) {
+      const hadFocus = editor.isFocused
       isInternalUpdate.current = true
       editor.commands.setContent(value)
       isInternalUpdate.current = false
+      // Mobile browsers can drop focus when contenteditable content is replaced.
+      // Restore it to keep the virtual keyboard open.
+      if (hadFocus && !editor.isFocused) {
+        editor.commands.focus()
+      }
     }
   }, [value, editor])
 

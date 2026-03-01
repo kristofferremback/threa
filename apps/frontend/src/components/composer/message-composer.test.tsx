@@ -140,10 +140,10 @@ describe("MessageComposer", () => {
       expect(screen.getByRole("button", { name: /attach files/i })).toBeDisabled()
     })
 
-    it("should disable editor when isSubmitting is true", () => {
+    it("should keep editor editable when isSubmitting is true (prevents mobile keyboard close)", () => {
       render(<MessageComposer {...defaultProps} isSubmitting={true} />)
 
-      expect(screen.getByTestId("rich-editor")).toBeDisabled()
+      expect(screen.getByTestId("rich-editor")).not.toBeDisabled()
     })
   })
 
