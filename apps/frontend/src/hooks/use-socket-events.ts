@@ -497,6 +497,14 @@ export function useSocketEvents(workspaceId: string) {
       })
 
       queryClient.invalidateQueries({ queryKey: ["activity", workspaceId] })
+
+      // Dismiss push notifications for all read streams (fast path when the app is open)
+      for (const streamId of payload.streamIds) {
+        navigator.serviceWorker?.controller?.postMessage({
+          type: SW_MSG_CLEAR_NOTIFICATIONS,
+          streamId,
+        })
+      }
     })
 
     // Handle stream activity (when a new message is created in any stream)

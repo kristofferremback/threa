@@ -1,5 +1,10 @@
 import type { Pool } from "pg"
-import { OutboxRepository, type ActivityCreatedOutboxPayload, type StreamReadOutboxPayload } from "../../lib/outbox"
+import {
+  OutboxRepository,
+  type ActivityCreatedOutboxPayload,
+  type StreamReadOutboxPayload,
+  type StreamsReadAllOutboxPayload,
+} from "../../lib/outbox"
 import type { PushService } from "./service"
 import { logger } from "../../lib/logger"
 import { CursorLock, ensureListenerFromLatest, DebounceWithMaxWait, type ProcessResult } from "@threa/backend-common"
@@ -95,6 +100,14 @@ export class PushNotificationHandler implements OutboxHandler {
               continue
             }
             await this.pushService.deliverClearForStream(payload.workspaceId, payload.authorId, payload.streamId)
+          } else if (event.eventType === "stream:read_all") {
+            const payload = event.payload as StreamsReadAllOutboxPayload
+            if (!payload?.workspaceId || !payload?.authorId || !payload?.streamIds?.length) {
+              logger.warn({ eventId: event.id }, "Skipping malformed stream:read_all payload")
+              seen.push(event.id)
+              continue
+            }
+            await this.pushService.deliverClearForStreams(payload.workspaceId, payload.authorId, payload.streamIds)
           }
 
           seen.push(event.id)
