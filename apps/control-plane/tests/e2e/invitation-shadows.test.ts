@@ -229,7 +229,7 @@ describe("Invitation Shadows", () => {
   })
 
   describe("Idempotency and replay safety", () => {
-    test("second accept of same shadow returns 404", async () => {
+    test("second accept of same shadow is idempotent", async () => {
       const owner = new TestClient()
       await loginAs(owner, "idem-owner@example.com", "Idem Owner")
       const ws = await createWorkspace(owner, "Idem Workspace")
@@ -251,9 +251,10 @@ describe("Invitation Shadows", () => {
       expect(accept1.status).toBe(200)
       expect(accept1.data.workspaceId).toBe(ws.id)
 
-      // Second accept — shadow is no longer pending
-      const accept2 = await invitee.post("/api/invitations/inv_idempotent/accept")
-      expect(accept2.status).toBe(404)
+      // Second accept — idempotent, returns same workspaceId
+      const accept2 = await invitee.post<{ workspaceId: string }>("/api/invitations/inv_idempotent/accept")
+      expect(accept2.status).toBe(200)
+      expect(accept2.data.workspaceId).toBe(ws.id)
     })
 
     test("accepted shadow creates membership that persists across logins", async () => {
