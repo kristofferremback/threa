@@ -104,6 +104,13 @@ export const WorkspaceRegistryRepository = {
     )
   },
 
+  async removeMembership(db: Querier, workspaceId: string, workosUserId: string): Promise<void> {
+    await db.query("DELETE FROM workspace_memberships WHERE workspace_id = $1 AND workos_user_id = $2", [
+      workspaceId,
+      workosUserId,
+    ])
+  },
+
   async deleteMembershipsByWorkspace(db: Querier, workspaceId: string): Promise<void> {
     await db.query("DELETE FROM workspace_memberships WHERE workspace_id = $1", [workspaceId])
   },

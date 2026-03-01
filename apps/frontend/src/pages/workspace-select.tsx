@@ -28,6 +28,8 @@ export function WorkspaceSelectPage() {
   const navigate = useNavigate()
   const [newWorkspaceName, setNewWorkspaceName] = useState("")
   const [selectedRegion, setSelectedRegion] = useState<string | undefined>()
+  const [acceptingId, setAcceptingId] = useState<string | null>(null)
+  const [acceptError, setAcceptError] = useState<string | null>(null)
   const createWorkspaceErrorMessage = getCreateWorkspaceErrorMessage(createWorkspace.error)
   const showRegionPicker = regions && regions.length > 1
 
@@ -42,9 +44,15 @@ export function WorkspaceSelectPage() {
   }
 
   const handleAcceptInvitation = (invitationId: string) => {
+    setAcceptingId(invitationId)
+    setAcceptError(null)
     acceptInvitation.mutate(invitationId, {
       onSuccess: ({ workspaceId }) => {
         navigate(`/w/${workspaceId}/setup`)
+      },
+      onError: () => {
+        setAcceptingId(null)
+        setAcceptError("Failed to accept invitation. It may have been revoked.")
       },
     })
   }
@@ -78,8 +86,9 @@ export function WorkspaceSelectPage() {
     )
   }
 
-  // Only auto-redirect when there are no pending invitations
-  if (workspaces?.length === 1 && pendingInvitations.length === 0) {
+  // Only auto-redirect when there are no pending invitations and no accept in flight.
+  // After a successful accept, the navigate in onSuccess handles routing to /setup.
+  if (workspaces?.length === 1 && pendingInvitations.length === 0 && !acceptingId) {
     return <Navigate to={`/w/${workspaces[0].id}`} replace />
   }
 
@@ -102,12 +111,13 @@ export function WorkspaceSelectPage() {
                   size="sm"
                   variant="default"
                   onClick={() => handleAcceptInvitation(invitation.id)}
-                  disabled={acceptInvitation.isPending}
+                  disabled={acceptingId === invitation.id}
                 >
-                  Accept
+                  {acceptingId === invitation.id ? "Accepting..." : "Accept"}
                 </Button>
               </div>
             ))}
+            {acceptError && <p className="text-sm text-destructive">{acceptError}</p>}
           </div>
         )}
 

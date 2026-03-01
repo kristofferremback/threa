@@ -67,16 +67,8 @@ export class InvitationShadowService {
       throw new HttpError("Invitation not found", { status: 404, code: "NOT_FOUND" })
     }
 
-    const name = this.resolveDisplayName(user)
-
-    // Regional backend handles idempotent acceptance — safe if two requests race here
-    await this.regionalClient.acceptInvitation(shadow.region, shadow.id, {
-      workosUserId: user.id,
-      email: user.email,
-      name,
-    })
-
-    // Atomic claim: only one concurrent request wins (INV-20)
+    // Atomic claim + membership insert BEFORE regional call (INV-20).
+    // This prevents accept-vs-revoke races: once claimed, revoke can't interleave.
     const claimed = await withTransaction(this.pool, async (client) => {
       const row = await InvitationShadowRepository.claimPending(client, shadow.id, "accepted")
       if (!row) return false
@@ -85,8 +77,25 @@ export class InvitationShadowService {
     })
 
     if (!claimed) {
-      // Another request won the race — still a success since the user is now a member
+      // Another accept won the race — user is already a member
       return { workspaceId: shadow.workspace_id }
+    }
+
+    // Provision user on regional backend. If this fails, revert the optimistic claim
+    // so the user can retry (INV-41: no DB connection held during network call).
+    const name = this.resolveDisplayName(user)
+    try {
+      await this.regionalClient.acceptInvitation(shadow.region, shadow.id, {
+        workosUserId: user.id,
+        email: user.email,
+        name,
+      })
+    } catch (error) {
+      await withTransaction(this.pool, async (client) => {
+        await InvitationShadowRepository.revertClaim(client, shadow.id)
+        await WorkspaceRegistryRepository.removeMembership(client, shadow.workspace_id, user.id)
+      })
+      throw error
     }
 
     return { workspaceId: shadow.workspace_id }

@@ -52,8 +52,10 @@ export function useAcceptInvitation() {
 
   return useMutation({
     mutationFn: (invitationId: string) => workspaceService.acceptInvitation(invitationId),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: workspaceKeys.list() })
+    onSuccess: () => {
+      // Fire-and-forget: don't await so per-call onSuccess (navigate) fires promptly
+      // and races don't cause the workspace-select auto-redirect to win
+      queryClient.invalidateQueries({ queryKey: workspaceKeys.list() })
     },
   })
 }
