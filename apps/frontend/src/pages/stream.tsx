@@ -215,7 +215,7 @@ export function StreamPage() {
         </div>
       </header>
       <main className="flex-1 overflow-hidden" data-editor-zone="main">
-        <TimelineView isDraft={isDraft} autoFocus />
+        <TimelineView isDraft={isDraft} autoFocus={!isMobile} />
       </main>
     </div>
   )

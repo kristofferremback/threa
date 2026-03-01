@@ -270,7 +270,7 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
                   submitLabel="Reply"
                   submittingLabel="Creating..."
                   placeholder="Write your reply..."
-                  autoFocus
+                  autoFocus={!isMobile}
                 />
               </div>
             </div>
@@ -283,7 +283,7 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
               streamId={panelId}
               highlightMessageId={highlightMessageId}
               stream={stream}
-              autoFocus={isThread}
+              autoFocus={isThread && !isMobile}
             />
           </StreamErrorBoundary>
         )}
