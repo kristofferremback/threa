@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import { useDraftComposer, getDraftMessageKey, useStreamOrDraft } from "@/hooks"
 import { usePreferences } from "@/contexts"
@@ -36,6 +36,12 @@ export function MessageInput({
   const [error, setError] = useState<string | null>(null)
   const [docEditorOpen, setDocEditorOpen] = useState(false)
   const messageSendMode = preferences?.messageSendMode ?? "enter"
+
+  // Reset local state on stream change (e.g., draft promotion) without remounting
+  useEffect(() => {
+    setError(null)
+    setDocEditorOpen(false)
+  }, [streamId])
 
   const handleSubmit = useCallback(async () => {
     if (!composer.canSend) return
@@ -180,6 +186,7 @@ export function MessageInput({
           messageSendMode={messageSendMode}
           onExpandClick={() => setDocEditorOpen(true)}
           autoFocus={autoFocus}
+          scopeId={streamId}
         />
         {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
       </div>

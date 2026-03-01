@@ -33,6 +33,8 @@ interface RichEditorProps {
   onAttachClick?: () => void
   /** Auto-focus the editor when mounted */
   autoFocus?: boolean
+  /** When this value changes, re-focus the editor (if autoFocus is enabled) */
+  scopeId?: string
 }
 
 export function RichEditor({
@@ -48,6 +50,7 @@ export function RichEditor({
   showFormattingToolbar = false,
   onAttachClick,
   autoFocus = false,
+  scopeId,
 }: RichEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const isInternalUpdate = useRef(false)
@@ -305,9 +308,15 @@ export function RichEditor({
     const currentJson = JSON.stringify(editor.getJSON())
     const newJson = JSON.stringify(value)
     if (newJson !== currentJson) {
+      const hadFocus = editor.isFocused
       isInternalUpdate.current = true
       editor.commands.setContent(value)
       isInternalUpdate.current = false
+      // Mobile browsers can drop focus when contenteditable content is replaced.
+      // Restore it to keep the virtual keyboard open.
+      if (hadFocus && !editor.isFocused) {
+        editor.commands.focus()
+      }
     }
   }, [value, editor])
 
@@ -370,7 +379,20 @@ export function RichEditor({
     }
   }, [editor])
 
-  // Re-focus after disabled transitions (e.g., after sending)
+  // Re-focus when scope changes (e.g., navigating between streams) on desktop.
+  // TipTap's autofocus only fires on mount; without key={scopeId} remounting,
+  // we need to manually re-focus when the scope changes.
+  const prevScopeRef = useRef(scopeId)
+  useEffect(() => {
+    const prev = prevScopeRef.current
+    prevScopeRef.current = scopeId
+    if (autoFocus && prev !== undefined && prev !== scopeId) {
+      focus()
+    }
+  }, [scopeId, autoFocus, focus])
+
+  // Re-focus after external disabled transitions (e.g., stream un-archived).
+  // Send-completion focus is handled by the setContent sync effect above (line ~308).
   // Track previous value so this only fires on true→false transitions, not on mount.
   const prevDisabledRef = useRef(disabled)
   useEffect(() => {

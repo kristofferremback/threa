@@ -49,6 +49,9 @@ export interface MessageComposerProps {
 
   /** Auto-focus the editor when mounted */
   autoFocus?: boolean
+
+  /** Scope identifier — when it changes, re-focus the editor (if autoFocus) */
+  scopeId?: string
 }
 
 export function MessageComposer({
@@ -72,8 +75,11 @@ export function MessageComposer({
   messageSendMode = "enter",
   onExpandClick,
   autoFocus = false,
+  scopeId,
 }: MessageComposerProps) {
-  const isDisabled = disabled || isSubmitting
+  // Controls (buttons, file input) are disabled during both external disable and sending.
+  // The editor itself stays editable during sending so mobile keyboards don't close/reopen.
+  const controlsDisabled = disabled || isSubmitting
 
   // Build the send mode hint text (reactive to preference changes)
   const sendHint = useMemo(() => {
@@ -102,7 +108,7 @@ export function MessageComposer({
           multiple
           className="hidden"
           onChange={onFileSelect}
-          disabled={isDisabled}
+          disabled={controlsDisabled}
         />
 
         {/* Main input area with glow effect */}
@@ -120,7 +126,7 @@ export function MessageComposer({
                       size="icon"
                       className="h-9 w-9 shrink-0 rounded-lg bg-muted/50 hover:bg-primary/10 hover:text-primary"
                       onClick={onExpandClick}
-                      disabled={isDisabled}
+                      disabled={controlsDisabled}
                     >
                       <Expand className="h-4 w-4" />
                     </Button>
@@ -143,11 +149,12 @@ export function MessageComposer({
                   onFileUpload={onFileUpload}
                   imageCount={imageCount}
                   placeholder={placeholder}
-                  disabled={isDisabled}
+                  disabled={disabled}
                   messageSendMode={messageSendMode}
                   showFormattingToolbar
                   onAttachClick={handleAttachClick}
                   autoFocus={autoFocus}
+                  scopeId={scopeId}
                 />
               </div>
 
@@ -166,7 +173,12 @@ export function MessageComposer({
                   </TooltipContent>
                 </Tooltip>
               ) : (
-                <Button onClick={onSubmit} disabled={!canSubmit} className="h-9 rounded-lg shrink-0">
+                <Button
+                  onPointerDown={(e) => e.preventDefault()}
+                  onClick={onSubmit}
+                  disabled={!canSubmit}
+                  className="h-9 rounded-lg shrink-0"
+                >
                   {isSubmitting ? submittingLabel : submitLabel}
                 </Button>
               )}
