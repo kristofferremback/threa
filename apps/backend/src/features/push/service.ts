@@ -237,6 +237,48 @@ export class PushService {
   }
 
   /**
+   * Sends a "clear" push to all of a user's devices so the service worker
+   * dismisses any notification for the given stream. Called when the user
+   * reads a stream on one device so other devices clear the notification too.
+   */
+  async deliverClearForStream(workspaceId: string, userId: string, streamId: string): Promise<void> {
+    if (!this.canSend) return
+
+    const subscriptions = await PushSubscriptionRepository.findByUserId(this.pool, workspaceId, userId)
+    if (subscriptions.length === 0) return
+
+    const pushPayload = JSON.stringify({
+      data: { action: "clear", streamId },
+    })
+
+    const staleIds: string[] = []
+    await Promise.allSettled(
+      subscriptions.map(async (sub) => {
+        try {
+          await webpush.sendNotification(
+            { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+            pushPayload
+          )
+        } catch (err: unknown) {
+          const statusCode = (err as { statusCode?: number }).statusCode
+          if (statusCode === 404 || statusCode === 410) {
+            staleIds.push(sub.id)
+          }
+          // Silently ignore other errors — clearing is best-effort
+        }
+      })
+    )
+
+    if (staleIds.length > 0) {
+      try {
+        await PushSubscriptionRepository.deleteByIds(this.pool, workspaceId, staleIds)
+      } catch (deleteErr) {
+        logger.warn({ err: deleteErr, count: staleIds.length }, "Failed to delete stale subscriptions")
+      }
+    }
+  }
+
+  /**
    * Determines which devices should receive a push notification.
    *
    * Four-tier strategy (SW handles focus-based display suppression per device):

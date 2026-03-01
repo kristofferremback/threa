@@ -33,6 +33,8 @@ interface PushData {
   streamName?: string
   /** Accumulated count of messages in this notification group (set by the SW, not the backend). */
   messageCount?: number
+  /** Backend-driven action: "clear" dismisses notifications for the stream. */
+  action?: "clear"
 }
 
 function formatTitle(activityType: string | undefined): string {
@@ -71,6 +73,17 @@ self.addEventListener("push", (event) => {
   // Tag by stream so notifications from the same stream replace each other
   // instead of stacking as separate entries (e.g. 5 messages from Pierre → one grouped notification).
   const tag = data.streamId ?? "threa-notification"
+
+  // Backend-driven clear: dismiss notifications for this stream across all devices
+  // (e.g. user read the stream on their laptop → phone notification disappears).
+  if (data.action === "clear") {
+    event.waitUntil(
+      self.registration.getNotifications({ tag }).then((notifications) => {
+        for (const n of notifications) n.close()
+      })
+    )
+    return
+  }
 
   // Suppress notification if the user has a focused app window — they can already see the message.
   // Backend always sends the push; the SW decides whether to display it.
