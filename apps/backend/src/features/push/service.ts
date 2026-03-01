@@ -16,6 +16,12 @@ import type { ActivityCreatedOutboxPayload } from "../../lib/outbox"
 /** Maximum push subscriptions per user per workspace to bound parallel delivery calls */
 const MAX_SUBSCRIPTIONS_PER_USER = 10
 
+/** How recently a device must have sent a heartbeat to be considered "active" */
+const ACTIVE_SESSION_WINDOW_MS = 60_000
+
+/** How recently a device must have been focused to consider the user "at their computer" */
+const RECENTLY_FOCUSED_WINDOW_MS = 10 * 60 * 1_000 // 10 minutes
+
 /** Callbacks for resolving cross-feature data (INV-52: access via service layer, not repos) */
 interface CrossFeatureLookups {
   /** Resolve a user's notification level preference. */
@@ -95,12 +101,20 @@ export class PushService {
     return PushSubscriptionRepository.deleteByEndpoint(this.pool, workspaceId, userId, endpoint)
   }
 
-  async upsertSession(params: { workspaceId: string; userId: string; deviceKey: string }): Promise<UserSession> {
+  async upsertSession(params: {
+    workspaceId: string
+    userId: string
+    deviceKey: string
+    focused?: boolean
+  }): Promise<UserSession> {
     return UserSessionRepository.upsert(this.pool, params)
   }
 
-  async upsertSessionsBatch(entries: Array<{ workspaceId: string; userId: string; deviceKey: string }>): Promise<void> {
-    return UserSessionRepository.upsertBatch(this.pool, entries)
+  async upsertSessionsBatch(
+    entries: Array<{ workspaceId: string; userId: string; deviceKey: string }>,
+    focused?: boolean
+  ): Promise<void> {
+    return UserSessionRepository.upsertBatch(this.pool, entries, focused)
   }
 
   /**
@@ -218,13 +232,41 @@ export class PushService {
   }
 
   /**
-   * Returns all push subscriptions for the user.
+   * Determines which devices should receive a push notification.
    *
-   * Push delivery is not session-gated on the backend — the service worker checks
-   * whether any app window is focused and suppresses the notification display if so.
-   * This ensures notifications arrive instantly when the user tabs away.
+   * Four-tier strategy (SW handles focus-based display suppression per device):
+   * 1. Threa focused       → push to active device, SW suppresses (user sees nothing)
+   * 2. Threa open, unfocused (<10m) → push to active device, SW shows notification
+   * 3. Threa open, unfocused 10m+   → push to ALL devices (user walked away)
+   * 4. Offline 60s+                  → push to ALL devices (no active sessions)
    */
   private async getTargetSubscriptions(workspaceId: string, userId: string) {
-    return PushSubscriptionRepository.findByUserId(this.pool, workspaceId, userId)
+    const allSubs = await PushSubscriptionRepository.findByUserId(this.pool, workspaceId, userId)
+    if (allSubs.length === 0) return []
+
+    const activeSessions = await UserSessionRepository.getActiveSessions(
+      this.pool,
+      workspaceId,
+      userId,
+      ACTIVE_SESSION_WINDOW_MS
+    )
+
+    // Tier 4: No active sessions → user is fully offline → push to all devices
+    if (activeSessions.length === 0) return allSubs
+
+    // Check if any active session was focused recently (within 10m).
+    // If not, the user likely walked away from their computer with Threa open.
+    const now = Date.now()
+    const hasRecentlyFocused = activeSessions.some(
+      (s) => s.lastFocusedAt && now - s.lastFocusedAt.getTime() < RECENTLY_FOCUSED_WINDOW_MS
+    )
+
+    // Tier 3: Active sessions but none focused recently → user walked away → push to all
+    if (!hasRecentlyFocused) return allSubs
+
+    // Tiers 1 & 2: User is at their computer → only push to active devices.
+    // The SW on each device decides whether to display (focused = suppress).
+    const activeDeviceKeys = new Set(activeSessions.map((s) => s.deviceKey))
+    return allSubs.filter((sub) => activeDeviceKeys.has(sub.deviceKey))
   }
 }

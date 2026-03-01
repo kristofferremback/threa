@@ -197,7 +197,30 @@ describe("Push Notifications", () => {
       })
       expect(session.id).toStartWith("usess_")
       expect(session.lastActiveAt).toBeInstanceOf(Date)
+      expect(session.lastFocusedAt).toBeNull()
       expect(session.createdAt).toBeInstanceOf(Date)
+    })
+
+    test("upsert with focused=true sets lastFocusedAt", async () => {
+      const session = await UserSessionRepository.upsert(pool, {
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        deviceKey: "device-focused-1",
+        focused: true,
+      })
+
+      expect(session.lastFocusedAt).toBeInstanceOf(Date)
+
+      // Upsert again without focused — lastFocusedAt should be preserved
+      const updated = await UserSessionRepository.upsert(pool, {
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        deviceKey: "device-focused-1",
+        focused: false,
+      })
+
+      expect(updated.lastFocusedAt).toBeInstanceOf(Date)
+      expect(updated.lastFocusedAt!.getTime()).toBe(session.lastFocusedAt!.getTime())
     })
 
     test("upsert updates lastActiveAt on conflict", async () => {
@@ -569,7 +592,7 @@ describe("Push Notifications", () => {
       })
     })
 
-    test("pushes to all devices regardless of active sessions", async () => {
+    test("active + recently focused session → only pushes to active device", async () => {
       const service = createServiceWithLookups()
 
       // Two subscriptions on different devices
@@ -590,17 +613,138 @@ describe("Push Notifications", () => {
         deviceKey: "device-2",
       })
 
-      // Mark device-1 as having an active session — should NOT suppress push.
-      // The service worker handles display suppression client-side.
+      // Only device-1 has an active, recently focused session
       await UserSessionRepository.upsert(pool, {
         workspaceId: testWorkspaceId,
         userId: testUserId,
         deviceKey: "device-1",
+        focused: true,
       })
 
       await service.deliverPushForActivity(makePayload())
 
-      // Both devices receive push — SW decides whether to show notification
+      // Only device-1 receives push — SW decides whether to display
+      expect(sendSpy).toHaveBeenCalledTimes(1)
+      expect(sendSpy.mock.calls[0][0]).toMatchObject({
+        endpoint: "https://push.example.com/sub/device-1",
+      })
+    })
+
+    test("active session but not focused for 10m+ → pushes to all devices", async () => {
+      const service = createServiceWithLookups()
+
+      await PushSubscriptionRepository.insert(pool, {
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        endpoint: "https://push.example.com/sub/device-1",
+        p256dh: "p1",
+        auth: "a1",
+        deviceKey: "device-1",
+      })
+      await PushSubscriptionRepository.insert(pool, {
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        endpoint: "https://push.example.com/sub/device-2",
+        p256dh: "p2",
+        auth: "a2",
+        deviceKey: "device-2",
+      })
+
+      // device-1 has active session (heartbeat recent) but was focused 15m ago
+      const s1 = await UserSessionRepository.upsert(pool, {
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        deviceKey: "device-1",
+        focused: true,
+      })
+      await pool.query(`UPDATE user_sessions SET last_focused_at = now() - interval '15 minutes' WHERE id = $1`, [
+        s1.id,
+      ])
+
+      await service.deliverPushForActivity(makePayload())
+
+      // User walked away → push to all devices
+      expect(sendSpy).toHaveBeenCalledTimes(2)
+      const calledEndpoints = sendSpy.mock.calls.map((c) => c[0].endpoint).sort()
+      expect(calledEndpoints).toEqual([
+        "https://push.example.com/sub/device-1",
+        "https://push.example.com/sub/device-2",
+      ])
+    })
+
+    test("no active sessions → pushes to all devices", async () => {
+      const service = createServiceWithLookups()
+
+      // Two subscriptions, no active sessions
+      await PushSubscriptionRepository.insert(pool, {
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        endpoint: "https://push.example.com/sub/device-1",
+        p256dh: "p1",
+        auth: "a1",
+        deviceKey: "device-1",
+      })
+      await PushSubscriptionRepository.insert(pool, {
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        endpoint: "https://push.example.com/sub/device-2",
+        p256dh: "p2",
+        auth: "a2",
+        deviceKey: "device-2",
+      })
+
+      await service.deliverPushForActivity(makePayload())
+
+      // Both devices receive push — user is fully offline
+      expect(sendSpy).toHaveBeenCalledTimes(2)
+      const calledEndpoints = sendSpy.mock.calls.map((c) => c[0].endpoint).sort()
+      expect(calledEndpoints).toEqual([
+        "https://push.example.com/sub/device-1",
+        "https://push.example.com/sub/device-2",
+      ])
+    })
+
+    test("stale sessions (60s+) → pushes to all devices", async () => {
+      const service = createServiceWithLookups()
+
+      await PushSubscriptionRepository.insert(pool, {
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        endpoint: "https://push.example.com/sub/device-1",
+        p256dh: "p1",
+        auth: "a1",
+        deviceKey: "device-1",
+      })
+      await PushSubscriptionRepository.insert(pool, {
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        endpoint: "https://push.example.com/sub/device-2",
+        p256dh: "p2",
+        auth: "a2",
+        deviceKey: "device-2",
+      })
+
+      // Both devices have sessions, but they're stale (older than 60s)
+      const s1 = await UserSessionRepository.upsert(pool, {
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        deviceKey: "device-1",
+        focused: true,
+      })
+      const s2 = await UserSessionRepository.upsert(pool, {
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        deviceKey: "device-2",
+        focused: true,
+      })
+      await pool.query(
+        `UPDATE user_sessions SET last_active_at = now() - interval '5 minutes', last_focused_at = now() - interval '5 minutes' WHERE id = ANY($1)`,
+        [[s1.id, s2.id]]
+      )
+
+      await service.deliverPushForActivity(makePayload())
+
+      // All sessions stale → user is offline → push to all devices
       expect(sendSpy).toHaveBeenCalledTimes(2)
       const calledEndpoints = sendSpy.mock.calls.map((c) => c[0].endpoint).sort()
       expect(calledEndpoints).toEqual([

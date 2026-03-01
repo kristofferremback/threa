@@ -140,12 +140,15 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
         socket.join(userRoom)
         userRooms.set(wsId, { userId: workspaceUser.id, userRoom })
 
-        // Upsert session for push notification suppression (only when push is enabled)
+        // Upsert session for push notification suppression (only when push is enabled).
+        // On join the tab is likely focused — heartbeats will refine this.
         if (pushService.isEnabled()) {
           const deviceKey = deriveDeviceKey(socket.handshake.headers["user-agent"])
-          pushService.upsertSession({ workspaceId: wsId, userId: workspaceUser.id, deviceKey }).catch((err) => {
-            logger.warn({ err, wsId, userId: workspaceUser.id }, "Failed to upsert user session on join")
-          })
+          pushService
+            .upsertSession({ workspaceId: wsId, userId: workspaceUser.id, deviceKey, focused: true })
+            .catch((err) => {
+              logger.warn({ err, wsId, userId: workspaceUser.id }, "Failed to upsert user session on join")
+            })
         }
 
         // Track metrics
@@ -282,19 +285,20 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
     // =========================================================================
     let lastHeartbeatAt = 0
     const HEARTBEAT_MIN_INTERVAL_MS = 15_000 // Server-side throttle: ignore heartbeats faster than 15s
-    socket.on("heartbeat", () => {
+    socket.on("heartbeat", (payload?: { focused?: boolean }) => {
       if (!pushService.isEnabled()) return
       const now = Date.now()
       if (now - lastHeartbeatAt < HEARTBEAT_MIN_INTERVAL_MS) return
       lastHeartbeatAt = now
       const deviceKey = deriveDeviceKey(socket.handshake.headers["user-agent"])
+      const focused = payload?.focused === true
       const entries = Array.from(userRooms, ([wsId, entry]) => ({
         workspaceId: wsId,
         userId: entry.userId,
         deviceKey,
       }))
       if (entries.length === 0) return
-      pushService.upsertSessionsBatch(entries).catch((err) => {
+      pushService.upsertSessionsBatch(entries, focused).catch((err) => {
         logger.warn({ err }, "Failed to upsert sessions on heartbeat")
       })
     })

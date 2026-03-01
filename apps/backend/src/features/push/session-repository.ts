@@ -8,6 +8,7 @@ interface UserSessionRow {
   user_id: string
   device_key: string
   last_active_at: Date
+  last_focused_at: Date | null
   created_at: Date
 }
 
@@ -17,6 +18,7 @@ export interface UserSession {
   userId: string
   deviceKey: string
   lastActiveAt: Date
+  lastFocusedAt: Date | null
   createdAt: Date
 }
 
@@ -27,18 +29,26 @@ function mapRowToSession(row: UserSessionRow): UserSession {
     userId: row.user_id,
     deviceKey: row.device_key,
     lastActiveAt: row.last_active_at,
+    lastFocusedAt: row.last_focused_at,
     createdAt: row.created_at,
   }
 }
 
 export const UserSessionRepository = {
-  async upsert(db: Querier, params: { workspaceId: string; userId: string; deviceKey: string }): Promise<UserSession> {
+  async upsert(
+    db: Querier,
+    params: { workspaceId: string; userId: string; deviceKey: string; focused?: boolean }
+  ): Promise<UserSession> {
     const id = userSessionId()
+    const focusedAt = params.focused ? new Date() : null
+
     const result = await db.query<UserSessionRow>(sql`
-      INSERT INTO user_sessions (id, workspace_id, user_id, device_key, last_active_at)
-      VALUES (${id}, ${params.workspaceId}, ${params.userId}, ${params.deviceKey}, now())
+      INSERT INTO user_sessions (id, workspace_id, user_id, device_key, last_active_at, last_focused_at)
+      VALUES (${id}, ${params.workspaceId}, ${params.userId}, ${params.deviceKey}, now(), ${focusedAt})
       ON CONFLICT (workspace_id, user_id, device_key)
-      DO UPDATE SET last_active_at = now()
+      DO UPDATE SET
+        last_active_at = now(),
+        last_focused_at = COALESCE(${focusedAt}, user_sessions.last_focused_at)
       RETURNING *
     `)
     return mapRowToSession(result.rows[0])
@@ -47,14 +57,16 @@ export const UserSessionRepository = {
   /**
    * Batch upsert sessions in a single SQL statement (INV-56).
    * Used by heartbeat handler to avoid N individual upserts per workspace.
+   * All entries in a batch share the same focused state (same browser tab).
    */
   async upsertBatch(
     db: Querier,
-    entries: Array<{ workspaceId: string; userId: string; deviceKey: string }>
+    entries: Array<{ workspaceId: string; userId: string; deviceKey: string }>,
+    focused?: boolean
   ): Promise<void> {
     if (entries.length === 0) return
     if (entries.length === 1) {
-      await this.upsert(db, entries[0])
+      await this.upsert(db, { ...entries[0], focused })
       return
     }
 
@@ -62,12 +74,15 @@ export const UserSessionRepository = {
     const workspaceIds = entries.map((e) => e.workspaceId)
     const userIds = entries.map((e) => e.userId)
     const deviceKeys = entries.map((e) => e.deviceKey)
+    const focusedAt = focused ? new Date() : null
 
     await db.query(sql`
-      INSERT INTO user_sessions (id, workspace_id, user_id, device_key, last_active_at)
-      SELECT unnest(${ids}::text[]), unnest(${workspaceIds}::text[]), unnest(${userIds}::text[]), unnest(${deviceKeys}::text[]), now()
+      INSERT INTO user_sessions (id, workspace_id, user_id, device_key, last_active_at, last_focused_at)
+      SELECT unnest(${ids}::text[]), unnest(${workspaceIds}::text[]), unnest(${userIds}::text[]), unnest(${deviceKeys}::text[]), now(), ${focusedAt}
       ON CONFLICT (workspace_id, user_id, device_key)
-      DO UPDATE SET last_active_at = now()
+      DO UPDATE SET
+        last_active_at = now(),
+        last_focused_at = COALESCE(${focusedAt}, user_sessions.last_focused_at)
     `)
   },
 

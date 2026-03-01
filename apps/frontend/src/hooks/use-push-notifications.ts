@@ -74,6 +74,11 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
   const [pushDisabledOnServer, setPushDisabledOnServer] = useState(false)
   const vapidCacheRef = useRef<{ workspaceId: string; config: VapidConfig } | null>(null)
 
+  // Re-sync opt-out state when workspaceId changes (initializer only runs on mount)
+  useEffect(() => {
+    setOptedOut(workspaceId ? localStorage.getItem(pushOptOutKey(workspaceId)) === "1" : false)
+  }, [workspaceId])
+
   // Subscribe to push notifications
   const subscribe = useCallback(
     async (registration: ServiceWorkerRegistration) => {
