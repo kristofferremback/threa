@@ -277,6 +277,7 @@ export interface InvitationSentOutboxPayload extends WorkspaceScopedPayload {
   invitationId: string
   email: string
   role: string
+  inviterWorkosUserId?: string
 }
 
 export interface InvitationAcceptedOutboxPayload extends WorkspaceScopedPayload {

@@ -1,12 +1,27 @@
 import { api } from "./client"
-import type { Workspace, WorkspaceBootstrap, User, CreateWorkspaceInput, CompleteUserSetupInput } from "@threa/types"
+import type {
+  Workspace,
+  WorkspaceBootstrap,
+  User,
+  CreateWorkspaceInput,
+  CompleteUserSetupInput,
+  PendingInvitation,
+} from "@threa/types"
 
 export type { WorkspaceBootstrap, CreateWorkspaceInput }
 
+export interface WorkspaceListResult {
+  workspaces: Workspace[]
+  pendingInvitations: PendingInvitation[]
+}
+
 export const workspacesApi = {
-  async list(): Promise<Workspace[]> {
-    const res = await api.get<{ workspaces: Workspace[] }>("/api/workspaces")
-    return res.workspaces
+  async list(): Promise<WorkspaceListResult> {
+    return api.get<WorkspaceListResult>("/api/workspaces")
+  },
+
+  async acceptInvitation(invitationId: string): Promise<{ workspaceId: string }> {
+    return api.post<{ workspaceId: string }>(`/api/invitations/${invitationId}/accept`)
   },
 
   async listRegions(): Promise<string[]> {

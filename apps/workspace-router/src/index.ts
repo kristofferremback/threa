@@ -23,6 +23,8 @@ const WORKSPACES_COLLECTION_RE = /^\/api\/workspaces\/?$/
 const REGIONS_ROUTE_RE = /^\/api\/regions\/?$/
 /** Dev auth routes that the control-plane handles in stub mode */
 const DEV_AUTH_ROUTE_RE = /^\/(?:test-auth-login|api\/dev\/login)\/?$/
+/** User-facing invitation acceptance (handled by control-plane) */
+const INVITATION_ACCEPT_RE = /^\/api\/invitations\/[^/]+\/accept$/
 
 /** Matches /api/workspaces/:workspaceId with optional trailing path */
 const WORKSPACE_ROUTE_RE = /^\/api\/workspaces\/([^/]+)(?:\/.+)?$/
@@ -61,7 +63,8 @@ export default {
         AUTH_ROUTE_RE.test(path) ||
         (WORKSPACES_COLLECTION_RE.test(path) && (method === "GET" || method === "POST")) ||
         REGIONS_ROUTE_RE.test(path) ||
-        DEV_AUTH_ROUTE_RE.test(path)
+        DEV_AUTH_ROUTE_RE.test(path) ||
+        (INVITATION_ACCEPT_RE.test(path) && method === "POST")
       ) {
         try {
           return await proxyRequest(request, env.CONTROL_PLANE_URL)

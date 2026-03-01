@@ -4,10 +4,10 @@ import {
   HttpError,
   SESSION_COOKIE_NAME,
   SESSION_COOKIE_CONFIG,
+  decodeAndSanitizeRedirectState,
   displayNameFromWorkos,
   type AuthService,
 } from "@threa/backend-common"
-import type { InvitationShadowService } from "../invitation-shadows/service"
 
 const callbackSchema = z.object({
   code: z.string().min(1),
@@ -16,10 +16,9 @@ const callbackSchema = z.object({
 
 interface Dependencies {
   authService: AuthService
-  shadowService: InvitationShadowService
 }
 
-export function createControlPlaneAuthHandlers({ authService, shadowService }: Dependencies) {
+export function createControlPlaneAuthHandlers({ authService }: Dependencies) {
   return {
     async login(req: Request, res: Response) {
       const redirectTo = req.query.redirect_to as string | undefined
@@ -41,12 +40,7 @@ export function createControlPlaneAuthHandlers({ authService, shadowService }: D
         throw new HttpError("Authentication failed", { status: 401, code: "AUTH_FAILED" })
       }
 
-      const user = result.user
-
-      const redirectUrl = await shadowService.acceptPendingAndGetRedirect({
-        user,
-        state,
-      })
+      const redirectUrl = state ? decodeAndSanitizeRedirectState(state) : "/"
 
       res.cookie(SESSION_COOKIE_NAME, result.sealedSession, SESSION_COOKIE_CONFIG)
       res.redirect(redirectUrl)

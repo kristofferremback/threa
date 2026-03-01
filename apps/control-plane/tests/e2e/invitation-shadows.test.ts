@@ -72,27 +72,24 @@ describe("Invitation Shadows", () => {
     })
   })
 
-  describe("Auto-acceptance on login", () => {
-    test("stub login auto-accepts pending shadows", async () => {
+  describe("Login no longer auto-accepts", () => {
+    test("stub login with pending shadows redirects to root", async () => {
       const client = new TestClient()
-      const email = "auto-accept@example.com"
+      const email = "no-auto-accept@example.com"
 
-      // Create a shadow for this email (simulating backend invitation sync)
+      // Create a shadow for this email
       await createShadow(client, {
-        id: "inv_auto_accept",
-        workspaceId: "ws_auto_accept",
+        id: "inv_no_auto",
+        workspaceId: "ws_no_auto",
         email,
         region: "local",
         expiresAt: futureDate,
       })
 
-      // Login via stub — should auto-accept the shadow
-      const loginRes = await client.post("/test-auth-login", { email, name: "Auto Accepter" })
-
-      // Should redirect to workspace setup (exactly 1 accepted workspace)
+      // Login via stub — should redirect to root (no auto-acceptance)
+      const loginRes = await client.post("/test-auth-login", { email, name: "No Auto" })
       expect(loginRes.status).toBe(302)
-      const location = loginRes.headers.get("location")
-      expect(location).toContain("/w/ws_auto_accept/setup")
+      expect(loginRes.headers.get("location")).toBe("/")
     })
 
     test("stub login with no pending shadows redirects to root", async () => {
@@ -106,14 +103,18 @@ describe("Invitation Shadows", () => {
       expect(loginRes.headers.get("location")).toBe("/")
     })
 
-    test("revoked shadows are not accepted on login", async () => {
+    test("revoked shadows are not listed as pending", async () => {
       const client = new TestClient()
       const email = "revoked-shadow@example.com"
+
+      const owner = new TestClient()
+      await loginAs(owner, "revoke-list-owner@example.com", "Revoke Owner")
+      const ws = await createWorkspace(owner, "Revoke List WS")
 
       // Create and revoke a shadow
       await createShadow(client, {
         id: "inv_revoked_test",
-        workspaceId: "ws_revoked",
+        workspaceId: ws.id,
         email,
         region: "local",
         expiresAt: futureDate,
@@ -122,41 +123,117 @@ describe("Invitation Shadows", () => {
         status: "revoked",
       })
 
-      // Login — should NOT redirect to workspace setup
-      const loginRes = await client.post("/test-auth-login", { email, name: "Revoked User" })
-      expect(loginRes.status).toBe(302)
-      expect(loginRes.headers.get("location")).toBe("/")
+      // Login and check workspace list — no pending invitations
+      await loginAs(client, email, "Revoked User")
+      const res = await client.get<{ workspaces: unknown[]; pendingInvitations: unknown[] }>("/api/workspaces")
+      expect(res.status).toBe(200)
+      expect(res.data.pendingInvitations).toHaveLength(0)
     })
 
-    test("expired shadows are not accepted on login", async () => {
+    test("expired shadows are not listed as pending", async () => {
       const client = new TestClient()
       const email = "expired-shadow@example.com"
       const pastDate = new Date(Date.now() - 1000).toISOString()
 
+      const owner = new TestClient()
+      await loginAs(owner, "expire-list-owner@example.com", "Expire Owner")
+      const ws = await createWorkspace(owner, "Expire List WS")
+
       // Create an already-expired shadow
       await createShadow(client, {
         id: "inv_expired_test",
-        workspaceId: "ws_expired",
+        workspaceId: ws.id,
         email,
         region: "local",
         expiresAt: pastDate,
       })
 
-      // Login — should NOT redirect to workspace setup
-      const loginRes = await client.post("/test-auth-login", { email, name: "Expired User" })
-      expect(loginRes.status).toBe(302)
-      expect(loginRes.headers.get("location")).toBe("/")
+      // Login and check workspace list — no pending invitations
+      await loginAs(client, email, "Expired User")
+      const res = await client.get<{ workspaces: unknown[]; pendingInvitations: unknown[] }>("/api/workspaces")
+      expect(res.status).toBe(200)
+      expect(res.data.pendingInvitations).toHaveLength(0)
+    })
+  })
+
+  describe("Explicit acceptance", () => {
+    test("GET /api/workspaces returns pending invitations", async () => {
+      const owner = new TestClient()
+      await loginAs(owner, "pending-list-owner@example.com", "List Owner")
+      const ws = await createWorkspace(owner, "Pending List WS")
+
+      const invitee = new TestClient()
+      const email = "pending-list@example.com"
+      await createShadow(invitee, {
+        id: "inv_pending_list",
+        workspaceId: ws.id,
+        email,
+        region: "local",
+        expiresAt: futureDate,
+      })
+
+      await loginAs(invitee, email, "Pending User")
+      const res = await invitee.get<{
+        workspaces: unknown[]
+        pendingInvitations: Array<{ id: string; workspaceId: string; workspaceName: string }>
+      }>("/api/workspaces")
+      expect(res.status).toBe(200)
+      expect(res.data.pendingInvitations).toHaveLength(1)
+      expect(res.data.pendingInvitations[0].id).toBe("inv_pending_list")
+      expect(res.data.pendingInvitations[0].workspaceId).toBe(ws.id)
+      expect(res.data.pendingInvitations[0].workspaceName).toBe("Pending List WS")
+    })
+
+    test("POST /api/invitations/:id/accept accepts a pending shadow", async () => {
+      const owner = new TestClient()
+      await loginAs(owner, "accept-owner@example.com", "Accept Owner")
+      const ws = await createWorkspace(owner, "Accept WS")
+
+      const invitee = new TestClient()
+      const email = "accept-user@example.com"
+      await createShadow(invitee, {
+        id: "inv_accept_explicit",
+        workspaceId: ws.id,
+        email,
+        region: "local",
+        expiresAt: futureDate,
+      })
+
+      await loginAs(invitee, email, "Accept User")
+      const acceptRes = await invitee.post<{ workspaceId: string }>("/api/invitations/inv_accept_explicit/accept")
+      expect(acceptRes.status).toBe(200)
+      expect(acceptRes.data.workspaceId).toBe(ws.id)
+
+      // Workspace should now appear in list, invitation should be gone
+      const listRes = await invitee.get<{
+        workspaces: Array<{ id: string }>
+        pendingInvitations: unknown[]
+      }>("/api/workspaces")
+      expect(listRes.status).toBe(200)
+      expect(listRes.data.workspaces.some((w) => w.id === ws.id)).toBe(true)
+      expect(listRes.data.pendingInvitations).toHaveLength(0)
+    })
+
+    test("POST /api/invitations/:id/accept returns 404 for nonexistent shadow", async () => {
+      const client = new TestClient()
+      await loginAs(client, "accept-404@example.com", "Accept 404")
+      const res = await client.post("/api/invitations/inv_nonexistent/accept")
+      expect(res.status).toBe(404)
+    })
+
+    test("POST /api/invitations/:id/accept returns 401 without auth", async () => {
+      const client = new TestClient()
+      const res = await client.post("/api/invitations/inv_some/accept")
+      expect(res.status).toBe(401)
     })
   })
 
   describe("Idempotency and replay safety", () => {
-    test("second login does not re-accept already accepted shadow", async () => {
-      // Owner creates workspace
+    test("second accept of same shadow is idempotent", async () => {
       const owner = new TestClient()
       await loginAs(owner, "idem-owner@example.com", "Idem Owner")
       const ws = await createWorkspace(owner, "Idem Workspace")
 
-      // Create shadow for invitee
       const invitee = new TestClient()
       const email = "idempotent-accept@example.com"
       await createShadow(invitee, {
@@ -167,25 +244,24 @@ describe("Invitation Shadows", () => {
         expiresAt: futureDate,
       })
 
-      // First login — accepts shadow, redirects to workspace setup
-      const login1 = await invitee.post("/test-auth-login", { email, name: "Idem User" })
-      expect(login1.status).toBe(302)
-      expect(login1.headers.get("location")).toContain(`/w/${ws.id}/setup`)
+      await loginAs(invitee, email, "Idem User")
 
-      // Second login — shadow is already accepted, no pending shadows left
-      const login2 = await invitee.post("/test-auth-login", { email, name: "Idem User" })
-      expect(login2.status).toBe(302)
-      // Should redirect to root (not to workspace setup, since no NEW acceptances)
-      expect(login2.headers.get("location")).toBe("/")
+      // First accept — succeeds
+      const accept1 = await invitee.post<{ workspaceId: string }>("/api/invitations/inv_idempotent/accept")
+      expect(accept1.status).toBe(200)
+      expect(accept1.data.workspaceId).toBe(ws.id)
+
+      // Second accept — idempotent, returns same workspaceId
+      const accept2 = await invitee.post<{ workspaceId: string }>("/api/invitations/inv_idempotent/accept")
+      expect(accept2.status).toBe(200)
+      expect(accept2.data.workspaceId).toBe(ws.id)
     })
 
     test("accepted shadow creates membership that persists across logins", async () => {
-      // Owner creates workspace
       const owner = new TestClient()
       await loginAs(owner, "persist-owner@example.com", "Persist Owner")
       const ws = await createWorkspace(owner, "Persist Workspace")
 
-      // Create shadow and login as invitee
       const invitee = new TestClient()
       const email = "persist-member@example.com"
       await createShadow(invitee, {
@@ -195,7 +271,9 @@ describe("Invitation Shadows", () => {
         region: "local",
         expiresAt: futureDate,
       })
-      await invitee.post("/test-auth-login", { email, name: "Persist User" })
+
+      await loginAs(invitee, email, "Persist User")
+      await invitee.post("/api/invitations/inv_persist/accept")
 
       // Check workspace list — should include the accepted workspace
       const res1 = await invitee.get<{ workspaces: Array<{ id: string }> }>("/api/workspaces")
@@ -209,14 +287,12 @@ describe("Invitation Shadows", () => {
       expect(res2.data.workspaces.some((w) => w.id === ws.id)).toBe(true)
     })
 
-    test("multiple shadows for same user accepted in single login", async () => {
-      // Owner creates two workspaces
+    test("multiple shadows for same user accepted individually", async () => {
       const owner = new TestClient()
       await loginAs(owner, "multi-owner@example.com", "Multi Owner")
       const ws1 = await createWorkspace(owner, "Multi WS 1")
       const ws2 = await createWorkspace(owner, "Multi WS 2")
 
-      // Create shadows for invitee pointing to both workspaces
       const invitee = new TestClient()
       const email = "multi-shadow@example.com"
       await createShadow(invitee, {
@@ -234,26 +310,34 @@ describe("Invitation Shadows", () => {
         expiresAt: futureDate,
       })
 
-      // Login — should accept both shadows (>1 accepted → redirect to root, not setup)
-      const loginRes = await invitee.post("/test-auth-login", { email, name: "Multi User" })
-      expect(loginRes.status).toBe(302)
-      expect(loginRes.headers.get("location")).toBe("/")
+      await loginAs(invitee, email, "Multi User")
+
+      // Should see both pending invitations
+      const listRes = await invitee.get<{
+        pendingInvitations: Array<{ id: string }>
+      }>("/api/workspaces")
+      expect(listRes.data.pendingInvitations).toHaveLength(2)
+
+      // Accept both individually
+      await invitee.post("/api/invitations/inv_multi_1/accept")
+      await invitee.post("/api/invitations/inv_multi_2/accept")
 
       // Both workspaces should appear in the list
-      const res = await invitee.get<{ workspaces: Array<{ id: string }> }>("/api/workspaces")
+      const res = await invitee.get<{ workspaces: Array<{ id: string }>; pendingInvitations: unknown[] }>(
+        "/api/workspaces"
+      )
       expect(res.status).toBe(200)
       const ids = res.data.workspaces.map((w) => w.id)
       expect(ids).toContain(ws1.id)
       expect(ids).toContain(ws2.id)
+      expect(res.data.pendingInvitations).toHaveLength(0)
     })
 
     test("revoking shadow after it was accepted has no effect on membership", async () => {
-      // Owner creates workspace
       const owner = new TestClient()
       await loginAs(owner, "revoke-after-owner@example.com", "Revoke Owner")
       const ws = await createWorkspace(owner, "Revoke After WS")
 
-      // Create shadow and login as invitee
       const invitee = new TestClient()
       const email = "revoke-after@example.com"
       await createShadow(invitee, {
@@ -263,7 +347,9 @@ describe("Invitation Shadows", () => {
         region: "local",
         expiresAt: futureDate,
       })
-      await invitee.post("/test-auth-login", { email, name: "Revoke After" })
+
+      await loginAs(invitee, email, "Revoke After")
+      await invitee.post("/api/invitations/inv_revoke_after/accept")
 
       // Try to revoke the already-accepted shadow
       const revokeRes = await invitee.internalRequest("PATCH", "/internal/invitation-shadows/inv_revoke_after", {

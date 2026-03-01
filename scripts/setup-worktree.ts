@@ -161,6 +161,15 @@ async function cloneDatabase(container: string, sourceDb: string, targetDb: stri
     .quiet()
     .nothrow()
 
+  // Reset outbox listener cursors to match actual outbox state.
+  // The retention worker may have deleted events before the clone, leaving
+  // cursors ahead of the sequence. Without this, new events get IDs below
+  // the stale cursors and are permanently skipped by every listener.
+  console.log("Resetting outbox listener cursors...")
+  await $`docker exec ${container} psql -U threa ${targetDb} -c "UPDATE outbox_listeners SET last_processed_id = COALESCE((SELECT MAX(id) FROM outbox), 0)"`
+    .quiet()
+    .nothrow()
+
   console.log(`Database '${targetDb}' cloned from '${sourceDb}'`)
 }
 

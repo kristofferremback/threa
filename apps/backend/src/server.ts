@@ -230,7 +230,7 @@ export async function startServer(): Promise<ServerInstance> {
     config.controlPlaneUrl && config.internalApiKey
       ? new ControlPlaneClient(config.controlPlaneUrl, config.internalApiKey)
       : null
-  const invitationService = new InvitationService(pool, workosOrgService, workspaceService)
+  const invitationService = new InvitationService(pool, workspaceService)
 
   // Schedule manager for cron tick generation
   const scheduleManager = new ScheduleManager(pool, {

@@ -9,6 +9,7 @@ export interface WorkspaceService {
   bootstrap: typeof workspacesApi.bootstrap
   create: typeof workspacesApi.create
   markAllAsRead: typeof workspacesApi.markAllAsRead
+  acceptInvitation: typeof workspacesApi.acceptInvitation
   updateProfile: typeof workspacesApi.updateProfile
   uploadAvatar: typeof workspacesApi.uploadAvatar
   removeAvatar: typeof workspacesApi.removeAvatar

@@ -4,10 +4,10 @@ import {
   HttpError,
   SESSION_COOKIE_NAME,
   SESSION_COOKIE_CONFIG,
+  decodeAndSanitizeRedirectState,
   renderLoginPage,
   type StubAuthService,
 } from "@threa/backend-common"
-import type { InvitationShadowService } from "../invitation-shadows/service"
 
 const stubLoginSchema = z.object({
   email: z.email(),
@@ -22,10 +22,9 @@ const devLoginSchema = z.object({
 
 interface Dependencies {
   authStubService: StubAuthService
-  shadowService: InvitationShadowService
 }
 
-export function createAuthStubHandlers({ authStubService, shadowService }: Dependencies) {
+export function createAuthStubHandlers({ authStubService }: Dependencies) {
   return {
     async getLoginPage(req: Request, res: Response) {
       const state = (req.query.state as string) || ""
@@ -40,10 +39,7 @@ export function createAuthStubHandlers({ authStubService, shadowService }: Depen
       const { email, name, state } = parsed.data
       const result = await authStubService.devLogin({ email, name })
 
-      const redirectUrl = await shadowService.acceptPendingAndGetRedirect({
-        user: { id: result.user.id, email: result.user.email, name: result.user.name },
-        state,
-      })
+      const redirectUrl = state ? decodeAndSanitizeRedirectState(state) : "/"
 
       res.cookie(SESSION_COOKIE_NAME, result.session, SESSION_COOKIE_CONFIG)
       res.redirect(redirectUrl)

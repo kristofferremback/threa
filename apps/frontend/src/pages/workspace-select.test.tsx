@@ -8,6 +8,7 @@ import { ApiError } from "@/api/client"
 const mockUseAuth = vi.fn()
 const mockUseWorkspaces = vi.fn()
 const mockUseCreateWorkspace = vi.fn()
+const mockUseAcceptInvitation = vi.fn()
 
 vi.mock("@/auth", () => ({
   useAuth: () => mockUseAuth(),
@@ -16,6 +17,7 @@ vi.mock("@/auth", () => ({
 vi.mock("@/hooks", () => ({
   useWorkspaces: () => mockUseWorkspaces(),
   useCreateWorkspace: () => mockUseCreateWorkspace(),
+  useAcceptInvitation: () => mockUseAcceptInvitation(),
   useRegions: () => ({ data: undefined, isLoading: false }),
 }))
 
@@ -41,6 +43,7 @@ function renderPage() {
       <Routes>
         <Route path="/workspaces" element={<WorkspaceSelectPage />} />
         <Route path="/w/:workspaceId" element={<WorkspaceRouteProbe />} />
+        <Route path="/w/:workspaceId/setup" element={<div data-testid="setup-route">setup</div>} />
         <Route path="/login" element={<div data-testid="login-route">login</div>} />
       </Routes>
     </MemoryRouter>
@@ -52,6 +55,7 @@ describe("WorkspaceSelectPage", () => {
     mockUseAuth.mockReset()
     mockUseWorkspaces.mockReset()
     mockUseCreateWorkspace.mockReset()
+    mockUseAcceptInvitation.mockReset()
 
     mockUseAuth.mockReturnValue({
       user: {
@@ -71,11 +75,17 @@ describe("WorkspaceSelectPage", () => {
       isPending: false,
       error: null,
     })
+
+    mockUseAcceptInvitation.mockReturnValue({
+      mutateAsync: vi.fn(),
+      isPending: false,
+    })
   })
 
   it("should redirect to the only workspace when user has one workspace", async () => {
     mockUseWorkspaces.mockReturnValue({
-      data: [makeWorkspace("workspace_1", "Solo")],
+      workspaces: [makeWorkspace("workspace_1", "Solo")],
+      pendingInvitations: [],
       isLoading: false,
       error: null,
     })
@@ -85,9 +95,27 @@ describe("WorkspaceSelectPage", () => {
     expect(await screen.findByTestId("workspace-route")).toHaveTextContent("workspace_1")
   })
 
+  it("should not auto-redirect when there are pending invitations", () => {
+    mockUseWorkspaces.mockReturnValue({
+      workspaces: [makeWorkspace("workspace_1", "Solo")],
+      pendingInvitations: [
+        { id: "inv_1", workspaceId: "ws_2", workspaceName: "Invited WS", expiresAt: "2026-12-01T00:00:00.000Z" },
+      ],
+      isLoading: false,
+      error: null,
+    })
+
+    renderPage()
+
+    expect(screen.getByText("Select a workspace to continue")).toBeInTheDocument()
+    expect(screen.getByText("Invited WS")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Accept" })).toBeInTheDocument()
+  })
+
   it("should show workspace picker when user has multiple workspaces", () => {
     mockUseWorkspaces.mockReturnValue({
-      data: [makeWorkspace("workspace_1", "Alpha"), makeWorkspace("workspace_2", "Beta")],
+      workspaces: [makeWorkspace("workspace_1", "Alpha"), makeWorkspace("workspace_2", "Beta")],
+      pendingInvitations: [],
       isLoading: false,
       error: null,
     })
@@ -101,7 +129,8 @@ describe("WorkspaceSelectPage", () => {
 
   it("should show invite-only message when invite is required", () => {
     mockUseWorkspaces.mockReturnValue({
-      data: [],
+      workspaces: [],
+      pendingInvitations: [],
       isLoading: false,
       error: null,
     })
@@ -122,7 +151,8 @@ describe("WorkspaceSelectPage", () => {
 
   it("should show backend message for non-invite 403 errors", () => {
     mockUseWorkspaces.mockReturnValue({
-      data: [],
+      workspaces: [],
+      pendingInvitations: [],
       isLoading: false,
       error: null,
     })

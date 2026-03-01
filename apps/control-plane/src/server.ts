@@ -29,7 +29,7 @@ import {
   type KvSyncPayload,
   type RegionalCreatePayload,
 } from "./features/workspaces"
-import { InvitationShadowService, OUTBOX_SHADOW_ACCEPT, type ShadowAcceptPayload } from "./features/invitation-shadows"
+import { InvitationShadowService } from "./features/invitation-shadows"
 
 const MIGRATIONS_GLOB = path.join(import.meta.dirname, "db/migrations/*.sql")
 const LISTENER_ID = "control-plane"
@@ -65,7 +65,7 @@ export async function startServer(): Promise<ControlPlaneInstance> {
     availableRegions,
     requireWorkspaceCreationInvite: config.workspaceCreationRequiresInvite,
   })
-  const shadowService = new InvitationShadowService({ pool, regionalClient })
+  const shadowService = new InvitationShadowService({ pool, regionalClient, workosOrgService })
 
   // Outbox — single handler for all control-plane events (no sharding needed)
   const cursorLock = new CursorLock({
@@ -87,7 +87,7 @@ export async function startServer(): Promise<ControlPlaneInstance> {
       let lastError: Error | undefined
       for (const event of events) {
         try {
-          await dispatchEvent(event, { workspaceService, shadowService })
+          await dispatchEvent(event, { workspaceService })
           seen.push(event.id)
         } catch (err) {
           lastError = err instanceof Error ? err : new Error(String(err))
@@ -168,7 +168,7 @@ export async function startServer(): Promise<ControlPlaneInstance> {
 /** Dispatch a single outbox event to the appropriate service method (INV-34) */
 async function dispatchEvent(
   event: OutboxEvent,
-  deps: { workspaceService: ControlPlaneWorkspaceService; shadowService: InvitationShadowService }
+  deps: { workspaceService: ControlPlaneWorkspaceService }
 ): Promise<void> {
   const payload = event.payload as unknown
   switch (event.eventType) {
@@ -177,9 +177,6 @@ async function dispatchEvent(
       break
     case OUTBOX_KV_SYNC:
       await deps.workspaceService.syncToKv(payload as KvSyncPayload)
-      break
-    case OUTBOX_SHADOW_ACCEPT:
-      await deps.shadowService.acceptFromOutbox(payload as ShadowAcceptPayload)
       break
     default:
       logger.warn({ eventType: event.eventType }, "Unknown outbox event type")

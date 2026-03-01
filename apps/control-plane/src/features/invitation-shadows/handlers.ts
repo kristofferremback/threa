@@ -13,6 +13,7 @@ const createShadowSchema = z.object({
   email: z.string().email(),
   region: z.string().min(1),
   expiresAt: z.string().datetime(),
+  inviterWorkosUserId: z.string().min(1).optional(),
 })
 
 const updateShadowSchema = z.object({
@@ -28,8 +29,12 @@ export function createInvitationShadowHandlers({ shadowService }: Dependencies) 
       }
 
       const shadow = await shadowService.createShadow({
-        ...parsed.data,
+        id: parsed.data.id,
+        workspaceId: parsed.data.workspaceId,
+        email: parsed.data.email,
+        region: parsed.data.region,
         expiresAt: new Date(parsed.data.expiresAt),
+        inviterWorkosUserId: parsed.data.inviterWorkosUserId,
       })
 
       res.status(201).json({ shadow })
@@ -48,6 +53,22 @@ export function createInvitationShadowHandlers({ shadowService }: Dependencies) 
       }
 
       res.json({ ok: true })
+    },
+
+    /** User-facing: accept a pending invitation */
+    async accept(req: Request, res: Response) {
+      if (!req.authUser) {
+        throw new HttpError("Not authenticated", { status: 401, code: "NOT_AUTHENTICATED" })
+      }
+
+      const { workspaceId } = await shadowService.acceptShadow(req.params.id, {
+        id: req.authUser.id,
+        email: req.authUser.email,
+        firstName: req.authUser.firstName,
+        lastName: req.authUser.lastName,
+      })
+
+      res.json({ workspaceId })
     },
   }
 }
