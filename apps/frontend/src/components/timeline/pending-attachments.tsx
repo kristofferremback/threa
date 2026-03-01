@@ -30,6 +30,12 @@ export function PendingAttachments({ attachments, onRemove }: PendingAttachments
         const isError = attachment.status === "error"
         const isUploading = attachment.status === "uploading"
         const isUploaded = attachment.status === "uploaded"
+        let StatusIcon = Icon
+        if (isUploading) {
+          StatusIcon = Loader2
+        } else if (isError) {
+          StatusIcon = AlertCircle
+        }
 
         const attachmentChip = (
           <div
@@ -43,13 +49,7 @@ export function PendingAttachments({ attachments, onRemove }: PendingAttachments
               isUploaded && "border border-primary/30 bg-primary/10 text-primary"
             )}
           >
-            {attachment.status === "uploading" ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : isError ? (
-              <AlertCircle className="h-3.5 w-3.5" />
-            ) : (
-              <Icon className="h-3.5 w-3.5" />
-            )}
+            <StatusIcon className={cn("h-3.5 w-3.5", isUploading && "animate-spin")} />
             <span className="max-w-[120px] truncate">{attachment.filename}</span>
             {isError ? (
               <span>Failed</span>

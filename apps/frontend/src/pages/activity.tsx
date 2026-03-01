@@ -64,6 +64,28 @@ export function ActivityPage() {
 
   if (!workspaceId) return null
 
+  let content = <ActivitySkeleton />
+  if (!isLoading) {
+    if (!activities?.length) {
+      content = <ActivityEmpty isFiltered={unreadOnly} />
+    } else {
+      content = (
+        <div className="flex flex-col gap-0.5">
+          {activities.map((activity) => (
+            <ActivityItem
+              key={activity.id}
+              activity={activity}
+              actorName={getActorName(activity.actorId, activity.actorType as AuthorType)}
+              streamName={resolveActivityStreamName(activity)}
+              workspaceId={workspaceId}
+              onMarkAsRead={(id) => markRead.mutate(id)}
+            />
+          ))}
+        </div>
+      )
+    }
+  }
+
   return (
     <div className="flex h-full flex-col">
       <header className="flex h-11 items-center justify-between border-b px-4 gap-2">
@@ -108,26 +130,7 @@ export function ActivityPage() {
       </header>
 
       <ScrollArea className="flex-1">
-        <main className="py-2">
-          {isLoading ? (
-            <ActivitySkeleton />
-          ) : !activities?.length ? (
-            <ActivityEmpty isFiltered={unreadOnly} />
-          ) : (
-            <div className="flex flex-col gap-0.5">
-              {activities.map((activity) => (
-                <ActivityItem
-                  key={activity.id}
-                  activity={activity}
-                  actorName={getActorName(activity.actorId, activity.actorType as AuthorType)}
-                  streamName={resolveActivityStreamName(activity)}
-                  workspaceId={workspaceId}
-                  onMarkAsRead={(id) => markRead.mutate(id)}
-                />
-              ))}
-            </div>
-          )}
-        </main>
+        <main className="py-2">{content}</main>
       </ScrollArea>
     </div>
   )

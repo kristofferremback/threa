@@ -29,6 +29,18 @@ interface CostStore {
 
 type FetchFunction = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 
+function getRequestUrl(input: RequestInfo | URL): string {
+  if (typeof input === "string") {
+    return input
+  }
+
+  if (input instanceof URL) {
+    return input.href
+  }
+
+  return input.url
+}
+
 /**
  * CostTracker provides thread-safe cost tracking for OpenRouter API calls.
  *
@@ -61,7 +73,7 @@ export class CostTracker {
       const response = await originalFetch(input, init)
 
       // Only process OpenRouter responses
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+      const url = getRequestUrl(input)
       if (!url.includes("openrouter.ai")) {
         return response
       }

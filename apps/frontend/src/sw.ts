@@ -98,12 +98,10 @@ self.addEventListener("push", (event) => {
       const previousCount = (existing[0]?.data as PushData | undefined)?.messageCount ?? 1
       const messageCount = existing.length > 0 ? previousCount + 1 : 1
 
-      const title =
-        messageCount === 1
-          ? formatTitle(data.activityType)
-          : data.streamName
-            ? `${messageCount} new messages in ${data.streamName}`
-            : `${messageCount} new messages`
+      let title = formatTitle(data.activityType)
+      if (messageCount > 1) {
+        title = data.streamName ? `${messageCount} new messages in ${data.streamName}` : `${messageCount} new messages`
+      }
 
       const body = messageCount === 1 ? formatBody(data) : (data.contentPreview ?? formatBody(data))
 

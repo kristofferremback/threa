@@ -2,7 +2,7 @@ import type { Request, Response } from "express"
 import { z } from "zod/v4"
 import { HttpError } from "@threa/backend-common"
 import type { ControlPlaneWorkspaceService } from "./service"
-import type { InvitationShadowService } from "../invitation-shadows/service"
+import type { InvitationShadowService } from "../invitation-shadows"
 
 interface Dependencies {
   workspaceService: ControlPlaneWorkspaceService

@@ -12,7 +12,13 @@ import { AttachmentRepository } from "../repository"
 import { AttachmentExtractionRepository } from "../extraction-repository"
 import { PdfPageExtractionRepository } from "./page-extraction-repository"
 import { PdfProcessingJobRepository } from "./job-repository"
-import { ProcessingStatuses, PdfJobStatuses, PdfPageClassifications, PdfSizeTiers } from "@threa/types"
+import {
+  ProcessingStatuses,
+  PdfJobStatuses,
+  PdfPageClassifications,
+  PdfSizeTiers,
+  type PdfSizeTier,
+} from "@threa/types"
 import { logger } from "../../../lib/logger"
 import { PDF_SIZE_THRESHOLDS } from "./config"
 import type { PdfProcessingServiceLike } from "./types"
@@ -101,12 +107,12 @@ export class StubPdfProcessingService implements PdfProcessingServiceLike {
     }
 
     const fullText = pages.map((p) => p.rawText ?? "").join("\n\n---\n\n")
-    const sizeTier =
-      pages.length < PDF_SIZE_THRESHOLDS.small
-        ? PdfSizeTiers.SMALL
-        : pages.length <= PDF_SIZE_THRESHOLDS.medium
-          ? PdfSizeTiers.MEDIUM
-          : PdfSizeTiers.LARGE
+    let sizeTier: PdfSizeTier = PdfSizeTiers.LARGE
+    if (pages.length < PDF_SIZE_THRESHOLDS.small) {
+      sizeTier = PdfSizeTiers.SMALL
+    } else if (pages.length <= PDF_SIZE_THRESHOLDS.medium) {
+      sizeTier = PdfSizeTiers.MEDIUM
+    }
 
     await withTransaction(this.pool, async (client) => {
       await AttachmentExtractionRepository.insert(client, {

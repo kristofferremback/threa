@@ -8,7 +8,7 @@ import {
   type WorkosOrgService,
 } from "@threa/backend-common"
 import { InvitationShadowRepository } from "./repository"
-import { WorkspaceRegistryRepository } from "../workspaces/repository"
+import { WorkspaceRegistryRepository } from "../workspaces"
 import type { RegionalClient } from "../../lib/regional-client"
 import type { PendingInvitation } from "@threa/types"
 

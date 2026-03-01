@@ -345,19 +345,25 @@ function RerunContextSummary({ rerunContext }: { rerunContext: RerunContextInfo 
 
   const before = rerunContext.editedMessageBefore?.trim()
   const after = rerunContext.editedMessageAfter?.trim()
+  let editSummary: React.ReactNode = null
+  if (before && after && before !== after) {
+    editSummary = (
+      <div className="text-xs">
+        <span className="font-medium">Edit:</span> "{before}" → "{after}"
+      </div>
+    )
+  } else if (after) {
+    editSummary = (
+      <div className="text-xs">
+        <span className="font-medium">Edited message:</span> "{after}"
+      </div>
+    )
+  }
 
   return (
     <div className="rounded bg-muted/40 px-3 py-2 space-y-1">
       <div className="text-[11px] font-medium text-muted-foreground">{causeLabel}</div>
-      {before && after && before !== after ? (
-        <div className="text-xs">
-          <span className="font-medium">Edit:</span> "{before}" → "{after}"
-        </div>
-      ) : after ? (
-        <div className="text-xs">
-          <span className="font-medium">Edited message:</span> "{after}"
-        </div>
-      ) : null}
+      {editSummary}
     </div>
   )
 }

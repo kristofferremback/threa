@@ -29,7 +29,12 @@ export function CommandEvent({ events }: CommandEventProps) {
   if (!dispatchedEvent) return null
 
   const dispatchedPayload = dispatchedEvent.payload as CommandDispatchedPayload
-  const status: CommandStatus = failedEvent ? "failed" : completedEvent ? "completed" : "running"
+  let status: CommandStatus = "running"
+  if (failedEvent) {
+    status = "failed"
+  } else if (completedEvent) {
+    status = "completed"
+  }
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>

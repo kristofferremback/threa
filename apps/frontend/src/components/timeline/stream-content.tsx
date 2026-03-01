@@ -134,6 +134,12 @@ export function StreamContent({
   const queryClient = useQueryClient()
   const isPublicChannel = stream?.type === StreamTypes.CHANNEL && stream?.visibility === Visibilities.PUBLIC
   const isMember = !!bootstrap?.membership
+  let disabledReason: string | undefined
+  if (isSystem) {
+    disabledReason = "System notifications are read-only."
+  } else if (isArchived) {
+    disabledReason = "This thread has been sealed in the labyrinth. It can be read but not extended."
+  }
 
   const handleJoined = useCallback(
     (membership: StreamMember) => {
@@ -168,7 +174,11 @@ export function StreamContent({
 
   return (
     <div className="flex h-full flex-col">
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain mb-4" onScroll={handleScroll}>
+      <div
+        ref={scrollContainerRef}
+        className="flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain mb-4"
+        onScroll={handleScroll}
+      >
         {/* Show parent message for threads */}
         {isThread && parentMessage && parentStreamId && (
           <ThreadParentMessage
@@ -207,26 +217,21 @@ export function StreamContent({
           />
         )}
       </div>
-      {!isMember && isPublicChannel ? (
+      {!isMember && isPublicChannel && (
         <JoinChannelBar
           workspaceId={workspaceId}
           streamId={streamId}
           channelName={stream?.slug ?? stream?.displayName ?? ""}
           onJoined={handleJoined}
         />
-      ) : (
+      )}
+      {(isMember || !isPublicChannel) && (
         <MessageInput
           workspaceId={workspaceId}
           streamId={streamId}
           streamName={stream?.displayName ?? undefined}
           disabled={isArchived || isSystem}
-          disabledReason={
-            isSystem
-              ? "System notifications are read-only."
-              : isArchived
-                ? "This thread has been sealed in the labyrinth. It can be read but not extended."
-                : undefined
-          }
+          disabledReason={disabledReason}
           autoFocus={autoFocus}
         />
       )}

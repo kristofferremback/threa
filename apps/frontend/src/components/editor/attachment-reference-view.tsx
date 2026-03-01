@@ -31,6 +31,15 @@ export function AttachmentReferenceView({ node }: NodeViewProps) {
   const isImage = attrs.mimeType.startsWith("image/")
   const displayText = getDisplayText(attrs)
 
+  let Icon = FileIcon
+  if (attrs.status === "uploading") {
+    Icon = Loader2
+  } else if (attrs.status === "error") {
+    Icon = AlertCircle
+  } else if (isImage) {
+    Icon = ImageIcon
+  }
+
   const baseStyles = cn(
     "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-sm",
     "cursor-pointer select-none transition-colors"
@@ -44,9 +53,6 @@ export function AttachmentReferenceView({ node }: NodeViewProps) {
     ),
     error: "bg-destructive/10 text-destructive hover:bg-destructive/20",
   }
-
-  const Icon =
-    attrs.status === "uploading" ? Loader2 : attrs.status === "error" ? AlertCircle : isImage ? ImageIcon : FileIcon
 
   const handleClick = () => {
     if (attrs.status !== "uploaded") return

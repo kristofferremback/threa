@@ -209,7 +209,14 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
   const togglePinned = useCallback(() => {
     clearHideTimeout()
     setState((current) => {
-      const next = current === "pinned" || current === "preview" ? "collapsed" : isMobile ? "preview" : "pinned"
+      let next: SidebarState
+      if (current === "pinned" || current === "preview") {
+        next = "collapsed"
+      } else if (isMobile) {
+        next = "preview"
+      } else {
+        next = "pinned"
+      }
       // Persist the open state (not preview which is transient)
       if (!isMobile) {
         updatePersistedState({ openState: next === "pinned" ? "open" : "collapsed" })

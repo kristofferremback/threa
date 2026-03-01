@@ -76,11 +76,10 @@ export function StreamSettingsDialog({ workspaceId }: StreamSettingsDialogProps)
   // If active tab isn't available for this stream type, fall back
   const effectiveTab = (availableTabs as readonly string[]).includes(activeTab) ? activeTab : availableTabs[0]
 
-  const streamName = resolvedStream
-    ? resolvedStream.slug
-      ? `#${resolvedStream.slug}`
-      : (resolvedStream.displayName ?? "Stream")
-    : "Stream"
+  let streamName = "Stream"
+  if (resolvedStream) {
+    streamName = resolvedStream.slug ? `#${resolvedStream.slug}` : (resolvedStream.displayName ?? "Stream")
+  }
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && closeStreamSettings()}>

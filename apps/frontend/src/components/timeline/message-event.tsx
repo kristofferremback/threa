@@ -233,30 +233,35 @@ function SentMessageEvent({
   // When activity.threadStreamId is present, use it for the thread link (allows immediate
   // navigation to the real thread before the slower stream:created event updates threadId)
   const effectiveThreadId = threadId ?? activity?.threadStreamId
-  const threadFooter = !isThreadParentProp ? (
-    <div className="mt-1 flex items-center gap-1.5 text-xs">
-      {effectiveThreadId ? (
-        replyCount > 0 ? (
-          <ThreadIndicator replyCount={replyCount} href={getPanelUrl(effectiveThreadId)} />
-        ) : (
-          <Link
-            to={getPanelUrl(effectiveThreadId)}
-            className="text-muted-foreground hover:text-foreground hover:underline"
-          >
-            Reply in thread
-          </Link>
-        )
+  let replyLink = (
+    <Link
+      to={draftPanelUrl}
+      className={cn(
+        "text-muted-foreground hover:text-foreground hover:underline transition-opacity",
+        !activityLabel && "opacity-0 group-hover:opacity-100 max-sm:opacity-100"
+      )}
+    >
+      Reply in thread
+    </Link>
+  )
+
+  if (effectiveThreadId) {
+    replyLink =
+      replyCount > 0 ? (
+        <ThreadIndicator replyCount={replyCount} href={getPanelUrl(effectiveThreadId)} />
       ) : (
         <Link
-          to={draftPanelUrl}
-          className={cn(
-            "text-muted-foreground hover:text-foreground hover:underline transition-opacity",
-            !activityLabel && "opacity-0 group-hover:opacity-100 max-sm:opacity-100"
-          )}
+          to={getPanelUrl(effectiveThreadId)}
+          className="text-muted-foreground hover:text-foreground hover:underline"
         >
           Reply in thread
         </Link>
-      )}
+      )
+  }
+
+  const threadFooter = !isThreadParentProp ? (
+    <div className="mt-1 flex items-center gap-1.5 text-xs">
+      {replyLink}
       {activityLabel && (
         <>
           <span className="text-muted-foreground/40">·</span>

@@ -196,21 +196,18 @@ export const PdfPageExtractionRepository = {
     const current = await this.findById(client, id)
     if (!current) return null
 
+    let embeddedImages = current.embeddedImages
+    if (params.embeddedImages !== undefined) {
+      embeddedImages = params.embeddedImages
+    }
+
     const result = await client.query<PdfPageExtractionRow>(sql`
       UPDATE pdf_page_extractions
       SET
         raw_text = ${params.rawText !== undefined ? params.rawText : current.rawText},
         ocr_text = ${params.ocrText !== undefined ? params.ocrText : current.ocrText},
         markdown_content = ${params.markdownContent !== undefined ? params.markdownContent : current.markdownContent},
-        embedded_images = ${
-          params.embeddedImages !== undefined
-            ? params.embeddedImages
-              ? JSON.stringify(params.embeddedImages)
-              : null
-            : current.embeddedImages
-              ? JSON.stringify(current.embeddedImages)
-              : null
-        },
+        embedded_images = ${embeddedImages ? JSON.stringify(embeddedImages) : null},
         processing_status = ${params.processingStatus !== undefined ? params.processingStatus : current.processingStatus},
         error_message = ${params.errorMessage !== undefined ? params.errorMessage : current.errorMessage},
         updated_at = NOW()

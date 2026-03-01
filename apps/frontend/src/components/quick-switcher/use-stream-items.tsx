@@ -225,7 +225,10 @@ export function useStreamItems(context: ModeContext): ModeResult {
       .filter((workspaceUser) => !existingDmPeerIds.has(workspaceUser.id))
       .map((workspaceUser) => {
         const name = workspaceUser.name
-        const score = searchText ? (name.toLowerCase().includes(lowerQuery) ? 0 : Infinity) : 0
+        let score = 0
+        if (searchText && !name.toLowerCase().includes(lowerQuery)) {
+          score = Infinity
+        }
         return { workspaceUser, score }
       })
       .filter(({ score }) => score !== Infinity)

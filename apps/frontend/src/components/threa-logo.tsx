@@ -26,13 +26,23 @@ interface ThreaLogoProps {
   color?: "auto" | "dark" | "light"
 }
 
+function getStrokeColorClass(color: "auto" | "dark" | "light"): string {
+  if (color === "auto") return "stroke-[hsl(var(--primary))]"
+  if (color === "dark") return "stroke-[#C8A055]"
+  return "stroke-[#8B7332]"
+}
+
+function getTextColorClass(color: "auto" | "dark" | "light"): string {
+  if (color === "auto") return "text-[hsl(var(--primary))]"
+  if (color === "dark") return "text-[#C8A055]"
+  return "text-[#8B7332]"
+}
+
 export function ThreaLogo({ size = "md", className, color = "auto" }: ThreaLogoProps) {
   const pixelSize = typeof size === "number" ? size : SIZE_MAP[size]
   const sizeKey = typeof size === "number" ? getSizeKeyForPixels(size) : size
   const weights = STROKE_WEIGHTS[sizeKey]
-
-  const colorClass =
-    color === "auto" ? "stroke-[hsl(var(--primary))]" : color === "dark" ? "stroke-[#C8A055]" : "stroke-[#8B7332]"
+  const colorClass = getStrokeColorClass(color)
 
   return (
     <svg
@@ -85,9 +95,7 @@ const TEXT_SIZE_MAP = {
 
 export function ThreaLogoWithText({ size = "md", className, color = "auto" }: ThreaLogoWithTextProps) {
   const config = TEXT_SIZE_MAP[size]
-
-  const textColorClass =
-    color === "auto" ? "text-[hsl(var(--primary))]" : color === "dark" ? "text-[#C8A055]" : "text-[#8B7332]"
+  const textColorClass = getTextColorClass(color)
 
   return (
     <div className={cn("flex items-center gap-2", className)}>

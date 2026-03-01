@@ -20,17 +20,18 @@ export function ThemeDropdown() {
     updatePreference("theme", newTheme)
   }
 
+  let ThemeIcon = Sun
+  if (theme === "system") {
+    ThemeIcon = Monitor
+  } else if (resolvedTheme === "dark") {
+    ThemeIcon = Moon
+  }
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon" className="h-8 w-8" title="Theme & Settings">
-          {theme === "system" ? (
-            <Monitor className="h-4 w-4" />
-          ) : resolvedTheme === "dark" ? (
-            <Moon className="h-4 w-4" />
-          ) : (
-            <Sun className="h-4 w-4" />
-          )}
+          <ThemeIcon className="h-4 w-4" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">

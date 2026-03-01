@@ -1,20 +1,14 @@
 import tsParser from "@typescript-eslint/parser"
-import threaPlugin from "../../eslint/threa-plugin.js"
 
 /**
- * ESLint configuration for Threa frontend.
+ * ESLint configuration for the control plane.
  *
  * Enforces CLAUDE invariants with clean syntactic signals:
  * - Runtime: do not import dotenv (Bun loads .env automatically)
- * - INV-15: components/pages do not reach into persistence directly
- * - INV-18: do not define components inside other components
- * - INV-26 / INV-48: no skipped/todo tests and no mock.module()
  * - INV-47: no nested ternaries
- * - Frontend Patterns: no direct queryClient.getQueryData() reads during render
- *
- * Components should handle UI rendering and local state only. They receive
- * capabilities via props/context and call them without knowing implementation.
- * This keeps components testable, reusable, and decoupled from persistence.
+ * - INV-51: lib/ is infrastructure — must not import from features/
+ * - INV-52: Features import other features only through barrels (index.ts)
+ * - INV-26 / INV-48: no skipped/todo tests and no mock.module()
  */
 const sharedRestrictedImportPatterns = [
   {
@@ -25,16 +19,13 @@ const sharedRestrictedImportPatterns = [
 
 export default [
   {
-    files: ["src/**/*.{ts,tsx}"],
+    files: ["src/**/*.ts", "tests/**/*.ts"],
     languageOptions: {
       parser: tsParser,
       parserOptions: {
         ecmaVersion: "latest",
         sourceType: "module",
       },
-    },
-    plugins: {
-      threa: threaPlugin,
     },
     rules: {
       "no-nested-ternary": "error",
@@ -47,21 +38,18 @@ export default [
     },
   },
 
-  // INV-15: Components must not access database or persistence layer directly.
-  // They receive capabilities (sendMessage, rename, etc.) via props or context.
   {
-    files: ["src/components/**/*.{ts,tsx}", "src/pages/**/*.{ts,tsx}"],
+    files: ["src/lib/**/*.ts"],
     rules: {
-      "threa/no-nested-component-definitions": "error",
-      "threa/no-queryclient-getquerydata-in-render": "error",
       "no-restricted-imports": [
         "error",
         {
           patterns: [
             ...sharedRestrictedImportPatterns,
             {
-              group: ["@/db", "@/db/*"],
-              message: "Components must not import database directly (INV-15). Use hooks or context to access data.",
+              group: ["**/features/*", "**/features/**"],
+              message:
+                "lib/ is infrastructure — it must not import from features/ (INV-51). Move shared code to lib/ or invert the dependency.",
             },
           ],
         },
@@ -70,7 +58,25 @@ export default [
   },
 
   {
-    files: ["src/**/*.{test,spec}.{ts,tsx}", "src/test/**/*.{ts,tsx}"],
+    files: ["src/features/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            ...sharedRestrictedImportPatterns,
+            {
+              group: ["**/auth/**", "**/workspaces/**", "**/invitation-shadows/**"],
+              message: "Import from feature barrels only (features/x/index.ts), not internals (INV-52).",
+            },
+          ],
+        },
+      ],
+    },
+  },
+
+  {
+    files: ["**/*.{test,spec}.ts", "tests/**/*.ts"],
     rules: {
       "no-restricted-properties": [
         "error",
