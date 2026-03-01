@@ -1,6 +1,7 @@
 import { useCallback } from "react"
 import { Link } from "react-router-dom"
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
+import { Separator } from "@/components/ui/separator"
 import { MarkdownContent } from "@/components/ui/markdown-content"
 import { cn } from "@/lib/utils"
 import { type MessageActionContext, type MessageAction, getVisibleActions } from "./message-actions"
@@ -117,5 +118,5 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
 }
 
 function Divider() {
-  return <div className="mx-3 my-1 border-t border-border/50" />
+  return <Separator className="mx-3 my-1 bg-border/50" />
 }

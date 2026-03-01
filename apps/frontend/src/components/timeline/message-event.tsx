@@ -352,7 +352,7 @@ function SentMessageEvent({
         containerRef={containerRef}
         isHighlighted={isHighlighted}
         containerClassName={cn(
-          isMobile && "select-none",
+          isMobile && !isEditing && "select-none",
           longPress.isPressed && "opacity-70 transition-opacity duration-100"
         )}
         touchHandlers={isMobile ? longPress.handlers : undefined}

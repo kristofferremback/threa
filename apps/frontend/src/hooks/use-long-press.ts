@@ -32,10 +32,12 @@ export function useLongPress({
   const firedRef = useRef(false)
   const [isPressed, setIsPressed] = useState(false)
 
-  // Read onLongPress from a ref so the callback identity doesn't
-  // invalidate touch handler memoization on every render.
+  // Refs so the timer callback reads fresh values without
+  // invalidating touch handler memoization on every render.
   const onLongPressRef = useRef(onLongPress)
   onLongPressRef.current = onLongPress
+  const enabledRef = useRef(enabled)
+  enabledRef.current = enabled
 
   const clear = useCallback(() => {
     if (timerRef.current) {
@@ -55,6 +57,7 @@ export function useLongPress({
       setIsPressed(true)
       timerRef.current = setTimeout(() => {
         timerRef.current = null
+        if (!enabledRef.current) return
         firedRef.current = true
         setIsPressed(false)
         // Haptic feedback (Android; silent no-op on iOS)
