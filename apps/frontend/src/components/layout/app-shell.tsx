@@ -103,8 +103,10 @@ export function AppShell({ sidebar, children }: AppShellProps) {
     onResizeEnd: stopResizing,
   })
 
-  // Track visual viewport for keyboard-aware layout on mobile
-  const visualViewport = useVisualViewport(isMobile)
+  // Track visual viewport for keyboard-aware layout on mobile.
+  // Sets --viewport-height CSS variable imperatively for smooth tracking;
+  // returns a boolean for conditional rendering (safe-area padding).
+  const isKeyboardOpen = useVisualViewport(isMobile)
 
   const isCollapsed = state === "collapsed"
   const isPreview = state === "preview"
@@ -132,8 +134,8 @@ export function AppShell({ sidebar, children }: AppShellProps) {
 
   return (
     <div
-      className="flex h-dvh w-screen flex-col overflow-hidden"
-      style={visualViewport ? { height: `${visualViewport.height}px` } : undefined}
+      className="flex w-screen flex-col overflow-hidden"
+      style={{ height: "var(--viewport-height, 100dvh)" }}
     >
       {/* Topbar - spans full width */}
       <Topbar isPinned={isMobile ? isOpen : isPinned} onToggleSidebar={togglePinned} />
@@ -289,7 +291,7 @@ export function AppShell({ sidebar, children }: AppShellProps) {
         {/* Main content area — safe-area padding for notched devices when keyboard is closed */}
         <main
           className="flex flex-1 flex-col overflow-hidden"
-          style={!visualViewport ? { paddingBottom: "env(safe-area-inset-bottom)" } : undefined}
+          style={!isKeyboardOpen ? { paddingBottom: "env(safe-area-inset-bottom)" } : undefined}
         >
           {children}
         </main>

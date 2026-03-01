@@ -55,6 +55,26 @@ export function useScrollBehavior({
     }
   }, [isLoading, itemCount, scrollToBottom])
 
+  // Auto-scroll to bottom when the container shrinks (e.g. mobile keyboard opens).
+  // This keeps the latest messages visible instead of being pushed off-screen.
+  useEffect(() => {
+    const el = scrollContainerRef.current
+    if (!el) return
+
+    let prevHeight = el.clientHeight
+
+    const observer = new ResizeObserver(() => {
+      const newHeight = el.clientHeight
+      if (newHeight < prevHeight && shouldAutoScroll.current) {
+        el.scrollTop = el.scrollHeight
+      }
+      prevHeight = newHeight
+    })
+
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
   const handleScroll = useCallback(() => {
     if (!scrollContainerRef.current) return
 
