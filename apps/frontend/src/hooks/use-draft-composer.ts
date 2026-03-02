@@ -95,9 +95,11 @@ export function useDraftComposer({
   const [isSending, setIsSending] = useState(false)
   const hasInitialized = useRef(false)
   const prevScopeIdRef = useRef<string | null>(null)
-  // Guards against persisting stale attachments to a new scope's draft key.
-  // Set true on scope change, cleared after clearAttachments() takes effect.
-  const scopeChangePending = useRef(false)
+  // Keeps attachment persistence suspended until the previous scope's uploaded
+  // attachments are gone from React state.
+  const suspendAttachmentPersistence = useRef(false)
+  const staleAttachmentIdsRef = useRef<Set<string>>(new Set())
+  const restoredAttachmentIdsRef = useRef<Set<string>>(new Set())
 
   // Initialize content and attachments from saved draft, reset on scope change
   useEffect(() => {
@@ -106,7 +108,11 @@ export function useDraftComposer({
     // On scope change, reset state
     if (isScopeChange) {
       hasInitialized.current = false
-      scopeChangePending.current = true
+      suspendAttachmentPersistence.current = true
+      staleAttachmentIdsRef.current = new Set(
+        pendingAttachments.filter((a) => a.status === "uploaded" && !a.id.startsWith("temp_")).map((a) => a.id)
+      )
+      restoredAttachmentIdsRef.current = new Set()
       setContent(initialContent)
       clearAttachments()
     }
@@ -129,24 +135,42 @@ export function useDraftComposer({
       if (savedAttachments.length > 0) {
         restoreAttachments(savedAttachments)
       }
+      restoredAttachmentIdsRef.current = new Set(savedAttachments.map((attachment: { id: string }) => attachment.id))
       hasInitialized.current = true
     }
-  }, [scopeId, isDraftLoaded, savedDraft, savedAttachments, restoreAttachments, clearAttachments, initialContent])
+  }, [
+    scopeId,
+    isDraftLoaded,
+    savedDraft,
+    savedAttachments,
+    restoreAttachments,
+    clearAttachments,
+    initialContent,
+    pendingAttachments,
+  ])
 
   // When attachments change, persist to draft storage
   useEffect(() => {
-    // After a scope change, clearAttachments() was called but the state update
-    // hasn't rendered yet — pendingAttachments still has stale entries from the
-    // previous scope. Skip to avoid persisting them under the new scope's draft key.
-    if (scopeChangePending.current) {
-      scopeChangePending.current = false
-      return
-    }
     const uploaded = pendingAttachments.filter((a) => a.status === "uploaded" && !a.id.startsWith("temp_"))
+
+    // After a scope change, keep skipping persistence until we have stopped
+    // seeing any uploaded attachments that belonged to the previous scope.
+    if (suspendAttachmentPersistence.current) {
+      const hasStaleAttachments = uploaded.some((attachment) => staleAttachmentIdsRef.current.has(attachment.id))
+      if (!hasStaleAttachments && hasInitialized.current) {
+        suspendAttachmentPersistence.current = false
+      }
+      if (suspendAttachmentPersistence.current) {
+        return
+      }
+    }
+
+    const uploadedToPersist = uploaded.filter((attachment) => !restoredAttachmentIdsRef.current.has(attachment.id))
+
     // Only update draft if we have uploaded attachments and we're past initialization
-    if (hasInitialized.current && uploaded.length > 0) {
+    if (hasInitialized.current && uploadedToPersist.length > 0) {
       // Sync each attachment to draft storage
-      for (const a of uploaded) {
+      for (const a of uploadedToPersist) {
         addDraftAttachment({
           id: a.id,
           filename: a.filename,

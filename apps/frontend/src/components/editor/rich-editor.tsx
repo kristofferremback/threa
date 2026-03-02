@@ -91,6 +91,14 @@ export function RichEditor({
   const onFileUploadRef = useRef(onFileUpload)
   onFileUploadRef.current = onFileUpload
 
+  // Ignore upload completions that resolve after the editor has switched scope.
+  const uploadScopeVersionRef = useRef(0)
+  const uploadScopeIdRef = useRef(scopeId)
+  if (uploadScopeIdRef.current !== scopeId) {
+    uploadScopeIdRef.current = scopeId
+    uploadScopeVersionRef.current += 1
+  }
+
   // Ref to access current image count for paste renaming
   const imageCountRef = useRef(imageCount)
   imageCountRef.current = imageCount
@@ -151,6 +159,7 @@ export function RichEditor({
   const handleFileInsert = useCallback(async (file: File, editorInstance: ReturnType<typeof useEditor>) => {
     const uploadFn = onFileUploadRef.current
     if (!uploadFn || !editorInstance) return
+    const uploadScopeVersion = uploadScopeVersionRef.current
 
     const isImage = file.type.startsWith("image/")
     const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2)}`
@@ -170,6 +179,14 @@ export function RichEditor({
 
     // Start upload and update node when done
     const result = await uploadFn(file)
+
+    if (
+      uploadScopeVersion !== uploadScopeVersionRef.current ||
+      editorInstance.isDestroyed ||
+      editorRef.current !== editorInstance
+    ) {
+      return
+    }
 
     // Update the placeholder node with real data
     editorInstance.commands.updateAttachmentReference(tempId, {

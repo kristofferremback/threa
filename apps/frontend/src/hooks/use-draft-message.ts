@@ -1,6 +1,6 @@
 import { useLiveQuery } from "dexie-react-hooks"
 import { useCallback, useEffect, useRef } from "react"
-import { db, type DraftAttachment } from "@/db"
+import { db, type DraftAttachment, type DraftMessage } from "@/db"
 import type { JSONContent } from "@threa/types"
 import { isEmptyContent } from "@/lib/prosemirror-utils"
 
@@ -20,12 +20,18 @@ const DEBOUNCE_MS = import.meta.env.VITE_DRAFT_DEBOUNCE_MS ? Number(import.meta.
 
 // Sentinel value to distinguish "loading" from "loaded but not found"
 const LOADING = Symbol("loading")
+type DraftLiveQueryResult = typeof LOADING | { draftKey: string; draft: DraftMessage | undefined }
 
 export function useDraftMessage(workspaceId: string, draftKey: string) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Use LOADING sentinel as initial value so we can tell when Dexie has finished loading
-  const draft = useLiveQuery(() => db.draftMessages.get(draftKey), [draftKey], LOADING as unknown)
+  // Tag results with the current key so a previous query can't leak stale draft data
+  // into a freshly selected scope while Dexie is still resolving the new one.
+  const draftResult = useLiveQuery(
+    async () => ({ draftKey, draft: await db.draftMessages.get(draftKey) }),
+    [draftKey],
+    LOADING as DraftLiveQueryResult
+  )
 
   const saveDraft = useCallback(
     async (contentJson: JSONContent, attachments?: DraftAttachment[]) => {
@@ -143,11 +149,12 @@ export function useDraftMessage(workspaceId: string, draftKey: string) {
     }
   }, [])
 
-  // Check if we're still loading (draft is the LOADING sentinel)
-  const isLoading = draft === LOADING
-  const resolvedDraft = isLoading
-    ? undefined
-    : (draft as { contentJson?: JSONContent; attachments?: DraftAttachment[] } | undefined)
+  let isLoading = true
+  let resolvedDraft: DraftMessage | undefined
+  if (draftResult !== LOADING && draftResult.draftKey === draftKey) {
+    isLoading = false
+    resolvedDraft = draftResult.draft
+  }
 
   // Default empty document
   const emptyDoc: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }

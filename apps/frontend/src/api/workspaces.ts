@@ -57,9 +57,10 @@ export const workspacesApi = {
     return res.user
   },
 
-  async checkSlugAvailable(workspaceId: string, slug: string): Promise<boolean> {
+  async checkSlugAvailable(workspaceId: string, slug: string, signal?: AbortSignal): Promise<boolean> {
     const res = await api.get<{ available: boolean }>(
-      `/api/workspaces/${workspaceId}/slug-available?slug=${encodeURIComponent(slug)}`
+      `/api/workspaces/${workspaceId}/slug-available?slug=${encodeURIComponent(slug)}`,
+      { signal }
     )
     return res.available
   },
