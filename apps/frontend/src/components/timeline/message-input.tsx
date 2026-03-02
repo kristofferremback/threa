@@ -17,6 +17,7 @@ interface MessageInputProps {
   disabled?: boolean
   disabledReason?: string
   autoFocus?: boolean
+  onEditLastMessage?: () => void
 }
 
 export function MessageInput({
@@ -26,6 +27,7 @@ export function MessageInput({
   disabled,
   disabledReason,
   autoFocus,
+  onEditLastMessage,
 }: MessageInputProps) {
   const navigate = useNavigate()
   const { preferences } = usePreferences()
@@ -187,6 +189,7 @@ export function MessageInput({
           onExpandClick={() => setDocEditorOpen(true)}
           autoFocus={autoFocus}
           scopeId={streamId}
+          onEditLastMessage={onEditLastMessage}
         />
         {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
       </div>

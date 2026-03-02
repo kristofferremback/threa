@@ -8,6 +8,7 @@ import { MarkdownContent, AttachmentProvider } from "@/components/ui/markdown-co
 import { RelativeTime } from "@/components/relative-time"
 import { PersonaAvatar } from "@/components/persona-avatar"
 import { usePendingMessages, usePanel, createDraftPanelId, useTrace, useMessageService } from "@/contexts"
+import { useEditLastMessage } from "./edit-last-message-context"
 import { useActors, useWorkspaceBootstrap, getStepLabel, focusAtEnd, type MessageAgentActivity } from "@/hooks"
 import { useUser } from "@/auth"
 import { cn } from "@/lib/utils"
@@ -210,6 +211,15 @@ function SentMessageEvent({
       if (editor) focusAtEnd(editor)
     })
   }, [])
+
+  // React to ArrowUp-to-edit-last-message trigger from the composer
+  const editLastMessageCtx = useEditLastMessage()
+  const pendingEditMessageId = editLastMessageCtx?.pendingEditMessageId ?? null
+  useEffect(() => {
+    if (pendingEditMessageId !== payload.messageId) return
+    setIsEditing(true)
+    editLastMessageCtx?.clearPendingEdit()
+  }, [pendingEditMessageId, payload.messageId, editLastMessageCtx])
 
   // Scroll to this message when highlighted
   useEffect(() => {
