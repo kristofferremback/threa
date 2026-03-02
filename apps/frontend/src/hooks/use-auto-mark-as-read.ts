@@ -1,42 +1,12 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef } from "react"
 import { useUnreadCounts } from "./use-unread-counts"
 import { useActivityCounts } from "./use-activity-counts"
+import { usePageActivity } from "./use-page-activity"
 import { SW_MSG_CLEAR_NOTIFICATIONS } from "../lib/sw-messages"
 
 interface UseAutoMarkAsReadOptions {
   enabled?: boolean
   debounceMs?: number
-}
-
-function getIsPageActive(): boolean {
-  if (typeof document === "undefined") return false
-  return document.visibilityState === "visible" && document.hasFocus()
-}
-
-function usePageActive(): boolean {
-  const [isPageActive, setIsPageActive] = useState(getIsPageActive)
-
-  useEffect(() => {
-    if (typeof window === "undefined" || typeof document === "undefined") return
-
-    const updateIsPageActive = () => {
-      setIsPageActive(getIsPageActive())
-    }
-
-    updateIsPageActive()
-
-    window.addEventListener("focus", updateIsPageActive)
-    window.addEventListener("blur", updateIsPageActive)
-    document.addEventListener("visibilitychange", updateIsPageActive)
-
-    return () => {
-      window.removeEventListener("focus", updateIsPageActive)
-      window.removeEventListener("blur", updateIsPageActive)
-      document.removeEventListener("visibilitychange", updateIsPageActive)
-    }
-  }, [])
-
-  return isPageActive
 }
 
 /**
@@ -56,7 +26,7 @@ export function useAutoMarkAsRead(
   const { enabled = true, debounceMs = 500 } = options
   const { markAsRead, getUnreadCount } = useUnreadCounts(workspaceId)
   const { getActivityCount } = useActivityCounts(workspaceId)
-  const isPageActive = usePageActive()
+  const { isActive } = usePageActivity()
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastMarkedRef = useRef<string | null>(null)
 
@@ -67,7 +37,7 @@ export function useAutoMarkAsRead(
   lastEventIdRef.current = lastEventId
 
   useEffect(() => {
-    if (!enabled || !lastEventId || !isPageActive) return
+    if (!enabled || !lastEventId || !isActive) return
 
     const unreadCount = getUnreadCount(streamId)
     const activityCount = getActivityCount(streamId)
@@ -106,5 +76,5 @@ export function useAutoMarkAsRead(
         clearTimeout(timerRef.current)
       }
     }
-  }, [enabled, streamId, lastEventId, debounceMs, markAsRead, getUnreadCount, getActivityCount, isPageActive])
+  }, [enabled, streamId, lastEventId, debounceMs, markAsRead, getUnreadCount, getActivityCount, isActive])
 }

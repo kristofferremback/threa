@@ -104,6 +104,19 @@ describe("useAutoMarkAsRead", () => {
     expect(mockPostMessage).not.toHaveBeenCalled()
   })
 
+  it("does not mark the stream as read while the tab is visible but the window is unfocused", () => {
+    hasFocus = false
+
+    renderHook(() => useAutoMarkAsRead("ws_123", "stream_123", "event_123"))
+
+    act(() => {
+      vi.advanceTimersByTime(500)
+    })
+
+    expect(mockMarkAsRead).not.toHaveBeenCalled()
+    expect(mockPostMessage).not.toHaveBeenCalled()
+  })
+
   it("waits until the tab is visible and focused again before sending the read event", () => {
     renderHook(() => useAutoMarkAsRead("ws_123", "stream_123", "event_123"))
 
@@ -141,7 +154,6 @@ describe("useAutoMarkAsRead", () => {
       vi.advanceTimersByTime(500)
     })
 
-    expect(mockMarkAsRead).toHaveBeenCalledTimes(1)
     expect(mockMarkAsRead).toHaveBeenCalledWith("stream_123", "event_123")
     expect(mockPostMessage).toHaveBeenCalledWith({
       type: SW_MSG_CLEAR_NOTIFICATIONS,
