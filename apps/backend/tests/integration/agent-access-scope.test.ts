@@ -1,12 +1,17 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { Pool } from "pg"
 import { DM_PARTICIPANT_COUNT, StreamTypes, Visibilities } from "@threa/types"
-import { computeAgentAccessSpec } from "../../src/features/agents"
+import { computeAgentAccessSpec, type AgentAccessSpec } from "../../src/features/agents"
 import { SearchRepository } from "../../src/features/search"
 import { StreamMemberRepository, StreamRepository } from "../../src/features/streams"
 import { WorkspaceRepository } from "../../src/features/workspaces"
 import { streamId, userId, workspaceId } from "../../src/lib/id"
 import { addTestMember, setupTestDatabase, withTestTransaction } from "./setup"
+
+function makeMalformedUserIntersectionSpec(userIds: string[]): AgentAccessSpec {
+  // Intentionally bypass the tuple type to verify the repository still fails closed at runtime.
+  return { type: "user_intersection", userIds } as unknown as AgentAccessSpec
+}
 
 describe("Agent Access Scope", () => {
   let pool: Pool
@@ -148,7 +153,7 @@ describe("Agent Access Scope", () => {
       await expect(
         SearchRepository.getAccessibleStreamsForAgent(
           client,
-          { type: "user_intersection", userIds: [ownerMember.id] },
+          makeMalformedUserIntersectionSpec([ownerMember.id]),
           testWorkspaceId
         )
       ).rejects.toThrow(expectedError)
@@ -156,7 +161,7 @@ describe("Agent Access Scope", () => {
       await expect(
         SearchRepository.getAccessibleStreamsForAgent(
           client,
-          { type: "user_intersection", userIds: [ownerMember.id, ownerMember.id] },
+          makeMalformedUserIntersectionSpec([ownerMember.id, ownerMember.id]),
           testWorkspaceId
         )
       ).rejects.toThrow(expectedError)
@@ -164,7 +169,7 @@ describe("Agent Access Scope", () => {
       await expect(
         SearchRepository.getAccessibleStreamsForAgent(
           client,
-          { type: "user_intersection", userIds: [ownerMember.id, secondMember.id, thirdMember.id] },
+          makeMalformedUserIntersectionSpec([ownerMember.id, secondMember.id, thirdMember.id]),
           testWorkspaceId
         )
       ).rejects.toThrow(expectedError)

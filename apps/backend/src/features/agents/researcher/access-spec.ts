@@ -16,11 +16,13 @@ import { StreamMemberRepository } from "../../streams"
  * - DM: agent sees only streams all participants can access
  * - Private channel: agent sees public content + current channel
  */
+export type UserIntersectionUserIds = [string, string]
+
 export type AgentAccessSpec =
   | { type: "user_full_access"; userId: string }
   | { type: "public_only" }
   | { type: "public_plus_stream"; streamId: string }
-  | { type: "user_intersection"; userIds: string[] }
+  | { type: "user_intersection"; userIds: UserIntersectionUserIds }
 
 export interface ComputeAccessSpecParams {
   stream: Stream
@@ -72,7 +74,7 @@ export async function computeAgentAccessSpec(db: Querier, params: ComputeAccessS
           `DM access spec requires exactly ${DM_PARTICIPANT_COUNT} members, got ${members.length} for ${effectiveStream.id}`
         )
       }
-      const userIds = members.map((m) => m.memberId)
+      const userIds: UserIntersectionUserIds = [members[0]!.memberId, members[1]!.memberId]
       return { type: "user_intersection", userIds }
     }
 
