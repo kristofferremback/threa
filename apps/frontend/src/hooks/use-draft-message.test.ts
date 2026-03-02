@@ -8,6 +8,21 @@ const makeDoc = (text: string): JSONContent => ({
   type: "doc",
   content: [{ type: "paragraph", content: text ? [{ type: "text", text }] : undefined }],
 })
+const makeLoadedDraftResult = (
+  draftKey: string,
+  draft:
+    | {
+        id: string
+        workspaceId: string
+        contentJson: JSONContent
+        attachments: Array<{ id: string; filename: string; mimeType: string; sizeBytes: number }>
+        updatedAt: number
+      }
+    | undefined
+) => ({
+  draftKey,
+  draft,
+})
 
 // Mock Dexie database
 const mockGet = vi.fn()
@@ -58,7 +73,7 @@ describe("useDraftMessage", () => {
     vi.clearAllMocks()
     vi.useFakeTimers()
     liveQueryLoading = true
-    liveQueryResult = undefined
+    liveQueryResult = makeLoadedDraftResult(draftKey, undefined)
     mockGet.mockResolvedValue(undefined)
     mockPut.mockResolvedValue(undefined)
     mockDelete.mockResolvedValue(undefined)
@@ -81,7 +96,7 @@ describe("useDraftMessage", () => {
 
     it("should return isLoaded=true after Dexie finishes loading with no data", () => {
       liveQueryLoading = false
-      liveQueryResult = undefined
+      liveQueryResult = makeLoadedDraftResult(draftKey, undefined)
 
       const { result } = renderHook(() => useDraftMessage(workspaceId, draftKey))
 
@@ -93,13 +108,13 @@ describe("useDraftMessage", () => {
     it("should return isLoaded=true with saved content after Dexie loads", () => {
       liveQueryLoading = false
       const savedContentJson = makeDoc("Hello world")
-      liveQueryResult = {
+      liveQueryResult = makeLoadedDraftResult(draftKey, {
         id: draftKey,
         workspaceId,
         contentJson: savedContentJson,
         attachments: [{ id: "attach_1", filename: "test.txt", mimeType: "text/plain", sizeBytes: 100 }],
         updatedAt: Date.now(),
-      }
+      })
 
       const { result } = renderHook(() => useDraftMessage(workspaceId, draftKey))
 
@@ -114,16 +129,13 @@ describe("useDraftMessage", () => {
       const oldDraftKey = "stream:stream_old"
       const newDraftKey = "stream:stream_new"
 
-      liveQueryResult = {
-        draftKey: oldDraftKey,
-        draft: {
-          id: oldDraftKey,
-          workspaceId,
-          contentJson: makeDoc("Old draft"),
-          attachments: [{ id: "attach_old", filename: "old.txt", mimeType: "text/plain", sizeBytes: 100 }],
-          updatedAt: Date.now(),
-        },
-      }
+      liveQueryResult = makeLoadedDraftResult(oldDraftKey, {
+        id: oldDraftKey,
+        workspaceId,
+        contentJson: makeDoc("Old draft"),
+        attachments: [{ id: "attach_old", filename: "old.txt", mimeType: "text/plain", sizeBytes: 100 }],
+        updatedAt: Date.now(),
+      })
 
       const { result, rerender } = renderHook(({ currentDraftKey }) => useDraftMessage(workspaceId, currentDraftKey), {
         initialProps: { currentDraftKey: oldDraftKey },
@@ -138,10 +150,7 @@ describe("useDraftMessage", () => {
       expect(result.current.contentJson).toEqual(EMPTY_DOC)
       expect(result.current.attachments).toEqual([])
 
-      liveQueryResult = {
-        draftKey: newDraftKey,
-        draft: undefined,
-      }
+      liveQueryResult = makeLoadedDraftResult(newDraftKey, undefined)
       rerender({ currentDraftKey: newDraftKey })
 
       expect(result.current.isLoaded).toBe(true)
@@ -153,7 +162,7 @@ describe("useDraftMessage", () => {
   describe("saveDraft", () => {
     it("should save content to database", async () => {
       liveQueryLoading = false
-      liveQueryResult = undefined
+      liveQueryResult = makeLoadedDraftResult(draftKey, undefined)
 
       const { result } = renderHook(() => useDraftMessage(workspaceId, draftKey))
       const newContent = makeDoc("New content")
@@ -174,7 +183,7 @@ describe("useDraftMessage", () => {
 
     it("should delete draft when content is empty and no attachments", async () => {
       liveQueryLoading = false
-      liveQueryResult = undefined
+      liveQueryResult = makeLoadedDraftResult(draftKey, undefined)
       mockGet.mockResolvedValue({ attachments: [] })
 
       const { result } = renderHook(() => useDraftMessage(workspaceId, draftKey))
@@ -211,7 +220,7 @@ describe("useDraftMessage", () => {
   describe("saveDraftDebounced", () => {
     it("should debounce saves", async () => {
       liveQueryLoading = false
-      liveQueryResult = undefined
+      liveQueryResult = makeLoadedDraftResult(draftKey, undefined)
 
       const { result } = renderHook(() => useDraftMessage(workspaceId, draftKey))
       const thirdContent = makeDoc("Third")

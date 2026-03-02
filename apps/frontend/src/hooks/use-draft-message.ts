@@ -20,17 +20,7 @@ const DEBOUNCE_MS = import.meta.env.VITE_DRAFT_DEBOUNCE_MS ? Number(import.meta.
 
 // Sentinel value to distinguish "loading" from "loaded but not found"
 const LOADING = Symbol("loading")
-type DraftLiveQueryResult =
-  | typeof LOADING
-  | DraftMessage
-  | { draftKey: string; draft: DraftMessage | undefined }
-  | undefined
-
-function isKeyedDraftResult(
-  value: DraftLiveQueryResult
-): value is { draftKey: string; draft: DraftMessage | undefined } {
-  return typeof value === "object" && value !== null && "draftKey" in value && "draft" in value
-}
+type DraftLiveQueryResult = typeof LOADING | { draftKey: string; draft: DraftMessage | undefined }
 
 export function useDraftMessage(workspaceId: string, draftKey: string) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -159,20 +149,11 @@ export function useDraftMessage(workspaceId: string, draftKey: string) {
     }
   }, [])
 
-  let resolvedDraftResult: typeof LOADING | { draftKey: string; draft: DraftMessage | undefined }
-  if (draftResult === LOADING) {
-    resolvedDraftResult = LOADING
-  } else if (isKeyedDraftResult(draftResult)) {
-    resolvedDraftResult = draftResult
-  } else {
-    resolvedDraftResult = { draftKey, draft: draftResult }
-  }
-
   let isLoading = true
   let resolvedDraft: DraftMessage | undefined
-  if (resolvedDraftResult !== LOADING && resolvedDraftResult.draftKey === draftKey) {
+  if (draftResult !== LOADING && draftResult.draftKey === draftKey) {
     isLoading = false
-    resolvedDraft = resolvedDraftResult.draft
+    resolvedDraft = draftResult.draft
   }
 
   // Default empty document
