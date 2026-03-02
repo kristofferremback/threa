@@ -208,11 +208,11 @@ export function AppShell({ sidebar, children }: AppShellProps) {
       <div ref={pullRef} className="relative flex flex-1 flex-col overflow-hidden">
         {/* Pull-to-refresh indicator */}
         <div
-          className="absolute inset-x-0 top-0 z-10 flex items-center justify-center pointer-events-none"
+          className="absolute inset-x-0 top-0 z-10 flex items-center justify-center gap-2 pointer-events-none"
           style={{ height: `${pullDistance}px` }}
         >
           {pullDistance > 5 && (
-            <div className="flex items-center gap-2" style={{ transition: pulling ? "none" : "all 0.3s ease-out" }}>
+            <>
               <div
                 className={cn(
                   "flex items-center justify-center rounded-full",
@@ -245,7 +245,7 @@ export function AppShell({ sidebar, children }: AppShellProps) {
               >
                 {pullConfig.label}
               </span>
-            </div>
+            </>
           )}
         </div>
 
