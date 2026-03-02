@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react"
 import { useUnreadCounts } from "./use-unread-counts"
 import { useActivityCounts } from "./use-activity-counts"
+import { usePageActivity } from "./use-page-activity"
 import { SW_MSG_CLEAR_NOTIFICATIONS } from "../lib/sw-messages"
 
 interface UseAutoMarkAsReadOptions {
@@ -25,6 +26,7 @@ export function useAutoMarkAsRead(
   const { enabled = true, debounceMs = 500 } = options
   const { markAsRead, getUnreadCount } = useUnreadCounts(workspaceId)
   const { getActivityCount } = useActivityCounts(workspaceId)
+  const { isActive } = usePageActivity()
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastMarkedRef = useRef<string | null>(null)
 
@@ -35,7 +37,7 @@ export function useAutoMarkAsRead(
   lastEventIdRef.current = lastEventId
 
   useEffect(() => {
-    if (!enabled || !lastEventId) return
+    if (!enabled || !lastEventId || !isActive) return
 
     const unreadCount = getUnreadCount(streamId)
     const activityCount = getActivityCount(streamId)
@@ -74,5 +76,5 @@ export function useAutoMarkAsRead(
         clearTimeout(timerRef.current)
       }
     }
-  }, [enabled, streamId, lastEventId, debounceMs, markAsRead, getUnreadCount, getActivityCount])
+  }, [enabled, streamId, lastEventId, debounceMs, markAsRead, getUnreadCount, getActivityCount, isActive])
 }
