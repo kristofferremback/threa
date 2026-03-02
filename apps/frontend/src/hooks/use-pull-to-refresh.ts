@@ -63,9 +63,13 @@ export function usePullToRefresh(enabled: boolean) {
       // Let the scroll container handle it if not at the top
       if (scrollEl && scrollEl.scrollTop > 1) return
 
+      // Own the gesture immediately — prevent native scroll as soon as we're
+      // at the top and moving down, before the visual threshold, so nested
+      // scroll containers can't start scrolling and build inertia.
+      e.preventDefault()
+
       const d = Math.min(dy * RESISTANCE, MAX_PULL)
       if (d > 5) {
-        e.preventDefault()
         pulling = true
         dist = d
         setDistance(d)

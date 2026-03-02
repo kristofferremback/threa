@@ -193,17 +193,29 @@ export function AppShell({ sidebar, children }: AppShellProps) {
           style={{ height: `${pullDistance}px` }}
         >
           {pullDistance > 5 && (
-            <RefreshCw
-              className={cn("h-5 w-5 text-muted-foreground", refreshing && "animate-spin")}
-              style={
-                refreshing
-                  ? undefined
-                  : {
-                      opacity: pullProgress,
-                      transform: `rotate(${pullProgress * 180}deg)`,
-                    }
-              }
-            />
+            <div
+              className={cn(
+                "flex items-center justify-center rounded-full",
+                refreshing ? "bg-primary/10" : "bg-muted/50"
+              )}
+              style={{
+                width: `${28 + pullProgress * 8}px`,
+                height: `${28 + pullProgress * 8}px`,
+                transition: pulling ? "none" : "all 0.3s ease-out",
+              }}
+            >
+              <RefreshCw
+                className={cn("h-3.5 w-3.5", refreshing ? "text-primary animate-spin" : "text-muted-foreground")}
+                style={
+                  refreshing
+                    ? undefined
+                    : {
+                        opacity: 0.4 + pullProgress * 0.6,
+                        transform: `rotate(${pullProgress * 270}deg) scale(${0.7 + pullProgress * 0.3})`,
+                      }
+                }
+              />
+            </div>
           )}
         </div>
 
@@ -215,6 +227,17 @@ export function AppShell({ sidebar, children }: AppShellProps) {
             transition: pulling ? "none" : "transform 0.3s ease-out",
           }}
         >
+          {/* Top-edge fade — smooths the hard cutoff of sidebar glow and backdrop
+               darkness where they meet the pull padding area above */}
+          <div
+            className="absolute inset-x-0 top-0 z-[60] pointer-events-none"
+            style={{
+              height: pullDistance > 0 ? `${Math.min(pullDistance * 0.5, 32)}px` : "0px",
+              background: "linear-gradient(to bottom, hsl(var(--background)), transparent)",
+              transition: pulling ? "none" : "height 0.3s ease-out",
+            }}
+          />
+
           {/* Mobile backdrop - always in DOM so swipe gestures can control opacity imperatively */}
           {isMobile && (
             <div
