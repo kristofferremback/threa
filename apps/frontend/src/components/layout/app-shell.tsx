@@ -111,13 +111,21 @@ export function AppShell({ sidebar, children }: AppShellProps) {
 
   // Pull-to-refresh for mobile (Chrome disables built-in refresh in standalone PWA;
   // our global overscroll-behavior: none disables it in regular mobile browsers too).
+  const pullEnabled = isMobile && !isKeyboardOpen
   const {
     ref: pullRef,
     distance: pullDistance,
     progress: pullProgress,
     pulling,
     refreshing,
-  } = usePullToRefresh(isMobile && !isKeyboardOpen)
+  } = usePullToRefresh(pullEnabled)
+  const {
+    ref: sidebarPullRef,
+    distance: sidebarPullDistance,
+    progress: sidebarPullProgress,
+    pulling: sidebarPulling,
+    refreshing: sidebarRefreshing,
+  } = usePullToRefresh(pullEnabled)
 
   const isCollapsed = state === "collapsed"
   const isPreview = state === "preview"
@@ -295,13 +303,41 @@ export function AppShell({ sidebar, children }: AppShellProps) {
           >
             {/* Inner container maintains full width for reveal animation (prevents text reflow) */}
             <div
-              className="h-full flex-1 flex flex-col overflow-hidden"
+              ref={sidebarPullRef}
+              className="h-full flex-1 flex flex-col overflow-hidden relative"
               style={{
                 width: isMobile ? "min(85vw, 320px)" : `${width}px`,
                 minWidth: isMobile ? undefined : `${width}px`,
               }}
             >
-              {sidebar}
+              {/* Sidebar pull-to-refresh indicator */}
+              <div
+                className="absolute inset-x-0 top-0 z-10 flex items-center justify-center pointer-events-none"
+                style={{ height: `${sidebarPullDistance}px` }}
+              >
+                {sidebarPullDistance > 5 && (
+                  <RefreshCw
+                    className={cn("h-5 w-5 text-muted-foreground", sidebarRefreshing && "animate-spin")}
+                    style={
+                      sidebarRefreshing
+                        ? undefined
+                        : {
+                            opacity: sidebarPullProgress,
+                            transform: `rotate(${sidebarPullProgress * 180}deg)`,
+                          }
+                    }
+                  />
+                )}
+              </div>
+              <div
+                className="h-full flex-1 flex flex-col overflow-hidden"
+                style={{
+                  transform: `translateY(${sidebarPullDistance}px)`,
+                  transition: sidebarPulling ? "none" : "transform 0.3s ease-out",
+                }}
+              >
+                {sidebar}
+              </div>
             </div>
 
             {/* Resize handle - only visible when not collapsed and not on mobile */}
