@@ -20,11 +20,25 @@ import type { StreamItemData, UrgencyLevel } from "./types"
 import { ScratchpadItem } from "./scratchpad-item"
 
 export function UrgencyStrip({ urgency }: { urgency: UrgencyLevel }) {
+  const color = URGENCY_COLORS[urgency]
+  const isActive = urgency !== "quiet"
+
   return (
     <div
-      className="w-1 flex-shrink-0 rounded-l-lg transition-colors duration-300"
-      style={{ backgroundColor: URGENCY_COLORS[urgency] }}
-    />
+      className="relative w-1 flex-shrink-0 rounded-l-lg transition-colors duration-300"
+      style={{ backgroundColor: color }}
+    >
+      {/* Colored glow that bleeds rightward into the item */}
+      {isActive && (
+        <div
+          className="absolute inset-y-0 left-0 pointer-events-none"
+          style={{
+            width: "2.5rem",
+            background: `linear-gradient(to right, ${color.replace(")", " / 0.22)")}, ${color.replace(")", " / 0.06)")} 40%, transparent)`,
+          }}
+        />
+      )}
+    </div>
   )
 }
 
