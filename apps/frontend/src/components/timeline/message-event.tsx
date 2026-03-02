@@ -218,9 +218,10 @@ function SentMessageEvent({
   const clearPendingEdit = editLastMessageCtx?.clearPendingEdit
   useEffect(() => {
     if (pendingEditMessageId !== payload.messageId) return
+    if (event.actorId !== currentUserId) return
     setIsEditing(true)
     clearPendingEdit?.()
-  }, [pendingEditMessageId, payload.messageId, clearPendingEdit])
+  }, [pendingEditMessageId, payload.messageId, clearPendingEdit, event.actorId, currentUserId])
 
   // Scroll to this message when highlighted
   useEffect(() => {
