@@ -1,3 +1,4 @@
+import { useState } from "react"
 import { useParams } from "react-router-dom"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
@@ -17,6 +18,40 @@ const NOTIFICATION_DESCRIPTIONS: Record<PrefNotificationLevel, string> = {
   all: "Get notified for all new messages",
   mentions: "Get notified for @mentions, DMs, and scratchpad messages",
   none: "Don't send any notifications",
+}
+
+const TEST_BUTTON_LABELS = { idle: "Test", sent: "Sent!", failed: "Failed" } as const
+
+function TestNotificationButton({ workspaceId }: { workspaceId: string }) {
+  const [label, setLabel] = useState<keyof typeof TEST_BUTTON_LABELS>("idle")
+
+  async function sendTest() {
+    try {
+      const registration = await navigator.serviceWorker?.ready
+      if (!registration) throw new Error("Service worker not available")
+
+      await registration.showNotification("Test notification", {
+        body: "If you can see this, push notifications are working!",
+        icon: "/threa-logo-192.png",
+        badge: "/threa-logo-192.png",
+        tag: "threa-test",
+        data: { workspaceId },
+      })
+
+      setLabel("sent")
+    } catch (err) {
+      console.error("[Push] Test notification failed:", err)
+      setLabel("failed")
+    } finally {
+      setTimeout(() => setLabel("idle"), 3000)
+    }
+  }
+
+  return (
+    <Button onClick={sendTest} variant="outline" size="sm">
+      {TEST_BUTTON_LABELS[label]}
+    </Button>
+  )
 }
 
 function PushNotificationCard({ workspaceId }: { workspaceId: string }) {
@@ -73,9 +108,12 @@ function PushNotificationCard({ workspaceId }: { workspaceId: string }) {
         {permission === "granted" && isSubscribed && (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">Push notifications are enabled for this device.</p>
-            <Button onClick={unsubscribe} variant="outline" size="sm">
-              Disable push notifications
-            </Button>
+            <div className="flex gap-2">
+              <Button onClick={unsubscribe} variant="outline" size="sm">
+                Disable push notifications
+              </Button>
+              <TestNotificationButton workspaceId={workspaceId} />
+            </div>
           </div>
         )}
         {permission === "granted" && !isSubscribed && optedOut && (

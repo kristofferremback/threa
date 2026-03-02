@@ -1,7 +1,9 @@
 import { type ReactNode, useCallback } from "react"
-import { PanelLeftClose, PanelLeft, Command } from "lucide-react"
+import { useQueryClient } from "@tanstack/react-query"
+import { useParams } from "react-router-dom"
+import { PanelLeftClose, PanelLeft, Command, RefreshCw } from "lucide-react"
 import { useSidebar, useQuickSwitcher, useCoordinatedLoading } from "@/contexts"
-import { useResizeDrag, useVisualViewport, useSidebarSwipe } from "@/hooks"
+import { useResizeDrag, useVisualViewport, useSidebarSwipe, usePullToRefresh, workspaceKeys, streamKeys } from "@/hooks"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { TopbarLoadingIndicator } from "./topbar-loading-indicator"
@@ -67,6 +69,60 @@ function Topbar({ isPinned, onToggleSidebar }: TopbarProps) {
   )
 }
 
+// Pull indicator styling per mode — INV-47
+const pullModeConfig = {
+  idle: { bg: "bg-muted/50", text: "text-muted-foreground", label: "Pull to refresh" },
+  soft: { bg: "bg-muted/50", text: "text-muted-foreground", label: "Release to refresh" },
+  hard: { bg: "bg-orange-500/15", text: "text-orange-500", label: "Release to reload" },
+} as const
+
+interface PullIndicatorProps {
+  distance: number
+  progress: number
+  pulling: boolean
+  refreshing: boolean
+  mode: keyof typeof pullModeConfig
+}
+
+function PullIndicator({ distance, progress, pulling, refreshing, mode }: PullIndicatorProps) {
+  if (distance <= 5) return null
+  const config = pullModeConfig[mode]
+
+  return (
+    <>
+      <div
+        className={cn("flex items-center justify-center rounded-full", refreshing ? "bg-primary/10" : config.bg)}
+        style={{
+          width: `${28 + progress * 8}px`,
+          height: `${28 + progress * 8}px`,
+          transition: pulling ? "none" : "all 0.3s ease-out",
+        }}
+      >
+        <RefreshCw
+          className={cn("h-3.5 w-3.5", refreshing ? "text-primary animate-spin" : config.text)}
+          style={
+            refreshing
+              ? undefined
+              : {
+                  opacity: 0.4 + progress * 0.6,
+                  transform: `rotate(${progress * 270}deg) scale(${0.7 + progress * 0.3})`,
+                }
+          }
+        />
+      </div>
+      <span
+        className={cn("text-xs font-medium", config.text)}
+        style={{
+          opacity: 0.4 + progress * 0.6,
+          transition: pulling ? "none" : "opacity 0.2s ease-out",
+        }}
+      >
+        {config.label}
+      </span>
+    </>
+  )
+}
+
 interface AppShellProps {
   sidebar: ReactNode
   children: ReactNode
@@ -104,10 +160,31 @@ export function AppShell({ sidebar, children }: AppShellProps) {
     onResizeEnd: stopResizing,
   })
 
-  // Track visual viewport for keyboard-aware layout on mobile.
-  // Sets --viewport-height CSS variable imperatively for smooth tracking;
-  // returns a boolean for conditional rendering (safe-area padding).
   const isKeyboardOpen = useVisualViewport(isMobile)
+
+  const queryClient = useQueryClient()
+  const { workspaceId } = useParams<{ workspaceId: string }>()
+
+  const handleSoftRefresh = useCallback(async () => {
+    if (!workspaceId) return
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: workspaceKeys.bootstrap(workspaceId) }),
+      queryClient.invalidateQueries({ queryKey: [...streamKeys.all, "bootstrap", workspaceId] }),
+    ])
+  }, [queryClient, workspaceId])
+
+  // Light pull = soft refresh (re-fetch data), heavy pull = hard refresh (page reload)
+  const {
+    ref: pullRef,
+    distance: pullDistance,
+    progress: pullProgress,
+    pulling,
+    refreshing,
+    mode: pullMode,
+  } = usePullToRefresh({
+    enabled: isMobile && !isKeyboardOpen,
+    onRefresh: handleSoftRefresh,
+  })
 
   const isCollapsed = state === "collapsed"
   const isPreview = state === "preview"
@@ -172,168 +249,199 @@ export function AppShell({ sidebar, children }: AppShellProps) {
       {/* Topbar - spans full width */}
       <Topbar isPinned={isMobile ? isOpen : isPinned} onToggleSidebar={togglePinned} />
 
-      {/* Main area with sidebar and content */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Mobile backdrop - always in DOM so swipe gestures can control opacity imperatively */}
-        {isMobile && (
-          <div
-            ref={backdropRef}
-            className={cn(
-              "fixed inset-0 z-30 bg-black/50",
-              !isSwiping && "transition-opacity duration-200",
-              backdropVisibility
-            )}
-            onClick={!isSwiping ? handleBackdropClick : undefined}
-            aria-hidden="true"
-          />
-        )}
-
-        {/* Sidebar wrapper - handles positioning */}
+      {/* Pull-to-refresh container — wraps everything below the topbar so pulling
+           anywhere (sidebar or main content) translates the entire area uniformly */}
+      <div ref={pullRef} className="relative flex flex-1 flex-col overflow-hidden">
+        {/* Pull-to-refresh indicator */}
         <div
-          className={cn(
-            "relative z-40 flex flex-shrink-0 flex-col",
-            // Transitions - disable during resize for smooth dragging
-            !isResizing && "transition-[width] duration-200 ease-out",
-            // On mobile, sidebar is always overlay (no wrapper width)
-            isMobile && "w-0"
-          )}
-          style={{
-            // Wrapper width: collapsed = 6px, preview = 6px (sidebar absolute), pinned = sidebar width
-            // On mobile: always 0 (overlay mode)
-            width: wrapperWidth,
-          }}
+          className="absolute inset-x-0 top-0 z-10 flex items-center justify-center gap-2 pointer-events-none"
+          style={{ height: `${pullDistance}px` }}
         >
-          {/* Urgency strip - always visible on left edge (6px wide) */}
-          {!isMobile && (
-            <div
-              className="absolute left-0 top-0 h-full w-[6px] z-50 pointer-events-none"
-              style={{
-                // Clip right edge to prevent blur bleeding into sidebar/content
-                // Let blur extend left (off-screen), up, and down for soft glow
-                clipPath: "inset(-50px 0 -50px -50px)",
-              }}
-              aria-hidden="true"
-            >
-              {/* Grey baseline - always visible */}
-              <div className="absolute inset-0" style={{ backgroundColor: "hsl(var(--muted-foreground) / 0.3)" }} />
-              {/* Activity blocks - single blurred bar per stream, 150% height centered */}
-              {Array.from(urgencyBlocks.entries()).map(([streamId, block]) => {
-                const expandedHeight = block.height * 1.5
-                const centeredTop = block.position - block.height * 0.25
-                return (
-                  <div
-                    key={streamId}
-                    className="absolute transition-opacity duration-300"
-                    style={{
-                      left: "-4px",
-                      width: "14px",
-                      top: `${centeredTop * 100}%`,
-                      height: `${Math.max(expandedHeight * 100, 4)}%`,
-                      backgroundColor: block.color,
-                      filter: "blur(12px)",
-                      opacity: block.opacity,
-                    }}
-                  />
-                )
-              })}
-            </div>
-          )}
-
-          {/* Hover margin - invisible zone for "magnetic" feel (collapsed state only, not on mobile) */}
-          {/* 30px zone to trigger preview when collapsed */}
-          {isCollapsed && !isMobile && (
-            <div
-              className="absolute left-full top-0 z-30 h-full w-[30px]"
-              onMouseEnter={handleMouseEnter}
-              aria-hidden="true"
-            />
-          )}
-
-          {/* Coyote Time zone - extends beyond sidebar in preview mode for comfortable resizing */}
-          {/* Positioned outside aside (which has overflow-hidden) at sidebar's right edge */}
-          {isPreview && !isMobile && (
-            <div
-              className="absolute top-0 z-50 h-full w-[30px]"
-              style={{ left: `${width}px` }}
-              onMouseEnter={handleMouseEnter}
-              onMouseLeave={handleMouseLeave}
-              aria-hidden="true"
-            />
-          )}
-
-          {/* Sidebar container - clips content for reveal effect */}
-          <aside
-            ref={isMobile ? sidebarRef : undefined}
-            className={cn(
-              "relative flex h-full flex-col border-r bg-background overflow-hidden z-40",
-              // Positioning - preview is absolute, or always absolute on mobile
-              (isPreview || isMobile) && "absolute left-0 top-0 shadow-[4px_0_24px_hsl(var(--foreground)/0.08)]",
-              // Mobile: transform-based positioning (GPU-composited, swipe-compatible)
-              isMobile && sidebarTransform,
-              // Transitions - disable during resize/swipe for smooth dragging
-              isMobile
-                ? !isSwiping && "transition-transform duration-200 ease-out"
-                : !isResizing && "transition-[width,box-shadow] duration-200 ease-out"
-            )}
-            style={{
-              width: sidebarWidth,
-            }}
-            onMouseEnter={handleMouseEnter}
-            onMouseLeave={handleMouseLeave}
-            role="navigation"
-            aria-label="Sidebar navigation"
-          >
-            {/* Inner container maintains full width for reveal animation (prevents text reflow) */}
-            <div
-              className="h-full flex-1 flex flex-col overflow-hidden"
-              style={{
-                width: isMobile ? "min(85vw, 320px)" : `${width}px`,
-                minWidth: isMobile ? undefined : `${width}px`,
-              }}
-            >
-              {sidebar}
-            </div>
-
-            {/* Resize handle - only visible when not collapsed and not on mobile */}
-            {!isCollapsed && !isMobile && (
-              <div
-                className={cn(
-                  "absolute right-0 top-0 h-full w-1 cursor-col-resize",
-                  "hover:bg-primary/20 active:bg-primary/30",
-                  "transition-colors duration-150",
-                  "focus-visible:bg-primary/30 focus-visible:outline-none",
-                  isResizing && "bg-primary/30"
-                )}
-                onMouseDown={handleResizeStart}
-                onKeyDown={(e) => {
-                  const step = e.shiftKey ? 50 : 10
-                  if (e.key === "ArrowLeft") {
-                    e.preventDefault()
-                    setWidth(width - step)
-                  } else if (e.key === "ArrowRight") {
-                    e.preventDefault()
-                    setWidth(width + step)
-                  }
-                }}
-                tabIndex={0}
-                role="separator"
-                aria-orientation="vertical"
-                aria-valuenow={width}
-                aria-valuemin={200}
-                aria-valuemax={400}
-                aria-label="Resize sidebar"
-              />
-            )}
-          </aside>
+          <PullIndicator
+            distance={pullDistance}
+            progress={pullProgress}
+            pulling={pulling}
+            refreshing={refreshing}
+            mode={pullMode}
+          />
         </div>
 
-        {/* Main content area — safe-area padding for notched devices when keyboard is closed */}
-        <main
-          className="flex flex-1 flex-col overflow-hidden"
-          style={!isKeyboardOpen ? { paddingBottom: "env(safe-area-inset-bottom)" } : undefined}
+        {/* Main area with sidebar and content — translates down during pull */}
+        <div
+          className="flex flex-1 overflow-hidden"
+          style={{
+            transform: `translateY(${pullDistance}px)`,
+            transition: pulling ? "none" : "transform 0.3s ease-out",
+          }}
         >
-          {children}
-        </main>
+          {/* Top-edge fade — smooths the hard cutoff of sidebar glow and backdrop
+               darkness where they meet the pull padding area above */}
+          <div
+            className="absolute inset-x-0 top-0 z-[60] pointer-events-none"
+            style={{
+              height: pullDistance > 0 ? `${Math.min(pullDistance * 0.5, 32)}px` : "0px",
+              background: "linear-gradient(to bottom, hsl(var(--background)), transparent)",
+              transition: pulling ? "none" : "height 0.3s ease-out",
+            }}
+          />
+
+          {/* Mobile backdrop - always in DOM so swipe gestures can control opacity imperatively */}
+          {isMobile && (
+            <div
+              ref={backdropRef}
+              className={cn(
+                "fixed inset-0 z-30 bg-black/50",
+                !isSwiping && "transition-opacity duration-200",
+                backdropVisibility
+              )}
+              onClick={!isSwiping ? handleBackdropClick : undefined}
+              aria-hidden="true"
+            />
+          )}
+
+          {/* Sidebar wrapper - handles positioning */}
+          <div
+            className={cn(
+              "relative z-40 flex flex-shrink-0 flex-col",
+              // Transitions - disable during resize for smooth dragging
+              !isResizing && "transition-[width] duration-200 ease-out",
+              // On mobile, sidebar is always overlay (no wrapper width)
+              isMobile && "w-0"
+            )}
+            style={{
+              width: wrapperWidth,
+            }}
+          >
+            {/* Urgency strip - always visible on left edge (6px wide) */}
+            {!isMobile && (
+              <div
+                className="absolute left-0 top-0 h-full w-[6px] z-50 pointer-events-none"
+                style={{
+                  // Clip right edge to prevent blur bleeding into sidebar/content
+                  // Let blur extend left (off-screen), up, and down for soft glow
+                  clipPath: "inset(-50px 0 -50px -50px)",
+                }}
+                aria-hidden="true"
+              >
+                {/* Grey baseline - always visible */}
+                <div className="absolute inset-0" style={{ backgroundColor: "hsl(var(--muted-foreground) / 0.3)" }} />
+                {/* Activity blocks - single blurred bar per stream, 150% height centered */}
+                {Array.from(urgencyBlocks.entries()).map(([streamId, block]) => {
+                  const expandedHeight = block.height * 1.5
+                  const centeredTop = block.position - block.height * 0.25
+                  return (
+                    <div
+                      key={streamId}
+                      className="absolute transition-opacity duration-300"
+                      style={{
+                        left: "-4px",
+                        width: "14px",
+                        top: `${centeredTop * 100}%`,
+                        height: `${Math.max(expandedHeight * 100, 4)}%`,
+                        backgroundColor: block.color,
+                        filter: "blur(12px)",
+                        opacity: block.opacity,
+                      }}
+                    />
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Hover margin - invisible zone for "magnetic" feel (collapsed state only, not on mobile) */}
+            {/* 30px zone to trigger preview when collapsed */}
+            {isCollapsed && !isMobile && (
+              <div
+                className="absolute left-full top-0 z-30 h-full w-[30px]"
+                onMouseEnter={handleMouseEnter}
+                aria-hidden="true"
+              />
+            )}
+
+            {/* Coyote Time zone - extends beyond sidebar in preview mode for comfortable resizing */}
+            {/* Positioned outside aside (which has overflow-hidden) at sidebar's right edge */}
+            {isPreview && !isMobile && (
+              <div
+                className="absolute top-0 z-50 h-full w-[30px]"
+                style={{ left: `${width}px` }}
+                onMouseEnter={handleMouseEnter}
+                onMouseLeave={handleMouseLeave}
+                aria-hidden="true"
+              />
+            )}
+
+            {/* Sidebar container - clips content for reveal effect */}
+            <aside
+              ref={isMobile ? sidebarRef : undefined}
+              className={cn(
+                "relative flex h-full flex-col border-r bg-background overflow-hidden z-40",
+                // Positioning - preview is absolute, or always absolute on mobile
+                (isPreview || isMobile) && "absolute left-0 top-0 shadow-[4px_0_24px_hsl(var(--foreground)/0.08)]",
+                // Mobile: transform-based positioning (GPU-composited, swipe-compatible)
+                isMobile && sidebarTransform,
+                // Transitions - disable during resize/swipe for smooth dragging
+                isMobile
+                  ? !isSwiping && "transition-transform duration-200 ease-out"
+                  : !isResizing && "transition-[width,box-shadow] duration-200 ease-out"
+              )}
+              style={{ width: sidebarWidth }}
+              onMouseEnter={handleMouseEnter}
+              onMouseLeave={handleMouseLeave}
+              role="navigation"
+              aria-label="Sidebar navigation"
+            >
+              {/* Inner container maintains full width for reveal animation (prevents text reflow) */}
+              <div
+                className="h-full flex-1 flex flex-col overflow-hidden"
+                style={{
+                  width: isMobile ? "min(85vw, 320px)" : `${width}px`,
+                  minWidth: isMobile ? undefined : `${width}px`,
+                }}
+              >
+                {sidebar}
+              </div>
+
+              {/* Resize handle - only visible when not collapsed and not on mobile */}
+              {!isCollapsed && !isMobile && (
+                <div
+                  className={cn(
+                    "absolute right-0 top-0 h-full w-1 cursor-col-resize",
+                    "hover:bg-primary/20 active:bg-primary/30",
+                    "transition-colors duration-150",
+                    "focus-visible:bg-primary/30 focus-visible:outline-none",
+                    isResizing && "bg-primary/30"
+                  )}
+                  onMouseDown={handleResizeStart}
+                  onKeyDown={(e) => {
+                    const step = e.shiftKey ? 50 : 10
+                    if (e.key === "ArrowLeft") {
+                      e.preventDefault()
+                      setWidth(width - step)
+                    } else if (e.key === "ArrowRight") {
+                      e.preventDefault()
+                      setWidth(width + step)
+                    }
+                  }}
+                  tabIndex={0}
+                  role="separator"
+                  aria-orientation="vertical"
+                  aria-valuenow={width}
+                  aria-valuemin={200}
+                  aria-valuemax={400}
+                  aria-label="Resize sidebar"
+                />
+              )}
+            </aside>
+          </div>
+
+          {/* Main content area — safe-area padding for notched devices when keyboard is closed */}
+          <main
+            className="flex flex-1 flex-col overflow-hidden"
+            style={!isKeyboardOpen ? { paddingBottom: "env(safe-area-inset-bottom)" } : undefined}
+          >
+            {children}
+          </main>
+        </div>
       </div>
     </div>
   )

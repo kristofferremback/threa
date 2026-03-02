@@ -135,6 +135,8 @@ self.addEventListener("notificationclick", (event) => {
     targetUrl = `/w/${data.workspaceId}`
   }
 
+  const absoluteUrl = new URL(targetUrl, self.location.origin).href
+
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(async (clients) => {
       // Focus an existing window if one is open
@@ -145,8 +147,10 @@ self.addEventListener("notificationclick", (event) => {
           return
         }
       }
-      // No existing window — open a new one
-      await self.clients.openWindow(targetUrl)
+      // No existing window — open a new one.
+      // Use absolute URL so browsers that associate the full URL with the manifest
+      // scope (e.g. for PWA standalone windows) can open in the correct context.
+      await self.clients.openWindow(absoluteUrl)
     })
   )
 })
