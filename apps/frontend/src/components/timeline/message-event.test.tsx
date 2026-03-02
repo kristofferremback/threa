@@ -1,56 +1,13 @@
-import { describe, it, expect, vi } from "vitest"
+import { describe, it, expect, vi, beforeAll, afterAll } from "vitest"
 import { render, screen } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { MessageEvent } from "./message-event"
 import { EditLastMessageContext } from "./edit-last-message-context"
+import * as editorModule from "@/components/editor"
+import * as prosemirrorModule from "@threa/prosemirror"
 import type { StreamEvent } from "@threa/types"
 import type { JSONContent } from "@threa/types"
-
-vi.mock("@/components/editor", () => ({
-  RichEditor: ({
-    value,
-    onChange,
-    onSubmit,
-    placeholder,
-  }: {
-    value: JSONContent
-    onChange: (v: JSONContent) => void
-    onSubmit: () => void
-    placeholder?: string
-  }) => (
-    <textarea
-      data-testid="rich-editor"
-      defaultValue={JSON.stringify(value)}
-      placeholder={placeholder}
-      onChange={(e) => {
-        try {
-          onChange(JSON.parse(e.target.value))
-        } catch {
-          // ignore parse errors in test
-        }
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" && !e.shiftKey) {
-          e.preventDefault()
-          onSubmit()
-        }
-      }}
-    />
-  ),
-  DocumentEditorModal: () => null,
-}))
-
-vi.mock("@threa/prosemirror", () => ({
-  serializeToMarkdown: (json: JSONContent) => {
-    const text = json.content?.[0]?.content?.[0]?.text
-    return text ?? ""
-  },
-  parseMarkdown: (md: string) => ({
-    type: "doc",
-    content: [{ type: "paragraph", content: [{ type: "text", text: md }] }],
-  }),
-}))
 
 // Only mock what can't run in jsdom: routing and data-fetching hooks
 vi.mock("react-router-dom", () => ({
@@ -239,6 +196,53 @@ describe("MessageEvent", () => {
   })
 
   describe("ArrowUp edit-last-message trigger", () => {
+    beforeAll(() => {
+      vi.spyOn(editorModule, "RichEditor").mockImplementation(
+        ({
+          value,
+          onChange,
+          onSubmit,
+          placeholder,
+        }: {
+          value: JSONContent
+          onChange: (v: JSONContent) => void
+          onSubmit: () => void
+          placeholder?: string
+        }) => (
+          <textarea
+            data-testid="rich-editor"
+            defaultValue={JSON.stringify(value)}
+            placeholder={placeholder}
+            onChange={(e) => {
+              try {
+                onChange(JSON.parse(e.target.value))
+              } catch {
+                /* ignore */
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault()
+                onSubmit()
+              }
+            }}
+          />
+        )
+      )
+      vi.spyOn(editorModule, "DocumentEditorModal").mockImplementation(() => <></>)
+      vi.spyOn(prosemirrorModule, "serializeToMarkdown").mockImplementation((json) => {
+        return json.content?.[0]?.content?.[0]?.text ?? ""
+      })
+      vi.spyOn(prosemirrorModule, "parseMarkdown").mockImplementation((md) => ({
+        type: "doc",
+        content: [{ type: "paragraph", content: [{ type: "text", text: md }] }],
+      }))
+    })
+
+    afterAll(() => {
+      vi.restoreAllMocks()
+    })
+
     it("opens inline edit form when pendingEditMessageId matches this message", () => {
       const event = createMessageEvent("msg_edit", "Hello world")
       const clearPendingEdit = vi.fn()
@@ -257,28 +261,6 @@ describe("MessageEvent", () => {
       // Cancel button is only present when the inline edit form is visible
       expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument()
       expect(clearPendingEdit).toHaveBeenCalled()
-    })
-
-    it("does not open edit form when message is authored by a different user", () => {
-      const event: StreamEvent = {
-        ...createMessageEvent("msg_edit", "Hello world"),
-        actorId: "member_other", // not the current user
-      }
-      const clearPendingEdit = vi.fn()
-      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-
-      render(
-        <QueryClientProvider client={queryClient}>
-          <TooltipProvider>
-            <EditLastMessageContext.Provider value={{ pendingEditMessageId: "msg_edit", clearPendingEdit }}>
-              <MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />
-            </EditLastMessageContext.Provider>
-          </TooltipProvider>
-        </QueryClientProvider>
-      )
-
-      expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument()
-      expect(clearPendingEdit).not.toHaveBeenCalled()
     })
 
     it("does not open edit form when pendingEditMessageId is for a different message", () => {

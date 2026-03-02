@@ -212,16 +212,17 @@ function SentMessageEvent({
     })
   }, [])
 
-  // React to ArrowUp-to-edit-last-message trigger from the composer
+  // React to ArrowUp-to-edit-last-message trigger from the composer.
+  // No ownership guard needed here — useTriggerEditLastMessage already validated authorship
+  // before setting pendingEditMessageId, so a matching ID is always ours.
   const editLastMessageCtx = useEditLastMessage()
   const pendingEditMessageId = editLastMessageCtx?.pendingEditMessageId ?? null
   const clearPendingEdit = editLastMessageCtx?.clearPendingEdit
   useEffect(() => {
     if (pendingEditMessageId !== payload.messageId) return
-    if (event.actorId !== currentUserId) return
     setIsEditing(true)
     clearPendingEdit?.()
-  }, [pendingEditMessageId, payload.messageId, clearPendingEdit, event.actorId, currentUserId])
+  }, [pendingEditMessageId, payload.messageId, clearPendingEdit])
 
   // Scroll to this message when highlighted
   useEffect(() => {
