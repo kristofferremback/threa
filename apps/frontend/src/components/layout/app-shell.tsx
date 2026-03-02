@@ -106,12 +106,8 @@ export function AppShell({ sidebar, children }: AppShellProps) {
     onResizeEnd: stopResizing,
   })
 
-  // Track visual viewport for keyboard-aware layout on mobile.
-  // Sets --viewport-height CSS variable imperatively for smooth tracking;
-  // returns a boolean for conditional rendering (safe-area padding).
   const isKeyboardOpen = useVisualViewport(isMobile)
 
-  // Soft refresh: invalidate workspace + stream bootstraps (same pattern as reconnect bootstrap)
   const queryClient = useQueryClient()
   const { workspaceId } = useParams<{ workspaceId: string }>()
 
@@ -123,11 +119,7 @@ export function AppShell({ sidebar, children }: AppShellProps) {
     ])
   }, [queryClient, workspaceId])
 
-  // Pull-to-refresh for mobile (Chrome disables built-in refresh in standalone PWA;
-  // our global overscroll-behavior: none disables it in regular mobile browsers too).
-  // Single instance wraps everything below the topbar so pulling anywhere (sidebar
-  // or main content) translates the entire content area down uniformly.
-  // Light pull = soft refresh (re-fetch data), heavy pull = hard refresh (page reload).
+  // Light pull = soft refresh (re-fetch data), heavy pull = hard refresh (page reload)
   const {
     ref: pullRef,
     distance: pullDistance,
@@ -198,7 +190,7 @@ export function AppShell({ sidebar, children }: AppShellProps) {
     sidebarTransform = isOpen ? "translate-x-0" : "-translate-x-full"
   }
 
-  // Pull indicator styling per mode (avoids nested ternaries in JSX — INV-47)
+  // Pull indicator styling per mode — INV-47
   const pullModeConfig = {
     idle: { bg: "bg-muted/50", text: "text-muted-foreground", label: "Pull to refresh" },
     soft: { bg: "bg-muted/50", text: "text-muted-foreground", label: "Release to refresh" },

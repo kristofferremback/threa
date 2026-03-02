@@ -30,7 +30,6 @@ export function usePullToRefresh({ enabled, onRefresh }: PullToRefreshOptions) {
   const [distance, setDistance] = useState(0)
   const [refreshing, setRefreshing] = useState(false)
 
-  // Stable ref for the callback to avoid re-running the touch-listener effect
   const onRefreshRef = useRef(onRefresh)
   useEffect(() => {
     onRefreshRef.current = onRefresh
@@ -111,35 +110,23 @@ export function usePullToRefresh({ enabled, onRefresh }: PullToRefreshOptions) {
       pulling = false
 
       if (dist >= HARD_THRESHOLD) {
-        // Hard refresh — full page reload
         isRefreshing = true
         setRefreshing(true)
         setDistance(HARD_THRESHOLD)
         reloadTimer = setTimeout(() => window.location.reload(), 400)
       } else if (dist >= SOFT_THRESHOLD) {
-        // Soft refresh — re-fetch data
         isRefreshing = true
         setRefreshing(true)
         setDistance(SOFT_THRESHOLD)
 
-        const cb = onRefreshRef.current
-        if (cb) {
-          cb().finally(() => {
-            // Brief delay for visual feedback before resetting
-            setTimeout(() => {
-              isRefreshing = false
-              setRefreshing(false)
-              setDistance(0)
-            }, 300)
-          })
-        } else {
-          // No callback — just reset after a beat
+        const promise = onRefreshRef.current?.() ?? Promise.resolve()
+        promise.finally(() => {
           setTimeout(() => {
             isRefreshing = false
             setRefreshing(false)
             setDistance(0)
           }, 300)
-        }
+        })
       } else {
         dist = 0
         setDistance(0)
