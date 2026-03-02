@@ -22,7 +22,12 @@ export function usePullToRefresh(enabled: boolean) {
   const [refreshing, setRefreshing] = useState(false)
 
   useEffect(() => {
-    if (!enabled) return
+    if (!enabled) {
+      // Reset visual state when disabled mid-pull (e.g. keyboard opens during gesture)
+      setDistance(0)
+      setRefreshing(false)
+      return
+    }
     const container = ref.current
     if (!container) return
 

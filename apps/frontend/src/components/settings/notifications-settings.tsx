@@ -21,27 +21,32 @@ const NOTIFICATION_DESCRIPTIONS: Record<PrefNotificationLevel, string> = {
 }
 
 function TestNotificationButton({ workspaceId }: { workspaceId: string }) {
-  const [sent, setSent] = useState(false)
+  const [label, setLabel] = useState<"idle" | "sent" | "failed">("idle")
 
   async function sendTest() {
-    const registration = await navigator.serviceWorker?.ready
-    if (!registration) return
+    try {
+      const registration = await navigator.serviceWorker?.ready
+      if (!registration) throw new Error("Service worker not available")
 
-    await registration.showNotification("Test notification", {
-      body: "If you can see this, push notifications are working!",
-      icon: "/threa-logo-192.png",
-      badge: "/threa-logo-192.png",
-      tag: "threa-test",
-      data: { workspaceId },
-    })
+      await registration.showNotification("Test notification", {
+        body: "If you can see this, push notifications are working!",
+        icon: "/threa-logo-192.png",
+        badge: "/threa-logo-192.png",
+        tag: "threa-test",
+        data: { workspaceId },
+      })
 
-    setSent(true)
-    setTimeout(() => setSent(false), 3000)
+      setLabel("sent")
+    } catch {
+      setLabel("failed")
+    } finally {
+      setTimeout(() => setLabel("idle"), 3000)
+    }
   }
 
   return (
     <Button onClick={sendTest} variant="outline" size="sm">
-      {sent ? "Sent!" : "Test"}
+      {label === "sent" ? "Sent!" : label === "failed" ? "Failed" : "Test"}
     </Button>
   )
 }
