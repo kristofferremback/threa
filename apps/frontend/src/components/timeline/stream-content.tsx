@@ -10,7 +10,6 @@ import {
   useAutoMarkAsRead,
   useUnreadDivider,
   useAgentActivity,
-  useWorkspaceBootstrap,
   streamKeys,
   workspaceKeys,
 } from "@/hooks"
@@ -30,7 +29,7 @@ import { EventList } from "./event-list"
 import { MessageInput } from "./message-input"
 import { JoinChannelBar } from "./join-channel-bar"
 import { ThreadParentMessage } from "../thread/thread-parent-message"
-import { EditLastMessageContext } from "./edit-last-message-context"
+import { EditLastMessageContext, useTriggerEditLastMessage } from "./edit-last-message-context"
 
 interface StreamContentProps {
   workspaceId: string
@@ -54,7 +53,6 @@ export function StreamContent({
   const [, setSearchParams] = useSearchParams()
   const user = useUser()
   const socket = useSocket()
-  const { data: wsBootstrap } = useWorkspaceBootstrap(workspaceId)
   const [pendingEditMessageId, setPendingEditMessageId] = useState<string | null>(null)
 
   // Clear highlight param after delay (works for both main view and panels)
@@ -109,28 +107,16 @@ export function StreamContent({
     { enabled: !isDraft }
   )
 
-  // Resolve current workspace user ID for ArrowUp-to-edit-last-message
-  const currentWorkspaceUserId = useMemo(
-    () => wsBootstrap?.users?.find((u) => u.workosUserId === user?.id)?.id ?? null,
-    [wsBootstrap?.users, user?.id]
-  )
-
   const clearPendingEdit = useCallback(() => setPendingEditMessageId(null), [])
+  const triggerEditLastMessage = useTriggerEditLastMessage(workspaceId, events, setPendingEditMessageId)
 
-  // Lazy scan — only runs when ArrowUp is pressed, not on every socket event
-  const triggerEditLastMessage = useCallback(() => {
-    if (!currentWorkspaceUserId) return
-    for (let i = events.length - 1; i >= 0; i--) {
-      const event = events[i]
-      if (event.eventType !== "message_created") continue
-      if (event.actorType !== "user") continue
-      if (event.actorId !== currentWorkspaceUserId) continue
-      const payload = event.payload as { messageId?: string; deletedAt?: string }
-      if (payload.deletedAt || !payload.messageId) continue
-      setPendingEditMessageId(payload.messageId)
-      return
-    }
-  }, [events, currentWorkspaceUserId])
+  // Auto-clear pendingEditMessageId if nothing consumes it — guards against stuck state
+  // when the target message is temporarily rendered as PendingMessageEvent/FailedMessageEvent
+  useEffect(() => {
+    if (!pendingEditMessageId) return
+    const timer = setTimeout(() => setPendingEditMessageId(null), 500)
+    return () => clearTimeout(timer)
+  }, [pendingEditMessageId])
 
   const editLastMessageCtx = useMemo(
     () => ({ pendingEditMessageId, clearPendingEdit }),
