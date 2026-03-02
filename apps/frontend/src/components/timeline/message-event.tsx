@@ -215,11 +215,12 @@ function SentMessageEvent({
   // React to ArrowUp-to-edit-last-message trigger from the composer
   const editLastMessageCtx = useEditLastMessage()
   const pendingEditMessageId = editLastMessageCtx?.pendingEditMessageId ?? null
+  const clearPendingEdit = editLastMessageCtx?.clearPendingEdit
   useEffect(() => {
     if (pendingEditMessageId !== payload.messageId) return
     setIsEditing(true)
-    editLastMessageCtx?.clearPendingEdit()
-  }, [pendingEditMessageId, payload.messageId])
+    clearPendingEdit?.()
+  }, [pendingEditMessageId, payload.messageId, clearPendingEdit])
 
   // Scroll to this message when highlighted
   useEffect(() => {
