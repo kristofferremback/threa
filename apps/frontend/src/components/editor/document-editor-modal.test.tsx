@@ -118,5 +118,18 @@ describe("DocumentEditorModal", () => {
       const sendButton = screen.getByRole("button", { name: "Send" })
       expect(sendButton).toBeDisabled()
     })
+
+    it("should not reset editor content when initialContent prop changes while modal is already open", () => {
+      const { rerender } = render(<DocumentEditorModal {...defaultProps} initialContent="Hello World" />)
+
+      // Editor initialised with content — Send is enabled
+      expect(screen.getByRole("button", { name: "Send" })).not.toBeDisabled()
+
+      // Parent updates initialContent to empty while the modal stays open
+      rerender(<DocumentEditorModal {...defaultProps} initialContent="" />)
+
+      // Send must still be enabled: the editor was not reset to the new (empty) initialContent
+      expect(screen.getByRole("button", { name: "Send" })).not.toBeDisabled()
+    })
   })
 })

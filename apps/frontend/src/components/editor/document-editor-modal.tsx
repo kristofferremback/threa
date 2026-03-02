@@ -151,6 +151,17 @@ export function DocumentEditorModal({
   // Update submit ref for keyboard shortcut
   handleSubmitRef.current = handleSubmit
 
+  // Capture open-time values in refs so the effect only depends on `open` and `editor`.
+  // Placing deps like initialContent/getMentionType/toEmoji in the array would cause the
+  // effect to fire while the modal is already open (e.g. async data resolves), silently
+  // overwriting whatever the user has typed.
+  const initContentRef = useRef(initialContent)
+  const getMentionTypeRef = useRef(getMentionType)
+  const toEmojiRef = useRef(toEmoji)
+  initContentRef.current = initialContent
+  getMentionTypeRef.current = getMentionType
+  toEmojiRef.current = toEmoji
+
   // Reset content only when dialog transitions from closed to open
   useEffect(() => {
     const isNewlyOpened = open && !wasOpenRef.current
@@ -158,11 +169,11 @@ export function DocumentEditorModal({
 
     if (isNewlyOpened && editor && !editor.isDestroyed) {
       isInternalUpdate.current = true
-      editor.commands.setContent(parseMarkdown(initialContent, getMentionType, toEmoji))
+      editor.commands.setContent(parseMarkdown(initContentRef.current, getMentionTypeRef.current, toEmojiRef.current))
       isInternalUpdate.current = false
       editor.commands.focus("end")
     }
-  }, [open, initialContent, editor, getMentionType, toEmoji])
+  }, [open, editor])
 
   // Reactively check if content is empty (TipTap v3 requires useEditorState for reactive reads)
   const isEmpty = useEditorState({
