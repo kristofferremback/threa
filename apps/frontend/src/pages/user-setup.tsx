@@ -127,8 +127,8 @@ export function UserSetupPage() {
   if (!workspaceId) return null
 
   const isSlugBlank = trimmedSlug.length === 0
-  const isManuallyChosenSlugTaken = slugManuallyEdited && !isSlugBlank && slugStatus === "taken"
-  const canSubmit = !isManuallyChosenSlugTaken && !setupMutation.isPending
+  const isSlugTaken = !isSlugBlank && slugStatus === "taken"
+  const canSubmit = !isSlugTaken && !setupMutation.isPending
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background">

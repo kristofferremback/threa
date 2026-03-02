@@ -108,6 +108,46 @@ describe("useDraftMessage", () => {
       expect(result.current.attachments).toHaveLength(1)
       expect(result.current.attachments[0].filename).toBe("test.txt")
     })
+
+    it("should treat stale data from the previous draft key as still loading", () => {
+      liveQueryLoading = false
+      const oldDraftKey = "stream:stream_old"
+      const newDraftKey = "stream:stream_new"
+
+      liveQueryResult = {
+        draftKey: oldDraftKey,
+        draft: {
+          id: oldDraftKey,
+          workspaceId,
+          contentJson: makeDoc("Old draft"),
+          attachments: [{ id: "attach_old", filename: "old.txt", mimeType: "text/plain", sizeBytes: 100 }],
+          updatedAt: Date.now(),
+        },
+      }
+
+      const { result, rerender } = renderHook(({ currentDraftKey }) => useDraftMessage(workspaceId, currentDraftKey), {
+        initialProps: { currentDraftKey: oldDraftKey },
+      })
+
+      expect(result.current.isLoaded).toBe(true)
+      expect(result.current.attachments).toHaveLength(1)
+
+      rerender({ currentDraftKey: newDraftKey })
+
+      expect(result.current.isLoaded).toBe(false)
+      expect(result.current.contentJson).toEqual(EMPTY_DOC)
+      expect(result.current.attachments).toEqual([])
+
+      liveQueryResult = {
+        draftKey: newDraftKey,
+        draft: undefined,
+      }
+      rerender({ currentDraftKey: newDraftKey })
+
+      expect(result.current.isLoaded).toBe(true)
+      expect(result.current.contentJson).toEqual(EMPTY_DOC)
+      expect(result.current.attachments).toEqual([])
+    })
   })
 
   describe("saveDraft", () => {

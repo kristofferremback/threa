@@ -15,20 +15,35 @@ const mockAddDraftAttachment = vi.fn()
 const mockRemoveDraftAttachment = vi.fn()
 const mockClearDraft = vi.fn()
 
+interface MockDraftState {
+  isLoaded: boolean
+  contentJson: JSONContent
+  attachments: Array<{ id: string; filename: string; mimeType: string; sizeBytes: number }>
+}
+
 let mockDraftIsLoaded = true
 let mockDraftContentJson: JSONContent = EMPTY_DOC
 let mockDraftAttachments: Array<{ id: string; filename: string; mimeType: string; sizeBytes: number }> = []
+let mockDraftStateByKey: Record<string, MockDraftState> = {}
 
 vi.mock("./use-draft-message", () => ({
-  useDraftMessage: () => ({
-    isLoaded: mockDraftIsLoaded,
-    contentJson: mockDraftContentJson,
-    attachments: mockDraftAttachments,
-    saveDraftDebounced: mockSaveDraftDebounced,
-    addAttachment: mockAddDraftAttachment,
-    removeAttachment: mockRemoveDraftAttachment,
-    clearDraft: mockClearDraft,
-  }),
+  useDraftMessage: (_workspaceId: string, currentDraftKey: string) => {
+    const state = mockDraftStateByKey[currentDraftKey] ?? {
+      isLoaded: mockDraftIsLoaded,
+      contentJson: mockDraftContentJson,
+      attachments: mockDraftAttachments,
+    }
+
+    return {
+      isLoaded: state.isLoaded,
+      contentJson: state.contentJson,
+      attachments: state.attachments,
+      saveDraftDebounced: mockSaveDraftDebounced,
+      addAttachment: mockAddDraftAttachment,
+      removeAttachment: mockRemoveDraftAttachment,
+      clearDraft: mockClearDraft,
+    }
+  },
 }))
 
 // Mock useAttachments
@@ -73,6 +88,7 @@ describe("useDraftComposer", () => {
     mockDraftIsLoaded = true
     mockDraftContentJson = EMPTY_DOC
     mockDraftAttachments = []
+    mockDraftStateByKey = {}
     mockPendingAttachments = []
   })
 
@@ -200,6 +216,95 @@ describe("useDraftComposer", () => {
         mimeType: "text/plain",
         sizeBytes: 200,
       })
+    })
+
+    it("should resume persistence after restoring saved attachments in the destination draft", () => {
+      const restoredAttachment = {
+        id: "attach_saved",
+        filename: "saved.txt",
+        mimeType: "text/plain",
+        sizeBytes: 150,
+      }
+
+      mockDraftStateByKey["stream:stream_2"] = {
+        isLoaded: true,
+        contentJson: EMPTY_DOC,
+        attachments: [restoredAttachment],
+      }
+
+      const { rerender } = renderHook(
+        ({ currentDraftKey, currentScopeId }) =>
+          useDraftComposer({ workspaceId, draftKey: currentDraftKey, scopeId: currentScopeId }),
+        {
+          initialProps: { currentDraftKey: "stream:stream_1", currentScopeId: "stream_1" },
+        }
+      )
+
+      rerender({ currentDraftKey: "stream:stream_2", currentScopeId: "stream_2" })
+
+      expect(mockRestoreAttachments).toHaveBeenCalledWith([restoredAttachment])
+
+      mockAddDraftAttachment.mockClear()
+      mockPendingAttachments = [{ ...restoredAttachment, status: "uploaded" as const }]
+      rerender({ currentDraftKey: "stream:stream_2", currentScopeId: "stream_2" })
+
+      expect(mockAddDraftAttachment).not.toHaveBeenCalled()
+
+      const freshAttachment = {
+        id: "attach_fresh",
+        filename: "fresh.txt",
+        mimeType: "text/plain",
+        sizeBytes: 200,
+      }
+      mockPendingAttachments = [
+        { ...restoredAttachment, status: "uploaded" as const },
+        { ...freshAttachment, status: "uploaded" as const },
+      ]
+      rerender({ currentDraftKey: "stream:stream_2", currentScopeId: "stream_2" })
+
+      expect(mockAddDraftAttachment).toHaveBeenCalledWith(freshAttachment)
+    })
+
+    it("should not persist previous scope attachments while the destination draft is restoring", () => {
+      const previousAttachment = {
+        id: "attach_previous",
+        filename: "previous.txt",
+        mimeType: "text/plain",
+        sizeBytes: 125,
+      }
+      const restoredAttachment = {
+        id: "attach_saved",
+        filename: "saved.txt",
+        mimeType: "text/plain",
+        sizeBytes: 150,
+      }
+
+      mockPendingAttachments = [{ ...previousAttachment, status: "uploaded" as const }]
+      mockDraftStateByKey["stream:stream_2"] = {
+        isLoaded: true,
+        contentJson: EMPTY_DOC,
+        attachments: [restoredAttachment],
+      }
+
+      const { rerender } = renderHook(
+        ({ currentDraftKey, currentScopeId }) =>
+          useDraftComposer({ workspaceId, draftKey: currentDraftKey, scopeId: currentScopeId }),
+        {
+          initialProps: { currentDraftKey: "stream:stream_1", currentScopeId: "stream_1" },
+        }
+      )
+
+      mockAddDraftAttachment.mockClear()
+
+      rerender({ currentDraftKey: "stream:stream_2", currentScopeId: "stream_2" })
+
+      expect(mockAddDraftAttachment).not.toHaveBeenCalled()
+      expect(mockRestoreAttachments).toHaveBeenCalledWith([restoredAttachment])
+
+      mockPendingAttachments = [{ ...restoredAttachment, status: "uploaded" as const }]
+      rerender({ currentDraftKey: "stream:stream_2", currentScopeId: "stream_2" })
+
+      expect(mockAddDraftAttachment).not.toHaveBeenCalled()
     })
   })
 
