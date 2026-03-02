@@ -6,6 +6,14 @@ function isMemberPropertyNamed(node, name) {
   return !node?.computed && isIdentifierNamed(node?.property, name)
 }
 
+function isFunctionNode(node) {
+  return (
+    node?.type === "FunctionDeclaration" ||
+    node?.type === "FunctionExpression" ||
+    node?.type === "ArrowFunctionExpression"
+  )
+}
+
 function isPascalCaseName(name) {
   return typeof name === "string" && /^[A-Z][A-Za-z0-9]*$/.test(name)
 }
@@ -23,14 +31,6 @@ function getFunctionName(node) {
     node.parent.id.type === "Identifier"
   ) {
     return node.parent.id.name
-  }
-
-  if (
-    (node.type === "ArrowFunctionExpression" || node.type === "FunctionExpression") &&
-    node.parent?.type === "Property" &&
-    node.parent.key.type === "Identifier"
-  ) {
-    return node.parent.key.name
   }
 
   return null
@@ -55,11 +55,7 @@ function functionReturnsJsx(node) {
     const current = queue.shift()
     if (!current) continue
 
-    if (
-      current.type === "FunctionDeclaration" ||
-      current.type === "FunctionExpression" ||
-      current.type === "ArrowFunctionExpression"
-    ) {
+    if (isFunctionNode(current)) {
       continue
     }
 
@@ -100,29 +96,18 @@ function isComponentFunction(node) {
   return isPascalCaseName(name) && functionReturnsJsx(node)
 }
 
-function isAllowedGetQueryDataUsage(node) {
-  const parent = node.parent
-
-  if (parent?.type !== "CallExpression") {
-    return false
-  }
-
-  if (parent.callee !== node) {
-    return false
-  }
-
-  let current = parent
-  while (current.parent) {
-    current = current.parent
-
-    if (
-      current.type === "ArrowFunctionExpression" ||
-      current.type === "FunctionExpression" ||
-      current.type === "FunctionDeclaration"
-    ) {
-      const enclosingName = getFunctionName(current)
-      return enclosingName ? !isPascalCaseName(enclosingName) : true
+function isAllowedGetQueryDataUsage(ancestors) {
+  for (let index = ancestors.length - 1; index >= 0; index -= 1) {
+    const ancestor = ancestors[index]
+    if (!isFunctionNode(ancestor)) {
+      continue
     }
+
+    return (
+      ancestor.parent?.type === "Property" &&
+      !ancestor.parent.computed &&
+      isIdentifierNamed(ancestor.parent.key, "queryFn")
+    )
   }
 
   return false
@@ -131,11 +116,18 @@ function isAllowedGetQueryDataUsage(node) {
 function getNearestFunction(ancestors) {
   for (let index = ancestors.length - 1; index >= 0; index -= 1) {
     const ancestor = ancestors[index]
-    if (
-      ancestor.type === "FunctionDeclaration" ||
-      ancestor.type === "FunctionExpression" ||
-      ancestor.type === "ArrowFunctionExpression"
-    ) {
+    if (isFunctionNode(ancestor)) {
+      return ancestor
+    }
+  }
+
+  return null
+}
+
+function getNearestComponentFunction(ancestors) {
+  for (let index = ancestors.length - 1; index >= 0; index -= 1) {
+    const ancestor = ancestors[index]
+    if (isFunctionNode(ancestor) && isComponentFunction(ancestor)) {
       return ancestor
     }
   }
@@ -195,20 +187,68 @@ const noQueryClientGetQueryDataInRenderRule = {
           return
         }
 
-        if (isAllowedGetQueryDataUsage(node.callee)) {
+        const ancestors = context.sourceCode.getAncestors(node)
+        if (isAllowedGetQueryDataUsage(ancestors)) {
           return
         }
 
-        const ancestors = context.sourceCode.getAncestors(node)
-        const nearestFunction = getNearestFunction(ancestors)
+        const nearestComponentFunction = getNearestComponentFunction(ancestors)
 
-        if (nearestFunction && isComponentFunction(nearestFunction)) {
+        if (nearestComponentFunction) {
           context.report({ node, messageId: "renderRead" })
         }
       },
     }
   },
 }
+
+export const dotenvRestrictedImportPattern = {
+  group: ["dotenv", "dotenv/config"],
+  message: "Bun auto-loads .env. Do not import dotenv in this repo.",
+}
+
+export const providerSdkRestrictedImportPattern = {
+  group: ["@openrouter/ai-sdk-provider", "@langchain/openai", "openai", "@anthropic-ai/sdk", "anthropic"],
+  message: "Import AI provider SDKs only inside src/lib/ai/ai.ts (INV-28). Use createAI elsewhere.",
+}
+
+export const testRestrictedProperties = [
+  {
+    object: "describe",
+    property: "skip",
+    message: "Do not commit skipped tests (INV-26).",
+  },
+  {
+    object: "describe",
+    property: "todo",
+    message: "Do not commit todo tests (INV-26).",
+  },
+  {
+    object: "test",
+    property: "skip",
+    message: "Do not commit skipped tests (INV-26).",
+  },
+  {
+    object: "test",
+    property: "todo",
+    message: "Do not commit todo tests (INV-26).",
+  },
+  {
+    object: "it",
+    property: "skip",
+    message: "Do not commit skipped tests (INV-26).",
+  },
+  {
+    object: "it",
+    property: "todo",
+    message: "Do not commit todo tests (INV-26).",
+  },
+  {
+    object: "mock",
+    property: "module",
+    message: "Avoid mock.module(); prefer scoped spyOn patterns (INV-48).",
+  },
+]
 
 const threaPlugin = {
   rules: {

@@ -1,6 +1,10 @@
 import tsParser from "@typescript-eslint/parser"
 import tsPlugin from "@typescript-eslint/eslint-plugin"
-import threaPlugin from "../../eslint/threa-plugin.js"
+import threaPlugin, {
+  dotenvRestrictedImportPattern,
+  providerSdkRestrictedImportPattern,
+  testRestrictedProperties,
+} from "../../eslint/threa-plugin.js"
 
 /**
  * ESLint configuration for Threa backend.
@@ -13,13 +17,6 @@ import threaPlugin from "../../eslint/threa-plugin.js"
  * - INV-52: Features import other features only through barrels (index.ts)
  * - INV-26 / INV-48: no skipped/todo tests and no mock.module()
  */
-const sharedRestrictedImportPatterns = [
-  {
-    group: ["dotenv", "dotenv/config"],
-    message: "Bun auto-loads .env. Do not import dotenv in this repo.",
-  },
-]
-
 export default [
   {
     files: ["src/**/*.ts", "tests/**/*.ts", "evals/**/*.ts", "scripts/**/*.ts"],
@@ -39,7 +36,7 @@ export default [
       "no-restricted-imports": [
         "error",
         {
-          patterns: sharedRestrictedImportPatterns,
+          patterns: [dotenvRestrictedImportPattern],
         },
       ],
     },
@@ -53,13 +50,7 @@ export default [
       "no-restricted-imports": [
         "error",
         {
-          patterns: [
-            ...sharedRestrictedImportPatterns,
-            {
-              group: ["@openrouter/ai-sdk-provider", "@langchain/openai", "openai", "@anthropic-ai/sdk", "anthropic"],
-              message: "Import AI provider SDKs only inside src/lib/ai/ai.ts (INV-28). Use createAI elsewhere.",
-            },
-          ],
+          patterns: [dotenvRestrictedImportPattern, providerSdkRestrictedImportPattern],
         },
       ],
     },
@@ -74,6 +65,7 @@ export default [
   {
     files: ["src/lib/**/*.ts"],
     ignores: [
+      "src/lib/ai/ai.ts",
       "src/lib/ai/static-config-resolver.ts",
       "src/lib/ai/message-formatter.ts",
       "src/lib/ai/message-formatter.test.ts",
@@ -85,7 +77,8 @@ export default [
         "error",
         {
           patterns: [
-            ...sharedRestrictedImportPatterns,
+            dotenvRestrictedImportPattern,
+            providerSdkRestrictedImportPattern,
             {
               group: ["**/features/*", "**/features/**"],
               message:
@@ -109,7 +102,8 @@ export default [
         "error",
         {
           patterns: [
-            ...sharedRestrictedImportPatterns,
+            dotenvRestrictedImportPattern,
+            providerSdkRestrictedImportPattern,
             {
               group: [
                 "**/streams/**",
@@ -136,44 +130,7 @@ export default [
   {
     files: ["**/*.{test,spec}.ts", "tests/**/*.ts"],
     rules: {
-      "no-restricted-properties": [
-        "error",
-        {
-          object: "describe",
-          property: "skip",
-          message: "Do not commit skipped tests (INV-26).",
-        },
-        {
-          object: "describe",
-          property: "todo",
-          message: "Do not commit todo tests (INV-26).",
-        },
-        {
-          object: "test",
-          property: "skip",
-          message: "Do not commit skipped tests (INV-26).",
-        },
-        {
-          object: "test",
-          property: "todo",
-          message: "Do not commit todo tests (INV-26).",
-        },
-        {
-          object: "it",
-          property: "skip",
-          message: "Do not commit skipped tests (INV-26).",
-        },
-        {
-          object: "it",
-          property: "todo",
-          message: "Do not commit todo tests (INV-26).",
-        },
-        {
-          object: "mock",
-          property: "module",
-          message: "Avoid mock.module(); prefer scoped spyOn patterns (INV-48).",
-        },
-      ],
+      "no-restricted-properties": ["error", ...testRestrictedProperties],
     },
   },
 ]

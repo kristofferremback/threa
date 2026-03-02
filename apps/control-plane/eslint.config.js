@@ -1,4 +1,5 @@
 import tsParser from "@typescript-eslint/parser"
+import { dotenvRestrictedImportPattern, testRestrictedProperties } from "../../eslint/threa-plugin.js"
 
 /**
  * ESLint configuration for the control plane.
@@ -10,13 +11,6 @@ import tsParser from "@typescript-eslint/parser"
  * - INV-52: Features import other features only through barrels (index.ts)
  * - INV-26 / INV-48: no skipped/todo tests and no mock.module()
  */
-const sharedRestrictedImportPatterns = [
-  {
-    group: ["dotenv", "dotenv/config"],
-    message: "Bun auto-loads .env. Do not import dotenv in this repo.",
-  },
-]
-
 export default [
   {
     files: ["src/**/*.ts", "tests/**/*.ts"],
@@ -32,7 +26,7 @@ export default [
       "no-restricted-imports": [
         "error",
         {
-          patterns: sharedRestrictedImportPatterns,
+          patterns: [dotenvRestrictedImportPattern],
         },
       ],
     },
@@ -45,7 +39,7 @@ export default [
         "error",
         {
           patterns: [
-            ...sharedRestrictedImportPatterns,
+            dotenvRestrictedImportPattern,
             {
               group: ["**/features/*", "**/features/**"],
               message:
@@ -64,7 +58,7 @@ export default [
         "error",
         {
           patterns: [
-            ...sharedRestrictedImportPatterns,
+            dotenvRestrictedImportPattern,
             {
               group: ["**/auth/**", "**/workspaces/**", "**/invitation-shadows/**"],
               message: "Import from feature barrels only (features/x/index.ts), not internals (INV-52).",
@@ -78,44 +72,7 @@ export default [
   {
     files: ["**/*.{test,spec}.ts", "tests/**/*.ts"],
     rules: {
-      "no-restricted-properties": [
-        "error",
-        {
-          object: "describe",
-          property: "skip",
-          message: "Do not commit skipped tests (INV-26).",
-        },
-        {
-          object: "describe",
-          property: "todo",
-          message: "Do not commit todo tests (INV-26).",
-        },
-        {
-          object: "test",
-          property: "skip",
-          message: "Do not commit skipped tests (INV-26).",
-        },
-        {
-          object: "test",
-          property: "todo",
-          message: "Do not commit todo tests (INV-26).",
-        },
-        {
-          object: "it",
-          property: "skip",
-          message: "Do not commit skipped tests (INV-26).",
-        },
-        {
-          object: "it",
-          property: "todo",
-          message: "Do not commit todo tests (INV-26).",
-        },
-        {
-          object: "mock",
-          property: "module",
-          message: "Avoid mock.module(); prefer scoped spyOn patterns (INV-48).",
-        },
-      ],
+      "no-restricted-properties": ["error", ...testRestrictedProperties],
     },
   },
 ]

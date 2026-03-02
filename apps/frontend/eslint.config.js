@@ -1,5 +1,5 @@
 import tsParser from "@typescript-eslint/parser"
-import threaPlugin from "../../eslint/threa-plugin.js"
+import threaPlugin, { dotenvRestrictedImportPattern, testRestrictedProperties } from "../../eslint/threa-plugin.js"
 
 /**
  * ESLint configuration for Threa frontend.
@@ -16,13 +16,6 @@ import threaPlugin from "../../eslint/threa-plugin.js"
  * capabilities via props/context and call them without knowing implementation.
  * This keeps components testable, reusable, and decoupled from persistence.
  */
-const sharedRestrictedImportPatterns = [
-  {
-    group: ["dotenv", "dotenv/config"],
-    message: "Bun auto-loads .env. Do not import dotenv in this repo.",
-  },
-]
-
 export default [
   {
     files: ["src/**/*.{ts,tsx}"],
@@ -41,7 +34,7 @@ export default [
       "no-restricted-imports": [
         "error",
         {
-          patterns: sharedRestrictedImportPatterns,
+          patterns: [dotenvRestrictedImportPattern],
         },
       ],
     },
@@ -58,7 +51,7 @@ export default [
         "error",
         {
           patterns: [
-            ...sharedRestrictedImportPatterns,
+            dotenvRestrictedImportPattern,
             {
               group: ["@/db", "@/db/*"],
               message: "Components must not import database directly (INV-15). Use hooks or context to access data.",
@@ -72,44 +65,7 @@ export default [
   {
     files: ["src/**/*.{test,spec}.{ts,tsx}", "src/test/**/*.{ts,tsx}"],
     rules: {
-      "no-restricted-properties": [
-        "error",
-        {
-          object: "describe",
-          property: "skip",
-          message: "Do not commit skipped tests (INV-26).",
-        },
-        {
-          object: "describe",
-          property: "todo",
-          message: "Do not commit todo tests (INV-26).",
-        },
-        {
-          object: "test",
-          property: "skip",
-          message: "Do not commit skipped tests (INV-26).",
-        },
-        {
-          object: "test",
-          property: "todo",
-          message: "Do not commit todo tests (INV-26).",
-        },
-        {
-          object: "it",
-          property: "skip",
-          message: "Do not commit skipped tests (INV-26).",
-        },
-        {
-          object: "it",
-          property: "todo",
-          message: "Do not commit todo tests (INV-26).",
-        },
-        {
-          object: "mock",
-          property: "module",
-          message: "Avoid mock.module(); prefer scoped spyOn patterns (INV-48).",
-        },
-      ],
+      "no-restricted-properties": ["error", ...testRestrictedProperties],
     },
   },
 ]
