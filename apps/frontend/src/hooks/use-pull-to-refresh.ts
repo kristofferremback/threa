@@ -160,7 +160,9 @@ export function usePullToRefresh({ enabled, onRefresh }: PullToRefreshOptions) {
     }
   }, [enabled])
 
-  const mode: PullMode = distance >= HARD_THRESHOLD ? "hard" : distance >= SOFT_THRESHOLD ? "soft" : "idle"
+  let mode: PullMode = "idle"
+  if (distance >= HARD_THRESHOLD) mode = "hard"
+  else if (distance >= SOFT_THRESHOLD) mode = "soft"
 
   return {
     ref,

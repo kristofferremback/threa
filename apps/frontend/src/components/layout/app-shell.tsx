@@ -375,11 +375,7 @@ export function AppShell({ sidebar, children }: AppShellProps) {
                   ? !isSwiping && "transition-transform duration-200 ease-out"
                   : !isResizing && "transition-[width,box-shadow] duration-200 ease-out"
               )}
-              style={{
-                // Mobile: constant full width (transform handles show/hide)
-                // Desktop: width-based reveal
-                width: isMobile ? "min(85vw, 320px)" : isCollapsed ? "6px" : `${width}px`,
-              }}
+              style={{ width: sidebarWidth }}
               onMouseEnter={handleMouseEnter}
               onMouseLeave={handleMouseLeave}
               role="navigation"
