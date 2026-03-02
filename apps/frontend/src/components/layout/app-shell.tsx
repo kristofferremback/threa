@@ -1,7 +1,7 @@
 import { type ReactNode, useCallback } from "react"
 import { PanelLeftClose, PanelLeft, Command } from "lucide-react"
 import { useSidebar, useQuickSwitcher, useCoordinatedLoading } from "@/contexts"
-import { useResizeDrag, useVisualViewport } from "@/hooks"
+import { useResizeDrag, useVisualViewport, useSidebarSwipe } from "@/hooks"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { TopbarLoadingIndicator } from "./topbar-loading-indicator"
@@ -90,6 +90,7 @@ export function AppShell({ sidebar, children }: AppShellProps) {
     setHovering,
     collapse,
     togglePinned,
+    showPreview,
     startResizing,
     stopResizing,
     setWidth,
@@ -113,6 +114,16 @@ export function AppShell({ sidebar, children }: AppShellProps) {
   const isPinned = state === "pinned"
   const isOpen = isPreview || isPinned
 
+  // Swipe gestures for mobile sidebar (open/close by dragging)
+  // Use showPreview (idempotent) instead of togglePinned (a toggle) to avoid
+  // double-call races on fast swipes collapsing the sidebar right after opening.
+  const { isSwiping, sidebarRef, backdropRef } = useSidebarSwipe({
+    isOpen,
+    isMobile,
+    onOpen: showPreview,
+    onClose: collapse,
+  })
+
   // Handle mouse enter on hover margin or sidebar (disabled on mobile - touch devices don't hover)
   const handleMouseEnter = useCallback(() => {
     if (!isMobile) {
@@ -132,6 +143,17 @@ export function AppShell({ sidebar, children }: AppShellProps) {
     collapse()
   }, [collapse])
 
+  // Derive mobile sidebar/backdrop classes outside JSX to avoid nested ternaries (INV-47)
+  let backdropVisibility: string | undefined
+  if (!isSwiping) {
+    backdropVisibility = isOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+  }
+
+  let sidebarTransform: string | undefined
+  if (!isSwiping) {
+    sidebarTransform = isOpen ? "translate-x-0" : "-translate-x-full"
+  }
+
   return (
     <div
       className="flex w-screen flex-col overflow-hidden"
@@ -142,11 +164,16 @@ export function AppShell({ sidebar, children }: AppShellProps) {
 
       {/* Main area with sidebar and content */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Mobile backdrop - shown when sidebar is open on mobile */}
-        {isMobile && isOpen && (
+        {/* Mobile backdrop - always in DOM so swipe gestures can control opacity imperatively */}
+        {isMobile && (
           <div
-            className="fixed inset-0 z-30 bg-black/50 transition-opacity duration-200"
-            onClick={handleBackdropClick}
+            ref={backdropRef}
+            className={cn(
+              "fixed inset-0 z-30 bg-black/50",
+              !isSwiping && "transition-opacity duration-200",
+              backdropVisibility
+            )}
+            onClick={!isSwiping ? handleBackdropClick : undefined}
             aria-hidden="true"
           />
         )}
@@ -226,17 +253,22 @@ export function AppShell({ sidebar, children }: AppShellProps) {
 
           {/* Sidebar container - clips content for reveal effect */}
           <aside
+            ref={isMobile ? sidebarRef : undefined}
             className={cn(
               "relative flex h-full flex-col border-r bg-background overflow-hidden z-40",
               // Positioning - preview is absolute, or always absolute on mobile
               (isPreview || isMobile) && "absolute left-0 top-0 shadow-[4px_0_24px_hsl(var(--foreground)/0.08)]",
-              // Transitions - disable during resize for smooth dragging
-              !isResizing && "transition-[width,box-shadow] duration-200 ease-out"
+              // Mobile: transform-based positioning (GPU-composited, swipe-compatible)
+              isMobile && sidebarTransform,
+              // Transitions - disable during resize/swipe for smooth dragging
+              isMobile
+                ? !isSwiping && "transition-transform duration-200 ease-out"
+                : !isResizing && "transition-[width,box-shadow] duration-200 ease-out"
             )}
             style={{
-              // On mobile: use 85% of screen width when open, 0 when collapsed
-              width: isMobile ? (isOpen ? "85vw" : "0px") : isCollapsed ? "6px" : `${width}px`,
-              maxWidth: isMobile ? "320px" : undefined,
+              // Mobile: constant full width (transform handles show/hide)
+              // Desktop: width-based reveal
+              width: isMobile ? "min(85vw, 320px)" : isCollapsed ? "6px" : `${width}px`,
             }}
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
@@ -247,9 +279,8 @@ export function AppShell({ sidebar, children }: AppShellProps) {
             <div
               className="h-full flex-1 flex flex-col overflow-hidden"
               style={{
-                width: isMobile ? "85vw" : `${width}px`,
+                width: isMobile ? "min(85vw, 320px)" : `${width}px`,
                 minWidth: isMobile ? undefined : `${width}px`,
-                maxWidth: isMobile ? "320px" : undefined,
               }}
             >
               {sidebar}

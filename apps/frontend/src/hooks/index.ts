@@ -112,3 +112,5 @@ export { useTypeToFocus, focusAtEnd } from "./use-type-to-focus"
 export { useVisualViewport } from "./use-visual-viewport"
 
 export { useIsMobile, MOBILE_BREAKPOINT } from "./use-mobile"
+
+export { useSidebarSwipe } from "./use-sidebar-swipe"
