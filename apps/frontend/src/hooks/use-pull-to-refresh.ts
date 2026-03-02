@@ -37,6 +37,7 @@ export function usePullToRefresh(enabled: boolean) {
     let isRefreshing = false
     let dist = 0
     let crossed = false
+    let reloadTimer: ReturnType<typeof setTimeout> | null = null
 
     function onTouchStart(e: TouchEvent) {
       if (isRefreshing) return
@@ -85,7 +86,7 @@ export function usePullToRefresh(enabled: boolean) {
         isRefreshing = true
         setRefreshing(true)
         setDistance(THRESHOLD)
-        setTimeout(() => window.location.reload(), 400)
+        reloadTimer = setTimeout(() => window.location.reload(), 400)
       } else {
         dist = 0
         setDistance(0)
@@ -102,6 +103,7 @@ export function usePullToRefresh(enabled: boolean) {
       container.removeEventListener("touchmove", onTouchMove)
       container.removeEventListener("touchend", onTouchEnd)
       container.removeEventListener("touchcancel", onTouchEnd)
+      if (reloadTimer) clearTimeout(reloadTimer)
     }
   }, [enabled])
 

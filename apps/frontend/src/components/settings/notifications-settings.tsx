@@ -20,8 +20,10 @@ const NOTIFICATION_DESCRIPTIONS: Record<PrefNotificationLevel, string> = {
   none: "Don't send any notifications",
 }
 
+const TEST_BUTTON_LABELS = { idle: "Test", sent: "Sent!", failed: "Failed" } as const
+
 function TestNotificationButton({ workspaceId }: { workspaceId: string }) {
-  const [label, setLabel] = useState<"idle" | "sent" | "failed">("idle")
+  const [label, setLabel] = useState<keyof typeof TEST_BUTTON_LABELS>("idle")
 
   async function sendTest() {
     try {
@@ -37,7 +39,8 @@ function TestNotificationButton({ workspaceId }: { workspaceId: string }) {
       })
 
       setLabel("sent")
-    } catch {
+    } catch (err) {
+      console.error("[Push] Test notification failed:", err)
       setLabel("failed")
     } finally {
       setTimeout(() => setLabel("idle"), 3000)
@@ -46,7 +49,7 @@ function TestNotificationButton({ workspaceId }: { workspaceId: string }) {
 
   return (
     <Button onClick={sendTest} variant="outline" size="sm">
-      {label === "sent" ? "Sent!" : label === "failed" ? "Failed" : "Test"}
+      {TEST_BUTTON_LABELS[label]}
     </Button>
   )
 }
