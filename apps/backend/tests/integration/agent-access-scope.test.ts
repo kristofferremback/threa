@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { Pool } from "pg"
-import { StreamTypes, Visibilities } from "@threa/types"
+import { DM_PARTICIPANT_COUNT, StreamTypes, Visibilities } from "@threa/types"
 import { computeAgentAccessSpec } from "../../src/features/agents"
 import { SearchRepository } from "../../src/features/search"
 import { StreamMemberRepository, StreamRepository } from "../../src/features/streams"
@@ -125,9 +125,11 @@ describe("Agent Access Scope", () => {
     })
   })
 
-  test("user_intersection fails closed when constructed with fewer than two users", async () => {
+  test("user_intersection fails closed unless constructed with exactly two distinct users", async () => {
     await withTestTransaction(pool, async (client) => {
       const ownerWorkosUserId = userId()
+      const secondWorkosUserId = userId()
+      const thirdWorkosUserId = userId()
       const testWorkspaceId = workspaceId()
 
       await WorkspaceRepository.insert(client, {
@@ -138,6 +140,10 @@ describe("Agent Access Scope", () => {
       })
 
       const ownerMember = await addTestMember(client, testWorkspaceId, ownerWorkosUserId)
+      const secondMember = await addTestMember(client, testWorkspaceId, secondWorkosUserId)
+      const thirdMember = await addTestMember(client, testWorkspaceId, thirdWorkosUserId)
+
+      const expectedError = `user_intersection access spec requires exactly ${DM_PARTICIPANT_COUNT} distinct users`
 
       await expect(
         SearchRepository.getAccessibleStreamsForAgent(
@@ -145,7 +151,23 @@ describe("Agent Access Scope", () => {
           { type: "user_intersection", userIds: [ownerMember.id] },
           testWorkspaceId
         )
-      ).rejects.toThrow("user_intersection access spec requires at least two users")
+      ).rejects.toThrow(expectedError)
+
+      await expect(
+        SearchRepository.getAccessibleStreamsForAgent(
+          client,
+          { type: "user_intersection", userIds: [ownerMember.id, ownerMember.id] },
+          testWorkspaceId
+        )
+      ).rejects.toThrow(expectedError)
+
+      await expect(
+        SearchRepository.getAccessibleStreamsForAgent(
+          client,
+          { type: "user_intersection", userIds: [ownerMember.id, secondMember.id, thirdMember.id] },
+          testWorkspaceId
+        )
+      ).rejects.toThrow(expectedError)
     })
   })
 })
