@@ -69,6 +69,60 @@ function Topbar({ isPinned, onToggleSidebar }: TopbarProps) {
   )
 }
 
+// Pull indicator styling per mode — INV-47
+const pullModeConfig = {
+  idle: { bg: "bg-muted/50", text: "text-muted-foreground", label: "Pull to refresh" },
+  soft: { bg: "bg-muted/50", text: "text-muted-foreground", label: "Release to refresh" },
+  hard: { bg: "bg-orange-500/15", text: "text-orange-500", label: "Release to reload" },
+} as const
+
+interface PullIndicatorProps {
+  distance: number
+  progress: number
+  pulling: boolean
+  refreshing: boolean
+  mode: keyof typeof pullModeConfig
+}
+
+function PullIndicator({ distance, progress, pulling, refreshing, mode }: PullIndicatorProps) {
+  if (distance <= 5) return null
+  const config = pullModeConfig[mode]
+
+  return (
+    <>
+      <div
+        className={cn("flex items-center justify-center rounded-full", refreshing ? "bg-primary/10" : config.bg)}
+        style={{
+          width: `${28 + progress * 8}px`,
+          height: `${28 + progress * 8}px`,
+          transition: pulling ? "none" : "all 0.3s ease-out",
+        }}
+      >
+        <RefreshCw
+          className={cn("h-3.5 w-3.5", refreshing ? "text-primary animate-spin" : config.text)}
+          style={
+            refreshing
+              ? undefined
+              : {
+                  opacity: 0.4 + progress * 0.6,
+                  transform: `rotate(${progress * 270}deg) scale(${0.7 + progress * 0.3})`,
+                }
+          }
+        />
+      </div>
+      <span
+        className={cn("text-xs font-medium", config.text)}
+        style={{
+          opacity: 0.4 + progress * 0.6,
+          transition: pulling ? "none" : "opacity 0.2s ease-out",
+        }}
+      >
+        {config.label}
+      </span>
+    </>
+  )
+}
+
 interface AppShellProps {
   sidebar: ReactNode
   children: ReactNode
@@ -190,14 +244,6 @@ export function AppShell({ sidebar, children }: AppShellProps) {
     sidebarTransform = isOpen ? "translate-x-0" : "-translate-x-full"
   }
 
-  // Pull indicator styling per mode — INV-47
-  const pullModeConfig = {
-    idle: { bg: "bg-muted/50", text: "text-muted-foreground", label: "Pull to refresh" },
-    soft: { bg: "bg-muted/50", text: "text-muted-foreground", label: "Release to refresh" },
-    hard: { bg: "bg-orange-500/15", text: "text-orange-500", label: "Release to reload" },
-  } as const
-  const pullConfig = pullModeConfig[pullMode]
-
   return (
     <div className="flex w-screen flex-col overflow-hidden" style={{ height: "var(--viewport-height, 100dvh)" }}>
       {/* Topbar - spans full width */}
@@ -211,42 +257,13 @@ export function AppShell({ sidebar, children }: AppShellProps) {
           className="absolute inset-x-0 top-0 z-10 flex items-center justify-center gap-2 pointer-events-none"
           style={{ height: `${pullDistance}px` }}
         >
-          {pullDistance > 5 && (
-            <>
-              <div
-                className={cn(
-                  "flex items-center justify-center rounded-full",
-                  refreshing ? "bg-primary/10" : pullConfig.bg
-                )}
-                style={{
-                  width: `${28 + pullProgress * 8}px`,
-                  height: `${28 + pullProgress * 8}px`,
-                  transition: pulling ? "none" : "all 0.3s ease-out",
-                }}
-              >
-                <RefreshCw
-                  className={cn("h-3.5 w-3.5", refreshing ? "text-primary animate-spin" : pullConfig.text)}
-                  style={
-                    refreshing
-                      ? undefined
-                      : {
-                          opacity: 0.4 + pullProgress * 0.6,
-                          transform: `rotate(${pullProgress * 270}deg) scale(${0.7 + pullProgress * 0.3})`,
-                        }
-                  }
-                />
-              </div>
-              <span
-                className={cn("text-xs font-medium", pullConfig.text)}
-                style={{
-                  opacity: 0.4 + pullProgress * 0.6,
-                  transition: pulling ? "none" : "opacity 0.2s ease-out",
-                }}
-              >
-                {pullConfig.label}
-              </span>
-            </>
-          )}
+          <PullIndicator
+            distance={pullDistance}
+            progress={pullProgress}
+            pulling={pulling}
+            refreshing={refreshing}
+            mode={pullMode}
+          />
         </div>
 
         {/* Main area with sidebar and content — translates down during pull */}
