@@ -26,27 +26,29 @@ export function getPageActivityState(): PageActivityState {
 }
 
 export function usePageActivity(): PageActivityState {
-  const [pageActivity, setPageActivity] = useState(getPageActivityState)
+  const initial = getPageActivityState()
+  const [isVisible, setIsVisible] = useState(initial.isVisible)
+  const [isFocused, setIsFocused] = useState(initial.isFocused)
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof document === "undefined") return
 
-    const updatePageActivity = () => {
-      setPageActivity(getPageActivityState())
-    }
+    const updateVisibility = () => setIsVisible(document.visibilityState === "visible")
+    const updateFocus = () => setIsFocused(document.hasFocus())
 
-    updatePageActivity()
+    updateVisibility()
+    updateFocus()
 
-    window.addEventListener("focus", updatePageActivity)
-    window.addEventListener("blur", updatePageActivity)
-    document.addEventListener("visibilitychange", updatePageActivity)
+    document.addEventListener("visibilitychange", updateVisibility)
+    window.addEventListener("focus", updateFocus)
+    window.addEventListener("blur", updateFocus)
 
     return () => {
-      window.removeEventListener("focus", updatePageActivity)
-      window.removeEventListener("blur", updatePageActivity)
-      document.removeEventListener("visibilitychange", updatePageActivity)
+      document.removeEventListener("visibilitychange", updateVisibility)
+      window.removeEventListener("focus", updateFocus)
+      window.removeEventListener("blur", updateFocus)
     }
   }, [])
 
-  return pageActivity
+  return { isVisible, isFocused, isActive: isVisible && isFocused }
 }

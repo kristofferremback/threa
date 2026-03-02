@@ -164,13 +164,21 @@ export function SocketProvider({ workspaceId, children }: SocketProviderProps) {
     const previousPageActivity = previousPageActivityRef.current
     const gainedFocus = !previousPageActivity.isFocused && pageActivity.isFocused
     const becameVisible = !previousPageActivity.isVisible && pageActivity.isVisible
+
+    if (!socket || status !== "connected") {
+      previousPageActivityRef.current = pageActivity
+      return
+    }
+
     previousPageActivityRef.current = pageActivity
 
-    if (!socket || status !== "connected") return
     if (!gainedFocus && !becameVisible) return
 
+    // Focus gains always emit — bypassing the throttle prevents a becameVisible
+    // heartbeat (focused=false) from blocking the closely-following gainedFocus
+    // heartbeat (focused=true) via the 10s throttle window.
     const now = Date.now()
-    if (now - lastInteractionHeartbeatRef.current > 10_000) {
+    if (gainedFocus || now - lastInteractionHeartbeatRef.current > 10_000) {
       lastInteractionHeartbeatRef.current = now
       socket.emit("heartbeat", { focused: pageActivity.isFocused })
     }
