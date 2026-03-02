@@ -48,11 +48,16 @@ export function UserSetupPage() {
 
       const controller = new AbortController()
       slugCheckAbort.current = controller
+      const timeout = window.setTimeout(() => {
+        if (slugCheckAbort.current !== controller) return
+        setSlugStatus("idle")
+        controller.abort()
+      }, 5000)
 
       setSlugStatus("checking")
 
       workspacesApi
-        .checkSlugAvailable(workspaceId, slugToCheck)
+        .checkSlugAvailable(workspaceId, slugToCheck, controller.signal)
         .then((available) => {
           if (controller.signal.aborted || slugCheckAbort.current !== controller) return
           setSlugStatus(available ? "available" : "taken")
@@ -60,6 +65,12 @@ export function UserSetupPage() {
         .catch(() => {
           if (controller.signal.aborted || slugCheckAbort.current !== controller) return
           setSlugStatus("idle")
+        })
+        .finally(() => {
+          window.clearTimeout(timeout)
+          if (slugCheckAbort.current === controller) {
+            slugCheckAbort.current = null
+          }
         })
     },
     [workspaceId]
@@ -100,7 +111,6 @@ export function UserSetupPage() {
   }, [])
 
   const trimmedSlug = slug.trim()
-
   const setupMutation = useMutation({
     mutationFn: () =>
       workspacesApi.completeUserSetup(workspaceId!, {
@@ -117,7 +127,8 @@ export function UserSetupPage() {
   if (!workspaceId) return null
 
   const isSlugBlank = trimmedSlug.length === 0
-  const canSubmit = (isSlugBlank || (slugStatus !== "taken" && slugStatus !== "checking")) && !setupMutation.isPending
+  const isManuallyChosenSlugTaken = slugManuallyEdited && !isSlugBlank && slugStatus === "taken"
+  const canSubmit = !isManuallyChosenSlugTaken && !setupMutation.isPending
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background">

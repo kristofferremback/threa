@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { MemoryRouter, Route, Routes, useParams } from "react-router-dom"
-import { render, screen } from "@/test"
+import { render, screen, userEvent } from "@/test"
 import { WorkspaceSelectPage } from "./workspace-select"
 import type { Workspace } from "@threa/types"
 import { ApiError } from "@/api/client"
@@ -110,6 +110,33 @@ describe("WorkspaceSelectPage", () => {
     expect(screen.getByText("Select a workspace to continue")).toBeInTheDocument()
     expect(screen.getByText("Invited WS")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Accept" })).toBeInTheDocument()
+  })
+
+  it("should keep the setup navigation when accepting an invitation updates the workspace list immediately", async () => {
+    let accepted = false
+
+    mockUseWorkspaces.mockImplementation(() => ({
+      workspaces: [makeWorkspace("workspace_1", "Solo")],
+      pendingInvitations: accepted
+        ? []
+        : [{ id: "inv_1", workspaceId: "workspace_1", workspaceName: "Solo", expiresAt: "2026-12-01T00:00:00.000Z" }],
+      isLoading: false,
+      error: null,
+    }))
+
+    mockUseAcceptInvitation.mockReturnValue({
+      mutate: (_invitationId: string, options?: { onSuccess?: (result: { workspaceId: string }) => void }) => {
+        accepted = true
+        options?.onSuccess?.({ workspaceId: "workspace_1" })
+      },
+      isPending: false,
+    })
+
+    renderPage()
+
+    await userEvent.click(screen.getByRole("button", { name: "Accept" }))
+
+    expect(await screen.findByTestId("setup-route")).toBeInTheDocument()
   })
 
   it("should show workspace picker when user has multiple workspaces", () => {

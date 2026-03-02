@@ -63,33 +63,36 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
 
 // HTTP method helpers
 export const api = {
-  get<T>(path: string): Promise<T> {
-    return apiFetch<T>(path, { method: "GET" })
+  get<T>(path: string, options?: RequestInit): Promise<T> {
+    return apiFetch<T>(path, { ...options, method: "GET" })
   },
 
-  post<T>(path: string, body?: unknown): Promise<T> {
+  post<T>(path: string, body?: unknown, options?: RequestInit): Promise<T> {
     return apiFetch<T>(path, {
+      ...options,
       method: "POST",
       body: body ? JSON.stringify(body) : undefined,
     })
   },
 
-  patch<T>(path: string, body?: unknown): Promise<T> {
+  patch<T>(path: string, body?: unknown, options?: RequestInit): Promise<T> {
     return apiFetch<T>(path, {
+      ...options,
       method: "PATCH",
       body: body ? JSON.stringify(body) : undefined,
     })
   },
 
-  put<T>(path: string, body?: unknown): Promise<T> {
+  put<T>(path: string, body?: unknown, options?: RequestInit): Promise<T> {
     return apiFetch<T>(path, {
+      ...options,
       method: "PUT",
       body: body ? JSON.stringify(body) : undefined,
     })
   },
 
-  delete<T>(path: string): Promise<T> {
-    return apiFetch<T>(path, { method: "DELETE" })
+  delete<T>(path: string, options?: RequestInit): Promise<T> {
+    return apiFetch<T>(path, { ...options, method: "DELETE" })
   },
 }
 

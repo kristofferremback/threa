@@ -167,6 +167,40 @@ describe("useDraftComposer", () => {
 
       expect(mockClearAttachments).toHaveBeenCalled()
     })
+
+    it("should not persist stale uploaded attachments after a scope change until attachments clear", () => {
+      mockPendingAttachments = [
+        { id: "attach_1", filename: "test.txt", mimeType: "text/plain", sizeBytes: 100, status: "uploaded" },
+      ]
+
+      const { rerender } = renderHook(({ scopeId }) => useDraftComposer({ workspaceId, draftKey, scopeId }), {
+        initialProps: { scopeId: "stream_1" },
+      })
+
+      mockAddDraftAttachment.mockClear()
+
+      rerender({ scopeId: "stream_2" })
+      rerender({ scopeId: "stream_2" })
+
+      expect(mockAddDraftAttachment).not.toHaveBeenCalled()
+
+      mockPendingAttachments = []
+      rerender({ scopeId: "stream_2" })
+
+      expect(mockAddDraftAttachment).not.toHaveBeenCalled()
+
+      mockPendingAttachments = [
+        { id: "attach_2", filename: "fresh.txt", mimeType: "text/plain", sizeBytes: 200, status: "uploaded" },
+      ]
+      rerender({ scopeId: "stream_2" })
+
+      expect(mockAddDraftAttachment).toHaveBeenCalledWith({
+        id: "attach_2",
+        filename: "fresh.txt",
+        mimeType: "text/plain",
+        sizeBytes: 200,
+      })
+    })
   })
 
   describe("handleContentChange", () => {
