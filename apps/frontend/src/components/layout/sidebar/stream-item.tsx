@@ -33,8 +33,8 @@ export function UrgencyStrip({ urgency }: { urgency: UrgencyLevel }) {
         <div
           className="absolute inset-y-0 left-0 pointer-events-none"
           style={{
-            width: "2.5rem",
-            background: `linear-gradient(to right, ${color.replace(")", " / 0.22)")}, ${color.replace(")", " / 0.06)")} 40%, transparent)`,
+            width: "4rem",
+            background: `linear-gradient(to right, ${color.replace(")", " / 0.4)")}, ${color.replace(")", " / 0.15)")} 50%, transparent)`,
           }}
         />
       )}
