@@ -115,9 +115,11 @@ export function StreamContent({
     [wsBootstrap?.users, user?.id]
   )
 
-  // Find the most recent non-deleted message sent by the current user
-  const lastOwnMessageId = useMemo(() => {
-    if (!currentWorkspaceUserId) return null
+  const clearPendingEdit = useCallback(() => setPendingEditMessageId(null), [])
+
+  // Lazy scan — only runs when ArrowUp is pressed, not on every socket event
+  const triggerEditLastMessage = useCallback(() => {
+    if (!currentWorkspaceUserId) return
     for (let i = events.length - 1; i >= 0; i--) {
       const event = events[i]
       if (event.eventType !== "message_created") continue
@@ -125,17 +127,10 @@ export function StreamContent({
       if (event.actorId !== currentWorkspaceUserId) continue
       const payload = event.payload as { messageId?: string; deletedAt?: string }
       if (payload.deletedAt || !payload.messageId) continue
-      return payload.messageId
+      setPendingEditMessageId(payload.messageId)
+      return
     }
-    return null
   }, [events, currentWorkspaceUserId])
-
-  const clearPendingEdit = useCallback(() => setPendingEditMessageId(null), [])
-
-  const triggerEditLastMessage = useCallback(() => {
-    if (!lastOwnMessageId) return
-    setPendingEditMessageId(lastOwnMessageId)
-  }, [lastOwnMessageId])
 
   const editLastMessageCtx = useMemo(
     () => ({ pendingEditMessageId, clearPendingEdit }),

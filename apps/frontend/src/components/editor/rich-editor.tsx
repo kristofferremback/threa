@@ -270,8 +270,13 @@ export function RichEditor({
       },
       handleKeyDown: (_view, event) => {
         // ArrowUp in empty editor: edit the last message sent by the current user
-        if (event.key === "ArrowUp" && editorRef.current?.isEmpty && !isSuggestionActive(editorRef.current)) {
-          onEditLastMessageRef.current?.()
+        if (
+          event.key === "ArrowUp" &&
+          editorRef.current?.isEmpty &&
+          !isSuggestionActive(editorRef.current) &&
+          onEditLastMessageRef.current
+        ) {
+          onEditLastMessageRef.current()
           return true
         }
         // Cmd/Ctrl+Enter: always send (regardless of mode or active suggestions)

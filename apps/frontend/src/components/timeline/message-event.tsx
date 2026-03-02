@@ -219,7 +219,7 @@ function SentMessageEvent({
     if (pendingEditMessageId !== payload.messageId) return
     setIsEditing(true)
     editLastMessageCtx?.clearPendingEdit()
-  }, [pendingEditMessageId, payload.messageId, editLastMessageCtx])
+  }, [pendingEditMessageId, payload.messageId])
 
   // Scroll to this message when highlighted
   useEffect(() => {
