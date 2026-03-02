@@ -187,9 +187,9 @@ export class WorkspaceAgent {
         invokingUserId,
       })
 
-      // For DMs, we need to pass participant IDs
+      // For DMs, retrieval must stay within streams all participants can access.
       const effectiveAccessSpec: AgentAccessSpec =
-        stream.type === "dm" && dmParticipantIds ? { type: "user_union", userIds: dmParticipantIds } : accessSpec
+        stream.type === "dm" && dmParticipantIds ? { type: "user_intersection", userIds: dmParticipantIds } : accessSpec
 
       // Get accessible streams for searches
       const accessibleStreamIds = await SearchRepository.getAccessibleStreamsForAgent(

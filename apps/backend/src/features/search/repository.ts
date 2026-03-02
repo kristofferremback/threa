@@ -405,7 +405,7 @@ export const SearchRepository = {
    * - user_full_access: Everything the specified user can access
    * - public_only: Only public streams
    * - public_plus_stream: Public streams + a specific stream and its threads
-   * - user_union: Union of what multiple users can access (for DMs)
+   * - user_intersection: Streams all specified users can access (for DMs)
    */
   async getAccessibleStreamsForAgent(
     db: Querier,
@@ -436,8 +436,8 @@ export const SearchRepository = {
         return [...new Set([...publicIds, ...streamTreeIds])]
       }
 
-      case "user_union": {
-        // Get accessible streams for each member and union them
+      case "user_intersection": {
+        // Get accessible streams for each participant, then keep only shared streams.
         const allResults = await Promise.all(
           spec.userIds.map((userId) =>
             this.getAccessibleStreamsWithMembers(db, {
@@ -449,8 +449,14 @@ export const SearchRepository = {
           )
         )
 
-        // Union all results
-        return [...new Set(allResults.flat())]
+        if (allResults.length === 0) {
+          return []
+        }
+
+        const [firstResult, ...otherResults] = allResults
+        const otherSets = otherResults.map((result) => new Set(result))
+
+        return [...new Set(firstResult)].filter((streamId) => otherSets.every((resultSet) => resultSet.has(streamId)))
       }
     }
   },

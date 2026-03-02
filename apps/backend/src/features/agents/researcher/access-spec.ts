@@ -13,14 +13,14 @@ import { StreamMemberRepository } from "../../streams"
  * Examples:
  * - Private scratchpad: agent sees everything the user can see
  * - Public channel: agent sees only public content
- * - DM: agent sees union of all participants' access
+ * - DM: agent sees only streams all participants can access
  * - Private channel: agent sees public content + current channel
  */
 export type AgentAccessSpec =
   | { type: "user_full_access"; userId: string }
   | { type: "public_only" }
   | { type: "public_plus_stream"; streamId: string }
-  | { type: "user_union"; userIds: string[] }
+  | { type: "user_intersection"; userIds: string[] }
 
 export interface ComputeAccessSpecParams {
   stream: Stream
@@ -35,7 +35,7 @@ export interface ComputeAccessSpecParams {
  * - Public scratchpad: Only public streams
  * - Private channel: Public streams + this channel (and its threads)
  * - Public channel: Only public streams
- * - DM: Union of all DM participants' access
+ * - DM: Intersection of all DM participants' access
  * - Thread: Inherits from root stream
  */
 export async function computeAgentAccessSpec(db: Querier, params: ComputeAccessSpecParams): Promise<AgentAccessSpec> {
@@ -65,10 +65,10 @@ export async function computeAgentAccessSpec(db: Querier, params: ComputeAccessS
         : { type: "public_only" }
 
     case StreamTypes.DM: {
-      // DM: Union of all participants' access
+      // DM: only streams every participant can access
       const members = await StreamMemberRepository.list(db, { streamId: effectiveStream.id })
       const userIds = members.map((m) => m.memberId)
-      return { type: "user_union", userIds }
+      return { type: "user_intersection", userIds }
     }
 
     default:
@@ -87,8 +87,8 @@ export function describeAccessSpec(spec: AgentAccessSpec): string {
       return "public streams only"
     case "public_plus_stream":
       return `public streams + stream ${spec.streamId}`
-    case "user_union":
-      return `union of ${spec.userIds.length} users' access`
+    case "user_intersection":
+      return `intersection of ${spec.userIds.length} users' access`
   }
 }
 
