@@ -67,6 +67,9 @@ export async function computeAgentAccessSpec(db: Querier, params: ComputeAccessS
     case StreamTypes.DM: {
       // DM: only streams every participant can access
       const members = await StreamMemberRepository.list(db, { streamId: effectiveStream.id })
+      if (members.length !== 2) {
+        throw new Error(`DM access spec requires exactly 2 members, got ${members.length} for ${effectiveStream.id}`)
+      }
       const userIds = members.map((m) => m.memberId)
       return { type: "user_intersection", userIds }
     }

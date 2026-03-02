@@ -438,6 +438,10 @@ export const SearchRepository = {
 
       case "user_intersection": {
         // Get accessible streams for each participant, then keep only shared streams.
+        if (spec.userIds.length < 2) {
+          throw new Error("user_intersection access spec requires at least two users")
+        }
+
         const allResults = await Promise.all(
           spec.userIds.map((userId) =>
             this.getAccessibleStreamsWithMembers(db, {

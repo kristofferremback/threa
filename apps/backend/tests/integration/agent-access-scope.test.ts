@@ -121,13 +121,31 @@ describe("Agent Access Scope", () => {
         testWorkspaceId
       )
 
-      expect(accessibleStreamIds).toHaveLength(3)
-      expect(accessibleStreamIds).toContain(sharedDmId)
-      expect(accessibleStreamIds).toContain(sharedPrivateChannelId)
-      expect(accessibleStreamIds).toContain(publicChannelId)
-      expect(accessibleStreamIds).not.toContain(ownerScratchpadId)
-      expect(accessibleStreamIds).not.toContain(secondScratchpadId)
-      expect(accessibleStreamIds).not.toContain(ownerOutsiderDmId)
+      expect(new Set(accessibleStreamIds)).toEqual(new Set([sharedDmId, sharedPrivateChannelId, publicChannelId]))
+    })
+  })
+
+  test("user_intersection fails closed when constructed with fewer than two users", async () => {
+    await withTestTransaction(pool, async (client) => {
+      const ownerWorkosUserId = userId()
+      const testWorkspaceId = workspaceId()
+
+      await WorkspaceRepository.insert(client, {
+        id: testWorkspaceId,
+        name: "Malformed Agent Access Scope Workspace",
+        slug: `malformed-agent-access-scope-${testWorkspaceId}`,
+        createdBy: ownerWorkosUserId,
+      })
+
+      const ownerMember = await addTestMember(client, testWorkspaceId, ownerWorkosUserId)
+
+      await expect(
+        SearchRepository.getAccessibleStreamsForAgent(
+          client,
+          { type: "user_intersection", userIds: [ownerMember.id] },
+          testWorkspaceId
+        )
+      ).rejects.toThrow("user_intersection access spec requires at least two users")
     })
   })
 })
