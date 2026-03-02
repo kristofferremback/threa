@@ -76,7 +76,7 @@ test.describe("New Channel Socket Subscription", () => {
 
     // Navigate to workspace so workspace member middleware picks up
     await userB.page.goto(`/w/${workspaceId}`)
-    await expect(userB.page.getByText("Select a stream from the sidebar")).toBeVisible({ timeout: 10000 })
+    await userB.page.waitForURL(/\/w\//, { timeout: 10000 })
 
     // Join the channel via dev endpoint
     const joinStreamRes = await userB.page.request.post(`/api/dev/workspaces/${workspaceId}/streams/${streamId}/join`)
@@ -160,7 +160,7 @@ test.describe("New Channel Socket Subscription", () => {
       data: { role: "user" },
     })
     await userB.page.goto(`/w/${workspaceId}`)
-    await expect(userB.page.getByText("Select a stream from the sidebar")).toBeVisible({ timeout: 10000 })
+    await userB.page.waitForURL(/\/w\//, { timeout: 10000 })
 
     await userB.page.request.post(`/api/dev/workspaces/${workspaceId}/streams/${streamId}/join`)
 

@@ -1,4 +1,5 @@
-import { createBrowserRouter, Navigate } from "react-router-dom"
+import { useEffect, useRef } from "react"
+import { createBrowserRouter, Navigate, useParams } from "react-router-dom"
 import { LoginPage } from "@/pages/login"
 import { WorkspaceSelectPage } from "@/pages/workspace-select"
 import { WorkspaceLayout } from "@/pages/workspace-layout"
@@ -9,6 +10,8 @@ import { ActivityPage } from "@/pages/activity"
 import { AIUsageAdminPage } from "@/pages/ai-usage-admin"
 import { UserSetupPage } from "@/pages/user-setup"
 import { ErrorBoundary } from "@/components/error-boundary"
+import { useSidebar } from "@/contexts"
+import { useLastStream } from "@/hooks"
 
 export const router = createBrowserRouter([
   {
@@ -66,8 +69,24 @@ export const router = createBrowserRouter([
   },
 ])
 
-// Simple workspace home that redirects to first available stream
+/** Workspace index route — redirects to a stream or opens the sidebar. */
 function WorkspaceHome() {
+  const { workspaceId } = useParams<{ workspaceId: string }>()
+  const { state, togglePinned } = useSidebar()
+  const { redirectStreamId, shouldOpenSidebar } = useLastStream(workspaceId ?? "")
+  const sidebarOpenedRef = useRef(false)
+
+  useEffect(() => {
+    if (shouldOpenSidebar && state === "collapsed" && !sidebarOpenedRef.current) {
+      sidebarOpenedRef.current = true
+      togglePinned()
+    }
+  }, [shouldOpenSidebar, state, togglePinned])
+
+  if (redirectStreamId && workspaceId) {
+    return <Navigate to={`/w/${workspaceId}/s/${redirectStreamId}`} replace />
+  }
+
   return (
     <div className="flex h-full items-center justify-center text-muted-foreground">
       <p>Select a stream from the sidebar</p>

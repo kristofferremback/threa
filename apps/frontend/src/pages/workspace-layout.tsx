@@ -27,6 +27,7 @@ import {
   useMentionables,
   useReconnectBootstrap,
   usePendingMessageRetry,
+  usePersistLastStream,
 } from "@/hooks"
 import { QuickSwitcher, type QuickSwitcherMode } from "@/components/quick-switcher"
 import { SettingsDialog } from "@/components/settings"
@@ -115,6 +116,8 @@ export function WorkspaceLayout() {
   const { data: bootstrap, error: workspaceError } = useWorkspaceBootstrap(workspaceId ?? "")
   const { mentionables } = useMentionables()
   const streams = useMemo(() => bootstrap?.streams ?? [], [bootstrap])
+
+  usePersistLastStream(workspaceId, streamId)
 
   useEffect(() => {
     if (
