@@ -1,7 +1,9 @@
 import { type ReactNode, useCallback } from "react"
+import { useQueryClient } from "@tanstack/react-query"
+import { useParams } from "react-router-dom"
 import { PanelLeftClose, PanelLeft, Command, RefreshCw } from "lucide-react"
 import { useSidebar, useQuickSwitcher, useCoordinatedLoading } from "@/contexts"
-import { useResizeDrag, useVisualViewport, useSidebarSwipe, usePullToRefresh } from "@/hooks"
+import { useResizeDrag, useVisualViewport, useSidebarSwipe, usePullToRefresh, workspaceKeys } from "@/hooks"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { TopbarLoadingIndicator } from "./topbar-loading-indicator"
@@ -109,17 +111,34 @@ export function AppShell({ sidebar, children }: AppShellProps) {
   // returns a boolean for conditional rendering (safe-area padding).
   const isKeyboardOpen = useVisualViewport(isMobile)
 
+  // Soft refresh: invalidate workspace + stream bootstraps (same pattern as reconnect bootstrap)
+  const queryClient = useQueryClient()
+  const { workspaceId } = useParams<{ workspaceId: string }>()
+
+  const handleSoftRefresh = useCallback(async () => {
+    if (!workspaceId) return
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: workspaceKeys.bootstrap(workspaceId) }),
+      queryClient.invalidateQueries({ queryKey: ["streams", "bootstrap", workspaceId] }),
+    ])
+  }, [queryClient, workspaceId])
+
   // Pull-to-refresh for mobile (Chrome disables built-in refresh in standalone PWA;
   // our global overscroll-behavior: none disables it in regular mobile browsers too).
   // Single instance wraps everything below the topbar so pulling anywhere (sidebar
   // or main content) translates the entire content area down uniformly.
+  // Light pull = soft refresh (re-fetch data), heavy pull = hard refresh (page reload).
   const {
     ref: pullRef,
     distance: pullDistance,
     progress: pullProgress,
     pulling,
     refreshing,
-  } = usePullToRefresh(isMobile && !isKeyboardOpen)
+    mode: pullMode,
+  } = usePullToRefresh({
+    enabled: isMobile && !isKeyboardOpen,
+    onRefresh: handleSoftRefresh,
+  })
 
   const isCollapsed = state === "collapsed"
   const isPreview = state === "preview"
@@ -179,6 +198,14 @@ export function AppShell({ sidebar, children }: AppShellProps) {
     sidebarTransform = isOpen ? "translate-x-0" : "-translate-x-full"
   }
 
+  // Pull indicator styling per mode (avoids nested ternaries in JSX — INV-47)
+  const pullModeConfig = {
+    idle: { bg: "bg-muted/50", text: "text-muted-foreground", label: "Pull to refresh" },
+    soft: { bg: "bg-muted/50", text: "text-muted-foreground", label: "Release to refresh" },
+    hard: { bg: "bg-orange-500/15", text: "text-orange-500", label: "Release to reload" },
+  } as const
+  const pullConfig = pullModeConfig[pullMode]
+
   return (
     <div className="flex w-screen flex-col overflow-hidden" style={{ height: "var(--viewport-height, 100dvh)" }}>
       {/* Topbar - spans full width */}
@@ -193,28 +220,39 @@ export function AppShell({ sidebar, children }: AppShellProps) {
           style={{ height: `${pullDistance}px` }}
         >
           {pullDistance > 5 && (
-            <div
-              className={cn(
-                "flex items-center justify-center rounded-full",
-                refreshing ? "bg-primary/10" : "bg-muted/50"
-              )}
-              style={{
-                width: `${28 + pullProgress * 8}px`,
-                height: `${28 + pullProgress * 8}px`,
-                transition: pulling ? "none" : "all 0.3s ease-out",
-              }}
-            >
-              <RefreshCw
-                className={cn("h-3.5 w-3.5", refreshing ? "text-primary animate-spin" : "text-muted-foreground")}
-                style={
-                  refreshing
-                    ? undefined
-                    : {
-                        opacity: 0.4 + pullProgress * 0.6,
-                        transform: `rotate(${pullProgress * 270}deg) scale(${0.7 + pullProgress * 0.3})`,
-                      }
-                }
-              />
+            <div className="flex items-center gap-2" style={{ transition: pulling ? "none" : "all 0.3s ease-out" }}>
+              <div
+                className={cn(
+                  "flex items-center justify-center rounded-full",
+                  refreshing ? "bg-primary/10" : pullConfig.bg
+                )}
+                style={{
+                  width: `${28 + pullProgress * 8}px`,
+                  height: `${28 + pullProgress * 8}px`,
+                  transition: pulling ? "none" : "all 0.3s ease-out",
+                }}
+              >
+                <RefreshCw
+                  className={cn("h-3.5 w-3.5", refreshing ? "text-primary animate-spin" : pullConfig.text)}
+                  style={
+                    refreshing
+                      ? undefined
+                      : {
+                          opacity: 0.4 + pullProgress * 0.6,
+                          transform: `rotate(${pullProgress * 270}deg) scale(${0.7 + pullProgress * 0.3})`,
+                        }
+                  }
+                />
+              </div>
+              <span
+                className={cn("text-xs font-medium", pullConfig.text)}
+                style={{
+                  opacity: 0.4 + pullProgress * 0.6,
+                  transition: pulling ? "none" : "opacity 0.2s ease-out",
+                }}
+              >
+                {pullConfig.label}
+              </span>
             </div>
           )}
         </div>

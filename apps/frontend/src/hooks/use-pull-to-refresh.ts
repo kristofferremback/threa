@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from "react"
 
-const THRESHOLD = 80
-const MAX_PULL = 128
+const SOFT_THRESHOLD = 70
+const HARD_THRESHOLD = 120
+const MAX_PULL = 150
 const RESISTANCE = 0.4
+
+export type PullMode = "idle" | "soft" | "hard"
 
 /** Find the nearest ancestor with vertical overflow scrolling. */
 function findScrollParent(el: HTMLElement | null): HTMLElement | null {
@@ -16,14 +19,25 @@ function findScrollParent(el: HTMLElement | null): HTMLElement | null {
   return null
 }
 
-export function usePullToRefresh(enabled: boolean) {
+interface PullToRefreshOptions {
+  enabled: boolean
+  /** Callback for soft refresh (re-fetch data). Hard refresh always reloads the page. */
+  onRefresh?: () => Promise<void>
+}
+
+export function usePullToRefresh({ enabled, onRefresh }: PullToRefreshOptions) {
   const ref = useRef<HTMLDivElement>(null)
   const [distance, setDistance] = useState(0)
   const [refreshing, setRefreshing] = useState(false)
 
+  // Stable ref for the callback to avoid re-running the touch-listener effect
+  const onRefreshRef = useRef(onRefresh)
+  useEffect(() => {
+    onRefreshRef.current = onRefresh
+  })
+
   useEffect(() => {
     if (!enabled) {
-      // Reset visual state when disabled mid-pull (e.g. keyboard opens during gesture)
       setDistance(0)
       setRefreshing(false)
       return
@@ -36,7 +50,8 @@ export function usePullToRefresh(enabled: boolean) {
     let pulling = false
     let isRefreshing = false
     let dist = 0
-    let crossed = false
+    let crossedSoft = false
+    let crossedHard = false
     let reloadTimer: ReturnType<typeof setTimeout> | null = null
 
     function onTouchStart(e: TouchEvent) {
@@ -44,7 +59,8 @@ export function usePullToRefresh(enabled: boolean) {
       startY = e.touches[0].clientY
       scrollEl = findScrollParent(e.target as HTMLElement)
       pulling = false
-      crossed = false
+      crossedSoft = false
+      crossedHard = false
     }
 
     function onTouchMove(e: TouchEvent) {
@@ -63,9 +79,7 @@ export function usePullToRefresh(enabled: boolean) {
       // Let the scroll container handle it if not at the top
       if (scrollEl && scrollEl.scrollTop > 1) return
 
-      // Own the gesture immediately — prevent native scroll as soon as we're
-      // at the top and moving down, before the visual threshold, so nested
-      // scroll containers can't start scrolling and build inertia.
+      // Own the gesture — prevent native scroll
       e.preventDefault()
 
       const d = Math.min(dy * RESISTANCE, MAX_PULL)
@@ -74,11 +88,21 @@ export function usePullToRefresh(enabled: boolean) {
         dist = d
         setDistance(d)
 
-        if (d >= THRESHOLD && !crossed) {
-          crossed = true
+        // Haptic feedback at threshold crossings (both directions)
+        if (d >= HARD_THRESHOLD && !crossedHard) {
+          crossedHard = true
+          navigator.vibrate?.([15, 30, 15])
+        }
+        if (d < HARD_THRESHOLD && crossedHard) {
+          crossedHard = false
           navigator.vibrate?.(10)
         }
-        if (d < THRESHOLD) crossed = false
+
+        if (d >= SOFT_THRESHOLD && !crossedSoft) {
+          crossedSoft = true
+          navigator.vibrate?.(10)
+        }
+        if (d < SOFT_THRESHOLD) crossedSoft = false
       }
     }
 
@@ -86,11 +110,36 @@ export function usePullToRefresh(enabled: boolean) {
       if (!pulling) return
       pulling = false
 
-      if (dist >= THRESHOLD) {
+      if (dist >= HARD_THRESHOLD) {
+        // Hard refresh — full page reload
         isRefreshing = true
         setRefreshing(true)
-        setDistance(THRESHOLD)
+        setDistance(HARD_THRESHOLD)
         reloadTimer = setTimeout(() => window.location.reload(), 400)
+      } else if (dist >= SOFT_THRESHOLD) {
+        // Soft refresh — re-fetch data
+        isRefreshing = true
+        setRefreshing(true)
+        setDistance(SOFT_THRESHOLD)
+
+        const cb = onRefreshRef.current
+        if (cb) {
+          cb().finally(() => {
+            // Brief delay for visual feedback before resetting
+            setTimeout(() => {
+              isRefreshing = false
+              setRefreshing(false)
+              setDistance(0)
+            }, 300)
+          })
+        } else {
+          // No callback — just reset after a beat
+          setTimeout(() => {
+            isRefreshing = false
+            setRefreshing(false)
+            setDistance(0)
+          }, 300)
+        }
       } else {
         dist = 0
         setDistance(0)
@@ -111,11 +160,14 @@ export function usePullToRefresh(enabled: boolean) {
     }
   }, [enabled])
 
+  const mode: PullMode = distance >= HARD_THRESHOLD ? "hard" : distance >= SOFT_THRESHOLD ? "soft" : "idle"
+
   return {
     ref,
     distance,
-    progress: Math.min(distance / THRESHOLD, 1),
+    progress: Math.min(distance / SOFT_THRESHOLD, 1),
     pulling: distance > 0 && !refreshing,
     refreshing,
+    mode,
   }
 }
