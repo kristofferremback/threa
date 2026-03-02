@@ -1,11 +1,13 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { act } from "@testing-library/react"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
-import { render, screen, waitFor } from "@/test"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { render, screen } from "../test"
 import { UserSetupPage } from "./user-setup"
 
 const mockCheckSlugAvailable = vi.fn()
 const mockCompleteUserSetup = vi.fn()
+const SLUG_CHECK_DEBOUNCE_MS = 500
 
 vi.mock("@/auth", () => ({
   useUser: () => ({
@@ -53,9 +55,16 @@ function renderPage() {
   )
 }
 
+async function advanceSlugDebounce() {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(SLUG_CHECK_DEBOUNCE_MS)
+  })
+}
+
 describe("UserSetupPage", () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.useFakeTimers()
     mockCompleteUserSetup.mockResolvedValue({
       id: "user_1",
       email: "kris@example.com",
@@ -66,15 +75,18 @@ describe("UserSetupPage", () => {
     })
   })
 
+  afterEach(() => {
+    vi.clearAllTimers()
+    vi.useRealTimers()
+  })
+
   it("should keep submit enabled while the initial slug check is still pending", async () => {
     mockCheckSlugAvailable.mockImplementation(() => new Promise(() => {}))
 
     renderPage()
+    await advanceSlugDebounce()
 
-    await waitFor(() => {
-      expect(mockCheckSlugAvailable).toHaveBeenCalledWith("ws_1", "taken-name", expect.any(AbortSignal))
-    })
-
+    expect(mockCheckSlugAvailable).toHaveBeenCalledWith("ws_1", "taken-name", expect.any(AbortSignal))
     expect(screen.getByRole("button", { name: "Complete Setup" })).toBeEnabled()
   })
 
@@ -82,11 +94,9 @@ describe("UserSetupPage", () => {
     mockCheckSlugAvailable.mockResolvedValue(false)
 
     renderPage()
+    await advanceSlugDebounce()
 
-    await waitFor(() => {
-      expect(screen.getByText("This slug is already taken in this workspace.")).toBeInTheDocument()
-    })
-
+    expect(screen.getByText("This slug is already taken in this workspace.")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Complete Setup" })).toBeDisabled()
   })
 })
