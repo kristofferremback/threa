@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "bun --hot src/index.ts",
     "start": "bun src/index.ts",
+    "lint": "eslint src/ tests/",
     "typecheck": "tsc --noEmit",
     "test": "bun test --preload ./tests/setup.ts tests/",
     "test:e2e": "bun test --preload ./tests/setup.ts tests/e2e/",
@@ -24,11 +25,13 @@
     "zod": "^4.2.0"
   },
   "devDependencies": {
+    "@typescript-eslint/parser": "^8.54.0",
     "@types/cookie-parser": "^1",
     "@types/cors": "^2",
     "@types/express": "^5",
     "@types/pg": "^8",
     "bun-types": "latest",
+    "eslint": "^9.39.2",
     "typescript": "^5"
   }
 }

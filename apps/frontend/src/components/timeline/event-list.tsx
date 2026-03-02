@@ -224,17 +224,15 @@ export function EventList({
         return (
           <div key={eventId} className={showUnreadDivider ? "relative" : undefined}>
             {showUnreadDivider && <UnreadDivider isFading={isDividerFading} />}
-            {item.type === "command_group" ? (
-              <CommandEvent events={item.events} />
-            ) : item.type === "session_group" ? (
-              hideSessionCards ? null : (
-                <AgentSessionEvent
-                  events={item.events}
-                  sessionVersion={item.sessionVersion}
-                  liveCounts={sessionLiveCounts.get(item.sessionId)}
-                />
-              )
-            ) : (
+            {item.type === "command_group" && <CommandEvent events={item.events} />}
+            {item.type === "session_group" && !hideSessionCards && (
+              <AgentSessionEvent
+                events={item.events}
+                sessionVersion={item.sessionVersion}
+                liveCounts={sessionLiveCounts.get(item.sessionId)}
+              />
+            )}
+            {item.type === "event" && (
               <EventItem
                 event={item.event}
                 workspaceId={workspaceId}

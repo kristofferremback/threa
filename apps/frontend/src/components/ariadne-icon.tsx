@@ -38,6 +38,28 @@ interface AriadneIconProps {
 const HEART_PATH =
   "M 50 18 C 28 18, 20 35, 28 48 C 36 61, 50 55, 50 50 C 50 45, 64 39, 72 48 C 80 57, 72 70, 50 82 C 28 70, 20 57, 28 48"
 
+function getStrokeWidth(size: IconSize | number): number {
+  if (typeof size !== "number") {
+    return STROKE_WIDTH_MAP[size]
+  }
+
+  if (size <= 16) return 6
+  if (size <= 20) return 5
+  if (size <= 28) return 4
+  return 3
+}
+
+function getRippleStrokeWidth(size: IconSize | number): number {
+  if (typeof size !== "number") {
+    return RIPPLE_STROKE_MAP[size]
+  }
+
+  if (size <= 16) return 4
+  if (size <= 20) return 3
+  if (size <= 28) return 2.5
+  return 2
+}
+
 /**
  * Ariadne persona icon - a stylized heart/thread design.
  *
@@ -53,11 +75,8 @@ export function AriadneIcon({ size = "md", animated = false, loading = false, cl
   const pixelSize = typeof size === "number" ? size : SIZE_MAP[size]
 
   // Calculate stroke widths based on size
-  const strokeWidth =
-    typeof size === "number" ? (size <= 16 ? 6 : size <= 20 ? 5 : size <= 28 ? 4 : 3) : STROKE_WIDTH_MAP[size]
-
-  const rippleStrokeWidth =
-    typeof size === "number" ? (size <= 16 ? 4 : size <= 20 ? 3 : size <= 28 ? 2.5 : 2) : RIPPLE_STROKE_MAP[size]
+  const strokeWidth = getStrokeWidth(size)
+  const rippleStrokeWidth = getRippleStrokeWidth(size)
 
   // Static icon - just the SVG, no wrapper needed
   if (!animated && !loading) {

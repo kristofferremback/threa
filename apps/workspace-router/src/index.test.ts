@@ -60,6 +60,10 @@ function getProxiedInit(fn: ReturnType<typeof mock>): RequestInit {
   return (fn.mock.calls[0] as unknown as [string, RequestInit])[1]
 }
 
+async function getJson<T>(response: Response): Promise<T> {
+  return (await response.json()) as T
+}
+
 describe("workspace-router", () => {
   describe("health check", () => {
     test("GET /readyz returns 200 OK", async () => {
@@ -79,7 +83,7 @@ describe("workspace-router", () => {
       const env = makeEnvWithKv("eu-north-1")
       const res = await worker.fetch(makeRequest("/api/workspaces/ws_123/config"), env)
       expect(res.status).toBe(200)
-      expect(await res.json()).toEqual({
+      expect(await getJson<{ region: string; wsUrl: string }>(res)).toEqual({
         region: "eu-north-1",
         wsUrl: "ws://eu-north-1.backend:3002",
       })
@@ -97,7 +101,7 @@ describe("workspace-router", () => {
         })
         const res = await worker.fetch(makeRequest("/api/workspaces/ws_unknown/config"), env)
         expect(res.status).toBe(200)
-        expect(await res.json()).toEqual({
+        expect(await getJson<{ region: string; wsUrl: string }>(res)).toEqual({
           region: "eu-north-1",
           wsUrl: "ws://eu-north-1.backend:3002",
         })
@@ -111,14 +115,14 @@ describe("workspace-router", () => {
     test("returns 404 when workspace not in KV and no control-plane", async () => {
       const res = await worker.fetch(makeRequest("/api/workspaces/ws_123/config"), makeEnv())
       expect(res.status).toBe(404)
-      expect(await res.json()).toEqual({ error: "Workspace not found" })
+      expect(await getJson<{ error: string }>(res)).toEqual({ error: "Workspace not found" })
     })
 
     test("returns 502 when region is not in REGIONS map", async () => {
       const env = makeEnvWithKv("ap-southeast-1")
       const res = await worker.fetch(makeRequest("/api/workspaces/ws_123/config"), env)
       expect(res.status).toBe(502)
-      expect(await res.json()).toEqual({ error: "Region not configured" })
+      expect(await getJson<{ error: string }>(res)).toEqual({ error: "Region not configured" })
     })
 
     test("only responds to GET", async () => {
@@ -152,7 +156,7 @@ describe("workspace-router", () => {
     test("returns 404 when workspace not in KV and no control-plane", async () => {
       const res = await worker.fetch(makeRequest("/api/workspaces/ws_unknown/streams"), makeEnv())
       expect(res.status).toBe(404)
-      expect(await res.json()).toEqual({ error: "Workspace not found" })
+      expect(await getJson<{ error: string }>(res)).toEqual({ error: "Workspace not found" })
     })
 
     test("routes /api/workspaces/:workspaceId (no trailing path) by workspace region", async () => {
@@ -214,19 +218,19 @@ describe("workspace-router", () => {
     test("auth routes return 404 when no CONTROL_PLANE_URL", async () => {
       const res = await worker.fetch(makeRequest("/api/auth/login"), makeEnv())
       expect(res.status).toBe(404)
-      expect(await res.json()).toEqual({ error: "Not found" })
+      expect(await getJson<{ error: string }>(res)).toEqual({ error: "Not found" })
     })
 
     test("workspace list returns 404 when no CONTROL_PLANE_URL", async () => {
       const res = await worker.fetch(makeRequest("/api/workspaces"), makeEnv())
       expect(res.status).toBe(404)
-      expect(await res.json()).toEqual({ error: "Not found" })
+      expect(await getJson<{ error: string }>(res)).toEqual({ error: "Not found" })
     })
 
     test("unknown paths return 404", async () => {
       const res = await worker.fetch(makeRequest("/api/unknown"), makeEnv())
       expect(res.status).toBe(404)
-      expect(await res.json()).toEqual({ error: "Not found" })
+      expect(await getJson<{ error: string }>(res)).toEqual({ error: "Not found" })
     })
   })
 

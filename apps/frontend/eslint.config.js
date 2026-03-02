@@ -1,9 +1,16 @@
 import tsParser from "@typescript-eslint/parser"
+import threaPlugin, { dotenvRestrictedImportPattern, testRestrictedProperties } from "../../eslint/threa-plugin.js"
 
 /**
  * ESLint configuration for Threa frontend.
  *
- * Primary purpose: Enforce architectural boundaries (INV-15: Dumb Components).
+ * Enforces CLAUDE invariants with clean syntactic signals:
+ * - Runtime: do not import dotenv (Bun loads .env automatically)
+ * - INV-15: components/pages do not reach into persistence directly
+ * - INV-18: do not define components inside other components
+ * - INV-26 / INV-48: no skipped/todo tests and no mock.module()
+ * - INV-47: no nested ternaries
+ * - Frontend Patterns: no direct queryClient.getQueryData() reads during render
  *
  * Components should handle UI rendering and local state only. They receive
  * capabilities via props/context and call them without knowing implementation.
@@ -19,6 +26,18 @@ export default [
         sourceType: "module",
       },
     },
+    plugins: {
+      threa: threaPlugin,
+    },
+    rules: {
+      "no-nested-ternary": "error",
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [dotenvRestrictedImportPattern],
+        },
+      ],
+    },
   },
 
   // INV-15: Components must not access database or persistence layer directly.
@@ -26,10 +45,13 @@ export default [
   {
     files: ["src/components/**/*.{ts,tsx}", "src/pages/**/*.{ts,tsx}"],
     rules: {
+      "threa/no-nested-component-definitions": "error",
+      "threa/no-queryclient-getquerydata-in-render": "error",
       "no-restricted-imports": [
         "error",
         {
           patterns: [
+            dotenvRestrictedImportPattern,
             {
               group: ["@/db", "@/db/*"],
               message: "Components must not import database directly (INV-15). Use hooks or context to access data.",
@@ -37,6 +59,13 @@ export default [
           ],
         },
       ],
+    },
+  },
+
+  {
+    files: ["src/**/*.{test,spec}.{ts,tsx}", "src/test/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-properties": ["error", ...testRestrictedProperties],
     },
   },
 ]

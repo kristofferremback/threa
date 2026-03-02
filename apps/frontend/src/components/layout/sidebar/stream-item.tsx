@@ -37,6 +37,18 @@ interface StreamItemAvatarProps {
 }
 
 export function StreamItemAvatar({ icon, className, avatarUrl, avatarAlt, badge }: StreamItemAvatarProps) {
+  let content = icon
+  if (badge) {
+    content = <MessageSquareText className="h-3.5 w-3.5 text-muted-foreground" />
+  } else if (avatarUrl) {
+    content = (
+      <Avatar className="h-8 w-8 rounded-lg">
+        <AvatarImage src={avatarUrl} alt={avatarAlt ?? "User avatar"} />
+        <AvatarFallback className="rounded-lg">{icon}</AvatarFallback>
+      </Avatar>
+    )
+  }
+
   return (
     <div
       className={cn(
@@ -44,16 +56,7 @@ export function StreamItemAvatar({ icon, className, avatarUrl, avatarAlt, badge 
         badge ? "bg-muted" : className
       )}
     >
-      {badge ? (
-        <MessageSquareText className="h-3.5 w-3.5 text-muted-foreground" />
-      ) : avatarUrl ? (
-        <Avatar className="h-8 w-8 rounded-lg">
-          <AvatarImage src={avatarUrl} alt={avatarAlt ?? "User avatar"} />
-          <AvatarFallback className="rounded-lg">{icon}</AvatarFallback>
-        </Avatar>
-      ) : (
-        icon
-      )}
+      {content}
       {badge && (
         <div
           className={cn(

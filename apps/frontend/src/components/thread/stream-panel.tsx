@@ -191,6 +191,34 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
     return [...ancestors, parentItem]
   }, [ancestors, parentBootstrap?.stream, draftInfo])
 
+  let headerContent: React.ReactNode
+  if (isDraft && parentBootstrap?.stream) {
+    headerContent = (
+      <div className="flex items-center gap-1 min-w-0 flex-1 overflow-hidden pr-2">
+        {!isMobile && (
+          <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={onClose}>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+        )}
+        <ResponsiveBreadcrumbs
+          ancestors={fullChain}
+          currentLabel="New thread"
+          isMainViewStream={isMainViewStream}
+          onClosePanel={closePanel}
+          getNavigationUrl={getPanelUrl}
+        />
+      </div>
+    )
+  } else if (isThread && stream) {
+    headerContent = <ThreadHeader workspaceId={workspaceId} stream={stream} inPanel />
+  } else {
+    headerContent = (
+      <SidePanelTitle className="flex-1">
+        {stream ? (getStreamName(stream) ?? streamFallbackLabel(stream.type as StreamType, "generic")) : "Stream"}
+      </SidePanelTitle>
+    )
+  }
+
   return (
     <SidePanel data-editor-zone="panel">
       <SidePanelHeader className="relative">
@@ -202,29 +230,7 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
             <span className="sr-only">Back</span>
           </Button>
         )}
-        {isDraft && parentBootstrap?.stream ? (
-          // Draft thread header with responsive breadcrumbs
-          <div className="flex items-center gap-1 min-w-0 flex-1 overflow-hidden pr-2">
-            {!isMobile && (
-              <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={onClose}>
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-            )}
-            <ResponsiveBreadcrumbs
-              ancestors={fullChain}
-              currentLabel="New thread"
-              isMainViewStream={isMainViewStream}
-              onClosePanel={closePanel}
-              getNavigationUrl={getPanelUrl}
-            />
-          </div>
-        ) : isThread && stream ? (
-          <ThreadHeader workspaceId={workspaceId} stream={stream} inPanel />
-        ) : (
-          <SidePanelTitle className="flex-1">
-            {stream ? (getStreamName(stream) ?? streamFallbackLabel(stream.type as StreamType, "generic")) : "Stream"}
-          </SidePanelTitle>
-        )}
+        {headerContent}
         {/* Hide X close button on mobile (back button used instead) */}
         {!isMobile && <SidePanelClose onClose={onClose} />}
       </SidePanelHeader>

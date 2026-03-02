@@ -20,7 +20,8 @@
     "monitoring:stop": "docker compose -f docker-compose.monitoring.yml stop",
     "monitoring:logs": "docker compose -f docker-compose.monitoring.yml logs -f",
     "setup:worktree": "bun scripts/setup-worktree.ts",
-    "typecheck": "bun run --cwd packages/types typecheck && bun run --cwd packages/prosemirror typecheck && bun run --cwd packages/backend-common typecheck && bun run --cwd apps/backend typecheck && bun run --cwd apps/control-plane typecheck && bun run --cwd apps/frontend typecheck",
+    "lint": "bun run --cwd apps/backend lint && bun run --cwd apps/control-plane lint && bun run --cwd apps/frontend lint",
+    "typecheck": "bun run --cwd packages/types typecheck && bun run --cwd packages/prosemirror typecheck && bun run --cwd packages/backend-common typecheck && bun run --cwd apps/backend typecheck && bun run --cwd apps/control-plane typecheck && bun run --cwd apps/workspace-router typecheck && bun run --cwd apps/frontend typecheck",
     "eval": "bun run --cwd apps/backend eval --",
     "test": "bun run --cwd apps/backend test",
     "test:unit": "bun run --cwd apps/backend test:unit",
@@ -41,15 +42,13 @@
     "infra:validate": "cd infra/aws && terraform validate"
   },
   "devDependencies": {
+    "typescript": "^5.9.3",
     "@playwright/test": "^1.57.0",
     "@types/bun": "latest",
     "husky": "^9.1.7",
     "lint-staged": "^16.2.7",
     "prettier": "^3.7.4",
     "shadcn": "^3.6.3"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
   },
   "lint-staged": {
     "!(.agents|.claude)/**/*.{js,jsx,ts,tsx,json,css,md,html}": "prettier --write"

@@ -95,11 +95,12 @@ export function StreamPage() {
   const isScratchpad = stream?.type === StreamTypes.SCRATCHPAD
   const isArchived = stream?.archivedAt != null
   const isDmDraft = isDraft && isDmDraftId(streamId)
-  const streamName = stream
-    ? (getStreamName(stream) ?? streamFallbackLabel(stream.type, "generic"))
-    : isDraft
-      ? streamFallbackLabel(isDmDraft ? "dm" : "scratchpad", "sidebar")
-      : "Stream"
+  let streamName = "Stream"
+  if (stream) {
+    streamName = getStreamName(stream) ?? streamFallbackLabel(stream.type, "generic")
+  } else if (isDraft) {
+    streamName = streamFallbackLabel(isDmDraft ? "dm" : "scratchpad", "sidebar")
+  }
   const isUnnamedScratchpad = isScratchpad && !stream?.displayName
 
   const handleStartRename = () => {
@@ -132,37 +133,44 @@ export function StreamPage() {
     }
   }
 
+  let headerTitle: React.ReactNode
+  if (isEditing) {
+    headerTitle = (
+      <Input
+        ref={inputRef}
+        value={editValue}
+        onChange={(e) => setEditValue(e.target.value)}
+        onBlur={handleSaveRename}
+        onKeyDown={handleKeyDown}
+        className="h-8 max-w-xs font-semibold"
+        placeholder="Scratchpad name"
+        autoFocus
+      />
+    )
+  } else if (isThread && stream) {
+    headerTitle = <ThreadHeader workspaceId={workspaceId} stream={stream} />
+  } else if (isScratchpad) {
+    headerTitle = (
+      <div
+        className="group inline-flex items-center gap-1 rounded-md px-2 py-1 -ml-2 hover:bg-accent/50 hover:outline hover:outline-1 hover:outline-border cursor-pointer transition-colors min-w-0"
+        onClick={handleStartRename}
+      >
+        <h1 className="font-semibold truncate">
+          {streamName}
+          {isDraft && <span className="ml-2 text-xs font-normal text-muted-foreground">(draft)</span>}
+        </h1>
+        <Pencil className="h-3.5 w-3.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+      </div>
+    )
+  } else {
+    headerTitle = <h1 className="font-semibold truncate">{streamName}</h1>
+  }
+
   const mainStreamContent = (
     <div className="flex h-full flex-col">
       <header className="flex h-11 items-center justify-between border-b px-4">
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          {isEditing ? (
-            <Input
-              ref={inputRef}
-              value={editValue}
-              onChange={(e) => setEditValue(e.target.value)}
-              onBlur={handleSaveRename}
-              onKeyDown={handleKeyDown}
-              className="h-8 max-w-xs font-semibold"
-              placeholder="Scratchpad name"
-              autoFocus
-            />
-          ) : isThread && stream ? (
-            <ThreadHeader workspaceId={workspaceId} stream={stream} />
-          ) : isScratchpad ? (
-            <div
-              className="group inline-flex items-center gap-1 rounded-md px-2 py-1 -ml-2 hover:bg-accent/50 hover:outline hover:outline-1 hover:outline-border cursor-pointer transition-colors min-w-0"
-              onClick={handleStartRename}
-            >
-              <h1 className="font-semibold truncate">
-                {streamName}
-                {isDraft && <span className="ml-2 text-xs font-normal text-muted-foreground">(draft)</span>}
-              </h1>
-              <Pencil className="h-3.5 w-3.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
-            </div>
-          ) : (
-            <h1 className="font-semibold truncate">{streamName}</h1>
-          )}
+          {headerTitle}
           {stream && !isThread && !isDraft && !isChannel && !isUnnamedScratchpad && (
             <Badge variant="secondary">{getStreamTypeLabel(stream.type)}</Badge>
           )}

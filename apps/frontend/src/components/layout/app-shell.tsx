@@ -113,6 +113,19 @@ export function AppShell({ sidebar, children }: AppShellProps) {
   const isPreview = state === "preview"
   const isPinned = state === "pinned"
   const isOpen = isPreview || isPinned
+  let wrapperWidth = `${width}px`
+  if (isMobile) {
+    wrapperWidth = "0px"
+  } else if (isCollapsed || isPreview) {
+    wrapperWidth = "6px"
+  }
+
+  let sidebarWidth = `${width}px`
+  if (isMobile) {
+    sidebarWidth = "min(85vw, 320px)"
+  } else if (isCollapsed) {
+    sidebarWidth = "6px"
+  }
 
   // Swipe gestures for mobile sidebar (open/close by dragging)
   // Use showPreview (idempotent) instead of togglePinned (a toggle) to avoid
@@ -155,10 +168,7 @@ export function AppShell({ sidebar, children }: AppShellProps) {
   }
 
   return (
-    <div
-      className="flex w-screen flex-col overflow-hidden"
-      style={{ height: "var(--viewport-height, 100dvh)" }}
-    >
+    <div className="flex w-screen flex-col overflow-hidden" style={{ height: "var(--viewport-height, 100dvh)" }}>
       {/* Topbar - spans full width */}
       <Topbar isPinned={isMobile ? isOpen : isPinned} onToggleSidebar={togglePinned} />
 
@@ -190,7 +200,7 @@ export function AppShell({ sidebar, children }: AppShellProps) {
           style={{
             // Wrapper width: collapsed = 6px, preview = 6px (sidebar absolute), pinned = sidebar width
             // On mobile: always 0 (overlay mode)
-            width: isMobile ? "0px" : isCollapsed ? "6px" : isPreview ? "6px" : `${width}px`,
+            width: wrapperWidth,
           }}
         >
           {/* Urgency strip - always visible on left edge (6px wide) */}
@@ -266,9 +276,7 @@ export function AppShell({ sidebar, children }: AppShellProps) {
                 : !isResizing && "transition-[width,box-shadow] duration-200 ease-out"
             )}
             style={{
-              // Mobile: constant full width (transform handles show/hide)
-              // Desktop: width-based reveal
-              width: isMobile ? "min(85vw, 320px)" : isCollapsed ? "6px" : `${width}px`,
+              width: sidebarWidth,
             }}
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}

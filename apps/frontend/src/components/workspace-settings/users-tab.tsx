@@ -17,10 +17,16 @@ export function UsersTab({ workspaceId }: UsersTabProps) {
   const queryClient = useQueryClient()
   const { formatDate } = useFormattedDate()
 
-  const bootstrapData = queryClient.getQueryData<{
-    users: User[]
-    invitations?: WorkspaceInvitation[]
-  }>(workspaceKeys.bootstrap(workspaceId))
+  const { data: bootstrapData } = useQuery({
+    queryKey: workspaceKeys.bootstrap(workspaceId),
+    queryFn: () =>
+      queryClient.getQueryData<{
+        users: User[]
+        invitations?: WorkspaceInvitation[]
+      }>(workspaceKeys.bootstrap(workspaceId)) ?? null,
+    enabled: false,
+    staleTime: Infinity,
+  })
 
   const users = bootstrapData?.users ?? []
 

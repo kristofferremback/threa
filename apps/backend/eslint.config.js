@@ -1,16 +1,25 @@
 import tsParser from "@typescript-eslint/parser"
 import tsPlugin from "@typescript-eslint/eslint-plugin"
+import threaPlugin, {
+  dotenvRestrictedImportPattern,
+  providerSdkRestrictedImportPattern,
+  testRestrictedProperties,
+} from "../../eslint/threa-plugin.js"
 
 /**
  * ESLint configuration for Threa backend.
  *
- * Enforces architectural boundaries:
+ * Enforces CLAUDE invariants with clean syntactic signals:
+ * - Runtime: do not import dotenv (Bun loads .env automatically)
+ * - INV-28: raw provider SDK imports stay inside the AI wrapper
+ * - INV-47: no nested ternaries
  * - INV-51: lib/ is infrastructure — must not import from features/
  * - INV-52: Features import other features only through barrels (index.ts)
+ * - INV-26 / INV-48: no skipped/todo tests and no mock.module()
  */
 export default [
   {
-    files: ["src/**/*.ts"],
+    files: ["src/**/*.ts", "tests/**/*.ts", "evals/**/*.ts", "scripts/**/*.ts"],
     languageOptions: {
       parser: tsParser,
       parserOptions: {
@@ -20,6 +29,30 @@ export default [
     },
     plugins: {
       "@typescript-eslint": tsPlugin,
+      threa: threaPlugin,
+    },
+    rules: {
+      "no-nested-ternary": "error",
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [dotenvRestrictedImportPattern],
+        },
+      ],
+    },
+  },
+
+  // INV-28: provider SDK imports are only allowed inside the AI wrapper.
+  {
+    files: ["src/**/*.ts", "tests/**/*.ts", "evals/**/*.ts", "scripts/**/*.ts"],
+    ignores: ["src/lib/ai/ai.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [dotenvRestrictedImportPattern, providerSdkRestrictedImportPattern],
+        },
+      ],
     },
   },
 
@@ -32,6 +65,7 @@ export default [
   {
     files: ["src/lib/**/*.ts"],
     ignores: [
+      "src/lib/ai/ai.ts",
       "src/lib/ai/static-config-resolver.ts",
       "src/lib/ai/message-formatter.ts",
       "src/lib/ai/message-formatter.test.ts",
@@ -43,6 +77,8 @@ export default [
         "error",
         {
           patterns: [
+            dotenvRestrictedImportPattern,
+            providerSdkRestrictedImportPattern,
             {
               group: ["**/features/*", "**/features/**"],
               message:
@@ -66,6 +102,8 @@ export default [
         "error",
         {
           patterns: [
+            dotenvRestrictedImportPattern,
+            providerSdkRestrictedImportPattern,
             {
               group: [
                 "**/streams/**",
@@ -86,6 +124,13 @@ export default [
           ],
         },
       ],
+    },
+  },
+
+  {
+    files: ["**/*.{test,spec}.ts", "tests/**/*.ts"],
+    rules: {
+      "no-restricted-properties": ["error", ...testRestrictedProperties],
     },
   },
 ]

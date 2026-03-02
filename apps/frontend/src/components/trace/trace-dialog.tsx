@@ -29,7 +29,12 @@ export function TraceDialog() {
 
   if (!sessionId) return null
 
-  const lineageSessions = relatedSessions.length > 0 ? relatedSessions : session ? [session] : []
+  let lineageSessions: AgentSession[] = []
+  if (relatedSessions.length > 0) {
+    lineageSessions = relatedSessions
+  } else if (session) {
+    lineageSessions = [session]
+  }
 
   const sessionOptions = useMemo(() => buildSessionOptions(lineageSessions), [lineageSessions])
   const versionById = useMemo(() => buildVersionBySessionId(lineageSessions), [lineageSessions])
@@ -220,26 +225,27 @@ function TraceBody({
   workspaceId: string
   streamId: string
 }) {
-  return (
-    <div className="flex-1 min-h-0 overflow-y-auto">
-      {isLoading ? (
-        <div className="p-6 space-y-4">
-          <Skeleton className="h-20 w-full" />
-          <Skeleton className="h-20 w-full" />
-          <Skeleton className="h-20 w-full" />
-        </div>
-      ) : error ? (
-        <div className="p-6 text-center text-destructive">Failed to load trace. Please try again.</div>
-      ) : (
-        <TraceStepList
-          steps={steps}
-          highlightMessageId={highlightMessageId}
-          workspaceId={workspaceId}
-          streamId={streamId}
-        />
-      )}
-    </div>
+  let content = (
+    <TraceStepList
+      steps={steps}
+      highlightMessageId={highlightMessageId}
+      workspaceId={workspaceId}
+      streamId={streamId}
+    />
   )
+  if (isLoading) {
+    content = (
+      <div className="p-6 space-y-4">
+        <Skeleton className="h-20 w-full" />
+        <Skeleton className="h-20 w-full" />
+        <Skeleton className="h-20 w-full" />
+      </div>
+    )
+  } else if (error) {
+    content = <div className="p-6 text-center text-destructive">Failed to load trace. Please try again.</div>
+  }
+
+  return <div className="flex-1 min-h-0 overflow-y-auto">{content}</div>
 }
 
 function TraceFooter({
