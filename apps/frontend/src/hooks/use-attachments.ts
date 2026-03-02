@@ -51,13 +51,15 @@ export function useAttachments(workspaceId: string): UseAttachmentsReturn {
 
   const handleFileSelect = useCallback(
     async (e: ChangeEvent<HTMLInputElement>) => {
-      const files = e.target.files
-      if (!files || files.length === 0) return
+      // Convert to array before resetting value — Chrome clears the FileList in-place
+      // when input.value is reset, so the reference would be empty if captured after.
+      const files = Array.from(e.target.files ?? [])
+      if (files.length === 0) return
 
       // Reset input so same file can be selected again
       e.target.value = ""
 
-      for (const file of Array.from(files)) {
+      for (const file of files) {
         const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2)}`
 
         // Add as uploading
