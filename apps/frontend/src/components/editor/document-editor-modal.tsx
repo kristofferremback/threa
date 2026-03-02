@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from "react"
-import { useEditor, EditorContent } from "@tiptap/react"
+import { useEditor, EditorContent, useEditorState } from "@tiptap/react"
 import { useParams } from "react-router-dom"
 import {
   Bold,
@@ -48,6 +48,7 @@ export function DocumentEditorModal({
 }: DocumentEditorModalProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const isInternalUpdate = useRef(false)
+  const wasOpenRef = useRef(false)
   const [linkEditorOpen, setLinkEditorOpen] = useState(false)
 
   // Mention, channel, and emoji autocomplete
@@ -150,9 +151,12 @@ export function DocumentEditorModal({
   // Update submit ref for keyboard shortcut
   handleSubmitRef.current = handleSubmit
 
-  // Reset content when dialog opens with new initial content
+  // Reset content only when dialog transitions from closed to open
   useEffect(() => {
-    if (open && editor && !editor.isDestroyed) {
+    const isNewlyOpened = open && !wasOpenRef.current
+    wasOpenRef.current = open
+
+    if (isNewlyOpened && editor && !editor.isDestroyed) {
       isInternalUpdate.current = true
       editor.commands.setContent(parseMarkdown(initialContent, getMentionType, toEmoji))
       isInternalUpdate.current = false
@@ -160,8 +164,11 @@ export function DocumentEditorModal({
     }
   }, [open, initialContent, editor, getMentionType, toEmoji])
 
-  // Check if content is empty
-  const isEmpty = !editor || editor.isEmpty
+  // Reactively check if content is empty (TipTap v3 requires useEditorState for reactive reads)
+  const isEmpty = useEditorState({
+    editor,
+    selector: (ctx) => !ctx.editor || ctx.editor.isEmpty,
+  })
 
   // Handle dialog close events (escape, click outside) - sync content
   const handleOpenChange = useCallback(
