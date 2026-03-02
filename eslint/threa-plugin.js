@@ -2,8 +2,13 @@ function isIdentifierNamed(node, name) {
   return node?.type === "Identifier" && node.name === name
 }
 
-function isMemberPropertyNamed(node, name) {
-  return !node?.computed && isIdentifierNamed(node?.property, name)
+function isQueryClientGetQueryDataCall(node) {
+  return (
+    node?.type === "MemberExpression" &&
+    !node.computed &&
+    isIdentifierNamed(node.property, "getQueryData") &&
+    isIdentifierNamed(node.object, "queryClient")
+  )
 }
 
 function isFunctionNode(node) {
@@ -113,17 +118,6 @@ function isAllowedGetQueryDataUsage(ancestors) {
   return false
 }
 
-function getNearestFunction(ancestors) {
-  for (let index = ancestors.length - 1; index >= 0; index -= 1) {
-    const ancestor = ancestors[index]
-    if (isFunctionNode(ancestor)) {
-      return ancestor
-    }
-  }
-
-  return null
-}
-
 function getNearestComponentFunction(ancestors) {
   for (let index = ancestors.length - 1; index >= 0; index -= 1) {
     const ancestor = ancestors[index]
@@ -153,9 +147,9 @@ const noNestedComponentDefinitionsRule = {
       }
 
       const ancestors = context.sourceCode.getAncestors(node)
-      const parentFunction = getNearestFunction(ancestors)
+      const parentComponentFunction = getNearestComponentFunction(ancestors)
 
-      if (parentFunction && isComponentFunction(parentFunction)) {
+      if (parentComponentFunction) {
         context.report({ node, messageId: "nested" })
       }
     }
@@ -183,7 +177,7 @@ const noQueryClientGetQueryDataInRenderRule = {
   create(context) {
     return {
       CallExpression(node) {
-        if (!isMemberPropertyNamed(node.callee, "getQueryData")) {
+        if (!isQueryClientGetQueryDataCall(node.callee)) {
           return
         }
 
