@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import { useParams } from "react-router-dom"
 import { PanelLeftClose, PanelLeft, Command, RefreshCw } from "lucide-react"
 import { useSidebar, useQuickSwitcher, useCoordinatedLoading } from "@/contexts"
-import { useResizeDrag, useVisualViewport, useSidebarSwipe, usePullToRefresh, workspaceKeys } from "@/hooks"
+import { useResizeDrag, useVisualViewport, useSidebarSwipe, usePullToRefresh, workspaceKeys, streamKeys } from "@/hooks"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { TopbarLoadingIndicator } from "./topbar-loading-indicator"
@@ -119,7 +119,7 @@ export function AppShell({ sidebar, children }: AppShellProps) {
     if (!workspaceId) return
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: workspaceKeys.bootstrap(workspaceId) }),
-      queryClient.invalidateQueries({ queryKey: ["streams", "bootstrap", workspaceId] }),
+      queryClient.invalidateQueries({ queryKey: [...streamKeys.all, "bootstrap", workspaceId] }),
     ])
   }, [queryClient, workspaceId])
 
