@@ -7,6 +7,7 @@ import {
   useStreamSocket,
   useScrollBehavior,
   useStreamBootstrap,
+  useWorkspaceBootstrap,
   useAutoMarkAsRead,
   useUnreadDivider,
   useAgentActivity,
@@ -107,8 +108,15 @@ export function StreamContent({
     { enabled: !isDraft }
   )
 
+  // Resolve current workspace-scoped user ID once here; event.actorId uses this same space
+  const { data: wsBootstrap } = useWorkspaceBootstrap(workspaceId)
+  const currentWorkspaceUserId = useMemo(
+    () => wsBootstrap?.users?.find((u) => u.workosUserId === user?.id)?.id ?? null,
+    [wsBootstrap?.users, user?.id]
+  )
+
   const clearPendingEdit = useCallback(() => setPendingEditMessageId(null), [])
-  const triggerEditLastMessage = useTriggerEditLastMessage(workspaceId, events, setPendingEditMessageId)
+  const triggerEditLastMessage = useTriggerEditLastMessage(currentWorkspaceUserId, events, setPendingEditMessageId)
 
   // Auto-clear pendingEditMessageId if nothing consumes it — guards against stuck state
   // when the target message is temporarily rendered as PendingMessageEvent/FailedMessageEvent

@@ -1,6 +1,4 @@
-import { createContext, useContext, useMemo, useCallback } from "react"
-import { useWorkspaceBootstrap } from "@/hooks"
-import { useUser } from "@/auth"
+import { createContext, useContext, useCallback } from "react"
 import type { StreamEvent } from "@threa/types"
 
 interface EditLastMessageContextValue {
@@ -16,22 +14,14 @@ export function useEditLastMessage() {
 
 /**
  * Returns a callback that, when invoked, scans events newest-first for the current user's
- * last non-deleted message and calls onFound with its messageId. Encapsulates workspace
- * user ID resolution and the event scan so StreamContent stays UI-focused (INV-15).
+ * last non-deleted message and calls onFound with its messageId. The caller is responsible
+ * for resolving currentWorkspaceUserId (workspace-scoped, same space as event.actorId).
  */
 export function useTriggerEditLastMessage(
-  workspaceId: string,
+  currentWorkspaceUserId: string | null,
   events: StreamEvent[],
   onFound: (messageId: string) => void
 ) {
-  const { data: wsBootstrap } = useWorkspaceBootstrap(workspaceId)
-  const user = useUser()
-
-  const currentWorkspaceUserId = useMemo(
-    () => wsBootstrap?.users?.find((u) => u.workosUserId === user?.id)?.id ?? null,
-    [wsBootstrap?.users, user?.id]
-  )
-
   return useCallback(() => {
     if (!currentWorkspaceUserId) return
     for (let i = events.length - 1; i >= 0; i--) {
