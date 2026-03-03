@@ -452,16 +452,16 @@ export const SearchRepository = {
 
         const result = await db.query<{ id: string }>(sql`
           WITH requested_users AS (
-            SELECT user_id
-            FROM unnest(${userIds}::text[]) AS requested_users(user_id)
+            SELECT member_id
+            FROM unnest(${userIds}::text[]) AS requested_users(member_id)
           ),
           shared_access AS (
-            SELECT s.id, requested_users.user_id
+            SELECT s.id, requested_users.member_id
             FROM streams s
             CROSS JOIN requested_users
-            LEFT JOIN stream_members sm ON s.id = sm.stream_id AND sm.member_id = requested_users.user_id
+            LEFT JOIN stream_members sm ON s.id = sm.stream_id AND sm.member_id = requested_users.member_id
             LEFT JOIN streams root ON s.root_stream_id = root.id
-            LEFT JOIN stream_members root_sm ON root.id = root_sm.stream_id AND root_sm.member_id = requested_users.user_id
+            LEFT JOIN stream_members root_sm ON root.id = root_sm.stream_id AND root_sm.member_id = requested_users.member_id
             WHERE s.workspace_id = ${workspaceId}
               AND (
                 sm.member_id IS NOT NULL
@@ -477,7 +477,7 @@ export const SearchRepository = {
           SELECT id
           FROM shared_access
           GROUP BY id
-          HAVING COUNT(DISTINCT user_id) = ${DM_PARTICIPANT_COUNT}
+          HAVING COUNT(DISTINCT member_id) = ${DM_PARTICIPANT_COUNT}
         `)
 
         return result.rows.map((r) => r.id)
