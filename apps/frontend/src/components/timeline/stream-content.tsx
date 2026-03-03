@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useCallback, useRef } from "react"
+import { useMemo, useEffect, useCallback } from "react"
 import { useSearchParams } from "react-router-dom"
 import { MessageSquare } from "lucide-react"
 import { useQueryClient } from "@tanstack/react-query"
@@ -11,6 +11,7 @@ import {
   useAutoMarkAsRead,
   useUnreadDivider,
   useAgentActivity,
+  useEditLastMessageTrigger,
   streamKeys,
   workspaceKeys,
 } from "@/hooks"
@@ -110,58 +111,7 @@ export function StreamContent({
   // Resolve current workspace-scoped user ID. The hook deduplicates with SentMessageEvent instances.
   const currentWorkspaceUserId = useWorkspaceUserId(workspaceId)
 
-  // Registry: maps messageId → openEdit callback registered by mounted SentMessageEvent instances.
-  // Ref-based so registration/deregistration never triggers re-renders.
-  const editRegistryRef = useRef(new Map<string, () => void>())
-
-  // Refs keep triggerEditLast stable (empty dep array) so context consumers don't re-render on
-  // every new message — same pattern as onEditLastMessageRef in rich-editor.tsx.
-  const eventsRef = useRef(events)
-  useEffect(() => {
-    eventsRef.current = events
-  }, [events])
-  const currentWorkspaceUserIdRef = useRef(currentWorkspaceUserId)
-  useEffect(() => {
-    currentWorkspaceUserIdRef.current = currentWorkspaceUserId
-  }, [currentWorkspaceUserId])
-
-  const registerMessage = useCallback((messageId: string, openEdit: () => void) => {
-    editRegistryRef.current.set(messageId, openEdit)
-    return () => editRegistryRef.current.delete(messageId)
-  }, [])
-
-  // Scan events newest-first for the current user's last non-deleted message,
-  // then call its registered handler. Silent no-op if nothing qualifies or not loaded.
-  const triggerEditLast = useCallback(() => {
-    const currentUserId = currentWorkspaceUserIdRef.current
-    if (!currentUserId) return
-
-    // Collect deleted message IDs from message_deleted events. Bootstrap-window events
-    // have deletedAt injected into message_created payloads, but paginated events don't —
-    // they carry a separate message_deleted event instead.
-    const deletedIds = new Set<string>()
-    for (const event of eventsRef.current) {
-      if (event.eventType === "message_deleted") {
-        const p = event.payload as { messageId?: string }
-        if (p.messageId) deletedIds.add(p.messageId)
-      }
-    }
-
-    for (let i = eventsRef.current.length - 1; i >= 0; i--) {
-      const event = eventsRef.current[i]
-      if (event.eventType !== "message_created") continue
-      if (event.actorType !== "user") continue
-      if (event.actorId !== currentUserId) continue
-      const payload = event.payload as { messageId?: string; deletedAt?: string }
-      if (!payload.messageId) continue
-      if (payload.deletedAt || deletedIds.has(payload.messageId)) continue
-      // If the message is not mounted (e.g., not yet loaded), nothing is registered — correct no-op.
-      editRegistryRef.current.get(payload.messageId)?.()
-      return
-    }
-  }, []) // stable — reads from refs, never recreated
-
-  const editLastMessageCtx = useMemo(() => ({ registerMessage, triggerEditLast }), [registerMessage, triggerEditLast])
+  const editLastMessageCtx = useEditLastMessageTrigger(events, currentWorkspaceUserId)
 
   // Track live agent session progress for all stream types (step/message counts on session cards).
   // In channels, session cards are hidden (responses go to threads) and inline activity shows on trigger messages instead.

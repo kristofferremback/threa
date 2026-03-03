@@ -140,53 +140,70 @@ test.describe("Edit last message (ArrowUp)", () => {
     await userB.context.close()
   })
 
-  test("does nothing when the user's only message is outside the loaded bootstrap window", async ({ page }) => {
-    test.setTimeout(60000)
-    const { testId } = await loginAndCreateWorkspace(page, "elm-window")
+  test("does nothing when the user's only message is outside the loaded bootstrap window", async ({ browser }) => {
+    test.setTimeout(90000)
+    const testId = generateTestId()
+    const channelName = `elm-window-${testId}`
 
-    const workspaceId = page.url().match(/\/w\/([^/]+)/)?.[1]
-    expect(workspaceId).toBeTruthy()
+    // ── User A: create workspace + channel, send first message ──
+    const userA = await loginInNewContext(browser, `elm-win-a-${testId}@example.com`, `ELM Win A ${testId}`)
 
-    // Open a scratchpad and send one message
-    await page.getByRole("button", { name: "+ New Scratchpad" }).click()
-    await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
+    const createWsRes = await userA.page.request.post("/api/workspaces", {
+      data: { name: `ELM Window ${testId}` },
+    })
+    await expectApiOk(createWsRes, "Create workspace")
+    const { workspace } = (await createWsRes.json()) as { workspace: { id: string } }
+    const workspaceId = workspace.id
+
+    await userA.page.goto(`/w/${workspaceId}`)
+    await expect(userA.page.getByRole("button", { name: "+ New Channel" })).toBeVisible({ timeout: 10000 })
+    await createChannel(userA.page, channelName, { switchToAll: false })
+
+    const streamMatch = userA.page.url().match(/\/s\/([^/?]+)/)
+    expect(streamMatch).toBeTruthy()
+    const streamId = streamMatch![1]
 
     const oldMessage = `Old message outside window ${testId}`
-    await page.locator("[contenteditable='true']").click()
-    await page.keyboard.type(oldMessage)
-    await page.keyboard.press("Enter")
-    await expect(page.getByRole("main").getByText(oldMessage)).toBeVisible({ timeout: 5000 })
+    await userA.page.locator("[contenteditable='true']").click()
+    await userA.page.keyboard.type(oldMessage)
+    await userA.page.keyboard.press("Enter")
+    await expect(userA.page.getByRole("main").getByText(oldMessage)).toBeVisible({ timeout: 5000 })
 
-    // Wait for the draft to be promoted to a real stream (URL changes from draft_xxx to stream_xxx)
-    await page.waitForURL(/\/s\/stream_/, { timeout: 10000 })
-    const streamId = page.url().match(/\/s\/([^/?]+)/)?.[1]
-    expect(streamId).toBeTruthy()
+    // ── User B: join workspace + channel, flood with 60 filler messages ──
+    // Fillers must come from a different user so User A's only message remains the old one.
+    const userB = await loginInNewContext(browser, `elm-win-b-${testId}@example.com`, `ELM Win B ${testId}`)
+    await userB.page.request.post(`/api/dev/workspaces/${workspaceId}/join`, { data: { role: "user" } })
+    await userB.page.request.post(`/api/dev/workspaces/${workspaceId}/streams/${streamId}/join`)
 
-    // Flood the stream with 60 messages via API to push the first message outside the 50-event bootstrap window
+    const fillerText = `Filler Win ${testId}`
     for (let i = 1; i <= 60; i++) {
-      await page.request.post(`/api/workspaces/${workspaceId}/messages`, {
+      await userB.page.request.post(`/api/workspaces/${workspaceId}/messages`, {
         data: {
           streamId,
           contentJson: {
             type: "doc",
-            content: [{ type: "paragraph", content: [{ type: "text", text: `Filler ${i}` }] }],
+            content: [{ type: "paragraph", content: [{ type: "text", text: `${fillerText} #${i}` }] }],
           },
-          contentMarkdown: `Filler ${i}`,
+          contentMarkdown: `${fillerText} #${i}`,
         },
       })
     }
 
-    // Reload so bootstrap loads only the 50 most recent events (the old message is no longer included)
-    await page.reload()
-    await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 10000 })
+    // ── User A: reload so bootstrap loads only the 50 most recent events ──
+    // The old message is now outside the window (not mounted, not registered).
+    await userA.page.reload()
+    await expect(userA.page.locator("[contenteditable='true']")).toBeVisible({ timeout: 10000 })
 
     // The old message should not be visible in the UI after reload
-    await expect(page.getByRole("main").getByText(oldMessage)).not.toBeVisible()
+    await expect(userA.page.getByRole("main").getByText(oldMessage)).not.toBeVisible()
 
     // Press ArrowUp — the old message is not registered (not mounted), so nothing happens
-    await page.locator("[contenteditable='true']").click()
-    await page.keyboard.press("ArrowUp")
+    await userA.page.locator("[contenteditable='true']").click()
+    await userA.page.keyboard.press("ArrowUp")
 
-    await expect(page.getByRole("button", { name: "Cancel" })).not.toBeVisible()
+    await expect(userA.page.getByRole("button", { name: "Cancel" })).not.toBeVisible()
+
+    await userA.context.close()
+    await userB.context.close()
   })
 })
