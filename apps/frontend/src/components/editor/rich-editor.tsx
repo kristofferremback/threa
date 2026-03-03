@@ -35,6 +35,8 @@ interface RichEditorProps {
   autoFocus?: boolean
   /** When this value changes, re-focus the editor (if autoFocus is enabled) */
   scopeId?: string
+  /** Called when ArrowUp is pressed in an empty editor — triggers edit-last-message */
+  onEditLastMessage?: () => void
 }
 
 export function RichEditor({
@@ -51,6 +53,7 @@ export function RichEditor({
   onAttachClick,
   autoFocus = false,
   scopeId,
+  onEditLastMessage,
 }: RichEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const isInternalUpdate = useRef(false)
@@ -108,6 +111,8 @@ export function RichEditor({
   onSubmitRef.current = onSubmit
   const messageSendModeRef = useRef(messageSendMode)
   messageSendModeRef.current = messageSendMode
+  const onEditLastMessageRef = useRef(onEditLastMessage)
+  onEditLastMessageRef.current = onEditLastMessage
 
   // Ref to access editor instance from callbacks defined before useEditor returns
   const editorRef = useRef<ReturnType<typeof useEditor>>(null)
@@ -281,6 +286,17 @@ export function RichEditor({
         return false
       },
       handleKeyDown: (_view, event) => {
+        // ArrowUp in empty editor: edit the last message sent by the current user
+        if (
+          event.key === "ArrowUp" &&
+          editorRef.current?.isEmpty &&
+          !isSuggestionActive(editorRef.current) &&
+          onEditLastMessageRef.current
+        ) {
+          event.preventDefault()
+          onEditLastMessageRef.current()
+          return true
+        }
         // Cmd/Ctrl+Enter: always send (regardless of mode or active suggestions)
         if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && !event.shiftKey) {
           event.preventDefault()

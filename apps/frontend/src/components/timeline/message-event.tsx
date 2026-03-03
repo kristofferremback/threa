@@ -8,8 +8,8 @@ import { MarkdownContent, AttachmentProvider } from "@/components/ui/markdown-co
 import { RelativeTime } from "@/components/relative-time"
 import { PersonaAvatar } from "@/components/persona-avatar"
 import { usePendingMessages, usePanel, createDraftPanelId, useTrace, useMessageService } from "@/contexts"
-import { useActors, useWorkspaceBootstrap, getStepLabel, focusAtEnd, type MessageAgentActivity } from "@/hooks"
-import { useUser } from "@/auth"
+import { useEditLastMessage } from "./edit-last-message-context"
+import { useActors, useWorkspaceUserId, getStepLabel, focusAtEnd, type MessageAgentActivity } from "@/hooks"
 import { cn } from "@/lib/utils"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useLongPress } from "@/hooks/use-long-press"
@@ -175,13 +175,7 @@ function SentMessageEvent({
 }: MessageEventInnerProps) {
   const { panelId, getPanelUrl } = usePanel()
   const messageService = useMessageService()
-  const user = useUser()
-  const { data: wsBootstrap } = useWorkspaceBootstrap(workspaceId)
-  const workspaceUsers = wsBootstrap?.users
-  const currentUserId = useMemo(
-    () => workspaceUsers?.find((m) => m.workosUserId === user?.id)?.id ?? null,
-    [workspaceUsers, user?.id]
-  )
+  const currentUserId = useWorkspaceUserId(workspaceId)
   const { getTraceUrl } = useTrace()
   const replyCount = payload.replyCount ?? 0
   const threadId = payload.threadId
@@ -210,6 +204,17 @@ function SentMessageEvent({
       if (editor) focusAtEnd(editor)
     })
   }, [])
+
+  // Register this message's edit handler with the context so the composer's ArrowUp trigger
+  // can imperatively open edit mode and scroll into view. Unregistered on unmount.
+  const { registerMessage } = useEditLastMessage() ?? {}
+  useEffect(() => {
+    if (!registerMessage) return
+    return registerMessage(payload.messageId, () => {
+      containerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" })
+      setIsEditing(true)
+    })
+  }, [payload.messageId, registerMessage])
 
   // Scroll to this message when highlighted
   useEffect(() => {
