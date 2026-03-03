@@ -1,8 +1,6 @@
-import { useRef, type ReactNode, type RefObject } from "react"
-import { Bell, FileEdit, Hash, Lock, MessageSquareText, MoreHorizontal, Settings, User } from "lucide-react"
+import { useCallback, useRef, useState, type MouseEvent, type ReactNode, type RefObject } from "react"
+import { Bell, FileEdit, Hash, Lock, MessageSquareText, Settings, User } from "lucide-react"
 import { Link } from "react-router-dom"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { Button } from "@/components/ui/button"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { MentionIndicator } from "@/components/mention-indicator"
 import { RelativeTime } from "@/components/relative-time"
@@ -10,9 +8,17 @@ import { getThreadRootContext } from "@/components/thread/breadcrumb-helpers"
 import { isDraftId, useActors } from "@/hooks"
 import { useSidebar } from "@/contexts"
 import { useStreamSettings } from "@/components/stream-settings/use-stream-settings"
+import { useIsMobile } from "@/hooks/use-mobile"
+import { useLongPress } from "@/hooks/use-long-press"
 import { cn } from "@/lib/utils"
 import { getStreamName, streamFallbackLabel } from "@/lib/streams"
 import { BADGE_CONFIG, URGENCY_COLORS } from "./config"
+import {
+  SidebarActionDrawer,
+  SidebarActionMenu,
+  type SidebarActionItem,
+  type SidebarActionPreview,
+} from "./sidebar-actions"
 import { useUrgencyTracking } from "./use-urgency-tracking"
 import { truncateContent } from "./utils"
 import { StreamTypes, Visibilities, type AuthorType, type StreamWithPreview } from "@threa/types"
@@ -79,14 +85,18 @@ interface StreamItemPreviewProps {
 }
 
 export function StreamItemPreview({ preview, getActorName, compact, showPreviewOnHover }: StreamItemPreviewProps) {
+  const isMobile = useIsMobile()
+
   if (!preview?.content) return null
+
+  const shouldShowPreviewOnHover = showPreviewOnHover && !isMobile
 
   return (
     <div
       className={cn(
         "flex items-center gap-1.5 text-xs text-muted-foreground",
-        compact && !showPreviewOnHover && "hidden",
-        compact && showPreviewOnHover && "hidden group-hover:flex"
+        compact && !shouldShowPreviewOnHover && "hidden",
+        compact && shouldShowPreviewOnHover && "hidden group-hover:flex"
       )}
     >
       <span className="truncate flex-1">
@@ -94,31 +104,6 @@ export function StreamItemPreview({ preview, getActorName, compact, showPreviewO
       </span>
       <RelativeTime date={preview.createdAt} className="flex-shrink-0" />
     </div>
-  )
-}
-
-export function StreamItemContextMenu({ children }: { children: ReactNode }) {
-  const { setMenuOpen } = useSidebar()
-
-  return (
-    <DropdownMenu onOpenChange={setMenuOpen}>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="absolute right-1 top-1 h-6 w-6 max-sm:h-8 max-sm:w-8 max-sm:right-0 max-sm:top-0 opacity-0 group-hover:opacity-100 max-sm:opacity-100 data-[state=open]:opacity-100"
-          onClick={(e) => {
-            e.preventDefault()
-            e.stopPropagation()
-          }}
-        >
-          <MoreHorizontal className="h-3.5 w-3.5" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-40">
-        {children}
-      </DropdownMenuContent>
-    </DropdownMenu>
   )
 }
 
@@ -153,7 +138,10 @@ export function StreamItem({
   const { getActorName, getActorAvatar } = useActors(workspaceId)
   const { openStreamSettings } = useStreamSettings()
   const { collapseOnMobile } = useSidebar()
+  const isMobile = useIsMobile()
   const itemRef = useRef<HTMLAnchorElement>(null)
+  const preventNavigationUntilRef = useRef(0)
+  const [drawerOpen, setDrawerOpen] = useState(false)
   const hasUnread = unreadCount > 0
   const preview = stream.lastMessagePreview
   const isVirtualDraft = isDraftId(stream.id)
@@ -207,6 +195,59 @@ export function StreamItem({
     return config ?? null
   })()
 
+  const actions: SidebarActionItem[] =
+    isVirtualDraft || stream.type === StreamTypes.DM
+      ? []
+      : [
+          {
+            id: "settings",
+            label: "Settings",
+            icon: Settings,
+            onSelect: () => openStreamSettings(stream.id),
+          },
+        ]
+
+  let drawerPreview: SidebarActionPreview | null = null
+  if (preview?.content) {
+    drawerPreview = {
+      streamName: name,
+      authorName: getActorName(preview.authorId, preview.authorType),
+      content: truncateContent(preview.content, 140),
+      createdAt: preview.createdAt,
+    }
+  } else if (stream.type === StreamTypes.DM) {
+    drawerPreview = {
+      streamName: name,
+      content: "No messages yet",
+    }
+  }
+
+  const hasPreviewOnlyDrawer = stream.type === StreamTypes.DM && drawerPreview !== null
+  const canOpenDrawer = actions.length > 0 || hasPreviewOnlyDrawer
+
+  const openDrawer = useCallback(() => {
+    if (!canOpenDrawer) return
+    preventNavigationUntilRef.current = Date.now() + 750
+    setDrawerOpen(true)
+  }, [canOpenDrawer])
+
+  const longPress = useLongPress({
+    onLongPress: openDrawer,
+    enabled: isMobile && canOpenDrawer,
+  })
+
+  const handleClick = useCallback(
+    (e: MouseEvent<HTMLAnchorElement>) => {
+      if (preventNavigationUntilRef.current > Date.now()) {
+        e.preventDefault()
+        e.stopPropagation()
+        return
+      }
+      collapseOnMobile()
+    },
+    [collapseOnMobile]
+  )
+
   // For scratchpads, support renaming
   if (stream.type === StreamTypes.SCRATCHPAD) {
     return (
@@ -225,62 +266,68 @@ export function StreamItem({
   }
 
   return (
-    <Link
-      ref={itemRef}
-      to={`/w/${workspaceId}/s/${stream.id}`}
-      onClick={collapseOnMobile}
-      className={cn(
-        "group relative flex items-stretch rounded-lg text-sm transition-colors",
-        isActive ? "bg-primary/10" : "hover:bg-muted/50",
-        hasUnread && !isActive && "bg-primary/5 hover:bg-primary/10"
-      )}
-    >
-      {showUrgencyStrip && <UrgencyStrip urgency={stream.urgency} />}
+    <>
+      <Link
+        ref={itemRef}
+        to={`/w/${workspaceId}/s/${stream.id}`}
+        onClick={handleClick}
+        onTouchStart={isMobile ? longPress.handlers.onTouchStart : undefined}
+        onTouchEnd={isMobile ? longPress.handlers.onTouchEnd : undefined}
+        onTouchMove={isMobile ? longPress.handlers.onTouchMove : undefined}
+        onContextMenu={isMobile ? longPress.handlers.onContextMenu : undefined}
+        className={cn(
+          "group relative flex items-stretch rounded-lg text-sm transition-colors",
+          isActive ? "bg-primary/10" : "hover:bg-muted/50",
+          hasUnread && !isActive && "bg-primary/5 hover:bg-primary/10",
+          isMobile && canOpenDrawer && "select-none",
+          longPress.isPressed && "opacity-70 transition-opacity duration-100"
+        )}
+      >
+        {showUrgencyStrip && <UrgencyStrip urgency={stream.urgency} />}
 
-      <div className="flex items-center gap-2.5 flex-1 min-w-0 px-2 py-2">
-        <StreamItemAvatar
-          icon={avatar.icon}
-          className={avatar.className}
-          avatarUrl={dmPeerAvatar?.avatarUrl}
-          avatarAlt={name}
-          badge={threadBadge}
-        />
-
-        <div className="flex flex-col flex-1 min-w-0 gap-0.5">
-          <div className="flex items-center gap-2 pr-8">
-            <span className={cn("truncate text-sm", hasUnread ? "font-semibold" : "font-medium")}>
-              {name}
-              {threadRootContext && (
-                <span className="font-normal text-muted-foreground/60 text-xs"> · {threadRootContext}</span>
-              )}
-            </span>
-            {stream.type === StreamTypes.CHANNEL && stream.visibility === Visibilities.PRIVATE && (
-              <Lock className="h-3 w-3 shrink-0 text-muted-foreground/60" />
-            )}
-            <MentionIndicator count={mentionCount} className="ml-auto" />
-          </div>
-          <StreamItemPreview
-            preview={preview}
-            getActorName={getActorName}
-            compact={compact}
-            showPreviewOnHover={showPreviewOnHover}
+        <div className="flex items-center gap-2.5 flex-1 min-w-0 px-2 py-2">
+          <StreamItemAvatar
+            icon={avatar.icon}
+            className={avatar.className}
+            avatarUrl={dmPeerAvatar?.avatarUrl}
+            avatarAlt={name}
+            badge={threadBadge}
           />
-        </div>
-      </div>
 
-      {!isVirtualDraft && (
-        <StreamItemContextMenu>
-          <DropdownMenuItem
-            onClick={(e) => {
-              e.stopPropagation()
-              openStreamSettings(stream.id)
-            }}
-          >
-            <Settings className="mr-2 h-4 w-4" />
-            Settings
-          </DropdownMenuItem>
-        </StreamItemContextMenu>
+          <div className="flex flex-col flex-1 min-w-0 gap-0.5">
+            <div className="flex items-center gap-2 pr-8">
+              <span className={cn("truncate text-sm", hasUnread ? "font-semibold" : "font-medium")}>
+                {name}
+                {threadRootContext && (
+                  <span className="font-normal text-muted-foreground/60 text-xs"> · {threadRootContext}</span>
+                )}
+              </span>
+              {stream.type === StreamTypes.CHANNEL && stream.visibility === Visibilities.PRIVATE && (
+                <Lock className="h-3 w-3 shrink-0 text-muted-foreground/60" />
+              )}
+              <MentionIndicator count={mentionCount} className="ml-auto" />
+            </div>
+            <StreamItemPreview
+              preview={preview}
+              getActorName={getActorName}
+              compact={compact}
+              showPreviewOnHover={showPreviewOnHover}
+            />
+          </div>
+        </div>
+
+        <SidebarActionMenu actions={actions} ariaLabel="Stream actions" />
+      </Link>
+      {isMobile && canOpenDrawer && (
+        <SidebarActionDrawer
+          open={drawerOpen}
+          onOpenChange={setDrawerOpen}
+          actions={actions}
+          title={`Actions for ${name}`}
+          description="Choose an action for this stream."
+          preview={drawerPreview}
+        />
       )}
-    </Link>
+    </>
   )
 }
