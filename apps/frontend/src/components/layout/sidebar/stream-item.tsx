@@ -1,4 +1,4 @@
-import { useRef, type ReactNode, type RefObject } from "react"
+import { useMemo, useRef, type ReactNode, type RefObject } from "react"
 import { Bell, FileEdit, Hash, Lock, MessageSquareText, Settings, User } from "lucide-react"
 import { Link } from "react-router-dom"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
@@ -192,17 +192,20 @@ export function StreamItem({
     return config ?? null
   })()
 
-  const actions: SidebarActionItem[] =
-    isVirtualDraft || stream.type === StreamTypes.DM
-      ? []
-      : [
-          {
-            id: "settings",
-            label: "Settings",
-            icon: Settings,
-            onSelect: () => openStreamSettings(stream.id),
-          },
-        ]
+  const actions = useMemo<SidebarActionItem[]>(
+    () =>
+      isVirtualDraft || stream.type === StreamTypes.DM
+        ? []
+        : [
+            {
+              id: "settings",
+              label: "Settings",
+              icon: Settings,
+              onSelect: () => openStreamSettings(stream.id),
+            },
+          ],
+    [isVirtualDraft, openStreamSettings, stream.id, stream.type]
+  )
 
   let drawerPreview: SidebarActionPreview | null = null
   if (preview?.content) {

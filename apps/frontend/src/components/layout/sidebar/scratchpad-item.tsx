@@ -1,4 +1,4 @@
-import { useRef, type RefObject } from "react"
+import { useCallback, useMemo, useRef, type RefObject } from "react"
 import { Archive, FileEdit, Settings } from "lucide-react"
 import { Link } from "react-router-dom"
 import { MentionIndicator } from "@/components/mention-indicator"
@@ -55,30 +55,33 @@ export function ScratchpadItem({
 
   useUrgencyTracking(itemRef, streamWithPreview.id, streamWithPreview.urgency, scrollContainerRef)
 
-  const handleArchive = async () => {
+  const handleArchive = useCallback(async () => {
     await archive()
-  }
+  }, [archive])
 
-  const actions: SidebarActionItem[] = [
-    ...(!isDraft
-      ? [
-          {
-            id: "settings",
-            label: "Settings",
-            icon: Settings,
-            onSelect: () => openStreamSettings(streamWithPreview.id),
-          } satisfies SidebarActionItem,
-        ]
-      : []),
-    {
-      id: "archive",
-      label: isDraft ? "Delete" : "Archive",
-      icon: Archive,
-      onSelect: handleArchive,
-      variant: "destructive",
-      separatorBefore: !isDraft,
-    },
-  ]
+  const actions = useMemo<SidebarActionItem[]>(
+    () => [
+      ...(!isDraft
+        ? [
+            {
+              id: "settings",
+              label: "Settings",
+              icon: Settings,
+              onSelect: () => openStreamSettings(streamWithPreview.id),
+            } satisfies SidebarActionItem,
+          ]
+        : []),
+      {
+        id: "archive",
+        label: isDraft ? "Delete" : "Archive",
+        icon: Archive,
+        onSelect: handleArchive,
+        variant: "destructive",
+        separatorBefore: !isDraft,
+      },
+    ],
+    [handleArchive, isDraft, openStreamSettings, streamWithPreview.id]
+  )
 
   const drawerPreview: SidebarActionPreview | null =
     preview && preview.content

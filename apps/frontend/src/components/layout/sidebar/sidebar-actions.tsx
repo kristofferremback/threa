@@ -53,6 +53,49 @@ async function runSidebarAction(action: SidebarActionItem) {
   }
 }
 
+function SidebarActionContent({ action, iconClassName }: { action: SidebarActionItem; iconClassName: string }) {
+  const Icon = action.icon
+
+  return (
+    <>
+      <Icon className={iconClassName} />
+      <span>{action.label}</span>
+    </>
+  )
+}
+
+function SidebarActionMenuEntry({ action }: { action: SidebarActionItem }) {
+  const isDestructive = action.variant === "destructive"
+  const content = <SidebarActionContent action={action} iconClassName="mr-2 h-4 w-4" />
+
+  return (
+    <div>
+      {action.separatorBefore && <DropdownMenuSeparator />}
+      {action.href ? (
+        <DropdownMenuItem asChild className={cn(isDestructive && "text-destructive focus:text-destructive")}>
+          <Link
+            to={action.href}
+            onClick={() => {
+              void runSidebarAction(action)
+            }}
+          >
+            {content}
+          </Link>
+        </DropdownMenuItem>
+      ) : (
+        <DropdownMenuItem
+          className={cn(isDestructive && "text-destructive focus:text-destructive")}
+          onSelect={() => {
+            void runSidebarAction(action)
+          }}
+        >
+          {content}
+        </DropdownMenuItem>
+      )}
+    </div>
+  )
+}
+
 export function SidebarActionMenu({
   actions,
   trigger,
@@ -84,39 +127,9 @@ export function SidebarActionMenu({
     <DropdownMenu onOpenChange={setMenuOpen}>
       <DropdownMenuTrigger asChild>{trigger ?? defaultTrigger}</DropdownMenuTrigger>
       <DropdownMenuContent side={side} align={align} className={cn("w-40", contentClassName)}>
-        {actions.map((action) => {
-          const Icon = action.icon
-          const isDestructive = action.variant === "destructive"
-
-          return (
-            <div key={action.id}>
-              {action.separatorBefore && <DropdownMenuSeparator />}
-              {action.href ? (
-                <DropdownMenuItem asChild className={cn(isDestructive && "text-destructive focus:text-destructive")}>
-                  <Link
-                    to={action.href}
-                    onClick={() => {
-                      void runSidebarAction(action)
-                    }}
-                  >
-                    <Icon className="mr-2 h-4 w-4" />
-                    {action.label}
-                  </Link>
-                </DropdownMenuItem>
-              ) : (
-                <DropdownMenuItem
-                  className={cn(isDestructive && "text-destructive focus:text-destructive")}
-                  onSelect={() => {
-                    void runSidebarAction(action)
-                  }}
-                >
-                  <Icon className="mr-2 h-4 w-4" />
-                  {action.label}
-                </DropdownMenuItem>
-              )}
-            </div>
-          )
-        })}
+        {actions.map((action) => (
+          <SidebarActionMenuEntry key={action.id} action={action} />
+        ))}
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -141,7 +154,9 @@ export function SidebarActionDrawer({
   header,
   preview,
 }: SidebarActionDrawerProps) {
-  if (!open && actions.length === 0) return null
+  const hasVisibleContent = actions.length > 0 || preview != null || header != null
+
+  if (!open && !hasVisibleContent) return null
 
   const resolvedHeader =
     header ??
@@ -171,61 +186,62 @@ export function SidebarActionDrawer({
 
         {actions.length > 0 && (
           <div className="px-2 pb-[max(12px,env(safe-area-inset-bottom))]">
-            {actions.map((action) => {
-              const Icon = action.icon
-              const isDestructive = action.variant === "destructive"
-
-              return (
-                <div key={action.id}>
-                  {action.separatorBefore && <Divider />}
-                  {action.href ? (
-                    <Link
-                      to={action.href}
-                      className={cn(
-                        "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors",
-                        isDestructive ? "text-destructive active:bg-destructive/10" : "active:bg-muted/80"
-                      )}
-                      onClick={() => {
-                        onOpenChange(false)
-                        void runSidebarAction(action)
-                      }}
-                    >
-                      <Icon
-                        className={cn(
-                          "h-[18px] w-[18px] shrink-0",
-                          isDestructive ? "text-destructive" : "text-muted-foreground"
-                        )}
-                      />
-                      <span>{action.label}</span>
-                    </Link>
-                  ) : (
-                    <button
-                      type="button"
-                      className={cn(
-                        "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors",
-                        isDestructive ? "text-destructive active:bg-destructive/10" : "active:bg-muted/80"
-                      )}
-                      onClick={() => {
-                        onOpenChange(false)
-                        void runSidebarAction(action)
-                      }}
-                    >
-                      <Icon
-                        className={cn(
-                          "h-[18px] w-[18px] shrink-0",
-                          isDestructive ? "text-destructive" : "text-muted-foreground"
-                        )}
-                      />
-                      <span>{action.label}</span>
-                    </button>
-                  )}
-                </div>
-              )
-            })}
+            {actions.map((action) => (
+              <SidebarActionDrawerEntry
+                key={action.id}
+                action={action}
+                onClose={() => {
+                  onOpenChange(false)
+                }}
+              />
+            ))}
           </div>
         )}
       </DrawerContent>
     </Drawer>
+  )
+}
+
+function SidebarActionDrawerEntry({ action, onClose }: { action: SidebarActionItem; onClose: () => void }) {
+  const isDestructive = action.variant === "destructive"
+  const className = cn(
+    "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors",
+    isDestructive ? "text-destructive active:bg-destructive/10" : "active:bg-muted/80"
+  )
+  const content = (
+    <SidebarActionContent
+      action={action}
+      iconClassName={cn("h-[18px] w-[18px] shrink-0", isDestructive ? "text-destructive" : "text-muted-foreground")}
+    />
+  )
+
+  return (
+    <div>
+      {action.separatorBefore && <Divider />}
+      {action.href ? (
+        <Link
+          to={action.href}
+          className={className}
+          onClick={() => {
+            onClose()
+            void runSidebarAction(action)
+          }}
+        >
+          {content}
+        </Link>
+      ) : (
+        <button
+          type="button"
+          className={className}
+          onClick={() => {
+            onClose()
+            void runSidebarAction(action)
+          }}
+        >
+          {content}
+        </button>
+      )}
+    </div>
   )
 }
 

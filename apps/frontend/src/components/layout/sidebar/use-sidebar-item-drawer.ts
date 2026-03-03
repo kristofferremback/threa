@@ -41,6 +41,5 @@ export function useSidebarItemDrawer({ canOpenDrawer, collapseOnMobile }: UseSid
     handleClick,
     isMobile,
     longPress,
-    openDrawer,
   }
 }

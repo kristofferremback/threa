@@ -47,7 +47,11 @@ vi.mock("@/components/relative-time", () => ({
 }))
 
 vi.mock("@/components/ui/drawer", () => ({
-  Drawer: ({ open, children }: { open: boolean; children: ReactNode }) => (open ? <div>{children}</div> : null),
+  Drawer: ({ open, children }: { open: boolean; children: ReactNode }) => (
+    <div data-testid="drawer-root" data-state={open ? "open" : "closed"}>
+      {open ? children : null}
+    </div>
+  ),
   DrawerContent: ({ children, className }: { children: ReactNode; className?: string }) => (
     <div className={className}>{children}</div>
   ),
@@ -139,6 +143,24 @@ describe("SidebarActionDrawer", () => {
     )
 
     expect(screen.getByText("Signed in as Kris")).toBeInTheDocument()
+  })
+
+  it("keeps preview-only drawers mounted while closing", () => {
+    render(
+      <SidebarActionDrawer
+        open={false}
+        onOpenChange={vi.fn()}
+        actions={[]}
+        title="Actions for Taylor"
+        description="Choose an action for this stream."
+        preview={{
+          streamName: "Taylor",
+          content: "No messages yet",
+        }}
+      />
+    )
+
+    expect(screen.getByTestId("drawer-root")).toHaveAttribute("data-state", "closed")
   })
 
   it("renders link actions as anchors", () => {
