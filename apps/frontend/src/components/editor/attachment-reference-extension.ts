@@ -66,8 +66,9 @@ export const AttachmentReferenceExtension = Node.create({
         parseHTML: (element) => {
           const rawValue = element.getAttribute("data-size-bytes")
           if (rawValue === null || rawValue === "") return null
-          const parsed = Number.parseInt(rawValue, 10)
-          return Number.isFinite(parsed) ? parsed : null
+          if (!/^\d+$/.test(rawValue)) return null
+          const parsed = Number(rawValue)
+          return Number.isSafeInteger(parsed) ? parsed : null
         },
         renderHTML: (attrs) => (attrs.sizeBytes != null ? { "data-size-bytes": String(attrs.sizeBytes) } : {}),
       },

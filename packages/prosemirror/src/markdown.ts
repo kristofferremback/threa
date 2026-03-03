@@ -7,6 +7,12 @@
  */
 
 import type { JSONContent, JSONContentMark } from "@threa/types"
+import {
+  escapeMarkdownLinkText,
+  parseAttachmentMetadata,
+  serializeAttachmentMetadata,
+  unescapeMarkdownLinkText,
+} from "./attachment-markdown"
 
 // ============================================================================
 // JSON → Markdown Serialization
@@ -18,61 +24,6 @@ import type { JSONContent, JSONContentMark } from "@threa/types"
 export function serializeToMarkdown(content: JSONContent): string {
   if (!content.content) return ""
   return content.content.map((node) => serializeNode(node)).join("\n\n")
-}
-
-const ATTACHMENT_METADATA_PREFIX = "threa-attachment:"
-
-function escapeMarkdownLinkTitle(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
-}
-
-function unescapeMarkdownLinkTitle(value: string): string {
-  return value.replace(/\\"/g, '"').replace(/\\\\/g, "\\")
-}
-
-function serializeAttachmentMetadata(attrs: Record<string, unknown> | undefined): string {
-  if (!attrs) return ""
-
-  const params = new URLSearchParams()
-  if (typeof attrs.filename === "string" && attrs.filename.length > 0) {
-    params.set("filename", attrs.filename)
-  }
-  if (typeof attrs.mimeType === "string" && attrs.mimeType.length > 0) {
-    params.set("mimeType", attrs.mimeType)
-  }
-  if (typeof attrs.sizeBytes === "number" && Number.isFinite(attrs.sizeBytes)) {
-    params.set("sizeBytes", String(attrs.sizeBytes))
-  }
-
-  const encoded = params.toString()
-  if (!encoded) return ""
-  return ` "${escapeMarkdownLinkTitle(`${ATTACHMENT_METADATA_PREFIX}${encoded}`)}"`
-}
-
-function parseAttachmentMetadata(rawTitle: string | undefined): {
-  filename?: string
-  mimeType?: string
-  sizeBytes: number | null
-} {
-  if (!rawTitle) {
-    return { sizeBytes: null }
-  }
-
-  const title = unescapeMarkdownLinkTitle(rawTitle)
-  if (!title.startsWith(ATTACHMENT_METADATA_PREFIX)) {
-    return { sizeBytes: null }
-  }
-
-  const params = new URLSearchParams(title.slice(ATTACHMENT_METADATA_PREFIX.length))
-  const rawSizeBytes = params.get("sizeBytes")
-  const parsedSizeBytes =
-    rawSizeBytes !== null && rawSizeBytes !== "" && Number.isFinite(Number(rawSizeBytes)) ? Number(rawSizeBytes) : null
-
-  return {
-    filename: params.get("filename") ?? undefined,
-    mimeType: params.get("mimeType") ?? undefined,
-    sizeBytes: parsedSizeBytes,
-  }
 }
 
 function serializeNode(node: JSONContent, listDepth = 0, listIndex?: number): string {
@@ -171,8 +122,9 @@ function getNodeText(node: JSONContent): string {
     // Format: [Image #1](attachment:id) or [filename](attachment:id)
     const isImage = mimeType?.startsWith("image/")
     const displayText = isImage && imageIndex ? `Image #${imageIndex}` : filename
+    const escapedDisplayText = escapeMarkdownLinkText(displayText)
     const metadata = serializeAttachmentMetadata(node.attrs)
-    return `[${displayText}](attachment:${id}${metadata})`
+    return `[${escapedDisplayText}](attachment:${id}${metadata})`
   }
   if (node.type === "emoji") {
     const shortcode = node.attrs?.shortcode as string
@@ -486,7 +438,7 @@ function parseInlineMarkdown(text: string, options: ParseOptions = {}): JSONCont
 
   // Inline markdown pattern - captures each format type in separate groups
   const inlinePattern =
-    /(\[([^\]]+)\]\(attachment:([^)\s"]+)(?:\s+"((?:\\"|\\\\|[^"])*)")?\))|(\[([^\]]+)\]\(([^)]+)\))|(\*\*\*(.+?)\*\*\*)|(\*\*(.+?)\*\*)|(?<!\*)(\*([^*]+?)\*)(?!\*)|(\~\~(.+?)\~\~)|(`([^`]+)`)|(@([\w-]+))|(#([\w-]+))|(:([\w+-]+):)/g
+    /(\[((?:\\.|[^\\\]])+)\]\(attachment:([^)\s"]+)(?:\s+"((?:\\"|\\\\|[^"])*)")?\))|(\[([^\]]+)\]\(([^)]+)\))|(\*\*\*(.+?)\*\*\*)|(\*\*(.+?)\*\*)|(?<!\*)(\*([^*]+?)\*)(?!\*)|(\~\~(.+?)\~\~)|(`([^`]+)`)|(@([\w-]+))|(#([\w-]+))|(:([\w+-]+):)/g
 
   let lastIndex = 0
   let match
@@ -499,7 +451,7 @@ function parseInlineMarkdown(text: string, options: ParseOptions = {}): JSONCont
 
     if (match[1]) {
       // Attachment: [text](attachment:id)
-      const displayText = match[2]
+      const displayText = unescapeMarkdownLinkText(match[2])
       const attachmentId = match[3]
       const metadata = parseAttachmentMetadata(match[4])
       const imageMatch = displayText.match(/^Image #(\d+)$/)

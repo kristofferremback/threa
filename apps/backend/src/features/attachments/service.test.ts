@@ -165,6 +165,30 @@ describe("AttachmentService", () => {
     expect(attachment.sizeBytes).toBe(4096)
   })
 
+  it("fails loudly when storage cannot determine the object size", async () => {
+    const insertSpy = spyOn(AttachmentRepository, "insert")
+    const outboxSpy = spyOn(OutboxRepository, "insert")
+    const { service, storage } = createService()
+    storage.getObjectSize = mock(async () => {
+      throw new Error("S3 HeadObject missing valid ContentLength for key: ws_1/attach_1/empty.txt")
+    })
+
+    await expect(
+      service.create({
+        id: "attach_1",
+        workspaceId: "ws_1",
+        uploadedBy: "usr_1",
+        filename: "empty.txt",
+        mimeType: "text/plain",
+        sizeBytes: 0,
+        storagePath: "ws_1/attach_1/empty.txt",
+      })
+    ).rejects.toThrow("S3 HeadObject missing valid ContentLength for key: ws_1/attach_1/empty.txt")
+
+    expect(insertSpy).not.toHaveBeenCalled()
+    expect(outboxSpy).not.toHaveBeenCalled()
+  })
+
   it("quarantines stale pending scans and returns recovered count", async () => {
     spyOn(db, "withTransaction").mockImplementation((async (_db: unknown, callback: (client: any) => Promise<any>) =>
       callback({})) as any)

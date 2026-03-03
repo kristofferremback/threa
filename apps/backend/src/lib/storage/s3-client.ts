@@ -46,7 +46,13 @@ export function createS3Storage(config: S3Config): StorageProvider {
         })
       )
 
-      return response.ContentLength ?? 0
+      const contentLength = response.ContentLength
+
+      if (typeof contentLength !== "number" || !Number.isSafeInteger(contentLength) || contentLength < 0) {
+        throw new Error(`S3 HeadObject missing valid ContentLength for key: ${key}`)
+      }
+
+      return contentLength
     },
 
     async getSignedDownloadUrl(key: string, expiresIn = 900): Promise<string> {

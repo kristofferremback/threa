@@ -1179,6 +1179,20 @@ const x = 1
         })
       })
 
+      it("should parse legacy escaped attachment labels without metadata", () => {
+        const result = parseMarkdown("[report\\[final\\]\\\\v2\\].pdf](attachment:attach_456)")
+        const content = result.content?.[0]?.content
+
+        expect(content?.[0]?.type).toBe("attachmentReference")
+        expect(content?.[0]?.attrs).toMatchObject({
+          id: "attach_456",
+          filename: "report[final]\\v2].pdf",
+          mimeType: "application/octet-stream",
+          sizeBytes: null,
+          status: "uploaded",
+        })
+      })
+
       it("should not confuse regular links with attachment references", () => {
         const result = parseMarkdown("[link](https://example.com)")
         const content = result.content?.[0]?.content
@@ -1264,6 +1278,45 @@ const x = 1
           filename: "document.docx",
           mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
           sizeBytes: 8192,
+        })
+      })
+
+      it("should preserve attachment labels with brackets and backslashes through round-trip", () => {
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                {
+                  type: "attachmentReference",
+                  attrs: {
+                    id: "attach_escaped",
+                    filename: "report[final]\\v2].pdf",
+                    mimeType: "application/pdf",
+                    sizeBytes: 512,
+                    status: "uploaded",
+                    imageIndex: null,
+                    error: null,
+                  },
+                },
+              ],
+            },
+          ],
+        }
+
+        const md = serializeToMarkdown(doc)
+        expect(md).toBe(
+          '[report\\[final\\]\\\\v2\\].pdf](attachment:attach_escaped "threa-attachment:filename=report%5Bfinal%5D%5Cv2%5D.pdf&mimeType=application%2Fpdf&sizeBytes=512")'
+        )
+
+        const parsed = parseMarkdown(md)
+        expect(parsed.content?.[0]?.content?.[0]?.type).toBe("attachmentReference")
+        expect(parsed.content?.[0]?.content?.[0]?.attrs).toMatchObject({
+          filename: "report[final]\\v2].pdf",
+          mimeType: "application/pdf",
+          sizeBytes: 512,
+          imageIndex: null,
         })
       })
     })
