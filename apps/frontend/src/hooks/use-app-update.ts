@@ -5,7 +5,7 @@ import { useSocketReconnectCount } from "@/contexts"
 
 const POLL_INTERVAL = 300_000 // 5 minutes
 const TOAST_ID = "app-update"
-const IS_DEV = __APP_VERSION__ === "dev"
+const IS_DEV = import.meta.env.DEV
 
 export function useAppUpdate(): void {
   const toastShownRef = useRef(false)
