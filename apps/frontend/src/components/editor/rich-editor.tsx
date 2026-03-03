@@ -276,6 +276,7 @@ export function RichEditor({
           !isSuggestionActive(editorRef.current) &&
           onEditLastMessageRef.current
         ) {
+          event.preventDefault()
           onEditLastMessageRef.current()
           return true
         }
