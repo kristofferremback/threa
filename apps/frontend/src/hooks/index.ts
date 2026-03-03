@@ -2,6 +2,7 @@ export {
   useWorkspaces,
   useWorkspace,
   useWorkspaceBootstrap,
+  useWorkspaceUserId,
   useCreateWorkspace,
   useAcceptInvitation,
   useRegions,

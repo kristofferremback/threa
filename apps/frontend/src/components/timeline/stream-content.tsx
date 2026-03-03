@@ -7,7 +7,7 @@ import {
   useStreamSocket,
   useScrollBehavior,
   useStreamBootstrap,
-  useWorkspaceBootstrap,
+  useWorkspaceUserId,
   useAutoMarkAsRead,
   useUnreadDivider,
   useAgentActivity,
@@ -107,16 +107,23 @@ export function StreamContent({
     { enabled: !isDraft }
   )
 
-  // Resolve current workspace-scoped user ID once here; event.actorId uses this same space
-  const { data: wsBootstrap } = useWorkspaceBootstrap(workspaceId)
-  const currentWorkspaceUserId = useMemo(
-    () => wsBootstrap?.users?.find((u) => u.workosUserId === user?.id)?.id ?? null,
-    [wsBootstrap?.users, user?.id]
-  )
+  // Resolve current workspace-scoped user ID. The hook deduplicates with SentMessageEvent instances.
+  const currentWorkspaceUserId = useWorkspaceUserId(workspaceId)
 
   // Registry: maps messageId → openEdit callback registered by mounted SentMessageEvent instances.
   // Ref-based so registration/deregistration never triggers re-renders.
   const editRegistryRef = useRef(new Map<string, () => void>())
+
+  // Refs keep triggerEditLast stable (empty dep array) so context consumers don't re-render on
+  // every new message — same pattern as onEditLastMessageRef in rich-editor.tsx.
+  const eventsRef = useRef(events)
+  useEffect(() => {
+    eventsRef.current = events
+  }, [events])
+  const currentWorkspaceUserIdRef = useRef(currentWorkspaceUserId)
+  useEffect(() => {
+    currentWorkspaceUserIdRef.current = currentWorkspaceUserId
+  }, [currentWorkspaceUserId])
 
   const registerMessage = useCallback((messageId: string, openEdit: () => void) => {
     editRegistryRef.current.set(messageId, openEdit)
@@ -126,24 +133,25 @@ export function StreamContent({
   // Scan events newest-first for the current user's last non-deleted message,
   // then call its registered handler. Silent no-op if nothing qualifies or not loaded.
   const triggerEditLast = useCallback(() => {
-    if (!currentWorkspaceUserId) return
+    const currentUserId = currentWorkspaceUserIdRef.current
+    if (!currentUserId) return
 
     // Collect deleted message IDs from message_deleted events. Bootstrap-window events
     // have deletedAt injected into message_created payloads, but paginated events don't —
     // they carry a separate message_deleted event instead.
     const deletedIds = new Set<string>()
-    for (const event of events) {
+    for (const event of eventsRef.current) {
       if (event.eventType === "message_deleted") {
         const p = event.payload as { messageId?: string }
         if (p.messageId) deletedIds.add(p.messageId)
       }
     }
 
-    for (let i = events.length - 1; i >= 0; i--) {
-      const event = events[i]
+    for (let i = eventsRef.current.length - 1; i >= 0; i--) {
+      const event = eventsRef.current[i]
       if (event.eventType !== "message_created") continue
       if (event.actorType !== "user") continue
-      if (event.actorId !== currentWorkspaceUserId) continue
+      if (event.actorId !== currentUserId) continue
       const payload = event.payload as { messageId?: string; deletedAt?: string }
       if (!payload.messageId) continue
       if (payload.deletedAt || deletedIds.has(payload.messageId)) continue
@@ -151,7 +159,7 @@ export function StreamContent({
       editRegistryRef.current.get(payload.messageId)?.()
       return
     }
-  }, [events, currentWorkspaceUserId])
+  }, []) // stable — reads from refs, never recreated
 
   const editLastMessageCtx = useMemo(() => ({ registerMessage, triggerEditLast }), [registerMessage, triggerEditLast])
 

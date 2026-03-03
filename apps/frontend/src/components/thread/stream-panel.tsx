@@ -22,6 +22,7 @@ import { usePanel, isDraftPanel, parseDraftPanel, useSidebar } from "@/contexts"
 import { useStreamService, useMessageService } from "@/contexts"
 import { StreamLoadingIndicator } from "@/components/loading"
 import { StreamContent } from "@/components/timeline"
+import { useEditLastMessage } from "@/components/timeline/edit-last-message-context"
 import { StreamErrorBoundary } from "@/components/stream-error-boundary"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
 import { MessageComposer } from "@/components/composer"
@@ -107,6 +108,7 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
   }, [isDraft, externalThreadId, openPanel])
 
   // Draft composer
+  const { triggerEditLast } = useEditLastMessage() ?? {}
   const draftKey = draftInfo ? getDraftMessageKey({ type: "thread", parentMessageId: draftInfo.parentMessageId }) : ""
   const composer = useDraftComposer({
     workspaceId,
@@ -278,6 +280,7 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
                   placeholder="Write your reply..."
                   autoFocus={!isMobile}
                   scopeId={panelId}
+                  onEditLastMessage={triggerEditLast}
                 />
               </div>
             </div>
