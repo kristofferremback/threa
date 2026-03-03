@@ -1,10 +1,6 @@
-import { useRef, useEffect, useCallback, useMemo } from "react"
+import { useRef, useCallback, useMemo } from "react"
 import type { StreamEvent } from "@threa/types"
-
-interface EditLastMessageTrigger {
-  registerMessage: (messageId: string, openEdit: () => void) => () => void
-  triggerEditLast: () => void
-}
+import type { EditLastMessageContextValue } from "@/components/timeline/edit-last-message-context"
 
 /**
  * Manages the "press ArrowUp to edit last message" feature for a stream.
@@ -17,22 +13,22 @@ interface EditLastMessageTrigger {
  * Both callbacks are stable (never recreated) — context consumers don't
  * re-render when new messages arrive.
  */
-export function useEditLastMessageTrigger(events: StreamEvent[], currentUserId: string | null): EditLastMessageTrigger {
+export function useEditLastMessageTrigger(
+  events: StreamEvent[],
+  currentUserId: string | null
+): EditLastMessageContextValue {
   // Registry: maps messageId → openEdit callback registered by mounted SentMessageEvent instances.
   // Ref-based so registration/deregistration never triggers re-renders.
   const editRegistryRef = useRef(new Map<string, () => void>())
 
-  // Refs keep callbacks stable (empty dep array) so context consumers don't re-render on
-  // every new message — same pattern as onEditLastMessageRef in rich-editor.tsx.
+  // Inline synchronous assignments keep refs current on every render, matching the
+  // onEditLastMessageRef pattern in rich-editor.tsx. This avoids a stale-ref window
+  // that useEffect updates would introduce between a render and its effect flush.
   const eventsRef = useRef(events)
-  useEffect(() => {
-    eventsRef.current = events
-  }, [events])
+  eventsRef.current = events
 
   const currentUserIdRef = useRef(currentUserId)
-  useEffect(() => {
-    currentUserIdRef.current = currentUserId
-  }, [currentUserId])
+  currentUserIdRef.current = currentUserId
 
   const registerMessage = useCallback((messageId: string, openEdit: () => void) => {
     editRegistryRef.current.set(messageId, openEdit)

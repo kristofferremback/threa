@@ -1,6 +1,6 @@
 import { createContext, useContext } from "react"
 
-interface EditLastMessageContextValue {
+export interface EditLastMessageContextValue {
   /**
    * Called by SentMessageEvent on mount to register its edit handler.
    * Returns a cleanup function that deregisters the handler on unmount.
