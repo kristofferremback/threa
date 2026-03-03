@@ -1,6 +1,7 @@
 import type { ComponentProps, MouseEvent, ReactNode } from "react"
 import { type LucideIcon, MoreHorizontal } from "lucide-react"
 import { Link } from "react-router-dom"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "@/components/ui/drawer"
 import {
@@ -39,6 +40,17 @@ interface SidebarActionMenuProps {
   align?: ComponentProps<typeof DropdownMenuContent>["align"]
   side?: ComponentProps<typeof DropdownMenuContent>["side"]
   contentClassName?: string
+}
+
+async function runSidebarAction(action: SidebarActionItem) {
+  if (!action.onSelect) return
+
+  try {
+    await action.onSelect()
+  } catch (error) {
+    console.error(`Sidebar action "${action.id}" failed:`, error)
+    toast.error(error instanceof Error ? error.message : `Failed to complete ${action.label.toLowerCase()}`)
+  }
 }
 
 export function SidebarActionMenu({
@@ -84,7 +96,7 @@ export function SidebarActionMenu({
                   <Link
                     to={action.href}
                     onClick={() => {
-                      void action.onSelect?.()
+                      void runSidebarAction(action)
                     }}
                   >
                     <Icon className="mr-2 h-4 w-4" />
@@ -95,7 +107,7 @@ export function SidebarActionMenu({
                 <DropdownMenuItem
                   className={cn(isDestructive && "text-destructive focus:text-destructive")}
                   onSelect={() => {
-                    void action.onSelect?.()
+                    void runSidebarAction(action)
                   }}
                 >
                   <Icon className="mr-2 h-4 w-4" />
@@ -175,7 +187,7 @@ export function SidebarActionDrawer({
                       )}
                       onClick={() => {
                         onOpenChange(false)
-                        void action.onSelect?.()
+                        void runSidebarAction(action)
                       }}
                     >
                       <Icon
@@ -195,7 +207,7 @@ export function SidebarActionDrawer({
                       )}
                       onClick={() => {
                         onOpenChange(false)
-                        void action.onSelect?.()
+                        void runSidebarAction(action)
                       }}
                     >
                       <Icon

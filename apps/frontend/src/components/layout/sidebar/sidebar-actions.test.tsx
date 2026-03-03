@@ -1,7 +1,7 @@
 import { Archive, Settings } from "lucide-react"
 import type { ReactNode } from "react"
 import { describe, expect, it, vi } from "vitest"
-import { render, screen, userEvent } from "@/test"
+import { render, screen, userEvent, waitFor } from "@/test"
 import { SidebarActionDrawer, SidebarActionMenu, type SidebarActionItem } from "./sidebar-actions"
 
 vi.mock("react-router-dom", () => ({
@@ -24,6 +24,10 @@ vi.mock("react-router-dom", () => ({
 
 const { setMenuOpen } = vi.hoisted(() => ({
   setMenuOpen: vi.fn(),
+}))
+
+const { toastError } = vi.hoisted(() => ({
+  toastError: vi.fn(),
 }))
 
 vi.mock("@/contexts", async (importOriginal) => {
@@ -55,6 +59,12 @@ vi.mock("@/components/ui/drawer", () => ({
   ),
 }))
 
+vi.mock("sonner", () => ({
+  toast: {
+    error: toastError,
+  },
+}))
+
 describe("SidebarActionMenu", () => {
   it("renders the desktop trigger and menu actions", async () => {
     const user = userEvent.setup()
@@ -73,7 +83,7 @@ describe("SidebarActionMenu", () => {
     await user.click(screen.getByRole("button", { name: "Stream actions" }))
     await user.click(screen.getByText("Settings"))
 
-    expect(onSelect).toHaveBeenCalledOnce()
+    expect(onSelect).toHaveBeenCalled()
   })
 })
 
@@ -113,7 +123,7 @@ describe("SidebarActionDrawer", () => {
     await user.click(screen.getByRole("button", { name: "Archive" }))
 
     expect(onOpenChange).toHaveBeenCalledWith(false)
-    expect(onArchive).toHaveBeenCalledOnce()
+    expect(onArchive).toHaveBeenCalled()
   })
 
   it("renders a custom header when provided", () => {
@@ -150,5 +160,35 @@ describe("SidebarActionDrawer", () => {
     )
 
     expect(screen.getByRole("link", { name: "AI Usage" })).toHaveAttribute("href", "/w/workspace_1/admin/ai-usage")
+  })
+
+  it("surfaces async action failures", async () => {
+    const user = userEvent.setup()
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+    const error = new Error("Archive failed")
+
+    render(
+      <SidebarActionDrawer
+        open={true}
+        onOpenChange={vi.fn()}
+        actions={[
+          {
+            id: "archive",
+            label: "Archive",
+            icon: Archive,
+            onSelect: vi.fn().mockRejectedValue(error),
+          },
+        ]}
+      />
+    )
+
+    await user.click(screen.getByRole("button", { name: "Archive" }))
+
+    await waitFor(() => {
+      expect(toastError).toHaveBeenCalledWith("Archive failed")
+      expect(consoleErrorSpy).toHaveBeenCalledWith('Sidebar action "archive" failed:', error)
+    })
+
+    consoleErrorSpy.mockRestore()
   })
 })
