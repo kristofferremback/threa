@@ -2,8 +2,10 @@ import { useState, useCallback, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import { useDraftComposer, getDraftMessageKey, useStreamOrDraft } from "@/hooks"
 import { usePreferences } from "@/contexts"
+import { useIsMobile } from "@/hooks/use-mobile"
 import { MessageComposer } from "@/components/composer"
 import { DocumentEditorModal } from "@/components/editor"
+import { Drawer, DrawerContent, DrawerHeader } from "@/components/ui/drawer"
 import { commandsApi } from "@/api"
 import { isCommand } from "@/lib/commands"
 import { cn } from "@/lib/utils"
@@ -17,6 +19,33 @@ interface MessageInputProps {
   disabled?: boolean
   disabledReason?: string
   autoFocus?: boolean
+}
+
+/** Extract a short plain-text preview from a ProseMirror document */
+function draftPreviewText(doc: JSONContent): string {
+  const texts: string[] = []
+  const walk = (node: JSONContent) => {
+    if (node.type === "text" && typeof node.text === "string") {
+      texts.push(node.text)
+    }
+    if (node.content) {
+      for (const child of node.content) walk(child)
+    }
+  }
+  walk(doc)
+  const joined = texts.join("").trim()
+  return joined.length > 60 ? joined.slice(0, 60) + "…" : joined
+}
+
+/** Returns true if the document has any actual content */
+function hasDocContent(doc: JSONContent): boolean {
+  if (!doc?.content) return false
+  return doc.content.some((node) => {
+    if (node.type === "paragraph") {
+      return node.content && node.content.length > 0
+    }
+    return true
+  })
 }
 
 export function MessageInput({
@@ -35,12 +64,15 @@ export function MessageInput({
   const composer = useDraftComposer({ workspaceId, draftKey, scopeId: streamId })
   const [error, setError] = useState<string | null>(null)
   const [docEditorOpen, setDocEditorOpen] = useState(false)
+  const [sheetOpen, setSheetOpen] = useState(false)
   const messageSendMode = preferences?.messageSendMode ?? "enter"
+  const isMobile = useIsMobile()
 
   // Reset local state on stream change (e.g., draft promotion) without remounting
   useEffect(() => {
     setError(null)
     setDocEditorOpen(false)
+    setSheetOpen(false)
   }, [streamId])
 
   const handleSubmit = useCallback(async () => {
@@ -100,6 +132,8 @@ export function MessageInput({
       if (result.navigateTo) {
         navigate(result.navigateTo, { replace: result.replace ?? false })
       }
+      // Close mobile sheet after successful send
+      setSheetOpen(false)
     } catch {
       // This only happens for draft promotion failure (stream creation failed)
       // Real stream message failures are handled in the timeline with retry
@@ -157,6 +191,60 @@ export function MessageInput({
             <p className="text-sm text-muted-foreground text-center">{disabledReason}</p>
           </div>
         </div>
+      </div>
+    )
+  }
+
+  // Mobile path: compact tap trigger + Drawer with full composer inside
+  if (isMobile && !disabled) {
+    const hasDraft = hasDocContent(composer.content)
+    const previewText = hasDraft ? draftPreviewText(composer.content) : null
+
+    return (
+      <div className="border-t">
+        {/* Compact tap trigger — visible when drawer is closed */}
+        {!sheetOpen && (
+          <button
+            type="button"
+            className="w-full p-4 text-left text-sm text-muted-foreground"
+            onClick={() => setSheetOpen(true)}
+          >
+            {previewText ?? (streamName ? `Message #${streamName}` : "Type a message…")}
+          </button>
+        )}
+
+        <Drawer open={sheetOpen} onOpenChange={setSheetOpen}>
+          <DrawerContent className="h-[90dvh] flex flex-col">
+            {/* Header with stream name */}
+            <DrawerHeader className="flex items-center py-2 px-4 border-b">
+              <span className="text-sm font-medium">{streamName ? `#${streamName}` : "New message"}</span>
+            </DrawerHeader>
+
+            {/* Full composer inside drawer */}
+            <div className="flex-1 overflow-hidden p-3">
+              <MessageComposer
+                content={composer.content}
+                onContentChange={composer.handleContentChange}
+                pendingAttachments={composer.pendingAttachments}
+                onRemoveAttachment={composer.handleRemoveAttachment}
+                fileInputRef={composer.fileInputRef}
+                onFileSelect={composer.handleFileSelect}
+                onFileUpload={composer.uploadFile}
+                imageCount={composer.imageCount}
+                onSubmit={handleSubmit}
+                canSubmit={composer.canSend}
+                isSubmitting={composer.isSending}
+                hasFailed={composer.hasFailed}
+                messageSendMode={messageSendMode}
+                onExpandClick={undefined}
+                autoFocus
+                scopeId={streamId}
+              />
+            </div>
+
+            {error && <p className="px-4 pb-2 text-sm text-destructive">{error}</p>}
+          </DrawerContent>
+        </Drawer>
       </div>
     )
   }

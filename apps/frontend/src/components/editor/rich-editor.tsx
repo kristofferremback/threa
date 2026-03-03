@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback, useMemo } from "react"
+import { useRef, useState, useEffect, useCallback, useMemo, forwardRef, useImperativeHandle } from "react"
 import { useEditor, EditorContent } from "@tiptap/react"
 import { useParams } from "react-router-dom"
 import { createEditorExtensions } from "./editor-extensions"
@@ -13,6 +13,13 @@ import { cn } from "@/lib/utils"
 import type { UploadResult } from "@/hooks/use-attachments"
 import type { AttachmentReferenceAttrs } from "./attachment-reference-extension"
 import type { MessageSendMode, JSONContent } from "@threa/types"
+
+export interface RichEditorHandle {
+  focus(): void
+  insertMention(): void
+  insertSlash(): void
+  insertEmoji(): void
+}
 
 interface RichEditorProps {
   value: JSONContent
@@ -29,6 +36,8 @@ interface RichEditorProps {
   messageSendMode?: MessageSendMode
   /** Show the always-visible formatting toolbar above the editor */
   showFormattingToolbar?: boolean
+  /** Force the bubble toolbar to be visible (e.g. via manual Format button) */
+  forceToolbarVisible?: boolean
   /** Called when attach button in formatting toolbar is clicked */
   onAttachClick?: () => void
   /** Auto-focus the editor when mounted */
@@ -37,21 +46,25 @@ interface RichEditorProps {
   scopeId?: string
 }
 
-export function RichEditor({
-  value,
-  onChange,
-  onSubmit,
-  onFileUpload,
-  imageCount = 0,
-  placeholder = "Type a message...",
-  disabled = false,
-  className,
-  messageSendMode = "enter",
-  showFormattingToolbar = false,
-  onAttachClick,
-  autoFocus = false,
-  scopeId,
-}: RichEditorProps) {
+export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function RichEditor(
+  {
+    value,
+    onChange,
+    onSubmit,
+    onFileUpload,
+    imageCount = 0,
+    placeholder = "Type a message...",
+    disabled = false,
+    className,
+    messageSendMode = "enter",
+    showFormattingToolbar = false,
+    forceToolbarVisible = false,
+    onAttachClick,
+    autoFocus = false,
+    scopeId,
+  },
+  ref
+) {
   const containerRef = useRef<HTMLDivElement>(null)
   const isInternalUpdate = useRef(false)
   const [isFocused, setIsFocused] = useState(false)
@@ -434,6 +447,18 @@ export function RichEditor({
     editor?.chain().focus().insertContent(":").run()
   }, [editor])
 
+  // Expose imperative handle for parent to trigger insert actions
+  useImperativeHandle(
+    ref,
+    () => ({
+      focus,
+      insertMention: handleMentionClick,
+      insertSlash: handleSlashClick,
+      insertEmoji: handleEmojiClick,
+    }),
+    [focus, handleMentionClick, handleSlashClick, handleEmojiClick]
+  )
+
   return (
     <div ref={containerRef} className={cn("relative flex-1", disabled && "cursor-not-allowed opacity-50", className)}>
       {showFormattingToolbar && (
@@ -453,6 +478,7 @@ export function RichEditor({
         <EditorToolbar
           editor={editor}
           isVisible={toolbarVisible}
+          forceVisible={forceToolbarVisible}
           referenceElement={containerRef.current}
           linkPopoverOpen={linkPopoverOpen}
           onLinkPopoverOpenChange={setLinkPopoverOpen}
@@ -465,4 +491,4 @@ export function RichEditor({
       {renderEmojiGrid()}
     </div>
   )
-}
+})

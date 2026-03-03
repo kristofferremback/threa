@@ -1,6 +1,7 @@
-import { type ChangeEvent, type RefObject, useMemo, useCallback } from "react"
-import { Expand } from "lucide-react"
+import { type ChangeEvent, type RefObject, useMemo, useCallback, useRef, useState } from "react"
+import { Expand, Type, AtSign, Slash, Paperclip } from "lucide-react"
 import { RichEditor } from "@/components/editor"
+import type { RichEditorHandle } from "@/components/editor"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
 import { PendingAttachments } from "@/components/timeline/pending-attachments"
@@ -81,6 +82,9 @@ export function MessageComposer({
   // The editor itself stays editable during sending so mobile keyboards don't close/reopen.
   const controlsDisabled = disabled || isSubmitting
 
+  const richEditorRef = useRef<RichEditorHandle>(null)
+  const [formatBubbleOpen, setFormatBubbleOpen] = useState(false)
+
   // Build the send mode hint text (reactive to preference changes)
   const sendHint = useMemo(() => {
     if (messageSendMode === "enter") {
@@ -89,14 +93,20 @@ export function MessageComposer({
     return `${MOD_SYMBOL}Enter to send`
   }, [messageSendMode])
 
-  // Handle attach button click from formatting toolbar
+  // Handle attach button click
   const handleAttachClick = useCallback(() => {
     fileInputRef.current?.click()
   }, [fileInputRef])
 
+  // Wrap onSubmit to reset bubble state on send
+  const handleSubmit = useCallback(() => {
+    setFormatBubbleOpen(false)
+    onSubmit()
+  }, [onSubmit])
+
   return (
     <TooltipProvider delayDuration={300}>
-      {/* Message input wrapper with premium styling */}
+      {/* Message input wrapper */}
       <div className={cn("max-h-[380px] flex flex-col", className)}>
         {/* Attachment bar - shown above input */}
         <PendingAttachments attachments={pendingAttachments} onRemove={onRemoveAttachment} />
@@ -111,12 +121,135 @@ export function MessageComposer({
           disabled={controlsDisabled}
         />
 
-        {/* Main input area with glow effect */}
+        {/* Main input area */}
         <div className="input-glow-wrapper">
-          <div className="rounded-[16px] border border-input bg-card p-3">
-            {/* Input row - expand button, editor, send button */}
-            <div className="flex items-end gap-2">
-              {/* Expand button - opens document editor modal */}
+          <div className="rounded-[16px] border border-input bg-card p-3 flex flex-col gap-2">
+            {/* Editor — bubble toolbar floats above on selection or forceVisible */}
+            <RichEditor
+              ref={richEditorRef}
+              value={content}
+              onChange={onContentChange}
+              onSubmit={handleSubmit}
+              onFileUpload={onFileUpload}
+              imageCount={imageCount}
+              placeholder={placeholder}
+              disabled={disabled}
+              messageSendMode={messageSendMode}
+              showFormattingToolbar={false}
+              forceToolbarVisible={formatBubbleOpen}
+              autoFocus={autoFocus}
+              scopeId={scopeId}
+            />
+
+            {/* Bottom action bar */}
+            <div className="flex items-center gap-1">
+              {/* Format toggle — opens/closes bubble manually */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className={cn("h-7 w-7 shrink-0", formatBubbleOpen && "bg-muted-foreground/20 text-foreground")}
+                    onClick={() => setFormatBubbleOpen((v) => !v)}
+                    disabled={controlsDisabled}
+                  >
+                    <Type className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  Format (⌘K)
+                </TooltipContent>
+              </Tooltip>
+
+              {/* Insert emoji */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 shrink-0"
+                    onPointerDown={(e) => {
+                      e.preventDefault()
+                      richEditorRef.current?.insertEmoji()
+                    }}
+                    disabled={controlsDisabled}
+                  >
+                    <span className="text-sm leading-none">😊</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  Emoji
+                </TooltipContent>
+              </Tooltip>
+
+              {/* Insert mention */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 shrink-0"
+                    onPointerDown={(e) => {
+                      e.preventDefault()
+                      richEditorRef.current?.insertMention()
+                    }}
+                    disabled={controlsDisabled}
+                  >
+                    <AtSign className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  Mention
+                </TooltipContent>
+              </Tooltip>
+
+              {/* Insert slash command */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 shrink-0"
+                    onPointerDown={(e) => {
+                      e.preventDefault()
+                      richEditorRef.current?.insertSlash()
+                    }}
+                    disabled={controlsDisabled}
+                  >
+                    <Slash className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  Command
+                </TooltipContent>
+              </Tooltip>
+
+              {/* Attach files */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 shrink-0"
+                    onClick={handleAttachClick}
+                    disabled={controlsDisabled}
+                  >
+                    <Paperclip className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  Attach files
+                </TooltipContent>
+              </Tooltip>
+
+              <div className="flex-1" />
+
+              {/* Expand button — desktop only, opens document editor */}
               {onExpandClick && (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -124,7 +257,7 @@ export function MessageComposer({
                       type="button"
                       variant="ghost"
                       size="icon"
-                      className="h-9 w-9 shrink-0 rounded-lg bg-muted/50 hover:bg-primary/10 hover:text-primary"
+                      className="h-7 w-7 shrink-0 rounded-lg hover:bg-primary/10 hover:text-primary"
                       onClick={onExpandClick}
                       disabled={controlsDisabled}
                     >
@@ -132,38 +265,20 @@ export function MessageComposer({
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent side="top">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">Expand editor</span>
-                      <span className="text-muted-foreground text-xs">{sendHint}</span>
-                    </div>
+                    <span className="font-medium">Expand editor</span>
                   </TooltipContent>
                 </Tooltip>
               )}
 
-              {/* Editor with formatting toolbar - takes remaining space */}
-              <div className="flex-1 min-w-0">
-                <RichEditor
-                  value={content}
-                  onChange={onContentChange}
-                  onSubmit={onSubmit}
-                  onFileUpload={onFileUpload}
-                  imageCount={imageCount}
-                  placeholder={placeholder}
-                  disabled={disabled}
-                  messageSendMode={messageSendMode}
-                  showFormattingToolbar
-                  onAttachClick={handleAttachClick}
-                  autoFocus={autoFocus}
-                  scopeId={scopeId}
-                />
-              </div>
+              {/* Send hint */}
+              <span className="text-xs text-muted-foreground hidden sm:block">{sendHint}</span>
 
               {/* Send button */}
               {hasFailed ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <span>
-                      <Button disabled className="pointer-events-none h-9 rounded-lg">
+                      <Button disabled className="pointer-events-none h-7 rounded-lg text-xs px-3">
                         {submitLabel}
                       </Button>
                     </span>
@@ -175,9 +290,9 @@ export function MessageComposer({
               ) : (
                 <Button
                   onPointerDown={(e) => e.preventDefault()}
-                  onClick={onSubmit}
+                  onClick={handleSubmit}
                   disabled={!canSubmit}
-                  className="h-9 rounded-lg shrink-0"
+                  className="h-7 rounded-lg shrink-0 text-xs px-3"
                 >
                   {isSubmitting ? submittingLabel : submitLabel}
                 </Button>

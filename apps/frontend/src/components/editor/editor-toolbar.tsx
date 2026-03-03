@@ -1,16 +1,18 @@
 import { useLayoutEffect } from "react"
 import type { Editor } from "@tiptap/react"
 import { useFloating, offset, flip, shift, autoUpdate } from "@floating-ui/react"
-import { Bold, Italic, Strikethrough, Link2, Quote, Code, Braces, List, ListOrdered } from "lucide-react"
+import { Bold, Italic, Strikethrough, Link2, Quote, Code, Braces, List, ListOrdered, ChevronDown } from "lucide-react"
 import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
 import { Button } from "@/components/ui/button"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { LinkEditor } from "./link-editor"
 import { cn } from "@/lib/utils"
 
 interface EditorToolbarProps {
   editor: Editor | null
   isVisible: boolean
+  forceVisible?: boolean
   referenceElement: HTMLElement | null
   linkPopoverOpen?: boolean
   onLinkPopoverOpenChange?: (open: boolean) => void
@@ -20,6 +22,7 @@ interface EditorToolbarProps {
 export function EditorToolbar({
   editor,
   isVisible,
+  forceVisible,
   referenceElement,
   linkPopoverOpen,
   onLinkPopoverOpenChange,
@@ -37,7 +40,7 @@ export function EditorToolbar({
     }
   }, [referenceElement, refs])
 
-  if (!editor || !isVisible) return null
+  if (!editor || (!isVisible && !forceVisible)) return null
 
   const isLinkActive = editor.isActive("link")
 
@@ -61,6 +64,11 @@ export function EditorToolbar({
             "animate-in fade-in-0 zoom-in-95 duration-150"
           )}
         >
+          {/* Style picker - heading / paragraph */}
+          <StylePicker editor={editor} />
+
+          <Separator orientation="vertical" className="mx-1 h-6" />
+
           {/* Inline formatting - toggle marks */}
           <ToolbarButton
             onAction={() => editor.chain().focus().toggleBold().run()}
@@ -134,6 +142,62 @@ export function EditorToolbar({
         </div>
       </div>
     </TooltipProvider>
+  )
+}
+
+function StylePicker({ editor }: { editor: Editor }) {
+  let activeLabel = "Normal"
+  if (editor.isActive("heading", { level: 1 })) activeLabel = "Heading 1"
+  else if (editor.isActive("heading", { level: 2 })) activeLabel = "Heading 2"
+  else if (editor.isActive("heading", { level: 3 })) activeLabel = "Heading 3"
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="sm" className="h-8 gap-1 px-2 text-xs font-medium hover:bg-muted" tabIndex={-1}>
+          {activeLabel}
+          <ChevronDown className="h-3 w-3 opacity-60" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="min-w-[120px]">
+        <DropdownMenuItem
+          onMouseDown={(e) => {
+            e.preventDefault()
+            editor.chain().focus().setParagraph().run()
+          }}
+          className={cn("text-sm", !editor.isActive("heading") && "font-medium")}
+        >
+          Normal
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onMouseDown={(e) => {
+            e.preventDefault()
+            editor.chain().focus().toggleHeading({ level: 1 }).run()
+          }}
+          className={cn("text-sm", editor.isActive("heading", { level: 1 }) && "font-medium")}
+        >
+          Heading 1
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onMouseDown={(e) => {
+            e.preventDefault()
+            editor.chain().focus().toggleHeading({ level: 2 }).run()
+          }}
+          className={cn("text-sm", editor.isActive("heading", { level: 2 }) && "font-medium")}
+        >
+          Heading 2
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onMouseDown={(e) => {
+            e.preventDefault()
+            editor.chain().focus().toggleHeading({ level: 3 }).run()
+          }}
+          className={cn("text-sm", editor.isActive("heading", { level: 3 }) && "font-medium")}
+        >
+          Heading 3
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
