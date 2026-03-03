@@ -24,13 +24,26 @@ export function useTriggerEditLastMessage(
 ) {
   return useCallback(() => {
     if (!currentWorkspaceUserId) return
+
+    // Collect deleted message IDs from message_deleted events. Bootstrap-window events
+    // have deletedAt injected into message_created payloads, but paginated events don't —
+    // they carry a separate message_deleted event instead.
+    const deletedMessageIds = new Set<string>()
+    for (const event of events) {
+      if (event.eventType === "message_deleted") {
+        const p = event.payload as { messageId?: string }
+        if (p.messageId) deletedMessageIds.add(p.messageId)
+      }
+    }
+
     for (let i = events.length - 1; i >= 0; i--) {
       const event = events[i]
       if (event.eventType !== "message_created") continue
       if (event.actorType !== "user") continue
       if (event.actorId !== currentWorkspaceUserId) continue
       const payload = event.payload as { messageId?: string; deletedAt?: string }
-      if (payload.deletedAt || !payload.messageId) continue
+      if (!payload.messageId) continue
+      if (payload.deletedAt || deletedMessageIds.has(payload.messageId)) continue
       onFound(payload.messageId)
       return
     }
