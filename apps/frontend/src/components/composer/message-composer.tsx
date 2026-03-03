@@ -266,6 +266,7 @@ export function MessageComposer({
                       type="button"
                       variant="ghost"
                       size="icon"
+                      aria-label="Expand editor"
                       className="h-7 w-7 shrink-0 rounded-lg hover:bg-primary/10 hover:text-primary"
                       onClick={onExpandClick}
                       disabled={controlsDisabled}

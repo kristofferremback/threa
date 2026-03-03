@@ -238,7 +238,7 @@ export function MessageInput({
                 hasFailed={composer.hasFailed}
                 messageSendMode={messageSendMode}
                 onExpandClick={undefined}
-                autoFocus
+                autoFocus={sheetOpen}
                 scopeId={streamId}
               />
             </div>
