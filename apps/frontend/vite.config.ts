@@ -1,7 +1,8 @@
 /// <reference types="vitest" />
-import { defineConfig } from "vite"
+import { defineConfig, type Plugin } from "vite"
 import react from "@vitejs/plugin-react"
 import { VitePWA } from "vite-plugin-pwa"
+import { execSync } from "child_process"
 import path from "path"
 
 // Ports can be configured via env vars for browser E2E tests
@@ -12,9 +13,35 @@ const backendTarget = `http://localhost:${backendPort}`
 // Disable HMR during E2E tests to avoid noisy WebSocket errors when Playwright closes tabs
 const isE2ETest = !!process.env.VITE_BACKEND_PORT
 
+// Build version from git short hash — used for auto-update detection
+let buildVersion = "dev"
+try {
+  buildVersion = execSync("git rev-parse --short HEAD", { encoding: "utf-8" }).trim()
+} catch {
+  // git not available (e.g. CI without .git), fall back to "dev"
+}
+
+function versionJsonPlugin(): Plugin {
+  return {
+    name: "version-json",
+    apply: "build",
+    generateBundle() {
+      this.emitFile({
+        type: "asset",
+        fileName: "version.json",
+        source: JSON.stringify({ version: buildVersion }),
+      })
+    },
+  }
+}
+
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(buildVersion),
+  },
   plugins: [
     react(),
+    versionJsonPlugin(),
     VitePWA({
       strategies: "injectManifest",
       srcDir: "src",
