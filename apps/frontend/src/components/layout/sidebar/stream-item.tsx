@@ -8,7 +8,6 @@ import { getThreadRootContext } from "@/components/thread/breadcrumb-helpers"
 import { isDraftId, useActors } from "@/hooks"
 import { useSidebar } from "@/contexts"
 import { useStreamSettings } from "@/components/stream-settings/use-stream-settings"
-import { useIsMobile } from "@/hooks/use-mobile"
 import { cn } from "@/lib/utils"
 import { getStreamName, streamFallbackLabel } from "@/lib/streams"
 import { BADGE_CONFIG, URGENCY_COLORS } from "./config"
@@ -82,11 +81,16 @@ interface StreamItemPreviewProps {
   getActorName: (actorId: string | null, actorType: AuthorType | null) => string
   compact: boolean
   showPreviewOnHover: boolean
+  isMobile: boolean
 }
 
-export function StreamItemPreview({ preview, getActorName, compact, showPreviewOnHover }: StreamItemPreviewProps) {
-  const isMobile = useIsMobile()
-
+export function StreamItemPreview({
+  preview,
+  getActorName,
+  compact,
+  showPreviewOnHover,
+  isMobile,
+}: StreamItemPreviewProps) {
   if (!preview?.content) return null
 
   const shouldShowPreviewOnHover = showPreviewOnHover && !isMobile
@@ -294,6 +298,7 @@ export function StreamItem({
                 getActorName={getActorName}
                 compact={compact}
                 showPreviewOnHover={showPreviewOnHover}
+                isMobile={isMobile}
               />
             </div>
           </div>

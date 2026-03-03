@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 import { ChevronUp, DollarSign, LogOut, Settings, User as UserIcon } from "lucide-react"
 import { useSearchParams } from "react-router-dom"
 import { useAuth } from "@/auth"
@@ -68,12 +68,15 @@ export function SidebarFooter({ workspaceId, currentUser }: SidebarFooterProps) 
   const isMobile = useIsMobile()
   const [drawerOpen, setDrawerOpen] = useState(false)
 
-  const handleOpenSettings = (tab: "profile" | "appearance") => {
-    collapseOnMobile()
-    openSettings(tab)
-  }
+  const handleOpenSettings = useCallback(
+    (tab: "profile" | "appearance") => {
+      collapseOnMobile()
+      openSettings(tab)
+    },
+    [collapseOnMobile, openSettings]
+  )
 
-  const openWorkspaceSettings = () => {
+  const openWorkspaceSettings = useCallback(() => {
     collapseOnMobile()
     setSearchParams(
       (prev) => {
@@ -83,46 +86,49 @@ export function SidebarFooter({ workspaceId, currentUser }: SidebarFooterProps) 
       },
       { replace: true }
     )
-  }
+  }, [collapseOnMobile, setSearchParams])
 
   if (!currentUser) return null
 
   const avatarSrc = getAvatarUrl(workspaceId, currentUser.avatarUrl, 64)
-  const menuActions: SidebarActionItem[] = [
-    {
-      id: "profile",
-      label: "Profile",
-      icon: UserIcon,
-      onSelect: () => handleOpenSettings("profile"),
-    },
-    {
-      id: "settings",
-      label: "Settings",
-      icon: Settings,
-      onSelect: () => handleOpenSettings("appearance"),
-    },
-    {
-      id: "workspace-settings",
-      label: "Workspace Settings",
-      icon: Settings,
-      onSelect: openWorkspaceSettings,
-    },
-    {
-      id: "ai-usage",
-      label: "AI Usage",
-      icon: DollarSign,
-      href: `/w/${workspaceId}/admin/ai-usage`,
-      onSelect: collapseOnMobile,
-      separatorBefore: true,
-    },
-    {
-      id: "logout",
-      label: "Log out",
-      icon: LogOut,
-      onSelect: () => logout(),
-      separatorBefore: true,
-    },
-  ]
+  const menuActions = useMemo<SidebarActionItem[]>(
+    () => [
+      {
+        id: "profile",
+        label: "Profile",
+        icon: UserIcon,
+        onSelect: () => handleOpenSettings("profile"),
+      },
+      {
+        id: "settings",
+        label: "Settings",
+        icon: Settings,
+        onSelect: () => handleOpenSettings("appearance"),
+      },
+      {
+        id: "workspace-settings",
+        label: "Workspace Settings",
+        icon: Settings,
+        onSelect: openWorkspaceSettings,
+      },
+      {
+        id: "ai-usage",
+        label: "AI Usage",
+        icon: DollarSign,
+        href: `/w/${workspaceId}/admin/ai-usage`,
+        onSelect: collapseOnMobile,
+        separatorBefore: true,
+      },
+      {
+        id: "logout",
+        label: "Log out",
+        icon: LogOut,
+        onSelect: () => logout(),
+        separatorBefore: true,
+      },
+    ],
+    [handleOpenSettings, openWorkspaceSettings, collapseOnMobile, logout, workspaceId]
+  )
 
   if (isMobile) {
     return (

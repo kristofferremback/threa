@@ -135,6 +135,7 @@ export function ScratchpadItem({
                 getActorName={getActorName}
                 compact={compact}
                 showPreviewOnHover={showPreviewOnHover}
+                isMobile={isMobile}
               />
             </div>
           </div>
