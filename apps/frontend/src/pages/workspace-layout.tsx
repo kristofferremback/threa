@@ -28,6 +28,7 @@ import {
   useReconnectBootstrap,
   usePendingMessageRetry,
   usePersistLastStream,
+  useAppUpdate,
 } from "@/hooks"
 import { QuickSwitcher, type QuickSwitcherMode } from "@/components/quick-switcher"
 import { SettingsDialog } from "@/components/settings"
@@ -83,6 +84,11 @@ function WorkspaceSocketHandler({ workspaceId, streamIds, children }: WorkspaceS
 
 function PendingMessageRetryHandler() {
   usePendingMessageRetry()
+  return null
+}
+
+function AppUpdateChecker() {
+  useAppUpdate()
   return null
 }
 
@@ -145,6 +151,7 @@ export function WorkspaceLayout() {
   return (
     <SocketProvider workspaceId={workspaceId}>
       <WorkspaceSocketHandler workspaceId={workspaceId} streamIds={streamIds}>
+        <AppUpdateChecker />
         <PendingMessageRetryHandler />
         <CoordinatedLoadingProvider workspaceId={workspaceId} streamIds={streamIds}>
           <ChannelLinkProvider workspaceId={workspaceId} streams={streams}>

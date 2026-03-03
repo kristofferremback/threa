@@ -121,3 +121,5 @@ export { useLastStream, usePersistLastStream } from "./use-last-stream"
 export { usePullToRefresh } from "./use-pull-to-refresh"
 
 export { useEditLastMessageTrigger } from "./use-edit-last-message-trigger"
+
+export { useAppUpdate } from "./use-app-update"
