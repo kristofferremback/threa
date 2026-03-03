@@ -13,12 +13,13 @@ const backendTarget = `http://localhost:${backendPort}`
 // Disable HMR during E2E tests to avoid noisy WebSocket errors when Playwright closes tabs
 const isE2ETest = !!process.env.VITE_BACKEND_PORT
 
-// Build version from git short hash — used for auto-update detection
-let buildVersion = "dev"
+// Build version from git short hash — used for auto-update detection.
+// Falls back to a build timestamp so auto-update still works in gitless CI environments.
+let buildVersion: string
 try {
   buildVersion = execSync("git rev-parse --short HEAD", { encoding: "utf-8" }).trim()
 } catch {
-  // git not available (e.g. CI without .git), fall back to "dev"
+  buildVersion = `build-${Date.now()}`
 }
 
 function versionJsonPlugin(): Plugin {
