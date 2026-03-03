@@ -8,6 +8,7 @@ import { commandsApi } from "@/api"
 import { isCommand } from "@/lib/commands"
 import { cn } from "@/lib/utils"
 import { serializeToMarkdown, parseMarkdown } from "@threa/prosemirror"
+import { useEditLastMessage } from "./edit-last-message-context"
 import type { JSONContent } from "@threa/types"
 
 interface MessageInputProps {
@@ -17,7 +18,6 @@ interface MessageInputProps {
   disabled?: boolean
   disabledReason?: string
   autoFocus?: boolean
-  onEditLastMessage?: () => void
 }
 
 export function MessageInput({
@@ -27,8 +27,8 @@ export function MessageInput({
   disabled,
   disabledReason,
   autoFocus,
-  onEditLastMessage,
 }: MessageInputProps) {
+  const { triggerEditLast } = useEditLastMessage() ?? {}
   const navigate = useNavigate()
   const { preferences } = usePreferences()
   const { sendMessage } = useStreamOrDraft(workspaceId, streamId)
@@ -189,7 +189,7 @@ export function MessageInput({
           onExpandClick={() => setDocEditorOpen(true)}
           autoFocus={autoFocus}
           scopeId={streamId}
-          onEditLastMessage={onEditLastMessage}
+          onEditLastMessage={triggerEditLast}
         />
         {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
       </div>

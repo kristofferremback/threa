@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from "vitest"
-import { render, screen } from "@testing-library/react"
+import { render, screen, act } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { MessageEvent } from "./message-event"
@@ -243,43 +243,45 @@ describe("MessageEvent", () => {
       vi.restoreAllMocks()
     })
 
-    it("opens inline edit form when pendingEditMessageId matches this message", () => {
+    it("registers an edit handler and opens inline edit when it is called", async () => {
       const event = createMessageEvent("msg_edit", "Hello world")
-      const clearPendingEdit = vi.fn()
       const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+
+      let capturedHandler: (() => void) | undefined
+      const registerMessage = vi.fn((_messageId: string, handler: () => void) => {
+        capturedHandler = handler
+        return () => {}
+      })
 
       render(
         <QueryClientProvider client={queryClient}>
           <TooltipProvider>
-            <EditLastMessageContext.Provider value={{ pendingEditMessageId: "msg_edit", clearPendingEdit }}>
+            <EditLastMessageContext.Provider value={{ registerMessage, triggerEditLast: vi.fn() }}>
               <MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />
             </EditLastMessageContext.Provider>
           </TooltipProvider>
         </QueryClientProvider>
       )
 
-      // Cancel button is only present when the inline edit form is visible
+      // Handler should be registered for this message
+      expect(registerMessage).toHaveBeenCalledWith("msg_edit", expect.any(Function))
+
+      // No edit form yet
+      expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument()
+
+      // Calling the registered handler opens the inline edit form
+      await act(async () => {
+        capturedHandler?.()
+      })
       expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument()
-      expect(clearPendingEdit).toHaveBeenCalled()
     })
 
-    it("does not open edit form when pendingEditMessageId is for a different message", () => {
+    it("does not open edit form when context is absent", () => {
       const event = createMessageEvent("msg_edit", "Hello world")
-      const clearPendingEdit = vi.fn()
-      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
 
-      render(
-        <QueryClientProvider client={queryClient}>
-          <TooltipProvider>
-            <EditLastMessageContext.Provider value={{ pendingEditMessageId: "msg_other", clearPendingEdit }}>
-              <MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />
-            </EditLastMessageContext.Provider>
-          </TooltipProvider>
-        </QueryClientProvider>
-      )
+      render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />)
 
       expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument()
-      expect(clearPendingEdit).not.toHaveBeenCalled()
     })
   })
 })

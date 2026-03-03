@@ -212,17 +212,16 @@ function SentMessageEvent({
     })
   }, [])
 
-  // React to ArrowUp-to-edit-last-message trigger from the composer.
-  // No ownership guard needed here — useTriggerEditLastMessage already validated authorship
-  // before setting pendingEditMessageId, so a matching ID is always ours.
-  const editLastMessageCtx = useEditLastMessage()
-  const pendingEditMessageId = editLastMessageCtx?.pendingEditMessageId ?? null
-  const clearPendingEdit = editLastMessageCtx?.clearPendingEdit
+  // Register this message's edit handler with the context so the composer's ArrowUp trigger
+  // can imperatively open edit mode and scroll into view. Unregistered on unmount.
+  const { registerMessage } = useEditLastMessage() ?? {}
   useEffect(() => {
-    if (pendingEditMessageId !== payload.messageId) return
-    setIsEditing(true)
-    clearPendingEdit?.()
-  }, [pendingEditMessageId, payload.messageId, clearPendingEdit])
+    if (!registerMessage) return
+    return registerMessage(payload.messageId, () => {
+      containerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" })
+      setIsEditing(true)
+    })
+  }, [payload.messageId, registerMessage])
 
   // Scroll to this message when highlighted
   useEffect(() => {

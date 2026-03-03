@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useCallback, useState } from "react"
+import { useMemo, useEffect, useCallback, useRef } from "react"
 import { useSearchParams } from "react-router-dom"
 import { MessageSquare } from "lucide-react"
 import { useQueryClient } from "@tanstack/react-query"
@@ -30,7 +30,7 @@ import { EventList } from "./event-list"
 import { MessageInput } from "./message-input"
 import { JoinChannelBar } from "./join-channel-bar"
 import { ThreadParentMessage } from "../thread/thread-parent-message"
-import { EditLastMessageContext, useTriggerEditLastMessage } from "./edit-last-message-context"
+import { EditLastMessageContext } from "./edit-last-message-context"
 
 interface StreamContentProps {
   workspaceId: string
@@ -54,7 +54,6 @@ export function StreamContent({
   const [, setSearchParams] = useSearchParams()
   const user = useUser()
   const socket = useSocket()
-  const [pendingEditMessageId, setPendingEditMessageId] = useState<string | null>(null)
 
   // Clear highlight param after delay (works for both main view and panels)
   useEffect(() => {
@@ -115,21 +114,46 @@ export function StreamContent({
     [wsBootstrap?.users, user?.id]
   )
 
-  const clearPendingEdit = useCallback(() => setPendingEditMessageId(null), [])
-  const triggerEditLastMessage = useTriggerEditLastMessage(currentWorkspaceUserId, events, setPendingEditMessageId)
+  // Registry: maps messageId → openEdit callback registered by mounted SentMessageEvent instances.
+  // Ref-based so registration/deregistration never triggers re-renders.
+  const editRegistryRef = useRef(new Map<string, () => void>())
 
-  // Auto-clear pendingEditMessageId if nothing consumes it — guards against stuck state
-  // when the target message is temporarily rendered as PendingMessageEvent/FailedMessageEvent
-  useEffect(() => {
-    if (!pendingEditMessageId) return
-    const timer = setTimeout(() => setPendingEditMessageId(null), 500)
-    return () => clearTimeout(timer)
-  }, [pendingEditMessageId])
+  const registerMessage = useCallback((messageId: string, openEdit: () => void) => {
+    editRegistryRef.current.set(messageId, openEdit)
+    return () => editRegistryRef.current.delete(messageId)
+  }, [])
 
-  const editLastMessageCtx = useMemo(
-    () => ({ pendingEditMessageId, clearPendingEdit }),
-    [pendingEditMessageId, clearPendingEdit]
-  )
+  // Scan events newest-first for the current user's last non-deleted message,
+  // then call its registered handler. Silent no-op if nothing qualifies or not loaded.
+  const triggerEditLast = useCallback(() => {
+    if (!currentWorkspaceUserId) return
+
+    // Collect deleted message IDs from message_deleted events. Bootstrap-window events
+    // have deletedAt injected into message_created payloads, but paginated events don't —
+    // they carry a separate message_deleted event instead.
+    const deletedIds = new Set<string>()
+    for (const event of events) {
+      if (event.eventType === "message_deleted") {
+        const p = event.payload as { messageId?: string }
+        if (p.messageId) deletedIds.add(p.messageId)
+      }
+    }
+
+    for (let i = events.length - 1; i >= 0; i--) {
+      const event = events[i]
+      if (event.eventType !== "message_created") continue
+      if (event.actorType !== "user") continue
+      if (event.actorId !== currentWorkspaceUserId) continue
+      const payload = event.payload as { messageId?: string; deletedAt?: string }
+      if (!payload.messageId) continue
+      if (payload.deletedAt || deletedIds.has(payload.messageId)) continue
+      // If the message is not mounted (e.g., not yet loaded), nothing is registered — correct no-op.
+      editRegistryRef.current.get(payload.messageId)?.()
+      return
+    }
+  }, [events, currentWorkspaceUserId])
+
+  const editLastMessageCtx = useMemo(() => ({ registerMessage, triggerEditLast }), [registerMessage, triggerEditLast])
 
   // Track live agent session progress for all stream types (step/message counts on session cards).
   // In channels, session cards are hidden (responses go to threads) and inline activity shows on trigger messages instead.
@@ -260,7 +284,6 @@ export function StreamContent({
             disabled={isArchived || isSystem}
             disabledReason={disabledReason}
             autoFocus={autoFocus}
-            onEditLastMessage={triggerEditLastMessage}
           />
         )}
       </div>
