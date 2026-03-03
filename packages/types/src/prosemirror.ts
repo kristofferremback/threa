@@ -206,7 +206,7 @@ export interface ThreaAttachmentReference {
     id: string
     filename: string
     mimeType: string
-    sizeBytes: number
+    sizeBytes: number | null
     status: "uploading" | "uploaded" | "error"
     imageIndex?: number | null
     error?: string | null
@@ -330,7 +330,7 @@ const attachmentReferenceNodeSchema = z.object({
     id: z.string(),
     filename: z.string(),
     mimeType: z.string(),
-    sizeBytes: z.number(),
+    sizeBytes: z.number().nullable(),
     status: z.enum(["uploading", "uploaded", "error"]),
     imageIndex: z.number().nullable().optional(),
     error: z.string().nullable().optional(),

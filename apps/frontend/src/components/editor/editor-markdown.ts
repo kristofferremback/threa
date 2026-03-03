@@ -8,6 +8,61 @@ export function serializeToMarkdown(content: JSONContent): string {
   return content.content.map((node) => serializeNode(node)).join("\n\n")
 }
 
+const ATTACHMENT_METADATA_PREFIX = "threa-attachment:"
+
+function escapeMarkdownLinkTitle(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
+}
+
+function unescapeMarkdownLinkTitle(value: string): string {
+  return value.replace(/\\"/g, '"').replace(/\\\\/g, "\\")
+}
+
+function serializeAttachmentMetadata(attrs: Record<string, unknown> | undefined): string {
+  if (!attrs) return ""
+
+  const params = new URLSearchParams()
+  if (typeof attrs.filename === "string" && attrs.filename.length > 0) {
+    params.set("filename", attrs.filename)
+  }
+  if (typeof attrs.mimeType === "string" && attrs.mimeType.length > 0) {
+    params.set("mimeType", attrs.mimeType)
+  }
+  if (typeof attrs.sizeBytes === "number" && Number.isFinite(attrs.sizeBytes)) {
+    params.set("sizeBytes", String(attrs.sizeBytes))
+  }
+
+  const encoded = params.toString()
+  if (!encoded) return ""
+  return ` "${escapeMarkdownLinkTitle(`${ATTACHMENT_METADATA_PREFIX}${encoded}`)}"`
+}
+
+function parseAttachmentMetadata(rawTitle: string | undefined): {
+  filename?: string
+  mimeType?: string
+  sizeBytes: number | null
+} {
+  if (!rawTitle) {
+    return { sizeBytes: null }
+  }
+
+  const title = unescapeMarkdownLinkTitle(rawTitle)
+  if (!title.startsWith(ATTACHMENT_METADATA_PREFIX)) {
+    return { sizeBytes: null }
+  }
+
+  const params = new URLSearchParams(title.slice(ATTACHMENT_METADATA_PREFIX.length))
+  const rawSizeBytes = params.get("sizeBytes")
+  const parsedSizeBytes =
+    rawSizeBytes !== null && rawSizeBytes !== "" && Number.isFinite(Number(rawSizeBytes)) ? Number(rawSizeBytes) : null
+
+  return {
+    filename: params.get("filename") ?? undefined,
+    mimeType: params.get("mimeType") ?? undefined,
+    sizeBytes: parsedSizeBytes,
+  }
+}
+
 function serializeNode(node: JSONContent, listDepth = 0, listIndex?: number): string {
   if (!node) return ""
 
@@ -104,7 +159,8 @@ function getNodeText(node: JSONContent): string {
     // Format: [Image #1](attachment:id) or [filename](attachment:id)
     const isImage = mimeType?.startsWith("image/")
     const displayText = isImage && imageIndex ? `Image #${imageIndex}` : filename
-    return `[${displayText}](attachment:${id})`
+    const metadata = serializeAttachmentMetadata(node.attrs)
+    return `[${displayText}](attachment:${id}${metadata})`
   }
   if (node.type === "emoji") {
     const shortcode = node.attrs?.shortcode as string
@@ -421,18 +477,18 @@ function parseInlineMarkdown(text: string, options: ParseOptions = {}): JSONCont
 
   // Inline markdown pattern - captures each format type in separate groups
   // Group layout (order matters for matching priority):
-  //   1-3:   Attachment  [text](attachment:id) → groups: full, text, id (must come before general links)
-  //   4-6:   Link        [text](url)     → groups: full, text, url
-  //   7-8:   BoldItalic  ***text***      → groups: full, text (must come before ** and *)
-  //   9-10:  Bold        **text**        → groups: full, text
-  //   11-12: Italic      *text*          → groups: full, text (with negative lookahead/behind for **)
-  //   13-14: Strike      ~~text~~        → groups: full, text
-  //   15-16: Code        `text`          → groups: full, text
-  //   17-18: Mention     @slug           → groups: full, slug
-  //   19-20: Channel     #slug           → groups: full, slug
-  //   21-22: Emoji       :shortcode:     → groups: full, shortcode
+  //   1-4:   Attachment  [text](attachment:id "meta") → groups: full, text, id, optional title
+  //   5-7:   Link        [text](url)     → groups: full, text, url
+  //   8-9:   BoldItalic  ***text***      → groups: full, text (must come before ** and *)
+  //   10-11: Bold        **text**        → groups: full, text
+  //   12-13: Italic      *text*          → groups: full, text (with negative lookahead/behind for **)
+  //   14-15: Strike      ~~text~~        → groups: full, text
+  //   16-17: Code        `text`          → groups: full, text
+  //   18-19: Mention     @slug           → groups: full, slug
+  //   20-21: Channel     #slug           → groups: full, slug
+  //   22-23: Emoji       :shortcode:     → groups: full, shortcode
   const inlinePattern =
-    /(\[([^\]]+)\]\(attachment:([^)]+)\))|(\[([^\]]+)\]\(([^)]+)\))|(\*\*\*(.+?)\*\*\*)|(\*\*(.+?)\*\*)|(?<!\*)(\*([^*]+?)\*)(?!\*)|(\~\~(.+?)\~\~)|(`([^`]+)`)|(@([\w-]+))|(#([\w-]+))|(:([\w+-]+):)/g
+    /(\[([^\]]+)\]\(attachment:([^)\s"]+)(?:\s+"((?:\\"|\\\\|[^"])*)")?\))|(\[([^\]]+)\]\(([^)]+)\))|(\*\*\*(.+?)\*\*\*)|(\*\*(.+?)\*\*)|(?<!\*)(\*([^*]+?)\*)(?!\*)|(\~\~(.+?)\~\~)|(`([^`]+)`)|(@([\w-]+))|(#([\w-]+))|(:([\w+-]+):)/g
 
   let lastIndex = 0
   let match
@@ -447,6 +503,7 @@ function parseInlineMarkdown(text: string, options: ParseOptions = {}): JSONCont
       // Attachment: [text](attachment:id)
       const displayText = match[2]
       const attachmentId = match[3]
+      const metadata = parseAttachmentMetadata(match[4])
       // Parse display text to extract image index if present
       const imageMatch = displayText.match(/^Image #(\d+)$/)
       const imageIndex = imageMatch ? parseInt(imageMatch[1], 10) : null
@@ -455,18 +512,18 @@ function parseInlineMarkdown(text: string, options: ParseOptions = {}): JSONCont
         type: "attachmentReference",
         attrs: {
           id: attachmentId,
-          filename: isImage ? "" : displayText,
-          mimeType: isImage ? "image/unknown" : "application/octet-stream",
-          sizeBytes: 0,
+          filename: metadata.filename ?? (isImage ? "" : displayText),
+          mimeType: metadata.mimeType ?? (isImage ? "image/unknown" : "application/octet-stream"),
+          sizeBytes: metadata.sizeBytes,
           status: "uploaded",
           imageIndex,
           error: null,
         },
       })
-    } else if (match[4]) {
+    } else if (match[5]) {
       // Link: [text](url)
-      const linkText = match[5]
-      const linkUrl = match[6]
+      const linkText = match[6]
+      const linkUrl = match[7]
       // Recursively parse the link text for nested formatting
       const innerContent = parseInlineMarkdown(linkText, options)
       for (const node of innerContent) {
@@ -476,9 +533,9 @@ function parseInlineMarkdown(text: string, options: ParseOptions = {}): JSONCont
           marks: [...(node.marks || []), { type: "link", attrs: { href: linkUrl } }],
         })
       }
-    } else if (match[7]) {
+    } else if (match[8]) {
       // BoldItalic: ***text*** - apply both marks
-      const boldItalicText = match[8]
+      const boldItalicText = match[9]
       const innerContent = parseInlineMarkdown(boldItalicText, options)
       for (const node of innerContent) {
         // Add both bold and italic marks to all nodes
@@ -487,9 +544,9 @@ function parseInlineMarkdown(text: string, options: ParseOptions = {}): JSONCont
           marks: [...(node.marks || []), { type: "bold" }, { type: "italic" }],
         })
       }
-    } else if (match[9]) {
+    } else if (match[10]) {
       // Bold: **text**
-      const boldText = match[10]
+      const boldText = match[11]
       const innerContent = parseInlineMarkdown(boldText, options)
       for (const node of innerContent) {
         // Add bold mark to all nodes (text, mentions, channels, etc.)
@@ -498,9 +555,9 @@ function parseInlineMarkdown(text: string, options: ParseOptions = {}): JSONCont
           marks: [...(node.marks || []), { type: "bold" }],
         })
       }
-    } else if (match[11]) {
+    } else if (match[12]) {
       // Italic: *text*
-      const italicText = match[12]
+      const italicText = match[13]
       const innerContent = parseInlineMarkdown(italicText, options)
       for (const node of innerContent) {
         // Add italic mark to all nodes (text, mentions, channels, etc.)
@@ -509,9 +566,9 @@ function parseInlineMarkdown(text: string, options: ParseOptions = {}): JSONCont
           marks: [...(node.marks || []), { type: "italic" }],
         })
       }
-    } else if (match[13]) {
+    } else if (match[14]) {
       // Strike: ~~text~~
-      const strikeText = match[14]
+      const strikeText = match[15]
       const innerContent = parseInlineMarkdown(strikeText, options)
       for (const node of innerContent) {
         // Add strike mark to all nodes (text, mentions, channels, etc.)
@@ -520,30 +577,30 @@ function parseInlineMarkdown(text: string, options: ParseOptions = {}): JSONCont
           marks: [...(node.marks || []), { type: "strike" }],
         })
       }
-    } else if (match[15]) {
+    } else if (match[16]) {
       // Code: `text` (no nesting for code)
       result.push({
         type: "text",
-        text: match[16],
+        text: match[17],
         marks: [{ type: "code" }],
       })
-    } else if (match[17]) {
+    } else if (match[18]) {
       // Mention: @slug
-      const slug = match[18]
+      const slug = match[19]
       result.push({
         type: "mention",
         attrs: { id: slug, slug, name: slug, mentionType: lookupMentionType(slug) },
       })
-    } else if (match[19]) {
+    } else if (match[20]) {
       // Channel: #slug
-      const slug = match[20]
+      const slug = match[21]
       result.push({
         type: "channelLink",
         attrs: { id: slug, slug, name: slug },
       })
-    } else if (match[21]) {
+    } else if (match[22]) {
       // Emoji: :shortcode:
-      const shortcode = match[22]
+      const shortcode = match[23]
       const emoji = getEmoji?.(shortcode)
       if (emoji) {
         result.push({

@@ -11,8 +11,8 @@ export interface AttachmentReferenceAttrs {
   filename: string
   /** MIME type for determining display (image vs file) */
   mimeType: string
-  /** Size in bytes */
-  sizeBytes: number
+  /** Size in bytes. Null when markdown was restored without attachment metadata. */
+  sizeBytes: number | null
   /** Upload status */
   status: AttachmentStatus
   /** Image index (1, 2, 3...) - only for images */
@@ -62,9 +62,14 @@ export const AttachmentReferenceExtension = Node.create({
         renderHTML: (attrs) => ({ "data-mime-type": attrs.mimeType }),
       },
       sizeBytes: {
-        default: 0,
-        parseHTML: (element) => parseInt(element.getAttribute("data-size-bytes") || "0", 10),
-        renderHTML: (attrs) => ({ "data-size-bytes": String(attrs.sizeBytes) }),
+        default: null,
+        parseHTML: (element) => {
+          const rawValue = element.getAttribute("data-size-bytes")
+          if (rawValue === null || rawValue === "") return null
+          const parsed = Number.parseInt(rawValue, 10)
+          return Number.isFinite(parsed) ? parsed : null
+        },
+        renderHTML: (attrs) => (attrs.sizeBytes != null ? { "data-size-bytes": String(attrs.sizeBytes) } : {}),
       },
       status: {
         default: "uploading" as AttachmentStatus,

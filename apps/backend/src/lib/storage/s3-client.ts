@@ -1,9 +1,16 @@
 import { Readable } from "node:stream"
-import { S3Client, GetObjectCommand, DeleteObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3"
+import {
+  S3Client,
+  GetObjectCommand,
+  DeleteObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+} from "@aws-sdk/client-s3"
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
 import type { S3Config } from "../env"
 
 export interface StorageProvider {
+  getObjectSize(key: string): Promise<number>
   getSignedDownloadUrl(key: string, expiresIn?: number): Promise<string>
   getObject(key: string): Promise<Buffer>
   /** Fetch first N bytes of an object using HTTP Range header */
@@ -31,6 +38,17 @@ export function createS3Storage(config: S3Config): StorageProvider {
   })
 
   return {
+    async getObjectSize(key: string): Promise<number> {
+      const response = await client.send(
+        new HeadObjectCommand({
+          Bucket: config.bucket,
+          Key: key,
+        })
+      )
+
+      return response.ContentLength ?? 0
+    },
+
     async getSignedDownloadUrl(key: string, expiresIn = 900): Promise<string> {
       const command = new GetObjectCommand({
         Bucket: config.bucket,

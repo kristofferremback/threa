@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, it, mock, spyOn } from "bun:test"
 import { AttachmentSafetyStatuses } from "@threa/types"
 import * as db from "../../db"
+import { OutboxRepository } from "../../lib/outbox"
 import { AttachmentRepository } from "./repository"
 import { AttachmentExtractionRepository } from "./extraction-repository"
 import { AttachmentService } from "./service"
 
 function createService() {
   const storage = {
+    getObjectSize: mock(async () => 0),
     getSignedDownloadUrl: mock(async () => "https://example.com/file"),
     delete: mock(async () => {}),
   } as any
@@ -94,6 +96,73 @@ describe("AttachmentService", () => {
     expect(AttachmentExtractionRepository.deleteByAttachmentId).not.toHaveBeenCalled()
     expect(AttachmentRepository.delete).not.toHaveBeenCalled()
     expect(storage.delete).not.toHaveBeenCalled()
+  })
+
+  it("recovers attachment size from storage when the upload middleware reports zero bytes", async () => {
+    spyOn(db, "withTransaction").mockImplementation((async (_db: unknown, callback: (client: any) => Promise<any>) =>
+      callback({})) as any)
+
+    const insertSpy = spyOn(AttachmentRepository, "insert").mockImplementation(async (_client, params) => ({
+      id: params.id,
+      workspaceId: params.workspaceId,
+      streamId: null,
+      messageId: null,
+      uploadedBy: params.uploadedBy,
+      filename: params.filename,
+      mimeType: params.mimeType,
+      sizeBytes: params.sizeBytes,
+      storageProvider: "s3",
+      storagePath: params.storagePath,
+      processingStatus: "pending",
+      safetyStatus: AttachmentSafetyStatuses.PENDING_SCAN,
+      createdAt: new Date(),
+    }))
+    spyOn(AttachmentRepository, "updateSafetyStatus").mockResolvedValue(true)
+    spyOn(AttachmentRepository, "findById").mockResolvedValue({
+      id: "attach_1",
+      workspaceId: "ws_1",
+      streamId: null,
+      messageId: null,
+      uploadedBy: "usr_1",
+      filename: "test.png",
+      mimeType: "image/png",
+      sizeBytes: 4096,
+      storageProvider: "s3",
+      storagePath: "ws_1/attach_1/test.png",
+      processingStatus: "pending",
+      safetyStatus: AttachmentSafetyStatuses.CLEAN,
+      createdAt: new Date(),
+    } as any)
+    const outboxSpy = spyOn(OutboxRepository, "insert").mockResolvedValue(undefined as never)
+
+    const { service, storage } = createService()
+    storage.getObjectSize = mock(async () => 4096)
+
+    const attachment = await service.create({
+      id: "attach_1",
+      workspaceId: "ws_1",
+      uploadedBy: "usr_1",
+      filename: "test.png",
+      mimeType: "image/png",
+      sizeBytes: 0,
+      storagePath: "ws_1/attach_1/test.png",
+    })
+
+    expect(storage.getObjectSize).toHaveBeenCalledWith("ws_1/attach_1/test.png")
+    expect(insertSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        sizeBytes: 4096,
+      })
+    )
+    expect(outboxSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      "attachment:uploaded",
+      expect.objectContaining({
+        sizeBytes: 4096,
+      })
+    )
+    expect(attachment.sizeBytes).toBe(4096)
   })
 
   it("quarantines stale pending scans and returns recovered count", async () => {

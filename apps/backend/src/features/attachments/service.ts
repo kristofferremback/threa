@@ -40,6 +40,11 @@ export class AttachmentService {
    * Malware scan runs before attachment processing workers are dispatched.
    */
   async create(params: CreateAttachmentParams): Promise<Attachment> {
+    const sizeBytes =
+      Number.isFinite(params.sizeBytes) && params.sizeBytes > 0
+        ? params.sizeBytes
+        : await this.storage.getObjectSize(params.storagePath)
+
     const attachment = await withTransaction(this.pool, async (client) => {
       return AttachmentRepository.insert(client, {
         id: params.id,
@@ -47,7 +52,7 @@ export class AttachmentService {
         uploadedBy: params.uploadedBy,
         filename: params.filename,
         mimeType: params.mimeType,
-        sizeBytes: params.sizeBytes,
+        sizeBytes,
         storagePath: params.storagePath,
         safetyStatus: AttachmentSafetyStatuses.PENDING_SCAN,
       })
@@ -80,7 +85,7 @@ export class AttachmentService {
           attachmentId: params.id,
           filename: params.filename,
           mimeType: params.mimeType,
-          sizeBytes: params.sizeBytes,
+          sizeBytes,
           storagePath: params.storagePath,
         })
       } else {
