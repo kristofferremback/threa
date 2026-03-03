@@ -1,6 +1,6 @@
 import type { Querier } from "../../db"
 import { sql } from "../../db"
-import { Visibilities, type AuthorType, type StreamType } from "@threa/types"
+import { DM_PARTICIPANT_COUNT, Visibilities, type AuthorType, type StreamType } from "@threa/types"
 import { parseArchiveStatusFilter, type ArchiveStatus } from "../../lib/sql-filters"
 import type { AgentAccessSpec } from "../agents"
 
@@ -42,6 +42,15 @@ function mapRowToSearchResult(row: SearchResultRow): SearchResult {
     createdAt: row.created_at,
     rank: row.rank,
   }
+}
+
+function getValidatedUserIntersectionUserIds(userIds: string[]): [string, string] {
+  const uniqueUserIds = [...new Set(userIds)]
+  if (userIds.length !== DM_PARTICIPANT_COUNT || uniqueUserIds.length !== DM_PARTICIPANT_COUNT) {
+    throw new Error(`user_intersection access spec requires exactly ${DM_PARTICIPANT_COUNT} distinct users`)
+  }
+
+  return [uniqueUserIds[0]!, uniqueUserIds[1]!]
 }
 
 /**
@@ -405,7 +414,7 @@ export const SearchRepository = {
    * - user_full_access: Everything the specified user can access
    * - public_only: Only public streams
    * - public_plus_stream: Public streams + a specific stream and its threads
-   * - user_union: Union of what multiple users can access (for DMs)
+   * - user_intersection: Streams all specified users can access (for DMs)
    */
   async getAccessibleStreamsForAgent(
     db: Querier,
@@ -436,21 +445,42 @@ export const SearchRepository = {
         return [...new Set([...publicIds, ...streamTreeIds])]
       }
 
-      case "user_union": {
-        // Get accessible streams for each member and union them
-        const allResults = await Promise.all(
-          spec.userIds.map((userId) =>
-            this.getAccessibleStreamsWithMembers(db, {
-              workspaceId,
-              userId,
-              streamTypes: options?.streamTypes,
-              archiveStatus: options?.archiveStatus,
-            })
-          )
-        )
+      case "user_intersection": {
+        const userIds = getValidatedUserIntersectionUserIds(spec.userIds)
+        const hasTypeFilter = options?.streamTypes && options.streamTypes.length > 0
+        const { includeActive, includeArchived, filterAll } = parseArchiveStatusFilter(options?.archiveStatus)
 
-        // Union all results
-        return [...new Set(allResults.flat())]
+        const result = await db.query<{ id: string }>(sql`
+          WITH requested_users AS (
+            SELECT member_id
+            FROM unnest(${userIds}::text[]) AS requested_users(member_id)
+          ),
+          shared_access AS (
+            SELECT s.id, requested_users.member_id
+            FROM streams s
+            CROSS JOIN requested_users
+            LEFT JOIN stream_members sm ON s.id = sm.stream_id AND sm.member_id = requested_users.member_id
+            LEFT JOIN streams root ON s.root_stream_id = root.id
+            LEFT JOIN stream_members root_sm ON root.id = root_sm.stream_id AND root_sm.member_id = requested_users.member_id
+            WHERE s.workspace_id = ${workspaceId}
+              AND (
+                sm.member_id IS NOT NULL
+                OR s.visibility = ${Visibilities.PUBLIC}
+                OR (
+                  s.root_stream_id IS NOT NULL
+                  AND (root_sm.member_id IS NOT NULL OR root.visibility = ${Visibilities.PUBLIC})
+                )
+              )
+              AND (${!hasTypeFilter} OR s.type = ANY(${options?.streamTypes ?? []}))
+              AND (${filterAll} OR (${includeArchived} AND s.archived_at IS NOT NULL) OR (${!includeArchived} AND s.archived_at IS NULL))
+          )
+          SELECT id
+          FROM shared_access
+          GROUP BY id
+          HAVING COUNT(DISTINCT member_id) = ${DM_PARTICIPANT_COUNT}
+        `)
+
+        return result.rows.map((r) => r.id)
       }
     }
   },

@@ -7,6 +7,7 @@ export {
   STREAM_TYPES,
   type StreamType,
   StreamTypes,
+  DM_PARTICIPANT_COUNT,
   // Visibility
   VISIBILITY_OPTIONS,
   type Visibility,

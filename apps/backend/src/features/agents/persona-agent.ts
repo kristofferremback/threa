@@ -248,7 +248,6 @@ export class PersonaAgent {
               query,
               conversationHistory: agentContext.streamContext.conversationHistory,
               invokingUserId: capturedInvokingUserId,
-              dmParticipantIds: agentContext.dmParticipantIds,
             })
         }
 
