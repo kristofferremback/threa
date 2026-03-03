@@ -1,4 +1,4 @@
-import { type ChangeEvent, type RefObject, useMemo, useCallback, useRef, useState } from "react"
+import { type ChangeEvent, type RefObject, useMemo, useCallback, useRef, useState, useEffect } from "react"
 import { Expand, Type, AtSign, Slash, Paperclip } from "lucide-react"
 import { RichEditor } from "@/components/editor"
 import type { RichEditorHandle } from "@/components/editor"
@@ -85,6 +85,11 @@ export function MessageComposer({
   const richEditorRef = useRef<RichEditorHandle>(null)
   const [formatBubbleOpen, setFormatBubbleOpen] = useState(false)
 
+  // Reset bubble when scope changes (stream navigation without remount)
+  useEffect(() => {
+    setFormatBubbleOpen(false)
+  }, [scopeId])
+
   // Build the send mode hint text (reactive to preference changes)
   const sendHint = useMemo(() => {
     if (messageSendMode === "enter") {
@@ -135,7 +140,6 @@ export function MessageComposer({
               placeholder={placeholder}
               disabled={disabled}
               messageSendMode={messageSendMode}
-              showFormattingToolbar={false}
               forceToolbarVisible={formatBubbleOpen}
               autoFocus={autoFocus}
               scopeId={scopeId}
@@ -150,6 +154,7 @@ export function MessageComposer({
                     type="button"
                     variant="ghost"
                     size="icon"
+                    aria-label="Toggle formatting toolbar"
                     className={cn("h-7 w-7 shrink-0", formatBubbleOpen && "bg-muted-foreground/20 text-foreground")}
                     onClick={() => setFormatBubbleOpen((v) => !v)}
                     disabled={controlsDisabled}
@@ -158,7 +163,7 @@ export function MessageComposer({
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="top" className="text-xs">
-                  Format (⌘K)
+                  Format
                 </TooltipContent>
               </Tooltip>
 
@@ -169,6 +174,7 @@ export function MessageComposer({
                     type="button"
                     variant="ghost"
                     size="icon"
+                    aria-label="Insert emoji"
                     className="h-7 w-7 shrink-0"
                     onPointerDown={(e) => {
                       e.preventDefault()
@@ -191,6 +197,7 @@ export function MessageComposer({
                     type="button"
                     variant="ghost"
                     size="icon"
+                    aria-label="Insert mention"
                     className="h-7 w-7 shrink-0"
                     onPointerDown={(e) => {
                       e.preventDefault()
@@ -213,6 +220,7 @@ export function MessageComposer({
                     type="button"
                     variant="ghost"
                     size="icon"
+                    aria-label="Insert command"
                     className="h-7 w-7 shrink-0"
                     onPointerDown={(e) => {
                       e.preventDefault()
@@ -235,6 +243,7 @@ export function MessageComposer({
                     type="button"
                     variant="ghost"
                     size="icon"
+                    aria-label="Attach files"
                     className="h-7 w-7 shrink-0"
                     onClick={handleAttachClick}
                     disabled={controlsDisabled}

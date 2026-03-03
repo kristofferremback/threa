@@ -198,7 +198,8 @@ export function MessageInput({
   // Mobile path: compact tap trigger + Drawer with full composer inside
   if (isMobile && !disabled) {
     const hasDraft = hasDocContent(composer.content)
-    const previewText = hasDraft ? draftPreviewText(composer.content) : null
+    const previewText = hasDraft ? draftPreviewText(composer.content) : ""
+    const triggerText = previewText || (streamName ? `Message #${streamName}` : "Type a message…")
 
     return (
       <div className="border-t">
@@ -209,7 +210,7 @@ export function MessageInput({
             className="w-full p-4 text-left text-sm text-muted-foreground"
             onClick={() => setSheetOpen(true)}
           >
-            {previewText ?? (streamName ? `Message #${streamName}` : "Type a message…")}
+            {triggerText}
           </button>
         )}
 

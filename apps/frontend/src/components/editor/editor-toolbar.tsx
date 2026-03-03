@@ -16,7 +16,6 @@ interface EditorToolbarProps {
   referenceElement: HTMLElement | null
   linkPopoverOpen?: boolean
   onLinkPopoverOpenChange?: (open: boolean) => void
-  onDropdownOpenChange?: (open: boolean) => void
 }
 
 export function EditorToolbar({
@@ -161,37 +160,25 @@ function StylePicker({ editor }: { editor: Editor }) {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-[120px]">
         <DropdownMenuItem
-          onMouseDown={(e) => {
-            e.preventDefault()
-            editor.chain().focus().setParagraph().run()
-          }}
+          onSelect={() => editor.chain().focus().setParagraph().run()}
           className={cn("text-sm", !editor.isActive("heading") && "font-medium")}
         >
           Normal
         </DropdownMenuItem>
         <DropdownMenuItem
-          onMouseDown={(e) => {
-            e.preventDefault()
-            editor.chain().focus().toggleHeading({ level: 1 }).run()
-          }}
+          onSelect={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
           className={cn("text-sm", editor.isActive("heading", { level: 1 }) && "font-medium")}
         >
           Heading 1
         </DropdownMenuItem>
         <DropdownMenuItem
-          onMouseDown={(e) => {
-            e.preventDefault()
-            editor.chain().focus().toggleHeading({ level: 2 }).run()
-          }}
+          onSelect={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
           className={cn("text-sm", editor.isActive("heading", { level: 2 }) && "font-medium")}
         >
           Heading 2
         </DropdownMenuItem>
         <DropdownMenuItem
-          onMouseDown={(e) => {
-            e.preventDefault()
-            editor.chain().focus().toggleHeading({ level: 3 }).run()
-          }}
+          onSelect={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
           className={cn("text-sm", editor.isActive("heading", { level: 3 }) && "font-medium")}
         >
           Heading 3

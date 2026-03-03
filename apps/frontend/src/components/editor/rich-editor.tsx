@@ -4,7 +4,6 @@ import { useParams } from "react-router-dom"
 import { createEditorExtensions } from "./editor-extensions"
 import { EditorBehaviors, isSuggestionActive } from "./editor-behaviors"
 import { EditorToolbar } from "./editor-toolbar"
-import { FormattingToolbar } from "./formatting-toolbar"
 import { serializeToMarkdown, parseMarkdown, type MentionTypeLookup } from "./editor-markdown"
 import { useMentionSuggestion, useChannelSuggestion, useCommandSuggestion, useEmojiSuggestion } from "./triggers"
 import { useMentionables } from "@/hooks/use-mentionables"
@@ -34,12 +33,8 @@ interface RichEditorProps {
   className?: string
   /** How Enter key behaves: "enter" = Enter sends, "cmdEnter" = Cmd+Enter sends */
   messageSendMode?: MessageSendMode
-  /** Show the always-visible formatting toolbar above the editor */
-  showFormattingToolbar?: boolean
   /** Force the bubble toolbar to be visible (e.g. via manual Format button) */
   forceToolbarVisible?: boolean
-  /** Called when attach button in formatting toolbar is clicked */
-  onAttachClick?: () => void
   /** Auto-focus the editor when mounted */
   autoFocus?: boolean
   /** When this value changes, re-focus the editor (if autoFocus is enabled) */
@@ -57,9 +52,7 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
     disabled = false,
     className,
     messageSendMode = "enter",
-    showFormattingToolbar = false,
     forceToolbarVisible = false,
-    onAttachClick,
     autoFocus = false,
     scopeId,
   },
@@ -461,29 +454,14 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
 
   return (
     <div ref={containerRef} className={cn("relative flex-1", disabled && "cursor-not-allowed opacity-50", className)}>
-      {showFormattingToolbar && (
-        <FormattingToolbar
-          editor={editor}
-          disabled={disabled}
-          onMentionClick={handleMentionClick}
-          onSlashClick={handleSlashClick}
-          onEmojiClick={handleEmojiClick}
-          onAttachClick={onAttachClick}
-          linkPopoverOpen={linkPopoverOpen}
-          onLinkPopoverOpenChange={setLinkPopoverOpen}
-        />
-      )}
-      {/* Floating toolbar - only shown when fixed toolbar is not visible */}
-      {!showFormattingToolbar && (
-        <EditorToolbar
-          editor={editor}
-          isVisible={toolbarVisible}
-          forceVisible={forceToolbarVisible}
-          referenceElement={containerRef.current}
-          linkPopoverOpen={linkPopoverOpen}
-          onLinkPopoverOpenChange={setLinkPopoverOpen}
-        />
-      )}
+      <EditorToolbar
+        editor={editor}
+        isVisible={toolbarVisible}
+        forceVisible={forceToolbarVisible}
+        referenceElement={containerRef.current}
+        linkPopoverOpen={linkPopoverOpen}
+        onLinkPopoverOpenChange={setLinkPopoverOpen}
+      />
       <EditorContent editor={editor} />
       {renderMentionList()}
       {renderChannelList()}
