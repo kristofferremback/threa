@@ -18,6 +18,8 @@ export interface RichEditorHandle {
   insertMention(): void
   insertSlash(): void
   insertEmoji(): void
+  /** Access the TipTap editor instance for external toolbar rendering */
+  getEditor(): import("@tiptap/react").Editor | null
 }
 
 interface RichEditorProps {
@@ -494,8 +496,9 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
       insertMention: handleMentionClick,
       insertSlash: handleSlashClick,
       insertEmoji: handleEmojiClick,
+      getEditor: () => editor,
     }),
-    [focus, handleMentionClick, handleSlashClick, handleEmojiClick]
+    [focus, handleMentionClick, handleSlashClick, handleEmojiClick, editor]
   )
 
   return (

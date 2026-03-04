@@ -19,6 +19,9 @@ interface EditorToolbarProps {
   /** Render as an inline block (no floating positioning). Used when the toolbar
    *  is pinned inside the input box via the format button. */
   inline?: boolean
+  /** Where the inline toolbar sits relative to the editor content.
+   *  "above" = border-bottom divider (default), "below" = border-top divider. */
+  inlinePosition?: "above" | "below"
 }
 
 export function EditorToolbar({
@@ -28,6 +31,7 @@ export function EditorToolbar({
   onLinkPopoverOpenChange,
   onDropdownOpenChange,
   inline = false,
+  inlinePosition = "above",
 }: EditorToolbarProps) {
   const { refs, floatingStyles, update } = useFloating({
     placement: "top",
@@ -146,8 +150,18 @@ export function EditorToolbar({
             className="rounded-md border bg-popover p-2 shadow-md mb-1"
           />
         )}
-        <div className="relative border-b border-border/50 mb-1">
-          <div className="flex items-center gap-0.5 py-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div
+          className={cn(
+            "relative",
+            inlinePosition === "above" ? "border-b border-border/50 mb-1" : "border-t border-border/50 mt-1"
+          )}
+        >
+          <div
+            className={cn(
+              "flex items-center gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+              inlinePosition === "below" ? "pt-1" : "py-1"
+            )}
+          >
             {buttons}
           </div>
           <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-card to-transparent" />
@@ -197,7 +211,13 @@ function StylePicker({ editor, onOpenChange }: { editor: Editor; onOpenChange?: 
           <ChevronDown className="h-3 w-3 opacity-60" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="min-w-[120px]">
+      <DropdownMenuContent
+        align="start"
+        className="min-w-[120px]"
+        // Prevent Radix from moving focus back to the trigger on close —
+        // the onSelect handlers already refocus the editor.
+        onCloseAutoFocus={(e) => e.preventDefault()}
+      >
         <DropdownMenuItem
           onSelect={() => editor.chain().focus().setParagraph().run()}
           className={cn("text-sm", !editor.isActive("heading") && "font-medium")}
