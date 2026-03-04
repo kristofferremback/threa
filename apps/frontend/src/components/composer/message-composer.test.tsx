@@ -71,25 +71,8 @@ vi.mock("@/components/editor", () => {
     )
   })
 
-  const EditorToolbar = ({
-    editor,
-    isVisible,
-    onDropdownOpenChange,
-  }: {
-    editor: { id: string } | null
-    isVisible: boolean
-    onDropdownOpenChange?: (open: boolean) => void
-  }) =>
-    isVisible ? (
-      <div data-testid="mobile-editor-toolbar" data-has-editor={editor ? "yes" : "no"}>
-        <button type="button" data-testid="mock-stylepicker-open" onPointerDown={() => onDropdownOpenChange?.(true)}>
-          Open style picker
-        </button>
-        <button type="button" data-testid="mock-stylepicker-close" onPointerDown={() => onDropdownOpenChange?.(false)}>
-          Close style picker
-        </button>
-      </div>
-    ) : null
+  const EditorToolbar = ({ editor, isVisible }: { editor: { id: string } | null; isVisible: boolean }) =>
+    isVisible ? <div data-testid="mobile-editor-toolbar" data-has-editor={editor ? "yes" : "no"} /> : null
 
   return { RichEditor, EditorToolbar }
 })
@@ -327,33 +310,6 @@ describe("MessageComposer", () => {
       })
 
       expect(screen.getByTestId("mobile-editor-toolbar")).toHaveAttribute("data-has-editor", "yes")
-    })
-
-    it("keeps mobile composer expanded while style picker dropdown is open", () => {
-      isMobileMockValue = true
-      vi.useFakeTimers()
-
-      render(<MessageComposer {...defaultProps} />)
-
-      fireEvent.click(screen.getByText("Type a message..."))
-      fireEvent.pointerDown(screen.getByRole("button", { name: "Formatting" }))
-      fireEvent.pointerDown(screen.getByTestId("mock-stylepicker-open"))
-
-      fireEvent.blur(screen.getByTestId("rich-editor"))
-      act(() => {
-        vi.advanceTimersByTime(200)
-      })
-
-      // Keep composer expanded while interacting with the portal menu.
-      expect(screen.queryByText("Type a message...")).not.toBeInTheDocument()
-
-      fireEvent.pointerDown(screen.getByTestId("mock-stylepicker-close"))
-      fireEvent.blur(screen.getByTestId("rich-editor"))
-      act(() => {
-        vi.advanceTimersByTime(200)
-      })
-
-      expect(screen.getByText("Type a message...")).toBeInTheDocument()
     })
   })
 })

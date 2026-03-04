@@ -120,11 +120,8 @@ export function MessageComposer({
   const [mobileExpanded, setMobileExpanded] = useState(false)
   const [mobileFocused, setMobileFocused] = useState(false)
   const [mobileLinkPopoverOpen, setMobileLinkPopoverOpen] = useState(false)
-  const [mobileToolbarDropdownOpen, setMobileToolbarDropdownOpen] = useState(false)
   const isMobile = useIsMobile()
   const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const mobileToolbarDropdownOpenRef = useRef(false)
-  mobileToolbarDropdownOpenRef.current = mobileToolbarDropdownOpen
 
   // Close inline format toolbar and collapse expansion when navigating to a different stream/scope
   useEffect(() => {
@@ -136,7 +133,6 @@ export function MessageComposer({
     setMobileExpanded(false)
     setMobileFocused(false)
     setMobileLinkPopoverOpen(false)
-    setMobileToolbarDropdownOpen(false)
   }, [scopeId])
 
   // Track focus state for mobile progressive disclosure.
@@ -151,9 +147,6 @@ export function MessageComposer({
 
   const handleBlurCapture = useCallback(() => {
     blurTimeoutRef.current = setTimeout(() => {
-      // Keep mobile composer expanded while interacting with the StylePicker menu,
-      // which is rendered in a portal outside this focus-capture container.
-      if (mobileToolbarDropdownOpenRef.current) return
       setMobileFocused(false)
       setMobileExpanded(false)
       setFormatOpen(false)
@@ -370,11 +363,7 @@ export function MessageComposer({
                     className={cn("h-7 w-7 shrink-0", formatOpen && "bg-accent text-accent-foreground")}
                     onPointerDown={(e) => {
                       e.preventDefault()
-                      setFormatOpen((v) => {
-                        const nextOpen = !v
-                        if (!nextOpen) setMobileToolbarDropdownOpen(false)
-                        return nextOpen
-                      })
+                      setFormatOpen((v) => !v)
                     }}
                     disabled={controlsDisabled}
                   >
@@ -488,7 +477,6 @@ export function MessageComposer({
                 inlinePosition="below"
                 linkPopoverOpen={mobileLinkPopoverOpen}
                 onLinkPopoverOpenChange={setMobileLinkPopoverOpen}
-                onDropdownOpenChange={setMobileToolbarDropdownOpen}
               />
             )}
           </div>
