@@ -1,11 +1,16 @@
 import { useRef, useState, useEffect, useCallback, useMemo, forwardRef, useImperativeHandle } from "react"
 import { useEditor, EditorContent } from "@tiptap/react"
+import type { PluginKey } from "@tiptap/pm/state"
 import { useParams } from "react-router-dom"
 import { createEditorExtensions } from "./editor-extensions"
 import { EditorBehaviors, isSuggestionActive } from "./editor-behaviors"
 import { EditorToolbar } from "./editor-toolbar"
 import { serializeToMarkdown, parseMarkdown, type MentionTypeLookup } from "./editor-markdown"
 import { useMentionSuggestion, useChannelSuggestion, useCommandSuggestion, useEmojiSuggestion } from "./triggers"
+import { MentionPluginKey } from "./triggers/mention-extension"
+import { CommandPluginKey } from "./triggers/command-extension"
+import { EmojiPluginKey } from "./triggers/emoji-extension"
+import { shouldRemoveTriggerOnToggle, type SuggestionPluginState } from "./trigger-toggle"
 import { useMentionables } from "@/hooks/use-mentionables"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { cn } from "@/lib/utils"
@@ -473,18 +478,47 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
     }
   }, [disabled, editor, focus])
 
-  // Callbacks for formatting toolbar trigger buttons
+  // Trigger icon behavior:
+  // - First click inserts trigger character and opens suggestion popup.
+  // - Second click (while still empty) removes that trigger character.
+  const handleTriggerClick = useCallback(
+    (trigger: string, pluginKey: PluginKey) => {
+      if (!editor) return
+
+      const { selection } = editor.state
+      const suggestionState = pluginKey.getState(editor.state) as SuggestionPluginState | null
+
+      if (
+        shouldRemoveTriggerOnToggle(trigger, suggestionState, {
+          from: selection.from,
+          to: selection.to,
+          empty: selection.empty,
+        })
+      ) {
+        editor
+          .chain()
+          .focus()
+          .deleteRange({ from: selection.from - trigger.length, to: selection.from })
+          .run()
+        return
+      }
+
+      editor.chain().focus().insertContent(trigger).run()
+    },
+    [editor]
+  )
+
   const handleMentionClick = useCallback(() => {
-    editor?.chain().focus().insertContent("@").run()
-  }, [editor])
+    handleTriggerClick("@", MentionPluginKey)
+  }, [handleTriggerClick])
 
   const handleSlashClick = useCallback(() => {
-    editor?.chain().focus().insertContent("/").run()
-  }, [editor])
+    handleTriggerClick("/", CommandPluginKey)
+  }, [handleTriggerClick])
 
   const handleEmojiClick = useCallback(() => {
-    editor?.chain().focus().insertContent(":").run()
-  }, [editor])
+    handleTriggerClick(":", EmojiPluginKey)
+  }, [handleTriggerClick])
 
   // Expose imperative handle for parent to trigger insert actions
   useImperativeHandle(
