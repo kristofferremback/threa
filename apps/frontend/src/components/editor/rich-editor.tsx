@@ -33,12 +33,14 @@ interface RichEditorProps {
   className?: string
   /** How Enter key behaves: "enter" = Enter sends, "cmdEnter" = Cmd+Enter sends */
   messageSendMode?: MessageSendMode
-  /** Force the bubble toolbar to be visible (e.g. via manual Format button) */
-  forceToolbarVisible?: boolean
   /** Auto-focus the editor when mounted */
   autoFocus?: boolean
   /** When this value changes, re-focus the editor (if autoFocus is enabled) */
   scopeId?: string
+  /** Show the toolbar pinned inline above the editor (button-driven mode) */
+  staticToolbarOpen?: boolean
+  /** Disable the floating bubble toolbar triggered by text selection */
+  disableSelectionToolbar?: boolean
   /** Called when ArrowUp is pressed in an empty editor — triggers edit-last-message */
   onEditLastMessage?: () => void
 }
@@ -54,9 +56,10 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
     disabled = false,
     className,
     messageSendMode = "enter",
-    forceToolbarVisible = false,
     autoFocus = false,
     scopeId,
+    staticToolbarOpen = false,
+    disableSelectionToolbar = false,
     onEditLastMessage,
   },
   ref
@@ -64,7 +67,9 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
   const containerRef = useRef<HTMLDivElement>(null)
   const isInternalUpdate = useRef(false)
   const [isFocused, setIsFocused] = useState(false)
+  const [hasSelection, setHasSelection] = useState(false)
   const [linkPopoverOpen, setLinkPopoverOpen] = useState(false)
+  const [dropdownOpen, setDropdownOpen] = useState(false)
   const [toolbarVisible, setToolbarVisible] = useState(false)
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -145,8 +150,13 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
     [placeholder, mentionConfig, channelConfig, commandConfig, emojiConfig, toEmoji]
   )
 
-  // Debounced toolbar visibility - stays visible briefly after focus lost
-  const shouldBeVisible = isFocused || linkPopoverOpen
+  // Debounced toolbar visibility — show only when focused with selection, or
+  // when link/dropdown is open (keeps toolbar alive while interacting with it).
+  // Suppressed when the inline toolbar is open (button-driven mode) or when
+  // selection-driven toolbar is disabled (e.g. mobile, where OS selection
+  // popup conflicts with the floating bubble).
+  const shouldBeVisible =
+    !staticToolbarOpen && !disableSelectionToolbar && ((isFocused && hasSelection) || linkPopoverOpen || dropdownOpen)
   useEffect(() => {
     if (shouldBeVisible) {
       if (hideTimeoutRef.current) {
@@ -218,7 +228,15 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
       onChange(editor.getJSON())
     },
     onFocus: () => setIsFocused(true),
-    onBlur: () => setIsFocused(false),
+    onBlur: () => {
+      setIsFocused(false)
+      // Safety net: reset any stuck dropdown state when editor loses focus.
+      // On desktop, Radix's DropdownMenuTrigger calls preventDefault on pointerdown
+      // to prevent editor blur when opening the StylePicker, so this only fires on
+      // true focus loss. On mobile it prevents the toolbar getting stuck open if
+      // blur precedes Radix's onOpenChange(false) due to event ordering differences.
+      setDropdownOpen(false)
+    },
     editorProps: {
       attributes: {
         class: cn(
@@ -339,6 +357,18 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
   // Store editor in ref so callbacks defined inside useEditor options can access it
   editorRef.current = editor
 
+  // Track whether the editor has a non-empty selection (drives toolbar visibility)
+  useEffect(() => {
+    if (!editor) return
+    const updateSelection = () => setHasSelection(!editor.state.selection.empty)
+    editor.on("selectionUpdate", updateSelection)
+    editor.on("update", updateSelection)
+    return () => {
+      editor.off("selectionUpdate", updateSelection)
+      editor.off("update", updateSelection)
+    }
+  }, [editor])
+
   // Sync external value changes (e.g., draft restoration, clearing after send)
   useEffect(() => {
     if (!editor || editor.isDestroyed) return
@@ -385,7 +415,7 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
     }
   }, [editor, mentionables, getMentionType, toEmoji])
 
-  // TipTap's autofocus option (line 184) handles initial focus.
+  // TipTap's autofocus option handles initial focus.
   // No additional focus-on-mount effect needed — the redundant focus()
   // dispatch caused a view update that raced with toolbar rendering,
   // briefly dropping focus in autoFocus editors (e.g. inline edit).
@@ -472,11 +502,11 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
     <div ref={containerRef} className={cn("relative flex-1", disabled && "cursor-not-allowed opacity-50", className)}>
       <EditorToolbar
         editor={editor}
-        isVisible={toolbarVisible}
-        forceVisible={forceToolbarVisible}
-        referenceElement={containerRef.current}
+        isVisible={staticToolbarOpen || toolbarVisible}
+        inline={staticToolbarOpen}
         linkPopoverOpen={linkPopoverOpen}
         onLinkPopoverOpenChange={setLinkPopoverOpen}
+        onDropdownOpenChange={setDropdownOpen}
       />
       <EditorContent editor={editor} />
       {renderMentionList()}

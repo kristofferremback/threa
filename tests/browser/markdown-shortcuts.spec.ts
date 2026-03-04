@@ -183,7 +183,8 @@ test.describe("Formatting Shortcuts", () => {
 
       await page.keyboard.type("hello ")
 
-      // Click bold button in toolbar
+      // Open the inline formatting toolbar via the Aa button, then click Bold
+      await page.getByRole("button", { name: "Formatting", exact: true }).click()
       await page.getByRole("button", { name: "Bold" }).click()
       await page.keyboard.type("toolbar")
 
@@ -196,7 +197,8 @@ test.describe("Formatting Shortcuts", () => {
 
       await page.keyboard.type("hello ")
 
-      // Click italic button in toolbar
+      // Open the inline formatting toolbar via the Aa button, then click Italic
+      await page.getByRole("button", { name: "Formatting", exact: true }).click()
       await page.getByRole("button", { name: "Italic" }).click()
       await page.keyboard.type("toolbar")
 
@@ -209,7 +211,8 @@ test.describe("Formatting Shortcuts", () => {
 
       await page.keyboard.type("run ")
 
-      // Click code button in toolbar
+      // Open the inline formatting toolbar via the Aa button, then click Inline code
+      await page.getByRole("button", { name: "Formatting", exact: true }).click()
       await page.getByRole("button", { name: "Inline code" }).click()
       await page.keyboard.type("npm")
 

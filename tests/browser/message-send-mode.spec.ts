@@ -93,14 +93,7 @@ test.describe("Message Send Mode", () => {
       await page.getByRole("button", { name: "+ New Scratchpad" }).click()
       await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
 
-      // Hover over the expand button to reveal the tooltip with the send hint
-      const expandButton = page
-        .getByRole("button")
-        .filter({ has: page.locator(".lucide-expand") })
-        .first()
-      await expandButton.hover()
-
-      // The hint is shown as a combined string with a middle dot separator (use .first() to avoid strict mode error)
+      // The desktop send hint is shown below the composer card in this viewport
       await expect(page.getByText("Enter to send · Shift+Enter for new line").first()).toBeVisible({ timeout: 2000 })
     })
 
@@ -166,14 +159,7 @@ test.describe("Message Send Mode", () => {
       await page.getByRole("button", { name: "+ New Scratchpad" }).click()
       await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
 
-      // Hover over the expand button to reveal the tooltip with the send hint
-      const expandButton = page
-        .getByRole("button")
-        .filter({ has: page.locator(".lucide-expand") })
-        .first()
-      await expandButton.hover()
-
-      // The hint should show Cmd+Enter (or ⌘Enter on Mac)
+      // The desktop send hint is shown below the composer card in this viewport
       await expect(page.getByText(/⌘Enter to send|Ctrl\+Enter to send/).first()).toBeVisible({ timeout: 2000 })
     })
   })

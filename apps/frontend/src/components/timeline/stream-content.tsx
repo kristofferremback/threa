@@ -238,7 +238,6 @@ export function StreamContent({
           <MessageInput
             workspaceId={workspaceId}
             streamId={streamId}
-            streamName={stream?.displayName ?? undefined}
             disabled={isArchived || isSystem}
             disabledReason={disabledReason}
             autoFocus={autoFocus}

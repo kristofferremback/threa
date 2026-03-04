@@ -297,7 +297,8 @@ test.describe("Rich Text Editing", () => {
       await editor.click()
       await page.keyboard.type("item")
 
-      // Click bullet list button
+      // Open the inline toolbar, then click bullet list.
+      await page.getByRole("button", { name: "Formatting", exact: true }).click()
       await page.getByRole("button", { name: "Bullet list" }).click()
       await expect(editor.locator("ul li")).toContainText("item")
     })
@@ -307,6 +308,7 @@ test.describe("Rich Text Editing", () => {
       await editor.click()
       await page.keyboard.type("quoted")
 
+      await page.getByRole("button", { name: "Formatting", exact: true }).click()
       await page.getByRole("button", { name: "Quote" }).click()
       await expect(editor.locator("blockquote")).toContainText("quoted")
     })
