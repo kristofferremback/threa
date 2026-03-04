@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useCallback, useMemo, forwardRef, useImperativeHandle } from "react"
-import { useEditor, EditorContent } from "@tiptap/react"
+import { useEditor, EditorContent, type Editor } from "@tiptap/react"
 import { useParams } from "react-router-dom"
 import { createEditorExtensions } from "./editor-extensions"
 import { EditorBehaviors, isSuggestionActive } from "./editor-behaviors"
@@ -18,6 +18,8 @@ export interface RichEditorHandle {
   insertMention(): void
   insertSlash(): void
   insertEmoji(): void
+  /** Raw TipTap editor instance — for external toolbar rendering */
+  editor: Editor | null
 }
 
 interface RichEditorProps {
@@ -494,8 +496,9 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
       insertMention: handleMentionClick,
       insertSlash: handleSlashClick,
       insertEmoji: handleEmojiClick,
+      editor,
     }),
-    [focus, handleMentionClick, handleSlashClick, handleEmojiClick]
+    [focus, handleMentionClick, handleSlashClick, handleEmojiClick, editor]
   )
 
   return (
