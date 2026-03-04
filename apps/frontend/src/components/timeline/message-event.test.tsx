@@ -9,6 +9,17 @@ import * as prosemirrorModule from "@threa/prosemirror"
 import type { StreamEvent } from "@threa/types"
 import type { JSONContent } from "@threa/types"
 
+// RichEditor is a forwardRef object — vi.spyOn can't spy on non-function values,
+// so we replace it at the module level with a vi.fn() that tests can configure.
+vi.mock("@/components/editor", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/components/editor")>()
+  return {
+    ...actual,
+    RichEditor: vi.fn().mockReturnValue(null),
+    DocumentEditorModal: vi.fn().mockReturnValue(null),
+  }
+})
+
 // Only mock what can't run in jsdom: routing and data-fetching hooks
 vi.mock("react-router-dom", () => ({
   Link: ({
@@ -198,7 +209,8 @@ describe("MessageEvent", () => {
 
   describe("ArrowUp edit-last-message trigger", () => {
     beforeAll(() => {
-      vi.spyOn(editorModule, "RichEditor").mockImplementation(
+      // RichEditor is mocked at module level as vi.fn() — configure its implementation here
+      ;(editorModule.RichEditor as unknown as ReturnType<typeof vi.fn>).mockImplementation(
         ({
           value,
           onChange,
@@ -230,7 +242,6 @@ describe("MessageEvent", () => {
           />
         )
       )
-      vi.spyOn(editorModule, "DocumentEditorModal").mockImplementation(() => <></>)
       vi.spyOn(prosemirrorModule, "serializeToMarkdown").mockImplementation((json) => {
         return json.content?.[0]?.content?.[0]?.text ?? ""
       })
@@ -241,7 +252,9 @@ describe("MessageEvent", () => {
     })
 
     afterAll(() => {
+      // Restore prosemirror spies; reset RichEditor to module-level default (returns null)
       vi.restoreAllMocks()
+      ;(editorModule.RichEditor as unknown as ReturnType<typeof vi.fn>).mockReturnValue(null)
     })
 
     it("registers an edit handler and opens inline edit when it is called", async () => {
