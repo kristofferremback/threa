@@ -268,8 +268,8 @@ describe("search_streams DM matching", () => {
         workspaceId: testWorkspaceId,
         workosUserId: peerWorkosUserId,
         email: `accented-peer.${testWorkspaceId.slice(-6)}@example.com`,
-        slug: "accented-peer",
-        name: "Accent Peer",
+        slug: "accented-peer-user",
+        name: "Åccént Peer",
         role: "user",
       })
 
@@ -293,7 +293,7 @@ describe("search_streams DM matching", () => {
       })
 
       const result = await tool.config.execute(
-        { query: "Can you summarize my recent DMs with Accent?" },
+        { query: "Can you summarize my recent DMs with Åccént?" },
         { toolCallId: "unicode" }
       )
       const parsed = JSON.parse(result.output) as {
@@ -304,8 +304,68 @@ describe("search_streams DM matching", () => {
       expect(parsed.results[0]).toMatchObject({
         id: dmId,
         type: StreamTypes.DM,
-        name: "Accent Peer",
+        name: "Åccént Peer",
       })
+    })
+  })
+
+  test("returns no matches for whitespace-only stream search query", async () => {
+    await withTestTransaction(pool, async (client) => {
+      const ownerWorkosUserId = userId()
+      const peerWorkosUserId = userId()
+      const testWorkspaceId = workspaceId()
+      const dmId = streamId()
+
+      await WorkspaceRepository.insert(client, {
+        id: testWorkspaceId,
+        name: "Empty Query Workspace",
+        slug: `empty-query-${testWorkspaceId}`,
+        createdBy: ownerWorkosUserId,
+      })
+
+      const ownerMember = await UserRepository.insert(client, {
+        id: userId(),
+        workspaceId: testWorkspaceId,
+        workosUserId: ownerWorkosUserId,
+        email: `owner.${testWorkspaceId.slice(-6)}@example.com`,
+        slug: "owner-user",
+        name: "Owner User",
+        role: "owner",
+      })
+      const peerMember = await UserRepository.insert(client, {
+        id: userId(),
+        workspaceId: testWorkspaceId,
+        workosUserId: peerWorkosUserId,
+        email: `peer.${testWorkspaceId.slice(-6)}@example.com`,
+        slug: "peer-user",
+        name: "Peer User",
+        role: "user",
+      })
+
+      await StreamRepository.insert(client, {
+        id: dmId,
+        workspaceId: testWorkspaceId,
+        type: StreamTypes.DM,
+        visibility: Visibilities.PRIVATE,
+        createdBy: ownerMember.id,
+      })
+      await StreamMemberRepository.insert(client, dmId, ownerMember.id)
+      await StreamMemberRepository.insert(client, dmId, peerMember.id)
+
+      const tool = createSearchStreamsTool({
+        db: client as unknown as Pool,
+        workspaceId: testWorkspaceId,
+        accessibleStreamIds: [dmId],
+        invokingUserId: ownerMember.id,
+        searchService: {} as never,
+        storage: {} as never,
+      })
+
+      const result = await tool.config.execute({ query: "   " }, { toolCallId: "empty-query" })
+      const parsed = JSON.parse(result.output) as { results: unknown[]; message?: string }
+
+      expect(parsed.results).toEqual([])
+      expect(parsed.message).toBe("Search query cannot be empty")
     })
   })
 

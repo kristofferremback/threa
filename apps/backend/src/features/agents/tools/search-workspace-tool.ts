@@ -214,10 +214,22 @@ export function createSearchStreamsTool(deps: WorkspaceToolDeps) {
 
     execute: async (input): Promise<AgentToolResult> => {
       try {
+        const normalizedQuery = input.query.trim()
+        if (normalizedQuery.length === 0) {
+          return {
+            output: JSON.stringify({
+              query: input.query,
+              types: input.types,
+              results: [],
+              message: "Search query cannot be empty",
+            }),
+          }
+        }
+
         const [nameMatches, dmSearchResults] = await Promise.all([
           StreamRepository.searchByName(db, {
             streamIds: accessibleStreamIds,
-            query: input.query,
+            query: normalizedQuery,
             types: input.types,
             limit: MAX_RESULTS,
           }),
@@ -226,7 +238,7 @@ export function createSearchStreamsTool(deps: WorkspaceToolDeps) {
             workspaceId,
             invokingUserId,
             accessibleStreamIds,
-            query: input.query,
+            query: normalizedQuery,
             types: input.types,
             limit: MAX_RESULTS,
           }),
@@ -245,7 +257,7 @@ export function createSearchStreamsTool(deps: WorkspaceToolDeps) {
                     : (stream.displayName ?? stream.slug ?? null),
                 description: stream.description ?? null,
               },
-              score: scoreStreamSearchResultName(stream.displayName ?? stream.slug ?? "", input.query),
+              score: scoreStreamSearchResultName(stream.displayName ?? stream.slug ?? "", normalizedQuery),
               sourceOrder: index,
             })
           ),
@@ -485,7 +497,7 @@ function truncate(text: string, maxLength: number): string {
 function scoreStreamSearchResultName(name: string, query: string): number {
   const normalizedName = name.trim().toLowerCase()
   const normalizedQuery = query.trim().toLowerCase()
-  if (!normalizedQuery) return 0
+  if (!normalizedQuery) return Number.POSITIVE_INFINITY
   if (normalizedName === normalizedQuery) return 0
   if (normalizedName.startsWith(normalizedQuery)) return 1
   if (normalizedName.includes(normalizedQuery)) return 2
