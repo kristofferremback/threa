@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react"
+import { forwardRef, useCallback, useMemo, useState, type ComponentPropsWithoutRef } from "react"
 import { ChevronUp, DollarSign, LogOut, Settings, User as UserIcon } from "lucide-react"
 import { useSearchParams } from "react-router-dom"
 import { useAuth } from "@/auth"
@@ -15,31 +15,36 @@ interface SidebarFooterProps {
   currentUser: User | null
 }
 
-interface SidebarFooterTriggerProps {
+interface SidebarFooterTriggerProps extends Omit<ComponentPropsWithoutRef<"button">, "children"> {
   avatarSrc?: string | null
   currentUser: User
-  onClick?: () => void
 }
 
-function SidebarFooterTrigger({ avatarSrc, currentUser, onClick }: SidebarFooterTriggerProps) {
-  return (
-    <button
-      type="button"
-      className={cn(
-        "w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-        "hover:bg-muted/50"
-      )}
-      onClick={onClick}
-    >
-      <Avatar className="h-7 w-7">
-        {avatarSrc && <AvatarImage src={avatarSrc} alt={currentUser.name} />}
-        <AvatarFallback className="text-[10px]">{getInitials(currentUser.name)}</AvatarFallback>
-      </Avatar>
-      <span className="truncate flex-1 text-left">{currentUser.name}</span>
-      <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" />
-    </button>
-  )
-}
+const SidebarFooterTrigger = forwardRef<HTMLButtonElement, SidebarFooterTriggerProps>(
+  ({ avatarSrc, currentUser, className, type = "button", ...buttonProps }, ref) => {
+    return (
+      <button
+        ref={ref}
+        type={type}
+        className={cn(
+          "w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+          "hover:bg-muted/50",
+          className
+        )}
+        {...buttonProps}
+      >
+        <Avatar className="h-7 w-7">
+          {avatarSrc && <AvatarImage src={avatarSrc} alt={currentUser.name} />}
+          <AvatarFallback className="text-[10px]">{getInitials(currentUser.name)}</AvatarFallback>
+        </Avatar>
+        <span className="truncate flex-1 text-left">{currentUser.name}</span>
+        <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" />
+      </button>
+    )
+  }
+)
+
+SidebarFooterTrigger.displayName = "SidebarFooterTrigger"
 
 function SidebarFooterHeader({ avatarSrc, currentUser }: { avatarSrc?: string | null; currentUser: User }) {
   return (
