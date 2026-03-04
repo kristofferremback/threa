@@ -1,4 +1,4 @@
-import { useLayoutEffect, useEffect } from "react"
+import { useLayoutEffect, useEffect, useState, useCallback } from "react"
 import type { Editor } from "@tiptap/react"
 import { useFloating, offset, flip, shift, autoUpdate } from "@floating-ui/react"
 import { Bold, Italic, Strikethrough, Link2, Quote, Code, Braces, List, ListOrdered, ChevronDown } from "lucide-react"
@@ -6,6 +6,7 @@ import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { LinkEditor } from "./link-editor"
 import { cn } from "@/lib/utils"
 
@@ -70,7 +71,11 @@ export function EditorToolbar({
 
   const buttons = (
     <>
-      <StylePicker editor={editor} onOpenChange={onDropdownOpenChange} />
+      <StylePicker
+        editor={editor}
+        onOpenChange={onDropdownOpenChange}
+        keepEditorFocus={inline && inlinePosition === "below"}
+      />
       <Separator orientation="vertical" className="mx-1 h-6" />
       <ToolbarButton
         onAction={() => editor.chain().focus().toggleBold().run()}
@@ -197,11 +202,120 @@ export function EditorToolbar({
   )
 }
 
-function StylePicker({ editor, onOpenChange }: { editor: Editor; onOpenChange?: (open: boolean) => void }) {
+function StylePicker({
+  editor,
+  onOpenChange,
+  keepEditorFocus = false,
+}: {
+  editor: Editor
+  onOpenChange?: (open: boolean) => void
+  keepEditorFocus?: boolean
+}) {
   let activeLabel = "Normal"
   if (editor.isActive("heading", { level: 1 })) activeLabel = "Heading 1"
   else if (editor.isActive("heading", { level: 2 })) activeLabel = "Heading 2"
   else if (editor.isActive("heading", { level: 3 })) activeLabel = "Heading 3"
+
+  const [mobileStyleOpen, setMobileStyleOpen] = useState(false)
+  const handleOpenChange = useCallback(
+    (open: boolean) => {
+      setMobileStyleOpen(open)
+      onOpenChange?.(open)
+    },
+    [onOpenChange]
+  )
+
+  if (keepEditorFocus) {
+    return (
+      <Popover open={mobileStyleOpen} onOpenChange={handleOpenChange}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 gap-1 px-2 text-xs font-medium hover:bg-muted"
+            tabIndex={-1}
+            onPointerDown={(e) => e.preventDefault()}
+          >
+            {activeLabel}
+            <ChevronDown className="h-3 w-3 opacity-60" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent
+          align="start"
+          side="top"
+          className="w-auto min-w-[120px] p-1"
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          onCloseAutoFocus={(e) => e.preventDefault()}
+        >
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className={cn("h-8 w-full justify-start px-2 text-sm", !editor.isActive("heading") && "font-medium")}
+            tabIndex={-1}
+            onPointerDown={(e) => {
+              e.preventDefault()
+              editor.chain().focus().setParagraph().run()
+              handleOpenChange(false)
+            }}
+          >
+            Normal
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className={cn(
+              "h-8 w-full justify-start px-2 text-sm",
+              editor.isActive("heading", { level: 1 }) && "font-medium"
+            )}
+            tabIndex={-1}
+            onPointerDown={(e) => {
+              e.preventDefault()
+              editor.chain().focus().toggleHeading({ level: 1 }).run()
+              handleOpenChange(false)
+            }}
+          >
+            Heading 1
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className={cn(
+              "h-8 w-full justify-start px-2 text-sm",
+              editor.isActive("heading", { level: 2 }) && "font-medium"
+            )}
+            tabIndex={-1}
+            onPointerDown={(e) => {
+              e.preventDefault()
+              editor.chain().focus().toggleHeading({ level: 2 }).run()
+              handleOpenChange(false)
+            }}
+          >
+            Heading 2
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className={cn(
+              "h-8 w-full justify-start px-2 text-sm",
+              editor.isActive("heading", { level: 3 }) && "font-medium"
+            )}
+            tabIndex={-1}
+            onPointerDown={(e) => {
+              e.preventDefault()
+              editor.chain().focus().toggleHeading({ level: 3 }).run()
+              handleOpenChange(false)
+            }}
+          >
+            Heading 3
+          </Button>
+        </PopoverContent>
+      </Popover>
+    )
+  }
 
   return (
     <DropdownMenu onOpenChange={onOpenChange}>
