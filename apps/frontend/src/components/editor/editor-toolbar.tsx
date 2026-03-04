@@ -206,7 +206,14 @@ function StylePicker({ editor, onOpenChange }: { editor: Editor; onOpenChange?: 
   return (
     <DropdownMenu onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" className="h-8 gap-1 px-2 text-xs font-medium hover:bg-muted" tabIndex={-1}>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 gap-1 px-2 text-xs font-medium hover:bg-muted"
+          tabIndex={-1}
+          // Keep TipTap focused so mobile keyboards stay open while opening StylePicker.
+          onPointerDown={(e) => e.preventDefault()}
+        >
           {activeLabel}
           <ChevronDown className="h-3 w-3 opacity-60" />
         </Button>
