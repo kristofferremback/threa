@@ -1036,7 +1036,9 @@ const x = 1
           ],
         }
 
-        expect(serializeToMarkdown(doc)).toBe("Check this [Image #1](attachment:attach_123)")
+        expect(serializeToMarkdown(doc)).toBe(
+          'Check this [Image #1](attachment:attach_123 "threa-attachment:filename=screenshot.png&mimeType=image%2Fpng&sizeBytes=1024")'
+        )
       })
 
       it("should serialize file attachment reference", () => {
@@ -1063,7 +1065,9 @@ const x = 1
           ],
         }
 
-        expect(serializeToMarkdown(doc)).toBe("[report.pdf](attachment:attach_456)")
+        expect(serializeToMarkdown(doc)).toBe(
+          '[report.pdf](attachment:attach_456 "threa-attachment:filename=report.pdf&mimeType=application%2Fpdf&sizeBytes=2048")'
+        )
       })
 
       it("should skip uploading attachments in serialization", () => {
@@ -1125,7 +1129,9 @@ const x = 1
 
     describe("parsing", () => {
       it("should parse image attachment reference", () => {
-        const result = parseMarkdown("See [Image #1](attachment:attach_123)")
+        const result = parseMarkdown(
+          'See [Image #1](attachment:attach_123 "threa-attachment:filename=screenshot.png&mimeType=image%2Fpng&sizeBytes=1024")'
+        )
         const content = result.content?.[0]?.content
 
         expect(content).toHaveLength(2)
@@ -1133,13 +1139,18 @@ const x = 1
         expect(content?.[1]?.type).toBe("attachmentReference")
         expect(content?.[1]?.attrs).toMatchObject({
           id: "attach_123",
+          filename: "screenshot.png",
+          mimeType: "image/png",
+          sizeBytes: 1024,
           imageIndex: 1,
           status: "uploaded",
         })
       })
 
       it("should parse file attachment reference", () => {
-        const result = parseMarkdown("[report.pdf](attachment:attach_456)")
+        const result = parseMarkdown(
+          '[report.pdf](attachment:attach_456 "threa-attachment:filename=report.pdf&mimeType=application%2Fpdf&sizeBytes=2048")'
+        )
         const content = result.content?.[0]?.content
 
         expect(content).toHaveLength(1)
@@ -1147,7 +1158,37 @@ const x = 1
         expect(content?.[0]?.attrs).toMatchObject({
           id: "attach_456",
           filename: "report.pdf",
+          mimeType: "application/pdf",
+          sizeBytes: 2048,
           imageIndex: null,
+          status: "uploaded",
+        })
+      })
+
+      it("should parse legacy attachment reference without metadata as unknown size", () => {
+        const result = parseMarkdown("[report.pdf](attachment:attach_456)")
+        const content = result.content?.[0]?.content
+
+        expect(content?.[0]?.type).toBe("attachmentReference")
+        expect(content?.[0]?.attrs).toMatchObject({
+          id: "attach_456",
+          filename: "report.pdf",
+          mimeType: "application/octet-stream",
+          sizeBytes: null,
+          status: "uploaded",
+        })
+      })
+
+      it("should parse legacy escaped attachment labels without metadata", () => {
+        const result = parseMarkdown("[report\\[final\\]\\\\v2\\].pdf](attachment:attach_456)")
+        const content = result.content?.[0]?.content
+
+        expect(content?.[0]?.type).toBe("attachmentReference")
+        expect(content?.[0]?.attrs).toMatchObject({
+          id: "attach_456",
+          filename: "report[final]\\v2].pdf",
+          mimeType: "application/octet-stream",
+          sizeBytes: null,
           status: "uploaded",
         })
       })
@@ -1174,9 +1215,9 @@ const x = 1
                   type: "attachmentReference",
                   attrs: {
                     id: "attach_789",
-                    filename: "",
+                    filename: "photo.png",
                     mimeType: "image/png",
-                    sizeBytes: 0,
+                    sizeBytes: 4096,
                     status: "uploaded",
                     imageIndex: 2,
                     error: null,
@@ -1188,11 +1229,18 @@ const x = 1
         }
 
         const md = serializeToMarkdown(doc)
-        expect(md).toBe("[Image #2](attachment:attach_789)")
+        expect(md).toBe(
+          '[Image #2](attachment:attach_789 "threa-attachment:filename=photo.png&mimeType=image%2Fpng&sizeBytes=4096")'
+        )
 
         const parsed = parseMarkdown(md)
         expect(parsed.content?.[0]?.content?.[0]?.type).toBe("attachmentReference")
-        expect(parsed.content?.[0]?.content?.[0]?.attrs?.imageIndex).toBe(2)
+        expect(parsed.content?.[0]?.content?.[0]?.attrs).toMatchObject({
+          filename: "photo.png",
+          mimeType: "image/png",
+          sizeBytes: 4096,
+          imageIndex: 2,
+        })
       })
 
       it("should preserve file attachment through round-trip", () => {
@@ -1208,7 +1256,7 @@ const x = 1
                     id: "attach_abc",
                     filename: "document.docx",
                     mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                    sizeBytes: 0,
+                    sizeBytes: 8192,
                     status: "uploaded",
                     imageIndex: null,
                     error: null,
@@ -1220,11 +1268,56 @@ const x = 1
         }
 
         const md = serializeToMarkdown(doc)
-        expect(md).toBe("[document.docx](attachment:attach_abc)")
+        expect(md).toBe(
+          '[document.docx](attachment:attach_abc "threa-attachment:filename=document.docx&mimeType=application%2Fvnd.openxmlformats-officedocument.wordprocessingml.document&sizeBytes=8192")'
+        )
 
         const parsed = parseMarkdown(md)
         expect(parsed.content?.[0]?.content?.[0]?.type).toBe("attachmentReference")
-        expect(parsed.content?.[0]?.content?.[0]?.attrs?.filename).toBe("document.docx")
+        expect(parsed.content?.[0]?.content?.[0]?.attrs).toMatchObject({
+          filename: "document.docx",
+          mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          sizeBytes: 8192,
+        })
+      })
+
+      it("should preserve attachment labels with brackets and backslashes through round-trip", () => {
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                {
+                  type: "attachmentReference",
+                  attrs: {
+                    id: "attach_escaped",
+                    filename: "report[final]\\v2].pdf",
+                    mimeType: "application/pdf",
+                    sizeBytes: 512,
+                    status: "uploaded",
+                    imageIndex: null,
+                    error: null,
+                  },
+                },
+              ],
+            },
+          ],
+        }
+
+        const md = serializeToMarkdown(doc)
+        expect(md).toBe(
+          '[report\\[final\\]\\\\v2\\].pdf](attachment:attach_escaped "threa-attachment:filename=report%5Bfinal%5D%5Cv2%5D.pdf&mimeType=application%2Fpdf&sizeBytes=512")'
+        )
+
+        const parsed = parseMarkdown(md)
+        expect(parsed.content?.[0]?.content?.[0]?.type).toBe("attachmentReference")
+        expect(parsed.content?.[0]?.content?.[0]?.attrs).toMatchObject({
+          filename: "report[final]\\v2].pdf",
+          mimeType: "application/pdf",
+          sizeBytes: 512,
+          imageIndex: null,
+        })
       })
     })
   })
