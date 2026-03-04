@@ -158,7 +158,15 @@ export function MessageComposer({
 
         {/* Main input area */}
         <div className="input-glow-wrapper">
-          <div className="rounded-[16px] border border-input bg-card p-3 flex flex-col gap-2">
+          <div
+            className="rounded-[16px] border border-input bg-card p-3 flex flex-col gap-2"
+            onClick={(e) => {
+              // Focus editor when clicking non-interactive areas (hint text, padding, etc.)
+              if (!(e.target as HTMLElement).closest("button,a,input,textarea,[contenteditable],[role='button']")) {
+                richEditorRef.current?.focus()
+              }
+            }}
+          >
             {/* Editor — bubble toolbar floats above the selection */}
             {sharedEditor}
 
