@@ -415,7 +415,7 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
     }
   }, [editor, mentionables, getMentionType, toEmoji])
 
-  // TipTap's autofocus option (line 184) handles initial focus.
+  // TipTap's autofocus option handles initial focus.
   // No additional focus-on-mount effect needed — the redundant focus()
   // dispatch caused a view update that raced with toolbar rendering,
   // briefly dropping focus in autoFocus editors (e.g. inline edit).

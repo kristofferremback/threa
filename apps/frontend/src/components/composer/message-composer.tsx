@@ -167,7 +167,7 @@ export function MessageComposer({
               }
             }}
           >
-            {/* Editor — bubble toolbar floats above the selection */}
+            {/* Editor surface; formatting appears via the desktop bubble or the inline Aa bar */}
             {sharedEditor}
 
             {/* Bottom action bar */}

@@ -93,7 +93,7 @@ test.describe("Message Send Mode", () => {
       await page.getByRole("button", { name: "+ New Scratchpad" }).click()
       await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
 
-      // The send hint is now always visible as text below the composer card
+      // The desktop send hint is shown below the composer card in this viewport
       await expect(page.getByText("Enter to send · Shift+Enter for new line").first()).toBeVisible({ timeout: 2000 })
     })
 
@@ -159,7 +159,7 @@ test.describe("Message Send Mode", () => {
       await page.getByRole("button", { name: "+ New Scratchpad" }).click()
       await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
 
-      // The send hint is now always visible as text below the composer card
+      // The desktop send hint is shown below the composer card in this viewport
       await expect(page.getByText(/⌘Enter to send|Ctrl\+Enter to send/).first()).toBeVisible({ timeout: 2000 })
     })
   })
