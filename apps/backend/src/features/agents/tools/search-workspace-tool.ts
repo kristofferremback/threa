@@ -1,7 +1,7 @@
 import { z } from "zod"
-import { AgentStepTypes, STREAM_TYPES } from "@threa/types"
+import { AgentStepTypes, STREAM_TYPES, StreamTypes } from "@threa/types"
 import { logger } from "../../../lib/logger"
-import { StreamRepository } from "../../streams"
+import { searchDmStreamsByParticipant, StreamRepository } from "../../streams"
 import { UserRepository } from "../../workspaces"
 import { MessageRepository } from "../../messaging"
 import { PersonaRepository } from "../persona-repository"
@@ -49,6 +49,12 @@ export interface StreamSearchResult {
   type: string
   name: string | null
   description: string | null
+}
+
+interface RankedStreamSearchResult {
+  result: StreamSearchResult
+  score: number
+  sourceOrder: number
 }
 
 // Schema for search_users tool
@@ -196,7 +202,7 @@ Optionally filter by stream using ID (stream_xxx), slug (general), or prefixed s
 }
 
 export function createSearchStreamsTool(deps: WorkspaceToolDeps) {
-  const { db, accessibleStreamIds } = deps
+  const { db, workspaceId, accessibleStreamIds, invokingUserId } = deps
 
   return defineAgentTool({
     name: "search_streams",
@@ -208,19 +214,95 @@ export function createSearchStreamsTool(deps: WorkspaceToolDeps) {
 
     execute: async (input): Promise<AgentToolResult> => {
       try {
-        const streams = await StreamRepository.searchByName(db, {
-          streamIds: accessibleStreamIds,
-          query: input.query,
-          types: input.types,
-          limit: 10,
-        })
+        const normalizedQuery = input.query.trim()
+        if (normalizedQuery.length === 0) {
+          return {
+            output: JSON.stringify({
+              query: input.query,
+              types: input.types,
+              results: [],
+              message: "Search query cannot be empty",
+            }),
+          }
+        }
 
-        const results: StreamSearchResult[] = streams.map((s) => ({
-          id: s.id,
-          type: s.type,
-          name: s.displayName ?? s.slug ?? null,
-          description: s.description ?? null,
-        }))
+        const [nameMatches, dmSearchResults] = await Promise.all([
+          StreamRepository.searchByName(db, {
+            streamIds: accessibleStreamIds,
+            query: normalizedQuery,
+            types: input.types,
+            limit: MAX_RESULTS,
+          }),
+          searchDmStreamsByParticipant({
+            db,
+            workspaceId,
+            invokingUserId,
+            accessibleStreamIds,
+            query: normalizedQuery,
+            types: input.types,
+            limit: MAX_RESULTS,
+          }),
+        ])
+
+        const dmDisplayNamesById = new Map(dmSearchResults.map((result) => [result.streamId, result.displayName]))
+        const rankedResults: RankedStreamSearchResult[] = [
+          ...nameMatches.map((stream, index): RankedStreamSearchResult => {
+            // Use viewer-resolved DM name when available so ranking aligns with what users see.
+            // For non-DM streams, score against displayName/slug as before.
+            // If no resolved DM label exists, fall back to persisted stream naming fields.
+            const searchText =
+              stream.type === StreamTypes.DM
+                ? (dmDisplayNamesById.get(stream.id) ?? stream.displayName ?? stream.slug ?? "")
+                : (stream.displayName ?? stream.slug ?? "")
+
+            return {
+              result: {
+                id: stream.id,
+                type: stream.type,
+                name:
+                  stream.type === StreamTypes.DM
+                    ? (dmDisplayNamesById.get(stream.id) ?? stream.displayName ?? "(direct message)")
+                    : (stream.displayName ?? stream.slug ?? null),
+                description: stream.description ?? null,
+              },
+              score: scoreStreamSearchResultName(searchText, normalizedQuery),
+              sourceOrder: index,
+            }
+          }),
+          ...dmSearchResults.map(
+            (result, index): RankedStreamSearchResult => ({
+              result: {
+                id: result.streamId,
+                type: StreamTypes.DM,
+                name: result.displayName,
+                description: null,
+              },
+              score: result.score,
+              sourceOrder: nameMatches.length + index,
+            })
+          ),
+        ]
+
+        const bestResultById = new Map<string, RankedStreamSearchResult>()
+        for (const entry of rankedResults) {
+          const existing = bestResultById.get(entry.result.id)
+          if (
+            !existing ||
+            entry.score < existing.score ||
+            (entry.score === existing.score && entry.sourceOrder < existing.sourceOrder)
+          ) {
+            bestResultById.set(entry.result.id, entry)
+          }
+        }
+
+        const results = [...bestResultById.values()]
+          .sort((a, b) => {
+            if (a.score !== b.score) return a.score - b.score
+            if (a.sourceOrder !== b.sourceOrder) return a.sourceOrder - b.sourceOrder
+            return (a.result.name ?? "").localeCompare(b.result.name ?? "")
+          })
+          .map((entry) => entry.result)
+          .slice(0, MAX_RESULTS)
 
         if (results.length === 0) {
           return {
@@ -418,4 +500,14 @@ You can reference streams by their ID (stream_xxx), slug (general), or prefixed 
 function truncate(text: string, maxLength: number): string {
   if (text.length <= maxLength) return text
   return text.slice(0, maxLength - 3) + "..."
+}
+
+function scoreStreamSearchResultName(name: string, query: string): number {
+  const normalizedName = name.trim().toLowerCase()
+  const normalizedQuery = query.trim().toLowerCase()
+  if (!normalizedQuery) return Number.POSITIVE_INFINITY
+  if (normalizedName === normalizedQuery) return 0
+  if (normalizedName.startsWith(normalizedQuery)) return 1
+  if (normalizedName.includes(normalizedQuery)) return 2
+  return 3
 }

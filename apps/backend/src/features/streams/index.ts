@@ -40,6 +40,8 @@ export type {
   LastMessagePreview,
   DmPeer,
 } from "./repository"
+export { searchDmStreamsByParticipant } from "./dm-search"
+export type { DmStreamSearchMatch } from "./dm-search"
 
 export { StreamEventRepository } from "./event-repository"
 export type { StreamEvent, InsertEventParams } from "./event-repository"
