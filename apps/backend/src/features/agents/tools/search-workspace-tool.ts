@@ -1,7 +1,7 @@
 import { z } from "zod"
-import { AgentStepTypes, STREAM_TYPES, StreamTypes, type StreamType } from "@threa/types"
+import { AgentStepTypes, STREAM_TYPES, StreamTypes } from "@threa/types"
 import { logger } from "../../../lib/logger"
-import { formatParticipantNames, StreamMemberRepository, StreamRepository, type Stream } from "../../streams"
+import { searchDmStreamsByParticipant, StreamRepository } from "../../streams"
 import { UserRepository } from "../../workspaces"
 import { MessageRepository } from "../../messaging"
 import { PersonaRepository } from "../persona-repository"
@@ -90,12 +90,6 @@ export interface StreamMessagesResult {
 
 const MAX_RESULTS = 10
 const MAX_STREAM_MESSAGES = 20
-
-interface DmSearchResult {
-  stream: Stream
-  displayName: string
-  score: number
-}
 
 export function createSearchMessagesTool(deps: WorkspaceToolDeps) {
   const { db, workspaceId, accessibleStreamIds, invokingUserId, searchService } = deps
@@ -221,33 +215,43 @@ export function createSearchStreamsTool(deps: WorkspaceToolDeps) {
             types: input.types,
             limit: MAX_RESULTS,
           }),
-          searchDmStreamsByParticipant(db, {
+          searchDmStreamsByParticipant({
+            db,
             workspaceId,
             invokingUserId,
-            streamIds: accessibleStreamIds,
+            accessibleStreamIds,
             query: input.query,
             types: input.types,
             limit: MAX_RESULTS,
           }),
         ])
 
-        const dmDisplayNamesById = new Map(dmSearchResults.map((result) => [result.stream.id, result.displayName]))
+        const dmDisplayNamesById = new Map(dmSearchResults.map((result) => [result.streamId, result.displayName]))
+        const mergedResults = [
+          ...nameMatches.map(
+            (stream): StreamSearchResult => ({
+              id: stream.id,
+              type: stream.type,
+              name:
+                stream.type === StreamTypes.DM
+                  ? (dmDisplayNamesById.get(stream.id) ?? stream.displayName ?? "(direct message)")
+                  : (stream.displayName ?? stream.slug ?? null),
+              description: stream.description ?? null,
+            })
+          ),
+          ...dmSearchResults.map(
+            (result): StreamSearchResult => ({
+              id: result.streamId,
+              type: StreamTypes.DM,
+              name: result.displayName,
+              description: null,
+            })
+          ),
+        ]
 
-        const mergedStreams = [...nameMatches, ...dmSearchResults.map((result) => result.stream)]
-
-        const streams = mergedStreams
-          .filter((stream, index, arr) => arr.findIndex((s) => s.id === stream.id) === index)
+        const results = mergedResults
+          .filter((result, index, arr) => arr.findIndex((entry) => entry.id === result.id) === index)
           .slice(0, MAX_RESULTS)
-
-        const results: StreamSearchResult[] = streams.map((s) => ({
-          id: s.id,
-          type: s.type,
-          name:
-            s.type === StreamTypes.DM
-              ? (dmDisplayNamesById.get(s.id) ?? s.displayName ?? "(direct message)")
-              : (s.displayName ?? s.slug ?? null),
-          description: s.description ?? null,
-        }))
 
         if (results.length === 0) {
           return {
@@ -290,121 +294,6 @@ export function createSearchStreamsTool(deps: WorkspaceToolDeps) {
       formatContent: (input) => JSON.stringify({ tool: "search_streams", query: input.query ?? "" }),
     },
   })
-}
-
-async function searchDmStreamsByParticipant(
-  db: WorkspaceToolDeps["db"],
-  params: {
-    workspaceId: string
-    invokingUserId: string
-    streamIds: string[]
-    query: string
-    types?: StreamType[]
-    limit: number
-  }
-): Promise<DmSearchResult[]> {
-  const { workspaceId, invokingUserId, streamIds, query, types, limit } = params
-  const shouldSearchDms = !types || types.length === 0 || types.includes(StreamTypes.DM)
-  if (!shouldSearchDms || streamIds.length === 0) {
-    return []
-  }
-
-  const candidateStreams = await StreamRepository.findByIds(db, streamIds)
-  const dmStreams = candidateStreams.filter((stream) => stream.type === StreamTypes.DM)
-  if (dmStreams.length === 0) {
-    return []
-  }
-
-  const dmStreamIds = dmStreams.map((stream) => stream.id)
-  const dmMembers = await StreamMemberRepository.list(db, { streamIds: dmStreamIds })
-  const participantUserIds = Array.from(new Set(dmMembers.map((member) => member.memberId)))
-  const users = await UserRepository.findByIds(db, workspaceId, participantUserIds)
-  const usersById = new Map(users.map((user) => [user.id, user]))
-  const membersByStreamId = new Map<string, string[]>()
-
-  for (const member of dmMembers) {
-    const currentMembers = membersByStreamId.get(member.streamId) ?? []
-    currentMembers.push(member.memberId)
-    membersByStreamId.set(member.streamId, currentMembers)
-  }
-
-  const queryTerms = extractSearchTerms(query)
-  const matches: DmSearchResult[] = []
-
-  for (const dmStream of dmStreams) {
-    const memberIds = membersByStreamId.get(dmStream.id) ?? []
-    const participants = memberIds
-      .map((memberId) => usersById.get(memberId))
-      .filter((user): user is NonNullable<typeof user> => user !== undefined)
-      .map((user) => ({ id: user.id, name: user.name }))
-
-    const displayName = formatParticipantNames(participants, invokingUserId)
-    const otherParticipant = memberIds.find((memberId) => memberId !== invokingUserId)
-    const otherParticipantUser = otherParticipant ? usersById.get(otherParticipant) : undefined
-
-    const score = scoreDmMatch({
-      queryTerms,
-      displayName,
-      participantSlug: otherParticipantUser?.slug ?? null,
-    })
-    if (score === Number.POSITIVE_INFINITY) {
-      continue
-    }
-
-    matches.push({ stream: dmStream, displayName, score })
-  }
-
-  return matches
-    .sort((a, b) => {
-      if (a.score !== b.score) return a.score - b.score
-      return a.displayName.localeCompare(b.displayName)
-    })
-    .slice(0, limit)
-}
-
-function extractSearchTerms(query: string): string[] {
-  const lowerQuery = query.trim().toLowerCase()
-  if (!lowerQuery) return []
-
-  const terms = new Set<string>([lowerQuery])
-  if (lowerQuery.startsWith("@")) {
-    terms.add(lowerQuery.slice(1))
-  }
-
-  const tokenMatches = lowerQuery.match(/[@]?[a-z0-9][a-z0-9-]*/g) ?? []
-  for (const token of tokenMatches) {
-    terms.add(token)
-    if (token.startsWith("@")) {
-      terms.add(token.slice(1))
-    }
-  }
-
-  return Array.from(terms).filter((term) => term.length > 1)
-}
-
-function scoreDmMatch(params: { queryTerms: string[]; displayName: string; participantSlug: string | null }): number {
-  const candidates = [params.displayName.toLowerCase()]
-  if (params.participantSlug) {
-    const slug = params.participantSlug.toLowerCase()
-    candidates.push(slug, `@${slug}`)
-  }
-
-  let bestScore = Number.POSITIVE_INFINITY
-  for (const candidate of candidates) {
-    for (const term of params.queryTerms) {
-      if (candidate === term) {
-        bestScore = Math.min(bestScore, 0)
-      } else if (candidate.startsWith(term)) {
-        bestScore = Math.min(bestScore, 1)
-      } else if (candidate.includes(term)) {
-        bestScore = Math.min(bestScore, 2)
-      } else if (term.includes(candidate)) {
-        bestScore = Math.min(bestScore, 3)
-      }
-    }
-  }
-
-  return bestScore
 }
 
 export function createSearchUsersTool(deps: WorkspaceToolDeps) {
