@@ -12,25 +12,14 @@ vi.mock("@/components/editor", () => ({
     onSubmit,
     placeholder,
     disabled,
-    showFormattingToolbar,
-    onAttachClick,
   }: {
     value: JSONContent
     onChange: (v: JSONContent) => void
     onSubmit: () => void
     placeholder: string
     disabled: boolean
-    showFormattingToolbar?: boolean
-    onAttachClick?: () => void
   }) => (
     <div data-testid="rich-editor-wrapper">
-      {showFormattingToolbar && (
-        <div data-testid="formatting-toolbar">
-          <button type="button" onClick={onAttachClick} disabled={disabled} aria-label="Attach files">
-            Attach
-          </button>
-        </div>
-      )}
       <textarea
         data-testid="rich-editor"
         data-content-type="json"
