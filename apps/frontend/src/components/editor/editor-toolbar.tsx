@@ -236,7 +236,7 @@ interface ToolbarButtonProps {
 }
 
 function ToolbarButton({ onAction, icon: Icon, label, shortcut, isActive }: ToolbarButtonProps) {
-  const handleMouseDown = (e: React.MouseEvent) => {
+  const handlePointerDown = (e: React.PointerEvent) => {
     e.preventDefault()
     onAction()
   }
@@ -247,7 +247,7 @@ function ToolbarButton({ onAction, icon: Icon, label, shortcut, isActive }: Tool
         <Button
           variant="ghost"
           size="sm"
-          onMouseDown={handleMouseDown}
+          onPointerDown={handlePointerDown}
           className={cn("h-8 w-8 p-0 hover:bg-muted", isActive && "bg-muted-foreground/20 text-foreground")}
           tabIndex={-1}
           aria-label={label}
