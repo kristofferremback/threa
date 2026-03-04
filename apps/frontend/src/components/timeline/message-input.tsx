@@ -2,14 +2,10 @@ import { useState, useCallback, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import { useDraftComposer, getDraftMessageKey, useStreamOrDraft } from "@/hooks"
 import { usePreferences } from "@/contexts"
-import { useIsMobile } from "@/hooks/use-mobile"
 import { MessageComposer } from "@/components/composer"
-import { DocumentEditorModal } from "@/components/editor"
-import { Drawer, DrawerContent, DrawerHeader } from "@/components/ui/drawer"
 import { commandsApi } from "@/api"
 import { isCommand } from "@/lib/commands"
-import { cn } from "@/lib/utils"
-import { serializeToMarkdown, parseMarkdown } from "@threa/prosemirror"
+import { serializeToMarkdown } from "@threa/prosemirror"
 import { useEditLastMessage } from "./edit-last-message-context"
 import type { JSONContent } from "@threa/types"
 
@@ -22,41 +18,7 @@ interface MessageInputProps {
   autoFocus?: boolean
 }
 
-/** Extract a short plain-text preview from a ProseMirror document */
-function draftPreviewText(doc: JSONContent): string {
-  const texts: string[] = []
-  const walk = (node: JSONContent) => {
-    if (node.type === "text" && typeof node.text === "string") {
-      texts.push(node.text)
-    }
-    if (node.content) {
-      for (const child of node.content) walk(child)
-    }
-  }
-  walk(doc)
-  const joined = texts.join("").trim()
-  return joined.length > 60 ? joined.slice(0, 60) + "…" : joined
-}
-
-/** Returns true if the document has any actual content */
-function hasDocContent(doc: JSONContent): boolean {
-  if (!doc?.content) return false
-  return doc.content.some((node) => {
-    if (node.type === "paragraph") {
-      return node.content && node.content.length > 0
-    }
-    return true
-  })
-}
-
-export function MessageInput({
-  workspaceId,
-  streamId,
-  streamName,
-  disabled,
-  disabledReason,
-  autoFocus,
-}: MessageInputProps) {
+export function MessageInput({ workspaceId, streamId, disabled, disabledReason, autoFocus }: MessageInputProps) {
   const { triggerEditLast } = useEditLastMessage() ?? {}
   const navigate = useNavigate()
   const { preferences } = usePreferences()
@@ -65,16 +27,11 @@ export function MessageInput({
 
   const composer = useDraftComposer({ workspaceId, draftKey, scopeId: streamId })
   const [error, setError] = useState<string | null>(null)
-  const [docEditorOpen, setDocEditorOpen] = useState(false)
-  const [sheetOpen, setSheetOpen] = useState(false)
   const messageSendMode = preferences?.messageSendMode ?? "enter"
-  const isMobile = useIsMobile()
 
   // Reset local state on stream change (e.g., draft promotion) without remounting
   useEffect(() => {
     setError(null)
-    setDocEditorOpen(false)
-    setSheetOpen(false)
   }, [streamId])
 
   const handleSubmit = useCallback(async () => {
@@ -134,8 +91,6 @@ export function MessageInput({
       if (result.navigateTo) {
         navigate(result.navigateTo, { replace: result.replace ?? false })
       }
-      // Close mobile sheet after successful send
-      setSheetOpen(false)
     } catch {
       // This only happens for draft promotion failure (stream creation failed)
       // Real stream message failures are handled in the timeline with retry
@@ -144,46 +99,6 @@ export function MessageInput({
       composer.setIsSending(false)
     }
   }, [composer, sendMessage, navigate, workspaceId, streamId])
-
-  // Send from document editor modal
-  const handleDocEditorSend = useCallback(
-    async (content: string) => {
-      const trimmed = content.trim()
-      if (!trimmed) return
-
-      setError(null)
-
-      // Parse markdown to ProseMirror JSON for sending
-      const contentJson = parseMarkdown(trimmed)
-
-      // Clear composer content immediately so it doesn't persist when modal closes
-      const emptyDoc: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
-      composer.setContent(emptyDoc)
-      composer.clearDraft()
-
-      try {
-        const result = await sendMessage({
-          contentJson,
-        })
-        if (result.navigateTo) {
-          navigate(result.navigateTo, { replace: result.replace ?? false })
-        }
-      } catch {
-        setError("Failed to send message. Please try again.")
-      }
-    },
-    [sendMessage, navigate, composer]
-  )
-
-  // Sync content from doc editor back to composer when dismissed
-  const handleDocEditorDismiss = useCallback(
-    (content: string) => {
-      // Parse markdown back to ProseMirror JSON
-      const contentJson = parseMarkdown(content)
-      composer.setContent(contentJson)
-    },
-    [composer]
-  )
 
   if (disabled && disabledReason) {
     return (
@@ -197,70 +112,9 @@ export function MessageInput({
     )
   }
 
-  // Mobile path: compact tap trigger + Drawer with full composer inside
-  if (isMobile && !disabled) {
-    const hasDraft = hasDocContent(composer.content)
-    const previewText = hasDraft ? draftPreviewText(composer.content) : ""
-    const triggerText = previewText || (streamName ? `Message #${streamName}` : "Type a message…")
-
-    return (
-      <div className="border-t">
-        {/* Compact tap trigger — visible when drawer is closed */}
-        {!sheetOpen && (
-          <button
-            type="button"
-            className="w-full p-4 text-left text-sm text-muted-foreground"
-            onClick={() => setSheetOpen(true)}
-          >
-            {triggerText}
-          </button>
-        )}
-
-        <Drawer open={sheetOpen} onOpenChange={setSheetOpen}>
-          <DrawerContent className="h-[90dvh] flex flex-col">
-            {/* Header with stream name */}
-            <DrawerHeader className="flex items-center py-2 px-4 border-b">
-              <span className="text-sm font-medium">{streamName ? `#${streamName}` : "New message"}</span>
-            </DrawerHeader>
-
-            {/* Full composer inside drawer */}
-            <div className="flex-1 overflow-hidden p-3">
-              <MessageComposer
-                content={composer.content}
-                onContentChange={composer.handleContentChange}
-                pendingAttachments={composer.pendingAttachments}
-                onRemoveAttachment={composer.handleRemoveAttachment}
-                fileInputRef={composer.fileInputRef}
-                onFileSelect={composer.handleFileSelect}
-                onFileUpload={composer.uploadFile}
-                imageCount={composer.imageCount}
-                onSubmit={handleSubmit}
-                canSubmit={composer.canSend}
-                isSubmitting={composer.isSending}
-                hasFailed={composer.hasFailed}
-                messageSendMode={messageSendMode}
-                onExpandClick={undefined}
-                autoFocus={sheetOpen}
-                scopeId={streamId}
-              />
-            </div>
-
-            {error && <p className="px-4 pb-2 text-sm text-destructive">{error}</p>}
-          </DrawerContent>
-        </Drawer>
-      </div>
-    )
-  }
-
   return (
     <div className="border-t">
-      {/* Message composer - hidden when doc editor is open */}
-      <div
-        className={cn(
-          "p-3 sm:p-6 mx-auto max-w-[800px] w-full min-w-0 transition-all duration-200",
-          docEditorOpen && "h-0 p-0 overflow-hidden opacity-0"
-        )}
-      >
+      <div className="pt-3 px-3 pb-1 sm:pt-6 sm:px-6 sm:pb-1 mx-auto max-w-[800px] w-full min-w-0">
         <MessageComposer
           content={composer.content}
           onContentChange={composer.handleContentChange}
@@ -275,23 +129,12 @@ export function MessageInput({
           isSubmitting={composer.isSending}
           hasFailed={composer.hasFailed}
           messageSendMode={messageSendMode}
-          onExpandClick={() => setDocEditorOpen(true)}
           autoFocus={autoFocus}
           scopeId={streamId}
           onEditLastMessage={triggerEditLast}
         />
         {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
       </div>
-
-      {/* Document editor modal */}
-      <DocumentEditorModal
-        open={docEditorOpen}
-        onOpenChange={setDocEditorOpen}
-        initialContent={serializeToMarkdown(composer.content)}
-        onSend={handleDocEditorSend}
-        onDismiss={handleDocEditorDismiss}
-        streamName={streamName ?? "this stream"}
-      />
     </div>
   )
 }

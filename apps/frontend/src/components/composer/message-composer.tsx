@@ -1,5 +1,6 @@
 import { type ChangeEvent, type RefObject, useMemo, useCallback, useRef, useState, useEffect } from "react"
-import { Expand, Type, AtSign, Slash, Paperclip } from "lucide-react"
+import { AtSign, Slash, Paperclip, ArrowUp } from "lucide-react"
+import { useIsMobile } from "@/hooks/use-mobile"
 import { RichEditor } from "@/components/editor"
 import type { RichEditorHandle } from "@/components/editor"
 import { Button } from "@/components/ui/button"
@@ -45,14 +46,12 @@ export interface MessageComposerProps {
   /** How Enter key behaves: "enter" = Enter sends, "cmdEnter" = Cmd+Enter sends */
   messageSendMode?: MessageSendMode
 
-  /** Called when expand button is clicked to open document editor */
-  onExpandClick?: () => void
-
   /** Auto-focus the editor when mounted */
   autoFocus?: boolean
 
   /** Scope identifier — when it changes, re-focus the editor (if autoFocus) */
   scopeId?: string
+
   /** Called when ArrowUp is pressed in an empty editor — triggers edit-last-message */
   onEditLastMessage?: () => void
 }
@@ -76,7 +75,6 @@ export function MessageComposer({
   disabled = false,
   className,
   messageSendMode = "enter",
-  onExpandClick,
   autoFocus = false,
   scopeId,
   onEditLastMessage,
@@ -86,11 +84,12 @@ export function MessageComposer({
   const controlsDisabled = disabled || isSubmitting
 
   const richEditorRef = useRef<RichEditorHandle>(null)
-  const [formatBubbleOpen, setFormatBubbleOpen] = useState(false)
+  const [formatOpen, setFormatOpen] = useState(false)
+  const isMobile = useIsMobile()
 
-  // Reset bubble when scope changes (stream navigation without remount)
+  // Close inline format toolbar when navigating to a different stream/scope without remount
   useEffect(() => {
-    setFormatBubbleOpen(false)
+    setFormatOpen(false)
   }, [scopeId])
 
   // Build the send mode hint text (reactive to preference changes)
@@ -106,12 +105,40 @@ export function MessageComposer({
     fileInputRef.current?.click()
   }, [fileInputRef])
 
-  // Wrap onSubmit to reset bubble state on send
   const handleSubmit = useCallback(() => {
-    setFormatBubbleOpen(false)
+    setFormatOpen(false)
     onSubmit()
   }, [onSubmit])
 
+  // Stable ref so TipTap's captured closure always invokes the current handler
+  // without needing to re-register on every render.
+  const onContentChangeRef = useRef(onContentChange)
+  onContentChangeRef.current = onContentChange
+
+  const handleContentChange = useCallback((newContent: JSONContent) => {
+    onContentChangeRef.current(newContent)
+  }, [])
+
+  const sharedEditor = (
+    <RichEditor
+      ref={richEditorRef}
+      value={content}
+      onChange={handleContentChange}
+      onSubmit={handleSubmit}
+      onFileUpload={onFileUpload}
+      imageCount={imageCount}
+      placeholder={placeholder}
+      disabled={disabled}
+      messageSendMode={messageSendMode}
+      autoFocus={autoFocus}
+      scopeId={scopeId}
+      staticToolbarOpen={formatOpen}
+      disableSelectionToolbar={isMobile}
+      onEditLastMessage={onEditLastMessage}
+    />
+  )
+
+  // ── Inline layout ────────────────────────────────────────────────────────
   return (
     <TooltipProvider delayDuration={300}>
       {/* Message input wrapper */}
@@ -132,42 +159,40 @@ export function MessageComposer({
         {/* Main input area */}
         <div className="input-glow-wrapper">
           <div className="rounded-[16px] border border-input bg-card p-3 flex flex-col gap-2">
-            {/* Editor — bubble toolbar floats above on selection or forceVisible */}
-            <RichEditor
-              ref={richEditorRef}
-              value={content}
-              onChange={onContentChange}
-              onSubmit={handleSubmit}
-              onFileUpload={onFileUpload}
-              imageCount={imageCount}
-              placeholder={placeholder}
-              disabled={disabled}
-              messageSendMode={messageSendMode}
-              forceToolbarVisible={formatBubbleOpen}
-              autoFocus={autoFocus}
-              scopeId={scopeId}
-              onEditLastMessage={onEditLastMessage}
-            />
+            {/* Editor — bubble toolbar floats above the selection */}
+            {sharedEditor}
 
             {/* Bottom action bar */}
             <div className="flex items-center gap-1">
-              {/* Format toggle — opens/closes bubble manually */}
+              {/* Hint text — fills space at left, pushes inserts right */}
+              <span className="text-[11px] text-muted-foreground flex-1 select-none pointer-events-none hidden sm:block">
+                Select text to format
+              </span>
+              <span className="text-[11px] text-muted-foreground flex-1 select-none pointer-events-none sm:hidden">
+                Select to format
+              </span>
+
+              {/* Format toggle — opens/closes inline style bar */}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon"
-                    aria-label="Toggle formatting toolbar"
-                    className={cn("h-7 w-7 shrink-0", formatBubbleOpen && "bg-muted-foreground/20 text-foreground")}
-                    onClick={() => setFormatBubbleOpen((v) => !v)}
+                    aria-label="Formatting"
+                    aria-pressed={formatOpen}
+                    className={cn("h-7 w-7 shrink-0", formatOpen && "bg-accent text-accent-foreground")}
+                    onPointerDown={(e) => {
+                      e.preventDefault()
+                      setFormatOpen((v) => !v)
+                    }}
                     disabled={controlsDisabled}
                   >
-                    <Type className="h-4 w-4" />
+                    <span className="text-[13px] font-bold leading-none tracking-tight">Aa</span>
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="top" className="text-xs">
-                  Format
+                  Formatting
                 </TooltipContent>
               </Tooltip>
 
@@ -217,7 +242,7 @@ export function MessageComposer({
                 </TooltipContent>
               </Tooltip>
 
-              {/* Insert slash command */}
+              {/* Insert slash command — desktop only */}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -225,7 +250,7 @@ export function MessageComposer({
                     variant="ghost"
                     size="icon"
                     aria-label="Insert command"
-                    className="h-7 w-7 shrink-0"
+                    className="h-7 w-7 shrink-0 hidden sm:inline-flex"
                     onPointerDown={(e) => {
                       e.preventDefault()
                       richEditorRef.current?.insertSlash()
@@ -260,40 +285,17 @@ export function MessageComposer({
                 </TooltipContent>
               </Tooltip>
 
-              <div className="flex-1" />
-
-              {/* Expand button — desktop only, opens document editor */}
-              {onExpandClick && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label="Expand editor"
-                      className="h-7 w-7 shrink-0 rounded-lg hover:bg-primary/10 hover:text-primary"
-                      onClick={onExpandClick}
-                      disabled={controlsDisabled}
-                    >
-                      <Expand className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top">
-                    <span className="font-medium">Expand editor</span>
-                  </TooltipContent>
-                </Tooltip>
-              )}
-
-              {/* Send hint */}
-              <span className="text-xs text-muted-foreground hidden sm:block">{sendHint}</span>
-
               {/* Send button */}
               {hasFailed ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <span>
-                      <Button disabled className="pointer-events-none h-7 rounded-lg text-xs px-3">
-                        {submitLabel}
+                      <Button
+                        disabled
+                        className="h-[30px] w-[30px] shrink-0 p-0 pointer-events-none rounded-md"
+                        aria-label={submitLabel}
+                      >
+                        <ArrowUp className="h-4 w-4" />
                       </Button>
                     </span>
                   </TooltipTrigger>
@@ -303,16 +305,25 @@ export function MessageComposer({
                 </Tooltip>
               ) : (
                 <Button
+                  type="button"
                   onPointerDown={(e) => e.preventDefault()}
                   onClick={handleSubmit}
                   disabled={!canSubmit}
-                  className="h-7 rounded-lg shrink-0 text-xs px-3"
+                  aria-label={isSubmitting ? submittingLabel : submitLabel}
+                  className="h-[30px] w-[30px] shrink-0 p-0 rounded-md"
                 >
-                  {isSubmitting ? submittingLabel : submitLabel}
+                  <ArrowUp className="h-4 w-4" />
                 </Button>
               )}
             </div>
           </div>
+        </div>
+
+        {/* Send hint */}
+        <div className="flex justify-end px-1 pt-1">
+          <span className="text-[10px] text-muted-foreground opacity-60 hidden sm:block select-none pointer-events-none">
+            {sendHint}
+          </span>
         </div>
       </div>
     </TooltipProvider>
