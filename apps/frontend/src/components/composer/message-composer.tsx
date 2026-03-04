@@ -1,17 +1,29 @@
 import { type ChangeEvent, type RefObject, useMemo, useCallback, useRef, useState, useEffect } from "react"
-import { AtSign, Slash, Paperclip, ArrowUp } from "lucide-react"
+import { AtSign, Slash, Paperclip, ArrowUp, Maximize2, Minimize2 } from "lucide-react"
 import { useIsMobile } from "@/hooks/use-mobile"
-import { RichEditor } from "@/components/editor"
+import { RichEditor, EditorToolbar } from "@/components/editor"
 import type { RichEditorHandle } from "@/components/editor"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
 import { PendingAttachments } from "@/components/timeline/pending-attachments"
+import { stripMarkdown } from "@/lib/markdown"
 import { cn } from "@/lib/utils"
 import type { PendingAttachment, UploadResult } from "@/hooks/use-attachments"
 import type { MessageSendMode, JSONContent } from "@threa/types"
+import type { Editor } from "@tiptap/react"
+import { serializeToMarkdown } from "@threa/prosemirror"
 
 /** Platform-appropriate modifier key symbol (⌘ on Mac, Ctrl+ elsewhere) */
 const MOD_SYMBOL = navigator.platform?.toLowerCase().includes("mac") ? "⌘" : "Ctrl+"
+
+/** Extract plain text from ProseMirror JSON for preview display */
+function getPlainText(doc: JSONContent): string {
+  const markdown = serializeToMarkdown(doc)
+  const plain = stripMarkdown(markdown)
+    // Collapsed preview should show list item text, not markdown list markers.
+    .replace(/^\s*(?:[-*+]|\d+\.)\s+/gm, "")
+  return plain.replace(/\s+/g, " ").trim()
+}
 
 export interface MessageComposerProps {
   // Content (controlled)
@@ -84,13 +96,52 @@ export function MessageComposer({
   const controlsDisabled = disabled || isSubmitting
 
   const richEditorRef = useRef<RichEditorHandle>(null)
+  const [mobileToolbarEditor, setMobileToolbarEditor] = useState<Editor | null>(null)
   const [formatOpen, setFormatOpen] = useState(false)
+  const [mobileExpanded, setMobileExpanded] = useState(false)
+  const [mobileFocused, setMobileFocused] = useState(false)
+  const [mobileLinkPopoverOpen, setMobileLinkPopoverOpen] = useState(false)
   const isMobile = useIsMobile()
+  const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Close inline format toolbar when navigating to a different stream/scope without remount
+  // Close inline format toolbar and collapse expansion when navigating to a different stream/scope
   useEffect(() => {
+    if (blurTimeoutRef.current) {
+      clearTimeout(blurTimeoutRef.current)
+      blurTimeoutRef.current = null
+    }
     setFormatOpen(false)
+    setMobileExpanded(false)
+    setMobileFocused(false)
+    setMobileLinkPopoverOpen(false)
   }, [scopeId])
+
+  // Track focus state for mobile progressive disclosure.
+  // Uses a small delay on blur to avoid flicker when focus moves between editor and action bar buttons.
+  const handleFocusCapture = useCallback(() => {
+    if (blurTimeoutRef.current) {
+      clearTimeout(blurTimeoutRef.current)
+      blurTimeoutRef.current = null
+    }
+    setMobileFocused(true)
+  }, [])
+
+  const handleBlurCapture = useCallback(() => {
+    blurTimeoutRef.current = setTimeout(() => {
+      setMobileFocused(false)
+      setMobileExpanded(false)
+      setFormatOpen(false)
+      setMobileLinkPopoverOpen(false)
+    }, 150)
+  }, [])
+
+  // Cleanup timeout on unmount
+  useEffect(
+    () => () => {
+      if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current)
+    },
+    []
+  )
 
   // Build the send mode hint text (reactive to preference changes)
   const sendHint = useMemo(() => {
@@ -107,6 +158,8 @@ export function MessageComposer({
 
   const handleSubmit = useCallback(() => {
     setFormatOpen(false)
+    setMobileExpanded(false)
+    setMobileLinkPopoverOpen(false)
     onSubmit()
   }, [onSubmit])
 
@@ -119,9 +172,18 @@ export function MessageComposer({
     onContentChangeRef.current(newContent)
   }, [])
 
+  const setRichEditorHandle = useCallback((handle: RichEditorHandle | null) => {
+    richEditorRef.current = handle
+    const nextEditor = handle?.getEditor() ?? null
+    setMobileToolbarEditor((currentEditor) => (currentEditor === nextEditor ? currentEditor : nextEditor))
+  }, [])
+
+  // Plain text preview for the collapsed mobile single-line view
+  const contentPreview = useMemo(() => (isMobile ? getPlainText(content) : ""), [isMobile, content])
+
   const sharedEditor = (
     <RichEditor
-      ref={richEditorRef}
+      ref={setRichEditorHandle}
       value={content}
       onChange={handleContentChange}
       onSubmit={handleSubmit}
@@ -132,17 +194,56 @@ export function MessageComposer({
       messageSendMode={messageSendMode}
       autoFocus={autoFocus}
       scopeId={scopeId}
-      staticToolbarOpen={formatOpen}
+      staticToolbarOpen={!isMobile && formatOpen}
       disableSelectionToolbar={isMobile}
       onEditLastMessage={onEditLastMessage}
     />
   )
 
+  // ── Send button (shared between states) ──────────────────────────────
+  const sendButton = hasFailed ? (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span>
+          <Button
+            disabled
+            className="h-[30px] w-[30px] shrink-0 p-0 pointer-events-none rounded-md"
+            aria-label={submitLabel}
+          >
+            <ArrowUp className="h-4 w-4" />
+          </Button>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top">
+        <p>Remove failed uploads before sending</p>
+      </TooltipContent>
+    </Tooltip>
+  ) : (
+    <Button
+      type="button"
+      onPointerDown={(e) => e.preventDefault()}
+      onClick={handleSubmit}
+      disabled={!canSubmit}
+      aria-label={isSubmitting ? submittingLabel : submitLabel}
+      className="h-[30px] w-[30px] shrink-0 p-0 rounded-md"
+    >
+      <ArrowUp className="h-4 w-4" />
+    </Button>
+  )
+
   // ── Inline layout ────────────────────────────────────────────────────────
   return (
     <TooltipProvider delayDuration={300}>
-      {/* Message input wrapper */}
-      <div className={cn("max-h-[380px] flex flex-col", className)}>
+      {/* Message input wrapper — dvh units respect the virtual keyboard on mobile */}
+      <div
+        className={cn(
+          "flex flex-col transition-[max-height,min-height] duration-200 ease-out",
+          mobileExpanded ? "max-h-[75dvh] min-h-[75dvh]" : "max-h-[380px] min-h-0",
+          className
+        )}
+        onFocusCapture={isMobile ? handleFocusCapture : undefined}
+        onBlurCapture={isMobile ? handleBlurCapture : undefined}
+      >
         {/* Attachment bar - shown above input */}
         <PendingAttachments attachments={pendingAttachments} onRemove={onRemoveAttachment} />
 
@@ -157,28 +258,79 @@ export function MessageComposer({
         />
 
         {/* Main input area */}
-        <div className="input-glow-wrapper">
+        <div className="input-glow-wrapper flex-1 flex flex-col min-h-0">
           <div
-            className="rounded-[16px] border border-input bg-card p-3 flex flex-col gap-2"
+            className={cn(
+              "rounded-[16px] border border-input bg-card flex flex-col flex-1 min-h-0",
+              // Compact padding when mobile-unfocused (single line), normal otherwise
+              isMobile && !mobileFocused ? "px-3 py-2" : "p-3 gap-2",
+              // When mobile-expanded, let the editor grow and override its internal max-height
+              mobileExpanded && "[&_.tiptap]:max-h-none"
+            )}
             onClick={(e) => {
-              // Focus editor when clicking non-interactive areas (hint text, padding, etc.)
-              if (!(e.target as HTMLElement).closest("button,a,input,textarea,[contenteditable],[role='button']")) {
-                richEditorRef.current?.focus()
+              if ((e.target as HTMLElement).closest("button,a,input,textarea,[contenteditable],[role='button']")) return
+              // On mobile unfocused, reveal the editor first then focus on next frame
+              if (isMobile && !mobileFocused) {
+                setMobileFocused(true)
+                requestAnimationFrame(() => richEditorRef.current?.focus())
+                return
               }
+              richEditorRef.current?.focus()
             }}
           >
-            {/* Editor surface; formatting appears via the desktop bubble or the inline Aa bar */}
-            {sharedEditor}
+            {/* Mobile unfocused: single-line preview with truncated text + send button */}
+            {isMobile && !mobileFocused && (
+              <div className="flex items-center gap-2 min-h-[30px]">
+                <span className="text-sm text-muted-foreground flex-1 truncate select-none">
+                  {contentPreview || placeholder}
+                </span>
+                {sendButton}
+              </div>
+            )}
 
-            {/* Bottom action bar */}
-            <div className="flex items-center gap-1">
-              {/* Hint text — fills space at left, pushes inserts right */}
+            {/* Editor surface — hidden on mobile when unfocused (stays mounted to preserve state) */}
+            <div
+              className={cn(
+                "flex-1 min-h-0",
+                isMobile && !mobileFocused && "hidden",
+                mobileExpanded && "overflow-y-auto"
+              )}
+            >
+              {sharedEditor}
+            </div>
+
+            {/* Bottom action bar — visible on desktop always, on mobile only when focused */}
+            <div className={cn("flex items-center gap-1", isMobile && !mobileFocused && "hidden")}>
+              {/* Hint text — desktop only */}
               <span className="text-[11px] text-muted-foreground flex-1 select-none pointer-events-none hidden sm:block">
                 Select text to format
               </span>
-              <span className="text-[11px] text-muted-foreground flex-1 select-none pointer-events-none sm:hidden">
-                Select to format
-              </span>
+              {isMobile && <span className="flex-1" />}
+
+              {/* Expand/collapse toggle — mobile only */}
+              {isMobile && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label={mobileExpanded ? "Minimize editor" : "Expand editor"}
+                      aria-pressed={mobileExpanded}
+                      className="h-7 w-7 shrink-0"
+                      onPointerDown={(e) => {
+                        e.preventDefault()
+                        setMobileExpanded((v) => !v)
+                      }}
+                    >
+                      {mobileExpanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">
+                    {mobileExpanded ? "Minimize" : "Expand"}
+                  </TooltipContent>
+                </Tooltip>
+              )}
 
               {/* Format toggle — opens/closes inline style bar */}
               <Tooltip>
@@ -294,36 +446,20 @@ export function MessageComposer({
               </Tooltip>
 
               {/* Send button */}
-              {hasFailed ? (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span>
-                      <Button
-                        disabled
-                        className="h-[30px] w-[30px] shrink-0 p-0 pointer-events-none rounded-md"
-                        aria-label={submitLabel}
-                      >
-                        <ArrowUp className="h-4 w-4" />
-                      </Button>
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent side="top">
-                    <p>Remove failed uploads before sending</p>
-                  </TooltipContent>
-                </Tooltip>
-              ) : (
-                <Button
-                  type="button"
-                  onPointerDown={(e) => e.preventDefault()}
-                  onClick={handleSubmit}
-                  disabled={!canSubmit}
-                  aria-label={isSubmitting ? submittingLabel : submitLabel}
-                  className="h-[30px] w-[30px] shrink-0 p-0 rounded-md"
-                >
-                  <ArrowUp className="h-4 w-4" />
-                </Button>
-              )}
+              {sendButton}
             </div>
+
+            {/* Mobile formatting toolbar — rendered below action bar, above keyboard */}
+            {isMobile && formatOpen && (
+              <EditorToolbar
+                editor={mobileToolbarEditor}
+                isVisible
+                inline
+                inlinePosition="below"
+                linkPopoverOpen={mobileLinkPopoverOpen}
+                onLinkPopoverOpenChange={setMobileLinkPopoverOpen}
+              />
+            )}
           </div>
         </div>
 

@@ -1,49 +1,94 @@
-import { describe, it, expect, vi } from "vitest"
-import { render, screen } from "@testing-library/react"
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
+import { render, screen, fireEvent, act } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
+import { forwardRef, useEffect, useImperativeHandle, useState } from "react"
 import { MessageComposer } from "./message-composer"
 import type { PendingAttachment } from "@/hooks/use-attachments"
 import type { JSONContent } from "@threa/types"
 
-// Mock RichEditor to work with JSONContent
-vi.mock("@/components/editor", () => ({
-  RichEditor: ({
-    onChange,
-    onSubmit,
-    placeholder,
-    disabled,
-  }: {
-    value: JSONContent
-    onChange: (v: JSONContent) => void
-    onSubmit: () => void
-    placeholder: string
-    disabled: boolean
-  }) => (
-    <div data-testid="rich-editor-wrapper">
-      <textarea
-        data-testid="rich-editor"
-        data-content-type="json"
-        onChange={(e) => {
-          // Simulate content change by creating a simple doc with the text
-          const text = e.target.value
-          onChange({
-            type: "doc",
-            content: [{ type: "paragraph", content: text ? [{ type: "text", text }] : undefined }],
-          })
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && e.metaKey) onSubmit()
-        }}
-        placeholder={placeholder}
-        disabled={disabled}
-      />
-    </div>
-  ),
+let isMobileMockValue = false
+
+vi.mock("@/hooks/use-mobile", () => ({
+  useIsMobile: () => isMobileMockValue,
 }))
+
+// Mock RichEditor/EditorToolbar for deterministic behavior with JSONContent
+vi.mock("@/components/editor", () => {
+  const RichEditor = forwardRef<
+    {
+      focus: () => void
+      insertMention: () => void
+      insertSlash: () => void
+      insertEmoji: () => void
+      getEditor: () => { id: string } | null
+    },
+    {
+      value: JSONContent
+      onChange: (v: JSONContent) => void
+      onSubmit: () => void
+      placeholder: string
+      disabled: boolean
+    }
+  >(function MockRichEditor({ onChange, onSubmit, placeholder, disabled }, ref) {
+    const [editorInstance, setEditorInstance] = useState<{ id: string } | null>(null)
+    useEffect(() => {
+      const timer = setTimeout(() => setEditorInstance({ id: "mock-editor" }), 0)
+      return () => clearTimeout(timer)
+    }, [])
+
+    useImperativeHandle(
+      ref,
+      () => ({
+        focus: () => undefined,
+        insertMention: () => undefined,
+        insertSlash: () => undefined,
+        insertEmoji: () => undefined,
+        getEditor: () => editorInstance,
+      }),
+      [editorInstance]
+    )
+
+    return (
+      <div data-testid="rich-editor-wrapper">
+        <textarea
+          data-testid="rich-editor"
+          data-content-type="json"
+          onChange={(e) => {
+            // Simulate content change by creating a simple doc with the text
+            const text = e.target.value
+            onChange({
+              type: "doc",
+              content: [{ type: "paragraph", content: text ? [{ type: "text", text }] : undefined }],
+            })
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && e.metaKey) onSubmit()
+          }}
+          placeholder={placeholder}
+          disabled={disabled}
+        />
+      </div>
+    )
+  })
+
+  const EditorToolbar = ({ editor, isVisible }: { editor: { id: string } | null; isVisible: boolean }) =>
+    isVisible ? <div data-testid="mobile-editor-toolbar" data-has-editor={editor ? "yes" : "no"} /> : null
+
+  return { RichEditor, EditorToolbar }
+})
 
 const EMPTY_DOC: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
 
 describe("MessageComposer", () => {
+  beforeEach(() => {
+    isMobileMockValue = false
+    vi.useRealTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   const defaultProps = {
     content: EMPTY_DOC,
     onContentChange: vi.fn(),
@@ -176,6 +221,95 @@ describe("MessageComposer", () => {
 
       // No attachment chips should be visible
       expect(screen.queryByText(/\.txt$/)).not.toBeInTheDocument()
+    })
+  })
+
+  describe("mobile state handling", () => {
+    it("shows nested block text in collapsed mobile preview", () => {
+      isMobileMockValue = true
+
+      const nestedDoc: JSONContent = {
+        type: "doc",
+        content: [
+          {
+            type: "bulletList",
+            content: [
+              {
+                type: "listItem",
+                content: [{ type: "paragraph", content: [{ type: "text", text: "First item" }] }],
+              },
+            ],
+          },
+          {
+            type: "blockquote",
+            content: [
+              {
+                type: "paragraph",
+                content: [
+                  { type: "mention", attrs: { slug: "kris", label: "kris" } },
+                  { type: "text", text: " said hi" },
+                ],
+              },
+            ],
+          },
+        ],
+      }
+
+      render(<MessageComposer {...defaultProps} content={nestedDoc} />)
+
+      expect(screen.getByText("First item @kris said hi")).toBeInTheDocument()
+    })
+
+    it("resets mobile focus state when scope changes", () => {
+      isMobileMockValue = true
+
+      const { rerender } = render(<MessageComposer {...defaultProps} scopeId="scope-a" />)
+
+      expect(screen.getByText("Type a message...")).toBeInTheDocument()
+
+      fireEvent.click(screen.getByText("Type a message..."))
+      expect(screen.queryByText("Type a message...")).not.toBeInTheDocument()
+
+      rerender(<MessageComposer {...defaultProps} scopeId="scope-b" />)
+      expect(screen.getByText("Type a message...")).toBeInTheDocument()
+    })
+
+    it("closes mobile formatting toolbar on blur", () => {
+      isMobileMockValue = true
+      vi.useFakeTimers()
+
+      render(<MessageComposer {...defaultProps} />)
+
+      fireEvent.click(screen.getByText("Type a message..."))
+
+      const formatButton = screen.getByRole("button", { name: "Formatting" })
+      fireEvent.pointerDown(formatButton)
+      expect(screen.getByTestId("mobile-editor-toolbar")).toBeInTheDocument()
+
+      fireEvent.blur(screen.getByTestId("rich-editor"))
+      act(() => {
+        vi.advanceTimersByTime(200)
+      })
+
+      expect(screen.queryByTestId("mobile-editor-toolbar")).not.toBeInTheDocument()
+    })
+
+    it("updates mobile toolbar editor when editor instance becomes available asynchronously", () => {
+      isMobileMockValue = true
+      vi.useFakeTimers()
+
+      render(<MessageComposer {...defaultProps} />)
+
+      fireEvent.click(screen.getByText("Type a message..."))
+      fireEvent.pointerDown(screen.getByRole("button", { name: "Formatting" }))
+
+      expect(screen.getByTestId("mobile-editor-toolbar")).toHaveAttribute("data-has-editor", "no")
+
+      act(() => {
+        vi.advanceTimersByTime(10)
+      })
+
+      expect(screen.getByTestId("mobile-editor-toolbar")).toHaveAttribute("data-has-editor", "yes")
     })
   })
 })
