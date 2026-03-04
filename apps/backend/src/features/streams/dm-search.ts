@@ -100,8 +100,6 @@ function scoreDmMatch(params: { queryTerms: string[]; participantName: string; p
         bestScore = Math.min(bestScore, 1)
       } else if (candidate.includes(term)) {
         bestScore = Math.min(bestScore, 2)
-      } else if (term.includes(candidate)) {
-        bestScore = Math.min(bestScore, 3)
       }
     }
   }

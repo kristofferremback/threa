@@ -246,8 +246,16 @@ export function createSearchStreamsTool(deps: WorkspaceToolDeps) {
 
         const dmDisplayNamesById = new Map(dmSearchResults.map((result) => [result.streamId, result.displayName]))
         const rankedResults: RankedStreamSearchResult[] = [
-          ...nameMatches.map(
-            (stream, index): RankedStreamSearchResult => ({
+          ...nameMatches.map((stream, index): RankedStreamSearchResult => {
+            // Use viewer-resolved DM name when available so ranking aligns with what users see.
+            // For non-DM streams, score against displayName/slug as before.
+            // If no resolved DM label exists, fall back to persisted stream naming fields.
+            const searchText =
+              stream.type === StreamTypes.DM
+                ? (dmDisplayNamesById.get(stream.id) ?? stream.displayName ?? stream.slug ?? "")
+                : (stream.displayName ?? stream.slug ?? "")
+
+            return {
               result: {
                 id: stream.id,
                 type: stream.type,
@@ -257,10 +265,10 @@ export function createSearchStreamsTool(deps: WorkspaceToolDeps) {
                     : (stream.displayName ?? stream.slug ?? null),
                 description: stream.description ?? null,
               },
-              score: scoreStreamSearchResultName(stream.displayName ?? stream.slug ?? "", normalizedQuery),
+              score: scoreStreamSearchResultName(searchText, normalizedQuery),
               sourceOrder: index,
-            })
-          ),
+            }
+          }),
           ...dmSearchResults.map(
             (result, index): RankedStreamSearchResult => ({
               result: {

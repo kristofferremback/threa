@@ -499,4 +499,90 @@ describe("search_streams DM matching", () => {
       expect(peers).toEqual([])
     })
   })
+
+  test("does not return DMs for short substring slugs embedded in other tokens", async () => {
+    await withTestTransaction(pool, async (client) => {
+      const ownerWorkosUserId = userId()
+      const targetPeerWorkosUserId = userId()
+      const shortSlugPeerWorkosUserId = userId()
+      const testWorkspaceId = workspaceId()
+
+      await WorkspaceRepository.insert(client, {
+        id: testWorkspaceId,
+        name: "DM Substring Guard Workspace",
+        slug: `dm-substring-guard-${testWorkspaceId}`,
+        createdBy: ownerWorkosUserId,
+      })
+
+      const ownerMember = await UserRepository.insert(client, {
+        id: userId(),
+        workspaceId: testWorkspaceId,
+        workosUserId: ownerWorkosUserId,
+        email: `owner.${testWorkspaceId.slice(-6)}@example.com`,
+        slug: "owner-user",
+        name: "Owner User",
+        role: "owner",
+      })
+      const targetPeer = await UserRepository.insert(client, {
+        id: userId(),
+        workspaceId: testWorkspaceId,
+        workosUserId: targetPeerWorkosUserId,
+        email: `target.${testWorkspaceId.slice(-6)}@example.com`,
+        slug: "pierre-boberg",
+        name: "Target Peer",
+        role: "user",
+      })
+      const shortSlugPeer = await UserRepository.insert(client, {
+        id: userId(),
+        workspaceId: testWorkspaceId,
+        workosUserId: shortSlugPeerWorkosUserId,
+        email: `short.${testWorkspaceId.slice(-6)}@example.com`,
+        slug: "bo",
+        name: "Bo",
+        role: "user",
+      })
+
+      const targetDmId = streamId()
+      await StreamRepository.insert(client, {
+        id: targetDmId,
+        workspaceId: testWorkspaceId,
+        type: StreamTypes.DM,
+        visibility: Visibilities.PRIVATE,
+        createdBy: ownerMember.id,
+      })
+      await StreamMemberRepository.insert(client, targetDmId, ownerMember.id)
+      await StreamMemberRepository.insert(client, targetDmId, targetPeer.id)
+
+      const shortSlugDmId = streamId()
+      await StreamRepository.insert(client, {
+        id: shortSlugDmId,
+        workspaceId: testWorkspaceId,
+        type: StreamTypes.DM,
+        visibility: Visibilities.PRIVATE,
+        createdBy: ownerMember.id,
+      })
+      await StreamMemberRepository.insert(client, shortSlugDmId, ownerMember.id)
+      await StreamMemberRepository.insert(client, shortSlugDmId, shortSlugPeer.id)
+
+      const tool = createSearchStreamsTool({
+        db: client as unknown as Pool,
+        workspaceId: testWorkspaceId,
+        accessibleStreamIds: [targetDmId, shortSlugDmId],
+        invokingUserId: ownerMember.id,
+        searchService: {} as never,
+        storage: {} as never,
+      })
+
+      const result = await tool.config.execute(
+        { query: "Can you summarize my recent DMs with @pierre-boberg" },
+        { toolCallId: "substring-guard" }
+      )
+      const parsed = JSON.parse(result.output) as {
+        results: Array<{ id: string; type: string; name: string }>
+      }
+
+      expect(parsed.results.some((entry) => entry.id === targetDmId)).toBe(true)
+      expect(parsed.results.some((entry) => entry.id === shortSlugDmId)).toBe(false)
+    })
+  })
 })
