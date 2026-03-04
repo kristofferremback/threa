@@ -1,14 +1,14 @@
 import type { Pool } from "pg"
 import type { ModelMessage } from "ai"
 import type { UserPreferences } from "@threa/types"
-import { AgentTriggers, StreamTypes, AuthorTypes } from "@threa/types"
+import { AgentTriggers, AuthorTypes } from "@threa/types"
 import type { UserPreferencesService } from "../../user-preferences"
 import { MessageRepository, type Message } from "../../messaging"
 import { UserRepository } from "../../workspaces"
 import { PersonaRepository } from "../persona-repository"
 import type { Persona } from "../persona-repository"
 import { AttachmentRepository } from "../../attachments"
-import { StreamMemberRepository, type Stream } from "../../streams"
+import type { Stream } from "../../streams"
 import { awaitAttachmentProcessing } from "../../attachments"
 import { buildStreamContext, type StreamContext } from "../context-builder"
 import type { ConversationSummaryService } from "../conversation-summary-service"
@@ -38,7 +38,6 @@ export interface AgentContext {
   invokingUserId: string | undefined
   preferences: UserPreferences | undefined
   authorNames: Map<string, string>
-  dmParticipantIds: string[] | undefined
   streamContext: StreamContext
 }
 
@@ -131,12 +130,6 @@ export async function buildAgentContext(deps: ContextDeps, params: ContextParams
     mentionerName = mentioner?.name ?? undefined
   }
 
-  let dmParticipantIds: string[] | undefined
-  if (stream.type === StreamTypes.DM) {
-    const members = await StreamMemberRepository.list(db, { streamId })
-    dmParticipantIds = members.map((m) => m.memberId)
-  }
-
   const systemPrompt = buildSystemPrompt(
     persona,
     streamContext,
@@ -155,7 +148,6 @@ export async function buildAgentContext(deps: ContextDeps, params: ContextParams
     invokingUserId,
     preferences,
     authorNames,
-    dmParticipantIds,
     streamContext,
   }
 }

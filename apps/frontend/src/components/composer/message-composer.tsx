@@ -53,6 +53,8 @@ export interface MessageComposerProps {
 
   /** Scope identifier — when it changes, re-focus the editor (if autoFocus) */
   scopeId?: string
+  /** Called when ArrowUp is pressed in an empty editor — triggers edit-last-message */
+  onEditLastMessage?: () => void
 }
 
 export function MessageComposer({
@@ -77,6 +79,7 @@ export function MessageComposer({
   onExpandClick,
   autoFocus = false,
   scopeId,
+  onEditLastMessage,
 }: MessageComposerProps) {
   // Controls (buttons, file input) are disabled during both external disable and sending.
   // The editor itself stays editable during sending so mobile keyboards don't close/reopen.
@@ -143,6 +146,7 @@ export function MessageComposer({
               forceToolbarVisible={formatBubbleOpen}
               autoFocus={autoFocus}
               scopeId={scopeId}
+              onEditLastMessage={onEditLastMessage}
             />
 
             {/* Bottom action bar */}

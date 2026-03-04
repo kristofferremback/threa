@@ -10,6 +10,8 @@ export const StreamTypes = {
   SYSTEM: "system",
 } as const satisfies Record<string, StreamType>
 
+export const DM_PARTICIPANT_COUNT = 2
+
 // Visibility
 export const VISIBILITY_OPTIONS = ["public", "private"] as const
 export type Visibility = (typeof VISIBILITY_OPTIONS)[number]

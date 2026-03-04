@@ -91,6 +91,13 @@ function getModelConfig(ctx: EvalContext): { model: string; temperature: number 
  */
 function createMockStorage(images: Map<string, Buffer>): StorageProvider {
   return {
+    async getObjectSize(key: string): Promise<number> {
+      const buffer = images.get(key)
+      if (!buffer) {
+        throw new Error(`Mock storage: key not found: ${key}`)
+      }
+      return buffer.length
+    },
     async getSignedDownloadUrl(key: string): Promise<string> {
       return `mock://storage/${key}`
     },

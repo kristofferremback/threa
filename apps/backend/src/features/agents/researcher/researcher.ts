@@ -63,8 +63,6 @@ export interface WorkspaceAgentInput {
   query: string
   conversationHistory: Message[]
   invokingUserId: string
-  /** For DMs: all participant member IDs */
-  dmParticipantIds?: string[]
 }
 
 /**
@@ -173,7 +171,7 @@ export class WorkspaceAgent {
    */
   async search(input: WorkspaceAgentInput): Promise<WorkspaceAgentResult> {
     const { pool } = this.deps
-    const { workspaceId, streamId, invokingUserId, dmParticipantIds } = input
+    const { workspaceId, streamId, invokingUserId } = input
 
     // Phase 1: Fetch all setup data with withClient (no transaction, fast reads ~100-200ms)
     const fetchedData = await withClient(pool, async (client) => {
@@ -187,18 +185,10 @@ export class WorkspaceAgent {
         invokingUserId,
       })
 
-      // For DMs, we need to pass participant IDs
-      const effectiveAccessSpec: AgentAccessSpec =
-        stream.type === "dm" && dmParticipantIds ? { type: "user_union", userIds: dmParticipantIds } : accessSpec
-
       // Get accessible streams for searches
-      const accessibleStreamIds = await SearchRepository.getAccessibleStreamsForAgent(
-        client,
-        effectiveAccessSpec,
-        workspaceId
-      )
+      const accessibleStreamIds = await SearchRepository.getAccessibleStreamsForAgent(client, accessSpec, workspaceId)
 
-      return { stream, accessSpec: effectiveAccessSpec, accessibleStreamIds }
+      return { stream, accessSpec, accessibleStreamIds }
     })
 
     // Return empty if stream not found

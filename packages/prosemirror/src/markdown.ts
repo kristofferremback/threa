@@ -7,6 +7,12 @@
  */
 
 import type { JSONContent, JSONContentMark } from "@threa/types"
+import {
+  escapeMarkdownLinkText,
+  parseAttachmentMetadata,
+  serializeAttachmentMetadata,
+  unescapeMarkdownLinkText,
+} from "./attachment-markdown"
 
 // ============================================================================
 // JSON → Markdown Serialization
@@ -116,7 +122,9 @@ function getNodeText(node: JSONContent): string {
     // Format: [Image #1](attachment:id) or [filename](attachment:id)
     const isImage = mimeType?.startsWith("image/")
     const displayText = isImage && imageIndex ? `Image #${imageIndex}` : filename
-    return `[${displayText}](attachment:${id})`
+    const escapedDisplayText = escapeMarkdownLinkText(displayText)
+    const metadata = serializeAttachmentMetadata(node.attrs)
+    return `[${escapedDisplayText}](attachment:${id}${metadata})`
   }
   if (node.type === "emoji") {
     const shortcode = node.attrs?.shortcode as string
@@ -430,7 +438,7 @@ function parseInlineMarkdown(text: string, options: ParseOptions = {}): JSONCont
 
   // Inline markdown pattern - captures each format type in separate groups
   const inlinePattern =
-    /(\[([^\]]+)\]\(attachment:([^)]+)\))|(\[([^\]]+)\]\(([^)]+)\))|(\*\*\*(.+?)\*\*\*)|(\*\*(.+?)\*\*)|(?<!\*)(\*([^*]+?)\*)(?!\*)|(\~\~(.+?)\~\~)|(`([^`]+)`)|(@([\w-]+))|(#([\w-]+))|(:([\w+-]+):)/g
+    /(\[((?:\\.|[^\\\]])+)\]\(attachment:([^)\s"]+)(?:\s+"((?:\\"|\\\\|[^"])*)")?\))|(\[([^\]]+)\]\(([^)]+)\))|(\*\*\*(.+?)\*\*\*)|(\*\*(.+?)\*\*)|(?<!\*)(\*([^*]+?)\*)(?!\*)|(\~\~(.+?)\~\~)|(`([^`]+)`)|(@([\w-]+))|(#([\w-]+))|(:([\w+-]+):)/g
 
   let lastIndex = 0
   let match
@@ -443,8 +451,9 @@ function parseInlineMarkdown(text: string, options: ParseOptions = {}): JSONCont
 
     if (match[1]) {
       // Attachment: [text](attachment:id)
-      const displayText = match[2]
+      const displayText = unescapeMarkdownLinkText(match[2])
       const attachmentId = match[3]
+      const metadata = parseAttachmentMetadata(match[4])
       const imageMatch = displayText.match(/^Image #(\d+)$/)
       const imageIndex = imageMatch ? parseInt(imageMatch[1], 10) : null
       const isImage = imageIndex !== null
@@ -452,18 +461,18 @@ function parseInlineMarkdown(text: string, options: ParseOptions = {}): JSONCont
         type: "attachmentReference",
         attrs: {
           id: attachmentId,
-          filename: isImage ? "" : displayText,
-          mimeType: isImage ? "image/unknown" : "application/octet-stream",
-          sizeBytes: 0,
+          filename: metadata.filename ?? (isImage ? "" : displayText),
+          mimeType: metadata.mimeType ?? (isImage ? "image/unknown" : "application/octet-stream"),
+          sizeBytes: metadata.sizeBytes,
           status: "uploaded",
           imageIndex,
           error: null,
         },
       })
-    } else if (match[4]) {
+    } else if (match[5]) {
       // Link: [text](url)
-      const linkText = match[5]
-      const linkUrl = match[6]
+      const linkText = match[6]
+      const linkUrl = match[7]
       const innerContent = parseInlineMarkdown(linkText, options)
       for (const node of innerContent) {
         result.push({
@@ -471,9 +480,9 @@ function parseInlineMarkdown(text: string, options: ParseOptions = {}): JSONCont
           marks: [...(node.marks || []), { type: "link", attrs: { href: linkUrl } }],
         })
       }
-    } else if (match[7]) {
+    } else if (match[8]) {
       // BoldItalic: ***text***
-      const boldItalicText = match[8]
+      const boldItalicText = match[9]
       const innerContent = parseInlineMarkdown(boldItalicText, options)
       for (const node of innerContent) {
         result.push({
@@ -481,9 +490,9 @@ function parseInlineMarkdown(text: string, options: ParseOptions = {}): JSONCont
           marks: [...(node.marks || []), { type: "bold" }, { type: "italic" }],
         })
       }
-    } else if (match[9]) {
+    } else if (match[10]) {
       // Bold: **text**
-      const boldText = match[10]
+      const boldText = match[11]
       const innerContent = parseInlineMarkdown(boldText, options)
       for (const node of innerContent) {
         result.push({
@@ -491,9 +500,9 @@ function parseInlineMarkdown(text: string, options: ParseOptions = {}): JSONCont
           marks: [...(node.marks || []), { type: "bold" }],
         })
       }
-    } else if (match[11]) {
+    } else if (match[12]) {
       // Italic: *text*
-      const italicText = match[12]
+      const italicText = match[13]
       const innerContent = parseInlineMarkdown(italicText, options)
       for (const node of innerContent) {
         result.push({
@@ -501,9 +510,9 @@ function parseInlineMarkdown(text: string, options: ParseOptions = {}): JSONCont
           marks: [...(node.marks || []), { type: "italic" }],
         })
       }
-    } else if (match[13]) {
+    } else if (match[14]) {
       // Strike: ~~text~~
-      const strikeText = match[14]
+      const strikeText = match[15]
       const innerContent = parseInlineMarkdown(strikeText, options)
       for (const node of innerContent) {
         result.push({
@@ -511,30 +520,30 @@ function parseInlineMarkdown(text: string, options: ParseOptions = {}): JSONCont
           marks: [...(node.marks || []), { type: "strike" }],
         })
       }
-    } else if (match[15]) {
+    } else if (match[16]) {
       // Code: `text` (no nesting for code)
       result.push({
         type: "text",
-        text: match[16],
+        text: match[17],
         marks: [{ type: "code" }],
       })
-    } else if (match[17]) {
+    } else if (match[18]) {
       // Mention: @slug
-      const slug = match[18]
+      const slug = match[19]
       result.push({
         type: "mention",
         attrs: { id: slug, slug, mentionType: lookupMentionType(slug) },
       })
-    } else if (match[19]) {
+    } else if (match[20]) {
       // Channel: #slug
-      const slug = match[20]
+      const slug = match[21]
       result.push({
         type: "channelLink",
         attrs: { id: slug, slug },
       })
-    } else if (match[21]) {
+    } else if (match[22]) {
       // Emoji: :shortcode:
-      const shortcode = match[22]
+      const shortcode = match[23]
       const emoji = getEmoji?.(shortcode)
       if (emoji) {
         result.push({

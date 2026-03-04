@@ -1,6 +1,7 @@
-import { useCallback } from "react"
+import { useCallback, useMemo } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useSocket, useWorkspaceService } from "@/contexts"
+import { useUser } from "@/auth"
 import { debugBootstrap } from "@/lib/bootstrap-debug"
 import { getQueryLoadState, isTerminalBootstrapError } from "@/lib/query-load-state"
 import { db } from "@/db"
@@ -225,6 +226,16 @@ export function useUploadAvatar(workspaceId: string) {
     mutationFn: (file: File) => workspaceService.uploadAvatar(workspaceId, file),
     onSuccess: (user) => updateUserInBootstrap(queryClient, workspaceId, user),
   })
+}
+
+/** Returns the workspace-scoped user ID for the current WorkOS user, or null if not found. */
+export function useWorkspaceUserId(workspaceId: string): string | null {
+  const user = useUser()
+  const { data: wsBootstrap } = useWorkspaceBootstrap(workspaceId)
+  return useMemo(
+    () => wsBootstrap?.users?.find((u) => u.workosUserId === user?.id)?.id ?? null,
+    [wsBootstrap?.users, user?.id]
+  )
 }
 
 export function useRemoveAvatar(workspaceId: string) {
