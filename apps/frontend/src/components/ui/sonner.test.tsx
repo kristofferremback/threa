@@ -33,32 +33,39 @@ vi.mock("sonner", async () => {
       const visibleToasts = props.id
         ? mockState.toasts.filter((activeToast) => activeToast.toasterId === props.id)
         : mockState.toasts.filter((activeToast) => !activeToast.toasterId)
+      const possiblePositions = Array.from(
+        new Set([
+          defaultPosition,
+          ...visibleToasts.filter((activeToast) => activeToast.position).map((activeToast) => activeToast.position!),
+        ])
+      )
 
       return (
         <section ref={ref} data-testid="sonner-root" data-position={props.position} className={props.className}>
-          <ol
-            data-sonner-toaster=""
-            data-y-position={defaultPosition.split("-")[0]}
-            data-x-position={defaultPosition.split("-")[1]}
-          >
-            {visibleToasts.map((activeToast, index) => {
-              const position = activeToast.position ?? defaultPosition
-              const [y, x] = position.split("-")
-              return (
-                <li
-                  key={activeToast.id}
-                  data-sonner-toast=""
-                  data-index={index}
-                  data-y-position={y}
-                  data-x-position={x}
-                  data-dismissible={activeToast.dismissible === false ? "false" : "true"}
-                >
-                  <span>{activeToast.id}</span>
-                  <button type="button">Action</button>
-                </li>
-              )
-            })}
-          </ol>
+          {possiblePositions.map((position, positionIndex) => {
+            const [y, x] = position.split("-")
+            const toastsAtPosition = visibleToasts.filter(
+              (activeToast) => (!activeToast.position && positionIndex === 0) || activeToast.position === position
+            )
+
+            return (
+              <ol key={position} data-sonner-toaster="" data-y-position={y} data-x-position={x}>
+                {toastsAtPosition.map((activeToast, index) => (
+                  <li
+                    key={activeToast.id}
+                    data-sonner-toast=""
+                    data-index={index}
+                    data-y-position={y}
+                    data-x-position={x}
+                    data-dismissible={activeToast.dismissible === false ? "false" : "true"}
+                  >
+                    <span>{activeToast.id}</span>
+                    <button type="button">Action</button>
+                  </li>
+                ))}
+              </ol>
+            )
+          })}
         </section>
       )
     }
@@ -122,5 +129,20 @@ describe("Toaster", () => {
     await user.click(screen.getByText("toast_1"))
 
     expect(mockState.dismissToast).not.toHaveBeenCalled()
+  })
+
+  it("dismisses the correct toast when multiple positions are active", async () => {
+    const user = userEvent.setup()
+    mockState.toasts = [
+      { id: "top_1", position: "top-center" },
+      { id: "bottom_1", position: "bottom-right" },
+      { id: "top_2", position: "top-center" },
+    ]
+
+    render(<Toaster />)
+    await user.click(screen.getByText("top_2"))
+
+    expect(mockState.dismissToast).toHaveBeenCalledWith("top_2")
+    expect(mockState.dismissToast).not.toHaveBeenCalledWith("top_1")
   })
 })
