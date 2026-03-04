@@ -34,22 +34,22 @@ describe("search_streams DM matching", () => {
         createdBy: ownerWorkosUserId,
       })
 
-      const kristoffer = await UserRepository.insert(client, {
+      const ownerMember = await UserRepository.insert(client, {
         id: userId(),
         workspaceId: testWorkspaceId,
         workosUserId: ownerWorkosUserId,
-        email: `kristoffer.${testWorkspaceId.slice(-6)}@example.com`,
-        slug: "kristoffer-remback",
-        name: "Kristoffer",
+        email: `owner.${testWorkspaceId.slice(-6)}@example.com`,
+        slug: "owner-user",
+        name: "Owner User",
         role: "owner",
       })
-      const pierre = await UserRepository.insert(client, {
+      const peerMember = await UserRepository.insert(client, {
         id: userId(),
         workspaceId: testWorkspaceId,
         workosUserId: peerWorkosUserId,
-        email: `pierre.${testWorkspaceId.slice(-6)}@example.com`,
-        slug: "pierre-boberg",
-        name: "Pierre Boberg",
+        email: `peer.${testWorkspaceId.slice(-6)}@example.com`,
+        slug: "peer-user",
+        name: "Peer User",
         role: "user",
       })
 
@@ -58,57 +58,57 @@ describe("search_streams DM matching", () => {
         workspaceId: testWorkspaceId,
         type: StreamTypes.DM,
         visibility: Visibilities.PRIVATE,
-        createdBy: kristoffer.id,
+        createdBy: ownerMember.id,
       })
-      await StreamMemberRepository.insert(client, dmId, kristoffer.id)
-      await StreamMemberRepository.insert(client, dmId, pierre.id)
+      await StreamMemberRepository.insert(client, dmId, ownerMember.id)
+      await StreamMemberRepository.insert(client, dmId, peerMember.id)
 
-      const kristofferTool = createSearchStreamsTool({
+      const ownerTool = createSearchStreamsTool({
         db: client as unknown as Pool,
         workspaceId: testWorkspaceId,
         accessibleStreamIds: [dmId],
-        invokingUserId: kristoffer.id,
+        invokingUserId: ownerMember.id,
         searchService: {} as never,
         storage: {} as never,
       })
 
-      const kristofferResult = await kristofferTool.config.execute(
-        { query: "Can you summarize my recent DMs with @pierre-boberg" },
-        { toolCallId: "kristoffer" }
+      const ownerResult = await ownerTool.config.execute(
+        { query: "Can you summarize my recent DMs with @peer-user" },
+        { toolCallId: "owner" }
       )
-      const kristofferParsed = JSON.parse(kristofferResult.output) as {
+      const ownerParsed = JSON.parse(ownerResult.output) as {
         results: Array<{ id: string; type: string; name: string }>
       }
 
-      expect(kristofferParsed.results).toHaveLength(1)
-      expect(kristofferParsed.results[0]).toMatchObject({
+      expect(ownerParsed.results).toHaveLength(1)
+      expect(ownerParsed.results[0]).toMatchObject({
         id: dmId,
         type: StreamTypes.DM,
-        name: "Pierre Boberg",
+        name: "Peer User",
       })
 
-      const pierreTool = createSearchStreamsTool({
+      const peerTool = createSearchStreamsTool({
         db: client as unknown as Pool,
         workspaceId: testWorkspaceId,
         accessibleStreamIds: [dmId],
-        invokingUserId: pierre.id,
+        invokingUserId: peerMember.id,
         searchService: {} as never,
         storage: {} as never,
       })
 
-      const pierreResult = await pierreTool.config.execute(
-        { query: "Summarize my recent DMs with @kristoffer-remback" },
-        { toolCallId: "pierre" }
+      const peerResult = await peerTool.config.execute(
+        { query: "Summarize my recent DMs with @owner-user" },
+        { toolCallId: "peer" }
       )
-      const pierreParsed = JSON.parse(pierreResult.output) as {
+      const peerParsed = JSON.parse(peerResult.output) as {
         results: Array<{ id: string; type: string; name: string }>
       }
 
-      expect(pierreParsed.results).toHaveLength(1)
-      expect(pierreParsed.results[0]).toMatchObject({
+      expect(peerParsed.results).toHaveLength(1)
+      expect(peerParsed.results[0]).toMatchObject({
         id: dmId,
         type: StreamTypes.DM,
-        name: "Kristoffer",
+        name: "Owner User",
       })
     })
   })
@@ -127,22 +127,22 @@ describe("search_streams DM matching", () => {
         createdBy: ownerWorkosUserId,
       })
 
-      const kristoffer = await UserRepository.insert(client, {
+      const ownerMember = await UserRepository.insert(client, {
         id: userId(),
         workspaceId: testWorkspaceId,
         workosUserId: ownerWorkosUserId,
-        email: `kristoffer.${testWorkspaceId.slice(-6)}@example.com`,
-        slug: "kristoffer-remback",
-        name: "Kristoffer",
+        email: `owner.${testWorkspaceId.slice(-6)}@example.com`,
+        slug: "owner-user",
+        name: "Owner User",
         role: "owner",
       })
-      const pierre = await UserRepository.insert(client, {
+      const peerMember = await UserRepository.insert(client, {
         id: userId(),
         workspaceId: testWorkspaceId,
         workosUserId: peerWorkosUserId,
-        email: `pierre.${testWorkspaceId.slice(-6)}@example.com`,
-        slug: "pierre-boberg",
-        name: "Pierre Boberg",
+        email: `peer.${testWorkspaceId.slice(-6)}@example.com`,
+        slug: "peer-user",
+        name: "Peer User",
         role: "user",
       })
       const outsider = await UserRepository.insert(client, {
@@ -161,21 +161,21 @@ describe("search_streams DM matching", () => {
         workspaceId: testWorkspaceId,
         type: StreamTypes.SCRATCHPAD,
         visibility: Visibilities.PRIVATE,
-        createdBy: kristoffer.id,
+        createdBy: ownerMember.id,
         displayName: "My Scratchpad",
       })
-      await StreamMemberRepository.insert(client, scratchpadId, kristoffer.id)
+      await StreamMemberRepository.insert(client, scratchpadId, ownerMember.id)
 
-      const dmWithPierreId = streamId()
+      const dmWithPeerId = streamId()
       await StreamRepository.insert(client, {
-        id: dmWithPierreId,
+        id: dmWithPeerId,
         workspaceId: testWorkspaceId,
         type: StreamTypes.DM,
         visibility: Visibilities.PRIVATE,
-        createdBy: kristoffer.id,
+        createdBy: ownerMember.id,
       })
-      await StreamMemberRepository.insert(client, dmWithPierreId, kristoffer.id)
-      await StreamMemberRepository.insert(client, dmWithPierreId, pierre.id)
+      await StreamMemberRepository.insert(client, dmWithPeerId, ownerMember.id)
+      await StreamMemberRepository.insert(client, dmWithPeerId, peerMember.id)
 
       const dmWithOutsiderId = streamId()
       await StreamRepository.insert(client, {
@@ -183,9 +183,9 @@ describe("search_streams DM matching", () => {
         workspaceId: testWorkspaceId,
         type: StreamTypes.DM,
         visibility: Visibilities.PRIVATE,
-        createdBy: kristoffer.id,
+        createdBy: ownerMember.id,
       })
-      await StreamMemberRepository.insert(client, dmWithOutsiderId, kristoffer.id)
+      await StreamMemberRepository.insert(client, dmWithOutsiderId, ownerMember.id)
       await StreamMemberRepository.insert(client, dmWithOutsiderId, outsider.id)
 
       const otherPrivateScratchpadId = streamId()
@@ -204,7 +204,7 @@ describe("search_streams DM matching", () => {
 
       const accessSpec = await computeAgentAccessSpec(client, {
         stream: scratchpad!,
-        invokingUserId: kristoffer.id,
+        invokingUserId: ownerMember.id,
       })
 
       expect(accessSpec.type).toBe("user_full_access")
@@ -214,7 +214,7 @@ describe("search_streams DM matching", () => {
         testWorkspaceId
       )
 
-      expect(accessibleStreamIds).toContain(dmWithPierreId)
+      expect(accessibleStreamIds).toContain(dmWithPeerId)
       expect(accessibleStreamIds).toContain(dmWithOutsiderId)
       expect(accessibleStreamIds).not.toContain(otherPrivateScratchpadId)
 
@@ -222,22 +222,20 @@ describe("search_streams DM matching", () => {
         db: client as unknown as Pool,
         workspaceId: testWorkspaceId,
         accessibleStreamIds,
-        invokingUserId: kristoffer.id,
+        invokingUserId: ownerMember.id,
         searchService: {} as never,
         storage: {} as never,
       })
 
       const result = await tool.config.execute(
-        { query: "Can you summarize my recent DMs with @pierre-boberg" },
+        { query: "Can you summarize my recent DMs with @peer-user" },
         { toolCallId: "scratchpad" }
       )
       const parsed = JSON.parse(result.output) as {
         results: Array<{ id: string; type: string; name: string }>
       }
 
-      expect(parsed.results.some((stream) => stream.id === dmWithPierreId && stream.name === "Pierre Boberg")).toBe(
-        true
-      )
+      expect(parsed.results.some((stream) => stream.id === dmWithPeerId && stream.name === "Peer User")).toBe(true)
       expect(parsed.results.some((stream) => stream.id === dmWithOutsiderId)).toBe(false)
     })
   })
@@ -256,22 +254,22 @@ describe("search_streams DM matching", () => {
         createdBy: ownerWorkosUserId,
       })
 
-      const kristoffer = await UserRepository.insert(client, {
+      const ownerMember = await UserRepository.insert(client, {
         id: userId(),
         workspaceId: testWorkspaceId,
         workosUserId: ownerWorkosUserId,
-        email: `kristoffer.${testWorkspaceId.slice(-6)}@example.com`,
-        slug: "kristoffer-remback",
-        name: "Kristoffer",
+        email: `owner.${testWorkspaceId.slice(-6)}@example.com`,
+        slug: "owner-user",
+        name: "Owner User",
         role: "owner",
       })
-      const jose = await UserRepository.insert(client, {
+      const unicodePeer = await UserRepository.insert(client, {
         id: userId(),
         workspaceId: testWorkspaceId,
         workosUserId: peerWorkosUserId,
-        email: `jose.${testWorkspaceId.slice(-6)}@example.com`,
-        slug: "jose-alvarez",
-        name: "José Álvarez",
+        email: `accented-peer.${testWorkspaceId.slice(-6)}@example.com`,
+        slug: "accented-peer",
+        name: "Accent Peer",
         role: "user",
       })
 
@@ -280,22 +278,22 @@ describe("search_streams DM matching", () => {
         workspaceId: testWorkspaceId,
         type: StreamTypes.DM,
         visibility: Visibilities.PRIVATE,
-        createdBy: kristoffer.id,
+        createdBy: ownerMember.id,
       })
-      await StreamMemberRepository.insert(client, dmId, kristoffer.id)
-      await StreamMemberRepository.insert(client, dmId, jose.id)
+      await StreamMemberRepository.insert(client, dmId, ownerMember.id)
+      await StreamMemberRepository.insert(client, dmId, unicodePeer.id)
 
       const tool = createSearchStreamsTool({
         db: client as unknown as Pool,
         workspaceId: testWorkspaceId,
         accessibleStreamIds: [dmId],
-        invokingUserId: kristoffer.id,
+        invokingUserId: ownerMember.id,
         searchService: {} as never,
         storage: {} as never,
       })
 
       const result = await tool.config.execute(
-        { query: "Can you summarize my recent DMs with José?" },
+        { query: "Can you summarize my recent DMs with Accent?" },
         { toolCallId: "unicode" }
       )
       const parsed = JSON.parse(result.output) as {
@@ -306,7 +304,7 @@ describe("search_streams DM matching", () => {
       expect(parsed.results[0]).toMatchObject({
         id: dmId,
         type: StreamTypes.DM,
-        name: "José Álvarez",
+        name: "Accent Peer",
       })
     })
   })
@@ -324,13 +322,13 @@ describe("search_streams DM matching", () => {
         createdBy: ownerWorkosUserId,
       })
 
-      const kristoffer = await UserRepository.insert(client, {
+      const ownerMember = await UserRepository.insert(client, {
         id: userId(),
         workspaceId: testWorkspaceId,
         workosUserId: ownerWorkosUserId,
-        email: `kristoffer.${testWorkspaceId.slice(-6)}@example.com`,
-        slug: "kristoffer-remback",
-        name: "Kristoffer",
+        email: `owner.${testWorkspaceId.slice(-6)}@example.com`,
+        slug: "owner-user",
+        name: "Owner User",
         role: "owner",
       })
       const testPeer = await UserRepository.insert(client, {
@@ -349,9 +347,9 @@ describe("search_streams DM matching", () => {
         workspaceId: testWorkspaceId,
         type: StreamTypes.DM,
         visibility: Visibilities.PRIVATE,
-        createdBy: kristoffer.id,
+        createdBy: ownerMember.id,
       })
-      await StreamMemberRepository.insert(client, dmId, kristoffer.id)
+      await StreamMemberRepository.insert(client, dmId, ownerMember.id)
       await StreamMemberRepository.insert(client, dmId, testPeer.id)
 
       const channelIds: string[] = []
@@ -365,7 +363,7 @@ describe("search_streams DM matching", () => {
           visibility: Visibilities.PUBLIC,
           slug: `test-channel-${index}`,
           displayName: `Test channel ${index}`,
-          createdBy: kristoffer.id,
+          createdBy: ownerMember.id,
         })
       }
 
@@ -373,7 +371,7 @@ describe("search_streams DM matching", () => {
         db: client as unknown as Pool,
         workspaceId: testWorkspaceId,
         accessibleStreamIds: [dmId, ...channelIds],
-        invokingUserId: kristoffer.id,
+        invokingUserId: ownerMember.id,
         searchService: {} as never,
         storage: {} as never,
       })
@@ -406,22 +404,22 @@ describe("search_streams DM matching", () => {
         createdBy: ownerWorkosUserId,
       })
 
-      const kristoffer = await UserRepository.insert(client, {
+      const ownerMember = await UserRepository.insert(client, {
         id: userId(),
         workspaceId: testWorkspaceId,
         workosUserId: ownerWorkosUserId,
-        email: `kristoffer.${testWorkspaceId.slice(-6)}@example.com`,
-        slug: "kristoffer-remback",
-        name: "Kristoffer",
+        email: `owner.${testWorkspaceId.slice(-6)}@example.com`,
+        slug: "owner-user",
+        name: "Owner User",
         role: "owner",
       })
-      const pierre = await UserRepository.insert(client, {
+      const peerMember = await UserRepository.insert(client, {
         id: userId(),
         workspaceId: testWorkspaceId,
         workosUserId: peerWorkosUserId,
-        email: `pierre.${testWorkspaceId.slice(-6)}@example.com`,
-        slug: "pierre-boberg",
-        name: "Pierre Boberg",
+        email: `peer.${testWorkspaceId.slice(-6)}@example.com`,
+        slug: "peer-user",
+        name: "Peer User",
         role: "user",
       })
 
@@ -430,12 +428,12 @@ describe("search_streams DM matching", () => {
         workspaceId: testWorkspaceId,
         type: StreamTypes.DM,
         visibility: Visibilities.PRIVATE,
-        createdBy: kristoffer.id,
+        createdBy: ownerMember.id,
       })
-      await StreamMemberRepository.insert(client, dmId, kristoffer.id)
-      await StreamMemberRepository.insert(client, dmId, pierre.id)
+      await StreamMemberRepository.insert(client, dmId, ownerMember.id)
+      await StreamMemberRepository.insert(client, dmId, peerMember.id)
 
-      const peers = await StreamRepository.listDmPeersForMember(client, testWorkspaceId, kristoffer.id, {
+      const peers = await StreamRepository.listDmPeersForMember(client, testWorkspaceId, ownerMember.id, {
         streamIds: [],
       })
       expect(peers).toEqual([])
