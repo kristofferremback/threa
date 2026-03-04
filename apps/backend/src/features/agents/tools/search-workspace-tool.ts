@@ -233,14 +233,11 @@ export function createSearchStreamsTool(deps: WorkspaceToolDeps) {
 
         const dmDisplayNamesById = new Map(dmSearchResults.map((result) => [result.stream.id, result.displayName]))
 
-        const sortedStreams = [
-          ...nameMatches,
-          ...dmSearchResults
-            .map((result) => result.stream)
-            .filter((stream) => !nameMatches.some((matchedStream) => matchedStream.id === stream.id)),
-        ].slice(0, MAX_RESULTS)
+        const mergedStreams = [...nameMatches, ...dmSearchResults.map((result) => result.stream)]
 
-        const streams = sortedStreams.filter((stream, index, arr) => arr.findIndex((s) => s.id === stream.id) === index)
+        const streams = mergedStreams
+          .filter((stream, index, arr) => arr.findIndex((s) => s.id === stream.id) === index)
+          .slice(0, MAX_RESULTS)
 
         const results: StreamSearchResult[] = streams.map((s) => ({
           id: s.id,
