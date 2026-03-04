@@ -3,11 +3,12 @@ import { describe, expect, it, beforeEach, vi } from "vitest"
 import { render, screen, userEvent } from "@/test"
 import { SidebarFooter } from "./sidebar-footer"
 
-const { logout, openSettings, collapseOnMobile, setSearchParams } = vi.hoisted(() => ({
+const { logout, openSettings, collapseOnMobile, setSearchParams, isMobile } = vi.hoisted(() => ({
   logout: vi.fn(),
   openSettings: vi.fn(),
   collapseOnMobile: vi.fn(),
   setSearchParams: vi.fn(),
+  isMobile: { value: true },
 }))
 
 vi.mock("react-router-dom", () => ({
@@ -50,7 +51,7 @@ vi.mock("@/contexts", async (importOriginal) => {
 })
 
 vi.mock("@/hooks/use-mobile", () => ({
-  useIsMobile: () => true,
+  useIsMobile: () => isMobile.value,
 }))
 
 vi.mock("@/components/ui/drawer", () => ({
@@ -72,6 +73,7 @@ describe("SidebarFooter", () => {
     openSettings.mockReset()
     collapseOnMobile.mockReset()
     setSearchParams.mockReset()
+    isMobile.value = true
   })
 
   it("opens the mobile account drawer on tap and exposes the same actions", async () => {
@@ -107,5 +109,36 @@ describe("SidebarFooter", () => {
 
     expect(openSettings).toHaveBeenCalledWith("appearance")
     expect(collapseOnMobile).toHaveBeenCalled()
+  })
+
+  it("opens the desktop dropdown from the account row trigger", async () => {
+    isMobile.value = false
+    const user = userEvent.setup()
+
+    render(
+      <SidebarFooter
+        workspaceId="workspace_1"
+        currentUser={{
+          id: "user_1",
+          workspaceId: "workspace_1",
+          workosUserId: "workos_user_1",
+          email: "kris@example.com",
+          role: "user",
+          slug: "kris",
+          name: "Kris",
+          description: null,
+          avatarUrl: null,
+          timezone: "Europe/Stockholm",
+          locale: "en-SE",
+          setupCompleted: true,
+          joinedAt: "2026-03-03T10:00:00Z",
+        }}
+      />
+    )
+
+    await user.click(screen.getByRole("button", { name: /kris/i }))
+    await user.click(screen.getByText("Settings"))
+
+    expect(openSettings).toHaveBeenCalledWith("appearance")
   })
 })
