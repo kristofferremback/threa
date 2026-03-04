@@ -12,7 +12,6 @@ import type { JSONContent } from "@threa/types"
 interface MessageInputProps {
   workspaceId: string
   streamId: string
-  streamName?: string
   disabled?: boolean
   disabledReason?: string
   autoFocus?: boolean
