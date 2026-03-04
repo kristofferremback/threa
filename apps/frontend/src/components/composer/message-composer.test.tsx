@@ -246,7 +246,7 @@ describe("MessageComposer", () => {
               {
                 type: "paragraph",
                 content: [
-                  { type: "mention", attrs: { label: "kris" } },
+                  { type: "mention", attrs: { slug: "kris", label: "kris" } },
                   { type: "text", text: " said hi" },
                 ],
               },

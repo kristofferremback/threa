@@ -6,42 +6,23 @@ import type { RichEditorHandle } from "@/components/editor"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
 import { PendingAttachments } from "@/components/timeline/pending-attachments"
+import { stripMarkdown } from "@/lib/markdown"
 import { cn } from "@/lib/utils"
 import type { PendingAttachment, UploadResult } from "@/hooks/use-attachments"
 import type { MessageSendMode, JSONContent } from "@threa/types"
 import type { Editor } from "@tiptap/react"
+import { serializeToMarkdown } from "@threa/prosemirror"
 
 /** Platform-appropriate modifier key symbol (⌘ on Mac, Ctrl+ elsewhere) */
 const MOD_SYMBOL = navigator.platform?.toLowerCase().includes("mac") ? "⌘" : "Ctrl+"
 
-const SPACE_JOIN_NODE_TYPES = new Set([
-  "doc",
-  "bulletList",
-  "orderedList",
-  "listItem",
-  "taskList",
-  "taskItem",
-  "blockquote",
-])
-
-function nodeToPlainText(node: JSONContent): string {
-  if (node.type === "text") return node.text ?? ""
-  if (node.type === "mention") return `@${node.attrs?.label ?? ""}`
-  if (node.type === "hardBreak") return " "
-  if (!node.content?.length) return ""
-
-  const childParts = node.content
-    .map((child) => nodeToPlainText(child as JSONContent))
-    .filter((part) => part.length > 0)
-  if (childParts.length === 0) return ""
-
-  const joiner = SPACE_JOIN_NODE_TYPES.has(node.type ?? "") ? " " : ""
-  return childParts.join(joiner)
-}
-
 /** Extract plain text from ProseMirror JSON for preview display */
 function getPlainText(doc: JSONContent): string {
-  return nodeToPlainText(doc).replace(/\s+/g, " ").trim()
+  const markdown = serializeToMarkdown(doc)
+  const plain = stripMarkdown(markdown)
+    // Collapsed preview should show list item text, not markdown list markers.
+    .replace(/^\s*(?:[-*+]|\d+\.)\s+/gm, "")
+  return plain.replace(/\s+/g, " ").trim()
 }
 
 export interface MessageComposerProps {
