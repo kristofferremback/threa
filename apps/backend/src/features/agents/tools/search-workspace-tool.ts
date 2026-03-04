@@ -51,6 +51,12 @@ export interface StreamSearchResult {
   description: string | null
 }
 
+interface RankedStreamSearchResult {
+  result: StreamSearchResult
+  score: number
+  sourceOrder: number
+}
+
 // Schema for search_users tool
 const SearchUsersSchema = z.object({
   query: z.string().describe("The search query to find users by slug, name, or email"),
@@ -227,30 +233,55 @@ export function createSearchStreamsTool(deps: WorkspaceToolDeps) {
         ])
 
         const dmDisplayNamesById = new Map(dmSearchResults.map((result) => [result.streamId, result.displayName]))
-        const mergedResults = [
+        const rankedResults: RankedStreamSearchResult[] = [
           ...nameMatches.map(
-            (stream): StreamSearchResult => ({
-              id: stream.id,
-              type: stream.type,
-              name:
-                stream.type === StreamTypes.DM
-                  ? (dmDisplayNamesById.get(stream.id) ?? stream.displayName ?? "(direct message)")
-                  : (stream.displayName ?? stream.slug ?? null),
-              description: stream.description ?? null,
+            (stream, index): RankedStreamSearchResult => ({
+              result: {
+                id: stream.id,
+                type: stream.type,
+                name:
+                  stream.type === StreamTypes.DM
+                    ? (dmDisplayNamesById.get(stream.id) ?? stream.displayName ?? "(direct message)")
+                    : (stream.displayName ?? stream.slug ?? null),
+                description: stream.description ?? null,
+              },
+              score: scoreStreamSearchResultName(stream.displayName ?? stream.slug ?? "", input.query),
+              sourceOrder: index,
             })
           ),
           ...dmSearchResults.map(
-            (result): StreamSearchResult => ({
-              id: result.streamId,
-              type: StreamTypes.DM,
-              name: result.displayName,
-              description: null,
+            (result, index): RankedStreamSearchResult => ({
+              result: {
+                id: result.streamId,
+                type: StreamTypes.DM,
+                name: result.displayName,
+                description: null,
+              },
+              score: result.score,
+              sourceOrder: nameMatches.length + index,
             })
           ),
         ]
 
-        const results = mergedResults
-          .filter((result, index, arr) => arr.findIndex((entry) => entry.id === result.id) === index)
+        const bestResultById = new Map<string, RankedStreamSearchResult>()
+        for (const entry of rankedResults) {
+          const existing = bestResultById.get(entry.result.id)
+          if (
+            !existing ||
+            entry.score < existing.score ||
+            (entry.score === existing.score && entry.sourceOrder < existing.sourceOrder)
+          ) {
+            bestResultById.set(entry.result.id, entry)
+          }
+        }
+
+        const results = [...bestResultById.values()]
+          .sort((a, b) => {
+            if (a.score !== b.score) return a.score - b.score
+            if (a.sourceOrder !== b.sourceOrder) return a.sourceOrder - b.sourceOrder
+            return (a.result.name ?? "").localeCompare(b.result.name ?? "")
+          })
+          .map((entry) => entry.result)
           .slice(0, MAX_RESULTS)
 
         if (results.length === 0) {
@@ -449,4 +480,14 @@ You can reference streams by their ID (stream_xxx), slug (general), or prefixed 
 function truncate(text: string, maxLength: number): string {
   if (text.length <= maxLength) return text
   return text.slice(0, maxLength - 3) + "..."
+}
+
+function scoreStreamSearchResultName(name: string, query: string): number {
+  const normalizedName = name.trim().toLowerCase()
+  const normalizedQuery = query.trim().toLowerCase()
+  if (!normalizedQuery) return 0
+  if (normalizedName === normalizedQuery) return 0
+  if (normalizedName.startsWith(normalizedQuery)) return 1
+  if (normalizedName.includes(normalizedQuery)) return 2
+  return 3
 }

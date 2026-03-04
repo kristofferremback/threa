@@ -310,4 +310,135 @@ describe("search_streams DM matching", () => {
       })
     })
   })
+
+  test("interleaves DM and channel results by relevance so exact DM matches are not dropped", async () => {
+    await withTestTransaction(pool, async (client) => {
+      const ownerWorkosUserId = userId()
+      const peerWorkosUserId = userId()
+      const testWorkspaceId = workspaceId()
+
+      await WorkspaceRepository.insert(client, {
+        id: testWorkspaceId,
+        name: "Interleaving Search Workspace",
+        slug: `interleaving-search-${testWorkspaceId}`,
+        createdBy: ownerWorkosUserId,
+      })
+
+      const kristoffer = await UserRepository.insert(client, {
+        id: userId(),
+        workspaceId: testWorkspaceId,
+        workosUserId: ownerWorkosUserId,
+        email: `kristoffer.${testWorkspaceId.slice(-6)}@example.com`,
+        slug: "kristoffer-remback",
+        name: "Kristoffer",
+        role: "owner",
+      })
+      const testPeer = await UserRepository.insert(client, {
+        id: userId(),
+        workspaceId: testWorkspaceId,
+        workosUserId: peerWorkosUserId,
+        email: `testpeer.${testWorkspaceId.slice(-6)}@example.com`,
+        slug: "testy-user",
+        name: "Test",
+        role: "user",
+      })
+
+      const dmId = streamId()
+      await StreamRepository.insert(client, {
+        id: dmId,
+        workspaceId: testWorkspaceId,
+        type: StreamTypes.DM,
+        visibility: Visibilities.PRIVATE,
+        createdBy: kristoffer.id,
+      })
+      await StreamMemberRepository.insert(client, dmId, kristoffer.id)
+      await StreamMemberRepository.insert(client, dmId, testPeer.id)
+
+      const channelIds: string[] = []
+      for (let index = 0; index < 12; index += 1) {
+        const channelId = streamId()
+        channelIds.push(channelId)
+        await StreamRepository.insert(client, {
+          id: channelId,
+          workspaceId: testWorkspaceId,
+          type: StreamTypes.CHANNEL,
+          visibility: Visibilities.PUBLIC,
+          slug: `test-channel-${index}`,
+          displayName: `Test channel ${index}`,
+          createdBy: kristoffer.id,
+        })
+      }
+
+      const tool = createSearchStreamsTool({
+        db: client as unknown as Pool,
+        workspaceId: testWorkspaceId,
+        accessibleStreamIds: [dmId, ...channelIds],
+        invokingUserId: kristoffer.id,
+        searchService: {} as never,
+        storage: {} as never,
+      })
+
+      const result = await tool.config.execute({ query: "test" }, { toolCallId: "interleave" })
+      const parsed = JSON.parse(result.output) as {
+        results: Array<{ id: string; type: string; name: string }>
+      }
+
+      expect(parsed.results).toHaveLength(10)
+      expect(parsed.results[0]).toMatchObject({
+        id: dmId,
+        type: StreamTypes.DM,
+        name: "Test",
+      })
+    })
+  })
+
+  test("listDmPeersForMember fails closed when stream scope is explicitly empty", async () => {
+    await withTestTransaction(pool, async (client) => {
+      const ownerWorkosUserId = userId()
+      const peerWorkosUserId = userId()
+      const testWorkspaceId = workspaceId()
+      const dmId = streamId()
+
+      await WorkspaceRepository.insert(client, {
+        id: testWorkspaceId,
+        name: "Scoped DM Peers Workspace",
+        slug: `scoped-dm-peers-${testWorkspaceId}`,
+        createdBy: ownerWorkosUserId,
+      })
+
+      const kristoffer = await UserRepository.insert(client, {
+        id: userId(),
+        workspaceId: testWorkspaceId,
+        workosUserId: ownerWorkosUserId,
+        email: `kristoffer.${testWorkspaceId.slice(-6)}@example.com`,
+        slug: "kristoffer-remback",
+        name: "Kristoffer",
+        role: "owner",
+      })
+      const pierre = await UserRepository.insert(client, {
+        id: userId(),
+        workspaceId: testWorkspaceId,
+        workosUserId: peerWorkosUserId,
+        email: `pierre.${testWorkspaceId.slice(-6)}@example.com`,
+        slug: "pierre-boberg",
+        name: "Pierre Boberg",
+        role: "user",
+      })
+
+      await StreamRepository.insert(client, {
+        id: dmId,
+        workspaceId: testWorkspaceId,
+        type: StreamTypes.DM,
+        visibility: Visibilities.PRIVATE,
+        createdBy: kristoffer.id,
+      })
+      await StreamMemberRepository.insert(client, dmId, kristoffer.id)
+      await StreamMemberRepository.insert(client, dmId, pierre.id)
+
+      const peers = await StreamRepository.listDmPeersForMember(client, testWorkspaceId, kristoffer.id, {
+        streamIds: [],
+      })
+      expect(peers).toEqual([])
+    })
+  })
 })

@@ -198,7 +198,12 @@ export const StreamRepository = {
     userId: string,
     options?: { streamIds?: string[] }
   ): Promise<DmPeer[]> {
-    const hasStreamScope = options?.streamIds !== undefined && options.streamIds.length > 0
+    const scopedStreamIds = options?.streamIds
+    const hasStreamScope = scopedStreamIds !== undefined
+    if (hasStreamScope && scopedStreamIds.length === 0) {
+      return []
+    }
+
     const result = await db.query<{ stream_id: string; member_id: string }>(sql`
       WITH dm_members AS (
         SELECT
@@ -209,7 +214,7 @@ export const StreamRepository = {
         WHERE s.workspace_id = ${workspaceId}
           AND s.type = 'dm'
           AND s.archived_at IS NULL
-          AND (${!hasStreamScope} OR s.id = ANY(${options?.streamIds ?? []}))
+          AND (${!hasStreamScope} OR s.id = ANY(${scopedStreamIds ?? []}))
         GROUP BY sm.stream_id
         HAVING COUNT(DISTINCT sm.member_id) = 2
           AND bool_or(sm.member_id = ${userId})
