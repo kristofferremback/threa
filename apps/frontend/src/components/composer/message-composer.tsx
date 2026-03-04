@@ -9,24 +9,39 @@ import { PendingAttachments } from "@/components/timeline/pending-attachments"
 import { cn } from "@/lib/utils"
 import type { PendingAttachment, UploadResult } from "@/hooks/use-attachments"
 import type { MessageSendMode, JSONContent } from "@threa/types"
+import type { Editor } from "@tiptap/react"
 
 /** Platform-appropriate modifier key symbol (⌘ on Mac, Ctrl+ elsewhere) */
 const MOD_SYMBOL = navigator.platform?.toLowerCase().includes("mac") ? "⌘" : "Ctrl+"
 
+const SPACE_JOIN_NODE_TYPES = new Set([
+  "doc",
+  "bulletList",
+  "orderedList",
+  "listItem",
+  "taskList",
+  "taskItem",
+  "blockquote",
+])
+
+function nodeToPlainText(node: JSONContent): string {
+  if (node.type === "text") return node.text ?? ""
+  if (node.type === "mention") return `@${node.attrs?.label ?? ""}`
+  if (node.type === "hardBreak") return " "
+  if (!node.content?.length) return ""
+
+  const childParts = node.content
+    .map((child) => nodeToPlainText(child as JSONContent))
+    .filter((part) => part.length > 0)
+  if (childParts.length === 0) return ""
+
+  const joiner = SPACE_JOIN_NODE_TYPES.has(node.type ?? "") ? " " : ""
+  return childParts.join(joiner)
+}
+
 /** Extract plain text from ProseMirror JSON for preview display */
 function getPlainText(doc: JSONContent): string {
-  if (!doc.content) return ""
-  const parts: string[] = []
-  for (const node of doc.content) {
-    if (node.content) {
-      for (const inline of node.content) {
-        if (inline.type === "text" && inline.text) parts.push(inline.text)
-        else if (inline.type === "mention") parts.push(`@${inline.attrs?.label ?? ""}`)
-      }
-    }
-    parts.push(" ")
-  }
-  return parts.join("").trim()
+  return nodeToPlainText(doc).replace(/\s+/g, " ").trim()
 }
 
 export interface MessageComposerProps {
@@ -100,6 +115,7 @@ export function MessageComposer({
   const controlsDisabled = disabled || isSubmitting
 
   const richEditorRef = useRef<RichEditorHandle>(null)
+  const [mobileToolbarEditor, setMobileToolbarEditor] = useState<Editor | null>(null)
   const [formatOpen, setFormatOpen] = useState(false)
   const [mobileExpanded, setMobileExpanded] = useState(false)
   const [mobileFocused, setMobileFocused] = useState(false)
@@ -109,8 +125,13 @@ export function MessageComposer({
 
   // Close inline format toolbar and collapse expansion when navigating to a different stream/scope
   useEffect(() => {
+    if (blurTimeoutRef.current) {
+      clearTimeout(blurTimeoutRef.current)
+      blurTimeoutRef.current = null
+    }
     setFormatOpen(false)
     setMobileExpanded(false)
+    setMobileFocused(false)
     setMobileLinkPopoverOpen(false)
   }, [scopeId])
 
@@ -128,6 +149,7 @@ export function MessageComposer({
     blurTimeoutRef.current = setTimeout(() => {
       setMobileFocused(false)
       setMobileExpanded(false)
+      setFormatOpen(false)
       setMobileLinkPopoverOpen(false)
     }, 150)
   }, [])
@@ -169,12 +191,18 @@ export function MessageComposer({
     onContentChangeRef.current(newContent)
   }, [])
 
+  const setRichEditorHandle = useCallback((handle: RichEditorHandle | null) => {
+    richEditorRef.current = handle
+    const nextEditor = handle?.getEditor() ?? null
+    setMobileToolbarEditor((currentEditor) => (currentEditor === nextEditor ? currentEditor : nextEditor))
+  }, [])
+
   // Plain text preview for the collapsed mobile single-line view
   const contentPreview = useMemo(() => (isMobile ? getPlainText(content) : ""), [isMobile, content])
 
   const sharedEditor = (
     <RichEditor
-      ref={richEditorRef}
+      ref={setRichEditorHandle}
       value={content}
       onChange={handleContentChange}
       onSubmit={handleSubmit}
@@ -443,7 +471,7 @@ export function MessageComposer({
             {/* Mobile formatting toolbar — rendered below action bar, above keyboard */}
             {isMobile && formatOpen && (
               <EditorToolbar
-                editor={richEditorRef.current?.getEditor() ?? null}
+                editor={mobileToolbarEditor}
                 isVisible
                 inline
                 inlinePosition="below"
