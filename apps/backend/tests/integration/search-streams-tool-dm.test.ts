@@ -241,4 +241,73 @@ describe("search_streams DM matching", () => {
       expect(parsed.results.some((stream) => stream.id === dmWithOutsiderId)).toBe(false)
     })
   })
+
+  test("matches DM by participant name with non-ASCII characters", async () => {
+    await withTestTransaction(pool, async (client) => {
+      const ownerWorkosUserId = userId()
+      const peerWorkosUserId = userId()
+      const testWorkspaceId = workspaceId()
+      const dmId = streamId()
+
+      await WorkspaceRepository.insert(client, {
+        id: testWorkspaceId,
+        name: "Unicode DM Search Workspace",
+        slug: `unicode-dm-search-${testWorkspaceId}`,
+        createdBy: ownerWorkosUserId,
+      })
+
+      const kristoffer = await UserRepository.insert(client, {
+        id: userId(),
+        workspaceId: testWorkspaceId,
+        workosUserId: ownerWorkosUserId,
+        email: `kristoffer.${testWorkspaceId.slice(-6)}@example.com`,
+        slug: "kristoffer-remback",
+        name: "Kristoffer",
+        role: "owner",
+      })
+      const jose = await UserRepository.insert(client, {
+        id: userId(),
+        workspaceId: testWorkspaceId,
+        workosUserId: peerWorkosUserId,
+        email: `jose.${testWorkspaceId.slice(-6)}@example.com`,
+        slug: "jose-alvarez",
+        name: "José Álvarez",
+        role: "user",
+      })
+
+      await StreamRepository.insert(client, {
+        id: dmId,
+        workspaceId: testWorkspaceId,
+        type: StreamTypes.DM,
+        visibility: Visibilities.PRIVATE,
+        createdBy: kristoffer.id,
+      })
+      await StreamMemberRepository.insert(client, dmId, kristoffer.id)
+      await StreamMemberRepository.insert(client, dmId, jose.id)
+
+      const tool = createSearchStreamsTool({
+        db: client as unknown as Pool,
+        workspaceId: testWorkspaceId,
+        accessibleStreamIds: [dmId],
+        invokingUserId: kristoffer.id,
+        searchService: {} as never,
+        storage: {} as never,
+      })
+
+      const result = await tool.config.execute(
+        { query: "Can you summarize my recent DMs with José?" },
+        { toolCallId: "unicode" }
+      )
+      const parsed = JSON.parse(result.output) as {
+        results: Array<{ id: string; type: string; name: string }>
+      }
+
+      expect(parsed.results).toHaveLength(1)
+      expect(parsed.results[0]).toMatchObject({
+        id: dmId,
+        type: StreamTypes.DM,
+        name: "José Álvarez",
+      })
+    })
+  })
 })

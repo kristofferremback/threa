@@ -73,7 +73,7 @@ function extractSearchTerms(query: string): string[] {
     terms.add(lowerQuery.slice(1))
   }
 
-  const tokenMatches = lowerQuery.match(/[@]?[a-z0-9][a-z0-9-]*/g) ?? []
+  const tokenMatches = lowerQuery.match(/[@]?[\p{L}\p{N}][\p{L}\p{N}-]*/gu) ?? []
   for (const token of tokenMatches) {
     terms.add(token)
     if (token.startsWith("@")) {
