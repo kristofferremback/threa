@@ -128,6 +128,15 @@ export function MessageComposer({
     setMobileLinkPopoverOpen(false)
   }, [scopeId])
 
+  // Reset mobile-only state when viewport crosses the mobile/desktop threshold
+  useEffect(() => {
+    if (!isMobile) {
+      setMobileExpanded(false)
+      setMobileFocused(false)
+      setMobileLinkPopoverOpen(false)
+    }
+  }, [isMobile])
+
   // Track focus state for mobile progressive disclosure.
   // Uses a small delay on blur to avoid flicker when focus moves between editor and action bar buttons.
   const handleFocusCapture = useCallback(() => {
