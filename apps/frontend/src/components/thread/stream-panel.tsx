@@ -1,5 +1,6 @@
 import { useSearchParams, useParams } from "react-router-dom"
-import { useMemo, useCallback, useEffect } from "react"
+import { useMemo, useCallback, useEffect, useState, useRef } from "react"
+import { createPortal } from "react-dom"
 import { useQueryClient } from "@tanstack/react-query"
 import { MessageSquare, ChevronLeft } from "lucide-react"
 import {
@@ -114,6 +115,32 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
     scopeId: draftInfo?.parentMessageId ?? "",
   })
 
+  // Draft thread expand state
+  const [draftExpanded, setDraftExpanded] = useState(false)
+  const draftExpandedRef = useRef<HTMLDivElement>(null)
+  const draftPortalTargetRef = useRef<HTMLElement | null>(null)
+
+  // Reset expand state when panel changes
+  useEffect(() => {
+    setDraftExpanded(false)
+  }, [panelId])
+
+  // Escape to close — only when focus is inside this expanded editor
+  useEffect(() => {
+    if (!draftExpanded) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && draftExpandedRef.current?.contains(document.activeElement)) {
+        e.preventDefault()
+        setDraftExpanded(false)
+      }
+    }
+    document.addEventListener("keydown", onKeyDown)
+    return () => document.removeEventListener("keydown", onKeyDown)
+  }, [draftExpanded])
+
+  const handleDraftExpand = useCallback(() => setDraftExpanded(true), [])
+  const handleDraftCollapse = useCallback(() => setDraftExpanded(false), [])
+
   // Handle draft thread submission
   const handleSubmit = useCallback(async () => {
     if (!draftInfo || !composer.canSend) return
@@ -135,6 +162,7 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
     composer.setContent(emptyDoc)
     composer.clearDraft()
     composer.clearAttachments()
+    setDraftExpanded(false)
 
     try {
       // Create the thread
@@ -220,7 +248,7 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
   }
 
   return (
-    <SidePanel data-editor-zone="panel">
+    <SidePanel>
       <SidePanelHeader className="relative">
         <StreamLoadingIndicator isLoading={showLoadingIndicator} />
         {/* Mobile back button — replaces X close on small screens */}
@@ -235,11 +263,46 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
         {!isMobile && <SidePanelClose onClose={onClose} />}
       </SidePanelHeader>
 
-      <SidePanelContent className="flex flex-col">
+      <SidePanelContent
+        className="relative flex flex-col"
+        data-editor-zone="panel"
+        ref={(el: HTMLElement | null) => {
+          draftPortalTargetRef.current = el
+        }}
+      >
         {isDraft && draftInfo ? (
           // Draft thread UI
           <>
-            <div className="flex-1 overflow-y-auto">
+            {/* Expanded overlay — portaled into the SidePanel */}
+            {draftExpanded &&
+              draftPortalTargetRef.current &&
+              createPortal(
+                <div ref={draftExpandedRef} className="absolute inset-0 z-30 bg-background">
+                  <MessageComposer
+                    content={composer.content}
+                    onContentChange={composer.handleContentChange}
+                    pendingAttachments={composer.pendingAttachments}
+                    onRemoveAttachment={composer.handleRemoveAttachment}
+                    fileInputRef={composer.fileInputRef}
+                    onFileSelect={composer.handleFileSelect}
+                    onFileUpload={composer.uploadFile}
+                    imageCount={composer.imageCount}
+                    onSubmit={handleSubmit}
+                    canSubmit={composer.canSend}
+                    isSubmitting={composer.isSending}
+                    hasFailed={composer.hasFailed}
+                    submitLabel="Reply"
+                    submittingLabel="Creating..."
+                    placeholder="Write your reply..."
+                    scopeId={panelId}
+                    expanded
+                    onCollapse={handleDraftCollapse}
+                    autoFocus
+                  />
+                </div>,
+                draftPortalTargetRef.current
+              )}
+            <div className={draftExpanded ? "flex-1 overflow-y-auto hidden" : "flex-1 overflow-y-auto"}>
               {parentMessage && (
                 <ThreadParentMessage
                   event={parentMessage}
@@ -258,27 +321,30 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
                 </EmptyHeader>
               </Empty>
             </div>
-            <div className="border-t">
+            <div className={draftExpanded ? "border-t hidden" : "border-t"}>
               <div className="pt-3 px-3 pb-1 sm:pt-6 sm:px-6 sm:pb-1 mx-auto max-w-[800px] w-full min-w-0">
-                <MessageComposer
-                  content={composer.content}
-                  onContentChange={composer.handleContentChange}
-                  pendingAttachments={composer.pendingAttachments}
-                  onRemoveAttachment={composer.handleRemoveAttachment}
-                  fileInputRef={composer.fileInputRef}
-                  onFileSelect={composer.handleFileSelect}
-                  onFileUpload={composer.uploadFile}
-                  imageCount={composer.imageCount}
-                  onSubmit={handleSubmit}
-                  canSubmit={composer.canSend}
-                  isSubmitting={composer.isSending}
-                  hasFailed={composer.hasFailed}
-                  submitLabel="Reply"
-                  submittingLabel="Creating..."
-                  placeholder="Write your reply..."
-                  autoFocus={!isMobile}
-                  scopeId={panelId}
-                />
+                {!draftExpanded && (
+                  <MessageComposer
+                    content={composer.content}
+                    onContentChange={composer.handleContentChange}
+                    pendingAttachments={composer.pendingAttachments}
+                    onRemoveAttachment={composer.handleRemoveAttachment}
+                    fileInputRef={composer.fileInputRef}
+                    onFileSelect={composer.handleFileSelect}
+                    onFileUpload={composer.uploadFile}
+                    imageCount={composer.imageCount}
+                    onSubmit={handleSubmit}
+                    canSubmit={composer.canSend}
+                    isSubmitting={composer.isSending}
+                    hasFailed={composer.hasFailed}
+                    submitLabel="Reply"
+                    submittingLabel="Creating..."
+                    placeholder="Write your reply..."
+                    autoFocus={!isMobile}
+                    scopeId={panelId}
+                    onExpandClick={handleDraftExpand}
+                  />
+                )}
               </div>
             </div>
           </>

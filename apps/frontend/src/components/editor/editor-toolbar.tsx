@@ -23,6 +23,9 @@ interface EditorToolbarProps {
   /** Where the inline toolbar sits relative to the editor content.
    *  "above" = border-bottom divider (default), "below" = border-top divider. */
   inlinePosition?: "above" | "below"
+  /** Extra content rendered after the formatting buttons (e.g. action buttons, close X).
+   *  Only applies when `inline` is true. */
+  trailingContent?: React.ReactNode
 }
 
 export function EditorToolbar({
@@ -33,6 +36,7 @@ export function EditorToolbar({
   onDropdownOpenChange,
   inline = false,
   inlinePosition = "above",
+  trailingContent,
 }: EditorToolbarProps) {
   const { refs, floatingStyles, update } = useFloating({
     placement: "top",
@@ -161,15 +165,16 @@ export function EditorToolbar({
             inlinePosition === "above" ? "border-b border-border/50 mb-1" : "border-t border-border/50 mt-1"
           )}
         >
-          <div
-            className={cn(
-              "flex items-center gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
-              inlinePosition === "below" ? "pt-1" : "py-1"
-            )}
-          >
-            {buttons}
+          <div className={cn("flex items-center gap-0.5", inlinePosition === "below" ? "pt-1" : "py-1")}>
+            {/* Formatting buttons — scroll horizontally when narrow */}
+            <div className="flex items-center gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden min-w-0 shrink">
+              {buttons}
+            </div>
+            {trailingContent}
           </div>
-          <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-card to-transparent" />
+          {!trailingContent && (
+            <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-card to-transparent" />
+          )}
         </div>
       </TooltipProvider>
     )
