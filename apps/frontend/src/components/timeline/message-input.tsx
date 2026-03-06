@@ -35,9 +35,6 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   const selfRef = useRef<HTMLDivElement>(null)
   const expandedRef = useRef<HTMLDivElement>(null)
   const portalTargetRef = useRef<HTMLElement | null>(null)
-  useEffect(() => {
-    portalTargetRef.current = selfRef.current?.closest<HTMLElement>("[data-editor-zone]") ?? null
-  }, [])
 
   // Reset local state on stream change (e.g., draft promotion) without remounting
   useEffect(() => {
@@ -45,7 +42,12 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     setExpanded(false)
   }, [streamId])
 
-  const handleExpandClick = useCallback(() => setExpanded(true), [])
+  // Resolve the portal target lazily on expand to avoid silent blank screen
+  // if the component mounts before the [data-editor-zone] ancestor exists.
+  const handleExpandClick = useCallback(() => {
+    portalTargetRef.current = selfRef.current?.closest<HTMLElement>("[data-editor-zone]") ?? null
+    if (portalTargetRef.current) setExpanded(true)
+  }, [])
   const handleCollapse = useCallback(() => setExpanded(false), [])
 
   // Escape to close — only when focus is inside this expanded editor

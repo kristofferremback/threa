@@ -332,8 +332,8 @@ export function MessageComposer({
 
           {/* Floating action drawer + send button — bottom-right corner */}
           <div className="absolute bottom-4 right-4 z-10 flex items-center gap-1.5 group/fab">
-            {/* Action drawer — slides out from behind the + button on hover */}
-            <div className="flex items-center gap-1 overflow-hidden max-w-0 opacity-0 group-hover/fab:max-w-[200px] group-hover/fab:opacity-100 transition-all duration-200 ease-out">
+            {/* Action drawer — slides out from behind the + button on hover or focus-within */}
+            <div className="flex items-center gap-1 overflow-hidden max-w-0 opacity-0 group-hover/fab:max-w-[200px] group-hover/fab:opacity-100 group-focus-within/fab:max-w-[200px] group-focus-within/fab:opacity-100 transition-all duration-200 ease-out">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -342,11 +342,11 @@ export function MessageComposer({
                     size="icon"
                     aria-label="Insert emoji"
                     className="h-[30px] w-[30px] shrink-0 p-0 rounded-md bg-background shadow-md"
-                    tabIndex={-1}
                     onPointerDown={(e) => {
                       e.preventDefault()
                       richEditorRef.current?.insertEmoji()
                     }}
+                    onClick={() => richEditorRef.current?.insertEmoji()}
                     disabled={controlsDisabled}
                   >
                     <span className="text-sm leading-none">😊</span>
@@ -364,11 +364,11 @@ export function MessageComposer({
                     size="icon"
                     aria-label="Insert mention"
                     className="h-[30px] w-[30px] shrink-0 p-0 rounded-md bg-background shadow-md"
-                    tabIndex={-1}
                     onPointerDown={(e) => {
                       e.preventDefault()
                       richEditorRef.current?.insertMention()
                     }}
+                    onClick={() => richEditorRef.current?.insertMention()}
                     disabled={controlsDisabled}
                   >
                     <AtSign className="h-4 w-4" />
@@ -386,11 +386,11 @@ export function MessageComposer({
                     size="icon"
                     aria-label="Insert command"
                     className="h-[30px] w-[30px] shrink-0 p-0 rounded-md bg-background shadow-md"
-                    tabIndex={-1}
                     onPointerDown={(e) => {
                       e.preventDefault()
                       richEditorRef.current?.insertSlash()
                     }}
+                    onClick={() => richEditorRef.current?.insertSlash()}
                     disabled={controlsDisabled}
                   >
                     <Slash className="h-4 w-4" />
@@ -408,7 +408,6 @@ export function MessageComposer({
                     size="icon"
                     aria-label="Attach files"
                     className="h-[30px] w-[30px] shrink-0 p-0 rounded-md bg-background shadow-md"
-                    tabIndex={-1}
                     onClick={handleAttachClick}
                     disabled={controlsDisabled}
                   >
@@ -426,7 +425,7 @@ export function MessageComposer({
               variant="outline"
               size="icon"
               aria-label="Actions"
-              className="h-[30px] w-[30px] shrink-0 p-0 rounded-md bg-background shadow-md group-hover/fab:[&_svg]:rotate-45 [&_svg]:transition-transform"
+              className="h-[30px] w-[30px] shrink-0 p-0 rounded-md bg-background shadow-md group-hover/fab:[&_svg]:rotate-45 group-focus-within/fab:[&_svg]:rotate-45 [&_svg]:transition-transform"
               tabIndex={-1}
             >
               <Plus className="h-4 w-4" />
