@@ -195,8 +195,12 @@ First, gather the classification context:
 ```bash
 BRANCH_NAME=$(git branch --show-current 2>/dev/null || echo "unknown")
 
-# Get main plan summary (from plan file or earliest plan session)
-MAIN_PLAN_FILE=$(grep -l 'plan' ~/.claude/plans/*.md 2>/dev/null | head -1)
+# Get main plan summary (check repo-local .claude/plans/ first, then global)
+PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+MAIN_PLAN_FILE=$(ls "$PROJECT_ROOT"/.claude/plans/*.md 2>/dev/null | head -1)
+if [ -z "$MAIN_PLAN_FILE" ]; then
+  MAIN_PLAN_FILE=$(ls ~/.claude/plans/*.md 2>/dev/null | head -1)
+fi
 MAIN_PLAN_SUMMARY=""
 if [ -n "$MAIN_PLAN_FILE" ]; then
   MAIN_PLAN_SUMMARY=$(head -20 "$MAIN_PLAN_FILE")
