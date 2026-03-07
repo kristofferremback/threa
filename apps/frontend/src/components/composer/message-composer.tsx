@@ -346,7 +346,6 @@ export function MessageComposer({
                       e.preventDefault()
                       richEditorRef.current?.insertEmoji()
                     }}
-                    onClick={() => richEditorRef.current?.insertEmoji()}
                     disabled={controlsDisabled}
                   >
                     <span className="text-sm leading-none">😊</span>
@@ -368,7 +367,6 @@ export function MessageComposer({
                       e.preventDefault()
                       richEditorRef.current?.insertMention()
                     }}
-                    onClick={() => richEditorRef.current?.insertMention()}
                     disabled={controlsDisabled}
                   >
                     <AtSign className="h-4 w-4" />
@@ -390,7 +388,6 @@ export function MessageComposer({
                       e.preventDefault()
                       richEditorRef.current?.insertSlash()
                     }}
-                    onClick={() => richEditorRef.current?.insertSlash()}
                     disabled={controlsDisabled}
                   >
                     <Slash className="h-4 w-4" />

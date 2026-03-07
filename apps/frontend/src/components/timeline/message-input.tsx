@@ -46,7 +46,11 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   // if the component mounts before the [data-editor-zone] ancestor exists.
   const handleExpandClick = useCallback(() => {
     portalTargetRef.current = selfRef.current?.closest<HTMLElement>("[data-editor-zone]") ?? null
-    if (portalTargetRef.current) setExpanded(true)
+    if (!portalTargetRef.current) {
+      console.warn("MessageInput: no [data-editor-zone] ancestor found — expand disabled")
+      return
+    }
+    setExpanded(true)
   }, [])
   const handleCollapse = useCallback(() => setExpanded(false), [])
 

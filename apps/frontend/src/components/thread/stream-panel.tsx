@@ -138,7 +138,13 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
     return () => document.removeEventListener("keydown", onKeyDown)
   }, [draftExpanded])
 
-  const handleDraftExpand = useCallback(() => setDraftExpanded(true), [])
+  const handleDraftExpand = useCallback(() => {
+    if (!draftPortalTargetRef.current) {
+      console.warn("StreamPanel: draft portal target not available — expand disabled")
+      return
+    }
+    setDraftExpanded(true)
+  }, [])
   const handleDraftCollapse = useCallback(() => setDraftExpanded(false), [])
 
   // Handle draft thread submission
