@@ -1,3 +1,4 @@
 {
-  "enabledPlugins": {}
+  "enabledPlugins": {},
+  "plansDirectory": ".claude/plans"
 }
