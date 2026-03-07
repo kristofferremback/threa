@@ -78,6 +78,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
       const emptyDoc: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
       composer.setContent(emptyDoc)
       composer.clearDraft()
+      setExpanded(false)
 
       try {
         const result = await commandsApi.dispatch(workspaceId, {

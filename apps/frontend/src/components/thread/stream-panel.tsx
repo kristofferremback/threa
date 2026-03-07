@@ -248,7 +248,7 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
   }
 
   return (
-    <SidePanel>
+    <SidePanel data-editor-zone="panel">
       <SidePanelHeader className="relative">
         <StreamLoadingIndicator isLoading={showLoadingIndicator} />
         {/* Mobile back button — replaces X close on small screens */}
