@@ -1,7 +1,7 @@
 ---
 name: sync-plan
 description: Ensure a committed plan file exists and reflects the current branch state. Use before creating a PR to give Greptile accurate plan context for adherence checking.
-allowed-tools: Bash(git diff:*), Bash(git log:*), Bash(git branch:*), Bash(git add:*), Bash(git commit:*), Bash(git status:*), Read, Write, Edit, Glob, Grep, Agent
+allowed-tools: Bash(git diff:*), Bash(git log:*), Bash(git branch:*), Bash(git add:*), Bash(git commit:*), Bash(git status:*), Bash(gh pr view:*), Read, Write, Edit, Glob, Grep, Agent, Skill(find-plan)
 ---
 
 # Sync Plan
@@ -34,16 +34,24 @@ ls -la .claude/plans/ 2>/dev/null
 
 Derive the branch slug for the plan filename: strip prefixes like `feat/`, `fix/`, `chore/`, and use the rest (e.g., `feat/multi-modal-images` → `multi-modal-images`).
 
-## Step 2: Find Existing Plan
+## Step 2: Find Existing Plan and Session Context
 
-Check for an existing plan file at `.claude/plans/<branch-slug>.md`.
-
+**2a. Check for an existing committed plan file** at `.claude/plans/<branch-slug>.md`.
 If found, read it — this is the baseline to update.
 
-If not found, check for plans from session history. Use the find-plan skill's approach:
-1. Check `.claude/plans/` for any file whose name roughly matches the branch
-2. Check the PR description (if a PR exists): `gh pr view --json body -q '.body'`
-3. Ask the user what the feature is about if nothing is found
+**2b. Run `/find-plan` to gather session context.**
+
+This surfaces the original intent, course corrections, and design decisions from conversation history. The find-plan skill will:
+- Find plan mode sessions and plan-like discourse across all sessions for this project
+- Classify sessions as MAIN, SUBSTEP, SIDE_QUEST, or INVESTIGATION
+- Identify course corrections where the approach changed mid-implementation
+- Return a structured view of all plans chronologically
+
+Store the find-plan output — you'll use it in Step 4 to capture design decisions and course corrections that aren't visible in the diff alone.
+
+**2c. If neither a plan file nor session plans were found:**
+1. Check the PR description (if a PR exists): `gh pr view --json body -q '.body'`
+2. Ask the user what the feature is about
 
 ## Step 3: Understand What Was Actually Built
 
@@ -97,6 +105,12 @@ Write `.claude/plans/<branch-slug>.md` with this structure:
 
 ...
 
+## Design Evolution
+
+[Course corrections discovered via session history from /find-plan. Include only significant direction changes, not minor tweaks.]
+
+- **[What changed]:** [Original approach] → [New approach]. [Why the change was made.]
+
 ## Schema Changes
 
 [List any migrations added, what they do]
@@ -115,8 +129,10 @@ Write `.claude/plans/<branch-slug>.md` with this structure:
 ### Writing Guidelines
 
 - **Describe what IS, not what was planned.** This file reflects the actual implementation, not the original aspirations.
+- **Use session context for the WHY.** The diff shows what changed; the find-plan output explains why. Design decisions and course corrections from conversations are the most valuable parts for reviewers.
 - **Be specific about file paths.** Greptile needs concrete references to match against the diff.
 - **Call out design decisions explicitly.** These are the things a reviewer would question — answer them preemptively.
+- **Include "Design Evolution" when the approach changed.** If find-plan reveals course corrections, document the original → final approach and why. This prevents reviewers from questioning intentional pivots.
 - **Include "What's NOT Included".** This prevents Greptile from flagging intentional omissions as missing changes.
 - **Keep it concise.** This is a review aid, not a design doc. Target 100-300 lines.
 
