@@ -266,11 +266,8 @@ export function MessageComposer({
             size="icon"
             aria-label="Close editor"
             className="h-8 w-8 p-0 hover:bg-muted"
-            tabIndex={-1}
-            onPointerDown={(e) => {
-              e.preventDefault()
-              onCollapse?.()
-            }}
+            onPointerDown={(e) => e.preventDefault()}
+            onClick={() => onCollapse?.()}
           >
             <X className="h-4 w-4" />
           </Button>
@@ -581,10 +578,8 @@ export function MessageComposer({
                       size="icon"
                       aria-label="Expand to fullscreen editor"
                       className="h-7 w-7 shrink-0"
-                      onPointerDown={(e) => {
-                        e.preventDefault()
-                        onExpandClick()
-                      }}
+                      onPointerDown={(e) => e.preventDefault()}
+                      onClick={onExpandClick}
                       disabled={controlsDisabled}
                     >
                       <Maximize2 className="h-3.5 w-3.5" />
