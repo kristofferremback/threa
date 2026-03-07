@@ -48,24 +48,21 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
   const messageService = useMessageService()
   const { streamId: mainViewStreamId } = useParams<{ streamId: string }>()
 
-  // Get panel stream ID
-  if (!panelId) return null
-
   const isMainViewStream = (streamId: string) => {
     return mainViewStreamId === streamId
   }
 
   // Check if this is a draft panel
-  const isDraft = isDraftPanel(panelId)
-  const draftInfo = isDraft ? parseDraftPanel(panelId) : null
+  const isDraft = panelId ? isDraftPanel(panelId) : false
+  const draftInfo = isDraft ? parseDraftPanel(panelId!) : null
 
   // For real streams, fetch bootstrap
   const {
     data: bootstrap,
     error,
     isLoading: isBootstrapLoading,
-  } = useStreamBootstrap(workspaceId, isDraft ? "" : panelId, {
-    enabled: !isDraft,
+  } = useStreamBootstrap(workspaceId, isDraft ? "" : (panelId ?? ""), {
+    enabled: !!panelId && !isDraft,
   })
   const stream = bootstrap?.stream
   const isThread = stream?.type === StreamTypes.THREAD
@@ -229,6 +226,8 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
 
     return [...ancestors, parentItem]
   }, [ancestors, parentBootstrap?.stream, draftInfo])
+
+  if (!panelId) return null
 
   let headerContent: React.ReactNode
   if (isDraft && parentBootstrap?.stream) {
