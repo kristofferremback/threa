@@ -167,6 +167,8 @@ git add .claude/plans/<branch-slug>.md
 git commit -m "docs: sync plan for <branch-slug>"
 ```
 
+After committing, tell the user the full path to the plan file so they can review it easily.
+
 ## Important Notes
 
 - **Do NOT invent requirements.** The plan should reflect what was actually built, derived from the diff and commits. If something is unclear, ask.
