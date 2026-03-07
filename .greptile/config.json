@@ -1,7 +1,7 @@
 {
   "strictness": 2,
   "commentTypes": ["logic", "syntax"],
-  "triggerOnUpdates": false,
+  "triggerOnUpdates": true,
   "excludeAuthors": ["dependabot[bot]", "renovate[bot]"],
   "ignorePatterns": "*.generated.*\n**/node_modules/**\npackage-lock.json\nbun.lockb\ndist/**\ndev-dist/**\n.env*\ntest-results/**\nplaywright-report/**\n*.log",
   "updateExistingSummaryComment": true,

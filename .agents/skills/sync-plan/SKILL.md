@@ -27,10 +27,9 @@ git log main..HEAD --oneline
 
 # Files changed vs main
 git diff main...HEAD --stat
-
-# Existing plan files
-ls -la .claude/plans/ 2>/dev/null
 ```
+
+Also use the Glob tool to check for existing plan files: `.claude/plans/*.md`
 
 Derive the branch slug for the plan filename: strip prefixes like `feat/`, `fix/`, `chore/`, and use the rest (e.g., `feat/multi-modal-images` → `multi-modal-images`).
 
