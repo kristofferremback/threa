@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from "react"
 import { createPortal } from "react-dom"
 import { useNavigate } from "react-router-dom"
 import { useDraftComposer, getDraftMessageKey, useStreamOrDraft } from "@/hooks"
+import { useIsMobile } from "@/hooks/use-mobile"
 import { usePreferences } from "@/contexts"
 import { MessageComposer } from "@/components/composer"
 import { commandsApi } from "@/api"
@@ -29,6 +30,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
   const messageSendMode = preferences?.messageSendMode ?? "enter"
+  const isMobile = useIsMobile()
 
   // Resolve the portal target for the expanded overlay by walking up from our own DOM node
   // to the closest [data-editor-zone] ancestor. Works for both main stream view and thread panel.
@@ -41,6 +43,11 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     setError(null)
     setExpanded(false)
   }, [streamId])
+
+  // Collapse expanded overlay when viewport crosses to mobile (expand is desktop-only)
+  useEffect(() => {
+    if (isMobile) setExpanded(false)
+  }, [isMobile])
 
   // Resolve the portal target lazily on expand to avoid silent blank screen
   // if the component mounts before the [data-editor-zone] ancestor exists.

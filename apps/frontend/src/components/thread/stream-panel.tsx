@@ -125,6 +125,11 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
     setDraftExpanded(false)
   }, [panelId])
 
+  // Collapse expanded overlay when viewport crosses to mobile (expand is desktop-only)
+  useEffect(() => {
+    if (isMobile) setDraftExpanded(false)
+  }, [isMobile])
+
   // Escape to close — only when focus is inside this expanded editor
   useEffect(() => {
     if (!draftExpanded) return

@@ -164,13 +164,15 @@ export function MessageComposer({
     []
   )
 
-  // Build the send mode hint text (reactive to preference changes)
+  // Build the send mode hint text (reactive to preference changes).
+  // Expanded (fullscreen) mode always uses cmdEnter regardless of user preference.
+  const effectiveSendMode = expanded ? "cmdEnter" : messageSendMode
   const sendHint = useMemo(() => {
-    if (messageSendMode === "enter") {
+    if (effectiveSendMode === "enter") {
       return `Enter to send · Shift+Enter for new line`
     }
     return `${MOD_SYMBOL}Enter to send`
-  }, [messageSendMode])
+  }, [effectiveSendMode])
 
   // Handle attach button click
   const handleAttachClick = useCallback(() => {
