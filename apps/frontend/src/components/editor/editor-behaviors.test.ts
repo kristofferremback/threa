@@ -76,4 +76,22 @@ describe("editor-behaviors indentation commands", () => {
     expect(handled).toBe(true)
     editor.destroy()
   })
+
+  it("traps Tab even when a single list item cannot be indented further", () => {
+    const editor = createBehaviorEditor("- item")
+    const event = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true })
+    let handled = false
+
+    editor.commands.focus("start")
+    editor.view.someProp("handleKeyDown", (handleKeyDown) => {
+      if (handleKeyDown(editor.view, event)) {
+        handled = true
+        return true
+      }
+      return false
+    })
+
+    expect(handled).toBe(true)
+    editor.destroy()
+  })
 })

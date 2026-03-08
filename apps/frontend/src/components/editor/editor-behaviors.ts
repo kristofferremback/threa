@@ -366,7 +366,8 @@ export const EditorBehaviors = Extension.create<EditorBehaviorsOptions>({
           return false
         }
 
-        return indentSelection(this.editor)
+        indentSelection(this.editor)
+        return true
       },
 
       // Shift+Tab: VS Code-style dedent (always trapped to prevent focus escape)
