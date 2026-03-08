@@ -287,7 +287,7 @@ function StylePicker({
               roomy ? "h-9 px-3 text-sm" : "h-8 px-2 text-xs"
             )}
             tabIndex={-1}
-            onPointerDown={(e) => e.preventDefault()}
+            onPointerDown={roomy ? undefined : (e) => e.preventDefault()}
           >
             {activeLabel}
             <ChevronDown className="h-3 w-3 opacity-60" />
@@ -430,6 +430,13 @@ interface ToolbarButtonProps {
 
 function ToolbarButton({ onAction, icon: Icon, label, shortcut, isActive, roomy = false }: ToolbarButtonProps) {
   const handlePointerDown = (e: React.PointerEvent) => {
+    if (roomy) return
+    e.preventDefault()
+    onAction()
+  }
+
+  const handleClick = (e: React.MouseEvent) => {
+    if (!roomy) return
     e.preventDefault()
     onAction()
   }
@@ -441,6 +448,7 @@ function ToolbarButton({ onAction, icon: Icon, label, shortcut, isActive, roomy 
           variant="ghost"
           size="sm"
           onPointerDown={handlePointerDown}
+          onClick={handleClick}
           className={cn(
             "p-0 hover:bg-muted shrink-0 snap-start",
             roomy ? "h-9 w-9 min-w-9" : "h-8 w-8",

@@ -60,6 +60,11 @@ describe("EditorToolbar", () => {
 
     fireEvent.pointerDown(screen.getByRole("button", { name: "Indent" }))
     fireEvent.pointerDown(screen.getByRole("button", { name: "Dedent" }))
+    expect(indentSelection).not.toHaveBeenCalled()
+    expect(dedentSelection).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole("button", { name: "Indent" }))
+    fireEvent.click(screen.getByRole("button", { name: "Dedent" }))
 
     expect(indentSelection).toHaveBeenCalledWith(editor)
     expect(dedentSelection).toHaveBeenCalledWith(editor)
