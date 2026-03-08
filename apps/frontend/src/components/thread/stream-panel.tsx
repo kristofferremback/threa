@@ -116,6 +116,9 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
   const [draftExpanded, setDraftExpanded] = useState(false)
   const draftExpandedRef = useRef<HTMLDivElement>(null)
   const draftPortalTargetRef = useRef<HTMLElement | null>(null)
+  const setDraftPortalTarget = useCallback((el: HTMLElement | null) => {
+    draftPortalTargetRef.current = el
+  }, [])
 
   // Reset expand state when panel changes
   useEffect(() => {
@@ -276,9 +279,7 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
       <SidePanelContent
         className="relative flex flex-col"
         data-editor-zone="panel"
-        ref={(el: HTMLElement | null) => {
-          draftPortalTargetRef.current = el
-        }}
+        ref={setDraftPortalTarget}
       >
         {isDraft && draftInfo ? (
           // Draft thread UI
