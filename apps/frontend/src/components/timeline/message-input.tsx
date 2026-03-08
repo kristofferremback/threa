@@ -1,6 +1,8 @@
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
+import { createPortal } from "react-dom"
 import { useNavigate } from "react-router-dom"
 import { useDraftComposer, getDraftMessageKey, useStreamOrDraft } from "@/hooks"
+import { useIsMobile } from "@/hooks/use-mobile"
 import { usePreferences } from "@/contexts"
 import { MessageComposer } from "@/components/composer"
 import { commandsApi } from "@/api"
@@ -26,12 +28,51 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
 
   const composer = useDraftComposer({ workspaceId, draftKey, scopeId: streamId })
   const [error, setError] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState(false)
   const messageSendMode = preferences?.messageSendMode ?? "enter"
+  const isMobile = useIsMobile()
+
+  // Resolve the portal target for the expanded overlay by walking up from our own DOM node
+  // to the closest [data-editor-zone] ancestor. Works for both main stream view and thread panel.
+  const selfRef = useRef<HTMLDivElement>(null)
+  const expandedRef = useRef<HTMLDivElement>(null)
+  const portalTargetRef = useRef<HTMLElement | null>(null)
 
   // Reset local state on stream change (e.g., draft promotion) without remounting
   useEffect(() => {
     setError(null)
+    setExpanded(false)
   }, [streamId])
+
+  // Collapse expanded overlay when viewport crosses to mobile (expand is desktop-only)
+  useEffect(() => {
+    if (isMobile) setExpanded(false)
+  }, [isMobile])
+
+  // Resolve the portal target lazily on expand to avoid silent blank screen
+  // if the component mounts before the [data-editor-zone] ancestor exists.
+  const handleExpandClick = useCallback(() => {
+    portalTargetRef.current = selfRef.current?.closest<HTMLElement>("[data-editor-zone]") ?? null
+    if (!portalTargetRef.current) {
+      console.warn("MessageInput: no [data-editor-zone] ancestor found — expand disabled")
+      return
+    }
+    setExpanded(true)
+  }, [])
+  const handleCollapse = useCallback(() => setExpanded(false), [])
+
+  // Escape to close — only when focus is inside this expanded editor
+  useEffect(() => {
+    if (!expanded) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && expandedRef.current?.contains(document.activeElement)) {
+        e.preventDefault()
+        setExpanded(false)
+      }
+    }
+    document.addEventListener("keydown", onKeyDown)
+    return () => document.removeEventListener("keydown", onKeyDown)
+  }, [expanded])
 
   const handleSubmit = useCallback(async () => {
     if (!composer.canSend) return
@@ -48,6 +89,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
       const emptyDoc: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
       composer.setContent(emptyDoc)
       composer.clearDraft()
+      setExpanded(false)
 
       try {
         const result = await commandsApi.dispatch(workspaceId, {
@@ -80,6 +122,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     composer.setContent(emptyDoc)
     composer.clearDraft()
     composer.clearAttachments()
+    setExpanded(false)
 
     try {
       const result = await sendMessage({
@@ -111,29 +154,44 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     )
   }
 
+  // Shared composer props used by both inline and expanded layouts
+  const composerProps = {
+    content: composer.content,
+    onContentChange: composer.handleContentChange,
+    pendingAttachments: composer.pendingAttachments,
+    onRemoveAttachment: composer.handleRemoveAttachment,
+    fileInputRef: composer.fileInputRef,
+    onFileSelect: composer.handleFileSelect,
+    onFileUpload: composer.uploadFile,
+    imageCount: composer.imageCount,
+    onSubmit: handleSubmit,
+    canSubmit: composer.canSend,
+    isSubmitting: composer.isSending,
+    hasFailed: composer.hasFailed,
+    messageSendMode,
+    scopeId: streamId,
+    onEditLastMessage: triggerEditLast,
+  } as const
+
   return (
-    <div className="border-t">
-      <div className="pt-3 px-3 pb-1 sm:pt-6 sm:px-6 sm:pb-1 mx-auto max-w-[800px] w-full min-w-0">
-        <MessageComposer
-          content={composer.content}
-          onContentChange={composer.handleContentChange}
-          pendingAttachments={composer.pendingAttachments}
-          onRemoveAttachment={composer.handleRemoveAttachment}
-          fileInputRef={composer.fileInputRef}
-          onFileSelect={composer.handleFileSelect}
-          onFileUpload={composer.uploadFile}
-          imageCount={composer.imageCount}
-          onSubmit={handleSubmit}
-          canSubmit={composer.canSend}
-          isSubmitting={composer.isSending}
-          hasFailed={composer.hasFailed}
-          messageSendMode={messageSendMode}
-          autoFocus={autoFocus}
-          scopeId={streamId}
-          onEditLastMessage={triggerEditLast}
-        />
-        {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
+    <>
+      {/* Expanded overlay — portaled into the stream view area */}
+      {expanded &&
+        portalTargetRef.current &&
+        createPortal(
+          <div ref={expandedRef} className="absolute inset-0 z-30 bg-background">
+            <MessageComposer {...composerProps} expanded onCollapse={handleCollapse} autoFocus />
+          </div>,
+          portalTargetRef.current
+        )}
+
+      {/* Inline composer — unmounted while expanded to avoid duplicate popovers */}
+      <div ref={selfRef} className={expanded ? "border-t hidden" : "border-t"}>
+        <div className="pt-3 px-3 pb-1 sm:pt-6 sm:px-6 sm:pb-1 mx-auto max-w-[800px] w-full min-w-0">
+          {!expanded && <MessageComposer {...composerProps} autoFocus={autoFocus} onExpandClick={handleExpandClick} />}
+          {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
+        </div>
       </div>
-    </div>
+    </>
   )
 }

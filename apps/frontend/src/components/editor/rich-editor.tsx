@@ -50,6 +50,10 @@ interface RichEditorProps {
   disableSelectionToolbar?: boolean
   /** Called when ArrowUp is pressed in an empty editor — triggers edit-last-message */
   onEditLastMessage?: () => void
+  /** Extra content rendered after the formatting buttons in the inline toolbar */
+  toolbarTrailingContent?: React.ReactNode
+  /** Content rendered between the toolbar and the editor (e.g. attachment pills) */
+  belowToolbarContent?: React.ReactNode
 }
 
 export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function RichEditor(
@@ -68,6 +72,8 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
     staticToolbarOpen = false,
     disableSelectionToolbar = false,
     onEditLastMessage,
+    toolbarTrailingContent,
+    belowToolbarContent,
   },
   ref
 ) {
@@ -544,7 +550,9 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
         linkPopoverOpen={linkPopoverOpen}
         onLinkPopoverOpenChange={setLinkPopoverOpen}
         onDropdownOpenChange={setDropdownOpen}
+        trailingContent={staticToolbarOpen ? toolbarTrailingContent : undefined}
       />
+      {belowToolbarContent}
       <EditorContent editor={editor} />
       {renderMentionList()}
       {renderChannelList()}
