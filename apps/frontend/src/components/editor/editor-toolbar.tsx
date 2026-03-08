@@ -89,6 +89,8 @@ export function EditorToolbar({
   if (!editor || !isVisible) return null
 
   const isLinkActive = editor.isActive("link")
+  const isMobileInlineToolbar = inline && inlinePosition === "below"
+  const separatorClassName = cn("mx-1 h-6 shrink-0", isMobileInlineToolbar && "mx-1.5")
 
   const buttons = (
     <>
@@ -96,14 +98,16 @@ export function EditorToolbar({
         editor={editor}
         onOpenChange={onDropdownOpenChange}
         keepEditorFocus={inline && inlinePosition === "below"}
+        roomy={isMobileInlineToolbar}
       />
-      <Separator orientation="vertical" className="mx-1 h-6" />
+      <Separator orientation="vertical" className={separatorClassName} />
       <ToolbarButton
         onAction={() => editor.chain().focus().toggleBold().run()}
         icon={Bold}
         label="Bold"
         shortcut="⌘B"
         isActive={editor.isActive("bold")}
+        roomy={isMobileInlineToolbar}
       />
       <ToolbarButton
         onAction={() => editor.chain().focus().toggleItalic().run()}
@@ -111,6 +115,7 @@ export function EditorToolbar({
         label="Italic"
         shortcut="⌘I"
         isActive={editor.isActive("italic")}
+        roomy={isMobileInlineToolbar}
       />
       <ToolbarButton
         onAction={() => editor.chain().focus().toggleStrike().run()}
@@ -118,6 +123,7 @@ export function EditorToolbar({
         label="Strikethrough"
         shortcut="⌘⇧S"
         isActive={editor.isActive("strike")}
+        roomy={isMobileInlineToolbar}
       />
       <ToolbarButton
         onAction={() => editor.chain().focus().toggleCode().run()}
@@ -125,6 +131,7 @@ export function EditorToolbar({
         label="Inline code"
         shortcut="⌘E"
         isActive={editor.isActive("code")}
+        roomy={isMobileInlineToolbar}
       />
       <ToolbarButton
         onAction={() => {
@@ -135,25 +142,29 @@ export function EditorToolbar({
         icon={Link2}
         label="Link"
         isActive={isLinkActive || !!linkPopoverOpen}
+        roomy={isMobileInlineToolbar}
       />
-      <Separator orientation="vertical" className="mx-1 h-6" />
+      <Separator orientation="vertical" className={separatorClassName} />
       <ToolbarButton
         onAction={() => editor.chain().focus().toggleBlockquote().run()}
         icon={Quote}
         label="Quote"
         isActive={editor.isActive("blockquote")}
+        roomy={isMobileInlineToolbar}
       />
       <ToolbarButton
         onAction={() => editor.chain().focus().toggleBulletList().run()}
         icon={List}
         label="Bullet list"
         isActive={editor.isActive("bulletList")}
+        roomy={isMobileInlineToolbar}
       />
       <ToolbarButton
         onAction={() => editor.chain().focus().toggleOrderedList().run()}
         icon={ListOrdered}
         label="Numbered list"
         isActive={editor.isActive("orderedList")}
+        roomy={isMobileInlineToolbar}
       />
       <ToolbarButton
         onAction={() => editor.chain().focus().toggleCodeBlock().run()}
@@ -161,12 +172,13 @@ export function EditorToolbar({
         label="Code block"
         shortcut="⌘⇧C"
         isActive={editor.isActive("codeBlock")}
+        roomy={isMobileInlineToolbar}
       />
       {showSpecialInputControls && (
         <>
-          <Separator orientation="vertical" className="mx-1 h-6" />
-          <ToolbarButton onAction={() => indentSelection(editor)} icon={ListIndentIncrease} label="Indent" />
-          <ToolbarButton onAction={() => dedentSelection(editor)} icon={ListIndentDecrease} label="Dedent" />
+          <Separator orientation="vertical" className={separatorClassName} />
+          <ToolbarButton onAction={() => indentSelection(editor)} icon={ListIndentIncrease} label="Indent" roomy />
+          <ToolbarButton onAction={() => dedentSelection(editor)} icon={ListIndentDecrease} label="Dedent" roomy />
         </>
       )}
     </>
@@ -191,12 +203,19 @@ export function EditorToolbar({
         >
           <div className={cn("flex items-center gap-0.5", inlinePosition === "below" ? "pt-1" : "py-1")}>
             {/* Formatting buttons — scroll horizontally when narrow */}
-            <div className="flex items-center gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden min-w-0 shrink">
+            <div
+              data-testid={isMobileInlineToolbar ? "mobile-inline-toolbar-scroll" : undefined}
+              className={cn(
+                "flex min-w-0 items-center gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+                "overscroll-x-contain touch-pan-x",
+                isMobileInlineToolbar ? "shrink-0 grow snap-x snap-mandatory pb-1 -mb-1 pr-3" : "shrink"
+              )}
+            >
               {buttons}
             </div>
             {trailingContent}
           </div>
-          {!trailingContent && (
+          {!trailingContent && !isMobileInlineToolbar && (
             <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-card to-transparent" />
           )}
         </div>
@@ -235,10 +254,12 @@ function StylePicker({
   editor,
   onOpenChange,
   keepEditorFocus = false,
+  roomy = false,
 }: {
   editor: Editor
   onOpenChange?: (open: boolean) => void
   keepEditorFocus?: boolean
+  roomy?: boolean
 }) {
   let activeLabel = "Normal"
   if (editor.isActive("heading", { level: 1 })) activeLabel = "Heading 1"
@@ -261,7 +282,10 @@ function StylePicker({
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 gap-1 px-2 text-xs font-medium hover:bg-muted"
+            className={cn(
+              "gap-1 font-medium hover:bg-muted shrink-0 snap-start",
+              roomy ? "h-9 px-3 text-sm" : "h-8 px-2 text-xs"
+            )}
             tabIndex={-1}
             onPointerDown={(e) => e.preventDefault()}
           >
@@ -349,7 +373,12 @@ function StylePicker({
   return (
     <DropdownMenu onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" className="h-8 gap-1 px-2 text-xs font-medium hover:bg-muted" tabIndex={-1}>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 gap-1 px-2 text-xs font-medium hover:bg-muted shrink-0"
+          tabIndex={-1}
+        >
           {activeLabel}
           <ChevronDown className="h-3 w-3 opacity-60" />
         </Button>
@@ -396,9 +425,10 @@ interface ToolbarButtonProps {
   label: string
   shortcut?: string
   isActive?: boolean
+  roomy?: boolean
 }
 
-function ToolbarButton({ onAction, icon: Icon, label, shortcut, isActive }: ToolbarButtonProps) {
+function ToolbarButton({ onAction, icon: Icon, label, shortcut, isActive, roomy = false }: ToolbarButtonProps) {
   const handlePointerDown = (e: React.PointerEvent) => {
     e.preventDefault()
     onAction()
@@ -411,7 +441,11 @@ function ToolbarButton({ onAction, icon: Icon, label, shortcut, isActive }: Tool
           variant="ghost"
           size="sm"
           onPointerDown={handlePointerDown}
-          className={cn("h-8 w-8 p-0 hover:bg-muted", isActive && "bg-muted-foreground/20 text-foreground")}
+          className={cn(
+            "p-0 hover:bg-muted shrink-0 snap-start",
+            roomy ? "h-9 w-9 min-w-9" : "h-8 w-8",
+            isActive && "bg-muted-foreground/20 text-foreground"
+          )}
           tabIndex={-1}
           aria-label={label}
           aria-pressed={isActive}

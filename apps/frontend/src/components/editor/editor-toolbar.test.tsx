@@ -64,4 +64,14 @@ describe("EditorToolbar", () => {
     expect(indentSelection).toHaveBeenCalledWith(editor)
     expect(dedentSelection).toHaveBeenCalledWith(editor)
   })
+
+  it("uses a dedicated scroll container for the mobile inline toolbar without the edge fade overlay", () => {
+    const editor = createEditorStub()
+    const { container } = render(
+      <EditorToolbar editor={editor} isVisible inline inlinePosition="below" showSpecialInputControls />
+    )
+
+    expect(screen.getByTestId("mobile-inline-toolbar-scroll")).toBeInTheDocument()
+    expect(container.querySelector(".bg-gradient-to-l")).toBeNull()
+  })
 })
