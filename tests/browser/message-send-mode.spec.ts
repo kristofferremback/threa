@@ -52,6 +52,14 @@ test.describe("Message Send Mode", () => {
   })
 
   test.describe("default enter mode", () => {
+    test("should expose the editor as a named textbox with keyboard instructions", async ({ page }) => {
+      await page.getByRole("button", { name: "+ New Scratchpad" }).click()
+
+      const editor = page.getByRole("textbox", { name: "Message input" })
+      await expect(editor).toBeVisible({ timeout: 5000 })
+      await expect(page.getByText("Tab and Shift+Tab indent content. Press Escape to leave the editor.")).toBeAttached()
+    })
+
     test("should send message with Enter", async ({ page }) => {
       // Create a scratchpad to test in
       await page.getByRole("button", { name: "+ New Scratchpad" }).click()
@@ -110,6 +118,37 @@ test.describe("Message Send Mode", () => {
 
       // Message should appear (sent successfully)
       await expect(page.locator("p").filter({ hasText: messageContent }).first()).toBeVisible({ timeout: 5000 })
+    })
+
+    test("should blur the editor with Escape", async ({ page }) => {
+      await page.getByRole("button", { name: "+ New Scratchpad" }).click()
+
+      const editor = page.getByRole("textbox", { name: "Message input" })
+      await expect(editor).toBeVisible({ timeout: 5000 })
+      await editor.click()
+      await expect(editor).toBeFocused()
+
+      await page.keyboard.press("Escape")
+
+      await expect(editor).not.toBeFocused()
+    })
+
+    test("should require a second Escape to close the fullscreen editor", async ({ page }) => {
+      await page.getByRole("button", { name: "+ New Scratchpad" }).click()
+
+      await page.getByRole("button", { name: "Expand to fullscreen editor" }).click()
+
+      const fullscreenEditor = page.getByRole("textbox", { name: "Fullscreen message editor" })
+      await expect(fullscreenEditor).toBeVisible({ timeout: 5000 })
+      await expect(fullscreenEditor).toBeFocused()
+
+      await page.keyboard.press("Escape")
+      await expect(fullscreenEditor).toBeVisible()
+      await expect(fullscreenEditor).not.toBeFocused()
+
+      await page.keyboard.press("Escape")
+      await expect(fullscreenEditor).not.toBeVisible()
+      await expect(page.getByRole("textbox", { name: "Message input" })).toBeVisible()
     })
   })
 

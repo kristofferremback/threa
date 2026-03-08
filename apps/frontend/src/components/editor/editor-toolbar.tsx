@@ -111,6 +111,7 @@ export function EditorToolbar({
         onOpenChange={onDropdownOpenChange}
         keepEditorFocus={inline && inlinePosition === "below"}
         roomy={isMobileInlineToolbar}
+        keyboardAccessible={inline}
       />
       <Separator orientation="vertical" className={separatorClassName} />
       <ToolbarButton
@@ -121,6 +122,7 @@ export function EditorToolbar({
         isActive={editor.isActive("bold")}
         roomy={isMobileInlineToolbar}
         showTooltip={!isMobileInlineToolbar}
+        keyboardAccessible={inline}
       />
       <ToolbarButton
         onAction={() => editor.chain().focus().toggleItalic().run()}
@@ -130,6 +132,7 @@ export function EditorToolbar({
         isActive={editor.isActive("italic")}
         roomy={isMobileInlineToolbar}
         showTooltip={!isMobileInlineToolbar}
+        keyboardAccessible={inline}
       />
       <ToolbarButton
         onAction={() => editor.chain().focus().toggleStrike().run()}
@@ -139,6 +142,7 @@ export function EditorToolbar({
         isActive={editor.isActive("strike")}
         roomy={isMobileInlineToolbar}
         showTooltip={!isMobileInlineToolbar}
+        keyboardAccessible={inline}
       />
       <ToolbarButton
         onAction={() => editor.chain().focus().toggleCode().run()}
@@ -148,6 +152,7 @@ export function EditorToolbar({
         isActive={editor.isActive("code")}
         roomy={isMobileInlineToolbar}
         showTooltip={!isMobileInlineToolbar}
+        keyboardAccessible={inline}
       />
       <ToolbarButton
         onAction={() => {
@@ -160,6 +165,7 @@ export function EditorToolbar({
         isActive={isLinkActive || !!linkPopoverOpen}
         roomy={isMobileInlineToolbar}
         showTooltip={!isMobileInlineToolbar}
+        keyboardAccessible={inline}
       />
       <Separator orientation="vertical" className={separatorClassName} />
       <ToolbarButton
@@ -169,6 +175,7 @@ export function EditorToolbar({
         isActive={editor.isActive("blockquote")}
         roomy={isMobileInlineToolbar}
         showTooltip={!isMobileInlineToolbar}
+        keyboardAccessible={inline}
       />
       <ToolbarButton
         onAction={() => editor.chain().focus().toggleBulletList().run()}
@@ -177,6 +184,7 @@ export function EditorToolbar({
         isActive={editor.isActive("bulletList")}
         roomy={isMobileInlineToolbar}
         showTooltip={!isMobileInlineToolbar}
+        keyboardAccessible={inline}
       />
       <ToolbarButton
         onAction={() => editor.chain().focus().toggleOrderedList().run()}
@@ -185,6 +193,7 @@ export function EditorToolbar({
         isActive={editor.isActive("orderedList")}
         roomy={isMobileInlineToolbar}
         showTooltip={!isMobileInlineToolbar}
+        keyboardAccessible={inline}
       />
       <ToolbarButton
         onAction={() => editor.chain().focus().toggleCodeBlock().run()}
@@ -194,6 +203,7 @@ export function EditorToolbar({
         isActive={editor.isActive("codeBlock")}
         roomy={isMobileInlineToolbar}
         showTooltip={!isMobileInlineToolbar}
+        keyboardAccessible={inline}
       />
       {showSpecialInputControls && (
         <>
@@ -292,11 +302,13 @@ function StylePicker({
   onOpenChange,
   keepEditorFocus = false,
   roomy = false,
+  keyboardAccessible = false,
 }: {
   editor: Editor
   onOpenChange?: (open: boolean) => void
   keepEditorFocus?: boolean
   roomy?: boolean
+  keyboardAccessible?: boolean
 }) {
   let activeLabel = "Normal"
   if (editor.isActive("heading", { level: 1 })) activeLabel = "Heading 1"
@@ -313,6 +325,22 @@ function StylePicker({
   )
 
   if (keepEditorFocus) {
+    const selectParagraph = () => {
+      editor.chain().focus().setParagraph().run()
+      handleOpenChange(false)
+    }
+    const selectHeading = (level: 1 | 2 | 3) => {
+      editor.chain().focus().toggleHeading({ level }).run()
+      handleOpenChange(false)
+    }
+    const handleOptionPointerDown = (action: () => void) => (e: React.PointerEvent) => {
+      e.preventDefault()
+      action()
+    }
+    const handleOptionClick = (action: () => void) => (e: React.MouseEvent) => {
+      if (e.detail === 0) action()
+    }
+
     return (
       <Popover open={mobileStyleOpen} onOpenChange={handleOpenChange}>
         <PopoverTrigger asChild>
@@ -325,7 +353,7 @@ function StylePicker({
                 ? "h-9 px-3 text-sm active:bg-muted hover:bg-transparent hover:text-current"
                 : "h-8 px-2 text-xs hover:bg-muted"
             )}
-            tabIndex={-1}
+            tabIndex={keyboardAccessible ? undefined : -1}
             onPointerDown={(e) => e.preventDefault()}
           >
             {activeLabel}
@@ -344,12 +372,9 @@ function StylePicker({
             variant="ghost"
             size="sm"
             className={cn("h-8 w-full justify-start px-2 text-sm", !editor.isActive("heading") && "font-medium")}
-            tabIndex={-1}
-            onPointerDown={(e) => {
-              e.preventDefault()
-              editor.chain().focus().setParagraph().run()
-              handleOpenChange(false)
-            }}
+            tabIndex={keyboardAccessible ? undefined : -1}
+            onPointerDown={handleOptionPointerDown(selectParagraph)}
+            onClick={handleOptionClick(selectParagraph)}
           >
             Normal
           </Button>
@@ -361,12 +386,9 @@ function StylePicker({
               "h-8 w-full justify-start px-2 text-sm",
               editor.isActive("heading", { level: 1 }) && "font-medium"
             )}
-            tabIndex={-1}
-            onPointerDown={(e) => {
-              e.preventDefault()
-              editor.chain().focus().toggleHeading({ level: 1 }).run()
-              handleOpenChange(false)
-            }}
+            tabIndex={keyboardAccessible ? undefined : -1}
+            onPointerDown={handleOptionPointerDown(() => selectHeading(1))}
+            onClick={handleOptionClick(() => selectHeading(1))}
           >
             Heading 1
           </Button>
@@ -378,12 +400,9 @@ function StylePicker({
               "h-8 w-full justify-start px-2 text-sm",
               editor.isActive("heading", { level: 2 }) && "font-medium"
             )}
-            tabIndex={-1}
-            onPointerDown={(e) => {
-              e.preventDefault()
-              editor.chain().focus().toggleHeading({ level: 2 }).run()
-              handleOpenChange(false)
-            }}
+            tabIndex={keyboardAccessible ? undefined : -1}
+            onPointerDown={handleOptionPointerDown(() => selectHeading(2))}
+            onClick={handleOptionClick(() => selectHeading(2))}
           >
             Heading 2
           </Button>
@@ -395,12 +414,9 @@ function StylePicker({
               "h-8 w-full justify-start px-2 text-sm",
               editor.isActive("heading", { level: 3 }) && "font-medium"
             )}
-            tabIndex={-1}
-            onPointerDown={(e) => {
-              e.preventDefault()
-              editor.chain().focus().toggleHeading({ level: 3 }).run()
-              handleOpenChange(false)
-            }}
+            tabIndex={keyboardAccessible ? undefined : -1}
+            onPointerDown={handleOptionPointerDown(() => selectHeading(3))}
+            onClick={handleOptionClick(() => selectHeading(3))}
           >
             Heading 3
           </Button>
@@ -416,7 +432,7 @@ function StylePicker({
           variant="ghost"
           size="sm"
           className="h-8 gap-1 px-2 text-xs font-medium hover:bg-muted shrink-0"
-          tabIndex={-1}
+          tabIndex={keyboardAccessible ? undefined : -1}
         >
           {activeLabel}
           <ChevronDown className="h-3 w-3 opacity-60" />
@@ -466,6 +482,7 @@ interface ToolbarButtonProps {
   isActive?: boolean
   roomy?: boolean
   showTooltip?: boolean
+  keyboardAccessible?: boolean
 }
 
 function ToolbarButton({
@@ -476,6 +493,7 @@ function ToolbarButton({
   isActive,
   roomy = false,
   showTooltip = true,
+  keyboardAccessible = false,
 }: ToolbarButtonProps) {
   // Desktop (non-roomy): fire on pointerdown for snappy interaction.
   // Mobile (roomy): use mousedown to prevent focus theft without blocking
@@ -487,7 +505,11 @@ function ToolbarButton({
         onAction()
       }
   const handleMouseDown = roomy ? (e: React.MouseEvent) => e.preventDefault() : undefined
-  const handleClick = roomy ? () => onAction() : undefined
+  const handleClick = roomy
+    ? () => onAction()
+    : (e: React.MouseEvent) => {
+        if (e.detail === 0) onAction()
+      }
 
   const button = (
     <Button
@@ -502,7 +524,7 @@ function ToolbarButton({
         isActive && "bg-muted-foreground/20 text-foreground",
         isActive && roomy && "hover:bg-muted-foreground/20"
       )}
-      tabIndex={-1}
+      tabIndex={keyboardAccessible ? undefined : -1}
       aria-label={label}
       aria-pressed={isActive}
     >

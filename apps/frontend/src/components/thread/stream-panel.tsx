@@ -135,10 +135,18 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
   useEffect(() => {
     if (!draftExpanded) return
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && draftExpandedRef.current?.contains(document.activeElement)) {
-        e.preventDefault()
-        setDraftExpanded(false)
-      }
+      if (e.defaultPrevented) return
+      if (e.key !== "Escape") return
+
+      const expandedElement = draftExpandedRef.current
+      if (!expandedElement) return
+
+      const activeElement = document.activeElement as HTMLElement | null
+      const focusedEditor = activeElement?.closest<HTMLElement>('[contenteditable="true"]')
+      if (focusedEditor && expandedElement.contains(focusedEditor)) return
+
+      e.preventDefault()
+      setDraftExpanded(false)
     }
     document.addEventListener("keydown", onKeyDown)
     return () => document.removeEventListener("keydown", onKeyDown)
