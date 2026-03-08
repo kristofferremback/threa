@@ -717,6 +717,7 @@ export function MessageComposer({
                 inlinePosition="below"
                 linkPopoverOpen={mobileLinkPopoverOpen}
                 onLinkPopoverOpenChange={setMobileLinkPopoverOpen}
+                showSpecialInputControls
               />
             )}
           </div>

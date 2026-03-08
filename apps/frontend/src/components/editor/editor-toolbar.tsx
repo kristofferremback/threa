@@ -1,13 +1,27 @@
 import { useLayoutEffect, useEffect, useState, useCallback } from "react"
 import type { Editor } from "@tiptap/react"
 import { useFloating, offset, flip, shift, autoUpdate } from "@floating-ui/react"
-import { Bold, Italic, Strikethrough, Link2, Quote, Code, Braces, List, ListOrdered, ChevronDown } from "lucide-react"
+import {
+  Bold,
+  Italic,
+  Strikethrough,
+  Link2,
+  Quote,
+  Code,
+  Braces,
+  List,
+  ListOrdered,
+  ChevronDown,
+  ListIndentIncrease,
+  ListIndentDecrease,
+} from "lucide-react"
 import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { LinkEditor } from "./link-editor"
+import { indentSelection, dedentSelection } from "./editor-behaviors"
 import { cn } from "@/lib/utils"
 
 interface EditorToolbarProps {
@@ -26,6 +40,8 @@ interface EditorToolbarProps {
   /** Extra content rendered after the formatting buttons (e.g. action buttons, close X).
    *  Only applies when `inline` is true. */
   trailingContent?: React.ReactNode
+  /** Show mobile-only editing controls like indent/dedent in a separate section. */
+  showSpecialInputControls?: boolean
 }
 
 export function EditorToolbar({
@@ -37,6 +53,7 @@ export function EditorToolbar({
   inline = false,
   inlinePosition = "above",
   trailingContent,
+  showSpecialInputControls = false,
 }: EditorToolbarProps) {
   const { refs, floatingStyles, update } = useFloating({
     placement: "top",
@@ -145,6 +162,13 @@ export function EditorToolbar({
         shortcut="⌘⇧C"
         isActive={editor.isActive("codeBlock")}
       />
+      {showSpecialInputControls && (
+        <>
+          <Separator orientation="vertical" className="mx-1 h-6" />
+          <ToolbarButton onAction={() => indentSelection(editor)} icon={ListIndentIncrease} label="Indent" />
+          <ToolbarButton onAction={() => dedentSelection(editor)} icon={ListIndentDecrease} label="Dedent" />
+        </>
+      )}
     </>
   )
 
