@@ -1,11 +1,21 @@
 ---
 name: respond-to-pr-review
-description: Fetch, analyze, and respond to PR review comments. Use when asked to check PR comments, address review feedback, respond to reviewers, or fix issues raised in code reviews.
+description: Systematically triage and respond to PR review comments. Use when asked to check PR comments, address review feedback, respond to reviewers, or fix issues raised in code reviews.
 ---
 
 # Respond to PR Review
 
-Fetch and respond to review comments on pull requests.
+Systematically triage, address, and respond to every review comment on a pull request. No comment should be silently skipped.
+
+## Core Principle
+
+**Every review comment gets an explicit disposition.** A comment is either:
+
+1. **Accepted** — the feedback is valid, fix the code and respond
+2. **Acknowledged** — the feedback is valid but out of scope for this PR; respond explaining why and what follow-up is planned
+3. **Disputed** — the feedback is incorrect or conflicts with project rules; respond with a concrete explanation referencing the relevant invariant or rationale
+
+Never silently skip a comment. Never dismiss a comment just because it is non-blocking, a suggestion, or an improvement rather than a bug. Automated reviewers (Greptile, CodeRabbit) are configured with project-specific rules — their feedback reflects project standards and should be treated with the same rigor as human review comments.
 
 ## Instructions
 
@@ -17,28 +27,34 @@ If not provided, detect from current branch:
 gh pr view --json number -q .number
 ```
 
-### 2. Fetch review comments
+### 2. Fetch all review comments and threads
+
+Fetch both issue-level comments and inline review threads:
 
 ```bash
+# Inline review comments
 gh api repos/{owner}/{repo}/pulls/{pr}/comments
-```
 
-### 3. Fetch review thread IDs and resolution status
+# Issue-level comments (summaries, top-level feedback)
+gh api repos/{owner}/{repo}/issues/{pr}/comments
 
-```bash
+# Review thread resolution status
 gh api graphql -f query='
 query {
   repository(owner: "{owner}", name: "{repo}") {
     pullRequest(number: {pr}) {
-      reviewThreads(first: 50) {
+      reviewThreads(first: 100) {
         nodes {
           id
           isResolved
-          comments(first: 1) {
+          comments(first: 10) {
             nodes {
+              author { login }
               body
               path
               line
+              createdAt
+              updatedAt
             }
           }
         }
@@ -48,27 +64,50 @@ query {
 }'
 ```
 
-### 4. Present unresolved comments
+### 3. Check for updated comments
 
-Summarize each comment showing:
+Compare `createdAt` vs `updatedAt` on each comment. If a comment was updated after a previous response, it means the reviewer edited their feedback — treat it as new input that needs re-evaluation.
 
-- File path and line number
-- The core issue (ignore HTML badges, buttons, metadata)
-- Severity if mentioned (High/Medium/Low)
+Also check for reply chains: if a reviewer responded to your previous reply, that thread needs attention regardless of resolution status.
 
-### 5. Verify before fixing
+### 4. Build a triage table
 
-Read the relevant code and verify each issue is valid before fixing.
+For EVERY unresolved comment (and resolved comments with new replies), create a triage entry:
 
-### 6. Fix and respond
+| # | Source | File:Line | Issue Summary | Disposition | Action |
+|---|--------|-----------|---------------|-------------|--------|
 
-For each valid issue:
+Fill in Source (greptile-apps[bot], coderabbitai[bot], human username), the file and line, a one-sentence summary of the issue, and leave Disposition/Action blank.
+
+Present this table to the user and ask for confirmation before proceeding. The user may override dispositions or skip specific comments.
+
+### 5. Read code and triage each comment
+
+For each comment, read the relevant code and determine the disposition:
+
+- **Accept**: The issue is real and should be fixed in this PR
+- **Acknowledge**: The issue is real but belongs in a follow-up (explain why — scope, risk, separate concern)
+- **Dispute**: The issue is incorrect — cite the specific invariant, spec, or technical reason
+
+Do not use weasel language like "just a suggestion", "non-blocking", or "nice to have" to skip valid feedback. If the feedback identifies a real issue (bug, regression, accessibility problem, spec violation), it should be accepted regardless of how the reviewer labeled its severity.
+
+### 6. Fix accepted issues
+
+For each accepted comment:
 
 1. Fix the code
+2. Reply to the thread explaining the fix
 
-2. Reply to the thread with Claude signature:
+### 7. Respond to acknowledged/disputed comments
 
-**IMPORTANT:** All responses MUST end with the Claude signature to make it clear the response was AI-generated:
+For each non-accepted comment, reply to the thread with:
+
+- **Acknowledged**: What the issue is, why it's deferred, and what follow-up is planned (e.g., "Will address in a separate PR" or "Tracking as part of [issue]")
+- **Disputed**: The concrete technical reason the feedback doesn't apply, referencing project invariants or specs where relevant
+
+### 8. Post replies
+
+All responses MUST end with the agent signature:
 
 ```
 🤖 _Response by [Claude Code](https://claude.com/claude-code)_
@@ -77,14 +116,14 @@ For each valid issue:
 Write the response to a temp file first (to avoid heredoc issues), then post:
 
 ```bash
-# Write response with signature
+mkdir -p /tmp/claude
+
 printf '%s\n' \
-  'Fixed! [explanation of what was changed]' \
+  '[response body]' \
   '' \
   '🤖 _Response by [Claude Code](https://claude.com/claude-code)_' \
   > /tmp/claude/pr-comment.md
 
-# Post the comment
 gh api graphql -f query='
 mutation($body: String!) {
   addPullRequestReviewThreadReply(input: {
@@ -94,9 +133,13 @@ mutation($body: String!) {
     comment { id }
   }
 }' -f body="$(cat /tmp/claude/pr-comment.md)"
+
+rm /tmp/claude/pr-comment.md
 ```
 
-3. Resolve the thread:
+### 9. Resolve threads
+
+Only resolve threads where the disposition is **Accept** (code was fixed) or **Dispute** (with explanation posted). Do NOT resolve **Acknowledged** threads — those stay open as a reminder for follow-up.
 
 ```bash
 gh api graphql -f query='
@@ -107,23 +150,26 @@ mutation {
 }'
 ```
 
-4. Clean up:
-
-```bash
-rm /tmp/claude/pr-comment.md
-```
-
-### 7. Commit and push
+### 10. Commit and push
 
 Commit all fixes with a message referencing the review feedback, then push.
+
+### 11. Report final status
+
+After all comments are handled, present the completed triage table with final dispositions:
+
+| # | Source | File:Line | Issue Summary | Disposition | Response |
+|---|--------|-----------|---------------|-------------|----------|
+
+This gives the user a clear audit trail of what was done with every comment.
 
 ## Examples
 
 **User says:** "Check the PR comments"
-**Action:** Fetch comments for current branch's PR, present issues, ask which to fix
+**Action:** Fetch all comments, build triage table, present for review, then address each systematically
 
 **User says:** "Address the review feedback on PR 42"
-**Action:** Fetch comments for PR #42, fix valid issues, respond and resolve threads
+**Action:** Fetch comments for PR #42, triage all, fix accepted issues, respond to all threads, report status
 
-**User says:** "Respond to the reviewers"
-**Action:** Reply to review threads explaining fixes, resolve addressed comments
+**User says:** "Any new review comments?"
+**Action:** Fetch comments, check for updated/new comments since last response, triage only the new ones
