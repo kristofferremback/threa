@@ -217,6 +217,7 @@ export function MessageEditForm({
           onChange={setContentJson}
           onSubmit={handleSubmit}
           placeholder="Edit message..."
+          ariaLabel="Edit message"
           autoFocus
         />
       </div>

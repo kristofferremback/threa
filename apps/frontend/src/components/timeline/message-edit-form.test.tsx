@@ -12,16 +12,19 @@ vi.mock("@/components/editor", () => ({
     onChange,
     onSubmit,
     placeholder,
+    ariaLabel,
   }: {
     value: JSONContent
     onChange: (v: JSONContent) => void
     onSubmit: () => void
     placeholder?: string
+    ariaLabel: string
   }) => (
     <textarea
       data-testid="rich-editor"
       defaultValue={JSON.stringify(value)}
       placeholder={placeholder}
+      aria-label={ariaLabel}
       onChange={(e) => {
         try {
           onChange(JSON.parse(e.target.value))
@@ -88,7 +91,7 @@ describe("MessageEditForm", () => {
   it("should render editor with save and cancel buttons", () => {
     renderForm()
 
-    expect(screen.getByTestId("rich-editor")).toBeInTheDocument()
+    expect(screen.getByRole("textbox", { name: "Edit message" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument()
   })
