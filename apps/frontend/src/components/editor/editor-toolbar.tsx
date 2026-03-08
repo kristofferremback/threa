@@ -91,6 +91,10 @@ export function EditorToolbar({
   const isLinkActive = editor.isActive("link")
   const isMobileInlineToolbar = inline && inlinePosition === "below"
   const separatorClassName = cn("mx-1 h-6 shrink-0", isMobileInlineToolbar && "mx-1.5")
+  const stopMobileToolbarTouchPropagation = (e: React.TouchEvent) => {
+    if (!isMobileInlineToolbar) return
+    e.stopPropagation()
+  }
 
   const buttons = (
     <>
@@ -108,6 +112,7 @@ export function EditorToolbar({
         shortcut="⌘B"
         isActive={editor.isActive("bold")}
         roomy={isMobileInlineToolbar}
+        showTooltip={!isMobileInlineToolbar}
       />
       <ToolbarButton
         onAction={() => editor.chain().focus().toggleItalic().run()}
@@ -116,6 +121,7 @@ export function EditorToolbar({
         shortcut="⌘I"
         isActive={editor.isActive("italic")}
         roomy={isMobileInlineToolbar}
+        showTooltip={!isMobileInlineToolbar}
       />
       <ToolbarButton
         onAction={() => editor.chain().focus().toggleStrike().run()}
@@ -124,6 +130,7 @@ export function EditorToolbar({
         shortcut="⌘⇧S"
         isActive={editor.isActive("strike")}
         roomy={isMobileInlineToolbar}
+        showTooltip={!isMobileInlineToolbar}
       />
       <ToolbarButton
         onAction={() => editor.chain().focus().toggleCode().run()}
@@ -132,6 +139,7 @@ export function EditorToolbar({
         shortcut="⌘E"
         isActive={editor.isActive("code")}
         roomy={isMobileInlineToolbar}
+        showTooltip={!isMobileInlineToolbar}
       />
       <ToolbarButton
         onAction={() => {
@@ -143,6 +151,7 @@ export function EditorToolbar({
         label="Link"
         isActive={isLinkActive || !!linkPopoverOpen}
         roomy={isMobileInlineToolbar}
+        showTooltip={!isMobileInlineToolbar}
       />
       <Separator orientation="vertical" className={separatorClassName} />
       <ToolbarButton
@@ -151,6 +160,7 @@ export function EditorToolbar({
         label="Quote"
         isActive={editor.isActive("blockquote")}
         roomy={isMobileInlineToolbar}
+        showTooltip={!isMobileInlineToolbar}
       />
       <ToolbarButton
         onAction={() => editor.chain().focus().toggleBulletList().run()}
@@ -158,6 +168,7 @@ export function EditorToolbar({
         label="Bullet list"
         isActive={editor.isActive("bulletList")}
         roomy={isMobileInlineToolbar}
+        showTooltip={!isMobileInlineToolbar}
       />
       <ToolbarButton
         onAction={() => editor.chain().focus().toggleOrderedList().run()}
@@ -165,6 +176,7 @@ export function EditorToolbar({
         label="Numbered list"
         isActive={editor.isActive("orderedList")}
         roomy={isMobileInlineToolbar}
+        showTooltip={!isMobileInlineToolbar}
       />
       <ToolbarButton
         onAction={() => editor.chain().focus().toggleCodeBlock().run()}
@@ -173,12 +185,25 @@ export function EditorToolbar({
         shortcut="⌘⇧C"
         isActive={editor.isActive("codeBlock")}
         roomy={isMobileInlineToolbar}
+        showTooltip={!isMobileInlineToolbar}
       />
       {showSpecialInputControls && (
         <>
           <Separator orientation="vertical" className={separatorClassName} />
-          <ToolbarButton onAction={() => indentSelection(editor)} icon={ListIndentIncrease} label="Indent" roomy />
-          <ToolbarButton onAction={() => dedentSelection(editor)} icon={ListIndentDecrease} label="Dedent" roomy />
+          <ToolbarButton
+            onAction={() => indentSelection(editor)}
+            icon={ListIndentIncrease}
+            label="Indent"
+            roomy
+            showTooltip={false}
+          />
+          <ToolbarButton
+            onAction={() => dedentSelection(editor)}
+            icon={ListIndentDecrease}
+            label="Dedent"
+            roomy
+            showTooltip={false}
+          />
         </>
       )}
     </>
@@ -205,6 +230,9 @@ export function EditorToolbar({
             {/* Formatting buttons — scroll horizontally when narrow */}
             <div
               data-testid={isMobileInlineToolbar ? "mobile-inline-toolbar-scroll" : undefined}
+              onTouchStart={stopMobileToolbarTouchPropagation}
+              onTouchMove={stopMobileToolbarTouchPropagation}
+              onTouchEnd={stopMobileToolbarTouchPropagation}
               className={cn(
                 "flex min-w-0 items-center gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
                 "overscroll-x-contain touch-pan-x",
@@ -283,7 +311,8 @@ function StylePicker({
             variant="ghost"
             size="sm"
             className={cn(
-              "gap-1 font-medium hover:bg-muted shrink-0 snap-start",
+              "gap-1 font-medium shrink-0 snap-start",
+              roomy ? "active:bg-muted" : "hover:bg-muted",
               roomy ? "h-9 px-3 text-sm" : "h-8 px-2 text-xs"
             )}
             tabIndex={-1}
@@ -426,9 +455,18 @@ interface ToolbarButtonProps {
   shortcut?: string
   isActive?: boolean
   roomy?: boolean
+  showTooltip?: boolean
 }
 
-function ToolbarButton({ onAction, icon: Icon, label, shortcut, isActive, roomy = false }: ToolbarButtonProps) {
+function ToolbarButton({
+  onAction,
+  icon: Icon,
+  label,
+  shortcut,
+  isActive,
+  roomy = false,
+  showTooltip = true,
+}: ToolbarButtonProps) {
   const handlePointerDown = (e: React.PointerEvent) => {
     if (roomy) return
     e.preventDefault()
@@ -441,26 +479,32 @@ function ToolbarButton({ onAction, icon: Icon, label, shortcut, isActive, roomy 
     onAction()
   }
 
+  const button = (
+    <Button
+      variant="ghost"
+      size="sm"
+      onPointerDown={handlePointerDown}
+      onClick={handleClick}
+      className={cn(
+        "p-0 shrink-0 snap-start",
+        roomy ? "h-9 w-9 min-w-9 active:bg-muted" : "h-8 w-8 hover:bg-muted",
+        isActive && "bg-muted-foreground/20 text-foreground"
+      )}
+      tabIndex={-1}
+      aria-label={label}
+      aria-pressed={isActive}
+    >
+      <Icon className={cn("h-4 w-4", isActive && "stroke-[2.5px]")} />
+    </Button>
+  )
+
+  if (!showTooltip) {
+    return button
+  }
+
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          onPointerDown={handlePointerDown}
-          onClick={handleClick}
-          className={cn(
-            "p-0 hover:bg-muted shrink-0 snap-start",
-            roomy ? "h-9 w-9 min-w-9" : "h-8 w-8",
-            isActive && "bg-muted-foreground/20 text-foreground"
-          )}
-          tabIndex={-1}
-          aria-label={label}
-          aria-pressed={isActive}
-        >
-          <Icon className={cn("h-4 w-4", isActive && "stroke-[2.5px]")} />
-        </Button>
-      </TooltipTrigger>
+      <TooltipTrigger asChild>{button}</TooltipTrigger>
       <TooltipContent side="top" className="text-xs">
         <div className="flex items-center gap-2">
           <span className="font-medium">{label}</span>

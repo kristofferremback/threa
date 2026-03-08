@@ -79,4 +79,17 @@ describe("EditorToolbar", () => {
     expect(screen.getByTestId("mobile-inline-toolbar-scroll")).toBeInTheDocument()
     expect(container.querySelector(".bg-gradient-to-l")).toBeNull()
   })
+
+  it("stops touch propagation from the mobile scroll container", () => {
+    const editor = createEditorStub()
+    render(<EditorToolbar editor={editor} isVisible inline inlinePosition="below" showSpecialInputControls />)
+
+    const scrollContainer = screen.getByTestId("mobile-inline-toolbar-scroll")
+    const event = new Event("touchstart", { bubbles: true, cancelable: true })
+    const stopPropagation = vi.spyOn(event, "stopPropagation")
+
+    fireEvent(scrollContainer, event)
+
+    expect(stopPropagation).toHaveBeenCalled()
+  })
 })
