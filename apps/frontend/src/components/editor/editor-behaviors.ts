@@ -370,7 +370,10 @@ export const EditorBehaviors = Extension.create<EditorBehaviorsOptions>({
       },
 
       // Shift+Tab: VS Code-style dedent (always trapped to prevent focus escape)
-      "Shift-Tab": () => dedentSelection(this.editor),
+      "Shift-Tab": () => {
+        dedentSelection(this.editor)
+        return true
+      },
 
       // Cmd/Ctrl+A: select all within code block if inside one
       "Mod-a": () => {

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { Editor } from "@tiptap/core"
 import { createEditorExtensions } from "./editor-extensions"
 import { parseMarkdown, serializeToMarkdown } from "./editor-markdown"
-import { indentSelection, dedentSelection } from "./editor-behaviors"
+import { EditorBehaviors, indentSelection, dedentSelection } from "./editor-behaviors"
 
 function createTestEditor(markdown: string) {
   return new Editor({
@@ -18,6 +18,24 @@ function createTestEditor(markdown: string) {
 
 function selectAll(editor: Editor) {
   editor.commands.setTextSelection({ from: 1, to: editor.state.doc.content.size })
+}
+
+function createBehaviorEditor(markdown: string) {
+  return new Editor({
+    element: document.createElement("div"),
+    extensions: [
+      ...createEditorExtensions({ placeholder: "Type a message..." }),
+      EditorBehaviors.configure({
+        sendModeRef: { current: "enter" },
+        onSubmitRef: { current: () => {} },
+      }),
+    ],
+    content: parseMarkdown(
+      markdown,
+      () => "user",
+      () => null
+    ),
+  })
 }
 
 describe("editor-behaviors indentation commands", () => {
@@ -38,6 +56,24 @@ describe("editor-behaviors indentation commands", () => {
     dedentSelection(editor)
 
     expect(serializeToMarkdown(editor.getJSON())).toBe("```\nconst a = 1\nconst b = 2\n```")
+    editor.destroy()
+  })
+
+  it("traps Shift+Tab even when a top-level list item cannot be dedented further", () => {
+    const editor = createBehaviorEditor("- item")
+    const event = new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true, cancelable: true })
+    let handled = false
+
+    editor.commands.focus("start")
+    editor.view.someProp("handleKeyDown", (handleKeyDown) => {
+      if (handleKeyDown(editor.view, event)) {
+        handled = true
+        return true
+      }
+      return false
+    })
+
+    expect(handled).toBe(true)
     editor.destroy()
   })
 })
