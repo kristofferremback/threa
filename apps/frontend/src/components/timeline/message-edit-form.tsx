@@ -198,6 +198,7 @@ export function MessageEditForm({
                 inlinePosition="below"
                 linkPopoverOpen={mobileLinkPopoverOpen}
                 onLinkPopoverOpenChange={setMobileLinkPopoverOpen}
+                showSpecialInputControls
               />
             )}
           </div>
