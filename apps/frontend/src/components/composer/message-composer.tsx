@@ -40,6 +40,7 @@ function getPreviewText(doc: JSONContent): string {
   function walk(node: JSONContent): string | null {
     if (node.type === "text") return node.text ?? ""
     if (node.type === "mention") return `@${node.attrs?.label ?? ""}`
+    if (node.type === "emoji") return String(node.attrs?.emoji ?? node.attrs?.shortcode ?? "")
     if (node.type === "hardBreak") return null
 
     if (node.type === "codeBlock") {
