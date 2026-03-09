@@ -114,6 +114,14 @@ export class ActivityService {
     effectiveType: string
   ): Promise<Set<string>> {
     const targetIds = new Set<string>()
+    const memberCache = new Map<string, { memberId: string }[]>()
+
+    const getMembers = async (streamId: string) => {
+      if (!memberCache.has(streamId)) {
+        memberCache.set(streamId, await StreamMemberRepository.list(client, { streamId }))
+      }
+      return memberCache.get(streamId)!
+    }
 
     for (const slug of broadcastSlugs) {
       if (slug === "channel") {
@@ -122,14 +130,14 @@ export class ActivityService {
 
         // Target: all members of the root channel (walk up from thread if needed)
         const channelId = rootStream?.id ?? stream.id
-        const members = await StreamMemberRepository.list(client, { streamId: channelId })
+        const members = await getMembers(channelId)
         for (const m of members) targetIds.add(m.memberId)
       } else if (slug === "here") {
         // @here valid in channel-tree and DM-tree streams
         if (effectiveType !== StreamTypes.CHANNEL && effectiveType !== StreamTypes.DM) continue
 
         // Target: direct members of the current stream
-        const members = await StreamMemberRepository.list(client, { streamId: stream.id })
+        const members = await getMembers(stream.id)
         for (const m of members) targetIds.add(m.memberId)
       }
     }

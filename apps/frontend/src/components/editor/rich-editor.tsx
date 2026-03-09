@@ -91,7 +91,9 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Mention, channel, command, and emoji autocomplete
-  const { mentionables } = useMentionables(streamContext)
+  // Unfiltered for type-lookup: ensures all broadcast slugs always resolve correctly
+  const { mentionables } = useMentionables()
+  // Filtered for autocomplete dropdown only
   const { suggestionConfig: mentionConfig, renderMentionList } = useMentionSuggestion(streamContext)
   const { suggestionConfig: channelConfig, renderChannelList } = useChannelSuggestion()
   const { suggestionConfig: commandConfig, renderCommandList } = useCommandSuggestion()
