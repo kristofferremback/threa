@@ -14,6 +14,30 @@ export interface EditorBehaviorsOptions {
   onSubmitRef: { current: () => void }
 }
 
+export function indentSelection(editor: Editor): boolean {
+  if (editor.isActive("codeBlock")) {
+    return handleCodeBlockTab(editor, false)
+  }
+
+  if (editor.isActive("listItem")) {
+    return editor.chain().focus().sinkListItem("listItem").run()
+  }
+
+  return handleTextTab(editor, false)
+}
+
+export function dedentSelection(editor: Editor): boolean {
+  if (editor.isActive("codeBlock")) {
+    return handleCodeBlockTab(editor, true)
+  }
+
+  if (editor.isActive("listItem")) {
+    return editor.chain().focus().liftListItem("listItem").run()
+  }
+
+  return handleTextTab(editor, true)
+}
+
 /**
  * Check if any suggestion popup is currently active.
  * When a suggestion is active, we should let the popup handle Enter/Tab.
@@ -342,25 +366,13 @@ export const EditorBehaviors = Extension.create<EditorBehaviorsOptions>({
           return false
         }
 
-        if (this.editor.isActive("codeBlock")) {
-          handleCodeBlockTab(this.editor, false)
-        } else if (this.editor.isActive("listItem")) {
-          this.editor.chain().focus().sinkListItem("listItem").run()
-        } else {
-          handleTextTab(this.editor, false)
-        }
+        indentSelection(this.editor)
         return true
       },
 
       // Shift+Tab: VS Code-style dedent (always trapped to prevent focus escape)
       "Shift-Tab": () => {
-        if (this.editor.isActive("codeBlock")) {
-          handleCodeBlockTab(this.editor, true)
-        } else if (this.editor.isActive("listItem")) {
-          this.editor.chain().focus().liftListItem("listItem").run()
-        } else {
-          handleTextTab(this.editor, true)
-        }
+        dedentSelection(this.editor)
         return true
       },
 

@@ -1,13 +1,27 @@
-import { useLayoutEffect, useEffect, useState, useCallback } from "react"
+import { useLayoutEffect, useEffect, useState, useCallback, useReducer } from "react"
 import type { Editor } from "@tiptap/react"
 import { useFloating, offset, flip, shift, autoUpdate } from "@floating-ui/react"
-import { Bold, Italic, Strikethrough, Link2, Quote, Code, Braces, List, ListOrdered, ChevronDown } from "lucide-react"
+import {
+  Bold,
+  Italic,
+  Strikethrough,
+  Link2,
+  Quote,
+  Code,
+  Braces,
+  List,
+  ListOrdered,
+  ChevronDown,
+  ListIndentIncrease,
+  ListIndentDecrease,
+} from "lucide-react"
 import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { LinkEditor } from "./link-editor"
+import { indentSelection, dedentSelection, isSuggestionActive } from "./editor-behaviors"
 import { cn } from "@/lib/utils"
 
 interface EditorToolbarProps {
@@ -26,6 +40,8 @@ interface EditorToolbarProps {
   /** Extra content rendered after the formatting buttons (e.g. action buttons, close X).
    *  Only applies when `inline` is true. */
   trailingContent?: React.ReactNode
+  /** Show mobile-only editing controls like indent/dedent in a separate section. */
+  showSpecialInputControls?: boolean
 }
 
 export function EditorToolbar({
@@ -37,6 +53,7 @@ export function EditorToolbar({
   inline = false,
   inlinePosition = "above",
   trailingContent,
+  showSpecialInputControls = false,
 }: EditorToolbarProps) {
   const { refs, floatingStyles, update } = useFloating({
     placement: "top",
@@ -69,9 +86,23 @@ export function EditorToolbar({
     }
   }, [editor, update, isVisible, inline])
 
+  // Re-render when the editor state changes so isActive() reflects current marks/nodes.
+  // Without this, the toolbar only updates when the parent re-renders (e.g. on typing),
+  // causing toggle buttons to appear stale until the next keystroke.
+  const [, forceRender] = useReducer((c: number) => c + 1, 0)
+  useEffect(() => {
+    if (!editor || !isVisible) return
+    editor.on("transaction", forceRender)
+    return () => {
+      editor.off("transaction", forceRender)
+    }
+  }, [editor, isVisible])
+
   if (!editor || !isVisible) return null
 
   const isLinkActive = editor.isActive("link")
+  const isMobileInlineToolbar = inline && inlinePosition === "below"
+  const separatorClassName = cn("mx-1 h-6 shrink-0", isMobileInlineToolbar && "mx-1.5")
 
   const buttons = (
     <>
@@ -79,14 +110,17 @@ export function EditorToolbar({
         editor={editor}
         onOpenChange={onDropdownOpenChange}
         keepEditorFocus={inline && inlinePosition === "below"}
+        roomy={isMobileInlineToolbar}
       />
-      <Separator orientation="vertical" className="mx-1 h-6" />
+      <Separator orientation="vertical" className={separatorClassName} />
       <ToolbarButton
         onAction={() => editor.chain().focus().toggleBold().run()}
         icon={Bold}
         label="Bold"
         shortcut="⌘B"
         isActive={editor.isActive("bold")}
+        roomy={isMobileInlineToolbar}
+        showTooltip={!isMobileInlineToolbar}
       />
       <ToolbarButton
         onAction={() => editor.chain().focus().toggleItalic().run()}
@@ -94,6 +128,8 @@ export function EditorToolbar({
         label="Italic"
         shortcut="⌘I"
         isActive={editor.isActive("italic")}
+        roomy={isMobileInlineToolbar}
+        showTooltip={!isMobileInlineToolbar}
       />
       <ToolbarButton
         onAction={() => editor.chain().focus().toggleStrike().run()}
@@ -101,6 +137,8 @@ export function EditorToolbar({
         label="Strikethrough"
         shortcut="⌘⇧S"
         isActive={editor.isActive("strike")}
+        roomy={isMobileInlineToolbar}
+        showTooltip={!isMobileInlineToolbar}
       />
       <ToolbarButton
         onAction={() => editor.chain().focus().toggleCode().run()}
@@ -108,6 +146,8 @@ export function EditorToolbar({
         label="Inline code"
         shortcut="⌘E"
         isActive={editor.isActive("code")}
+        roomy={isMobileInlineToolbar}
+        showTooltip={!isMobileInlineToolbar}
       />
       <ToolbarButton
         onAction={() => {
@@ -118,25 +158,33 @@ export function EditorToolbar({
         icon={Link2}
         label="Link"
         isActive={isLinkActive || !!linkPopoverOpen}
+        roomy={isMobileInlineToolbar}
+        showTooltip={!isMobileInlineToolbar}
       />
-      <Separator orientation="vertical" className="mx-1 h-6" />
+      <Separator orientation="vertical" className={separatorClassName} />
       <ToolbarButton
         onAction={() => editor.chain().focus().toggleBlockquote().run()}
         icon={Quote}
         label="Quote"
         isActive={editor.isActive("blockquote")}
+        roomy={isMobileInlineToolbar}
+        showTooltip={!isMobileInlineToolbar}
       />
       <ToolbarButton
         onAction={() => editor.chain().focus().toggleBulletList().run()}
         icon={List}
         label="Bullet list"
         isActive={editor.isActive("bulletList")}
+        roomy={isMobileInlineToolbar}
+        showTooltip={!isMobileInlineToolbar}
       />
       <ToolbarButton
         onAction={() => editor.chain().focus().toggleOrderedList().run()}
         icon={ListOrdered}
         label="Numbered list"
         isActive={editor.isActive("orderedList")}
+        roomy={isMobileInlineToolbar}
+        showTooltip={!isMobileInlineToolbar}
       />
       <ToolbarButton
         onAction={() => editor.chain().focus().toggleCodeBlock().run()}
@@ -144,7 +192,32 @@ export function EditorToolbar({
         label="Code block"
         shortcut="⌘⇧C"
         isActive={editor.isActive("codeBlock")}
+        roomy={isMobileInlineToolbar}
+        showTooltip={!isMobileInlineToolbar}
       />
+      {showSpecialInputControls && (
+        <>
+          <Separator orientation="vertical" className={separatorClassName} />
+          <ToolbarButton
+            onAction={() => {
+              if (!isSuggestionActive(editor)) indentSelection(editor)
+            }}
+            icon={ListIndentIncrease}
+            label="Indent"
+            roomy
+            showTooltip={false}
+          />
+          <ToolbarButton
+            onAction={() => {
+              if (!isSuggestionActive(editor)) dedentSelection(editor)
+            }}
+            icon={ListIndentDecrease}
+            label="Dedent"
+            roomy
+            showTooltip={false}
+          />
+        </>
+      )}
     </>
   )
 
@@ -167,12 +240,19 @@ export function EditorToolbar({
         >
           <div className={cn("flex items-center gap-0.5", inlinePosition === "below" ? "pt-1" : "py-1")}>
             {/* Formatting buttons — scroll horizontally when narrow */}
-            <div className="flex items-center gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden min-w-0 shrink">
+            <div
+              data-testid={isMobileInlineToolbar ? "mobile-inline-toolbar-scroll" : undefined}
+              className={cn(
+                "flex min-w-0 items-center gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+                "overscroll-x-contain touch-pan-x",
+                isMobileInlineToolbar ? "grow pb-1 -mb-1 pr-3" : "shrink"
+              )}
+            >
               {buttons}
             </div>
             {trailingContent}
           </div>
-          {!trailingContent && (
+          {!trailingContent && !isMobileInlineToolbar && (
             <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-card to-transparent" />
           )}
         </div>
@@ -211,10 +291,12 @@ function StylePicker({
   editor,
   onOpenChange,
   keepEditorFocus = false,
+  roomy = false,
 }: {
   editor: Editor
   onOpenChange?: (open: boolean) => void
   keepEditorFocus?: boolean
+  roomy?: boolean
 }) {
   let activeLabel = "Normal"
   if (editor.isActive("heading", { level: 1 })) activeLabel = "Heading 1"
@@ -237,7 +319,12 @@ function StylePicker({
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 gap-1 px-2 text-xs font-medium hover:bg-muted"
+            className={cn(
+              "gap-1 font-medium shrink-0",
+              roomy
+                ? "h-9 px-3 text-sm active:bg-muted hover:bg-transparent hover:text-current"
+                : "h-8 px-2 text-xs hover:bg-muted"
+            )}
             tabIndex={-1}
             onPointerDown={(e) => e.preventDefault()}
           >
@@ -325,7 +412,12 @@ function StylePicker({
   return (
     <DropdownMenu onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" className="h-8 gap-1 px-2 text-xs font-medium hover:bg-muted" tabIndex={-1}>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 gap-1 px-2 text-xs font-medium hover:bg-muted shrink-0"
+          tabIndex={-1}
+        >
           {activeLabel}
           <ChevronDown className="h-3 w-3 opacity-60" />
         </Button>
@@ -372,29 +464,59 @@ interface ToolbarButtonProps {
   label: string
   shortcut?: string
   isActive?: boolean
+  roomy?: boolean
+  showTooltip?: boolean
 }
 
-function ToolbarButton({ onAction, icon: Icon, label, shortcut, isActive }: ToolbarButtonProps) {
-  const handlePointerDown = (e: React.PointerEvent) => {
-    e.preventDefault()
-    onAction()
+function ToolbarButton({
+  onAction,
+  icon: Icon,
+  label,
+  shortcut,
+  isActive,
+  roomy = false,
+  showTooltip = true,
+}: ToolbarButtonProps) {
+  // Desktop (non-roomy): fire on pointerdown for snappy interaction.
+  // Mobile (roomy): use mousedown to prevent focus theft without blocking
+  // touch-initiated scroll, then fire the action on click.
+  const handlePointerDown = roomy
+    ? undefined
+    : (e: React.PointerEvent) => {
+        e.preventDefault()
+        onAction()
+      }
+  const handleMouseDown = roomy ? (e: React.MouseEvent) => e.preventDefault() : undefined
+  const handleClick = roomy ? () => onAction() : undefined
+
+  const button = (
+    <Button
+      variant="ghost"
+      size="sm"
+      onPointerDown={handlePointerDown}
+      onMouseDown={handleMouseDown}
+      onClick={handleClick}
+      className={cn(
+        "p-0 shrink-0",
+        roomy ? "h-9 w-9 min-w-9 active:bg-muted hover:bg-transparent hover:text-current" : "h-8 w-8 hover:bg-muted",
+        isActive && "bg-muted-foreground/20 text-foreground",
+        isActive && roomy && "hover:bg-muted-foreground/20"
+      )}
+      tabIndex={-1}
+      aria-label={label}
+      aria-pressed={isActive}
+    >
+      <Icon className={cn("h-4 w-4", isActive && "stroke-[2.5px]")} />
+    </Button>
+  )
+
+  if (!showTooltip) {
+    return button
   }
 
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          onPointerDown={handlePointerDown}
-          className={cn("h-8 w-8 p-0 hover:bg-muted", isActive && "bg-muted-foreground/20 text-foreground")}
-          tabIndex={-1}
-          aria-label={label}
-          aria-pressed={isActive}
-        >
-          <Icon className={cn("h-4 w-4", isActive && "stroke-[2.5px]")} />
-        </Button>
-      </TooltipTrigger>
+      <TooltipTrigger asChild>{button}</TooltipTrigger>
       <TooltipContent side="top" className="text-xs">
         <div className="flex items-center gap-2">
           <span className="font-medium">{label}</span>

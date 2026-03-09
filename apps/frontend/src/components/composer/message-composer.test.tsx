@@ -71,8 +71,29 @@ vi.mock("@/components/editor", () => {
     )
   })
 
-  const EditorToolbar = ({ editor, isVisible }: { editor: { id: string } | null; isVisible: boolean }) =>
-    isVisible ? <div data-testid="mobile-editor-toolbar" data-has-editor={editor ? "yes" : "no"} /> : null
+  const EditorToolbar = ({
+    editor,
+    isVisible,
+    showSpecialInputControls,
+  }: {
+    editor: { id: string } | null
+    isVisible: boolean
+    showSpecialInputControls?: boolean
+  }) =>
+    isVisible ? (
+      <div
+        data-testid="mobile-editor-toolbar"
+        data-has-editor={editor ? "yes" : "no"}
+        data-has-special-input-controls={showSpecialInputControls ? "yes" : "no"}
+      >
+        {showSpecialInputControls && (
+          <>
+            <button type="button">Indent</button>
+            <button type="button">Dedent</button>
+          </>
+        )}
+      </div>
+    ) : null
 
   return { RichEditor, EditorToolbar }
 })
@@ -283,7 +304,7 @@ describe("MessageComposer", () => {
       fireEvent.click(screen.getByText("Type a message..."))
 
       const formatButton = screen.getByRole("button", { name: "Formatting" })
-      fireEvent.pointerDown(formatButton)
+      fireEvent.click(formatButton)
       expect(screen.getByTestId("mobile-editor-toolbar")).toBeInTheDocument()
 
       fireEvent.blur(screen.getByTestId("rich-editor"))
@@ -301,7 +322,7 @@ describe("MessageComposer", () => {
       render(<MessageComposer {...defaultProps} />)
 
       fireEvent.click(screen.getByText("Type a message..."))
-      fireEvent.pointerDown(screen.getByRole("button", { name: "Formatting" }))
+      fireEvent.click(screen.getByRole("button", { name: "Formatting" }))
 
       expect(screen.getByTestId("mobile-editor-toolbar")).toHaveAttribute("data-has-editor", "no")
 
@@ -310,6 +331,19 @@ describe("MessageComposer", () => {
       })
 
       expect(screen.getByTestId("mobile-editor-toolbar")).toHaveAttribute("data-has-editor", "yes")
+    })
+
+    it("shows mobile indent controls in the formatting toolbar", () => {
+      isMobileMockValue = true
+
+      render(<MessageComposer {...defaultProps} />)
+
+      fireEvent.click(screen.getByText("Type a message..."))
+      fireEvent.click(screen.getByRole("button", { name: "Formatting" }))
+
+      expect(screen.getByTestId("mobile-editor-toolbar")).toHaveAttribute("data-has-special-input-controls", "yes")
+      expect(screen.getByRole("button", { name: "Indent" })).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: "Dedent" })).toBeInTheDocument()
     })
   })
 })

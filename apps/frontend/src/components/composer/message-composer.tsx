@@ -165,8 +165,9 @@ export function MessageComposer({
   )
 
   // Build the send mode hint text (reactive to preference changes).
-  // Expanded (fullscreen) mode always uses cmdEnter regardless of user preference.
-  const effectiveSendMode = expanded ? "cmdEnter" : messageSendMode
+  // Expanded (fullscreen) and mobile always use cmdEnter — on mobile the send button
+  // is the only way to send, so Enter just inserts a newline.
+  const effectiveSendMode = expanded || isMobile ? "cmdEnter" : messageSendMode
   const sendHint = useMemo(() => {
     if (effectiveSendMode === "enter") {
       return `Enter to send · Shift+Enter for new line`
@@ -214,7 +215,7 @@ export function MessageComposer({
       imageCount={imageCount}
       placeholder={placeholder}
       disabled={disabled}
-      messageSendMode={messageSendMode}
+      messageSendMode={effectiveSendMode}
       autoFocus={autoFocus}
       scopeId={scopeId}
       staticToolbarOpen={!isMobile && formatOpen}
@@ -244,7 +245,6 @@ export function MessageComposer({
   ) : (
     <Button
       type="button"
-      onPointerDown={(e) => e.preventDefault()}
       onClick={handleSubmit}
       disabled={!canSubmit}
       aria-label={isSubmitting ? submittingLabel : submitLabel}
@@ -537,8 +537,13 @@ export function MessageComposer({
               {sharedEditor}
             </div>
 
-            {/* Bottom action bar — visible on desktop always, on mobile only when focused */}
-            <div className={cn("flex items-center gap-1", isMobile && !mobileFocused && "hidden")}>
+            {/* Bottom action bar — visible on desktop always, on mobile only when focused.
+               onMouseDown preventDefault keeps editor focus on mobile so the virtual keyboard
+               stays open when tapping any button in this bar. */}
+            <div
+              className={cn("flex items-center gap-1", isMobile && !mobileFocused && "hidden")}
+              onMouseDown={(e) => e.preventDefault()}
+            >
               {/* Hint text — desktop only */}
               <span className="text-[11px] text-muted-foreground flex-1 select-none pointer-events-none hidden sm:block">
                 Select text to format
@@ -556,10 +561,7 @@ export function MessageComposer({
                       aria-label={mobileExpanded ? "Minimize editor" : "Expand editor"}
                       aria-pressed={mobileExpanded}
                       className="h-7 w-7 shrink-0"
-                      onPointerDown={(e) => {
-                        e.preventDefault()
-                        setMobileExpanded((v) => !v)
-                      }}
+                      onClick={() => setMobileExpanded((v) => !v)}
                     >
                       {mobileExpanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
                     </Button>
@@ -578,7 +580,6 @@ export function MessageComposer({
                       size="icon"
                       aria-label="Expand to fullscreen editor"
                       className="h-7 w-7 shrink-0"
-                      onPointerDown={(e) => e.preventDefault()}
                       onClick={onExpandClick}
                       disabled={controlsDisabled}
                     >
@@ -601,10 +602,7 @@ export function MessageComposer({
                     aria-label="Formatting"
                     aria-pressed={formatOpen}
                     className={cn("h-7 w-7 shrink-0", formatOpen && "bg-accent text-accent-foreground")}
-                    onPointerDown={(e) => {
-                      e.preventDefault()
-                      setFormatOpen((v) => !v)
-                    }}
+                    onClick={() => setFormatOpen((v) => !v)}
                     disabled={controlsDisabled}
                   >
                     <span className="text-[13px] font-bold leading-none tracking-tight">Aa</span>
@@ -624,10 +622,7 @@ export function MessageComposer({
                     size="icon"
                     aria-label="Insert emoji"
                     className="h-7 w-7 shrink-0"
-                    onPointerDown={(e) => {
-                      e.preventDefault()
-                      richEditorRef.current?.insertEmoji()
-                    }}
+                    onClick={() => richEditorRef.current?.insertEmoji()}
                     disabled={controlsDisabled}
                   >
                     <span className="text-sm leading-none">😊</span>
@@ -647,10 +642,7 @@ export function MessageComposer({
                     size="icon"
                     aria-label="Insert mention"
                     className="h-7 w-7 shrink-0"
-                    onPointerDown={(e) => {
-                      e.preventDefault()
-                      richEditorRef.current?.insertMention()
-                    }}
+                    onClick={() => richEditorRef.current?.insertMention()}
                     disabled={controlsDisabled}
                   >
                     <AtSign className="h-4 w-4" />
@@ -670,10 +662,7 @@ export function MessageComposer({
                     size="icon"
                     aria-label="Insert command"
                     className="h-7 w-7 shrink-0 hidden sm:inline-flex"
-                    onPointerDown={(e) => {
-                      e.preventDefault()
-                      richEditorRef.current?.insertSlash()
-                    }}
+                    onClick={() => richEditorRef.current?.insertSlash()}
                     disabled={controlsDisabled}
                   >
                     <Slash className="h-4 w-4" />
@@ -717,6 +706,7 @@ export function MessageComposer({
                 inlinePosition="below"
                 linkPopoverOpen={mobileLinkPopoverOpen}
                 onLinkPopoverOpenChange={setMobileLinkPopoverOpen}
+                showSpecialInputControls
               />
             )}
           </div>
