@@ -95,7 +95,20 @@ vi.mock("@/components/editor", () => {
       </div>
     ) : null
 
-  return { RichEditor, EditorToolbar }
+  const EditorActionBar = (props: Record<string, unknown>) => (
+    <div data-testid="editor-action-bar">
+      <button
+        type="button"
+        aria-label="Formatting"
+        onClick={() => (props.onFormatOpenChange as (v: boolean) => void)!(!(props.formatOpen as boolean))}
+      >
+        Aa
+      </button>
+      {props.trailingContent as any}
+    </div>
+  )
+
+  return { RichEditor, EditorToolbar, EditorActionBar }
 })
 
 const EMPTY_DOC: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
