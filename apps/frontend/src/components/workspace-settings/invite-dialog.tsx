@@ -1,6 +1,12 @@
 import { useState } from "react"
 import { useMutation } from "@tanstack/react-query"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import {
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogHeader,
+  ResponsiveDialogTitle,
+  ResponsiveDialogFooter,
+} from "@/components/ui/responsive-dialog"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -43,14 +49,14 @@ export function InviteDialog({ workspaceId, open, onOpenChange, onSuccess }: Inv
   }
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Invite Users</DialogTitle>
-        </DialogHeader>
+    <ResponsiveDialog open={open} onOpenChange={(o) => !o && handleClose()}>
+      <ResponsiveDialogContent desktopClassName="max-w-md">
+        <ResponsiveDialogHeader>
+          <ResponsiveDialogTitle>Invite Users</ResponsiveDialogTitle>
+        </ResponsiveDialogHeader>
 
         {result ? (
-          <div className="space-y-4">
+          <div className="space-y-4 px-4 sm:px-6">
             {result.sent.length > 0 && (
               <div className="space-y-1">
                 <p className="text-sm font-medium">
@@ -75,12 +81,14 @@ export function InviteDialog({ workspaceId, open, onOpenChange, onSuccess }: Inv
               </div>
             )}
 
-            <DialogFooter>
-              <Button onClick={handleClose}>Done</Button>
-            </DialogFooter>
+            <ResponsiveDialogFooter>
+              <Button onClick={handleClose} className="sm:w-auto w-full">
+                Done
+              </Button>
+            </ResponsiveDialogFooter>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-4 px-4 sm:px-6">
             <div className="space-y-2">
               <Label htmlFor="emails">Email addresses</Label>
               <Textarea
@@ -105,17 +113,17 @@ export function InviteDialog({ workspaceId, open, onOpenChange, onSuccess }: Inv
               </Select>
             </div>
 
-            <DialogFooter>
+            <ResponsiveDialogFooter>
               <Button variant="outline" onClick={handleClose}>
                 Cancel
               </Button>
               <Button onClick={() => sendMutation.mutate()} disabled={sendMutation.isPending || !emailsText.trim()}>
                 {sendMutation.isPending ? "Sending..." : "Send Invitations"}
               </Button>
-            </DialogFooter>
+            </ResponsiveDialogFooter>
           </div>
         )}
-      </DialogContent>
-    </Dialog>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   )
 }

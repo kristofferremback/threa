@@ -3,15 +3,15 @@ import { useParams, useNavigate, Link } from "react-router-dom"
 import { FileText, Hash, MessageSquare, Trash2, FileEdit, ArrowLeft } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
+  ResponsiveAlertDialog,
+  ResponsiveAlertDialogAction,
+  ResponsiveAlertDialogCancel,
+  ResponsiveAlertDialogContent,
+  ResponsiveAlertDialogDescription,
+  ResponsiveAlertDialogFooter,
+  ResponsiveAlertDialogHeader,
+  ResponsiveAlertDialogTitle,
+} from "@/components/ui/responsive-alert-dialog"
 import { ItemList, type QuickSwitcherItem } from "@/components/quick-switcher"
 import { useAllDrafts, type UnifiedDraft, type DraftType } from "@/hooks"
 
@@ -143,20 +143,20 @@ export function DraftsPage() {
       </div>
 
       {/* Delete confirmation dialog */}
-      <AlertDialog open={!!draftToDelete} onOpenChange={(open) => !open && handleCancelDelete()}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete this draft?</AlertDialogTitle>
-            <AlertDialogDescription>
+      <ResponsiveAlertDialog open={!!draftToDelete} onOpenChange={(open) => !open && handleCancelDelete()}>
+        <ResponsiveAlertDialogContent>
+          <ResponsiveAlertDialogHeader>
+            <ResponsiveAlertDialogTitle>Delete this draft?</ResponsiveAlertDialogTitle>
+            <ResponsiveAlertDialogDescription>
               This action cannot be undone. The draft will be permanently deleted.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmDelete}>Delete</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </ResponsiveAlertDialogDescription>
+          </ResponsiveAlertDialogHeader>
+          <ResponsiveAlertDialogFooter>
+            <ResponsiveAlertDialogCancel>Cancel</ResponsiveAlertDialogCancel>
+            <ResponsiveAlertDialogAction onClick={handleConfirmDelete}>Delete</ResponsiveAlertDialogAction>
+          </ResponsiveAlertDialogFooter>
+        </ResponsiveAlertDialogContent>
+      </ResponsiveAlertDialog>
     </>
   )
 }

@@ -28,7 +28,7 @@ export function ImageLightbox({ isOpen, onClose, imageUrl, filename }: ImageLigh
           <Button
             variant="ghost"
             size="icon"
-            className="absolute top-2 right-2 z-10 text-white hover:bg-white/20"
+            className="absolute top-2 right-2 z-10 h-10 w-10 text-white hover:bg-white/20 rounded-full"
             onClick={onClose}
           >
             <X className="h-5 w-5" />

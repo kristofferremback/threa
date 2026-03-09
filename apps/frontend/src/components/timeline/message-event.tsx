@@ -428,6 +428,7 @@ function SentMessageEvent({
           onOpenChange={setHistoryOpen}
           messageId={payload.messageId}
           workspaceId={workspaceId}
+          messageCreatedAt={event.createdAt}
           currentContent={{
             contentMarkdown: payload.contentMarkdown,
             editedAt: payload.editedAt,

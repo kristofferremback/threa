@@ -1,6 +1,11 @@
 import { useMemo } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import {
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogHeader,
+  ResponsiveDialogTitle,
+} from "@/components/ui/responsive-dialog"
 import { ResponsiveTabs } from "@/components/ui/responsive-tabs"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
 import { useStreamSettings, STREAM_SETTINGS_TABS, type StreamSettingsTab } from "./use-stream-settings"
@@ -82,14 +87,22 @@ export function StreamSettingsDialog({ workspaceId }: StreamSettingsDialogProps)
   }
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && closeStreamSettings()}>
-      <DialogContent className="max-w-2xl max-h-[85vh] max-sm:max-h-none sm:flex flex-col overflow-hidden">
-        <DialogHeader>
-          <DialogTitle>{streamName} Settings</DialogTitle>
-        </DialogHeader>
+    <ResponsiveDialog open={isOpen} onOpenChange={(open) => !open && closeStreamSettings()}>
+      <ResponsiveDialogContent
+        desktopClassName="max-w-2xl max-h-[85vh] sm:flex flex-col overflow-hidden"
+        drawerClassName="flex flex-col"
+        hideCloseButton
+      >
+        <ResponsiveDialogHeader className="px-4 sm:px-6 pt-4 sm:pt-6">
+          <ResponsiveDialogTitle>{streamName} Settings</ResponsiveDialogTitle>
+        </ResponsiveDialogHeader>
 
         {resolvedStream && streamId && currentUserId ? (
-          <Tabs value={effectiveTab} onValueChange={setTab} className="flex-1 flex flex-col overflow-hidden">
+          <Tabs
+            value={effectiveTab}
+            onValueChange={setTab}
+            className="flex-1 flex flex-col overflow-hidden px-4 sm:px-6"
+          >
             <ResponsiveTabs
               tabs={availableTabs}
               labels={TAB_LABELS}
@@ -98,7 +111,7 @@ export function StreamSettingsDialog({ workspaceId }: StreamSettingsDialogProps)
               columns={availableTabs.length}
             />
 
-            <div className="flex-1 overflow-y-auto mt-4 pr-2 scrollbar-thin">
+            <div className="flex-1 overflow-y-auto mt-4 pr-2 pb-4 sm:pb-6 scrollbar-thin">
               <TabsContent value="general" className="mt-0">
                 <GeneralTab
                   workspaceId={workspaceId}
@@ -118,7 +131,7 @@ export function StreamSettingsDialog({ workspaceId }: StreamSettingsDialogProps)
         ) : (
           <p className="text-sm text-muted-foreground p-4">Loading stream settings...</p>
         )}
-      </DialogContent>
-    </Dialog>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   )
 }

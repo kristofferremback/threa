@@ -1,7 +1,13 @@
 import { useState, useCallback, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+import {
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogHeader,
+  ResponsiveDialogTitle,
+  ResponsiveDialogDescription,
+} from "@/components/ui/responsive-dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -19,20 +25,20 @@ import type { Visibility, WorkspaceBootstrap } from "@threa/types"
 
 function ChannelDialogHeader() {
   return (
-    <div className="px-6 pt-6 pb-4">
-      <DialogHeader>
+    <div className="px-4 sm:px-6 pt-4 sm:pt-6 pb-4">
+      <ResponsiveDialogHeader>
         <div className="flex items-center gap-2.5">
           <div className="flex items-center justify-center h-9 w-9 rounded-lg bg-primary/10">
             <Hash className="h-4.5 w-4.5 text-primary" />
           </div>
           <div>
-            <DialogTitle className="text-base">Create a channel</DialogTitle>
-            <DialogDescription className="text-xs mt-0.5">
+            <ResponsiveDialogTitle className="text-base">Create a channel</ResponsiveDialogTitle>
+            <ResponsiveDialogDescription className="text-xs mt-0.5">
               Channels organize conversations around a topic
-            </DialogDescription>
+            </ResponsiveDialogDescription>
           </div>
         </div>
-      </DialogHeader>
+      </ResponsiveDialogHeader>
     </div>
   )
 }
@@ -104,7 +110,7 @@ function DialogActions({
   isPending: boolean
 }) {
   return (
-    <div className="border-t border-border px-6 py-4 flex items-center justify-end gap-2 bg-muted/30">
+    <div className="border-t border-border px-4 sm:px-6 py-4 flex items-center justify-end gap-2 bg-muted/30">
       <Button variant="outline" size="sm" onClick={onCancel}>
         Cancel
       </Button>
@@ -207,11 +213,15 @@ export function CreateChannelDialog({ workspaceId }: CreateChannelDialogProps) {
   const canSubmit = slug.length > 0 && slugValid && !createStream.isPending
 
   return (
-    <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-[480px] gap-0 max-sm:gap-0 p-0 max-sm:p-0 overflow-hidden max-sm:overflow-hidden">
+    <ResponsiveDialog open={isOpen} onOpenChange={handleOpenChange}>
+      <ResponsiveDialogContent
+        desktopClassName="max-w-[480px] gap-0 p-0 overflow-hidden"
+        drawerClassName="gap-0 p-0 overflow-hidden"
+        hideCloseButton
+      >
         <ChannelDialogHeader />
         <div className="border-t border-border" />
-        <div className="pl-6 pr-4 py-5 space-y-5 max-h-[60vh] max-sm:max-h-none max-sm:flex-1 max-sm:min-h-0 overflow-y-auto scrollbar-thin">
+        <div className="px-4 sm:pl-6 sm:pr-4 py-5 space-y-5 sm:max-h-[60vh] flex-1 min-h-0 overflow-y-auto scrollbar-thin">
           <SlugField workspaceId={workspaceId} value={slug} onChange={setSlug} onValidityChange={setSlugValid} />
           <VisibilityField value={visibility} onChange={setVisibility} />
           <DescriptionField value={description} onChange={setDescription} />
@@ -230,7 +240,7 @@ export function CreateChannelDialog({ workspaceId }: CreateChannelDialogProps) {
           canSubmit={canSubmit}
           isPending={createStream.isPending}
         />
-      </DialogContent>
-    </Dialog>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   )
 }

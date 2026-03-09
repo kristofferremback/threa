@@ -7,15 +7,15 @@ import { VisibilityPicker } from "@/components/ui/visibility-picker"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
+  ResponsiveAlertDialog,
+  ResponsiveAlertDialogAction,
+  ResponsiveAlertDialogCancel,
+  ResponsiveAlertDialogContent,
+  ResponsiveAlertDialogDescription,
+  ResponsiveAlertDialogFooter,
+  ResponsiveAlertDialogHeader,
+  ResponsiveAlertDialogTitle,
+} from "@/components/ui/responsive-alert-dialog"
 import { ChannelSlugInput } from "./channel-slug-input"
 import { useUpdateStream, useArchiveStream, useUnarchiveStream, useSetNotificationLevel } from "@/hooks"
 import {
@@ -168,22 +168,22 @@ function VisibilitySection({ workspaceId, stream }: { workspaceId: string; strea
       <Label className="text-sm font-medium">Visibility</Label>
       <VisibilityPicker value={stream.visibility} onChange={handleVisibilityChange} />
 
-      <AlertDialog open={confirmOpen} onOpenChange={handleCancel}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Change visibility?</AlertDialogTitle>
-            <AlertDialogDescription>
+      <ResponsiveAlertDialog open={confirmOpen} onOpenChange={handleCancel}>
+        <ResponsiveAlertDialogContent>
+          <ResponsiveAlertDialogHeader>
+            <ResponsiveAlertDialogTitle>Change visibility?</ResponsiveAlertDialogTitle>
+            <ResponsiveAlertDialogDescription>
               {pendingVisibility === Visibilities.PRIVATE
                 ? "Making this channel private will hide it from non-members. They won't be able to find or join it."
                 : "Making this channel public will make it visible to all workspace users. Anyone will be able to join."}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirm}>Confirm</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </ResponsiveAlertDialogDescription>
+          </ResponsiveAlertDialogHeader>
+          <ResponsiveAlertDialogFooter>
+            <ResponsiveAlertDialogCancel>Cancel</ResponsiveAlertDialogCancel>
+            <ResponsiveAlertDialogAction onClick={handleConfirm}>Confirm</ResponsiveAlertDialogAction>
+          </ResponsiveAlertDialogFooter>
+        </ResponsiveAlertDialogContent>
+      </ResponsiveAlertDialog>
     </div>
   )
 }
@@ -360,24 +360,26 @@ function ArchiveSection({
         </div>
       </div>
 
-      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
+      <ResponsiveAlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <ResponsiveAlertDialogContent>
+          <ResponsiveAlertDialogHeader>
+            <ResponsiveAlertDialogTitle>
               {isArchived ? "Unarchive" : "Archive"} {streamName}?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
+            </ResponsiveAlertDialogTitle>
+            <ResponsiveAlertDialogDescription>
               {isArchived
                 ? "This stream will be visible in the sidebar again."
                 : "This stream will be hidden from the sidebar. You can unarchive it later."}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleAction}>{isArchived ? "Unarchive" : "Archive"}</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </ResponsiveAlertDialogDescription>
+          </ResponsiveAlertDialogHeader>
+          <ResponsiveAlertDialogFooter>
+            <ResponsiveAlertDialogCancel>Cancel</ResponsiveAlertDialogCancel>
+            <ResponsiveAlertDialogAction onClick={handleAction}>
+              {isArchived ? "Unarchive" : "Archive"}
+            </ResponsiveAlertDialogAction>
+          </ResponsiveAlertDialogFooter>
+        </ResponsiveAlertDialogContent>
+      </ResponsiveAlertDialog>
     </div>
   )
 }

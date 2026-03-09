@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { useNavigate } from "react-router-dom"
 import { Search, Terminal, FileText } from "lucide-react"
-import { Dialog, DialogContent } from "@/components/ui/dialog"
+import { ResponsiveDialog, ResponsiveDialogContent } from "@/components/ui/responsive-dialog"
 import { useWorkspaceBootstrap, useDraftScratchpads } from "@/hooks"
 import { useSettings } from "@/contexts"
 import { useUser } from "@/auth"
@@ -274,10 +274,12 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
   const ModeIcon = inputRequest?.icon ?? MODE_ICONS[mode]
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
+    <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+      <ResponsiveDialogContent
         ref={dialogRef}
-        className="overflow-hidden p-0 max-sm:p-0 max-sm:gap-0 max-sm:overflow-hidden shadow-lg sm:!fixed sm:!top-[20%] sm:!translate-y-0 sm:max-w-[600px] sm:rounded-2xl sm:border sm:p-0"
+        desktopClassName="overflow-hidden p-0 gap-0 shadow-lg sm:!fixed sm:!top-[20%] sm:!translate-y-0 sm:max-w-[600px] sm:rounded-2xl sm:border"
+        drawerClassName="overflow-hidden p-0"
+        hideCloseButton
         onPointerDownOutside={(e) => {
           // Prevent closing when clicking on suggestion popover (rendered via portal)
           const target = e.target as HTMLElement
@@ -362,8 +364,21 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
           }
         }}
       >
-        {/* Input area — extra right padding on mobile for close button */}
-        <div className="p-4 max-sm:pr-10 border-b border-border">
+        {/* Mobile: mode tabs above the input for better hierarchy */}
+        {!inputRequest && (
+          <div className="sm:hidden">
+            <ModeTabs
+              currentMode={mode}
+              onModeChange={handleModeChange}
+              focusedTabIndex={focusedTabIndex}
+              onFocusedTabIndexChange={setFocusedTabIndex}
+              onTabSelect={focusInput}
+            />
+          </div>
+        )}
+
+        {/* Input area */}
+        <div className="p-4 border-b border-border">
           <div className="flex items-center gap-3 px-4 py-3 rounded-[10px] border border-border bg-background transition-all focus-within:border-primary/60 focus-within:shadow-[0_0_0_2px_hsl(var(--primary)/0.06)]">
             <ModeIcon className="h-4 w-4 shrink-0 opacity-50" />
             {inputRequest ? (
@@ -409,15 +424,17 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
           </div>
         </div>
 
-        {/* Mode tabs - only show when not in input request mode */}
+        {/* Desktop: mode tabs below the input (keyboard-navigable) */}
         {!inputRequest && (
-          <ModeTabs
-            currentMode={mode}
-            onModeChange={handleModeChange}
-            focusedTabIndex={focusedTabIndex}
-            onFocusedTabIndexChange={setFocusedTabIndex}
-            onTabSelect={focusInput}
-          />
+          <div className="hidden sm:block">
+            <ModeTabs
+              currentMode={mode}
+              onModeChange={handleModeChange}
+              focusedTabIndex={focusedTabIndex}
+              onFocusedTabIndexChange={setFocusedTabIndex}
+              onTabSelect={focusInput}
+            />
+          </div>
         )}
 
         {/* Hint from input request */}
@@ -467,7 +484,7 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
             Tip: Use <kbd className="px-1 py-0.5 bg-muted rounded text-[10px]">Ctrl+[</kbd> or click outside to close
           </div>
         )}
-      </DialogContent>
-    </Dialog>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   )
 }
