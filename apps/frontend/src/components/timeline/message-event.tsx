@@ -201,9 +201,10 @@ function SentMessageEvent({
     setIsEditing(true)
     if (isMobile) {
       inlineEdit?.setEditingInline(true)
-      requestAnimationFrame(() => {
-        containerRef.current?.scrollIntoView({ block: "start", behavior: "smooth" })
-      })
+      // Scroll immediately and again after the keyboard opens and re-layouts
+      const scroll = () => containerRef.current?.scrollIntoView({ block: "start", behavior: "smooth" })
+      requestAnimationFrame(scroll)
+      setTimeout(scroll, 400)
     }
   }, [isMobile, inlineEdit])
 

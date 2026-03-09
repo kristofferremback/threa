@@ -56,12 +56,30 @@ export function MessageEditForm({
     }
   }, [isMobile])
 
-  // Scroll into view when mobile expansion toggles on
+  // When expanded on mobile: lock the scroll container and size the editor to fill it
   useEffect(() => {
-    if (mobileExpanded && isMobile) {
-      requestAnimationFrame(() => {
-        wrapperRef.current?.scrollIntoView({ block: "start", behavior: "smooth" })
-      })
+    if (!mobileExpanded || !isMobile) return
+    const wrapper = wrapperRef.current
+    if (!wrapper) return
+
+    const scrollContainer = wrapper.closest<HTMLElement>(".overflow-y-auto")
+    if (!scrollContainer) return
+
+    // Scroll the edit form to the top of the scroll container (instant — we lock right after)
+    wrapper.scrollIntoView({ block: "start" })
+
+    // Lock scrolling and size the editor to fill the visible scroll container
+    requestAnimationFrame(() => {
+      scrollContainer.style.overflow = "hidden"
+      const height = scrollContainer.clientHeight
+      wrapper.style.minHeight = `${height}px`
+      wrapper.style.maxHeight = `${height}px`
+    })
+
+    return () => {
+      scrollContainer.style.overflow = ""
+      wrapper.style.minHeight = ""
+      wrapper.style.maxHeight = ""
     }
   }, [mobileExpanded, isMobile])
 
@@ -163,13 +181,7 @@ export function MessageEditForm({
 
   if (isMobile) {
     return (
-      <div
-        ref={wrapperRef}
-        className={cn(
-          "flex flex-col scroll-mt-12 transition-[max-height,min-height] duration-200 ease-out",
-          mobileExpanded ? "max-h-[75dvh] min-h-[75dvh]" : "max-h-none min-h-0"
-        )}
-      >
+      <div ref={wrapperRef} className="flex flex-col scroll-mt-12">
         <div
           data-inline-edit
           className={cn(
