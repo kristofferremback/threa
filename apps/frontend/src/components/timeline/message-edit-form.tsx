@@ -150,7 +150,7 @@ export function MessageEditForm({
       <Drawer
         open
         onOpenChange={(open) => {
-          if (!open) onCancel()
+          if (!open) setTimeout(onCancel, 300)
         }}
       >
         <DrawerContent className={mobileExpanded ? "h-[100dvh] max-h-[100dvh]" : "max-h-[85dvh]"}>
@@ -172,6 +172,7 @@ export function MessageEditForm({
                 onChange={setContentJson}
                 onSubmit={handleSubmit}
                 placeholder="Edit message..."
+                messageSendMode="cmdEnter"
                 autoFocus
                 disableSelectionToolbar
               />

@@ -219,6 +219,7 @@ function SentMessageEvent({
     setIsEditing(false)
     if (isMobile) {
       inlineEdit?.setEditingInline(false)
+      return
     }
     requestAnimationFrame(() => {
       const zone = containerRef.current?.closest<HTMLElement>("[data-editor-zone]")
