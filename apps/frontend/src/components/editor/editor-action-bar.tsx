@@ -104,10 +104,8 @@ export function EditorActionBar({
             aria-label="Formatting"
             aria-pressed={formatOpen}
             className={cn("h-7 w-7 shrink-0", formatOpen && "bg-accent text-accent-foreground")}
-            onPointerDown={(e) => {
-              e.preventDefault()
-              onFormatOpenChange(!formatOpen)
-            }}
+            onPointerDown={(e) => e.preventDefault()}
+            onClick={() => onFormatOpenChange(!formatOpen)}
             disabled={disabled}
           >
             <span className="text-[13px] font-bold leading-none tracking-tight">Aa</span>

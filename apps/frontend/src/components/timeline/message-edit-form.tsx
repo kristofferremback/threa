@@ -50,6 +50,7 @@ export function MessageEditForm({
   const [mobileToolbarEditor, setMobileToolbarEditor] = useState<Editor | null>(null)
 
   useEffect(() => {
+    if (isMobile) return // vaul handles Escape via onOpenChange
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault()
@@ -58,7 +59,7 @@ export function MessageEditForm({
     }
     document.addEventListener("keydown", handleKeyDown)
     return () => document.removeEventListener("keydown", handleKeyDown)
-  }, [onCancel])
+  }, [isMobile, onCancel])
 
   const setRichEditorHandle = useCallback((handle: RichEditorHandle | null) => {
     richEditorRef.current = handle
@@ -164,7 +165,6 @@ export function MessageEditForm({
             <div
               data-inline-edit
               className="flex-1 min-h-0 overflow-y-auto [&_.tiptap]:!pt-0 [&_.tiptap_p]:!leading-relaxed [&_.tiptap]:max-h-none"
-              onMouseDown={(e) => e.preventDefault()}
             >
               <RichEditor
                 ref={setRichEditorHandle}
@@ -180,7 +180,7 @@ export function MessageEditForm({
           </div>
 
           {/* Action bar + toolbar at the bottom of the drawer */}
-          <div className="px-4 pb-[max(8px,env(safe-area-inset-bottom))]">
+          <div className="px-4 pb-[max(8px,env(safe-area-inset-bottom))]" onMouseDown={(e) => e.preventDefault()}>
             <EditorActionBar
               editorHandle={richEditorRef.current}
               disabled={isSaving}
