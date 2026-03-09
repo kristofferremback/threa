@@ -107,9 +107,13 @@ const ResponsiveDialogContent = React.forwardRef<HTMLDivElement, ResponsiveDialo
     const isMobile = useIsMobile()
 
     if (isMobile) {
-      // DrawerContent already renders its own Portal + Overlay internally
+      // DrawerContent already renders its own Portal + Overlay internally.
+      // h-[100dvh] is required so vaul's transform-based snap point positioning
+      // works correctly — the drawer must be full viewport height so that
+      // translate3d(0, offset, 0) controls the visible portion (e.g. 80% at 0.8 snap).
+      // Without it, h-auto makes the drawer content-dependent and shorter than expected.
       return (
-        <DrawerContent ref={ref} className={cn(drawerClassName, className)} {...props}>
+        <DrawerContent ref={ref} className={cn("h-[100dvh]", drawerClassName, className)} {...props}>
           {children}
         </DrawerContent>
       )

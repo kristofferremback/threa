@@ -50,7 +50,7 @@ export function SettingsDialog() {
         <Tabs
           value={activeTab}
           onValueChange={(value) => setActiveTab(value as SettingsTab)}
-          className="flex-1 flex flex-col overflow-hidden px-4 sm:px-6"
+          className="flex-1 flex flex-col min-h-0 px-4 sm:px-6"
         >
           <ResponsiveTabs
             tabs={SETTINGS_TABS}

@@ -98,11 +98,7 @@ export function StreamSettingsDialog({ workspaceId }: StreamSettingsDialogProps)
         </ResponsiveDialogHeader>
 
         {resolvedStream && streamId && currentUserId ? (
-          <Tabs
-            value={effectiveTab}
-            onValueChange={setTab}
-            className="flex-1 flex flex-col overflow-hidden px-4 sm:px-6"
-          >
+          <Tabs value={effectiveTab} onValueChange={setTab} className="flex-1 flex flex-col min-h-0 px-4 sm:px-6">
             <ResponsiveTabs
               tabs={availableTabs}
               labels={TAB_LABELS}
