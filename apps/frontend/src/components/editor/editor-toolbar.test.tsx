@@ -80,16 +80,23 @@ describe("EditorToolbar", () => {
     expect(container.querySelector(".bg-gradient-to-l")).toBeNull()
   })
 
-  it("stops touch propagation from the mobile scroll container", () => {
+  it("neutralizes ghost hover and uses active:bg-muted for mobile toolbar buttons", () => {
     const editor = createEditorStub()
     render(<EditorToolbar editor={editor} isVisible inline inlinePosition="below" showSpecialInputControls />)
 
-    const scrollContainer = screen.getByTestId("mobile-inline-toolbar-scroll")
-    const event = new Event("touchstart", { bubbles: true, cancelable: true })
-    const stopPropagation = vi.spyOn(event, "stopPropagation")
+    const boldButton = screen.getByRole("button", { name: "Bold" })
+    expect(boldButton.className).toContain("active:bg-muted")
+    expect(boldButton.className).toContain("hover:bg-transparent")
+    expect(boldButton.className).not.toContain("hover:bg-muted")
+  })
 
-    fireEvent(scrollContainer, event)
+  it("preserves toggled-on background through hover for mobile toolbar buttons", () => {
+    const editor = createEditorStub()
+    vi.mocked(editor.isActive).mockImplementation((type) => type === "bold")
+    render(<EditorToolbar editor={editor} isVisible inline inlinePosition="below" showSpecialInputControls />)
 
-    expect(stopPropagation).toHaveBeenCalled()
+    const boldButton = screen.getByRole("button", { name: "Bold" })
+    expect(boldButton.className).toContain("bg-muted-foreground/20")
+    expect(boldButton.className).toContain("hover:bg-muted-foreground/20")
   })
 })

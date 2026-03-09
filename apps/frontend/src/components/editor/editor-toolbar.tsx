@@ -1,4 +1,4 @@
-import { useLayoutEffect, useEffect, useState, useCallback } from "react"
+import { useLayoutEffect, useEffect, useState, useCallback, useReducer } from "react"
 import type { Editor } from "@tiptap/react"
 import { useFloating, offset, flip, shift, autoUpdate } from "@floating-ui/react"
 import {
@@ -86,15 +86,23 @@ export function EditorToolbar({
     }
   }, [editor, update, isVisible, inline])
 
+  // Re-render when the editor state changes so isActive() reflects current marks/nodes.
+  // Without this, the toolbar only updates when the parent re-renders (e.g. on typing),
+  // causing toggle buttons to appear stale until the next keystroke.
+  const [, forceRender] = useReducer((c: number) => c + 1, 0)
+  useEffect(() => {
+    if (!editor || !isVisible) return
+    editor.on("transaction", forceRender)
+    return () => {
+      editor.off("transaction", forceRender)
+    }
+  }, [editor, isVisible])
+
   if (!editor || !isVisible) return null
 
   const isLinkActive = editor.isActive("link")
   const isMobileInlineToolbar = inline && inlinePosition === "below"
   const separatorClassName = cn("mx-1 h-6 shrink-0", isMobileInlineToolbar && "mx-1.5")
-  const stopMobileToolbarTouchPropagation = (e: React.TouchEvent) => {
-    if (!isMobileInlineToolbar) return
-    e.stopPropagation()
-  }
 
   const buttons = (
     <>
@@ -230,13 +238,10 @@ export function EditorToolbar({
             {/* Formatting buttons — scroll horizontally when narrow */}
             <div
               data-testid={isMobileInlineToolbar ? "mobile-inline-toolbar-scroll" : undefined}
-              onTouchStart={stopMobileToolbarTouchPropagation}
-              onTouchMove={stopMobileToolbarTouchPropagation}
-              onTouchEnd={stopMobileToolbarTouchPropagation}
               className={cn(
                 "flex min-w-0 items-center gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
                 "overscroll-x-contain touch-pan-x",
-                isMobileInlineToolbar ? "shrink-0 grow snap-x snap-mandatory pb-1 -mb-1 pr-3" : "shrink"
+                isMobileInlineToolbar ? "grow pb-1 -mb-1 pr-3" : "shrink"
               )}
             >
               {buttons}
@@ -311,12 +316,13 @@ function StylePicker({
             variant="ghost"
             size="sm"
             className={cn(
-              "gap-1 font-medium shrink-0 snap-start",
-              roomy ? "active:bg-muted" : "hover:bg-muted",
-              roomy ? "h-9 px-3 text-sm" : "h-8 px-2 text-xs"
+              "gap-1 font-medium shrink-0",
+              roomy
+                ? "h-9 px-3 text-sm active:bg-muted hover:bg-transparent hover:text-current"
+                : "h-8 px-2 text-xs hover:bg-muted"
             )}
             tabIndex={-1}
-            onPointerDown={roomy ? undefined : (e) => e.preventDefault()}
+            onPointerDown={(e) => e.preventDefault()}
           >
             {activeLabel}
             <ChevronDown className="h-3 w-3 opacity-60" />
@@ -467,28 +473,30 @@ function ToolbarButton({
   roomy = false,
   showTooltip = true,
 }: ToolbarButtonProps) {
-  const handlePointerDown = (e: React.PointerEvent) => {
-    if (roomy) return
-    e.preventDefault()
-    onAction()
-  }
-
-  const handleClick = (e: React.MouseEvent) => {
-    if (!roomy) return
-    e.preventDefault()
-    onAction()
-  }
+  // Desktop (non-roomy): fire on pointerdown for snappy interaction.
+  // Mobile (roomy): use mousedown to prevent focus theft without blocking
+  // touch-initiated scroll, then fire the action on click.
+  const handlePointerDown = roomy
+    ? undefined
+    : (e: React.PointerEvent) => {
+        e.preventDefault()
+        onAction()
+      }
+  const handleMouseDown = roomy ? (e: React.MouseEvent) => e.preventDefault() : undefined
+  const handleClick = roomy ? () => onAction() : undefined
 
   const button = (
     <Button
       variant="ghost"
       size="sm"
       onPointerDown={handlePointerDown}
+      onMouseDown={handleMouseDown}
       onClick={handleClick}
       className={cn(
-        "p-0 shrink-0 snap-start",
-        roomy ? "h-9 w-9 min-w-9 active:bg-muted" : "h-8 w-8 hover:bg-muted",
-        isActive && "bg-muted-foreground/20 text-foreground"
+        "p-0 shrink-0",
+        roomy ? "h-9 w-9 min-w-9 active:bg-muted hover:bg-transparent hover:text-current" : "h-8 w-8 hover:bg-muted",
+        isActive && "bg-muted-foreground/20 text-foreground",
+        isActive && roomy && "hover:bg-muted-foreground/20"
       )}
       tabIndex={-1}
       aria-label={label}

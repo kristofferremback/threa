@@ -304,7 +304,7 @@ describe("MessageComposer", () => {
       fireEvent.click(screen.getByText("Type a message..."))
 
       const formatButton = screen.getByRole("button", { name: "Formatting" })
-      fireEvent.pointerDown(formatButton)
+      fireEvent.click(formatButton)
       expect(screen.getByTestId("mobile-editor-toolbar")).toBeInTheDocument()
 
       fireEvent.blur(screen.getByTestId("rich-editor"))
@@ -322,7 +322,7 @@ describe("MessageComposer", () => {
       render(<MessageComposer {...defaultProps} />)
 
       fireEvent.click(screen.getByText("Type a message..."))
-      fireEvent.pointerDown(screen.getByRole("button", { name: "Formatting" }))
+      fireEvent.click(screen.getByRole("button", { name: "Formatting" }))
 
       expect(screen.getByTestId("mobile-editor-toolbar")).toHaveAttribute("data-has-editor", "no")
 
@@ -339,7 +339,7 @@ describe("MessageComposer", () => {
       render(<MessageComposer {...defaultProps} />)
 
       fireEvent.click(screen.getByText("Type a message..."))
-      fireEvent.pointerDown(screen.getByRole("button", { name: "Formatting" }))
+      fireEvent.click(screen.getByRole("button", { name: "Formatting" }))
 
       expect(screen.getByTestId("mobile-editor-toolbar")).toHaveAttribute("data-has-special-input-controls", "yes")
       expect(screen.getByRole("button", { name: "Indent" })).toBeInTheDocument()
