@@ -198,12 +198,13 @@ export function MessageComposer({
   }, [])
 
   // Markdown preview for the collapsed mobile single-line view.
-  // Fenced code blocks are stripped — they can't meaningfully render in a
-  // single-line preview and their lazy-loaded CodeBlock component breaks layout.
+  // Fenced code blocks are converted to inline code (first line only) so the
+  // preview shows the draft content without triggering the lazy CodeBlock
+  // component (which adds syntax-highlighted multi-line rendering).
   const markdownPreview = useMemo(() => {
     if (!isMobile) return ""
     return serializeToMarkdown(content)
-      .replace(/```[\s\S]*?```/g, "")
+      .replace(/```\w*\n?([^\n]*)[\s\S]*?```/g, "`$1`")
       .trim()
   }, [isMobile, content])
 

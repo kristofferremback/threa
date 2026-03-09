@@ -311,7 +311,7 @@
     display: none;
   }
   /* Hide block containers (CodeBlock wrapper, table overflow wrapper)
-     as a safety net. Fenced code blocks are stripped from the markdown
+     as a safety net. Fenced code blocks are converted to inline code
      at the JS level before rendering, so this rarely activates. */
   .inline-preview > .markdown-content > div {
     display: none;
