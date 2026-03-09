@@ -246,7 +246,7 @@ describe("MessageComposer", () => {
   })
 
   describe("mobile state handling", () => {
-    it("shows nested block text in collapsed mobile preview", () => {
+    it("renders editor in preview mode when mobile unfocused with content", () => {
       isMobileMockValue = true
 
       const nestedDoc: JSONContent = {
@@ -261,27 +261,15 @@ describe("MessageComposer", () => {
               },
             ],
           },
-          {
-            type: "blockquote",
-            content: [
-              {
-                type: "paragraph",
-                content: [
-                  { type: "mention", attrs: { slug: "kris", label: "kris" } },
-                  { type: "text", text: " said hi" },
-                ],
-              },
-            ],
-          },
         ],
       }
 
       render(<MessageComposer {...defaultProps} content={nestedDoc} />)
 
-      // Markdown preview renders styled content inline — text is split across elements
-      expect(screen.getByText("First item")).toBeInTheDocument()
-      expect(screen.getByText("@kris")).toBeInTheDocument()
-      expect(screen.getByText(/said hi/)).toBeInTheDocument()
+      // Editor is rendered (not hidden) — CSS clips it to single-line preview
+      expect(screen.getByTestId("rich-editor")).toBeInTheDocument()
+      // Action bar is not rendered in unfocused state
+      expect(screen.queryByRole("button", { name: "Formatting" })).not.toBeInTheDocument()
     })
 
     it("resets mobile focus state when scope changes", () => {
@@ -289,13 +277,16 @@ describe("MessageComposer", () => {
 
       const { rerender } = render(<MessageComposer {...defaultProps} scopeId="scope-a" />)
 
-      expect(screen.getByText("Type a message...")).toBeInTheDocument()
+      // Initially unfocused — action bar not rendered
+      expect(screen.queryByRole("button", { name: "Formatting" })).not.toBeInTheDocument()
 
-      fireEvent.click(screen.getByText("Type a message..."))
-      expect(screen.queryByText("Type a message...")).not.toBeInTheDocument()
+      // Click editor area to focus (not the textarea itself, which the guard skips)
+      fireEvent.click(screen.getByTestId("rich-editor-wrapper"))
+      expect(screen.getByRole("button", { name: "Formatting" })).toBeInTheDocument()
 
+      // Scope change resets to unfocused
       rerender(<MessageComposer {...defaultProps} scopeId="scope-b" />)
-      expect(screen.getByText("Type a message...")).toBeInTheDocument()
+      expect(screen.queryByRole("button", { name: "Formatting" })).not.toBeInTheDocument()
     })
 
     it("closes mobile formatting toolbar on blur", () => {
@@ -304,7 +295,7 @@ describe("MessageComposer", () => {
 
       render(<MessageComposer {...defaultProps} />)
 
-      fireEvent.click(screen.getByText("Type a message..."))
+      fireEvent.click(screen.getByTestId("rich-editor-wrapper"))
 
       const formatButton = screen.getByRole("button", { name: "Formatting" })
       fireEvent.click(formatButton)
@@ -324,7 +315,7 @@ describe("MessageComposer", () => {
 
       render(<MessageComposer {...defaultProps} />)
 
-      fireEvent.click(screen.getByText("Type a message..."))
+      fireEvent.click(screen.getByTestId("rich-editor-wrapper"))
       fireEvent.click(screen.getByRole("button", { name: "Formatting" }))
 
       expect(screen.getByTestId("mobile-editor-toolbar")).toHaveAttribute("data-has-editor", "no")
@@ -341,7 +332,7 @@ describe("MessageComposer", () => {
 
       render(<MessageComposer {...defaultProps} />)
 
-      fireEvent.click(screen.getByText("Type a message..."))
+      fireEvent.click(screen.getByTestId("rich-editor-wrapper"))
       fireEvent.click(screen.getByRole("button", { name: "Formatting" }))
 
       expect(screen.getByTestId("mobile-editor-toolbar")).toHaveAttribute("data-has-special-input-controls", "yes")

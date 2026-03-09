@@ -285,38 +285,6 @@
     background-color: hsl(var(--muted-foreground) / 0.4);
   }
 
-  /* Mobile composer preview: forces markdown into single-line inline flow.
-     pointer-events: none ensures taps pass through to the card's click-to-expand
-     handler instead of being intercepted by rendered <a> links or mention chips. */
-  .inline-preview {
-    pointer-events: none;
-  }
-  .inline-preview > .markdown-content {
-    display: contents;
-  }
-  .inline-preview :is(p, h1, h2, h3, h4, h5, h6, ul, ol, li, blockquote, pre) {
-    display: inline;
-    margin: 0;
-    padding: 0;
-    border: none;
-  }
-  .inline-preview :is(h1, h2, h3, h4, h5, h6) {
-    font-size: inherit;
-    font-weight: 600;
-  }
-  .inline-preview :is(ul, ol) {
-    list-style: none;
-  }
-  .inline-preview :is(hr, table) {
-    display: none;
-  }
-  /* Hide block containers (CodeBlock wrapper, table overflow wrapper)
-     as a safety net. Fenced code blocks are converted to inline code
-     at the JS level before rendering, so this rarely activates. */
-  .inline-preview > .markdown-content > div {
-    display: none;
-  }
-
   /* Keyboard hint styling for quick switcher footer */
   .kbd-hint {
     display: inline-flex;
