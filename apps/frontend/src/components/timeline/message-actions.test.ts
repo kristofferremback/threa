@@ -88,6 +88,20 @@ describe("getVisibleActions", () => {
     })
   })
 
+  describe("see revisions action visibility", () => {
+    it("should show see-revisions when message has editedAt", () => {
+      const actions = getVisibleActions(createContext({ editedAt: "2026-02-17T12:00:00Z" }))
+
+      expect(actions.find((a) => a.id === "see-revisions")).toBeDefined()
+    })
+
+    it("should not show see-revisions when message has no editedAt", () => {
+      const actions = getVisibleActions(createContext())
+
+      expect(actions.find((a) => a.id === "see-revisions")).toBeUndefined()
+    })
+  })
+
   describe("delete action visibility", () => {
     it("should show delete action when author matches current user", () => {
       const actions = getVisibleActions(createContext({ authorId: "member_1", currentUserId: "member_1" }))
@@ -123,6 +137,20 @@ describe("getVisibleActions", () => {
 
       expect(editIdx).toBeLessThan(copyIdx)
       expect(deleteIdx).toBeGreaterThan(copyIdx)
+    })
+
+    it("should place see-revisions between edit and copy for edited messages", () => {
+      const actions = getVisibleActions(
+        createContext({ authorId: "member_1", currentUserId: "member_1", editedAt: "2026-02-17T12:00:00Z" })
+      )
+
+      const ids = actions.map((a) => a.id)
+      const editIdx = ids.indexOf("edit-message")
+      const revisionsIdx = ids.indexOf("see-revisions")
+      const copyIdx = ids.indexOf("copy")
+
+      expect(editIdx).toBeLessThan(revisionsIdx)
+      expect(revisionsIdx).toBeLessThan(copyIdx)
     })
   })
 })
@@ -192,6 +220,16 @@ describe("message action behaviors", () => {
     editAction.action!(ctx)
 
     expect(onEdit).toHaveBeenCalledOnce()
+  })
+
+  it("see-revisions action should invoke onShowHistory callback", () => {
+    const onShowHistory = vi.fn()
+    const ctx = createContext({ editedAt: "2026-02-17T12:00:00Z", onShowHistory })
+
+    const action = getVisibleActions(ctx).find((a) => a.id === "see-revisions")!
+    action.action!(ctx)
+
+    expect(onShowHistory).toHaveBeenCalledOnce()
   })
 
   it("delete action should invoke onDelete callback", () => {

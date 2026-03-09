@@ -7,8 +7,6 @@ import {
   DialogDescription,
   DialogFooter,
   DialogHeader,
-  DialogOverlay,
-  DialogPortal,
   DialogTitle,
   DialogTrigger,
 } from "./dialog"
@@ -19,8 +17,6 @@ import {
   DrawerDescription,
   DrawerFooter,
   DrawerHeader,
-  DrawerOverlay,
-  DrawerPortal,
   DrawerTitle,
   DrawerTrigger,
 } from "./drawer"
@@ -111,28 +107,19 @@ const ResponsiveDialogContent = React.forwardRef<HTMLDivElement, ResponsiveDialo
     const isMobile = useIsMobile()
 
     if (isMobile) {
+      // DrawerContent already renders its own Portal + Overlay internally
       return (
-        <DrawerPortal>
-          <DrawerOverlay />
-          <DrawerContent ref={ref} className={cn(drawerClassName, className)}>
-            {children}
-          </DrawerContent>
-        </DrawerPortal>
+        <DrawerContent ref={ref} className={cn(drawerClassName, className)} {...props}>
+          {children}
+        </DrawerContent>
       )
     }
 
+    // DialogContent already renders its own Portal + Overlay internally
     return (
-      <DialogPortal>
-        <DialogOverlay />
-        <DialogContent
-          ref={ref}
-          className={cn(desktopClassName, className)}
-          hideCloseButton={hideCloseButton}
-          {...props}
-        >
-          {children}
-        </DialogContent>
-      </DialogPortal>
+      <DialogContent ref={ref} className={cn(desktopClassName, className)} hideCloseButton={hideCloseButton} {...props}>
+        {children}
+      </DialogContent>
     )
   }
 )

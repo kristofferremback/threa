@@ -1,5 +1,5 @@
 import type { ComponentType } from "react"
-import { Sparkles, MessageSquareReply, Copy, FileText, Type, Pencil, Trash2 } from "lucide-react"
+import { Sparkles, MessageSquareReply, Copy, FileText, Type, Pencil, Trash2, History } from "lucide-react"
 import { toast } from "sonner"
 import { stripMarkdown } from "@/lib/markdown"
 
@@ -23,10 +23,14 @@ export interface MessageActionContext {
   authorId?: string
   /** Current user's user ID */
   currentUserId?: string
+  /** Whether this message has been edited */
+  editedAt?: string
   /** Callback to enter edit mode */
   onEdit?: () => void
   /** Callback to open delete confirmation */
   onDelete?: () => void
+  /** Callback to open edit history */
+  onShowHistory?: () => void
 }
 
 /** A variant within a sub-menu (e.g. "Copy as Markdown" vs "Copy as Plain text"). */
@@ -85,6 +89,13 @@ export const messageActions: MessageAction[] = [
     icon: Pencil,
     when: (ctx) => ctx.actorType === "user" && !!ctx.authorId && ctx.authorId === ctx.currentUserId,
     action: (ctx) => ctx.onEdit?.(),
+  },
+  {
+    id: "see-revisions",
+    label: "See revisions",
+    icon: History,
+    when: (ctx) => !!ctx.editedAt,
+    action: (ctx) => ctx.onShowHistory?.(),
   },
   {
     id: "copy",

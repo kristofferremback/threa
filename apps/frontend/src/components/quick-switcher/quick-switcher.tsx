@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom"
 import { Search, Terminal, FileText } from "lucide-react"
 import { ResponsiveDialog, ResponsiveDialogContent } from "@/components/ui/responsive-dialog"
 import { useWorkspaceBootstrap, useDraftScratchpads } from "@/hooks"
+import { useIsMobile } from "@/hooks/use-mobile"
 import { useSettings } from "@/contexts"
 import { useUser } from "@/auth"
 import { useCreateChannel } from "@/components/create-channel"
@@ -97,6 +98,7 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
   )
   const dmPeers = bootstrap?.dmPeers
 
+  const isMobile = useIsMobile()
   const inputRef = useRef<HTMLInputElement>(null)
   const richInputRef = useRef<RichInputRef>(null)
 
@@ -199,11 +201,14 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
       setQuery(prefix)
       setSelectedIndex(0)
       setFocusedTabIndex(null)
-      requestAnimationFrame(() => {
-        richInputRef.current?.focus()
-      })
+      // Skip auto-focus on mobile — opening the keyboard shifts the drawer layout
+      if (!isMobile) {
+        requestAnimationFrame(() => {
+          richInputRef.current?.focus()
+        })
+      }
     }
-  }, [open, initialMode])
+  }, [open, initialMode, isMobile])
 
   // Reset state when dialog closes
   useEffect(() => {
@@ -235,10 +240,13 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
 
   const focusInput = useCallback(() => {
     setFocusedTabIndex(null)
-    requestAnimationFrame(() => {
-      richInputRef.current?.focus()
-    })
-  }, [])
+    // Skip auto-focus on mobile — keyboard causes jarring layout shifts
+    if (!isMobile) {
+      requestAnimationFrame(() => {
+        richInputRef.current?.focus()
+      })
+    }
+  }, [isMobile])
 
   const handleModeChange = useCallback(
     (newMode: QuickSwitcherMode) => {
@@ -418,7 +426,7 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
                 triggers={triggers}
                 placeholder={MODE_PLACEHOLDERS[mode]}
                 ariaLabel={mode === "search" ? "Search query input" : "Quick switcher input"}
-                autoFocus
+                autoFocus={!isMobile}
               />
             )}
           </div>
