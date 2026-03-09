@@ -1,14 +1,18 @@
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { Expand } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { RichEditor, DocumentEditorModal } from "@/components/editor"
+import { RichEditor, EditorToolbar, EditorActionBar, DocumentEditorModal } from "@/components/editor"
+import type { RichEditorHandle } from "@/components/editor"
+import { useIsMobile } from "@/hooks/use-mobile"
 import { useMessageService } from "@/contexts"
 import { messageKeys } from "@/api/messages"
 import { serializeToMarkdown, parseMarkdown } from "@threa/prosemirror"
+import { cn } from "@/lib/utils"
 import type { JSONContent } from "@threa/types"
+import type { Editor } from "@tiptap/react"
 
 const EMPTY_DOC: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
 
@@ -29,10 +33,37 @@ export function MessageEditForm({
 }: MessageEditFormProps) {
   const queryClient = useQueryClient()
   const messageService = useMessageService()
+  const isMobile = useIsMobile()
   const [contentJson, setContentJson] = useState<JSONContent>(initialContentJson ?? EMPTY_DOC)
   const [isSaving, setIsSaving] = useState(false)
   const [docEditorOpen, setDocEditorOpen] = useState(false)
   const [initialMarkdown] = useState(() => serializeToMarkdown(initialContentJson ?? EMPTY_DOC).trim())
+
+  // Mobile-specific state
+  const [formatOpen, setFormatOpen] = useState(false)
+  const [mobileExpanded, setMobileExpanded] = useState(false)
+  const [mobileLinkPopoverOpen, setMobileLinkPopoverOpen] = useState(false)
+  const richEditorRef = useRef<RichEditorHandle>(null)
+  const [mobileToolbarEditor, setMobileToolbarEditor] = useState<Editor | null>(null)
+  const wrapperRef = useRef<HTMLDivElement>(null)
+
+  // Reset mobile state when viewport changes
+  useEffect(() => {
+    if (!isMobile) {
+      setMobileExpanded(false)
+      setMobileLinkPopoverOpen(false)
+      setFormatOpen(false)
+    }
+  }, [isMobile])
+
+  // Scroll into view when mobile expansion toggles on
+  useEffect(() => {
+    if (mobileExpanded && isMobile) {
+      requestAnimationFrame(() => {
+        wrapperRef.current?.scrollIntoView({ block: "start", behavior: "smooth" })
+      })
+    }
+  }, [mobileExpanded, isMobile])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -44,6 +75,12 @@ export function MessageEditForm({
     document.addEventListener("keydown", handleKeyDown)
     return () => document.removeEventListener("keydown", handleKeyDown)
   }, [onCancel])
+
+  const setRichEditorHandle = useCallback((handle: RichEditorHandle | null) => {
+    richEditorRef.current = handle
+    const nextEditor = handle?.getEditor() ?? null
+    setMobileToolbarEditor((currentEditor) => (currentEditor === nextEditor ? currentEditor : nextEditor))
+  }, [])
 
   const saveEdit = useCallback(
     async (json: JSONContent, markdown: string) => {
@@ -69,6 +106,9 @@ export function MessageEditForm({
       onCancel()
       return
     }
+    setFormatOpen(false)
+    setMobileExpanded(false)
+    setMobileLinkPopoverOpen(false)
     await saveEdit(contentJson, trimmed)
   }, [contentJson, saveEdit, initialMarkdown, onCancel])
 
@@ -92,6 +132,86 @@ export function MessageEditForm({
     setContentJson(json)
   }, [])
 
+  // Cancel + Save trailing content for EditorActionBar on mobile
+  const mobileTrailingContent = (
+    <>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        aria-label="Cancel edit"
+        className="h-8 px-2.5 text-xs shrink-0"
+        onPointerDown={(e) => e.preventDefault()}
+        onClick={onCancel}
+        disabled={isSaving}
+      >
+        Cancel
+      </Button>
+      <Button
+        type="button"
+        size="sm"
+        aria-label={isSaving ? "Saving..." : "Save edit"}
+        className="h-8 px-3 text-xs shrink-0"
+        onPointerDown={(e) => e.preventDefault()}
+        onClick={handleSubmit}
+        disabled={isSaving}
+      >
+        {isSaving ? "Saving..." : "Save"}
+      </Button>
+    </>
+  )
+
+  if (isMobile) {
+    return (
+      <div
+        ref={wrapperRef}
+        className={cn(
+          "flex flex-col scroll-mt-12 transition-[max-height,min-height] duration-200 ease-out",
+          mobileExpanded ? "max-h-[75dvh] min-h-[75dvh]" : "max-h-none min-h-0"
+        )}
+      >
+        <div
+          data-inline-edit
+          className={cn(
+            "[&_.tiptap]:!pt-0 [&_.tiptap_p]:!leading-relaxed",
+            mobileExpanded && "flex-1 min-h-0 overflow-y-auto [&_.tiptap]:max-h-none"
+          )}
+        >
+          <RichEditor
+            ref={setRichEditorHandle}
+            value={contentJson}
+            onChange={setContentJson}
+            onSubmit={handleSubmit}
+            placeholder="Edit message..."
+            autoFocus
+            disableSelectionToolbar
+          />
+        </div>
+        <EditorActionBar
+          editorHandle={richEditorRef.current}
+          disabled={isSaving}
+          formatOpen={formatOpen}
+          onFormatOpenChange={setFormatOpen}
+          mobileExpanded={mobileExpanded}
+          onMobileExpandedChange={setMobileExpanded}
+          showAttach={false}
+          trailingContent={mobileTrailingContent}
+        />
+        {formatOpen && (
+          <EditorToolbar
+            editor={mobileToolbarEditor}
+            isVisible
+            inline
+            inlinePosition="below"
+            linkPopoverOpen={mobileLinkPopoverOpen}
+            onLinkPopoverOpenChange={setMobileLinkPopoverOpen}
+          />
+        )}
+      </div>
+    )
+  }
+
+  // Desktop layout — unchanged
   return (
     <>
       <div data-inline-edit className="[&_.tiptap]:!pt-0 [&_.tiptap_p]:!leading-relaxed">

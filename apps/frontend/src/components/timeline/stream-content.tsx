@@ -32,6 +32,7 @@ import { MessageInput } from "./message-input"
 import { JoinChannelBar } from "./join-channel-bar"
 import { ThreadParentMessage } from "../thread/thread-parent-message"
 import { EditLastMessageContext } from "./edit-last-message-context"
+import { InlineEditProvider } from "./inline-edit-context"
 
 interface StreamContentProps {
   workspaceId: string
@@ -182,68 +183,70 @@ export function StreamContent({
 
   return (
     <EditLastMessageContext.Provider value={editLastMessageCtx}>
-      <div className="flex h-full flex-col">
-        <div
-          ref={scrollContainerRef}
-          className="flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain mb-1 sm:mb-4"
-          onScroll={handleScroll}
-        >
-          {/* Show parent message for threads */}
-          {isThread && parentMessage && parentStreamId && (
-            <ThreadParentMessage
-              event={parentMessage}
-              workspaceId={workspaceId}
-              streamId={parentStreamId}
-              replyCount={events.length}
-            />
-          )}
-          {!isDraft && isFetchingOlder && (
-            <div className="flex justify-center py-2">
-              <p className="text-sm text-muted-foreground">Loading older messages...</p>
-            </div>
-          )}
-          {isDraft ? (
-            <Empty className="h-full border-0">
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <MessageSquare />
-                </EmptyMedia>
-                <EmptyTitle>Start a conversation</EmptyTitle>
-                <EmptyDescription>Type a message below to begin this scratchpad.</EmptyDescription>
-              </EmptyHeader>
-            </Empty>
-          ) : (
-            <EventList
-              events={events}
-              isLoading={isLoading}
+      <InlineEditProvider>
+        <div className="flex h-full flex-col">
+          <div
+            ref={scrollContainerRef}
+            className="flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain mb-1 sm:mb-4"
+            onScroll={handleScroll}
+          >
+            {/* Show parent message for threads */}
+            {isThread && parentMessage && parentStreamId && (
+              <ThreadParentMessage
+                event={parentMessage}
+                workspaceId={workspaceId}
+                streamId={parentStreamId}
+                replyCount={events.length}
+              />
+            )}
+            {!isDraft && isFetchingOlder && (
+              <div className="flex justify-center py-2">
+                <p className="text-sm text-muted-foreground">Loading older messages...</p>
+              </div>
+            )}
+            {isDraft ? (
+              <Empty className="h-full border-0">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <MessageSquare />
+                  </EmptyMedia>
+                  <EmptyTitle>Start a conversation</EmptyTitle>
+                  <EmptyDescription>Type a message below to begin this scratchpad.</EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            ) : (
+              <EventList
+                events={events}
+                isLoading={isLoading}
+                workspaceId={workspaceId}
+                streamId={streamId}
+                highlightMessageId={highlightMessageId}
+                firstUnreadEventId={dividerEventId}
+                isDividerFading={isDividerFading}
+                agentActivity={agentActivity}
+                hideSessionCards={isChannel}
+              />
+            )}
+          </div>
+          {!isMember && isPublicChannel && (
+            <JoinChannelBar
               workspaceId={workspaceId}
               streamId={streamId}
-              highlightMessageId={highlightMessageId}
-              firstUnreadEventId={dividerEventId}
-              isDividerFading={isDividerFading}
-              agentActivity={agentActivity}
-              hideSessionCards={isChannel}
+              channelName={stream?.slug ?? stream?.displayName ?? ""}
+              onJoined={handleJoined}
+            />
+          )}
+          {(isMember || !isPublicChannel) && (
+            <MessageInput
+              workspaceId={workspaceId}
+              streamId={streamId}
+              disabled={isArchived || isSystem}
+              disabledReason={disabledReason}
+              autoFocus={autoFocus}
             />
           )}
         </div>
-        {!isMember && isPublicChannel && (
-          <JoinChannelBar
-            workspaceId={workspaceId}
-            streamId={streamId}
-            channelName={stream?.slug ?? stream?.displayName ?? ""}
-            onJoined={handleJoined}
-          />
-        )}
-        {(isMember || !isPublicChannel) && (
-          <MessageInput
-            workspaceId={workspaceId}
-            streamId={streamId}
-            disabled={isArchived || isSystem}
-            disabledReason={disabledReason}
-            autoFocus={autoFocus}
-          />
-        )}
-      </div>
+      </InlineEditProvider>
     </EditLastMessageContext.Provider>
   )
 }

@@ -9,6 +9,7 @@ import { RelativeTime } from "@/components/relative-time"
 import { PersonaAvatar } from "@/components/persona-avatar"
 import { usePendingMessages, usePanel, createDraftPanelId, useTrace, useMessageService } from "@/contexts"
 import { useEditLastMessage } from "./edit-last-message-context"
+import { useInlineEdit } from "./inline-edit-context"
 import { useActors, useWorkspaceUserId, getStepLabel, focusAtEnd, type MessageAgentActivity } from "@/hooks"
 import { cn } from "@/lib/utils"
 import { useIsMobile } from "@/hooks/use-mobile"
@@ -188,6 +189,7 @@ function SentMessageEvent({
 
   // Mobile: long-press opens action drawer instead of dropdown
   const isMobile = useIsMobile()
+  const inlineEdit = useInlineEdit()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const openDrawer = useCallback(() => setDrawerOpen(true), [])
   const longPress = useLongPress({
@@ -195,15 +197,28 @@ function SentMessageEvent({
     enabled: isMobile && !isEditing,
   })
 
+  const startEditing = useCallback(() => {
+    setIsEditing(true)
+    if (isMobile) {
+      inlineEdit?.setEditingInline(true)
+      requestAnimationFrame(() => {
+        containerRef.current?.scrollIntoView({ block: "start", behavior: "smooth" })
+      })
+    }
+  }, [isMobile, inlineEdit])
+
   // Restore focus to the zone's editor after exiting inline edit mode
   const stopEditing = useCallback(() => {
     setIsEditing(false)
+    if (isMobile) {
+      inlineEdit?.setEditingInline(false)
+    }
     requestAnimationFrame(() => {
       const zone = containerRef.current?.closest<HTMLElement>("[data-editor-zone]")
       const editor = zone?.querySelector<HTMLElement>('[contenteditable="true"]')
       if (editor) focusAtEnd(editor)
     })
-  }, [])
+  }, [isMobile, inlineEdit])
 
   // Register this message's edit handler with the context so the composer's ArrowUp trigger
   // can imperatively open edit mode and scroll into view. Unregistered on unmount.
@@ -212,9 +227,9 @@ function SentMessageEvent({
     if (!registerMessage) return
     return registerMessage(payload.messageId, () => {
       containerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" })
-      setIsEditing(true)
+      startEditing()
     })
-  }, [payload.messageId, registerMessage])
+  }, [payload.messageId, registerMessage, startEditing])
 
   // Scroll to this message when highlighted
   useEffect(() => {
@@ -308,7 +323,7 @@ function SentMessageEvent({
       messageId: payload.messageId,
       authorId: event.actorId ?? undefined,
       currentUserId: currentUserId ?? undefined,
-      onEdit: () => setIsEditing(true),
+      onEdit: startEditing,
       onDelete: () => setDeleteDialogOpen(true),
     }),
     [
@@ -325,6 +340,7 @@ function SentMessageEvent({
       draftPanelUrl,
       getTraceUrl,
       currentUserId,
+      startEditing,
     ]
   )
 
@@ -362,6 +378,7 @@ function SentMessageEvent({
         containerRef={containerRef}
         isHighlighted={isHighlighted}
         containerClassName={cn(
+          "scroll-mt-12",
           isMobile && !isEditing && "select-none",
           longPress.isPressed && "opacity-70 transition-opacity duration-100"
         )}
