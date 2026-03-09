@@ -285,7 +285,12 @@
     background-color: hsl(var(--muted-foreground) / 0.4);
   }
 
-  /* Mobile composer preview: forces markdown into single-line inline flow */
+  /* Mobile composer preview: forces markdown into single-line inline flow.
+     pointer-events: none ensures taps pass through to the card's click-to-expand
+     handler instead of being intercepted by rendered <a> links or mention chips. */
+  .inline-preview {
+    pointer-events: none;
+  }
   .inline-preview > .markdown-content {
     display: contents;
   }
@@ -303,6 +308,11 @@
     list-style: none;
   }
   .inline-preview :is(hr, table) {
+    display: none;
+  }
+  /* Hide block containers (CodeBlock wrapper, table overflow wrapper) that
+     would break single-line flow after lazy-load hydration. */
+  .inline-preview > .markdown-content > div {
     display: none;
   }
 
