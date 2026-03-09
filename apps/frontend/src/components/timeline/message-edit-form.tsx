@@ -44,6 +44,7 @@ export function MessageEditForm({
 
   // Mobile drawer state
   const [formatOpen, setFormatOpen] = useState(false)
+  const [mobileExpanded, setMobileExpanded] = useState(false)
   const [mobileLinkPopoverOpen, setMobileLinkPopoverOpen] = useState(false)
   const richEditorRef = useRef<RichEditorHandle>(null)
   const [mobileToolbarEditor, setMobileToolbarEditor] = useState<Editor | null>(null)
@@ -90,6 +91,7 @@ export function MessageEditForm({
       return
     }
     setFormatOpen(false)
+    setMobileExpanded(false)
     setMobileLinkPopoverOpen(false)
     await saveEdit(contentJson, trimmed)
   }, [contentJson, saveEdit, initialMarkdown, onCancel])
@@ -151,7 +153,7 @@ export function MessageEditForm({
           if (!open) onCancel()
         }}
       >
-        <DrawerContent className="max-h-[85dvh]">
+        <DrawerContent className={mobileExpanded ? "h-[100dvh] max-h-[100dvh]" : "max-h-[85dvh]"}>
           <DrawerTitle className="sr-only">Edit message</DrawerTitle>
 
           <div className="flex flex-col flex-1 min-h-0 px-4 pt-1">
@@ -183,7 +185,8 @@ export function MessageEditForm({
               disabled={isSaving}
               formatOpen={formatOpen}
               onFormatOpenChange={setFormatOpen}
-              showExpand={false}
+              mobileExpanded={mobileExpanded}
+              onMobileExpandedChange={setMobileExpanded}
               showAttach={false}
               trailingContent={trailingContent}
             />
