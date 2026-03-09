@@ -30,6 +30,7 @@ import { ThreadParentMessage } from "./thread-parent-message"
 import { ThreadHeader } from "./thread-header"
 import { ResponsiveBreadcrumbs } from "./responsive-breadcrumbs"
 import { StreamTypes, type JSONContent, type StreamType } from "@threa/types"
+import type { MentionStreamContext } from "@/hooks/use-mentionables"
 import { getStreamName, streamFallbackLabel } from "@/lib/streams"
 import { serializeToMarkdown } from "@threa/prosemirror"
 
@@ -151,6 +152,21 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
     setDraftExpanded(true)
   }, [])
   const handleDraftCollapse = useCallback(() => setDraftExpanded(false), [])
+
+  // Stream context for draft thread broadcast mention filtering.
+  // A draft thread lives under parentStream — its root type determines eligibility.
+  const draftStreamContext = useMemo<MentionStreamContext | undefined>(() => {
+    if (!parentStream) return undefined
+    // The draft IS a thread; use the parent's type (or root type) as rootStreamType
+    const rootType = parentStream.rootStreamId
+      ? ancestors.find((a) => a.id === parentStream.rootStreamId)?.type
+      : parentStream.type
+    // While ancestors are loading, rootType is undefined — return undefined so
+    // filterBroadcastMentions falls back to ALL_BROADCAST_MENTIONS (show all)
+    // rather than incorrectly filtering to "thread" (show none).
+    if (parentStream.rootStreamId && rootType === undefined) return undefined
+    return { streamType: StreamTypes.THREAD, rootStreamType: rootType }
+  }, [parentStream, ancestors])
 
   // Handle draft thread submission
   const handleSubmit = useCallback(async () => {
@@ -276,11 +292,7 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
         {!isMobile && <SidePanelClose onClose={onClose} />}
       </SidePanelHeader>
 
-      <SidePanelContent
-        className="relative flex flex-col"
-        data-editor-zone="panel"
-        ref={setDraftPortalTarget}
-      >
+      <SidePanelContent className="relative flex flex-col" data-editor-zone="panel" ref={setDraftPortalTarget}>
         {isDraft && draftInfo ? (
           // Draft thread UI
           <>
@@ -309,6 +321,7 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
                     expanded
                     onCollapse={handleDraftCollapse}
                     autoFocus
+                    streamContext={draftStreamContext}
                   />
                 </div>,
                 draftPortalTargetRef.current
@@ -354,6 +367,7 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
                     autoFocus={!isMobile}
                     scopeId={panelId}
                     onExpandClick={handleDraftExpand}
+                    streamContext={draftStreamContext}
                   />
                 )}
               </div>

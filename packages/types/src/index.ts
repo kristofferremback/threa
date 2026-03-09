@@ -180,10 +180,13 @@ export {
   SLUG_PATTERN,
   MENTION_PATTERN,
   INVALID_SLUG_CHARS,
+  BROADCAST_SLUGS,
   isValidSlug,
+  isBroadcastSlug,
   extractMentionSlugs,
   hasMention,
 } from "./slug"
+export type { BroadcastSlug } from "./slug"
 
 // API types
 export type {

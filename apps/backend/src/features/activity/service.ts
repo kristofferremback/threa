@@ -3,7 +3,7 @@ import { ActivityRepository, type Activity } from "./repository"
 import { UserRepository } from "../workspaces"
 import { StreamRepository, StreamMemberRepository, resolveNotificationLevelsForStream, type Stream } from "../streams"
 import { extractMentionSlugs } from "../agents"
-import { Visibilities, NotificationLevels, StreamTypes } from "@threa/types"
+import { Visibilities, NotificationLevels, StreamTypes, isBroadcastSlug } from "@threa/types"
 import { withClient } from "../../db"
 import { logger } from "../../lib/logger"
 
@@ -31,33 +31,63 @@ export class ActivityService {
     const mentionSlugs = extractMentionSlugs(contentMarkdown)
     if (mentionSlugs.length === 0) return []
 
+    // Partition into broadcast (@channel, @here) and user slugs
+    const broadcastSlugs = mentionSlugs.filter(isBroadcastSlug)
+    const userSlugs = mentionSlugs.filter((s) => !isBroadcastSlug(s))
+
     return withClient(this.pool, async (client) => {
-      const users = await UserRepository.findBySlugs(client, workspaceId, mentionSlugs)
-
-      const candidates = users.filter((u) => u.id !== actorId)
-      if (candidates.length === 0) return []
-
       const stream = await StreamRepository.findById(client, streamId)
       if (!stream || stream.workspaceId !== workspaceId) return []
 
-      // Fetch root stream once — reused by both access check and context
+      // Fetch root stream once — reused by access checks, broadcast resolution, and context
       const rootStream = stream.rootStreamId ? await StreamRepository.findById(client, stream.rootStreamId) : null
 
-      const eligible = await this.filterByAccess(
-        client,
-        stream,
-        rootStream,
-        candidates.map((m) => m.id)
-      )
-      if (eligible.size === 0) return []
+      // Resolve the effective stream type for broadcast validation:
+      // threads inherit their root stream's type for @channel/@here eligibility
+      const effectiveType = rootStream?.type ?? stream.type
+
+      // 1. Resolve direct @user mentions
+      const userIds = new Set<string>()
+      if (userSlugs.length > 0) {
+        const users = await UserRepository.findBySlugs(client, workspaceId, userSlugs)
+        const candidates = users.filter((u) => u.id !== actorId)
+        if (candidates.length > 0) {
+          const eligible = await this.filterByAccess(
+            client,
+            stream,
+            rootStream,
+            candidates.map((u) => u.id)
+          )
+          for (const u of candidates) {
+            if (eligible.has(u.id)) userIds.add(u.id)
+          }
+        }
+      }
+
+      // 2. Resolve broadcast mentions to member lists
+      if (broadcastSlugs.length > 0) {
+        const broadcastUserIds = await this.resolveBroadcastTargets(
+          client,
+          broadcastSlugs,
+          stream,
+          rootStream,
+          effectiveType
+        )
+        for (const id of broadcastUserIds) {
+          userIds.add(id)
+        }
+      }
+
+      // Exclude the actor
+      userIds.delete(actorId)
+      if (userIds.size === 0) return []
 
       const streamContext = resolveStreamContext(stream, rootStream)
       const contentPreview = contentMarkdown.slice(0, 200)
-      const eligibleUserIds = candidates.filter((u) => eligible.has(u.id)).map((u) => u.id)
 
       return ActivityRepository.insertBatch(client, {
         workspaceId,
-        userIds: eligibleUserIds,
+        userIds: [...userIds],
         activityType: "mention",
         streamId,
         messageId,
@@ -66,6 +96,53 @@ export class ActivityService {
         context: { contentPreview, ...streamContext },
       })
     })
+  }
+
+  /**
+   * Resolve broadcast mention slugs (@channel, @here) to target user IDs.
+   *
+   * @channel — notifies all members of the root channel (or the channel itself if not in a thread).
+   *            Only valid in channel-tree streams.
+   * @here    — notifies direct members of the current stream.
+   *            Valid in channel-tree and DM-tree streams.
+   */
+  private async resolveBroadcastTargets(
+    client: PoolClient,
+    broadcastSlugs: string[],
+    stream: Stream,
+    rootStream: Stream | null,
+    effectiveType: string
+  ): Promise<Set<string>> {
+    const targetIds = new Set<string>()
+    const memberCache = new Map<string, { memberId: string }[]>()
+
+    const getMembers = async (streamId: string) => {
+      if (!memberCache.has(streamId)) {
+        memberCache.set(streamId, await StreamMemberRepository.list(client, { streamId }))
+      }
+      return memberCache.get(streamId)!
+    }
+
+    for (const slug of broadcastSlugs) {
+      if (slug === "channel") {
+        // @channel only valid in channel-tree streams
+        if (effectiveType !== StreamTypes.CHANNEL) continue
+
+        // Target: all members of the root channel (walk up from thread if needed)
+        const channelId = rootStream?.id ?? stream.id
+        const members = await getMembers(channelId)
+        for (const m of members) targetIds.add(m.memberId)
+      } else if (slug === "here") {
+        // @here valid in channel-tree and DM-tree streams
+        if (effectiveType !== StreamTypes.CHANNEL && effectiveType !== StreamTypes.DM) continue
+
+        // Target: direct members of the current stream
+        const members = await getMembers(stream.id)
+        for (const m of members) targetIds.add(m.memberId)
+      }
+    }
+
+    return targetIds
   }
 
   async processMessageNotifications(params: {

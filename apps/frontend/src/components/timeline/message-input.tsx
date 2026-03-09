@@ -1,7 +1,7 @@
-import { useState, useCallback, useEffect, useRef } from "react"
+import { useState, useCallback, useEffect, useRef, useMemo } from "react"
 import { createPortal } from "react-dom"
 import { useNavigate } from "react-router-dom"
-import { useDraftComposer, getDraftMessageKey, useStreamOrDraft } from "@/hooks"
+import { useDraftComposer, getDraftMessageKey, useStreamOrDraft, useWorkspaceBootstrap } from "@/hooks"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { usePreferences } from "@/contexts"
 import { MessageComposer } from "@/components/composer"
@@ -9,7 +9,8 @@ import { commandsApi } from "@/api"
 import { isCommand } from "@/lib/commands"
 import { serializeToMarkdown } from "@threa/prosemirror"
 import { useEditLastMessage } from "./edit-last-message-context"
-import type { JSONContent } from "@threa/types"
+import { StreamTypes, type JSONContent } from "@threa/types"
+import type { MentionStreamContext } from "@/hooks/use-mentionables"
 
 interface MessageInputProps {
   workspaceId: string
@@ -23,8 +24,21 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   const { triggerEditLast } = useEditLastMessage() ?? {}
   const navigate = useNavigate()
   const { preferences } = usePreferences()
-  const { sendMessage } = useStreamOrDraft(workspaceId, streamId)
+  const { stream, sendMessage } = useStreamOrDraft(workspaceId, streamId)
   const draftKey = getDraftMessageKey({ type: "stream", streamId })
+
+  // Resolve stream context for broadcast mention filtering.
+  // For threads, look up the root stream's type from workspace bootstrap.
+  const { data: wsBootstrap } = useWorkspaceBootstrap(workspaceId)
+  const streamContext = useMemo<MentionStreamContext | undefined>(() => {
+    if (!stream) return undefined
+    const ctx: MentionStreamContext = { streamType: stream.type }
+    if (stream.type === StreamTypes.THREAD && stream.rootStreamId && wsBootstrap) {
+      const rootStream = wsBootstrap.streams.find((s) => s.id === stream.rootStreamId)
+      if (rootStream) ctx.rootStreamType = rootStream.type
+    }
+    return ctx
+  }, [stream, wsBootstrap])
 
   const composer = useDraftComposer({ workspaceId, draftKey, scopeId: streamId })
   const [error, setError] = useState<string | null>(null)
@@ -171,6 +185,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     messageSendMode,
     scopeId: streamId,
     onEditLastMessage: triggerEditLast,
+    streamContext,
   } as const
 
   return (

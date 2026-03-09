@@ -4,39 +4,82 @@ import { useWorkspaceBootstrap } from "./use-workspaces"
 import { useParams } from "react-router-dom"
 import { useUser } from "@/auth"
 import { useWorkspaceEmoji } from "./use-workspace-emoji"
+import { StreamTypes, type StreamType } from "@threa/types"
+
+/**
+ * Stream context for filtering which broadcast mentions are available.
+ * `streamType` is the current stream's type; `rootStreamType` is the root
+ * stream's type when the current stream is a thread.
+ */
+export interface MentionStreamContext {
+  streamType: StreamType
+  rootStreamType?: StreamType
+}
 
 /**
  * Reserved broadcast mention slugs.
  */
-const BROADCAST_MENTIONS: Mentionable[] = [
-  {
-    id: "broadcast:channel",
-    slug: "channel",
-    name: "Channel",
-    type: "broadcast",
-    avatarEmoji: "📢",
-  },
-  {
-    id: "broadcast:here",
-    slug: "here",
-    name: "Here",
-    type: "broadcast",
-    avatarEmoji: "👋",
-  },
-]
+const BROADCAST_CHANNEL: Mentionable = {
+  id: "broadcast:channel",
+  slug: "channel",
+  name: "Channel",
+  type: "broadcast",
+  avatarEmoji: "📢",
+}
+
+const BROADCAST_HERE: Mentionable = {
+  id: "broadcast:here",
+  slug: "here",
+  name: "Here",
+  type: "broadcast",
+  avatarEmoji: "👋",
+}
+
+const ALL_BROADCAST_MENTIONS: Mentionable[] = [BROADCAST_CHANNEL, BROADCAST_HERE]
+
+/**
+ * Return the broadcast mentions allowed for a given stream context.
+ *
+ * @channel — channels and threads under channels
+ * @here    — channels, DMs, and threads under either
+ */
+export function filterBroadcastMentions(ctx?: MentionStreamContext): Mentionable[] {
+  if (!ctx) return ALL_BROADCAST_MENTIONS
+
+  // For threads, use the root stream type to determine eligibility
+  const effectiveType = ctx.rootStreamType ?? ctx.streamType
+
+  const allowed: Mentionable[] = []
+
+  // @channel: only in channel-tree streams
+  if (effectiveType === StreamTypes.CHANNEL) {
+    allowed.push(BROADCAST_CHANNEL)
+  }
+
+  // @here: channel-tree and DM-tree streams
+  if (effectiveType === StreamTypes.CHANNEL || effectiveType === StreamTypes.DM) {
+    allowed.push(BROADCAST_HERE)
+  }
+
+  return allowed
+}
 
 /**
  * Hook that provides mentionable entities for the current workspace.
  * Combines users, personas, broadcast options, and a special "me" shortcut.
+ *
+ * When `streamContext` is provided, broadcast mentions are filtered based on
+ * stream type. Without it, all broadcasts are included (backwards-compatible).
  */
-export function useMentionables() {
+export function useMentionables(streamContext?: MentionStreamContext) {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const { data: bootstrap, isLoading } = useWorkspaceBootstrap(workspaceId ?? "")
   const currentUser = useUser()
   const { toEmoji } = useWorkspaceEmoji(workspaceId ?? "")
 
   const mentionables = useMemo<Mentionable[]>(() => {
-    if (!bootstrap) return BROADCAST_MENTIONS
+    const broadcasts = filterBroadcastMentions(streamContext)
+    if (!bootstrap) return broadcasts
 
     // Build user mentionables from workspace-scoped user profiles.
     const currentUserId = currentUser?.id
@@ -68,8 +111,8 @@ export function useMentionables() {
       }
     })
 
-    return [...users, ...personas, ...BROADCAST_MENTIONS]
-  }, [bootstrap, currentUser?.id, toEmoji])
+    return [...users, ...personas, ...broadcasts]
+  }, [bootstrap, currentUser?.id, toEmoji, streamContext])
 
   return {
     mentionables,
