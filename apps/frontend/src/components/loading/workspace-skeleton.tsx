@@ -77,7 +77,7 @@ function MessageSkeleton() {
 }
 
 function FooterSkeleton() {
-  return <Skeleton className="h-24 w-full rounded-md" />
+  return <Skeleton className="h-[46px] sm:h-24 w-full rounded-[16px] sm:rounded-md" />
 }
 
 // ============================================================================

@@ -278,7 +278,10 @@ describe("MessageComposer", () => {
 
       render(<MessageComposer {...defaultProps} content={nestedDoc} />)
 
-      expect(screen.getByText("First item @kris said hi")).toBeInTheDocument()
+      // Markdown preview renders styled content inline — text is split across elements
+      expect(screen.getByText("First item")).toBeInTheDocument()
+      expect(screen.getByText("@kris")).toBeInTheDocument()
+      expect(screen.getByText(/said hi/)).toBeInTheDocument()
     })
 
     it("resets mobile focus state when scope changes", () => {

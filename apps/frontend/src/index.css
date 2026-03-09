@@ -285,6 +285,27 @@
     background-color: hsl(var(--muted-foreground) / 0.4);
   }
 
+  /* Mobile composer preview: forces markdown into single-line inline flow */
+  .inline-preview > .markdown-content {
+    display: contents;
+  }
+  .inline-preview :is(p, h1, h2, h3, h4, h5, h6, ul, ol, li, blockquote, pre) {
+    display: inline;
+    margin: 0;
+    padding: 0;
+    border: none;
+  }
+  .inline-preview :is(h1, h2, h3, h4, h5, h6) {
+    font-size: inherit;
+    font-weight: 600;
+  }
+  .inline-preview :is(ul, ol) {
+    list-style: none;
+  }
+  .inline-preview :is(hr, table) {
+    display: none;
+  }
+
   /* Keyboard hint styling for quick switcher footer */
   .kbd-hint {
     display: inline-flex;

@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
 import { PendingAttachments } from "@/components/timeline/pending-attachments"
-import { stripMarkdown } from "@/lib/markdown"
+import { MarkdownContent } from "@/components/ui/markdown-content"
 import { cn } from "@/lib/utils"
 import type { PendingAttachment, UploadResult } from "@/hooks/use-attachments"
 import type { MessageSendMode, JSONContent } from "@threa/types"
@@ -17,15 +17,6 @@ import { serializeToMarkdown } from "@threa/prosemirror"
 
 /** Platform-appropriate modifier key symbol (⌘ on Mac, Ctrl+ elsewhere) */
 const MOD_SYMBOL = navigator.platform?.toLowerCase().includes("mac") ? "⌘" : "Ctrl+"
-
-/** Extract plain text from ProseMirror JSON for preview display */
-function getPlainText(doc: JSONContent): string {
-  const markdown = serializeToMarkdown(doc)
-  const plain = stripMarkdown(markdown)
-    // Collapsed preview should show list item text, not markdown list markers.
-    .replace(/^\s*(?:[-*+]|\d+\.)\s+/gm, "")
-  return plain.replace(/\s+/g, " ").trim()
-}
 
 export interface MessageComposerProps {
   // Content (controlled)
@@ -206,8 +197,8 @@ export function MessageComposer({
     setMobileToolbarEditor((currentEditor) => (currentEditor === nextEditor ? currentEditor : nextEditor))
   }, [])
 
-  // Plain text preview for the collapsed mobile single-line view
-  const contentPreview = useMemo(() => (isMobile ? getPlainText(content) : ""), [isMobile, content])
+  // Markdown preview for the collapsed mobile single-line view
+  const markdownPreview = useMemo(() => (isMobile ? serializeToMarkdown(content).trim() : ""), [isMobile, content])
 
   const sharedEditor = (
     <RichEditor
@@ -525,9 +516,13 @@ export function MessageComposer({
             {/* Mobile unfocused: single-line preview with truncated text + send button */}
             {isMobile && !mobileFocused && (
               <div className="flex items-center gap-2 min-h-[30px]">
-                <span className="text-sm text-muted-foreground flex-1 truncate select-none">
-                  {contentPreview || placeholder}
-                </span>
+                {markdownPreview ? (
+                  <div className="inline-preview text-sm text-muted-foreground flex-1 min-w-0 truncate select-none">
+                    <MarkdownContent content={markdownPreview} />
+                  </div>
+                ) : (
+                  <span className="text-sm text-muted-foreground flex-1 truncate select-none">{placeholder}</span>
+                )}
                 {sendButton}
               </div>
             )}
