@@ -310,10 +310,12 @@
   .inline-preview :is(hr, table) {
     display: none;
   }
-  /* Hide block containers (CodeBlock wrapper, table overflow wrapper) that
-     would break single-line flow after lazy-load hydration. */
+  /* Make block containers (CodeBlock wrapper, table overflow wrapper)
+     layout-transparent so their children flow inline instead of breaking
+     the single line. Using display:contents instead of display:none
+     ensures code-only messages still show text in the preview. */
   .inline-preview > .markdown-content > div {
-    display: none;
+    display: contents;
   }
 
   /* Keyboard hint styling for quick switcher footer */
