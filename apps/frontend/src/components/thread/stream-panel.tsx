@@ -161,6 +161,10 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
     const rootType = parentStream.rootStreamId
       ? ancestors.find((a) => a.id === parentStream.rootStreamId)?.type
       : parentStream.type
+    // While ancestors are loading, rootType is undefined — return undefined so
+    // filterBroadcastMentions falls back to ALL_BROADCAST_MENTIONS (show all)
+    // rather than incorrectly filtering to "thread" (show none).
+    if (parentStream.rootStreamId && rootType === undefined) return undefined
     return { streamType: StreamTypes.THREAD, rootStreamType: rootType }
   }, [parentStream, ancestors])
 
