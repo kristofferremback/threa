@@ -51,6 +51,17 @@ export function isValidSlug(slug: string): boolean {
 export const INVALID_SLUG_CHARS = /[^a-z0-9_-]/g
 
 /**
+ * Reserved slugs for broadcast mentions (@channel, @here).
+ * Single source of truth used by both frontend filtering and backend resolution.
+ */
+export const BROADCAST_SLUGS = ["channel", "here"] as const
+export type BroadcastSlug = (typeof BROADCAST_SLUGS)[number]
+
+export function isBroadcastSlug(slug: string): slug is BroadcastSlug {
+  return BROADCAST_SLUGS.includes(slug as BroadcastSlug)
+}
+
+/**
  * Extract @mentions from message content.
  * Returns unique slugs in order of first occurrence.
  */

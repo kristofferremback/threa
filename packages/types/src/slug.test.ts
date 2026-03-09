@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test"
-import { isValidSlug, extractMentionSlugs, hasMention, SLUG_MAX_LENGTH } from "./slug"
+import { isValidSlug, extractMentionSlugs, hasMention, isBroadcastSlug, SLUG_MAX_LENGTH } from "./slug"
 
 describe("slug validation", () => {
   describe("isValidSlug", () => {
@@ -128,6 +128,25 @@ describe("slug validation", () => {
 
     test("returns false for invalid slug parameter", () => {
       expect(hasMention("Hello @test", "test.user")).toBe(false)
+    })
+  })
+
+  describe("isBroadcastSlug", () => {
+    test("returns true for 'channel'", () => {
+      expect(isBroadcastSlug("channel")).toBe(true)
+    })
+
+    test("returns true for 'here'", () => {
+      expect(isBroadcastSlug("here")).toBe(true)
+    })
+
+    test("returns false for user slugs", () => {
+      expect(isBroadcastSlug("alice")).toBe(false)
+      expect(isBroadcastSlug("ariadne")).toBe(false)
+    })
+
+    test("returns false for empty string", () => {
+      expect(isBroadcastSlug("")).toBe(false)
     })
   })
 })

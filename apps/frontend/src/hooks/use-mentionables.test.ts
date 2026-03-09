@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { filterMentionables } from "./use-mentionables"
+import { filterMentionables, filterBroadcastMentions } from "./use-mentionables"
 import type { Mentionable } from "@/components/editor/triggers/types"
 
 /**
@@ -84,5 +84,44 @@ describe("filterMentionables", () => {
     const result = filterMentionables(mentionables, "a")
     // Matches: alice (slug), Ariadne (slug/name), Channel (name)
     expect(result.length).toBeGreaterThanOrEqual(2)
+  })
+})
+
+describe("filterBroadcastMentions", () => {
+  const slugs = (items: Mentionable[]) => items.map((m) => m.slug).sort()
+
+  it("returns both when no context provided (backwards-compatible)", () => {
+    expect(slugs(filterBroadcastMentions())).toEqual(["channel", "here"])
+  })
+
+  it("returns both in a channel", () => {
+    expect(slugs(filterBroadcastMentions({ streamType: "channel" }))).toEqual(["channel", "here"])
+  })
+
+  it("returns both in a thread under a channel", () => {
+    expect(slugs(filterBroadcastMentions({ streamType: "thread", rootStreamType: "channel" }))).toEqual([
+      "channel",
+      "here",
+    ])
+  })
+
+  it("returns only @here in a DM", () => {
+    expect(slugs(filterBroadcastMentions({ streamType: "dm" }))).toEqual(["here"])
+  })
+
+  it("returns only @here in a thread under a DM", () => {
+    expect(slugs(filterBroadcastMentions({ streamType: "thread", rootStreamType: "dm" }))).toEqual(["here"])
+  })
+
+  it("returns empty in a scratchpad", () => {
+    expect(filterBroadcastMentions({ streamType: "scratchpad" })).toEqual([])
+  })
+
+  it("returns empty in a thread under a scratchpad", () => {
+    expect(filterBroadcastMentions({ streamType: "thread", rootStreamType: "scratchpad" })).toEqual([])
+  })
+
+  it("returns empty for system streams", () => {
+    expect(filterBroadcastMentions({ streamType: "system" })).toEqual([])
   })
 })

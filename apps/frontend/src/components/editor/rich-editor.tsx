@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils"
 import type { UploadResult } from "@/hooks/use-attachments"
 import type { AttachmentReferenceAttrs } from "./attachment-reference-extension"
 import type { MessageSendMode, JSONContent } from "@threa/types"
+import type { MentionStreamContext } from "@/hooks/use-mentionables"
 
 export interface RichEditorHandle {
   focus(): void
@@ -54,6 +55,8 @@ interface RichEditorProps {
   toolbarTrailingContent?: React.ReactNode
   /** Content rendered between the toolbar and the editor (e.g. attachment pills) */
   belowToolbarContent?: React.ReactNode
+  /** Stream context for filtering which broadcast mentions (@channel, @here) are available */
+  streamContext?: MentionStreamContext
 }
 
 export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function RichEditor(
@@ -74,6 +77,7 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
     onEditLastMessage,
     toolbarTrailingContent,
     belowToolbarContent,
+    streamContext,
   },
   ref
 ) {
@@ -87,8 +91,8 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Mention, channel, command, and emoji autocomplete
-  const { mentionables } = useMentionables()
-  const { suggestionConfig: mentionConfig, renderMentionList } = useMentionSuggestion()
+  const { mentionables } = useMentionables(streamContext)
+  const { suggestionConfig: mentionConfig, renderMentionList } = useMentionSuggestion(streamContext)
   const { suggestionConfig: channelConfig, renderChannelList } = useChannelSuggestion()
   const { suggestionConfig: commandConfig, renderCommandList } = useCommandSuggestion()
 

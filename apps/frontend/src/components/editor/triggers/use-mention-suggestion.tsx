@@ -1,15 +1,15 @@
 import { useCallback } from "react"
 import type { Mentionable } from "./types"
 import { MentionList } from "./mention-list"
-import { filterMentionables, useMentionables } from "@/hooks/use-mentionables"
+import { filterMentionables, useMentionables, type MentionStreamContext } from "@/hooks/use-mentionables"
 import { useSuggestion } from "./use-suggestion"
 
 /**
  * Hook that manages the mention suggestion state and provides render callbacks.
  * Returns configuration for the MentionExtension and a render function for the popup.
  */
-export function useMentionSuggestion() {
-  const { mentionables } = useMentionables()
+export function useMentionSuggestion(streamContext?: MentionStreamContext) {
+  const { mentionables } = useMentionables(streamContext)
 
   const renderList = useCallback(
     (props: {

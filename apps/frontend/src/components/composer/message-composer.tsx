@@ -11,6 +11,7 @@ import { stripMarkdown } from "@/lib/markdown"
 import { cn } from "@/lib/utils"
 import type { PendingAttachment, UploadResult } from "@/hooks/use-attachments"
 import type { MessageSendMode, JSONContent } from "@threa/types"
+import type { MentionStreamContext } from "@/hooks/use-mentionables"
 import type { Editor } from "@tiptap/react"
 import { serializeToMarkdown } from "@threa/prosemirror"
 
@@ -75,6 +76,8 @@ export interface MessageComposerProps {
   expanded?: boolean
   /** Called to collapse the expanded editor back to inline mode */
   onCollapse?: () => void
+  /** Stream context for filtering which broadcast mentions (@channel, @here) are available */
+  streamContext?: MentionStreamContext
 }
 
 export function MessageComposer({
@@ -102,6 +105,7 @@ export function MessageComposer({
   onExpandClick,
   expanded = false,
   onCollapse,
+  streamContext,
 }: MessageComposerProps) {
   // Controls (buttons, file input) are disabled during both external disable and sending.
   // The editor itself stays editable during sending so mobile keyboards don't close/reopen.
@@ -220,6 +224,7 @@ export function MessageComposer({
       staticToolbarOpen={!isMobile && formatOpen}
       disableSelectionToolbar={isMobile}
       onEditLastMessage={onEditLastMessage}
+      streamContext={streamContext}
     />
   )
 
@@ -317,6 +322,7 @@ export function MessageComposer({
               disableSelectionToolbar
               onEditLastMessage={onEditLastMessage}
               toolbarTrailingContent={expandedTrailingContent}
+              streamContext={streamContext}
               belowToolbarContent={
                 pendingAttachments.length > 0 ? (
                   <div className="pt-1 pb-2 border-b border-border/50 [&>div]:mb-0">
