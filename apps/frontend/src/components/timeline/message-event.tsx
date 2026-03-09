@@ -207,6 +207,16 @@ function SentMessageEvent({
     }
   }, [isMobile, inlineEdit])
 
+  // Reset inline edit context if the message unmounts while being edited
+  // (e.g., message deleted by another user mid-edit)
+  useEffect(() => {
+    return () => {
+      if (isEditing && isMobile) {
+        inlineEdit?.setEditingInline(false)
+      }
+    }
+  }, [isEditing, isMobile, inlineEdit])
+
   // Restore focus to the zone's editor after exiting inline edit mode
   const stopEditing = useCallback(() => {
     setIsEditing(false)

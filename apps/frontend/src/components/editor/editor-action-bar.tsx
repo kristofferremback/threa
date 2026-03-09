@@ -57,6 +57,7 @@ export function EditorActionBar({
               e.preventDefault()
               onMobileExpandedChange(!mobileExpanded)
             }}
+            disabled={disabled}
           >
             {mobileExpanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
           </Button>
