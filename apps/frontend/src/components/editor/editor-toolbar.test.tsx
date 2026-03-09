@@ -2,11 +2,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen, fireEvent } from "@testing-library/react"
 import type { Editor } from "@tiptap/react"
 import { EditorToolbar } from "./editor-toolbar"
-import { indentSelection, dedentSelection } from "./editor-behaviors"
+import { indentSelection, dedentSelection, isSuggestionActive } from "./editor-behaviors"
 
 vi.mock("./editor-behaviors", () => ({
   indentSelection: vi.fn(),
   dedentSelection: vi.fn(),
+  isSuggestionActive: vi.fn(() => false),
 }))
 
 function createEditorStub() {
@@ -68,6 +69,18 @@ describe("EditorToolbar", () => {
 
     expect(indentSelection).toHaveBeenCalledWith(editor)
     expect(dedentSelection).toHaveBeenCalledWith(editor)
+  })
+
+  it("skips indent and dedent when a suggestion popup is active", () => {
+    const editor = createEditorStub()
+    vi.mocked(isSuggestionActive).mockReturnValue(true)
+    render(<EditorToolbar editor={editor} isVisible inline inlinePosition="below" showSpecialInputControls />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Indent" }))
+    fireEvent.click(screen.getByRole("button", { name: "Dedent" }))
+
+    expect(indentSelection).not.toHaveBeenCalled()
+    expect(dedentSelection).not.toHaveBeenCalled()
   })
 
   it("uses a dedicated scroll container for the mobile inline toolbar without the edge fade overlay", () => {

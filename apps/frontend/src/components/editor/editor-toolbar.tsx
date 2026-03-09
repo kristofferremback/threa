@@ -21,7 +21,7 @@ import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { LinkEditor } from "./link-editor"
-import { indentSelection, dedentSelection } from "./editor-behaviors"
+import { indentSelection, dedentSelection, isSuggestionActive } from "./editor-behaviors"
 import { cn } from "@/lib/utils"
 
 interface EditorToolbarProps {
@@ -199,14 +199,18 @@ export function EditorToolbar({
         <>
           <Separator orientation="vertical" className={separatorClassName} />
           <ToolbarButton
-            onAction={() => indentSelection(editor)}
+            onAction={() => {
+              if (!isSuggestionActive(editor)) indentSelection(editor)
+            }}
             icon={ListIndentIncrease}
             label="Indent"
             roomy
             showTooltip={false}
           />
           <ToolbarButton
-            onAction={() => dedentSelection(editor)}
+            onAction={() => {
+              if (!isSuggestionActive(editor)) dedentSelection(editor)
+            }}
             icon={ListIndentDecrease}
             label="Dedent"
             roomy
