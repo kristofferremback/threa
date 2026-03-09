@@ -310,12 +310,11 @@
   .inline-preview :is(hr, table) {
     display: none;
   }
-  /* Make block containers (CodeBlock wrapper, table overflow wrapper)
-     layout-transparent so their children flow inline instead of breaking
-     the single line. Using display:contents instead of display:none
-     ensures code-only messages still show text in the preview. */
+  /* Hide block containers (CodeBlock wrapper, table overflow wrapper)
+     as a safety net. Fenced code blocks are stripped from the markdown
+     at the JS level before rendering, so this rarely activates. */
   .inline-preview > .markdown-content > div {
-    display: contents;
+    display: none;
   }
 
   /* Keyboard hint styling for quick switcher footer */

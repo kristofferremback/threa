@@ -197,8 +197,15 @@ export function MessageComposer({
     setMobileToolbarEditor((currentEditor) => (currentEditor === nextEditor ? currentEditor : nextEditor))
   }, [])
 
-  // Markdown preview for the collapsed mobile single-line view
-  const markdownPreview = useMemo(() => (isMobile ? serializeToMarkdown(content).trim() : ""), [isMobile, content])
+  // Markdown preview for the collapsed mobile single-line view.
+  // Fenced code blocks are stripped — they can't meaningfully render in a
+  // single-line preview and their lazy-loaded CodeBlock component breaks layout.
+  const markdownPreview = useMemo(() => {
+    if (!isMobile) return ""
+    return serializeToMarkdown(content)
+      .replace(/```[\s\S]*?```/g, "")
+      .trim()
+  }, [isMobile, content])
 
   const sharedEditor = (
     <RichEditor
