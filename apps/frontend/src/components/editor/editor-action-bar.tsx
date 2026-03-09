@@ -11,9 +11,10 @@ export interface EditorActionBarProps {
   // Toggle state
   formatOpen: boolean
   onFormatOpenChange: (open: boolean) => void
-  mobileExpanded: boolean
-  onMobileExpandedChange: (expanded: boolean) => void
+  mobileExpanded?: boolean
+  onMobileExpandedChange?: (expanded: boolean) => void
   // Optional buttons
+  showExpand?: boolean
   showAttach?: boolean
   showSlashCommand?: boolean
   onAttachClick?: () => void
@@ -29,8 +30,9 @@ export function EditorActionBar({
   disabled = false,
   formatOpen,
   onFormatOpenChange,
-  mobileExpanded,
+  mobileExpanded = false,
   onMobileExpandedChange,
+  showExpand = true,
   showAttach = true,
   showSlashCommand = false,
   onAttachClick,
@@ -44,28 +46,30 @@ export function EditorActionBar({
       <span className="flex-1" />
 
       {/* Expand/collapse toggle — mobile inline expansion */}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            aria-label={mobileExpanded ? "Minimize editor" : "Expand editor"}
-            aria-pressed={mobileExpanded}
-            className="h-7 w-7 shrink-0"
-            onPointerDown={(e) => {
-              e.preventDefault()
-              onMobileExpandedChange(!mobileExpanded)
-            }}
-            disabled={disabled}
-          >
-            {mobileExpanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="top" className="text-xs">
-          {mobileExpanded ? "Minimize" : "Expand"}
-        </TooltipContent>
-      </Tooltip>
+      {showExpand && onMobileExpandedChange && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label={mobileExpanded ? "Minimize editor" : "Expand editor"}
+              aria-pressed={mobileExpanded}
+              className="h-7 w-7 shrink-0"
+              onPointerDown={(e) => {
+                e.preventDefault()
+                onMobileExpandedChange(!mobileExpanded)
+              }}
+              disabled={disabled}
+            >
+              {mobileExpanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="text-xs">
+            {mobileExpanded ? "Minimize" : "Expand"}
+          </TooltipContent>
+        </Tooltip>
+      )}
 
       {/* Desktop expand — opens fullscreen editor modal */}
       {showDesktopExpand && onDesktopExpandClick && (

@@ -201,10 +201,6 @@ function SentMessageEvent({
     setIsEditing(true)
     if (isMobile) {
       inlineEdit?.setEditingInline(true)
-      // Scroll immediately and again after the keyboard opens and re-layouts
-      const scroll = () => containerRef.current?.scrollIntoView({ block: "start", behavior: "smooth" })
-      requestAnimationFrame(scroll)
-      setTimeout(scroll, 400)
     }
   }, [isMobile, inlineEdit])
 
@@ -373,7 +369,7 @@ function SentMessageEvent({
             )}
           </>
         }
-        isEditing={isEditing}
+        isEditing={isEditing && !isMobile}
         actions={
           // Desktop: hover-reveal dropdown menu. Mobile: hidden (long-press opens drawer instead).
           <div
@@ -385,7 +381,7 @@ function SentMessageEvent({
             <MessageContextMenu context={actionContext} />
           </div>
         }
-        footer={isEditing ? undefined : threadFooter}
+        footer={isEditing && !isMobile ? undefined : threadFooter}
         containerRef={containerRef}
         isHighlighted={isHighlighted}
         containerClassName={cn(
@@ -395,7 +391,8 @@ function SentMessageEvent({
         )}
         touchHandlers={isMobile ? longPress.handlers : undefined}
       >
-        {isEditing ? (
+        {/* Desktop: inline edit replaces message content. Mobile: drawer handles editing. */}
+        {isEditing && !isMobile ? (
           <MessageEditForm
             messageId={payload.messageId}
             workspaceId={workspaceId}
@@ -405,6 +402,17 @@ function SentMessageEvent({
           />
         ) : undefined}
       </MessageLayout>
+      {/* Mobile: edit in a bottom-sheet drawer (avoids scroll/keyboard issues) */}
+      {isEditing && isMobile && (
+        <MessageEditForm
+          messageId={payload.messageId}
+          workspaceId={workspaceId}
+          initialContentJson={payload.contentJson}
+          onSave={stopEditing}
+          onCancel={stopEditing}
+          authorName={actorName}
+        />
+      )}
       {deleteDialogOpen && (
         <DeleteMessageDialog
           open={deleteDialogOpen}
