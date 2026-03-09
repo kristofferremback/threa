@@ -17,10 +17,11 @@ The composer now exposes explicit keyboard instructions to screen readers and su
 
 ### Rich Editor Accessibility Semantics
 
-The shared rich editor now exposes proper textbox semantics for the TipTap contenteditable surface, including an accessible name, multiline semantics, and linked instructions. Escape-to-blur is implemented in the editor key path as an opt-in behavior so composer surfaces can use it without changing inline edit cancellation semantics.
+The shared rich editor now exposes proper textbox semantics for the TipTap contenteditable surface, including an accessible name, multiline semantics, and linked instructions. Escape-to-blur is implemented in the editor key path as an opt-in behavior so composer surfaces can use it without changing inline edit cancellation semantics, and editor labels are now explicit per surface instead of relying on a misleading shared default.
 
 **Files:**
-- `apps/frontend/src/components/editor/rich-editor.tsx` - adds ARIA support for the editor surface and an opt-in Escape blur path
+- `apps/frontend/src/components/editor/rich-editor.tsx` - adds ARIA support for the editor surface, requires explicit labels, and implements an opt-in Escape blur path
+- `apps/frontend/src/components/timeline/message-edit-form.tsx` - labels the inline message edit surface as `Edit message` instead of inheriting composer semantics
 
 ### Keyboard-Accessible Formatting Controls
 
@@ -36,6 +37,7 @@ Component tests cover the new editor semantics and toolbar keyboard behavior, an
 **Files:**
 - `apps/frontend/src/components/composer/message-composer.test.tsx` - verifies accessible naming and instruction text
 - `apps/frontend/src/components/editor/editor-toolbar.test.tsx` - verifies inline toolbar tab order and keyboard activation
+- `apps/frontend/src/components/timeline/message-edit-form.test.tsx` - verifies the inline edit surface exposes the correct accessible name
 - `tests/browser/message-send-mode.spec.ts` - verifies named textbox exposure, Escape blur, and fullscreen double-Escape behavior
 
 ## Design Decisions
@@ -58,10 +60,18 @@ Component tests cover the new editor semantics and toolbar keyboard behavior, an
 **Why:** The inline toolbar is part of the explicit composer UI and should be reachable; the floating selection toolbar can stay pointer-oriented to avoid unwanted tab stops during general editing.
 **Alternatives considered:** Making every toolbar rendering keyboard-focusable would add noise to the floating selection experience.
 
+### Editor Labels Must Be Explicit At Each Surface
+
+**Chose:** Remove the default `RichEditor` label and require each caller to pass an explicit `ariaLabel`.
+**Why:** Review feedback surfaced that a shared default misidentified inline message editing as `Message input`, which would announce the wrong purpose to assistive technology.
+**Alternatives considered:** Keeping a generic default such as `Rich text editor` was possible, but still leaves the responsibility implicit and makes regressions easier to miss.
+
 ## Design Evolution
 
 - **Escape handling location:** Initial wrapper-level Escape blur handling in the composer evolved into editor-level handling inside `RichEditor` after Playwright showed the wrapper approach did not actually blur the focused TipTap surface.
 - **Fullscreen close sequencing:** Initial fullscreen close logic relied on the existing document listener. Browser verification exposed that blur and close could happen in the same Escape sequence, so the implementation shifted to an explicit blur-then-focus-shell-then-close flow.
+- **Toolbar activation behavior:** Initial keyboard-accessible toolbar changes moved actions onto `onClick`, but review feedback showed that touch activation would stop firing after `preventDefault()` on `pointerdown`. The final implementation splits pointer activation to `onPointerDown` and keyboard activation to `onClick` with `detail === 0`.
+- **Editor accessible naming:** Initial editor semantics used a `RichEditor` default label of `Message input`. Review feedback exposed that inline message editing inherited that label, so the implementation changed to require explicit labels and set `Edit message` at the inline edit call site.
 
 ## Schema Changes
 
@@ -78,5 +88,6 @@ None.
 - [x] Add Escape-to-blur support for composer editors
 - [x] Preserve fullscreen close behavior via double Escape
 - [x] Expose proper textbox semantics and keyboard instructions for assistive tech
+- [x] Require explicit editor labels so each surface announces the correct purpose
 - [x] Make inline formatting controls keyboard-accessible
 - [x] Verify the new behavior with targeted unit and browser tests
