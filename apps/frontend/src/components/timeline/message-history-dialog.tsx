@@ -64,6 +64,7 @@ export function MessageHistoryDialog({
       <ResponsiveDialogContent
         desktopClassName="max-w-2xl max-h-[80vh] sm:flex flex-col"
         drawerClassName="flex flex-col"
+        aria-describedby={undefined}
       >
         <ResponsiveDialogHeader>
           <ResponsiveDialogTitle>Edit history</ResponsiveDialogTitle>

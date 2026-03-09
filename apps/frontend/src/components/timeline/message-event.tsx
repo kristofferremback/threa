@@ -334,7 +334,10 @@ function SentMessageEvent({
       editedAt: payload.editedAt,
       onEdit: startEditing,
       onDelete: () => setDeleteDialogOpen(true),
-      onShowHistory: () => setHistoryOpen(true),
+      // Deferred to next tick so the DropdownMenu/ActionDrawer fully unmounts
+      // before the Dialog opens — Radix emits synthetic pointer events on menu
+      // close that trigger the Dialog's "click outside" handler otherwise.
+      onShowHistory: () => setTimeout(() => setHistoryOpen(true), 0),
     }),
     [
       payload.contentMarkdown,
