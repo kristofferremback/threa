@@ -5,6 +5,19 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils"
 import type { RichEditorHandle } from "./rich-editor"
 
+function handlePointerAction(action: () => void) {
+  return (event: React.PointerEvent) => {
+    event.preventDefault()
+    action()
+  }
+}
+
+function handleKeyboardClick(action: () => void) {
+  return (event: React.MouseEvent) => {
+    if (event.detail === 0) action()
+  }
+}
+
 export interface EditorActionBarProps {
   editorHandle: RichEditorHandle | null
   disabled?: boolean
@@ -56,10 +69,8 @@ export function EditorActionBar({
               aria-label={mobileExpanded ? "Minimize editor" : "Expand editor"}
               aria-pressed={mobileExpanded}
               className="h-7 w-7 shrink-0"
-              onPointerDown={(e) => {
-                e.preventDefault()
-                onMobileExpandedChange(!mobileExpanded)
-              }}
+              onPointerDown={handlePointerAction(() => onMobileExpandedChange(!mobileExpanded))}
+              onClick={handleKeyboardClick(() => onMobileExpandedChange(!mobileExpanded))}
               disabled={disabled}
             >
               {mobileExpanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
@@ -81,8 +92,8 @@ export function EditorActionBar({
               size="icon"
               aria-label="Expand to fullscreen editor"
               className="h-7 w-7 shrink-0"
-              onPointerDown={(e) => e.preventDefault()}
-              onClick={onDesktopExpandClick}
+              onPointerDown={handlePointerAction(onDesktopExpandClick)}
+              onClick={handleKeyboardClick(onDesktopExpandClick)}
               disabled={disabled}
             >
               <Maximize2 className="h-3.5 w-3.5" />
@@ -104,8 +115,8 @@ export function EditorActionBar({
             aria-label="Formatting"
             aria-pressed={formatOpen}
             className={cn("h-7 w-7 shrink-0", formatOpen && "bg-accent text-accent-foreground")}
-            onPointerDown={(e) => e.preventDefault()}
-            onClick={() => onFormatOpenChange(!formatOpen)}
+            onPointerDown={handlePointerAction(() => onFormatOpenChange(!formatOpen))}
+            onClick={handleKeyboardClick(() => onFormatOpenChange(!formatOpen))}
             disabled={disabled}
           >
             <span className="text-[13px] font-bold leading-none tracking-tight">Aa</span>
@@ -125,10 +136,8 @@ export function EditorActionBar({
             size="icon"
             aria-label="Insert emoji"
             className="h-7 w-7 shrink-0"
-            onPointerDown={(e) => {
-              e.preventDefault()
-              editorHandle?.insertEmoji()
-            }}
+            onPointerDown={handlePointerAction(() => editorHandle?.insertEmoji())}
+            onClick={handleKeyboardClick(() => editorHandle?.insertEmoji())}
             disabled={disabled}
           >
             <span className="text-sm leading-none">😊</span>
@@ -148,10 +157,8 @@ export function EditorActionBar({
             size="icon"
             aria-label="Insert mention"
             className="h-7 w-7 shrink-0"
-            onPointerDown={(e) => {
-              e.preventDefault()
-              editorHandle?.insertMention()
-            }}
+            onPointerDown={handlePointerAction(() => editorHandle?.insertMention())}
+            onClick={handleKeyboardClick(() => editorHandle?.insertMention())}
             disabled={disabled}
           >
             <AtSign className="h-4 w-4" />
@@ -172,10 +179,8 @@ export function EditorActionBar({
               size="icon"
               aria-label="Insert command"
               className="h-7 w-7 shrink-0"
-              onPointerDown={(e) => {
-                e.preventDefault()
-                editorHandle?.insertSlash()
-              }}
+              onPointerDown={handlePointerAction(() => editorHandle?.insertSlash())}
+              onClick={handleKeyboardClick(() => editorHandle?.insertSlash())}
               disabled={disabled}
             >
               <Slash className="h-4 w-4" />

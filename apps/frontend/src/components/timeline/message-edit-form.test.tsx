@@ -1,10 +1,28 @@
-import { describe, it, expect, vi } from "vitest"
+import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen, fireEvent } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { MessageEditForm } from "./message-edit-form"
 import type { JSONContent } from "@threa/types"
+
+let isMobileMockValue = false
+
+vi.mock("@/hooks/use-mobile", () => ({
+  useIsMobile: () => isMobileMockValue,
+}))
+
+vi.mock("@/components/ui/drawer", () => ({
+  Drawer: ({ children }: { children: React.ReactNode }) => <div data-testid="drawer-root">{children}</div>,
+  DrawerContent: ({ children, className }: { children: React.ReactNode; className?: string }) => (
+    <div data-testid="drawer-content" className={className}>
+      {children}
+    </div>
+  ),
+  DrawerTitle: ({ children, className }: { children: React.ReactNode; className?: string }) => (
+    <h2 className={className}>{children}</h2>
+  ),
+}))
 
 vi.mock("@/components/editor", () => ({
   RichEditor: ({
@@ -13,18 +31,21 @@ vi.mock("@/components/editor", () => ({
     onSubmit,
     placeholder,
     ariaLabel,
+    ariaDescribedBy,
   }: {
     value: JSONContent
     onChange: (v: JSONContent) => void
     onSubmit: () => void
     placeholder?: string
     ariaLabel: string
+    ariaDescribedBy?: string
   }) => (
     <textarea
       data-testid="rich-editor"
       defaultValue={JSON.stringify(value)}
       placeholder={placeholder}
       aria-label={ariaLabel}
+      aria-describedby={ariaDescribedBy}
       onChange={(e) => {
         try {
           onChange(JSON.parse(e.target.value))
@@ -40,6 +61,8 @@ vi.mock("@/components/editor", () => ({
       }}
     />
   ),
+  EditorToolbar: () => null,
+  EditorActionBar: ({ trailingContent }: { trailingContent: React.ReactNode }) => <div>{trailingContent}</div>,
   DocumentEditorModal: () => null,
 }))
 
@@ -88,12 +111,27 @@ function renderForm(props: Partial<React.ComponentProps<typeof MessageEditForm>>
 }
 
 describe("MessageEditForm", () => {
+  beforeEach(() => {
+    isMobileMockValue = false
+  })
+
   it("should render editor with save and cancel buttons", () => {
     renderForm()
 
     expect(screen.getByRole("textbox", { name: "Edit message" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument()
+  })
+
+  it("should expose the mobile editor with instructions", () => {
+    isMobileMockValue = true
+    renderForm({ authorName: "Alice" })
+
+    const editor = screen.getByRole("textbox", { name: "Edit message" })
+    const instructions = screen.getByText(/Press Escape to leave the editor\./)
+
+    expect(editor).toHaveAttribute("aria-describedby", instructions.getAttribute("id"))
+    expect(screen.getByText("Alice")).toBeInTheDocument()
   })
 
   it("should call onCancel when cancel button is clicked", async () => {

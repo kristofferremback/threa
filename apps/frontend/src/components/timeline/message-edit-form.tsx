@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback, useRef, useId, useMemo } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { Expand } from "lucide-react"
@@ -15,6 +15,7 @@ import type { JSONContent } from "@threa/types"
 import type { Editor } from "@tiptap/react"
 
 const EMPTY_DOC: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
+const MOD_KEY_NAME = navigator.platform?.toLowerCase().includes("mac") ? "Command" : "Control"
 
 interface MessageEditFormProps {
   messageId: string
@@ -47,7 +48,9 @@ export function MessageEditForm({
   const [mobileExpanded, setMobileExpanded] = useState(false)
   const [mobileLinkPopoverOpen, setMobileLinkPopoverOpen] = useState(false)
   const richEditorRef = useRef<RichEditorHandle>(null)
+  const mobileActionBarRef = useRef<HTMLDivElement>(null)
   const [mobileToolbarEditor, setMobileToolbarEditor] = useState<Editor | null>(null)
+  const instructionsId = useId()
 
   useEffect(() => {
     if (isMobile) return // vaul handles Escape via onOpenChange
@@ -117,6 +120,18 @@ export function MessageEditForm({
     setContentJson(json)
   }, [])
 
+  const screenReaderInstructions = useMemo(() => {
+    if (isMobile) {
+      return `Press ${MOD_KEY_NAME}+Enter to save. Tab and Shift+Tab indent content. Press Escape to leave the editor.`
+    }
+
+    return "Press Enter to save. Tab and Shift+Tab indent content. Press Escape to cancel editing."
+  }, [isMobile])
+
+  const focusMobileActionBar = useCallback(() => {
+    mobileActionBarRef.current?.focus()
+  }, [])
+
   // Mobile: Drawer bottom sheet
   if (isMobile) {
     const trailingContent = (
@@ -156,6 +171,9 @@ export function MessageEditForm({
       >
         <DrawerContent className={mobileExpanded ? "h-[100dvh] max-h-[100dvh]" : "max-h-[85dvh]"}>
           <DrawerTitle className="sr-only">Edit message</DrawerTitle>
+          <p id={instructionsId} className="sr-only">
+            {screenReaderInstructions}
+          </p>
 
           <div className="flex flex-col flex-1 min-h-0 px-4 pt-1">
             {/* Author context */}
@@ -172,15 +190,24 @@ export function MessageEditForm({
                 onChange={setContentJson}
                 onSubmit={handleSubmit}
                 placeholder="Edit message..."
+                ariaLabel="Edit message"
+                ariaDescribedBy={instructionsId}
                 messageSendMode="cmdEnter"
                 autoFocus
                 disableSelectionToolbar
+                blurOnEscape
+                onEscapeBlur={focusMobileActionBar}
               />
             </div>
           </div>
 
           {/* Action bar + toolbar at the bottom of the drawer */}
-          <div className="px-4 pb-[max(8px,env(safe-area-inset-bottom))]" onMouseDown={(e) => e.preventDefault()}>
+          <div
+            ref={mobileActionBarRef}
+            className="px-4 pb-[max(8px,env(safe-area-inset-bottom))]"
+            tabIndex={-1}
+            onMouseDown={(e) => e.preventDefault()}
+          >
             <EditorActionBar
               editorHandle={richEditorRef.current}
               disabled={isSaving}
@@ -211,6 +238,9 @@ export function MessageEditForm({
   // Desktop layout — unchanged
   return (
     <>
+      <p id={instructionsId} className="sr-only">
+        {screenReaderInstructions}
+      </p>
       <div data-inline-edit className="[&_.tiptap]:!pt-0 [&_.tiptap_p]:!leading-relaxed">
         <RichEditor
           value={contentJson}
@@ -218,6 +248,7 @@ export function MessageEditForm({
           onSubmit={handleSubmit}
           placeholder="Edit message..."
           ariaLabel="Edit message"
+          ariaDescribedBy={instructionsId}
           autoFocus
         />
       </div>
