@@ -9,6 +9,7 @@ import { RelativeTime } from "@/components/relative-time"
 import { PersonaAvatar } from "@/components/persona-avatar"
 import { usePendingMessages, usePanel, createDraftPanelId, useTrace, useMessageService } from "@/contexts"
 import { useEditLastMessage } from "./edit-last-message-context"
+import { useInlineEdit } from "./inline-edit-context"
 import { useActors, useWorkspaceUserId, getStepLabel, focusAtEnd, type MessageAgentActivity } from "@/hooks"
 import { cn } from "@/lib/utils"
 import { useIsMobile } from "@/hooks/use-mobile"
@@ -188,6 +189,7 @@ function SentMessageEvent({
 
   // Mobile: long-press opens action drawer instead of dropdown
   const isMobile = useIsMobile()
+  const inlineEdit = useInlineEdit()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const openDrawer = useCallback(() => setDrawerOpen(true), [])
   const longPress = useLongPress({
@@ -195,15 +197,36 @@ function SentMessageEvent({
     enabled: isMobile && !isEditing,
   })
 
+  const startEditing = useCallback(() => {
+    setIsEditing(true)
+    if (isMobile) {
+      inlineEdit?.setEditingInline(true)
+    }
+  }, [isMobile, inlineEdit])
+
+  // Reset inline edit context if the message unmounts while being edited
+  // (e.g., message deleted by another user mid-edit)
+  useEffect(() => {
+    return () => {
+      if (isEditing && isMobile) {
+        inlineEdit?.setEditingInline(false)
+      }
+    }
+  }, [isEditing, isMobile, inlineEdit])
+
   // Restore focus to the zone's editor after exiting inline edit mode
   const stopEditing = useCallback(() => {
     setIsEditing(false)
+    if (isMobile) {
+      inlineEdit?.setEditingInline(false)
+      return
+    }
     requestAnimationFrame(() => {
       const zone = containerRef.current?.closest<HTMLElement>("[data-editor-zone]")
       const editor = zone?.querySelector<HTMLElement>('[contenteditable="true"]')
       if (editor) focusAtEnd(editor)
     })
-  }, [])
+  }, [isMobile, inlineEdit])
 
   // Register this message's edit handler with the context so the composer's ArrowUp trigger
   // can imperatively open edit mode and scroll into view. Unregistered on unmount.
@@ -212,9 +235,9 @@ function SentMessageEvent({
     if (!registerMessage) return
     return registerMessage(payload.messageId, () => {
       containerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" })
-      setIsEditing(true)
+      startEditing()
     })
-  }, [payload.messageId, registerMessage])
+  }, [payload.messageId, registerMessage, startEditing])
 
   // Scroll to this message when highlighted
   useEffect(() => {
@@ -308,7 +331,7 @@ function SentMessageEvent({
       messageId: payload.messageId,
       authorId: event.actorId ?? undefined,
       currentUserId: currentUserId ?? undefined,
-      onEdit: () => setIsEditing(true),
+      onEdit: startEditing,
       onDelete: () => setDeleteDialogOpen(true),
     }),
     [
@@ -325,6 +348,7 @@ function SentMessageEvent({
       draftPanelUrl,
       getTraceUrl,
       currentUserId,
+      startEditing,
     ]
   )
 
@@ -346,7 +370,7 @@ function SentMessageEvent({
             )}
           </>
         }
-        isEditing={isEditing}
+        isEditing={isEditing && !isMobile}
         actions={
           // Desktop: hover-reveal dropdown menu. Mobile: hidden (long-press opens drawer instead).
           <div
@@ -358,16 +382,18 @@ function SentMessageEvent({
             <MessageContextMenu context={actionContext} />
           </div>
         }
-        footer={isEditing ? undefined : threadFooter}
+        footer={isEditing && !isMobile ? undefined : threadFooter}
         containerRef={containerRef}
         isHighlighted={isHighlighted}
         containerClassName={cn(
+          "scroll-mt-12",
           isMobile && !isEditing && "select-none",
           longPress.isPressed && "opacity-70 transition-opacity duration-100"
         )}
         touchHandlers={isMobile ? longPress.handlers : undefined}
       >
-        {isEditing ? (
+        {/* Desktop: inline edit replaces message content. Mobile: drawer handles editing. */}
+        {isEditing && !isMobile ? (
           <MessageEditForm
             messageId={payload.messageId}
             workspaceId={workspaceId}
@@ -377,6 +403,17 @@ function SentMessageEvent({
           />
         ) : undefined}
       </MessageLayout>
+      {/* Mobile: edit in a bottom-sheet drawer (avoids scroll/keyboard issues) */}
+      {isEditing && isMobile && (
+        <MessageEditForm
+          messageId={payload.messageId}
+          workspaceId={workspaceId}
+          initialContentJson={payload.contentJson}
+          onSave={stopEditing}
+          onCancel={stopEditing}
+          authorName={actorName}
+        />
+      )}
       {deleteDialogOpen && (
         <DeleteMessageDialog
           open={deleteDialogOpen}

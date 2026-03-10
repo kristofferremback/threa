@@ -1,7 +1,7 @@
 import { type ChangeEvent, type RefObject, useMemo, useCallback, useRef, useState, useEffect } from "react"
-import { AtSign, Slash, Paperclip, ArrowUp, Maximize2, Minimize2, X, Plus } from "lucide-react"
+import { ArrowUp, X, Plus, AtSign, Slash, Paperclip, Maximize2 } from "lucide-react"
 import { useIsMobile } from "@/hooks/use-mobile"
-import { RichEditor, EditorToolbar } from "@/components/editor"
+import { RichEditor, EditorToolbar, EditorActionBar } from "@/components/editor"
 import type { RichEditorHandle } from "@/components/editor"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
@@ -592,158 +592,138 @@ export function MessageComposer({
                onMouseDown preventDefault keeps editor focus on mobile so the virtual keyboard
                stays open when tapping any button in this bar. */}
             {(!isMobile || mobileFocused) && (
-              <div className="flex items-center gap-1" onMouseDown={(e) => e.preventDefault()}>
-                {/* Hint text — desktop only */}
-                <span className="text-[11px] text-muted-foreground flex-1 select-none pointer-events-none hidden sm:block">
-                  Select text to format
-                </span>
-                {isMobile && <span className="flex-1" />}
-
-                {/* Expand/collapse toggle — mobile: expand inline, desktop: open fullscreen editor */}
-                {isMobile && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        aria-label={mobileExpanded ? "Minimize editor" : "Expand editor"}
-                        aria-pressed={mobileExpanded}
-                        className="h-7 w-7 shrink-0"
-                        onClick={() => setMobileExpanded((v) => !v)}
-                      >
-                        {mobileExpanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="text-xs">
-                      {mobileExpanded ? "Minimize" : "Expand"}
-                    </TooltipContent>
-                  </Tooltip>
+              <div onMouseDown={(e) => e.preventDefault()}>
+                {isMobile ? (
+                  <EditorActionBar
+                    editorHandle={richEditorRef.current}
+                    disabled={controlsDisabled}
+                    formatOpen={formatOpen}
+                    onFormatOpenChange={setFormatOpen}
+                    mobileExpanded={mobileExpanded}
+                    onMobileExpandedChange={setMobileExpanded}
+                    showAttach
+                    onAttachClick={handleAttachClick}
+                    trailingContent={sendButton}
+                  />
+                ) : (
+                  <div className="flex items-center gap-1">
+                    <span className="text-[11px] text-muted-foreground flex-1 select-none pointer-events-none">
+                      Select text to format
+                    </span>
+                    {onExpandClick && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            aria-label="Expand to fullscreen editor"
+                            className="h-7 w-7 shrink-0"
+                            onClick={onExpandClick}
+                            disabled={controlsDisabled}
+                          >
+                            <Maximize2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="text-xs">
+                          Expand editor
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label="Formatting"
+                          aria-pressed={formatOpen}
+                          className={cn("h-7 w-7 shrink-0", formatOpen && "bg-accent text-accent-foreground")}
+                          onClick={() => setFormatOpen((v) => !v)}
+                          disabled={controlsDisabled}
+                        >
+                          <span className="text-[13px] font-bold leading-none tracking-tight">Aa</span>
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="text-xs">
+                        Formatting
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label="Insert emoji"
+                          className="h-7 w-7 shrink-0"
+                          onClick={() => richEditorRef.current?.insertEmoji()}
+                          disabled={controlsDisabled}
+                        >
+                          <span className="text-sm leading-none">😊</span>
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="text-xs">
+                        Emoji
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label="Insert mention"
+                          className="h-7 w-7 shrink-0"
+                          onClick={() => richEditorRef.current?.insertMention()}
+                          disabled={controlsDisabled}
+                        >
+                          <AtSign className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="text-xs">
+                        Mention
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label="Insert command"
+                          className="h-7 w-7 shrink-0 hidden sm:inline-flex"
+                          onClick={() => richEditorRef.current?.insertSlash()}
+                          disabled={controlsDisabled}
+                        >
+                          <Slash className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="text-xs">
+                        Command
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label="Attach files"
+                          className="h-7 w-7 shrink-0"
+                          onClick={handleAttachClick}
+                          disabled={controlsDisabled}
+                        >
+                          <Paperclip className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="text-xs">
+                        Attach files
+                      </TooltipContent>
+                    </Tooltip>
+                    {sendButton}
+                  </div>
                 )}
-                {!isMobile && onExpandClick && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        aria-label="Expand to fullscreen editor"
-                        className="h-7 w-7 shrink-0"
-                        onClick={onExpandClick}
-                        disabled={controlsDisabled}
-                      >
-                        <Maximize2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="text-xs">
-                      Expand editor
-                    </TooltipContent>
-                  </Tooltip>
-                )}
-
-                {/* Format toggle — opens/closes inline style bar */}
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label="Formatting"
-                      aria-pressed={formatOpen}
-                      className={cn("h-7 w-7 shrink-0", formatOpen && "bg-accent text-accent-foreground")}
-                      onClick={() => setFormatOpen((v) => !v)}
-                      disabled={controlsDisabled}
-                    >
-                      <span className="text-[13px] font-bold leading-none tracking-tight">Aa</span>
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="text-xs">
-                    Formatting
-                  </TooltipContent>
-                </Tooltip>
-
-                {/* Insert emoji */}
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label="Insert emoji"
-                      className="h-7 w-7 shrink-0"
-                      onClick={() => richEditorRef.current?.insertEmoji()}
-                      disabled={controlsDisabled}
-                    >
-                      <span className="text-sm leading-none">😊</span>
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="text-xs">
-                    Emoji
-                  </TooltipContent>
-                </Tooltip>
-
-                {/* Insert mention */}
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label="Insert mention"
-                      className="h-7 w-7 shrink-0"
-                      onClick={() => richEditorRef.current?.insertMention()}
-                      disabled={controlsDisabled}
-                    >
-                      <AtSign className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="text-xs">
-                    Mention
-                  </TooltipContent>
-                </Tooltip>
-
-                {/* Insert slash command — desktop only */}
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label="Insert command"
-                      className="h-7 w-7 shrink-0 hidden sm:inline-flex"
-                      onClick={() => richEditorRef.current?.insertSlash()}
-                      disabled={controlsDisabled}
-                    >
-                      <Slash className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="text-xs">
-                    Command
-                  </TooltipContent>
-                </Tooltip>
-
-                {/* Attach files */}
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label="Attach files"
-                      className="h-7 w-7 shrink-0"
-                      onClick={handleAttachClick}
-                      disabled={controlsDisabled}
-                    >
-                      <Paperclip className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="text-xs">
-                    Attach files
-                  </TooltipContent>
-                </Tooltip>
-
-                {/* Send button */}
-                {sendButton}
               </div>
             )}
 
