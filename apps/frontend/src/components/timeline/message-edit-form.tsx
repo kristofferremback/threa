@@ -164,7 +164,7 @@ export function MessageEditForm({
             {/* Editor */}
             <div
               data-inline-edit
-              className="flex-1 min-h-0 overflow-y-auto [&_.tiptap]:!pt-0 [&_.tiptap_p]:!leading-relaxed [&_.tiptap]:max-h-none"
+              className="flex-1 min-h-0 overflow-y-auto [&_.tiptap]:!pt-0 [&_.tiptap_p]:!leading-relaxed [&_.tiptap]:max-h-none [&_.tiptap]:min-h-full"
             >
               <RichEditor
                 ref={setRichEditorHandle}
