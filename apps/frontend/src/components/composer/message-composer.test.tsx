@@ -28,8 +28,10 @@ vi.mock("@/components/editor", () => {
       onSubmit: () => void
       placeholder: string
       disabled: boolean
+      ariaLabel?: string
+      ariaDescribedBy?: string
     }
-  >(function MockRichEditor({ onChange, onSubmit, placeholder, disabled }, ref) {
+  >(function MockRichEditor({ onChange, onSubmit, placeholder, disabled, ariaLabel, ariaDescribedBy }, ref) {
     const [editorInstance, setEditorInstance] = useState<{ id: string } | null>(null)
     useEffect(() => {
       const timer = setTimeout(() => setEditorInstance({ id: "mock-editor" }), 0)
@@ -66,6 +68,8 @@ vi.mock("@/components/editor", () => {
           }}
           placeholder={placeholder}
           disabled={disabled}
+          aria-label={ariaLabel}
+          aria-describedby={ariaDescribedBy}
         />
       </div>
     )
@@ -164,6 +168,53 @@ describe("MessageComposer", () => {
       render(<MessageComposer {...defaultProps} placeholder="Write a reply..." />)
 
       expect(screen.getByPlaceholderText("Write a reply...")).toBeInTheDocument()
+    })
+
+    it("should give the editor an accessible name and instructions", () => {
+      render(<MessageComposer {...defaultProps} />)
+
+      const editor = screen.getByRole("textbox", { name: "Message input" })
+      const instructions = screen.getByText(/Tab and Shift\+Tab indent content\./)
+
+      expect(editor).toHaveAttribute("aria-describedby", instructions.getAttribute("id"))
+      expect(instructions).toHaveTextContent("Press Escape to leave the editor.")
+    })
+
+    it("should announce fullscreen escape instructions when expanded", () => {
+      render(<MessageComposer {...defaultProps} expanded />)
+
+      expect(screen.getByRole("textbox", { name: "Fullscreen message editor" })).toBeInTheDocument()
+      expect(screen.getByText(/Press Escape again to close the fullscreen editor\./)).toBeInTheDocument()
+    })
+
+    it("should only consume shell escape when collapse is available", () => {
+      const { rerender } = render(<MessageComposer {...defaultProps} expanded />)
+
+      const instructions = screen.getByText(/Press Escape again to close the fullscreen editor\./)
+      const shell = instructions.parentElement as HTMLDivElement
+      const escapeWithoutCollapse = new KeyboardEvent("keydown", {
+        key: "Escape",
+        bubbles: true,
+        cancelable: true,
+      })
+
+      shell.dispatchEvent(escapeWithoutCollapse)
+
+      expect(escapeWithoutCollapse.defaultPrevented).toBe(false)
+
+      const onCollapse = vi.fn()
+      rerender(<MessageComposer {...defaultProps} expanded onCollapse={onCollapse} />)
+
+      const escapeWithCollapse = new KeyboardEvent("keydown", {
+        key: "Escape",
+        bubbles: true,
+        cancelable: true,
+      })
+
+      shell.dispatchEvent(escapeWithCollapse)
+
+      expect(escapeWithCollapse.defaultPrevented).toBe(true)
+      expect(onCollapse).toHaveBeenCalledOnce()
     })
   })
 

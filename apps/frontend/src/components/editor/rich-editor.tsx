@@ -55,6 +55,14 @@ interface RichEditorProps {
   toolbarTrailingContent?: React.ReactNode
   /** Content rendered between the toolbar and the editor (e.g. attachment pills) */
   belowToolbarContent?: React.ReactNode
+  /** Accessible name announced for the editor surface */
+  ariaLabel: string
+  /** IDs of elements that describe the editor surface */
+  ariaDescribedBy?: string
+  /** Blur the editor when Escape is pressed and no suggestion popup is active */
+  blurOnEscape?: boolean
+  /** Called after Escape blurs the editor */
+  onEscapeBlur?: () => void
   /** Stream context for filtering which broadcast mentions (@channel, @here) are available */
   streamContext?: MentionStreamContext
 }
@@ -77,6 +85,10 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
     onEditLastMessage,
     toolbarTrailingContent,
     belowToolbarContent,
+    ariaLabel,
+    ariaDescribedBy,
+    blurOnEscape = false,
+    onEscapeBlur,
     streamContext,
   },
   ref
@@ -143,6 +155,8 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
   messageSendModeRef.current = messageSendMode
   const onEditLastMessageRef = useRef(onEditLastMessage)
   onEditLastMessageRef.current = onEditLastMessage
+  const onEscapeBlurRef = useRef(onEscapeBlur)
+  onEscapeBlurRef.current = onEscapeBlur
 
   // Ref to access editor instance from callbacks defined before useEditor returns
   const editorRef = useRef<ReturnType<typeof useEditor>>(null)
@@ -258,6 +272,10 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
     },
     editorProps: {
       attributes: {
+        role: "textbox",
+        "aria-label": ariaLabel,
+        "aria-multiline": "true",
+        ...(ariaDescribedBy ? { "aria-describedby": ariaDescribedBy } : {}),
         class: cn(
           "min-h-[40px] max-h-[200px] overflow-y-auto w-full py-2 outline-none",
           "prose prose-sm dark:prose-invert max-w-none text-sm",
@@ -329,6 +347,15 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
         return false
       },
       handleKeyDown: (_view, event) => {
+        if (event.key === "Escape" && blurOnEscape) {
+          if (editorRef.current && isSuggestionActive(editorRef.current)) {
+            return false
+          }
+          event.preventDefault()
+          ;(_view.dom as HTMLElement).blur()
+          onEscapeBlurRef.current?.()
+          return true
+        }
         // ArrowUp in empty editor: edit the last message sent by the current user
         if (
           event.key === "ArrowUp" &&

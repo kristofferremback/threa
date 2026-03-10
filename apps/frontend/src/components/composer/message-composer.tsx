@@ -1,4 +1,14 @@
-import { type ChangeEvent, type RefObject, useMemo, useCallback, useRef, useState, useEffect } from "react"
+import {
+  type ChangeEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type RefObject,
+  useMemo,
+  useCallback,
+  useRef,
+  useState,
+  useEffect,
+  useId,
+} from "react"
 import { ArrowUp, X, Plus, AtSign, Slash, Paperclip, Maximize2 } from "lucide-react"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { RichEditor, EditorToolbar, EditorActionBar } from "@/components/editor"
@@ -74,6 +84,7 @@ function getPreviewText(doc: JSONContent): string {
 
 /** Platform-appropriate modifier key symbol (⌘ on Mac, Ctrl+ elsewhere) */
 const MOD_SYMBOL = navigator.platform?.toLowerCase().includes("mac") ? "⌘" : "Ctrl+"
+const MOD_KEY_NAME = navigator.platform?.toLowerCase().includes("mac") ? "Command" : "Control"
 
 export interface MessageComposerProps {
   // Content (controlled)
@@ -160,6 +171,7 @@ export function MessageComposer({
   const controlsDisabled = disabled || isSubmitting
 
   const richEditorRef = useRef<RichEditorHandle>(null)
+  const expandedShellRef = useRef<HTMLDivElement>(null)
   const [mobileToolbarEditor, setMobileToolbarEditor] = useState<Editor | null>(null)
   const [formatOpen, setFormatOpen] = useState(false)
   const [mobileExpanded, setMobileExpanded] = useState(false)
@@ -167,6 +179,7 @@ export function MessageComposer({
   const [mobileLinkPopoverOpen, setMobileLinkPopoverOpen] = useState(false)
   const isMobile = useIsMobile()
   const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const instructionsId = useId()
 
   // Close inline format toolbar and collapse expansion when navigating to a different stream/scope
   useEffect(() => {
@@ -227,6 +240,19 @@ export function MessageComposer({
     return `${MOD_SYMBOL}Enter to send`
   }, [effectiveSendMode])
 
+  const screenReaderInstructions = useMemo(() => {
+    const sendInstructions =
+      effectiveSendMode === "enter"
+        ? "Press Enter to send and Shift+Enter for a new line."
+        : `Press ${MOD_KEY_NAME}+Enter to send.`
+
+    if (expanded) {
+      return `${sendInstructions} Tab and Shift+Tab indent content. Press Escape to leave the editor. Press Escape again to close the fullscreen editor.`
+    }
+
+    return `${sendInstructions} Tab and Shift+Tab indent content. Press Escape to leave the editor.`
+  }, [effectiveSendMode, expanded])
+
   // Plain-text first line for the mobile collapsed preview bar
   const previewText = useMemo(() => getPreviewText(content), [content])
 
@@ -257,6 +283,22 @@ export function MessageComposer({
     setMobileToolbarEditor((currentEditor) => (currentEditor === nextEditor ? currentEditor : nextEditor))
   }, [])
 
+  const focusExpandedShell = useCallback(() => {
+    expandedShellRef.current?.focus()
+  }, [])
+
+  const handleExpandedShellKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      if (event.key !== "Escape") return
+      if (event.target !== event.currentTarget) return
+      if (!onCollapse) return
+
+      event.preventDefault()
+      onCollapse()
+    },
+    [onCollapse]
+  )
+
   const sharedEditor = (
     <RichEditor
       ref={setRichEditorHandle}
@@ -273,6 +315,9 @@ export function MessageComposer({
       staticToolbarOpen={!isMobile && formatOpen}
       disableSelectionToolbar={isMobile}
       onEditLastMessage={onEditLastMessage}
+      ariaLabel="Message input"
+      ariaDescribedBy={instructionsId}
+      blurOnEscape
       streamContext={streamContext}
     />
   )
@@ -335,7 +380,15 @@ export function MessageComposer({
   if (expanded) {
     return (
       <TooltipProvider delayDuration={300}>
-        <div className={cn("relative flex flex-col h-full bg-background", className)}>
+        <div
+          ref={expandedShellRef}
+          className={cn("relative flex flex-col h-full bg-background", className)}
+          tabIndex={-1}
+          onKeyDown={handleExpandedShellKeyDown}
+        >
+          <p id={instructionsId} className="sr-only">
+            {screenReaderInstructions}
+          </p>
           {/* Hidden file input */}
           <input
             ref={fileInputRef}
@@ -370,6 +423,10 @@ export function MessageComposer({
               disableSelectionToolbar
               onEditLastMessage={onEditLastMessage}
               toolbarTrailingContent={expandedTrailingContent}
+              ariaLabel="Fullscreen message editor"
+              ariaDescribedBy={instructionsId}
+              blurOnEscape
+              onEscapeBlur={focusExpandedShell}
               streamContext={streamContext}
               belowToolbarContent={
                 pendingAttachments.length > 0 ? (
@@ -536,6 +593,9 @@ export function MessageComposer({
         onFocusCapture={isMobile ? handleFocusCapture : undefined}
         onBlurCapture={isMobile ? handleBlurCapture : undefined}
       >
+        <p id={instructionsId} className="sr-only">
+          {screenReaderInstructions}
+        </p>
         {/* Attachment bar - shown above input */}
         <PendingAttachments attachments={pendingAttachments} onRemove={onRemoveAttachment} />
 

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen, fireEvent } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import type { Editor } from "@tiptap/react"
 import { EditorToolbar } from "./editor-toolbar"
 import { indentSelection, dedentSelection, isSuggestionActive } from "./editor-behaviors"
@@ -34,12 +35,63 @@ function createEditorStub() {
     },
     on: vi.fn(),
     off: vi.fn(),
+    __chainState: chain,
+    __run: chain.run,
   } as unknown as Editor
 }
 
 describe("EditorToolbar", () => {
   beforeEach(() => {
     vi.clearAllMocks()
+  })
+
+  it("keeps inline formatting buttons in the tab order", async () => {
+    const user = userEvent.setup()
+    const editor = createEditorStub() as Editor & {
+      __chainState: { focus: ReturnType<typeof vi.fn>; toggleBold: ReturnType<typeof vi.fn> }
+      __run: ReturnType<typeof vi.fn>
+    }
+
+    render(<EditorToolbar editor={editor} isVisible inline />)
+
+    await user.tab()
+    await user.tab()
+
+    expect(screen.getByRole("button", { name: "Bold" })).toHaveFocus()
+  })
+
+  it("supports keyboard activation for inline formatting buttons", async () => {
+    const user = userEvent.setup()
+    const editor = createEditorStub() as Editor & {
+      __chainState: { focus: ReturnType<typeof vi.fn>; toggleBold: ReturnType<typeof vi.fn> }
+      __run: ReturnType<typeof vi.fn>
+    }
+
+    render(<EditorToolbar editor={editor} isVisible inline />)
+
+    await user.tab()
+    await user.tab()
+    await user.keyboard("{Enter}")
+
+    expect(editor.__chainState.focus).toHaveBeenCalled()
+    expect(editor.__chainState.toggleBold).toHaveBeenCalled()
+    expect(editor.__run).toHaveBeenCalled()
+  })
+
+  it("supports pointer activation for inline formatting buttons", async () => {
+    const user = userEvent.setup()
+    const editor = createEditorStub() as Editor & {
+      __chainState: { focus: ReturnType<typeof vi.fn>; toggleBold: ReturnType<typeof vi.fn> }
+      __run: ReturnType<typeof vi.fn>
+    }
+
+    render(<EditorToolbar editor={editor} isVisible inline />)
+
+    await user.click(screen.getByRole("button", { name: "Bold" }))
+
+    expect(editor.__chainState.focus).toHaveBeenCalled()
+    expect(editor.__chainState.toggleBold).toHaveBeenCalled()
+    expect(editor.__run).toHaveBeenCalled()
   })
 
   it("renders indent and dedent controls only when special input controls are enabled", () => {

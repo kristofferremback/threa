@@ -82,10 +82,18 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   useEffect(() => {
     if (!expanded) return
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && expandedRef.current?.contains(document.activeElement)) {
-        e.preventDefault()
-        setExpanded(false)
-      }
+      if (e.defaultPrevented) return
+      if (e.key !== "Escape") return
+
+      const expandedElement = expandedRef.current
+      if (!expandedElement) return
+
+      const activeElement = document.activeElement as HTMLElement | null
+      const focusedEditor = activeElement?.closest<HTMLElement>('[contenteditable="true"]')
+      if (focusedEditor && expandedElement.contains(focusedEditor)) return
+
+      e.preventDefault()
+      setExpanded(false)
     }
     document.addEventListener("keydown", onKeyDown)
     return () => document.removeEventListener("keydown", onKeyDown)
