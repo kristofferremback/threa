@@ -291,9 +291,10 @@ export function MessageComposer({
     (event: ReactKeyboardEvent<HTMLDivElement>) => {
       if (event.key !== "Escape") return
       if (event.target !== event.currentTarget) return
+      if (!onCollapse) return
 
       event.preventDefault()
-      onCollapse?.()
+      onCollapse()
     },
     [onCollapse]
   )

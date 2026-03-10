@@ -186,6 +186,36 @@ describe("MessageComposer", () => {
       expect(screen.getByRole("textbox", { name: "Fullscreen message editor" })).toBeInTheDocument()
       expect(screen.getByText(/Press Escape again to close the fullscreen editor\./)).toBeInTheDocument()
     })
+
+    it("should only consume shell escape when collapse is available", () => {
+      const { rerender } = render(<MessageComposer {...defaultProps} expanded />)
+
+      const instructions = screen.getByText(/Press Escape again to close the fullscreen editor\./)
+      const shell = instructions.parentElement as HTMLDivElement
+      const escapeWithoutCollapse = new KeyboardEvent("keydown", {
+        key: "Escape",
+        bubbles: true,
+        cancelable: true,
+      })
+
+      shell.dispatchEvent(escapeWithoutCollapse)
+
+      expect(escapeWithoutCollapse.defaultPrevented).toBe(false)
+
+      const onCollapse = vi.fn()
+      rerender(<MessageComposer {...defaultProps} expanded onCollapse={onCollapse} />)
+
+      const escapeWithCollapse = new KeyboardEvent("keydown", {
+        key: "Escape",
+        bubbles: true,
+        cancelable: true,
+      })
+
+      shell.dispatchEvent(escapeWithCollapse)
+
+      expect(escapeWithCollapse.defaultPrevented).toBe(true)
+      expect(onCollapse).toHaveBeenCalledOnce()
+    })
   })
 
   describe("submit button states", () => {
