@@ -17,8 +17,6 @@ import {
   DrawerDescription,
   DrawerFooter,
   DrawerHeader,
-  DrawerOverlay,
-  DrawerPortal,
   DrawerTitle,
 } from "./drawer"
 import { Button } from "./button"
@@ -51,13 +49,15 @@ const ResponsiveAlertDialogContent = React.forwardRef<
   const isMobile = useIsMobile()
 
   if (isMobile) {
+    // DrawerContent already renders its own Portal + Overlay internally
     return (
-      <DrawerPortal>
-        <DrawerOverlay />
-        <DrawerContent ref={ref} className={cn("max-h-[85dvh]", className)}>
-          {children}
-        </DrawerContent>
-      </DrawerPortal>
+      <DrawerContent
+        ref={ref}
+        className={cn("max-h-[85dvh]", className)}
+        {...(props as React.ComponentPropsWithoutRef<typeof DrawerContent>)}
+      >
+        {children}
+      </DrawerContent>
     )
   }
 
@@ -138,7 +138,18 @@ const ResponsiveAlertDialogAction = React.forwardRef<
   if (isMobile) {
     return (
       <DrawerClose asChild>
-        <Button ref={ref} className={cn("w-full", className)} {...props} />
+        <Button
+          ref={ref}
+          className={cn("w-full", className)}
+          {...props}
+          onClick={(e) => {
+            if (props.disabled) {
+              e.preventDefault()
+              return
+            }
+            props.onClick?.(e)
+          }}
+        />
       </DrawerClose>
     )
   }

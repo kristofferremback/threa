@@ -47,8 +47,8 @@ export function MessageHistoryDialog({
   const isMobile = useIsMobile()
 
   useEffect(() => {
-    setSelectedIndex(0)
-  }, [messageId])
+    if (open) setSelectedIndex(0)
+  }, [open, messageId])
 
   const { data: versions = [] } = useQuery({
     queryKey: messageKeys.versions(workspaceId, messageId),

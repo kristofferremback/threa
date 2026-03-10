@@ -84,7 +84,6 @@ export function TraceDialog() {
             if (nextSessionId === sessionId) return
             navigate(getTraceUrl(nextSessionId, highlightMessageId ?? undefined), { replace: true })
           }}
-          onClose={closeTraceModal}
         />
 
         <TraceBody
@@ -113,7 +112,6 @@ function TraceHeader({
   selectedSessionId,
   sessionOptions,
   onSessionChange,
-  onClose,
 }: {
   isLoading: boolean
   personaName?: string
@@ -125,7 +123,6 @@ function TraceHeader({
   selectedSessionId: string
   sessionOptions: SessionOption[]
   onSessionChange: (sessionId: string) => void
-  onClose: () => void
 }) {
   return (
     <div className="px-4 sm:px-6 py-4 border-b shrink-0 flex items-center justify-between gap-2">
@@ -179,10 +176,7 @@ function TraceHeader({
             </SelectContent>
           </Select>
         )}
-        <ResponsiveDialogClose
-          className="w-8 h-8 rounded-md flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-          onClick={onClose}
-        >
+        <ResponsiveDialogClose className="w-8 h-8 rounded-md flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
           <X className="w-5 h-5" />
           <span className="sr-only">Close</span>
         </ResponsiveDialogClose>

@@ -225,8 +225,10 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
   const dialogRef = useRef<HTMLDivElement>(null)
 
   // Show escape hint after 2 seconds if focus has left the dialog (Vimium scenario)
+  // Only on desktop — the hint uses absolute positioning below the dialog which is
+  // clipped by the mobile drawer's overflow-hidden
   useEffect(() => {
-    if (!open) return
+    if (!open || isMobile) return
 
     const timer = setTimeout(() => {
       const focusInDialog = dialogRef.current?.contains(document.activeElement)
@@ -236,7 +238,7 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
     }, 2000)
 
     return () => clearTimeout(timer)
-  }, [open])
+  }, [open, isMobile])
 
   const focusInput = useCallback(() => {
     setFocusedTabIndex(null)
@@ -373,16 +375,14 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
         }}
       >
         {/* Mobile: mode tabs above the input for better hierarchy */}
-        {!inputRequest && (
-          <div className="sm:hidden">
-            <ModeTabs
-              currentMode={mode}
-              onModeChange={handleModeChange}
-              focusedTabIndex={focusedTabIndex}
-              onFocusedTabIndexChange={setFocusedTabIndex}
-              onTabSelect={focusInput}
-            />
-          </div>
+        {!inputRequest && isMobile && (
+          <ModeTabs
+            currentMode={mode}
+            onModeChange={handleModeChange}
+            focusedTabIndex={focusedTabIndex}
+            onFocusedTabIndexChange={setFocusedTabIndex}
+            onTabSelect={focusInput}
+          />
         )}
 
         {/* Input area */}
@@ -433,16 +433,14 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
         </div>
 
         {/* Desktop: mode tabs below the input (keyboard-navigable) */}
-        {!inputRequest && (
-          <div className="hidden sm:block">
-            <ModeTabs
-              currentMode={mode}
-              onModeChange={handleModeChange}
-              focusedTabIndex={focusedTabIndex}
-              onFocusedTabIndexChange={setFocusedTabIndex}
-              onTabSelect={focusInput}
-            />
-          </div>
+        {!inputRequest && !isMobile && (
+          <ModeTabs
+            currentMode={mode}
+            onModeChange={handleModeChange}
+            focusedTabIndex={focusedTabIndex}
+            onFocusedTabIndexChange={setFocusedTabIndex}
+            onTabSelect={focusInput}
+          />
         )}
 
         {/* Hint from input request */}

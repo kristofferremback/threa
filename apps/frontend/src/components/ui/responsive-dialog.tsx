@@ -40,7 +40,7 @@ interface ResponsiveDialogProps {
 
 function ResponsiveDialog({ children, snapPoints, ...props }: ResponsiveDialogProps) {
   const isMobile = useIsMobile()
-  const resolvedSnaps = snapPoints ?? [...DEFAULT_SNAP_POINTS]
+  const resolvedSnaps = React.useMemo(() => snapPoints ?? [...DEFAULT_SNAP_POINTS], [snapPoints])
   const [activeSnap, setActiveSnap] = React.useState<number | string | null>(DEFAULT_ACTIVE_SNAP)
 
   // Reset snap point when drawer opens
