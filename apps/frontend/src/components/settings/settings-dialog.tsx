@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import {
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogHeader,
+  ResponsiveDialogTitle,
+} from "@/components/ui/responsive-dialog"
 import { ResponsiveTabs } from "@/components/ui/responsive-tabs"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
 import { useSettings } from "@/contexts"
@@ -32,16 +37,20 @@ export function SettingsDialog() {
   if (!mounted) return null
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && closeSettings()}>
-      <DialogContent className="max-w-2xl max-h-[85vh] max-sm:max-h-none sm:flex flex-col overflow-hidden">
-        <DialogHeader>
-          <DialogTitle>Settings</DialogTitle>
-        </DialogHeader>
+    <ResponsiveDialog open={isOpen} onOpenChange={(open) => !open && closeSettings()}>
+      <ResponsiveDialogContent
+        desktopClassName="max-w-2xl max-h-[85vh] sm:flex flex-col overflow-hidden"
+        drawerClassName="flex flex-col"
+        hideCloseButton
+      >
+        <ResponsiveDialogHeader className="px-4 sm:px-6 pt-4 sm:pt-6">
+          <ResponsiveDialogTitle>Settings</ResponsiveDialogTitle>
+        </ResponsiveDialogHeader>
 
         <Tabs
           value={activeTab}
           onValueChange={(value) => setActiveTab(value as SettingsTab)}
-          className="flex-1 flex flex-col overflow-hidden"
+          className="flex-1 flex flex-col min-h-0 px-4 sm:px-6"
         >
           <ResponsiveTabs
             tabs={SETTINGS_TABS}
@@ -50,7 +59,7 @@ export function SettingsDialog() {
             onValueChange={(value) => setActiveTab(value as SettingsTab)}
           />
 
-          <div className="flex-1 overflow-y-auto mt-4">
+          <div className="flex-1 overflow-y-auto mt-4 pb-4 sm:pb-6">
             <TabsContent value="profile" className="mt-0">
               <ProfileSettings />
             </TabsContent>
@@ -71,7 +80,7 @@ export function SettingsDialog() {
             </TabsContent>
           </div>
         </Tabs>
-      </DialogContent>
-    </Dialog>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   )
 }

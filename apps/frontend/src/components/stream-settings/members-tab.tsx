@@ -7,15 +7,15 @@ import { Label } from "@/components/ui/label"
 import { SearchableList } from "@/components/ui/searchable-list"
 import { renderUserListItem, type UserListItem } from "@/components/ui/user-list-item"
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
+  ResponsiveAlertDialog,
+  ResponsiveAlertDialogAction,
+  ResponsiveAlertDialogCancel,
+  ResponsiveAlertDialogContent,
+  ResponsiveAlertDialogDescription,
+  ResponsiveAlertDialogFooter,
+  ResponsiveAlertDialogHeader,
+  ResponsiveAlertDialogTitle,
+} from "@/components/ui/responsive-alert-dialog"
 import { X, UserPlus } from "lucide-react"
 import { useAddStreamMember, useRemoveStreamMember, streamKeys, workspaceKeys } from "@/hooks"
 import { useStreamService } from "@/contexts"
@@ -195,20 +195,20 @@ export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabP
         </div>
       )}
 
-      <AlertDialog open={removeMemberId !== null} onOpenChange={(open) => !open && setRemoveMemberId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Remove member?</AlertDialogTitle>
-            <AlertDialogDescription>
+      <ResponsiveAlertDialog open={removeMemberId !== null} onOpenChange={(open) => !open && setRemoveMemberId(null)}>
+        <ResponsiveAlertDialogContent>
+          <ResponsiveAlertDialogHeader>
+            <ResponsiveAlertDialogTitle>Remove member?</ResponsiveAlertDialogTitle>
+            <ResponsiveAlertDialogDescription>
               Are you sure you want to remove {removeMemberName} from this stream?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleRemove}>Remove</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </ResponsiveAlertDialogDescription>
+          </ResponsiveAlertDialogHeader>
+          <ResponsiveAlertDialogFooter>
+            <ResponsiveAlertDialogCancel>Cancel</ResponsiveAlertDialogCancel>
+            <ResponsiveAlertDialogAction onClick={handleRemove}>Remove</ResponsiveAlertDialogAction>
+          </ResponsiveAlertDialogFooter>
+        </ResponsiveAlertDialogContent>
+      </ResponsiveAlertDialog>
     </div>
   )
 }

@@ -331,13 +331,19 @@ function SentMessageEvent({
       messageId: payload.messageId,
       authorId: event.actorId ?? undefined,
       currentUserId: currentUserId ?? undefined,
+      editedAt: payload.editedAt,
       onEdit: startEditing,
       onDelete: () => setDeleteDialogOpen(true),
+      // Deferred to next tick so the DropdownMenu/ActionDrawer fully unmounts
+      // before the Dialog opens — Radix emits synthetic pointer events on menu
+      // close that trigger the Dialog's "click outside" handler otherwise.
+      onShowHistory: () => setTimeout(() => setHistoryOpen(true), 0),
     }),
     [
       payload.contentMarkdown,
       payload.sessionId,
       payload.messageId,
+      payload.editedAt,
       event.actorType,
       event.actorId,
       panelId,
@@ -428,6 +434,7 @@ function SentMessageEvent({
           onOpenChange={setHistoryOpen}
           messageId={payload.messageId}
           workspaceId={workspaceId}
+          messageCreatedAt={event.createdAt}
           currentContent={{
             contentMarkdown: payload.contentMarkdown,
             editedAt: payload.editedAt,

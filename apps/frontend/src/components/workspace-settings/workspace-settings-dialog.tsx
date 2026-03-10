@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react"
 import { useSearchParams } from "react-router-dom"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import {
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogHeader,
+  ResponsiveDialogTitle,
+} from "@/components/ui/responsive-dialog"
 import { ResponsiveTabs } from "@/components/ui/responsive-tabs"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
 import { UsersTab } from "./users-tab"
@@ -48,16 +53,20 @@ export function WorkspaceSettingsDialog({ workspaceId }: WorkspaceSettingsDialog
   }
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && close()}>
-      <DialogContent className="max-w-2xl max-h-[85vh] max-sm:max-h-none sm:flex flex-col overflow-hidden">
-        <DialogHeader>
-          <DialogTitle>Workspace Settings</DialogTitle>
-        </DialogHeader>
+    <ResponsiveDialog open={isOpen} onOpenChange={(open) => !open && close()}>
+      <ResponsiveDialogContent
+        desktopClassName="max-w-2xl max-h-[85vh] sm:flex flex-col overflow-hidden"
+        drawerClassName="flex flex-col"
+        hideCloseButton
+      >
+        <ResponsiveDialogHeader className="px-4 sm:px-6 pt-4 sm:pt-6">
+          <ResponsiveDialogTitle>Workspace Settings</ResponsiveDialogTitle>
+        </ResponsiveDialogHeader>
 
-        <Tabs value={activeTab} onValueChange={setTab} className="flex-1 flex flex-col overflow-hidden">
+        <Tabs value={activeTab} onValueChange={setTab} className="flex-1 flex flex-col min-h-0 px-4 sm:px-6">
           <ResponsiveTabs tabs={WORKSPACE_SETTINGS_TABS} labels={TAB_LABELS} value={activeTab} onValueChange={setTab} />
 
-          <div className="flex-1 overflow-y-auto mt-4">
+          <div className="flex-1 overflow-y-auto mt-4 pb-4 sm:pb-6">
             <TabsContent value="general" className="mt-0">
               <div className="space-y-4 p-1">
                 <p className="text-sm text-muted-foreground">Workspace general settings will be available here.</p>
@@ -68,7 +77,7 @@ export function WorkspaceSettingsDialog({ workspaceId }: WorkspaceSettingsDialog
             </TabsContent>
           </div>
         </Tabs>
-      </DialogContent>
-    </Dialog>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   )
 }

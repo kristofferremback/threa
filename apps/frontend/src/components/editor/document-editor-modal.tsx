@@ -15,7 +15,13 @@ import {
   Heading2,
   Heading3,
 } from "lucide-react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import {
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogHeader,
+  ResponsiveDialogTitle,
+  ResponsiveDialogFooter,
+} from "@/components/ui/responsive-dialog"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
@@ -194,9 +200,11 @@ export function DocumentEditorModal({
   )
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent
-        className="w-[90vw] max-w-[800px] h-[80vh] max-h-[700px] max-sm:w-full max-sm:h-full max-sm:max-w-none max-sm:max-h-none flex flex-col gap-0 max-sm:gap-0 p-0 max-sm:p-0"
+    <ResponsiveDialog open={open} onOpenChange={handleOpenChange}>
+      <ResponsiveDialogContent
+        desktopClassName="w-[90vw] max-w-[800px] h-[80vh] max-h-[700px] sm:flex flex-col gap-0 p-0"
+        drawerClassName="flex flex-col gap-0 p-0"
+        hideCloseButton
         onPointerDownOutside={(e) => {
           // Prevent closing when clicking on suggestion popover
           const target = e.target as HTMLElement
@@ -206,11 +214,11 @@ export function DocumentEditorModal({
         }}
       >
         {/* Header */}
-        <DialogHeader className="px-4 py-3 border-b">
-          <DialogTitle className="text-base font-medium">
+        <ResponsiveDialogHeader className="px-4 py-3 border-b">
+          <ResponsiveDialogTitle className="text-base font-medium">
             Message in <span className="text-primary">{streamName}</span>
-          </DialogTitle>
-        </DialogHeader>
+          </ResponsiveDialogTitle>
+        </ResponsiveDialogHeader>
 
         {/* Toolbar - fixed position, not floating */}
         <TooltipProvider delayDuration={300}>
@@ -329,23 +337,21 @@ export function DocumentEditorModal({
         </div>
 
         {/* Footer */}
-        <DialogFooter className="px-4 py-3 border-t">
-          <div className="flex items-center gap-3 w-full justify-between">
-            <span className="hidden sm:inline text-xs text-muted-foreground">
-              <kbd className="kbd-hint">{navigator.platform?.includes("Mac") ? "⌘" : "Ctrl+"}↵</kbd> to send
-            </span>
-            <div className="flex gap-2 max-sm:flex-1 max-sm:justify-end">
-              <Button variant="ghost" onClick={handleDismiss}>
-                Cancel
-              </Button>
-              <Button onClick={handleSubmit} disabled={isEmpty} className="max-sm:flex-1">
-                Send
-              </Button>
-            </div>
+        <ResponsiveDialogFooter className="px-4 py-3 border-t flex-row items-center">
+          <span className="hidden sm:inline text-xs text-muted-foreground">
+            <kbd className="kbd-hint">{navigator.platform?.includes("Mac") ? "⌘" : "Ctrl+"}↵</kbd> to send
+          </span>
+          <div className="flex gap-2 sm:ml-auto w-full sm:w-auto justify-end">
+            <Button variant="ghost" onClick={handleDismiss}>
+              Cancel
+            </Button>
+            <Button onClick={handleSubmit} disabled={isEmpty} className="flex-1 sm:flex-initial">
+              Send
+            </Button>
           </div>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </ResponsiveDialogFooter>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   )
 }
 

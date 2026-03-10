@@ -1,6 +1,11 @@
 import { useMemo } from "react"
 import { useNavigate, useParams } from "react-router-dom"
-import { Dialog, DialogContent, DialogClose, DialogTitle } from "@/components/ui/dialog"
+import {
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogClose,
+  ResponsiveDialogTitle,
+} from "@/components/ui/responsive-dialog"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { RelativeTime } from "@/components/relative-time"
@@ -59,8 +64,12 @@ export function TraceDialog() {
   const messageCount = steps.filter((s) => s.stepType === "message_sent" || s.stepType === "message_edited").length
 
   return (
-    <Dialog open onOpenChange={(open) => !open && closeTraceModal()}>
-      <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col p-0 max-sm:p-0 gap-0 max-sm:gap-0 [&>button:last-child]:hidden">
+    <ResponsiveDialog open onOpenChange={(open) => !open && closeTraceModal()}>
+      <ResponsiveDialogContent
+        desktopClassName="max-w-3xl max-h-[85vh] sm:flex flex-col p-0 gap-0 [&>button:last-child]:hidden"
+        drawerClassName="flex flex-col p-0"
+        hideCloseButton
+      >
         <TraceHeader
           isLoading={isLoading}
           personaName={persona?.name}
@@ -87,8 +96,8 @@ export function TraceDialog() {
         />
 
         {status && <TraceFooter status={status} stepCount={steps.length} messageCount={messageCount} />}
-      </DialogContent>
-    </Dialog>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   )
 }
 
@@ -118,9 +127,9 @@ function TraceHeader({
   return (
     <div className="px-4 sm:px-6 py-4 border-b shrink-0 flex items-center justify-between gap-2">
       <div className="min-w-0 flex-1">
-        <DialogTitle className="text-lg font-semibold truncate">
+        <ResponsiveDialogTitle className="text-lg font-semibold truncate">
           {isLoading ? <Skeleton className="h-5 w-48" /> : "Agent Session Trace"}
-        </DialogTitle>
+        </ResponsiveDialogTitle>
         {personaName && sessionCreatedAt && (
           <div className="mt-1 space-y-1">
             <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
@@ -167,10 +176,10 @@ function TraceHeader({
             </SelectContent>
           </Select>
         )}
-        <DialogClose className="w-8 h-8 rounded-md flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
+        <ResponsiveDialogClose className="w-8 h-8 rounded-md flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
           <X className="w-5 h-5" />
           <span className="sr-only">Close</span>
-        </DialogClose>
+        </ResponsiveDialogClose>
       </div>
     </div>
   )
@@ -258,7 +267,7 @@ function TraceFooter({
   messageCount: number
 }) {
   return (
-    <div className="px-6 py-4 border-t shrink-0 flex items-center justify-between text-xs text-muted-foreground">
+    <div className="px-4 sm:px-6 py-4 border-t shrink-0 flex items-center justify-between text-xs text-muted-foreground">
       <span>{STATUS_TEXT[status]}</span>
       <span>
         {stepCount} {stepCount === 1 ? "step" : "steps"} • {messageCount} {messageCount === 1 ? "message" : "messages"}{" "}

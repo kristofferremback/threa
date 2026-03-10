@@ -1,13 +1,13 @@
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
+  ResponsiveAlertDialog,
+  ResponsiveAlertDialogAction,
+  ResponsiveAlertDialogCancel,
+  ResponsiveAlertDialogContent,
+  ResponsiveAlertDialogDescription,
+  ResponsiveAlertDialogFooter,
+  ResponsiveAlertDialogHeader,
+  ResponsiveAlertDialogTitle,
+} from "@/components/ui/responsive-alert-dialog"
 
 interface DeleteMessageDialogProps {
   open: boolean
@@ -18,25 +18,25 @@ interface DeleteMessageDialogProps {
 
 export function DeleteMessageDialog({ open, onOpenChange, onConfirm, isDeleting }: DeleteMessageDialogProps) {
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Delete message</AlertDialogTitle>
-          <AlertDialogDescription>
+    <ResponsiveAlertDialog open={open} onOpenChange={onOpenChange}>
+      <ResponsiveAlertDialogContent>
+        <ResponsiveAlertDialogHeader>
+          <ResponsiveAlertDialogTitle>Delete message</ResponsiveAlertDialogTitle>
+          <ResponsiveAlertDialogDescription>
             Are you sure you want to delete this message? This action cannot be undone.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
-          <AlertDialogAction
+          </ResponsiveAlertDialogDescription>
+        </ResponsiveAlertDialogHeader>
+        <ResponsiveAlertDialogFooter>
+          <ResponsiveAlertDialogCancel disabled={isDeleting}>Cancel</ResponsiveAlertDialogCancel>
+          <ResponsiveAlertDialogAction
             onClick={onConfirm}
             disabled={isDeleting}
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
           >
             {isDeleting ? "Deleting..." : "Delete"}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+          </ResponsiveAlertDialogAction>
+        </ResponsiveAlertDialogFooter>
+      </ResponsiveAlertDialogContent>
+    </ResponsiveAlertDialog>
   )
 }
