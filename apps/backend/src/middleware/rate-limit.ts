@@ -1,3 +1,4 @@
+import { createHash } from "crypto"
 import type { Request, RequestHandler } from "express"
 import { createRateLimit, getClientIp } from "@threa/backend-common"
 
@@ -82,7 +83,9 @@ export function createRateLimiters(config: RateLimiterConfig): RateLimiterSet {
       key: (req) => {
         const authHeader = req.headers.authorization
         if (authHeader?.startsWith("Bearer ")) {
-          return `apikey:${authHeader.slice(7)}`
+          // Hash the token to avoid storing raw credentials in memory
+          const hash = createHash("sha256").update(authHeader.slice(7)).digest("hex").slice(0, 16)
+          return `apikey:${hash}`
         }
         return getClientIp(req, "unknown")
       },

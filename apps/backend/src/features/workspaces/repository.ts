@@ -89,4 +89,10 @@ export const WorkspaceRepository = {
     `)
     return result.rows[0]?.workos_organization_id ?? null
   },
+
+  async setWorkosOrganizationId(db: Querier, workspaceId: string, orgId: string): Promise<void> {
+    await db.query(sql`
+      UPDATE workspaces SET workos_organization_id = ${orgId} WHERE id = ${workspaceId}
+    `)
+  },
 }

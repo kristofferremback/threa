@@ -9,7 +9,6 @@ const PUBLIC_SEARCH_MAX_LIMIT = 50
 
 const publicSearchSchema = z.object({
   query: z.string().min(1, "query is required"),
-  semantic: z.boolean().optional().default(false),
   streams: z.array(z.string()).optional(),
   from: z.string().optional(),
   type: z.array(z.enum(STREAM_TYPES)).optional(),
@@ -54,7 +53,7 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService }:
         })
       }
 
-      const { query, semantic, streams, from, type, before, after, limit } = result.data
+      const { query, streams, from, type, before, after, limit } = result.data
 
       const accessibleStreamIds = await apiKeyChannelService.getAccessibleStreamIdsForApiKey(workspaceId, apiKey.id)
 
@@ -74,9 +73,6 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService }:
           after: after ? new Date(after) : undefined,
         },
         limit,
-        // When semantic is false, use exact text matching
-        // When semantic is true, use the default hybrid search (full-text + embedding)
-        exact: !semantic,
       })
 
       res.json({

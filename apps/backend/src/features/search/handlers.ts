@@ -1,7 +1,6 @@
 import { z } from "zod"
 import type { Request, Response } from "express"
 import type { Pool } from "pg"
-import { withClient } from "../../db"
 import type { SearchService } from "./service"
 import type { SearchResult } from "./repository"
 import { resolveUserAccessibleStreamIds } from "./access"
@@ -81,9 +80,7 @@ export function createSearchHandlers({ pool, searchService }: Dependencies) {
       }
 
       // Resolve access before calling the auth-agnostic search service
-      const accessibleStreamIds = await withClient(pool, (client) =>
-        resolveUserAccessibleStreamIds(client, workspaceId, userId, filters)
-      )
+      const accessibleStreamIds = await resolveUserAccessibleStreamIds(pool, workspaceId, userId, filters)
 
       const results = await searchService.search({
         workspaceId,

@@ -1,3 +1,4 @@
+import { z } from "zod"
 import type { Express, RequestHandler } from "express"
 import { createAuthMiddleware } from "@threa/backend-common"
 import { createWorkspaceUserMiddleware } from "./middleware/workspace"
@@ -6,7 +7,7 @@ import { createRateLimiters, type RateLimiterConfig } from "./middleware/rate-li
 import { createOpsAccessMiddleware } from "./middleware/ops-access"
 import { requireRole } from "./middleware/authorization"
 import { createAuthHandlers } from "./auth/handlers"
-import { createWorkspaceHandlers } from "./features/workspaces"
+import { createWorkspaceHandlers, WorkspaceRepository } from "./features/workspaces"
 import { createStreamHandlers } from "./features/streams"
 import { createMessageHandlers } from "./features/messaging"
 import { createAttachmentHandlers } from "./features/attachments"
@@ -70,8 +71,8 @@ interface Dependencies {
   rateLimiterConfig: RateLimiterConfig
   allowDevAuthRoutes: boolean
   internalApiKey: string | null
-  apiKeyService: ApiKeyService | null
-  apiKeyChannelService: ApiKeyChannelService | null
+  apiKeyService: ApiKeyService
+  apiKeyChannelService: ApiKeyChannelService
 }
 
 export function registerRoutes(app: Express, deps: Dependencies) {
@@ -171,13 +172,11 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     app.post("/api/dev/workspaces/:workspaceId/streams/:streamId/join", auth, workspaceUser, authStub.handleStreamJoin)
 
     // Dev-only: set workspace org ID for API key testing
+    const setOrgIdSchema = z.object({ orgId: z.string().min(1) })
     app.post("/api/dev/workspaces/:workspaceId/set-org-id", auth, async (req, res) => {
-      const { orgId } = req.body as { orgId: string }
-      if (!orgId) return res.status(400).json({ error: "orgId is required" })
-      await pool.query("UPDATE workspaces SET workos_organization_id = $1 WHERE id = $2", [
-        orgId,
-        req.params.workspaceId,
-      ])
+      const result = setOrgIdSchema.safeParse(req.body)
+      if (!result.success) return res.status(400).json({ error: "orgId is required" })
+      await WorkspaceRepository.setWorkosOrganizationId(pool, req.params.workspaceId, result.data.orgId)
       res.json({ ok: true })
     })
   }
@@ -292,19 +291,17 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/workspaces/:workspaceId/agent-sessions/:sessionId", ...authed, agentSession.getSession)
 
   // Public API v1 — API key auth
-  if (apiKeyService && apiKeyChannelService) {
-    const publicAuth = createPublicApiAuthMiddleware({ apiKeyService, pool })
-    const publicApi = createPublicApiHandlers({ searchService, apiKeyChannelService })
+  const publicAuth = createPublicApiAuthMiddleware({ apiKeyService, pool })
+  const publicApi = createPublicApiHandlers({ searchService, apiKeyChannelService })
 
-    app.post(
-      "/api/v1/workspaces/:workspaceId/messages/search",
-      rateLimits.publicApiWorkspace,
-      rateLimits.publicApiKey,
-      publicAuth,
-      requireApiKeyScope(API_KEY_SCOPES.MESSAGES_SEARCH),
-      publicApi.searchMessages
-    )
-  }
+  app.post(
+    "/api/v1/workspaces/:workspaceId/messages/search",
+    rateLimits.publicApiWorkspace,
+    rateLimits.publicApiKey,
+    publicAuth,
+    requireApiKeyScope(API_KEY_SCOPES.MESSAGES_SEARCH),
+    publicApi.searchMessages
+  )
 
   app.use(errorHandler)
 }
