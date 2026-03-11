@@ -335,6 +335,9 @@ export {
   type UpdateUserPreferencesInput,
 } from "./preferences"
 
+// API Keys
+export { API_KEY_SCOPES, type ApiKeyScope } from "./api-keys"
+
 // Agent trace types
 export {
   TRACE_SOURCE_TYPES,

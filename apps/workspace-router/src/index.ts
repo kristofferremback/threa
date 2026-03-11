@@ -28,6 +28,8 @@ const INVITATION_ACCEPT_RE = /^\/api\/invitations\/[^/]+\/accept$/
 
 /** Matches /api/workspaces/:workspaceId with optional trailing path */
 const WORKSPACE_ROUTE_RE = /^\/api\/workspaces\/([^/]+)(?:\/.+)?$/
+/** Public API v1 routes — routed to regional backend like workspace routes */
+const PUBLIC_API_ROUTE_RE = /^\/api\/v1\/workspaces\/([^/]+)(?:\/.+)?$/
 /** Dev workspace routes (workspace/stream join — test only) */
 const DEV_WORKSPACE_ROUTE_RE = /^\/api\/dev\/workspaces\/([^/]+)(?:\/.+)?$/
 
@@ -78,6 +80,12 @@ export default {
     const configMatch = path.match(CONFIG_ROUTE_RE)
     if (configMatch && request.method === "GET") {
       return handleConfigRequest(configMatch[1], regions, env)
+    }
+
+    // Public API v1 routes (API key auth, routed to regional backend)
+    const publicApiMatch = path.match(PUBLIC_API_ROUTE_RE)
+    if (publicApiMatch) {
+      return routeWorkspaceRequest(request, publicApiMatch[1], regions, env)
     }
 
     // Workspace-scoped API routes

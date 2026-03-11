@@ -8,6 +8,8 @@ export interface RateLimiterSet {
   upload: RequestHandler
   messageCreate: RequestHandler
   commandDispatch: RequestHandler
+  publicApiWorkspace: RequestHandler
+  publicApiKey: RequestHandler
 }
 
 export interface RateLimiterConfig {
@@ -61,6 +63,29 @@ export function createRateLimiters(config: RateLimiterConfig): RateLimiterSet {
       windowMs: 60_000,
       max: 30,
       key: userScopeKey,
+    }),
+
+    // Public API rate limiters run BEFORE auth middleware, so use
+    // req.params (populated by Express route matching) and the raw
+    // Authorization header instead of req.workspaceId / req.apiKey.
+    publicApiWorkspace: createRateLimit({
+      name: "public-api-workspace",
+      windowMs: 60_000,
+      max: 600,
+      key: (req) => req.params.workspaceId || getClientIp(req, "unknown"),
+    }),
+
+    publicApiKey: createRateLimit({
+      name: "public-api-key",
+      windowMs: 60_000,
+      max: 60,
+      key: (req) => {
+        const authHeader = req.headers.authorization
+        if (authHeader?.startsWith("Bearer ")) {
+          return `apikey:${authHeader.slice(7)}`
+        }
+        return getClientIp(req, "unknown")
+      },
     }),
   }
 }

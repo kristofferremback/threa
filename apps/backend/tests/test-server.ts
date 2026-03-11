@@ -112,7 +112,8 @@ async function cleanupStaleData(): Promise<void> {
         queue_tokens,
         schedules,
         schedule_ticks,
-        user_activity
+        user_activity,
+        api_key_channel_access
       CASCADE
     `)
   } catch {
