@@ -1,5 +1,4 @@
 import { Pool } from "pg"
-import { withClient } from "../../db"
 import { SearchRepository, type SearchResult, type ResolvedFilters } from "./repository"
 import type { EmbeddingServiceLike } from "../memos"
 import { logger } from "../../lib/logger"
@@ -80,22 +79,20 @@ export class SearchService {
       return []
     }
 
-    // For exact matching, skip embedding generation - use ILIKE directly
-    if (exact) {
-      return withClient(this.pool, async (client) => {
-        const repoFilters: ResolvedFilters = {
-          authorId: filters.authorId,
-          streamTypes: filters.streamTypes,
-          before: filters.before,
-          after: filters.after,
-        }
+    const repoFilters: ResolvedFilters = {
+      authorId: filters.authorId,
+      streamTypes: filters.streamTypes,
+      before: filters.before,
+      after: filters.after,
+    }
 
-        return SearchRepository.exactSearch(client, {
-          query,
-          streamIds,
-          filters: repoFilters,
-          limit,
-        })
+    // For exact matching, skip embedding generation - use ILIKE directly (INV-30: single query, pass pool)
+    if (exact) {
+      return SearchRepository.exactSearch(this.pool, {
+        query,
+        streamIds,
+        filters: repoFilters,
+        limit,
       })
     }
 
@@ -109,37 +106,27 @@ export class SearchService {
       }
     }
 
-    return withClient(this.pool, async (client) => {
-      logger.debug({ streamIds: streamIds.length }, "Found accessible streams")
+    // INV-30: each branch issues a single query, pass pool directly
+    const normalizedQuery = query.trim()
+    const hasQuery = normalizedQuery.length > 0
+    const hasEmbedding = embedding.length > 0
 
-      const repoFilters: ResolvedFilters = {
-        authorId: filters.authorId,
-        streamTypes: filters.streamTypes,
-        before: filters.before,
-        after: filters.after,
-      }
-
-      const normalizedQuery = query.trim()
-      const hasQuery = normalizedQuery.length > 0
-      const hasEmbedding = embedding.length > 0
-
-      if (!hasQuery || !hasEmbedding) {
-        return SearchRepository.fullTextSearch(client, {
-          query: normalizedQuery,
-          streamIds,
-          filters: repoFilters,
-          limit,
-        })
-      }
-
-      return SearchRepository.hybridSearch(client, {
+    if (!hasQuery || !hasEmbedding) {
+      return SearchRepository.fullTextSearch(this.pool, {
         query: normalizedQuery,
-        embedding,
         streamIds,
         filters: repoFilters,
         limit,
-        semanticDistanceThreshold: SEMANTIC_DISTANCE_THRESHOLD,
       })
+    }
+
+    return SearchRepository.hybridSearch(this.pool, {
+      query: normalizedQuery,
+      embedding,
+      streamIds,
+      filters: repoFilters,
+      limit,
+      semanticDistanceThreshold: SEMANTIC_DISTANCE_THRESHOLD,
     })
   }
 
