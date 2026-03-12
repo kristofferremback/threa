@@ -147,7 +147,7 @@ export class SearchService {
   private resolveStreamIds(accessibleStreamIds: string[], filters: SearchFilters): string[] {
     if (filters.streamIds && filters.streamIds.length > 0) {
       const accessibleSet = new Set(accessibleStreamIds)
-      return filters.streamIds.filter((id) => accessibleSet.has(id))
+      return [...new Set(filters.streamIds)].filter((id) => accessibleSet.has(id))
     }
     return accessibleStreamIds
   }
