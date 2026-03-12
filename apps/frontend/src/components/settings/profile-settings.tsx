@@ -54,7 +54,7 @@ export function ProfileSettings() {
   // Determine if current pronouns value is a preset or custom
   const isPreset = PRONOUN_PRESETS.includes(currentPronouns as (typeof PRONOUN_PRESETS)[number])
   const showCustomInput = isCustomPronouns || (currentPronouns !== "" && !isPreset)
-  const selectValue = showCustomInput ? "custom" : currentPronouns || ""
+  const selectValue = showCustomInput ? "custom" : currentPronouns || "none"
 
   const handleSaveName = async () => {
     if (!nameChanged || !nameValid) return

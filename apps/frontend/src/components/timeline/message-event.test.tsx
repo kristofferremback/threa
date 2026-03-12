@@ -69,6 +69,10 @@ vi.mock("@/auth", () => ({
   useUser: () => ({ id: "workos_user_123" }),
 }))
 
+vi.mock("@/components/user-profile", () => ({
+  useUserProfile: () => ({ openUserProfile: vi.fn() }),
+}))
+
 vi.mock("@/hooks", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/hooks")>()
   return {

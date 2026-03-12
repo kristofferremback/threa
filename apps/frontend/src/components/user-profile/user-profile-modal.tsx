@@ -1,8 +1,8 @@
-import { useParams, useNavigate } from "react-router-dom"
+import { useParams, Link } from "react-router-dom"
 import { MessageCircle, Phone, Github, Globe } from "lucide-react"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { buttonVariants } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import {
   ResponsiveDialog,
@@ -16,15 +16,7 @@ import { useWorkspaceBootstrap } from "@/hooks"
 import { useAuth } from "@/auth"
 import { createDmDraftId } from "@/hooks"
 import { getAvatarUrl, type User } from "@threa/types"
-
-function getInitials(name: string): string {
-  return name
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((w) => w[0])
-    .join("")
-    .toUpperCase()
-}
+import { getInitials } from "@/lib/initials"
 
 function getRoleBadge(role: User["role"]) {
   switch (role) {
@@ -45,7 +37,6 @@ interface UserProfileModalProps {
 
 export function UserProfileModal({ userId, open, onOpenChange }: UserProfileModalProps) {
   const { workspaceId } = useParams<{ workspaceId: string }>()
-  const navigate = useNavigate()
   const { user: authUser } = useAuth()
   const { data: bootstrap } = useWorkspaceBootstrap(workspaceId ?? "")
 
@@ -53,17 +44,9 @@ export function UserProfileModal({ userId, open, onOpenChange }: UserProfileModa
   const isOwnProfile = authUser && user?.workosUserId === authUser.id
   const avatarUrl = user ? getAvatarUrl(workspaceId!, user.avatarUrl, 256) : undefined
 
-  const handleMessage = () => {
-    if (!workspaceId || !userId) return
-    const dmDraftId = createDmDraftId(userId)
-
-    // Check if a DM stream already exists for this peer
-    const existingDmStreamId = bootstrap?.dmPeers.find((p) => p.userId === userId)?.streamId
-    const streamId = existingDmStreamId ?? dmDraftId
-
-    onOpenChange(false)
-    navigate(`/w/${workspaceId}/s/${streamId}`)
-  }
+  const existingDmStreamId = bootstrap?.dmPeers.find((p) => p.userId === userId)?.streamId
+  const messageStreamId = existingDmStreamId ?? createDmDraftId(userId)
+  const messageHref = workspaceId ? `/w/${workspaceId}/s/${messageStreamId}` : undefined
 
   if (!user) return null
 
@@ -124,13 +107,17 @@ export function UserProfileModal({ userId, open, onOpenChange }: UserProfileModa
             </>
           )}
 
-          {!isOwnProfile && (
+          {!isOwnProfile && messageHref && (
             <>
               <Separator />
-              <Button className="w-full" onClick={handleMessage}>
+              <Link
+                to={messageHref}
+                onClick={() => onOpenChange(false)}
+                className={buttonVariants({ className: "w-full" })}
+              >
                 <MessageCircle className="h-4 w-4 mr-2" />
                 Message
-              </Button>
+              </Link>
             </>
           )}
         </ResponsiveDialogBody>

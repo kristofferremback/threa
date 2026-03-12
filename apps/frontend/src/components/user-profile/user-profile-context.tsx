@@ -1,4 +1,6 @@
-import { createContext, useCallback, useContext, useState, type ReactNode } from "react"
+import React, { createContext, useCallback, useContext, useState, type ReactNode } from "react"
+
+import { UserProfileModal } from "./user-profile-modal"
 
 interface UserProfileContextValue {
   openUserProfile: (userId: string) => void
@@ -24,23 +26,19 @@ export function UserProfileProvider({ children }: UserProfileProviderProps) {
   return (
     <UserProfileContext.Provider value={{ openUserProfile }}>
       {children}
-      {targetUserId && <UserProfileModalLazy userId={targetUserId} onClose={close} />}
+      {targetUserId && (
+        <React.Suspense fallback={null}>
+          <UserProfileModal userId={targetUserId} open onOpenChange={(open) => !open && close()} />
+        </React.Suspense>
+      )}
     </UserProfileContext.Provider>
   )
 }
 
-const NOOP_CONTEXT: UserProfileContextValue = {
-  openUserProfile: () => {},
-}
-
 export function useUserProfile(): UserProfileContextValue {
   const context = useContext(UserProfileContext)
-  return context ?? NOOP_CONTEXT
-}
-
-// Lazy import to keep the context file lightweight
-import { UserProfileModal } from "./user-profile-modal"
-
-function UserProfileModalLazy({ userId, onClose }: { userId: string; onClose: () => void }) {
-  return <UserProfileModal userId={userId} open onOpenChange={(open) => !open && onClose()} />
+  if (!context) {
+    throw new Error("useUserProfile must be used within a UserProfileProvider")
+  }
+  return context
 }
