@@ -31,7 +31,6 @@ export interface SearchResultItem {
 
 export interface SearchResponse {
   results: SearchResultItem[]
-  total: number
 }
 
 export async function searchMessages(workspaceId: string, request: SearchRequest): Promise<SearchResponse> {

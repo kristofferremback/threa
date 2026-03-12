@@ -96,7 +96,7 @@ describe("Public API v1 — Message Search", () => {
       const res = await publicApiRequest(ctx.workspaceId, { query: ctx.keyword }, VALID_API_KEY)
       expect(res.status).toBe(200)
 
-      const data = (await res.json()) as { results: Array<{ streamId: string; content: string }>; count: number }
+      const data = (await res.json()) as { results: Array<{ streamId: string; content: string }> }
       expect(data.results.length).toBeGreaterThanOrEqual(1)
 
       const publicResults = data.results.filter((r) => r.streamId === ctx.publicChannelId)
@@ -128,7 +128,7 @@ describe("Public API v1 — Message Search", () => {
       const res = await publicApiRequest(ctx.workspaceId, { query: ctx.keyword, limit: 1 }, VALID_API_KEY)
       expect(res.status).toBe(200)
 
-      const data = (await res.json()) as { results: unknown[]; count: number }
+      const data = (await res.json()) as { results: unknown[] }
       expect(data.results.length).toBeLessThanOrEqual(1)
     })
 
@@ -184,12 +184,9 @@ describe("Public API v1 — Message Search", () => {
           createdAt: string
           rank: number
         }>
-        count: number
       }
 
       expect(data).toHaveProperty("results")
-      expect(data).toHaveProperty("count")
-      expect(data.count).toBe(data.results.length)
 
       if (data.results.length > 0) {
         const result = data.results[0]

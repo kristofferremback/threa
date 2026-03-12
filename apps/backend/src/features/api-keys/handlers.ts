@@ -58,7 +58,7 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService }:
       const accessibleStreamIds = await apiKeyChannelService.getAccessibleStreamIdsForApiKey(workspaceId, apiKey.id)
 
       if (accessibleStreamIds.length === 0) {
-        return res.json({ results: [], total: 0 })
+        return res.json({ results: [] })
       }
 
       const results = await searchService.search({
@@ -77,7 +77,6 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService }:
 
       res.json({
         results: results.map(serializeSearchResult),
-        count: results.length,
       })
     },
   }

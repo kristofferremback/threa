@@ -92,7 +92,6 @@ export function createSearchHandlers({ pool, searchService }: Dependencies) {
 
       res.json({
         results: results.map(serializeSearchResult),
-        total: results.length,
       })
     },
   }
