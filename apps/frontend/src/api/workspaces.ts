@@ -65,7 +65,16 @@ export const workspacesApi = {
     return res.available
   },
 
-  async updateProfile(workspaceId: string, data: { name?: string; description?: string | null }): Promise<User> {
+  async updateProfile(
+    workspaceId: string,
+    data: {
+      name?: string
+      description?: string | null
+      pronouns?: string | null
+      phone?: string | null
+      githubUsername?: string | null
+    }
+  ): Promise<User> {
     const res = await api.patch<{ user?: User }>(`/api/workspaces/${workspaceId}/profile`, data)
     if (!res.user) {
       throw new Error("Profile response missing user payload")

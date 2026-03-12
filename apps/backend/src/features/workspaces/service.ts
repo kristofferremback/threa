@@ -352,7 +352,13 @@ export class WorkspaceService {
   async updateUserProfile(
     userId: string,
     workspaceId: string,
-    params: { name?: string; description?: string | null }
+    params: {
+      name?: string
+      description?: string | null
+      pronouns?: string | null
+      phone?: string | null
+      githubUsername?: string | null
+    }
   ): Promise<User> {
     return withTransaction(this.pool, async (client) => {
       const updated = await UserRepository.update(client, workspaceId, userId, params)

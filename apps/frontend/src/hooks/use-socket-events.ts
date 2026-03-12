@@ -74,6 +74,9 @@ interface WorkspaceUserPayload {
   avatarUrl: string | null
   timezone: string | null
   locale: string | null
+  pronouns: string | null
+  phone: string | null
+  githubUsername: string | null
   setupCompleted: boolean
   email: string
   joinedAt: string

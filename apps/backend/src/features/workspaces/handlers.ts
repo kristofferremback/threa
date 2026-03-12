@@ -26,6 +26,9 @@ const completeUserSetupSchema = z.object({
 const updateProfileSchema = z.object({
   name: z.string().min(1, "name is required").max(100).optional(),
   description: z.string().max(500).nullable().optional(),
+  pronouns: z.string().max(50).nullable().optional(),
+  phone: z.string().max(30).nullable().optional(),
+  githubUsername: z.string().max(39).nullable().optional(),
 })
 
 const checkSlugAvailableSchema = z.object({
