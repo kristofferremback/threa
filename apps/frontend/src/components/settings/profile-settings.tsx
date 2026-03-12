@@ -88,7 +88,7 @@ export function ProfileSettings() {
   const handlePronounSelectChange = (value: string) => {
     if (value === "custom") {
       setIsCustomPronouns(true)
-      setPronouns("")
+      if (!currentPronouns || isPreset) setPronouns("")
     } else if (value === "none") {
       setIsCustomPronouns(false)
       setPronouns("")

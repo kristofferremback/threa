@@ -4,6 +4,7 @@ import { AppShell } from "@/components/layout/app-shell"
 import { Sidebar } from "@/components/layout/sidebar"
 import { Toaster } from "@/components/ui/sonner"
 import { MentionableMarkdownWrapper, type MentionableMarkdownWrapperProps } from "@/components/ui/markdown-content"
+import type { MentionType } from "@/lib/markdown/mention-context"
 import { UserProfileProvider, useUserProfile } from "@/components/user-profile"
 import { WorkspaceEmojiProvider } from "@/components/workspace-emoji"
 import { ChannelLinkProvider } from "@/lib/markdown/channel-link-context"
@@ -106,16 +107,14 @@ function TraceDialogContainer() {
 /** Bridges UserProfileProvider with MentionableMarkdownWrapper (INV-18: standalone component). */
 function MentionableWrapper({ children, mentionables }: Omit<MentionableMarkdownWrapperProps, "onMentionClick">) {
   const { openUserProfile } = useUserProfile()
-  const { data: bootstrap } = useWorkspaceBootstrap(useParams<{ workspaceId: string }>().workspaceId ?? "")
-  const users = bootstrap?.users
 
   const handleMentionClick = useCallback(
-    (slug: string, type: string) => {
+    (slug: string, type: MentionType) => {
       if (type !== "user" && type !== "me") return
-      const user = users?.find((u) => u.slug === slug)
-      if (user) openUserProfile(user.id)
+      const mentionable = mentionables.find((m) => m.slug === slug)
+      if (mentionable) openUserProfile(mentionable.id)
     },
-    [users, openUserProfile]
+    [mentionables, openUserProfile]
   )
 
   return (
