@@ -77,7 +77,7 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService }:
 
       res.json({
         results: results.map(serializeSearchResult),
-        total: results.length,
+        count: results.length,
       })
     },
   }

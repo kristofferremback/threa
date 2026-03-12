@@ -1,5 +1,6 @@
 import type { Querier } from "../../db"
 import { sql } from "../../db"
+import { Visibilities } from "@threa/types"
 
 export const ApiKeyChannelAccessRepository = {
   async getAccessibleStreamIds(db: Querier, workspaceId: string, apiKeyId: string): Promise<string[]> {
@@ -8,5 +9,15 @@ export const ApiKeyChannelAccessRepository = {
       WHERE workspace_id = ${workspaceId} AND api_key_id = ${apiKeyId}
     `)
     return result.rows.map((r) => r.stream_id)
+  },
+
+  async getPublicStreamIds(db: Querier, workspaceId: string): Promise<string[]> {
+    const result = await db.query<{ id: string }>(sql`
+      SELECT id FROM streams
+      WHERE workspace_id = ${workspaceId}
+        AND visibility = ${Visibilities.PUBLIC}
+        AND archived_at IS NULL
+    `)
+    return result.rows.map((r) => r.id)
   },
 }
