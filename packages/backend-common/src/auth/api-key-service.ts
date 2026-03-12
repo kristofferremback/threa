@@ -32,12 +32,17 @@ export class WorkosApiKeyService implements ApiKeyService {
         permissions: new Set(apiKey.permissions),
       }
     } catch (error: unknown) {
-      // WorkOS SDK throws for invalid keys (expected) and for network/infra failures (unexpected).
-      // Log at warn for unexpected errors to surface outages.
+      // WorkOS SDK throws for invalid keys (401/404) and for network/infra failures.
+      // Invalid keys → return null (caller maps to 401).
+      // Infrastructure failures → re-throw so error middleware returns 500.
       const isExpectedRejection =
         error instanceof Error && (error.message.includes("not found") || error.message.includes("invalid"))
-      logger[isExpectedRejection ? "debug" : "warn"]({ error }, "API key validation failed")
-      return null
+      if (isExpectedRejection) {
+        logger.debug({ error }, "API key validation rejected")
+        return null
+      }
+      logger.warn({ error }, "API key validation infrastructure error")
+      throw error
     }
   }
 }
