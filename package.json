@@ -17,6 +17,7 @@
     "db:reset": "docker compose down -v && docker compose up -d postgres minio",
     "db:backfill-cp": "bun scripts/backfill-control-plane.ts",
     "workos:sync": "bun scripts/sync-workos-permissions.ts",
+    "workos:check": "bun scripts/sync-workos-permissions.ts --check",
     "monitoring:start": "docker compose -f docker-compose.monitoring.yml up -d",
     "monitoring:stop": "docker compose -f docker-compose.monitoring.yml stop",
     "monitoring:logs": "docker compose -f docker-compose.monitoring.yml logs -f",

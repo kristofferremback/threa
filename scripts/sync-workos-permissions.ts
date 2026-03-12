@@ -5,9 +5,10 @@
  * Creates missing permissions, updates name/description on existing ones.
  *
  * Usage:
- *   bun scripts/sync-workos-permissions.ts              # uses apps/backend/.env
- *   WORKOS_API_KEY=sk_... bun scripts/sync-workos-permissions.ts
+ *   bun scripts/sync-workos-permissions.ts              # sync (create/update)
  *   bun scripts/sync-workos-permissions.ts --dry-run    # preview without changes
+ *   bun scripts/sync-workos-permissions.ts --check      # check for drift, exit 1 if found
+ *   WORKOS_API_KEY=sk_... bun scripts/sync-workos-permissions.ts
  */
 
 import * as fs from "fs"
@@ -90,14 +91,84 @@ async function updatePermission(
   return workosRequest<WorkOSPermission>(apiKey, "PATCH", `/authorization/permissions/${slug}`, updates)
 }
 
+// --- Drift detection ---
+
+interface DriftReport {
+  missing: typeof API_KEY_PERMISSIONS
+  stale: { slug: string; fields: string[] }[]
+  orphans: WorkOSPermission[]
+}
+
+function detectDrift(remote: WorkOSPermission[]): DriftReport {
+  const remoteBySlug = new Map(remote.filter((p) => !p.system).map((p) => [p.slug, p]))
+  const localSlugs = new Set(API_KEY_PERMISSIONS.map((p) => p.slug))
+
+  const missing = API_KEY_PERMISSIONS.filter((p) => !remoteBySlug.has(p.slug))
+
+  const stale: DriftReport["stale"] = []
+  for (const local of API_KEY_PERMISSIONS) {
+    const existing = remoteBySlug.get(local.slug)
+    if (!existing) continue
+    const fields: string[] = []
+    if (existing.name !== local.name) fields.push("name")
+    if (existing.description !== local.description) fields.push("description")
+    if (fields.length > 0) stale.push({ slug: local.slug, fields })
+  }
+
+  const orphans = remote.filter((p) => !p.system && !localSlugs.has(p.slug))
+
+  return { missing, stale, orphans }
+}
+
+function printDrift(drift: DriftReport): boolean {
+  const hasDrift = drift.missing.length > 0 || drift.stale.length > 0 || drift.orphans.length > 0
+
+  if (!hasDrift) {
+    console.log("No drift detected. WorkOS permissions match code definitions.")
+    return false
+  }
+
+  if (drift.missing.length > 0) {
+    console.log(`Missing in WorkOS (${drift.missing.length}):`)
+    for (const p of drift.missing) console.log(`  - ${p.slug} ("${p.name}")`)
+    console.log()
+  }
+
+  if (drift.stale.length > 0) {
+    console.log(`Out of date in WorkOS (${drift.stale.length}):`)
+    for (const p of drift.stale) console.log(`  - ${p.slug} (${p.fields.join(", ")} differ)`)
+    console.log()
+  }
+
+  if (drift.orphans.length > 0) {
+    console.log(`Orphans in WorkOS not in code (${drift.orphans.length}):`)
+    for (const p of drift.orphans) console.log(`  - ${p.slug} ("${p.name}") — delete via dashboard`)
+    console.log()
+  }
+
+  return true
+}
+
 // --- Sync logic ---
+
+async function check() {
+  const apiKey = loadApiKey()
+  const remote = await listPermissions(apiKey)
+  const drift = detectDrift(remote)
+  const hasDrift = printDrift(drift)
+
+  if (hasDrift) {
+    console.log("Run `bun run workos:sync` to fix missing/stale permissions.")
+    process.exit(1)
+  }
+}
 
 async function sync(dryRun: boolean) {
   const apiKey = loadApiKey()
   const remote = await listPermissions(apiKey)
-  const remoteBySlug = new Map(remote.filter((p) => !p.system).map((p) => [p.slug, p]))
+  const drift = detectDrift(remote)
 
-  console.log(`Found ${remote.length} permissions in WorkOS (${remoteBySlug.size} non-system)`)
+  console.log(`Found ${remote.length} permissions in WorkOS (${remote.filter((p) => !p.system).length} non-system)`)
   console.log(`Local definitions: ${API_KEY_PERMISSIONS.length}\n`)
 
   let created = 0
@@ -105,9 +176,10 @@ async function sync(dryRun: boolean) {
   let unchanged = 0
 
   for (const local of API_KEY_PERMISSIONS) {
-    const existing = remoteBySlug.get(local.slug)
+    const isMissing = drift.missing.some((p) => p.slug === local.slug)
+    const staleEntry = drift.stale.find((p) => p.slug === local.slug)
 
-    if (!existing) {
+    if (isMissing) {
       if (dryRun) {
         console.log(`  [CREATE] ${local.slug} — "${local.name}"`)
       } else {
@@ -115,16 +187,9 @@ async function sync(dryRun: boolean) {
         console.log(`  [CREATED] ${local.slug} — "${local.name}"`)
       }
       created++
-      continue
-    }
-
-    const needsUpdate = existing.name !== local.name || existing.description !== local.description
-
-    if (needsUpdate) {
+    } else if (staleEntry) {
       if (dryRun) {
-        console.log(`  [UPDATE] ${local.slug}`)
-        if (existing.name !== local.name) console.log(`    name: "${existing.name}" → "${local.name}"`)
-        if (existing.description !== local.description) console.log(`    description: changed`)
+        console.log(`  [UPDATE] ${local.slug} (${staleEntry.fields.join(", ")})`)
       } else {
         await updatePermission(apiKey, local.slug, { name: local.name, description: local.description })
         console.log(`  [UPDATED] ${local.slug}`)
@@ -136,22 +201,23 @@ async function sync(dryRun: boolean) {
     }
   }
 
-  // Warn about remote permissions not in code (but don't delete — API doesn't support it)
-  for (const [slug] of remoteBySlug) {
-    if (!API_KEY_PERMISSIONS.some((p) => p.slug === slug)) {
-      console.log(`  [ORPHAN] ${slug} — exists in WorkOS but not in code (delete via dashboard)`)
-    }
+  for (const orphan of drift.orphans) {
+    console.log(`  [ORPHAN] ${orphan.slug} — exists in WorkOS but not in code (delete via dashboard)`)
   }
 
   console.log(`\n${dryRun ? "Dry run" : "Done"}: ${created} created, ${updated} updated, ${unchanged} unchanged`)
+  if (drift.orphans.length > 0) {
+    console.log(`${drift.orphans.length} orphan(s) need manual deletion in WorkOS dashboard`)
+  }
 }
 
 // --- Main ---
 
-const dryRun = process.argv.includes("--dry-run")
-if (dryRun) console.log("DRY RUN — no changes will be made\n")
+const mode = process.argv.includes("--check") ? "check" : process.argv.includes("--dry-run") ? "dry-run" : "sync"
 
-sync(dryRun).catch((err) => {
-  console.error("Sync failed:", err.message)
+const run = mode === "check" ? check() : sync(mode === "dry-run")
+
+run.catch((err) => {
+  console.error("Failed:", err.message)
   process.exit(1)
 })
