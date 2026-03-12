@@ -35,4 +35,5 @@ export {
   messageVersionId,
   pushSubscriptionId,
   userSessionId,
+  apiKeyChannelAccessId,
 } from "@threa/backend-common"

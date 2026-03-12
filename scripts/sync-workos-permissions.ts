@@ -101,7 +101,7 @@ interface DriftReport {
 
 function detectDrift(remote: WorkOSPermission[]): DriftReport {
   const remoteBySlug = new Map(remote.filter((p) => !p.system).map((p) => [p.slug, p]))
-  const localSlugs = new Set(API_KEY_PERMISSIONS.map((p) => p.slug))
+  const localSlugs = new Set<string>(API_KEY_PERMISSIONS.map((p) => p.slug))
 
   const missing = API_KEY_PERMISSIONS.filter((p) => !remoteBySlug.has(p.slug))
 

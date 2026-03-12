@@ -1,7 +1,7 @@
 import { z } from "zod"
 import type { Request, Response } from "express"
 import type { SearchService } from "../search"
-import type { SearchResult } from "../search"
+import { serializeSearchResult } from "../search"
 import type { ApiKeyChannelService } from "./service"
 import { STREAM_TYPES } from "@threa/types"
 
@@ -9,6 +9,7 @@ const PUBLIC_SEARCH_MAX_LIMIT = 50
 
 const publicSearchSchema = z.object({
   query: z.string().min(1, "query is required"),
+  semantic: z.boolean().optional().default(false),
   streams: z.array(z.string()).optional(),
   from: z.string().optional(),
   type: z.array(z.enum(STREAM_TYPES)).optional(),
@@ -16,18 +17,6 @@ const publicSearchSchema = z.object({
   after: z.string().datetime().optional(),
   limit: z.coerce.number().int().min(1).max(PUBLIC_SEARCH_MAX_LIMIT).optional().default(20),
 })
-
-function serializeSearchResult(result: SearchResult) {
-  return {
-    id: result.id,
-    streamId: result.streamId,
-    content: result.content,
-    authorId: result.authorId,
-    authorType: result.authorType,
-    createdAt: result.createdAt.toISOString(),
-    rank: result.rank,
-  }
-}
 
 interface Dependencies {
   searchService: SearchService
@@ -53,7 +42,7 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService }:
         })
       }
 
-      const { query, streams, from, type, before, after, limit } = result.data
+      const { query, semantic, streams, from, type, before, after, limit } = result.data
 
       const accessibleStreamIds = await apiKeyChannelService.getAccessibleStreamIdsForApiKey(workspaceId, apiKey.id)
 
@@ -73,6 +62,7 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService }:
           after: after ? new Date(after) : undefined,
         },
         limit,
+        skipEmbedding: !semantic,
       })
 
       res.json({

@@ -1,5 +1,5 @@
 // Search feature - Hybrid full-text and semantic message search
-export { createSearchHandlers } from "./handlers"
+export { createSearchHandlers, serializeSearchResult } from "./handlers"
 export { resolveUserAccessibleStreamIds } from "./access"
 export { SearchService } from "./service"
 export { SearchRepository } from "./repository"

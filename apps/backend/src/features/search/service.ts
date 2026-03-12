@@ -38,6 +38,8 @@ export interface SearchParams {
   limit?: number
   /** If true, use exact substring matching (ILIKE) instead of full-text search */
   exact?: boolean
+  /** If true, skip embedding generation and use keyword-only search */
+  skipEmbedding?: boolean
 }
 
 export interface SearchServiceDependencies {
@@ -67,7 +69,15 @@ export class SearchService {
    * This keeps SearchService auth-agnostic — it works for session auth, API keys, and agents.
    */
   async search(params: SearchParams): Promise<SearchResult[]> {
-    const { workspaceId, permissions, query, filters = {}, limit = DEFAULT_LIMIT, exact = false } = params
+    const {
+      workspaceId,
+      permissions,
+      query,
+      filters = {},
+      limit = DEFAULT_LIMIT,
+      exact = false,
+      skipEmbedding = false,
+    } = params
 
     logger.debug({ query, filters, workspaceId, exact }, "Search request")
 
@@ -98,7 +108,7 @@ export class SearchService {
 
     // Generate embedding for search query (do this before DB connection - INV-41)
     let embedding: number[] = []
-    if (query.trim()) {
+    if (!skipEmbedding && query.trim()) {
       try {
         embedding = await this.embeddingService.embed(query, { workspaceId, functionId: "search-query" })
       } catch (error) {

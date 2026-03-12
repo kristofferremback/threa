@@ -138,6 +138,24 @@ describe("Public API v1 — Message Search", () => {
     })
   })
 
+  describe("Semantic Search", () => {
+    test("should accept semantic flag and return results", async () => {
+      const res = await publicApiRequest(ctx.workspaceId, { query: ctx.keyword, semantic: true }, VALID_API_KEY)
+      expect(res.status).toBe(200)
+
+      const data = (await res.json()) as { results: Array<{ streamId: string }> }
+      expect(data.results.length).toBeGreaterThanOrEqual(1)
+    })
+
+    test("should default to keyword-only search when semantic is false", async () => {
+      const res = await publicApiRequest(ctx.workspaceId, { query: ctx.keyword, semantic: false }, VALID_API_KEY)
+      expect(res.status).toBe(200)
+
+      const data = (await res.json()) as { results: Array<{ streamId: string }> }
+      expect(data.results.length).toBeGreaterThanOrEqual(1)
+    })
+  })
+
   describe("Filters", () => {
     test("should filter by stream type", async () => {
       const res = await publicApiRequest(ctx.workspaceId, { query: ctx.keyword, type: ["channel"] }, VALID_API_KEY)

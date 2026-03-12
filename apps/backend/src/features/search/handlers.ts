@@ -20,7 +20,7 @@ const searchQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional(),
 })
 
-function serializeSearchResult(result: SearchResult) {
+export function serializeSearchResult(result: SearchResult) {
   return {
     id: result.id,
     streamId: result.streamId,
