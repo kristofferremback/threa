@@ -24,7 +24,7 @@ export class StubApiKeyService implements ApiKeyService {
     const parts = value.split("__")
     if (parts.length === 3 && parts[0] === "test") {
       return {
-        id: `apikey_stub_${parts[1]}`,
+        id: `apikey_stub_${parts[1]}_${parts[2].replace(/[^a-z0-9]/g, "_")}`,
         name: "Test API Key",
         organizationId: parts[1],
         permissions: new Set(parts[2].split(",")),
