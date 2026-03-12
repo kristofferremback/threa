@@ -155,11 +155,32 @@ async function check() {
   const apiKey = loadApiKey()
   const remote = await listPermissions(apiKey)
   const drift = detectDrift(remote)
-  const hasDrift = printDrift(drift)
 
-  if (hasDrift) {
-    console.log("Run `bun run workos:sync` to fix missing/stale permissions.")
+  // Missing and stale are informational — the sync on merge to main handles those.
+  // Only orphans are a hard failure: they indicate permissions in WorkOS that have
+  // been removed from code and need manual dashboard cleanup.
+  if (drift.missing.length > 0) {
+    console.log(`Pending (${drift.missing.length} — will be created on merge):`)
+    for (const p of drift.missing) console.log(`  - ${p.slug} ("${p.name}")`)
+    console.log()
+  }
+
+  if (drift.stale.length > 0) {
+    console.log(`Stale (${drift.stale.length} — will be updated on merge):`)
+    for (const p of drift.stale) console.log(`  - ${p.slug} (${p.fields.join(", ")} differ)`)
+    console.log()
+  }
+
+  if (drift.orphans.length > 0) {
+    console.log(`Orphans in WorkOS not in code (${drift.orphans.length}):`)
+    for (const p of drift.orphans) console.log(`  - ${p.slug} ("${p.name}") — delete via dashboard`)
+    console.log()
+    console.error("Check failed: orphaned permissions found. Remove them from the WorkOS dashboard.")
     process.exit(1)
+  }
+
+  if (drift.missing.length === 0 && drift.stale.length === 0) {
+    console.log("No drift detected. WorkOS permissions match code definitions.")
   }
 }
 
