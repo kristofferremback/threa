@@ -35,13 +35,14 @@ export const CONTENT_FORMATS = ["plaintext", "markdown"] as const
 export type ContentFormat = (typeof CONTENT_FORMATS)[number]
 
 // Author types
-export const AUTHOR_TYPES = ["user", "persona", "system"] as const
+export const AUTHOR_TYPES = ["user", "persona", "system", "bot"] as const
 export type AuthorType = (typeof AUTHOR_TYPES)[number]
 
 export const AuthorTypes = {
   USER: "user",
   PERSONA: "persona",
   SYSTEM: "system",
+  BOT: "bot",
 } as const satisfies Record<string, AuthorType>
 
 // Event types

@@ -71,6 +71,8 @@ export interface CreateMessageParams {
   sessionId?: string
   /** Client-generated idempotency key to prevent duplicate sends on retry */
   clientMessageId?: string
+  authorDisplayName?: string
+  apiKeyId?: string
 }
 
 export interface EditMessageParams {
@@ -222,6 +224,8 @@ export class EventService {
         contentJson: params.contentJson,
         contentMarkdown: params.contentMarkdown,
         clientMessageId: params.clientMessageId,
+        authorDisplayName: params.authorDisplayName,
+        apiKeyId: params.apiKeyId,
       })
 
       // Concurrent duplicate detected: ON CONFLICT DO NOTHING suppressed our INSERT,

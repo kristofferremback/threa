@@ -96,19 +96,19 @@ describe("Public API v1 — Message Search", () => {
       const res = await publicApiRequest(ctx.workspaceId, { query: ctx.keyword }, VALID_API_KEY)
       expect(res.status).toBe(200)
 
-      const data = (await res.json()) as { results: Array<{ streamId: string; content: string }> }
-      expect(data.results.length).toBeGreaterThanOrEqual(1)
+      const data = (await res.json()) as { data: Array<{ streamId: string; content: string }> }
+      expect(data.data.length).toBeGreaterThanOrEqual(1)
 
-      const publicResults = data.results.filter((r) => r.streamId === ctx.publicChannelId)
+      const publicResults = data.data.filter((r) => r.streamId === ctx.publicChannelId)
       expect(publicResults.length).toBe(1)
       expect(publicResults[0].content).toContain(ctx.keyword)
     })
 
     test("should NOT return results from private channels without grant", async () => {
       const res = await publicApiRequest(ctx.workspaceId, { query: ctx.keyword }, VALID_API_KEY)
-      const data = (await res.json()) as { results: Array<{ streamId: string }> }
+      const data = (await res.json()) as { data: Array<{ streamId: string }> }
 
-      const privateResults = data.results.filter((r) => r.streamId === ctx.privateChannelId)
+      const privateResults = data.data.filter((r) => r.streamId === ctx.privateChannelId)
       expect(privateResults.length).toBe(0)
     })
   })
@@ -128,8 +128,8 @@ describe("Public API v1 — Message Search", () => {
       const res = await publicApiRequest(ctx.workspaceId, { query: ctx.keyword, limit: 1 }, VALID_API_KEY)
       expect(res.status).toBe(200)
 
-      const data = (await res.json()) as { results: unknown[] }
-      expect(data.results.length).toBeLessThanOrEqual(1)
+      const data = (await res.json()) as { data: unknown[] }
+      expect(data.data.length).toBeLessThanOrEqual(1)
     })
 
     test("should reject limit above maximum", async () => {
@@ -143,16 +143,16 @@ describe("Public API v1 — Message Search", () => {
       const res = await publicApiRequest(ctx.workspaceId, { query: ctx.keyword, semantic: true }, VALID_API_KEY)
       expect(res.status).toBe(200)
 
-      const data = (await res.json()) as { results: Array<{ streamId: string }> }
-      expect(data.results.length).toBeGreaterThanOrEqual(1)
+      const data = (await res.json()) as { data: Array<{ streamId: string }> }
+      expect(data.data.length).toBeGreaterThanOrEqual(1)
     })
 
     test("should default to keyword-only search when semantic is false", async () => {
       const res = await publicApiRequest(ctx.workspaceId, { query: ctx.keyword, semantic: false }, VALID_API_KEY)
       expect(res.status).toBe(200)
 
-      const data = (await res.json()) as { results: Array<{ streamId: string }> }
-      expect(data.results.length).toBeGreaterThanOrEqual(1)
+      const data = (await res.json()) as { data: Array<{ streamId: string }> }
+      expect(data.data.length).toBeGreaterThanOrEqual(1)
     })
   })
 
@@ -161,8 +161,8 @@ describe("Public API v1 — Message Search", () => {
       const res = await publicApiRequest(ctx.workspaceId, { query: ctx.keyword, type: ["channel"] }, VALID_API_KEY)
       expect(res.status).toBe(200)
 
-      const data = (await res.json()) as { results: Array<{ streamId: string }> }
-      expect(data.results.length).toBeGreaterThanOrEqual(1)
+      const data = (await res.json()) as { data: Array<{ streamId: string }> }
+      expect(data.data.length).toBeGreaterThanOrEqual(1)
     })
 
     test("should filter by specific streams", async () => {
@@ -173,8 +173,8 @@ describe("Public API v1 — Message Search", () => {
       )
       expect(res.status).toBe(200)
 
-      const data = (await res.json()) as { results: Array<{ streamId: string }> }
-      for (const result of data.results) {
+      const data = (await res.json()) as { data: Array<{ streamId: string }> }
+      for (const result of data.data) {
         expect(result.streamId).toBe(ctx.publicChannelId)
       }
     })
@@ -184,8 +184,8 @@ describe("Public API v1 — Message Search", () => {
       const res = await publicApiRequest(ctx.workspaceId, { query: ctx.keyword, after: futureDate }, VALID_API_KEY)
       expect(res.status).toBe(200)
 
-      const data = (await res.json()) as { results: unknown[] }
-      expect(data.results.length).toBe(0)
+      const data = (await res.json()) as { data: unknown[] }
+      expect(data.data.length).toBe(0)
     })
   })
 
@@ -193,7 +193,7 @@ describe("Public API v1 — Message Search", () => {
     test("should return properly formatted results", async () => {
       const res = await publicApiRequest(ctx.workspaceId, { query: ctx.keyword }, VALID_API_KEY)
       const data = (await res.json()) as {
-        results: Array<{
+        data: Array<{
           id: string
           streamId: string
           content: string
@@ -204,10 +204,10 @@ describe("Public API v1 — Message Search", () => {
         }>
       }
 
-      expect(data).toHaveProperty("results")
+      expect(data).toHaveProperty("data")
 
-      if (data.results.length > 0) {
-        const result = data.results[0]
+      if (data.data.length > 0) {
+        const result = data.data[0]
         expect(result).toHaveProperty("id")
         expect(result).toHaveProperty("streamId")
         expect(result).toHaveProperty("content")

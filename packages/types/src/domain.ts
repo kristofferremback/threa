@@ -155,6 +155,7 @@ export interface Message {
   sequence: string
   authorId: string
   authorType: AuthorType
+  authorDisplayName: string | null
   contentJson: ThreaDocument
   contentMarkdown: string
   replyCount: number
@@ -162,6 +163,7 @@ export interface Message {
   editedAt: string | null
   deletedAt: string | null
   createdAt: string
+  apiKeyId: string | null
 }
 
 export interface MessageVersion {
