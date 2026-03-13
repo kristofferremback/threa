@@ -1,3 +1,4 @@
+import { z } from "zod"
 import type { Express, RequestHandler } from "express"
 import { createAuthMiddleware } from "@threa/backend-common"
 import { createWorkspaceUserMiddleware } from "./middleware/workspace"
@@ -6,7 +7,7 @@ import { createRateLimiters, type RateLimiterConfig } from "./middleware/rate-li
 import { createOpsAccessMiddleware } from "./middleware/ops-access"
 import { requireRole } from "./middleware/authorization"
 import { createAuthHandlers } from "./auth/handlers"
-import { createWorkspaceHandlers } from "./features/workspaces"
+import { createWorkspaceHandlers, WorkspaceRepository } from "./features/workspaces"
 import { createStreamHandlers } from "./features/streams"
 import { createMessageHandlers } from "./features/messaging"
 import { createAttachmentHandlers } from "./features/attachments"
@@ -23,7 +24,16 @@ import { createDebugHandlers } from "./handlers/debug-handlers"
 import { createInternalHandlers } from "./handlers/internal-handlers"
 import { createAuthStubHandlers } from "./auth/auth-stub-handlers"
 import { createAgentSessionHandlers } from "./features/agents"
-import { createInternalAuthMiddleware, errorHandler, StubAuthService, type AuthService } from "@threa/backend-common"
+import { createPublicApiHandlers } from "./features/api-keys"
+import {
+  createInternalAuthMiddleware,
+  errorHandler,
+  StubAuthService,
+  type AuthService,
+  type ApiKeyService,
+} from "@threa/backend-common"
+import { createPublicApiAuthMiddleware, requireApiKeyScope } from "./middleware/public-api-auth"
+import { API_KEY_SCOPES } from "@threa/types"
 import type { WorkspaceService } from "./features/workspaces"
 import type { StreamService } from "./features/streams"
 import type { EventService } from "./features/messaging"
@@ -37,6 +47,7 @@ import type { S3Config } from "./lib/env"
 import type { CommandRegistry } from "./features/commands"
 import type { UserPreferencesService } from "./features/user-preferences"
 import type { AvatarService } from "./features/workspaces"
+import type { ApiKeyChannelService } from "./features/api-keys"
 import type { Pool } from "pg"
 import type { PoolMonitor } from "./lib/observability"
 
@@ -60,6 +71,8 @@ interface Dependencies {
   rateLimiterConfig: RateLimiterConfig
   allowDevAuthRoutes: boolean
   internalApiKey: string | null
+  apiKeyService: ApiKeyService
+  apiKeyChannelService: ApiKeyChannelService
 }
 
 export function registerRoutes(app: Express, deps: Dependencies) {
@@ -83,6 +96,8 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     rateLimiterConfig,
     allowDevAuthRoutes,
     internalApiKey,
+    apiKeyService,
+    apiKeyChannelService,
   } = deps
 
   const auth = createAuthMiddleware({ authService })
@@ -108,7 +123,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const stream = createStreamHandlers({ streamService, eventService, activityService })
   const message = createMessageHandlers({ pool, eventService, streamService, commandRegistry })
   const attachment = createAttachmentHandlers({ attachmentService, streamService })
-  const search = createSearchHandlers({ searchService })
+  const search = createSearchHandlers({ pool, searchService })
   const emoji = createEmojiHandlers()
   const conversation = createConversationHandlers({ conversationService, streamService })
   const command = createCommandHandlers({ pool, commandRegistry, streamService })
@@ -155,6 +170,15 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     app.post("/api/dev/login", authStub.handleDevLogin)
     app.post("/api/dev/workspaces/:workspaceId/join", auth, authStub.handleWorkspaceJoin)
     app.post("/api/dev/workspaces/:workspaceId/streams/:streamId/join", auth, workspaceUser, authStub.handleStreamJoin)
+
+    // Dev-only: set workspace org ID for API key testing
+    const setOrgIdSchema = z.object({ orgId: z.string().min(1) })
+    app.post("/api/dev/workspaces/:workspaceId/set-org-id", auth, async (req, res) => {
+      const result = setOrgIdSchema.safeParse(req.body)
+      if (!result.success) return res.status(400).json({ error: "orgId is required" })
+      await WorkspaceRepository.setWorkosOrganizationId(pool, req.params.workspaceId, result.data.orgId)
+      res.json({ ok: true })
+    })
   }
 
   app.get("/api/auth/me", auth, authHandlers.me)
@@ -265,6 +289,19 @@ export function registerRoutes(app: Express, deps: Dependencies) {
 
   // Agent Sessions (trace viewing)
   app.get("/api/workspaces/:workspaceId/agent-sessions/:sessionId", ...authed, agentSession.getSession)
+
+  // Public API v1 — API key auth
+  const publicAuth = createPublicApiAuthMiddleware({ apiKeyService, pool })
+  const publicApi = createPublicApiHandlers({ searchService, apiKeyChannelService })
+
+  app.post(
+    "/api/v1/workspaces/:workspaceId/messages/search",
+    rateLimits.publicApiWorkspace,
+    rateLimits.publicApiKey,
+    publicAuth,
+    requireApiKeyScope(API_KEY_SCOPES.MESSAGES_SEARCH),
+    publicApi.searchMessages
+  )
 
   app.use(errorHandler)
 }

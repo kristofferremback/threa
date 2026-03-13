@@ -1,5 +1,4 @@
-import { Pool, PoolClient } from "pg"
-import { withClient } from "../../db"
+import { Pool } from "pg"
 import { SearchRepository, type SearchResult, type ResolvedFilters } from "./repository"
 import type { EmbeddingServiceLike } from "../memos"
 import { logger } from "../../lib/logger"
@@ -22,14 +21,25 @@ export interface SearchFilters {
   after?: Date // Inclusive (>=)
 }
 
+/**
+ * Caller-resolved access boundary.
+ * The caller resolves what the requester can see and passes it here.
+ * This keeps SearchService auth-agnostic.
+ */
+export interface SearchPermissions {
+  accessibleStreamIds: string[]
+}
+
 export interface SearchParams {
   workspaceId: string
-  userId: string
+  permissions: SearchPermissions
   query: string
   filters?: SearchFilters
   limit?: number
   /** If true, use exact substring matching (ILIKE) instead of full-text search */
   exact?: boolean
+  /** If true, skip embedding generation and use keyword-only search */
+  skipEmbedding?: boolean
 }
 
 export interface SearchServiceDependencies {
@@ -54,41 +64,51 @@ export class SearchService {
    *
    * When exact=true, uses ILIKE for true substring matching instead of full-text search.
    * This is useful for error messages, IDs, or other literal text.
+   *
+   * The caller resolves access boundaries and passes them via `permissions`.
+   * This keeps SearchService auth-agnostic — it works for session auth, API keys, and agents.
    */
   async search(params: SearchParams): Promise<SearchResult[]> {
-    const { workspaceId, userId, query, filters = {}, limit = DEFAULT_LIMIT, exact = false } = params
+    const {
+      workspaceId,
+      permissions,
+      query,
+      filters = {},
+      limit = DEFAULT_LIMIT,
+      exact = false,
+      skipEmbedding = false,
+    } = params
 
-    logger.debug({ query, filters, workspaceId, userId, exact }, "Search request")
+    logger.debug({ query, filters, workspaceId, exact }, "Search request")
 
-    // For exact matching, skip embedding generation - use ILIKE directly
+    // Intersect caller-provided accessible streams with any filter-requested streams
+    const streamIds = this.resolveStreamIds(permissions.accessibleStreamIds, filters)
+
+    if (streamIds.length === 0) {
+      logger.debug({ workspaceId }, "No accessible streams")
+      return []
+    }
+
+    const repoFilters: ResolvedFilters = {
+      authorId: filters.authorId,
+      streamTypes: filters.streamTypes,
+      before: filters.before,
+      after: filters.after,
+    }
+
+    // For exact matching, skip embedding generation - use ILIKE directly (INV-30: single query, pass pool)
     if (exact) {
-      return withClient(this.pool, async (client) => {
-        const streamIds = await this.getAccessibleStreamIds(client, workspaceId, userId, filters)
-
-        if (streamIds.length === 0) {
-          logger.debug({ workspaceId, userId }, "No accessible streams for user")
-          return []
-        }
-
-        const repoFilters: ResolvedFilters = {
-          authorId: filters.authorId,
-          streamTypes: filters.streamTypes,
-          before: filters.before,
-          after: filters.after,
-        }
-
-        return SearchRepository.exactSearch(client, {
-          query,
-          streamIds,
-          filters: repoFilters,
-          limit,
-        })
+      return SearchRepository.exactSearch(this.pool, {
+        query,
+        streamIds,
+        filters: repoFilters,
+        limit,
       })
     }
 
-    // Generate embedding for search query (do this before DB connection)
+    // Generate embedding for search query (do this before DB connection - INV-41)
     let embedding: number[] = []
-    if (query.trim()) {
+    if (!skipEmbedding && query.trim()) {
       try {
         embedding = await this.embeddingService.embed(query, { workspaceId, functionId: "search-query" })
       } catch (error) {
@@ -96,74 +116,39 @@ export class SearchService {
       }
     }
 
-    return withClient(this.pool, async (client) => {
-      // 1. Get accessible stream IDs for this user
-      const streamIds = await this.getAccessibleStreamIds(client, workspaceId, userId, filters)
+    // INV-30: each branch issues a single query, pass pool directly
+    const normalizedQuery = query.trim()
+    const hasQuery = normalizedQuery.length > 0
+    const hasEmbedding = embedding.length > 0
 
-      if (streamIds.length === 0) {
-        logger.debug({ workspaceId, userId }, "No accessible streams for user")
-        return []
-      }
-
-      logger.debug({ streamIds: streamIds.length }, "Found accessible streams")
-
-      // 2. Map client filters to repository filters
-      const repoFilters: ResolvedFilters = {
-        authorId: filters.authorId,
-        streamTypes: filters.streamTypes,
-        before: filters.before,
-        after: filters.after,
-      }
-
-      const normalizedQuery = query.trim()
-      const hasQuery = normalizedQuery.length > 0
-      const hasEmbedding = embedding.length > 0
-
-      if (!hasQuery || !hasEmbedding) {
-        return SearchRepository.fullTextSearch(client, {
-          query: normalizedQuery,
-          streamIds,
-          filters: repoFilters,
-          limit,
-        })
-      }
-
-      return SearchRepository.hybridSearch(client, {
+    if (!hasQuery || !hasEmbedding) {
+      return SearchRepository.fullTextSearch(this.pool, {
         query: normalizedQuery,
-        embedding,
         streamIds,
         filters: repoFilters,
         limit,
-        semanticDistanceThreshold: SEMANTIC_DISTANCE_THRESHOLD,
       })
+    }
+
+    return SearchRepository.hybridSearch(this.pool, {
+      query: normalizedQuery,
+      embedding,
+      streamIds,
+      filters: repoFilters,
+      limit,
+      semanticDistanceThreshold: SEMANTIC_DISTANCE_THRESHOLD,
     })
   }
 
   /**
-   * Get stream IDs the user can access, optionally filtered by search filters.
-   * Uses combined query for access control + participant filtering.
+   * Intersect caller-provided accessible streams with user-requested stream filter.
+   * If the user doesn't filter by stream, use all accessible streams.
    */
-  private async getAccessibleStreamIds(
-    client: PoolClient,
-    workspaceId: string,
-    userId: string,
-    filters: SearchFilters
-  ): Promise<string[]> {
-    // Use combined query for access + participant filtering
-    const accessibleStreamIds = await SearchRepository.getAccessibleStreamsWithMembers(client, {
-      workspaceId,
-      userId,
-      userIds: filters.userIds,
-      streamTypes: filters.streamTypes,
-      archiveStatus: filters.archiveStatus,
-    })
-
-    // If specific stream IDs requested, filter to those
+  private resolveStreamIds(accessibleStreamIds: string[], filters: SearchFilters): string[] {
     if (filters.streamIds && filters.streamIds.length > 0) {
-      const requestedSet = new Set(filters.streamIds)
-      return accessibleStreamIds.filter((id) => requestedSet.has(id))
+      const accessibleSet = new Set(accessibleStreamIds)
+      return [...new Set(filters.streamIds)].filter((id) => accessibleSet.has(id))
     }
-
     return accessibleStreamIds
   }
 }

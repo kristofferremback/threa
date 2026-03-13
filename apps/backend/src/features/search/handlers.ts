@@ -1,7 +1,9 @@
 import { z } from "zod"
 import type { Request, Response } from "express"
+import type { Pool } from "pg"
 import type { SearchService } from "./service"
 import type { SearchResult } from "./repository"
+import { resolveUserAccessibleStreamIds } from "./access"
 import { STREAM_TYPES } from "@threa/types"
 
 const ARCHIVE_STATUSES = ["active", "archived"] as const
@@ -18,7 +20,7 @@ const searchQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional(),
 })
 
-function serializeSearchResult(result: SearchResult) {
+export function serializeSearchResult(result: SearchResult) {
   return {
     id: result.id,
     streamId: result.streamId,
@@ -31,10 +33,11 @@ function serializeSearchResult(result: SearchResult) {
 }
 
 interface Dependencies {
+  pool: Pool
   searchService: SearchService
 }
 
-export function createSearchHandlers({ searchService }: Dependencies) {
+export function createSearchHandlers({ pool, searchService }: Dependencies) {
   return {
     /**
      * Search messages across accessible streams.
@@ -66,25 +69,29 @@ export function createSearchHandlers({ searchService }: Dependencies) {
 
       const { query, from, with: withParticipants, in: inStreams, type, status, before, after, limit } = result.data
 
+      const filters = {
+        authorId: from,
+        userIds: withParticipants,
+        streamIds: inStreams,
+        streamTypes: type,
+        archiveStatus: status,
+        before: before ? new Date(before) : undefined,
+        after: after ? new Date(after) : undefined,
+      }
+
+      // Resolve access before calling the auth-agnostic search service
+      const accessibleStreamIds = await resolveUserAccessibleStreamIds(pool, workspaceId, userId, filters)
+
       const results = await searchService.search({
         workspaceId,
-        userId,
+        permissions: { accessibleStreamIds },
         query,
-        filters: {
-          authorId: from,
-          userIds: withParticipants,
-          streamIds: inStreams,
-          streamTypes: type,
-          archiveStatus: status,
-          before: before ? new Date(before) : undefined,
-          after: after ? new Date(after) : undefined,
-        },
+        filters,
         limit,
       })
 
       res.json({
         results: results.map(serializeSearchResult),
-        total: results.length,
       })
     },
   }

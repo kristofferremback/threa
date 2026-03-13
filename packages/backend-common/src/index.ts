@@ -7,6 +7,9 @@ export { WorkosOrgServiceImpl, getWorkosErrorCode } from "./auth/workos-org-serv
 export type { WorkosOrgService } from "./auth/workos-org-service"
 export { StubWorkosOrgService } from "./auth/workos-org-service.stub"
 export { createAuthMiddleware } from "./auth/middleware"
+export { WorkosApiKeyService } from "./auth/api-key-service"
+export type { ApiKeyService, ValidatedApiKey } from "./auth/api-key-service"
+export { StubApiKeyService } from "./auth/api-key-service.stub"
 export { displayNameFromWorkos } from "./auth/display-name"
 export { decodeAndSanitizeRedirectState } from "./auth/redirect"
 export { renderLoginPage } from "./auth/stub-login-page"
@@ -66,6 +69,7 @@ export {
   taskId,
   pushSubscriptionId,
   userSessionId,
+  apiKeyChannelAccessId,
 } from "./id"
 export { parseCookies, SESSION_COOKIE_NAME, SESSION_COOKIE_CONFIG } from "./cookies"
 export { generateSlug, generateUniqueSlug } from "./slug"

@@ -131,9 +131,9 @@ Optionally filter by stream using ID (stream_xxx), slug (general), or prefixed s
 
         const searchResults = await searchService.search({
           workspaceId,
-          userId: invokingUserId,
+          permissions: { accessibleStreamIds },
           query: input.query,
-          filters: { streamIds: filterStreamIds },
+          filters: input.stream ? { streamIds: filterStreamIds } : undefined,
           limit: 10,
           exact: input.exact,
         })

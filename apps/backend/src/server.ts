@@ -8,7 +8,8 @@ import { errorHandler } from "./middleware/error-handler"
 import { registerSocketHandlers } from "./socket"
 import { createDatabasePools, warmPool, type DatabasePools } from "./db"
 import { runMigrations } from "./db/migrations"
-import { WorkosAuthService, StubAuthService } from "@threa/backend-common"
+import { WorkosAuthService, StubAuthService, WorkosApiKeyService, StubApiKeyService } from "@threa/backend-common"
+import { ApiKeyChannelService } from "./features/api-keys"
 import {
   WorkspaceService,
   AvatarService,
@@ -331,6 +332,10 @@ export async function startServer(): Promise<ServerInstance> {
   const commandRegistry = new CommandRegistry()
   commandRegistry.register(new EchoCommand())
 
+  // Public API key service — WorkOS validates API keys in production, stub in dev
+  const apiKeyService = config.useStubAuth ? new StubApiKeyService() : new WorkosApiKeyService(config.workos)
+  const apiKeyChannelService = new ApiKeyChannelService({ pool })
+
   const isProduction = process.env.NODE_ENV === "production"
   const app = createApp({ corsAllowedOrigins: config.corsAllowedOrigins, isProduction })
 
@@ -354,6 +359,8 @@ export async function startServer(): Promise<ServerInstance> {
     rateLimiterConfig: config.rateLimits,
     allowDevAuthRoutes: config.useStubAuth && !isProduction,
     internalApiKey: config.internalApiKey,
+    apiKeyService,
+    apiKeyChannelService,
   })
 
   app.use(errorHandler)

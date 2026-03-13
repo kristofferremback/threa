@@ -113,3 +113,44 @@ jobs:
 
       - name: Run frontend tests
         run: bun run --cwd apps/frontend test
+
+  workos-permissions:
+    name: WorkOS Permissions
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check for permission file changes
+        if: github.event_name == 'pull_request'
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            permissions:
+              - 'packages/types/src/api-keys.ts'
+              - 'scripts/sync-workos-permissions.ts'
+
+      - name: Setup Bun
+        if: github.event_name == 'push' || steps.filter.outputs.permissions == 'true'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        if: github.event_name == 'push' || steps.filter.outputs.permissions == 'true'
+        run: bun install
+
+      # On PRs: check for drift when permission files change
+      - name: Check for permission drift
+        if: github.event_name == 'pull_request' && steps.filter.outputs.permissions == 'true'
+        run: bun run workos:check
+        env:
+          WORKOS_API_KEY: ${{ secrets.WORKOS_PROD_API_KEY }}
+
+      # On every merge to main: sync permissions to production WorkOS
+      - name: Sync permissions to WorkOS
+        if: github.event_name == 'push'
+        run: bun run workos:sync
+        env:
+          WORKOS_API_KEY: ${{ secrets.WORKOS_PROD_API_KEY }}
