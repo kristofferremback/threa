@@ -64,6 +64,8 @@ interface MessageLayoutProps {
   isHighlighted?: boolean
   isEditing?: boolean
   containerRef?: React.RefObject<HTMLDivElement | null>
+  /** Whether this message was sent by the current user */
+  isCurrentUser?: boolean
   /** Touch event handlers for mobile long-press */
   touchHandlers?: {
     onTouchStart: (e: React.TouchEvent) => void
@@ -89,6 +91,7 @@ function MessageLayout({
   isHighlighted,
   isEditing,
   containerRef,
+  isCurrentUser,
   touchHandlers,
 }: MessageLayoutProps) {
   const isPersona = event.actorType === "persona"
@@ -106,6 +109,8 @@ function MessageLayout({
         // System messages get a subtle info-toned accent
         isSystem &&
           "bg-gradient-to-r from-blue-500/[0.04] to-transparent -mx-3 px-3 sm:-mx-6 sm:px-6 py-4 shadow-[inset_3px_0_0_hsl(210_100%_55%)]",
+        // Current user's messages get a subtle tint for at-a-glance identification
+        !isPersona && !isSystem && isCurrentUser && "bg-foreground/[0.03] -mx-3 px-3 sm:-mx-6 sm:px-6 py-3 rounded-sm",
         // Edit mode: pseudo-element background so no layout shift — zero padding/margin changes
         isEditing &&
           !isPersona &&
@@ -368,6 +373,7 @@ function SentMessageEvent({
         actorInitials={actorInitials}
         personaSlug={personaSlug}
         actorAvatarUrl={actorAvatarUrl}
+        isCurrentUser={event.actorId === currentUserId}
         statusIndicator={
           <>
             <RelativeTime date={event.createdAt} className="text-xs text-muted-foreground" />
@@ -471,6 +477,7 @@ function PendingMessageEvent({
       actorInitials={actorInitials}
       personaSlug={personaSlug}
       actorAvatarUrl={actorAvatarUrl}
+      isCurrentUser
       containerClassName="opacity-60"
       statusIndicator={
         <span className="text-xs text-muted-foreground opacity-0 animate-fade-in-delayed">Sending...</span>
@@ -499,6 +506,7 @@ function FailedMessageEvent({
       actorInitials={actorInitials}
       personaSlug={personaSlug}
       actorAvatarUrl={actorAvatarUrl}
+      isCurrentUser
       containerClassName="border-l-2 border-destructive pl-2"
       statusIndicator={<span className="text-xs text-destructive">Failed to send</span>}
       actions={
