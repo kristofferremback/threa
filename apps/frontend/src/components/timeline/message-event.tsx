@@ -373,7 +373,7 @@ function SentMessageEvent({
         actorInitials={actorInitials}
         personaSlug={personaSlug}
         actorAvatarUrl={actorAvatarUrl}
-        isCurrentUser={event.actorId === currentUserId}
+        isCurrentUser={currentUserId !== null && event.actorId === currentUserId}
         statusIndicator={
           <>
             <RelativeTime date={event.createdAt} className="text-xs text-muted-foreground" />
