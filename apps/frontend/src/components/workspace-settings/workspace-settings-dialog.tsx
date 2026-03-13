@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/responsive-dialog"
 import { ResponsiveTabs } from "@/components/ui/responsive-tabs"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
+import { GeneralTab } from "./general-tab"
 import { UsersTab } from "./users-tab"
 
 const WORKSPACE_SETTINGS_TABS = ["general", "users"] as const
@@ -68,9 +69,7 @@ export function WorkspaceSettingsDialog({ workspaceId }: WorkspaceSettingsDialog
 
           <div className="flex-1 overflow-y-auto mt-4 pb-4 sm:pb-6">
             <TabsContent value="general" className="mt-0">
-              <div className="space-y-4 p-1">
-                <p className="text-sm text-muted-foreground">Workspace general settings will be available here.</p>
-              </div>
+              <GeneralTab workspaceId={workspaceId} />
             </TabsContent>
             <TabsContent value="users" className="mt-0">
               <UsersTab workspaceId={workspaceId} />

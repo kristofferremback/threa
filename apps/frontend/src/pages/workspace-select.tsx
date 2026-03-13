@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ThreaLogo } from "@/components/threa-logo"
 import { ApiError } from "@/api/client"
+import { formatRegion } from "@/lib/regions"
 
 function getCreateWorkspaceErrorMessage(error: unknown): string | null {
   if (!error) return null
@@ -150,7 +151,7 @@ export function WorkspaceSelectPage() {
               <SelectContent>
                 {regions.map((region) => (
                   <SelectItem key={region} value={region}>
-                    {region}
+                    {formatRegion(region)}
                   </SelectItem>
                 ))}
               </SelectContent>
