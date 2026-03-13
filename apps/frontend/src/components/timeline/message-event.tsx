@@ -506,7 +506,6 @@ function FailedMessageEvent({
       actorInitials={actorInitials}
       personaSlug={personaSlug}
       actorAvatarUrl={actorAvatarUrl}
-      isCurrentUser
       containerClassName="border-l-2 border-destructive pl-2"
       statusIndicator={<span className="text-xs text-destructive">Failed to send</span>}
       actions={
