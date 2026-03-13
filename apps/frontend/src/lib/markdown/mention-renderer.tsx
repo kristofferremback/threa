@@ -1,7 +1,7 @@
 import type { ReactNode } from "react"
 import { Link } from "react-router-dom"
 import { cn } from "@/lib/utils"
-import { useMentionType } from "./mention-context"
+import { useMentionType, useMentionClick } from "./mention-context"
 import { useChannelUrl } from "./channel-link-context"
 import { useEmojiLookup } from "./emoji-context"
 import { MENTION_PATTERN, isValidSlug } from "@threa/types"
@@ -33,6 +33,7 @@ const chipBase = "inline px-1 py-px rounded font-medium"
 function TriggerChip({ type, text }: TriggerChipProps) {
   const getMentionType = useMentionType()
   const getChannelUrl = useChannelUrl()
+  const onMentionClick = useMentionClick()
 
   if (type === "channel") {
     const url = getChannelUrl(text)
@@ -60,6 +61,23 @@ function TriggerChip({ type, text }: TriggerChipProps) {
     default:
       style = triggerStyles[getMentionType(text)]
       prefix = "@"
+  }
+
+  // User and "me" mentions are clickable when a handler is provided
+  const mentionType = type === "mention" ? getMentionType(text) : null
+  const isClickable = onMentionClick && (mentionType === "user" || mentionType === "me")
+
+  if (isClickable) {
+    return (
+      <button
+        type="button"
+        onClick={() => onMentionClick(text, mentionType)}
+        className={cn(chipBase, "cursor-pointer hover:underline", style)}
+      >
+        {prefix}
+        {text}
+      </button>
+    )
   }
 
   return (

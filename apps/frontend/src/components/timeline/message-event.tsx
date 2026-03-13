@@ -8,6 +8,7 @@ import { MarkdownContent, AttachmentProvider } from "@/components/ui/markdown-co
 import { RelativeTime } from "@/components/relative-time"
 import { PersonaAvatar } from "@/components/persona-avatar"
 import { usePendingMessages, usePanel, createDraftPanelId, useTrace, useMessageService } from "@/contexts"
+import { useUserProfile } from "@/components/user-profile"
 import { useEditLastMessage } from "./edit-last-message-context"
 import { useInlineEdit } from "./inline-edit-context"
 import { useActors, useWorkspaceUserId, getStepLabel, focusAtEnd, type MessageAgentActivity } from "@/hooks"
@@ -93,6 +94,8 @@ function MessageLayout({
 }: MessageLayoutProps) {
   const isPersona = event.actorType === "persona"
   const isSystem = event.actorType === "system"
+  const isUser = event.actorType === "user"
+  const { openUserProfile } = useUserProfile()
 
   return (
     <div
@@ -127,9 +130,19 @@ function MessageLayout({
       )}
       <div className="message-content flex-1 min-w-0">
         <div className="flex items-baseline gap-2 mb-1">
-          <span className={cn("font-semibold text-sm", isPersona && "text-primary", isSystem && "text-blue-500")}>
-            {actorName}
-          </span>
+          {isUser && event.actorId ? (
+            <button
+              type="button"
+              onClick={() => openUserProfile(event.actorId!)}
+              className={cn("font-semibold text-sm hover:underline text-left")}
+            >
+              {actorName}
+            </button>
+          ) : (
+            <span className={cn("font-semibold text-sm", isPersona && "text-primary", isSystem && "text-blue-500")}>
+              {actorName}
+            </span>
+          )}
           {statusIndicator}
           {actions}
         </div>

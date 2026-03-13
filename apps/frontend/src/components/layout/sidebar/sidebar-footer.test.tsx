@@ -94,6 +94,9 @@ describe("SidebarFooter", () => {
           avatarUrl: null,
           timezone: "Europe/Stockholm",
           locale: "en-SE",
+          pronouns: null,
+          phone: null,
+          githubUsername: null,
           setupCompleted: true,
           joinedAt: "2026-03-03T10:00:00Z",
         }}
@@ -130,6 +133,9 @@ describe("SidebarFooter", () => {
           avatarUrl: null,
           timezone: "Europe/Stockholm",
           locale: "en-SE",
+          pronouns: null,
+          phone: null,
+          githubUsername: null,
           setupCompleted: true,
           joinedAt: "2026-03-03T10:00:00Z",
         }}

@@ -1,16 +1,18 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react"
 import type { Mentionable } from "@/components/editor/triggers/types"
 
-type MentionType = "user" | "persona" | "broadcast" | "me"
+export type MentionType = "user" | "persona" | "broadcast" | "me"
 
 interface MentionContextValue {
   getMentionType: (slug: string) => MentionType
+  onMentionClick?: (slug: string, type: MentionType) => void
 }
 
 const MentionContext = createContext<MentionContextValue | null>(null)
 
 interface MentionProviderProps {
   mentionables: Mentionable[]
+  onMentionClick?: (slug: string, type: MentionType) => void
   children: ReactNode
 }
 
@@ -18,7 +20,7 @@ interface MentionProviderProps {
  * Provider that supplies mention type lookup for rendering.
  * Wraps markdown content to enable correct styling of @mentions.
  */
-export function MentionProvider({ mentionables, children }: MentionProviderProps) {
+export function MentionProvider({ mentionables, onMentionClick, children }: MentionProviderProps) {
   const value = useMemo<MentionContextValue>(() => {
     const slugToType = new Map<string, MentionType>()
     for (const m of mentionables) {
@@ -30,8 +32,9 @@ export function MentionProvider({ mentionables, children }: MentionProviderProps
 
     return {
       getMentionType: (slug: string) => slugToType.get(slug) ?? "user",
+      onMentionClick,
     }
-  }, [mentionables])
+  }, [mentionables, onMentionClick])
 
   return <MentionContext.Provider value={value}>{children}</MentionContext.Provider>
 }
@@ -50,4 +53,12 @@ export function useMentionType(): (slug: string) => MentionType {
     }
   }
   return context.getMentionType
+}
+
+/**
+ * Hook to get the optional mention click handler.
+ */
+export function useMentionClick(): ((slug: string, type: MentionType) => void) | undefined {
+  const context = useContext(MentionContext)
+  return context?.onMentionClick
 }

@@ -13,6 +13,9 @@ interface UserRow {
   avatar_url: string | null
   timezone: string | null
   locale: string | null
+  pronouns: string | null
+  phone: string | null
+  github_username: string | null
   setup_completed: boolean
   joined_at: Date
 }
@@ -33,6 +36,9 @@ export interface User {
   avatarUrl: string | null
   timezone: string | null
   locale: string | null
+  pronouns: string | null
+  phone: string | null
+  githubUsername: string | null
   setupCompleted: boolean
   joinedAt: Date
 }
@@ -57,17 +63,22 @@ export interface UpdateUserParams {
   avatarUrl?: string | null
   timezone?: string
   locale?: string
+  pronouns?: string | null
+  phone?: string | null
+  githubUsername?: string | null
   setupCompleted?: boolean
 }
 
 const SELECT_FIELDS = `
   id, workspace_id, workos_user_id, email, role, slug,
-  name, description, avatar_url, timezone, locale, setup_completed, joined_at
+  name, description, avatar_url, timezone, locale,
+  pronouns, phone, github_username, setup_completed, joined_at
 `
 
 const SELECT_FIELDS_WITH_ALIAS = `
   u.id, u.workspace_id, u.workos_user_id, u.email, u.role, u.slug,
-  u.name, u.description, u.avatar_url, u.timezone, u.locale, u.setup_completed, u.joined_at
+  u.name, u.description, u.avatar_url, u.timezone, u.locale,
+  u.pronouns, u.phone, u.github_username, u.setup_completed, u.joined_at
 `
 
 function mapRowToUser(row: UserRow): User {
@@ -83,6 +94,9 @@ function mapRowToUser(row: UserRow): User {
     avatarUrl: row.avatar_url,
     timezone: row.timezone,
     locale: row.locale,
+    pronouns: row.pronouns,
+    phone: row.phone,
+    githubUsername: row.github_username,
     setupCompleted: row.setup_completed,
     joinedAt: row.joined_at,
   }
@@ -132,6 +146,9 @@ export const UserRepository = {
         um.avatar_url,
         um.timezone,
         um.locale,
+        um.pronouns,
+        um.phone,
+        um.github_username,
         um.setup_completed,
         um.joined_at
       FROM (SELECT 1) AS one
@@ -269,6 +286,18 @@ export const UserRepository = {
       sets.push(`locale = $${paramIndex++}`)
       values.push(params.locale)
     }
+    if (params.pronouns !== undefined) {
+      sets.push(`pronouns = $${paramIndex++}`)
+      values.push(params.pronouns)
+    }
+    if (params.phone !== undefined) {
+      sets.push(`phone = $${paramIndex++}`)
+      values.push(params.phone)
+    }
+    if (params.githubUsername !== undefined) {
+      sets.push(`github_username = $${paramIndex++}`)
+      values.push(params.githubUsername)
+    }
     if (params.setupCompleted !== undefined) {
       sets.push(`setup_completed = $${paramIndex++}`)
       values.push(params.setupCompleted)
@@ -286,8 +315,7 @@ export const UserRepository = {
     const query = `
       UPDATE users SET ${sets.join(", ")}
       ${whereClause}
-      RETURNING id, workspace_id, workos_user_id, email, role, slug,
-                name, description, avatar_url, timezone, locale, setup_completed, joined_at
+      RETURNING ${SELECT_FIELDS}
     `
     const result = await db.query<UserRow>(query, values)
     return result.rows[0] ? mapRowToUser(result.rows[0]) : null

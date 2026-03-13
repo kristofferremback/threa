@@ -212,8 +212,13 @@ export function useUpdateProfile(workspaceId: string) {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (data: { name?: string; description?: string | null }) =>
-      workspaceService.updateProfile(workspaceId, data),
+    mutationFn: (data: {
+      name?: string
+      description?: string | null
+      pronouns?: string | null
+      phone?: string | null
+      githubUsername?: string | null
+    }) => workspaceService.updateProfile(workspaceId, data),
     onSuccess: (user) => updateUserInBootstrap(queryClient, workspaceId, user),
   })
 }

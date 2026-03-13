@@ -12,8 +12,16 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
-import { useStreamOrDraft, useStreamError, usePanelLayout, isDmDraftId, useTypeToFocus } from "@/hooks"
+import {
+  useStreamOrDraft,
+  useStreamError,
+  usePanelLayout,
+  isDmDraftId,
+  useTypeToFocus,
+  useWorkspaceBootstrap,
+} from "@/hooks"
 import { usePanel, useSidebar } from "@/contexts"
+import { useUserProfile } from "@/components/user-profile"
 import { TimelineView } from "@/components/timeline"
 import { StreamPanel, ThreadHeader } from "@/components/thread"
 import { ThreadPanelSlot } from "@/components/layout"
@@ -76,8 +84,13 @@ export function StreamPage() {
     })
   }
 
+  const { openUserProfile } = useUserProfile()
+  const { data: bootstrap } = useWorkspaceBootstrap(workspaceId ?? "")
+
   const isThread = stream?.type === StreamTypes.THREAD
   const isChannel = stream?.type === StreamTypes.CHANNEL
+  const isDm = stream?.type === StreamTypes.DM
+  const dmPeerUserId = isDm ? bootstrap?.dmPeers.find((p) => p.streamId === streamId)?.userId : null
 
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState("")
@@ -161,6 +174,16 @@ export function StreamPage() {
         </h1>
         <Pencil className="h-3.5 w-3.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
       </div>
+    )
+  } else if (isDm && dmPeerUserId) {
+    headerTitle = (
+      <button
+        type="button"
+        onClick={() => openUserProfile(dmPeerUserId)}
+        className="font-semibold truncate hover:underline text-left"
+      >
+        {streamName}
+      </button>
     )
   } else {
     headerTitle = <h1 className="font-semibold truncate">{streamName}</h1>

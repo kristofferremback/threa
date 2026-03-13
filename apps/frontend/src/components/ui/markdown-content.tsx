@@ -3,7 +3,7 @@ import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { cn } from "@/lib/utils"
 import { markdownComponents } from "@/lib/markdown/components"
-import { MentionProvider } from "@/lib/markdown/mention-context"
+import { MentionProvider, type MentionType } from "@/lib/markdown/mention-context"
 import { AttachmentProvider } from "@/lib/markdown/attachment-context"
 import type { Mentionable } from "@/components/editor/triggers/types"
 
@@ -64,15 +64,24 @@ export function MarkdownWithMentions({ content, className, mentionables }: Markd
   )
 }
 
-interface MentionableMarkdownWrapperProps {
+export interface MentionableMarkdownWrapperProps {
   children: ReactNode
   mentionables: Mentionable[]
+  onMentionClick?: (slug: string, type: MentionType) => void
 }
 
 /**
  * Wrapper that provides mention context to its children.
  * Use this to wrap areas where messages are rendered to enable correct mention styling.
  */
-export function MentionableMarkdownWrapper({ children, mentionables }: MentionableMarkdownWrapperProps) {
-  return <MentionProvider mentionables={mentionables}>{children}</MentionProvider>
+export function MentionableMarkdownWrapper({
+  children,
+  mentionables,
+  onMentionClick,
+}: MentionableMarkdownWrapperProps) {
+  return (
+    <MentionProvider mentionables={mentionables} onMentionClick={onMentionClick}>
+      {children}
+    </MentionProvider>
+  )
 }
