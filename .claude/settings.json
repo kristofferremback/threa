@@ -1,4 +1,12 @@
 {
   "enabledPlugins": {},
-  "plansDirectory": ".claude/plans"
+  "plansDirectory": ".claude/plans",
+  "hooks": {
+    "SessionStart": [
+      {
+        "command": "npm install --prefer-offline 2>/dev/null || npm install; exit 0",
+        "timeout": 180
+      }
+    ]
+  }
 }
