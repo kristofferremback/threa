@@ -70,4 +70,9 @@ if ! command -v gh &>/dev/null; then
     && apt-get install -y gh
 fi
 
+# ─── Marker ───────────────────────────────────────────────────────────────────
+
+# SessionStart hook checks for this to skip npm install on local dev
+touch /tmp/.claude-code-web
+
 echo "Claude Code Web setup complete."
