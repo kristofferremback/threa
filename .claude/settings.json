@@ -4,7 +4,7 @@
   "hooks": {
     "SessionStart": [
       {
-        "command": "[ -f /tmp/.claude-code-web ] && { cp -n .env.claude-code-web .env; docker compose up -d --wait 2>/dev/null; bun install }; exit 0",
+        "command": "[ -f /tmp/.claude-code-web ] && { cp -n .env.claude-code-web .env; docker compose up -d --wait 2>/dev/null; bun install; }; exit 0",
         "timeout": 180
       }
     ]
