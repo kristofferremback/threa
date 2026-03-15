@@ -19,13 +19,9 @@ The `.claude/settings.json` SessionStart hook runs after clone and:
 
 - Copies `.env.claude-code-web` to `.env` (if not already present)
 - Runs `docker compose up -d --wait` to start PostgreSQL 17 with pgvector and MinIO
-- Runs `npm install` (bun install fails due to the proxy not supporting HTTPS CONNECT)
+- Runs `bun install`
 
 This uses the same `docker-compose.yml` and ports as local dev (Postgres 5454, MinIO 9099).
-
-## Dependency Installation
-
-`bun install` fails in the sandbox due to the HTTP proxy not supporting HTTPS CONNECT tunneling. The SessionStart hook uses `npm install` as a fallback instead.
 
 ## Environment
 
