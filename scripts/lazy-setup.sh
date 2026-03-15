@@ -6,7 +6,8 @@
 # ─── MinIO ────────────────────────────────────────────────────────────────────
 
 if ! command -v /usr/local/bin/minio &>/dev/null; then
-  curl -fsSL --max-time 60 https://dl.min.io/server/minio/release/linux-amd64/minio \
+  _arch=$(dpkg --print-architecture 2>/dev/null || uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+  curl -fsSL --max-time 60 "https://dl.min.io/server/minio/release/linux-${_arch}/minio" \
     -o /usr/local/bin/minio && chmod +x /usr/local/bin/minio
 fi
 
@@ -25,6 +26,7 @@ if ! command -v gh &>/dev/null; then
     && out=$(mktemp) \
     && wget -nv -O"$out" https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && cat "$out" | tee /etc/apt/keyrings/githubcli-archive-keyring.gpg >/dev/null \
+    && rm -f "$out" \
     && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
       | tee /etc/apt/sources.list.d/github-cli.list >/dev/null \
