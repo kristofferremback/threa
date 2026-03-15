@@ -3,9 +3,6 @@
 # Installs things that aren't needed immediately (MinIO, gh CLI).
 # Each section is independent; failures don't block the session.
 
-LOCK="/tmp/.lazy-setup-done"
-[ -f "$LOCK" ] && exit 0
-
 # ─── MinIO ────────────────────────────────────────────────────────────────────
 
 if ! command -v /usr/local/bin/minio &>/dev/null; then
@@ -35,5 +32,4 @@ if ! command -v gh &>/dev/null; then
     && apt-get install -y gh
 fi
 
-touch "$LOCK"
 exit 0
