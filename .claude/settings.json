@@ -4,7 +4,7 @@
   "hooks": {
     "SessionStart": [
       {
-        "command": "[ -f /tmp/.claude-code-web ] && (npm install --prefer-offline 2>/dev/null || npm install); exit 0",
+        "command": "[ -f /tmp/.claude-code-web ] && { (npm install --prefer-offline 2>/dev/null || npm install); bash scripts/lazy-setup.sh &>/tmp/lazy-setup.log & }; exit 0",
         "timeout": 180
       }
     ]
