@@ -4,27 +4,32 @@ How to develop Threa in [Claude Code web](https://claude.ai/code) sandbox sessio
 
 ## Sandbox Environment
 
-Ubuntu 24.04 VM with PostgreSQL 16 (not running), Bun, Node 22, and git pre-installed. No systemd. The VM resets between every conversation turn — only the git working directory persists.
+Ubuntu 24.04 VM with Docker 29, Bun, Node 22, and git pre-installed. No systemd. The VM resets between every conversation turn — only the git working directory persists.
 
 ## Setup Script (`scripts/claude-code-web-setup.sh`)
 
 Paste this script into **CC web Settings > Setup Script**. It runs as root on each new session and:
 
-- Starts PostgreSQL 16 via `pg_ctlcluster`
-- Creates user `threa`/`threa`, databases `threa` and `threa_test`, and enables pgvector
-- Enables md5 password auth for local TCP connections in `pg_hba.conf`
-- Downloads and starts MinIO on port 9000 (background process, `/tmp/minio-data`)
-- Installs the `gh` CLI for PR workflows
+- Starts the Docker daemon with the egress proxy (`$https_proxy`) so it can pull images
+- Downloads and installs the `gh` CLI binary from GitHub Releases (apt is unreachable)
 
-Postgres runs directly on port 5432 (not the 5454/5455 Docker mappings used in local dev).
+## SessionStart Hook
+
+The `.claude/settings.json` SessionStart hook runs after clone and:
+
+- Copies `.env.claude-code-web` to `.env` (if not already present)
+- Runs `docker compose up -d --wait` to start PostgreSQL 17 with pgvector and MinIO
+- Runs `npm install` (bun install fails due to the proxy not supporting HTTPS CONNECT)
+
+This uses the same `docker-compose.yml` and ports as local dev (Postgres 5454, MinIO 9099).
 
 ## Dependency Installation
 
-`bun install` fails in the sandbox due to the HTTP proxy not supporting HTTPS CONNECT tunneling. The `.claude/settings.json` SessionStart hook uses `npm install` as a fallback instead.
+`bun install` fails in the sandbox due to the HTTP proxy not supporting HTTPS CONNECT tunneling. The SessionStart hook uses `npm install` as a fallback instead.
 
 ## Environment
 
-Copy `.env.claude-code-web` to `.env` for sandbox sessions. It points at localhost:5432 (Postgres) and localhost:9000 (MinIO) with stub auth enabled.
+`.env.claude-code-web` is copied to `.env` automatically. It matches `docker-compose.yml` port mappings (5454 for Postgres, 9099 for MinIO) with stub auth enabled.
 
 ## Manual UI Configuration
 
@@ -34,3 +39,4 @@ Copy `.env.claude-code-web` to `.env` for sandbox sessions. It points at localho
 ## Limitations
 
 - **No browser tests.** Playwright and browser-based E2E tests cannot run in the sandbox. Use GitHub Actions CI for those (`bun run test:e2e`).
+- **No apt access.** `archive.ubuntu.com` DNS resolution fails from the sandbox. System packages must be pre-installed or downloaded as binaries through the egress proxy.
