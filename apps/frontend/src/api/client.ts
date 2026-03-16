@@ -24,9 +24,15 @@ interface ErrorResponse {
   }
 }
 
+/**
+ * Base URL for API calls. Empty string for same-origin (dev/prod),
+ * absolute URL for staging (e.g. "https://staging.threa.io").
+ */
+export const API_BASE = import.meta.env.VITE_API_BASE_URL ?? ""
+
 // Base fetch wrapper with error handling
 async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(path, {
+  const response = await fetch(`${API_BASE}${path}`, {
     ...options,
     credentials: "include", // Include cookies for auth
     headers: {
