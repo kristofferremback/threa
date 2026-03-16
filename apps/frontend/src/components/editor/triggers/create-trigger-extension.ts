@@ -42,7 +42,7 @@ export interface TriggerExtensionOptions<TItem> {
     render: () => {
       onStart: (props: SuggestionProps<TItem>) => void
       onUpdate: (props: SuggestionProps<TItem>) => void
-      onExit: () => void
+      onExit: (props: SuggestionProps<TItem>) => void
       onKeyDown: (props: SuggestionKeyDownProps) => boolean
     }
   }
@@ -67,6 +67,10 @@ export function createTriggerExtension<TItem, TAttrs extends object>(config: Tri
     selectable: false,
     atom: true,
     marks: "_", // Allow all marks (bold, italic, code, strike) on this node
+
+    addStorage() {
+      return { popupVisible: false }
+    },
 
     addOptions() {
       return {

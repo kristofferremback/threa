@@ -17,7 +17,7 @@ export interface FromFilterOptions {
     render: () => {
       onStart: (props: SuggestionProps<Mentionable>) => void
       onUpdate: (props: SuggestionProps<Mentionable>) => void
-      onExit: () => void
+      onExit: (props: SuggestionProps<Mentionable>) => void
       onKeyDown: (props: SuggestionKeyDownProps) => boolean
     }
   }

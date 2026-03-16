@@ -52,6 +52,7 @@ export function useChannelSuggestion() {
   )
 
   const { suggestionConfig, renderSuggestionList, isActive, close } = useSuggestion<ChannelItem>({
+    extensionName: "channelLink",
     getItems: () => channels,
     filterItems: filterChannels,
     renderList,

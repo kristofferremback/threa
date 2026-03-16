@@ -181,6 +181,65 @@ test.describe("Emoji Shortcuts", () => {
     await expect(buttons.first()).toHaveAttribute("data-selected", "true")
   })
 
+  test("should send message with Enter when emoji query has no matches (e.g. :) smiley)", async ({ page }) => {
+    const editor = await setupWorkspaceWithEditor(page)
+
+    // Type "hello :)" — the colon triggers the emoji picker, but ")" has no matches
+    await page.keyboard.type("hello :)")
+
+    // Emoji grid should NOT be visible (no matches for ")")
+    await expect(page.locator("[data-emoji-grid]")).not.toBeVisible()
+
+    // Press Enter — should send the message, not insert a newline
+    await page.keyboard.press("Enter")
+
+    // Message should appear in the stream
+    await expect(page.getByText("hello :)")).toBeVisible({ timeout: 5000 })
+  })
+
+  test("should send message with Enter after dismissing emoji picker with Escape", async ({ page }) => {
+    const editor = await setupWorkspaceWithEditor(page)
+
+    // Type ":" to trigger picker
+    await page.keyboard.type("hello :")
+
+    // Wait for grid
+    await expect(page.locator("[data-emoji-grid]")).toBeVisible({ timeout: 2000 })
+
+    // Dismiss with Escape
+    await page.keyboard.press("Escape")
+    await expect(page.locator("[data-emoji-grid]")).not.toBeVisible()
+
+    // Type more text
+    await page.keyboard.type(") done")
+
+    // Press Enter — should send
+    await page.keyboard.press("Enter")
+
+    // Message should appear
+    await expect(page.getByText("hello :) done")).toBeVisible({ timeout: 5000 })
+  })
+
+  test("should send message ending with :D after dismissing matching emoji picker", async ({ page }) => {
+    const editor = await setupWorkspaceWithEditor(page)
+
+    // Type "nice :D" — :D matches laughing emoji, so the picker opens
+    await page.keyboard.type("nice :D")
+
+    // Emoji grid should be visible (D matches emojis)
+    await expect(page.locator("[data-emoji-grid]")).toBeVisible({ timeout: 2000 })
+
+    // Dismiss with Escape
+    await page.keyboard.press("Escape")
+    await expect(page.locator("[data-emoji-grid]")).not.toBeVisible()
+
+    // Press Enter — should send the message, not insert a newline
+    await page.keyboard.press("Enter")
+
+    // Message should appear with the literal :D text
+    await expect(page.getByText("nice :D")).toBeVisible({ timeout: 5000 })
+  })
+
   test("should send message with emoji", async ({ page }) => {
     const editor = await setupWorkspaceWithEditor(page)
 

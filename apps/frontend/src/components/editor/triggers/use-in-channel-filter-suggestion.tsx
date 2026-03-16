@@ -48,6 +48,7 @@ export function useInChannelFilterSuggestion() {
   )
 
   const { suggestionConfig, renderSuggestionList, isActive, close } = useSuggestion<ChannelItem>({
+    extensionName: "inChannelFilter",
     getItems: () => channels,
     filterItems: filterChannels,
     renderList,

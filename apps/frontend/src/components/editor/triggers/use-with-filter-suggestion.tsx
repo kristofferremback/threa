@@ -23,6 +23,7 @@ export function useWithFilterSuggestion() {
   )
 
   const { suggestionConfig, renderSuggestionList, isActive, close } = useSuggestion<Mentionable>({
+    extensionName: "withFilter",
     getItems: () => mentionables,
     filterItems: filterSearchMentionables,
     renderList,

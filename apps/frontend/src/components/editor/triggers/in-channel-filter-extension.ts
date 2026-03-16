@@ -24,7 +24,7 @@ export interface InChannelFilterOptions {
     render: () => {
       onStart: (props: SuggestionProps<ChannelItem>) => void
       onUpdate: (props: SuggestionProps<ChannelItem>) => void
-      onExit: () => void
+      onExit: (props: SuggestionProps<ChannelItem>) => void
       onKeyDown: (props: SuggestionKeyDownProps) => boolean
     }
   }

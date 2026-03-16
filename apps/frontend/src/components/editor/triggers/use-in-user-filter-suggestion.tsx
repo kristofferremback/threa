@@ -22,6 +22,7 @@ export function useInUserFilterSuggestion() {
   )
 
   const { suggestionConfig, renderSuggestionList, isActive, close } = useSuggestion<Mentionable>({
+    extensionName: "inUserFilter",
     getItems: () => mentionables,
     filterItems: filterUsersOnly, // Only users, not personas (can't DM with agents)
     renderList,
