@@ -1,0 +1,8 @@
+{
+  "_comment": "Staging environment configuration. Fill in after one-time setup.",
+  "seedWorkspaceId": "REPLACE_AFTER_SETUP",
+  "stagingDomain": "staging.threa.io",
+  "railwayProjectId": "REPLACE_AFTER_SETUP",
+  "kvNamespaceId": "REPLACE_AFTER_SETUP",
+  "controlPlaneUrl": "REPLACE_AFTER_SETUP"
+}

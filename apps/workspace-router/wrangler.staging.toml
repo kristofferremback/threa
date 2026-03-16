@@ -1,0 +1,13 @@
+name = "workspace-router-staging"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+[[kv_namespaces]]
+binding = "WORKSPACE_REGIONS"
+id = "REPLACE_WITH_STAGING_KV_NAMESPACE_ID"
+
+[vars]
+# Empty default — staging regions are managed dynamically via KV (__regions_config__ key)
+REGIONS = '{}'
+CONTROL_PLANE_URL = "REPLACE_WITH_STAGING_CONTROL_PLANE_URL"
+# INTERNAL_API_KEY is set via: bunx wrangler secret put INTERNAL_API_KEY --config wrangler.staging.toml

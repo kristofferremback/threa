@@ -1,4 +1,4 @@
-import { api, ApiError } from "./client"
+import { api, API_BASE, ApiError } from "./client"
 import type { Attachment } from "@threa/types"
 
 export const attachmentsApi = {
@@ -11,7 +11,7 @@ export const attachmentsApi = {
     const formData = new FormData()
     formData.append("file", file)
 
-    const response = await fetch(`/api/workspaces/${workspaceId}/attachments`, {
+    const response = await fetch(`${API_BASE}/api/workspaces/${workspaceId}/attachments`, {
       method: "POST",
       body: formData,
       credentials: "include",

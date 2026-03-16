@@ -1,4 +1,4 @@
-import { api } from "./client"
+import { api, API_BASE } from "./client"
 import type {
   Workspace,
   WorkspaceBootstrap,
@@ -86,7 +86,7 @@ export const workspacesApi = {
     const formData = new FormData()
     formData.append("avatar", file)
 
-    const response = await fetch(`/api/workspaces/${workspaceId}/profile/avatar`, {
+    const response = await fetch(`${API_BASE}/api/workspaces/${workspaceId}/profile/avatar`, {
       method: "POST",
       body: formData,
       credentials: "include",

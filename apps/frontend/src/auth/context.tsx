@@ -1,4 +1,5 @@
 import { createContext, useCallback, useEffect, useState, type ReactNode } from "react"
+import { API_BASE } from "@/api/client"
 import type { AuthState, User } from "./types"
 
 declare global {
@@ -43,7 +44,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
       }
 
-      const res = await fetch("/api/auth/me", { credentials: "include" })
+      const res = await fetch(`${API_BASE}/api/auth/me`, { credentials: "include" })
 
       if (res.status === 401) {
         setState({ user: null, loading: false, error: null })
@@ -70,7 +71,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, [fetchUser])
 
   const login = useCallback((redirectTo?: string) => {
-    const url = redirectTo ? `/api/auth/login?redirect_to=${encodeURIComponent(redirectTo)}` : "/api/auth/login"
+    const url = redirectTo
+      ? `${API_BASE}/api/auth/login?redirect_to=${encodeURIComponent(redirectTo)}`
+      : `${API_BASE}/api/auth/login`
     window.location.href = url
   }, [])
 
@@ -82,7 +85,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const registration = await navigator.serviceWorker?.ready
       const subscription = await registration?.pushManager.getSubscription()
       if (subscription) {
-        await fetch("/api/push/cleanup-endpoint", {
+        await fetch(`${API_BASE}/api/push/cleanup-endpoint`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
@@ -93,7 +96,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } catch {
       // Best-effort — don't block logout if push cleanup fails
     }
-    window.location.href = "/api/auth/logout"
+    window.location.href = `${API_BASE}/api/auth/logout`
   }, [])
 
   const value: AuthContextValue = {
