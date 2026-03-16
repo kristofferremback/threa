@@ -29,7 +29,7 @@ export interface StatusFilterOptions {
     render: () => {
       onStart: (props: SuggestionProps<StatusFilterItem>) => void
       onUpdate: (props: SuggestionProps<StatusFilterItem>) => void
-      onExit: () => void
+      onExit: (props: SuggestionProps<StatusFilterItem>) => void
       onKeyDown: (props: SuggestionKeyDownProps) => boolean
     }
   }

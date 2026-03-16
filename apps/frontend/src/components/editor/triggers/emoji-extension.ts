@@ -18,7 +18,7 @@ export interface EmojiExtensionOptions {
     render: () => {
       onStart: (props: SuggestionProps<EmojiEntry>) => void
       onUpdate: (props: SuggestionProps<EmojiEntry>) => void
-      onExit: () => void
+      onExit: (props: SuggestionProps<EmojiEntry>) => void
       onKeyDown: (props: SuggestionKeyDownProps) => boolean
     }
   }
@@ -41,6 +41,10 @@ export const EmojiExtension = Node.create<EmojiExtensionOptions>({
   selectable: false,
   atom: true,
   marks: "_", // Allow all marks (bold, italic, etc.)
+
+  addStorage() {
+    return { popupVisible: false }
+  },
 
   addOptions() {
     return {

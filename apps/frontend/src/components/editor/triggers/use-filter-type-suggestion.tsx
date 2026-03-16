@@ -35,6 +35,7 @@ export function useFilterTypeSuggestion() {
   )
 
   const { suggestionConfig, renderSuggestionList, isActive, close } = useSuggestion<FilterTypeItem>({
+    extensionName: "filterType",
     getItems,
     filterItems: filterFilterTypes,
     renderList,

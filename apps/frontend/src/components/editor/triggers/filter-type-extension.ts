@@ -32,7 +32,7 @@ export interface FilterTypeOptions {
     render: () => {
       onStart: (props: SuggestionProps<FilterTypeItem>) => void
       onUpdate: (props: SuggestionProps<FilterTypeItem>) => void
-      onExit: () => void
+      onExit: (props: SuggestionProps<FilterTypeItem>) => void
       onKeyDown: (props: SuggestionKeyDownProps) => boolean
     }
   }

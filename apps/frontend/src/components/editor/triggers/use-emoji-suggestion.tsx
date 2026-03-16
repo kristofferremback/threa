@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useMemo, type RefObject, type ReactNode } from "react"
 import { createPortal } from "react-dom"
+import type { Editor } from "@tiptap/react"
 import type { SuggestionProps, SuggestionKeyDownProps } from "@tiptap/suggestion"
 import type { EmojiEntry } from "@threa/types"
 import type { SuggestionListRef } from "./suggestion-list"
@@ -25,7 +26,7 @@ export interface UseEmojiSuggestionResult {
     render: () => {
       onStart: (props: SuggestionProps<EmojiEntry>) => void
       onUpdate: (props: SuggestionProps<EmojiEntry>) => void
-      onExit: () => void
+      onExit: (props: SuggestionProps<EmojiEntry>) => void
       onKeyDown: (props: SuggestionKeyDownProps) => boolean
     }
   }
@@ -51,6 +52,12 @@ export function useEmojiSuggestion(config: UseEmojiSuggestionConfig): UseEmojiSu
   const { emojis, emojiWeights } = config
   const [state, setState] = useState<EmojiSuggestionState | null>(null)
   const listRef = useRef<SuggestionListRef>(null)
+  const editorRef = useRef<Editor | null>(null)
+
+  const setPopupVisible = useCallback((editor: Editor, visible: boolean) => {
+    const storage = (editor.storage as unknown as Record<string, Record<string, unknown>>).emoji
+    if (storage) storage.popupVisible = visible
+  }, [])
 
   // Pre-sort emojis for consistent ordering
   const sortedEmojis = useMemo(() => {
@@ -93,38 +100,56 @@ export function useEmojiSuggestion(config: UseEmojiSuggestionConfig): UseEmojiSu
     [filterItems]
   )
 
-  const onStart = useCallback((props: SuggestionProps<EmojiEntry>) => {
-    setState({
-      items: props.items,
-      clientRect: props.clientRect ?? null,
-      command: props.command,
-    })
-  }, [])
+  const onStart = useCallback(
+    (props: SuggestionProps<EmojiEntry>) => {
+      editorRef.current = props.editor
+      setPopupVisible(props.editor, props.items.length > 0)
+      setState({
+        items: props.items,
+        clientRect: props.clientRect ?? null,
+        command: props.command,
+      })
+    },
+    [setPopupVisible]
+  )
 
-  const onUpdate = useCallback((props: SuggestionProps<EmojiEntry>) => {
-    setState({
-      items: props.items,
-      clientRect: props.clientRect ?? null,
-      command: props.command,
-    })
-  }, [])
+  const onUpdate = useCallback(
+    (props: SuggestionProps<EmojiEntry>) => {
+      setPopupVisible(props.editor, props.items.length > 0)
+      setState({
+        items: props.items,
+        clientRect: props.clientRect ?? null,
+        command: props.command,
+      })
+    },
+    [setPopupVisible]
+  )
 
-  const onExit = useCallback(() => {
-    setState(null)
-  }, [])
+  const onExit = useCallback(
+    (props: SuggestionProps<EmojiEntry>) => {
+      setPopupVisible(props.editor, false)
+      setState(null)
+    },
+    [setPopupVisible]
+  )
 
   const close = useCallback(() => {
+    if (editorRef.current) setPopupVisible(editorRef.current, false)
     setState(null)
-  }, [])
+  }, [setPopupVisible])
 
-  const onKeyDown = useCallback((props: SuggestionKeyDownProps) => {
-    if (props.event.key === "Escape") {
-      props.event.preventDefault()
-      setState(null)
-      return true
-    }
-    return listRef.current?.onKeyDown(props.event) ?? false
-  }, [])
+  const onKeyDown = useCallback(
+    (props: SuggestionKeyDownProps) => {
+      if (props.event.key === "Escape") {
+        props.event.preventDefault()
+        if (editorRef.current) setPopupVisible(editorRef.current, false)
+        setState(null)
+        return true
+      }
+      return listRef.current?.onKeyDown(props.event) ?? false
+    },
+    [setPopupVisible]
+  )
 
   const suggestionConfig = useMemo(
     () => ({

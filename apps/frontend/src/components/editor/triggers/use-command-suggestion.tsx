@@ -47,6 +47,7 @@ export function useCommandSuggestion() {
   )
 
   const { suggestionConfig, renderSuggestionList, isActive } = useSuggestion<CommandItem>({
+    extensionName: "slashCommand",
     getItems: () => commands,
     filterItems: filterCommands,
     renderList,

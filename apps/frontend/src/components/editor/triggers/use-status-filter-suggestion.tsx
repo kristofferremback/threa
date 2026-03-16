@@ -37,6 +37,7 @@ export function useStatusFilterSuggestion() {
   )
 
   const { suggestionConfig, renderSuggestionList, isActive, close } = useSuggestion<StatusFilterItem>({
+    extensionName: "statusFilter",
     getItems,
     filterItems: filterStatusOptions,
     renderList,

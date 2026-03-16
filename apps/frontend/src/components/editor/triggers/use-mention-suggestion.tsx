@@ -22,6 +22,7 @@ export function useMentionSuggestion(streamContext?: MentionStreamContext) {
   )
 
   const { suggestionConfig, renderSuggestionList, isActive } = useSuggestion<Mentionable>({
+    extensionName: "mention",
     getItems: () => mentionables,
     filterItems: filterMentionables,
     renderList,

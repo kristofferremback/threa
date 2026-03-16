@@ -25,7 +25,7 @@ export interface SuggestionCallbackProps<T> {
 export function createSuggestionRender<T>(handlers: {
   onStart: (props: SuggestionCallbackProps<T>) => void
   onUpdate: (props: SuggestionCallbackProps<T>) => void
-  onExit: () => void
+  onExit: (props: SuggestionCallbackProps<T>) => void
   onKeyDown: (event: KeyboardEvent) => boolean
 }) {
   return () => ({
@@ -55,8 +55,15 @@ export function createSuggestionRender<T>(handlers: {
       return handlers.onKeyDown(props.event)
     },
 
-    onExit: () => {
-      handlers.onExit()
+    onExit: (props: SuggestionProps<T>) => {
+      handlers.onExit({
+        editor: props.editor,
+        range: props.range,
+        query: props.query,
+        items: props.items,
+        clientRect: props.clientRect ?? null,
+        command: props.command,
+      })
     },
   })
 }

@@ -2,10 +2,6 @@ import { Extension, type Editor } from "@tiptap/react"
 import { TextSelection, type Transaction } from "@tiptap/pm/state"
 import type { EditorState } from "@tiptap/pm/state"
 import type { MessageSendMode } from "@threa/types"
-import { MentionPluginKey } from "./triggers/mention-extension"
-import { ChannelPluginKey } from "./triggers/channel-extension"
-import { CommandPluginKey } from "./triggers/command-extension"
-import { EmojiPluginKey } from "./triggers/emoji-extension"
 
 export interface EditorBehaviorsOptions {
   /** Ref to current send mode - using ref avoids stale closure in keyboard shortcuts */
@@ -39,17 +35,20 @@ export function dedentSelection(editor: Editor): boolean {
 }
 
 /**
- * Check if any suggestion popup is currently active.
- * When a suggestion is active, we should let the popup handle Enter/Tab.
+ * Check if any suggestion popup is currently visible with items.
+ *
+ * Uses editor.storage.popupVisible (set by suggestion hooks) instead of raw
+ * plugin state, so that dismissed popups (Escape) and zero-result queries
+ * (e.g. `:)`) no longer block Enter from sending.
  */
 export function isSuggestionActive(editor: Editor): boolean {
-  const { state } = editor
-  const mentionState = MentionPluginKey.getState(state)
-  const channelState = ChannelPluginKey.getState(state)
-  const commandState = CommandPluginKey.getState(state)
-  const emojiState = EmojiPluginKey.getState(state)
-
-  return !!(mentionState?.active || channelState?.active || commandState?.active || emojiState?.active)
+  const s = editor.storage as unknown as Record<string, { popupVisible?: boolean } | undefined>
+  return !!(
+    s.mention?.popupVisible ||
+    s.channelLink?.popupVisible ||
+    s.slashCommand?.popupVisible ||
+    s.emoji?.popupVisible
+  )
 }
 
 /**
