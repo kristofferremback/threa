@@ -3,6 +3,7 @@ dist/
 dev-dist/
 .env
 .env.*
+!.env.claude-code-web
 *.log
 .DS_Store
 .claude/settings.local.json
