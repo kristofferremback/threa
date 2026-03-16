@@ -26,12 +26,8 @@ precacheAndRoute(self.__WB_MANIFEST)
 /** Cache name for pre-fetched bootstrap responses triggered by push notifications. */
 const PUSH_BOOTSTRAP_CACHE = "push-bootstrap"
 
-/**
- * Synchronous set of bootstrap URL pathnames that have been pre-fetched.
- * Lets the fetch interceptor skip `respondWith` entirely when no cache entry
- * exists, so the browser handles the request natively with zero SW overhead.
- */
-const prefetchedBootstrapPaths = new Set<string>()
+/** Regex matching stream bootstrap API paths. */
+const BOOTSTRAP_PATH_RE = /^\/api\/workspaces\/[^/]+\/streams\/[^/]+\/bootstrap$/
 
 /**
  * Pre-fetch the stream bootstrap API and store the response in the Cache API
@@ -47,20 +43,22 @@ async function prefetchStreamBootstrap(workspaceId: string, streamId: string): P
 
   const cache = await caches.open(PUSH_BOOTSTRAP_CACHE)
   await cache.put(url, response)
-  prefetchedBootstrapPaths.add(url)
 }
 
 /**
  * Fetch interceptor: serve pre-fetched bootstrap responses from the push cache.
  * Entries are one-shot — deleted after being served so subsequent fetches hit the network.
  *
- * Uses `prefetchedBootstrapPaths` as a synchronous guard so we only call
- * `respondWith` when a cache entry actually exists. Requests without a
- * pre-fetched entry fall through to the browser's native fetch with no SW overhead.
+ * Uses a regex guard (not an in-memory Set) because mobile browsers terminate
+ * the SW between push receipt and notification tap — any in-memory state would
+ * be lost, orphaning the cache entry. The Cache API is persistent and is the
+ * sole source of truth. The per-request cost of a regex test + async cache miss
+ * is sub-millisecond — negligible compared to the network round-trip it replaces
+ * on a cache hit.
  */
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url)
-  if (!prefetchedBootstrapPaths.has(url.pathname)) return
+  if (!BOOTSTRAP_PATH_RE.test(url.pathname)) return
 
   event.respondWith(
     (async () => {
@@ -68,12 +66,10 @@ self.addEventListener("fetch", (event) => {
       const cached = await cache.match(event.request.url)
       if (cached) {
         // One-shot: serve and delete so the next fetch gets fresh data
-        prefetchedBootstrapPaths.delete(url.pathname)
         void cache.delete(event.request.url)
         return cached
       }
-      // Guard was stale (e.g. cache evicted) — clean up and fall through to network
-      prefetchedBootstrapPaths.delete(url.pathname)
+      // No pre-fetched data — pass through to network
       return fetch(event.request)
     })()
   )
