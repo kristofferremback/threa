@@ -105,7 +105,9 @@ export function EditorActionBar({
         </Tooltip>
       )}
 
-      {/* Format toggle */}
+      {/* Format toggle — split: pointerdown only prevents blur, click toggles toolbar.
+         Firing the toggle on pointerdown would cause the newly-appeared toolbar buttons
+         to receive the subsequent pointerup/click, inadvertently activating a mark. */}
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
@@ -115,8 +117,8 @@ export function EditorActionBar({
             aria-label="Formatting"
             aria-pressed={formatOpen}
             className={cn("h-7 w-7 shrink-0", formatOpen && "bg-accent text-accent-foreground")}
-            onPointerDown={handlePointerAction(() => onFormatOpenChange(!formatOpen))}
-            onClick={handleKeyboardClick(() => onFormatOpenChange(!formatOpen))}
+            onPointerDown={(e) => e.preventDefault()}
+            onClick={() => onFormatOpenChange(!formatOpen)}
             disabled={disabled}
           >
             <span className="text-[13px] font-bold leading-none tracking-tight">Aa</span>
