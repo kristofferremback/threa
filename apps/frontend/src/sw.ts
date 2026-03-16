@@ -20,6 +20,56 @@ self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim(
 precacheAndRoute(self.__WB_MANIFEST)
 
 // ============================================================================
+// Push bootstrap pre-fetch — cache stream data so it's instant on notification tap
+// ============================================================================
+
+/** Cache name for pre-fetched bootstrap responses triggered by push notifications. */
+const PUSH_BOOTSTRAP_CACHE = "push-bootstrap"
+
+/** Regex matching stream bootstrap API paths. */
+const BOOTSTRAP_PATH_RE = /^\/api\/workspaces\/[^/]+\/streams\/[^/]+\/bootstrap$/
+
+/**
+ * Pre-fetch the stream bootstrap API and store the response in the Cache API
+ * so the next fetch for this URL (when the user taps the notification and the
+ * app mounts the stream view) can be served instantly from cache.
+ *
+ * Best-effort: errors are swallowed — the normal fetch path takes over.
+ */
+async function prefetchStreamBootstrap(workspaceId: string, streamId: string): Promise<void> {
+  const url = `/api/workspaces/${workspaceId}/streams/${streamId}/bootstrap`
+  const response = await fetch(url, { credentials: "include" })
+  if (!response.ok) return
+
+  const cache = await caches.open(PUSH_BOOTSTRAP_CACHE)
+  await cache.put(url, response)
+}
+
+/**
+ * Fetch interceptor: serve pre-fetched bootstrap responses from the push cache.
+ * Entries are one-shot — deleted after being served so subsequent fetches hit the network.
+ * Non-bootstrap requests and cache misses fall through to the network transparently.
+ */
+self.addEventListener("fetch", (event) => {
+  const url = new URL(event.request.url)
+  if (!BOOTSTRAP_PATH_RE.test(url.pathname)) return
+
+  event.respondWith(
+    (async () => {
+      const cache = await caches.open(PUSH_BOOTSTRAP_CACHE)
+      const cached = await cache.match(event.request.url)
+      if (cached) {
+        // One-shot: serve and delete so the next fetch gets fresh data
+        void cache.delete(event.request.url)
+        return cached
+      }
+      // No pre-fetched data — pass through to network
+      return fetch(event.request)
+    })()
+  )
+})
+
+// ============================================================================
 // Push notification handling
 // ============================================================================
 
@@ -114,7 +164,13 @@ self.addEventListener("push", (event) => {
         renotify: true, // Re-alert (vibrate/sound) even when replacing an existing notification
       }
 
-      return self.registration.showNotification(title, options)
+      await self.registration.showNotification(title, options)
+
+      // Pre-fetch stream bootstrap in the background so it's ready when user taps.
+      // Best-effort: swallow errors so notification display is never affected.
+      if (data.workspaceId && data.streamId) {
+        await prefetchStreamBootstrap(data.workspaceId, data.streamId).catch(() => {})
+      }
     })
   )
 })
