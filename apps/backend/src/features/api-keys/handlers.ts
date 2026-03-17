@@ -35,11 +35,15 @@ const listStreamsSchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional().default(50),
 })
 
-const listMessagesSchema = z.object({
-  before: z.string().optional(),
-  after: z.string().optional(),
-  limit: z.coerce.number().int().min(1).max(100).optional().default(50),
-})
+const listMessagesSchema = z
+  .object({
+    before: z.string().regex(/^\d+$/, "must be a numeric sequence").optional(),
+    after: z.string().regex(/^\d+$/, "must be a numeric sequence").optional(),
+    limit: z.coerce.number().int().min(1).max(100).optional().default(50),
+  })
+  .refine((data) => !(data.before && data.after), {
+    message: "Provide at most one of 'before' or 'after'",
+  })
 
 const sendMessageSchema = z.object({
   content: z.string().min(1, "content is required"),
@@ -220,9 +224,10 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
 
       const result = listMessagesSchema.safeParse(req.query)
       if (!result.success) {
+        const flat = z.flattenError(result.error)
         return res.status(400).json({
-          error: "Validation failed",
-          details: z.flattenError(result.error).fieldErrors,
+          error: flat.formErrors.length > 0 ? flat.formErrors[0] : "Validation failed",
+          details: flat.fieldErrors,
         })
       }
 

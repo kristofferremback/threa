@@ -19,7 +19,8 @@ const MESSAGES_READ_KEY = `test__${TEST_ORG_ID}__messages:read`
 const MESSAGES_WRITE_KEY = `test__${TEST_ORG_ID}__messages:write`
 const USERS_READ_KEY = `test__${TEST_ORG_ID}__users:read`
 const NO_SCOPE_KEY = `test__${TEST_ORG_ID}__messages:search`
-const SECOND_WRITE_KEY = `test__${TEST_ORG_ID}__messages:write`
+// Different permissions string → stub resolves to a different key ID
+const SECOND_WRITE_KEY = `test__${TEST_ORG_ID}__messages:write,messages:read`
 
 interface TestContext {
   workspaceId: string
@@ -294,15 +295,22 @@ describe("Public API v1 — CRUD Endpoints", () => {
     })
 
     test("should return 403 when updating message created by different API key", async () => {
-      // SECOND_WRITE_KEY has same key ID in stub auth, so this tests the scenario
-      // where a different logical key tries to update. In stub auth, keys with different
-      // formats would have different IDs. We test with the user-created message instead.
+      // botMessageId was created by MESSAGES_WRITE_KEY; SECOND_WRITE_KEY has a
+      // different stub key ID (different permissions string → different ID)
+      const res = await apiPatch(
+        `/api/v1/workspaces/${ctx.workspaceId}/messages/${botMessageId}`,
+        { content: "hacked" },
+        SECOND_WRITE_KEY
+      )
+      expect(res.status).toBe(403)
+    })
+
+    test("should return 403 when updating message created by a user (not via API)", async () => {
       const res = await apiPatch(
         `/api/v1/workspaces/${ctx.workspaceId}/messages/${ctx.publicMessageId}`,
         { content: "hacked" },
         MESSAGES_WRITE_KEY
       )
-      // publicMessageId was created by a user, not via API, so apiKeyId is null
       expect(res.status).toBe(403)
     })
 
@@ -333,6 +341,22 @@ describe("Public API v1 — CRUD Endpoints", () => {
     test("should delete own bot message and return 204", async () => {
       const res = await apiDelete(`/api/v1/workspaces/${ctx.workspaceId}/messages/${botMessageId}`, MESSAGES_WRITE_KEY)
       expect(res.status).toBe(204)
+    })
+
+    test("should return 403 when deleting message created by different API key", async () => {
+      // Create a message with MESSAGES_WRITE_KEY, try to delete with SECOND_WRITE_KEY
+      const createRes = await apiPost(
+        `/api/v1/workspaces/${ctx.workspaceId}/streams/${ctx.publicChannelId}/messages`,
+        { content: `Cross-key delete test ${testRunId}`, displayName: "CrossKeyBot" },
+        MESSAGES_WRITE_KEY
+      )
+      const createBody = (await createRes.json()) as { data: { id: string } }
+
+      const res = await apiDelete(
+        `/api/v1/workspaces/${ctx.workspaceId}/messages/${createBody.data.id}`,
+        SECOND_WRITE_KEY
+      )
+      expect(res.status).toBe(403)
     })
 
     test("should return 403 when deleting message not created via API", async () => {
