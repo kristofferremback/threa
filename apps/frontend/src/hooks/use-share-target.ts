@@ -1,12 +1,7 @@
 import { useCallback } from "react"
 import { db } from "@/db"
 import type { JSONContent } from "@threa/types"
-
-function generateDraftId(): string {
-  const timestamp = Date.now().toString(36)
-  const random = Math.random().toString(36).substring(2, 10)
-  return `draft_${timestamp}${random}`
-}
+import { generateDraftId } from "@/hooks/use-draft-scratchpads"
 
 /**
  * Build a ProseMirror document from the shared title, text, and URL.

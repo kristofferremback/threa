@@ -58,16 +58,25 @@ export function SharePickerPage() {
   const users = useMemo(() => bootstrap?.users ?? [], [bootstrap?.users])
   const handleSelectStream = useCallback(
     async (streamId: string) => {
-      // Save shared content as a draft message in the target stream's composer
-      await saveShareContent(workspaceId!, streamId, { title, text, url })
+      try {
+        await saveShareContent(workspaceId!, streamId, { title, text, url })
+      } catch (err) {
+        // Navigate anyway — the draft won't be pre-populated but the user isn't stranded
+        console.error("Failed to save shared content", err)
+      }
       navigate(`/w/${workspaceId}/s/${streamId}`, { replace: true })
     },
     [workspaceId, title, text, url, navigate, saveShareContent]
   )
 
   const handleNewScratchpad = useCallback(async () => {
-    const result = await createShareDraft(workspaceId!, { title, text, url })
-    navigate(result.path, { replace: true })
+    try {
+      const result = await createShareDraft(workspaceId!, { title, text, url })
+      navigate(result.path, { replace: true })
+    } catch (err) {
+      console.error("Failed to create share draft", err)
+      navigate(`/w/${workspaceId}`, { replace: true })
+    }
   }, [workspaceId, title, text, url, navigate, createShareDraft])
 
   // Reset selection when query changes
