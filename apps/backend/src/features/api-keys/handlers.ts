@@ -161,7 +161,6 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
      */
     async searchMessages(req: Request, res: Response) {
       const workspaceId = req.workspaceId!
-      const apiKey = req.apiKey!
 
       const result = publicSearchSchema.safeParse(req.body)
       if (!result.success) {
@@ -173,7 +172,7 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
 
       const { query, semantic, streams, from, type, before, after, limit } = result.data
 
-      const accessibleStreamIds = await apiKeyChannelService.getAccessibleStreamIdsForApiKey(workspaceId, apiKey.id)
+      const accessibleStreamIds = await getAccessibleStreamIds(req)
 
       if (accessibleStreamIds.length === 0) {
         return res.json({ data: [] })
@@ -220,7 +219,7 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
         return res.json({ data: [] })
       }
 
-      const streams = await StreamRepository.listByIds(pool, accessibleStreamIds, {
+      const streams = await StreamRepository.listByIds(pool, req.workspaceId!, accessibleStreamIds, {
         types: type,
         query,
         limit,

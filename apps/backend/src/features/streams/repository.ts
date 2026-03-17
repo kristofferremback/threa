@@ -176,58 +176,40 @@ export const StreamRepository = {
    */
   async listByIds(
     db: Querier,
+    workspaceId: string,
     ids: string[],
     filters?: { types?: StreamType[]; query?: string; limit?: number }
   ): Promise<Stream[]> {
     if (ids.length === 0) return []
-    const limit = filters?.limit ?? 50
 
-    if (filters?.query && filters?.types?.length) {
-      const pattern = `%${filters.query}%`
-      const result = await db.query<StreamRow>(sql`
-        SELECT ${sql.raw(SELECT_FIELDS)} FROM streams
-        WHERE id = ANY(${ids})
-          AND archived_at IS NULL
-          AND type = ANY(${filters.types})
-          AND (display_name ILIKE ${pattern} OR slug ILIKE ${pattern})
-        ORDER BY display_name NULLS LAST
-        LIMIT ${limit}
-      `)
-      return result.rows.map(mapRowToStream)
+    const conditions: string[] = ["id = ANY($1)", "workspace_id = $2", "archived_at IS NULL"]
+    const params: unknown[] = [ids, workspaceId]
+    let paramIndex = 3
+
+    if (filters?.types?.length) {
+      conditions.push(`type = ANY($${paramIndex})`)
+      params.push(filters.types)
+      paramIndex++
     }
 
     if (filters?.query) {
       const pattern = `%${filters.query}%`
-      const result = await db.query<StreamRow>(sql`
-        SELECT ${sql.raw(SELECT_FIELDS)} FROM streams
-        WHERE id = ANY(${ids})
-          AND archived_at IS NULL
-          AND (display_name ILIKE ${pattern} OR slug ILIKE ${pattern})
-        ORDER BY display_name NULLS LAST
-        LIMIT ${limit}
-      `)
-      return result.rows.map(mapRowToStream)
+      conditions.push(`(display_name ILIKE $${paramIndex} OR slug ILIKE $${paramIndex})`)
+      params.push(pattern)
+      paramIndex++
     }
 
-    if (filters?.types?.length) {
-      const result = await db.query<StreamRow>(sql`
-        SELECT ${sql.raw(SELECT_FIELDS)} FROM streams
-        WHERE id = ANY(${ids})
-          AND archived_at IS NULL
-          AND type = ANY(${filters.types})
-        ORDER BY display_name NULLS LAST
-        LIMIT ${limit}
-      `)
-      return result.rows.map(mapRowToStream)
-    }
+    const limit = filters?.limit ?? 50
+    params.push(limit)
 
-    const result = await db.query<StreamRow>(sql`
-      SELECT ${sql.raw(SELECT_FIELDS)} FROM streams
-      WHERE id = ANY(${ids})
-        AND archived_at IS NULL
+    const query = `
+      SELECT ${SELECT_FIELDS} FROM streams
+      WHERE ${conditions.join(" AND ")}
       ORDER BY display_name NULLS LAST
-      LIMIT ${limit}
-    `)
+      LIMIT $${paramIndex}
+    `
+
+    const result = await db.query<StreamRow>(query, params)
     return result.rows.map(mapRowToStream)
   },
 
