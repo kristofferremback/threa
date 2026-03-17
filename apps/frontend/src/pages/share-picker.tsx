@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect, useRef } from "react"
+import { useState, useMemo, useCallback, useEffect } from "react"
 import { useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { FileText, Hash, MessageSquare, Bell, Search, Plus, Link as LinkIcon } from "lucide-react"
 import { StreamTypes, getAvatarUrl } from "@threa/types"
@@ -18,6 +18,12 @@ const STREAM_ICONS: Record<StreamType, React.ComponentType<{ className?: string 
   [StreamTypes.SYSTEM]: Bell,
 }
 
+const TYPE_LABELS: Partial<Record<StreamType, string>> = {
+  [StreamTypes.SCRATCHPAD]: "Scratchpad",
+  [StreamTypes.CHANNEL]: "Channel",
+  [StreamTypes.DM]: "Direct Message",
+}
+
 /**
  * Share destination picker — workspace-scoped page shown when content is shared to Threa.
  *
@@ -33,7 +39,6 @@ export function SharePickerPage() {
 
   const [query, setQuery] = useState("")
   const [selectedIndex, setSelectedIndex] = useState(0)
-  const inputRef = useRef<HTMLInputElement>(null)
 
   const title = searchParams.get("title")
   const text = searchParams.get("text")
@@ -49,7 +54,7 @@ export function SharePickerPage() {
   }, [title, text, url])
 
   const streams = useMemo(() => bootstrap?.streams ?? [], [bootstrap?.streams])
-  const dmPeers = bootstrap?.dmPeers
+  const dmPeers = useMemo(() => bootstrap?.dmPeers ?? [], [bootstrap?.dmPeers])
   const users = useMemo(() => bootstrap?.users ?? [], [bootstrap?.users])
   const handleSelectStream = useCallback(
     async (streamId: string) => {
@@ -72,7 +77,7 @@ export function SharePickerPage() {
 
   const items = useMemo(() => {
     const lowerQuery = query.toLowerCase()
-    const dmPeerByStreamId = new Map((dmPeers ?? []).map((peer) => [peer.streamId, peer.userId]))
+    const dmPeerByStreamId = new Map(dmPeers.map((peer) => [peer.streamId, peer.userId]))
     const usersById = new Map(users.map((u) => [u.id, u]))
 
     // "New scratchpad" always at the top
@@ -118,11 +123,6 @@ export function SharePickerPage() {
           avatarUrl = getAvatarUrl(workspaceId!, peerUser?.avatarUrl, 64)
         }
 
-        const TYPE_LABELS: Partial<Record<StreamType, string>> = {
-          [StreamTypes.SCRATCHPAD]: "Scratchpad",
-          [StreamTypes.CHANNEL]: "Channel",
-          [StreamTypes.DM]: "Direct Message",
-        }
         const typeLabel = TYPE_LABELS[stream.type] ?? stream.type
 
         return {
@@ -137,6 +137,8 @@ export function SharePickerPage() {
 
     return [newScratchpadItem, ...streamItems]
   }, [streams, dmPeers, users, query, workspaceId, handleNewScratchpad, handleSelectStream])
+
+  const isLoading = !bootstrap
 
   return (
     <div className="flex h-full items-center justify-center bg-background">
@@ -155,7 +157,6 @@ export function SharePickerPage() {
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              ref={inputRef}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search streams..."
@@ -185,6 +186,7 @@ export function SharePickerPage() {
             selectedIndex={selectedIndex}
             onSelectIndex={setSelectedIndex}
             onSelectItem={(item) => item.onSelect()}
+            isLoading={isLoading}
             emptyMessage="No streams found."
           />
         </div>
