@@ -71,21 +71,21 @@ export function useShareTarget() {
       const draftId = generateDraftId()
       const content = buildSharedContent(shared.title, shared.text, shared.url)
 
-      await Promise.all([
-        db.draftScratchpads.add({
+      await db.transaction("rw", db.draftScratchpads, db.draftMessages, async () => {
+        await db.draftScratchpads.add({
           id: draftId,
           workspaceId,
           displayName: shared.title || null,
           companionMode: "on",
           createdAt: Date.now(),
-        }),
-        db.draftMessages.put({
+        })
+        await db.draftMessages.put({
           id: `stream:${draftId}`,
           workspaceId,
           contentJson: content,
           updatedAt: Date.now(),
-        }),
-      ])
+        })
+      })
 
       return { draftId, path: `/w/${workspaceId}/s/${draftId}` }
     },
@@ -100,15 +100,17 @@ export function useShareTarget() {
     ): Promise<void> => {
       const content = buildSharedContent(shared.title, shared.text, shared.url)
 
-      // Read existing draft to preserve staged attachments (put replaces the full record)
-      const existing = await db.draftMessages.get(`stream:${streamId}`)
-
-      await db.draftMessages.put({
-        id: `stream:${streamId}`,
-        workspaceId,
-        contentJson: content,
-        attachments: existing?.attachments,
-        updatedAt: Date.now(),
+      // Transaction ensures the read-then-put is atomic — a concurrent write
+      // between get and put can't silently drop attachments.
+      await db.transaction("rw", db.draftMessages, async () => {
+        const existing = await db.draftMessages.get(`stream:${streamId}`)
+        await db.draftMessages.put({
+          id: `stream:${streamId}`,
+          workspaceId,
+          contentJson: content,
+          attachments: existing?.attachments,
+          updatedAt: Date.now(),
+        })
       })
     },
     []

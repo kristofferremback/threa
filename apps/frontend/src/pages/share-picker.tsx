@@ -6,6 +6,7 @@ import type { Stream, StreamType } from "@threa/types"
 import { useWorkspaceBootstrap } from "@/hooks"
 import { useShareTarget } from "@/hooks/use-share-target"
 import { getStreamName, streamFallbackLabel } from "@/lib/streams"
+import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ItemList } from "@/components/quick-switcher/item-list"
 import type { QuickSwitcherItem } from "@/components/quick-switcher/types"
@@ -154,12 +155,9 @@ export function SharePickerPage() {
       <div className="flex h-full items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4 px-4 text-center">
           <p className="text-sm text-destructive">Failed to load workspace data.</p>
-          <button
-            onClick={() => navigate(`/w/${workspaceId}`, { replace: true })}
-            className="text-sm text-muted-foreground underline"
-          >
+          <Button variant="link" onClick={() => navigate(`/w/${workspaceId}`, { replace: true })}>
             Go to workspace
-          </button>
+          </Button>
         </div>
       </div>
     )
