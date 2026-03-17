@@ -55,6 +55,11 @@ describe("extractUrls", () => {
     expect(extractUrls(md)).toEqual(["https://google.com", "https://github.com"])
   })
 
+  test("extracts markdown links with parentheses in URL", () => {
+    const md = "[Wikipedia](https://en.wikipedia.org/wiki/Foo_(bar))"
+    expect(extractUrls(md)).toEqual(["https://en.wikipedia.org/wiki/Foo_(bar)"])
+  })
+
   test("extracts bare URLs", () => {
     const md = "Visit https://example.com for more info"
     expect(extractUrls(md)).toEqual(["https://example.com"])

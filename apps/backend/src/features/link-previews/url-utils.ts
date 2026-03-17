@@ -108,9 +108,10 @@ const SKIP_PATTERNS = [
  * Returns unique URLs in order of first appearance.
  */
 export function extractUrls(markdown: string): string[] {
-  // Match URLs in markdown links [text](url) and bare URLs
-  // Bare URL pattern allows parentheses to support Wikipedia-style URLs
-  const urlRegex = /(?:\[(?:[^\]]*)\]\(([^)]+)\))|(?:(?:^|\s)(https?:\/\/[^\s<>"]+))/gm
+  // Match URLs in markdown links [text](url) and bare URLs.
+  // Markdown-link group supports one level of balanced parentheses for Wikipedia-style URLs.
+  // Bare URL group allows parens; unbalanced trailing parens are stripped post-match.
+  const urlRegex = /(?:\[(?:[^\]]*)\]\(([^()]*(?:\([^()]*\)[^()]*)*)\))|(?:(?:^|\s)(https?:\/\/[^\s<>"]+))/gm
   const seen = new Set<string>()
   const urls: string[] = []
 

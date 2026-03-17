@@ -108,12 +108,27 @@ async function fetchMetadata(url: string): Promise<UpdateLinkPreviewParams> {
  */
 export function parseHtmlMeta(html: string, url: string): UpdateLinkPreviewParams {
   const getMeta = (property: string): string | null => {
-    // Match og:*, twitter:*, and name= meta tags
+    // Match og:*, twitter:*, and name= meta tags.
+    // Double-quoted and single-quoted content values are matched separately
+    // so that apostrophes inside double-quoted values are not treated as delimiters.
+    const prop = escapeRegex(property)
     const patterns = [
-      new RegExp(`<meta[^>]+property=["']${escapeRegex(property)}["'][^>]+content=["']([^"']+)["']`, "i"),
-      new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+property=["']${escapeRegex(property)}["']`, "i"),
-      new RegExp(`<meta[^>]+name=["']${escapeRegex(property)}["'][^>]+content=["']([^"']+)["']`, "i"),
-      new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+name=["']${escapeRegex(property)}["']`, "i"),
+      // property="X" content="Y" (double-quoted content)
+      new RegExp(`<meta[^>]+property=["']${prop}["'][^>]+content="([^"]*)"`, "i"),
+      // property="X" content='Y' (single-quoted content)
+      new RegExp(`<meta[^>]+property=["']${prop}["'][^>]+content='([^']*)'`, "i"),
+      // content="Y" property="X" (reversed, double-quoted)
+      new RegExp(`<meta[^>]+content="([^"]*)"[^>]+property=["']${prop}["']`, "i"),
+      // content='Y' property="X" (reversed, single-quoted)
+      new RegExp(`<meta[^>]+content='([^']*)'[^>]+property=["']${prop}["']`, "i"),
+      // name="X" content="Y" (double-quoted)
+      new RegExp(`<meta[^>]+name=["']${prop}["'][^>]+content="([^"]*)"`, "i"),
+      // name="X" content='Y' (single-quoted)
+      new RegExp(`<meta[^>]+name=["']${prop}["'][^>]+content='([^']*)'`, "i"),
+      // content="Y" name="X" (reversed, double-quoted)
+      new RegExp(`<meta[^>]+content="([^"]*)"[^>]+name=["']${prop}["']`, "i"),
+      // content='Y' name="X" (reversed, single-quoted)
+      new RegExp(`<meta[^>]+content='([^']*)'[^>]+name=["']${prop}["']`, "i"),
     ]
     for (const pattern of patterns) {
       const match = html.match(pattern)

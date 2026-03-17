@@ -86,6 +86,28 @@ describe("parseHtmlMeta", () => {
     expect(result.faviconUrl).toBe("https://example.com/favicon.ico")
   })
 
+  test("handles apostrophes in double-quoted content attributes", () => {
+    const html = `
+      <html><head>
+        <meta property="og:title" content="McDonald's Restaurant Guide">
+        <meta property="og:description" content="Tom's favorite spot">
+      </head></html>
+    `
+    const result = parseHtmlMeta(html, baseUrl)
+    expect(result.title).toBe("McDonald's Restaurant Guide")
+    expect(result.description).toBe("Tom's favorite spot")
+  })
+
+  test("handles double quotes in single-quoted content attributes", () => {
+    const html = `
+      <html><head>
+        <meta property='og:title' content='She said "hello"'>
+      </head></html>
+    `
+    const result = parseHtmlMeta(html, baseUrl)
+    expect(result.title).toBe('She said "hello"')
+  })
+
   test("decodes HTML entities", () => {
     const html = `
       <html><head>
