@@ -50,6 +50,7 @@ export type OutboxEventType =
   | "activity:created"
   | "bot:created"
   | "bot:updated"
+  | "link_preview:ready"
 
 /** Events that are scoped to a stream (have streamId) */
 export type StreamScopedEventType =
@@ -70,6 +71,7 @@ export type StreamScopedEventType =
   | "agent_session:completed"
   | "agent_session:failed"
   | "agent_session:deleted"
+  | "link_preview:ready"
 
 /** Events that are scoped to a workspace (no streamId) */
 export type WorkspaceScopedEventType =
@@ -319,6 +321,12 @@ export interface BotUpdatedOutboxPayload extends WorkspaceScopedPayload {
   bot: WireBot
 }
 
+// Link preview event payload (stream-scoped)
+export interface LinkPreviewReadyOutboxPayload extends StreamScopedPayload {
+  messageId: string
+  previews: import("@threa/types").LinkPreviewSummary[]
+}
+
 // Budget alert event payload
 export interface BudgetAlertOutboxPayload extends WorkspaceScopedPayload {
   alertType: string
@@ -372,6 +380,7 @@ export interface OutboxEventPayloadMap {
   "activity:created": ActivityCreatedOutboxPayload
   "bot:created": BotCreatedOutboxPayload
   "bot:updated": BotUpdatedOutboxPayload
+  "link_preview:ready": LinkPreviewReadyOutboxPayload
 }
 
 export type OutboxEventPayload<T extends OutboxEventType> = OutboxEventPayloadMap[T]
@@ -421,6 +430,7 @@ const STREAM_SCOPED_EVENTS: StreamScopedEventType[] = [
   "agent_session:completed",
   "agent_session:failed",
   "agent_session:deleted",
+  "link_preview:ready",
 ]
 
 /**

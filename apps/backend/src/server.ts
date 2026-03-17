@@ -10,6 +10,7 @@ import { createDatabasePools, warmPool, type DatabasePools } from "./db"
 import { runMigrations } from "./db/migrations"
 import { WorkosAuthService, StubAuthService, WorkosApiKeyService, StubApiKeyService } from "@threa/backend-common"
 import { ApiKeyChannelService } from "./features/api-keys"
+import { LinkPreviewService, LinkPreviewOutboxHandler, createLinkPreviewWorker } from "./features/link-previews"
 import {
   WorkspaceService,
   AvatarService,
@@ -336,6 +337,9 @@ export async function startServer(): Promise<ServerInstance> {
   const apiKeyService = config.useStubAuth ? new StubApiKeyService() : new WorkosApiKeyService(config.workos)
   const apiKeyChannelService = new ApiKeyChannelService({ pool })
 
+  // Link preview service — created early for route registration
+  const linkPreviewService = new LinkPreviewService({ pool })
+
   const isProduction = process.env.NODE_ENV === "production"
   const app = createApp({ corsAllowedOrigins: config.corsAllowedOrigins, isProduction })
 
@@ -361,6 +365,7 @@ export async function startServer(): Promise<ServerInstance> {
     internalApiKey: config.internalApiKey,
     apiKeyService,
     apiKeyChannelService,
+    linkPreviewService,
   })
 
   app.use(errorHandler)
@@ -522,6 +527,10 @@ export async function startServer(): Promise<ServerInstance> {
     hooks: { onDLQ: avatarProcessOnDLQ },
   })
 
+  // Link preview worker
+  const linkPreviewWorker = createLinkPreviewWorker({ pool, linkPreviewService })
+  jobQueue.registerHandler(JobQueues.LINK_PREVIEW_EXTRACT, linkPreviewWorker)
+
   // Register handlers before starting
   await jobQueue.start()
 
@@ -556,6 +565,7 @@ export async function startServer(): Promise<ServerInstance> {
   const systemMessageOutboxHandler = new SystemMessageOutboxHandler(pool, systemMessageService)
   const activityFeedHandler = new ActivityFeedHandler(pool, activityService)
   const pushNotificationHandler = pushService.isEnabled() ? new PushNotificationHandler({ pool, pushService }) : null
+  const linkPreviewOutboxHandler = new LinkPreviewOutboxHandler(pool, jobQueue)
   const shadowSyncHandler =
     controlPlaneClient && config.region
       ? new InvitationShadowSyncHandler(pool, controlPlaneClient, config.region)
@@ -574,6 +584,7 @@ export async function startServer(): Promise<ServerInstance> {
     attachmentUploadedHandler,
     systemMessageOutboxHandler,
     activityFeedHandler,
+    linkPreviewOutboxHandler,
     ...(pushNotificationHandler ? [pushNotificationHandler] : []),
     ...(shadowSyncHandler ? [shadowSyncHandler] : []),
   ]

@@ -71,6 +71,15 @@ export const FontFamilies = {
   DYSLEXIC: "dyslexic",
 } as const satisfies Record<string, FontFamily>
 
+// Link preview default display mode
+export const LINK_PREVIEW_DEFAULT_OPTIONS = ["open", "collapsed"] as const
+export type LinkPreviewDefault = (typeof LINK_PREVIEW_DEFAULT_OPTIONS)[number]
+
+export const LinkPreviewDefaults = {
+  OPEN: "open",
+  COLLAPSED: "collapsed",
+} as const satisfies Record<string, LinkPreviewDefault>
+
 // Message send mode - how Enter key behaves in composer
 export const MESSAGE_SEND_MODE_OPTIONS = ["enter", "cmdEnter"] as const
 export type MessageSendMode = (typeof MESSAGE_SEND_MODE_OPTIONS)[number]
@@ -141,6 +150,7 @@ export interface UserPreferences {
   notificationLevel: PrefNotificationLevel
   sidebarCollapsed: boolean
   messageSendMode: MessageSendMode
+  linkPreviewDefault: LinkPreviewDefault
   keyboardShortcuts: KeyboardShortcuts
   accessibility: AccessibilityPreferences
   createdAt: string
@@ -160,6 +170,7 @@ export const DEFAULT_USER_PREFERENCES: Omit<UserPreferences, "workspaceId" | "us
   notificationLevel: "all",
   sidebarCollapsed: false,
   messageSendMode: "enter",
+  linkPreviewDefault: "open",
   keyboardShortcuts: {},
   accessibility: DEFAULT_ACCESSIBILITY,
 }
@@ -181,6 +192,7 @@ export interface UpdateUserPreferencesInput {
   notificationLevel?: PrefNotificationLevel
   sidebarCollapsed?: boolean
   messageSendMode?: MessageSendMode
+  linkPreviewDefault?: LinkPreviewDefault
   keyboardShortcuts?: KeyboardShortcuts
   accessibility?: Partial<AccessibilityPreferences>
 }

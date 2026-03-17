@@ -32,6 +32,7 @@ export const JobQueues = {
   WORD_PROCESS: "word.process",
   EXCEL_PROCESS: "excel.process",
   AVATAR_PROCESS: "avatar.process",
+  LINK_PREVIEW_EXTRACT: "link_preview.extract",
 } as const
 
 export type JobQueueName = (typeof JobQueues)[keyof typeof JobQueues]
@@ -145,6 +146,14 @@ export interface AvatarProcessJobData {
   avatarUploadId: string
 }
 
+/** Link preview extraction job - fetches metadata for URLs in a message */
+export interface LinkPreviewExtractJobData {
+  workspaceId: string
+  streamId: string
+  messageId: string
+  contentMarkdown: string
+}
+
 // Map queue names to their data types
 export interface JobDataMap {
   [JobQueues.PERSONA_AGENT]: PersonaAgentJobData
@@ -162,6 +171,7 @@ export interface JobDataMap {
   [JobQueues.WORD_PROCESS]: WordProcessJobData
   [JobQueues.EXCEL_PROCESS]: ExcelProcessJobData
   [JobQueues.AVATAR_PROCESS]: AvatarProcessJobData
+  [JobQueues.LINK_PREVIEW_EXTRACT]: LinkPreviewExtractJobData
 }
 
 /**

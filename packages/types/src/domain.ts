@@ -35,6 +35,8 @@ import type {
   TextFormat,
   TextSizeTier,
   InjectionStrategy,
+  LinkPreviewContentType,
+  LinkPreviewStatus,
 } from "./constants"
 import type { ThreaDocument } from "./prosemirror"
 
@@ -559,4 +561,44 @@ export interface AttachmentExtraction {
   excelMetadata: ExcelMetadata | null
   createdAt: string
   updatedAt: string
+}
+
+// =============================================================================
+// Link Previews
+// =============================================================================
+
+/**
+ * Cached metadata for a URL found in a message.
+ * Fetched server-side by background worker.
+ */
+export interface LinkPreview {
+  id: string
+  workspaceId: string
+  url: string
+  normalizedUrl: string
+  title: string | null
+  description: string | null
+  imageUrl: string | null
+  faviconUrl: string | null
+  siteName: string | null
+  contentType: LinkPreviewContentType
+  status: LinkPreviewStatus
+  fetchedAt: string | null
+  createdAt: string
+}
+
+/**
+ * Lightweight link preview info included in message event payloads.
+ * Contains what's needed for display; full data fetched on-demand if needed.
+ */
+export interface LinkPreviewSummary {
+  id: string
+  url: string
+  title: string | null
+  description: string | null
+  imageUrl: string | null
+  faviconUrl: string | null
+  siteName: string | null
+  contentType: LinkPreviewContentType
+  position: number
 }

@@ -5,7 +5,7 @@ import { db } from "@/db"
 import { joinRoomFireAndForget } from "@/lib/socket-room"
 import { streamKeys } from "./use-streams"
 import { workspaceKeys } from "./use-workspaces"
-import type { StreamEvent, Stream, WorkspaceBootstrap, LastMessagePreview } from "@threa/types"
+import type { StreamEvent, Stream, WorkspaceBootstrap, LastMessagePreview, LinkPreviewSummary } from "@threa/types"
 
 interface MessageEventPayload {
   workspaceId: string
@@ -68,6 +68,13 @@ interface AgentSessionEventPayload {
   workspaceId: string
   streamId: string
   event: StreamEvent
+}
+
+interface LinkPreviewReadyPayload {
+  workspaceId: string
+  streamId: string
+  messageId: string
+  previews: LinkPreviewSummary[]
 }
 
 interface StreamBootstrap {
@@ -417,6 +424,27 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
       await db.events.put({ ...payload.event, _cachedAt: Date.now() })
     }
 
+    // Handle link preview ready - inject previews into message_created event payload
+    const handleLinkPreviewReady = async (payload: LinkPreviewReadyPayload) => {
+      if (payload.streamId !== streamId) return
+
+      queryClient.setQueryData(streamKeys.bootstrap(workspaceId, streamId), (old: unknown) => {
+        if (!old || typeof old !== "object") return old
+        const bootstrap = old as StreamBootstrap
+        return {
+          ...bootstrap,
+          events: bootstrap.events.map((e) => {
+            if (e.eventType !== "message_created") return e
+            const eventPayload = e.payload as { messageId: string; linkPreviews?: LinkPreviewSummary[] }
+            if (eventPayload.messageId !== payload.messageId) return e
+            return { ...e, payload: { ...eventPayload, linkPreviews: payload.previews } }
+          }),
+        }
+      })
+
+      await persistUpdatedMessageEvent(payload.messageId)
+    }
+
     socket.on("message:created", handleMessageCreated)
     socket.on("message:edited", handleMessageEdited)
     socket.on("message:deleted", handleMessageDeleted)
@@ -432,6 +460,7 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
     socket.on("agent_session:completed", handleAgentSessionEvent)
     socket.on("agent_session:failed", handleAgentSessionEvent)
     socket.on("agent_session:deleted", handleAgentSessionEvent)
+    socket.on("link_preview:ready", handleLinkPreviewReady)
 
     return () => {
       abortController.abort()
@@ -455,6 +484,7 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
       socket.off("agent_session:completed", handleAgentSessionEvent)
       socket.off("agent_session:failed", handleAgentSessionEvent)
       socket.off("agent_session:deleted", handleAgentSessionEvent)
+      socket.off("link_preview:ready", handleLinkPreviewReady)
     }
   }, [socket, workspaceId, streamId, shouldSubscribe, queryClient, reconnectCount])
 }
