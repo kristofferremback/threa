@@ -16,6 +16,10 @@ const MAX_RETRY_COUNT = 3
  * socket reconnects. The loop short-circuits when offline so that connectivity
  * failures never increment retryCount — only genuine send failures (while
  * connected) consume retry slots.
+ *
+ * When a message fails, the loop continues to deliver newer messages rather
+ * than blocking at the head of the queue. Failed messages are retried on the
+ * next drain cycle (reconnect or new enqueue).
  */
 export function useMessageQueue(): void {
   const isConnected = useSocketConnected()
@@ -38,10 +42,15 @@ export function useMessageQueue(): void {
     hasPendingWork.current = false
 
     try {
+      // Track messages that failed in this drain cycle so we skip past them
+      // and deliver newer messages instead of blocking at the head of the queue.
+      const skippedIds = new Set<string>()
+
       while (true) {
         if (!isConnectedRef.current) break
 
-        const next = await db.pendingMessages.orderBy("createdAt").first()
+        const candidates = await db.pendingMessages.orderBy("createdAt").toArray()
+        const next = candidates.find((m) => !skippedIds.has(m.clientId))
         if (!next) break
 
         if (next.retryCount >= MAX_RETRY_COUNT) {
@@ -52,6 +61,7 @@ export function useMessageQueue(): void {
         }
 
         markPending(next.clientId)
+        await db.events.update(next.clientId, { _status: "pending" })
 
         try {
           const contentJson = next.contentJson ?? parseMarkdown(next.content)
@@ -86,7 +96,9 @@ export function useMessageQueue(): void {
           })
           await db.events.update(next.clientId, { _status: "failed" })
           markFailed(next.clientId)
-          break
+          // Skip this message for the rest of this drain cycle so newer
+          // messages are not blocked behind it.
+          skippedIds.add(next.clientId)
         }
       }
     } finally {

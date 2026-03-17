@@ -57,7 +57,7 @@ vi.mock("@/db", () => ({
   db: {
     pendingMessages: {
       orderBy: () => ({
-        first: () => Promise.resolve(mockPendingMessages[0] ?? undefined),
+        toArray: () => Promise.resolve([...mockPendingMessages]),
       }),
       delete: (...args: unknown[]) => mockDelete(...args),
       update: (...args: unknown[]) => mockUpdate(...args),
@@ -208,6 +208,73 @@ describe("useMessageQueue", () => {
     // Message should still be in the queue untouched
     expect(mockPendingMessages).toHaveLength(1)
     expect(mockPendingMessages[0].retryCount).toBe(0)
+  })
+
+  it("should reset db.events._status to pending before retrying a failed message", async () => {
+    mockPendingMessages = [
+      {
+        clientId: "temp_retry_status",
+        workspaceId: "ws_1",
+        streamId: "stream_1",
+        content: "Retry me",
+        contentFormat: "markdown",
+        createdAt: 1000,
+        retryCount: 1,
+      },
+    ]
+
+    renderHook(() => useMessageQueue())
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10))
+    })
+
+    // The first events.update call should be the _status: "pending" reset
+    expect(mockEventsUpdate).toHaveBeenCalledWith("temp_retry_status", { _status: "pending" })
+    expect(mockMarkPending).toHaveBeenCalledWith("temp_retry_status")
+  })
+
+  it("should deliver newer messages when an older message fails (no head-of-line blocking)", async () => {
+    // Message A will fail, message B should still be delivered
+    let callCount = 0
+    mockCreate.mockImplementation(() => {
+      callCount++
+      if (callCount === 1) return Promise.reject(new Error("Server error"))
+      return Promise.resolve({ id: "msg_b" })
+    })
+
+    mockPendingMessages = [
+      {
+        clientId: "temp_a",
+        workspaceId: "ws_1",
+        streamId: "stream_1",
+        content: "Message A",
+        contentFormat: "markdown",
+        createdAt: 1000,
+        retryCount: 0,
+      },
+      {
+        clientId: "temp_b",
+        workspaceId: "ws_1",
+        streamId: "stream_1",
+        content: "Message B",
+        contentFormat: "markdown",
+        createdAt: 2000,
+        retryCount: 0,
+      },
+    ]
+
+    renderHook(() => useMessageQueue())
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50))
+    })
+
+    // A should have failed and been skipped
+    expect(mockMarkFailed).toHaveBeenCalledWith("temp_a")
+    // B should have been sent successfully
+    expect(mockMarkSent).toHaveBeenCalledWith("temp_b")
+    expect(mockCreate).toHaveBeenCalledTimes(2)
   })
 
   it("should process messages with attachmentIds", async () => {
