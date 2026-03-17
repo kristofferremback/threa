@@ -91,8 +91,11 @@ export const LinkPreviewRepository = {
     ) as Promise<LinkPreview>
   },
 
-  async findById(querier: Querier, id: string): Promise<LinkPreview | null> {
-    const result = await querier.query(sql`SELECT * FROM link_previews WHERE id = $1`, [id])
+  async findById(querier: Querier, workspaceId: string, id: string): Promise<LinkPreview | null> {
+    const result = await querier.query(sql`SELECT * FROM link_previews WHERE workspace_id = $1 AND id = $2`, [
+      workspaceId,
+      id,
+    ])
     return result.rows.length > 0 ? mapRow(result.rows[0]) : null
   },
 
@@ -104,14 +107,20 @@ export const LinkPreviewRepository = {
     return result.rows.length > 0 ? mapRow(result.rows[0]) : null
   },
 
-  async updateMetadata(querier: Querier, id: string, params: UpdateLinkPreviewParams): Promise<LinkPreview | null> {
+  async updateMetadata(
+    querier: Querier,
+    workspaceId: string,
+    id: string,
+    params: UpdateLinkPreviewParams
+  ): Promise<LinkPreview | null> {
     const result = await querier.query(
       sql`UPDATE link_previews
-          SET title = $2, description = $3, image_url = $4, favicon_url = $5,
-              site_name = $6, content_type = $7, status = $8, fetched_at = NOW()
-          WHERE id = $1
+          SET title = $3, description = $4, image_url = $5, favicon_url = $6,
+              site_name = $7, content_type = $8, status = $9, fetched_at = NOW()
+          WHERE workspace_id = $1 AND id = $2
           RETURNING *`,
       [
+        workspaceId,
         id,
         params.title ?? null,
         params.description ?? null,
@@ -127,35 +136,45 @@ export const LinkPreviewRepository = {
 
   // --- Message junction ---
 
-  async linkToMessage(querier: Querier, messageId: string, linkPreviewId: string, position: number): Promise<void> {
+  async linkToMessage(
+    querier: Querier,
+    workspaceId: string,
+    messageId: string,
+    linkPreviewId: string,
+    position: number
+  ): Promise<void> {
     await querier.query(
-      sql`INSERT INTO message_link_previews (message_id, link_preview_id, position)
-          VALUES ($1, $2, $3)
-          ON CONFLICT (message_id, link_preview_id) DO NOTHING`,
-      [messageId, linkPreviewId, position]
+      sql`INSERT INTO message_link_previews (workspace_id, message_id, link_preview_id, position)
+          VALUES ($1, $2, $3, $4)
+          ON CONFLICT (workspace_id, message_id, link_preview_id) DO NOTHING`,
+      [workspaceId, messageId, linkPreviewId, position]
     )
   },
 
-  async findByMessageId(querier: Querier, messageId: string): Promise<LinkPreview[]> {
+  async findByMessageId(querier: Querier, workspaceId: string, messageId: string): Promise<LinkPreview[]> {
     const result = await querier.query(
       sql`SELECT lp.* FROM link_previews lp
           JOIN message_link_previews mlp ON mlp.link_preview_id = lp.id
-          WHERE mlp.message_id = $1
+          WHERE mlp.workspace_id = $1 AND mlp.message_id = $2
           ORDER BY mlp.position ASC`,
-      [messageId]
+      [workspaceId, messageId]
     )
     return result.rows.map(mapRow)
   },
 
-  async findByMessageIds(querier: Querier, messageIds: string[]): Promise<Map<string, LinkPreview[]>> {
+  async findByMessageIds(
+    querier: Querier,
+    workspaceId: string,
+    messageIds: string[]
+  ): Promise<Map<string, LinkPreview[]>> {
     if (messageIds.length === 0) return new Map()
 
     const result = await querier.query(
       sql`SELECT lp.*, mlp.message_id, mlp.position FROM link_previews lp
           JOIN message_link_previews mlp ON mlp.link_preview_id = lp.id
-          WHERE mlp.message_id = ANY($1)
+          WHERE mlp.workspace_id = $1 AND mlp.message_id = ANY($2)
           ORDER BY mlp.message_id, mlp.position ASC`,
-      [messageIds]
+      [workspaceId, messageIds]
     )
 
     const map = new Map<string, LinkPreview[]>()

@@ -74,7 +74,13 @@ export function LinkPreviewCard({
       >
         <div className="absolute top-1.5 right-1.5 z-10 flex gap-1 opacity-0 group-hover/preview:opacity-100 transition-opacity">
           {onDismiss && (
-            <Button variant="secondary" size="icon" className="h-6 w-6 shadow-sm" onClick={handleDismiss}>
+            <Button
+              variant="secondary"
+              size="icon"
+              className="h-6 w-6 shadow-sm"
+              onClick={handleDismiss}
+              aria-label="Dismiss preview"
+            >
               <X className="h-3 w-3" />
             </Button>
           )}
@@ -88,7 +94,7 @@ export function LinkPreviewCard({
             onError={() => setImageError(true)}
           />
         ) : (
-          <div className="flex h-20 w-40 items-center justify-center text-muted-foreground">
+          <div className="flex h-32 w-40 items-center justify-center text-muted-foreground">
             <ImageIcon className="h-8 w-8" />
           </div>
         )}
@@ -115,6 +121,7 @@ export function LinkPreviewCard({
           type="button"
           onClick={handleToggleCollapse}
           className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          aria-label={isCollapsedProp ? "Expand preview" : "Collapse preview"}
         >
           {isCollapsedProp ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
         </button>
@@ -134,7 +141,13 @@ export function LinkPreviewCard({
         <ExternalLink className="h-3 w-3 text-muted-foreground/50 shrink-0 ml-auto" />
         <div className="flex gap-1 opacity-0 group-hover/preview:opacity-100 transition-opacity">
           {onDismiss && (
-            <Button variant="ghost" size="icon" className="h-5 w-5" onClick={handleDismiss}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-5 w-5"
+              onClick={handleDismiss}
+              aria-label="Dismiss preview"
+            >
               <X className="h-3 w-3" />
             </Button>
           )}

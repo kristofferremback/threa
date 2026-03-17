@@ -528,7 +528,7 @@ export async function startServer(): Promise<ServerInstance> {
   })
 
   // Link preview worker
-  const linkPreviewWorker = createLinkPreviewWorker({ pool, linkPreviewService })
+  const linkPreviewWorker = createLinkPreviewWorker({ linkPreviewService })
   jobQueue.registerHandler(JobQueues.LINK_PREVIEW_EXTRACT, linkPreviewWorker)
 
   // Register handlers before starting

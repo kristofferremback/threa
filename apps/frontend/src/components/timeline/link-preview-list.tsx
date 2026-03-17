@@ -36,22 +36,28 @@ export function LinkPreviewList({
 
   const defaultCollapsed = preferences?.linkPreviewDefault === "collapsed"
 
+  // Track whether socket has delivered previews (takes priority over API fetch)
+  const [hasSocketPreviews, setHasSocketPreviews] = useState(
+    () => initialPreviews !== undefined && initialPreviews.length > 0
+  )
+
   // Update previews when they arrive from props (real-time socket delivery)
   useEffect(() => {
     if (initialPreviews && initialPreviews.length > 0) {
       setPreviews(initialPreviews)
+      setHasSocketPreviews(true)
     }
   }, [initialPreviews])
 
-  // Fetch previews from API if none provided via props
+  // Fetch previews from API if none provided via props or socket
   useEffect(() => {
-    if (previews.length > 0 || fetchedFromApi) return
+    if (hasSocketPreviews || fetchedFromApi) return
 
     let mounted = true
     async function fetchPreviews() {
       try {
         const result = await linkPreviewsApi.getForMessage(workspaceId, messageId)
-        if (!mounted) return
+        if (!mounted || hasSocketPreviews) return
         setPreviews(result.map(({ dismissed, ...p }) => p))
         setDismissedIds(new Set(result.filter((p) => p.dismissed).map((p) => p.id)))
         setFetchedFromApi(true)
@@ -64,7 +70,7 @@ export function LinkPreviewList({
     return () => {
       mounted = false
     }
-  }, [workspaceId, messageId, previews.length, fetchedFromApi])
+  }, [workspaceId, messageId, hasSocketPreviews, fetchedFromApi])
 
   const handleDismiss = useCallback(
     async (previewId: string) => {
@@ -97,10 +103,10 @@ export function LinkPreviewList({
         // Determine if this preview corresponds to the hovered inline link
         const isHighlighted = hoveredUrl ? normalizeForCompare(preview.url) === normalizeForCompare(hoveredUrl) : false
 
-        // Respect default collapsed preference unless user has explicitly toggled
-        const isCollapsed = collapsedIds.has(preview.id)
-          ? true
-          : defaultCollapsed && !collapsedIds.has(`__opened_${preview.id}`)
+        // Collapsed if explicitly collapsed, or default-collapsed and not explicitly opened
+        const explicitlyCollapsed = collapsedIds.has(preview.id)
+        const explicitlyOpened = collapsedIds.has(`__opened_${preview.id}`)
+        const isCollapsed = explicitlyCollapsed || (defaultCollapsed && !explicitlyOpened)
 
         return (
           <LinkPreviewCard
@@ -110,16 +116,17 @@ export function LinkPreviewList({
             isCollapsed={isCollapsed}
             onDismiss={handleDismiss}
             onToggleCollapse={(id) => {
-              // Track explicit user toggle
               setCollapsedIds((prev) => {
                 const next = new Set(prev)
-                if (next.has(id)) {
-                  next.delete(id)
-                  // Mark as explicitly opened (for default-collapsed mode)
+                // Determine current effective collapsed state
+                const currentlyCollapsed = next.has(id) || (defaultCollapsed && !next.has(`__opened_${id}`))
+                // Clear both markers, then set the opposite
+                next.delete(id)
+                next.delete(`__opened_${id}`)
+                if (currentlyCollapsed) {
                   next.add(`__opened_${id}`)
                 } else {
                   next.add(id)
-                  next.delete(`__opened_${id}`)
                 }
                 return next
               })

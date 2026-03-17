@@ -3,7 +3,7 @@ import { OutboxRepository, parseMessageCreatedPayload } from "../../lib/outbox"
 import { JobQueues } from "../../lib/queue"
 import type { QueueManager } from "../../lib/queue"
 import { CursorLock, ensureListenerFromLatest, DebounceWithMaxWait, type ProcessResult } from "@threa/backend-common"
-import { logger } from "../../lib/logger"
+import { logger } from "@threa/backend-common"
 import type { OutboxHandler } from "../../lib/outbox"
 
 export interface LinkPreviewHandlerConfig {
@@ -94,9 +94,9 @@ export class LinkPreviewOutboxHandler implements OutboxHandler {
           }
 
           const { workspaceId, streamId, event: messageEvent } = payload
-          const messagePayload = messageEvent.payload as { messageId: string; contentMarkdown: string }
+          const { messageId, contentMarkdown } = messageEvent.payload
 
-          if (!messagePayload.contentMarkdown) {
+          if (!contentMarkdown) {
             seen.push(event.id)
             continue
           }
@@ -105,11 +105,11 @@ export class LinkPreviewOutboxHandler implements OutboxHandler {
           await this.jobQueue.send(JobQueues.LINK_PREVIEW_EXTRACT, {
             workspaceId,
             streamId,
-            messageId: messagePayload.messageId,
-            contentMarkdown: messagePayload.contentMarkdown,
+            messageId,
+            contentMarkdown,
           })
 
-          logger.debug({ messageId: messagePayload.messageId }, "Link preview extraction job dispatched")
+          logger.debug({ messageId }, "Link preview extraction job dispatched")
           seen.push(event.id)
         }
 

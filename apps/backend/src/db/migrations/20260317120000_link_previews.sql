@@ -25,14 +25,15 @@ CREATE INDEX IF NOT EXISTS link_previews_status
 
 -- Junction: which previews appear in which messages
 CREATE TABLE IF NOT EXISTS message_link_previews (
+    workspace_id TEXT NOT NULL,
     message_id TEXT NOT NULL,
     link_preview_id TEXT NOT NULL,
     position INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (message_id, link_preview_id)
+    PRIMARY KEY (workspace_id, message_id, link_preview_id)
 );
 
-CREATE INDEX IF NOT EXISTS message_link_previews_message_id
-    ON message_link_previews (message_id);
+CREATE INDEX IF NOT EXISTS message_link_previews_workspace_message
+    ON message_link_previews (workspace_id, message_id);
 
 -- Per-user dismissals of link previews
 CREATE TABLE IF NOT EXISTS user_link_preview_dismissals (

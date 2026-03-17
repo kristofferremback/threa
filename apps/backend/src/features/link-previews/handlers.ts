@@ -22,7 +22,7 @@ export function createLinkPreviewHandlers(deps: HandlerDeps) {
         const userId = (req as any).workspaceUser.id
         const workspaceId = req.params.workspaceId
 
-        const previews = await linkPreviewService.getPreviewsForMessage(messageId)
+        const previews = await linkPreviewService.getPreviewsForMessage(workspaceId, messageId)
         const dismissals = await linkPreviewService.getDismissals(workspaceId, userId, [messageId])
 
         const result = previews.map((p) => ({

@@ -1,19 +1,14 @@
-import type { Pool } from "pg"
 import { logger } from "@threa/backend-common"
 import type { Job, JobHandler } from "../../lib/queue"
 import type { LinkPreviewExtractJobData } from "../../lib/queue/job-queue"
-import { LinkPreviewService } from "./service"
-import { LinkPreviewRepository, type UpdateLinkPreviewParams } from "./repository"
-import { OutboxRepository } from "../../lib/outbox"
-import { withTransaction } from "../../db"
+import type { LinkPreviewService } from "./service"
+import type { UpdateLinkPreviewParams } from "./repository"
 import { detectContentType } from "./url-utils"
 import { FETCH_TIMEOUT_MS, FETCH_USER_AGENT, MAX_DESCRIPTION_LENGTH, MAX_TITLE_LENGTH } from "./config"
-import type { LinkPreviewSummary } from "@threa/types"
 
 const log = logger.child({ module: "link-preview-worker" })
 
 interface WorkerDeps {
-  pool: Pool
   linkPreviewService: LinkPreviewService
 }
 
@@ -178,7 +173,8 @@ function escapeRegex(str: string): string {
 
 /**
  * Create the link preview extraction worker.
- * Processes URLs extracted from messages and fetches their metadata.
+ * Thin handler: extracts URLs, fetches metadata (network, INV-41),
+ * then delegates DB persistence + outbox to the service (INV-6, INV-34).
  */
 export function createLinkPreviewWorker(deps: WorkerDeps): JobHandler<LinkPreviewExtractJobData> {
   return async (job: Job<LinkPreviewExtractJobData>) => {
@@ -186,7 +182,7 @@ export function createLinkPreviewWorker(deps: WorkerDeps): JobHandler<LinkPrevie
 
     log.info({ messageId, workspaceId }, "Processing link previews for message")
 
-    // 1. Extract URLs and create pending records (DB work)
+    // 1. Extract URLs and create pending records (DB work via service)
     const pendingPreviews = await deps.linkPreviewService.extractAndCreatePending(
       workspaceId,
       messageId,
@@ -198,69 +194,27 @@ export function createLinkPreviewWorker(deps: WorkerDeps): JobHandler<LinkPrevie
       return
     }
 
-    // 2. Fetch metadata for each URL (network work — no DB connection held, INV-41)
+    // 2. Check which previews are already cached, then fetch metadata for the rest
+    //    Network work runs outside any DB transaction (INV-41)
     const fetchResults = await Promise.allSettled(
       pendingPreviews.map(async (p) => {
-        const existing = await LinkPreviewRepository.findById(deps.pool, p.id)
-        // Skip if already completed (cached from another message)
-        if (existing?.status === "completed") return { id: p.id, skipped: true }
+        const alreadyCompleted = await deps.linkPreviewService.isCompleted(workspaceId, p.id)
+        if (alreadyCompleted) return { id: p.id, skipped: true }
 
         const metadata = await fetchMetadata(p.url)
         return { id: p.id, metadata, skipped: false }
       })
     )
 
-    // 3. Update DB with fetched metadata and publish outbox event
-    await withTransaction(deps.pool, async (client) => {
-      const completedPreviews: LinkPreviewSummary[] = []
+    // 3. Collect settled results, delegate persistence + outbox to service (INV-6)
+    const settled = fetchResults
+      .filter(
+        (r): r is PromiseFulfilledResult<{ id: string; metadata?: UpdateLinkPreviewParams; skipped: boolean }> =>
+          r.status === "fulfilled"
+      )
+      .map((r) => r.value)
 
-      for (const result of fetchResults) {
-        if (result.status === "rejected") continue
-        const { id, metadata, skipped } = result.value
-        if (skipped) {
-          const existing = await LinkPreviewRepository.findById(client, id)
-          if (existing) {
-            completedPreviews.push({
-              id: existing.id,
-              url: existing.url,
-              title: existing.title,
-              description: existing.description,
-              imageUrl: existing.imageUrl,
-              faviconUrl: existing.faviconUrl,
-              siteName: existing.siteName,
-              contentType: existing.contentType,
-              position: completedPreviews.length,
-            })
-          }
-          continue
-        }
-
-        if (!metadata) continue
-        const updated = await LinkPreviewRepository.updateMetadata(client, id, metadata)
-        if (updated && updated.status === "completed") {
-          completedPreviews.push({
-            id: updated.id,
-            url: updated.url,
-            title: updated.title,
-            description: updated.description,
-            imageUrl: updated.imageUrl,
-            faviconUrl: updated.faviconUrl,
-            siteName: updated.siteName,
-            contentType: updated.contentType,
-            position: completedPreviews.length,
-          })
-        }
-      }
-
-      if (completedPreviews.length > 0) {
-        await OutboxRepository.insert(client, "link_preview:ready", {
-          workspaceId,
-          streamId,
-          messageId,
-          previews: completedPreviews,
-        })
-      }
-    })
+    await deps.linkPreviewService.completePreviewsAndPublish(workspaceId, streamId, messageId, settled)
 
     log.info({ messageId, count: pendingPreviews.length }, "Link preview extraction complete")
   }

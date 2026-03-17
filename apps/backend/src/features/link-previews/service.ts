@@ -1,8 +1,9 @@
 import type { Pool } from "pg"
-import { withClient } from "../../db"
+import { withTransaction } from "../../db"
 import { linkPreviewId } from "../../lib/id"
 import type { LinkPreviewSummary } from "@threa/types"
-import { LinkPreviewRepository, type LinkPreview } from "./repository"
+import { LinkPreviewRepository, type LinkPreview, type UpdateLinkPreviewParams } from "./repository"
+import { OutboxRepository } from "../../lib/outbox"
 import { extractUrls, normalizeUrl, detectContentType } from "./url-utils"
 import { MAX_PREVIEWS_PER_MESSAGE } from "./config"
 
@@ -25,7 +26,7 @@ export class LinkPreviewService {
     const urls = extractUrls(contentMarkdown).slice(0, MAX_PREVIEWS_PER_MESSAGE)
     if (urls.length === 0) return []
 
-    return withClient(this.deps.pool, async (client) => {
+    return withTransaction(this.deps.pool, async (client) => {
       const results: Array<{ id: string; url: string }> = []
 
       for (let i = 0; i < urls.length; i++) {
@@ -41,7 +42,7 @@ export class LinkPreviewService {
           contentType,
         })
 
-        await LinkPreviewRepository.linkToMessage(client, messageId, preview.id, i)
+        await LinkPreviewRepository.linkToMessage(client, workspaceId, messageId, preview.id, i)
         results.push({ id: preview.id, url: preview.url })
       }
 
@@ -50,19 +51,67 @@ export class LinkPreviewService {
   }
 
   /**
+   * Check if a preview is already completed (cached from another message).
+   */
+  async isCompleted(workspaceId: string, id: string): Promise<boolean> {
+    const existing = await LinkPreviewRepository.findById(this.deps.pool, workspaceId, id)
+    return existing?.status === "completed"
+  }
+
+  /**
+   * Update fetched metadata and publish outbox event for completed previews.
+   * Called by the worker after network fetches complete (INV-6: service owns transaction).
+   */
+  async completePreviewsAndPublish(
+    workspaceId: string,
+    streamId: string,
+    messageId: string,
+    fetchResults: Array<{ id: string; metadata?: UpdateLinkPreviewParams; skipped: boolean }>
+  ): Promise<void> {
+    await withTransaction(this.deps.pool, async (client) => {
+      const completedPreviews: LinkPreviewSummary[] = []
+
+      for (const { id, metadata, skipped } of fetchResults) {
+        if (skipped) {
+          const existing = await LinkPreviewRepository.findById(client, workspaceId, id)
+          if (existing) {
+            completedPreviews.push(toLinkPreviewSummary(existing, completedPreviews.length))
+          }
+          continue
+        }
+
+        if (!metadata) continue
+        const updated = await LinkPreviewRepository.updateMetadata(client, workspaceId, id, metadata)
+        if (updated && updated.status === "completed") {
+          completedPreviews.push(toLinkPreviewSummary(updated, completedPreviews.length))
+        }
+      }
+
+      if (completedPreviews.length > 0) {
+        await OutboxRepository.insert(client, "link_preview:ready", {
+          workspaceId,
+          streamId,
+          messageId,
+          previews: completedPreviews,
+        })
+      }
+    })
+  }
+
+  /**
    * Get link preview summaries for a message.
    * Filters out failed/pending previews.
    */
-  async getPreviewsForMessage(messageId: string): Promise<LinkPreviewSummary[]> {
-    const previews = await LinkPreviewRepository.findByMessageId(this.deps.pool, messageId)
+  async getPreviewsForMessage(workspaceId: string, messageId: string): Promise<LinkPreviewSummary[]> {
+    const previews = await LinkPreviewRepository.findByMessageId(this.deps.pool, workspaceId, messageId)
     return previews.filter((p) => p.status === "completed").map((p, i) => toLinkPreviewSummary(p, i))
   }
 
   /**
    * Get link preview summaries for multiple messages (batch).
    */
-  async getPreviewsForMessages(messageIds: string[]): Promise<Map<string, LinkPreviewSummary[]>> {
-    const previewMap = await LinkPreviewRepository.findByMessageIds(this.deps.pool, messageIds)
+  async getPreviewsForMessages(workspaceId: string, messageIds: string[]): Promise<Map<string, LinkPreviewSummary[]>> {
+    const previewMap = await LinkPreviewRepository.findByMessageIds(this.deps.pool, workspaceId, messageIds)
     const result = new Map<string, LinkPreviewSummary[]>()
 
     for (const [msgId, previews] of previewMap) {
