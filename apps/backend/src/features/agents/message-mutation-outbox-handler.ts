@@ -296,7 +296,17 @@ export class AgentMessageMutationHandler implements OutboxHandler {
 
     // Skip if the edited message was never in the agent's context window.
     // contextMessageIds tracks exactly which messages the agent saw.
-    if (latestSession.contextMessageIds.length > 0 && !latestSession.contextMessageIds.includes(payload.messageId)) {
+    // For pre-migration sessions without context IDs, fall back to the
+    // sequence-based heuristic as a coarse upper-bound guard.
+    if (latestSession.contextMessageIds.length > 0) {
+      if (!latestSession.contextMessageIds.includes(payload.messageId)) {
+        return
+      }
+    } else if (
+      payload.sequence !== null &&
+      latestSession.lastSeenSequence !== null &&
+      payload.sequence > latestSession.lastSeenSequence
+    ) {
       return
     }
 

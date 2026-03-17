@@ -702,6 +702,60 @@ describe("AgentMessageMutationHandler", () => {
     expect(jobQueue.send).not.toHaveBeenCalled()
   })
 
+  it("falls back to sequence check for pre-migration sessions without contextMessageIds", async () => {
+    spyOn(OutboxRepository, "fetchAfterId").mockResolvedValue([
+      {
+        id: 1n,
+        eventType: "message:edited",
+        payload: {
+          workspaceId: "ws_1",
+          streamId: "stream_thread_1",
+          event: {
+            actorId: "usr_editor",
+            actorType: AuthorTypes.USER,
+            sequence: "25",
+            payload: {
+              messageId: "msg_after_session",
+            },
+          },
+        },
+        createdAt: new Date("2026-02-19T12:10:00.000Z"),
+      } as any,
+    ])
+
+    const updateStatusSpy = spyOn(AgentSessionRepository, "updateStatus").mockResolvedValue(null)
+    spyOn(AgentSessionRepository, "findByTriggerMessage").mockResolvedValue(null)
+    spyOn(AgentSessionRepository, "findLatestByStream").mockResolvedValue({
+      id: "session_legacy",
+      streamId: "stream_thread_1",
+      personaId: "persona_1",
+      triggerMessageId: "msg_invoke_latest",
+      triggerMessageRevision: 4,
+      supersedesSessionId: null,
+      status: SessionStatuses.COMPLETED,
+      currentStep: 0,
+      currentStepType: null,
+      serverId: null,
+      heartbeatAt: null,
+      responseMessageId: "msg_agent_latest",
+      error: null,
+      lastSeenSequence: 20n,
+      sentMessageIds: ["msg_agent_latest"],
+      contextMessageIds: [],
+      createdAt: new Date("2026-02-19T11:00:00.000Z"),
+      completedAt: new Date("2026-02-19T12:00:00.000Z"),
+    })
+
+    const { handler, eventService, jobQueue } = createHandler()
+    handler.handle()
+
+    await waitForDebounce()
+
+    expect(updateStatusSpy).not.toHaveBeenCalled()
+    expect(eventService.deleteMessage).not.toHaveBeenCalled()
+    expect(jobQueue.send).not.toHaveBeenCalled()
+  })
+
   it("does not rerun when edited message event is authored by persona", async () => {
     spyOn(OutboxRepository, "fetchAfterId").mockResolvedValue([
       {
