@@ -33,6 +33,7 @@ export function useNewMessageIndicator(
 
   useEffect(() => {
     if (events.length === 0) return
+    if (currentUserId === undefined) return
 
     const maxSequence = events[events.length - 1].sequence
 
@@ -74,6 +75,7 @@ export function useNewMessageIndicator(
     // Auto-expire after the animation completes
     const timer = setTimeout(() => {
       timersRef.current.delete(timer)
+      for (const id of freshIds) trackedIdsRef.current.delete(id)
       setNewIds((prev) => {
         const next = new Set(prev)
         for (const id of freshIds) next.delete(id)

@@ -119,7 +119,7 @@ function MessageLayout({
           !isSystem &&
           "before:content-[''] before:absolute before:-top-4 before:-bottom-4 before:-left-3 before:-right-3 sm:before:-left-6 sm:before:-right-6 before:bg-primary/[0.04] before:-z-10",
         isHighlighted && "animate-highlight-flash",
-        isNew && "animate-new-message-fade",
+        isNew && !isHighlighted && "animate-new-message-fade",
         containerClassName
       )}
     >
