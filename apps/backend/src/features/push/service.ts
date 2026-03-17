@@ -22,6 +22,14 @@ const ACTIVE_SESSION_WINDOW_MS = 60_000
 /** How recently a device must have been focused to consider the user "at their computer" */
 const RECENTLY_FOCUSED_WINDOW_MS = 10 * 60 * 1_000 // 10 minutes
 
+/**
+ * If a user has had zero session heartbeats within this window, their auth session
+ * has likely expired. We send a one-shot "session expired" push and clean up their
+ * subscriptions so they stop getting notifications while logged out.
+ * Matches the 30-day session cookie TTL.
+ */
+const SESSION_EXPIRY_WINDOW_MS = 30 * 24 * 60 * 60 * 1_000 // 30 days
+
 /** Callbacks for resolving cross-feature data (INV-52: access via service layer, not repos) */
 interface CrossFeatureLookups {
   /** Resolve a user's notification level preference. */
@@ -166,6 +174,20 @@ export class PushService {
       return
     }
 
+    // 3b. Check if the user's auth session has likely expired (no heartbeat in 30 days).
+    // If so, send a one-shot "session expired" notification and clean up subscriptions
+    // so the user knows to log back in but doesn't keep receiving stale notifications.
+    const hasRecentSession = await UserSessionRepository.hasAnyRecentSession(
+      this.pool,
+      workspaceId,
+      targetUserId,
+      SESSION_EXPIRY_WINDOW_MS
+    )
+    if (!hasRecentSession) {
+      await this.deliverSessionExpiredAndCleanup(workspaceId, targetUserId, subscriptions)
+      return
+    }
+
     // 4. Build structured push payload — display text is formatted by the service worker (INV-46)
     const context = activity.context as { contentPreview?: string; streamName?: string } | null | undefined
     const pushPayload = JSON.stringify({
@@ -265,6 +287,43 @@ export class PushService {
         await PushSubscriptionRepository.deleteByIds(this.pool, workspaceId, staleIds)
       } catch (deleteErr) {
         logger.warn({ err: deleteErr, count: staleIds.length }, "Failed to delete stale subscriptions")
+      }
+    }
+  }
+
+  /**
+   * Sends a "session expired" push to all of a user's devices, then deletes
+   * all their push subscriptions for this workspace. The SW shows a
+   * "You've been signed out — tap to reconnect" notification.
+   */
+  private async deliverSessionExpiredAndCleanup(
+    workspaceId: string,
+    userId: string,
+    subscriptions: PushSubscription[]
+  ): Promise<void> {
+    const pushPayload = JSON.stringify({
+      data: {
+        action: "session_expired" as const,
+        workspaceId,
+      },
+    })
+
+    // Best-effort delivery — some subscriptions may already be stale
+    await this.sendAndEvictStale(workspaceId, subscriptions, pushPayload)
+
+    // Clean up remaining subscriptions so no further notifications are sent
+    const remainingIds = (await PushSubscriptionRepository.findByUserId(this.pool, workspaceId, userId)).map(
+      (s) => s.id
+    )
+    if (remainingIds.length > 0) {
+      try {
+        await PushSubscriptionRepository.deleteByIds(this.pool, workspaceId, remainingIds)
+        logger.info(
+          { workspaceId, userId, count: remainingIds.length },
+          "Cleaned up push subscriptions for expired session"
+        )
+      } catch (err) {
+        logger.warn({ err, workspaceId, userId }, "Failed to clean up push subscriptions for expired session")
       }
     }
   }

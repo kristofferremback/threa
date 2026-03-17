@@ -89,8 +89,8 @@ interface PushData {
   streamName?: string
   /** Accumulated count of messages in this notification group (set by the SW, not the backend). */
   messageCount?: number
-  /** Backend-driven action: "clear" dismisses notifications for the stream. */
-  action?: "clear"
+  /** Backend-driven action: "clear" dismisses notifications for the stream; "session_expired" prompts re-login. */
+  action?: "clear" | "session_expired"
 }
 
 function formatTitle(activityType: string | undefined): string {
@@ -134,6 +134,21 @@ self.addEventListener("push", (event) => {
       self.registration.getNotifications({ tag: data.streamId }).then((notifications) => {
         for (const n of notifications) n.close()
       })
+    )
+    return
+  }
+
+  // Session expired: the user's auth has expired and their push subscriptions
+  // have been cleaned up. Show a one-shot notification so they know to log back in.
+  if (data.action === "session_expired") {
+    event.waitUntil(
+      self.registration.showNotification("Session expired", {
+        body: "Your session has expired. Tap to sign back in.",
+        icon: "/threa-logo-192.png",
+        badge: "/threa-logo-192.png",
+        tag: "session-expired",
+        data: { ...data, action: "session_expired" },
+      } as ExtendedNotificationOptions)
     )
     return
   }

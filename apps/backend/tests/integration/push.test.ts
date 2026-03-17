@@ -783,6 +783,73 @@ describe("Push Notifications", () => {
       ])
     })
 
+    test("no recent session (expired auth) → sends session_expired push and cleans up subscriptions", async () => {
+      const service = createServiceWithLookups()
+
+      // Two subscriptions, no sessions at all (user never connected or sessions GC'd)
+      await PushSubscriptionRepository.insert(pool, {
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        endpoint: "https://push.example.com/sub/expired-1",
+        p256dh: "p1",
+        auth: "a1",
+        deviceKey: "device-1",
+      })
+      await PushSubscriptionRepository.insert(pool, {
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        endpoint: "https://push.example.com/sub/expired-2",
+        p256dh: "p2",
+        auth: "a2",
+        deviceKey: "device-2",
+      })
+
+      await service.deliverPushForActivity(makePayload())
+
+      // Should have sent session_expired push to both devices
+      expect(sendSpy).toHaveBeenCalledTimes(2)
+      const payloads = sendSpy.mock.calls.map((c) => JSON.parse(c[1] as string))
+      expect(payloads[0].data).toMatchObject({ action: "session_expired", workspaceId: testWorkspaceId })
+      expect(payloads[1].data).toMatchObject({ action: "session_expired", workspaceId: testWorkspaceId })
+
+      // All subscriptions should be cleaned up
+      const remaining = await PushSubscriptionRepository.findByUserId(pool, testWorkspaceId, testUserId)
+      expect(remaining).toHaveLength(0)
+    })
+
+    test("recent session exists → delivers normal push, not session_expired", async () => {
+      const service = createServiceWithLookups()
+
+      await PushSubscriptionRepository.insert(pool, {
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        endpoint: "https://push.example.com/sub/active-user",
+        p256dh: "p",
+        auth: "a",
+        deviceKey: "device-1",
+      })
+
+      // Create a session that's recent (within 30-day window)
+      await UserSessionRepository.upsert(pool, {
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        deviceKey: "device-1",
+        focused: true,
+      })
+
+      await service.deliverPushForActivity(makePayload())
+
+      // Should send normal push, not session_expired
+      expect(sendSpy).toHaveBeenCalledTimes(1)
+      const payload = JSON.parse(sendSpy.mock.calls[0][1] as string)
+      expect(payload.data.action).toBeUndefined()
+      expect(payload.data.activityType).toBe(ActivityTypes.MENTION)
+
+      // Subscription should still exist
+      const subs = await PushSubscriptionRepository.findByUserId(pool, testWorkspaceId, testUserId)
+      expect(subs).toHaveLength(1)
+    })
+
     test("stale subscription cleanup on 410 response", async () => {
       const service = createServiceWithLookups()
 
