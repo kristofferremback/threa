@@ -33,11 +33,6 @@ export function useWorkspaces() {
 
       return result
     },
-    // Try to use cached data while fetching fresh
-    placeholderData: () => {
-      // Sync read from IndexedDB for immediate display
-      return undefined // Will be populated by initialData if available
-    },
   })
 
   return {
