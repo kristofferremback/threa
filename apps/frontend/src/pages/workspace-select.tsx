@@ -21,7 +21,7 @@ function getCreateWorkspaceErrorMessage(error: unknown): string | null {
 
 export function WorkspaceSelectPage() {
   const { user, loading: authLoading } = useAuth()
-  const { workspaces, pendingInvitations, isLoading: workspacesLoading, error } = useWorkspaces()
+  const { workspaces, pendingInvitations, isLoading: workspacesLoading, isRefreshingSeed, error } = useWorkspaces()
   const { data: regions } = useRegions()
   const createWorkspace = useCreateWorkspace()
   const acceptInvitation = useAcceptInvitation()
@@ -87,8 +87,9 @@ export function WorkspaceSelectPage() {
   }
 
   // Only auto-redirect when there are no pending invitations and no accept in flight.
-  // After a successful accept, the navigate in onSuccess handles routing to /setup.
-  if (workspaces?.length === 1 && pendingInvitations.length === 0 && !acceptingId) {
+  // Wait for seeded data to be replaced by a real fetch — seeded cache has
+  // pendingInvitations: [] which would cause a false redirect if a real invitation exists.
+  if (workspaces?.length === 1 && pendingInvitations.length === 0 && !acceptingId && !isRefreshingSeed) {
     return <Navigate to={`/w/${workspaces[0].id}`} replace />
   }
 

@@ -1,6 +1,12 @@
 import { createContext, useCallback, useEffect, useState, type ReactNode } from "react"
 import type { AuthState, User } from "./types"
 
+declare global {
+  interface Window {
+    __eagerAuthPromise?: Promise<User | null>
+  }
+}
+
 interface AuthContextValue extends AuthState {
   login: (redirectTo?: string) => void
   logout: () => void
@@ -22,6 +28,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const fetchUser = useCallback(async () => {
     try {
+      // Consume the eager auth promise started in index.html before the bundle loaded.
+      // If the eager promise rejected (network error, 500, etc.) we fall through
+      // to a fresh fetch so error handling works correctly.
+      const eagerPromise = window.__eagerAuthPromise
+      if (eagerPromise) {
+        window.__eagerAuthPromise = undefined
+        try {
+          const user = await eagerPromise
+          setState({ user, loading: false, error: null })
+          return
+        } catch {
+          // Eager fetch failed — fall through to regular fetch
+        }
+      }
+
       const res = await fetch("/api/auth/me", { credentials: "include" })
 
       if (res.status === 401) {
