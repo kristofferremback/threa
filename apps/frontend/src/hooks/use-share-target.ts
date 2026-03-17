@@ -105,10 +105,14 @@ export function useShareTarget() {
     ): Promise<void> => {
       const content = buildSharedContent(shared.title, shared.text, shared.url)
 
+      // Read existing draft to preserve staged attachments (put replaces the full record)
+      const existing = await db.draftMessages.get(`stream:${streamId}`)
+
       await db.draftMessages.put({
         id: `stream:${streamId}`,
         workspaceId,
         contentJson: content,
+        attachments: existing?.attachments,
         updatedAt: Date.now(),
       })
     },

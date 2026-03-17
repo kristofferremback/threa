@@ -22,9 +22,14 @@ export function ShareTargetPage() {
 
   useEffect(() => {
     if (authLoading || workspacesLoading || hasNavigated.current) return
-    if (!workspaces?.length) return
 
     hasNavigated.current = true
+
+    if (!workspaces?.length) {
+      // No workspaces — send to workspace selection/creation page
+      navigate("/workspaces", { replace: true })
+      return
+    }
 
     // Use the first workspace (most users have exactly one)
     const workspaceId = workspaces[0].id
