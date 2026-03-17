@@ -7,11 +7,11 @@
  * UI can render immediately with stale data while the fresh network fetch runs
  * in the background.
  */
-import { db, type CachedWorkspace, type CachedWorkspaceUser, type CachedStream } from "@/db"
-import type { CachedPersona } from "@/db/database" // Not re-exported from barrel; direct import
+import { db, type CachedWorkspace, type CachedWorkspaceUser, type CachedStream, type CachedPersona } from "@/db"
 import { getQueryClient } from "@/contexts/query-client"
 import { workspaceKeys } from "@/hooks/use-workspaces"
 import type { WorkspaceBootstrap, Workspace } from "@threa/types"
+import { DEFAULT_USER_PREFERENCES } from "@threa/types"
 import type { WorkspaceListResult } from "@/api/workspaces"
 
 /**
@@ -149,24 +149,9 @@ export async function seedCacheFromIndexedDB(): Promise<void> {
       unreadActivityCount: 0,
       mutedStreamIds: [],
       userPreferences: {
+        ...DEFAULT_USER_PREFERENCES,
         workspaceId,
         userId: "",
-        theme: "system",
-        messageDisplay: "comfortable",
-        dateFormat: "YYYY-MM-DD",
-        timeFormat: "24h",
-        timezone: "UTC",
-        language: "en",
-        notificationLevel: "all",
-        sidebarCollapsed: false,
-        messageSendMode: "enter",
-        keyboardShortcuts: {},
-        accessibility: {
-          fontSize: "medium",
-          fontFamily: "system",
-          reducedMotion: false,
-          highContrast: false,
-        },
         createdAt: "",
         updatedAt: "",
       },

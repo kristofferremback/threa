@@ -4,6 +4,7 @@ export type {
   CachedWorkspaceUser,
   CachedStream,
   CachedEvent,
+  CachedPersona,
   PendingMessage,
   SyncCursor,
   DraftScratchpad,
