@@ -294,10 +294,13 @@ export class AgentMessageMutationHandler implements OutboxHandler {
       return
     }
 
+    // Skip if the edited message was never in the agent's context window.
+    // Messages with sequence > lastSeenSequence were posted after the session
+    // finished processing and were never seen by the agent.
     if (
       payload.sequence !== null &&
       latestSession.lastSeenSequence !== null &&
-      payload.sequence <= latestSession.lastSeenSequence
+      payload.sequence > latestSession.lastSeenSequence
     ) {
       return
     }

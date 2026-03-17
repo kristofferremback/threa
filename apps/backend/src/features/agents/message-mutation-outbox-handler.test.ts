@@ -539,7 +539,7 @@ describe("AgentMessageMutationHandler", () => {
     expect(jobQueue.send).not.toHaveBeenCalled()
   })
 
-  it("supersedes latest stream session when referenced message is edited and dispatches rerun", async () => {
+  it("supersedes latest stream session when referenced message within context is edited and dispatches rerun", async () => {
     spyOn(OutboxRepository, "fetchAfterId").mockResolvedValue([
       {
         id: 1n,
@@ -550,7 +550,7 @@ describe("AgentMessageMutationHandler", () => {
           event: {
             actorId: "usr_editor",
             actorType: AuthorTypes.USER,
-            sequence: "21",
+            sequence: "15",
             payload: {
               messageId: "msg_referenced_1",
             },
@@ -635,7 +635,7 @@ describe("AgentMessageMutationHandler", () => {
     )
   })
 
-  it("does not rerun for referenced edit already seen by latest session", async () => {
+  it("does not rerun for referenced edit outside agent context (sequence beyond lastSeenSequence)", async () => {
     spyOn(OutboxRepository, "fetchAfterId").mockResolvedValue([
       {
         id: 1n,
@@ -646,7 +646,7 @@ describe("AgentMessageMutationHandler", () => {
           event: {
             actorId: "usr_editor",
             actorType: AuthorTypes.USER,
-            sequence: "20",
+            sequence: "21",
             payload: {
               messageId: "msg_referenced_1",
             },
