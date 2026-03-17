@@ -2,7 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
+    />
     <title>Threa</title>
 
     <!-- Primary Meta Tags -->
@@ -88,6 +91,18 @@
 
         // Message display
         if (prefs.messageDisplay) root.dataset.messageDisplay = prefs.messageDisplay
+
+        // Eager auth fetch — start before the JS bundle loads so the network
+        // round-trip overlaps with script parse/eval instead of running after it.
+        window.__eagerAuthPromise = fetch("/api/auth/me", { credentials: "include" })
+          .then(function (res) {
+            if (res.status === 401) return null
+            if (!res.ok) throw new Error("Failed to fetch user")
+            return res.json()
+          })
+          .catch(function () {
+            return null
+          })
       })()
     </script>
   </head>
