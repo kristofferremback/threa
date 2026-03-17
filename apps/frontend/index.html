@@ -94,15 +94,13 @@
 
         // Eager auth fetch — start before the JS bundle loads so the network
         // round-trip overlaps with script parse/eval instead of running after it.
-        window.__eagerAuthPromise = fetch("/api/auth/me", { credentials: "include" })
-          .then(function (res) {
-            if (res.status === 401) return null
-            if (!res.ok) throw new Error("Failed to fetch user")
-            return res.json()
-          })
-          .catch(function () {
-            return null
-          })
+        // 401 resolves to null (unauthenticated). Other errors reject so
+        // AuthProvider can fall through to a normal fetch with proper error handling.
+        window.__eagerAuthPromise = fetch("/api/auth/me", { credentials: "include" }).then(function (res) {
+          if (res.status === 401) return null
+          if (!res.ok) throw new Error("Failed to fetch user")
+          return res.json()
+        })
       })()
     </script>
   </head>

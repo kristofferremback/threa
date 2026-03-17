@@ -87,6 +87,11 @@ export function useWorkspaceBootstrap(workspaceId: string) {
   // This prevents continuous refetching when the server is down
   const existingQueryState = queryClient.getQueryState(workspaceKeys.bootstrap(workspaceId))
   const hasTerminalError = existingQueryState?.status === "error" && isTerminalBootstrapError(existingQueryState.error)
+  // Detect if we have seeded data from IndexedDB cache (set before socket connects).
+  // Seeded data is marked as invalidated by cache-seed.ts, but with staleTime: Infinity
+  // and refetchOnMount: false, the queryFn might not run. Force refetch on mount when
+  // seeded so the queryFn executes (joining the socket room and fetching fresh data).
+  const hasSeededData = existingQueryState?.status === "success" && existingQueryState.isInvalidated
 
   const query = useQuery({
     queryKey: workspaceKeys.bootstrap(workspaceId),
@@ -138,7 +143,10 @@ export function useWorkspaceBootstrap(workspaceId: string) {
     staleTime: Infinity,
     gcTime: Infinity,
     retry: false,
-    refetchOnMount: false,
+    // When seeded from IndexedDB cache, force refetch to join the socket room
+    // and replace stale data. Otherwise skip mount refetch since socket events
+    // keep the data up to date after the initial fetch.
+    refetchOnMount: hasSeededData ? "always" : false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   })

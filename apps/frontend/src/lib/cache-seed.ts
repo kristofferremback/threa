@@ -11,7 +11,7 @@ import { db, type CachedWorkspace, type CachedWorkspaceUser, type CachedStream }
 import type { CachedPersona } from "@/db/database" // Not re-exported from barrel; direct import
 import { getQueryClient } from "@/contexts/query-client"
 import { workspaceKeys } from "@/hooks/use-workspaces"
-import type { WorkspaceBootstrap, Workspace, NotificationLevel } from "@threa/types"
+import type { WorkspaceBootstrap, Workspace } from "@threa/types"
 import type { WorkspaceListResult } from "@/api/workspaces"
 
 /**
@@ -110,18 +110,10 @@ export async function seedCacheFromIndexedDB(): Promise<void> {
         archivedAt: null,
         lastMessagePreview: null,
       })),
-      streamMemberships: streams
-        .filter((s: CachedStream) => s.lastReadEventId !== undefined)
-        .map((s: CachedStream) => ({
-          streamId: s.id,
-          memberId: "",
-          pinned: s.pinned ?? false,
-          pinnedAt: null,
-          notificationLevel: (s.notificationLevel as NotificationLevel | null) ?? null,
-          lastReadEventId: s.lastReadEventId ?? null,
-          lastReadAt: null,
-          joinedAt: "",
-        })),
+      // Empty — memberId isn't available at seed time (no auth context yet).
+      // Seeding with memberId:"" would break membership lookups by currentUserId.
+      // The real bootstrap fetch fills this in once the socket connects.
+      streamMemberships: [],
       dmPeers: [],
       personas: personas.map((p: CachedPersona) => ({
         id: p.id,

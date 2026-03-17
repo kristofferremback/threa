@@ -29,13 +29,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const fetchUser = useCallback(async () => {
     try {
       // Consume the eager auth promise started in index.html before the bundle loaded.
-      // Falls back to a fresh fetch if the eager promise isn't available.
+      // If the eager promise rejected (network error, 500, etc.) we fall through
+      // to a fresh fetch so error handling works correctly.
       const eagerPromise = window.__eagerAuthPromise
       if (eagerPromise) {
         window.__eagerAuthPromise = undefined
-        const user = await eagerPromise
-        setState({ user, loading: false, error: null })
-        return
+        try {
+          const user = await eagerPromise
+          setState({ user, loading: false, error: null })
+          return
+        } catch {
+          // Eager fetch failed — fall through to regular fetch
+        }
       }
 
       const res = await fetch("/api/auth/me", { credentials: "include" })
