@@ -1,9 +1,5 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from "react"
-import { useQueryClient } from "@tanstack/react-query"
+import { createContext, useContext, useState, useCallback, useRef, type ReactNode } from "react"
 import { db } from "@/db"
-import { useMessageService } from "./services-context"
-import { streamKeys } from "@/hooks/use-streams"
-import { parseMarkdown } from "@threa/prosemirror"
 
 type MessageStatus = "pending" | "failed"
 
@@ -12,7 +8,12 @@ interface PendingMessagesContextValue {
   markPending: (id: string) => void
   markFailed: (id: string) => void
   markSent: (id: string) => void
+  /** Reset a failed message's retry count and re-enqueue it for sending */
   retryMessage: (id: string) => Promise<void>
+  /** Kick the background message queue to process the next pending message */
+  notifyQueue: () => void
+  /** Register the queue's notify callback (called by useMessageQueue) */
+  registerQueueNotify: (fn: () => void) => void
 }
 
 const PendingMessagesContext = createContext<PendingMessagesContextValue | null>(null)
@@ -24,8 +25,7 @@ interface PendingMessagesProviderProps {
 export function PendingMessagesProvider({ children }: PendingMessagesProviderProps) {
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set())
   const [failedIds, setFailedIds] = useState<Set<string>>(new Set())
-  const messageService = useMessageService()
-  const queryClient = useQueryClient()
+  const queueNotifyRef = useRef<(() => void) | null>(null)
 
   const getStatus = useCallback(
     (id: string): MessageStatus | null => {
@@ -67,49 +67,32 @@ export function PendingMessagesProvider({ children }: PendingMessagesProviderPro
     })
   }, [])
 
+  const notifyQueue = useCallback(() => {
+    queueNotifyRef.current?.()
+  }, [])
+
+  const registerQueueNotify = useCallback((fn: () => void) => {
+    queueNotifyRef.current = fn
+  }, [])
+
   const retryMessage = useCallback(
     async (id: string) => {
-      const pending = await db.pendingMessages.get(id)
-      if (!pending) {
-        console.warn(`No pending message found for id: ${id}`)
-        return
-      }
-
+      // Reset retry count so the queue processor will pick it up again
+      // Dexie's deep KeyPaths inference hits a circular type on JSONContent.
+      // Cast through unknown to bypass the broken type inference.
+      type UpdateFn = (key: string, changes: Record<string, unknown>) => Promise<number>
+      await (db.pendingMessages.update as unknown as UpdateFn)(id, { retryCount: 0 })
+      await db.events.update(id, { _status: "pending" })
       markPending(id)
-
-      try {
-        // Parse stored markdown back to JSON for retry
-        const contentJson = parseMarkdown(pending.content)
-        await messageService.create(pending.workspaceId, pending.streamId, {
-          streamId: pending.streamId,
-          contentJson,
-          contentMarkdown: pending.content,
-        })
-
-        // Clean up on success
-        await db.pendingMessages.delete(id)
-        await db.events.delete(id)
-
-        // Remove optimistic event from cache - real event arrives via WebSocket
-        queryClient.setQueryData(streamKeys.bootstrap(pending.workspaceId, pending.streamId), (old: unknown) => {
-          if (!old || typeof old !== "object") return old
-          const bootstrap = old as { events: Array<{ id: string }> }
-          return {
-            ...bootstrap,
-            events: bootstrap.events.filter((e) => e.id !== id),
-          }
-        })
-
-        markSent(id)
-      } catch {
-        markFailed(id)
-      }
+      notifyQueue()
     },
-    [messageService, queryClient, markPending, markFailed, markSent]
+    [markPending, notifyQueue]
   )
 
   return (
-    <PendingMessagesContext.Provider value={{ getStatus, markPending, markFailed, markSent, retryMessage }}>
+    <PendingMessagesContext.Provider
+      value={{ getStatus, markPending, markFailed, markSent, retryMessage, notifyQueue, registerQueueNotify }}
+    >
       {children}
     </PendingMessagesContext.Provider>
   )

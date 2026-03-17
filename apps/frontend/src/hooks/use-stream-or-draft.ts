@@ -355,8 +355,7 @@ function useDraftDmStream(workspaceId: string, streamId: string, enabled: boolea
 function useRealStream(workspaceId: string, streamId: string, enabled: boolean): UseStreamOrDraftReturn {
   const queryClient = useQueryClient()
   const streamService = useStreamService()
-  const messageService = useMessageService()
-  const { markPending, markFailed, markSent } = usePendingMessages()
+  const { markPending, notifyQueue } = usePendingMessages()
   const user = useUser()
   const { data: wsBootstrap } = useWorkspaceBootstrap(workspaceId)
   const workspaceUsers = wsBootstrap?.users ?? []
@@ -447,7 +446,6 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
       const clientId = generateClientId()
       const now = new Date().toISOString()
 
-      // Serialize JSON to markdown
       const contentMarkdown = serializeToMarkdown(input.contentJson)
 
       // Use timestamp as sequence to ensure optimistic events sort after real events
@@ -468,7 +466,6 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
         createdAt: now,
       }
 
-      // Track as pending in context (for UI status display)
       markPending(clientId)
 
       // Update React Query cache immediately for instant UI feedback
@@ -481,13 +478,16 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
         }
       })
 
-      // Persist to IndexedDB for recovery/retry capability (store markdown for backwards compatibility)
+      // Persist to IndexedDB — this is the durable enqueue step.
+      // The background message queue (useMessageQueue) will pick it up and send it.
       await db.pendingMessages.add({
         clientId,
         workspaceId,
         streamId,
         content: contentMarkdown,
         contentFormat: "markdown",
+        contentJson: input.contentJson,
+        attachmentIds: input.attachmentIds,
         createdAt: Date.now(),
         retryCount: 0,
       })
@@ -499,38 +499,12 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
         _cachedAt: Date.now(),
       })
 
-      try {
-        await messageService.create(workspaceId, streamId, {
-          streamId,
-          contentJson: input.contentJson,
-          contentMarkdown,
-          attachmentIds: input.attachmentIds,
-        })
-
-        // Remove optimistic event immediately to minimize duplication window.
-        // The real event will arrive via WebSocket with a different ID.
-        queryClient.setQueryData(streamKeys.bootstrap(workspaceId, streamId), (old: unknown) => {
-          if (!old || typeof old !== "object") return old
-          const bootstrap = old as { events: StreamEvent[] }
-          return {
-            ...bootstrap,
-            events: bootstrap.events.filter((e) => e.id !== clientId),
-          }
-        })
-        markSent(clientId)
-
-        // Clean up IndexedDB (fire-and-forget since UI is already updated)
-        void db.pendingMessages.delete(clientId)
-        void db.events.delete(clientId)
-      } catch {
-        await db.events.update(clientId, { _status: "failed" })
-        markFailed(clientId)
-        // Don't throw - failure is shown in timeline with retry option
-      }
+      // Kick the background queue to start sending
+      notifyQueue()
 
       return {}
     },
-    [streamId, workspaceId, messageService, queryClient, markPending, markFailed, markSent, currentUserId]
+    [streamId, workspaceId, queryClient, markPending, notifyQueue, currentUserId]
   )
 
   return {

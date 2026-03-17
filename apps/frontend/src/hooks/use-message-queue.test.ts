@@ -1,0 +1,209 @@
+import { describe, it, expect, vi, beforeEach } from "vitest"
+import { renderHook, act } from "@testing-library/react"
+import { useMessageQueue } from "./use-message-queue"
+
+// Mock dependencies
+const mockCreate = vi.fn()
+const mockMarkPending = vi.fn()
+const mockMarkFailed = vi.fn()
+const mockMarkSent = vi.fn()
+const mockRegisterQueueNotify = vi.fn()
+let mockIsConnected = true
+
+vi.mock("@/contexts", () => ({
+  useSocketConnected: () => mockIsConnected,
+  useMessageService: () => ({
+    create: mockCreate,
+  }),
+  usePendingMessages: () => ({
+    markPending: mockMarkPending,
+    markFailed: mockMarkFailed,
+    markSent: mockMarkSent,
+    registerQueueNotify: mockRegisterQueueNotify,
+  }),
+}))
+
+const mockSetQueryData = vi.fn()
+vi.mock("@tanstack/react-query", () => ({
+  useQueryClient: () => ({
+    setQueryData: mockSetQueryData,
+  }),
+}))
+
+// Mock IndexedDB
+interface MockPendingMessage {
+  clientId: string
+  workspaceId: string
+  streamId: string
+  content: string
+  contentFormat: string
+  contentJson?: { type: string; content: Array<{ type: string; content?: Array<{ type: string; text: string }> }> }
+  attachmentIds?: string[]
+  createdAt: number
+  retryCount: number
+}
+
+let mockPendingMessages: MockPendingMessage[] = []
+const mockDelete = vi.fn().mockImplementation((id: string) => {
+  mockPendingMessages = mockPendingMessages.filter((m) => m.clientId !== id)
+  return Promise.resolve()
+})
+const mockUpdate = vi.fn().mockResolvedValue(1)
+
+vi.mock("@/db", () => ({
+  db: {
+    pendingMessages: {
+      orderBy: () => ({
+        first: () => Promise.resolve(mockPendingMessages[0] ?? undefined),
+      }),
+      delete: (...args: unknown[]) => mockDelete(...args),
+      update: (...args: unknown[]) => mockUpdate(...args),
+    },
+    events: {
+      delete: vi.fn().mockResolvedValue(undefined),
+      update: vi.fn().mockResolvedValue(1),
+    },
+  },
+}))
+
+vi.mock("./use-streams", () => ({
+  streamKeys: {
+    bootstrap: (wsId: string, sId: string) => ["stream", "bootstrap", wsId, sId],
+  },
+}))
+
+vi.mock("@threa/prosemirror", () => ({
+  parseMarkdown: (md: string) => ({
+    type: "doc",
+    content: [{ type: "paragraph", content: [{ type: "text", text: md }] }],
+  }),
+}))
+
+describe("useMessageQueue", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockPendingMessages = []
+    mockIsConnected = true
+    mockCreate.mockResolvedValue({ id: "msg_1" })
+  })
+
+  it("should register its notify callback on mount", () => {
+    renderHook(() => useMessageQueue())
+
+    expect(mockRegisterQueueNotify).toHaveBeenCalledWith(expect.any(Function))
+  })
+
+  it("should process a pending message when connected", async () => {
+    mockPendingMessages = [
+      {
+        clientId: "temp_abc",
+        workspaceId: "ws_1",
+        streamId: "stream_1",
+        content: "Hello",
+        contentFormat: "markdown",
+        contentJson: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Hello" }] }] },
+        createdAt: 1000,
+        retryCount: 0,
+      },
+    ]
+
+    renderHook(() => useMessageQueue())
+
+    // Wait for async queue processing
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10))
+    })
+
+    expect(mockMarkPending).toHaveBeenCalledWith("temp_abc")
+    expect(mockCreate).toHaveBeenCalledWith("ws_1", "stream_1", {
+      streamId: "stream_1",
+      contentJson: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Hello" }] }] },
+      contentMarkdown: "Hello",
+      attachmentIds: undefined,
+    })
+    expect(mockDelete).toHaveBeenCalledWith("temp_abc")
+    expect(mockMarkSent).toHaveBeenCalledWith("temp_abc")
+  })
+
+  it("should mark message as failed when API call fails", async () => {
+    mockCreate.mockRejectedValue(new Error("Network error"))
+    mockPendingMessages = [
+      {
+        clientId: "temp_fail",
+        workspaceId: "ws_1",
+        streamId: "stream_1",
+        content: "Fail",
+        contentFormat: "markdown",
+        createdAt: 1000,
+        retryCount: 0,
+      },
+    ]
+
+    renderHook(() => useMessageQueue())
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10))
+    })
+
+    expect(mockMarkFailed).toHaveBeenCalledWith("temp_fail")
+  })
+
+  it("should skip messages that have exceeded max retry count", async () => {
+    mockPendingMessages = [
+      {
+        clientId: "temp_exhausted",
+        workspaceId: "ws_1",
+        streamId: "stream_1",
+        content: "Exhausted",
+        contentFormat: "markdown",
+        createdAt: 1000,
+        retryCount: 3,
+      },
+    ]
+
+    renderHook(() => useMessageQueue())
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10))
+    })
+
+    expect(mockCreate).not.toHaveBeenCalled()
+    expect(mockMarkFailed).toHaveBeenCalledWith("temp_exhausted")
+    expect(mockDelete).toHaveBeenCalledWith("temp_exhausted")
+  })
+
+  it("should process messages with attachmentIds", async () => {
+    mockPendingMessages = [
+      {
+        clientId: "temp_attach",
+        workspaceId: "ws_1",
+        streamId: "stream_1",
+        content: "With attachments",
+        contentFormat: "markdown",
+        contentJson: {
+          type: "doc",
+          content: [{ type: "paragraph", content: [{ type: "text", text: "With attachments" }] }],
+        },
+        attachmentIds: ["attach_1", "attach_2"],
+        createdAt: 1000,
+        retryCount: 0,
+      },
+    ]
+
+    renderHook(() => useMessageQueue())
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10))
+    })
+
+    expect(mockCreate).toHaveBeenCalledWith("ws_1", "stream_1", {
+      streamId: "stream_1",
+      contentJson: {
+        type: "doc",
+        content: [{ type: "paragraph", content: [{ type: "text", text: "With attachments" }] }],
+      },
+      contentMarkdown: "With attachments",
+      attachmentIds: ["attach_1", "attach_2"],
+    })
+  })
+})

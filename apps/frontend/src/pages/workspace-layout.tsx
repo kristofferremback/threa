@@ -28,9 +28,9 @@ import {
   useKeyboardShortcuts,
   useMentionables,
   useReconnectBootstrap,
-  usePendingMessageRetry,
   usePersistLastStream,
   useAppUpdate,
+  useMessageQueue,
 } from "@/hooks"
 import { QuickSwitcher, type QuickSwitcherMode } from "@/components/quick-switcher"
 import { SettingsDialog } from "@/components/settings"
@@ -84,8 +84,8 @@ function WorkspaceSocketHandler({ workspaceId, streamIds, children }: WorkspaceS
   return <>{children}</>
 }
 
-function PendingMessageRetryHandler() {
-  usePendingMessageRetry()
+function MessageQueueHandler() {
+  useMessageQueue()
   return null
 }
 
@@ -174,7 +174,7 @@ export function WorkspaceLayout() {
     <SocketProvider workspaceId={workspaceId}>
       <WorkspaceSocketHandler workspaceId={workspaceId} streamIds={streamIds}>
         <AppUpdateChecker />
-        <PendingMessageRetryHandler />
+        <MessageQueueHandler />
         <CoordinatedLoadingProvider workspaceId={workspaceId} streamIds={streamIds}>
           <ChannelLinkProvider workspaceId={workspaceId} streams={streams}>
             <UserProfileProvider>
