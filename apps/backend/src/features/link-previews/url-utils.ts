@@ -66,14 +66,20 @@ const SKIP_PATTERNS = [
  */
 export function extractUrls(markdown: string): string[] {
   // Match URLs in markdown links [text](url) and bare URLs
-  const urlRegex = /(?:\[(?:[^\]]*)\]\(([^)]+)\))|(?:(?:^|\s)(https?:\/\/[^\s<>)"]+))/gm
+  // Bare URL pattern allows parentheses to support Wikipedia-style URLs
+  const urlRegex = /(?:\[(?:[^\]]*)\]\(([^)]+)\))|(?:(?:^|\s)(https?:\/\/[^\s<>"]+))/gm
   const seen = new Set<string>()
   const urls: string[] = []
 
   let match
   while ((match = urlRegex.exec(markdown)) !== null) {
-    const url = (match[1] ?? match[2])?.trim()
+    let url = (match[1] ?? match[2])?.trim()
     if (!url) continue
+
+    // For bare URLs (group 2), strip unbalanced trailing parentheses
+    if (match[2]) {
+      url = stripUnbalancedTrailingParens(url)
+    }
 
     // Skip non-http protocols and internal links
     if (SKIP_PATTERNS.some((p) => p.test(url))) continue
@@ -93,6 +99,24 @@ export function extractUrls(markdown: string): string[] {
   }
 
   return urls
+}
+
+/**
+ * Strip trailing ')' characters that aren't balanced by '(' within the URL.
+ * Handles Wikipedia-style URLs like https://en.wikipedia.org/wiki/Foo_(bar)
+ * while correctly trimming sentence-ending parens like (see https://example.com)
+ */
+function stripUnbalancedTrailingParens(url: string): string {
+  while (url.endsWith(")")) {
+    const opens = (url.match(/\(/g) ?? []).length
+    const closes = (url.match(/\)/g) ?? []).length
+    if (closes > opens) {
+      url = url.slice(0, -1)
+    } else {
+      break
+    }
+  }
+  return url
 }
 
 /** Image file extensions */

@@ -37,6 +37,7 @@ async function fetchMetadata(url: string): Promise<UpdateLinkPreviewParams> {
 
     // For images, we don't need to parse HTML
     if (contentTypeHeader.startsWith("image/")) {
+      response.body?.cancel()
       return {
         contentType: "image",
         status: "completed",
@@ -45,6 +46,7 @@ async function fetchMetadata(url: string): Promise<UpdateLinkPreviewParams> {
 
     // For PDFs, extract basic info from headers
     if (contentTypeHeader.includes("application/pdf")) {
+      response.body?.cancel()
       const disposition = response.headers.get("content-disposition") ?? ""
       const filenameMatch = disposition.match(/filename[*]?="?([^";]+)"?/)
       const filename = filenameMatch?.[1] ?? new URL(url).pathname.split("/").pop() ?? "Document"
@@ -56,8 +58,9 @@ async function fetchMetadata(url: string): Promise<UpdateLinkPreviewParams> {
       }
     }
 
-    // For HTML, parse meta tags
+    // For non-HTML content types, detect from URL extension
     if (!contentTypeHeader.includes("text/html") && !contentTypeHeader.includes("application/xhtml")) {
+      response.body?.cancel()
       return { status: "completed", contentType: detectContentType(url) }
     }
 

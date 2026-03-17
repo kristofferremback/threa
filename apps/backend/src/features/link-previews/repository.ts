@@ -84,11 +84,11 @@ export const LinkPreviewRepository = {
       return mapRow(result.rows[0])
     }
     // Already exists — return the existing row
-    return LinkPreviewRepository.findByNormalizedUrl(
-      querier,
-      params.workspaceId,
-      params.normalizedUrl
-    ) as Promise<LinkPreview>
+    const existing = await LinkPreviewRepository.findByNormalizedUrl(querier, params.workspaceId, params.normalizedUrl)
+    if (!existing) {
+      throw new Error(`link_preview row disappeared after conflict for ${params.normalizedUrl}`)
+    }
+    return existing
   },
 
   async findById(querier: Querier, workspaceId: string, id: string): Promise<LinkPreview | null> {

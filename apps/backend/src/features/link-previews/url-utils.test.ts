@@ -60,6 +60,21 @@ describe("extractUrls", () => {
     expect(extractUrls(md)).toEqual(["https://example.com"])
   })
 
+  test("handles bare URLs with balanced parentheses (Wikipedia-style)", () => {
+    const md = "See https://en.wikipedia.org/wiki/Foo_(bar) for details"
+    expect(extractUrls(md)).toEqual(["https://en.wikipedia.org/wiki/Foo_(bar)"])
+  })
+
+  test("strips unbalanced trailing paren from bare URL in prose", () => {
+    const md = "(see https://example.com/page)"
+    expect(extractUrls(md)).toEqual(["https://example.com/page"])
+  })
+
+  test("handles nested balanced parens in bare URLs", () => {
+    const md = "Check https://en.wikipedia.org/wiki/Foo_(bar_(baz)) now"
+    expect(extractUrls(md)).toEqual(["https://en.wikipedia.org/wiki/Foo_(bar_(baz))"])
+  })
+
   test("deduplicates by normalized URL", () => {
     const md = "Check [link](https://example.com/page?utm_source=twitter) and https://example.com/page"
     expect(extractUrls(md)).toEqual(["https://example.com/page?utm_source=twitter"])
