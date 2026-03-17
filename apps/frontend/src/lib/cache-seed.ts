@@ -32,9 +32,11 @@ export async function seedCacheFromIndexedDB(): Promise<void> {
   try {
     const queryClient = getQueryClient()
 
-    // Seed workspace list for instant redirect on WorkspaceSelectPage
+    // Seed workspace list for instant redirect on WorkspaceSelectPage.
+    // Skip if a real fetch already populated the cache (guards against the
+    // unlikely race where this async seed completes after a network response).
     const cachedWorkspaces = await db.workspaces.toArray()
-    if (cachedWorkspaces.length > 0) {
+    if (cachedWorkspaces.length > 0 && !queryClient.getQueryData(workspaceKeys.list())) {
       const workspaces: Workspace[] = cachedWorkspaces.map((w: CachedWorkspace) => ({
         id: w.id,
         name: w.name,
@@ -156,6 +158,9 @@ export async function seedCacheFromIndexedDB(): Promise<void> {
         updatedAt: "",
       },
     }
+
+    // Skip if a real fetch already populated the cache (same race guard as above).
+    if (queryClient.getQueryData(workspaceKeys.bootstrap(workspaceId))) return
 
     // Seed the cache and immediately invalidate so TanStack Query knows a
     // refetch is needed. The query is disabled until the socket connects, so
