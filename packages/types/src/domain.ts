@@ -163,7 +163,6 @@ export interface Message {
   editedAt: string | null
   deletedAt: string | null
   createdAt: string
-  apiKeyId: string | null
 }
 
 export interface MessageVersion {

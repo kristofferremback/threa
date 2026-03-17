@@ -367,6 +367,28 @@ describe("Public API v1 — CRUD Endpoints", () => {
       expect(res.status).toBe(403)
     })
 
+    test("should return 404 when deleting an already-deleted message", async () => {
+      // Create and delete a message, then try deleting again
+      const createRes = await apiPost(
+        `/api/v1/workspaces/${ctx.workspaceId}/streams/${ctx.publicChannelId}/messages`,
+        { content: `Double-delete test ${testRunId}`, displayName: "DeleteBot" },
+        MESSAGES_WRITE_KEY
+      )
+      const createBody = (await createRes.json()) as { data: { id: string } }
+
+      const firstDelete = await apiDelete(
+        `/api/v1/workspaces/${ctx.workspaceId}/messages/${createBody.data.id}`,
+        MESSAGES_WRITE_KEY
+      )
+      expect(firstDelete.status).toBe(204)
+
+      const secondDelete = await apiDelete(
+        `/api/v1/workspaces/${ctx.workspaceId}/messages/${createBody.data.id}`,
+        MESSAGES_WRITE_KEY
+      )
+      expect(secondDelete.status).toBe(404)
+    })
+
     test("should return 404 for non-existent message", async () => {
       const res = await apiDelete(
         `/api/v1/workspaces/${ctx.workspaceId}/messages/msg_nonexistent_12345`,

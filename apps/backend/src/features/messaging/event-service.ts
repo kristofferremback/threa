@@ -514,7 +514,10 @@ export class EventService {
     })
   }
 
-  async getMessages(streamId: string, options?: { limit?: number; beforeSequence?: bigint }): Promise<Message[]> {
+  async getMessages(
+    streamId: string,
+    options?: { limit?: number; beforeSequence?: bigint; afterSequence?: bigint }
+  ): Promise<Message[]> {
     return MessageRepository.list(this.pool, streamId, options)
   }
 

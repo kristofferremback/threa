@@ -5,7 +5,7 @@ import type { SearchService } from "../search"
 import { serializeSearchResult } from "../search"
 import type { ApiKeyChannelService } from "./service"
 import type { EventService } from "../messaging"
-import { MessageRepository, OwnershipError } from "../messaging"
+import { OwnershipError } from "../messaging"
 import { StreamRepository } from "../streams"
 import { UserRepository } from "../workspaces"
 import { STREAM_TYPES, AuthorTypes } from "@threa/types"
@@ -140,7 +140,7 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
 
   /** Find a message and verify stream access. Used by update/delete. */
   async function resolveApiKeyMessage(messageId: string, req: Request) {
-    const message = await MessageRepository.findById(pool, messageId)
+    const message = await eventService.getMessageById(messageId)
     if (!message) {
       throw new HttpError("Message not found", { status: 404, code: "NOT_FOUND" })
     }
@@ -254,7 +254,7 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
         throw new HttpError("Stream not accessible", { status: 403, code: "FORBIDDEN" })
       }
 
-      const messages = await MessageRepository.list(pool, streamId, {
+      const messages = await eventService.getMessages(streamId, {
         limit: limit + 1, // Fetch one extra to determine hasMore
         beforeSequence: before ? BigInt(before) : undefined,
         afterSequence: after ? BigInt(after) : undefined,
@@ -381,7 +381,7 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
       const existing = await resolveApiKeyMessage(messageId, req)
 
       try {
-        await eventService.deleteMessage({
+        const deleted = await eventService.deleteMessage({
           workspaceId,
           messageId,
           streamId: existing.streamId,
@@ -389,6 +389,10 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
           actorType: AuthorTypes.BOT,
           apiKeyId: apiKey.id,
         })
+
+        if (!deleted) {
+          throw new HttpError("Message not found or was deleted", { status: 404, code: "NOT_FOUND" })
+        }
       } catch (e) {
         if (e instanceof OwnershipError) {
           throw new HttpError(e.message, { status: 403, code: "FORBIDDEN" })
