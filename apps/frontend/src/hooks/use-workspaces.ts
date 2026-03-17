@@ -132,6 +132,22 @@ export function useWorkspaceBootstrap(workspaceId: string) {
             _cachedAt: now,
           }))
         ),
+        db.streamMemberships.bulkPut(
+          bootstrap.streamMemberships.map((sm) => ({
+            ...sm,
+            id: `${workspaceId}:${sm.streamId}`,
+            workspaceId,
+            _cachedAt: now,
+          }))
+        ),
+        db.dmPeers.bulkPut(
+          bootstrap.dmPeers.map((dp) => ({
+            ...dp,
+            id: `${workspaceId}:${dp.streamId}`,
+            workspaceId,
+            _cachedAt: now,
+          }))
+        ),
         db.personas.bulkPut(bootstrap.personas.map((p) => ({ ...p, _cachedAt: now }))),
       ])
 

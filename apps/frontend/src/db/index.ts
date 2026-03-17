@@ -3,6 +3,8 @@ export type {
   CachedWorkspace,
   CachedWorkspaceUser,
   CachedStream,
+  CachedStreamMembership,
+  CachedDmPeer,
   CachedEvent,
   CachedPersona,
   PendingMessage,

@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from "dexie"
-import type { AuthorType, EventType, JSONContent, StreamType } from "@threa/types"
+import type { AuthorType, EventType, JSONContent, NotificationLevel, StreamType } from "@threa/types"
 
 const WORKSPACE_USERS_STORE = "workspaceUsers"
 const LEGACY_WORKSPACE_USERS_STORE = "workspaceMembers"
@@ -40,15 +40,43 @@ export interface CachedStream {
   slug: string | null
   description: string | null
   visibility: "public" | "private"
+  parentStreamId: string | null
+  parentMessageId: string | null
+  rootStreamId: string | null
   companionMode: "off" | "on"
   companionPersonaId: string | null
   createdBy: string
   createdAt: string
   updatedAt: string
+  archivedAt: string | null
   // User-specific state (from membership)
   pinned?: boolean
   notificationLevel?: string | null
   lastReadEventId?: string | null
+  _cachedAt: number
+}
+
+export interface CachedStreamMembership {
+  /** Composite key: `${workspaceId}:${streamId}` */
+  id: string
+  workspaceId: string
+  streamId: string
+  memberId: string
+  pinned: boolean
+  pinnedAt: string | null
+  notificationLevel: NotificationLevel | null
+  lastReadEventId: string | null
+  lastReadAt: string | null
+  joinedAt: string
+  _cachedAt: number
+}
+
+export interface CachedDmPeer {
+  /** Composite key: `${workspaceId}:${streamId}` */
+  id: string
+  workspaceId: string
+  userId: string
+  streamId: string
   _cachedAt: number
 }
 
@@ -136,6 +164,8 @@ class ThreaDatabase extends Dexie {
   workspaces!: EntityTable<CachedWorkspace, "id">
   workspaceUsers!: EntityTable<CachedWorkspaceUser, "id">
   streams!: EntityTable<CachedStream, "id">
+  streamMemberships!: EntityTable<CachedStreamMembership, "id">
+  dmPeers!: EntityTable<CachedDmPeer, "id">
   events!: EntityTable<CachedEvent, "id">
   personas!: EntityTable<CachedPersona, "id">
   pendingMessages!: EntityTable<PendingMessage, "clientId">
@@ -234,6 +264,14 @@ class ThreaDatabase extends Dexie {
       })
       .upgrade((tx) => tx.table(WORKSPACE_USERS_STORE).clear())
 
+    // v13: Cache stream memberships and DM peers for offline seed.
+    // Also adds parentStreamId/rootStreamId/archivedAt to CachedStream (already stored
+    // via spread, but now typed and relied upon by cache-seed).
+    this.version(13).stores({
+      streamMemberships: "id, workspaceId, streamId, _cachedAt",
+      dmPeers: "id, workspaceId, streamId, _cachedAt",
+    })
+
     this.workspaceUsers = this.table(WORKSPACE_USERS_STORE) as EntityTable<CachedWorkspaceUser, "id">
   }
 }
@@ -247,6 +285,8 @@ export async function clearAllCachedData(): Promise<void> {
     db.workspaces.clear(),
     db.workspaceUsers.clear(),
     db.streams.clear(),
+    db.streamMemberships.clear(),
+    db.dmPeers.clear(),
     db.events.clear(),
     db.personas.clear(),
     db.syncCursors.clear(),

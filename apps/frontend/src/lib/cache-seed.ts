@@ -7,7 +7,15 @@
  * UI can render immediately with stale data while the fresh network fetch runs
  * in the background.
  */
-import { db, type CachedWorkspace, type CachedWorkspaceUser, type CachedStream, type CachedPersona } from "@/db"
+import {
+  db,
+  type CachedWorkspace,
+  type CachedWorkspaceUser,
+  type CachedStream,
+  type CachedStreamMembership,
+  type CachedDmPeer,
+  type CachedPersona,
+} from "@/db"
 import { getQueryClient } from "@/contexts/query-client"
 import { workspaceKeys } from "@/hooks/use-workspaces"
 import type { WorkspaceBootstrap, Workspace } from "@threa/types"
@@ -63,10 +71,12 @@ export async function seedCacheFromIndexedDB(): Promise<void> {
     const workspaceId = getWorkspaceIdFromUrl()
     if (!workspaceId) return
 
-    const [workspace, users, streams, personas] = await Promise.all([
+    const [workspace, users, streams, memberships, dmPeers, personas] = await Promise.all([
       db.workspaces.get(workspaceId),
       db.workspaceUsers.where("workspaceId").equals(workspaceId).toArray(),
       db.streams.where("workspaceId").equals(workspaceId).toArray(),
+      db.streamMemberships.where("workspaceId").equals(workspaceId).toArray(),
+      db.dmPeers.where("workspaceId").equals(workspaceId).toArray(),
       db.personas.where("workspaceId").equals(workspaceId).toArray(),
     ])
 
@@ -108,22 +118,31 @@ export async function seedCacheFromIndexedDB(): Promise<void> {
         slug: s.slug,
         description: s.description,
         visibility: s.visibility,
-        parentStreamId: null,
-        parentMessageId: null,
-        rootStreamId: null,
+        parentStreamId: s.parentStreamId,
+        parentMessageId: s.parentMessageId,
+        rootStreamId: s.rootStreamId,
         companionMode: s.companionMode,
         companionPersonaId: s.companionPersonaId,
         createdBy: s.createdBy,
         createdAt: s.createdAt,
         updatedAt: s.updatedAt,
-        archivedAt: null,
+        archivedAt: s.archivedAt,
         lastMessagePreview: null,
       })),
-      // Empty — memberId isn't available at seed time (no auth context yet).
-      // Seeding with memberId:"" would break membership lookups by currentUserId.
-      // The real bootstrap fetch fills this in once the socket connects.
-      streamMemberships: [],
-      dmPeers: [],
+      streamMemberships: memberships.map((sm: CachedStreamMembership) => ({
+        streamId: sm.streamId,
+        memberId: sm.memberId,
+        pinned: sm.pinned,
+        pinnedAt: sm.pinnedAt,
+        notificationLevel: sm.notificationLevel,
+        lastReadEventId: sm.lastReadEventId,
+        lastReadAt: sm.lastReadAt,
+        joinedAt: sm.joinedAt,
+      })),
+      dmPeers: dmPeers.map((dp: CachedDmPeer) => ({
+        userId: dp.userId,
+        streamId: dp.streamId,
+      })),
       personas: personas.map((p: CachedPersona) => ({
         id: p.id,
         workspaceId: p.workspaceId,
