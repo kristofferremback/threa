@@ -214,6 +214,11 @@ export class PersonaAgent {
           { workspaceId, streamId, stream, messageId, persona, trigger }
         )
 
+        // Persist which message IDs are in the agent's context window
+        // so edit-triggered reruns can check exact membership
+        const contextMessageIds = agentContext.streamContext.conversationHistory.map((m) => m.id)
+        await AgentSessionRepository.updateContextMessageIds(pool, session.id, contextMessageIds)
+
         // Record initial context step for trace UI
         if (agentContext.streamContext.conversationHistory.length > 0) {
           const history = agentContext.streamContext.conversationHistory

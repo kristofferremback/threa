@@ -26,6 +26,7 @@ interface SessionRow {
   error: string | null
   last_seen_sequence: string | null
   sent_message_ids: string[] | null
+  context_message_ids: string[] | null
   created_at: Date
   completed_at: Date | null
 }
@@ -60,6 +61,7 @@ export interface AgentSession {
   error: string | null
   lastSeenSequence: bigint | null
   sentMessageIds: string[]
+  contextMessageIds: string[]
   createdAt: Date
   completedAt: Date | null
 }
@@ -121,6 +123,7 @@ function mapRowToSession(row: SessionRow): AgentSession {
     error: row.error,
     lastSeenSequence: row.last_seen_sequence ? BigInt(row.last_seen_sequence) : null,
     sentMessageIds: row.sent_message_ids ?? [],
+    contextMessageIds: row.context_message_ids ?? [],
     createdAt: row.created_at,
     completedAt: row.completed_at,
   }
@@ -145,7 +148,7 @@ const SESSION_SELECT_FIELDS = `
   id, stream_id, persona_id, trigger_message_id, trigger_message_revision, supersedes_session_id,
   status, current_step, current_step_type, server_id, heartbeat_at,
   response_message_id, error, last_seen_sequence,
-  sent_message_ids, created_at, completed_at
+  sent_message_ids, context_message_ids, created_at, completed_at
 `
 
 const STEP_SELECT_FIELDS = `
@@ -420,6 +423,16 @@ export const AgentSessionRepository = {
       `
     )
     return result.rows[0] ? mapRowToSession(result.rows[0]) : null
+  },
+
+  async updateContextMessageIds(db: Querier, id: string, messageIds: string[]): Promise<void> {
+    await db.query(
+      sql`
+        UPDATE agent_sessions
+        SET context_message_ids = ${messageIds}
+        WHERE id = ${id}
+      `
+    )
   },
 
   /**
