@@ -142,7 +142,7 @@ describe("WorkspaceSelectPage", () => {
     expect(await screen.findByTestId("setup-route")).toBeInTheDocument()
   })
 
-  it("should not auto-redirect while seeded data is being refreshed", () => {
+  it("should show loading state (not picker) while seeded data is being refreshed", () => {
     mockUseWorkspaces.mockReturnValue({
       workspaces: [makeWorkspace("workspace_1", "Solo")],
       pendingInvitations: [],
@@ -153,7 +153,8 @@ describe("WorkspaceSelectPage", () => {
 
     renderPage()
 
-    expect(screen.getByText("Select a workspace to continue")).toBeInTheDocument()
+    expect(screen.getByText("Loading...")).toBeInTheDocument()
+    expect(screen.queryByText("Select a workspace to continue")).not.toBeInTheDocument()
   })
 
   it("should show workspace picker when user has multiple workspaces", () => {
