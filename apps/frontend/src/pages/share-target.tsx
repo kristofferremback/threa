@@ -22,6 +22,7 @@ export function ShareTargetPage() {
 
   useEffect(() => {
     if (authLoading || workspacesLoading || hasNavigated.current) return
+    if (!user) return // Unauthenticated — render-time <Navigate> handles login redirect
 
     hasNavigated.current = true
 
@@ -34,7 +35,7 @@ export function ShareTargetPage() {
     // Use the first workspace (most users have exactly one)
     const workspaceId = workspaces[0].id
     navigate(`/w/${workspaceId}/share?${searchParams.toString()}`, { replace: true })
-  }, [authLoading, workspacesLoading, workspaces, searchParams, navigate])
+  }, [authLoading, workspacesLoading, user, workspaces, searchParams, navigate])
 
   // Redirect to login if not authenticated
   if (!authLoading && !user) {
