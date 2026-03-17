@@ -61,8 +61,11 @@ function buildSharedContent(title: string | null, text: string | null, url: stri
 }
 
 /**
- * Creates a draft scratchpad pre-populated with shared content.
- * Returns the draft ID and workspace-scoped URL path.
+ * Hook for handling PWA Share Target content.
+ *
+ * Provides two operations:
+ * - `createShareDraft`: Creates a new draft scratchpad pre-populated with shared content
+ * - `saveShareContent`: Saves shared content as a draft message in an existing stream's composer
  */
 export function useShareTarget() {
   const createShareDraft = useCallback(
@@ -94,5 +97,23 @@ export function useShareTarget() {
     []
   )
 
-  return { createShareDraft }
+  const saveShareContent = useCallback(
+    async (
+      workspaceId: string,
+      streamId: string,
+      shared: { title: string | null; text: string | null; url: string | null }
+    ): Promise<void> => {
+      const content = buildSharedContent(shared.title, shared.text, shared.url)
+
+      await db.draftMessages.put({
+        id: `stream:${streamId}`,
+        workspaceId,
+        contentJson: content,
+        updatedAt: Date.now(),
+      })
+    },
+    []
+  )
+
+  return { createShareDraft, saveShareContent }
 }
