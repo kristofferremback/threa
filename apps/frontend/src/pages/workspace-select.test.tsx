@@ -87,7 +87,7 @@ describe("WorkspaceSelectPage", () => {
       workspaces: [makeWorkspace("workspace_1", "Solo")],
       pendingInvitations: [],
       isLoading: false,
-      isFetching: false,
+      isRefreshingSeed: false,
       error: null,
     })
 
@@ -103,7 +103,7 @@ describe("WorkspaceSelectPage", () => {
         { id: "inv_1", workspaceId: "ws_2", workspaceName: "Invited WS", expiresAt: "2026-12-01T00:00:00.000Z" },
       ],
       isLoading: false,
-      isFetching: false,
+      isRefreshingSeed: false,
       error: null,
     })
 
@@ -123,7 +123,7 @@ describe("WorkspaceSelectPage", () => {
         ? []
         : [{ id: "inv_1", workspaceId: "workspace_1", workspaceName: "Solo", expiresAt: "2026-12-01T00:00:00.000Z" }],
       isLoading: false,
-      isFetching: false,
+      isRefreshingSeed: false,
       error: null,
     }))
 
@@ -142,12 +142,12 @@ describe("WorkspaceSelectPage", () => {
     expect(await screen.findByTestId("setup-route")).toBeInTheDocument()
   })
 
-  it("should not auto-redirect while background refetch is in flight", () => {
+  it("should not auto-redirect while seeded data is being refreshed", () => {
     mockUseWorkspaces.mockReturnValue({
       workspaces: [makeWorkspace("workspace_1", "Solo")],
       pendingInvitations: [],
       isLoading: false,
-      isFetching: true,
+      isRefreshingSeed: true,
       error: null,
     })
 
@@ -161,7 +161,7 @@ describe("WorkspaceSelectPage", () => {
       workspaces: [makeWorkspace("workspace_1", "Alpha"), makeWorkspace("workspace_2", "Beta")],
       pendingInvitations: [],
       isLoading: false,
-      isFetching: false,
+      isRefreshingSeed: false,
       error: null,
     })
 
@@ -177,7 +177,7 @@ describe("WorkspaceSelectPage", () => {
       workspaces: [],
       pendingInvitations: [],
       isLoading: false,
-      isFetching: false,
+      isRefreshingSeed: false,
       error: null,
     })
     mockUseCreateWorkspace.mockReturnValue({
@@ -200,7 +200,7 @@ describe("WorkspaceSelectPage", () => {
       workspaces: [],
       pendingInvitations: [],
       isLoading: false,
-      isFetching: false,
+      isRefreshingSeed: false,
       error: null,
     })
     mockUseCreateWorkspace.mockReturnValue({

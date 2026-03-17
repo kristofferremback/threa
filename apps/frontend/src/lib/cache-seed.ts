@@ -172,6 +172,10 @@ export async function seedCacheFromIndexedDB(): Promise<void> {
       userPreferences: {
         ...DEFAULT_USER_PREFERENCES,
         workspaceId,
+        // userId is unavailable at seed time (no auth context yet).
+        // Consumers that need the real userId (e.g. useWorkspaceUserId) resolve
+        // it via workosUserId from the auth context, so this empty value is safe.
+        // The real bootstrap fetch fills it in once the socket connects.
         userId: "",
         createdAt: "",
         updatedAt: "",

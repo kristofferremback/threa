@@ -21,6 +21,7 @@ export const workspaceKeys = {
 
 export function useWorkspaces() {
   const workspaceService = useWorkspaceService()
+  const queryClient = useQueryClient()
 
   const query = useQuery({
     queryKey: workspaceKeys.list(),
@@ -35,11 +36,17 @@ export function useWorkspaces() {
     },
   })
 
+  // True when seeded data is being replaced by a real fetch. cache-seed.ts sets
+  // data via setQueryData then immediately invalidates it (refetchType: "none").
+  // isInvalidated resets to false once the first real queryFn succeeds, so this
+  // flag only fires for the seed→fresh transition, not normal background refetches.
+  const isRefreshingSeed = query.isFetching && queryClient.getQueryState(workspaceKeys.list())?.isInvalidated === true
+
   return {
     ...query,
     workspaces: query.data?.workspaces,
     pendingInvitations: query.data?.pendingInvitations ?? [],
-    isFetching: query.isFetching,
+    isRefreshingSeed,
   }
 }
 
