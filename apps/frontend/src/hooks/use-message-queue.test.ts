@@ -178,6 +178,38 @@ describe("useMessageQueue", () => {
     expect(mockDelete).toHaveBeenCalledWith("temp_exhausted")
   })
 
+  it("should not attempt send or increment retryCount when offline", async () => {
+    mockIsConnected = false
+    mockPendingMessages = [
+      {
+        clientId: "temp_offline",
+        workspaceId: "ws_1",
+        streamId: "stream_1",
+        content: "Offline msg",
+        contentFormat: "markdown",
+        createdAt: 1000,
+        retryCount: 0,
+      },
+    ]
+
+    renderHook(() => useMessageQueue())
+
+    // Trigger the queue via the registered notify callback
+    const notifyFn = mockRegisterQueueNotify.mock.calls[0][0]
+    await act(async () => {
+      notifyFn()
+      await new Promise((r) => setTimeout(r, 10))
+    })
+
+    expect(mockCreate).not.toHaveBeenCalled()
+    expect(mockUpdate).not.toHaveBeenCalled()
+    expect(mockMarkFailed).not.toHaveBeenCalled()
+    expect(mockDelete).not.toHaveBeenCalled()
+    // Message should still be in the queue untouched
+    expect(mockPendingMessages).toHaveLength(1)
+    expect(mockPendingMessages[0].retryCount).toBe(0)
+  })
+
   it("should process messages with attachmentIds", async () => {
     mockPendingMessages = [
       {

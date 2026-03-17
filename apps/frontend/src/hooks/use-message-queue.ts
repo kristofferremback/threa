@@ -13,8 +13,9 @@ const MAX_RETRY_COUNT = 3
  *
  * Messages are sent in createdAt order, one at a time. The queue is triggered
  * whenever a new message is enqueued (via context `notifyQueue()`) or the
- * socket reconnects. Only connectivity failures (not retries) cause the loop
- * to pause — retryCount is only incremented after a confirmed send failure.
+ * socket reconnects. The loop short-circuits when offline so that connectivity
+ * failures never increment retryCount — only genuine send failures (while
+ * connected) consume retry slots.
  */
 export function useMessageQueue(): void {
   const isConnected = useSocketConnected()
@@ -24,6 +25,8 @@ export function useMessageQueue(): void {
 
   const isProcessing = useRef(false)
   const hasPendingWork = useRef(false)
+  const isConnectedRef = useRef(isConnected)
+  isConnectedRef.current = isConnected
 
   const processQueue = useCallback(async () => {
     if (isProcessing.current) {
@@ -36,6 +39,8 @@ export function useMessageQueue(): void {
 
     try {
       while (true) {
+        if (!isConnectedRef.current) break
+
         const next = await db.pendingMessages.orderBy("createdAt").first()
         if (!next) break
 
