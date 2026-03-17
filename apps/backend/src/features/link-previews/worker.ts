@@ -3,7 +3,7 @@ import type { Job, JobHandler } from "../../lib/queue"
 import type { LinkPreviewExtractJobData } from "../../lib/queue/job-queue"
 import type { LinkPreviewService } from "./service"
 import type { UpdateLinkPreviewParams } from "./repository"
-import { detectContentType } from "./url-utils"
+import { detectContentType, isBlockedUrl } from "./url-utils"
 import { FETCH_TIMEOUT_MS, FETCH_USER_AGENT, MAX_DESCRIPTION_LENGTH, MAX_TITLE_LENGTH } from "./config"
 
 const log = logger.child({ module: "link-preview-worker" })
@@ -17,6 +17,12 @@ interface WorkerDeps {
  * Runs outside of any DB transaction (INV-41).
  */
 async function fetchMetadata(url: string): Promise<UpdateLinkPreviewParams> {
+  // Defense-in-depth SSRF check (primary filter is in extractUrls)
+  if (isBlockedUrl(url)) {
+    log.warn({ url }, "Blocked SSRF attempt in fetchMetadata")
+    return { status: "failed" }
+  }
+
   try {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
@@ -32,6 +38,13 @@ async function fetchMetadata(url: string): Promise<UpdateLinkPreviewParams> {
     })
 
     clearTimeout(timeout)
+
+    // Validate the final URL after redirects to prevent SSRF via open redirects
+    if (response.url && isBlockedUrl(response.url)) {
+      log.warn({ url, finalUrl: response.url }, "Redirect led to blocked internal URL")
+      response.body?.cancel()
+      return { status: "failed" }
+    }
 
     const contentTypeHeader = response.headers.get("content-type") ?? ""
 

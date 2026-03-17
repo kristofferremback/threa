@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test"
-import { normalizeUrl, extractUrls, detectContentType } from "./url-utils"
+import { normalizeUrl, extractUrls, detectContentType, isBlockedUrl } from "./url-utils"
 
 describe("normalizeUrl", () => {
   test("lowercases hostname", () => {
@@ -137,5 +137,71 @@ describe("detectContentType", () => {
 
   test("returns website for invalid URLs", () => {
     expect(detectContentType("not-a-url")).toBe("website")
+  })
+})
+
+describe("isBlockedUrl", () => {
+  test("blocks localhost", () => {
+    expect(isBlockedUrl("http://localhost/admin")).toBe(true)
+    expect(isBlockedUrl("http://localhost:8080/api")).toBe(true)
+  })
+
+  test("blocks loopback IPs", () => {
+    expect(isBlockedUrl("http://127.0.0.1/")).toBe(true)
+    expect(isBlockedUrl("http://127.0.0.1:3000/api")).toBe(true)
+  })
+
+  test("blocks private class A (10.x)", () => {
+    expect(isBlockedUrl("http://10.0.0.1/internal")).toBe(true)
+    expect(isBlockedUrl("http://10.255.255.255/")).toBe(true)
+  })
+
+  test("blocks private class B (172.16-31.x)", () => {
+    expect(isBlockedUrl("http://172.16.0.1/")).toBe(true)
+    expect(isBlockedUrl("http://172.31.255.255/")).toBe(true)
+  })
+
+  test("does not block non-private 172.x", () => {
+    expect(isBlockedUrl("http://172.15.0.1/")).toBe(false)
+    expect(isBlockedUrl("http://172.32.0.1/")).toBe(false)
+  })
+
+  test("blocks private class C (192.168.x)", () => {
+    expect(isBlockedUrl("http://192.168.1.1/")).toBe(true)
+  })
+
+  test("blocks link-local (169.254.x)", () => {
+    expect(isBlockedUrl("http://169.254.169.254/latest/meta-data/")).toBe(true)
+  })
+
+  test("blocks cloud metadata hostnames", () => {
+    expect(isBlockedUrl("http://metadata.google.internal/")).toBe(true)
+  })
+
+  test("allows public URLs", () => {
+    expect(isBlockedUrl("https://example.com/page")).toBe(false)
+    expect(isBlockedUrl("https://github.com/user/repo")).toBe(false)
+    expect(isBlockedUrl("https://en.wikipedia.org/wiki/Article")).toBe(false)
+  })
+
+  test("blocks unparseable URLs", () => {
+    expect(isBlockedUrl("not-a-url")).toBe(true)
+  })
+})
+
+describe("extractUrls SSRF filtering", () => {
+  test("filters out private/internal URLs", () => {
+    const md = "Check http://127.0.0.1:3000/admin and https://example.com/page"
+    expect(extractUrls(md)).toEqual(["https://example.com/page"])
+  })
+
+  test("filters out localhost URLs", () => {
+    const md = "[internal](http://localhost:8080/api) and [external](https://example.com)"
+    expect(extractUrls(md)).toEqual(["https://example.com"])
+  })
+
+  test("filters out cloud metadata URLs", () => {
+    const md = "See http://169.254.169.254/latest/meta-data/"
+    expect(extractUrls(md)).toEqual([])
   })
 })

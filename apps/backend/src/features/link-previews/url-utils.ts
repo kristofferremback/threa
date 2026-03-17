@@ -14,6 +14,49 @@ const TRACKING_PARAMS = new Set([
 ])
 
 /**
+ * Private/reserved IP ranges that must not be fetched (SSRF protection).
+ * Includes loopback, link-local, private networks, and cloud metadata endpoints.
+ */
+const BLOCKED_IP_PATTERNS = [
+  /^127\./, // loopback
+  /^10\./, // private class A
+  /^172\.(1[6-9]|2\d|3[01])\./, // private class B
+  /^192\.168\./, // private class C
+  /^169\.254\./, // link-local
+  /^0\./, // current network
+  /^\[?::1\]?$/, // IPv6 loopback
+  /^\[?fe80:/i, // IPv6 link-local
+  /^\[?fc00:/i, // IPv6 unique local
+  /^\[?fd/i, // IPv6 unique local
+]
+
+/** Hostnames that must not be fetched (cloud metadata endpoints) */
+const BLOCKED_HOSTNAMES = new Set(["metadata.google.internal", "metadata.google.com"])
+
+/**
+ * Check if a URL targets a private/internal address (SSRF protection).
+ * Returns true if the URL should be blocked.
+ */
+export function isBlockedUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    const hostname = parsed.hostname.toLowerCase()
+
+    if (BLOCKED_HOSTNAMES.has(hostname)) return true
+    if (hostname === "localhost") return true
+
+    // Check IP patterns
+    for (const pattern of BLOCKED_IP_PATTERNS) {
+      if (pattern.test(hostname)) return true
+    }
+
+    return false
+  } catch {
+    return true // Block unparseable URLs
+  }
+}
+
+/**
  * Normalize a URL for deduplication.
  * Lowercases host, strips tracking parameters, removes trailing slash.
  */
@@ -90,6 +133,9 @@ export function extractUrls(markdown: string): string[] {
     } catch {
       continue
     }
+
+    // SSRF protection: skip private/internal URLs
+    if (isBlockedUrl(url)) continue
 
     const normalized = normalizeUrl(url)
     if (!seen.has(normalized)) {
