@@ -12,8 +12,8 @@ interface PendingMessagesContextValue {
   retryMessage: (id: string) => Promise<void>
   /** Kick the background message queue to process the next pending message */
   notifyQueue: () => void
-  /** Register the queue's notify callback (called by useMessageQueue) */
-  registerQueueNotify: (fn: () => void) => void
+  /** Register the queue's notify callback (called by useMessageQueue). Pass null to unregister. */
+  registerQueueNotify: (fn: (() => void) | null) => void
 }
 
 const PendingMessagesContext = createContext<PendingMessagesContextValue | null>(null)
@@ -71,7 +71,10 @@ export function PendingMessagesProvider({ children }: PendingMessagesProviderPro
     queueNotifyRef.current?.()
   }, [])
 
-  const registerQueueNotify = useCallback((fn: () => void) => {
+  const registerQueueNotify = useCallback((fn: (() => void) | null) => {
+    if (process.env.NODE_ENV !== "production" && fn && queueNotifyRef.current) {
+      console.warn("registerQueueNotify: overwriting an existing callback — only one queue processor should be mounted")
+    }
     queueNotifyRef.current = fn
   }, [])
 

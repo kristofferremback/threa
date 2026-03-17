@@ -13,12 +13,8 @@ const MAX_RETRY_COUNT = 3
  *
  * Messages are sent in createdAt order, one at a time. The queue is triggered
  * whenever a new message is enqueued (via context `notifyQueue()`) or the
- * socket reconnects.
- *
- * Replaces `usePendingMessageRetry` — subsumes reconnect retry behavior and
- * adds continuous draining so multiple messages can be queued while offline.
- *
- * Mount once at workspace level (same spot as the old PendingMessageRetryHandler).
+ * socket reconnects. Only connectivity failures (not retries) cause the loop
+ * to pause — retryCount is only incremented after a confirmed send failure.
  */
 export function useMessageQueue(): void {
   const isConnected = useSocketConnected()
@@ -45,17 +41,12 @@ export function useMessageQueue(): void {
 
         if (next.retryCount >= MAX_RETRY_COUNT) {
           markFailed(next.clientId)
+          await db.events.update(next.clientId, { _status: "failed" })
           await db.pendingMessages.delete(next.clientId)
           continue
         }
 
         markPending(next.clientId)
-
-        // Dexie's deep KeyPaths inference hits a circular type on JSONContent
-        type UpdateFn = (key: string, changes: Record<string, unknown>) => Promise<number>
-        await (db.pendingMessages.update as unknown as UpdateFn)(next.clientId, {
-          retryCount: next.retryCount + 1,
-        })
 
         try {
           const contentJson = next.contentJson ?? parseMarkdown(next.content)
@@ -81,6 +72,13 @@ export function useMessageQueue(): void {
 
           markSent(next.clientId)
         } catch {
+          // Increment retry count only after a confirmed failure, so transient
+          // connectivity issues don't silently exhaust retries.
+          // Dexie's deep KeyPaths inference hits a circular type on JSONContent.
+          type UpdateFn = (key: string, changes: Record<string, unknown>) => Promise<number>
+          await (db.pendingMessages.update as unknown as UpdateFn)(next.clientId, {
+            retryCount: next.retryCount + 1,
+          })
           await db.events.update(next.clientId, { _status: "failed" })
           markFailed(next.clientId)
           break
@@ -99,7 +97,7 @@ export function useMessageQueue(): void {
   // Register notify callback so other hooks can kick the queue via context
   useEffect(() => {
     registerQueueNotify(() => void processQueue())
-    return () => registerQueueNotify(() => {})
+    return () => registerQueueNotify(null)
   }, [registerQueueNotify, processQueue])
 
   // Drain queue when socket (re)connects

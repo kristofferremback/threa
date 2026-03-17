@@ -50,6 +50,9 @@ const mockDelete = vi.fn().mockImplementation((id: string) => {
 })
 const mockUpdate = vi.fn().mockResolvedValue(1)
 
+const mockEventsDelete = vi.fn().mockResolvedValue(undefined)
+const mockEventsUpdate = vi.fn().mockResolvedValue(1)
+
 vi.mock("@/db", () => ({
   db: {
     pendingMessages: {
@@ -60,8 +63,8 @@ vi.mock("@/db", () => ({
       update: (...args: unknown[]) => mockUpdate(...args),
     },
     events: {
-      delete: vi.fn().mockResolvedValue(undefined),
-      update: vi.fn().mockResolvedValue(1),
+      delete: (...args: unknown[]) => mockEventsDelete(...args),
+      update: (...args: unknown[]) => mockEventsUpdate(...args),
     },
   },
 }))
@@ -125,7 +128,7 @@ describe("useMessageQueue", () => {
     expect(mockMarkSent).toHaveBeenCalledWith("temp_abc")
   })
 
-  it("should mark message as failed when API call fails", async () => {
+  it("should mark message as failed and increment retryCount when API call fails", async () => {
     mockCreate.mockRejectedValue(new Error("Network error"))
     mockPendingMessages = [
       {
@@ -145,6 +148,8 @@ describe("useMessageQueue", () => {
       await new Promise((r) => setTimeout(r, 10))
     })
 
+    expect(mockUpdate).toHaveBeenCalledWith("temp_fail", { retryCount: 1 })
+    expect(mockEventsUpdate).toHaveBeenCalledWith("temp_fail", { _status: "failed" })
     expect(mockMarkFailed).toHaveBeenCalledWith("temp_fail")
   })
 
@@ -169,6 +174,7 @@ describe("useMessageQueue", () => {
 
     expect(mockCreate).not.toHaveBeenCalled()
     expect(mockMarkFailed).toHaveBeenCalledWith("temp_exhausted")
+    expect(mockEventsUpdate).toHaveBeenCalledWith("temp_exhausted", { _status: "failed" })
     expect(mockDelete).toHaveBeenCalledWith("temp_exhausted")
   })
 
