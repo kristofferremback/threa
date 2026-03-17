@@ -10,6 +10,7 @@ import {
   useWorkspaceUserId,
   useAutoMarkAsRead,
   useUnreadDivider,
+  useNewMessageIndicator,
   useAgentActivity,
   useEditLastMessageTrigger,
   streamKeys,
@@ -130,6 +131,9 @@ export function StreamContent({
   const lastEventId = events.length > 0 ? events[events.length - 1].id : undefined
   useAutoMarkAsRead(workspaceId, streamId, lastEventId, { enabled: !isDraft && !isLoading })
 
+  // Track live-arriving messages from other users for brief "new" indicator
+  const newMessageIds = useNewMessageIndicator(events, currentWorkspaceUserId ?? undefined, streamId)
+
   // Unread divider state management (also handles scroll-to-first-unread)
   const { dividerEventId, isFading: isDividerFading } = useUnreadDivider({
     events,
@@ -225,6 +229,7 @@ export function StreamContent({
                 isDividerFading={isDividerFading}
                 agentActivity={agentActivity}
                 hideSessionCards={isChannel}
+                newMessageIds={newMessageIds}
               />
             )}
           </div>

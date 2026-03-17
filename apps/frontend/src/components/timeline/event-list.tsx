@@ -27,6 +27,8 @@ interface EventListProps {
   agentActivity?: Map<string, MessageAgentActivity>
   /** Hide session group cards (used in channels where responses go to threads) */
   hideSessionCards?: boolean
+  /** Event IDs that just arrived via socket and should flash briefly */
+  newMessageIds?: Set<string>
 }
 
 function isCommandEvent(event: StreamEvent): boolean {
@@ -161,6 +163,7 @@ export function EventList({
   isDividerFading,
   agentActivity,
   hideSessionCards,
+  newMessageIds,
 }: EventListProps) {
   const user = useUser()
 
@@ -239,6 +242,7 @@ export function EventList({
                 streamId={streamId}
                 highlightMessageId={highlightMessageId}
                 agentActivity={hideSessionCards ? agentActivity : undefined}
+                isNew={newMessageIds?.has(item.event.id)}
               />
             )}
           </div>
