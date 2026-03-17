@@ -3,7 +3,7 @@ import { ChevronDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { linkPreviewsApi } from "@/api"
 import { cn } from "@/lib/utils"
-import { usePreferences } from "@/contexts/preferences-context"
+import { usePreferences } from "@/contexts"
 import { LinkPreviewCard } from "./link-preview-card"
 import type { LinkPreviewSummary } from "@threa/types"
 
@@ -76,7 +76,7 @@ export function LinkPreviewList({
     async (previewId: string) => {
       setDismissedIds((prev) => new Set([...prev, previewId]))
       try {
-        await linkPreviewsApi.dismiss(workspaceId, previewId, messageId)
+        await linkPreviewsApi.dismiss(workspaceId, messageId, previewId)
       } catch {
         // Revert on failure
         setDismissedIds((prev) => {

@@ -117,7 +117,7 @@ export const LinkPreviewRepository = {
       sql`UPDATE link_previews
           SET title = $3, description = $4, image_url = $5, favicon_url = $6,
               site_name = $7, content_type = $8, status = $9, fetched_at = NOW()
-          WHERE workspace_id = $1 AND id = $2
+          WHERE workspace_id = $1 AND id = $2 AND status = 'pending'
           RETURNING *`,
       [
         workspaceId,

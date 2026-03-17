@@ -1,15 +1,9 @@
 import type { Request, Response, NextFunction } from "express"
-import { z } from "zod"
-import { HttpError } from "@threa/backend-common"
 import type { LinkPreviewService } from "./service"
 
 interface HandlerDeps {
   linkPreviewService: LinkPreviewService
 }
-
-const dismissBodySchema = z.object({
-  messageId: z.string().min(1),
-})
 
 export function createLinkPreviewHandlers(deps: HandlerDeps) {
   const { linkPreviewService } = deps
@@ -18,9 +12,8 @@ export function createLinkPreviewHandlers(deps: HandlerDeps) {
     /** GET /api/workspaces/:workspaceId/messages/:messageId/link-previews */
     async getForMessage(req: Request, res: Response, next: NextFunction) {
       try {
-        const { messageId } = req.params
+        const { workspaceId, messageId } = req.params
         const userId = (req as any).workspaceUser.id
-        const workspaceId = req.params.workspaceId
 
         const previews = await linkPreviewService.getPreviewsForMessage(workspaceId, messageId)
         const dismissals = await linkPreviewService.getDismissals(workspaceId, userId, [messageId])
@@ -36,36 +29,26 @@ export function createLinkPreviewHandlers(deps: HandlerDeps) {
       }
     },
 
-    /** POST /api/workspaces/:workspaceId/link-previews/:linkPreviewId/dismiss */
+    /** POST /api/workspaces/:workspaceId/messages/:messageId/link-previews/:linkPreviewId/dismiss */
     async dismiss(req: Request, res: Response, next: NextFunction) {
       try {
-        const { workspaceId, linkPreviewId } = req.params
+        const { workspaceId, messageId, linkPreviewId } = req.params
         const userId = (req as any).workspaceUser.id
 
-        const body = dismissBodySchema.safeParse(req.body)
-        if (!body.success) {
-          throw new HttpError("messageId is required", { status: 400, code: "VALIDATION_ERROR" })
-        }
-
-        await linkPreviewService.dismiss(workspaceId, userId, body.data.messageId, linkPreviewId)
+        await linkPreviewService.dismiss(workspaceId, userId, messageId, linkPreviewId)
         res.json({ ok: true })
       } catch (err) {
         next(err)
       }
     },
 
-    /** DELETE /api/workspaces/:workspaceId/link-previews/:linkPreviewId/dismiss */
+    /** DELETE /api/workspaces/:workspaceId/messages/:messageId/link-previews/:linkPreviewId/dismiss */
     async undismiss(req: Request, res: Response, next: NextFunction) {
       try {
-        const { workspaceId, linkPreviewId } = req.params
+        const { workspaceId, messageId, linkPreviewId } = req.params
         const userId = (req as any).workspaceUser.id
 
-        const body = dismissBodySchema.safeParse(req.body)
-        if (!body.success) {
-          throw new HttpError("messageId is required", { status: 400, code: "VALIDATION_ERROR" })
-        }
-
-        await linkPreviewService.undismiss(workspaceId, userId, body.data.messageId, linkPreviewId)
+        await linkPreviewService.undismiss(workspaceId, userId, messageId, linkPreviewId)
         res.json({ ok: true })
       } catch (err) {
         next(err)

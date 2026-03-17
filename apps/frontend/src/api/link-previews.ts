@@ -13,11 +13,11 @@ export const linkPreviewsApi = {
     return res.previews
   },
 
-  async dismiss(workspaceId: string, linkPreviewId: string, messageId: string): Promise<void> {
-    await api.post(`/api/workspaces/${workspaceId}/link-previews/${linkPreviewId}/dismiss`, { messageId })
+  async dismiss(workspaceId: string, messageId: string, linkPreviewId: string): Promise<void> {
+    await api.post(`/api/workspaces/${workspaceId}/messages/${messageId}/link-previews/${linkPreviewId}/dismiss`)
   },
 
-  async undismiss(workspaceId: string, linkPreviewId: string): Promise<void> {
-    await api.delete(`/api/workspaces/${workspaceId}/link-previews/${linkPreviewId}/dismiss`)
+  async undismiss(workspaceId: string, messageId: string, linkPreviewId: string): Promise<void> {
+    await api.delete(`/api/workspaces/${workspaceId}/messages/${messageId}/link-previews/${linkPreviewId}/dismiss`)
   },
 }

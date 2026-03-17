@@ -84,6 +84,12 @@ export class LinkPreviewService {
         const updated = await LinkPreviewRepository.updateMetadata(client, workspaceId, id, metadata)
         if (updated && updated.status === "completed") {
           completedPreviews.push(toLinkPreviewSummary(updated, completedPreviews.length))
+        } else if (!updated) {
+          // Row already completed by a concurrent worker (WHERE status='pending' didn't match)
+          const existing = await LinkPreviewRepository.findById(client, workspaceId, id)
+          if (existing?.status === "completed") {
+            completedPreviews.push(toLinkPreviewSummary(existing, completedPreviews.length))
+          }
         }
       }
 

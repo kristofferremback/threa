@@ -299,8 +299,16 @@ export function registerRoutes(app: Express, deps: Dependencies) {
 
   // Link Previews
   app.get("/api/workspaces/:workspaceId/messages/:messageId/link-previews", ...authed, linkPreview.getForMessage)
-  app.post("/api/workspaces/:workspaceId/link-previews/:linkPreviewId/dismiss", ...authed, linkPreview.dismiss)
-  app.delete("/api/workspaces/:workspaceId/link-previews/:linkPreviewId/dismiss", ...authed, linkPreview.undismiss)
+  app.post(
+    "/api/workspaces/:workspaceId/messages/:messageId/link-previews/:linkPreviewId/dismiss",
+    ...authed,
+    linkPreview.dismiss
+  )
+  app.delete(
+    "/api/workspaces/:workspaceId/messages/:messageId/link-previews/:linkPreviewId/dismiss",
+    ...authed,
+    linkPreview.undismiss
+  )
 
   // Public API v1 — API key auth
   const publicAuth = createPublicApiAuthMiddleware({ apiKeyService, pool })
