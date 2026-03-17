@@ -424,6 +424,12 @@ describe("Push Notifications", () => {
   })
 
   describe("PushService.deliverPushForActivity", () => {
+    /** Create a session that's stale for the 60s active window but within the 7-day expiry window. */
+    async function createRecentInactiveSession(wId: string, uId: string, deviceKey = "d") {
+      const s = await UserSessionRepository.upsert(pool, { workspaceId: wId, userId: uId, deviceKey })
+      await pool.query(`UPDATE user_sessions SET last_active_at = now() - interval '2 minutes' WHERE id = $1`, [s.id])
+    }
+
     function makePayload(overrides?: Partial<ActivityCreatedOutboxPayload>): ActivityCreatedOutboxPayload {
       return {
         workspaceId: testWorkspaceId,
@@ -517,6 +523,7 @@ describe("Push Notifications", () => {
         auth: "a",
         deviceKey: "d",
       })
+      await createRecentInactiveSession(testWorkspaceId, testUserId)
 
       await service.deliverPushForActivity(
         makePayload({
@@ -547,6 +554,7 @@ describe("Push Notifications", () => {
         auth: "a",
         deviceKey: "d",
       })
+      await createRecentInactiveSession(testWorkspaceId, testUserId)
 
       await service.deliverPushForActivity(
         makePayload({
@@ -576,6 +584,7 @@ describe("Push Notifications", () => {
         auth: "a",
         deviceKey: "d",
       })
+      await createRecentInactiveSession(testWorkspaceId, testUserId)
 
       await service.deliverPushForActivity(
         makePayload({
@@ -702,10 +711,11 @@ describe("Push Notifications", () => {
       ])
     })
 
-    test("no active sessions → pushes to all devices", async () => {
+    test("no active sessions but recent session exists → pushes to all devices (not session_expired)", async () => {
       const service = createServiceWithLookups()
 
-      // Two subscriptions, no active sessions
+      // Two subscriptions, no *active* sessions (within 60s), but a recent session exists
+      // (within 7-day expiry window) — user went offline briefly, not logged out
       await PushSubscriptionRepository.insert(pool, {
         workspaceId: testWorkspaceId,
         userId: testUserId,
@@ -723,15 +733,21 @@ describe("Push Notifications", () => {
         deviceKey: "device-2",
       })
 
+      // Session that's stale for the 60s active window but still within the 7-day expiry window
+      await createRecentInactiveSession(testWorkspaceId, testUserId, "device-1")
+
       await service.deliverPushForActivity(makePayload())
 
-      // Both devices receive push — user is fully offline
+      // Both devices receive normal push — user is offline but session not expired
       expect(sendSpy).toHaveBeenCalledTimes(2)
       const calledEndpoints = sendSpy.mock.calls.map((c) => c[0].endpoint).sort()
       expect(calledEndpoints).toEqual([
         "https://push.example.com/sub/device-1",
         "https://push.example.com/sub/device-2",
       ])
+      // Verify it's a normal push, not session_expired
+      const payload = JSON.parse(sendSpy.mock.calls[0][1] as string)
+      expect(payload.data.action).toBeUndefined()
     })
 
     test("stale sessions (60s+) → pushes to all devices", async () => {
@@ -861,6 +877,9 @@ describe("Push Notifications", () => {
         auth: "a",
         deviceKey: "d",
       })
+
+      // Need a recent session so the push follows the normal delivery path (not session_expired)
+      await createRecentInactiveSession(testWorkspaceId, testUserId)
 
       // Simulate 410 Gone from push service
       sendSpy.mockRejectedValueOnce(Object.assign(new Error("Gone"), { statusCode: 410 }))
