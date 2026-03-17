@@ -22,6 +22,7 @@ function makeRunningSession(overrides?: Partial<AgentSession>): AgentSession {
     error: null,
     lastSeenSequence: 10n,
     sentMessageIds: [],
+    contextMessageIds: [],
     createdAt: new Date("2026-02-19T12:00:00.000Z"),
     completedAt: null,
     ...overrides,
@@ -42,6 +43,7 @@ describe("withCompanionSession", () => {
     const completedSession = makeRunningSession({
       status: SessionStatuses.COMPLETED,
       sentMessageIds: ["msg_agent_1"],
+      contextMessageIds: [],
       responseMessageId: "msg_agent_1",
       lastSeenSequence: 11n,
       completedAt: new Date("2026-02-19T12:01:00.000Z"),

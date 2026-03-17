@@ -88,6 +88,7 @@ describe("AgentMessageMutationHandler", () => {
       error: null,
       lastSeenSequence: 10n,
       sentMessageIds: ["msg_agent_1", "msg_agent_2"],
+      contextMessageIds: [],
       createdAt: new Date("2026-02-19T11:30:00.000Z"),
       completedAt: new Date("2026-02-19T11:59:00.000Z"),
     })
@@ -108,6 +109,7 @@ describe("AgentMessageMutationHandler", () => {
       error: "Superseded by invoking message edit",
       lastSeenSequence: 10n,
       sentMessageIds: ["msg_agent_1", "msg_agent_2"],
+      contextMessageIds: [],
       createdAt: new Date("2026-02-19T11:30:00.000Z"),
       completedAt: new Date("2026-02-19T12:01:00.000Z"),
     })
@@ -183,6 +185,7 @@ describe("AgentMessageMutationHandler", () => {
       error: null,
       lastSeenSequence: 10n,
       sentMessageIds: ["msg_agent_1"],
+      contextMessageIds: [],
       createdAt: new Date("2026-02-19T11:30:00.000Z"),
       completedAt: new Date("2026-02-19T11:59:00.000Z"),
     })
@@ -246,6 +249,7 @@ describe("AgentMessageMutationHandler", () => {
       error: "Superseded by invoking message edit",
       lastSeenSequence: 10n,
       sentMessageIds: ["msg_agent_1"],
+      contextMessageIds: [],
       createdAt: new Date("2026-02-19T11:30:00.000Z"),
       completedAt: new Date("2026-02-19T11:59:00.000Z"),
     })
@@ -308,6 +312,7 @@ describe("AgentMessageMutationHandler", () => {
       error: "Superseded by invoking message edit",
       lastSeenSequence: 10n,
       sentMessageIds: ["msg_agent_1"],
+      contextMessageIds: [],
       createdAt: new Date("2026-02-19T11:30:00.000Z"),
       completedAt: new Date("2026-02-19T12:02:00.000Z"),
     })
@@ -378,6 +383,7 @@ describe("AgentMessageMutationHandler", () => {
       error: "Agent loop completed without sending a message",
       lastSeenSequence: 10n,
       sentMessageIds: ["msg_agent_1"],
+      contextMessageIds: [],
       createdAt: new Date("2026-02-19T11:30:00.000Z"),
       completedAt: new Date("2026-02-19T11:59:00.000Z"),
     })
@@ -398,6 +404,7 @@ describe("AgentMessageMutationHandler", () => {
       error: "Superseded by invoking message edit",
       lastSeenSequence: 10n,
       sentMessageIds: ["msg_agent_1"],
+      contextMessageIds: [],
       createdAt: new Date("2026-02-19T11:30:00.000Z"),
       completedAt: new Date("2026-02-19T12:01:00.000Z"),
     })
@@ -472,6 +479,7 @@ describe("AgentMessageMutationHandler", () => {
       error: null,
       lastSeenSequence: 10n,
       sentMessageIds: ["msg_agent_1"],
+      contextMessageIds: [],
       createdAt: new Date("2026-02-19T11:00:00.000Z"),
       completedAt: new Date("2026-02-19T12:05:00.000Z"),
     })
@@ -525,6 +533,7 @@ describe("AgentMessageMutationHandler", () => {
       error: null,
       lastSeenSequence: 15n,
       sentMessageIds: ["msg_agent_3"],
+      contextMessageIds: [],
       createdAt: new Date("2026-02-19T12:01:00.000Z"),
       completedAt: new Date("2026-02-19T12:08:00.000Z"),
     })
@@ -579,6 +588,7 @@ describe("AgentMessageMutationHandler", () => {
       error: null,
       lastSeenSequence: 20n,
       sentMessageIds: ["msg_agent_latest"],
+      contextMessageIds: ["msg_invoke_latest", "msg_referenced_1", "msg_other_1"],
       createdAt: new Date("2026-02-19T11:00:00.000Z"),
       completedAt: new Date("2026-02-19T12:00:00.000Z"),
     })
@@ -599,6 +609,7 @@ describe("AgentMessageMutationHandler", () => {
       error: "Superseded by referenced message edit",
       lastSeenSequence: 20n,
       sentMessageIds: ["msg_agent_latest"],
+      contextMessageIds: ["msg_invoke_latest", "msg_referenced_1", "msg_other_1"],
       createdAt: new Date("2026-02-19T11:00:00.000Z"),
       completedAt: new Date("2026-02-19T12:11:00.000Z"),
     })
@@ -635,7 +646,7 @@ describe("AgentMessageMutationHandler", () => {
     )
   })
 
-  it("does not rerun for referenced edit outside agent context (sequence beyond lastSeenSequence)", async () => {
+  it("does not rerun for referenced edit outside agent context window", async () => {
     spyOn(OutboxRepository, "fetchAfterId").mockResolvedValue([
       {
         id: 1n,
@@ -646,9 +657,9 @@ describe("AgentMessageMutationHandler", () => {
           event: {
             actorId: "usr_editor",
             actorType: AuthorTypes.USER,
-            sequence: "21",
+            sequence: "5",
             payload: {
-              messageId: "msg_referenced_1",
+              messageId: "msg_old_from_weeks_ago",
             },
           },
         },
@@ -675,6 +686,7 @@ describe("AgentMessageMutationHandler", () => {
       error: null,
       lastSeenSequence: 20n,
       sentMessageIds: ["msg_agent_latest"],
+      contextMessageIds: ["msg_invoke_latest", "msg_recent_1", "msg_recent_2"],
       createdAt: new Date("2026-02-19T11:00:00.000Z"),
       completedAt: new Date("2026-02-19T12:00:00.000Z"),
     })
@@ -759,6 +771,7 @@ describe("AgentMessageMutationHandler", () => {
         error: null,
         lastSeenSequence: 11n,
         sentMessageIds: [],
+        contextMessageIds: [],
         createdAt: new Date(),
         completedAt: null,
       },
@@ -778,6 +791,7 @@ describe("AgentMessageMutationHandler", () => {
         error: "Invoking message deleted",
         lastSeenSequence: 9n,
         sentMessageIds: ["msg_agent_2"],
+        contextMessageIds: [],
         createdAt: new Date(),
         completedAt: new Date("2026-02-19T11:55:00.000Z"),
       },
@@ -799,6 +813,7 @@ describe("AgentMessageMutationHandler", () => {
       error: "Invoking message deleted",
       lastSeenSequence: null,
       sentMessageIds: [],
+      contextMessageIds: [],
       createdAt: new Date(),
       completedAt: new Date("2026-02-19T12:00:00.000Z"),
     }))
