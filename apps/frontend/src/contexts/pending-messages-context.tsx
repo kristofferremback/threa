@@ -80,6 +80,12 @@ export function PendingMessagesProvider({ children }: PendingMessagesProviderPro
 
   const retryMessage = useCallback(
     async (id: string) => {
+      // Verify the message still exists — it may have been deleted after
+      // MAX_RETRY_COUNT exhaustion. Without this guard, markPending would
+      // lock the UI in "pending" with no queue record to resolve it.
+      const existing = await db.pendingMessages.get(id)
+      if (!existing) return
+
       // Reset retry count so the queue processor will pick it up again
       // Dexie's deep KeyPaths inference hits a circular type on JSONContent.
       // Cast through unknown to bypass the broken type inference.
