@@ -44,6 +44,7 @@ export function useWorkspaces() {
     ...query,
     workspaces: query.data?.workspaces,
     pendingInvitations: query.data?.pendingInvitations ?? [],
+    isFetching: query.isFetching,
   }
 }
 

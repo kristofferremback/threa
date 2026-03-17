@@ -87,6 +87,7 @@ describe("WorkspaceSelectPage", () => {
       workspaces: [makeWorkspace("workspace_1", "Solo")],
       pendingInvitations: [],
       isLoading: false,
+      isFetching: false,
       error: null,
     })
 
@@ -102,6 +103,7 @@ describe("WorkspaceSelectPage", () => {
         { id: "inv_1", workspaceId: "ws_2", workspaceName: "Invited WS", expiresAt: "2026-12-01T00:00:00.000Z" },
       ],
       isLoading: false,
+      isFetching: false,
       error: null,
     })
 
@@ -121,6 +123,7 @@ describe("WorkspaceSelectPage", () => {
         ? []
         : [{ id: "inv_1", workspaceId: "workspace_1", workspaceName: "Solo", expiresAt: "2026-12-01T00:00:00.000Z" }],
       isLoading: false,
+      isFetching: false,
       error: null,
     }))
 
@@ -139,11 +142,26 @@ describe("WorkspaceSelectPage", () => {
     expect(await screen.findByTestId("setup-route")).toBeInTheDocument()
   })
 
+  it("should not auto-redirect while background refetch is in flight", () => {
+    mockUseWorkspaces.mockReturnValue({
+      workspaces: [makeWorkspace("workspace_1", "Solo")],
+      pendingInvitations: [],
+      isLoading: false,
+      isFetching: true,
+      error: null,
+    })
+
+    renderPage()
+
+    expect(screen.getByText("Select a workspace to continue")).toBeInTheDocument()
+  })
+
   it("should show workspace picker when user has multiple workspaces", () => {
     mockUseWorkspaces.mockReturnValue({
       workspaces: [makeWorkspace("workspace_1", "Alpha"), makeWorkspace("workspace_2", "Beta")],
       pendingInvitations: [],
       isLoading: false,
+      isFetching: false,
       error: null,
     })
 
@@ -159,6 +177,7 @@ describe("WorkspaceSelectPage", () => {
       workspaces: [],
       pendingInvitations: [],
       isLoading: false,
+      isFetching: false,
       error: null,
     })
     mockUseCreateWorkspace.mockReturnValue({
@@ -181,6 +200,7 @@ describe("WorkspaceSelectPage", () => {
       workspaces: [],
       pendingInvitations: [],
       isLoading: false,
+      isFetching: false,
       error: null,
     })
     mockUseCreateWorkspace.mockReturnValue({
