@@ -9,6 +9,7 @@ import { ThreadsPage } from "@/pages/threads"
 import { ActivityPage } from "@/pages/activity"
 import { AIUsageAdminPage } from "@/pages/ai-usage-admin"
 import { UserSetupPage } from "@/pages/user-setup"
+import { ShareTargetPage } from "@/pages/share-target"
 import { ErrorBoundary } from "@/components/error-boundary"
 import { useSidebar } from "@/contexts"
 import { useLastStream } from "@/hooks"
@@ -27,6 +28,11 @@ export const router = createBrowserRouter([
   {
     path: "/workspaces",
     element: <WorkspaceSelectPage />,
+    errorElement: <ErrorBoundary />,
+  },
+  {
+    path: "/share",
+    element: <ShareTargetPage />,
     errorElement: <ErrorBoundary />,
   },
   {

@@ -6,6 +6,15 @@
   "display": "standalone",
   "background_color": "#0a0a0a",
   "theme_color": "#C8A055",
+  "share_target": {
+    "action": "/share",
+    "method": "GET",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  },
   "icons": [
     {
       "src": "/threa-logo-192.png",
