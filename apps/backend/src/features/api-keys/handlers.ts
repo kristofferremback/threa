@@ -5,7 +5,7 @@ import type { SearchService } from "../search"
 import { serializeSearchResult } from "../search"
 import type { ApiKeyChannelService } from "./service"
 import type { EventService } from "../messaging"
-import { MessageRepository } from "../messaging"
+import { MessageRepository, OwnershipError } from "../messaging"
 import { StreamRepository } from "../streams"
 import { UserRepository } from "../workspaces"
 import { STREAM_TYPES, AuthorTypes } from "@threa/types"
@@ -138,6 +138,21 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
     return apiKeyChannelService.getAccessibleStreamIdsForApiKey(req.workspaceId!, req.apiKey!.id)
   }
 
+  /** Find a message and verify stream access. Used by update/delete. */
+  async function resolveApiKeyMessage(messageId: string, req: Request) {
+    const message = await MessageRepository.findById(pool, messageId)
+    if (!message) {
+      throw new HttpError("Message not found", { status: 404, code: "NOT_FOUND" })
+    }
+
+    const accessibleStreamIds = await getAccessibleStreamIds(req)
+    if (!accessibleStreamIds.includes(message.streamId)) {
+      throw new HttpError("Stream not accessible", { status: 403, code: "FORBIDDEN" })
+    }
+
+    return message
+  }
+
   return {
     /**
      * Search messages via public API.
@@ -246,7 +261,12 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
       })
 
       const hasMore = messages.length > limit
-      const page = hasMore ? messages.slice(0, limit) : messages
+      // afterSequence returns ASC from DB — extra probe is at the tail.
+      // beforeSequence/default return DESC then reverse to ASC — extra probe is at the head.
+      let page = messages
+      if (hasMore) {
+        page = after ? messages.slice(0, limit) : messages.slice(-limit)
+      }
 
       res.json({
         data: page.map(serializeMessage),
@@ -317,45 +337,35 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
       }
 
       const { content } = result.data
-
-      // Find message and verify ownership
-      const existing = await MessageRepository.findById(pool, messageId)
-      if (!existing) {
-        throw new HttpError("Message not found", { status: 404, code: "NOT_FOUND" })
-      }
-
-      if (existing.apiKeyId !== apiKey.id) {
-        throw new HttpError("Cannot update messages created by another API key", {
-          status: 403,
-          code: "FORBIDDEN",
-        })
-      }
-
-      // Verify stream access
-      const accessibleStreamIds = await getAccessibleStreamIds(req)
-      if (!accessibleStreamIds.includes(existing.streamId)) {
-        throw new HttpError("Stream not accessible", { status: 403, code: "FORBIDDEN" })
-      }
+      const existing = await resolveApiKeyMessage(messageId, req)
 
       // Normalize and parse content
       const contentMarkdown = normalizeMessage(content)
       const contentJson = parseMarkdown(contentMarkdown, undefined, toEmoji)
 
-      const updated = await eventService.editMessage({
-        workspaceId,
-        messageId,
-        streamId: existing.streamId,
-        contentJson,
-        contentMarkdown,
-        actorId: apiKey.id,
-        actorType: AuthorTypes.BOT,
-      })
+      try {
+        const updated = await eventService.editMessage({
+          workspaceId,
+          messageId,
+          streamId: existing.streamId,
+          contentJson,
+          contentMarkdown,
+          actorId: apiKey.id,
+          actorType: AuthorTypes.BOT,
+          apiKeyId: apiKey.id,
+        })
 
-      if (!updated) {
-        throw new HttpError("Message not found or was deleted", { status: 404, code: "NOT_FOUND" })
+        if (!updated) {
+          throw new HttpError("Message not found or was deleted", { status: 404, code: "NOT_FOUND" })
+        }
+
+        res.json({ data: serializeMessage(updated) })
+      } catch (e) {
+        if (e instanceof OwnershipError) {
+          throw new HttpError(e.message, { status: 403, code: "FORBIDDEN" })
+        }
+        throw e
       }
-
-      res.json({ data: serializeMessage(updated) })
     },
 
     /**
@@ -368,32 +378,23 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
       const messageId = req.params.messageId
       const apiKey = req.apiKey!
 
-      // Find message and verify ownership
-      const existing = await MessageRepository.findById(pool, messageId)
-      if (!existing) {
-        throw new HttpError("Message not found", { status: 404, code: "NOT_FOUND" })
-      }
+      const existing = await resolveApiKeyMessage(messageId, req)
 
-      if (existing.apiKeyId !== apiKey.id) {
-        throw new HttpError("Cannot delete messages created by another API key", {
-          status: 403,
-          code: "FORBIDDEN",
+      try {
+        await eventService.deleteMessage({
+          workspaceId,
+          messageId,
+          streamId: existing.streamId,
+          actorId: apiKey.id,
+          actorType: AuthorTypes.BOT,
+          apiKeyId: apiKey.id,
         })
+      } catch (e) {
+        if (e instanceof OwnershipError) {
+          throw new HttpError(e.message, { status: 403, code: "FORBIDDEN" })
+        }
+        throw e
       }
-
-      // Verify stream access
-      const accessibleStreamIds = await getAccessibleStreamIds(req)
-      if (!accessibleStreamIds.includes(existing.streamId)) {
-        throw new HttpError("Stream not accessible", { status: 403, code: "FORBIDDEN" })
-      }
-
-      await eventService.deleteMessage({
-        workspaceId,
-        messageId,
-        streamId: existing.streamId,
-        actorId: apiKey.id,
-        actorType: AuthorTypes.BOT,
-      })
 
       res.status(204).send()
     },

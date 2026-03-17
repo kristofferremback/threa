@@ -83,6 +83,8 @@ export interface EditMessageParams {
   contentMarkdown: string
   actorId: string
   actorType?: AuthorType
+  /** When set, ownership is verified: message must have been created by this API key. */
+  apiKeyId?: string
 }
 
 export interface DeleteMessageParams {
@@ -91,6 +93,8 @@ export interface DeleteMessageParams {
   streamId: string
   actorId: string
   actorType?: AuthorType
+  /** When set, ownership is verified: message must have been created by this API key. */
+  apiKeyId?: string
 }
 
 export interface AddReactionParams {
@@ -114,6 +118,14 @@ export interface RemoveReactionParams {
 class DuplicateMessageError extends Error {
   constructor(readonly existingMessage: Message) {
     super("Duplicate clientMessageId detected via ON CONFLICT")
+  }
+}
+
+/** Thrown when an API key tries to modify a message it didn't create. */
+export class OwnershipError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "OwnershipError"
   }
 }
 
@@ -320,6 +332,11 @@ export class EventService {
       const existing = await MessageRepository.findByIdForUpdate(client, params.messageId)
       if (!existing || existing.deletedAt) return null
 
+      // Ownership check for API-key-created messages (under transaction lock)
+      if (params.apiKeyId !== undefined && existing.apiKeyId !== params.apiKeyId) {
+        throw new OwnershipError("Cannot update messages created by another API key")
+      }
+
       // No-op: content hasn't meaningfully changed
       if (params.contentMarkdown.trim() === existing.contentMarkdown.trim()) return existing
 
@@ -373,6 +390,11 @@ export class EventService {
     return withTransaction(this.pool, async (client) => {
       const existing = await MessageRepository.findByIdForUpdate(client, params.messageId)
       if (!existing || existing.deletedAt) return null
+
+      // Ownership check for API-key-created messages (under transaction lock)
+      if (params.apiKeyId !== undefined && existing.apiKeyId !== params.apiKeyId) {
+        throw new OwnershipError("Cannot delete messages created by another API key")
+      }
 
       const actorType = await this.resolveActorType(client, params.streamId, params.actorId, params.actorType, existing)
 
