@@ -48,6 +48,13 @@ export async function seedCacheFromIndexedDB(): Promise<void> {
         workspaces,
         pendingInvitations: [],
       })
+      // Mark stale immediately so useWorkspaces refetches on mount.
+      // Without this, the 30s staleTime suppresses the network fetch and
+      // pendingInvitations stays empty until the timer expires.
+      void queryClient.invalidateQueries({
+        queryKey: workspaceKeys.list(),
+        refetchType: "none",
+      })
     }
 
     // Seed workspace bootstrap if we're navigating to a workspace
