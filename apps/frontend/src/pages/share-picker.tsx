@@ -34,7 +34,7 @@ export function SharePickerPage() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
-  const { data: bootstrap } = useWorkspaceBootstrap(workspaceId!)
+  const { data: bootstrap, error: bootstrapError } = useWorkspaceBootstrap(workspaceId!)
   const { createShareDraft, saveShareContent } = useShareTarget()
 
   const [query, setQuery] = useState("")
@@ -147,7 +147,23 @@ export function SharePickerPage() {
     return [newScratchpadItem, ...streamItems]
   }, [streams, dmPeers, users, query, workspaceId, handleNewScratchpad, handleSelectStream])
 
-  const isLoading = !bootstrap
+  const isLoading = !bootstrap && !bootstrapError
+
+  if (bootstrapError) {
+    return (
+      <div className="flex h-full items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-4 px-4 text-center">
+          <p className="text-sm text-destructive">Failed to load workspace data.</p>
+          <button
+            onClick={() => navigate(`/w/${workspaceId}`, { replace: true })}
+            className="text-sm text-muted-foreground underline"
+          >
+            Go to workspace
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex h-full items-center justify-center bg-background">
