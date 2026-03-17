@@ -51,7 +51,8 @@ export function useNewMessageIndicator(
       if (BigInt(event.sequence) <= BigInt(baseline)) break
       if (
         event.actorId !== currentUserId &&
-        event.eventType === "message_created" &&
+        event.actorType === "user" &&
+        (event.eventType === "message_created" || event.eventType === "companion_response") &&
         !trackedIdsRef.current.has(event.id)
       ) {
         freshIds.push(event.id)
