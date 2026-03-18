@@ -157,7 +157,7 @@ export function StreamContent({
   const isChannel = stream?.type === StreamTypes.CHANNEL
   const agentActivity = useAgentActivity(events, socket)
 
-  const { scrollContainerRef, handleScroll } = useScrollBehavior({
+  const { scrollContainerRef, handleScroll, isScrolledFarFromBottom } = useScrollBehavior({
     isLoading,
     itemCount: events.length,
     onScrollNearTop: hasOlderEvents ? fetchOlderEvents : undefined,
@@ -215,14 +215,18 @@ export function StreamContent({
   )
 
   const handleJumpToLatest = useCallback(() => {
-    exitJumpMode()
-    // Scroll to bottom after exiting jump mode
-    requestAnimationFrame(() => {
-      if (scrollContainerRef.current) {
-        scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight
-      }
-    })
-  }, [exitJumpMode, scrollContainerRef])
+    if (isJumpMode) {
+      exitJumpMode()
+      // Scroll to bottom after React re-renders with bootstrap events
+      requestAnimationFrame(() => {
+        if (scrollContainerRef.current) {
+          scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight
+        }
+      })
+    } else if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTo({ top: scrollContainerRef.current.scrollHeight, behavior: "smooth" })
+    }
+  }, [isJumpMode, exitJumpMode, scrollContainerRef])
 
   if (error && !isDraft) {
     return (
@@ -289,8 +293,8 @@ export function StreamContent({
                 </div>
               )}
             </div>
-            {/* Jump to latest button — shown when in jump-to mode */}
-            {isJumpMode && (
+            {/* Jump to latest button — shown when scrolled far from bottom or in jump mode */}
+            {(isJumpMode || isScrolledFarFromBottom) && (
               <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10">
                 <Button variant="secondary" size="sm" className="shadow-lg gap-1.5" onClick={handleJumpToLatest}>
                   <ArrowDown className="h-3.5 w-3.5" />

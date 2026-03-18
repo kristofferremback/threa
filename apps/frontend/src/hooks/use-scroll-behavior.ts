@@ -1,5 +1,8 @@
-import { useRef, useEffect, useLayoutEffect, useCallback, type RefObject } from "react"
+import { useRef, useState, useEffect, useLayoutEffect, useCallback, type RefObject } from "react"
 import { EVENT_PAGE_SIZE, SCROLL_FETCH_RATIO } from "@/lib/constants"
+
+/** Number of items from the bottom before showing "Jump to latest" */
+const JUMP_TO_LATEST_ITEM_THRESHOLD = 10
 
 interface UseScrollBehaviorOptions {
   /** Whether data is currently loading (delays initial scroll) */
@@ -28,6 +31,8 @@ interface UseScrollBehaviorReturn {
   scrollContainerRef: RefObject<HTMLDivElement | null>
   /** Scroll handler to attach to the container's onScroll */
   handleScroll: () => void
+  /** True when scrolled ~10+ items away from the bottom */
+  isScrolledFarFromBottom: boolean
 }
 
 /**
@@ -52,6 +57,7 @@ export function useScrollBehavior({
 }: UseScrollBehaviorOptions): UseScrollBehaviorReturn {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const shouldAutoScroll = useRef(true)
+  const [isScrolledFarFromBottom, setIsScrolledFarFromBottom] = useState(false)
   const prevItemCount = useRef(0)
   const prevScrollHeight = useRef(0)
   // Tracks the previous render's isFetchingOlder value so the adjustment
@@ -140,6 +146,11 @@ export function useScrollBehavior({
     const avgItemHeight = scrollHeight / itemCount
     const triggerPixels = triggerItemCount * avgItemHeight
 
+    // Track whether user is scrolled far enough from bottom to show "Jump to latest"
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight
+    const jumpThresholdPixels = JUMP_TO_LATEST_ITEM_THRESHOLD * avgItemHeight
+    setIsScrolledFarFromBottom(distanceFromBottom > jumpThresholdPixels)
+
     // Load older content when near top
     if (onScrollNearTop && scrollTop < triggerPixels && !isFetchingOlder) {
       onScrollNearTop()
@@ -165,5 +176,6 @@ export function useScrollBehavior({
   return {
     scrollContainerRef,
     handleScroll,
+    isScrolledFarFromBottom,
   }
 }
