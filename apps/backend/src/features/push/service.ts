@@ -359,12 +359,12 @@ export class PushService {
         userId,
         ACTIVE_SESSION_WINDOW_MS
       )
-      // Get all device keys with a session within the expiry window (30 days).
-      // Used to identify per-device session expiry for cleanup.
+      // Check which device keys have had any session activity within the expiry
+      // window — cross-workspace, because the auth cookie is global.
+      const subDeviceKeys = [...new Set(subs.map((s) => s.deviceKey))]
       const deviceKeys = await UserSessionRepository.getRecentDeviceKeys(
         client,
-        workspaceId,
-        userId,
+        subDeviceKeys,
         SESSION_EXPIRY_WINDOW_MS
       )
       return { allSubs: subs, activeSessions: sessions, recentDeviceKeys: deviceKeys }

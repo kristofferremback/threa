@@ -924,6 +924,41 @@ describe("Push Notifications", () => {
       expect(subs).toHaveLength(1)
     })
 
+    test("cross-workspace: device active in another workspace keeps subscription alive", async () => {
+      const service = createServiceWithLookups()
+      const otherWorkspaceId = "ws_other_workspace"
+
+      // Subscription in testWorkspaceId, but NO session in this workspace
+      await PushSubscriptionRepository.insert(pool, {
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        endpoint: "https://push.example.com/sub/cross-ws",
+        p256dh: "p",
+        auth: "a",
+        deviceKey: "device-1",
+      })
+
+      // Session exists on the SAME device but in a DIFFERENT workspace.
+      // Auth is global (single cookie), so this proves the device is still logged in.
+      await UserSessionRepository.upsert(pool, {
+        workspaceId: otherWorkspaceId,
+        userId: "user_other_workspace_id",
+        deviceKey: "device-1",
+      })
+
+      await service.deliverPushForActivity(makePayload())
+
+      // Should send normal push — device is still authenticated
+      expect(sendSpy).toHaveBeenCalledTimes(1)
+      const payload = JSON.parse(sendSpy.mock.calls[0][1] as string)
+      expect(payload.data.action).toBeUndefined()
+      expect(payload.data.activityType).toBe(ActivityTypes.MENTION)
+
+      // Subscription should still exist
+      const subs = await PushSubscriptionRepository.findByUserId(pool, testWorkspaceId, testUserId)
+      expect(subs).toHaveLength(1)
+    })
+
     test("stale subscription cleanup on 410 response", async () => {
       const service = createServiceWithLookups()
 

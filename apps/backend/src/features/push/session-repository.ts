@@ -97,15 +97,17 @@ export const UserSessionRepository = {
   },
 
   /**
-   * Return the set of device keys that have had any session activity within
-   * the given window. Used to identify which devices still have a live auth
-   * session vs. which have likely expired (per-device expiry check).
+   * Return which of the given device keys have had any session activity within
+   * the given window across ALL workspaces. Auth sessions are global (single
+   * cookie), so a device active in workspace A proves the auth is still valid
+   * for workspace B. Cross-workspace by design (INV-8 infra exception, same
+   * rationale as cleanupStale).
    */
-  async getRecentDeviceKeys(db: Querier, workspaceId: string, userId: string, windowMs: number): Promise<Set<string>> {
+  async getRecentDeviceKeys(db: Querier, deviceKeys: string[], windowMs: number): Promise<Set<string>> {
+    if (deviceKeys.length === 0) return new Set()
     const result = await db.query<{ device_key: string }>(sql`
       SELECT DISTINCT device_key FROM user_sessions
-      WHERE workspace_id = ${workspaceId}
-        AND user_id = ${userId}
+      WHERE device_key = ANY(${deviceKeys})
         AND last_active_at > now() - (${windowMs}::text || ' milliseconds')::interval
     `)
     return new Set(result.rows.map((r) => r.device_key))
