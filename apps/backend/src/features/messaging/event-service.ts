@@ -480,11 +480,14 @@ export class EventService {
   async listEventsAround(
     streamId: string,
     targetId: string,
-    options?: { limit?: number; viewerId?: string }
+    options?: { idType?: "event" | "message"; limit?: number; viewerId?: string }
   ): Promise<{ events: StreamEvent[]; hasOlder: boolean; hasNewer: boolean }> {
-    // Try event ID first, then fall back to message ID lookup
-    let targetEvent = await StreamEventRepository.findById(this.pool, targetId)
-    if (!targetEvent || targetEvent.streamId !== streamId) {
+    let targetEvent: StreamEvent | null = null
+    if (!options?.idType || options.idType === "event") {
+      targetEvent = await StreamEventRepository.findById(this.pool, targetId)
+      if (targetEvent && targetEvent.streamId !== streamId) targetEvent = null
+    }
+    if (!targetEvent) {
       targetEvent = await StreamEventRepository.findByMessageId(this.pool, targetId)
     }
     if (!targetEvent || targetEvent.streamId !== streamId) {

@@ -77,12 +77,17 @@ const addMemberSchema = z.object({
 
 const numericString = z.string().regex(/^\d+$/, "must be a numeric string")
 
-const listEventsQuerySchema = z.object({
-  type: z.union([z.string(), z.array(z.string())]).optional(),
-  limit: z.coerce.number().int().positive().max(200).optional(),
-  after: numericString.optional(),
-  before: numericString.optional(),
-})
+const listEventsQuerySchema = z
+  .object({
+    type: z.union([z.string(), z.array(z.string())]).optional(),
+    limit: z.coerce.number().int().positive().max(200).optional(),
+    after: numericString.optional(),
+    before: numericString.optional(),
+  })
+  .refine((d) => !(d.after && d.before), {
+    message: "after and before are mutually exclusive",
+    path: ["after"],
+  })
 
 const listEventsAroundQuerySchema = z
   .object({
@@ -92,6 +97,7 @@ const listEventsAroundQuerySchema = z
   })
   .refine((d) => d.eventId ?? d.messageId, {
     message: "eventId or messageId is required",
+    path: ["eventId"],
   })
 
 // Exhaustive: adding a StreamType forces a decision here
@@ -290,6 +296,7 @@ export function createStreamHandlers({ streamService, eventService, activityServ
       await streamService.validateStreamAccess(streamId, workspaceId, userId)
 
       const result = await eventService.listEventsAround(streamId, targetId, {
+        idType: eventId ? "event" : "message",
         limit,
         viewerId: userId,
       })
