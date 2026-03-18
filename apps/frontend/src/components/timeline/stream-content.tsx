@@ -168,7 +168,7 @@ export function StreamContent({
 
   // Auto-mark stream as read when viewing
   const lastEventId = events.length > 0 ? events[events.length - 1].id : undefined
-  useAutoMarkAsRead(workspaceId, streamId, lastEventId, { enabled: !isDraft && !isLoading })
+  useAutoMarkAsRead(workspaceId, streamId, lastEventId, { enabled: !isDraft && !isLoading && !isJumpMode })
 
   // Track live-arriving messages from other users for brief "new" indicator
   const newMessageIds = useNewMessageIndicator(events, currentWorkspaceUserId ?? undefined, streamId)
