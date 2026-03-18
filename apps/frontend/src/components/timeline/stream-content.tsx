@@ -135,10 +135,14 @@ export function StreamContent({
     if (!isVisible && events.length > 0) {
       jumpTriggeredRef.current = highlightMessageId
       // Use the messageId directly — the backend resolves it to the corresponding event
-      jumpToEvent(highlightMessageId).catch(() => {
-        // Reset so the user can retry (e.g. on reconnect)
-        jumpTriggeredRef.current = null
-      })
+      jumpToEvent(highlightMessageId)
+        .then((success) => {
+          if (!success) jumpTriggeredRef.current = null
+        })
+        .catch(() => {
+          // Reset so the user can retry (e.g. on reconnect)
+          jumpTriggeredRef.current = null
+        })
     }
   }, [highlightMessageId, isLoading, isDraft, events, jumpToEvent])
 

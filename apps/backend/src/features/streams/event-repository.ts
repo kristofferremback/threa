@@ -242,7 +242,8 @@ export const StreamEventRepository = {
     const hasOlder = olderEvents.length > half
     const hasNewer = newerEvents.length > half
 
-    // Drop probe events used for boundary detection
+    // olderEvents is ASC-sorted: [0] is the oldest (probe), [half] is the target.
+    // newerEvents is ASC-sorted: [half] is the newest (probe).
     const trimmedOlder = hasOlder ? olderEvents.slice(1) : olderEvents
     const trimmedNewer = hasNewer ? newerEvents.slice(0, half) : newerEvents
 

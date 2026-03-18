@@ -170,6 +170,8 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
     }
 
     // Seed with a cursor-only page, then fetch immediately.
+    // This branch is only reachable when no pages exist yet (!hasOlderPage),
+    // so we never discard previously-fetched multi-page history.
     // setQueryData updates TanStack Query's internal cache synchronously,
     // so fetchOlderPage picks up the cursor without needing a second trigger.
     const anchorEvents = jumpState ? jumpState.events : (bootstrap?.events ?? [])
