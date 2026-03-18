@@ -123,7 +123,7 @@ describe("useMessageQueue", () => {
       contentJson: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Hello" }] }] },
       contentMarkdown: "Hello",
       attachmentIds: undefined,
-      clientId: "temp_abc",
+      clientMessageId: "temp_abc",
     })
     expect(mockDelete).toHaveBeenCalledWith("temp_abc")
     expect(mockMarkSent).toHaveBeenCalledWith("temp_abc")
@@ -310,7 +310,7 @@ describe("useMessageQueue", () => {
       },
       contentMarkdown: "With attachments",
       attachmentIds: ["attach_1", "attach_2"],
-      clientId: "temp_attach",
+      clientMessageId: "temp_attach",
     })
   })
 })

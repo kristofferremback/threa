@@ -60,7 +60,7 @@ describe("EventService.createMessage idempotency", () => {
     mock.restore()
   })
 
-  it("returns existing message when clientId matches a previously created message", async () => {
+  it("returns existing message when clientMessageId matches a previously created message", async () => {
     const existingMessage = {
       id: "msg_existing",
       streamId: "stream_1",
@@ -76,7 +76,7 @@ describe("EventService.createMessage idempotency", () => {
       createdAt: new Date(),
     }
 
-    spyOn(MessageRepository, "findByClientId").mockResolvedValue(existingMessage)
+    spyOn(MessageRepository, "findByClientMessageId").mockResolvedValue(existingMessage)
 
     const service = new EventService({} as any)
 
@@ -87,15 +87,15 @@ describe("EventService.createMessage idempotency", () => {
       authorType: "user",
       contentJson: { type: "doc", content: [] },
       contentMarkdown: "hello",
-      clientId: "temp_abc123",
+      clientMessageId: "temp_abc123",
     })
 
     expect(result).toBe(existingMessage)
-    expect(MessageRepository.findByClientId).toHaveBeenCalledWith(expect.anything(), "stream_1", "temp_abc123")
+    expect(MessageRepository.findByClientMessageId).toHaveBeenCalledWith(expect.anything(), "stream_1", "temp_abc123")
   })
 
-  it("creates new message when clientId does not match any existing message", async () => {
-    spyOn(MessageRepository, "findByClientId").mockResolvedValue(null)
+  it("creates new message when clientMessageId does not match any existing message", async () => {
+    spyOn(MessageRepository, "findByClientMessageId").mockResolvedValue(null)
     spyOn(db, "withTransaction").mockImplementation(((_db: unknown, callback: (client: any) => Promise<unknown>) =>
       callback({})) as any)
     spyOn(StreamRepository, "findById").mockResolvedValue({ id: "stream_1", type: "scratchpad" } as any)
@@ -137,17 +137,17 @@ describe("EventService.createMessage idempotency", () => {
       authorType: "user",
       contentJson: { type: "doc", content: [] },
       contentMarkdown: "hello",
-      clientId: "temp_new123",
+      clientMessageId: "temp_new123",
     })
 
     expect(result).toBe(insertedMessage)
     expect(MessageRepository.insert).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ clientId: "temp_new123" })
+      expect.objectContaining({ clientMessageId: "temp_new123" })
     )
   })
 
-  it("skips idempotency check when clientId is not provided", async () => {
+  it("skips idempotency check when clientMessageId is not provided", async () => {
     spyOn(db, "withTransaction").mockImplementation(((_db: unknown, callback: (client: any) => Promise<unknown>) =>
       callback({})) as any)
     spyOn(StreamRepository, "findById").mockResolvedValue({ id: "stream_1", type: "scratchpad" } as any)
@@ -178,7 +178,7 @@ describe("EventService.createMessage idempotency", () => {
     })
     spyOn(StreamMemberRepository, "update").mockResolvedValue(undefined as any)
     spyOn(OutboxRepository, "insert").mockResolvedValue(undefined as any)
-    const findByClientIdSpy = spyOn(MessageRepository, "findByClientId")
+    const findByClientMessageIdSpy = spyOn(MessageRepository, "findByClientMessageId")
 
     const service = new EventService({} as any)
 
@@ -191,7 +191,7 @@ describe("EventService.createMessage idempotency", () => {
       contentMarkdown: "hello",
     })
 
-    expect(findByClientIdSpy).not.toHaveBeenCalled()
+    expect(findByClientMessageIdSpy).not.toHaveBeenCalled()
   })
 })
 

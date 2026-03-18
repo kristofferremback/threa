@@ -47,7 +47,7 @@ export interface InsertMessageParams {
   authorType: AuthorType
   contentJson: JSONContent
   contentMarkdown: string
-  clientId?: string
+  clientMessageId?: string
 }
 
 function mapRowToMessage(row: MessageRow, reactions: Record<string, string[]> = {}): Message {
@@ -106,10 +106,10 @@ const SELECT_FIELDS = `
 `
 
 export const MessageRepository = {
-  async findByClientId(db: Querier, streamId: string, clientId: string): Promise<Message | null> {
+  async findByClientMessageId(db: Querier, streamId: string, clientMessageId: string): Promise<Message | null> {
     const result = await db.query<MessageRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS)} FROM messages
-      WHERE stream_id = ${streamId} AND client_id = ${clientId}
+      WHERE stream_id = ${streamId} AND client_message_id = ${clientMessageId}
     `)
     if (!result.rows[0]) return null
 
@@ -203,7 +203,7 @@ export const MessageRepository = {
 
   async insert(db: Querier, params: InsertMessageParams): Promise<Message> {
     const result = await db.query<MessageRow>(sql`
-      INSERT INTO messages (id, stream_id, sequence, author_id, author_type, content_json, content_markdown, client_id)
+      INSERT INTO messages (id, stream_id, sequence, author_id, author_type, content_json, content_markdown, client_message_id)
       VALUES (
         ${params.id},
         ${params.streamId},
@@ -212,7 +212,7 @@ export const MessageRepository = {
         ${params.authorType},
         ${JSON.stringify(params.contentJson)},
         ${params.contentMarkdown},
-        ${params.clientId ?? null}
+        ${params.clientMessageId ?? null}
       )
       RETURNING ${sql.raw(SELECT_FIELDS)}
     `)

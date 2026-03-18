@@ -23,7 +23,7 @@ const createMessageJsonToStreamSchema = z.object({
   }),
   contentMarkdown: z.string().optional(),
   attachmentIds: z.array(z.string()).optional(),
-  clientId: z.string().optional(),
+  clientMessageId: z.string().optional(),
 })
 
 // Schema for markdown input to an existing stream (from AI/external)
@@ -31,7 +31,7 @@ const createMessageMarkdownToStreamSchema = z.object({
   streamId: z.string().min(1, "streamId is required"),
   content: z.string().min(1, "content is required"),
   attachmentIds: z.array(z.string()).optional(),
-  clientId: z.string().optional(),
+  clientMessageId: z.string().optional(),
 })
 
 // Schema for JSON input to a DM target user (lazy stream creation on first message)
@@ -43,7 +43,7 @@ const createMessageJsonToDmSchema = z.object({
   }),
   contentMarkdown: z.string().optional(),
   attachmentIds: z.array(z.string()).optional(),
-  clientId: z.string().optional(),
+  clientMessageId: z.string().optional(),
 })
 
 // Schema for markdown input to a DM target user (lazy stream creation on first message)
@@ -51,7 +51,7 @@ const createMessageMarkdownToDmSchema = z.object({
   dmUserId: z.string().min(1, "dmUserId is required"),
   content: z.string().min(1, "content is required"),
   attachmentIds: z.array(z.string()).optional(),
-  clientId: z.string().optional(),
+  clientMessageId: z.string().optional(),
 })
 
 // Union schema - accepts either format
@@ -222,7 +222,7 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
         contentJson,
         contentMarkdown,
         attachmentIds,
-        clientId: data.clientId,
+        clientMessageId: data.clientMessageId,
       })
 
       res.status(201).json({ message: serializeMessage(message) })
