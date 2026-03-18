@@ -63,7 +63,9 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
   // Jump-to-message state: when set, replaces bootstrap as the anchor window
   const [jumpState, setJumpState] = useState<JumpState | null>(null)
 
-  // Infinite query for older events (backward pagination)
+  // Infinite query for older events (backward pagination).
+  // Seeded via setQueryData with a cursor-only page; getNextPageParam reads the cursor
+  // from either the fetched events or the seed page's cursor field.
   const {
     data: olderData,
     fetchNextPage: fetchOlderPage,
@@ -73,17 +75,19 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
     queryKey: eventKeys.list(workspaceId, streamId),
     queryFn: async ({ pageParam }) => {
       if (!pageParam) {
-        return { events: [] as StreamEvent[], hasMore: false }
+        return { events: [] as StreamEvent[], hasMore: false, cursor: undefined }
       }
       const events = await streamService.getEvents(workspaceId, streamId, {
         before: pageParam,
         limit: EVENT_PAGE_SIZE,
       })
       await cacheToIndexedDB(events)
-      return { events, hasMore: events.length === EVENT_PAGE_SIZE }
+      return { events, hasMore: events.length === EVENT_PAGE_SIZE, cursor: undefined }
     },
     getNextPageParam: (lastPage) => {
-      if (!lastPage.hasMore || lastPage.events.length === 0) return undefined
+      if (!lastPage.hasMore) return undefined
+      // Seed pages have no events but carry a cursor for the first real fetch
+      if (lastPage.events.length === 0) return lastPage.cursor
       return lastPage.events[0].sequence
     },
     initialPageParam: undefined as string | undefined,
@@ -100,19 +104,19 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
     queryKey: eventKeys.newer(workspaceId, streamId),
     queryFn: async ({ pageParam }) => {
       if (!pageParam) {
-        return { events: [] as StreamEvent[], hasMore: false }
+        return { events: [] as StreamEvent[], hasMore: false, cursor: undefined }
       }
       const events = await streamService.getEvents(workspaceId, streamId, {
         after: pageParam,
         limit: EVENT_PAGE_SIZE,
       })
       await cacheToIndexedDB(events)
-      return { events, hasMore: events.length === EVENT_PAGE_SIZE }
+      return { events, hasMore: events.length === EVENT_PAGE_SIZE, cursor: undefined }
     },
     getNextPageParam: (lastPage) => {
-      if (!lastPage.hasMore || lastPage.events.length === 0) return undefined
-      const last = lastPage.events[lastPage.events.length - 1]
-      return last.sequence
+      if (!lastPage.hasMore) return undefined
+      if (lastPage.events.length === 0) return lastPage.cursor
+      return lastPage.events[lastPage.events.length - 1].sequence
     },
     initialPageParam: undefined as string | undefined,
     enabled: shouldFetch && !!jumpState,
@@ -148,18 +152,21 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
   const fetchOlderEvents = useCallback(() => {
     if (isFetchingOlder) return
 
-    // Set initial cursor if first backward fetch
-    if (!olderData?.pages.some((p) => p.events.length > 0)) {
-      const anchorEvents = jumpState ? jumpState.events : (bootstrap?.events ?? [])
-      if (anchorEvents.length === 0) return
-      const oldestSeq = anchorEvents[0].sequence
-      queryClient.setQueryData(eventKeys.list(workspaceId, streamId), {
-        pages: [{ events: [], hasMore: true }],
-        pageParams: [oldestSeq],
-      })
+    if (hasOlderPage) {
+      fetchOlderPage()
+      return
     }
+
+    // Seed with a cursor-only page so getNextPageParam returns the anchor cursor
+    const anchorEvents = jumpState ? jumpState.events : (bootstrap?.events ?? [])
+    if (anchorEvents.length === 0) return
+    queryClient.setQueryData(eventKeys.list(workspaceId, streamId), {
+      pages: [{ events: [], hasMore: true, cursor: anchorEvents[0].sequence }],
+      pageParams: [undefined],
+    })
+    // After seeding, hasNextPage becomes true — trigger fetch immediately
     fetchOlderPage()
-  }, [isFetchingOlder, olderData, jumpState, bootstrap?.events, queryClient, workspaceId, streamId, fetchOlderPage])
+  }, [isFetchingOlder, hasOlderPage, jumpState, bootstrap?.events, queryClient, workspaceId, streamId, fetchOlderPage])
 
   // Auto-load all older events on mount when loadAll is true (e.g. thread panels)
   const loadAll = options?.loadAll ?? false
@@ -171,15 +178,17 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
   const fetchNewerEvents = useCallback(() => {
     if (!jumpState || isFetchingNewer) return
 
-    if (!newerData?.pages.some((p) => p.events.length > 0)) {
-      const newestSeq = jumpState.newestSequence
-      queryClient.setQueryData(eventKeys.newer(workspaceId, streamId), {
-        pages: [{ events: [], hasMore: true }],
-        pageParams: [newestSeq],
-      })
+    if (hasNewerPage) {
+      fetchNewerPage()
+      return
     }
+
+    queryClient.setQueryData(eventKeys.newer(workspaceId, streamId), {
+      pages: [{ events: [], hasMore: true, cursor: jumpState.newestSequence }],
+      pageParams: [undefined],
+    })
     fetchNewerPage()
-  }, [jumpState, isFetchingNewer, newerData, queryClient, workspaceId, streamId, fetchNewerPage])
+  }, [jumpState, isFetchingNewer, hasNewerPage, queryClient, workspaceId, streamId, fetchNewerPage])
 
   /**
    * Jump to a specific event (e.g. from search). Loads events around it
