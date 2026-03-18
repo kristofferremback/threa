@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, type RefObject } from "react"
+import { useRef, useEffect, useLayoutEffect, useCallback, type RefObject } from "react"
 import { EVENT_PAGE_SIZE, SCROLL_FETCH_RATIO } from "@/lib/constants"
 
 interface UseScrollBehaviorOptions {
@@ -64,8 +64,10 @@ export function useScrollBehavior({
     }
   }, [])
 
-  // Scroll position preservation and initial scroll
-  useEffect(() => {
+  // Scroll position preservation and initial scroll.
+  // useLayoutEffect runs synchronously after DOM mutation but before paint,
+  // preventing a visible one-frame scroll jump when older messages are prepended.
+  useLayoutEffect(() => {
     const el = scrollContainerRef.current
     if (!el || isLoading) return
 
@@ -94,7 +96,8 @@ export function useScrollBehavior({
 
   // Capture previous-render values AFTER the adjustment effect has read them.
   // No dep array → runs every render, defined after adjustment so it runs second.
-  useEffect(() => {
+  // Must also be useLayoutEffect to maintain ordering with the adjustment above.
+  useLayoutEffect(() => {
     prevIsFetchingOlder.current = isFetchingOlder
     const el = scrollContainerRef.current
     if (el) {
