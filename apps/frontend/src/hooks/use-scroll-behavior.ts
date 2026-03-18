@@ -61,15 +61,6 @@ export function useScrollBehavior({
     }
   }, [])
 
-  // Capture scroll height before DOM updates (when item count is about to change)
-  // This runs synchronously before paint via useLayoutEffect-like timing in the effect below
-  useEffect(() => {
-    const el = scrollContainerRef.current
-    if (el) {
-      prevScrollHeight.current = el.scrollHeight
-    }
-  })
-
   // Scroll position preservation and initial scroll
   useEffect(() => {
     const el = scrollContainerRef.current
@@ -95,6 +86,16 @@ export function useScrollBehavior({
       scrollToBottom()
     }
   }, [isLoading, itemCount, scrollToBottom, bottomThreshold])
+
+  // Capture scrollHeight AFTER the adjustment effect has read prevScrollHeight.
+  // No dep array → runs every render, but defined after adjustment so it runs second,
+  // storing the current render's height for the *next* render's adjustment.
+  useEffect(() => {
+    const el = scrollContainerRef.current
+    if (el) {
+      prevScrollHeight.current = el.scrollHeight
+    }
+  })
 
   // Auto-scroll to bottom when the container shrinks (e.g. mobile keyboard opens).
   // This keeps the latest messages visible instead of being pushed off-screen.

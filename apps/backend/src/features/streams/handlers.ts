@@ -75,6 +75,23 @@ const addMemberSchema = z.object({
   memberId: z.string().min(1, "memberId is required"),
 })
 
+const listEventsQuerySchema = z.object({
+  type: z.union([z.string(), z.array(z.string())]).optional(),
+  limit: z.coerce.number().int().positive().max(200).optional(),
+  after: z.string().optional(),
+  before: z.string().optional(),
+})
+
+const listEventsAroundQuerySchema = z
+  .object({
+    eventId: z.string().optional(),
+    messageId: z.string().optional(),
+    limit: z.coerce.number().int().positive().max(100).optional(),
+  })
+  .refine((d) => d.eventId ?? d.messageId, {
+    message: "eventId or messageId is required",
+  })
+
 // Exhaustive: adding a StreamType forces a decision here
 const addMemberAllowed: Record<StreamType, boolean> = {
   [StreamTypes.CHANNEL]: true,
@@ -228,7 +245,15 @@ export function createStreamHandlers({ streamService, eventService, activityServ
       const userId = req.user!.id
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
-      const { type, limit, after, before } = req.query
+
+      const result = listEventsQuerySchema.safeParse(req.query)
+      if (!result.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: z.flattenError(result.error).fieldErrors,
+        })
+      }
+      const { type, limit, after, before } = result.data
 
       await streamService.validateStreamAccess(streamId, workspaceId, userId)
 
@@ -236,9 +261,9 @@ export function createStreamHandlers({ streamService, eventService, activityServ
 
       const events = await eventService.listEvents(streamId, {
         types,
-        limit: limit ? parseInt(limit as string, 10) : undefined,
-        afterSequence: after ? BigInt(after as string) : undefined,
-        beforeSequence: before ? BigInt(before as string) : undefined,
+        limit,
+        afterSequence: after ? BigInt(after) : undefined,
+        beforeSequence: before ? BigInt(before) : undefined,
         viewerId: userId,
       })
 
@@ -249,21 +274,21 @@ export function createStreamHandlers({ streamService, eventService, activityServ
       const userId = req.user!.id
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
-      const { eventId, messageId, limit } = req.query
 
-      // Accept either eventId or messageId — search returns message IDs
-      const targetId = (eventId ?? messageId) as string | undefined
-      if (!targetId || typeof targetId !== "string") {
-        throw new HttpError("eventId or messageId query parameter is required", {
-          status: 400,
-          code: "MISSING_TARGET_ID",
+      const parsed = listEventsAroundQuerySchema.safeParse(req.query)
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: z.flattenError(parsed.error).fieldErrors,
         })
       }
+      const { eventId, messageId, limit } = parsed.data
+      const targetId = (eventId ?? messageId)!
 
       await streamService.validateStreamAccess(streamId, workspaceId, userId)
 
       const result = await eventService.listEventsAround(streamId, targetId, {
-        limit: limit ? parseInt(limit as string, 10) : undefined,
+        limit,
         viewerId: userId,
       })
 
