@@ -120,6 +120,10 @@ export interface PendingMessage {
   streamId: string
   content: string
   contentFormat: "markdown" | "plaintext"
+  /** ProseMirror JSON content for sending to the API */
+  contentJson?: JSONContent
+  /** Attachment IDs to include with the message */
+  attachmentIds?: string[]
   createdAt: number // timestamp for ordering
   retryCount: number
 }

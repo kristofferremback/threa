@@ -47,7 +47,7 @@ export { useSocketEvents } from "./use-socket-events"
 
 export { useStreamSocket } from "./use-stream-socket"
 
-export { usePendingMessageRetry } from "./use-pending-message-retry"
+export { useMessageQueue } from "./use-message-queue"
 
 export { useAttachments, type PendingAttachment, type UseAttachmentsReturn } from "./use-attachments"
 

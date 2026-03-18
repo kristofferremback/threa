@@ -46,6 +46,8 @@ vi.mock("@/contexts", async (importOriginal) => {
     usePendingMessages: () => ({
       getStatus: () => "sent",
       retryMessage: vi.fn(),
+      notifyQueue: vi.fn(),
+      registerQueueNotify: vi.fn(),
     }),
     usePanel: () => ({
       panelId: null,
