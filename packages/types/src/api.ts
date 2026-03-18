@@ -71,6 +71,8 @@ export interface CreateMessageInputJson {
   /** Optional pre-computed markdown (backend derives if missing) */
   contentMarkdown?: string
   attachmentIds?: string[]
+  /** Client-generated idempotency key to prevent duplicate sends on retry */
+  clientMessageId?: string
 }
 
 export interface CreateDmMessageInputJson {
@@ -80,6 +82,8 @@ export interface CreateDmMessageInputJson {
   /** Optional pre-computed markdown (backend derives if missing) */
   contentMarkdown?: string
   attachmentIds?: string[]
+  /** Client-generated idempotency key to prevent duplicate sends on retry */
+  clientMessageId?: string
 }
 
 /**
@@ -90,6 +94,8 @@ export interface CreateMessageInputMarkdown {
   /** Markdown text content */
   content: string
   attachmentIds?: string[]
+  /** Client-generated idempotency key to prevent duplicate sends on retry */
+  clientMessageId?: string
 }
 
 export interface CreateDmMessageInputMarkdown {
@@ -97,6 +103,8 @@ export interface CreateDmMessageInputMarkdown {
   /** Markdown text content */
   content: string
   attachmentIds?: string[]
+  /** Client-generated idempotency key to prevent duplicate sends on retry */
+  clientMessageId?: string
 }
 
 /**

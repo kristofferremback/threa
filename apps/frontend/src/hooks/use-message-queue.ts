@@ -71,6 +71,7 @@ export function useMessageQueue(): void {
             contentJson,
             contentMarkdown: next.content,
             attachmentIds: next.attachmentIds,
+            clientMessageId: next.clientId,
           })
 
           await db.pendingMessages.delete(next.clientId)

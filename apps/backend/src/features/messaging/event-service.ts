@@ -69,6 +69,8 @@ export interface CreateMessageParams {
   attachmentIds?: string[]
   sources?: SourceItem[]
   sessionId?: string
+  /** Client-generated idempotency key to prevent duplicate sends on retry */
+  clientMessageId?: string
 }
 
 export interface EditMessageParams {
@@ -105,6 +107,14 @@ export interface RemoveReactionParams {
   userId: string
 }
 
+/** Sentinel thrown when ON CONFLICT DO NOTHING suppresses a duplicate messages INSERT.
+ *  Carries the existing message so the caller can return it after the txn rolls back. */
+class DuplicateMessageError extends Error {
+  constructor(readonly existingMessage: Message) {
+    super("Duplicate clientMessageId detected via ON CONFLICT")
+  }
+}
+
 export class EventService {
   constructor(private pool: Pool) {}
 
@@ -136,20 +146,29 @@ export class EventService {
   }
 
   async createMessage(params: CreateMessageParams): Promise<Message> {
+    try {
+      return await this._createMessageTxn(params)
+    } catch (error) {
+      // Concurrent duplicate: the txn rolled back (no orphaned stream_events/outbox),
+      // and we return the already-committed message from the winning transaction.
+      if (error instanceof DuplicateMessageError) return error.existingMessage
+      throw error
+    }
+  }
+
+  private async _createMessageTxn(params: CreateMessageParams): Promise<Message> {
     return withTransaction(this.pool, async (client) => {
+      // Fast path: if a message with this clientMessageId already exists,
+      // return it without doing any writes. Handles sequential retries.
+      if (params.clientMessageId) {
+        const existing = await MessageRepository.findByClientMessageId(client, params.streamId, params.clientMessageId)
+        if (existing) return existing
+      }
       const msgId = messageId()
       const evtId = eventId()
 
-      // 0. Get stream for metrics and thread handling
+      // 0. Get stream for thread handling (metrics deferred until after conflict check)
       const stream = await StreamRepository.findById(client, params.streamId)
-      const streamType = stream?.type || "unknown"
-
-      // Increment message counter
-      messagesTotal.inc({
-        workspace_id: params.workspaceId,
-        stream_type: streamType,
-        author_type: params.authorType,
-      })
 
       // 1. Validate and prepare attachments FIRST (before creating event)
       let attachmentSummaries: AttachmentSummary[] | undefined
@@ -202,6 +221,23 @@ export class EventService {
         authorType: params.authorType,
         contentJson: params.contentJson,
         contentMarkdown: params.contentMarkdown,
+        clientMessageId: params.clientMessageId,
+      })
+
+      // Concurrent duplicate detected: ON CONFLICT DO NOTHING suppressed our INSERT,
+      // so the repository returned the existing message (different ID). Throw to
+      // rollback the transaction — this prevents orphaned stream_events and outbox
+      // entries that would reference our never-created msgId (INV-20).
+      if (message.id !== msgId) {
+        throw new DuplicateMessageError(message)
+      }
+
+      // Increment only after confirming this transaction owns the new message,
+      // so concurrent duplicate losers (rolled back above) never overcount.
+      messagesTotal.inc({
+        workspace_id: params.workspaceId,
+        stream_type: stream?.type || "unknown",
+        author_type: params.authorType,
       })
 
       // 4. Update author's read position to include their own message
