@@ -308,20 +308,19 @@ export class PushService {
     // Best-effort delivery — some subscriptions may already be stale
     await this.sendAndEvictStale(workspaceId, subscriptions, pushPayload)
 
-    // Clean up remaining subscriptions so no further notifications are sent
-    const remainingIds = (await PushSubscriptionRepository.findByUserId(this.pool, workspaceId, userId)).map(
-      (s) => s.id
-    )
-    if (remainingIds.length > 0) {
-      try {
-        await PushSubscriptionRepository.deleteByIds(this.pool, workspaceId, remainingIds)
-        logger.info(
-          { workspaceId, userId, count: remainingIds.length },
-          "Cleaned up push subscriptions for expired session"
-        )
-      } catch (err) {
-        logger.warn({ err, workspaceId, userId }, "Failed to clean up push subscriptions for expired session")
-      }
+    // Clean up remaining subscriptions so no further notifications are sent.
+    // Reuse the IDs we already have rather than re-fetching (INV-20: avoids
+    // select-then-delete race where a concurrent subscribe could be wiped).
+    // deleteByIds is a no-op for IDs already removed by sendAndEvictStale.
+    const subscriptionIds = subscriptions.map((s) => s.id)
+    try {
+      await PushSubscriptionRepository.deleteByIds(this.pool, workspaceId, subscriptionIds)
+      logger.info(
+        { workspaceId, userId, count: subscriptionIds.length },
+        "Cleaned up push subscriptions for expired session"
+      )
+    } catch (err) {
+      logger.warn({ err, workspaceId, userId }, "Failed to clean up push subscriptions for expired session")
     }
   }
 
