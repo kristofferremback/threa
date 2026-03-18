@@ -23,7 +23,7 @@ interface JumpState {
 }
 
 function sortBySequence(events: StreamEvent[]): StreamEvent[] {
-  return events.sort((a, b) => {
+  return [...events].sort((a, b) => {
     const seqA = BigInt(a.sequence)
     const seqB = BigInt(b.sequence)
     if (seqA < seqB) return -1

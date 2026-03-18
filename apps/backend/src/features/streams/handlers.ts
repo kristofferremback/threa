@@ -102,6 +102,10 @@ const listEventsAroundQuerySchema = z
     message: "eventId or messageId is required",
     path: ["eventId"],
   })
+  .refine((d) => !(d.eventId && d.messageId), {
+    message: "provide eventId or messageId, not both",
+    path: ["eventId"],
+  })
 
 // Exhaustive: adding a StreamType forces a decision here
 const addMemberAllowed: Record<StreamType, boolean> = {
