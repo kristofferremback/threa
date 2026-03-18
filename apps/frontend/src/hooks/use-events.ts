@@ -64,8 +64,8 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
   const [jumpState, setJumpState] = useState<JumpState | null>(null)
 
   // Infinite query for older events (backward pagination).
-  // Seeded via setQueryData with a cursor-only page; getNextPageParam reads the cursor
-  // from either the fetched events or the seed page's cursor field.
+  // enabled: false — never auto-fetches. Triggered exclusively via seed + fetchOlderPage().
+  // This prevents an initial dummy page from poisoning the hasRunQuery check.
   const {
     data: olderData,
     fetchNextPage: fetchOlderPage,
@@ -86,15 +86,16 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
     },
     getNextPageParam: (lastPage) => {
       if (!lastPage.hasMore) return undefined
-      // Seed pages have no events but carry a cursor for the first real fetch
+      // Seed pages carry a cursor but no events
       if (lastPage.events.length === 0) return lastPage.cursor
       return lastPage.events[0].sequence
     },
     initialPageParam: undefined as string | undefined,
-    enabled: shouldFetch && !!workspaceId && !!streamId && (!!bootstrap || !!jumpState),
+    enabled: false,
   })
 
-  // Infinite query for newer events (forward pagination, only active in jump-to mode)
+  // Infinite query for newer events (forward pagination, only active in jump-to mode).
+  // Also enabled: false — triggered via seed + fetchNewerPage().
   const {
     data: newerData,
     fetchNextPage: fetchNewerPage,
@@ -119,7 +120,7 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
       return lastPage.events[lastPage.events.length - 1].sequence
     },
     initialPageParam: undefined as string | undefined,
-    enabled: shouldFetch && !!jumpState,
+    enabled: false,
   })
 
   // Combine all event sources
