@@ -336,9 +336,6 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
 
       // Upsert bot entity and emit outbox event in a transaction
       const { bot } = await withTransaction(pool, async (client) => {
-        const existing = await BotRepository.findByApiKeyId(client, workspaceId, apiKey.id)
-        const nameChanged = existing && existing.name !== botName
-
         const { bot: upsertedBot, isInsert } = await BotRepository.upsert(client, {
           id: botId(),
           workspaceId,
@@ -351,7 +348,10 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
             workspaceId,
             bot: serializeBot(upsertedBot),
           })
-        } else if (nameChanged) {
+        } else {
+          // Always emit bot:updated on non-insert — the upsert overwrites the name
+          // unconditionally, so skipping the event based on a pre-read would race
+          // under concurrent requests (INV-20). Idempotent updates are harmless.
           await OutboxRepository.insert(client, "bot:updated", {
             workspaceId,
             bot: serializeBot(upsertedBot),
