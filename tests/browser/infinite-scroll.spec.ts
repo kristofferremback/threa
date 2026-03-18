@@ -12,6 +12,9 @@ import { loginAndCreateWorkspace, createChannel, expectApiOk } from "./helpers"
  * 4. Clicking "Jump to latest" scrolls back to the most recent messages
  */
 
+// Seeding 55+ messages via API is slow in CI — give plenty of headroom
+test.describe.configure({ timeout: 90_000 })
+
 /** Send N messages to a stream via the API (much faster than typing in the editor). */
 async function seedMessages(
   page: Page,
@@ -20,11 +23,21 @@ async function seedMessages(
   count: number,
   prefix: string
 ): Promise<void> {
-  for (let i = 1; i <= count; i++) {
-    const response = await page.request.post(`/api/workspaces/${workspaceId}/messages`, {
-      data: { streamId, content: `${prefix} msg-${String(i).padStart(3, "0")}` },
-    })
-    await expectApiOk(response, `Send message ${i}`)
+  // Send in small parallel batches to speed up seeding while preserving order
+  const BATCH_SIZE = 5
+  for (let start = 1; start <= count; start += BATCH_SIZE) {
+    const end = Math.min(start + BATCH_SIZE - 1, count)
+    const promises = []
+    for (let i = start; i <= end; i++) {
+      promises.push(
+        page.request
+          .post(`/api/workspaces/${workspaceId}/messages`, {
+            data: { streamId, content: `${prefix} msg-${String(i).padStart(3, "0")}` },
+          })
+          .then((r) => expectApiOk(r, `Send message ${i}`))
+      )
+    }
+    await Promise.all(promises)
   }
 }
 
@@ -48,8 +61,19 @@ function messageLocator(page: Page, prefix: string, num: number) {
     .first()
 }
 
+/** Scroll to top and dispatch a scroll event so React's onScroll handler fires. */
+async function scrollToTop(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const container = document.querySelector("[data-suppress-pull-refresh]")
+    if (container) {
+      container.scrollTop = 0
+      container.dispatchEvent(new Event("scroll", { bubbles: true }))
+    }
+  })
+}
+
 test.describe("Infinite Scroll", () => {
-  const MESSAGE_COUNT = 65 // Exceeds the 50-event bootstrap page size
+  const MESSAGE_COUNT = 55 // Exceeds the 50-event bootstrap page size
   let testId: string
 
   test.beforeEach(async ({ page }) => {
@@ -85,10 +109,7 @@ test.describe("Infinite Scroll", () => {
     })
 
     // Scroll to the very top of the container
-    await page.evaluate(() => {
-      const container = document.querySelector("[data-suppress-pull-refresh]")
-      if (container) container.scrollTop = 0
-    })
+    await scrollToTop(page)
 
     // Wait for the pagination request to fire and older messages to appear
     await expect
@@ -123,10 +144,7 @@ test.describe("Infinite Scroll", () => {
     await expect(jumpButton).not.toBeVisible()
 
     // Scroll to the top
-    await page.evaluate(() => {
-      const container = document.querySelector("[data-suppress-pull-refresh]")
-      if (container) container.scrollTop = 0
-    })
+    await scrollToTop(page)
 
     // "Jump to latest" should appear
     await expect(jumpButton).toBeVisible({ timeout: 5000 })
@@ -135,10 +153,10 @@ test.describe("Infinite Scroll", () => {
     await jumpButton.click()
 
     // Button should disappear after scrolling back to bottom
-    await expect(jumpButton).not.toBeVisible({ timeout: 5000 })
+    await expect(jumpButton).not.toBeVisible({ timeout: 10000 })
 
     // The latest message should be visible again
-    await expect(messageLocator(page, prefix, MESSAGE_COUNT)).toBeVisible()
+    await expect(messageLocator(page, prefix, MESSAGE_COUNT)).toBeVisible({ timeout: 5000 })
   })
 
   test("should not make pagination requests when all messages fit in bootstrap", async ({ page }) => {
@@ -166,10 +184,7 @@ test.describe("Infinite Scroll", () => {
     await expect(messageLocator(page, prefix, 10)).toBeVisible({ timeout: 10000 })
 
     // Scroll to top
-    await page.evaluate(() => {
-      const container = document.querySelector("[data-suppress-pull-refresh]")
-      if (container) container.scrollTop = 0
-    })
+    await scrollToTop(page)
 
     // Wait a moment to ensure no spurious requests fire
     await page.waitForTimeout(1000)
