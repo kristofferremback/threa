@@ -167,16 +167,8 @@ export class EventService {
       const msgId = messageId()
       const evtId = eventId()
 
-      // 0. Get stream for metrics and thread handling
+      // 0. Get stream for thread handling (metrics deferred until after conflict check)
       const stream = await StreamRepository.findById(client, params.streamId)
-      const streamType = stream?.type || "unknown"
-
-      // Increment message counter
-      messagesTotal.inc({
-        workspace_id: params.workspaceId,
-        stream_type: streamType,
-        author_type: params.authorType,
-      })
 
       // 1. Validate and prepare attachments FIRST (before creating event)
       let attachmentSummaries: AttachmentSummary[] | undefined
@@ -239,6 +231,14 @@ export class EventService {
       if (message.id !== msgId) {
         throw new DuplicateMessageError(message)
       }
+
+      // Increment only after confirming this transaction owns the new message,
+      // so concurrent duplicate losers (rolled back above) never overcount.
+      messagesTotal.inc({
+        workspace_id: params.workspaceId,
+        stream_type: stream?.type || "unknown",
+        author_type: params.authorType,
+      })
 
       // 4. Update author's read position to include their own message
       // This ensures the sender's own message is never counted as unread
