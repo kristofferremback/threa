@@ -119,6 +119,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     activityService,
     commandRegistry,
     avatarService,
+    pool,
   })
   const stream = createStreamHandlers({ streamService, eventService, activityService })
   const message = createMessageHandlers({ pool, eventService, streamService, commandRegistry })

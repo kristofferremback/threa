@@ -22,6 +22,9 @@ const NO_SCOPE_KEY = `test__${TEST_ORG_ID}__messages:search`
 // Different permissions string → stub resolves to a different key ID
 const SECOND_WRITE_KEY = `test__${TEST_ORG_ID}__messages:write,messages:read`
 
+// Stub API key service returns "Test API Key" as the name for all test keys
+const STUB_API_KEY_NAME = "Test API Key"
+
 interface TestContext {
   workspaceId: string
   publicChannelId: string
@@ -223,10 +226,10 @@ describe("Public API v1 — CRUD Endpoints", () => {
   })
 
   describe("Send Message", () => {
-    test("should create a bot message and return 201", async () => {
+    test("should create a bot message with name from API key", async () => {
       const res = await apiPost(
         `/api/v1/workspaces/${ctx.workspaceId}/streams/${ctx.publicChannelId}/messages`,
-        { content: `Bot message ${testRunId}`, displayName: "GitHub CI" },
+        { content: `Bot message ${testRunId}` },
         MESSAGES_WRITE_KEY
       )
       expect(res.status).toBe(201)
@@ -241,7 +244,7 @@ describe("Public API v1 — CRUD Endpoints", () => {
         }
       }
       expect(body.data.authorType).toBe("bot")
-      expect(body.data.authorDisplayName).toBe("GitHub CI")
+      expect(body.data.authorDisplayName).toBe(STUB_API_KEY_NAME)
       expect(body.data.authorId).toMatch(/^bot_/)
       expect(body.data.content).toContain(`Bot message ${testRunId}`)
     })
@@ -250,7 +253,7 @@ describe("Public API v1 — CRUD Endpoints", () => {
       // Send a bot message
       await apiPost(
         `/api/v1/workspaces/${ctx.workspaceId}/streams/${ctx.publicChannelId}/messages`,
-        { content: `List test ${testRunId}`, displayName: "ListBot" },
+        { content: `List test ${testRunId}` },
         MESSAGES_WRITE_KEY
       )
 
@@ -268,8 +271,7 @@ describe("Public API v1 — CRUD Endpoints", () => {
       // The bot message should have authorDisplayName resolved
       const botMsg = body.data.find((m) => m.content.includes(`List test ${testRunId}`))
       expect(botMsg).toBeDefined()
-      // The same API key sent it, so the bot name is the latest display name used
-      expect(botMsg!.authorDisplayName).toBeTruthy()
+      expect(botMsg!.authorDisplayName).toBe(STUB_API_KEY_NAME)
 
       // User messages should have null authorDisplayName
       const userMsg = body.data.find((m) => m.authorType === "user")
@@ -280,7 +282,7 @@ describe("Public API v1 — CRUD Endpoints", () => {
     test("should return 403 for inaccessible stream", async () => {
       const res = await apiPost(
         `/api/v1/workspaces/${ctx.workspaceId}/streams/${ctx.privateChannelId}/messages`,
-        { content: "test", displayName: "Bot" },
+        { content: "test" },
         MESSAGES_WRITE_KEY
       )
       expect(res.status).toBe(403)
@@ -289,25 +291,16 @@ describe("Public API v1 — CRUD Endpoints", () => {
     test("should return 403 without messages:write scope", async () => {
       const res = await apiPost(
         `/api/v1/workspaces/${ctx.workspaceId}/streams/${ctx.publicChannelId}/messages`,
-        { content: "test", displayName: "Bot" },
+        { content: "test" },
         NO_SCOPE_KEY
       )
       expect(res.status).toBe(403)
     })
 
-    test("should return 400 for missing displayName", async () => {
-      const res = await apiPost(
-        `/api/v1/workspaces/${ctx.workspaceId}/streams/${ctx.publicChannelId}/messages`,
-        { content: "test" },
-        MESSAGES_WRITE_KEY
-      )
-      expect(res.status).toBe(400)
-    })
-
     test("should return 400 for empty content", async () => {
       const res = await apiPost(
         `/api/v1/workspaces/${ctx.workspaceId}/streams/${ctx.publicChannelId}/messages`,
-        { content: "", displayName: "Bot" },
+        { content: "" },
         MESSAGES_WRITE_KEY
       )
       expect(res.status).toBe(400)
@@ -321,7 +314,7 @@ describe("Public API v1 — CRUD Endpoints", () => {
       // Create a bot message to update
       const res = await apiPost(
         `/api/v1/workspaces/${ctx.workspaceId}/streams/${ctx.publicChannelId}/messages`,
-        { content: `To update ${testRunId}`, displayName: "UpdateBot" },
+        { content: `To update ${testRunId}` },
         MESSAGES_WRITE_KEY
       )
       const body = (await res.json()) as { data: { id: string } }
@@ -374,7 +367,7 @@ describe("Public API v1 — CRUD Endpoints", () => {
       // Create and delete a message, then try updating
       const createRes = await apiPost(
         `/api/v1/workspaces/${ctx.workspaceId}/streams/${ctx.publicChannelId}/messages`,
-        { content: `Soft-delete update test ${testRunId}`, displayName: "Bot" },
+        { content: `Soft-delete update test ${testRunId}` },
         MESSAGES_WRITE_KEY
       )
       const createBody = (await createRes.json()) as { data: { id: string } }
@@ -397,7 +390,7 @@ describe("Public API v1 — CRUD Endpoints", () => {
       // Create a bot message to delete
       const res = await apiPost(
         `/api/v1/workspaces/${ctx.workspaceId}/streams/${ctx.publicChannelId}/messages`,
-        { content: `To delete ${testRunId}`, displayName: "DeleteBot" },
+        { content: `To delete ${testRunId}` },
         MESSAGES_WRITE_KEY
       )
       const body = (await res.json()) as { data: { id: string } }
@@ -413,7 +406,7 @@ describe("Public API v1 — CRUD Endpoints", () => {
       // Create a message with MESSAGES_WRITE_KEY, try to delete with SECOND_WRITE_KEY
       const createRes = await apiPost(
         `/api/v1/workspaces/${ctx.workspaceId}/streams/${ctx.publicChannelId}/messages`,
-        { content: `Cross-key delete test ${testRunId}`, displayName: "CrossKeyBot" },
+        { content: `Cross-key delete test ${testRunId}` },
         MESSAGES_WRITE_KEY
       )
       const createBody = (await createRes.json()) as { data: { id: string } }
@@ -437,7 +430,7 @@ describe("Public API v1 — CRUD Endpoints", () => {
       // Create and delete a message, then try deleting again
       const createRes = await apiPost(
         `/api/v1/workspaces/${ctx.workspaceId}/streams/${ctx.publicChannelId}/messages`,
-        { content: `Double-delete test ${testRunId}`, displayName: "DeleteBot" },
+        { content: `Double-delete test ${testRunId}` },
         MESSAGES_WRITE_KEY
       )
       const createBody = (await createRes.json()) as { data: { id: string } }
@@ -490,6 +483,33 @@ describe("Public API v1 — CRUD Endpoints", () => {
     test("should return 403 without users:read scope", async () => {
       const res = await apiGet(`/api/v1/workspaces/${ctx.workspaceId}/users`, NO_SCOPE_KEY)
       expect(res.status).toBe(403)
+    })
+  })
+
+  describe("Bootstrap includes bots", () => {
+    test("should include bots array in workspace bootstrap after bot message is sent", async () => {
+      // Ensure at least one bot exists by sending a message
+      await apiPost(
+        `/api/v1/workspaces/${ctx.workspaceId}/streams/${ctx.publicChannelId}/messages`,
+        { content: `Bootstrap bot test ${testRunId}` },
+        MESSAGES_WRITE_KEY
+      )
+
+      // Fetch bootstrap as the authenticated user
+      const client = new TestClient()
+      await loginAs(client, testEmail("setup"), `CrudUser ${testRunId}`)
+      const { data: bootstrapData } = await client.get<{
+        data: { bots: Array<{ id: string; name: string; workspaceId: string }> }
+      }>(`/api/workspaces/${ctx.workspaceId}/bootstrap`)
+
+      expect(bootstrapData.data.bots).toBeDefined()
+      expect(Array.isArray(bootstrapData.data.bots)).toBe(true)
+      expect(bootstrapData.data.bots.length).toBeGreaterThanOrEqual(1)
+
+      const bot = bootstrapData.data.bots[0]
+      expect(bot.id).toMatch(/^bot_/)
+      expect(bot.name).toBe(STUB_API_KEY_NAME)
+      expect(bot.workspaceId).toBe(ctx.workspaceId)
     })
   })
 })

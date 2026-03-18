@@ -9,6 +9,7 @@ import type { CommandRegistry } from "../commands"
 import type { AvatarService } from "./avatar-service"
 import { getEmojiList } from "../emoji"
 import { getEffectiveLevel } from "../streams"
+import { BotRepository, serializeBot } from "../public-api"
 import { displayNameFromWorkos } from "@threa/backend-common"
 import { HttpError } from "../../lib/errors"
 
@@ -45,6 +46,7 @@ interface Dependencies {
   activityService?: ActivityService
   commandRegistry: CommandRegistry
   avatarService: AvatarService
+  pool: import("pg").Pool
 }
 
 export function createWorkspaceHandlers({
@@ -55,6 +57,7 @@ export function createWorkspaceHandlers({
   activityService,
   commandRegistry,
   avatarService,
+  pool,
 }: Dependencies) {
   return {
     async list(req: Request, res: Response) {
@@ -113,11 +116,12 @@ export function createWorkspaceHandlers({
       const userId = req.user!.id
       const workspaceId = req.workspaceId!
 
-      const [workspace, users, streams, personas, emojiWeights, userPreferences, dmPeers] = await Promise.all([
+      const [workspace, users, streams, personas, bots, emojiWeights, userPreferences, dmPeers] = await Promise.all([
         workspaceService.getWorkspaceById(workspaceId),
         workspaceService.getUsers(workspaceId),
         streamService.listWithPreviews(workspaceId, userId),
         workspaceService.getPersonasForWorkspace(workspaceId),
+        BotRepository.listByWorkspace(pool, workspaceId),
         workspaceService.getEmojiWeights(workspaceId, userId),
         userPreferencesService.getPreferences(workspaceId, userId),
         streamService.listDmPeers(workspaceId, userId),
@@ -186,6 +190,7 @@ export function createWorkspaceHandlers({
           streams: resolvedStreams,
           streamMemberships,
           personas,
+          bots: bots.map(serializeBot),
           emojis: getEmojiList(),
           emojiWeights,
           commands,

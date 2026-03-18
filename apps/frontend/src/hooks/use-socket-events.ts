@@ -12,6 +12,7 @@ import { workspaceKeys } from "./use-workspaces"
 import type {
   Stream,
   User,
+  Bot,
   WorkspaceBootstrap,
   StreamMember,
   UserPreferences,
@@ -704,6 +705,31 @@ export function useSocketEvents(workspaceId: string) {
       })
     })
 
+    // Handle bot created
+    socket.on("bot:created", (payload: { workspaceId: string; bot: Bot }) => {
+      if (payload.workspaceId !== workspaceId) return
+
+      updateBootstrapOrInvalidate(queryClient, workspaceId, (old) => {
+        const exists = old.bots?.some((b) => b.id === payload.bot.id)
+        if (exists) return old
+        return { ...old, bots: [...(old.bots ?? []), payload.bot] }
+      })
+
+      db.bots.put({ ...payload.bot, _cachedAt: Date.now() })
+    })
+
+    // Handle bot updated
+    socket.on("bot:updated", (payload: { workspaceId: string; bot: Bot }) => {
+      if (payload.workspaceId !== workspaceId) return
+
+      updateBootstrapOrInvalidate(queryClient, workspaceId, (old) => ({
+        ...old,
+        bots: (old.bots ?? []).map((b) => (b.id === payload.bot.id ? payload.bot : b)),
+      }))
+
+      db.bots.put({ ...payload.bot, _cachedAt: Date.now() })
+    })
+
     // Handle activity created (mentions and notification-level activities)
     socket.on("activity:created", (payload: ActivityCreatedPayload) => {
       if (payload.workspaceId !== workspaceId) return
@@ -745,6 +771,8 @@ export function useSocketEvents(workspaceId: string) {
       socket.off("stream:member_added")
       socket.off("stream:member_removed")
       socket.off("user_preferences:updated")
+      socket.off("bot:created")
+      socket.off("bot:updated")
       socket.off("activity:created")
     }
   }, [socket, workspaceId, queryClient, reconnectCount])

@@ -7,12 +7,15 @@ import type { ApiKeyChannelService } from "../api-keys"
 import type { EventService } from "../messaging"
 import { StreamRepository } from "../streams"
 import { UserRepository } from "../workspaces"
-import { BotRepository } from "./bot-repository"
+import { BotRepository, type Bot } from "./bot-repository"
 import { STREAM_TYPES, AuthorTypes } from "@threa/types"
+import type { Bot as WireBot } from "@threa/types"
 import { HttpError } from "@threa/backend-common"
 import { normalizeMessage, toEmoji } from "../emoji"
 import { parseMarkdown } from "@threa/prosemirror"
 import { botId } from "../../lib/id"
+import { withTransaction } from "../../db"
+import { OutboxRepository } from "../../lib/outbox"
 
 const PUBLIC_SEARCH_MAX_LIMIT = 50
 
@@ -48,7 +51,6 @@ const listMessagesSchema = z
 
 const sendMessageSchema = z.object({
   content: z.string().min(1, "content is required"),
-  displayName: z.string().min(1, "displayName is required").max(100),
 })
 
 const updateMessageSchema = z.object({
@@ -107,6 +109,18 @@ function serializeMessage(
     replyCount: message.replyCount,
     editedAt: message.editedAt?.toISOString() ?? null,
     createdAt: message.createdAt.toISOString(),
+  }
+}
+
+export function serializeBot(bot: Bot): WireBot {
+  return {
+    id: bot.id,
+    workspaceId: bot.workspaceId,
+    name: bot.name,
+    description: bot.description,
+    avatarEmoji: bot.avatarEmoji,
+    createdAt: bot.createdAt.toISOString(),
+    updatedAt: bot.updatedAt.toISOString(),
   }
 }
 
@@ -311,7 +325,8 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
         })
       }
 
-      const { content, displayName } = result.data
+      const { content } = result.data
+      const botName = apiKey.name
 
       // Verify stream access
       const accessibleStreamIds = await getAccessibleStreamIds(req)
@@ -319,12 +334,31 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
         throw new HttpError("Stream not accessible", { status: 403, code: "FORBIDDEN" })
       }
 
-      // Upsert bot entity (creates on first use, updates name if changed)
-      const bot = await BotRepository.upsert(pool, {
-        id: botId(),
-        workspaceId,
-        apiKeyId: apiKey.id,
-        name: displayName,
+      // Upsert bot entity and emit outbox event in a transaction
+      const { bot } = await withTransaction(pool, async (client) => {
+        const existing = await BotRepository.findByApiKeyId(client, workspaceId, apiKey.id)
+        const nameChanged = existing && existing.name !== botName
+
+        const { bot: upsertedBot, isInsert } = await BotRepository.upsert(client, {
+          id: botId(),
+          workspaceId,
+          apiKeyId: apiKey.id,
+          name: botName,
+        })
+
+        if (isInsert) {
+          await OutboxRepository.insert(client, "bot:created", {
+            workspaceId,
+            bot: serializeBot(upsertedBot),
+          })
+        } else if (nameChanged) {
+          await OutboxRepository.insert(client, "bot:updated", {
+            workspaceId,
+            bot: serializeBot(upsertedBot),
+          })
+        }
+
+        return { bot: upsertedBot }
       })
 
       // Normalize and parse content

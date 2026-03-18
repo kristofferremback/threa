@@ -49,6 +49,8 @@ export {
   type StreamReadOutboxPayload,
   type StreamsReadAllOutboxPayload,
   type UserPreferencesUpdatedOutboxPayload,
+  type BotCreatedOutboxPayload,
+  type BotUpdatedOutboxPayload,
   type BudgetAlertOutboxPayload,
   type InvitationAcceptedOutboxPayload,
   type ActivityCreatedOutboxPayload,

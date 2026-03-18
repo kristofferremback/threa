@@ -7,6 +7,7 @@ export type {
   CachedDmPeer,
   CachedEvent,
   CachedPersona,
+  CachedBot,
   PendingMessage,
   SyncCursor,
   DraftScratchpad,

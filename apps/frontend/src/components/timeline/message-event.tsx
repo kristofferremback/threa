@@ -98,6 +98,7 @@ function MessageLayout({
 }: MessageLayoutProps) {
   const isPersona = event.actorType === "persona"
   const isSystem = event.actorType === "system"
+  const isBot = event.actorType === "bot"
   const isUser = event.actorType === "user"
   const { openUserProfile } = useUserProfile()
 
@@ -110,12 +111,15 @@ function MessageLayout({
         // AI/Persona messages get full-width gradient with gold accent
         isPersona &&
           "bg-gradient-to-r from-primary/[0.06] to-transparent py-4 shadow-[inset_3px_0_0_hsl(var(--primary))]",
+        // Bot messages get emerald accent
+        isBot && "bg-gradient-to-r from-emerald-500/[0.06] to-transparent py-4 shadow-[inset_3px_0_0_hsl(152_69%_41%)]",
         // System messages get a subtle info-toned accent
         isSystem &&
           "bg-gradient-to-r from-blue-500/[0.04] to-transparent py-4 shadow-[inset_3px_0_0_hsl(210_100%_55%)]",
         // Edit mode: pseudo-element background so no layout shift — zero padding/margin changes
         isEditing &&
           !isPersona &&
+          !isBot &&
           !isSystem &&
           "before:content-[''] before:absolute before:-top-4 before:-bottom-4 before:left-0 before:right-0 before:bg-primary/[0.04] before:-z-10",
         isHighlighted && "animate-highlight-flash",
@@ -128,7 +132,14 @@ function MessageLayout({
       ) : (
         <Avatar className="message-avatar h-9 w-9 rounded-[10px] shrink-0">
           {actorAvatarUrl && <AvatarImage src={actorAvatarUrl} alt={actorName} />}
-          <AvatarFallback className={cn("text-foreground", isSystem ? "bg-blue-500/10 text-blue-500" : "bg-muted")}>
+          <AvatarFallback
+            className={cn(
+              "text-foreground",
+              isSystem && "bg-blue-500/10 text-blue-500",
+              isBot && "bg-emerald-500/10 text-emerald-600",
+              !isSystem && !isBot && "bg-muted"
+            )}
+          >
             {actorInitials}
           </AvatarFallback>
         </Avatar>
@@ -144,7 +155,14 @@ function MessageLayout({
               {actorName}
             </button>
           ) : (
-            <span className={cn("font-semibold text-sm", isPersona && "text-primary", isSystem && "text-blue-500")}>
+            <span
+              className={cn(
+                "font-semibold text-sm",
+                isPersona && "text-primary",
+                isBot && "text-emerald-600",
+                isSystem && "text-blue-500"
+              )}
+            >
               {actorName}
             </span>
           )}

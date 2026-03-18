@@ -203,6 +203,16 @@ export interface Persona {
   updatedAt: string
 }
 
+export interface Bot {
+  id: string
+  workspaceId: string
+  name: string
+  description: string | null
+  avatarEmoji: string | null
+  createdAt: string
+  updatedAt: string
+}
+
 export interface Attachment {
   id: string
   workspaceId: string

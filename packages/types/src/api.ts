@@ -15,6 +15,7 @@ import type {
   User,
   WorkspaceInvitation,
   Persona,
+  Bot,
 } from "./domain"
 import type { UserPreferences } from "./preferences"
 
@@ -173,6 +174,7 @@ export interface WorkspaceBootstrap {
   streamMemberships: StreamMember[]
   dmPeers: Array<{ userId: string; streamId: string }>
   personas: Persona[]
+  bots: Bot[]
   emojis: EmojiEntry[]
   emojiWeights: Record<string, number>
   commands: CommandInfo[]
