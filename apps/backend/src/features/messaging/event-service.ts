@@ -115,14 +115,6 @@ class DuplicateMessageError extends Error {
   }
 }
 
-/** Thrown when an API key tries to modify a message it didn't create. */
-export class OwnershipError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = "OwnershipError"
-  }
-}
-
 export class EventService {
   constructor(private pool: Pool) {}
 

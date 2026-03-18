@@ -7,7 +7,7 @@ export { MessageVersionRepository } from "./version-repository"
 export type { MessageVersion } from "./version-repository"
 
 // Event Service
-export { EventService, OwnershipError } from "./event-service"
+export { EventService } from "./event-service"
 export type {
   AttachmentSummary,
   MessageCreatedPayload,
