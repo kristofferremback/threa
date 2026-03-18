@@ -334,7 +334,12 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
         throw new HttpError("Stream not accessible", { status: 403, code: "FORBIDDEN" })
       }
 
-      // Upsert bot entity and emit outbox event in a transaction
+      // Upsert bot entity and emit outbox event in a transaction.
+      // Note: this commits separately from createMessage below. If createMessage
+      // fails, clients may briefly see the bot identity without a message. This is
+      // acceptable — the bot existing without messages is a benign state, and
+      // merging both into one transaction would require eventService to accept a
+      // Querier, which is a larger refactor deferred until needed.
       const { bot } = await withTransaction(pool, async (client) => {
         const { bot: upsertedBot, isInsert } = await BotRepository.upsert(client, {
           id: botId(),

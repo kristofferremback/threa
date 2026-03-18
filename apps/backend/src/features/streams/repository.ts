@@ -182,34 +182,20 @@ export const StreamRepository = {
   ): Promise<Stream[]> {
     if (ids.length === 0) return []
 
-    const conditions: string[] = ["id = ANY($1)", "workspace_id = $2", "archived_at IS NULL"]
-    const params: unknown[] = [ids, workspaceId]
-    let paramIndex = 3
-
-    if (filters?.types?.length) {
-      conditions.push(`type = ANY($${paramIndex})`)
-      params.push(filters.types)
-      paramIndex++
-    }
-
-    if (filters?.query) {
-      const pattern = `%${filters.query}%`
-      conditions.push(`(display_name ILIKE $${paramIndex} OR slug ILIKE $${paramIndex})`)
-      params.push(pattern)
-      paramIndex++
-    }
-
     const limit = filters?.limit ?? 50
-    params.push(limit)
+    const typeFilter = filters?.types?.length ? sql`AND type = ANY(${filters.types})` : sql``
+    const queryFilter = filters?.query
+      ? sql`AND (display_name ILIKE ${`%${filters.query}%`} OR slug ILIKE ${`%${filters.query}%`})`
+      : sql``
 
-    const query = `
-      SELECT ${SELECT_FIELDS} FROM streams
-      WHERE ${conditions.join(" AND ")}
-      ORDER BY display_name NULLS LAST
-      LIMIT $${paramIndex}
-    `
-
-    const result = await db.query<StreamRow>(query, params)
+    const result = await db.query<StreamRow>(
+      sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams
+        WHERE id = ANY(${ids}) AND workspace_id = ${workspaceId} AND archived_at IS NULL
+        ${typeFilter}
+        ${queryFilter}
+        ORDER BY display_name NULLS LAST
+        LIMIT ${limit}`
+    )
     return result.rows.map(mapRowToStream)
   },
 
