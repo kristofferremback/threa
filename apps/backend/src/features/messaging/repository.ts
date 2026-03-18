@@ -206,9 +206,9 @@ export const MessageRepository = {
 
     // Use ON CONFLICT DO NOTHING when a clientMessageId is provided so that
     // concurrent retries don't throw a unique-constraint error (INV-20).
-    const conflictClause = clientMessageId
-      ? sql`ON CONFLICT (stream_id, client_message_id) WHERE client_message_id IS NOT NULL DO NOTHING`
-      : sql``
+    const onConflict = clientMessageId
+      ? "ON CONFLICT (stream_id, client_message_id) WHERE client_message_id IS NOT NULL DO NOTHING"
+      : ""
 
     const result = await db.query<MessageRow>(sql`
       INSERT INTO messages (id, stream_id, sequence, author_id, author_type, content_json, content_markdown, client_message_id)
@@ -222,7 +222,7 @@ export const MessageRepository = {
         ${params.contentMarkdown},
         ${clientMessageId}
       )
-      ${conflictClause}
+      ${sql.raw(onConflict)}
       RETURNING ${sql.raw(SELECT_FIELDS)}
     `)
 
