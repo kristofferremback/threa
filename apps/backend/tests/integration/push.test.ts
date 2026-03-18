@@ -424,7 +424,7 @@ describe("Push Notifications", () => {
   })
 
   describe("PushService.deliverPushForActivity", () => {
-    /** Create a session that's stale for the 60s active window but within the 7-day expiry window. */
+    /** Create a session that's stale for the 60s active window but within the 30-day expiry window. */
     async function createRecentInactiveSession(wId: string, uId: string, deviceKey = "d") {
       const s = await UserSessionRepository.upsert(pool, { workspaceId: wId, userId: uId, deviceKey })
       await pool.query(`UPDATE user_sessions SET last_active_at = now() - interval '2 minutes' WHERE id = $1`, [s.id])
@@ -604,7 +604,7 @@ describe("Push Notifications", () => {
     test("active + recently focused session → only pushes to active device", async () => {
       const service = createServiceWithLookups()
 
-      // Two subscriptions on different devices
+      // Two subscriptions on different devices, both with recent sessions
       await PushSubscriptionRepository.insert(pool, {
         workspaceId: testWorkspaceId,
         userId: testUserId,
@@ -622,7 +622,8 @@ describe("Push Notifications", () => {
         deviceKey: "device-2",
       })
 
-      // Only device-1 has an active, recently focused session
+      // Both devices have recent sessions (not expired), but only device-1 is actively focused
+      await createRecentInactiveSession(testWorkspaceId, testUserId, "device-2")
       await UserSessionRepository.upsert(pool, {
         workspaceId: testWorkspaceId,
         userId: testUserId,
@@ -639,7 +640,7 @@ describe("Push Notifications", () => {
       })
     })
 
-    test("active session on device without subscription → falls back to all subscriptions", async () => {
+    test("active session on device without subscription → falls back to all active subscriptions", async () => {
       const service = createServiceWithLookups()
 
       // Subscription on device-1, but active session only on device-2
@@ -652,6 +653,9 @@ describe("Push Notifications", () => {
         deviceKey: "device-1",
       })
 
+      // device-1 has a recent (but not active) session so it's not expired
+      await createRecentInactiveSession(testWorkspaceId, testUserId, "device-1")
+
       // Active, recently focused session on device-2 (no subscription here)
       await UserSessionRepository.upsert(pool, {
         workspaceId: testWorkspaceId,
@@ -662,14 +666,14 @@ describe("Push Notifications", () => {
 
       await service.deliverPushForActivity(makePayload())
 
-      // Intersection is empty (device-2 has session, device-1 has sub) → falls back to all
+      // Intersection is empty (device-2 has active session, device-1 has sub) → falls back to all active
       expect(sendSpy).toHaveBeenCalledTimes(1)
       expect(sendSpy.mock.calls[0][0]).toMatchObject({
         endpoint: "https://push.example.com/sub/device-1",
       })
     })
 
-    test("active session but not focused for 10m+ → pushes to all devices", async () => {
+    test("active session but not focused for 10m+ → pushes to all active devices", async () => {
       const service = createServiceWithLookups()
 
       await PushSubscriptionRepository.insert(pool, {
@@ -688,6 +692,9 @@ describe("Push Notifications", () => {
         auth: "a2",
         deviceKey: "device-2",
       })
+
+      // Both devices have recent sessions (not expired)
+      await createRecentInactiveSession(testWorkspaceId, testUserId, "device-2")
 
       // device-1 has active session (heartbeat recent) but was focused 15m ago
       const s1 = await UserSessionRepository.upsert(pool, {
@@ -733,12 +740,14 @@ describe("Push Notifications", () => {
         deviceKey: "device-2",
       })
 
-      // Session that's stale for the 60s active window but still within the 7-day expiry window
+      // Both devices have sessions that are stale for the 60s active window
+      // but still within the 30-day expiry window — not expired
       await createRecentInactiveSession(testWorkspaceId, testUserId, "device-1")
+      await createRecentInactiveSession(testWorkspaceId, testUserId, "device-2")
 
       await service.deliverPushForActivity(makePayload())
 
-      // Both devices receive normal push — user is offline but session not expired
+      // Both devices receive normal push — user is offline but sessions not expired
       expect(sendSpy).toHaveBeenCalledTimes(2)
       const calledEndpoints = sendSpy.mock.calls.map((c) => c[0].endpoint).sort()
       expect(calledEndpoints).toEqual([
