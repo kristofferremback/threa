@@ -228,7 +228,7 @@ export function createStreamHandlers({ streamService, eventService, activityServ
       const userId = req.user!.id
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
-      const { type, limit, after } = req.query
+      const { type, limit, after, before } = req.query
 
       await streamService.validateStreamAccess(streamId, workspaceId, userId)
 
@@ -238,10 +238,40 @@ export function createStreamHandlers({ streamService, eventService, activityServ
         types,
         limit: limit ? parseInt(limit as string, 10) : undefined,
         afterSequence: after ? BigInt(after as string) : undefined,
+        beforeSequence: before ? BigInt(before as string) : undefined,
         viewerId: userId,
       })
 
       res.json({ events: events.map(serializeEvent) })
+    },
+
+    async listEventsAround(req: Request, res: Response) {
+      const userId = req.user!.id
+      const workspaceId = req.workspaceId!
+      const { streamId } = req.params
+      const { eventId, messageId, limit } = req.query
+
+      // Accept either eventId or messageId — search returns message IDs
+      const targetId = (eventId ?? messageId) as string | undefined
+      if (!targetId || typeof targetId !== "string") {
+        throw new HttpError("eventId or messageId query parameter is required", {
+          status: 400,
+          code: "MISSING_TARGET_ID",
+        })
+      }
+
+      await streamService.validateStreamAccess(streamId, workspaceId, userId)
+
+      const result = await eventService.listEventsAround(streamId, targetId, {
+        limit: limit ? parseInt(limit as string, 10) : undefined,
+        viewerId: userId,
+      })
+
+      res.json({
+        events: result.events.map(serializeEvent),
+        hasOlder: result.hasOlder,
+        hasNewer: result.hasNewer,
+      })
     },
 
     async updateCompanionMode(req: Request, res: Response) {
@@ -402,6 +432,9 @@ export function createStreamHandlers({ streamService, eventService, activityServ
       // Get the latest sequence number from the most recent event
       const latestSequence = events.length > 0 ? events[events.length - 1].sequence : "0"
 
+      // Signal whether older events exist beyond this bootstrap window
+      const hasOlderEvents = events.length === 50
+
       res.json({
         data: {
           stream,
@@ -409,6 +442,7 @@ export function createStreamHandlers({ streamService, eventService, activityServ
           members,
           membership,
           latestSequence: latestSequence.toString(),
+          hasOlderEvents,
         },
       })
     },

@@ -55,6 +55,13 @@ export interface StreamBootstrap {
   members: StreamMember[]
   membership: StreamMember | null
   latestSequence: string
+  hasOlderEvents: boolean
+}
+
+export interface EventsAroundResponse {
+  events: StreamEvent[]
+  hasOlder: boolean
+  hasNewer: boolean
 }
 
 // ============================================================================

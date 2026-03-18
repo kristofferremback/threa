@@ -1,16 +1,54 @@
-import { useCallback, useMemo } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useStreamBootstrap, streamKeys } from "./use-streams"
 import { useStreamService } from "@/contexts"
 import { useQueryClient, useInfiniteQuery } from "@tanstack/react-query"
 import { db } from "@/db"
-import type { StreamEvent } from "@threa/types"
+import { EVENT_PAGE_SIZE } from "@/lib/constants"
+import type { StreamEvent, EventsAroundResponse } from "@threa/types"
 
 export const eventKeys = {
   all: ["events"] as const,
   list: (workspaceId: string, streamId: string) => [...eventKeys.all, "list", workspaceId, streamId] as const,
+  newer: (workspaceId: string, streamId: string) => [...eventKeys.all, "newer", workspaceId, streamId] as const,
 }
 
-export function useEvents(workspaceId: string, streamId: string, options?: { enabled?: boolean }) {
+interface JumpState {
+  events: StreamEvent[]
+  hasOlder: boolean
+  hasNewer: boolean
+  /** Sequence of the oldest event in the jump window — cursor for backward pagination */
+  oldestSequence: string
+  /** Sequence of the newest event in the jump window — cursor for forward pagination */
+  newestSequence: string
+}
+
+function sortBySequence(events: StreamEvent[]): StreamEvent[] {
+  return events.sort((a, b) => {
+    const seqA = BigInt(a.sequence)
+    const seqB = BigInt(b.sequence)
+    if (seqA < seqB) return -1
+    if (seqA > seqB) return 1
+    return 0
+  })
+}
+
+function dedupeAndSort(eventArrays: StreamEvent[][]): StreamEvent[] {
+  const eventMap = new Map<string, StreamEvent>()
+  for (const arr of eventArrays) {
+    for (const event of arr) {
+      eventMap.set(event.id, event)
+    }
+  }
+  return sortBySequence(Array.from(eventMap.values()))
+}
+
+async function cacheToIndexedDB(events: StreamEvent[]) {
+  if (events.length === 0) return
+  const now = Date.now()
+  await db.events.bulkPut(events.map((e) => ({ ...e, _cachedAt: now })))
+}
+
+export function useEvents(workspaceId: string, streamId: string, options?: { enabled?: boolean; loadAll?: boolean }) {
   const shouldFetch = options?.enabled ?? true
   const {
     data: bootstrap,
@@ -22,61 +60,171 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
   const streamService = useStreamService()
   const queryClient = useQueryClient()
 
-  // Use infinite query for pagination of older events
+  // Jump-to-message state: when set, replaces bootstrap as the anchor window
+  const [jumpState, setJumpState] = useState<JumpState | null>(null)
+
+  // Infinite query for older events (backward pagination)
   const {
-    data: paginatedData,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
+    data: olderData,
+    fetchNextPage: fetchOlderPage,
+    hasNextPage: hasOlderPage,
+    isFetchingNextPage: isFetchingOlder,
   } = useInfiniteQuery({
     queryKey: eventKeys.list(workspaceId, streamId),
     queryFn: async ({ pageParam }) => {
       if (!pageParam) {
-        // First page comes from bootstrap
-        return { events: [], hasMore: false }
+        return { events: [] as StreamEvent[], hasMore: false }
       }
-      // Fetch older events
       const events = await streamService.getEvents(workspaceId, streamId, {
         before: pageParam,
-        limit: 50,
+        limit: EVENT_PAGE_SIZE,
       })
-      // Cache to IndexedDB
-      const now = Date.now()
-      await db.events.bulkPut(events.map((e) => ({ ...e, _cachedAt: now })))
-      return { events, hasMore: events.length === 50 }
+      await cacheToIndexedDB(events)
+      return { events, hasMore: events.length === EVENT_PAGE_SIZE }
     },
     getNextPageParam: (lastPage) => {
       if (!lastPage.hasMore || lastPage.events.length === 0) return undefined
       return lastPage.events[0].sequence
     },
     initialPageParam: undefined as string | undefined,
-    enabled: shouldFetch && !!workspaceId && !!streamId && !!bootstrap,
+    enabled: shouldFetch && !!workspaceId && !!streamId && (!!bootstrap || !!jumpState),
   })
 
-  // Combine bootstrap events with paginated older events
-  const events = useMemo(() => {
-    const bootstrapEvents = bootstrap?.events ?? []
-    const olderEvents = paginatedData?.pages.flatMap((page) => page.events).filter((e) => e) ?? []
+  // Infinite query for newer events (forward pagination, only active in jump-to mode)
+  const {
+    data: newerData,
+    fetchNextPage: fetchNewerPage,
+    hasNextPage: hasNewerPage,
+    isFetchingNextPage: isFetchingNewer,
+  } = useInfiniteQuery({
+    queryKey: eventKeys.newer(workspaceId, streamId),
+    queryFn: async ({ pageParam }) => {
+      if (!pageParam) {
+        return { events: [] as StreamEvent[], hasMore: false }
+      }
+      const events = await streamService.getEvents(workspaceId, streamId, {
+        after: pageParam,
+        limit: EVENT_PAGE_SIZE,
+      })
+      await cacheToIndexedDB(events)
+      return { events, hasMore: events.length === EVENT_PAGE_SIZE }
+    },
+    getNextPageParam: (lastPage) => {
+      if (!lastPage.hasMore || lastPage.events.length === 0) return undefined
+      const last = lastPage.events[lastPage.events.length - 1]
+      return last.sequence
+    },
+    initialPageParam: undefined as string | undefined,
+    enabled: shouldFetch && !!jumpState,
+  })
 
-    // Merge and dedupe by ID, sorted by sequence ascending
-    const eventMap = new Map<string, StreamEvent>()
-    for (const event of [...olderEvents, ...bootstrapEvents]) {
-      eventMap.set(event.id, event)
+  // Combine all event sources
+  const events = useMemo(() => {
+    const olderEvents = olderData?.pages.flatMap((page) => page.events).filter(Boolean) ?? []
+    const newerEvents = newerData?.pages.flatMap((page) => page.events).filter(Boolean) ?? []
+
+    if (jumpState) {
+      return dedupeAndSort([jumpState.events, olderEvents, newerEvents])
     }
 
-    return Array.from(eventMap.values()).sort((a, b) => {
-      const seqA = BigInt(a.sequence)
-      const seqB = BigInt(b.sequence)
-      if (seqA < seqB) return -1
-      if (seqA > seqB) return 1
-      return 0
-    })
-  }, [bootstrap?.events, paginatedData])
+    const bootstrapEvents = bootstrap?.events ?? []
+    return dedupeAndSort([bootstrapEvents, olderEvents])
+  }, [bootstrap?.events, olderData, newerData, jumpState])
+
+  // Determine if older events exist
+  const hasOlderEvents = useMemo(() => {
+    if (hasOlderPage) return true
+    if (jumpState) return jumpState.hasOlder
+    return bootstrap?.hasOlderEvents ?? false
+  }, [hasOlderPage, jumpState, bootstrap?.hasOlderEvents])
+
+  // Determine if newer events exist (only in jump mode)
+  const hasNewerEvents = useMemo(() => {
+    if (!jumpState) return false
+    if (hasNewerPage) return true
+    return jumpState.hasNewer
+  }, [jumpState, hasNewerPage])
+
+  const fetchOlderEvents = useCallback(() => {
+    if (isFetchingOlder) return
+
+    // Set initial cursor if first backward fetch
+    if (!olderData?.pages.some((p) => p.events.length > 0)) {
+      const anchorEvents = jumpState ? jumpState.events : (bootstrap?.events ?? [])
+      if (anchorEvents.length === 0) return
+      const oldestSeq = anchorEvents[0].sequence
+      queryClient.setQueryData(eventKeys.list(workspaceId, streamId), {
+        pages: [{ events: [], hasMore: true }],
+        pageParams: [oldestSeq],
+      })
+    }
+    fetchOlderPage()
+  }, [isFetchingOlder, olderData, jumpState, bootstrap?.events, queryClient, workspaceId, streamId, fetchOlderPage])
+
+  // Auto-load all older events on mount when loadAll is true (e.g. thread panels)
+  const loadAll = options?.loadAll ?? false
+  useEffect(() => {
+    if (!loadAll || !hasOlderEvents || isFetchingOlder) return
+    fetchOlderEvents()
+  }, [loadAll, hasOlderEvents, isFetchingOlder, fetchOlderEvents])
+
+  const fetchNewerEvents = useCallback(() => {
+    if (!jumpState || isFetchingNewer) return
+
+    if (!newerData?.pages.some((p) => p.events.length > 0)) {
+      const newestSeq = jumpState.newestSequence
+      queryClient.setQueryData(eventKeys.newer(workspaceId, streamId), {
+        pages: [{ events: [], hasMore: true }],
+        pageParams: [newestSeq],
+      })
+    }
+    fetchNewerPage()
+  }, [jumpState, isFetchingNewer, newerData, queryClient, workspaceId, streamId, fetchNewerPage])
+
+  /**
+   * Jump to a specific event (e.g. from search). Loads events around it
+   * and switches to bidirectional pagination mode.
+   */
+  const jumpToEvent = useCallback(
+    async (targetEventId: string): Promise<boolean> => {
+      const result: EventsAroundResponse = await streamService.getEventsAround(
+        workspaceId,
+        streamId,
+        targetEventId,
+        EVENT_PAGE_SIZE
+      )
+      if (result.events.length === 0) return false
+
+      await cacheToIndexedDB(result.events)
+
+      const sorted = sortBySequence([...result.events])
+      setJumpState({
+        events: sorted,
+        hasOlder: result.hasOlder,
+        hasNewer: result.hasNewer,
+        oldestSequence: sorted[0].sequence,
+        newestSequence: sorted[sorted.length - 1].sequence,
+      })
+
+      // Reset pagination caches for this stream
+      queryClient.removeQueries({ queryKey: eventKeys.list(workspaceId, streamId) })
+      queryClient.removeQueries({ queryKey: eventKeys.newer(workspaceId, streamId) })
+
+      return true
+    },
+    [streamService, workspaceId, streamId, queryClient]
+  )
+
+  /** Exit jump mode and return to live tail (latest messages from bootstrap). */
+  const exitJumpMode = useCallback(() => {
+    setJumpState(null)
+    queryClient.removeQueries({ queryKey: eventKeys.list(workspaceId, streamId) })
+    queryClient.removeQueries({ queryKey: eventKeys.newer(workspaceId, streamId) })
+  }, [queryClient, workspaceId, streamId])
 
   // Handler to add a new event (from WebSocket or optimistic update)
   const addEvent = useCallback(
     async (event: StreamEvent) => {
-      // Update cache
       queryClient.setQueryData(streamKeys.bootstrap(workspaceId, streamId), (old: typeof bootstrap) => {
         if (!old) return old
         return {
@@ -85,7 +233,6 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
           latestSequence: event.sequence,
         }
       })
-      // Also cache to IndexedDB
       await db.events.put({ ...event, _cachedAt: Date.now() })
     },
     [queryClient, workspaceId, streamId]
@@ -101,7 +248,6 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
           events: old.events.map((e) => (e.id === eventId ? { ...e, ...updates } : e)),
         }
       })
-      // Update IndexedDB
       await db.events.update(eventId, updates)
     },
     [queryClient, workspaceId, streamId]
@@ -111,9 +257,15 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
     events,
     isLoading,
     error,
-    fetchOlderEvents: fetchNextPage,
-    hasOlderEvents: hasNextPage ?? false,
-    isFetchingOlder: isFetchingNextPage,
+    fetchOlderEvents,
+    hasOlderEvents,
+    isFetchingOlder,
+    fetchNewerEvents,
+    hasNewerEvents,
+    isFetchingNewer,
+    jumpToEvent,
+    exitJumpMode,
+    isJumpMode: !!jumpState,
     addEvent,
     updateEvent,
     latestSequence: bootstrap?.latestSequence ?? "0",

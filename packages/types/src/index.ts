@@ -195,6 +195,7 @@ export type {
   UpdateStreamInput,
   UpdateCompanionModeInput,
   StreamBootstrap,
+  EventsAroundResponse,
   // Messages
   CreateMessageInput,
   CreateMessageInputJson,

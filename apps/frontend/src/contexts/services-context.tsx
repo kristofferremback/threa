@@ -24,6 +24,7 @@ export interface StreamService {
   archive: typeof streamsApi.archive
   unarchive: typeof streamsApi.unarchive
   getEvents: typeof streamsApi.getEvents
+  getEventsAround: typeof streamsApi.getEventsAround
   markAsRead: typeof streamsApi.markAsRead
   checkSlugAvailable: typeof streamsApi.checkSlugAvailable
   setNotificationLevel: typeof streamsApi.setNotificationLevel
