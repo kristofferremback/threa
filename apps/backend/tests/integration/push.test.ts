@@ -845,7 +845,7 @@ describe("Push Notifications", () => {
         deviceKey: "device-1",
       })
 
-      // Create a session that's recent (within 30-day window)
+      // Create a session that's recent (within 7-day expiry window)
       await UserSessionRepository.upsert(pool, {
         workspaceId: testWorkspaceId,
         userId: testUserId,

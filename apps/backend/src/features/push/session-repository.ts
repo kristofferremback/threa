@@ -98,8 +98,8 @@ export const UserSessionRepository = {
 
   /**
    * Check whether a user has had any session activity within the given window.
-   * Used to detect expired auth sessions: if no heartbeat has arrived in a long
-   * window (e.g. 30 days), the user is likely logged out on all devices.
+   * Used to detect expired auth sessions: if no heartbeat has arrived within
+   * the session GC window (7 days), the user is likely logged out on all devices.
    */
   async hasAnyRecentSession(db: Querier, workspaceId: string, userId: string, windowMs: number): Promise<boolean> {
     const result = await db.query<{ exists: boolean }>(sql`
