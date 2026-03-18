@@ -168,15 +168,16 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
       return
     }
 
-    // Seed with a cursor-only page so getNextPageParam returns the anchor cursor.
-    // The setQueryData triggers a re-render where hasOlderPage becomes true,
-    // and the next scroll event or loadAll effect will call fetchOlderPage.
+    // Seed with a cursor-only page, then fetch immediately.
+    // setQueryData updates TanStack Query's internal cache synchronously,
+    // so fetchOlderPage picks up the cursor without needing a second trigger.
     const anchorEvents = jumpState ? jumpState.events : (bootstrap?.events ?? [])
     if (anchorEvents.length === 0) return
     queryClient.setQueryData(eventKeys.list(workspaceId, streamId), {
       pages: [{ events: [], hasMore: true, cursor: anchorEvents[0].sequence }],
       pageParams: [undefined],
     })
+    fetchOlderPage()
   }, [isFetchingOlder, hasOlderPage, jumpState, bootstrap?.events, queryClient, workspaceId, streamId, fetchOlderPage])
 
   // Auto-load all older events on mount when loadAll is true (e.g. thread panels)
@@ -198,6 +199,7 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
       pages: [{ events: [], hasMore: true, cursor: jumpState.newestSequence }],
       pageParams: [undefined],
     })
+    fetchNewerPage()
   }, [jumpState, isFetchingNewer, hasNewerPage, queryClient, workspaceId, streamId, fetchNewerPage])
 
   /**
