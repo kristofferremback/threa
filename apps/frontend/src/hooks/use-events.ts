@@ -140,9 +140,12 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
   // exclusively — the bootstrap hint is stale after the first fetch.
   const hasOlderEvents = useMemo(() => {
     if (hasOlderPage) return true
-    if (jumpState) return jumpState.hasOlder
+    // Once a query has run and exhausted all pages, trust that over bootstrap/jump hints.
+    // hasOlderPage is checked first, so the seed-page case (pages.length = 1, hasOlderPage = true)
+    // is already handled above.
     const hasRunQuery = (olderData?.pages.length ?? 0) > 0
     if (hasRunQuery) return false
+    if (jumpState) return jumpState.hasOlder
     return bootstrap?.hasOlderEvents ?? false
   }, [hasOlderPage, jumpState, olderData?.pages.length, bootstrap?.hasOlderEvents])
 

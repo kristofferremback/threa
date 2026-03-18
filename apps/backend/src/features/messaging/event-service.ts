@@ -487,7 +487,7 @@ export class EventService {
       targetEvent = await StreamEventRepository.findById(this.pool, targetId)
       if (targetEvent && targetEvent.streamId !== streamId) targetEvent = null
     }
-    if (!targetEvent) {
+    if (!targetEvent && options?.idType !== "event") {
       targetEvent = await StreamEventRepository.findByMessageId(this.pool, streamId, targetId)
     }
     if (!targetEvent) {
