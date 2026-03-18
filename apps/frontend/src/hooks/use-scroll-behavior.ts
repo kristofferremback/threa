@@ -98,7 +98,7 @@ export function useScrollBehavior({
     } else if (shouldAutoScroll.current) {
       scrollToBottom()
     }
-  }, [isLoading, itemCount, scrollToBottom, bottomThreshold, isFetchingOlder])
+  }, [isLoading, itemCount, scrollToBottom, isFetchingOlder])
 
   // Capture previous-render values AFTER the adjustment effect has read them.
   // No dep array → runs every render, defined after adjustment so it runs second.
@@ -158,7 +158,6 @@ export function useScrollBehavior({
 
     // Load newer content when near bottom (jump-to mode)
     if (onScrollNearBottom && !isFetchingNewer) {
-      const distanceFromBottom = scrollHeight - scrollTop - clientHeight
       if (distanceFromBottom < triggerPixels) {
         onScrollNearBottom()
       }

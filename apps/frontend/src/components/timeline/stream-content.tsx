@@ -142,10 +142,11 @@ export function StreamContent({
     }
   }, [highlightMessageId, isLoading, isDraft, events, jumpToEvent])
 
-  // Reset jump trigger when stream changes
+  // Reset jump trigger and exit jump mode when stream changes
   useEffect(() => {
     jumpTriggeredRef.current = null
-  }, [streamId])
+    exitJumpMode()
+  }, [streamId, exitJumpMode])
 
   // Resolve current workspace-scoped user ID. The hook deduplicates with SentMessageEvent instances.
   const currentWorkspaceUserId = useWorkspaceUserId(workspaceId)
