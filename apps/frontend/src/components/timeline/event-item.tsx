@@ -110,7 +110,7 @@ export function EventItem({
 
 function DeletedMessageEvent(_props: { event: StreamEvent }) {
   return (
-    <div className="py-2 text-center">
+    <div className="py-2 px-3 sm:px-6 text-center">
       <p className="text-sm italic text-muted-foreground">This message was deleted</p>
     </div>
   )

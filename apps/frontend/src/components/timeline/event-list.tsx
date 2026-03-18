@@ -209,7 +209,7 @@ export function EventList({
   }
 
   return (
-    <div className="flex flex-col p-3 sm:p-6 mx-auto max-w-[800px] w-full min-w-0">
+    <div className="flex flex-col py-3 sm:py-6 mx-auto max-w-[800px] w-full min-w-0">
       {timelineItems.map((item) => {
         const showUnreadDivider = isFirstUnread(item)
         let eventId: string
@@ -227,13 +227,19 @@ export function EventList({
         return (
           <div key={eventId} className={showUnreadDivider ? "relative" : undefined}>
             {showUnreadDivider && <UnreadDivider isFading={isDividerFading} />}
-            {item.type === "command_group" && <CommandEvent events={item.events} />}
+            {item.type === "command_group" && (
+              <div className="px-3 sm:px-6">
+                <CommandEvent events={item.events} />
+              </div>
+            )}
             {item.type === "session_group" && !hideSessionCards && (
-              <AgentSessionEvent
-                events={item.events}
-                sessionVersion={item.sessionVersion}
-                liveCounts={sessionLiveCounts.get(item.sessionId)}
-              />
+              <div className="px-3 sm:px-6">
+                <AgentSessionEvent
+                  events={item.events}
+                  sessionVersion={item.sessionVersion}
+                  liveCounts={sessionLiveCounts.get(item.sessionId)}
+                />
+              </div>
             )}
             {item.type === "event" && (
               <EventItem

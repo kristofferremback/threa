@@ -106,18 +106,18 @@ function MessageLayout({
       ref={containerRef}
       {...touchHandlers}
       className={cn(
-        "message-item group relative flex gap-[14px] mb-5",
+        "message-item group relative flex gap-[14px] mb-5 px-3 sm:px-6",
         // AI/Persona messages get full-width gradient with gold accent
         isPersona &&
-          "bg-gradient-to-r from-primary/[0.06] to-transparent -mx-3 px-3 sm:-mx-6 sm:px-6 py-4 shadow-[inset_3px_0_0_hsl(var(--primary))]",
+          "bg-gradient-to-r from-primary/[0.06] to-transparent py-4 shadow-[inset_3px_0_0_hsl(var(--primary))]",
         // System messages get a subtle info-toned accent
         isSystem &&
-          "bg-gradient-to-r from-blue-500/[0.04] to-transparent -mx-3 px-3 sm:-mx-6 sm:px-6 py-4 shadow-[inset_3px_0_0_hsl(210_100%_55%)]",
+          "bg-gradient-to-r from-blue-500/[0.04] to-transparent py-4 shadow-[inset_3px_0_0_hsl(210_100%_55%)]",
         // Edit mode: pseudo-element background so no layout shift — zero padding/margin changes
         isEditing &&
           !isPersona &&
           !isSystem &&
-          "before:content-[''] before:absolute before:-top-4 before:-bottom-4 before:-left-3 before:-right-3 sm:before:-left-6 sm:before:-right-6 before:bg-primary/[0.04] before:-z-10",
+          "before:content-[''] before:absolute before:-top-4 before:-bottom-4 before:left-0 before:right-0 before:bg-primary/[0.04] before:-z-10",
         isHighlighted && "animate-highlight-flash",
         isNew && !isHighlighted && "animate-new-message-fade",
         containerClassName
