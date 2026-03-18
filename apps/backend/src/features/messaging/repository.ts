@@ -202,6 +202,14 @@ export const MessageRepository = {
   },
 
   async insert(db: Querier, params: InsertMessageParams): Promise<Message> {
+    const clientMessageId = params.clientMessageId ?? null
+
+    // Use ON CONFLICT DO NOTHING when a clientMessageId is provided so that
+    // concurrent retries don't throw a unique-constraint error (INV-20).
+    const conflictClause = clientMessageId
+      ? sql`ON CONFLICT (stream_id, client_message_id) WHERE client_message_id IS NOT NULL DO NOTHING`
+      : sql``
+
     const result = await db.query<MessageRow>(sql`
       INSERT INTO messages (id, stream_id, sequence, author_id, author_type, content_json, content_markdown, client_message_id)
       VALUES (
@@ -212,10 +220,19 @@ export const MessageRepository = {
         ${params.authorType},
         ${JSON.stringify(params.contentJson)},
         ${params.contentMarkdown},
-        ${params.clientMessageId ?? null}
+        ${clientMessageId}
       )
+      ${conflictClause}
       RETURNING ${sql.raw(SELECT_FIELDS)}
     `)
+
+    // If ON CONFLICT swallowed the insert, the duplicate already exists — fetch it.
+    if (!result.rows[0] && clientMessageId) {
+      const existing = await this.findByClientMessageId(db, params.streamId, clientMessageId)
+      if (existing) return existing
+      throw new Error(`Insert conflict but no existing message found for clientMessageId ${clientMessageId}`)
+    }
+
     return mapRowToMessage(result.rows[0])
   },
 

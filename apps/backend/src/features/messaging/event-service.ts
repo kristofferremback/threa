@@ -138,17 +138,17 @@ export class EventService {
   }
 
   async createMessage(params: CreateMessageParams): Promise<Message> {
-    // Idempotency check: if the client sent a clientMessageId and a message with that
-    // clientMessageId already exists for this stream, return the existing message
-    // instead of creating a duplicate. This handles the case where the send
-    // succeeded but the client's local cleanup was interrupted (tab suspension,
-    // device sleep) and the message queue re-sends on reconnect.
-    if (params.clientMessageId) {
-      const existing = await MessageRepository.findByClientMessageId(this.pool, params.streamId, params.clientMessageId)
-      if (existing) return existing
-    }
-
     return withTransaction(this.pool, async (client) => {
+      // Idempotency check inside the transaction: if a message with this
+      // clientMessageId already exists for this stream, return it instead of
+      // creating a duplicate. Running inside the transaction avoids a TOCTOU
+      // race where two concurrent retries both pass a pre-check (INV-20).
+      // The unique index on (stream_id, client_message_id) + ON CONFLICT in
+      // the repository insert provide a second safety net.
+      if (params.clientMessageId) {
+        const existing = await MessageRepository.findByClientMessageId(client, params.streamId, params.clientMessageId)
+        if (existing) return existing
+      }
       const msgId = messageId()
       const evtId = eventId()
 
