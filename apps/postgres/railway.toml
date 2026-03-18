@@ -6,3 +6,4 @@ watchPatterns = ["Dockerfile.postgres"]
 
 [deploy]
 restartPolicyType = "ALWAYS"
+requiredMountPath = "/var/lib/postgresql/data"
