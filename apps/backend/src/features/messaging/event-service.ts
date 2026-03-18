@@ -107,6 +107,14 @@ export interface RemoveReactionParams {
   userId: string
 }
 
+/** Sentinel thrown when ON CONFLICT DO NOTHING suppresses a duplicate messages INSERT.
+ *  Carries the existing message so the caller can return it after the txn rolls back. */
+class DuplicateMessageError extends Error {
+  constructor(readonly existingMessage: Message) {
+    super("Duplicate clientMessageId detected via ON CONFLICT")
+  }
+}
+
 export class EventService {
   constructor(private pool: Pool) {}
 
@@ -138,13 +146,20 @@ export class EventService {
   }
 
   async createMessage(params: CreateMessageParams): Promise<Message> {
+    try {
+      return await this._createMessageTxn(params)
+    } catch (error) {
+      // Concurrent duplicate: the txn rolled back (no orphaned stream_events/outbox),
+      // and we return the already-committed message from the winning transaction.
+      if (error instanceof DuplicateMessageError) return error.existingMessage
+      throw error
+    }
+  }
+
+  private async _createMessageTxn(params: CreateMessageParams): Promise<Message> {
     return withTransaction(this.pool, async (client) => {
-      // Idempotency check inside the transaction: if a message with this
-      // clientMessageId already exists for this stream, return it instead of
-      // creating a duplicate. Running inside the transaction avoids a TOCTOU
-      // race where two concurrent retries both pass a pre-check (INV-20).
-      // The unique index on (stream_id, client_message_id) + ON CONFLICT in
-      // the repository insert provide a second safety net.
+      // Fast path: if a message with this clientMessageId already exists,
+      // return it without doing any writes. Handles sequential retries.
       if (params.clientMessageId) {
         const existing = await MessageRepository.findByClientMessageId(client, params.streamId, params.clientMessageId)
         if (existing) return existing
@@ -216,6 +231,14 @@ export class EventService {
         contentMarkdown: params.contentMarkdown,
         clientMessageId: params.clientMessageId,
       })
+
+      // Concurrent duplicate detected: ON CONFLICT DO NOTHING suppressed our INSERT,
+      // so the repository returned the existing message (different ID). Throw to
+      // rollback the transaction — this prevents orphaned stream_events and outbox
+      // entries that would reference our never-created msgId (INV-20).
+      if (message.id !== msgId) {
+        throw new DuplicateMessageError(message)
+      }
 
       // 4. Update author's read position to include their own message
       // This ensures the sender's own message is never counted as unread
