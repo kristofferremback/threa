@@ -96,7 +96,7 @@ const listEventsAroundQuerySchema = z
   .object({
     eventId: z.string().optional(),
     messageId: z.string().optional(),
-    limit: z.coerce.number().int().positive().max(100).optional(),
+    limit: z.coerce.number().int().min(2).max(100).optional(),
   })
   .refine((d) => d.eventId ?? d.messageId, {
     message: "eventId or messageId is required",
