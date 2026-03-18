@@ -488,9 +488,9 @@ export class EventService {
       if (targetEvent && targetEvent.streamId !== streamId) targetEvent = null
     }
     if (!targetEvent) {
-      targetEvent = await StreamEventRepository.findByMessageId(this.pool, targetId)
+      targetEvent = await StreamEventRepository.findByMessageId(this.pool, streamId, targetId)
     }
-    if (!targetEvent || targetEvent.streamId !== streamId) {
+    if (!targetEvent) {
       return { events: [], hasOlder: false, hasNewer: false }
     }
     return StreamEventRepository.listAround(this.pool, streamId, targetEvent.sequence, options)

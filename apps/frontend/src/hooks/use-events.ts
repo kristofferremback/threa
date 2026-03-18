@@ -238,6 +238,7 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
   // Handler to add a new event (from WebSocket or optimistic update)
   const addEvent = useCallback(
     async (event: StreamEvent) => {
+      // Always update bootstrap (live tail source of truth)
       queryClient.setQueryData(streamKeys.bootstrap(workspaceId, streamId), (old: typeof bootstrap) => {
         if (!old) return old
         return {
@@ -245,6 +246,11 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
           events: [...old.events, event],
           latestSequence: event.sequence,
         }
+      })
+      // Also update jump state so new messages appear during jump mode
+      setJumpState((prev) => {
+        if (!prev) return prev
+        return { ...prev, events: [...prev.events, event], newestSequence: event.sequence }
       })
       await db.events.put({ ...event, _cachedAt: Date.now() })
     },
@@ -254,13 +260,27 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
   // Handler to update an existing event (edit/delete)
   const updateEvent = useCallback(
     async (eventId: string, updates: Partial<StreamEvent>) => {
+      const mapEvent = (e: StreamEvent) => (e.id === eventId ? { ...e, ...updates } : e)
+
       queryClient.setQueryData(streamKeys.bootstrap(workspaceId, streamId), (old: typeof bootstrap) => {
         if (!old) return old
-        return {
-          ...old,
-          events: old.events.map((e) => (e.id === eventId ? { ...e, ...updates } : e)),
-        }
+        return { ...old, events: old.events.map(mapEvent) }
       })
+      // Update jump state and pagination caches so edits appear in jump mode
+      setJumpState((prev) => {
+        if (!prev) return prev
+        return { ...prev, events: prev.events.map(mapEvent) }
+      })
+      // Update older/newer page caches
+      for (const key of [eventKeys.list(workspaceId, streamId), eventKeys.newer(workspaceId, streamId)]) {
+        queryClient.setQueryData(key, (old: typeof olderData) => {
+          if (!old) return old
+          return {
+            ...old,
+            pages: old.pages.map((page) => ({ ...page, events: page.events.map(mapEvent) })),
+          }
+        })
+      }
       await db.events.update(eventId, updates)
     },
     [queryClient, workspaceId, streamId]

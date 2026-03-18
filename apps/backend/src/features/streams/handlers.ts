@@ -75,6 +75,9 @@ const addMemberSchema = z.object({
   memberId: z.string().min(1, "memberId is required"),
 })
 
+/** Default number of events returned in bootstrap and event list queries. */
+const EVENTS_DEFAULT_LIMIT = 50
+
 const numericString = z.string().regex(/^\d+$/, "must be a numeric string")
 
 const listEventsQuerySchema = z
@@ -455,7 +458,7 @@ export function createStreamHandlers({ streamService, eventService, activityServ
 
       // Fetch all data in parallel - threads with counts is a single optimized query
       const [events, members, membership, threadDataMap] = await Promise.all([
-        eventService.listEvents(streamId, { limit: 50, viewerId: userId }),
+        eventService.listEvents(streamId, { limit: EVENTS_DEFAULT_LIMIT, viewerId: userId }),
         streamService.getMembers(streamId),
         streamService.getMembership(streamId, userId),
         streamService.getThreadsWithReplyCounts(streamId),
@@ -467,7 +470,7 @@ export function createStreamHandlers({ streamService, eventService, activityServ
       const latestSequence = events.length > 0 ? events[events.length - 1].sequence : "0"
 
       // Signal whether older events exist beyond this bootstrap window
-      const hasOlderEvents = events.length === 50
+      const hasOlderEvents = events.length === EVENTS_DEFAULT_LIMIT
 
       res.json({
         data: {

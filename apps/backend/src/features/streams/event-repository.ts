@@ -269,12 +269,13 @@ export const StreamEventRepository = {
     return result.rows[0] ? mapRowToEvent(result.rows[0]) : null
   },
 
-  /** Find the message_created event for a given message ID. */
-  async findByMessageId(db: Querier, messageId: string): Promise<StreamEvent | null> {
+  /** Find the message_created event for a given message ID within a stream. */
+  async findByMessageId(db: Querier, streamId: string, messageId: string): Promise<StreamEvent | null> {
     const result = await db.query<StreamEventRow>(sql`
       SELECT id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at
       FROM stream_events
-      WHERE event_type = 'message_created'
+      WHERE stream_id = ${streamId}
+        AND event_type = 'message_created'
         AND payload->>'messageId' = ${messageId}
       LIMIT 1
     `)
