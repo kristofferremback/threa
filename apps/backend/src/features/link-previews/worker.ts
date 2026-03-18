@@ -86,15 +86,18 @@ async function fetchMetadata(url: string): Promise<UpdateLinkPreviewParams> {
     const maxBytes = 100 * 1024
     let totalBytes = 0
 
-    while (totalBytes < maxBytes) {
-      const { done, value } = await reader.read()
-      if (done) break
-      html += decoder.decode(value, { stream: true })
-      totalBytes += value.byteLength
-      // Stop once we have </head> — no need to parse body
-      if (html.includes("</head>")) break
+    try {
+      while (totalBytes < maxBytes) {
+        const { done, value } = await reader.read()
+        if (done) break
+        html += decoder.decode(value, { stream: true })
+        totalBytes += value.byteLength
+        // Stop once we have </head> — no need to parse body
+        if (html.includes("</head>")) break
+      }
+    } finally {
+      reader.cancel()
     }
-    reader.cancel()
 
     return parseHtmlMeta(html, url)
   } catch (err) {
