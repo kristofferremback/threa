@@ -13,7 +13,7 @@ export function createLinkPreviewHandlers(deps: HandlerDeps) {
     async getForMessage(req: Request, res: Response, next: NextFunction) {
       try {
         const { workspaceId, messageId } = req.params
-        const userId = (req as any).workspaceUser.id
+        const userId = req.user!.id
 
         const previews = await linkPreviewService.getPreviewsForMessage(workspaceId, messageId)
         const dismissals = await linkPreviewService.getDismissals(workspaceId, userId, [messageId])
@@ -33,22 +33,9 @@ export function createLinkPreviewHandlers(deps: HandlerDeps) {
     async dismiss(req: Request, res: Response, next: NextFunction) {
       try {
         const { workspaceId, messageId, linkPreviewId } = req.params
-        const userId = (req as any).workspaceUser.id
+        const userId = req.user!.id
 
         await linkPreviewService.dismiss(workspaceId, userId, messageId, linkPreviewId)
-        res.json({ ok: true })
-      } catch (err) {
-        next(err)
-      }
-    },
-
-    /** DELETE /api/workspaces/:workspaceId/messages/:messageId/link-previews/:linkPreviewId/dismiss */
-    async undismiss(req: Request, res: Response, next: NextFunction) {
-      try {
-        const { workspaceId, messageId, linkPreviewId } = req.params
-        const userId = (req as any).workspaceUser.id
-
-        await linkPreviewService.undismiss(workspaceId, userId, messageId, linkPreviewId)
         res.json({ ok: true })
       } catch (err) {
         next(err)

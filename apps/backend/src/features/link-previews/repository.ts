@@ -205,20 +205,6 @@ export const LinkPreviewRepository = {
     )
   },
 
-  async undismiss(
-    querier: Querier,
-    workspaceId: string,
-    userId: string,
-    messageId: string,
-    linkPreviewId: string
-  ): Promise<void> {
-    await querier.query(
-      sql`DELETE FROM user_link_preview_dismissals
-          WHERE workspace_id = $1 AND user_id = $2 AND message_id = $3 AND link_preview_id = $4`,
-      [workspaceId, userId, messageId, linkPreviewId]
-    )
-  },
-
   async findDismissals(
     querier: Querier,
     workspaceId: string,

@@ -16,8 +16,4 @@ export const linkPreviewsApi = {
   async dismiss(workspaceId: string, messageId: string, linkPreviewId: string): Promise<void> {
     await api.post(`/api/workspaces/${workspaceId}/messages/${messageId}/link-previews/${linkPreviewId}/dismiss`)
   },
-
-  async undismiss(workspaceId: string, messageId: string, linkPreviewId: string): Promise<void> {
-    await api.delete(`/api/workspaces/${workspaceId}/messages/${messageId}/link-previews/${linkPreviewId}/dismiss`)
-  },
 }

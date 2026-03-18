@@ -304,11 +304,6 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     ...authed,
     linkPreview.dismiss
   )
-  app.delete(
-    "/api/workspaces/:workspaceId/messages/:messageId/link-previews/:linkPreviewId/dismiss",
-    ...authed,
-    linkPreview.undismiss
-  )
 
   // Public API v1 — API key auth
   const publicAuth = createPublicApiAuthMiddleware({ apiKeyService, pool })

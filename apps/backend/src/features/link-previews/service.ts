@@ -70,6 +70,7 @@ export class LinkPreviewService {
   ): Promise<void> {
     await withTransaction(this.deps.pool, async (client) => {
       const completedPreviews: LinkPreviewSummary[] = []
+      let hasNewWrites = false
 
       for (const { id, metadata, skipped } of fetchResults) {
         if (skipped) {
@@ -83,6 +84,7 @@ export class LinkPreviewService {
         if (!metadata) continue
         const updated = await LinkPreviewRepository.updateMetadata(client, workspaceId, id, metadata)
         if (updated && updated.status === "completed") {
+          hasNewWrites = true
           completedPreviews.push(toLinkPreviewSummary(updated, completedPreviews.length))
         } else if (!updated) {
           // Row already completed by a concurrent worker (WHERE status='pending' didn't match)
@@ -93,7 +95,9 @@ export class LinkPreviewService {
         }
       }
 
-      if (completedPreviews.length > 0) {
+      // Only publish if this worker actually wrote at least one row.
+      // Prevents duplicate outbox events when concurrent workers process the same job.
+      if (completedPreviews.length > 0 && hasNewWrites) {
         await OutboxRepository.insert(client, "link_preview:ready", {
           workspaceId,
           streamId,
@@ -131,17 +135,18 @@ export class LinkPreviewService {
   }
 
   /**
-   * Dismiss a link preview for a user.
+   * Dismiss a link preview for a user and notify other sessions via outbox (INV-4).
    */
   async dismiss(workspaceId: string, userId: string, messageId: string, linkPreviewId: string): Promise<void> {
-    await LinkPreviewRepository.dismiss(this.deps.pool, workspaceId, userId, messageId, linkPreviewId)
-  }
-
-  /**
-   * Un-dismiss a link preview for a user.
-   */
-  async undismiss(workspaceId: string, userId: string, messageId: string, linkPreviewId: string): Promise<void> {
-    await LinkPreviewRepository.undismiss(this.deps.pool, workspaceId, userId, messageId, linkPreviewId)
+    await withTransaction(this.deps.pool, async (client) => {
+      await LinkPreviewRepository.dismiss(client, workspaceId, userId, messageId, linkPreviewId)
+      await OutboxRepository.insert(client, "link_preview:dismissed", {
+        workspaceId,
+        authorId: userId,
+        messageId,
+        linkPreviewId,
+      })
+    })
   }
 
   /**

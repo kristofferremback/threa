@@ -4,7 +4,14 @@ import type { LinkPreviewExtractJobData } from "../../lib/queue/job-queue"
 import type { LinkPreviewService } from "./service"
 import type { UpdateLinkPreviewParams } from "./repository"
 import { detectContentType, isBlockedUrl } from "./url-utils"
-import { FETCH_TIMEOUT_MS, FETCH_USER_AGENT, MAX_DESCRIPTION_LENGTH, MAX_TITLE_LENGTH } from "./config"
+import {
+  FETCH_TIMEOUT_MS,
+  FETCH_USER_AGENT,
+  MAX_DESCRIPTION_LENGTH,
+  MAX_HTML_BYTES,
+  MAX_TITLE_LENGTH,
+  OEMBED_PROVIDERS,
+} from "./config"
 
 const log = logger.child({ module: "link-preview-worker" })
 
@@ -12,8 +19,70 @@ interface WorkerDeps {
   linkPreviewService: LinkPreviewService
 }
 
+// ── oEmbed ──────────────────────────────────────────────────────────
+
+interface OEmbedResponse {
+  title?: string
+  author_name?: string
+  provider_name?: string
+  thumbnail_url?: string
+}
+
+/**
+ * Try fetching structured metadata via oEmbed for known providers.
+ * Returns null if the URL doesn't match any known provider or the request fails.
+ */
+async function tryOEmbed(url: string): Promise<UpdateLinkPreviewParams | null> {
+  const provider = OEMBED_PROVIDERS.find((p) => p.pattern.test(url))
+  if (!provider) return null
+
+  try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+
+    const oembedUrl = `${provider.endpoint}?format=json&url=${encodeURIComponent(url)}`
+    const response = await fetch(oembedUrl, {
+      headers: { "User-Agent": FETCH_USER_AGENT, Accept: "application/json" },
+      signal: controller.signal,
+    })
+
+    clearTimeout(timeout)
+
+    if (!response.ok) {
+      response.body?.cancel()
+      return null
+    }
+
+    const data = (await response.json()) as OEmbedResponse
+
+    // Derive a favicon from the provider's origin
+    let faviconUrl: string | null = null
+    try {
+      faviconUrl = `${new URL(url).origin}/favicon.ico`
+    } catch {
+      /* ignore */
+    }
+
+    return {
+      title: data.title?.slice(0, MAX_TITLE_LENGTH) ?? null,
+      description: null,
+      imageUrl: data.thumbnail_url ?? null,
+      faviconUrl,
+      siteName: data.provider_name ?? null,
+      contentType: "website",
+      status: "completed",
+    }
+  } catch (err) {
+    log.debug({ err, url }, "oEmbed fetch failed, falling back to HTML")
+    return null
+  }
+}
+
+// ── HTML metadata fetching ──────────────────────────────────────────
+
 /**
  * Fetch OpenGraph / meta tag metadata from a URL.
+ * Tries oEmbed first for known providers, then falls back to HTML parsing.
  * Runs outside of any DB transaction (INV-41).
  */
 async function fetchMetadata(url: string): Promise<UpdateLinkPreviewParams> {
@@ -22,6 +91,10 @@ async function fetchMetadata(url: string): Promise<UpdateLinkPreviewParams> {
     log.warn({ url }, "Blocked SSRF attempt in fetchMetadata")
     return { status: "failed" }
   }
+
+  // Fast path: try oEmbed for known providers
+  const oembedResult = await tryOEmbed(url)
+  if (oembedResult) return oembedResult
 
   try {
     const controller = new AbortController()
@@ -77,17 +150,16 @@ async function fetchMetadata(url: string): Promise<UpdateLinkPreviewParams> {
       return { status: "completed", contentType: detectContentType(url) }
     }
 
-    // Only read first 100KB to avoid large pages
+    // Read HTML up to MAX_HTML_BYTES (some sites like YouTube put meta tags far into the response)
     const reader = response.body?.getReader()
     if (!reader) return { status: "failed" }
 
     let html = ""
     const decoder = new TextDecoder()
-    const maxBytes = 100 * 1024
     let totalBytes = 0
 
     try {
-      while (totalBytes < maxBytes) {
+      while (totalBytes < MAX_HTML_BYTES) {
         const { done, value } = await reader.read()
         if (done) break
         html += decoder.decode(value, { stream: true })
@@ -99,54 +171,76 @@ async function fetchMetadata(url: string): Promise<UpdateLinkPreviewParams> {
       reader.cancel()
     }
 
-    return parseHtmlMeta(html, url)
+    return await parseHtmlMeta(html, url)
   } catch (err) {
     log.warn({ err, url }, "Failed to fetch link preview metadata")
     return { status: "failed" }
   }
 }
 
-/**
- * Parse OpenGraph and standard meta tags from HTML head.
- */
-export function parseHtmlMeta(html: string, url: string): UpdateLinkPreviewParams {
-  const getMeta = (property: string): string | null => {
-    // Match og:*, twitter:*, and name= meta tags.
-    // Double-quoted and single-quoted content values are matched separately
-    // so that apostrophes inside double-quoted values are not treated as delimiters.
-    const prop = escapeRegex(property)
-    const patterns = [
-      // property="X" content="Y" (double-quoted content)
-      new RegExp(`<meta[^>]+property=["']${prop}["'][^>]+content="([^"]*)"`, "i"),
-      // property="X" content='Y' (single-quoted content)
-      new RegExp(`<meta[^>]+property=["']${prop}["'][^>]+content='([^']*)'`, "i"),
-      // content="Y" property="X" (reversed, double-quoted)
-      new RegExp(`<meta[^>]+content="([^"]*)"[^>]+property=["']${prop}["']`, "i"),
-      // content='Y' property="X" (reversed, single-quoted)
-      new RegExp(`<meta[^>]+content='([^']*)'[^>]+property=["']${prop}["']`, "i"),
-      // name="X" content="Y" (double-quoted)
-      new RegExp(`<meta[^>]+name=["']${prop}["'][^>]+content="([^"]*)"`, "i"),
-      // name="X" content='Y' (single-quoted)
-      new RegExp(`<meta[^>]+name=["']${prop}["'][^>]+content='([^']*)'`, "i"),
-      // content="Y" name="X" (reversed, double-quoted)
-      new RegExp(`<meta[^>]+content="([^"]*)"[^>]+name=["']${prop}["']`, "i"),
-      // content='Y' name="X" (reversed, single-quoted)
-      new RegExp(`<meta[^>]+content='([^']*)'[^>]+name=["']${prop}["']`, "i"),
-    ]
-    for (const pattern of patterns) {
-      const match = html.match(pattern)
-      if (match?.[1]) return decodeHtmlEntities(match[1])
-    }
-    return null
-  }
+// ── HTML parsing via Bun's HTMLRewriter (lol-html) ──────────────────
 
-  const title = getMeta("og:title") ?? getMeta("twitter:title") ?? extractTitle(html)
-  const description = getMeta("og:description") ?? getMeta("twitter:description") ?? getMeta("description")
-  const imageUrl = getMeta("og:image") ?? getMeta("twitter:image")
-  const siteName = getMeta("og:site_name")
+/**
+ * Parse OpenGraph and standard meta tags from HTML using Bun's HTMLRewriter.
+ * Uses CSS selectors instead of regex for robust extraction from malformed HTML.
+ */
+export async function parseHtmlMeta(html: string, url: string): Promise<UpdateLinkPreviewParams> {
+  const meta: Record<string, string> = {}
+  let titleText = ""
+  let faviconHref = ""
+
+  const rewriter = new HTMLRewriter()
+    .on("meta", {
+      element(el) {
+        const content = el.getAttribute("content")
+        if (!content) return
+
+        const property = el.getAttribute("property")
+        if (property) {
+          // Only capture first occurrence of each property (og: takes priority)
+          if (!meta[property]) meta[property] = content
+          return
+        }
+
+        const name = el.getAttribute("name")
+        if (name) {
+          if (!meta[name]) meta[name] = content
+        }
+      },
+    })
+    .on("title", {
+      text(chunk) {
+        titleText += chunk.text
+      },
+    })
+    .on('link[rel="icon"], link[rel="shortcut icon"]', {
+      element(el) {
+        if (!faviconHref) {
+          faviconHref = el.getAttribute("href") ?? ""
+        }
+      },
+    })
+
+  // HTMLRewriter requires consuming the transformed response to trigger handlers
+  await rewriter.transform(new Response(html)).text()
+
+  const title = decode(meta["og:title"]) ?? decode(meta["twitter:title"]) ?? (titleText.trim() || null)
+  const description =
+    decode(meta["og:description"]) ?? decode(meta["twitter:description"]) ?? decode(meta["description"]) ?? null
+  const imageUrl = decode(meta["og:image"]) ?? decode(meta["twitter:image"]) ?? null
+  const siteName = decode(meta["og:site_name"]) ?? null
 
   // Resolve favicon
-  const faviconUrl = extractFavicon(html, url)
+  let faviconUrl: string | null = null
+  if (faviconHref) {
+    faviconUrl = resolveUrl(faviconHref, url)
+  } else {
+    try {
+      faviconUrl = `${new URL(url).origin}/favicon.ico`
+    } catch {
+      /* ignore */
+    }
+  }
 
   return {
     title: title?.slice(0, MAX_TITLE_LENGTH) ?? null,
@@ -159,39 +253,10 @@ export function parseHtmlMeta(html: string, url: string): UpdateLinkPreviewParam
   }
 }
 
-function extractTitle(html: string): string | null {
-  const match = html.match(/<title[^>]*>([^<]+)<\/title>/i)
-  return match?.[1] ? decodeHtmlEntities(match[1].trim()) : null
-}
-
-function extractFavicon(html: string, baseUrl: string): string | null {
-  const patterns = [
-    /<link[^>]+rel=["'](?:shortcut )?icon["'][^>]+href=["']([^"']+)["']/i,
-    /<link[^>]+href=["']([^"']+)["'][^>]+rel=["'](?:shortcut )?icon["']/i,
-  ]
-  for (const pattern of patterns) {
-    const match = html.match(pattern)
-    if (match?.[1]) return resolveUrl(match[1], baseUrl)
-  }
-  // Default favicon path
-  try {
-    const u = new URL(baseUrl)
-    return `${u.origin}/favicon.ico`
-  } catch {
-    return null
-  }
-}
-
-function resolveUrl(relative: string, base: string): string {
-  try {
-    return new URL(relative, base).toString()
-  } catch {
-    return relative
-  }
-}
-
-function decodeHtmlEntities(text: string): string {
-  return text
+/** Decode HTML entities in attribute values (HTMLRewriter returns raw attribute text). */
+function decode(value: string | undefined): string | null {
+  if (!value) return null
+  return value
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
@@ -201,8 +266,12 @@ function decodeHtmlEntities(text: string): string {
     .replace(/&#x2F;/g, "/")
 }
 
-function escapeRegex(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+function resolveUrl(relative: string, base: string): string {
+  try {
+    return new URL(relative, base).toString()
+  } catch {
+    return relative
+  }
 }
 
 /**
