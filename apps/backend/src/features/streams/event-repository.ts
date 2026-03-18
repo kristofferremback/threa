@@ -221,7 +221,8 @@ export const StreamEventRepository = {
     targetSequence: bigint,
     options?: { limit?: number; viewerId?: string }
   ): Promise<{ events: StreamEvent[]; hasOlder: boolean; hasNewer: boolean }> {
-    const total = options?.limit ?? 50
+    // Ensure at least 2 so probe-trimming doesn't consume the target event
+    const total = Math.max(options?.limit ?? 50, 2)
     const half = Math.floor(total / 2)
 
     // Fetch older (including target) and newer in parallel
