@@ -1,0 +1,11 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile.backend"
+watchPatterns = ["apps/backend/**", "packages/**", "Dockerfile.backend", "bun.lock"]
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
+region = "europe-west4-drams3a"

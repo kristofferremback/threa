@@ -1,0 +1,10 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile.postgres"
+# Only rebuild when the Dockerfile itself changes, not on every push
+watchPatterns = ["Dockerfile.postgres"]
+
+[deploy]
+restartPolicyType = "ALWAYS"
+requiredMountPath = "/var/lib/postgresql/data"
+region = "europe-west4-drams3a"
