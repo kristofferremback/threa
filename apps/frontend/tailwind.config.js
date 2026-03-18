@@ -107,6 +107,14 @@ export default {
             backgroundColor: "transparent",
           },
         },
+        "new-message-fade": {
+          "0%": {
+            backgroundColor: "hsl(var(--primary) / 0.08)",
+          },
+          "100%": {
+            backgroundColor: "transparent",
+          },
+        },
         "activity-pulse": {
           "0%, 100%": {
             opacity: "1",
@@ -160,6 +168,7 @@ export default {
         "accordion-up": "accordion-up 0.2s ease-out",
         "fade-in-delayed": "fade-in 0.2s ease-out 0.5s forwards",
         "highlight-flash": "highlight-flash 2s ease-out forwards",
+        "new-message-fade": "new-message-fade 2s ease-out forwards",
         "activity-pulse": "activity-pulse 2s ease-in-out infinite",
         "indeterminate-progress": "indeterminate-progress 1.5s ease-in-out infinite",
         "topbar-shimmer": "topbar-shimmer 2s ease-in-out infinite",

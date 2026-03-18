@@ -14,6 +14,8 @@ interface EventItemProps {
   highlightMessageId?: string | null
   /** Active agent sessions mapped by trigger message ID */
   agentActivity?: Map<string, MessageAgentActivity>
+  /** Whether this event just arrived via socket (brief visual indicator) */
+  isNew?: boolean
 }
 
 export function EventItem({
@@ -23,6 +25,7 @@ export function EventItem({
   isThreadParent,
   highlightMessageId,
   agentActivity,
+  isNew,
 }: EventItemProps) {
   // Check if this event's message should be highlighted
   const messageId = (event.payload as { messageId?: string })?.messageId
@@ -47,6 +50,7 @@ export function EventItem({
             streamId={streamId}
             isThreadParent={isThreadParent}
             isHighlighted={isHighlighted}
+            isNew={isNew}
             activity={messageId ? agentActivity?.get(messageId) : undefined}
           />
         </div>

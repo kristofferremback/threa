@@ -80,6 +80,8 @@ export { useAutoMarkAsRead } from "./use-auto-mark-as-read"
 
 export { useUnreadDivider } from "./use-unread-divider"
 
+export { useNewMessageIndicator } from "./use-new-message-indicator"
+
 export { useScrollToElement } from "./use-scroll-to-element"
 
 export { useMentionables, filterMentionables, filterBroadcastMentions } from "./use-mentionables"

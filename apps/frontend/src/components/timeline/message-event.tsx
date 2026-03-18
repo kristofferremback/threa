@@ -43,6 +43,8 @@ interface MessageEventProps {
   isThreadParent?: boolean
   /** Whether to highlight this message (scroll into view and flash) */
   isHighlighted?: boolean
+  /** Whether this message just arrived via socket (brief subtle indicator) */
+  isNew?: boolean
   /** Active agent session triggered by this message */
   activity?: MessageAgentActivity
 }
@@ -63,6 +65,7 @@ interface MessageLayoutProps {
   children?: ReactNode
   containerClassName?: string
   isHighlighted?: boolean
+  isNew?: boolean
   isEditing?: boolean
   containerRef?: React.RefObject<HTMLDivElement | null>
   /** Touch event handlers for mobile long-press */
@@ -88,6 +91,7 @@ function MessageLayout({
   children,
   containerClassName,
   isHighlighted,
+  isNew,
   isEditing,
   containerRef,
   touchHandlers,
@@ -115,6 +119,7 @@ function MessageLayout({
           !isSystem &&
           "before:content-[''] before:absolute before:-top-4 before:-bottom-4 before:-left-3 before:-right-3 sm:before:-left-6 sm:before:-right-6 before:bg-primary/[0.04] before:-z-10",
         isHighlighted && "animate-highlight-flash",
+        isNew && !isHighlighted && "animate-new-message-fade",
         containerClassName
       )}
     >
@@ -171,6 +176,7 @@ interface MessageEventInnerProps {
   actorAvatarUrl?: string
   isThreadParent?: boolean
   isHighlighted?: boolean
+  isNew?: boolean
   activity?: MessageAgentActivity
 }
 
@@ -185,6 +191,7 @@ function SentMessageEvent({
   actorAvatarUrl,
   isThreadParent: isThreadParentProp,
   isHighlighted,
+  isNew,
   activity,
 }: MessageEventInnerProps) {
   const { panelId, getPanelUrl } = usePanel()
@@ -404,6 +411,7 @@ function SentMessageEvent({
         footer={isEditing && !isMobile ? undefined : threadFooter}
         containerRef={containerRef}
         isHighlighted={isHighlighted}
+        isNew={isNew}
         containerClassName={cn(
           "scroll-mt-12",
           isMobile && !isEditing && "select-none",
@@ -529,6 +537,7 @@ export function MessageEvent({
   streamId,
   isThreadParent,
   isHighlighted,
+  isNew,
   activity,
 }: MessageEventProps) {
   const payload = event.payload as MessagePayload
@@ -583,6 +592,7 @@ export function MessageEvent({
           actorAvatarUrl={actorAvatarUrl}
           isThreadParent={isThreadParent}
           isHighlighted={isHighlighted}
+          isNew={isNew}
           activity={activity}
         />
       )
