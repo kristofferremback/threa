@@ -12,7 +12,7 @@ function makeMessage(sequence: bigint, content: string): Message {
     sequence,
     authorId: "usr_1",
     authorType: "user",
-    authorDisplayName: null,
+
     contentJson: { type: "doc", content: [] },
     contentMarkdown: content,
     replyCount: 0,
@@ -20,7 +20,6 @@ function makeMessage(sequence: bigint, content: string): Message {
     editedAt: null,
     deletedAt: null,
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
-    apiKeyId: null,
   }
 }
 

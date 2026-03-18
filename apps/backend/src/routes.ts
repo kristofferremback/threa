@@ -24,7 +24,7 @@ import { createDebugHandlers } from "./handlers/debug-handlers"
 import { createInternalHandlers } from "./handlers/internal-handlers"
 import { createAuthStubHandlers } from "./auth/auth-stub-handlers"
 import { createAgentSessionHandlers } from "./features/agents"
-import { createPublicApiHandlers } from "./features/api-keys"
+import { createPublicApiHandlers } from "./features/public-api"
 import {
   createInternalAuthMiddleware,
   errorHandler,

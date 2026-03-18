@@ -1,6 +1,14 @@
--- Add columns for API-created messages (bot author identity and ownership tracking)
-ALTER TABLE messages ADD COLUMN author_display_name TEXT;
-ALTER TABLE messages ADD COLUMN api_key_id TEXT;
+-- Bot entities for API-created messages.
+-- Follows the persona pattern: authorType "bot" + authorId -> bots.id
+CREATE TABLE bots (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL,
+  api_key_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  avatar_emoji TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
--- Partial index for ownership checks on API-created messages
-CREATE INDEX idx_messages_api_key_id ON messages (api_key_id) WHERE api_key_id IS NOT NULL;
+-- One bot per API key per workspace
+CREATE UNIQUE INDEX idx_bots_workspace_api_key ON bots (workspace_id, api_key_id);

@@ -25,6 +25,7 @@ const SECOND_WRITE_KEY = `test__${TEST_ORG_ID}__messages:write,messages:read`
 interface TestContext {
   workspaceId: string
   publicChannelId: string
+  publicChannelSlug: string
   privateChannelId: string
   publicMessageId: string
   publicMessageSequence: string
@@ -72,7 +73,8 @@ async function setupTestWorkspace(): Promise<TestContext> {
   // Set org ID for API key matching
   await client.post(`/api/dev/workspaces/${workspace.id}/set-org-id`, { orgId: TEST_ORG_ID })
 
-  const publicChannel = await createChannel(client, workspace.id, `pub-crud-${testRunId}`, "public")
+  const slug = `pub-crud-${testRunId}`
+  const publicChannel = await createChannel(client, workspace.id, slug, "public")
   const privateChannel = await createChannel(client, workspace.id, `priv-crud-${testRunId}`, "private")
 
   const msg = await sendMessage(client, workspace.id, publicChannel.id, `Test message ${testRunId}`)
@@ -86,6 +88,7 @@ async function setupTestWorkspace(): Promise<TestContext> {
   return {
     workspaceId: workspace.id,
     publicChannelId: publicChannel.id,
+    publicChannelSlug: slug,
     privateChannelId: privateChannel.id,
     publicMessageId: msg.id,
     publicMessageSequence: msg.sequence,
@@ -139,6 +142,17 @@ describe("Public API v1 — CRUD Endpoints", () => {
       const body = (await res.json()) as { data: Array<{ id: string }> }
       expect(body.data.length).toBeGreaterThanOrEqual(1)
       expect(body.data.some((s) => s.id === ctx.publicChannelId)).toBe(true)
+    })
+
+    test("should return #slug as displayName for channels", async () => {
+      const res = await apiGet(`/api/v1/workspaces/${ctx.workspaceId}/streams`, STREAMS_READ_KEY)
+      expect(res.status).toBe(200)
+
+      const body = (await res.json()) as { data: Array<{ id: string; displayName: string; slug: string }> }
+      const pub = body.data.find((s) => s.id === ctx.publicChannelId)
+      expect(pub).toBeDefined()
+      expect(pub!.displayName).toBe(`#${ctx.publicChannelSlug}`)
+      expect(pub!.slug).toBe(ctx.publicChannelSlug)
     })
 
     test("should return 403 without streams:read scope", async () => {
@@ -220,6 +234,7 @@ describe("Public API v1 — CRUD Endpoints", () => {
       const body = (await res.json()) as {
         data: {
           id: string
+          authorId: string
           authorType: string
           authorDisplayName: string
           content: string
@@ -227,7 +242,39 @@ describe("Public API v1 — CRUD Endpoints", () => {
       }
       expect(body.data.authorType).toBe("bot")
       expect(body.data.authorDisplayName).toBe("GitHub CI")
+      expect(body.data.authorId).toMatch(/^bot_/)
       expect(body.data.content).toContain(`Bot message ${testRunId}`)
+    })
+
+    test("should resolve bot display name in listMessages", async () => {
+      // Send a bot message
+      await apiPost(
+        `/api/v1/workspaces/${ctx.workspaceId}/streams/${ctx.publicChannelId}/messages`,
+        { content: `List test ${testRunId}`, displayName: "ListBot" },
+        MESSAGES_WRITE_KEY
+      )
+
+      // Fetch messages and verify authorDisplayName is resolved for bot messages
+      const res = await apiGet(
+        `/api/v1/workspaces/${ctx.workspaceId}/streams/${ctx.publicChannelId}/messages`,
+        ALL_SCOPES_KEY
+      )
+      expect(res.status).toBe(200)
+
+      const body = (await res.json()) as {
+        data: Array<{ authorType: string; authorDisplayName: string | null; content: string }>
+      }
+
+      // The bot message should have authorDisplayName resolved
+      const botMsg = body.data.find((m) => m.content.includes(`List test ${testRunId}`))
+      expect(botMsg).toBeDefined()
+      // The same API key sent it, so the bot name is the latest display name used
+      expect(botMsg!.authorDisplayName).toBeTruthy()
+
+      // User messages should have null authorDisplayName
+      const userMsg = body.data.find((m) => m.authorType === "user")
+      expect(userMsg).toBeDefined()
+      expect(userMsg!.authorDisplayName).toBeNull()
     })
 
     test("should return 403 for inaccessible stream", async () => {
@@ -318,6 +365,25 @@ describe("Public API v1 — CRUD Endpoints", () => {
       const res = await apiPatch(
         `/api/v1/workspaces/${ctx.workspaceId}/messages/msg_nonexistent_12345`,
         { content: "nope" },
+        MESSAGES_WRITE_KEY
+      )
+      expect(res.status).toBe(404)
+    })
+
+    test("should return 404 when updating a soft-deleted message", async () => {
+      // Create and delete a message, then try updating
+      const createRes = await apiPost(
+        `/api/v1/workspaces/${ctx.workspaceId}/streams/${ctx.publicChannelId}/messages`,
+        { content: `Soft-delete update test ${testRunId}`, displayName: "Bot" },
+        MESSAGES_WRITE_KEY
+      )
+      const createBody = (await createRes.json()) as { data: { id: string } }
+
+      await apiDelete(`/api/v1/workspaces/${ctx.workspaceId}/messages/${createBody.data.id}`, MESSAGES_WRITE_KEY)
+
+      const res = await apiPatch(
+        `/api/v1/workspaces/${ctx.workspaceId}/messages/${createBody.data.id}`,
+        { content: "revived" },
         MESSAGES_WRITE_KEY
       )
       expect(res.status).toBe(404)

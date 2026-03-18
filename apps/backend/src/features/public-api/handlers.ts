@@ -3,15 +3,16 @@ import type { Request, Response } from "express"
 import type { Pool } from "pg"
 import type { SearchService } from "../search"
 import { serializeSearchResult } from "../search"
-import type { ApiKeyChannelService } from "./service"
+import type { ApiKeyChannelService } from "../api-keys"
 import type { EventService } from "../messaging"
-import { OwnershipError } from "../messaging"
 import { StreamRepository } from "../streams"
 import { UserRepository } from "../workspaces"
+import { BotRepository } from "./bot-repository"
 import { STREAM_TYPES, AuthorTypes } from "@threa/types"
 import { HttpError } from "@threa/backend-common"
 import { normalizeMessage, toEmoji } from "../emoji"
 import { parseMarkdown } from "@threa/prosemirror"
+import { botId } from "../../lib/id"
 
 const PUBLIC_SEARCH_MAX_LIMIT = 50
 
@@ -72,7 +73,7 @@ function serializeStream(stream: {
   return {
     id: stream.id,
     type: stream.type,
-    displayName: stream.displayName,
+    displayName: stream.type === "channel" && stream.slug ? `#${stream.slug}` : stream.displayName,
     slug: stream.slug,
     description: stream.description,
     visibility: stream.visibility,
@@ -81,25 +82,27 @@ function serializeStream(stream: {
   }
 }
 
-function serializeMessage(message: {
-  id: string
-  streamId: string
-  sequence: bigint
-  authorId: string
-  authorType: string
-  authorDisplayName: string | null
-  contentMarkdown: string
-  replyCount: number
-  editedAt: Date | null
-  createdAt: Date
-}) {
+function serializeMessage(
+  message: {
+    id: string
+    streamId: string
+    sequence: bigint
+    authorId: string
+    authorType: string
+    contentMarkdown: string
+    replyCount: number
+    editedAt: Date | null
+    createdAt: Date
+  },
+  authorDisplayName?: string | null
+) {
   return {
     id: message.id,
     streamId: message.streamId,
     sequence: message.sequence.toString(),
     authorId: message.authorId,
     authorType: message.authorType,
-    authorDisplayName: message.authorDisplayName,
+    authorDisplayName: authorDisplayName ?? null,
     content: message.contentMarkdown,
     replyCount: message.replyCount,
     editedAt: message.editedAt?.toISOString() ?? null,
@@ -138,10 +141,10 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
     return apiKeyChannelService.getAccessibleStreamIdsForApiKey(req.workspaceId!, req.apiKey!.id)
   }
 
-  /** Find a message and verify stream access. Used by update/delete. */
+  /** Find a message, verify stream access, and verify bot ownership. Used by update/delete. */
   async function resolveApiKeyMessage(messageId: string, req: Request) {
     const message = await eventService.getMessageById(messageId)
-    if (!message) {
+    if (!message || message.deletedAt) {
       throw new HttpError("Message not found", { status: 404, code: "NOT_FOUND" })
     }
 
@@ -150,7 +153,17 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
       throw new HttpError("Stream not accessible", { status: 403, code: "FORBIDDEN" })
     }
 
-    return message
+    // Verify bot ownership: message must be authored by a bot owned by this API key
+    if (message.authorType !== AuthorTypes.BOT) {
+      throw new HttpError("Cannot modify messages not created via API", { status: 403, code: "FORBIDDEN" })
+    }
+
+    const bot = await BotRepository.findById(pool, message.authorId)
+    if (!bot || bot.apiKeyId !== req.apiKey!.id) {
+      throw new HttpError("Cannot modify messages created by another API key", { status: 403, code: "FORBIDDEN" })
+    }
+
+    return { message, bot }
   }
 
   return {
@@ -267,8 +280,15 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
         page = after ? messages.slice(0, limit) : messages.slice(-limit)
       }
 
+      // Resolve bot display names for bot-authored messages
+      const botAuthorIds = [...new Set(page.filter((m) => m.authorType === "bot").map((m) => m.authorId))]
+      const bots = botAuthorIds.length > 0 ? await BotRepository.findByIds(pool, botAuthorIds) : []
+      const botNameMap = new Map(bots.map((b) => [b.id, b.name]))
+
       res.json({
-        data: page.map(serializeMessage),
+        data: page.map((m) =>
+          serializeMessage(m, m.authorType === "bot" ? (botNameMap.get(m.authorId) ?? null) : null)
+        ),
         hasMore,
       })
     },
@@ -299,6 +319,14 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
         throw new HttpError("Stream not accessible", { status: 403, code: "FORBIDDEN" })
       }
 
+      // Upsert bot entity (creates on first use, updates name if changed)
+      const bot = await BotRepository.upsert(pool, {
+        id: botId(),
+        workspaceId,
+        apiKeyId: apiKey.id,
+        name: displayName,
+      })
+
       // Normalize and parse content
       const contentMarkdown = normalizeMessage(content)
       const contentJson = parseMarkdown(contentMarkdown, undefined, toEmoji)
@@ -306,15 +334,13 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
       const message = await eventService.createMessage({
         workspaceId,
         streamId,
-        authorId: apiKey.id,
+        authorId: bot.id,
         authorType: AuthorTypes.BOT,
         contentJson,
         contentMarkdown,
-        authorDisplayName: displayName,
-        apiKeyId: apiKey.id,
       })
 
-      res.status(201).json({ data: serializeMessage(message) })
+      res.status(201).json({ data: serializeMessage(message, bot.name) })
     },
 
     /**
@@ -325,7 +351,6 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
     async updateMessage(req: Request, res: Response) {
       const workspaceId = req.workspaceId!
       const messageId = req.params.messageId
-      const apiKey = req.apiKey!
 
       const result = updateMessageSchema.safeParse(req.body)
       if (!result.success) {
@@ -336,35 +361,27 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
       }
 
       const { content } = result.data
-      const existing = await resolveApiKeyMessage(messageId, req)
+      const { message: existing, bot } = await resolveApiKeyMessage(messageId, req)
 
       // Normalize and parse content
       const contentMarkdown = normalizeMessage(content)
       const contentJson = parseMarkdown(contentMarkdown, undefined, toEmoji)
 
-      try {
-        const updated = await eventService.editMessage({
-          workspaceId,
-          messageId,
-          streamId: existing.streamId,
-          contentJson,
-          contentMarkdown,
-          actorId: apiKey.id,
-          actorType: AuthorTypes.BOT,
-          apiKeyId: apiKey.id,
-        })
+      const updated = await eventService.editMessage({
+        workspaceId,
+        messageId,
+        streamId: existing.streamId,
+        contentJson,
+        contentMarkdown,
+        actorId: bot.id,
+        actorType: AuthorTypes.BOT,
+      })
 
-        if (!updated) {
-          throw new HttpError("Message not found or was deleted", { status: 404, code: "NOT_FOUND" })
-        }
-
-        res.json({ data: serializeMessage(updated) })
-      } catch (e) {
-        if (e instanceof OwnershipError) {
-          throw new HttpError(e.message, { status: 403, code: "FORBIDDEN" })
-        }
-        throw e
+      if (!updated) {
+        throw new HttpError("Message not found or was deleted", { status: 404, code: "NOT_FOUND" })
       }
+
+      res.json({ data: serializeMessage(updated, bot.name) })
     },
 
     /**
@@ -375,28 +392,19 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
     async deleteMessage(req: Request, res: Response) {
       const workspaceId = req.workspaceId!
       const messageId = req.params.messageId
-      const apiKey = req.apiKey!
 
-      const existing = await resolveApiKeyMessage(messageId, req)
+      const { message: existing, bot } = await resolveApiKeyMessage(messageId, req)
 
-      try {
-        const deleted = await eventService.deleteMessage({
-          workspaceId,
-          messageId,
-          streamId: existing.streamId,
-          actorId: apiKey.id,
-          actorType: AuthorTypes.BOT,
-          apiKeyId: apiKey.id,
-        })
+      const deleted = await eventService.deleteMessage({
+        workspaceId,
+        messageId,
+        streamId: existing.streamId,
+        actorId: bot.id,
+        actorType: AuthorTypes.BOT,
+      })
 
-        if (!deleted) {
-          throw new HttpError("Message not found or was deleted", { status: 404, code: "NOT_FOUND" })
-        }
-      } catch (e) {
-        if (e instanceof OwnershipError) {
-          throw new HttpError(e.message, { status: 403, code: "FORBIDDEN" })
-        }
-        throw e
+      if (!deleted) {
+        throw new HttpError("Message not found or was deleted", { status: 404, code: "NOT_FOUND" })
       }
 
       res.status(204).send()

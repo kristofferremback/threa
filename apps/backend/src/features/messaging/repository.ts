@@ -9,14 +9,12 @@ interface MessageRow {
   sequence: string
   author_id: string
   author_type: string
-  author_display_name: string | null
   content_json: JSONContent
   content_markdown: string
   reply_count: number
   edited_at: Date | null
   deleted_at: Date | null
   created_at: Date
-  api_key_id: string | null
 }
 
 interface ReactionRow {
@@ -32,7 +30,6 @@ export interface Message {
   sequence: bigint
   authorId: string
   authorType: AuthorType
-  authorDisplayName: string | null
   contentJson: JSONContent
   contentMarkdown: string
   replyCount: number
@@ -40,7 +37,6 @@ export interface Message {
   editedAt: Date | null
   deletedAt: Date | null
   createdAt: Date
-  apiKeyId: string | null
 }
 
 export interface InsertMessageParams {
@@ -52,8 +48,6 @@ export interface InsertMessageParams {
   contentJson: JSONContent
   contentMarkdown: string
   clientMessageId?: string
-  authorDisplayName?: string
-  apiKeyId?: string
 }
 
 function mapRowToMessage(row: MessageRow, reactions: Record<string, string[]> = {}): Message {
@@ -63,7 +57,6 @@ function mapRowToMessage(row: MessageRow, reactions: Record<string, string[]> = 
     sequence: BigInt(row.sequence),
     authorId: row.author_id,
     authorType: row.author_type as AuthorType,
-    authorDisplayName: row.author_display_name,
     contentJson: row.content_json,
     contentMarkdown: row.content_markdown,
     replyCount: row.reply_count,
@@ -71,7 +64,6 @@ function mapRowToMessage(row: MessageRow, reactions: Record<string, string[]> = 
     editedAt: row.edited_at,
     deletedAt: row.deleted_at,
     createdAt: row.created_at,
-    apiKeyId: row.api_key_id,
   }
 }
 
@@ -108,9 +100,9 @@ function aggregateReactionsByMessage(rows: ReactionRow[]): Map<string, Record<st
 }
 
 const SELECT_FIELDS = `
-  id, stream_id, sequence, author_id, author_type, author_display_name,
+  id, stream_id, sequence, author_id, author_type,
   content_json, content_markdown, reply_count,
-  edited_at, deleted_at, created_at, api_key_id
+  edited_at, deleted_at, created_at
 `
 
 export const MessageRepository = {
@@ -235,17 +227,15 @@ export const MessageRepository = {
       : ""
 
     const result = await db.query<MessageRow>(sql`
-      INSERT INTO messages (id, stream_id, sequence, author_id, author_type, author_display_name, content_json, content_markdown, api_key_id, client_message_id)
+      INSERT INTO messages (id, stream_id, sequence, author_id, author_type, content_json, content_markdown, client_message_id)
       VALUES (
         ${params.id},
         ${params.streamId},
         ${params.sequence.toString()},
         ${params.authorId},
         ${params.authorType},
-        ${params.authorDisplayName ?? null},
         ${JSON.stringify(params.contentJson)},
         ${params.contentMarkdown},
-        ${params.apiKeyId ?? null},
         ${clientMessageId}
       )
       ${sql.raw(onConflict)}
@@ -366,9 +356,9 @@ export const MessageRepository = {
     // Find thread streams for these parent messages and get their messages
     const result = await db.query<MessageRow & { parent_message_id: string }>(sql`
       SELECT
-        m.id, m.stream_id, m.sequence, m.author_id, m.author_type, m.author_display_name,
+        m.id, m.stream_id, m.sequence, m.author_id, m.author_type,
         m.content_json, m.content_markdown, m.reply_count,
-        m.edited_at, m.deleted_at, m.created_at, m.api_key_id,
+        m.edited_at, m.deleted_at, m.created_at,
         s.parent_message_id
       FROM messages m
       JOIN streams s ON m.stream_id = s.id
