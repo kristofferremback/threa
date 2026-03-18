@@ -75,11 +75,13 @@ const addMemberSchema = z.object({
   memberId: z.string().min(1, "memberId is required"),
 })
 
+const numericString = z.string().regex(/^\d+$/, "must be a numeric string")
+
 const listEventsQuerySchema = z.object({
   type: z.union([z.string(), z.array(z.string())]).optional(),
   limit: z.coerce.number().int().positive().max(200).optional(),
-  after: z.string().optional(),
-  before: z.string().optional(),
+  after: numericString.optional(),
+  before: numericString.optional(),
 })
 
 const listEventsAroundQuerySchema = z

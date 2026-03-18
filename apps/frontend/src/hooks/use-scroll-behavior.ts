@@ -54,6 +54,9 @@ export function useScrollBehavior({
   const shouldAutoScroll = useRef(true)
   const prevItemCount = useRef(0)
   const prevScrollHeight = useRef(0)
+  // Tracks the previous render's isFetchingOlder value so the adjustment
+  // effect can detect when an older-content fetch just completed (true→false).
+  const prevIsFetchingOlder = useRef(false)
 
   const scrollToBottom = useCallback(() => {
     if (scrollContainerRef.current && shouldAutoScroll.current) {
@@ -75,22 +78,24 @@ export function useScrollBehavior({
       return
     }
 
-    if (itemCount > oldCount && !shouldAutoScroll.current) {
-      // Items were added. If the user is NOT at the bottom, preserve position.
-      // New scrollHeight minus old scrollHeight = height of prepended content.
+    // Only preserve scroll when older content was just prepended at the top
+    // (isFetchingOlder transitioned true→false). Bottom-appended content
+    // (WebSocket messages, newer pagination) needs no scrollTop adjustment.
+    const olderContentJustArrived = prevIsFetchingOlder.current && !isFetchingOlder
+    if (itemCount > oldCount && !shouldAutoScroll.current && olderContentJustArrived) {
       const heightDelta = el.scrollHeight - prevScrollHeight.current
-      if (heightDelta > 0 && el.scrollTop < el.scrollHeight - el.clientHeight - bottomThreshold) {
+      if (heightDelta > 0) {
         el.scrollTop += heightDelta
       }
     } else if (shouldAutoScroll.current) {
       scrollToBottom()
     }
-  }, [isLoading, itemCount, scrollToBottom, bottomThreshold])
+  }, [isLoading, itemCount, scrollToBottom, bottomThreshold, isFetchingOlder])
 
-  // Capture scrollHeight AFTER the adjustment effect has read prevScrollHeight.
-  // No dep array → runs every render, but defined after adjustment so it runs second,
-  // storing the current render's height for the *next* render's adjustment.
+  // Capture previous-render values AFTER the adjustment effect has read them.
+  // No dep array → runs every render, defined after adjustment so it runs second.
   useEffect(() => {
+    prevIsFetchingOlder.current = isFetchingOlder
     const el = scrollContainerRef.current
     if (el) {
       prevScrollHeight.current = el.scrollHeight
