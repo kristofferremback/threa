@@ -135,12 +135,16 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
     return dedupeAndSort([bootstrapEvents, olderEvents])
   }, [bootstrap?.events, olderData, newerData, jumpState])
 
-  // Determine if older events exist
+  // Determine if older events exist.
+  // Once the infinite query has produced at least one page, trust hasOlderPage
+  // exclusively — the bootstrap hint is stale after the first fetch.
   const hasOlderEvents = useMemo(() => {
     if (hasOlderPage) return true
     if (jumpState) return jumpState.hasOlder
+    const hasRunQuery = (olderData?.pages.length ?? 0) > 0
+    if (hasRunQuery) return false
     return bootstrap?.hasOlderEvents ?? false
-  }, [hasOlderPage, jumpState, bootstrap?.hasOlderEvents])
+  }, [hasOlderPage, jumpState, olderData?.pages.length, bootstrap?.hasOlderEvents])
 
   // Determine if newer events exist (only in jump mode)
   const hasNewerEvents = useMemo(() => {

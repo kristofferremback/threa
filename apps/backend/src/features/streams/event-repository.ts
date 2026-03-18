@@ -233,20 +233,21 @@ export const StreamEventRepository = {
       }),
       this.list(db, streamId, {
         afterSequence: targetSequence,
-        limit: half,
+        limit: half + 1,
         viewerId: options?.viewerId,
       }),
     ])
 
     const hasOlder = olderEvents.length > half
-    const hasNewer = newerEvents.length === half
+    const hasNewer = newerEvents.length > half
 
-    // Drop the oldest probe event if we fetched one extra to detect hasOlder
+    // Drop probe events used for boundary detection
     const trimmedOlder = hasOlder ? olderEvents.slice(1) : olderEvents
+    const trimmedNewer = hasNewer ? newerEvents.slice(0, half) : newerEvents
 
     // Merge and dedupe
     const eventMap = new Map<string, StreamEvent>()
-    for (const e of [...trimmedOlder, ...newerEvents]) {
+    for (const e of [...trimmedOlder, ...trimmedNewer]) {
       eventMap.set(e.id, e)
     }
 
