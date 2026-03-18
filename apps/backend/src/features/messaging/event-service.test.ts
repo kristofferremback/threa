@@ -55,6 +55,146 @@ describe("EventService attachment safety checks", () => {
   })
 })
 
+describe("EventService.createMessage idempotency", () => {
+  afterEach(() => {
+    mock.restore()
+  })
+
+  it("returns existing message when clientId matches a previously created message", async () => {
+    const existingMessage = {
+      id: "msg_existing",
+      streamId: "stream_1",
+      sequence: 1n,
+      authorId: "usr_1",
+      authorType: "user" as const,
+      contentJson: { type: "doc" as const, content: [] },
+      contentMarkdown: "hello",
+      replyCount: 0,
+      reactions: {},
+      editedAt: null,
+      deletedAt: null,
+      createdAt: new Date(),
+    }
+
+    spyOn(MessageRepository, "findByClientId").mockResolvedValue(existingMessage)
+
+    const service = new EventService({} as any)
+
+    const result = await service.createMessage({
+      workspaceId: "ws_1",
+      streamId: "stream_1",
+      authorId: "usr_1",
+      authorType: "user",
+      contentJson: { type: "doc", content: [] },
+      contentMarkdown: "hello",
+      clientId: "temp_abc123",
+    })
+
+    expect(result).toBe(existingMessage)
+    expect(MessageRepository.findByClientId).toHaveBeenCalledWith(expect.anything(), "stream_1", "temp_abc123")
+  })
+
+  it("creates new message when clientId does not match any existing message", async () => {
+    spyOn(MessageRepository, "findByClientId").mockResolvedValue(null)
+    spyOn(db, "withTransaction").mockImplementation(((_db: unknown, callback: (client: any) => Promise<unknown>) =>
+      callback({})) as any)
+    spyOn(StreamRepository, "findById").mockResolvedValue({ id: "stream_1", type: "scratchpad" } as any)
+    spyOn(messagesTotal, "inc").mockImplementation(() => undefined)
+    spyOn(StreamEventRepository, "insert").mockResolvedValue({
+      id: "evt_1",
+      streamId: "stream_1",
+      sequence: 1n,
+      eventType: "message_created",
+      payload: {},
+      actorId: "usr_1",
+      actorType: "user",
+      createdAt: new Date(),
+    } as any)
+    const insertedMessage = {
+      id: "msg_new",
+      streamId: "stream_1",
+      sequence: 1n,
+      authorId: "usr_1",
+      authorType: "user" as const,
+      contentJson: { type: "doc" as const, content: [] },
+      contentMarkdown: "hello",
+      replyCount: 0,
+      reactions: {},
+      editedAt: null,
+      deletedAt: null,
+      createdAt: new Date(),
+    }
+    spyOn(MessageRepository, "insert").mockResolvedValue(insertedMessage)
+    spyOn(StreamMemberRepository, "update").mockResolvedValue(undefined as any)
+    spyOn(OutboxRepository, "insert").mockResolvedValue(undefined as any)
+
+    const service = new EventService({} as any)
+
+    const result = await service.createMessage({
+      workspaceId: "ws_1",
+      streamId: "stream_1",
+      authorId: "usr_1",
+      authorType: "user",
+      contentJson: { type: "doc", content: [] },
+      contentMarkdown: "hello",
+      clientId: "temp_new123",
+    })
+
+    expect(result).toBe(insertedMessage)
+    expect(MessageRepository.insert).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ clientId: "temp_new123" })
+    )
+  })
+
+  it("skips idempotency check when clientId is not provided", async () => {
+    spyOn(db, "withTransaction").mockImplementation(((_db: unknown, callback: (client: any) => Promise<unknown>) =>
+      callback({})) as any)
+    spyOn(StreamRepository, "findById").mockResolvedValue({ id: "stream_1", type: "scratchpad" } as any)
+    spyOn(messagesTotal, "inc").mockImplementation(() => undefined)
+    spyOn(StreamEventRepository, "insert").mockResolvedValue({
+      id: "evt_1",
+      streamId: "stream_1",
+      sequence: 1n,
+      eventType: "message_created",
+      payload: {},
+      actorId: "usr_1",
+      actorType: "user",
+      createdAt: new Date(),
+    } as any)
+    spyOn(MessageRepository, "insert").mockResolvedValue({
+      id: "msg_new",
+      streamId: "stream_1",
+      sequence: 1n,
+      authorId: "usr_1",
+      authorType: "user" as const,
+      contentJson: { type: "doc" as const, content: [] },
+      contentMarkdown: "hello",
+      replyCount: 0,
+      reactions: {},
+      editedAt: null,
+      deletedAt: null,
+      createdAt: new Date(),
+    })
+    spyOn(StreamMemberRepository, "update").mockResolvedValue(undefined as any)
+    spyOn(OutboxRepository, "insert").mockResolvedValue(undefined as any)
+    const findByClientIdSpy = spyOn(MessageRepository, "findByClientId")
+
+    const service = new EventService({} as any)
+
+    await service.createMessage({
+      workspaceId: "ws_1",
+      streamId: "stream_1",
+      authorId: "usr_1",
+      authorType: "user",
+      contentJson: { type: "doc", content: [] },
+      contentMarkdown: "hello",
+    })
+
+    expect(findByClientIdSpy).not.toHaveBeenCalled()
+  })
+})
+
 describe("EventService.editMessage version capture", () => {
   const existingMessage = {
     id: "msg_1",

@@ -69,6 +69,8 @@ export interface CreateMessageParams {
   attachmentIds?: string[]
   sources?: SourceItem[]
   sessionId?: string
+  /** Client-generated idempotency key to prevent duplicate sends on retry */
+  clientId?: string
 }
 
 export interface EditMessageParams {
@@ -136,6 +138,16 @@ export class EventService {
   }
 
   async createMessage(params: CreateMessageParams): Promise<Message> {
+    // Idempotency check: if the client sent a clientId and a message with that
+    // clientId already exists for this stream, return the existing message
+    // instead of creating a duplicate. This handles the case where the send
+    // succeeded but the client's local cleanup was interrupted (tab suspension,
+    // device sleep) and the message queue re-sends on reconnect.
+    if (params.clientId) {
+      const existing = await MessageRepository.findByClientId(this.pool, params.streamId, params.clientId)
+      if (existing) return existing
+    }
+
     return withTransaction(this.pool, async (client) => {
       const msgId = messageId()
       const evtId = eventId()
@@ -202,6 +214,7 @@ export class EventService {
         authorType: params.authorType,
         contentJson: params.contentJson,
         contentMarkdown: params.contentMarkdown,
+        clientId: params.clientId,
       })
 
       // 4. Update author's read position to include their own message

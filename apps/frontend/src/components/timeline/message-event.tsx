@@ -492,10 +492,7 @@ function PendingMessageEvent({
       actorInitials={actorInitials}
       personaSlug={personaSlug}
       actorAvatarUrl={actorAvatarUrl}
-      containerClassName="opacity-60"
-      statusIndicator={
-        <span className="text-xs text-muted-foreground opacity-0 animate-fade-in-delayed">Sending...</span>
-      }
+      statusIndicator={<RelativeTime date={event.createdAt} />}
     />
   )
 }
