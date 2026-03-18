@@ -146,12 +146,16 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
     return bootstrap?.hasOlderEvents ?? false
   }, [hasOlderPage, jumpState, olderData?.pages.length, bootstrap?.hasOlderEvents])
 
-  // Determine if newer events exist (only in jump mode)
+  // Determine if newer events exist (only in jump mode).
+  // Once the newer query has produced at least one page, trust hasNewerPage
+  // exclusively — the jump state hint is stale after the first fetch.
   const hasNewerEvents = useMemo(() => {
     if (!jumpState) return false
     if (hasNewerPage) return true
+    const hasRunQuery = (newerData?.pages.length ?? 0) > 0
+    if (hasRunQuery) return false
     return jumpState.hasNewer
-  }, [jumpState, hasNewerPage])
+  }, [jumpState, hasNewerPage, newerData?.pages.length])
 
   const fetchOlderEvents = useCallback(() => {
     if (isFetchingOlder) return
