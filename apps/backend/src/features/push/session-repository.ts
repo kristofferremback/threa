@@ -97,20 +97,18 @@ export const UserSessionRepository = {
   },
 
   /**
-   * Check whether a user has had any session activity within the given window.
-   * Used to detect expired auth sessions: if no heartbeat has arrived within
-   * the session GC window (7 days), the user is likely logged out on all devices.
+   * Return the set of device keys that have had any session activity within
+   * the given window. Used to identify which devices still have a live auth
+   * session vs. which have likely expired (per-device expiry check).
    */
-  async hasAnyRecentSession(db: Querier, workspaceId: string, userId: string, windowMs: number): Promise<boolean> {
-    const result = await db.query<{ exists: boolean }>(sql`
-      SELECT EXISTS(
-        SELECT 1 FROM user_sessions
-        WHERE workspace_id = ${workspaceId}
-          AND user_id = ${userId}
-          AND last_active_at > now() - (${windowMs}::text || ' milliseconds')::interval
-      ) AS exists
+  async getRecentDeviceKeys(db: Querier, workspaceId: string, userId: string, windowMs: number): Promise<Set<string>> {
+    const result = await db.query<{ device_key: string }>(sql`
+      SELECT DISTINCT device_key FROM user_sessions
+      WHERE workspace_id = ${workspaceId}
+        AND user_id = ${userId}
+        AND last_active_at > now() - (${windowMs}::text || ' milliseconds')::interval
     `)
-    return result.rows[0].exists
+    return new Set(result.rows.map((r) => r.device_key))
   },
 
   async cleanupStale(db: Querier, olderThanMs: number): Promise<number> {
