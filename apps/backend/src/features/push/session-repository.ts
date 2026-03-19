@@ -96,6 +96,23 @@ export const UserSessionRepository = {
     return result.rows.map(mapRowToSession)
   },
 
+  /**
+   * Return which of the given device keys have had any session activity within
+   * the given window across ALL workspaces. Auth sessions are global (single
+   * cookie), so a device active in workspace A proves the auth is still valid
+   * for workspace B. Cross-workspace by design (INV-8 infra exception, same
+   * rationale as cleanupStale).
+   */
+  async getRecentDeviceKeys(db: Querier, deviceKeys: string[], windowMs: number): Promise<Set<string>> {
+    if (deviceKeys.length === 0) return new Set()
+    const result = await db.query<{ device_key: string }>(sql`
+      SELECT DISTINCT device_key FROM user_sessions
+      WHERE device_key = ANY(${deviceKeys})
+        AND last_active_at > now() - (${windowMs}::text || ' milliseconds')::interval
+    `)
+    return new Set(result.rows.map((r) => r.device_key))
+  },
+
   async cleanupStale(db: Querier, olderThanMs: number): Promise<number> {
     const result = await db.query(sql`
       DELETE FROM user_sessions

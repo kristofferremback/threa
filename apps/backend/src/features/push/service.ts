@@ -22,6 +22,15 @@ const ACTIVE_SESSION_WINDOW_MS = 60_000
 /** How recently a device must have been focused to consider the user "at their computer" */
 const RECENTLY_FOCUSED_WINDOW_MS = 10 * 60 * 1_000 // 10 minutes
 
+/**
+ * Per-device session expiry window. If a specific device has not sent a heartbeat
+ * within this window, its auth session has likely expired. We send a "session expired"
+ * push to that device and clean up its subscription individually — other devices with
+ * active sessions are unaffected. Matches the 30-day session cookie TTL and the
+ * session GC window in session-cleanup.ts.
+ */
+const SESSION_EXPIRY_WINDOW_MS = 30 * 24 * 60 * 60 * 1_000 // 30 days (matches cookie TTL)
+
 /** Callbacks for resolving cross-feature data (INV-52: access via service layer, not repos) */
 interface CrossFeatureLookups {
   /** Resolve a user's notification level preference. */
@@ -160,9 +169,20 @@ export class PushService {
       }
     }
 
-    // 3. Determine which subscriptions to push to based on active sessions
-    const subscriptions = await this.getTargetSubscriptions(workspaceId, targetUserId)
-    if (subscriptions.length === 0) {
+    // 3. Determine which subscriptions to push to, partitioned by session state.
+    // Subscriptions on devices with an expired session get a one-shot "session expired"
+    // notification and are cleaned up; active-device subscriptions get normal delivery.
+    const { active: activeSubscriptions, expired: expiredSubscriptions } = await this.getTargetSubscriptions(
+      workspaceId,
+      targetUserId
+    )
+
+    // 3b. Handle expired-device subscriptions: notify and clean up per-device
+    if (expiredSubscriptions.length > 0) {
+      await this.deliverSessionExpiredAndCleanup(workspaceId, targetUserId, expiredSubscriptions)
+    }
+
+    if (activeSubscriptions.length === 0) {
       return
     }
 
@@ -179,8 +199,8 @@ export class PushService {
       },
     })
 
-    // 5. Send to all target subscriptions and evict stale ones
-    await this.sendAndEvictStale(workspaceId, subscriptions, pushPayload)
+    // 5. Send to active-device subscriptions and evict stale ones
+    await this.sendAndEvictStale(workspaceId, activeSubscriptions, pushPayload)
   }
 
   /**
@@ -270,22 +290,68 @@ export class PushService {
   }
 
   /**
-   * Determines which devices should receive a push notification.
+   * Sends a "session expired" push to the given devices and deletes their
+   * subscriptions. Only targets devices whose sessions have expired — active
+   * devices are unaffected. The SW shows a "Your session has expired — tap
+   * to sign back in" notification.
+   */
+  private async deliverSessionExpiredAndCleanup(
+    workspaceId: string,
+    userId: string,
+    subscriptions: PushSubscription[]
+  ): Promise<void> {
+    const pushPayload = JSON.stringify({
+      data: {
+        action: "session_expired" as const,
+        workspaceId,
+      },
+    })
+
+    // Best-effort delivery — some subscriptions may already be stale
+    await this.sendAndEvictStale(workspaceId, subscriptions, pushPayload)
+
+    // Clean up remaining subscriptions so no further notifications are sent.
+    // Reuse the IDs we already have rather than re-fetching (INV-20: avoids
+    // select-then-delete race where a concurrent subscribe could be wiped).
+    // deleteByIds is a no-op for IDs already removed by sendAndEvictStale.
+    const subscriptionIds = subscriptions.map((s) => s.id)
+    try {
+      await PushSubscriptionRepository.deleteByIds(this.pool, workspaceId, subscriptionIds)
+      logger.info(
+        { workspaceId, userId, count: subscriptionIds.length },
+        "Cleaned up push subscriptions for expired session"
+      )
+    } catch (err) {
+      logger.warn({ err, workspaceId, userId }, "Failed to clean up push subscriptions for expired session")
+    }
+  }
+
+  /**
+   * Determines which devices should receive a push notification and which
+   * have expired sessions that should be cleaned up.
    *
-   * Four-tier strategy (SW handles focus-based display suppression per device):
+   * Returns `active` (subscriptions to deliver to) and `expired` (subscriptions
+   * on devices with no session within SESSION_EXPIRY_WINDOW_MS — these get a
+   * session-expired push and are cleaned up).
+   *
+   * Four-tier strategy for active subscriptions (SW handles focus-based suppression):
    * 1. Threa focused       → push to active device, SW suppresses (user sees nothing)
    * 2. Threa open, unfocused (<10m) → push to active device, SW shows notification
-   * 3. Threa open, unfocused 10m+   → push to ALL devices (user walked away)
-   * 4. Offline 60s+                  → push to ALL devices (no active sessions)
+   * 3. Threa open, unfocused 10m+   → push to ALL active devices (user walked away)
+   * 4. Offline 60s+                  → push to ALL active devices
    */
-  private async getTargetSubscriptions(workspaceId: string, userId: string) {
+  private async getTargetSubscriptions(
+    workspaceId: string,
+    userId: string
+  ): Promise<{ active: PushSubscription[]; expired: PushSubscription[] }> {
     // INV-30: multiple related reads share a client; INV-41: release before network I/O
-    const { allSubs, activeSessions } = await withClient(this.pool, async (client) => {
+    const { allSubs, activeSessions, recentDeviceKeys } = await withClient(this.pool, async (client) => {
       const subs = await PushSubscriptionRepository.findByUserId(client, workspaceId, userId)
       if (subs.length === 0)
         return {
           allSubs: subs,
           activeSessions: [] as Awaited<ReturnType<typeof UserSessionRepository.getActiveSessions>>,
+          recentDeviceKeys: new Set<string>(),
         }
       const sessions = await UserSessionRepository.getActiveSessions(
         client,
@@ -293,12 +359,35 @@ export class PushService {
         userId,
         ACTIVE_SESSION_WINDOW_MS
       )
-      return { allSubs: subs, activeSessions: sessions }
+      // Check which device keys have had any session activity within the expiry
+      // window — cross-workspace, because the auth cookie is global.
+      const subDeviceKeys = [...new Set(subs.map((s) => s.deviceKey))]
+      const deviceKeys = await UserSessionRepository.getRecentDeviceKeys(
+        client,
+        subDeviceKeys,
+        SESSION_EXPIRY_WINDOW_MS
+      )
+      return { allSubs: subs, activeSessions: sessions, recentDeviceKeys: deviceKeys }
     })
-    if (allSubs.length === 0) return []
+    if (allSubs.length === 0) return { active: [], expired: [] }
 
-    // Tier 4: No active sessions → user is fully offline → push to all devices
-    if (activeSessions.length === 0) return allSubs
+    // Partition subscriptions: devices with no session in the expiry window are expired.
+    // Devices that have a recent session (even if not active right now) are still valid.
+    const activeSubs: PushSubscription[] = []
+    const expiredSubs: PushSubscription[] = []
+    for (const sub of allSubs) {
+      if (recentDeviceKeys.has(sub.deviceKey)) {
+        activeSubs.push(sub)
+      } else {
+        expiredSubs.push(sub)
+      }
+    }
+
+    if (activeSubs.length === 0) return { active: [], expired: expiredSubs }
+
+    // Apply four-tier targeting to active subscriptions only
+    // Tier 4: No active sessions (within 60s) → user is offline → push to all active devices
+    if (activeSessions.length === 0) return { active: activeSubs, expired: expiredSubs }
 
     // Check if any active session was focused recently (within 10m).
     // If not, the user likely walked away from their computer with Threa open.
@@ -307,16 +396,17 @@ export class PushService {
       (s) => s.lastFocusedAt && now - s.lastFocusedAt.getTime() < RECENTLY_FOCUSED_WINDOW_MS
     )
 
-    // Tier 3: Active sessions but none focused recently → user walked away → push to all
-    if (!hasRecentlyFocused) return allSubs
+    // Tier 3: Active sessions but none focused recently → user walked away → push to all active
+    if (!hasRecentlyFocused) return { active: activeSubs, expired: expiredSubs }
 
     // Tiers 1 & 2: User is at their computer → push to devices with active sessions.
     // The SW on each device decides whether to display (focused = suppress).
-    // Fall back to all subscriptions if the intersection is empty — a session can
+    // Fall back to all active subscriptions if the intersection is empty — a session can
     // exist on a device without a subscription (e.g. second browser, or subscription
     // registered on a device that no longer has an active socket).
     const activeDeviceKeys = new Set(activeSessions.map((s) => s.deviceKey))
-    const matched = allSubs.filter((sub) => activeDeviceKeys.has(sub.deviceKey))
-    return matched.length > 0 ? matched : allSubs
+    const matched = activeSubs.filter((sub) => activeDeviceKeys.has(sub.deviceKey))
+    const active = matched.length > 0 ? matched : activeSubs
+    return { active, expired: expiredSubs }
   }
 }

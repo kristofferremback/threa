@@ -18,7 +18,9 @@ export function createPushSessionCleanup(
     maxAgeMs?: number
   } = {}
 ): PushSessionCleanup {
-  const { intervalMs = 60 * 60 * 1000, maxAgeMs = 7 * 24 * 60 * 60 * 1000 } = options
+  // maxAgeMs matches the 30-day session cookie TTL so that session rows remain
+  // available for the per-device push expiry check in PushService.
+  const { intervalMs = 60 * 60 * 1000, maxAgeMs = 30 * 24 * 60 * 60 * 1000 } = options
 
   let timer: ReturnType<typeof setInterval> | null = null
 
