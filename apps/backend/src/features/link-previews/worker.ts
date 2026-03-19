@@ -36,17 +36,15 @@ async function tryOEmbed(url: string): Promise<UpdateLinkPreviewParams | null> {
   const provider = OEMBED_PROVIDERS.find((p) => p.pattern.test(url))
   if (!provider) return null
 
-  try {
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
 
+  try {
     const oembedUrl = `${provider.endpoint}?format=json&url=${encodeURIComponent(url)}`
     const response = await fetch(oembedUrl, {
       headers: { "User-Agent": FETCH_USER_AGENT, Accept: "application/json" },
       signal: controller.signal,
     })
-
-    clearTimeout(timeout)
 
     if (!response.ok) {
       response.body?.cancel()
@@ -75,6 +73,8 @@ async function tryOEmbed(url: string): Promise<UpdateLinkPreviewParams | null> {
   } catch (err) {
     log.debug({ err, url }, "oEmbed fetch failed, falling back to HTML")
     return null
+  } finally {
+    clearTimeout(timeout)
   }
 }
 
@@ -96,10 +96,10 @@ async function fetchMetadata(url: string): Promise<UpdateLinkPreviewParams> {
   const oembedResult = await tryOEmbed(url)
   if (oembedResult) return oembedResult
 
-  try {
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
 
+  try {
     const response = await fetch(url, {
       method: "GET",
       headers: {
@@ -109,8 +109,6 @@ async function fetchMetadata(url: string): Promise<UpdateLinkPreviewParams> {
       signal: controller.signal,
       redirect: "follow",
     })
-
-    clearTimeout(timeout)
 
     // Validate the final URL after redirects to prevent SSRF via open redirects
     if (response.url && isBlockedUrl(response.url)) {
@@ -175,6 +173,8 @@ async function fetchMetadata(url: string): Promise<UpdateLinkPreviewParams> {
   } catch (err) {
     log.warn({ err, url }, "Failed to fetch link preview metadata")
     return { status: "failed" }
+  } finally {
+    clearTimeout(timeout)
   }
 }
 
