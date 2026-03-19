@@ -48,6 +48,7 @@ export function SharePickerPage() {
   const [selectedIndex, setSelectedIndex] = useState(0)
   // null = not yet loaded, [] = loaded but empty/unavailable
   const [files, setFiles] = useState<File[] | null>(null)
+  const [submitting, setSubmitting] = useState(false)
 
   // Only lightweight text metadata comes from navigation state — files stay in Cache API
   // to avoid hitting browser history.state serialization limits (~640 KB in Firefox).
@@ -70,6 +71,7 @@ export function SharePickerPage() {
     }
   }, [hasFiles])
 
+  const filesLoading = hasFiles && files === null
   const resolvedFiles = files ?? []
 
   // Full ShareData for passing to handlers (combines meta + files)
@@ -106,6 +108,8 @@ export function SharePickerPage() {
 
   const handleSelectStream = useCallback(
     async (streamId: string) => {
+      if (filesLoading || submitting) return
+      setSubmitting(true)
       try {
         await saveShareContent(workspaceId!, streamId, shareData)
       } catch (err) {
@@ -115,10 +119,12 @@ export function SharePickerPage() {
       void clearShareTargetCache()
       navigate(`/w/${workspaceId}/s/${streamId}`, { replace: true })
     },
-    [workspaceId, shareData, navigate, saveShareContent]
+    [workspaceId, shareData, navigate, saveShareContent, filesLoading, submitting]
   )
 
   const handleNewScratchpad = useCallback(async () => {
+    if (filesLoading || submitting) return
+    setSubmitting(true)
     try {
       const result = await createShareDraft(workspaceId!, shareData)
       void clearShareTargetCache()
@@ -127,7 +133,7 @@ export function SharePickerPage() {
       console.error("Failed to create share draft", err)
       navigate(`/w/${workspaceId}`, { replace: true })
     }
-  }, [workspaceId, shareData, navigate, createShareDraft])
+  }, [workspaceId, shareData, navigate, createShareDraft, filesLoading, submitting])
 
   // Reset selection when query changes
   useEffect(() => {
@@ -197,7 +203,7 @@ export function SharePickerPage() {
     return [newScratchpadItem, ...streamItems]
   }, [streams, dmPeers, users, query, workspaceId, handleNewScratchpad, handleSelectStream])
 
-  const isLoading = !bootstrap && !bootstrapError
+  const isLoading = (!bootstrap && !bootstrapError) || filesLoading || submitting
 
   if (bootstrapError) {
     return (

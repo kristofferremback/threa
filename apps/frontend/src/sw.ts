@@ -79,13 +79,10 @@ self.addEventListener("fetch", (event) => {
         const keys = await cache.keys()
         for (const key of keys) await cache.delete(key)
 
-        // Store metadata
-        await cache.put(
-          new Request("/_share/meta"),
-          new Response(JSON.stringify({ title, text, url: sharedUrl, fileCount: files.length }))
-        )
-
-        // Store each file as a separate cache entry preserving name/type
+        // Store files first so fileCount in meta is always accurate —
+        // if a file write fails mid-loop, meta records only the files
+        // that were actually persisted.
+        let storedFileCount = 0
         for (let i = 0; i < files.length; i++) {
           await cache.put(
             new Request(`/_share/file/${i}`),
@@ -97,7 +94,14 @@ self.addEventListener("fetch", (event) => {
               },
             })
           )
+          storedFileCount++
         }
+
+        // Store metadata last — fileCount reflects only successfully stored files
+        await cache.put(
+          new Request("/_share/meta"),
+          new Response(JSON.stringify({ title, text, url: sharedUrl, fileCount: storedFileCount }))
+        )
       } catch {
         // Best-effort — if stashing fails, the redirect still lands on /share
         // and the user sees the normal share picker (just without pre-populated content).
