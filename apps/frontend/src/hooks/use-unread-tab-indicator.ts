@@ -20,7 +20,6 @@ const LIGHT_FAVICON_SVG = `<svg viewBox="0 0 100 100" fill="none" xmlns="http://
 </svg>`
 
 function addNotificationDot(baseSvg: string): string {
-  // Insert a red notification dot at the top-right of the SVG before the closing tag
   const dot = `<circle cx="78" cy="22" r="14" fill="#EF4444"/>`
   return baseSvg.replace("</svg>", `  ${dot}\n</svg>`)
 }
@@ -34,8 +33,6 @@ function isDarkMode(): boolean {
 }
 
 function setFavicon(href: string) {
-  // Update existing SVG favicon links; the first SVG icon without a media query
-  // (or the first one matching the current scheme) is the one browsers use.
   const links = document.querySelectorAll<HTMLLinkElement>('link[rel="icon"][type="image/svg+xml"]')
   for (const link of links) {
     link.href = href
@@ -45,6 +42,10 @@ function setFavicon(href: string) {
 function getTotalUnread(bootstrap: WorkspaceBootstrap | undefined): number {
   if (!bootstrap?.unreadCounts) return 0
   return Object.values(bootstrap.unreadCounts).reduce<number>((sum, count) => sum + count, 0)
+}
+
+function arraysEqual(a: readonly unknown[], b: readonly unknown[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i])
 }
 
 /**
@@ -61,8 +62,14 @@ export function useUnreadTabIndicator(workspaceId: string) {
   const prevCountRef = useRef<number>(0)
 
   useEffect(() => {
+    const bootstrapKey = workspaceKeys.bootstrap(workspaceId)
+
+    // Reset so the first update() always writes to the DOM, even if the new
+    // workspace happens to have the same unread count as the previous one.
+    prevCountRef.current = -1
+
     function update() {
-      const bootstrap = queryClient.getQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId))
+      const bootstrap = queryClient.getQueryData<WorkspaceBootstrap>(bootstrapKey)
       const totalUnread = getTotalUnread(bootstrap)
 
       // Skip DOM updates if count hasn't changed
@@ -84,18 +91,21 @@ export function useUnreadTabIndicator(workspaceId: string) {
 
     // Subscribe to cache changes for the workspace bootstrap query
     const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
-      if (
-        event.type === "updated" &&
-        event.query.queryKey[0] === "workspaces" &&
-        event.query.queryKey[1] === "bootstrap" &&
-        event.query.queryKey[2] === workspaceId
-      ) {
+      if (event.type === "updated" && arraysEqual(event.query.queryKey, bootstrapKey)) {
         update()
       }
     })
 
+    // Re-render favicon when theme changes so the correct base SVG is used
+    const themeObserver = new MutationObserver(() => {
+      prevCountRef.current = -1
+      update()
+    })
+    themeObserver.observe(document.documentElement, { attributeFilter: ["class"] })
+
     return () => {
       unsubscribe()
+      themeObserver.disconnect()
       // Restore defaults on unmount
       document.title = BASE_TITLE
       const dark = isDarkMode()
