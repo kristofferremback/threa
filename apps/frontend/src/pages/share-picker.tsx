@@ -1,10 +1,10 @@
 import { useState, useMemo, useCallback, useEffect } from "react"
-import { useNavigate, useParams, useSearchParams } from "react-router-dom"
-import { FileText, Hash, MessageSquare, Bell, Search, Plus, Link as LinkIcon } from "lucide-react"
+import { useNavigate, useParams, useLocation } from "react-router-dom"
+import { FileText, Hash, MessageSquare, Bell, Search, Plus, Link as LinkIcon, Image, Paperclip } from "lucide-react"
 import { StreamTypes, getAvatarUrl } from "@threa/types"
 import type { Stream, StreamType } from "@threa/types"
 import { useWorkspaceBootstrap } from "@/hooks"
-import { useShareTarget } from "@/hooks/use-share-target"
+import { useShareTarget, type ShareData } from "@/hooks/use-share-target"
 import { getStreamName, streamFallbackLabel } from "@/lib/streams"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -33,7 +33,7 @@ const TYPE_LABELS: Partial<Record<StreamType, string>> = {
  */
 export function SharePickerPage() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
-  const [searchParams] = useSearchParams()
+  const location = useLocation()
   const navigate = useNavigate()
   const { data: bootstrap, error: bootstrapError } = useWorkspaceBootstrap(workspaceId!)
   const { createShareDraft, saveShareContent } = useShareTarget()
@@ -41,9 +41,13 @@ export function SharePickerPage() {
   const [query, setQuery] = useState("")
   const [selectedIndex, setSelectedIndex] = useState(0)
 
-  const title = searchParams.get("title")
-  const text = searchParams.get("text")
-  const url = searchParams.get("url")
+  // Share data passed from ShareTargetPage via navigation state
+  const shareData: ShareData = useMemo(() => {
+    const state = location.state as { shareData?: ShareData | null } | null
+    return state?.shareData ?? { title: null, text: null, url: null, files: [] }
+  }, [location.state])
+
+  const { title, text, url, files } = shareData
 
   // Build a preview of what's being shared
   const sharedPreview = useMemo(() => {
@@ -51,34 +55,45 @@ export function SharePickerPage() {
     if (title) parts.push(title)
     if (text && text !== title) parts.push(text)
     if (url) parts.push(url)
-    return parts.join(" — ") || "Shared content"
+    return parts.join(" — ") || null
   }, [title, text, url])
+
+  const filesSummary = useMemo(() => {
+    if (files.length === 0) return null
+    const imageCount = files.filter((f) => f.type.startsWith("image/")).length
+    const otherCount = files.length - imageCount
+    const parts: string[] = []
+    if (imageCount > 0) parts.push(`${imageCount} image${imageCount > 1 ? "s" : ""}`)
+    if (otherCount > 0) parts.push(`${otherCount} file${otherCount > 1 ? "s" : ""}`)
+    return parts.join(", ")
+  }, [files])
 
   const streams = useMemo(() => bootstrap?.streams ?? [], [bootstrap?.streams])
   const dmPeers = useMemo(() => bootstrap?.dmPeers ?? [], [bootstrap?.dmPeers])
   const users = useMemo(() => bootstrap?.users ?? [], [bootstrap?.users])
+
   const handleSelectStream = useCallback(
     async (streamId: string) => {
       try {
-        await saveShareContent(workspaceId!, streamId, { title, text, url })
+        await saveShareContent(workspaceId!, streamId, shareData)
       } catch (err) {
         // Navigate anyway — the draft won't be pre-populated but the user isn't stranded
         console.error("Failed to save shared content", err)
       }
       navigate(`/w/${workspaceId}/s/${streamId}`, { replace: true })
     },
-    [workspaceId, title, text, url, navigate, saveShareContent]
+    [workspaceId, shareData, navigate, saveShareContent]
   )
 
   const handleNewScratchpad = useCallback(async () => {
     try {
-      const result = await createShareDraft(workspaceId!, { title, text, url })
+      const result = await createShareDraft(workspaceId!, shareData)
       navigate(result.path, { replace: true })
     } catch (err) {
       console.error("Failed to create share draft", err)
       navigate(`/w/${workspaceId}`, { replace: true })
     }
-  }, [workspaceId, title, text, url, navigate, createShareDraft])
+  }, [workspaceId, shareData, navigate, createShareDraft])
 
   // Reset selection when query changes
   useEffect(() => {
@@ -169,10 +184,26 @@ export function SharePickerPage() {
         {/* Header */}
         <div className="px-4 pt-6 pb-4">
           <h1 className="text-lg font-medium">Share to Threa</h1>
-          <div className="mt-2 flex items-start gap-2 rounded-lg border border-border bg-muted/50 px-3 py-2.5 text-sm text-muted-foreground">
-            <LinkIcon className="h-4 w-4 shrink-0 mt-0.5 opacity-60" />
-            <span className="line-clamp-2 break-all">{sharedPreview}</span>
-          </div>
+
+          {/* Text preview */}
+          {sharedPreview && (
+            <div className="mt-2 flex items-start gap-2 rounded-lg border border-border bg-muted/50 px-3 py-2.5 text-sm text-muted-foreground">
+              <LinkIcon className="h-4 w-4 shrink-0 mt-0.5 opacity-60" />
+              <span className="line-clamp-2 break-all">{sharedPreview}</span>
+            </div>
+          )}
+
+          {/* File preview */}
+          {filesSummary && (
+            <div className="mt-2 flex items-start gap-2 rounded-lg border border-border bg-muted/50 px-3 py-2.5 text-sm text-muted-foreground">
+              {files.some((f) => f.type.startsWith("image/")) ? (
+                <Image className="h-4 w-4 shrink-0 mt-0.5 opacity-60" />
+              ) : (
+                <Paperclip className="h-4 w-4 shrink-0 mt-0.5 opacity-60" />
+              )}
+              <span>{filesSummary}</span>
+            </div>
+          )}
         </div>
 
         {/* Search */}
