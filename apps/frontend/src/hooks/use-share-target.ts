@@ -14,12 +14,19 @@ export interface ShareData {
   files: File[]
 }
 
+/** Lightweight metadata passed via navigation state (no binary blobs). */
+export interface ShareMeta {
+  title: string | null
+  text: string | null
+  url: string | null
+  hasFiles: boolean
+}
+
 /**
- * Read share data stashed by the service worker in the Cache API.
- * Returns null if no data is available. Does NOT clear the cache — call
- * {@link clearShareTargetCache} after the data has been safely consumed.
+ * Read only the text metadata from the share cache.
+ * Safe to pass via `history.state` — no binary blobs.
  */
-export async function readShareTargetCache(): Promise<ShareData | null> {
+export async function readShareTargetMeta(): Promise<ShareMeta | null> {
   try {
     const cache = await caches.open(SHARE_TARGET_CACHE)
     const metaResponse = await cache.match("/_share/meta")
@@ -32,6 +39,24 @@ export async function readShareTargetCache(): Promise<ShareData | null> {
       fileCount: number
     }
 
+    return { title: meta.title, text: meta.text, url: meta.url, hasFiles: meta.fileCount > 0 }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Read file blobs from the share cache. Call separately from
+ * {@link readShareTargetMeta} — files must NOT go through `history.state`
+ * because browsers enforce serialization size limits (~640 KB in Firefox).
+ */
+export async function readShareTargetFiles(): Promise<File[]> {
+  try {
+    const cache = await caches.open(SHARE_TARGET_CACHE)
+    const metaResponse = await cache.match("/_share/meta")
+    if (!metaResponse) return []
+
+    const meta = (await metaResponse.json()) as { fileCount: number }
     const files: File[] = []
     for (let i = 0; i < meta.fileCount; i++) {
       const fileResponse = await cache.match(`/_share/file/${i}`)
@@ -41,10 +66,9 @@ export async function readShareTargetCache(): Promise<ShareData | null> {
         files.push(new File([blob], filename, { type: blob.type }))
       }
     }
-
-    return { title: meta.title, text: meta.text, url: meta.url, files }
+    return files
   } catch {
-    return null
+    return []
   }
 }
 

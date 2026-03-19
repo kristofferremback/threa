@@ -4,7 +4,13 @@ import { FileText, Hash, MessageSquare, Bell, Search, Plus, Link as LinkIcon, Im
 import { StreamTypes, getAvatarUrl } from "@threa/types"
 import type { Stream, StreamType } from "@threa/types"
 import { useWorkspaceBootstrap } from "@/hooks"
-import { useShareTarget, clearShareTargetCache, type ShareData } from "@/hooks/use-share-target"
+import {
+  useShareTarget,
+  clearShareTargetCache,
+  readShareTargetFiles,
+  type ShareData,
+  type ShareMeta,
+} from "@/hooks/use-share-target"
 import { getStreamName, streamFallbackLabel } from "@/lib/streams"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -40,14 +46,31 @@ export function SharePickerPage() {
 
   const [query, setQuery] = useState("")
   const [selectedIndex, setSelectedIndex] = useState(0)
+  const [files, setFiles] = useState<File[]>([])
 
-  // Share data passed from ShareTargetPage via navigation state
-  const shareData: ShareData = useMemo(() => {
-    const state = location.state as { shareData?: ShareData | null } | null
-    return state?.shareData ?? { title: null, text: null, url: null, files: [] }
+  // Only lightweight text metadata comes from navigation state — files stay in Cache API
+  // to avoid hitting browser history.state serialization limits (~640 KB in Firefox).
+  const shareMeta: ShareMeta = useMemo(() => {
+    const state = location.state as { shareMeta?: ShareMeta | null } | null
+    return state?.shareMeta ?? { title: null, text: null, url: null, hasFiles: false }
   }, [location.state])
 
-  const { title, text, url, files } = shareData
+  const { title, text, url, hasFiles } = shareMeta
+
+  // Read file blobs from the Cache API on mount (not from navigation state)
+  useEffect(() => {
+    if (!hasFiles) return
+    let cancelled = false
+    readShareTargetFiles().then((f) => {
+      if (!cancelled) setFiles(f)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [hasFiles])
+
+  // Full ShareData for passing to handlers (combines meta + files)
+  const shareData: ShareData = useMemo(() => ({ title, text, url, files }), [title, text, url, files])
 
   // Build a preview of what's being shared
   const sharedPreview = useMemo(() => {
@@ -59,14 +82,15 @@ export function SharePickerPage() {
   }, [title, text, url])
 
   const filesSummary = useMemo(() => {
-    if (files.length === 0) return null
+    if (!hasFiles && files.length === 0) return null
+    if (files.length === 0) return hasFiles ? "Loading files..." : null
     const imageCount = files.filter((f) => f.type.startsWith("image/")).length
     const otherCount = files.length - imageCount
     const parts: string[] = []
     if (imageCount > 0) parts.push(`${imageCount} image${imageCount > 1 ? "s" : ""}`)
     if (otherCount > 0) parts.push(`${otherCount} file${otherCount > 1 ? "s" : ""}`)
     return parts.join(", ")
-  }, [files])
+  }, [hasFiles, files])
 
   const streams = useMemo(() => bootstrap?.streams ?? [], [bootstrap?.streams])
   const dmPeers = useMemo(() => bootstrap?.dmPeers ?? [], [bootstrap?.dmPeers])

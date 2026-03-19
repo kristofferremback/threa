@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react"
 import { Navigate, useNavigate } from "react-router-dom"
 import { useAuth } from "@/auth"
 import { useWorkspaces } from "@/hooks"
-import { readShareTargetCache } from "@/hooks/use-share-target"
+import { readShareTargetMeta } from "@/hooks/use-share-target"
 import { ThreaLogo } from "@/components/threa-logo"
 
 /**
@@ -33,14 +33,14 @@ export function ShareTargetPage() {
     const workspaceId = workspaces[0].id
     let cancelled = false
 
-    // Read share data from the SW cache and pass it via navigation state
-    // so the share picker can access files without a second cache read.
-    // Cache is NOT cleared here — the share picker clears it after consuming.
-    readShareTargetCache().then((shareData) => {
+    // Pass only lightweight text metadata via navigation state.
+    // Files stay in the Cache API — passing File blobs through history.state
+    // would hit browser serialization limits (~640 KB in Firefox).
+    readShareTargetMeta().then((shareMeta) => {
       if (cancelled) return
       navigate(`/w/${workspaceId}/share`, {
         replace: true,
-        state: { shareData },
+        state: { shareMeta },
       })
     })
 
