@@ -60,24 +60,19 @@ Key behaviors:
 - Call send_message to deliver your response. You can call it multiple times for multi-part responses.
 - If you have nothing to add (e.g., the question was already answered), simply don't call send_message.
 - If new messages arrive while you're processing, you'll see them and can incorporate them in your response.
-- Be helpful, concise, and conversational.`
+
+## Response Style
+
+Be brief. Default to 1–3 sentences. Match the depth to what was asked — a simple question gets a simple answer. Only go longer when the topic genuinely requires it (step-by-step instructions, complex analysis the user requested, etc.). Avoid preamble, filler, and restating what the user said. Be friendly and warm in tone, but don't pad with extra words.`
 
   if (workspaceResearchEnabled) {
     prompt += `
 
 ## Workspace Research
 
-You have a \`workspace_research\` tool to retrieve relevant workspace memory (messages, memos, and attachments) for this conversation.
+You have a \`workspace_research\` tool to retrieve relevant workspace memory (messages, memos, and attachments).
 
-When to use workspace_research:
-- When you need additional background from past workspace conversations
-- Before answering if you are unsure whether prior context exists
-- When the user asks about previous decisions, conversations, or shared files
-- For scratchpad planning/problem-solving prompts, prefer checking memory early before finalizing your answer
-
-After calling it:
-- Incorporate the retrieved context naturally into your response
-- Preserve important source-backed details when sending your message`
+Use it when the user asks about past conversations, decisions, or shared files, or when you suspect relevant prior context exists. Incorporate retrieved context naturally into your response.`
   }
 
   prompt += `
