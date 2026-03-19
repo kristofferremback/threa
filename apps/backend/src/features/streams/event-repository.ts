@@ -225,19 +225,18 @@ export const StreamEventRepository = {
     const total = Math.max(options?.limit ?? 50, 2)
     const half = Math.floor(total / 2)
 
-    // Fetch older (including target) and newer in parallel
-    const [olderEvents, newerEvents] = await Promise.all([
-      this.list(db, streamId, {
-        beforeSequence: targetSequence + 1n,
-        limit: half + 1,
-        viewerId: options?.viewerId,
-      }),
-      this.list(db, streamId, {
-        afterSequence: targetSequence,
-        limit: half + 1,
-        viewerId: options?.viewerId,
-      }),
-    ])
+    // Fetch older (including target) and newer sequentially on the provided connection.
+    // Using the explicit name avoids a broken `this` binding if the method is destructured.
+    const olderEvents = await StreamEventRepository.list(db, streamId, {
+      beforeSequence: targetSequence + 1n,
+      limit: half + 1,
+      viewerId: options?.viewerId,
+    })
+    const newerEvents = await StreamEventRepository.list(db, streamId, {
+      afterSequence: targetSequence,
+      limit: half + 1,
+      viewerId: options?.viewerId,
+    })
 
     const hasOlder = olderEvents.length > half
     const hasNewer = newerEvents.length > half

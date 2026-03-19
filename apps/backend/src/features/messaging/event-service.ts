@@ -482,18 +482,20 @@ export class EventService {
     targetId: string,
     options?: { idType?: "event" | "message"; limit?: number; viewerId?: string }
   ): Promise<{ events: StreamEvent[]; hasOlder: boolean; hasNewer: boolean }> {
-    let targetEvent: StreamEvent | null = null
-    if (!options?.idType || options.idType === "event") {
-      targetEvent = await StreamEventRepository.findById(this.pool, targetId)
-      if (targetEvent && targetEvent.streamId !== streamId) targetEvent = null
-    }
-    if (!targetEvent && options?.idType !== "event") {
-      targetEvent = await StreamEventRepository.findByMessageId(this.pool, streamId, targetId)
-    }
-    if (!targetEvent) {
-      return { events: [], hasOlder: false, hasNewer: false }
-    }
-    return StreamEventRepository.listAround(this.pool, streamId, targetEvent.sequence, options)
+    return withClient(this.pool, async (client) => {
+      let targetEvent: StreamEvent | null = null
+      if (!options?.idType || options.idType === "event") {
+        targetEvent = await StreamEventRepository.findById(client, targetId)
+        if (targetEvent && targetEvent.streamId !== streamId) targetEvent = null
+      }
+      if (!targetEvent && options?.idType !== "event") {
+        targetEvent = await StreamEventRepository.findByMessageId(client, streamId, targetId)
+      }
+      if (!targetEvent) {
+        return { events: [], hasOlder: false, hasNewer: false }
+      }
+      return StreamEventRepository.listAround(client, streamId, targetEvent.sequence, options)
+    })
   }
 
   /**

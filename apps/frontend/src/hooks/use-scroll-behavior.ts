@@ -63,6 +63,10 @@ export function useScrollBehavior({
   // Tracks the previous render's isFetchingOlder value so the adjustment
   // effect can detect when an older-content fetch just completed (true→false).
   const prevIsFetchingOlder = useRef(false)
+  // One-shot guards: prevent onScrollNearTop/Bottom from firing repeatedly
+  // between React re-renders while the user scrolls within the trigger zone.
+  const olderFetchScheduled = useRef(false)
+  const newerFetchScheduled = useRef(false)
 
   const scrollToBottom = useCallback(() => {
     if (scrollContainerRef.current && shouldAutoScroll.current) {
@@ -104,7 +108,10 @@ export function useScrollBehavior({
   // No dep array → runs every render, defined after adjustment so it runs second.
   // Must also be useLayoutEffect to maintain ordering with the adjustment above.
   useLayoutEffect(() => {
+    // Reset one-shot guards when fetching completes (true→false transition)
+    if (prevIsFetchingOlder.current && !isFetchingOlder) olderFetchScheduled.current = false
     prevIsFetchingOlder.current = isFetchingOlder
+    if (!isFetchingNewer) newerFetchScheduled.current = false
     const el = scrollContainerRef.current
     if (el) {
       prevScrollHeight.current = el.scrollHeight
@@ -151,14 +158,16 @@ export function useScrollBehavior({
     const jumpThresholdPixels = JUMP_TO_LATEST_ITEM_THRESHOLD * avgItemHeight
     setIsScrolledFarFromBottom(distanceFromBottom > jumpThresholdPixels)
 
-    // Load older content when near top
-    if (onScrollNearTop && scrollTop < triggerPixels && !isFetchingOlder) {
+    // Load older content when near top (one-shot until fetch completes)
+    if (onScrollNearTop && scrollTop < triggerPixels && !isFetchingOlder && !olderFetchScheduled.current) {
+      olderFetchScheduled.current = true
       onScrollNearTop()
     }
 
-    // Load newer content when near bottom (jump-to mode)
-    if (onScrollNearBottom && !isFetchingNewer) {
+    // Load newer content when near bottom (jump-to mode, one-shot)
+    if (onScrollNearBottom && !isFetchingNewer && !newerFetchScheduled.current) {
       if (distanceFromBottom < triggerPixels) {
+        newerFetchScheduled.current = true
         onScrollNearBottom()
       }
     }
