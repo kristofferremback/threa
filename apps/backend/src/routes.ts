@@ -24,7 +24,7 @@ import { createDebugHandlers } from "./handlers/debug-handlers"
 import { createInternalHandlers } from "./handlers/internal-handlers"
 import { createAuthStubHandlers } from "./auth/auth-stub-handlers"
 import { createAgentSessionHandlers } from "./features/agents"
-import { createPublicApiHandlers } from "./features/api-keys"
+import { createPublicApiHandlers } from "./features/public-api"
 import {
   createInternalAuthMiddleware,
   errorHandler,
@@ -119,6 +119,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     activityService,
     commandRegistry,
     avatarService,
+    pool,
   })
   const stream = createStreamHandlers({ streamService, eventService, activityService })
   const message = createMessageHandlers({ pool, eventService, streamService, commandRegistry })
@@ -293,15 +294,56 @@ export function registerRoutes(app: Express, deps: Dependencies) {
 
   // Public API v1 — API key auth
   const publicAuth = createPublicApiAuthMiddleware({ apiKeyService, pool })
-  const publicApi = createPublicApiHandlers({ searchService, apiKeyChannelService })
+  const publicApi = createPublicApiHandlers({ searchService, apiKeyChannelService, eventService, pool })
+  const publicMiddleware = [rateLimits.publicApiWorkspace, rateLimits.publicApiKey, publicAuth] as const
 
   app.post(
     "/api/v1/workspaces/:workspaceId/messages/search",
-    rateLimits.publicApiWorkspace,
-    rateLimits.publicApiKey,
-    publicAuth,
+    ...publicMiddleware,
     requireApiKeyScope(API_KEY_SCOPES.MESSAGES_SEARCH),
     publicApi.searchMessages
+  )
+
+  // Streams
+  app.get(
+    "/api/v1/workspaces/:workspaceId/streams",
+    ...publicMiddleware,
+    requireApiKeyScope(API_KEY_SCOPES.STREAMS_READ),
+    publicApi.listStreams
+  )
+
+  // Messages
+  app.get(
+    "/api/v1/workspaces/:workspaceId/streams/:streamId/messages",
+    ...publicMiddleware,
+    requireApiKeyScope(API_KEY_SCOPES.MESSAGES_READ),
+    publicApi.listMessages
+  )
+  app.post(
+    "/api/v1/workspaces/:workspaceId/streams/:streamId/messages",
+    ...publicMiddleware,
+    requireApiKeyScope(API_KEY_SCOPES.MESSAGES_WRITE),
+    publicApi.sendMessage
+  )
+  app.patch(
+    "/api/v1/workspaces/:workspaceId/messages/:messageId",
+    ...publicMiddleware,
+    requireApiKeyScope(API_KEY_SCOPES.MESSAGES_WRITE),
+    publicApi.updateMessage
+  )
+  app.delete(
+    "/api/v1/workspaces/:workspaceId/messages/:messageId",
+    ...publicMiddleware,
+    requireApiKeyScope(API_KEY_SCOPES.MESSAGES_WRITE),
+    publicApi.deleteMessage
+  )
+
+  // Users
+  app.get(
+    "/api/v1/workspaces/:workspaceId/users",
+    ...publicMiddleware,
+    requireApiKeyScope(API_KEY_SCOPES.USERS_READ),
+    publicApi.listUsers
   )
 
   app.use(errorHandler)

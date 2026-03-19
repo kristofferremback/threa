@@ -113,7 +113,8 @@ async function cleanupStaleData(): Promise<void> {
         schedules,
         schedule_ticks,
         user_activity,
-        api_key_channel_access
+        api_key_channel_access,
+        bots
       CASCADE
     `)
   } catch {

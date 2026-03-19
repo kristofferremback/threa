@@ -145,6 +145,7 @@ export type {
   MessageVersion,
   StreamEvent,
   Persona,
+  Bot,
   Attachment,
   AttachmentSummary,
   SourceItem,

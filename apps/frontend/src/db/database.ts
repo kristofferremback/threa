@@ -95,6 +95,17 @@ export interface CachedEvent {
   _cachedAt: number
 }
 
+export interface CachedBot {
+  id: string
+  workspaceId: string
+  name: string
+  description: string | null
+  avatarEmoji: string | null
+  createdAt: string
+  updatedAt: string
+  _cachedAt: number
+}
+
 export interface CachedPersona {
   id: string
   workspaceId: string | null
@@ -172,6 +183,7 @@ class ThreaDatabase extends Dexie {
   dmPeers!: EntityTable<CachedDmPeer, "id">
   events!: EntityTable<CachedEvent, "id">
   personas!: EntityTable<CachedPersona, "id">
+  bots!: EntityTable<CachedBot, "id">
   pendingMessages!: EntityTable<PendingMessage, "clientId">
   syncCursors!: EntityTable<SyncCursor, "key">
   draftScratchpads!: EntityTable<DraftScratchpad, "id">
@@ -276,6 +288,11 @@ class ThreaDatabase extends Dexie {
       dmPeers: "id, workspaceId, streamId, _cachedAt",
     })
 
+    // v14: Add bots table for bot entity resolution on frontend.
+    this.version(14).stores({
+      bots: "id, workspaceId, _cachedAt",
+    })
+
     this.workspaceUsers = this.table(WORKSPACE_USERS_STORE) as EntityTable<CachedWorkspaceUser, "id">
   }
 }
@@ -293,6 +310,7 @@ export async function clearAllCachedData(): Promise<void> {
     db.dmPeers.clear(),
     db.events.clear(),
     db.personas.clear(),
+    db.bots.clear(),
     db.syncCursors.clear(),
     // Note: we keep pendingMessages to retry sending after re-login
   ])

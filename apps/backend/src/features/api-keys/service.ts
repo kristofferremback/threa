@@ -1,4 +1,5 @@
 import type { Pool } from "pg"
+import { sql } from "../../db"
 import { ApiKeyChannelAccessRepository } from "./repository"
 import { SearchRepository } from "../search"
 
@@ -20,5 +21,22 @@ export class ApiKeyChannelService {
     ])
 
     return [...new Set([...publicStreamIds, ...grantedStreamIds])]
+  }
+
+  async isStreamAccessibleForApiKey(workspaceId: string, apiKeyId: string, streamId: string): Promise<boolean> {
+    const result = await this.pool.query(
+      sql`SELECT EXISTS(
+        SELECT 1 FROM streams
+        WHERE id = ${streamId} AND workspace_id = ${workspaceId} AND archived_at IS NULL
+          AND (
+            visibility = 'public'
+            OR id IN (
+              SELECT stream_id FROM api_key_channel_access
+              WHERE workspace_id = ${workspaceId} AND api_key_id = ${apiKeyId} AND stream_id = ${streamId}
+            )
+          )
+      ) AS accessible`
+    )
+    return result.rows[0].accessible
   }
 }

@@ -171,6 +171,45 @@ export const StreamRepository = {
   },
 
   /**
+   * List streams by a known set of IDs with optional filtering.
+   * Used by the public API to fetch accessible stream details.
+   */
+  async listByIds(
+    db: Querier,
+    workspaceId: string,
+    ids: string[],
+    filters?: { types?: StreamType[]; query?: string; limit?: number }
+  ): Promise<Stream[]> {
+    if (ids.length === 0) return []
+
+    const limit = filters?.limit ?? 50
+    const conditions = [`id = ANY($1)`, `workspace_id = $2`, `archived_at IS NULL`]
+    const values: unknown[] = [ids, workspaceId]
+    let paramIndex = 3
+
+    if (filters?.types?.length) {
+      conditions.push(`type = ANY($${paramIndex++})`)
+      values.push(filters.types)
+    }
+    if (filters?.query) {
+      const pattern = `%${filters.query}%`
+      conditions.push(`(display_name ILIKE $${paramIndex} OR slug ILIKE $${paramIndex})`)
+      paramIndex++
+      values.push(pattern)
+    }
+    values.push(limit)
+
+    const result = await db.query<StreamRow>(
+      `SELECT ${SELECT_FIELDS} FROM streams
+        WHERE ${conditions.join(" AND ")}
+        ORDER BY display_name NULLS LAST
+        LIMIT $${paramIndex}`,
+      values
+    )
+    return result.rows.map(mapRowToStream)
+  },
+
+  /**
    * Find a stream by its slug within a workspace.
    * Slugs are case-insensitive for matching.
    */

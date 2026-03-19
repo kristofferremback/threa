@@ -1,343 +1,300 @@
-# Public API v1 — API Key Auth + Message Search
+# Public API v1 — Phase 2 Architectural Rework
 
 ## Context
 
-Threa needs a public-facing API to support external integrations (source control platforms, AI assistants like OpenClaw, programmatic access). The public API must be separate from the internal API so internal endpoints can evolve freely without breaking external consumers.
+PR #220 implemented CRUD endpoints (streams, messages, users) for the public API. After review feedback from Kris and Greptile, four architectural issues need addressing:
 
-WorkOS shipped [API Keys](https://workos.com/changelog/api-keys) (Oct 2025) — organization-scoped keys with permission strings, a validation endpoint (`workos.apiKeys.validateApiKey()`), and a self-service management widget (`<ApiKeys />`). Our SDK (`@workos-inc/node@^7`) already has the `apiKeys.validateApiKey()` method available.
+1. **Bot identity**: `author_display_name` and `api_key_id` as flat columns on messages breaks the established `authorType + authorId → entity table` pattern. Bots should be proper entities like personas.
+2. **Feature folder**: Public API handlers are misplaced in `features/api-keys/`. The public API is its own feature that wraps other features.
+3. **Display name consistency**: Public API should return formatted channel names (`#slug`) so consumers don't need to know Threa conventions.
+4. **OwnershipError handling**: Try/catch blocks in every handler are verbose; centralize in error middleware.
 
-This plan delivers the first public endpoint (message search) behind API key auth, establishing the patterns for all future public API expansion.
-
-## Architecture Decisions
-
-- **Path prefix**: `/api/v1/workspaces/:workspaceId/*` for public API, existing `/api/workspaces/:workspaceId/*` stays internal
-- **Auth**: `Authorization: Bearer <api_key>` → WorkOS validates → org match check → permission check
-- **Channel access**: Public channels accessible by default, private channels require explicit grants via `api_key_channel_access` table
-- **Rate limiting**: Workspace-level (600/min) + per-key (60/min), both applied to `/api/v1/` routes
-- **Search**: Full-text + semantic (embedding) search, with `semantic: true` as an opt-in flag
+Additionally, Greptile flagged that `resolveApiKeyMessage` allows soft-deleted messages through.
 
 ---
 
-## Step 1: Database — `api_key_channel_access` table
+## Step 1: Replace Migration
 
-Create migration: `apps/backend/migrations/YYYYMMDD_api_key_channel_access.sql`
+**Replace** `apps/backend/src/db/migrations/20260313120000_public_api_message_columns.sql`
+
+The current migration adds `author_display_name` and `api_key_id` to messages. Replace with a migration that creates the `bots` table and removes the flat columns. Safe to replace since this migration hasn't shipped (PR not merged).
 
 ```sql
-CREATE TABLE api_key_channel_access (
+-- Bot entities for API-created messages.
+-- Follows the persona pattern: authorType "bot" + authorId → bots.id
+CREATE TABLE bots (
   id TEXT PRIMARY KEY,
   workspace_id TEXT NOT NULL,
   api_key_id TEXT NOT NULL,
-  stream_id TEXT NOT NULL,
-  granted_by TEXT NOT NULL,
-  granted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE(workspace_id, api_key_id, stream_id)
+  name TEXT NOT NULL,
+  avatar_emoji TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_api_key_channel_access_key
-  ON api_key_channel_access (workspace_id, api_key_id);
+-- One bot per API key per workspace
+CREATE UNIQUE INDEX idx_bots_workspace_api_key ON bots (workspace_id, api_key_id);
 ```
 
-Prefixed ULID: `akca_<ulid>` (INV-2). Workspace-scoped (INV-8). No foreign keys (INV-1). TEXT not enum (INV-3).
-
-**File**: New migration in `apps/backend/migrations/`
+No changes to the messages table — bots use the existing `author_id` + `author_type` columns.
 
 ---
 
-## Step 2: Define API Key Scopes in `@threa/types`
+## Step 2: Create `features/public-api/` Feature Folder
 
-Add public API permission constants that map to WorkOS permission strings:
+New feature folder following INV-51 colocation:
 
-```ts
-export const API_KEY_SCOPES = {
-  MESSAGES_SEARCH: "messages:search",
-  // Future: MESSAGES_READ, STREAMS_LIST, STREAMS_READ, etc.
-} as const
-
-export type ApiKeyScope = (typeof API_KEY_SCOPES)[keyof typeof API_KEY_SCOPES]
+```
+features/public-api/
+├── handlers.ts          # All public API endpoint handlers (moved from api-keys/)
+├── bot-repository.ts    # Bot entity data access
+├── index.ts             # Barrel exports
 ```
 
-**File**: `packages/types/src/api-keys.ts` (new), re-export from `packages/types/src/index.ts`
-
----
-
-## Step 3: API Key Auth Middleware
-
-New middleware that validates API keys via WorkOS and resolves workspace context.
-
-### 3a: API Key Auth Service
-
-Add `ApiKeyService` to `packages/backend-common/src/auth/`:
+### 2a: BotRepository (`features/public-api/bot-repository.ts`)
 
 ```ts
-interface ValidatedApiKey {
+interface Bot {
   id: string
+  workspaceId: string
+  apiKeyId: string
   name: string
-  organizationId: string      // WorkOS org ID
-  permissions: Set<string>    // Fast .has() lookups for scope checks
+  avatarEmoji: string | null
+  createdAt: Date
+  updatedAt: Date
 }
 
-interface ApiKeyService {
-  validateApiKey(value: string): Promise<ValidatedApiKey | null>
+// Key methods:
+findByApiKeyId(db, workspaceId, apiKeyId): Promise<Bot | null>
+upsert(db, params: { id, workspaceId, apiKeyId, name }): Promise<Bot>
+findById(db, id): Promise<Bot | null>
+```
+
+The `upsert` uses `ON CONFLICT (workspace_id, api_key_id) DO UPDATE SET name = EXCLUDED.name, updated_at = NOW()` (INV-20 race-safe). Called on every `sendMessage` — creates the bot on first use, updates name if changed.
+
+### 2b: Move Handlers
+
+Move `createPublicApiHandlers` and all serializers from `features/api-keys/handlers.ts` to `features/public-api/handlers.ts`. The api-keys barrel (`features/api-keys/index.ts`) stops exporting `createPublicApiHandlers`/`PublicApiDeps`.
+
+Update `PublicApiDeps` interface:
+```ts
+export interface PublicApiDeps {
+  searchService: SearchService
+  apiKeyChannelService: ApiKeyChannelService
+  eventService: EventService
+  pool: Pool
 }
 ```
 
-Production implementation calls `workos.apiKeys.validateApiKey({ value })`. Stub implementation for tests returns a configurable response from an in-memory map.
-
-**Files**:
-- `packages/backend-common/src/auth/api-key-service.ts` (new)
-- `packages/backend-common/src/auth/api-key-service.stub.ts` (new)
-- `packages/backend-common/src/auth/index.ts` (re-export)
-
-### 3b: Public API Auth Middleware
-
-New middleware factory in `apps/backend/src/middleware/public-api-auth.ts`:
-
-1. Extract `Authorization: Bearer <token>` from request
-2. Call `apiKeyService.validateApiKey(token)`
-3. If invalid/missing → 401
-4. Look up `workos_organization_id` for the workspace in the URL via `WorkspaceRepository.getWorkosOrganizationId(pool, workspaceId)` (already exists)
-5. Verify the key's `organizationId` matches → 403 if mismatch
-6. Set on request: `req.apiKey = { id, name, permissions }`, `req.workspaceId = workspaceId`
-
-Extend Express Request type:
+### 2c: Update Barrel (`features/public-api/index.ts`)
 
 ```ts
-declare global {
-  namespace Express {
-    interface Request {
-      apiKey?: { id: string; name: string; permissions: Set<string> }
-    }
+export { createPublicApiHandlers, type PublicApiDeps } from "./handlers"
+```
+
+### 2d: Update Imports
+
+- `apps/backend/src/routes.ts`: import from `features/public-api` instead of `features/api-keys`
+- `apps/backend/src/features/api-keys/index.ts`: remove `createPublicApiHandlers`/`PublicApiDeps` exports
+
+---
+
+## Step 3: Bot Identity in Message Flow
+
+### 3a: Remove Flat Columns from Backend Message Type
+
+**`apps/backend/src/features/messaging/repository.ts`**:
+- Remove `authorDisplayName` and `apiKeyId` from `Message` interface
+- Remove `authorDisplayName` and `apiKeyId` from `InsertMessageParams`
+- Remove from `SELECT_FIELDS`, `insert()` SQL, and `mapRowToMessage()`
+
+### 3b: Remove from EventService
+
+**`apps/backend/src/features/messaging/event-service.ts`**:
+- Remove `authorDisplayName` and `apiKeyId` from `CreateMessageParams`
+- Remove `apiKeyId` from `EditMessageParams` and `DeleteMessageParams`
+- Remove the `apiKeyId`-based ownership check in `editMessage` and `deleteMessage` (the standard `actorId` check handles ownership naturally when the caller passes `bot.id`)
+
+### 3c: Update `sendMessage` Handler
+
+```ts
+async sendMessage(req, res) {
+  // ... validate, check stream access ...
+
+  // Upsert bot entity (creates on first use, updates name if changed)
+  const bot = await BotRepository.upsert(pool, {
+    id: generateId("bot"),
+    workspaceId,
+    apiKeyId: apiKey.id,
+    name: displayName,
+  })
+
+  // Create message with bot as author
+  const message = await eventService.createMessage({
+    workspaceId,
+    streamId,
+    authorId: bot.id,           // Bot entity ID, not API key ID
+    authorType: AuthorTypes.BOT,
+    contentJson,
+    contentMarkdown,
+  })
+
+  res.status(201).json({ data: serializeMessage(message) })
+}
+```
+
+### 3d: Update `resolveApiKeyMessage` Helper
+
+The helper now also verifies bot ownership:
+
+```ts
+async function resolveApiKeyMessage(messageId: string, req: Request) {
+  const message = await eventService.getMessageById(messageId)
+  if (!message || message.deletedAt) {  // ← Greptile fix: reject soft-deleted
+    throw new HttpError("Message not found", { status: 404, code: "NOT_FOUND" })
+  }
+
+  // Verify stream access
+  const accessibleStreamIds = await getAccessibleStreamIds(req)
+  if (!accessibleStreamIds.includes(message.streamId)) {
+    throw new HttpError("Stream not accessible", { status: 403, code: "FORBIDDEN" })
+  }
+
+  // Verify bot ownership: message must be authored by a bot owned by this API key
+  if (message.authorType !== AuthorTypes.BOT) {
+    throw new HttpError("Cannot modify messages not created via API", { status: 403, code: "FORBIDDEN" })
+  }
+
+  const bot = await BotRepository.findById(pool, message.authorId)
+  if (!bot || bot.apiKeyId !== req.apiKey!.id) {
+    throw new HttpError("Cannot modify messages created by another API key", { status: 403, code: "FORBIDDEN" })
+  }
+
+  return { message, bot }
+}
+```
+
+### 3e: Update `updateMessage` and `deleteMessage` Handlers
+
+With ownership verified in `resolveApiKeyMessage`, the handlers become simpler — no try/catch for `OwnershipError`:
+
+```ts
+async updateMessage(req, res) {
+  const { message, bot } = await resolveApiKeyMessage(messageId, req)
+  const updated = await eventService.editMessage({
+    workspaceId,
+    messageId,
+    streamId: message.streamId,
+    contentJson,
+    contentMarkdown,
+    actorId: bot.id,
+    actorType: AuthorTypes.BOT,
+    // No apiKeyId — ownership already verified
+  })
+  if (!updated) throw new HttpError("Message not found or was deleted", { status: 404, code: "NOT_FOUND" })
+  res.json({ data: serializeMessage(updated) })
+}
+```
+
+### 3f: Serialize Bot Display Name
+
+The `serializeMessage` function needs the bot name for the response. Two options:
+- **Option A**: `resolveApiKeyMessage` already returns the bot — pass it through
+- **Option B**: Add `authorDisplayName` back to the serialized response by looking up the bot
+
+For `listMessages` (read endpoint), messages don't go through `resolveApiKeyMessage`. The message itself no longer has `authorDisplayName`. To include bot names in list responses, join with the bots table or do a batch lookup.
+
+**Approach**: Add an optional `authorDisplayName` to the serialize call. For bot messages in list responses, batch-fetch bot names by collecting unique bot authorIds and querying the bots table. For send/update responses, use the bot name from the upserted/resolved bot.
+
+```ts
+function serializeMessage(message: Message, authorDisplayName?: string | null) {
+  return {
+    ...baseFields,
+    authorDisplayName: authorDisplayName ?? null,
   }
 }
 ```
 
-### 3c: Permission Check Middleware
-
-`requireApiKeyScope(...scopes: ApiKeyScope[])` — checks `req.apiKey.permissions.has(scope)` for each required scope. Returns 403 if any are missing.
-
-**File**: `apps/backend/src/middleware/public-api-auth.ts` (new)
-
----
-
-## Step 4: API Key Channel Access — Repository + Service
-
-New feature module: `apps/backend/src/features/api-keys/`
-
-### Repository (`repository.ts`)
-
-- `getAccessibleStreamIds(db, workspaceId, apiKeyId)` → returns stream IDs from `api_key_channel_access` for this key
-- `grantAccess(db, { id, workspaceId, apiKeyId, streamId, grantedBy })` → INSERT
-- `revokeAccess(db, workspaceId, apiKeyId, streamId)` → DELETE
-- `listGrants(db, workspaceId, apiKeyId)` → list all grants for a key
-
-### Service (`service.ts`)
-
-- `getAccessibleStreamIdsForApiKey(workspaceId, apiKeyId)` → combines:
-  1. All public streams in workspace (reuse `SearchRepository.getPublicStreams()` which already exists)
-  2. Explicitly granted private streams from `api_key_channel_access`
-  3. Deduplicates and returns combined set
-
-**Files**:
-- `apps/backend/src/features/api-keys/repository.ts` (new)
-- `apps/backend/src/features/api-keys/service.ts` (new)
-- `apps/backend/src/features/api-keys/index.ts` (new barrel)
-
----
-
-## Step 5: Public Search Endpoint
-
-### Handler (`apps/backend/src/features/api-keys/handlers.ts`)
-
-Factory: `createPublicApiHandlers({ searchService, apiKeyChannelService })`
-
-`POST /api/v1/workspaces/:workspaceId/messages/search`
-
-Request body (Zod validated):
+For `listMessages`:
 ```ts
-{
-  query: string              // Required (non-empty)
-  semantic?: boolean         // Opt-in embedding search (default: false)
-  streams?: string[]         // Filter to specific stream IDs
-  from?: string              // Author ID filter
-  type?: StreamType[]        // Stream type filter
-  before?: ISO datetime      // Exclusive (<)
-  after?: ISO datetime       // Inclusive (>=)
-  limit?: number             // 1-50 (lower max than internal)
+// After fetching messages, resolve bot display names
+const botIds = [...new Set(page.filter(m => m.authorType === 'bot').map(m => m.authorId))]
+const bots = botIds.length > 0 ? await BotRepository.findByIds(pool, botIds) : []
+const botNameMap = new Map(bots.map(b => [b.id, b.name]))
+
+res.json({
+  data: page.map(m => serializeMessage(m, m.authorType === 'bot' ? botNameMap.get(m.authorId) : null)),
+  hasMore,
+})
+```
+
+Add `findByIds(db, ids: string[]): Promise<Bot[]>` to BotRepository (batch lookup, INV-56).
+
+---
+
+## Step 4: Display Name Consistency
+
+**`features/public-api/handlers.ts` — `serializeStream`**:
+
+```ts
+function serializeStream(stream: { type: string; slug: string | null; displayName: string | null; ... }) {
+  return {
+    ...otherFields,
+    displayName: stream.type === "channel" && stream.slug ? `#${stream.slug}` : stream.displayName,
+    slug: stream.slug,
+  }
 }
 ```
 
-Handler flow:
-1. Resolve accessible stream IDs via `apiKeyChannelService.getAccessibleStreamIdsForApiKey()`
-2. Call `searchService.search()` with `permissions: { accessibleStreamIds }` and any user-provided filters
-3. Return results
+Channels get `#slug` as displayName. Other stream types keep their raw displayName. The `slug` field remains available separately for consumers who need the raw value.
 
-### SearchService refactor — explicit `permissions` parameter
+---
 
-The service currently owns stream access resolution (via `getAccessibleStreamIds()` using a `userId`). This couples search to user-based auth. Instead, the **caller** resolves access and passes it in via a `permissions` object. The service becomes auth-agnostic.
+## Step 5: Centralize OwnershipError Handling
 
-New `SearchParams`:
+**`apps/backend/src/middleware/error-handler.ts`**:
+
 ```ts
-export interface SearchPermissions {
-  accessibleStreamIds: string[]     // What the caller CAN see (empty → empty results)
-  // Extensible: future fields like maxResults, canSearchArchived, etc.
-}
+import { OwnershipError } from "../features/messaging"
 
-export interface SearchParams {
-  workspaceId: string
-  permissions: SearchPermissions    // Caller-resolved access boundary
-  query: string
-  filters?: SearchFilters           // streamIds here = user intent ("search in these"), intersected with permissions
-  limit?: number
-  exact?: boolean
+export function errorHandler(err: Error, req: Request, res: Response, _next: NextFunction) {
+  if (err instanceof OwnershipError) {
+    return res.status(403).json({ error: err.message, code: "FORBIDDEN" })
+  }
+  // ... existing MulterError handling ...
 }
 ```
 
-The service intersects `filters.streamIds` (if provided) with `permissions.accessibleStreamIds`. Empty `permissions.accessibleStreamIds` → return `[]` immediately.
-
-Changes:
-- Replace `userId` with `permissions` on `SearchParams`
-- Remove `getAccessibleStreamIds()` private method from `SearchService` (move to a standalone helper)
-- Service intersects `permissions.accessibleStreamIds` with `filters.streamIds` internally
-- Internal search handler resolves access via existing `SearchRepository.getAccessibleStreamsWithMembers()` and passes as `permissions`
-- Public search handler resolves access via `ApiKeyChannelService.getAccessibleStreamIdsForApiKey()` and passes as `permissions`
-- Agent search tool already receives `accessibleStreamIds` from deps — passes directly as `permissions` (removes redundant `userId`)
-
-Three callers need updating:
-1. **Internal search handler** (`features/search/handlers.ts`) — resolve via `SearchRepository.getAccessibleStreamsWithMembers()`, pass as `permissions`
-2. **Agent search tool** (`features/agents/tools/search-workspace-tool.ts`) — already has `accessibleStreamIds` from deps, just wraps in `permissions` object (removes redundant double resolution)
-3. **Public API handler** (new) — resolves via `ApiKeyChannelService`, passes as `permissions`
-
-The access resolution logic currently in `SearchService.getAccessibleStreamIds()` moves into a helper function that the internal search handler calls. This is a move, not a rewrite — same SQL, same logic, different call site.
-
-**Files**:
-- `apps/backend/src/features/api-keys/handlers.ts` (new)
-- `apps/backend/src/features/search/service.ts` (edit — remove userId, accept accessibleStreamIds)
-- `apps/backend/src/features/search/handlers.ts` (edit — resolve access before calling service)
-- `apps/backend/src/features/search/access.ts` (new — extracted access resolution helper)
-- `apps/backend/src/features/agents/tools/search-workspace-tool.ts` (edit — pass accessibleStreamIds instead of userId)
+This means any handler that encounters an OwnershipError gets an automatic 403 without try/catch. The public API handlers won't hit this path (they check ownership explicitly), but internal handlers benefit from the centralization.
 
 ---
 
-## Step 6: Rate Limiting for Public API
+## Step 6: Remove `authorDisplayName` from Shared Domain Type
 
-Add to `apps/backend/src/middleware/rate-limit.ts`:
-
-```ts
-// Workspace-level rate limit for all API key requests
-publicApiWorkspace: createRateLimit({
-  name: "public-api-workspace",
-  windowMs: 60_000,
-  max: 600,
-  key: (req) => req.workspaceId || "unknown",
-}),
-
-// Per-key rate limit
-publicApiKey: createRateLimit({
-  name: "public-api-key",
-  windowMs: 60_000,
-  max: 60,
-  key: (req) => req.apiKey?.id || getClientIp(req, "unknown"),
-}),
-```
-
-Both applied as middleware on `/api/v1/` routes.
-
-**File**: `apps/backend/src/middleware/rate-limit.ts` (edit)
+**`packages/types/src/domain.ts`**: The `Message` type should not have `authorDisplayName` — it's resolved from the bot entity, not stored on the message. (Note: `apiKeyId` was already removed from the shared type in the previous commit.)
 
 ---
 
-## Step 7: Route Registration
+## Step 7: Update Routes and Server
 
-In `apps/backend/src/routes.ts`:
+**`apps/backend/src/routes.ts`**:
+- Change import from `"../features/api-keys"` to `"../features/public-api"` for `createPublicApiHandlers`/`PublicApiDeps`
+- No route path changes needed
 
-```ts
-// Public API v1 routes
-const publicAuth = createPublicApiAuthMiddleware({ apiKeyService, pool })
-
-app.post(
-  "/api/v1/workspaces/:workspaceId/messages/search",
-  rateLimits.publicApiWorkspace,
-  rateLimits.publicApiKey,
-  publicAuth,
-  requireApiKeyScope(API_KEY_SCOPES.MESSAGES_SEARCH),
-  publicApi.searchMessages
-)
-```
-
-**File**: `apps/backend/src/routes.ts` (edit)
+**`apps/backend/src/server.ts`**: No changes needed — `eventService` and `pool` are already passed through `registerRoutes`.
 
 ---
 
-## Step 8: Workspace Router — Route `/api/v1/` to Backend
+## Step 8: Update E2E Tests
 
-Add regex to match `/api/v1/workspaces/:workspaceId/*` and route to the regional backend (same as existing workspace routes):
+**`apps/backend/tests/e2e/public-api-crud.test.ts`**:
 
-```ts
-const PUBLIC_API_ROUTE_RE = /^\/api\/v1\/workspaces\/([^/]+)(?:\/.+)?$/
-```
-
-Add check alongside the existing `WORKSPACE_ROUTE_RE` match.
-
-**File**: `apps/workspace-router/src/index.ts` (edit)
-
----
-
-## Step 9: Wire Dependencies in Server Bootstrap
-
-In `apps/backend/src/server.ts`:
-
-1. Create `ApiKeyService` (production or stub based on env)
-2. Create `ApiKeyChannelService` with pool dependency
-3. Create public API handlers via factory
-4. Pass to `registerRoutes()`
-
-**File**: `apps/backend/src/server.ts` (edit)
-
----
-
-## Step 10: OpenAPI Spec Generation
-
-Use `zod-openapi` to derive an OpenAPI 3.1 spec from our Zod request/response schemas. Since all public API endpoints already use Zod validation, we annotate the schemas with `.openapi()` metadata and generate the spec.
-
-**Approach**: Create a registry file that collects all public API schemas and produces a JSON/YAML OpenAPI doc. This can be generated at build time or served at `/api/v1/openapi.json`.
-
-```ts
-// apps/backend/src/features/api-keys/openapi.ts
-import { createDocument } from "zod-openapi"
-
-// Registers all public API schemas with OpenAPI metadata
-// Exports the generated OpenAPI document
-```
-
-The Zod schemas for the public search endpoint (Step 5) get `.openapi()` annotations for titles, descriptions, and examples. The generated spec is served as a static endpoint — no runtime cost.
-
-**Files**:
-- `apps/backend/src/features/api-keys/openapi.ts` (new)
-- `apps/backend/src/routes.ts` (edit — serve `/api/v1/openapi.json`)
-
-**Dependency**: `zod-openapi` (add to `apps/backend/package.json`)
-
----
-
-## Step 11: Tests
-
-### Unit tests
-- API key auth middleware: valid key, invalid key, org mismatch, missing header
-- Permission check middleware: has scope, missing scope
-- API key channel access repository: grant, revoke, list
-- API key channel service: combines public + granted streams
-
-### E2E test
-- `apps/backend/tests/e2e/public-api-search.test.ts`:
-  - Search with valid API key returns results from public channels
-  - Search with valid API key + granted private channel access returns private results
-  - Invalid API key returns 401
-  - Missing required scope returns 403
-  - Key from different workspace returns 403
-  - Rate limiting returns 429
-  - Semantic search opt-in works
-
-Uses stub `ApiKeyService` (same pattern as existing auth stub).
+- Bot messages now have `authorId` as a `bot_xxx` ID (not the API key ID). Tests asserting `authorType: "bot"` and `authorDisplayName` still pass.
+- Cross-key tests still work: different API keys produce different bot entities, so ownership checks fail correctly.
+- Add test: verify `listMessages` includes `authorDisplayName` for bot messages.
+- Add test: verify `serializeStream` returns `#slug` for channels.
+- The soft-delete test (double-delete returning 404) already exists.
+- Add test: verify update/delete returns 404 for soft-deleted message (Greptile fix).
 
 ---
 
@@ -345,40 +302,28 @@ Uses stub `ApiKeyService` (same pattern as existing auth stub).
 
 | File | Action | Description |
 |------|--------|-------------|
-| `apps/backend/migrations/YYYYMMDD_api_key_channel_access.sql` | New | Channel access grants table |
-| `packages/types/src/api-keys.ts` | New | Scope constants and types |
-| `packages/types/src/index.ts` | Edit | Re-export api-keys |
-| `packages/backend-common/src/auth/api-key-service.ts` | New | WorkOS API key validation service |
-| `packages/backend-common/src/auth/api-key-service.stub.ts` | New | Test stub |
-| `packages/backend-common/src/auth/index.ts` | Edit | Re-export |
-| `apps/backend/src/middleware/public-api-auth.ts` | New | Auth + permission middleware |
-| `apps/backend/src/middleware/rate-limit.ts` | Edit | Add public API rate limiters |
-| `apps/backend/src/features/api-keys/repository.ts` | New | Channel access data access |
-| `apps/backend/src/features/api-keys/service.ts` | New | Channel access business logic |
-| `apps/backend/src/features/api-keys/handlers.ts` | New | Public API endpoint handlers |
-| `apps/backend/src/features/api-keys/index.ts` | New | Barrel export |
-| `apps/backend/src/features/search/service.ts` | Edit | Remove userId, accept accessibleStreamIds |
-| `apps/backend/src/features/search/handlers.ts` | Edit | Resolve access before calling service |
-| `apps/backend/src/features/search/access.ts` | New | Extracted access resolution helper |
-| `apps/backend/src/features/agents/tools/search-workspace-tool.ts` | Edit | Pass accessibleStreamIds instead of userId |
-| `apps/backend/src/routes.ts` | Edit | Register `/api/v1/` routes |
-| `apps/backend/src/server.ts` | Edit | Wire dependencies |
-| `apps/workspace-router/src/index.ts` | Edit | Route `/api/v1/` paths |
-| `apps/backend/src/features/api-keys/openapi.ts` | New | OpenAPI spec from Zod schemas |
-| `apps/backend/tests/e2e/public-api-search.test.ts` | New | E2E tests |
-
-## Deferred (not in this PR)
-
-- API Keys widget integration in frontend admin settings
-- Channel access management UI
-- Cost/usage buckets and billing tier rate limits
-- Additional public endpoints (streams list, message read, etc.)
-- Hosted API documentation UI (Swagger/Redoc) — spec is generated, but no UI yet
+| `apps/backend/src/db/migrations/20260313120000_public_api_message_columns.sql` | Replace | Create bots table instead of message columns |
+| `apps/backend/src/features/public-api/handlers.ts` | New | Moved from api-keys, updated for bot entity |
+| `apps/backend/src/features/public-api/bot-repository.ts` | New | Bot entity data access |
+| `apps/backend/src/features/public-api/index.ts` | New | Barrel exports |
+| `apps/backend/src/features/api-keys/handlers.ts` | Delete | Moved to public-api (api-keys keeps only key management) |
+| `apps/backend/src/features/api-keys/index.ts` | Edit | Remove public API exports |
+| `apps/backend/src/features/messaging/repository.ts` | Edit | Remove authorDisplayName, apiKeyId from Message/insert |
+| `apps/backend/src/features/messaging/event-service.ts` | Edit | Remove apiKeyId from params and ownership checks |
+| `apps/backend/src/middleware/error-handler.ts` | Edit | Add OwnershipError → 403 handling |
+| `packages/types/src/domain.ts` | Edit | Remove authorDisplayName from Message |
+| `apps/backend/src/routes.ts` | Edit | Import from features/public-api |
+| `apps/backend/tests/e2e/public-api-crud.test.ts` | Edit | Update assertions for bot entity pattern |
 
 ## Verification
 
-1. **Type check**: `bun run typecheck` passes
-2. **Unit tests**: `bun run test` — new tests pass, existing tests unaffected
-3. **E2E tests**: `bun run test:e2e` — new public API search tests pass
-4. **Manual test**: `curl -H "Authorization: Bearer <test_key>" POST /api/v1/workspaces/<id>/messages/search` returns search results
-5. **Negative cases**: Invalid key → 401, wrong workspace → 403, missing scope → 403, rate limit → 429
+1. `bun run typecheck` — all types consistent after removing flat columns
+2. `bun run test` — unit tests pass (no internal code depends on authorDisplayName/apiKeyId on messages)
+3. `bun run test:e2e` — all 254+ E2E tests pass, including:
+   - Bot message has `authorType: "bot"` and `authorDisplayName` resolved from bot entity
+   - Cross-key ownership still enforced (403)
+   - Soft-deleted messages return 404 on update/delete
+   - Channel display names include `#` prefix
+   - Double-delete returns 404
+4. Manual: `curl` send → update → delete flow with a valid API key
+5. Real-time: Bot message appears in connected Threa client via outbox/WebSocket

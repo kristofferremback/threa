@@ -164,11 +164,25 @@ export const MessageRepository = {
     return map
   },
 
-  async list(db: Querier, streamId: string, filters?: { limit?: number; beforeSequence?: bigint }): Promise<Message[]> {
+  async list(
+    db: Querier,
+    streamId: string,
+    filters?: { limit?: number; beforeSequence?: bigint; afterSequence?: bigint }
+  ): Promise<Message[]> {
     const limit = filters?.limit ?? 50
 
     let messageRows: MessageRow[]
-    if (filters?.beforeSequence) {
+    if (filters?.afterSequence) {
+      const result = await db.query<MessageRow>(sql`
+        SELECT ${sql.raw(SELECT_FIELDS)} FROM messages
+        WHERE stream_id = ${streamId}
+          AND sequence > ${filters.afterSequence.toString()}
+          AND deleted_at IS NULL
+        ORDER BY sequence ASC
+        LIMIT ${limit}
+      `)
+      messageRows = result.rows
+    } else if (filters?.beforeSequence) {
       const result = await db.query<MessageRow>(sql`
         SELECT ${sql.raw(SELECT_FIELDS)} FROM messages
         WHERE stream_id = ${streamId}
@@ -198,7 +212,9 @@ export const MessageRepository = {
     `)
     const reactionsByMessage = aggregateReactionsByMessage(reactionsResult.rows)
 
-    return messageRows.map((row) => mapRowToMessage(row, reactionsByMessage.get(row.id) ?? {})).reverse()
+    // afterSequence already returns ASC order; beforeSequence and default return DESC and need reversal
+    const messages = messageRows.map((row) => mapRowToMessage(row, reactionsByMessage.get(row.id) ?? {}))
+    return filters?.afterSequence ? messages : messages.reverse()
   },
 
   async insert(db: Querier, params: InsertMessageParams): Promise<Message> {

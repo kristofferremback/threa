@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import { getAvatarUrl } from "@threa/types"
 import { workspaceKeys } from "./use-workspaces"
 import { useWorkspaceEmoji } from "./use-workspace-emoji"
-import type { Persona, WorkspaceBootstrap, User, AuthorType } from "@threa/types"
+import type { Persona, Bot, WorkspaceBootstrap, User, AuthorType } from "@threa/types"
 
 interface ActorAvatarInfo {
   fallback: string
@@ -18,6 +18,7 @@ interface ActorLookup {
   getActorAvatar: (actorId: string | null, actorType: AuthorType | null) => ActorAvatarInfo
   getUser: (userId: string) => User | undefined
   getPersona: (personaId: string) => Persona | undefined
+  getBot: (botId: string) => Bot | undefined
 }
 
 /**
@@ -58,6 +59,14 @@ export function useActors(workspaceId: string): ActorLookup {
     [getBootstrapData]
   )
 
+  const getBot = useCallback(
+    (botId: string): Bot | undefined => {
+      const bootstrap = getBootstrapData()
+      return bootstrap?.bots?.find((b) => b.id === botId)
+    },
+    [getBootstrapData]
+  )
+
   const getActorName = useCallback(
     (actorId: string | null, actorType: AuthorType | null): string => {
       if (!actorId) return "Unknown"
@@ -69,13 +78,18 @@ export function useActors(workspaceId: string): ActorLookup {
         return persona?.name ?? "AI Companion"
       }
 
+      if (actorType === "bot") {
+        const bot = getBot(actorId)
+        return bot?.name ?? "Bot"
+      }
+
       // actorType === "user" — resolve workspace-scoped name
       const bootstrap = getBootstrapData()
       const users = bootstrap?.users
       const name = resolveUserName(actorId, users)
       return name ?? actorId.substring(0, 8)
     },
-    [getBootstrapData, getPersona]
+    [getBootstrapData, getPersona, getBot]
   )
 
   const getActorInitials = useCallback(
@@ -101,6 +115,23 @@ export function useActors(workspaceId: string): ActorLookup {
         return "AI"
       }
 
+      if (actorType === "bot") {
+        const bot = getBot(actorId)
+        if (bot?.avatarEmoji) {
+          const emoji = toEmoji(bot.avatarEmoji)
+          if (emoji) return emoji
+        }
+        if (bot?.name) {
+          const words = bot.name.split(" ")
+          return words
+            .slice(0, 2)
+            .map((w) => w[0])
+            .join("")
+            .toUpperCase()
+        }
+        return "B"
+      }
+
       const bootstrap = getBootstrapData()
       const users = bootstrap?.users
       const name = resolveUserName(actorId, users)
@@ -115,7 +146,7 @@ export function useActors(workspaceId: string): ActorLookup {
 
       return actorId.substring(0, 2).toUpperCase()
     },
-    [getBootstrapData, getPersona, toEmoji]
+    [getBootstrapData, getPersona, getBot, toEmoji]
   )
 
   const getActorAvatar = useCallback(
@@ -128,6 +159,8 @@ export function useActors(workspaceId: string): ActorLookup {
         const persona = getPersona(actorId)
         return { fallback, slug: persona?.slug }
       }
+
+      if (actorType === "bot") return { fallback }
 
       if (actorId) {
         const workspaceUser = getUser(actorId)
@@ -147,7 +180,8 @@ export function useActors(workspaceId: string): ActorLookup {
       getActorAvatar,
       getUser,
       getPersona,
+      getBot,
     }),
-    [getActorName, getActorInitials, getActorAvatar, getUser, getPersona]
+    [getActorName, getActorInitials, getActorAvatar, getUser, getPersona, getBot]
   )
 }

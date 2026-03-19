@@ -15,6 +15,7 @@ import {
   type CachedStreamMembership,
   type CachedDmPeer,
   type CachedPersona,
+  type CachedBot,
 } from "@/db"
 import { getQueryClient } from "@/contexts/query-client"
 import { workspaceKeys } from "@/hooks/use-workspaces"
@@ -71,13 +72,14 @@ export async function seedCacheFromIndexedDB(): Promise<void> {
     const workspaceId = getWorkspaceIdFromUrl()
     if (!workspaceId) return
 
-    const [workspace, users, streams, memberships, dmPeers, personas] = await Promise.all([
+    const [workspace, users, streams, memberships, dmPeers, personas, bots] = await Promise.all([
       db.workspaces.get(workspaceId),
       db.workspaceUsers.where("workspaceId").equals(workspaceId).toArray(),
       db.streams.where("workspaceId").equals(workspaceId).toArray(),
       db.streamMemberships.where("workspaceId").equals(workspaceId).toArray(),
       db.dmPeers.where("workspaceId").equals(workspaceId).toArray(),
       db.personas.where("workspaceId").equals(workspaceId).toArray(),
+      db.bots.where("workspaceId").equals(workspaceId).toArray(),
     ])
 
     // Only seed if we have meaningful cached data
@@ -159,6 +161,15 @@ export async function seedCacheFromIndexedDB(): Promise<void> {
         status: p.status,
         createdAt: p.createdAt,
         updatedAt: p.updatedAt,
+      })),
+      bots: bots.map((b: CachedBot) => ({
+        id: b.id,
+        workspaceId: b.workspaceId,
+        name: b.name,
+        description: b.description,
+        avatarEmoji: b.avatarEmoji,
+        createdAt: b.createdAt,
+        updatedAt: b.updatedAt,
       })),
       emojis: [],
       emojiWeights: {},

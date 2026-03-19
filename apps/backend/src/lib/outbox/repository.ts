@@ -3,7 +3,7 @@ import type { Stream } from "../../features/streams"
 import type { StreamEvent } from "../../features/streams"
 import type { User } from "../../features/workspaces"
 import type { ConversationWithStaleness } from "../../features/conversations"
-import type { Memo as WireMemo, UserPreferences, LastMessagePreview } from "@threa/types"
+import type { Memo as WireMemo, UserPreferences, LastMessagePreview, Bot as WireBot } from "@threa/types"
 
 /**
  * Outbox event types and their payloads.
@@ -48,6 +48,8 @@ export type OutboxEventType =
   | "invitation:accepted"
   | "invitation:revoked"
   | "activity:created"
+  | "bot:created"
+  | "bot:updated"
 
 /** Events that are scoped to a stream (have streamId) */
 export type StreamScopedEventType =
@@ -79,6 +81,8 @@ export type WorkspaceScopedEventType =
   | "workspace_user:added"
   | "workspace_user:removed"
   | "workspace_user:updated"
+  | "bot:created"
+  | "bot:updated"
 
 /**
  * Base fields for stream-scoped events.
@@ -306,6 +310,15 @@ export interface ActivityCreatedOutboxPayload extends WorkspaceScopedPayload {
   }
 }
 
+// Bot event payloads
+export interface BotCreatedOutboxPayload extends WorkspaceScopedPayload {
+  bot: WireBot
+}
+
+export interface BotUpdatedOutboxPayload extends WorkspaceScopedPayload {
+  bot: WireBot
+}
+
 // Budget alert event payload
 export interface BudgetAlertOutboxPayload extends WorkspaceScopedPayload {
   alertType: string
@@ -357,6 +370,8 @@ export interface OutboxEventPayloadMap {
   "invitation:accepted": InvitationAcceptedOutboxPayload
   "invitation:revoked": InvitationRevokedOutboxPayload
   "activity:created": ActivityCreatedOutboxPayload
+  "bot:created": BotCreatedOutboxPayload
+  "bot:updated": BotUpdatedOutboxPayload
 }
 
 export type OutboxEventPayload<T extends OutboxEventType> = OutboxEventPayloadMap[T]
