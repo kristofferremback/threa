@@ -90,7 +90,7 @@ GREPTILE_TS=$(gh api "repos/$OWNER/$REPO/pulls/$PR/comments" \
 
 # List files changed only in commits *after* Greptile's review
 gh api "repos/$OWNER/$REPO/pulls/$PR/commits" \
-  --jq --arg ts "$GREPTILE_TS" '[.[] | select(.commit.author.date > $ts)] | .[].sha' \
+  | jq -r --arg ts "$GREPTILE_TS" '[.[] | select(.commit.author.date > $ts)] | .[].sha' \
   | while read sha; do
       gh api "repos/$OWNER/$REPO/commits/$sha" --jq '.files[].filename'
     done | sort -u
