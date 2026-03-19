@@ -1,7 +1,12 @@
 /// <reference lib="webworker" />
 import { precacheAndRoute } from "workbox-precaching"
 import { ActivityTypes } from "@threa/types"
-import { SW_MSG_NOTIFICATION_CLICK, SW_MSG_SUBSCRIPTION_CHANGED, SW_MSG_CLEAR_NOTIFICATIONS } from "./lib/sw-messages"
+import {
+  SW_MSG_NOTIFICATION_CLICK,
+  SW_MSG_SUBSCRIPTION_CHANGED,
+  SW_MSG_CLEAR_NOTIFICATIONS,
+  SHARE_TARGET_CACHE,
+} from "./lib/sw-messages"
 
 declare const self: ServiceWorkerGlobalScope
 
@@ -44,6 +49,68 @@ async function prefetchStreamBootstrap(workspaceId: string, streamId: string): P
   const cache = await caches.open(PUSH_BOOTSTRAP_CACHE)
   await cache.put(url, response)
 }
+
+// ============================================================================
+// Share Target POST interception — stash files + text for the app to read
+// ============================================================================
+
+/**
+ * When the OS shares content to Threa (Web Share Target API), the browser sends
+ * a POST with multipart/form-data to /share. The SW intercepts this, stashes
+ * the form data (text fields + files) into the Cache API, and responds with a
+ * redirect to the GET /share page where the app picks it up.
+ */
+self.addEventListener("fetch", (event) => {
+  const url = new URL(event.request.url)
+  if (url.pathname !== "/share" || event.request.method !== "POST") return
+
+  event.respondWith(
+    (async () => {
+      try {
+        const formData = await event.request.formData()
+        const title = formData.get("title") as string | null
+        const text = formData.get("text") as string | null
+        const sharedUrl = formData.get("url") as string | null
+        const files = formData.getAll("files") as File[]
+
+        const cache = await caches.open(SHARE_TARGET_CACHE)
+
+        // Clear any previous share data
+        const keys = await cache.keys()
+        for (const key of keys) await cache.delete(key)
+
+        // Store files first so fileCount in meta is always accurate —
+        // if a file write fails mid-loop, meta records only the files
+        // that were actually persisted.
+        let storedFileCount = 0
+        for (let i = 0; i < files.length; i++) {
+          await cache.put(
+            new Request(`/_share/file/${i}`),
+            new Response(files[i], {
+              headers: {
+                "Content-Type": files[i].type,
+                "X-Filename": encodeURIComponent(files[i].name),
+                "X-Size": String(files[i].size),
+              },
+            })
+          )
+          storedFileCount++
+        }
+
+        // Store metadata last — fileCount reflects only successfully stored files
+        await cache.put(
+          new Request("/_share/meta"),
+          new Response(JSON.stringify({ title, text, url: sharedUrl, fileCount: storedFileCount }))
+        )
+      } catch {
+        // Best-effort — if stashing fails, the redirect still lands on /share
+        // and the user sees the normal share picker (just without pre-populated content).
+      }
+
+      return Response.redirect("/share", 303)
+    })()
+  )
+})
 
 /**
  * Fetch interceptor: serve pre-fetched bootstrap responses from the push cache.

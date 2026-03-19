@@ -1,7 +1,86 @@
 import { useCallback } from "react"
 import { db } from "@/db"
+import type { DraftAttachment } from "@/db/database"
 import type { JSONContent } from "@threa/types"
 import { generateDraftId } from "@/hooks/use-draft-scratchpads"
+import { attachmentsApi } from "@/api/attachments"
+import { SHARE_TARGET_CACHE } from "@/lib/sw-messages"
+
+/** Data stashed by the service worker from a Web Share Target POST. */
+export interface ShareData {
+  title: string | null
+  text: string | null
+  url: string | null
+  files: File[]
+}
+
+/** Lightweight metadata passed via navigation state (no binary blobs). */
+export interface ShareMeta {
+  title: string | null
+  text: string | null
+  url: string | null
+  hasFiles: boolean
+}
+
+/**
+ * Read only the text metadata from the share cache.
+ * Safe to pass via `history.state` — no binary blobs.
+ */
+export async function readShareTargetMeta(): Promise<ShareMeta | null> {
+  try {
+    const cache = await caches.open(SHARE_TARGET_CACHE)
+    const metaResponse = await cache.match("/_share/meta")
+    if (!metaResponse) return null
+
+    const meta = (await metaResponse.json()) as {
+      title: string | null
+      text: string | null
+      url: string | null
+      fileCount: number
+    }
+
+    return { title: meta.title, text: meta.text, url: meta.url, hasFiles: meta.fileCount > 0 }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Read file blobs from the share cache. Call separately from
+ * {@link readShareTargetMeta} — files must NOT go through `history.state`
+ * because browsers enforce serialization size limits (~640 KB in Firefox).
+ */
+export async function readShareTargetFiles(): Promise<File[]> {
+  try {
+    const cache = await caches.open(SHARE_TARGET_CACHE)
+    const metaResponse = await cache.match("/_share/meta")
+    if (!metaResponse) return []
+
+    const meta = (await metaResponse.json()) as { fileCount: number }
+    const files: File[] = []
+    for (let i = 0; i < meta.fileCount; i++) {
+      const fileResponse = await cache.match(`/_share/file/${i}`)
+      if (fileResponse) {
+        const blob = await fileResponse.blob()
+        const rawFilename = fileResponse.headers.get("X-Filename")
+        const filename = rawFilename ? decodeURIComponent(rawFilename) : `file-${i}`
+        files.push(new File([blob], filename, { type: blob.type }))
+      }
+    }
+    return files
+  } catch {
+    return []
+  }
+}
+
+/** Remove stashed share data from the Cache API after it has been consumed. */
+export async function clearShareTargetCache(): Promise<void> {
+  try {
+    await caches.delete(SHARE_TARGET_CACHE)
+  } catch {
+    // Best-effort cleanup
+  }
+}
 
 /**
  * Build a ProseMirror document from the shared title, text, and URL.
@@ -56,20 +135,32 @@ function buildSharedContent(title: string | null, text: string | null, url: stri
 }
 
 /**
- * Hook for handling PWA Share Target content.
- *
- * Provides two operations:
- * - `createShareDraft`: Creates a new draft scratchpad pre-populated with shared content
- * - `saveShareContent`: Saves shared content as a draft message in an existing stream's composer
+ * Upload shared files and return DraftAttachment entries.
+ * Best-effort: failed uploads are skipped so text content is still saved.
  */
+async function uploadSharedFiles(workspaceId: string, files: File[]): Promise<DraftAttachment[]> {
+  const settled = await Promise.allSettled(
+    files.map(async (file) => {
+      const attachment = await attachmentsApi.upload(workspaceId, file)
+      return {
+        id: attachment.id,
+        filename: attachment.filename,
+        mimeType: attachment.mimeType,
+        sizeBytes: attachment.sizeBytes,
+      } satisfies DraftAttachment
+    })
+  )
+  return settled
+    .filter((r): r is PromiseFulfilledResult<DraftAttachment> => r.status === "fulfilled")
+    .map((r) => r.value)
+}
+
 export function useShareTarget() {
   const createShareDraft = useCallback(
-    async (
-      workspaceId: string,
-      shared: { title: string | null; text: string | null; url: string | null }
-    ): Promise<{ draftId: string; path: string }> => {
+    async (workspaceId: string, shared: ShareData): Promise<{ draftId: string; path: string }> => {
       const draftId = generateDraftId()
       const content = buildSharedContent(shared.title, shared.text, shared.url)
+      const attachments = shared.files.length > 0 ? await uploadSharedFiles(workspaceId, shared.files) : undefined
 
       await db.transaction("rw", db.draftScratchpads, db.draftMessages, async () => {
         await db.draftScratchpads.add({
@@ -83,6 +174,7 @@ export function useShareTarget() {
           id: `stream:${draftId}`,
           workspaceId,
           contentJson: content,
+          attachments,
           updatedAt: Date.now(),
         })
       })
@@ -93,22 +185,20 @@ export function useShareTarget() {
   )
 
   const saveShareContent = useCallback(
-    async (
-      workspaceId: string,
-      streamId: string,
-      shared: { title: string | null; text: string | null; url: string | null }
-    ): Promise<void> => {
+    async (workspaceId: string, streamId: string, shared: ShareData): Promise<void> => {
       const content = buildSharedContent(shared.title, shared.text, shared.url)
+      const uploadedAttachments = shared.files.length > 0 ? await uploadSharedFiles(workspaceId, shared.files) : []
 
       // Transaction ensures the read-then-put is atomic — a concurrent write
       // between get and put can't silently drop attachments.
       await db.transaction("rw", db.draftMessages, async () => {
         const existing = await db.draftMessages.get(`stream:${streamId}`)
+        const mergedAttachments = [...(existing?.attachments ?? []), ...uploadedAttachments]
         await db.draftMessages.put({
           id: `stream:${streamId}`,
           workspaceId,
           contentJson: content,
-          attachments: existing?.attachments,
+          attachments: mergedAttachments.length > 0 ? mergedAttachments : undefined,
           updatedAt: Date.now(),
         })
       })
