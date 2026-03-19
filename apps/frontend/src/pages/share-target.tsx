@@ -31,15 +31,22 @@ export function ShareTargetPage() {
     }
 
     const workspaceId = workspaces[0].id
+    let cancelled = false
 
     // Read share data from the SW cache and pass it via navigation state
     // so the share picker can access files without a second cache read.
+    // Cache is NOT cleared here — the share picker clears it after consuming.
     readShareTargetCache().then((shareData) => {
+      if (cancelled) return
       navigate(`/w/${workspaceId}/share`, {
         replace: true,
         state: { shareData },
       })
     })
+
+    return () => {
+      cancelled = true
+    }
   }, [authLoading, workspacesLoading, user, workspaces, navigate])
 
   // Redirect to login if not authenticated — preserve /share as the return destination

@@ -16,7 +16,8 @@ export interface ShareData {
 
 /**
  * Read share data stashed by the service worker in the Cache API.
- * Returns null if no data is available. Clears the cache after reading.
+ * Returns null if no data is available. Does NOT clear the cache — call
+ * {@link clearShareTargetCache} after the data has been safely consumed.
  */
 export async function readShareTargetCache(): Promise<ShareData | null> {
   try {
@@ -41,13 +42,18 @@ export async function readShareTargetCache(): Promise<ShareData | null> {
       }
     }
 
-    // Clean up — one-shot read
-    const keys = await cache.keys()
-    for (const key of keys) await cache.delete(key)
-
     return { title: meta.title, text: meta.text, url: meta.url, files }
   } catch {
     return null
+  }
+}
+
+/** Remove stashed share data from the Cache API after it has been consumed. */
+export async function clearShareTargetCache(): Promise<void> {
+  try {
+    await caches.delete(SHARE_TARGET_CACHE)
+  } catch {
+    // Best-effort cleanup
   }
 }
 
@@ -104,32 +110,24 @@ function buildSharedContent(title: string | null, text: string | null, url: stri
 }
 
 /**
- * Hook for handling PWA Share Target content.
- *
- * Provides two operations:
- * - `createShareDraft`: Creates a new draft scratchpad pre-populated with shared content
- * - `saveShareContent`: Saves shared content as a draft message in an existing stream's composer
- */
-/**
  * Upload shared files and return DraftAttachment entries.
  * Best-effort: failed uploads are skipped so text content is still saved.
  */
 async function uploadSharedFiles(workspaceId: string, files: File[]): Promise<DraftAttachment[]> {
-  const results: DraftAttachment[] = []
-  for (const file of files) {
-    try {
+  const settled = await Promise.allSettled(
+    files.map(async (file) => {
       const attachment = await attachmentsApi.upload(workspaceId, file)
-      results.push({
+      return {
         id: attachment.id,
         filename: attachment.filename,
         mimeType: attachment.mimeType,
         sizeBytes: attachment.sizeBytes,
-      })
-    } catch (err) {
-      console.error("Failed to upload shared file", file.name, err)
-    }
-  }
-  return results
+      } satisfies DraftAttachment
+    })
+  )
+  return settled
+    .filter((r): r is PromiseFulfilledResult<DraftAttachment> => r.status === "fulfilled")
+    .map((r) => r.value)
 }
 
 export function useShareTarget() {

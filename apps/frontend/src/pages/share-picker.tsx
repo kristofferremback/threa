@@ -4,7 +4,7 @@ import { FileText, Hash, MessageSquare, Bell, Search, Plus, Link as LinkIcon, Im
 import { StreamTypes, getAvatarUrl } from "@threa/types"
 import type { Stream, StreamType } from "@threa/types"
 import { useWorkspaceBootstrap } from "@/hooks"
-import { useShareTarget, type ShareData } from "@/hooks/use-share-target"
+import { useShareTarget, clearShareTargetCache, type ShareData } from "@/hooks/use-share-target"
 import { getStreamName, streamFallbackLabel } from "@/lib/streams"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -80,6 +80,7 @@ export function SharePickerPage() {
         // Navigate anyway — the draft won't be pre-populated but the user isn't stranded
         console.error("Failed to save shared content", err)
       }
+      void clearShareTargetCache()
       navigate(`/w/${workspaceId}/s/${streamId}`, { replace: true })
     },
     [workspaceId, shareData, navigate, saveShareContent]
@@ -88,6 +89,7 @@ export function SharePickerPage() {
   const handleNewScratchpad = useCallback(async () => {
     try {
       const result = await createShareDraft(workspaceId!, shareData)
+      void clearShareTargetCache()
       navigate(result.path, { replace: true })
     } catch (err) {
       console.error("Failed to create share draft", err)
