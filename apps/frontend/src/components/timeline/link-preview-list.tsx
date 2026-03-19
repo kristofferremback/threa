@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from "react"
+import { useState, useCallback, useEffect, useMemo, useRef } from "react"
 import { ChevronDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { linkPreviewsApi } from "@/api"
@@ -36,16 +36,14 @@ export function LinkPreviewList({
 
   const defaultCollapsed = preferences?.linkPreviewDefault === "collapsed"
 
-  // Track whether socket has delivered previews (takes priority over API fetch)
-  const [hasSocketPreviews, setHasSocketPreviews] = useState(
-    () => initialPreviews !== undefined && initialPreviews.length > 0
-  )
+  // Track whether socket has delivered previews (ref avoids stale closure in API fetch callback)
+  const hasSocketPreviewsRef = useRef(initialPreviews !== undefined && initialPreviews.length > 0)
 
   // Update previews when they arrive from props (real-time socket delivery)
   useEffect(() => {
     if (initialPreviews && initialPreviews.length > 0) {
       setPreviews(initialPreviews)
-      setHasSocketPreviews(true)
+      hasSocketPreviewsRef.current = true
     }
   }, [initialPreviews])
 
@@ -59,7 +57,7 @@ export function LinkPreviewList({
       .getForMessage(workspaceId, messageId)
       .then((result) => {
         if (!mounted) return
-        if (!hasSocketPreviews) {
+        if (!hasSocketPreviewsRef.current) {
           setPreviews(result.map(({ dismissed, ...p }) => p))
         }
         setDismissedIds(new Set(result.filter((p) => p.dismissed).map((p) => p.id)))
