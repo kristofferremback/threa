@@ -274,7 +274,7 @@ export function createStreamHandlers({ streamService, eventService, activityServ
 
       const types = type ? ((Array.isArray(type) ? type : [type]) as EventType[]) : undefined
 
-      const rawEvents = await eventService.listEvents(streamId, {
+      const events = await eventService.listEvents(streamId, {
         types,
         limit,
         afterSequence: after ? BigInt(after) : undefined,
@@ -282,7 +282,6 @@ export function createStreamHandlers({ streamService, eventService, activityServ
         viewerId: userId,
       })
 
-      const events = await eventService.enrichBootstrapEvents(rawEvents, new Map())
       res.json({ events: events.map(serializeEvent) })
     },
 

@@ -60,9 +60,9 @@ export function useScrollBehavior({
   const [isScrolledFarFromBottom, setIsScrolledFarFromBottom] = useState(false)
   const prevItemCount = useRef(0)
   const prevScrollHeight = useRef(0)
-  // Tracks the previous render's isFetchingOlder value so the adjustment
-  // effect can detect when an older-content fetch just completed (true→false).
+  // Track previous-render fetching values so effects can detect true→false transitions.
   const prevIsFetchingOlder = useRef(false)
+  const prevIsFetchingNewer = useRef(false)
   // One-shot guards: prevent onScrollNearTop/Bottom from firing repeatedly
   // between React re-renders while the user scrolls within the trigger zone.
   const olderFetchScheduled = useRef(false)
@@ -110,8 +110,9 @@ export function useScrollBehavior({
   useLayoutEffect(() => {
     // Reset one-shot guards when fetching completes (true→false transition)
     if (prevIsFetchingOlder.current && !isFetchingOlder) olderFetchScheduled.current = false
+    if (prevIsFetchingNewer.current && !isFetchingNewer) newerFetchScheduled.current = false
     prevIsFetchingOlder.current = isFetchingOlder
-    if (!isFetchingNewer) newerFetchScheduled.current = false
+    prevIsFetchingNewer.current = isFetchingNewer
     const el = scrollContainerRef.current
     if (el) {
       prevScrollHeight.current = el.scrollHeight
