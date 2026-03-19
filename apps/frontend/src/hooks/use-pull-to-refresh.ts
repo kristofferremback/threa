@@ -78,6 +78,10 @@ export function usePullToRefresh({ enabled, onRefresh }: PullToRefreshOptions) {
       // Let the scroll container handle it if not at the top
       if (scrollEl && scrollEl.scrollTop > 1) return
 
+      // Never activate pull-to-refresh inside stream scroll containers —
+      // they use infinite scroll instead.
+      if (scrollEl && scrollEl.dataset.suppressPullRefresh) return
+
       // Own the gesture — prevent native scroll
       e.preventDefault()
 

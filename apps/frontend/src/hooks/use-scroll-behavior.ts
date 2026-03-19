@@ -1,18 +1,29 @@
-import { useRef, useEffect, useCallback, type RefObject } from "react"
+import { useRef, useState, useEffect, useLayoutEffect, useCallback, type RefObject } from "react"
+import { EVENT_PAGE_SIZE, SCROLL_FETCH_RATIO } from "@/lib/constants"
+
+/** Number of items from the bottom before showing "Jump to latest" */
+const JUMP_TO_LATEST_ITEM_THRESHOLD = 10
 
 interface UseScrollBehaviorOptions {
   /** Whether data is currently loading (delays initial scroll) */
   isLoading: boolean
   /** Number of items in the list (triggers scroll when changes) */
   itemCount: number
-  /** Called when user scrolls near the top (for infinite scroll) */
+  /** Called when user scrolls near the top (for loading older messages) */
   onScrollNearTop?: () => void
-  /** Whether infinite scroll is currently fetching */
-  isFetchingMore?: boolean
-  /** Threshold in pixels from top to trigger onScrollNearTop (default: 100) */
-  topThreshold?: number
-  /** Threshold in pixels from bottom to consider "near bottom" (default: 100) */
+  /** Called when user scrolls near the bottom (for loading newer messages in jump-to mode) */
+  onScrollNearBottom?: () => void
+  /** Whether infinite scroll is currently fetching older events */
+  isFetchingOlder?: boolean
+  /** Whether infinite scroll is currently fetching newer events */
+  isFetchingNewer?: boolean
+  /** Threshold in pixels from bottom to consider "near bottom" for auto-scroll (default: 100) */
   bottomThreshold?: number
+  /**
+   * Number of items from the edge that triggers a fetch.
+   * Default: EVENT_PAGE_SIZE * SCROLL_FETCH_RATIO (25)
+   */
+  triggerItemCount?: number
 }
 
 interface UseScrollBehaviorReturn {
@@ -20,6 +31,8 @@ interface UseScrollBehaviorReturn {
   scrollContainerRef: RefObject<HTMLDivElement | null>
   /** Scroll handler to attach to the container's onScroll */
   handleScroll: () => void
+  /** True when scrolled ~10+ items away from the bottom */
+  isScrolledFarFromBottom: boolean
 }
 
 /**
@@ -29,18 +42,31 @@ interface UseScrollBehaviorReturn {
  * - Auto-scrolls to bottom on initial load and new messages
  * - Tracks if user has scrolled away (pauses auto-scroll)
  * - Resumes auto-scroll when user scrolls back to bottom
- * - Optional infinite scroll callback when scrolling near top
+ * - Triggers fetch callbacks based on scroll position relative to item count
+ * - Preserves scroll position when older content is prepended
  */
 export function useScrollBehavior({
   isLoading,
   itemCount,
   onScrollNearTop,
-  isFetchingMore = false,
-  topThreshold = 100,
+  onScrollNearBottom,
+  isFetchingOlder = false,
+  isFetchingNewer = false,
   bottomThreshold = 100,
+  triggerItemCount = Math.floor(EVENT_PAGE_SIZE * SCROLL_FETCH_RATIO),
 }: UseScrollBehaviorOptions): UseScrollBehaviorReturn {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const shouldAutoScroll = useRef(true)
+  const [isScrolledFarFromBottom, setIsScrolledFarFromBottom] = useState(false)
+  const prevItemCount = useRef(0)
+  const prevScrollHeight = useRef(0)
+  // Track previous-render fetching values so effects can detect true→false transitions.
+  const prevIsFetchingOlder = useRef(false)
+  const prevIsFetchingNewer = useRef(false)
+  // One-shot guards: prevent onScrollNearTop/Bottom from firing repeatedly
+  // between React re-renders while the user scrolls within the trigger zone.
+  const olderFetchScheduled = useRef(false)
+  const newerFetchScheduled = useRef(false)
 
   const scrollToBottom = useCallback(() => {
     if (scrollContainerRef.current && shouldAutoScroll.current) {
@@ -48,12 +74,50 @@ export function useScrollBehavior({
     }
   }, [])
 
-  // Initial scroll to bottom when data loads
-  useEffect(() => {
-    if (!isLoading && itemCount > 0) {
+  // Scroll position preservation and initial scroll.
+  // useLayoutEffect runs synchronously after DOM mutation but before paint,
+  // preventing a visible one-frame scroll jump when older messages are prepended.
+  useLayoutEffect(() => {
+    const el = scrollContainerRef.current
+    if (!el || isLoading) return
+
+    const oldCount = prevItemCount.current
+    prevItemCount.current = itemCount
+
+    if (oldCount === 0 && itemCount > 0) {
+      // Initial load — scroll to bottom
+      scrollToBottom()
+      return
+    }
+
+    // Only preserve scroll when older content was just prepended at the top
+    // (isFetchingOlder transitioned true→false). Bottom-appended content
+    // (WebSocket messages, newer pagination) needs no scrollTop adjustment.
+    const olderContentJustArrived = prevIsFetchingOlder.current && !isFetchingOlder
+    if (itemCount > oldCount && !shouldAutoScroll.current && olderContentJustArrived) {
+      const heightDelta = el.scrollHeight - prevScrollHeight.current
+      if (heightDelta > 0) {
+        el.scrollTop += heightDelta
+      }
+    } else if (shouldAutoScroll.current) {
       scrollToBottom()
     }
-  }, [isLoading, itemCount, scrollToBottom])
+  }, [isLoading, itemCount, scrollToBottom, isFetchingOlder])
+
+  // Capture previous-render values AFTER the adjustment effect has read them.
+  // No dep array → runs every render, defined after adjustment so it runs second.
+  // Must also be useLayoutEffect to maintain ordering with the adjustment above.
+  useLayoutEffect(() => {
+    // Reset one-shot guards when fetching completes (true→false transition)
+    if (prevIsFetchingOlder.current && !isFetchingOlder) olderFetchScheduled.current = false
+    if (prevIsFetchingNewer.current && !isFetchingNewer) newerFetchScheduled.current = false
+    prevIsFetchingOlder.current = isFetchingOlder
+    prevIsFetchingNewer.current = isFetchingNewer
+    const el = scrollContainerRef.current
+    if (el) {
+      prevScrollHeight.current = el.scrollHeight
+    }
+  })
 
   // Auto-scroll to bottom when the container shrinks (e.g. mobile keyboard opens).
   // This keeps the latest messages visible instead of being pushed off-screen.
@@ -84,14 +148,43 @@ export function useScrollBehavior({
     // Resume auto-scroll if user scrolls back to bottom
     shouldAutoScroll.current = isNearBottom
 
-    // Infinite scroll: load older content when near top
-    if (onScrollNearTop && scrollTop < topThreshold && !isFetchingMore) {
+    if (itemCount === 0) return
+
+    // Estimate average item height and compute pixel threshold from item count
+    const avgItemHeight = scrollHeight / itemCount
+    const triggerPixels = triggerItemCount * avgItemHeight
+
+    // Track whether user is scrolled far enough from bottom to show "Jump to latest"
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight
+    const jumpThresholdPixels = JUMP_TO_LATEST_ITEM_THRESHOLD * avgItemHeight
+    setIsScrolledFarFromBottom(distanceFromBottom > jumpThresholdPixels)
+
+    // Load older content when near top (one-shot until fetch completes)
+    if (onScrollNearTop && scrollTop < triggerPixels && !isFetchingOlder && !olderFetchScheduled.current) {
+      olderFetchScheduled.current = true
       onScrollNearTop()
     }
-  }, [onScrollNearTop, isFetchingMore, topThreshold, bottomThreshold])
+
+    // Load newer content when near bottom (jump-to mode, one-shot)
+    if (onScrollNearBottom && !isFetchingNewer && !newerFetchScheduled.current) {
+      if (distanceFromBottom < triggerPixels) {
+        newerFetchScheduled.current = true
+        onScrollNearBottom()
+      }
+    }
+  }, [
+    onScrollNearTop,
+    onScrollNearBottom,
+    isFetchingOlder,
+    isFetchingNewer,
+    bottomThreshold,
+    itemCount,
+    triggerItemCount,
+  ])
 
   return {
     scrollContainerRef,
     handleScroll,
+    isScrolledFarFromBottom,
   }
 }

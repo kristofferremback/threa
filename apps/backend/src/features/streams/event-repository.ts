@@ -142,18 +142,25 @@ export const StreamEventRepository = {
   async list(
     db: Querier,
     streamId: string,
-    filters?: { types?: EventType[]; afterSequence?: bigint; limit?: number; viewerId?: string }
+    filters?: {
+      types?: EventType[]
+      afterSequence?: bigint
+      beforeSequence?: bigint
+      limit?: number
+      viewerId?: string
+    }
   ): Promise<StreamEvent[]> {
     const limit = filters?.limit ?? 50
     const types = filters?.types
     const viewerId = filters?.viewerId
     const afterSequence = filters?.afterSequence
+    const beforeSequence = filters?.beforeSequence
 
     // Command events are author-only: only visible to the actor who created them.
     // If viewerId is provided, filter out command events from other users.
     // If viewerId is not provided, return all events (backwards compatibility for internal use).
 
-    // Build query dynamically to avoid 8 permutations of the same query
+    // Build query dynamically to avoid many permutations of the same query
     const conditions: string[] = ["stream_id = $1"]
     const params: unknown[] = [streamId]
     let paramIndex = 2
@@ -161,6 +168,12 @@ export const StreamEventRepository = {
     if (afterSequence !== undefined) {
       conditions.push(`sequence > $${paramIndex}`)
       params.push(afterSequence.toString())
+      paramIndex++
+    }
+
+    if (beforeSequence !== undefined) {
+      conditions.push(`sequence < $${paramIndex}`)
+      params.push(beforeSequence.toString())
       paramIndex++
     }
 
@@ -177,8 +190,9 @@ export const StreamEventRepository = {
       paramIndex += 2
     }
 
-    // If afterSequence is provided, paginate forward (ASC order)
-    // Otherwise, get the most recent N events (DESC, then reverse)
+    // afterSequence → paginate forward (ASC)
+    // beforeSequence → paginate backward (DESC, then reverse for chronological)
+    // neither → get most recent N events (DESC, then reverse)
     const orderDirection = afterSequence !== undefined ? "ASC" : "DESC"
 
     const query = `
@@ -193,8 +207,58 @@ export const StreamEventRepository = {
     const result = await db.query<StreamEventRow>(query, params)
     const events = result.rows.map(mapRowToEvent)
 
-    // When fetching most recent (DESC), reverse to return in chronological order
+    // When fetching DESC (most recent or before cursor), reverse to chronological order
     return afterSequence !== undefined ? events : events.reverse()
+  },
+
+  /**
+   * Fetch events surrounding a target event for jump-to-message.
+   * Returns events centered around the target's sequence, plus boundary flags.
+   */
+  async listAround(
+    db: Querier,
+    streamId: string,
+    targetSequence: bigint,
+    options?: { limit?: number; viewerId?: string }
+  ): Promise<{ events: StreamEvent[]; hasOlder: boolean; hasNewer: boolean }> {
+    // Ensure at least 2 so probe-trimming doesn't consume the target event
+    const total = Math.max(options?.limit ?? 50, 2)
+    const half = Math.floor(total / 2)
+
+    // Fetch older (including target) and newer sequentially on the provided connection.
+    // Using the explicit name avoids a broken `this` binding if the method is destructured.
+    const olderEvents = await StreamEventRepository.list(db, streamId, {
+      beforeSequence: targetSequence + 1n,
+      limit: half + 1,
+      viewerId: options?.viewerId,
+    })
+    const newerEvents = await StreamEventRepository.list(db, streamId, {
+      afterSequence: targetSequence,
+      limit: half + 1,
+      viewerId: options?.viewerId,
+    })
+
+    const hasOlder = olderEvents.length > half
+    const hasNewer = newerEvents.length > half
+
+    // olderEvents is ASC-sorted: [0] is the oldest (probe), [half] is the target.
+    // newerEvents is ASC-sorted: [half] is the newest (probe).
+    const trimmedOlder = hasOlder ? olderEvents.slice(1) : olderEvents
+    const trimmedNewer = hasNewer ? newerEvents.slice(0, half) : newerEvents
+
+    // Merge and dedupe
+    const eventMap = new Map<string, StreamEvent>()
+    for (const e of [...trimmedOlder, ...trimmedNewer]) {
+      eventMap.set(e.id, e)
+    }
+
+    const events = Array.from(eventMap.values()).sort((a, b) => {
+      if (a.sequence < b.sequence) return -1
+      if (a.sequence > b.sequence) return 1
+      return 0
+    })
+
+    return { events, hasOlder, hasNewer }
   },
 
   async findById(db: Querier, id: string): Promise<StreamEvent | null> {
@@ -202,6 +266,19 @@ export const StreamEventRepository = {
       SELECT id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at
       FROM stream_events
       WHERE id = ${id}
+    `)
+    return result.rows[0] ? mapRowToEvent(result.rows[0]) : null
+  },
+
+  /** Find the message_created event for a given message ID within a stream. */
+  async findByMessageId(db: Querier, streamId: string, messageId: string): Promise<StreamEvent | null> {
+    const result = await db.query<StreamEventRow>(sql`
+      SELECT id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at
+      FROM stream_events
+      WHERE stream_id = ${streamId}
+        AND event_type = 'message_created'
+        AND payload->>'messageId' = ${messageId}
+      LIMIT 1
     `)
     return result.rows[0] ? mapRowToEvent(result.rows[0]) : null
   },

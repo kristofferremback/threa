@@ -75,6 +75,38 @@ const addMemberSchema = z.object({
   memberId: z.string().min(1, "memberId is required"),
 })
 
+/** Default number of events returned in bootstrap and event list queries. */
+const EVENTS_DEFAULT_LIMIT = 50
+
+const numericString = z.string().regex(/^\d+$/, "must be a numeric string")
+
+const listEventsQuerySchema = z
+  .object({
+    type: z.union([z.string(), z.array(z.string())]).optional(),
+    limit: z.coerce.number().int().positive().max(200).optional(),
+    after: numericString.optional(),
+    before: numericString.optional(),
+  })
+  .refine((d) => !(d.after && d.before), {
+    message: "after and before are mutually exclusive",
+    path: ["after"],
+  })
+
+const listEventsAroundQuerySchema = z
+  .object({
+    eventId: z.string().optional(),
+    messageId: z.string().optional(),
+    limit: z.coerce.number().int().min(2).max(100).optional(),
+  })
+  .refine((d) => d.eventId ?? d.messageId, {
+    message: "eventId or messageId is required",
+    path: ["eventId"],
+  })
+  .refine((d) => !(d.eventId && d.messageId), {
+    message: "provide eventId or messageId, not both",
+    path: ["eventId"],
+  })
+
 // Exhaustive: adding a StreamType forces a decision here
 const addMemberAllowed: Record<StreamType, boolean> = {
   [StreamTypes.CHANNEL]: true,
@@ -228,7 +260,15 @@ export function createStreamHandlers({ streamService, eventService, activityServ
       const userId = req.user!.id
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
-      const { type, limit, after } = req.query
+
+      const result = listEventsQuerySchema.safeParse(req.query)
+      if (!result.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: z.flattenError(result.error).fieldErrors,
+        })
+      }
+      const { type, limit, after, before } = result.data
 
       await streamService.validateStreamAccess(streamId, workspaceId, userId)
 
@@ -236,12 +276,45 @@ export function createStreamHandlers({ streamService, eventService, activityServ
 
       const events = await eventService.listEvents(streamId, {
         types,
-        limit: limit ? parseInt(limit as string, 10) : undefined,
-        afterSequence: after ? BigInt(after as string) : undefined,
+        limit,
+        afterSequence: after ? BigInt(after) : undefined,
+        beforeSequence: before ? BigInt(before) : undefined,
         viewerId: userId,
       })
 
       res.json({ events: events.map(serializeEvent) })
+    },
+
+    async listEventsAround(req: Request, res: Response) {
+      const userId = req.user!.id
+      const workspaceId = req.workspaceId!
+      const { streamId } = req.params
+
+      const parsed = listEventsAroundQuerySchema.safeParse(req.query)
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: z.flattenError(parsed.error).fieldErrors,
+        })
+      }
+      const { eventId, messageId, limit } = parsed.data
+      const targetId = (eventId ?? messageId)!
+
+      await streamService.validateStreamAccess(streamId, workspaceId, userId)
+
+      const result = await eventService.listEventsAround(streamId, targetId, {
+        idType: eventId ? "event" : "message",
+        limit,
+        viewerId: userId,
+      })
+
+      const enrichedEvents = await eventService.enrichBootstrapEvents(result.events, new Map())
+
+      res.json({
+        events: enrichedEvents.map(serializeEvent),
+        hasOlder: result.hasOlder,
+        hasNewer: result.hasNewer,
+      })
     },
 
     async updateCompanionMode(req: Request, res: Response) {
@@ -391,7 +464,7 @@ export function createStreamHandlers({ streamService, eventService, activityServ
 
       // Fetch all data in parallel - threads with counts is a single optimized query
       const [events, members, membership, threadDataMap] = await Promise.all([
-        eventService.listEvents(streamId, { limit: 50, viewerId: userId }),
+        eventService.listEvents(streamId, { limit: EVENTS_DEFAULT_LIMIT, viewerId: userId }),
         streamService.getMembers(streamId),
         streamService.getMembership(streamId, userId),
         streamService.getThreadsWithReplyCounts(streamId),
@@ -402,6 +475,9 @@ export function createStreamHandlers({ streamService, eventService, activityServ
       // Get the latest sequence number from the most recent event
       const latestSequence = events.length > 0 ? events[events.length - 1].sequence : "0"
 
+      // Signal whether older events exist beyond this bootstrap window
+      const hasOlderEvents = events.length === EVENTS_DEFAULT_LIMIT
+
       res.json({
         data: {
           stream,
@@ -409,6 +485,7 @@ export function createStreamHandlers({ streamService, eventService, activityServ
           members,
           membership,
           latestSequence: latestSequence.toString(),
+          hasOlderEvents,
         },
       })
     },

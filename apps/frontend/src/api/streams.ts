@@ -5,6 +5,7 @@ import type {
   StreamMember,
   StreamType,
   StreamBootstrap,
+  EventsAroundResponse,
   CreateStreamInput,
   UpdateStreamInput,
   NotificationLevel,
@@ -60,16 +61,30 @@ export const streamsApi = {
   async getEvents(
     workspaceId: string,
     streamId: string,
-    params?: { before?: string; limit?: number }
+    params?: { before?: string; after?: string; limit?: number }
   ): Promise<StreamEvent[]> {
     const searchParams = new URLSearchParams()
-    if (params?.before) searchParams.set("after", params.before)
+    if (params?.before) searchParams.set("before", params.before)
+    if (params?.after) searchParams.set("after", params.after)
     if (params?.limit) searchParams.set("limit", params.limit.toString())
     const query = searchParams.toString()
     const res = await api.get<{ events: StreamEvent[] }>(
       `/api/workspaces/${workspaceId}/streams/${streamId}/events${query ? `?${query}` : ""}`
     )
     return res.events
+  },
+
+  async getEventsAround(
+    workspaceId: string,
+    streamId: string,
+    targetId: string,
+    limit?: number
+  ): Promise<EventsAroundResponse> {
+    const searchParams = new URLSearchParams({ messageId: targetId })
+    if (limit) searchParams.set("limit", limit.toString())
+    return api.get<EventsAroundResponse>(
+      `/api/workspaces/${workspaceId}/streams/${streamId}/events/around?${searchParams.toString()}`
+    )
   },
 
   async checkSlugAvailable(workspaceId: string, slug: string, excludeStreamId?: string): Promise<boolean> {

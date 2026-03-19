@@ -498,9 +498,40 @@ export class EventService {
 
   async listEvents(
     streamId: string,
-    filters?: { types?: EventType[]; limit?: number; afterSequence?: bigint; viewerId?: string }
+    filters?: {
+      types?: EventType[]
+      limit?: number
+      afterSequence?: bigint
+      beforeSequence?: bigint
+      viewerId?: string
+    }
   ): Promise<StreamEvent[]> {
     return StreamEventRepository.list(this.pool, streamId, filters)
+  }
+
+  /**
+   * Fetch events surrounding a target. Accepts either an event ID or a message ID
+   * (search results return message IDs, not event IDs).
+   */
+  async listEventsAround(
+    streamId: string,
+    targetId: string,
+    options?: { idType?: "event" | "message"; limit?: number; viewerId?: string }
+  ): Promise<{ events: StreamEvent[]; hasOlder: boolean; hasNewer: boolean }> {
+    return withClient(this.pool, async (client) => {
+      let targetEvent: StreamEvent | null = null
+      if (!options?.idType || options.idType === "event") {
+        targetEvent = await StreamEventRepository.findById(client, targetId)
+        if (targetEvent && targetEvent.streamId !== streamId) targetEvent = null
+      }
+      if (!targetEvent && options?.idType !== "event") {
+        targetEvent = await StreamEventRepository.findByMessageId(client, streamId, targetId)
+      }
+      if (!targetEvent) {
+        return { events: [], hasOlder: false, hasNewer: false }
+      }
+      return StreamEventRepository.listAround(client, streamId, targetEvent.sequence, options)
+    })
   }
 
   /**

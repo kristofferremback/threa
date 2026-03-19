@@ -1,6 +1,6 @@
-import { useMemo, useEffect, useCallback } from "react"
+import { useMemo, useEffect, useCallback, useRef } from "react"
 import { useSearchParams } from "react-router-dom"
-import { MessageSquare } from "lucide-react"
+import { MessageSquare, ArrowDown } from "lucide-react"
 import { useQueryClient } from "@tanstack/react-query"
 import {
   useEvents,
@@ -18,6 +18,7 @@ import {
 } from "@/hooks"
 import { useSocket } from "@/contexts"
 import { useUser } from "@/auth"
+import { Button } from "@/components/ui/button"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
 import { ErrorView } from "@/components/error-view"
 import {
@@ -57,6 +58,7 @@ export function StreamContent({
   const [, setSearchParams] = useSearchParams()
   const user = useUser()
   const socket = useSocket()
+  const jumpTriggeredRef = useRef<string | null>(null)
 
   // Clear highlight param after delay (works for both main view and panels)
   useEffect(() => {
@@ -104,11 +106,51 @@ export function StreamContent({
   // Subscribe to stream room FIRST (subscribe-then-bootstrap pattern)
   useStreamSocket(workspaceId, streamId, { enabled: !isDraft })
 
-  const { events, isLoading, error, fetchOlderEvents, hasOlderEvents, isFetchingOlder } = useEvents(
-    workspaceId,
-    streamId,
-    { enabled: !isDraft }
-  )
+  const {
+    events,
+    isLoading,
+    error,
+    fetchOlderEvents,
+    hasOlderEvents,
+    isFetchingOlder,
+    fetchNewerEvents,
+    hasNewerEvents,
+    isFetchingNewer,
+    jumpToEvent,
+    exitJumpMode,
+    isJumpMode,
+  } = useEvents(workspaceId, streamId, { enabled: !isDraft, loadAll: isThread })
+
+  // Jump to highlighted message if it's not in the current event window
+  useEffect(() => {
+    if (!highlightMessageId || isLoading || isDraft) return
+    if (jumpTriggeredRef.current === highlightMessageId) return
+
+    // Check if the message is already visible in current events
+    const isVisible = events.some((e) => {
+      const payload = e.payload as { messageId?: string }
+      return payload?.messageId === highlightMessageId
+    })
+
+    if (!isVisible && events.length > 0) {
+      jumpTriggeredRef.current = highlightMessageId
+      // Use the messageId directly — the backend resolves it to the corresponding event
+      jumpToEvent(highlightMessageId)
+        .then((success) => {
+          if (!success) jumpTriggeredRef.current = null
+        })
+        .catch(() => {
+          // Reset so the user can retry (e.g. on reconnect)
+          jumpTriggeredRef.current = null
+        })
+    }
+  }, [highlightMessageId, isLoading, isDraft, events, jumpToEvent])
+
+  // Reset jump trigger and exit jump mode when stream changes
+  useEffect(() => {
+    jumpTriggeredRef.current = null
+    exitJumpMode()
+  }, [streamId, exitJumpMode])
 
   // Resolve current workspace-scoped user ID. The hook deduplicates with SentMessageEvent instances.
   const currentWorkspaceUserId = useWorkspaceUserId(workspaceId)
@@ -120,16 +162,18 @@ export function StreamContent({
   const isChannel = stream?.type === StreamTypes.CHANNEL
   const agentActivity = useAgentActivity(events, socket)
 
-  const { scrollContainerRef, handleScroll } = useScrollBehavior({
+  const { scrollContainerRef, handleScroll, isScrolledFarFromBottom } = useScrollBehavior({
     isLoading,
     itemCount: events.length,
     onScrollNearTop: hasOlderEvents ? fetchOlderEvents : undefined,
-    isFetchingMore: isFetchingOlder,
+    onScrollNearBottom: hasNewerEvents ? fetchNewerEvents : undefined,
+    isFetchingOlder,
+    isFetchingNewer,
   })
 
   // Auto-mark stream as read when viewing
   const lastEventId = events.length > 0 ? events[events.length - 1].id : undefined
-  useAutoMarkAsRead(workspaceId, streamId, lastEventId, { enabled: !isDraft && !isLoading })
+  useAutoMarkAsRead(workspaceId, streamId, lastEventId, { enabled: !isDraft && !isLoading && !isJumpMode })
 
   // Track live-arriving messages from other users for brief "new" indicator
   const newMessageIds = useNewMessageIndicator(events, currentWorkspaceUserId ?? undefined, streamId)
@@ -175,6 +219,20 @@ export function StreamContent({
     [queryClient, workspaceId, streamId]
   )
 
+  const handleJumpToLatest = useCallback(() => {
+    if (isJumpMode) {
+      exitJumpMode()
+      // Scroll to bottom after React re-renders with bootstrap events
+      requestAnimationFrame(() => {
+        if (scrollContainerRef.current) {
+          scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight
+        }
+      })
+    } else if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTo({ top: scrollContainerRef.current.scrollHeight, behavior: "smooth" })
+    }
+  }, [isJumpMode, exitJumpMode, scrollContainerRef])
+
   if (error && !isDraft) {
     return (
       <ErrorView
@@ -189,48 +247,65 @@ export function StreamContent({
     <EditLastMessageContext.Provider value={editLastMessageCtx}>
       <InlineEditProvider>
         <div className="flex h-full flex-col">
-          <div
-            ref={scrollContainerRef}
-            className="flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain mb-1 sm:mb-4"
-            onScroll={handleScroll}
-          >
-            {/* Show parent message for threads */}
-            {isThread && parentMessage && parentStreamId && (
-              <ThreadParentMessage
-                event={parentMessage}
-                workspaceId={workspaceId}
-                streamId={parentStreamId}
-                replyCount={events.length}
-              />
-            )}
-            {!isDraft && isFetchingOlder && (
-              <div className="flex justify-center py-2">
-                <p className="text-sm text-muted-foreground">Loading older messages...</p>
+          <div className="relative flex-1 overflow-hidden">
+            <div
+              ref={scrollContainerRef}
+              className="h-full overflow-y-auto overflow-x-hidden overscroll-y-contain mb-1 sm:mb-4"
+              data-suppress-pull-refresh="true"
+              onScroll={handleScroll}
+            >
+              {/* Show parent message for threads */}
+              {isThread && parentMessage && parentStreamId && (
+                <ThreadParentMessage
+                  event={parentMessage}
+                  workspaceId={workspaceId}
+                  streamId={parentStreamId}
+                  replyCount={events.length}
+                />
+              )}
+              {!isDraft && isFetchingOlder && (
+                <div className="flex justify-center py-2">
+                  <p className="text-sm text-muted-foreground">Loading older messages...</p>
+                </div>
+              )}
+              {isDraft ? (
+                <Empty className="h-full border-0">
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon">
+                      <MessageSquare />
+                    </EmptyMedia>
+                    <EmptyTitle>Start a conversation</EmptyTitle>
+                    <EmptyDescription>Type a message below to begin this scratchpad.</EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              ) : (
+                <EventList
+                  events={events}
+                  isLoading={isLoading}
+                  workspaceId={workspaceId}
+                  streamId={streamId}
+                  highlightMessageId={highlightMessageId}
+                  firstUnreadEventId={dividerEventId}
+                  isDividerFading={isDividerFading}
+                  agentActivity={agentActivity}
+                  hideSessionCards={isChannel}
+                  newMessageIds={newMessageIds}
+                />
+              )}
+              {!isDraft && isFetchingNewer && (
+                <div className="flex justify-center py-2">
+                  <p className="text-sm text-muted-foreground">Loading newer messages...</p>
+                </div>
+              )}
+            </div>
+            {/* Jump to latest button — shown when scrolled far from bottom or in jump mode */}
+            {(isJumpMode || isScrolledFarFromBottom) && (
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10">
+                <Button variant="secondary" size="sm" className="shadow-lg gap-1.5" onClick={handleJumpToLatest}>
+                  <ArrowDown className="h-3.5 w-3.5" />
+                  Jump to latest
+                </Button>
               </div>
-            )}
-            {isDraft ? (
-              <Empty className="h-full border-0">
-                <EmptyHeader>
-                  <EmptyMedia variant="icon">
-                    <MessageSquare />
-                  </EmptyMedia>
-                  <EmptyTitle>Start a conversation</EmptyTitle>
-                  <EmptyDescription>Type a message below to begin this scratchpad.</EmptyDescription>
-                </EmptyHeader>
-              </Empty>
-            ) : (
-              <EventList
-                events={events}
-                isLoading={isLoading}
-                workspaceId={workspaceId}
-                streamId={streamId}
-                highlightMessageId={highlightMessageId}
-                firstUnreadEventId={dividerEventId}
-                isDividerFading={isDividerFading}
-                agentActivity={agentActivity}
-                hideSessionCards={isChannel}
-                newMessageIds={newMessageIds}
-              />
             )}
           </div>
           {!isMember && isPublicChannel && (
