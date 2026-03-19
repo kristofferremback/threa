@@ -12,7 +12,7 @@ Systematically read, triage, and address Greptile code review comments on a pull
 Greptile produces two distinct types of comments — they have different lifecycles and must be handled differently:
 
 1. **Summary comment** (issue-level) — posted by `greptile-apps[bot]` on the issues endpoint. **Continuously updated** after every review cycle. Always re-read this; never rely on a cached version. Contains:
-   - Confidence score (1-10)
+   - Confidence score (0-5)
    - Summary of findings
    - Outside-of-diff issues (problems in code not touched by the PR)
    - "Fix with Claude" link — a URL to `https://app.greptile.com/ide/claude-code?prompt=...&repo=...` where the `prompt` param is URL-encoded markdown with file paths, line numbers, issue descriptions, and suggested fixes
@@ -58,14 +58,16 @@ gh api "repos/$OWNER/$REPO/issues/$PR/comments" \
 
 From the summary comment body, extract:
 
-- **Confidence score** — the numerical rating (1-10) reflecting how confident Greptile is in the PR's correctness
+- **Confidence score** — the numerical rating (0-5) reflecting how confident Greptile is in the PR's correctness
 - **Issue list** — the categorized findings (bugs, style, performance, etc.)
 - **Outside-of-diff issues** — problems in code not modified by the PR but related to the changes
 - **"Fix with Claude" link** — decode the `prompt` query parameter to get structured issue details:
 
 ```bash
-# Extract and decode the Fix with Claude URL from the comment body
-# The prompt param contains URL-encoded markdown with file paths, line numbers, and suggested fixes
+# Extract the Fix with Claude URL from the comment body (stored in $COMMENT_BODY)
+FIX_URL=$(echo "$COMMENT_BODY" | grep -o 'https://app\.greptile\.com/ide/claude-code[^)]*' | head -1)
+ENCODED_PROMPT=$(echo "$FIX_URL" | sed 's/.*[?&]prompt=\([^&]*\).*/\1/')
+python3 -c "import urllib.parse, sys; print(urllib.parse.unquote(sys.argv[1]))" "$ENCODED_PROMPT"
 ```
 
 Use the decoded prompt content as the primary input for understanding what Greptile found — it contains the most structured and actionable version of the findings.
@@ -82,10 +84,16 @@ gh api "repos/$OWNER/$REPO/pulls/$PR/comments" \
 Cross-reference with recent commits to determine which comments are still relevant:
 
 ```bash
-# Check what files were changed in commits after Greptile's review
-gh api "repos/$OWNER/$REPO/pulls/$PR/commits" --jq '.[].sha' | while read sha; do
-  gh api "repos/$OWNER/$REPO/commits/$sha" --jq '.files[].filename'
-done | sort -u
+# Get the timestamp of Greptile's last inline review comment
+GREPTILE_TS=$(gh api "repos/$OWNER/$REPO/pulls/$PR/comments" \
+  --jq '[.[] | select(.user.login == "greptile-apps[bot]")] | last | .created_at')
+
+# List files changed only in commits *after* Greptile's review
+gh api "repos/$OWNER/$REPO/pulls/$PR/commits" \
+  --jq --arg ts "$GREPTILE_TS" '[.[] | select(.commit.author.date > $ts)] | .[].sha' \
+  | while read sha; do
+      gh api "repos/$OWNER/$REPO/commits/$sha" --jq '.files[].filename'
+    done | sort -u
 ```
 
 If a file mentioned in a Greptile comment was modified in a later commit, the comment may already be addressed — read the current code to verify before acting on it.
