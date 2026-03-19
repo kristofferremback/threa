@@ -46,7 +46,8 @@ export function SharePickerPage() {
 
   const [query, setQuery] = useState("")
   const [selectedIndex, setSelectedIndex] = useState(0)
-  const [files, setFiles] = useState<File[]>([])
+  // null = not yet loaded, [] = loaded but empty/unavailable
+  const [files, setFiles] = useState<File[] | null>(null)
 
   // Only lightweight text metadata comes from navigation state — files stay in Cache API
   // to avoid hitting browser history.state serialization limits (~640 KB in Firefox).
@@ -69,8 +70,13 @@ export function SharePickerPage() {
     }
   }, [hasFiles])
 
+  const resolvedFiles = files ?? []
+
   // Full ShareData for passing to handlers (combines meta + files)
-  const shareData: ShareData = useMemo(() => ({ title, text, url, files }), [title, text, url, files])
+  const shareData: ShareData = useMemo(
+    () => ({ title, text, url, files: resolvedFiles }),
+    [title, text, url, resolvedFiles]
+  )
 
   // Build a preview of what's being shared
   const sharedPreview = useMemo(() => {
@@ -82,8 +88,10 @@ export function SharePickerPage() {
   }, [title, text, url])
 
   const filesSummary = useMemo(() => {
-    if (!hasFiles && files.length === 0) return null
-    if (files.length === 0) return hasFiles ? "Loading files..." : null
+    if (!hasFiles) return null
+    // files === null means the effect hasn't resolved yet
+    if (files === null) return "Loading files..."
+    if (files.length === 0) return null
     const imageCount = files.filter((f) => f.type.startsWith("image/")).length
     const otherCount = files.length - imageCount
     const parts: string[] = []
@@ -222,7 +230,7 @@ export function SharePickerPage() {
           {/* File preview */}
           {filesSummary && (
             <div className="mt-2 flex items-start gap-2 rounded-lg border border-border bg-muted/50 px-3 py-2.5 text-sm text-muted-foreground">
-              {files.some((f) => f.type.startsWith("image/")) ? (
+              {resolvedFiles.some((f) => f.type.startsWith("image/")) ? (
                 <Image className="h-4 w-4 shrink-0 mt-0.5 opacity-60" />
               ) : (
                 <Paperclip className="h-4 w-4 shrink-0 mt-0.5 opacity-60" />

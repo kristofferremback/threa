@@ -92,7 +92,7 @@ self.addEventListener("fetch", (event) => {
             new Response(files[i], {
               headers: {
                 "Content-Type": files[i].type,
-                "X-Filename": files[i].name,
+                "X-Filename": encodeURIComponent(files[i].name),
                 "X-Size": String(files[i].size),
               },
             })

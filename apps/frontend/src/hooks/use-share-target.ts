@@ -62,7 +62,8 @@ export async function readShareTargetFiles(): Promise<File[]> {
       const fileResponse = await cache.match(`/_share/file/${i}`)
       if (fileResponse) {
         const blob = await fileResponse.blob()
-        const filename = fileResponse.headers.get("X-Filename") || `file-${i}`
+        const rawFilename = fileResponse.headers.get("X-Filename")
+        const filename = rawFilename ? decodeURIComponent(rawFilename) : `file-${i}`
         files.push(new File([blob], filename, { type: blob.type }))
       }
     }
