@@ -214,13 +214,13 @@ export const UserRepository = {
       return result.rows.map(mapRowToUser)
     }
 
-    const limit = filters?.limit ?? 200
+    const limit = filters?.limit
     const result = await db.query<UserRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS_WITH_ALIAS)}
       FROM users u
       WHERE u.workspace_id = ${workspaceId}
       ORDER BY u.joined_at
-      LIMIT ${limit}
+      ${limit !== undefined ? sql`LIMIT ${limit}` : sql``}
     `)
     return result.rows.map(mapRowToUser)
   },
