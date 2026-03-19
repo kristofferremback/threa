@@ -12,28 +12,14 @@ export function buildScratchpadPrompt(context: StreamContext, workspaceResearchE
   if (context.streamInfo.name) {
     section += ` called "${context.streamInfo.name}"`
   }
-  section += ". This is a private, personal space for notes and thinking."
+  section += ". This is a private space for notes and thinking."
 
   if (context.streamInfo.description) {
     section += `\n\nDescription: ${context.streamInfo.description}`
   }
 
-  section += `
-
-## Workspace Knowledge Access
-
-You have access to the user's workspace knowledge through the GAM (General Agentic Memory) system:
-- Their other scratchpads and notes
-- Channels they're a member of
-- DMs they're participating in
-- Memos (summarized knowledge) from past conversations
-
-`
-
   if (workspaceResearchEnabled) {
-    section += `Use the \`workspace_research\` tool when you need this additional context. If a "Retrieved Knowledge" section appears below, it contains information found relevant to this conversation. You can reference this knowledge naturally without explicitly citing sources unless the user asks where information came from.`
-  } else {
-    section += `Workspace research is not available in this run, so rely on the active conversation context and ask follow-up questions when needed.`
+    section += `\n\nYou can use the \`workspace_research\` tool to retrieve relevant knowledge from past conversations, scratchpads, and memos. Reference retrieved knowledge naturally without citing sources unless asked.`
   }
 
   return section
@@ -53,7 +39,7 @@ export function buildChannelPrompt(context: StreamContext): string {
   if (context.streamInfo.slug) {
     section += ` (#${context.streamInfo.slug})`
   }
-  section += ". This is a collaborative space where team members can discuss topics together."
+  section += ". This is a collaborative team space."
 
   if (context.streamInfo.description) {
     section += `\n\nChannel description: ${context.streamInfo.description}`
@@ -80,7 +66,7 @@ export function buildThreadPrompt(context: StreamContext): string {
   if (context.streamInfo.name) {
     section += ` called "${context.streamInfo.name}"`
   }
-  section += ". This is a focused discussion branching from a parent conversation."
+  section += ". This is a focused thread branching from a parent conversation."
 
   if (context.streamInfo.description) {
     section += `\n\nThread description: ${context.streamInfo.description}`
@@ -124,7 +110,7 @@ export function buildDmPrompt(context: StreamContext): string {
     const names = context.participants.map((p) => p.name).join(" and ")
     section += ` between ${names}`
   }
-  section += ". This is a private, focused conversation between two people."
+  section += "."
 
   if (context.streamInfo.description) {
     section += `\n\nDescription: ${context.streamInfo.description}`
