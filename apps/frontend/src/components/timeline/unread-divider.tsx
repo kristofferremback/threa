@@ -5,7 +5,7 @@ interface UnreadDividerProps {
 export function UnreadDivider({ isFading }: UnreadDividerProps) {
   return (
     <div
-      className={`absolute left-0 right-0 top-0 -translate-y-1/2 z-10 flex items-center gap-3 pointer-events-none transition-opacity duration-500 ${
+      className={`absolute left-0 right-0 -top-2 -translate-y-1/2 z-10 flex items-center gap-3 pointer-events-none transition-opacity duration-500 ${
         isFading ? "opacity-0" : "opacity-100"
       }`}
     >
