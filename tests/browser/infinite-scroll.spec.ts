@@ -27,7 +27,7 @@ async function seedMessages(
   const BATCH_SIZE = 5
   for (let start = 1; start <= count; start += BATCH_SIZE) {
     const end = Math.min(start + BATCH_SIZE - 1, count)
-    const promises = []
+    const promises: Promise<void>[] = []
     for (let i = start; i <= end; i++) {
       promises.push(
         page.request
@@ -160,7 +160,7 @@ test.describe("Infinite Scroll", () => {
   })
 
   test("should not make pagination requests when all messages fit in bootstrap", async ({ page }) => {
-    const channelName = `scroll-nopage-${testId}`
+    const channelName = `scroll-no-page-${testId}`
     await createChannel(page, channelName)
 
     const { workspaceId, streamId } = extractIds(page)
