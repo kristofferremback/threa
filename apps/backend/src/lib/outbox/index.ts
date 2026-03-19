@@ -54,6 +54,7 @@ export {
   type BudgetAlertOutboxPayload,
   type InvitationAcceptedOutboxPayload,
   type ActivityCreatedOutboxPayload,
+  type LinkPreviewReadyOutboxPayload,
   type UserScopedEventType,
   isUserScopedEvent,
 } from "./repository"

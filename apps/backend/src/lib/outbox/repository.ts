@@ -50,6 +50,8 @@ export type OutboxEventType =
   | "activity:created"
   | "bot:created"
   | "bot:updated"
+  | "link_preview:ready"
+  | "link_preview:dismissed"
 
 /** Events that are scoped to a stream (have streamId) */
 export type StreamScopedEventType =
@@ -70,6 +72,7 @@ export type StreamScopedEventType =
   | "agent_session:completed"
   | "agent_session:failed"
   | "agent_session:deleted"
+  | "link_preview:ready"
 
 /** Events that are scoped to a workspace (no streamId) */
 export type WorkspaceScopedEventType =
@@ -319,6 +322,18 @@ export interface BotUpdatedOutboxPayload extends WorkspaceScopedPayload {
   bot: WireBot
 }
 
+// Link preview event payloads
+export interface LinkPreviewReadyOutboxPayload extends StreamScopedPayload {
+  messageId: string
+  previews: import("@threa/types").LinkPreviewSummary[]
+}
+
+export interface LinkPreviewDismissedOutboxPayload extends WorkspaceScopedPayload {
+  authorId: string
+  messageId: string
+  linkPreviewId: string
+}
+
 // Budget alert event payload
 export interface BudgetAlertOutboxPayload extends WorkspaceScopedPayload {
   alertType: string
@@ -372,6 +387,8 @@ export interface OutboxEventPayloadMap {
   "activity:created": ActivityCreatedOutboxPayload
   "bot:created": BotCreatedOutboxPayload
   "bot:updated": BotUpdatedOutboxPayload
+  "link_preview:ready": LinkPreviewReadyOutboxPayload
+  "link_preview:dismissed": LinkPreviewDismissedOutboxPayload
 }
 
 export type OutboxEventPayload<T extends OutboxEventType> = OutboxEventPayloadMap[T]
@@ -421,6 +438,7 @@ const STREAM_SCOPED_EVENTS: StreamScopedEventType[] = [
   "agent_session:completed",
   "agent_session:failed",
   "agent_session:deleted",
+  "link_preview:ready",
 ]
 
 /**
@@ -438,6 +456,7 @@ export type AuthorScopedEventType =
   | "stream:read"
   | "stream:read_all"
   | "user_preferences:updated"
+  | "link_preview:dismissed"
 
 const AUTHOR_SCOPED_EVENTS: AuthorScopedEventType[] = [
   "command:dispatched",
@@ -445,6 +464,7 @@ const AUTHOR_SCOPED_EVENTS: AuthorScopedEventType[] = [
   "command:failed",
   "stream:read",
   "stream:read_all",
+  "link_preview:dismissed",
   "user_preferences:updated",
 ]
 

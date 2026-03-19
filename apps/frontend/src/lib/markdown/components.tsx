@@ -5,6 +5,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ProcessedChildren } from "./mention-renderer"
 import { useAttachmentContext } from "./attachment-context"
+import { useLinkPreviewContext } from "./link-preview-context"
 
 const CodeBlock = lazy(() => import("./code-block"))
 
@@ -13,6 +14,7 @@ const CodeBlock = lazy(() => import("./code-block"))
  */
 function MarkdownLink({ href, children }: { href?: string; children: ReactNode }) {
   const attachmentContext = useAttachmentContext()
+  const linkPreviewContext = useLinkPreviewContext()
 
   // Check if this is an attachment link
   if (href?.startsWith("attachment:")) {
@@ -44,12 +46,22 @@ function MarkdownLink({ href, children }: { href?: string; children: ReactNode }
     )
   }
 
-  // Regular link
+  // Regular link — sync hover with link preview context
+  const handleMouseEnter = () => {
+    if (href) linkPreviewContext?.setHoveredLinkUrl(href)
+  }
+
+  const handleMouseLeave = () => {
+    linkPreviewContext?.setHoveredLinkUrl(null)
+  }
+
   return (
     <a
       href={href}
       target="_blank"
       rel="noopener noreferrer"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
       className="text-primary underline underline-offset-4 hover:text-primary/80 [&_span]:[text-decoration:inherit]"
     >
       <ProcessedChildren>{children}</ProcessedChildren>

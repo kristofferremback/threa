@@ -127,6 +127,13 @@ export {
   INJECTION_STRATEGIES,
   type InjectionStrategy,
   InjectionStrategies,
+  // Link previews
+  LINK_PREVIEW_CONTENT_TYPES,
+  type LinkPreviewContentType,
+  LinkPreviewContentTypes,
+  LINK_PREVIEW_STATUSES,
+  type LinkPreviewStatus,
+  LinkPreviewStatuses,
   // Inter-service authentication
   INTERNAL_API_KEY_HEADER,
 } from "./constants"
@@ -173,6 +180,9 @@ export type {
   ExcelSheetInfo,
   ExcelChartInfo,
   ExcelMetadata,
+  // Link previews
+  LinkPreview,
+  LinkPreviewSummary,
 } from "./domain"
 
 // Slug validation
@@ -323,6 +333,10 @@ export {
   MESSAGE_SEND_MODE_OPTIONS,
   type MessageSendMode,
   MessageSendModes,
+  // Link preview default
+  LINK_PREVIEW_DEFAULT_OPTIONS,
+  type LinkPreviewDefault,
+  LinkPreviewDefaults,
   // Settings tabs
   SETTINGS_TAB_OPTIONS,
   SETTINGS_TABS,

@@ -413,5 +413,25 @@ export const InjectionStrategies = {
   SUMMARY: "summary",
 } as const satisfies Record<string, InjectionStrategy>
 
+// Link preview content types
+export const LINK_PREVIEW_CONTENT_TYPES = ["website", "pdf", "image"] as const
+export type LinkPreviewContentType = (typeof LINK_PREVIEW_CONTENT_TYPES)[number]
+
+export const LinkPreviewContentTypes = {
+  WEBSITE: "website",
+  PDF: "pdf",
+  IMAGE: "image",
+} as const satisfies Record<string, LinkPreviewContentType>
+
+// Link preview fetch statuses
+export const LINK_PREVIEW_STATUSES = ["pending", "completed", "failed"] as const
+export type LinkPreviewStatus = (typeof LINK_PREVIEW_STATUSES)[number]
+
+export const LinkPreviewStatuses = {
+  PENDING: "pending",
+  COMPLETED: "completed",
+  FAILED: "failed",
+} as const satisfies Record<string, LinkPreviewStatus>
+
 // Inter-service authentication header (control-plane ↔ regional backend ↔ workspace-router)
 export const INTERNAL_API_KEY_HEADER = "X-Internal-Api-Key"

@@ -24,6 +24,7 @@ import { createDebugHandlers } from "./handlers/debug-handlers"
 import { createInternalHandlers } from "./handlers/internal-handlers"
 import { createAuthStubHandlers } from "./auth/auth-stub-handlers"
 import { createAgentSessionHandlers } from "./features/agents"
+import { createLinkPreviewHandlers } from "./features/link-previews"
 import { createPublicApiHandlers } from "./features/public-api"
 import {
   createInternalAuthMiddleware,
@@ -48,6 +49,7 @@ import type { CommandRegistry } from "./features/commands"
 import type { UserPreferencesService } from "./features/user-preferences"
 import type { AvatarService } from "./features/workspaces"
 import type { ApiKeyChannelService } from "./features/api-keys"
+import type { LinkPreviewService } from "./features/link-previews"
 import type { Pool } from "pg"
 import type { PoolMonitor } from "./lib/observability"
 
@@ -73,6 +75,7 @@ interface Dependencies {
   internalApiKey: string | null
   apiKeyService: ApiKeyService
   apiKeyChannelService: ApiKeyChannelService
+  linkPreviewService: LinkPreviewService
 }
 
 export function registerRoutes(app: Express, deps: Dependencies) {
@@ -98,6 +101,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     internalApiKey,
     apiKeyService,
     apiKeyChannelService,
+    linkPreviewService,
   } = deps
 
   const auth = createAuthMiddleware({ authService })
@@ -134,6 +138,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const invitation = createInvitationHandlers({ invitationService })
   const activity = createActivityHandlers({ activityService })
   const agentSession = createAgentSessionHandlers({ pool })
+  const linkPreview = createLinkPreviewHandlers({ linkPreviewService })
 
   // Ops endpoints - registered before rate limiter so probes aren't throttled
   app.get("/readyz", opsAccess, debug.readiness)
@@ -291,6 +296,14 @@ export function registerRoutes(app: Express, deps: Dependencies) {
 
   // Agent Sessions (trace viewing)
   app.get("/api/workspaces/:workspaceId/agent-sessions/:sessionId", ...authed, agentSession.getSession)
+
+  // Link Previews
+  app.get("/api/workspaces/:workspaceId/messages/:messageId/link-previews", ...authed, linkPreview.getForMessage)
+  app.post(
+    "/api/workspaces/:workspaceId/messages/:messageId/link-previews/:linkPreviewId/dismiss",
+    ...authed,
+    linkPreview.dismiss
+  )
 
   // Public API v1 — API key auth
   const publicAuth = createPublicApiAuthMiddleware({ apiKeyService, pool })

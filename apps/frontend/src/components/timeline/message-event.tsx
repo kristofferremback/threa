@@ -1,5 +1,5 @@
 import { type ReactNode, useRef, useEffect, useState, useMemo, useCallback } from "react"
-import type { StreamEvent, AttachmentSummary, JSONContent } from "@threa/types"
+import type { StreamEvent, AttachmentSummary, JSONContent, LinkPreviewSummary } from "@threa/types"
 import { Link } from "react-router-dom"
 import { toast } from "sonner"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
@@ -16,6 +16,8 @@ import { cn } from "@/lib/utils"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useLongPress } from "@/hooks/use-long-press"
 import { AttachmentList } from "./attachment-list"
+import { LinkPreviewList } from "./link-preview-list"
+import { LinkPreviewProvider, useLinkPreviewContext } from "@/lib/markdown/link-preview-context"
 import { MessageContextMenu } from "./message-context-menu"
 import { MessageActionDrawer } from "./message-action-drawer"
 import { ThreadIndicator } from "./thread-indicator"
@@ -29,6 +31,7 @@ interface MessagePayload {
   contentMarkdown: string
   contentJson?: JSONContent
   attachments?: AttachmentSummary[]
+  linkPreviews?: LinkPreviewSummary[]
   replyCount?: number
   threadId?: string
   sessionId?: string
@@ -75,6 +78,27 @@ interface MessageLayoutProps {
     onTouchMove: (e: React.TouchEvent) => void
     onContextMenu: (e: React.MouseEvent) => void
   }
+}
+
+/** Reads hovered link URL from context and passes to LinkPreviewList */
+function MessageLinkPreviews({
+  messageId,
+  workspaceId,
+  previews,
+}: {
+  messageId: string
+  workspaceId: string
+  previews?: LinkPreviewSummary[]
+}) {
+  const linkPreviewContext = useLinkPreviewContext()
+  return (
+    <LinkPreviewList
+      messageId={messageId}
+      workspaceId={workspaceId}
+      previews={previews}
+      hoveredUrl={linkPreviewContext?.hoveredLinkUrl}
+    />
+  )
 }
 
 function MessageLayout({
@@ -170,12 +194,19 @@ function MessageLayout({
           {actions}
         </div>
         {children ?? (
-          <AttachmentProvider workspaceId={workspaceId} attachments={payload.attachments ?? []}>
-            <MarkdownContent content={payload.contentMarkdown} className="text-sm leading-relaxed" />
-            {payload.attachments && payload.attachments.length > 0 && (
-              <AttachmentList attachments={payload.attachments} workspaceId={workspaceId} />
-            )}
-          </AttachmentProvider>
+          <LinkPreviewProvider>
+            <AttachmentProvider workspaceId={workspaceId} attachments={payload.attachments ?? []}>
+              <MarkdownContent content={payload.contentMarkdown} className="text-sm leading-relaxed" />
+              {payload.attachments && payload.attachments.length > 0 && (
+                <AttachmentList attachments={payload.attachments} workspaceId={workspaceId} />
+              )}
+              <MessageLinkPreviews
+                messageId={payload.messageId}
+                workspaceId={workspaceId}
+                previews={payload.linkPreviews}
+              />
+            </AttachmentProvider>
+          </LinkPreviewProvider>
         )}
         {footer}
       </div>
