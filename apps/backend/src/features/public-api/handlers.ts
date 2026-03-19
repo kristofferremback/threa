@@ -155,6 +155,18 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
     return apiKeyChannelService.getAccessibleStreamIdsForApiKey(req.workspaceId!, req.apiKey!.id)
   }
 
+  /** Check if a single stream is accessible for the current API key */
+  async function assertStreamAccessible(req: Request, streamId: string): Promise<void> {
+    const accessible = await apiKeyChannelService.isStreamAccessibleForApiKey(
+      req.workspaceId!,
+      req.apiKey!.id,
+      streamId
+    )
+    if (!accessible) {
+      throw new HttpError("Stream not accessible", { status: 403, code: "FORBIDDEN" })
+    }
+  }
+
   /** Find a message, verify stream access, and verify bot ownership. Used by update/delete. */
   async function resolveApiKeyMessage(messageId: string, req: Request) {
     const message = await eventService.getMessageById(messageId)
@@ -162,10 +174,7 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
       throw new HttpError("Message not found", { status: 404, code: "NOT_FOUND" })
     }
 
-    const accessibleStreamIds = await getAccessibleStreamIds(req)
-    if (!accessibleStreamIds.includes(message.streamId)) {
-      throw new HttpError("Stream not accessible", { status: 403, code: "FORBIDDEN" })
-    }
+    await assertStreamAccessible(req, message.streamId)
 
     // Verify bot ownership: message must be authored by a bot owned by this API key
     if (message.authorType !== AuthorTypes.BOT) {
@@ -275,10 +284,7 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
       const { before, after, limit } = result.data
 
       // Verify stream access
-      const accessibleStreamIds = await getAccessibleStreamIds(req)
-      if (!accessibleStreamIds.includes(streamId)) {
-        throw new HttpError("Stream not accessible", { status: 403, code: "FORBIDDEN" })
-      }
+      await assertStreamAccessible(req, streamId)
 
       const messages = await eventService.getMessages(streamId, {
         limit: limit + 1, // Fetch one extra to determine hasMore
@@ -329,10 +335,7 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
       const botName = apiKey.name
 
       // Verify stream access
-      const accessibleStreamIds = await getAccessibleStreamIds(req)
-      if (!accessibleStreamIds.includes(streamId)) {
-        throw new HttpError("Stream not accessible", { status: 403, code: "FORBIDDEN" })
-      }
+      await assertStreamAccessible(req, streamId)
 
       // Upsert bot entity and emit outbox event in a transaction.
       // Note: this commits separately from createMessage below. If createMessage
