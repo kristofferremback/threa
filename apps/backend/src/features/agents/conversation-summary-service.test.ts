@@ -12,7 +12,6 @@ function makeMessage(sequence: bigint, content: string): Message {
     sequence,
     authorId: "usr_1",
     authorType: "user",
-
     contentJson: { type: "doc", content: [] },
     contentMarkdown: content,
     replyCount: 0,

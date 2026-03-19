@@ -19,7 +19,6 @@ function createMessage(overrides: Partial<Message> = {}): Message {
     sequence: 1n,
     authorId: "usr_123",
     authorType: "user",
-
     contentJson: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: contentMarkdown }] }] },
     contentMarkdown,
     replyCount: 0,
@@ -27,7 +26,6 @@ function createMessage(overrides: Partial<Message> = {}): Message {
     editedAt: null,
     deletedAt: null,
     createdAt: new Date("2024-01-01T10:00:00Z"),
-
     ...overrides,
   }
 }

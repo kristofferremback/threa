@@ -51,7 +51,6 @@ function createMockMessage(overrides: Partial<Message> = {}): Message {
     sequence: BigInt(1),
     authorId: "usr_test",
     authorType: "user",
-
     contentJson: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: contentMarkdown }] }] },
     contentMarkdown,
     replyCount: 0,
@@ -59,7 +58,6 @@ function createMockMessage(overrides: Partial<Message> = {}): Message {
     editedAt: null,
     deletedAt: null,
     createdAt: new Date(),
-
     ...overrides,
   }
 }

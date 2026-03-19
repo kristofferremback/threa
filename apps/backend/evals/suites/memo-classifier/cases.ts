@@ -40,7 +40,6 @@ export function createTestMessage(input: ClassifierInput, messageId: string, aut
     sequence: BigInt(1),
     authorId,
     authorType: input.authorType ?? "user",
-
     contentJson: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: input.content }] }] },
     contentMarkdown: input.content,
     replyCount: 0,

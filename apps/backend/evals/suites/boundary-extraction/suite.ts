@@ -59,7 +59,6 @@ function toMessage(evalMsg: EvalMessage, streamId: string, sequence: number = 1)
     sequence: BigInt(sequence),
     authorId: evalMsg.authorId,
     authorType: evalMsg.authorType,
-
     contentJson: {
       type: "doc",
       content: [{ type: "paragraph", content: [{ type: "text", text: evalMsg.contentMarkdown }] }],

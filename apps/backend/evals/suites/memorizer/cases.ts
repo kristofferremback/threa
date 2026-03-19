@@ -51,7 +51,6 @@ export function createTestMessage(content: string, messageId: string, authorId: 
     sequence: BigInt(1),
     authorId,
     authorType: "user",
-
     contentJson: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: content }] }] },
     contentMarkdown: content,
     replyCount: 0,
