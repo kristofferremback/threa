@@ -139,13 +139,15 @@ export class LinkPreviewService {
    */
   async dismiss(workspaceId: string, userId: string, messageId: string, linkPreviewId: string): Promise<void> {
     await withTransaction(this.deps.pool, async (client) => {
-      await LinkPreviewRepository.dismiss(client, workspaceId, userId, messageId, linkPreviewId)
-      await OutboxRepository.insert(client, "link_preview:dismissed", {
-        workspaceId,
-        authorId: userId,
-        messageId,
-        linkPreviewId,
-      })
+      const inserted = await LinkPreviewRepository.dismiss(client, workspaceId, userId, messageId, linkPreviewId)
+      if (inserted) {
+        await OutboxRepository.insert(client, "link_preview:dismissed", {
+          workspaceId,
+          authorId: userId,
+          messageId,
+          linkPreviewId,
+        })
+      }
     })
   }
 

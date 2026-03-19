@@ -49,28 +49,29 @@ export function LinkPreviewList({
     }
   }, [initialPreviews])
 
-  // Fetch previews from API if none provided via props or socket
+  // Fetch previews (and dismissal flags) from API.
+  // Always runs on mount to hydrate dismissedIds, even when previews came from IndexedDB cache.
   useEffect(() => {
-    if (hasSocketPreviews || fetchedFromApi) return
+    if (fetchedFromApi) return
 
     let mounted = true
-    async function fetchPreviews() {
-      try {
-        const result = await linkPreviewsApi.getForMessage(workspaceId, messageId)
-        if (!mounted || hasSocketPreviews) return
-        setPreviews(result.map(({ dismissed, ...p }) => p))
+    linkPreviewsApi
+      .getForMessage(workspaceId, messageId)
+      .then((result) => {
+        if (!mounted) return
+        if (!hasSocketPreviews) {
+          setPreviews(result.map(({ dismissed, ...p }) => p))
+        }
         setDismissedIds(new Set(result.filter((p) => p.dismissed).map((p) => p.id)))
         setFetchedFromApi(true)
-      } catch {
+      })
+      .catch(() => {
         // Silently fail — previews are non-critical
-      }
-    }
-
-    fetchPreviews()
+      })
     return () => {
       mounted = false
     }
-  }, [workspaceId, messageId, hasSocketPreviews, fetchedFromApi])
+  }, [workspaceId, messageId, fetchedFromApi])
 
   // Sync dismissals from other views/tabs via socket (author-scoped event)
   const socket = useSocket()

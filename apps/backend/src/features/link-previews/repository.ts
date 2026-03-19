@@ -196,13 +196,14 @@ export const LinkPreviewRepository = {
     userId: string,
     messageId: string,
     linkPreviewId: string
-  ): Promise<void> {
-    await querier.query(
+  ): Promise<boolean> {
+    const result = await querier.query(
       sql`INSERT INTO user_link_preview_dismissals (workspace_id, user_id, message_id, link_preview_id)
           VALUES ($1, $2, $3, $4)
           ON CONFLICT (workspace_id, user_id, message_id, link_preview_id) DO NOTHING`,
       [workspaceId, userId, messageId, linkPreviewId]
     )
+    return (result.rowCount ?? 0) > 0
   },
 
   async findDismissals(

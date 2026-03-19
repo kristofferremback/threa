@@ -169,6 +169,7 @@ async function fetchMetadata(url: string): Promise<UpdateLinkPreviewParams> {
       reader.cancel()
     }
 
+    html += decoder.decode() // flush any buffered multi-byte characters
     return await parseHtmlMeta(html, url)
   } catch (err) {
     log.warn({ err, url }, "Failed to fetch link preview metadata")
@@ -258,12 +259,13 @@ function decode(value: string | undefined): string | null {
   if (!value) return null
   return value
     .replace(/&amp;/g, "&")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
-    .replace(/&#039;/g, "'")
-    .replace(/&#x27;/g, "'")
-    .replace(/&#x2F;/g, "/")
+    .replace(/&apos;/g, "'")
+    .replace(/&nbsp;/g, "\u00A0")
 }
 
 function resolveUrl(relative: string, base: string): string {
