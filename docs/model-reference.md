@@ -32,6 +32,26 @@ All models use `provider:modelPath` format:
 
 ## Inference Models
 
+### openrouter:anthropic/claude-sonnet-4.6
+
+**Name:** Claude Sonnet 4.6
+
+**Description:** Latest high-quality reasoning model from Anthropic's Claude 4.6 generation. Successor to Claude Sonnet 4.5 with improved capabilities.
+
+**Typical cost:** ~$3.00 per 1M input tokens, ~$15.00 per 1M output tokens
+
+**When to use:**
+
+- Complex reasoning and generation
+- Multi-turn agent conversations
+- Nuanced text generation requiring high quality
+- Default Ariadne companion persona model
+- Tasks where quality justifies higher cost
+
+**Use instead of:** `claude-sonnet-4.5` for improved quality
+
+---
+
 ### openrouter:anthropic/claude-haiku-4.5
 
 **Name:** Claude Haiku 4.5
