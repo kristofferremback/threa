@@ -88,19 +88,24 @@ Cross-reference with recent commits to determine which comments are still releva
 GREPTILE_TS=$(gh api "repos/$OWNER/$REPO/pulls/$PR/comments" \
   --jq '[.[] | select(.user.login == "greptile-apps[bot]")] | last | .created_at')
 
-# List files changed only in commits *after* Greptile's review
-gh api "repos/$OWNER/$REPO/pulls/$PR/commits" \
-  | jq -r --arg ts "$GREPTILE_TS" '[.[] | select(.commit.author.date > $ts)] | .[].sha' \
-  | while read sha; do
-      gh api "repos/$OWNER/$REPO/commits/$sha" --jq '.files[].filename'
-    done | sort -u
+# Skip staleness check if there are no inline comments
+if [ -z "$GREPTILE_TS" ]; then
+  echo "No inline comments found — skipping staleness check."
+else
+  # List files changed only in commits *after* Greptile's review
+  gh api "repos/$OWNER/$REPO/pulls/$PR/commits" \
+    | jq -r --arg ts "$GREPTILE_TS" '[.[] | select(.commit.author.date > $ts)] | .[].sha' \
+    | while read sha; do
+        gh api "repos/$OWNER/$REPO/commits/$sha" --jq '.files[].filename'
+      done | sort -u
+fi
 ```
 
 If a file mentioned in a Greptile comment was modified in a later commit, the comment may already be addressed — read the current code to verify before acting on it.
 
 ### 5. Triage
 
-For each issue found in steps 3 and 4, determine its disposition:
+For each issue found in steps 3 and 4, determine its disposition. Tag each row with its **Source** (Summary or Inline) — this determines what response actions are available in step 7:
 
 | # | Source | File:Line | Issue Summary | Disposition | Action |
 |---|--------|-----------|---------------|-------------|--------|
@@ -127,9 +132,11 @@ Commit and push all fixes together.
 
 ### 7. Respond to inline comments
 
-Reply to each inline thread with the disposition. Use the `respond-to-pr-review` skill's reply mechanics (write to temp file, post via GraphQL, include agent signature).
+Reply to each **Inline-sourced** thread with the disposition. Use the `respond-to-pr-review` skill's reply mechanics (write to temp file, post via GraphQL, include agent signature).
 
 Resolve threads for **Accept** (fix applied) and **Dispute** (with explanation). Leave **Acknowledge** threads open.
+
+**Summary-only findings** have no inline thread to reply to. For these, Dispute/Acknowledge dispositions are noted in the triage table for the user's awareness but require no thread response — the re-review in step 8 will confirm whether accepted fixes resolved them.
 
 ### 8. Wait for re-review
 
