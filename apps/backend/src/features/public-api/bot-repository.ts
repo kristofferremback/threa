@@ -82,15 +82,25 @@ export const BotRepository = {
   async upsert(
     db: Querier,
     params: { id: string; workspaceId: string; apiKeyId: string; name: string }
-  ): Promise<{ bot: Bot; isInsert: boolean }> {
-    const result = await db.query<BotRow & { is_insert: boolean }>(sql`
+  ): Promise<{ bot: Bot; isInsert: boolean; nameChanged: boolean }> {
+    // Use a CTE to capture the old name before the upsert overwrites it.
+    // This avoids both a pre-read race (INV-20) and unconditional bot:updated noise.
+    const result = await db.query<BotRow & { is_insert: boolean; old_name: string | null }>(sql`
+      WITH prev AS (
+        SELECT name FROM bots
+        WHERE workspace_id = ${params.workspaceId} AND api_key_id = ${params.apiKeyId}
+      )
       INSERT INTO bots (id, workspace_id, api_key_id, name)
       VALUES (${params.id}, ${params.workspaceId}, ${params.apiKeyId}, ${params.name})
       ON CONFLICT (workspace_id, api_key_id)
       DO UPDATE SET name = EXCLUDED.name, updated_at = NOW()
-      RETURNING ${sql.raw(BOT_COLUMNS)}, (xmax = 0) AS is_insert
+      RETURNING ${sql.raw(BOT_COLUMNS)}, (xmax = 0) AS is_insert, (SELECT name FROM prev) AS old_name
     `)
     const row = result.rows[0]
-    return { bot: mapRowToBot(row), isInsert: row.is_insert }
+    return {
+      bot: mapRowToBot(row),
+      isInsert: row.is_insert,
+      nameChanged: !row.is_insert && row.old_name !== null && row.old_name !== params.name,
+    }
   },
 }

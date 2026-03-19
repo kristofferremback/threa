@@ -341,7 +341,11 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
       // merging both into one transaction would require eventService to accept a
       // Querier, which is a larger refactor deferred until needed.
       const { bot } = await withTransaction(pool, async (client) => {
-        const { bot: upsertedBot, isInsert } = await BotRepository.upsert(client, {
+        const {
+          bot: upsertedBot,
+          isInsert,
+          nameChanged,
+        } = await BotRepository.upsert(client, {
           id: botId(),
           workspaceId,
           apiKeyId: apiKey.id,
@@ -353,10 +357,7 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
             workspaceId,
             bot: serializeBot(upsertedBot),
           })
-        } else {
-          // Always emit bot:updated on non-insert — the upsert overwrites the name
-          // unconditionally, so skipping the event based on a pre-read would race
-          // under concurrent requests (INV-20). Idempotent updates are harmless.
+        } else if (nameChanged) {
           await OutboxRepository.insert(client, "bot:updated", {
             workspaceId,
             bot: serializeBot(upsertedBot),

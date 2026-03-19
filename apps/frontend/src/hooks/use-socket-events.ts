@@ -722,10 +722,13 @@ export function useSocketEvents(workspaceId: string) {
     socket.on("bot:updated", (payload: { workspaceId: string; bot: Bot }) => {
       if (payload.workspaceId !== workspaceId) return
 
-      updateBootstrapOrInvalidate(queryClient, workspaceId, (old) => ({
-        ...old,
-        bots: (old.bots ?? []).map((b) => (b.id === payload.bot.id ? payload.bot : b)),
-      }))
+      updateBootstrapOrInvalidate(queryClient, workspaceId, (old) => {
+        const exists = old.bots?.some((b) => b.id === payload.bot.id)
+        if (exists) {
+          return { ...old, bots: (old.bots ?? []).map((b) => (b.id === payload.bot.id ? payload.bot : b)) }
+        }
+        return { ...old, bots: [...(old.bots ?? []), payload.bot] }
+      })
 
       db.bots.put({ ...payload.bot, _cachedAt: Date.now() })
     })
