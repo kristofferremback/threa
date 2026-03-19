@@ -183,18 +183,28 @@ export const StreamRepository = {
     if (ids.length === 0) return []
 
     const limit = filters?.limit ?? 50
-    const typeFilter = filters?.types?.length ? sql`AND type = ANY(${filters.types})` : sql``
-    const queryFilter = filters?.query
-      ? sql`AND (display_name ILIKE ${`%${filters.query}%`} OR slug ILIKE ${`%${filters.query}%`})`
-      : sql``
+    const conditions = [`id = ANY($1)`, `workspace_id = $2`, `archived_at IS NULL`]
+    const values: unknown[] = [ids, workspaceId]
+    let paramIndex = 3
+
+    if (filters?.types?.length) {
+      conditions.push(`type = ANY($${paramIndex++})`)
+      values.push(filters.types)
+    }
+    if (filters?.query) {
+      const pattern = `%${filters.query}%`
+      conditions.push(`(display_name ILIKE $${paramIndex} OR slug ILIKE $${paramIndex})`)
+      paramIndex++
+      values.push(pattern)
+    }
+    values.push(limit)
 
     const result = await db.query<StreamRow>(
-      sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams
-        WHERE id = ANY(${ids}) AND workspace_id = ${workspaceId} AND archived_at IS NULL
-        ${typeFilter}
-        ${queryFilter}
+      `SELECT ${SELECT_FIELDS} FROM streams
+        WHERE ${conditions.join(" AND ")}
         ORDER BY display_name NULLS LAST
-        LIMIT ${limit}`
+        LIMIT $${paramIndex}`,
+      values
     )
     return result.rows.map(mapRowToStream)
   },
