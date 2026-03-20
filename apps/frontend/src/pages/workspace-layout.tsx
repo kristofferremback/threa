@@ -31,6 +31,7 @@ import {
   usePersistLastStream,
   useAppUpdate,
   useMessageQueue,
+  useUnreadTabIndicator,
 } from "@/hooks"
 import { QuickSwitcher, type QuickSwitcherMode } from "@/components/quick-switcher"
 import { SettingsDialog } from "@/components/settings"
@@ -86,6 +87,11 @@ function WorkspaceSocketHandler({ workspaceId, streamIds, children }: WorkspaceS
 
 function MessageQueueHandler() {
   useMessageQueue()
+  return null
+}
+
+function UnreadTabIndicator({ workspaceId }: { workspaceId: string }) {
+  useUnreadTabIndicator(workspaceId)
   return null
 }
 
@@ -173,6 +179,7 @@ export function WorkspaceLayout() {
   return (
     <SocketProvider workspaceId={workspaceId}>
       <WorkspaceSocketHandler workspaceId={workspaceId} streamIds={streamIds}>
+        <UnreadTabIndicator workspaceId={workspaceId} />
         <AppUpdateChecker />
         <MessageQueueHandler />
         <CoordinatedLoadingProvider workspaceId={workspaceId} streamIds={streamIds}>
