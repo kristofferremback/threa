@@ -443,6 +443,10 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
 
   const sendMessage = useCallback(
     async (input: SendMessageInput): Promise<{ navigateTo?: string }> => {
+      if (!currentUserId) {
+        throw new Error("Cannot send message: user identity not resolved yet")
+      }
+
       const clientId = generateClientId()
       const now = new Date().toISOString()
 

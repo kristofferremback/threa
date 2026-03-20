@@ -35,6 +35,8 @@ export interface MessageCreatedPayload {
   attachments?: AttachmentSummary[]
   sources?: SourceItem[]
   sessionId?: string
+  /** Client-generated ID for deterministic optimistic→real event dedup on the frontend */
+  clientMessageId?: string
 }
 
 export interface MessageEditedPayload {
@@ -207,6 +209,7 @@ export class EventService {
           ...(attachmentSummaries && { attachments: attachmentSummaries }),
           ...(params.sources && params.sources.length > 0 && { sources: params.sources }),
           ...(params.sessionId && { sessionId: params.sessionId }),
+          ...(params.clientMessageId && { clientMessageId: params.clientMessageId }),
         } satisfies MessageCreatedPayload,
         actorId: params.authorId,
         actorType: params.authorType,

@@ -117,7 +117,7 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
       if (payload.streamId !== streamId) return
 
       const newEvent = payload.event
-      const newPayload = newEvent.payload as { contentJson: unknown; contentMarkdown: string }
+      const newPayload = newEvent.payload as { contentJson: unknown; contentMarkdown: string; clientMessageId?: string }
 
       // Update stream bootstrap cache
       queryClient.setQueryData(streamKeys.bootstrap(workspaceId, streamId), (old: unknown) => {
@@ -127,10 +127,12 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
         // Dedupe by event ID (might be our own optimistic event)
         if (bootstrap.events.some((e) => e.id === newEvent.id)) return old
 
-        // Find matching optimistic event (temp_ prefix, same content and actor)
-        // Remove only the first match so sending identical messages quickly still works
+        // Find matching optimistic event to swap out.
+        // Primary: deterministic match via clientMessageId (the optimistic event's ID is the clientMessageId)
+        // Fallback: content-based match for events sent before clientMessageId was deployed
         const matchingOptimisticIdx = bootstrap.events.findIndex((e) => {
           if (!e.id.startsWith("temp_")) return false
+          if (newPayload.clientMessageId) return e.id === newPayload.clientMessageId
           const existingPayload = e.payload as { contentMarkdown: string }
           return e.actorId === newEvent.actorId && existingPayload.contentMarkdown === newPayload.contentMarkdown
         })
@@ -169,7 +171,11 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
         }
       })
 
+      // Persist the real event and clean up the optimistic event from IndexedDB
       await db.events.put({ ...payload.event, _cachedAt: Date.now() })
+      if (newPayload.clientMessageId) {
+        await db.events.delete(newPayload.clientMessageId).catch(() => {})
+      }
     }
 
     // Reads the updated message_created event from the query cache and persists it to IndexedDB.
