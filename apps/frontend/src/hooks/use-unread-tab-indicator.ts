@@ -97,7 +97,11 @@ export function useUnreadTabIndicator(workspaceId: string) {
     })
 
     // Re-render favicon when theme changes so the correct base SVG is used
+    let lastDark = isDarkMode()
     const themeObserver = new MutationObserver(() => {
+      const nowDark = isDarkMode()
+      if (nowDark === lastDark) return
+      lastDark = nowDark
       prevCountRef.current = -1
       update()
     })
