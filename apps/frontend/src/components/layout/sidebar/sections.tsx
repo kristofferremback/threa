@@ -168,9 +168,9 @@ export function StreamSection({
         <button
           type="button"
           onClick={onToggle}
-          className="mx-3 mt-1 px-3 py-2 w-[calc(100%-1.5rem)] rounded-md bg-muted/30 border border-dashed border-border/50 cursor-pointer hover:bg-muted/50 transition-colors"
+          className="mx-3 mt-1 px-3 py-2 w-[calc(100%-1.5rem)] rounded-md bg-muted/30 border border-dashed border-border/50 cursor-pointer hover:bg-muted/50 transition-colors text-center"
         >
-          <span className="text-center text-xs text-muted-foreground">
+          <span className="text-xs text-muted-foreground">
             {items.length} more stream{items.length !== 1 ? "s" : ""} — click to expand or use{" "}
             <kbd className="px-1.5 py-0.5 rounded bg-muted text-[10px] font-mono">⌘K</kbd>
           </span>
