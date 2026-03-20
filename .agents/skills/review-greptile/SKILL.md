@@ -52,8 +52,8 @@ If the Greptile Review check is still pending or in progress, inform the user an
 Always fetch the latest version — this comment is updated after every review cycle:
 
 ```bash
-gh api "repos/$OWNER/$REPO/issues/$PR/comments" \
-  --jq '[.[] | select(.user.login == "greptile-apps[bot]")] | last'
+COMMENT_BODY=$(gh api "repos/$OWNER/$REPO/issues/$PR/comments" \
+  --jq '[.[] | select(.user.login == "greptile-apps[bot]")] | last | .body')
 ```
 
 From the summary comment body, extract:
@@ -77,7 +77,7 @@ Use the decoded prompt content as the primary input for understanding what Grept
 Fetch all inline review comments from `greptile-apps[bot]`:
 
 ```bash
-gh api "repos/$OWNER/$REPO/pulls/$PR/comments" \
+gh api --paginate "repos/$OWNER/$REPO/pulls/$PR/comments" \
   --jq '[.[] | select(.user.login == "greptile-apps[bot]") | {id, path, line, body, created_at}]'
 ```
 
@@ -85,7 +85,7 @@ Cross-reference with recent commits to determine which comments are still releva
 
 ```bash
 # Get the timestamp of Greptile's last inline review comment
-GREPTILE_TS=$(gh api "repos/$OWNER/$REPO/pulls/$PR/comments" \
+GREPTILE_TS=$(gh api --paginate "repos/$OWNER/$REPO/pulls/$PR/comments" \
   --jq '[.[] | select(.user.login == "greptile-apps[bot]")] | last | .created_at')
 
 # Skip staleness check if there are no inline comments
@@ -93,7 +93,7 @@ if [ -z "$GREPTILE_TS" ]; then
   echo "No inline comments found — skipping staleness check."
 else
   # List files changed only in commits *after* Greptile's review
-  gh api "repos/$OWNER/$REPO/pulls/$PR/commits" \
+  gh api --paginate "repos/$OWNER/$REPO/pulls/$PR/commits" \
     | jq -r --arg ts "$GREPTILE_TS" '[.[] | select(.commit.author.date > $ts)] | .[].sha' \
     | while read sha; do
         gh api "repos/$OWNER/$REPO/commits/$sha" --jq '.files[].filename'
