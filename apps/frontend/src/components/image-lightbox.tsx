@@ -2,7 +2,7 @@ import { useCallback } from "react"
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { X, Download, Copy } from "lucide-react"
-import { toast } from "sonner"
+import { downloadImage, copyImage } from "@/lib/image-utils"
 
 interface ImageLightboxProps {
   isOpen: boolean
@@ -12,35 +12,12 @@ interface ImageLightboxProps {
 }
 
 export function ImageLightbox({ isOpen, onClose, imageUrl, filename }: ImageLightboxProps) {
-  const handleDownload = useCallback(async () => {
-    if (!imageUrl) return
-    try {
-      const response = await fetch(imageUrl)
-      const blob = await response.blob()
-      const blobUrl = URL.createObjectURL(blob)
-      const link = document.createElement("a")
-      link.href = blobUrl
-      link.download = filename
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      URL.revokeObjectURL(blobUrl)
-      toast.success("Image downloaded")
-    } catch {
-      toast.error("Failed to download image")
-    }
+  const handleDownload = useCallback(() => {
+    if (imageUrl) downloadImage(imageUrl, filename)
   }, [imageUrl, filename])
 
-  const handleCopy = useCallback(async () => {
-    if (!imageUrl) return
-    try {
-      const response = await fetch(imageUrl)
-      const blob = await response.blob()
-      await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })])
-      toast.success("Image copied")
-    } catch {
-      toast.error("Failed to copy image")
-    }
+  const handleCopy = useCallback(() => {
+    if (imageUrl) copyImage(imageUrl)
   }, [imageUrl])
 
   return (

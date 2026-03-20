@@ -1,11 +1,11 @@
 import React, { useState, useCallback, useEffect } from "react"
 import { Download, FileText, File, Loader2, Copy } from "lucide-react"
-import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
 import { ImageLightbox } from "@/components/image-lightbox"
 import { attachmentsApi } from "@/api"
 import { cn } from "@/lib/utils"
+import { downloadImage, copyImage } from "@/lib/image-utils"
 import { useAttachmentContext } from "@/lib/markdown/attachment-context"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useLongPress } from "@/hooks/use-long-press"
@@ -37,35 +37,6 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-async function downloadImageUrl(url: string, filename: string) {
-  try {
-    const response = await fetch(url)
-    const blob = await response.blob()
-    const blobUrl = URL.createObjectURL(blob)
-    const link = document.createElement("a")
-    link.href = blobUrl
-    link.download = filename
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    URL.revokeObjectURL(blobUrl)
-    toast.success("Image downloaded")
-  } catch {
-    toast.error("Failed to download image")
-  }
-}
-
-async function copyImageUrl(url: string) {
-  try {
-    const response = await fetch(url)
-    const blob = await response.blob()
-    await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })])
-    toast.success("Image copied")
-  } catch {
-    toast.error("Failed to copy image")
-  }
-}
-
 function ImageActionDrawer({
   open,
   onOpenChange,
@@ -79,12 +50,12 @@ function ImageActionDrawer({
 }) {
   const handleDownload = useCallback(() => {
     onOpenChange(false)
-    downloadImageUrl(imageUrl, filename)
+    downloadImage(imageUrl, filename)
   }, [imageUrl, filename, onOpenChange])
 
   const handleCopy = useCallback(() => {
     onOpenChange(false)
-    copyImageUrl(imageUrl)
+    copyImage(imageUrl)
   }, [imageUrl, onOpenChange])
 
   return (
@@ -181,30 +152,41 @@ function ImageAttachment({ attachment, workspaceId, onImageClick, isHighlighted 
   }
 
   const handleDownload = useCallback(() => {
-    if (imageUrl) downloadImageUrl(imageUrl, attachment.filename)
+    if (imageUrl) downloadImage(imageUrl, attachment.filename)
   }, [imageUrl, attachment.filename])
 
   const handleCopy = useCallback(() => {
-    if (imageUrl) copyImageUrl(imageUrl)
+    if (imageUrl) copyImage(imageUrl)
   }, [imageUrl])
 
   if (error) {
     return <div className="rounded-lg border bg-muted/50 p-2 text-xs text-muted-foreground">Failed to load image</div>
   }
 
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault()
+        handleClick()
+      }
+    },
+    [handleClick]
+  )
+
   return (
     <>
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={isLoading || !imageUrl ? -1 : 0}
         onClick={handleClick}
-        disabled={isLoading || !imageUrl}
+        onKeyDown={handleKeyDown}
         data-highlighted={isHighlighted || undefined}
         {...(isMobile ? longPress.handlers : {})}
         className={cn(
-          "group/image relative overflow-hidden rounded-lg border bg-muted/30 transition-all",
+          "group/image relative overflow-hidden rounded-lg border bg-muted/30 transition-all cursor-pointer",
           "hover:border-primary hover:shadow-sm",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
-          "disabled:cursor-wait",
+          (isLoading || !imageUrl) && "cursor-wait",
           isHighlighted && "ring-2 ring-primary border-primary shadow-sm",
           longPress.isPressed && "opacity-70 transition-opacity duration-100"
         )}
@@ -246,7 +228,7 @@ function ImageAttachment({ attachment, workspaceId, onImageClick, isHighlighted 
             </div>
           </div>
         </div>
-      </button>
+      </div>
       {isMobile && imageUrl && (
         <ImageActionDrawer
           open={drawerOpen}
