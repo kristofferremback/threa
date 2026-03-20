@@ -247,10 +247,10 @@ export function StreamContent({
     <EditLastMessageContext.Provider value={editLastMessageCtx}>
       <InlineEditProvider>
         <div className="flex h-full flex-col">
-          <div className="relative flex-1 overflow-hidden">
+          <div className="relative flex-1 overflow-hidden mb-1 sm:mb-4">
             <div
               ref={scrollContainerRef}
-              className="h-full overflow-y-auto overflow-x-hidden overscroll-y-contain mb-1 sm:mb-4"
+              className="h-full overflow-y-auto overflow-x-hidden overscroll-y-contain"
               data-suppress-pull-refresh="true"
               onScroll={handleScroll}
             >
