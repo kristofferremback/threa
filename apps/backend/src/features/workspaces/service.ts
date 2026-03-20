@@ -9,6 +9,7 @@ import { PersonaRepository, type Persona } from "../agents"
 import { workspaceId, userId as generateUserId, streamId, avatarUploadId } from "../../lib/id"
 import { generateSlug, generateUniqueSlug, serializeBigInt } from "@threa/backend-common"
 import { HttpError, isUniqueViolation } from "../../lib/errors"
+import { logger } from "../../lib/logger"
 import { JobQueues } from "../../lib/queue"
 import type { QueueManager } from "../../lib/queue"
 import type { WorkosOrgService } from "@threa/backend-common"
@@ -459,16 +460,22 @@ export class WorkspaceService {
       return existing.id
     }
 
-    // Tier 3: Create new
+    // Tier 3: Create new (with concurrent-creation race guard)
     const workspace = await WorkspaceRepository.findById(this.pool, workspaceId)
     if (!workspace) return null
 
-    const org = await this.workosOrgService.createOrganization({
-      name: workspace.name,
-      externalId: workspaceId,
-    })
-    await WorkspaceRepository.setWorkosOrganizationId(this.pool, workspaceId, org.id)
-    return org.id
+    try {
+      const org = await this.workosOrgService.createOrganization({
+        name: workspace.name,
+        externalId: workspaceId,
+      })
+      await WorkspaceRepository.setWorkosOrganizationId(this.pool, workspaceId, org.id)
+    } catch (error) {
+      logger.error({ err: error, workspaceId }, "Failed to create WorkOS organization")
+    }
+
+    // Re-read to get the winning org ID (handles concurrent creation race)
+    return WorkspaceRepository.getWorkosOrganizationId(this.pool, workspaceId)
   }
 
   private async shouldPreferEmailSlug(orgId: string | null, email: string): Promise<boolean> {

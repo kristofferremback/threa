@@ -183,13 +183,19 @@ export class ControlPlaneWorkspaceService {
       return existingOrg.id
     }
 
-    // Tier 3: Create new org in WorkOS
-    const org = await this.workosOrgService.createOrganization({
-      name: workspaceName,
-      externalId: workspaceId,
-    })
-    await WorkspaceRegistryRepository.setWorkosOrganizationId(this.pool, workspaceId, org.id)
-    return org.id
+    // Tier 3: Create new org in WorkOS (with concurrent-creation race guard)
+    try {
+      const org = await this.workosOrgService.createOrganization({
+        name: workspaceName,
+        externalId: workspaceId,
+      })
+      await WorkspaceRegistryRepository.setWorkosOrganizationId(this.pool, workspaceId, org.id)
+    } catch (error) {
+      logger.error({ err: error, workspaceId }, "Failed to create WorkOS organization")
+    }
+
+    // Re-read to get the winning org ID (handles concurrent creation race)
+    return WorkspaceRegistryRepository.getWorkosOrganizationId(this.pool, workspaceId)
   }
 
   /** Outbox handler: provision workspace in the regional backend */
