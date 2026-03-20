@@ -91,7 +91,16 @@ export function useStreamBootstrap(workspaceId: string, streamId: string, option
       })
       const now = Date.now()
 
-      // Cache stream and events to IndexedDB
+      // Cache stream and events to IndexedDB, and clean up any orphaned optimistic events.
+      // Optimistic events (temp_*) are created during send and should be swapped for real
+      // events by the socket handler. On bootstrap refetch, any remaining temp_ events for
+      // this stream are stale and must be removed to prevent ghost duplicates.
+      const staleOptimisticIds = await db.events
+        .where("streamId")
+        .equals(streamId)
+        .filter((e) => e.id.startsWith("temp_"))
+        .primaryKeys()
+
       await Promise.all([
         db.streams.put({
           ...bootstrap.stream,
@@ -101,6 +110,7 @@ export function useStreamBootstrap(workspaceId: string, streamId: string, option
           _cachedAt: now,
         }),
         db.events.bulkPut(bootstrap.events.map((e) => ({ ...e, _cachedAt: now }))),
+        staleOptimisticIds.length > 0 ? db.events.bulkDelete(staleOptimisticIds) : Promise.resolve(),
       ])
 
       return bootstrap
