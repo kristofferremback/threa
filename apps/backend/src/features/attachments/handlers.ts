@@ -81,7 +81,9 @@ export function createAttachmentHandlers({ attachmentService, streamService }: D
         }
       }
 
-      const { download } = z.object({ download: z.enum(["true", "false"]).optional() }).parse(req.query)
+      const parsed = z.object({ download: z.enum(["true", "false"]).optional() }).safeParse(req.query)
+      if (!parsed.success) return res.status(400).json({ error: "Invalid query parameters" })
+      const { download } = parsed.data
       const url = await attachmentService.getDownloadUrl(attachment, { download: download === "true" })
       res.json({ url, expiresIn: 900 })
     },
