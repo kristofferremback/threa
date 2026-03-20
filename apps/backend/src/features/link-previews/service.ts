@@ -158,6 +158,15 @@ export class LinkPreviewService {
           messageId,
           previews: completedPreviews,
         })
+      } else if (completedPreviews.length === 0 && options?.forcePublish) {
+        // All fetches failed on an edit — DB junction rows are already cleared,
+        // but frontend still shows stale previews. Emit empty set to clear them.
+        await OutboxRepository.insert(client, "link_preview:ready", {
+          workspaceId,
+          streamId,
+          messageId,
+          previews: [],
+        })
       }
     })
   }

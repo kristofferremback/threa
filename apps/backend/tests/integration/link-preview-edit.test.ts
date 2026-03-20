@@ -145,6 +145,33 @@ describe("Link preview edit flow", () => {
     expect(payload.previews[0].id).toBe(pending[0].id)
   })
 
+  test("completePreviewsAndPublish with forcePublish emits empty previews when all fetches failed", async () => {
+    const wsId = workspaceId()
+    const stId = streamId()
+    const msgId = messageId()
+
+    // Create a pending preview (simulates replacePreviewsForMessage creating a new record)
+    const pending = await service.extractAndCreatePending(wsId, msgId, "Visit https://example.com")
+
+    // Simulate edit flow where the fetch failed: metadata sets status to "failed"
+    await service.completePreviewsAndPublish(
+      wsId,
+      stId,
+      msgId,
+      [{ id: pending[0].id, metadata: { status: "failed" }, skipped: false }],
+      { forcePublish: true }
+    )
+
+    const result = await pool.query(
+      "SELECT * FROM outbox WHERE event_type = 'link_preview:ready' ORDER BY id DESC LIMIT 1"
+    )
+    expect(result.rows).toHaveLength(1)
+
+    const payload = result.rows[0].payload as { messageId: string; previews: unknown[] }
+    expect(payload.messageId).toBe(msgId)
+    expect(payload.previews).toEqual([])
+  })
+
   test("completePreviewsAndPublish without forcePublish skips event when all previews were cached", async () => {
     const wsId = workspaceId()
     const stId = streamId()
