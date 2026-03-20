@@ -158,8 +158,11 @@ export class AttachmentService {
     return AttachmentRepository.findByMessageIds(this.pool, messageIds)
   }
 
-  async getDownloadUrl(attachment: Attachment): Promise<string> {
-    return this.storage.getSignedDownloadUrl(attachment.storagePath)
+  async getDownloadUrl(attachment: Attachment, options?: { download?: boolean }): Promise<string> {
+    const responseContentDisposition = options?.download
+      ? `attachment; filename="${attachment.filename.replace(/"/g, '\\"')}"`
+      : undefined
+    return this.storage.getSignedDownloadUrl(attachment.storagePath, { responseContentDisposition })
   }
 
   async delete(id: string): Promise<boolean> {

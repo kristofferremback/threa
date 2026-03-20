@@ -129,6 +129,7 @@ describe("attachment handlers safety gating", () => {
         user: { id: "usr_1" },
         workspaceId: "ws_1",
         params: { attachmentId: "attach_1" },
+        query: {},
       } as any,
       res
     )
@@ -157,6 +158,7 @@ describe("attachment handlers safety gating", () => {
         user: { id: "usr_1" },
         workspaceId: "ws_1",
         params: { attachmentId: "attach_1" },
+        query: {},
       } as any,
       res
     )
@@ -185,6 +187,7 @@ describe("attachment handlers safety gating", () => {
         user: { id: "usr_1" },
         workspaceId: "ws_1",
         params: { attachmentId: "attach_1" },
+        query: {},
       } as any,
       res
     )

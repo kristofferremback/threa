@@ -80,7 +80,8 @@ export function createAttachmentHandlers({ attachmentService, streamService }: D
         }
       }
 
-      const url = await attachmentService.getDownloadUrl(attachment)
+      const download = req.query.download === "true"
+      const url = await attachmentService.getDownloadUrl(attachment, { download })
       res.json({ url, expiresIn: 900 })
     },
 

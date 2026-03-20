@@ -9,9 +9,14 @@ import {
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
 import type { S3Config } from "../env"
 
+export interface SignedDownloadUrlOptions {
+  expiresIn?: number
+  responseContentDisposition?: string
+}
+
 export interface StorageProvider {
   getObjectSize(key: string): Promise<number>
-  getSignedDownloadUrl(key: string, expiresIn?: number): Promise<string>
+  getSignedDownloadUrl(key: string, options?: SignedDownloadUrlOptions): Promise<string>
   getObject(key: string): Promise<Buffer>
   /** Fetch first N bytes of an object using HTTP Range header */
   getObjectRange(key: string, start: number, end: number): Promise<Buffer>
@@ -55,10 +60,12 @@ export function createS3Storage(config: S3Config): StorageProvider {
       return contentLength
     },
 
-    async getSignedDownloadUrl(key: string, expiresIn = 900): Promise<string> {
+    async getSignedDownloadUrl(key: string, options?: SignedDownloadUrlOptions): Promise<string> {
+      const { expiresIn = 900, responseContentDisposition } = options ?? {}
       const command = new GetObjectCommand({
         Bucket: config.bucket,
         Key: key,
+        ...(responseContentDisposition && { ResponseContentDisposition: responseContentDisposition }),
       })
       return getSignedUrl(client, command, { expiresIn })
     },

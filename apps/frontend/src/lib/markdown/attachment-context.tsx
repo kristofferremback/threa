@@ -30,7 +30,7 @@ interface AttachmentProviderProps {
  * Enables attachment links to open images in lightbox or trigger downloads.
  */
 export function AttachmentProvider({ workspaceId, attachments, children }: AttachmentProviderProps) {
-  const [lightbox, setLightbox] = useState<{ url: string; filename: string } | null>(null)
+  const [lightbox, setLightbox] = useState<{ url: string; filename: string; attachmentId: string } | null>(null)
   const [hoveredAttachmentId, setHoveredAttachmentId] = useState<string | null>(null)
 
   const openAttachment = useCallback(
@@ -48,7 +48,7 @@ export function AttachmentProvider({ workspaceId, attachments, children }: Attac
           window.open(url, "_blank")
         } else if (isImage) {
           // Click on image: open lightbox
-          setLightbox({ url, filename: attachment.filename })
+          setLightbox({ url, filename: attachment.filename, attachmentId })
         } else {
           // Click on non-image: trigger download
           const link = document.createElement("a")
@@ -75,6 +75,8 @@ export function AttachmentProvider({ workspaceId, attachments, children }: Attac
         onClose={() => setLightbox(null)}
         imageUrl={lightbox?.url ?? null}
         filename={lightbox?.filename ?? ""}
+        workspaceId={workspaceId}
+        attachmentId={lightbox?.attachmentId ?? null}
       />
     </AttachmentContext.Provider>
   )

@@ -35,9 +35,10 @@ export const attachmentsApi = {
    * Get a presigned download URL for an attachment.
    * URL is valid for 15 minutes.
    */
-  async getDownloadUrl(workspaceId: string, attachmentId: string): Promise<string> {
+  async getDownloadUrl(workspaceId: string, attachmentId: string, options?: { download?: boolean }): Promise<string> {
+    const params = options?.download ? "?download=true" : ""
     const res = await api.get<{ url: string; expiresIn: number }>(
-      `/api/workspaces/${workspaceId}/attachments/${attachmentId}/url`
+      `/api/workspaces/${workspaceId}/attachments/${attachmentId}/url${params}`
     )
     return res.url
   },
