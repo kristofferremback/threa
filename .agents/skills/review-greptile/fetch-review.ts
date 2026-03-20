@@ -39,8 +39,8 @@ async function ghPaginate<T>(endpoint: string): Promise<T[]> {
   try {
     return JSON.parse(raw) as T[]
   } catch {
-    // Multiple concatenated arrays — wrap in brackets and join
-    const fixed = "[" + raw.replace(/\]\s*\[/g, ",") + "]"
+    // Multiple concatenated arrays — merge by replacing ][ boundaries with commas
+    const fixed = raw.replace(/\]\s*\[/g, ",")
     return JSON.parse(fixed) as T[]
   }
 }

@@ -49,7 +49,7 @@ If `reviewStatus.status` is not `"completed"`, the review is still running (~10 
 
 If `summary` is `null`, no Greptile summary comment exists yet.
 
-Use `decodedPrompt` as the primary input for understanding findings — it contains the most structured and actionable version.
+Use `decodedPrompt` as the primary input for understanding findings — it contains the most structured and actionable version. If `decodedPrompt` is `null` (no "Fix with Claude" link present), fall back to `summary.body` for the full list of issues.
 
 ### 2. Determine staleness
 
