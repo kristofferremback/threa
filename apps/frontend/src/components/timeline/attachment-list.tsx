@@ -147,7 +147,10 @@ function ImageAttachment({ attachment, workspaceId, onImageClick, isHighlighted 
       },
       onTouchEnd: () => longPressRaw.handlers.onTouchEnd(),
       onTouchMove: (e: React.TouchEvent) => longPressRaw.handlers.onTouchMove(e),
-      onContextMenu: (e: React.MouseEvent) => longPressRaw.handlers.onContextMenu(e),
+      onContextMenu: (e: React.MouseEvent) => {
+        e.stopPropagation()
+        longPressRaw.handlers.onContextMenu(e)
+      },
     },
   }
 
