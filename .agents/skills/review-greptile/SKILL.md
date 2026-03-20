@@ -21,110 +21,43 @@ Greptile produces two distinct types of comments — they have different lifecyc
 
 ## Instructions
 
-### 1. Determine PR number
+### 1. Fetch review data
 
-If not provided, detect from current branch:
-
-```bash
-gh pr view --json number -q .number
-```
-
-Also extract owner/repo for API calls:
+Run the fetch script to get all Greptile review data as structured JSON:
 
 ```bash
-OWNER=$(gh repo view --json owner -q .owner.login)
-REPO=$(gh repo view --json name -q .name)
-PR=$(gh pr view --json number -q .number)
+bun .agents/skills/review-greptile/fetch-review.ts
+# Or with an explicit PR number:
+bun .agents/skills/review-greptile/fetch-review.ts --pr 123
 ```
 
-### 2. Check review status
+The script outputs a JSON object with:
 
-Greptile reviews take ~10 minutes. Before reading comments, check if the review is complete:
+- `pr`, `owner`, `repo` — PR identifiers
+- `reviewStatus` — Greptile check status (`{ name, status, conclusion }` or `null`)
+- `summary` — the latest summary comment with extracted fields:
+  - `body` — full comment text
+  - `confidenceScore` — e.g. `"3/5"`
+  - `fixUrl` — the "Fix with Claude" URL
+  - `decodedPrompt` — the URL-decoded prompt content with structured issue details
+- `inlineComments` — array of `{ id, path, line, body, created_at }`
+- `staleness` — which files were changed after Greptile's review:
+  - `lastReviewTimestamp` — when Greptile last commented
+  - `filesChangedAfterReview` — files modified in post-review commits
 
-```bash
-gh pr checks "$PR" | grep -i greptile
-```
+If `reviewStatus.status` is not `"completed"`, the review is still running (~10 minutes). Inform the user and wait before proceeding.
 
-If the Greptile Review check is still pending or in progress, inform the user and wait. Reading comments before the review completes will give incomplete results.
+If `summary` is `null`, no Greptile summary comment exists yet.
 
-### 3. Read the summary comment
+Use `decodedPrompt` as the primary input for understanding findings — it contains the most structured and actionable version.
 
-Always fetch the latest version — this comment is updated after every review cycle:
+### 2. Determine staleness
 
-```bash
-COMMENT_BODY=$(gh api --paginate "repos/$OWNER/$REPO/issues/$PR/comments" \
-  --jq '.[] | select(.user.login == "greptile-apps[bot]")' \
-  | jq -s 'last | .body' -r)
+If `staleness.filesChangedAfterReview` is non-empty, cross-reference with `inlineComments`: any comment whose `path` appears in the changed files list may already be addressed. Read the current code to verify before acting on it.
 
-if [ -z "$COMMENT_BODY" ] || [ "$COMMENT_BODY" = "null" ]; then
-  echo "No Greptile summary comment found yet. Has the review completed? (gh pr checks $PR | grep -i greptile)"
-  exit 1
-fi
-```
+### 3. Triage
 
-From the summary comment body, extract:
-
-- **Confidence score** — the numerical rating (0-5) reflecting how confident Greptile is in the PR's correctness
-- **Issue list** — the categorized findings (bugs, style, performance, etc.)
-- **Outside-of-diff issues** — problems in code not modified by the PR but related to the changes
-- **"Fix with Claude" link** — decode the `prompt` query parameter to get structured issue details:
-
-```bash
-# Extract the Fix with Claude URL and decode the prompt parameter
-FIX_URL=$(python3 -c "
-import re, sys
-body = sys.stdin.read()
-m = re.search(r'https://app\.greptile\.com/ide/claude-code\S+', body)
-print(m.group(0).rstrip(')') if m else '')
-" <<< "$COMMENT_BODY")
-
-DECODED_PROMPT=$(python3 -c "
-from urllib.parse import urlparse, parse_qs
-import sys
-url = sys.argv[1]
-qs = parse_qs(urlparse(url).query)
-print(qs.get('prompt', [''])[0])
-" "$FIX_URL")
-```
-
-Use the decoded prompt content as the primary input for understanding what Greptile found — it contains the most structured and actionable version of the findings.
-
-### 4. Read inline code comments
-
-Fetch all inline review comments from `greptile-apps[bot]`:
-
-```bash
-gh api --paginate "repos/$OWNER/$REPO/pulls/$PR/comments" \
-  --jq '.[] | select(.user.login == "greptile-apps[bot]") | {id, path, line, body, created_at}' \
-  | jq -s '.'
-```
-
-Cross-reference with recent commits to determine which comments are still relevant:
-
-```bash
-# Get the timestamp of Greptile's last inline review comment
-GREPTILE_TS=$(gh api --paginate "repos/$OWNER/$REPO/pulls/$PR/comments" \
-  --jq '.[] | select(.user.login == "greptile-apps[bot]")' \
-  | jq -s 'last | .created_at' -r)
-
-# Skip staleness check if there are no inline comments
-if [ -z "$GREPTILE_TS" ] || [ "$GREPTILE_TS" = "null" ]; then
-  echo "No inline comments found — skipping staleness check."
-else
-  # List files changed only in commits *after* Greptile's review
-  gh api --paginate "repos/$OWNER/$REPO/pulls/$PR/commits" \
-    | jq -r --arg ts "$GREPTILE_TS" '[.[] | select(.commit.committer.date > $ts)] | .[].sha' \
-    | while read sha; do
-        gh api "repos/$OWNER/$REPO/commits/$sha" --jq '.files[].filename'
-      done | sort -u
-fi
-```
-
-If a file mentioned in a Greptile comment was modified in a later commit, the comment may already be addressed — read the current code to verify before acting on it.
-
-### 5. Triage
-
-For each issue found in steps 3 and 4, determine its disposition. Tag each row with its **Source** (Summary or Inline) — this determines what response actions are available in step 7:
+For each issue found in the summary and inline comments, determine its disposition. Tag each row with its **Source** (Summary or Inline) — this determines what response actions are available in step 5:
 
 | # | Source | File:Line | Issue Summary | Disposition | Action |
 |---|--------|-----------|---------------|-------------|--------|
@@ -139,7 +72,7 @@ Present the triage table to the user and ask for confirmation before proceeding.
 
 **Important:** Greptile is configured with this project's CLAUDE.md rules — its findings reflect project-specific invariants and standards. Disputing should be rare. When you consider disputing, triple-check your reasoning against the relevant invariant or project convention before concluding Greptile is wrong.
 
-### 6. Fix accepted issues
+### 4. Fix accepted issues
 
 For each accepted issue:
 
@@ -149,27 +82,27 @@ For each accepted issue:
 
 Commit and push all fixes together.
 
-### 7. Respond to inline comments
+### 5. Respond to inline comments
 
 Reply to each **Inline-sourced** thread with the disposition. Use the `respond-to-pr-review` skill's reply mechanics (write to temp file, post via GraphQL, include agent signature).
 
 Resolve threads for **Accept** (fix applied) and **Dispute** (with explanation). Leave **Acknowledge** threads open.
 
-**Summary-only findings** have no inline thread to reply to. For these, Dispute/Acknowledge dispositions are noted in the triage table for the user's awareness but require no thread response — the re-review in step 8 will confirm whether accepted fixes resolved them.
+**Summary-only findings** have no inline thread to reply to. For these, Dispute/Acknowledge dispositions are noted in the triage table for the user's awareness but require no thread response — the re-review in step 6 will confirm whether accepted fixes resolved them.
 
-### 8. Wait for re-review
+### 6. Wait for re-review
 
-After pushing fixes, Greptile will automatically re-review (~10 minutes). Monitor the check status:
+After pushing fixes, Greptile will automatically re-review (~10 minutes). Run the fetch script again to check:
 
 ```bash
-gh pr checks "$PR" | grep -i greptile
+bun .agents/skills/review-greptile/fetch-review.ts
 ```
 
-Once complete, re-read the summary comment (step 3) to check if the confidence score improved. Report the before/after score to the user.
+Once `reviewStatus.status` is `"completed"`, compare the new `summary.confidenceScore` against the previous one. Report the before/after score to the user.
 
 ## Web Environment
 
-In Claude Code web sessions, the `gh` CLI is not available. Use the `github-api-web` skill for curl-based equivalents of all API calls above. The key endpoints are the same:
+In Claude Code web sessions, the `gh` CLI is not available. Use the `github-api-web` skill for curl-based equivalents. The key endpoints are the same:
 
 - Summary: `GET /repos/{owner}/{repo}/issues/{pr}/comments` filtered by `greptile-apps[bot]`
 - Inline: `GET /repos/{owner}/{repo}/pulls/{pr}/comments` filtered by `greptile-apps[bot]`
@@ -178,13 +111,13 @@ In Claude Code web sessions, the `gh` CLI is not available. Use the `github-api-
 ## Examples
 
 **User says:** "Check Greptile" or "What did Greptile say?"
-**Action:** Determine PR, check review status, read summary + inline comments, build triage table, present to user
+**Action:** Run fetch script, build triage table from results, present to user
 
 **User says:** "What's the confidence score?"
-**Action:** Fetch the summary comment, extract and report the confidence score
+**Action:** Run fetch script, report `summary.confidenceScore`
 
 **User says:** "Address the Greptile review"
-**Action:** Full workflow — read, triage, fix accepted issues, respond to all threads, push, wait for re-review
+**Action:** Full workflow — fetch, triage, fix accepted issues, respond to all threads, push, wait for re-review
 
 **User shares a Greptile link:** `https://app.greptile.com/ide/claude-code?prompt=...`
 **Action:** Decode the prompt parameter to get structured issue details, use as input for triage and fixes
