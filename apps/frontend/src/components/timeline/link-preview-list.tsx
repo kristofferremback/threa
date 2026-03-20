@@ -44,9 +44,7 @@ export function LinkPreviewList({
   useEffect(() => {
     if (initialPreviews === undefined) return
     setPreviews(initialPreviews)
-    if (initialPreviews.length > 0) {
-      hasSocketPreviewsRef.current = true
-    }
+    hasSocketPreviewsRef.current = true
   }, [initialPreviews])
 
   // Fetch previews (and dismissal flags) from API.

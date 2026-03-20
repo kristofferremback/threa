@@ -95,13 +95,11 @@ export class LinkPreviewService {
    * Used when an edited message no longer contains any URLs.
    */
   async publishEmptyPreviews(workspaceId: string, streamId: string, messageId: string): Promise<void> {
-    await withTransaction(this.deps.pool, async (client) => {
-      await OutboxRepository.insert(client, "link_preview:ready", {
-        workspaceId,
-        streamId,
-        messageId,
-        previews: [],
-      })
+    await OutboxRepository.insert(this.deps.pool, "link_preview:ready", {
+      workspaceId,
+      streamId,
+      messageId,
+      previews: [],
     })
   }
 
