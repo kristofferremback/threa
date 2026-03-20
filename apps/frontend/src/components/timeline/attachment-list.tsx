@@ -5,7 +5,7 @@ import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
 import { ImageLightbox } from "@/components/image-lightbox"
 import { attachmentsApi } from "@/api"
 import { cn } from "@/lib/utils"
-import { downloadImage, copyImage } from "@/lib/image-utils"
+import { downloadImage, copyImage, triggerDownload } from "@/lib/image-utils"
 import { useAttachmentContext } from "@/lib/markdown/attachment-context"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useLongPress } from "@/hooks/use-long-press"
@@ -263,13 +263,7 @@ function FileAttachment({ attachment, workspaceId, isHighlighted }: AttachmentIt
       if (attachment.mimeType === "application/pdf") {
         window.open(url, "_blank")
       } else {
-        // Force download using anchor element
-        const link = document.createElement("a")
-        link.href = url
-        link.download = attachment.filename
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
+        triggerDownload(url, attachment.filename)
       }
     } catch (error) {
       console.error("Failed to download attachment:", error)

@@ -1,6 +1,7 @@
 import { createContext, useContext, useCallback, useState, type ReactNode } from "react"
 import { ImageLightbox } from "@/components/image-lightbox"
 import { attachmentsApi } from "@/api"
+import { triggerDownload } from "@/lib/image-utils"
 
 interface Attachment {
   id: string
@@ -51,12 +52,7 @@ export function AttachmentProvider({ workspaceId, attachments, children }: Attac
           setLightbox({ url, filename: attachment.filename, attachmentId })
         } else {
           // Click on non-image: trigger download
-          const link = document.createElement("a")
-          link.href = url
-          link.download = attachment.filename
-          document.body.appendChild(link)
-          link.click()
-          document.body.removeChild(link)
+          triggerDownload(url, attachment.filename)
         }
       } catch (error) {
         console.error("Failed to get attachment URL:", error)
