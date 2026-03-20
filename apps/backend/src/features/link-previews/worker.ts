@@ -283,19 +283,22 @@ function resolveUrl(relative: string, base: string): string {
  */
 export function createLinkPreviewWorker(deps: WorkerDeps): JobHandler<LinkPreviewExtractJobData> {
   return async (job: Job<LinkPreviewExtractJobData>) => {
-    const { workspaceId, messageId, streamId, contentMarkdown } = job.data
+    const { workspaceId, messageId, streamId, contentMarkdown, isEdit } = job.data
 
-    log.info({ messageId, workspaceId }, "Processing link previews for message")
+    log.info({ messageId, workspaceId, isEdit }, "Processing link previews for message")
 
     // 1. Extract URLs and create pending records (DB work via service)
-    const pendingPreviews = await deps.linkPreviewService.extractAndCreatePending(
-      workspaceId,
-      messageId,
-      contentMarkdown
-    )
+    //    For edits, clear old junction rows first so stale previews are removed.
+    const pendingPreviews = isEdit
+      ? await deps.linkPreviewService.replacePreviewsForMessage(workspaceId, messageId, contentMarkdown)
+      : await deps.linkPreviewService.extractAndCreatePending(workspaceId, messageId, contentMarkdown)
 
     if (pendingPreviews.length === 0) {
-      log.debug({ messageId }, "No URLs found in message")
+      // For edits with no URLs, publish empty set so frontend clears stale previews
+      if (isEdit) {
+        await deps.linkPreviewService.publishEmptyPreviews(workspaceId, streamId, messageId)
+      }
+      log.debug({ messageId, isEdit }, "No URLs found in message")
       return
     }
 
@@ -319,7 +322,9 @@ export function createLinkPreviewWorker(deps: WorkerDeps): JobHandler<LinkPrevie
       )
       .map((r) => r.value)
 
-    await deps.linkPreviewService.completePreviewsAndPublish(workspaceId, streamId, messageId, settled)
+    await deps.linkPreviewService.completePreviewsAndPublish(workspaceId, streamId, messageId, settled, {
+      forcePublish: isEdit,
+    })
 
     log.info({ messageId, count: pendingPreviews.length }, "Link preview extraction complete")
   }

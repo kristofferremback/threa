@@ -1,8 +1,8 @@
 import { describe, test, expect } from "bun:test"
-import { parseMessageCreatedPayload } from "./payload-parsers"
+import { parseMessagePayload } from "./payload-parsers"
 import { AuthorTypes } from "@threa/types"
 
-describe("parseMessageCreatedPayload", () => {
+describe("parseMessagePayload", () => {
   describe("modern format", () => {
     test("should parse valid modern payload", () => {
       const payload = {
@@ -20,7 +20,7 @@ describe("parseMessageCreatedPayload", () => {
         },
       }
 
-      const result = parseMessageCreatedPayload(payload)
+      const result = parseMessagePayload(payload)
 
       expect(result).toEqual({
         workspaceId: "ws_123",
@@ -54,7 +54,7 @@ describe("parseMessageCreatedPayload", () => {
         },
       }
 
-      const result = parseMessageCreatedPayload(payload)
+      const result = parseMessagePayload(payload)
 
       expect(result?.event.actorType).toBe(AuthorTypes.PERSONA)
       expect(result?.event.actorId).toBe("persona_xyz")
@@ -71,7 +71,7 @@ describe("parseMessageCreatedPayload", () => {
         },
       }
 
-      const result = parseMessageCreatedPayload(payload)
+      const result = parseMessagePayload(payload)
 
       expect(result).toEqual({
         workspaceId: "ws_123",
@@ -92,12 +92,12 @@ describe("parseMessageCreatedPayload", () => {
 
   describe("invalid payloads", () => {
     test("should return null for null payload", () => {
-      const result = parseMessageCreatedPayload(null)
+      const result = parseMessagePayload(null)
       expect(result).toBeNull()
     })
 
     test("should return null for non-object payload", () => {
-      const result = parseMessageCreatedPayload("string")
+      const result = parseMessagePayload("string")
       expect(result).toBeNull()
     })
 
@@ -106,7 +106,7 @@ describe("parseMessageCreatedPayload", () => {
         streamId: "stream_456",
         event: { payload: { messageId: "msg_123" } },
       }
-      const result = parseMessageCreatedPayload(payload)
+      const result = parseMessagePayload(payload)
       expect(result).toBeNull()
     })
 
@@ -115,7 +115,7 @@ describe("parseMessageCreatedPayload", () => {
         workspaceId: "ws_123",
         event: { payload: { messageId: "msg_123" } },
       }
-      const result = parseMessageCreatedPayload(payload)
+      const result = parseMessagePayload(payload)
       expect(result).toBeNull()
     })
 
@@ -125,7 +125,7 @@ describe("parseMessageCreatedPayload", () => {
         streamId: "stream_456",
         event: { payload: {} },
       }
-      const result = parseMessageCreatedPayload(payload)
+      const result = parseMessagePayload(payload)
       expect(result).toBeNull()
     })
   })

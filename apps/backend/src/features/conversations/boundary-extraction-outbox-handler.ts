@@ -1,6 +1,6 @@
 import type { Pool } from "pg"
 import { OutboxRepository } from "../../lib/outbox"
-import { parseMessageCreatedPayload } from "../../lib/outbox"
+import { parseMessagePayload } from "../../lib/outbox"
 import { AuthorTypes } from "@threa/types"
 import { logger } from "../../lib/logger"
 import { JobQueues } from "../../lib/queue"
@@ -93,7 +93,7 @@ export class BoundaryExtractionHandler implements OutboxHandler {
             continue
           }
 
-          const payload = parseMessageCreatedPayload(event.payload)
+          const payload = parseMessagePayload(event.payload)
           if (!payload) {
             logger.debug({ eventId: event.id.toString() }, "BoundaryExtractionHandler: malformed event, skipping")
             seen.push(event.id)

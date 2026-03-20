@@ -193,8 +193,8 @@ test.describe("Emoji Shortcuts", () => {
     // Press Enter — should send the message, not insert a newline
     await page.keyboard.press("Enter")
 
-    // Message should appear in the stream
-    await expect(page.getByText("hello :)")).toBeVisible({ timeout: 5000 })
+    // Message should appear in the stream (scoped to main to avoid matching sidebar preview)
+    await expect(page.getByRole("main").getByText("hello :)")).toBeVisible({ timeout: 5000 })
   })
 
   test("should send message with Enter after dismissing emoji picker with Escape", async ({ page }) => {
@@ -216,8 +216,8 @@ test.describe("Emoji Shortcuts", () => {
     // Press Enter — should send
     await page.keyboard.press("Enter")
 
-    // Message should appear
-    await expect(page.getByText("hello :) done")).toBeVisible({ timeout: 5000 })
+    // Message should appear (scoped to main to avoid matching sidebar preview)
+    await expect(page.getByRole("main").getByText("hello :) done")).toBeVisible({ timeout: 5000 })
   })
 
   test("should send message ending with :D after dismissing matching emoji picker", async ({ page }) => {
@@ -236,8 +236,8 @@ test.describe("Emoji Shortcuts", () => {
     // Press Enter — should send the message, not insert a newline
     await page.keyboard.press("Enter")
 
-    // Message should appear with the literal :D text
-    await expect(page.getByText("nice :D")).toBeVisible({ timeout: 5000 })
+    // Message should appear with the literal :D text (scoped to main to avoid matching sidebar preview)
+    await expect(page.getByRole("main").getByText("nice :D")).toBeVisible({ timeout: 5000 })
   })
 
   test("should send message with emoji", async ({ page }) => {
@@ -256,6 +256,6 @@ test.describe("Emoji Shortcuts", () => {
     await page.getByRole("button", { name: "Send" }).click()
 
     // Message should appear with emoji rendered (stored as :fire: but displayed as 🔥)
-    await expect(page.getByText("🔥 Great job!")).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole("main").getByText("🔥 Great job!")).toBeVisible({ timeout: 5000 })
   })
 })

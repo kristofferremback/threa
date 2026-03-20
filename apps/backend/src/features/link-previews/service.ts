@@ -51,6 +51,59 @@ export class LinkPreviewService {
   }
 
   /**
+   * Replace link previews for an edited message.
+   * Clears old junction rows then creates pending records for new URLs (INV-6: service owns transaction).
+   */
+  async replacePreviewsForMessage(
+    workspaceId: string,
+    messageId: string,
+    contentMarkdown: string
+  ): Promise<Array<{ id: string; url: string }>> {
+    const urls = extractUrls(contentMarkdown).slice(0, MAX_PREVIEWS_PER_MESSAGE)
+
+    return withTransaction(this.deps.pool, async (client) => {
+      // Clear old message-preview links
+      await LinkPreviewRepository.unlinkAllFromMessage(client, workspaceId, messageId)
+
+      if (urls.length === 0) return []
+
+      const results: Array<{ id: string; url: string }> = []
+
+      for (let i = 0; i < urls.length; i++) {
+        const url = urls[i]
+        const normalized = normalizeUrl(url)
+        const contentType = detectContentType(url)
+
+        const preview = await LinkPreviewRepository.insert(client, {
+          id: linkPreviewId(),
+          workspaceId,
+          url,
+          normalizedUrl: normalized,
+          contentType,
+        })
+
+        await LinkPreviewRepository.linkToMessage(client, workspaceId, messageId, preview.id, i)
+        results.push({ id: preview.id, url: preview.url })
+      }
+
+      return results
+    })
+  }
+
+  /**
+   * Publish a link_preview:ready event with an empty previews array.
+   * Used when an edited message no longer contains any URLs.
+   */
+  async publishEmptyPreviews(workspaceId: string, streamId: string, messageId: string): Promise<void> {
+    await OutboxRepository.insert(this.deps.pool, "link_preview:ready", {
+      workspaceId,
+      streamId,
+      messageId,
+      previews: [],
+    })
+  }
+
+  /**
    * Check if a preview is already completed (cached from another message).
    */
   async isCompleted(workspaceId: string, id: string): Promise<boolean> {
@@ -66,7 +119,8 @@ export class LinkPreviewService {
     workspaceId: string,
     streamId: string,
     messageId: string,
-    fetchResults: Array<{ id: string; metadata?: UpdateLinkPreviewParams; skipped: boolean }>
+    fetchResults: Array<{ id: string; metadata?: UpdateLinkPreviewParams; skipped: boolean }>,
+    options?: { forcePublish?: boolean }
   ): Promise<void> {
     await withTransaction(this.deps.pool, async (client) => {
       const completedPreviews: LinkPreviewSummary[] = []
@@ -95,14 +149,23 @@ export class LinkPreviewService {
         }
       }
 
-      // Only publish if this worker actually wrote at least one row.
-      // Prevents duplicate outbox events when concurrent workers process the same job.
-      if (completedPreviews.length > 0 && hasNewWrites) {
+      // Publish if this worker wrote at least one row, or if forced (edit flow where
+      // the set of previews changed even though individual preview metadata was already cached).
+      if (completedPreviews.length > 0 && (hasNewWrites || options?.forcePublish)) {
         await OutboxRepository.insert(client, "link_preview:ready", {
           workspaceId,
           streamId,
           messageId,
           previews: completedPreviews,
+        })
+      } else if (completedPreviews.length === 0 && options?.forcePublish) {
+        // All fetches failed on an edit — DB junction rows are already cleared,
+        // but frontend still shows stale previews. Emit empty set to clear them.
+        await OutboxRepository.insert(client, "link_preview:ready", {
+          workspaceId,
+          streamId,
+          messageId,
+          previews: [],
         })
       }
     })

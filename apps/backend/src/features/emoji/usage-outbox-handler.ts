@@ -1,7 +1,7 @@
 import type { Pool } from "pg"
 import { OutboxRepository, type ReactionOutboxPayload } from "../../lib/outbox"
 import { EmojiUsageRepository } from "./usage-repository"
-import { parseMessageCreatedPayload } from "../../lib/outbox"
+import { parseMessagePayload } from "../../lib/outbox"
 import { AuthorTypes } from "@threa/types"
 import { logger } from "../../lib/logger"
 import { emojiUsageId } from "../../lib/id"
@@ -140,7 +140,7 @@ export class EmojiUsageHandler implements OutboxHandler {
   }
 
   private async handleMessageCreated(outboxEvent: { id: bigint; payload: unknown }): Promise<void> {
-    const payload = parseMessageCreatedPayload(outboxEvent.payload)
+    const payload = parseMessagePayload(outboxEvent.payload)
     if (!payload) {
       logger.debug({ eventId: outboxEvent.id.toString() }, "EmojiUsageHandler: malformed message event, skipping")
       return
