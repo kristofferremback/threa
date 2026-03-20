@@ -1,10 +1,7 @@
 import { useEffect, useRef, useCallback } from "react"
-import { useQueryClient } from "@tanstack/react-query"
 import { useSocketConnected, useMessageService, usePendingMessages } from "@/contexts"
 import { db } from "@/db"
-import { streamKeys } from "./use-streams"
 import { parseMarkdown } from "@threa/prosemirror"
-import type { StreamEvent } from "@threa/types"
 
 const MAX_RETRY_COUNT = 3
 
@@ -25,7 +22,6 @@ export function useMessageQueue(): void {
   const isConnected = useSocketConnected()
   const messageService = useMessageService()
   const { markPending, markFailed, markSent, registerQueueNotify } = usePendingMessages()
-  const queryClient = useQueryClient()
 
   const isProcessing = useRef(false)
   const hasPendingWork = useRef(false)
@@ -77,15 +73,11 @@ export function useMessageQueue(): void {
           await db.pendingMessages.delete(next.clientId)
           await db.events.delete(next.clientId)
 
-          queryClient.setQueryData(streamKeys.bootstrap(next.workspaceId, next.streamId), (old: unknown) => {
-            if (!old || typeof old !== "object") return old
-            const bootstrap = old as { events: StreamEvent[] }
-            return {
-              ...bootstrap,
-              events: bootstrap.events.filter((e) => e.id !== next.clientId),
-            }
-          })
-
+          // Don't remove the optimistic event from the React Query cache here.
+          // The socket handler (handleMessageCreated) atomically swaps the
+          // optimistic event for the real server event in a single setQueryData
+          // call, preventing the message from flickering out of view between
+          // the HTTP response and the socket broadcast.
           markSent(next.clientId)
         } catch {
           // Increment retry count only after a confirmed failure, so transient
@@ -110,7 +102,7 @@ export function useMessageQueue(): void {
         void processQueue()
       }
     }
-  }, [messageService, queryClient, markPending, markFailed, markSent])
+  }, [messageService, markPending, markFailed, markSent])
 
   // Register notify callback so other hooks can kick the queue via context
   useEffect(() => {
