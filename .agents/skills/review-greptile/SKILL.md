@@ -55,6 +55,11 @@ Always fetch the latest version — this comment is updated after every review c
 COMMENT_BODY=$(gh api --paginate "repos/$OWNER/$REPO/issues/$PR/comments" \
   --jq '.[] | select(.user.login == "greptile-apps[bot]")' \
   | jq -s 'last | .body' -r)
+
+if [ -z "$COMMENT_BODY" ] || [ "$COMMENT_BODY" = "null" ]; then
+  echo "No Greptile summary comment found yet. Has the review completed? (gh pr checks $PR | grep -i greptile)"
+  exit 1
+fi
 ```
 
 From the summary comment body, extract:
@@ -65,10 +70,21 @@ From the summary comment body, extract:
 - **"Fix with Claude" link** — decode the `prompt` query parameter to get structured issue details:
 
 ```bash
-# Extract the Fix with Claude URL from the comment body (stored in $COMMENT_BODY)
-FIX_URL=$(echo "$COMMENT_BODY" | grep -o 'https://app\.greptile\.com/ide/claude-code[^)]*' | head -1)
-ENCODED_PROMPT=$(echo "$FIX_URL" | sed 's/.*[?&]prompt=\([^&]*\).*/\1/')
-python3 -c "import urllib.parse, sys; print(urllib.parse.unquote(sys.argv[1]))" "$ENCODED_PROMPT"
+# Extract the Fix with Claude URL and decode the prompt parameter
+FIX_URL=$(python3 -c "
+import re, sys
+body = sys.stdin.read()
+m = re.search(r'https://app\.greptile\.com/ide/claude-code\S+', body)
+print(m.group(0).rstrip(')') if m else '')
+" <<< "$COMMENT_BODY")
+
+DECODED_PROMPT=$(python3 -c "
+from urllib.parse import urlparse, parse_qs
+import sys
+url = sys.argv[1]
+qs = parse_qs(urlparse(url).query)
+print(qs.get('prompt', [''])[0])
+" "$FIX_URL")
 ```
 
 Use the decoded prompt content as the primary input for understanding what Greptile found — it contains the most structured and actionable version of the findings.
@@ -92,7 +108,7 @@ GREPTILE_TS=$(gh api --paginate "repos/$OWNER/$REPO/pulls/$PR/comments" \
   | jq -s 'last | .created_at' -r)
 
 # Skip staleness check if there are no inline comments
-if [ -z "$GREPTILE_TS" ]; then
+if [ -z "$GREPTILE_TS" ] || [ "$GREPTILE_TS" = "null" ]; then
   echo "No inline comments found — skipping staleness check."
 else
   # List files changed only in commits *after* Greptile's review
