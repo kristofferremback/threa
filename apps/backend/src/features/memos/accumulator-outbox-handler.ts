@@ -2,7 +2,7 @@ import type { Pool } from "pg"
 import { OutboxRepository } from "../../lib/outbox"
 import { StreamStateRepository, StreamRepository } from "../streams"
 import { PendingItemRepository } from "./pending-item-repository"
-import { parseMessageCreatedPayload } from "../../lib/outbox"
+import { parseMessagePayload } from "../../lib/outbox"
 import { pendingItemId } from "../../lib/id"
 import { AuthorTypes, StreamTypes } from "@threa/types"
 import { logger } from "../../lib/logger"
@@ -119,7 +119,7 @@ export class MemoAccumulatorHandler implements OutboxHandler {
   }
 
   private async handleMessageCreated(outboxEvent: { id: bigint; payload: unknown }): Promise<void> {
-    const payload = parseMessageCreatedPayload(outboxEvent.payload)
+    const payload = parseMessagePayload(outboxEvent.payload)
     if (!payload) {
       logger.debug({ eventId: outboxEvent.id.toString() }, "MemoAccumulatorHandler: malformed event, skipping")
       return

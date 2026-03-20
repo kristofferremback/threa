@@ -1,6 +1,6 @@
 import type { Pool } from "pg"
 import { OutboxRepository } from "../../lib/outbox"
-import { parseMessageCreatedPayload } from "../../lib/outbox"
+import { parseMessagePayload } from "../../lib/outbox"
 import { logger } from "../../lib/logger"
 import { JobQueues } from "../../lib/queue"
 import type { QueueManager } from "../../lib/queue"
@@ -90,7 +90,7 @@ export class EmbeddingHandler implements OutboxHandler {
             continue
           }
 
-          const payload = parseMessageCreatedPayload(event.payload)
+          const payload = parseMessagePayload(event.payload)
           if (!payload) {
             logger.debug({ eventId: event.id.toString() }, "EmbeddingHandler: malformed event, skipping")
             seen.push(event.id)

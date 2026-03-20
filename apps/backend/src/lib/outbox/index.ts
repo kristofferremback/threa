@@ -4,7 +4,7 @@ export { OutboxRetentionWorker, type OutboxRetentionWorkerConfig } from "@threa/
 
 // Domain-specific outbox code
 export { BroadcastHandler, type BroadcastHandlerConfig } from "./broadcast-handler"
-export { parseMessageCreatedPayload, type NormalizedMessageCreatedPayload } from "./payload-parsers"
+export { parseMessagePayload, type NormalizedMessagePayload } from "./payload-parsers"
 export {
   OutboxRepository,
   OUTBOX_CHANNEL,

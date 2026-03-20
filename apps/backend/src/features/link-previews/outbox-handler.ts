@@ -1,5 +1,5 @@
 import type { Pool } from "pg"
-import { OutboxRepository, parseMessageCreatedPayload } from "../../lib/outbox"
+import { OutboxRepository, parseMessagePayload } from "../../lib/outbox"
 import { JobQueues } from "../../lib/queue"
 import type { QueueManager } from "../../lib/queue"
 import { CursorLock, ensureListenerFromLatest, DebounceWithMaxWait, type ProcessResult } from "@threa/backend-common"
@@ -89,8 +89,7 @@ export class LinkPreviewOutboxHandler implements OutboxHandler {
             continue
           }
 
-          // message:created and message:edited share the same payload shape
-          const payload = parseMessageCreatedPayload(event.payload)
+          const payload = parseMessagePayload(event.payload)
           if (!payload) {
             seen.push(event.id)
             continue

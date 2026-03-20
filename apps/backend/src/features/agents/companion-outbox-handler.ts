@@ -3,7 +3,7 @@ import { OutboxRepository } from "../../lib/outbox"
 import { StreamRepository } from "../streams"
 import { PersonaRepository } from "./persona-repository"
 import { AgentSessionRepository, SessionStatuses } from "./session-repository"
-import { parseMessageCreatedPayload } from "../../lib/outbox"
+import { parseMessagePayload } from "../../lib/outbox"
 import { AuthorTypes, CompanionModes } from "@threa/types"
 import { logger } from "../../lib/logger"
 import { JobQueues } from "../../lib/queue"
@@ -101,7 +101,7 @@ export class CompanionHandler implements OutboxHandler {
             continue
           }
 
-          const payload = parseMessageCreatedPayload(event.payload)
+          const payload = parseMessagePayload(event.payload)
           if (!payload) {
             logger.debug({ eventId: event.id.toString() }, "CompanionHandler: malformed event, skipping")
             seen.push(event.id)

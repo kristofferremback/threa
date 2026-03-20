@@ -1,7 +1,7 @@
 import type { Pool } from "pg"
 import { OutboxRepository } from "../../lib/outbox"
 import { PersonaRepository } from "./persona-repository"
-import { parseMessageCreatedPayload } from "../../lib/outbox"
+import { parseMessagePayload } from "../../lib/outbox"
 import { AgentTriggers, AuthorTypes } from "@threa/types"
 import { extractMentionSlugs } from "./mention-extractor"
 import { logger } from "../../lib/logger"
@@ -98,7 +98,7 @@ export class MentionInvokeHandler implements OutboxHandler {
             continue
           }
 
-          const payload = parseMessageCreatedPayload(event.payload)
+          const payload = parseMessagePayload(event.payload)
           if (!payload) {
             logger.debug({ eventId: event.id.toString() }, "MentionInvokeHandler: malformed event, skipping")
             seen.push(event.id)

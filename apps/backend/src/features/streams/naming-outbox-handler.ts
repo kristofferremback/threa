@@ -1,7 +1,7 @@
 import type { Pool } from "pg"
 import { OutboxRepository } from "../../lib/outbox"
 import { StreamRepository } from "./repository"
-import { parseMessageCreatedPayload } from "../../lib/outbox"
+import { parseMessagePayload } from "../../lib/outbox"
 import { needsAutoNaming } from "./display-name"
 import { logger } from "../../lib/logger"
 import { AuthorTypes } from "@threa/types"
@@ -106,7 +106,7 @@ export class NamingHandler implements OutboxHandler {
             continue
           }
 
-          const payload = parseMessageCreatedPayload(event.payload)
+          const payload = parseMessagePayload(event.payload)
           if (!payload) {
             logger.debug({ eventId: event.id.toString() }, "NamingHandler: malformed event, skipping")
             seen.push(event.id)

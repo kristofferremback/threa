@@ -9,10 +9,10 @@ import type { AuthorType } from "@threa/types"
 import { AuthorTypes } from "@threa/types"
 
 /**
- * Normalized payload for message:created events.
+ * Normalized payload for message:created and message:edited events.
  * Returned when minimum required fields can be extracted.
  */
-export interface NormalizedMessageCreatedPayload {
+export interface NormalizedMessagePayload {
   workspaceId: string
   streamId: string
   event: {
@@ -28,13 +28,13 @@ export interface NormalizedMessageCreatedPayload {
 }
 
 /**
- * Parse and normalize a message:created outbox payload.
+ * Parse and normalize a message:created or message:edited outbox payload.
  *
  * Expected format: { streamId, workspaceId, event: { actorType, payload: { messageId } } }
  *
  * Returns null if minimum required fields cannot be extracted.
  */
-export function parseMessageCreatedPayload(payload: unknown): NormalizedMessageCreatedPayload | null {
+export function parseMessagePayload(payload: unknown): NormalizedMessagePayload | null {
   if (!payload || typeof payload !== "object") {
     return null
   }
