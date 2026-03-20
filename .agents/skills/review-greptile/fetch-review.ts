@@ -6,18 +6,64 @@
  * Outputs JSON with summary comment, inline comments, staleness info,
  * and decoded "Fix with Claude" prompt.
  *
- * Requires `gh` CLI to be authenticated.
+ * Auth resolution order:
+ *   1. `gh` CLI (if installed and authenticated)
+ *   2. `GH_TOKEN` environment variable with native fetch()
+ *   3. Token extracted from `gh auth token` with native fetch()
  */
 
 const GREPTILE_BOT = "greptile-apps[bot]"
 
-// --- GitHub helpers using `gh` CLI ---
+// --- GitHub access layer ---
+// Detects whether `gh` CLI is available and falls back to fetch() + token.
 
-async function gh(args: string[]): Promise<string> {
-  const proc = Bun.spawn(["gh", ...args], {
-    stdout: "pipe",
-    stderr: "pipe",
-  })
+let _mode: "gh" | "fetch" | undefined
+let _token: string | undefined
+
+async function hasGhCli(): Promise<boolean> {
+  try {
+    const proc = Bun.spawn(["gh", "--version"], { stdout: "pipe", stderr: "pipe" })
+    await proc.exited
+    return proc.exitCode === 0
+  } catch {
+    return false
+  }
+}
+
+async function resolveToken(): Promise<string> {
+  // Try GH_TOKEN env first
+  if (process.env.GH_TOKEN) return process.env.GH_TOKEN
+  if (process.env.GITHUB_TOKEN) return process.env.GITHUB_TOKEN
+
+  // Try extracting from gh CLI auth store
+  try {
+    const proc = Bun.spawn(["gh", "auth", "token"], { stdout: "pipe", stderr: "pipe" })
+    const stdout = await new Response(proc.stdout).text()
+    await proc.exited
+    if (proc.exitCode === 0 && stdout.trim()) return stdout.trim()
+  } catch {
+    // gh not available
+  }
+
+  throw new Error(
+    "No GitHub auth found. Install `gh` CLI and run `gh auth login`, or set GH_TOKEN env var.",
+  )
+}
+
+async function initMode(): Promise<void> {
+  if (_mode) return
+  if (await hasGhCli()) {
+    _mode = "gh"
+  } else {
+    _token = await resolveToken()
+    _mode = "fetch"
+  }
+}
+
+// --- gh CLI helpers ---
+
+async function ghExec(args: string[]): Promise<string> {
+  const proc = Bun.spawn(["gh", ...args], { stdout: "pipe", stderr: "pipe" })
   const stdout = await new Response(proc.stdout).text()
   const exitCode = await proc.exited
   if (exitCode !== 0) {
@@ -27,22 +73,114 @@ async function gh(args: string[]): Promise<string> {
   return stdout.trim()
 }
 
-async function ghJson<T>(args: string[]): Promise<T> {
-  const raw = await gh(args)
-  return JSON.parse(raw) as T
+// --- fetch() helpers ---
+
+async function githubFetch(endpoint: string): Promise<unknown> {
+  const url = endpoint.startsWith("https://")
+    ? endpoint
+    : `https://api.github.com/${endpoint}`
+  const resp = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${_token}`,
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+    },
+  })
+  if (!resp.ok) {
+    throw new Error(`GitHub API ${endpoint} failed (${resp.status}): ${await resp.text()}`)
+  }
+  return resp.json()
 }
 
-async function ghPaginate<T>(endpoint: string): Promise<T[]> {
-  const raw = await gh(["api", "--paginate", endpoint])
-  // --paginate concatenates JSON arrays, so we may get multiple arrays
-  // Parse carefully: if it's a single array, use it; otherwise merge
-  try {
-    return JSON.parse(raw) as T[]
-  } catch {
-    // Multiple concatenated arrays — merge by replacing ][ boundaries with commas
-    const fixed = raw.replace(/\]\s*\[/g, ",")
-    return JSON.parse(fixed) as T[]
+async function githubFetchPaginated<T>(endpoint: string): Promise<T[]> {
+  const results: T[] = []
+  let url: string | null = endpoint.startsWith("https://")
+    ? endpoint
+    : `https://api.github.com/${endpoint}?per_page=100`
+
+  while (url) {
+    const resp = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${_token}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+    })
+    if (!resp.ok) {
+      throw new Error(`GitHub API ${url} failed (${resp.status}): ${await resp.text()}`)
+    }
+    const page = (await resp.json()) as T[]
+    results.push(...page)
+
+    // Parse Link header for next page
+    const link = resp.headers.get("link")
+    const next = link?.match(/<([^>]+)>;\s*rel="next"/)
+    url = next ? next[1] : null
   }
+  return results
+}
+
+// --- Unified API layer ---
+
+async function gh(args: string[]): Promise<string> {
+  await initMode()
+  if (_mode === "gh") {
+    return ghExec(args)
+  }
+  throw new Error(`gh() called in fetch mode — use apiGet/apiPaginate instead`)
+}
+
+async function ghJson<T>(args: string[]): Promise<T> {
+  await initMode()
+  if (_mode === "gh") {
+    const raw = await ghExec(args)
+    return JSON.parse(raw) as T
+  }
+
+  // Translate common gh CLI patterns to fetch calls
+  // gh api <endpoint>
+  if (args[0] === "api") {
+    const endpoint = args.filter((a) => !a.startsWith("--"))[1]
+    return (await githubFetch(endpoint)) as T
+  }
+  // gh pr view <num> --json <field>
+  if (args[0] === "pr" && args[1] === "view") {
+    const prNum = args[2]
+    const jsonIdx = args.indexOf("--json")
+    const fields = jsonIdx !== -1 ? args[jsonIdx + 1] : ""
+    const { owner, repo } = await detectOwnerRepo()
+    const pr = (await githubFetch(`repos/${owner}/${repo}/pulls/${prNum}`)) as Record<string, unknown>
+    // Map common fields
+    const result: Record<string, unknown> = {}
+    for (const field of fields.split(",")) {
+      if (field === "number") result.number = pr.number
+      if (field === "headRefOid") result.headRefOid = (pr.head as { sha: string }).sha
+    }
+    return result as T
+  }
+  throw new Error(`Unsupported gh command in fetch mode: ${args.join(" ")}`)
+}
+
+async function apiPaginate<T>(endpoint: string): Promise<T[]> {
+  await initMode()
+  if (_mode === "gh") {
+    const raw = await ghExec(["api", "--paginate", endpoint])
+    try {
+      return JSON.parse(raw) as T[]
+    } catch {
+      const fixed = raw.replace(/\]\s*\[/g, ",")
+      return JSON.parse(fixed) as T[]
+    }
+  }
+  return githubFetchPaginated<T>(endpoint)
+}
+
+async function apiGet<T>(endpoint: string): Promise<T> {
+  await initMode()
+  if (_mode === "gh") {
+    return JSON.parse(await ghExec(["api", endpoint])) as T
+  }
+  return (await githubFetch(endpoint)) as T
 }
 
 // --- Types ---
@@ -106,15 +244,66 @@ interface ReviewData {
   }
 }
 
+// --- Owner/repo detection ---
+
+let _ownerRepo: { owner: string; repo: string } | undefined
+
+async function detectOwnerRepo(): Promise<{ owner: string; repo: string }> {
+  if (_ownerRepo) return _ownerRepo
+
+  await initMode()
+  if (_mode === "gh") {
+    const [owner, repo] = await Promise.all([
+      ghExec(["repo", "view", "--json", "owner", "-q", ".owner.login"]),
+      ghExec(["repo", "view", "--json", "name", "-q", ".name"]),
+    ])
+    _ownerRepo = { owner, repo }
+    return _ownerRepo
+  }
+
+  // Parse from git remote
+  const proc = Bun.spawn(["git", "remote", "get-url", "origin"], {
+    stdout: "pipe",
+    stderr: "pipe",
+  })
+  const url = (await new Response(proc.stdout).text()).trim()
+  await proc.exited
+
+  // Handle SSH (git@github.com:owner/repo.git) and HTTPS (https://github.com/owner/repo.git)
+  const match = url.match(/github\.com[:/]([^/]+)\/([^/.]+)/)
+  if (!match) throw new Error(`Could not parse owner/repo from git remote: ${url}`)
+
+  _ownerRepo = { owner: match[1], repo: match[2] }
+  return _ownerRepo
+}
+
 // --- Core logic ---
 
 async function detectPR(): Promise<{ pr: number; owner: string; repo: string }> {
-  const [prNum, owner, repo] = await Promise.all([
-    gh(["pr", "view", "--json", "number", "-q", ".number"]),
-    gh(["repo", "view", "--json", "owner", "-q", ".owner.login"]),
-    gh(["repo", "view", "--json", "name", "-q", ".name"]),
-  ])
-  return { pr: parseInt(prNum, 10), owner, repo }
+  await initMode()
+  const { owner, repo } = await detectOwnerRepo()
+
+  if (_mode === "gh") {
+    const prNum = await ghExec(["pr", "view", "--json", "number", "-q", ".number"])
+    return { pr: parseInt(prNum, 10), owner, repo }
+  }
+
+  // In fetch mode, detect current branch and find its PR
+  const branchProc = Bun.spawn(["git", "rev-parse", "--abbrev-ref", "HEAD"], {
+    stdout: "pipe",
+    stderr: "pipe",
+  })
+  const branch = (await new Response(branchProc.stdout).text()).trim()
+  await branchProc.exited
+
+  const prs = (await githubFetch(
+    `repos/${owner}/${repo}/pulls?head=${owner}:${branch}&state=open`,
+  )) as Array<{ number: number }>
+
+  if (prs.length === 0) {
+    throw new Error(`No open PR found for branch ${branch}. Use --pr <number> to specify.`)
+  }
+  return { pr: prs[0].number, owner, repo }
 }
 
 async function checkReviewStatus(
@@ -122,12 +311,10 @@ async function checkReviewStatus(
   repo: string,
   pr: number,
 ): Promise<ReviewData["reviewStatus"]> {
-  // Get the latest commit SHA on the PR to check its status
   const prData = await ghJson<{ headRefOid: string }>(["pr", "view", String(pr), "--json", "headRefOid"])
-  const checkRuns = await ghJson<{ check_runs: CheckRun[] }>([
-    "api",
+  const checkRuns = await apiGet<{ check_runs: CheckRun[] }>(
     `repos/${owner}/${repo}/commits/${prData.headRefOid}/check-runs`,
-  ])
+  )
   const greptile = checkRuns.check_runs.find((cr) =>
     cr.name.toLowerCase().includes("greptile"),
   )
@@ -141,7 +328,7 @@ async function fetchSummaryComment(
   repo: string,
   pr: number,
 ): Promise<ReviewData["summary"]> {
-  const comments = await ghPaginate<GitHubComment>(
+  const comments = await apiPaginate<GitHubComment>(
     `repos/${owner}/${repo}/issues/${pr}/comments`,
   )
   const greptileComments = comments.filter((c) => c.user.login === GREPTILE_BOT)
@@ -177,7 +364,7 @@ async function fetchInlineComments(
   repo: string,
   pr: number,
 ): Promise<ReviewData["inlineComments"]> {
-  const comments = await ghPaginate<InlineComment>(
+  const comments = await apiPaginate<InlineComment>(
     `repos/${owner}/${repo}/pulls/${pr}/comments`,
   )
   return comments
@@ -203,7 +390,7 @@ async function checkStaleness(
 
   const lastReviewTimestamp = inlineComments[inlineComments.length - 1].created_at
 
-  const commits = await ghPaginate<Commit>(
+  const commits = await apiPaginate<Commit>(
     `repos/${owner}/${repo}/pulls/${pr}/commits`,
   )
   const postReviewCommits = commits.filter(
@@ -217,10 +404,9 @@ async function checkStaleness(
   // Fetch changed files for each post-review commit in parallel
   const fileArrays = await Promise.all(
     postReviewCommits.map(async (c) => {
-      const detail = await ghJson<CommitDetail>([
-        "api",
+      const detail = await apiGet<CommitDetail>(
         `repos/${owner}/${repo}/commits/${c.sha}`,
-      ])
+      )
       return detail.files.map((f) => f.filename)
     }),
   )
@@ -241,10 +427,7 @@ async function main() {
 
   if (prArgIndex !== -1 && args[prArgIndex + 1]) {
     pr = parseInt(args[prArgIndex + 1], 10)
-    ;[owner, repo] = await Promise.all([
-      gh(["repo", "view", "--json", "owner", "-q", ".owner.login"]),
-      gh(["repo", "view", "--json", "name", "-q", ".name"]),
-    ])
+    ;({ owner, repo } = await detectOwnerRepo())
   } else {
     ;({ pr, owner, repo } = await detectPR())
   }
