@@ -175,7 +175,7 @@ describe("AttachmentList", () => {
       render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />)
 
       // Wait for image to load
-      const imageButton = await screen.findByRole("button", { name: "photo.png" })
+      const imageButton = await screen.findByRole("button", { name: /photo\.png/i })
 
       await user.click(imageButton)
 
@@ -195,7 +195,7 @@ describe("AttachmentList", () => {
       render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />)
 
       // Wait for image to load
-      const imageButton = await screen.findByRole("button", { name: "photo.png" })
+      const imageButton = await screen.findByRole("button", { name: /photo\.png/i })
 
       await user.click(imageButton)
 
