@@ -159,10 +159,6 @@ function ImageAttachment({ attachment, workspaceId, onImageClick, isHighlighted 
     if (imageUrl) copyImage(imageUrl)
   }, [imageUrl])
 
-  if (error) {
-    return <div className="rounded-lg border bg-muted/50 p-2 text-xs text-muted-foreground">Failed to load image</div>
-  }
-
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === "Enter" || e.key === " ") {
@@ -172,6 +168,10 @@ function ImageAttachment({ attachment, workspaceId, onImageClick, isHighlighted 
     },
     [handleClick]
   )
+
+  if (error) {
+    return <div className="rounded-lg border bg-muted/50 p-2 text-xs text-muted-foreground">Failed to load image</div>
+  }
 
   return (
     <>

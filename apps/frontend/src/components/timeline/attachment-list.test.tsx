@@ -174,11 +174,8 @@ describe("AttachmentList", () => {
       })
       render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />)
 
-      // Wait for image to load (button becomes enabled)
-      const imageButton = await screen.findByRole("button")
-      await waitFor(() => {
-        expect(imageButton).not.toBeDisabled()
-      })
+      // Wait for image to load
+      const imageButton = await screen.findByRole("button", { name: "photo.png" })
 
       await user.click(imageButton)
 
@@ -197,11 +194,8 @@ describe("AttachmentList", () => {
       })
       render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />)
 
-      // Wait for image to load (button becomes enabled)
-      const imageButton = await screen.findByRole("button")
-      await waitFor(() => {
-        expect(imageButton).not.toBeDisabled()
-      })
+      // Wait for image to load
+      const imageButton = await screen.findByRole("button", { name: "photo.png" })
 
       await user.click(imageButton)
 
