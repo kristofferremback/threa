@@ -203,7 +203,7 @@ test.describe("Inline File Uploads", () => {
 
     // Wait until attachment metadata is hydrated in the rendered message.
     // Inline link click depends on attachment context, which can lag briefly in CI.
-    const attachmentPill = page.locator("button:has(img[alt='pasted-image-1.png'])")
+    const attachmentPill = page.locator("[role='button']:has(img[alt='pasted-image-1.png'])")
     await expect(attachmentPill).toBeVisible({ timeout: 10000 })
 
     // Click on the image link
@@ -254,7 +254,7 @@ test.describe("Inline File Uploads", () => {
     await expect(imageLink).toBeVisible({ timeout: 10000 })
 
     // Find the attachment pill (the image button with the filename)
-    const attachmentPill = page.locator("button:has(img[alt='pasted-image-1.png'])")
+    const attachmentPill = page.locator("[role='button']:has(img[alt='pasted-image-1.png'])")
     await expect(attachmentPill).toBeVisible({ timeout: 5000 })
 
     // Before hover: pill should NOT be highlighted
