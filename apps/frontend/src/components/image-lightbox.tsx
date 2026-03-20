@@ -1,6 +1,8 @@
+import { useCallback } from "react"
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { X } from "lucide-react"
+import { X, Download, Copy } from "lucide-react"
+import { toast } from "sonner"
 
 interface ImageLightboxProps {
   isOpen: boolean
@@ -10,6 +12,37 @@ interface ImageLightboxProps {
 }
 
 export function ImageLightbox({ isOpen, onClose, imageUrl, filename }: ImageLightboxProps) {
+  const handleDownload = useCallback(async () => {
+    if (!imageUrl) return
+    try {
+      const response = await fetch(imageUrl)
+      const blob = await response.blob()
+      const blobUrl = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = blobUrl
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(blobUrl)
+      toast.success("Image downloaded")
+    } catch {
+      toast.error("Failed to download image")
+    }
+  }, [imageUrl, filename])
+
+  const handleCopy = useCallback(async () => {
+    if (!imageUrl) return
+    try {
+      const response = await fetch(imageUrl)
+      const blob = await response.blob()
+      await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })])
+      toast.success("Image copied")
+    } catch {
+      toast.error("Failed to copy image")
+    }
+  }, [imageUrl])
+
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent
@@ -25,15 +58,35 @@ export function ImageLightbox({ isOpen, onClose, imageUrl, filename }: ImageLigh
         <DialogTitle className="sr-only">{filename}</DialogTitle>
         <DialogDescription className="sr-only">Full-size image preview</DialogDescription>
         <div className="relative flex items-center justify-center">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="absolute top-2 right-2 z-10 h-10 w-10 text-white hover:bg-white/20 rounded-full"
-            onClick={onClose}
-          >
-            <X className="h-5 w-5" />
-            <span className="sr-only">Close</span>
-          </Button>
+          <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-10 w-10 text-white hover:bg-white/20 rounded-full"
+              onClick={handleDownload}
+            >
+              <Download className="h-5 w-5" />
+              <span className="sr-only">Download image</span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-10 w-10 text-white hover:bg-white/20 rounded-full"
+              onClick={handleCopy}
+            >
+              <Copy className="h-5 w-5" />
+              <span className="sr-only">Copy image</span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-10 w-10 text-white hover:bg-white/20 rounded-full"
+              onClick={onClose}
+            >
+              <X className="h-5 w-5" />
+              <span className="sr-only">Close</span>
+            </Button>
+          </div>
           {imageUrl && <img src={imageUrl} alt={filename} className="max-w-full max-h-[85vh] object-contain" />}
           <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
             <span className="text-sm text-white">{filename}</span>
