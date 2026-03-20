@@ -39,4 +39,19 @@ export class StubWorkosOrgService implements WorkosOrgService {
   async getOrganization(organizationId: string): Promise<{ id: string; domains: string[] } | null> {
     return { id: organizationId, domains: [] }
   }
+
+  async ensureOrganizationMembership(params: {
+    organizationId: string
+    userId: string
+    roleSlug: string
+  }): Promise<void> {
+    logger.info(
+      { organizationId: params.organizationId, userId: params.userId, roleSlug: params.roleSlug },
+      "Stub: Ensured organization membership"
+    )
+  }
+
+  async getWidgetToken(_params: { organizationId: string; userId: string; scopes: string[] }): Promise<string> {
+    return "stub_widget_token"
+  }
 }

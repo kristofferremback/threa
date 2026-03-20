@@ -271,6 +271,16 @@ export function useWorkspaceUserId(workspaceId: string): string | null {
   )
 }
 
+/** Returns the full workspace-scoped User for the current WorkOS user, or null if not found. */
+export function useCurrentWorkspaceUser(workspaceId: string): User | null {
+  const user = useUser()
+  const { data: wsBootstrap } = useWorkspaceBootstrap(workspaceId)
+  return useMemo(
+    () => wsBootstrap?.users?.find((u) => u.workosUserId === user?.id) ?? null,
+    [wsBootstrap?.users, user?.id]
+  )
+}
+
 export function useRemoveAvatar(workspaceId: string) {
   const workspaceService = useWorkspaceService()
   const queryClient = useQueryClient()

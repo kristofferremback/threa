@@ -2,6 +2,12 @@ import { WorkOS } from "@workos-inc/node"
 import { logger } from "../logger"
 import type { WorkosConfig } from "./types"
 
+type WidgetScope =
+  | "widgets:api-keys:manage"
+  | "widgets:users-table:manage"
+  | "widgets:sso:manage"
+  | "widgets:domain-verification:manage"
+
 /**
  * Extract error code from WorkOS SDK exceptions.
  * Duck-typed to handle both BadRequestException (.code) and GenericServerException (.rawData.code).
@@ -26,6 +32,8 @@ export interface WorkosOrgService {
   }): Promise<{ id: string; expiresAt: Date }>
   revokeInvitation(invitationId: string): Promise<void>
   getOrganization(organizationId: string): Promise<{ id: string; domains: string[] } | null>
+  ensureOrganizationMembership(params: { organizationId: string; userId: string; roleSlug: string }): Promise<void>
+  getWidgetToken(params: { organizationId: string; userId: string; scopes: string[] }): Promise<string>
 }
 
 export class WorkosOrgServiceImpl implements WorkosOrgService {
@@ -114,5 +122,42 @@ export class WorkosOrgServiceImpl implements WorkosOrgService {
       logger.error({ err: error, organizationId }, "Failed to get WorkOS organization")
       return null
     }
+  }
+
+  async ensureOrganizationMembership(params: {
+    organizationId: string
+    userId: string
+    roleSlug: string
+  }): Promise<void> {
+    try {
+      await this.workos.userManagement.createOrganizationMembership({
+        organizationId: params.organizationId,
+        userId: params.userId,
+        roleSlug: params.roleSlug,
+      })
+      logger.info(
+        { organizationId: params.organizationId, userId: params.userId, roleSlug: params.roleSlug },
+        "Created WorkOS organization membership"
+      )
+    } catch (error) {
+      const code = getWorkosErrorCode(error)
+      if (code === "user_already_organization_member") {
+        logger.debug(
+          { organizationId: params.organizationId, userId: params.userId },
+          "User already has WorkOS org membership"
+        )
+        return
+      }
+      throw error
+    }
+  }
+
+  async getWidgetToken(params: { organizationId: string; userId: string; scopes: string[] }): Promise<string> {
+    const token = await this.workos.widgets.getToken({
+      organizationId: params.organizationId,
+      userId: params.userId,
+      scopes: params.scopes as WidgetScope[],
+    })
+    return token
   }
 }

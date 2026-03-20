@@ -140,7 +140,7 @@ export class ControlPlaneWorkspaceService {
       }
     }
 
-    return {
+    const result = {
       id: workspace.id,
       name: workspace.name,
       slug: workspace.slug,
@@ -149,6 +149,47 @@ export class ControlPlaneWorkspaceService {
       createdAt: workspace.created_at,
       updatedAt: workspace.updated_at,
     }
+
+    // Best-effort: create WorkOS org and owner membership eagerly (no DB connection held — INV-41)
+    try {
+      const orgId = await this.ensureWorkosOrganization(id, name)
+      if (orgId) {
+        await this.workosOrgService.ensureOrganizationMembership({
+          organizationId: orgId,
+          userId: workosUserId,
+          roleSlug: "admin",
+        })
+      }
+    } catch (error) {
+      logger.warn({ err: error, workspaceId: id }, "Failed to sync WorkOS org membership on workspace creation")
+    }
+
+    return result
+  }
+
+  /**
+   * Ensure a WorkOS organization exists for the given workspace.
+   * 3-tier lookup: local cache → WorkOS by external ID → create new.
+   */
+  private async ensureWorkosOrganization(workspaceId: string, workspaceName: string): Promise<string | null> {
+    // Tier 1: Check local DB cache
+    const cachedOrgId = await WorkspaceRegistryRepository.getWorkosOrganizationId(this.pool, workspaceId)
+    if (cachedOrgId) return cachedOrgId
+
+    // Tier 2: Check WorkOS by external ID
+    const existingOrg = await this.workosOrgService.getOrganizationByExternalId(workspaceId)
+    if (existingOrg) {
+      await WorkspaceRegistryRepository.setWorkosOrganizationId(this.pool, workspaceId, existingOrg.id)
+      return existingOrg.id
+    }
+
+    // Tier 3: Create new org in WorkOS
+    const org = await this.workosOrgService.createOrganization({
+      name: workspaceName,
+      externalId: workspaceId,
+    })
+    await WorkspaceRegistryRepository.setWorkosOrganizationId(this.pool, workspaceId, org.id)
+    return org.id
   }
 
   /** Outbox handler: provision workspace in the regional backend */

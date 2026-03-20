@@ -3,6 +3,7 @@
  *
  * Reads API_KEY_PERMISSIONS from @threa/types and ensures they exist in WorkOS.
  * Creates missing permissions, updates name/description on existing ones.
+ * Also ensures required roles exist with the correct permissions.
  *
  * Usage:
  *   bun scripts/sync-workos-permissions.ts              # sync (create/update)
@@ -89,6 +90,60 @@ async function updatePermission(
   updates: { name: string; description: string }
 ): Promise<WorkOSPermission> {
   return workosRequest<WorkOSPermission>(apiKey, "PATCH", `/authorization/permissions/${slug}`, updates)
+}
+
+// --- Role definitions ---
+// Roles required for widget and API key management.
+// The "admin" role needs the system permission "widgets:api-keys:manage" to
+// render the API Keys Widget. The "member" role is the default for regular users.
+
+interface RoleDefinition {
+  slug: string
+  name: string
+  description: string
+  permissions: string[]
+}
+
+const REQUIRED_ROLES: RoleDefinition[] = [
+  {
+    slug: "admin",
+    name: "Admin",
+    description: "Full workspace administration including API key management",
+    permissions: ["widgets:api-keys:manage"],
+  },
+  {
+    slug: "member",
+    name: "Member",
+    description: "Default workspace member",
+    permissions: [],
+  },
+]
+
+// --- Role API client ---
+
+interface WorkOSRole {
+  id: string
+  slug: string
+  name: string
+  description: string | null
+  permissions: string[]
+  type: string
+}
+
+async function listRoles(apiKey: string): Promise<WorkOSRole[]> {
+  const data = await workosRequest<{ data: WorkOSRole[] }>(apiKey, "GET", "/authorization/roles")
+  return data.data
+}
+
+async function createRole(
+  apiKey: string,
+  role: { slug: string; name: string; description: string }
+): Promise<WorkOSRole> {
+  return workosRequest<WorkOSRole>(apiKey, "POST", "/authorization/roles", role)
+}
+
+async function setRolePermissions(apiKey: string, roleSlug: string, permissions: string[]): Promise<void> {
+  await workosRequest<unknown>(apiKey, "PUT", `/authorization/roles/${roleSlug}/permissions`, { permissions })
 }
 
 // --- Drift detection ---
@@ -182,6 +237,33 @@ async function check() {
   if (drift.missing.length === 0 && drift.stale.length === 0) {
     console.log("No drift detected. WorkOS permissions match code definitions.")
   }
+
+  // --- Role check ---
+  console.log("\n--- Roles ---\n")
+  const remoteRoles = await listRoles(apiKey)
+  const remoteRolesBySlug = new Map(remoteRoles.map((r) => [r.slug, r]))
+  let roleDrift = false
+
+  for (const role of REQUIRED_ROLES) {
+    const existing = remoteRolesBySlug.get(role.slug)
+    if (!existing) {
+      console.log(`  [MISSING] role "${role.slug}" — will be created on merge`)
+      roleDrift = true
+    } else {
+      const existingPerms = new Set(existing.permissions)
+      const missingPerms = role.permissions.filter((p) => !existingPerms.has(p))
+      if (missingPerms.length > 0) {
+        console.log(`  [STALE] role "${role.slug}" — missing permissions: [${missingPerms.join(", ")}]`)
+        roleDrift = true
+      } else {
+        console.log(`  [OK] role "${role.slug}"`)
+      }
+    }
+  }
+
+  if (!roleDrift) {
+    console.log("No role drift detected.")
+  }
 }
 
 async function sync(dryRun: boolean) {
@@ -229,6 +311,43 @@ async function sync(dryRun: boolean) {
   console.log(`\n${dryRun ? "Dry run" : "Done"}: ${created} created, ${updated} updated, ${unchanged} unchanged`)
   if (drift.orphans.length > 0) {
     console.log(`${drift.orphans.length} orphan(s) need manual deletion in WorkOS dashboard`)
+  }
+
+  // --- Role sync ---
+  console.log("\n--- Roles ---\n")
+  const remoteRoles = await listRoles(apiKey)
+  const remoteRolesBySlug = new Map(remoteRoles.map((r) => [r.slug, r]))
+
+  for (const role of REQUIRED_ROLES) {
+    const existing = remoteRolesBySlug.get(role.slug)
+
+    if (!existing) {
+      if (dryRun) {
+        console.log(`  [CREATE] role "${role.slug}" — "${role.name}"`)
+      } else {
+        await createRole(apiKey, { slug: role.slug, name: role.name, description: role.description })
+        if (role.permissions.length > 0) {
+          await setRolePermissions(apiKey, role.slug, role.permissions)
+        }
+        console.log(`  [CREATED] role "${role.slug}" with permissions: [${role.permissions.join(", ")}]`)
+      }
+    } else {
+      // Check if permissions need updating
+      const existingPerms = new Set(existing.permissions)
+      const missingPerms = role.permissions.filter((p) => !existingPerms.has(p))
+
+      if (missingPerms.length > 0) {
+        const allPerms = [...new Set([...existing.permissions, ...role.permissions])]
+        if (dryRun) {
+          console.log(`  [UPDATE] role "${role.slug}" — adding permissions: [${missingPerms.join(", ")}]`)
+        } else {
+          await setRolePermissions(apiKey, role.slug, allPerms)
+          console.log(`  [UPDATED] role "${role.slug}" — added permissions: [${missingPerms.join(", ")}]`)
+        }
+      } else {
+        console.log(`  [OK] role "${role.slug}"`)
+      }
+    }
   }
 }
 

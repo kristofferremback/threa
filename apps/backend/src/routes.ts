@@ -50,6 +50,7 @@ import type { UserPreferencesService } from "./features/user-preferences"
 import type { AvatarService } from "./features/workspaces"
 import type { ApiKeyChannelService } from "./features/api-keys"
 import type { LinkPreviewService } from "./features/link-previews"
+import type { WorkosOrgService } from "@threa/backend-common"
 import type { Pool } from "pg"
 import type { PoolMonitor } from "./lib/observability"
 
@@ -76,6 +77,7 @@ interface Dependencies {
   apiKeyService: ApiKeyService
   apiKeyChannelService: ApiKeyChannelService
   linkPreviewService: LinkPreviewService
+  workosOrgService: WorkosOrgService
 }
 
 export function registerRoutes(app: Express, deps: Dependencies) {
@@ -102,6 +104,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     apiKeyService,
     apiKeyChannelService,
     linkPreviewService,
+    workosOrgService,
   } = deps
 
   const auth = createAuthMiddleware({ authService })
@@ -123,6 +126,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     activityService,
     commandRegistry,
     avatarService,
+    workosOrgService,
     pool,
   })
   const stream = createStreamHandlers({ streamService, eventService, activityService })
@@ -280,6 +284,9 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/workspaces/:workspaceId/ai-usage/recent", ...authed, aiUsage.getRecentUsage)
   app.get("/api/workspaces/:workspaceId/ai-budget", ...authed, aiUsage.getBudget)
   app.put("/api/workspaces/:workspaceId/ai-budget", ...authed, requireRole("admin"), aiUsage.updateBudget)
+
+  // Widget tokens (admin+ only — API key management widget)
+  app.get("/api/workspaces/:workspaceId/widget-token", ...authed, requireRole("admin"), workspace.getWidgetToken)
 
   // Activity feed
   app.get("/api/workspaces/:workspaceId/activity", ...authed, activity.list)

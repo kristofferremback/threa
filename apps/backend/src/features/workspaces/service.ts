@@ -440,6 +440,37 @@ export class WorkspaceService {
     return updated
   }
 
+  /**
+   * Ensure a WorkOS organization exists for the given workspace.
+   * 3-tier lookup: local cache → WorkOS by external ID → create new.
+   * No DB connection held during WorkOS API calls (INV-41).
+   */
+  async ensureWorkosOrganization(workspaceId: string): Promise<string | null> {
+    if (!this.workosOrgService) return null
+
+    // Tier 1: Local DB cache
+    const cached = await WorkspaceRepository.getWorkosOrganizationId(this.pool, workspaceId)
+    if (cached) return cached
+
+    // Tier 2: WorkOS by external ID
+    const existing = await this.workosOrgService.getOrganizationByExternalId(workspaceId)
+    if (existing) {
+      await WorkspaceRepository.setWorkosOrganizationId(this.pool, workspaceId, existing.id)
+      return existing.id
+    }
+
+    // Tier 3: Create new
+    const workspace = await WorkspaceRepository.findById(this.pool, workspaceId)
+    if (!workspace) return null
+
+    const org = await this.workosOrgService.createOrganization({
+      name: workspace.name,
+      externalId: workspaceId,
+    })
+    await WorkspaceRepository.setWorkosOrganizationId(this.pool, workspaceId, org.id)
+    return org.id
+  }
+
   private async shouldPreferEmailSlug(orgId: string | null, email: string): Promise<boolean> {
     if (!this.workosOrgService || !orgId) return false
 
