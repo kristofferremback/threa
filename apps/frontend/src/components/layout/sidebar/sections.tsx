@@ -165,12 +165,16 @@ export function StreamSection({
 
       {/* Collapsed hint for "Everything Else" style sections */}
       {showCollapsedHint && isCollapsed && items.length > 0 && (
-        <div className="mx-3 mt-1 px-3 py-2 rounded-md bg-muted/30 border border-dashed border-border/50">
+        <button
+          type="button"
+          onClick={onToggle}
+          className="mx-3 mt-1 px-3 py-2 w-[calc(100%-1.5rem)] rounded-md bg-muted/30 border border-dashed border-border/50 cursor-pointer hover:bg-muted/50 transition-colors"
+        >
           <p className="text-center text-xs text-muted-foreground">
             {items.length} more stream{items.length !== 1 ? "s" : ""} — click to expand or use{" "}
             <kbd className="px-1.5 py-0.5 rounded bg-muted text-[10px] font-mono">⌘K</kbd>
           </p>
-        </div>
+        </button>
       )}
 
       {/* Optional action (like "+ New Scratchpad" button) */}
