@@ -269,8 +269,9 @@ async function detectOwnerRepo(): Promise<{ owner: string; repo: string }> {
   const url = (await new Response(proc.stdout).text()).trim()
   await proc.exited
 
-  // Handle SSH (git@github.com:owner/repo.git) and HTTPS (https://github.com/owner/repo.git)
-  const match = url.match(/github\.com[:/]([^/]+)\/([^/.]+)/)
+  // Handle SSH (git@github.com:owner/repo.git), HTTPS (https://github.com/owner/repo.git),
+  // and proxy URLs (http://proxy@host/git/owner/repo)
+  const match = url.match(/github\.com[:/]([^/]+)\/([^/.]+)/) ?? url.match(/\/git\/([^/]+)\/([^/.]+)/)
   if (!match) throw new Error(`Could not parse owner/repo from git remote: ${url}`)
 
   _ownerRepo = { owner: match[1], repo: match[2] }
