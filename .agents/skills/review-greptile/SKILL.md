@@ -52,8 +52,9 @@ If the Greptile Review check is still pending or in progress, inform the user an
 Always fetch the latest version — this comment is updated after every review cycle:
 
 ```bash
-COMMENT_BODY=$(gh api "repos/$OWNER/$REPO/issues/$PR/comments" \
-  --jq '[.[] | select(.user.login == "greptile-apps[bot]")] | last | .body')
+COMMENT_BODY=$(gh api --paginate "repos/$OWNER/$REPO/issues/$PR/comments" \
+  --jq '.[] | select(.user.login == "greptile-apps[bot]")' \
+  | jq -s 'last | .body' -r)
 ```
 
 From the summary comment body, extract:
@@ -78,7 +79,8 @@ Fetch all inline review comments from `greptile-apps[bot]`:
 
 ```bash
 gh api --paginate "repos/$OWNER/$REPO/pulls/$PR/comments" \
-  --jq '[.[] | select(.user.login == "greptile-apps[bot]") | {id, path, line, body, created_at}]'
+  --jq '.[] | select(.user.login == "greptile-apps[bot]") | {id, path, line, body, created_at}' \
+  | jq -s '.'
 ```
 
 Cross-reference with recent commits to determine which comments are still relevant:
@@ -86,7 +88,8 @@ Cross-reference with recent commits to determine which comments are still releva
 ```bash
 # Get the timestamp of Greptile's last inline review comment
 GREPTILE_TS=$(gh api --paginate "repos/$OWNER/$REPO/pulls/$PR/comments" \
-  --jq '[.[] | select(.user.login == "greptile-apps[bot]")] | last | .created_at')
+  --jq '.[] | select(.user.login == "greptile-apps[bot]")' \
+  | jq -s 'last | .created_at' -r)
 
 # Skip staleness check if there are no inline comments
 if [ -z "$GREPTILE_TS" ]; then
@@ -94,7 +97,7 @@ if [ -z "$GREPTILE_TS" ]; then
 else
   # List files changed only in commits *after* Greptile's review
   gh api --paginate "repos/$OWNER/$REPO/pulls/$PR/commits" \
-    | jq -r --arg ts "$GREPTILE_TS" '[.[] | select(.commit.author.date > $ts)] | .[].sha' \
+    | jq -r --arg ts "$GREPTILE_TS" '[.[] | select(.commit.committer.date > $ts)] | .[].sha' \
     | while read sha; do
         gh api "repos/$OWNER/$REPO/commits/$sha" --jq '.files[].filename'
       done | sort -u
