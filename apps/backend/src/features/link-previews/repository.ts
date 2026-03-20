@@ -136,6 +136,13 @@ export const LinkPreviewRepository = {
 
   // --- Message junction ---
 
+  async unlinkAllFromMessage(querier: Querier, workspaceId: string, messageId: string): Promise<void> {
+    await querier.query(sql`DELETE FROM message_link_previews WHERE workspace_id = $1 AND message_id = $2`, [
+      workspaceId,
+      messageId,
+    ])
+  },
+
   async linkToMessage(
     querier: Querier,
     workspaceId: string,

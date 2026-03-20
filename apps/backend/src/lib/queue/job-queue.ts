@@ -152,6 +152,8 @@ export interface LinkPreviewExtractJobData {
   streamId: string
   messageId: string
   contentMarkdown: string
+  /** When true, clears existing previews before re-extracting (message edit flow) */
+  isEdit?: boolean
 }
 
 // Map queue names to their data types

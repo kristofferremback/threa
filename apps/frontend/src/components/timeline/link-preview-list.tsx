@@ -39,10 +39,12 @@ export function LinkPreviewList({
   // Track whether socket has delivered previews (ref avoids stale closure in API fetch callback)
   const hasSocketPreviewsRef = useRef(initialPreviews !== undefined && initialPreviews.length > 0)
 
-  // Update previews when they arrive from props (real-time socket delivery)
+  // Update previews when they arrive from props (real-time socket delivery).
+  // An explicit empty array (from an edited message that removed URLs) clears stale previews.
   useEffect(() => {
-    if (initialPreviews && initialPreviews.length > 0) {
-      setPreviews(initialPreviews)
+    if (initialPreviews === undefined) return
+    setPreviews(initialPreviews)
+    if (initialPreviews.length > 0) {
       hasSocketPreviewsRef.current = true
     }
   }, [initialPreviews])

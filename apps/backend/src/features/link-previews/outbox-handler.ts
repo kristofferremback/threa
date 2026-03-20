@@ -6,6 +6,8 @@ import { CursorLock, ensureListenerFromLatest, DebounceWithMaxWait, type Process
 import { logger } from "@threa/backend-common"
 import type { OutboxHandler } from "../../lib/outbox"
 
+const LINK_PREVIEW_EVENT_TYPES = new Set(["message:created", "message:edited"])
+
 export interface LinkPreviewHandlerConfig {
   batchSize?: number
   debounceMs?: number
@@ -28,7 +30,7 @@ const DEFAULT_CONFIG = {
 
 /**
  * Outbox handler that dispatches link preview extraction jobs
- * when new messages are created.
+ * when messages are created or edited.
  */
 export class LinkPreviewOutboxHandler implements OutboxHandler {
   readonly listenerId = "link_preview"
@@ -82,34 +84,38 @@ export class LinkPreviewOutboxHandler implements OutboxHandler {
 
       try {
         for (const event of events) {
-          if (event.eventType !== "message:created") {
+          if (!LINK_PREVIEW_EVENT_TYPES.has(event.eventType)) {
             seen.push(event.id)
             continue
           }
 
+          // message:created and message:edited share the same payload shape
           const payload = parseMessageCreatedPayload(event.payload)
           if (!payload) {
             seen.push(event.id)
             continue
           }
 
+          const isEdit = event.eventType === "message:edited"
           const { workspaceId, streamId, event: messageEvent } = payload
           const { messageId, contentMarkdown } = messageEvent.payload
 
-          if (!contentMarkdown) {
+          // For creates, skip if no content. For edits, always enqueue
+          // so stale previews are cleared even when all URLs are removed.
+          if (!isEdit && !contentMarkdown) {
             seen.push(event.id)
             continue
           }
 
-          // Enqueue link preview extraction job
           await this.jobQueue.send(JobQueues.LINK_PREVIEW_EXTRACT, {
             workspaceId,
             streamId,
             messageId,
             contentMarkdown,
+            isEdit,
           })
 
-          logger.debug({ messageId }, "Link preview extraction job dispatched")
+          logger.debug({ messageId, isEdit }, "Link preview extraction job dispatched")
           seen.push(event.id)
         }
 
