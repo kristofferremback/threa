@@ -9,12 +9,14 @@ interface ImageLightboxProps {
   onClose: () => void
   imageUrl: string | null
   filename: string
+  workspaceId: string
+  attachmentId: string | null
 }
 
-export function ImageLightbox({ isOpen, onClose, imageUrl, filename }: ImageLightboxProps) {
+export function ImageLightbox({ isOpen, onClose, imageUrl, filename, workspaceId, attachmentId }: ImageLightboxProps) {
   const handleDownload = useCallback(() => {
-    if (imageUrl) downloadImage(imageUrl, filename)
-  }, [imageUrl, filename])
+    if (workspaceId && attachmentId) downloadImage(workspaceId, attachmentId, filename)
+  }, [workspaceId, attachmentId, filename])
 
   const handleCopy = useCallback(() => {
     if (imageUrl) copyImage(imageUrl)

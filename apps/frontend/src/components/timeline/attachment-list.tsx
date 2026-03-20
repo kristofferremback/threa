@@ -5,7 +5,7 @@ import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
 import { ImageLightbox } from "@/components/image-lightbox"
 import { attachmentsApi } from "@/api"
 import { cn } from "@/lib/utils"
-import { downloadImage, copyImage } from "@/lib/image-utils"
+import { downloadImage, copyImage, triggerDownload } from "@/lib/image-utils"
 import { useAttachmentContext } from "@/lib/markdown/attachment-context"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useLongPress } from "@/hooks/use-long-press"
@@ -20,7 +20,7 @@ interface AttachmentListProps {
 interface AttachmentItemProps {
   attachment: AttachmentSummary
   workspaceId: string
-  onImageClick?: (url: string, filename: string) => void
+  onImageClick?: (url: string, filename: string, attachmentId: string) => void
   isHighlighted?: boolean
 }
 
@@ -42,16 +42,20 @@ function ImageActionDrawer({
   onOpenChange,
   imageUrl,
   filename,
+  workspaceId,
+  attachmentId,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   imageUrl: string
   filename: string
+  workspaceId: string
+  attachmentId: string
 }) {
   const handleDownload = useCallback(() => {
     onOpenChange(false)
-    downloadImage(imageUrl, filename)
-  }, [imageUrl, filename, onOpenChange])
+    downloadImage(workspaceId, attachmentId, filename)
+  }, [workspaceId, attachmentId, filename, onOpenChange])
 
   const handleCopy = useCallback(() => {
     onOpenChange(false)
@@ -126,9 +130,9 @@ function ImageAttachment({ attachment, workspaceId, onImageClick, isHighlighted 
 
   const handleClick = useCallback(() => {
     if (imageUrl && onImageClick) {
-      onImageClick(imageUrl, attachment.filename)
+      onImageClick(imageUrl, attachment.filename, attachment.id)
     }
-  }, [imageUrl, onImageClick, attachment.filename])
+  }, [imageUrl, onImageClick, attachment.filename, attachment.id])
 
   const openDrawer = useCallback(() => setDrawerOpen(true), [])
   const longPressRaw = useLongPress({
@@ -155,8 +159,8 @@ function ImageAttachment({ attachment, workspaceId, onImageClick, isHighlighted 
   }
 
   const handleDownload = useCallback(() => {
-    if (imageUrl) downloadImage(imageUrl, attachment.filename)
-  }, [imageUrl, attachment.filename])
+    downloadImage(workspaceId, attachment.id, attachment.filename)
+  }, [workspaceId, attachment.id, attachment.filename])
 
   const handleCopy = useCallback(() => {
     if (imageUrl) copyImage(imageUrl)
@@ -239,6 +243,8 @@ function ImageAttachment({ attachment, workspaceId, onImageClick, isHighlighted 
           onOpenChange={setDrawerOpen}
           imageUrl={imageUrl}
           filename={attachment.filename}
+          workspaceId={workspaceId}
+          attachmentId={attachment.id}
         />
       )}
     </>
@@ -257,13 +263,7 @@ function FileAttachment({ attachment, workspaceId, isHighlighted }: AttachmentIt
       if (attachment.mimeType === "application/pdf") {
         window.open(url, "_blank")
       } else {
-        // Force download using anchor element
-        const link = document.createElement("a")
-        link.href = url
-        link.download = attachment.filename
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
+        triggerDownload(url, attachment.filename)
       }
     } catch (error) {
       console.error("Failed to download attachment:", error)
@@ -289,7 +289,7 @@ function FileAttachment({ attachment, workspaceId, isHighlighted }: AttachmentIt
 }
 
 export function AttachmentList({ attachments, workspaceId, className }: AttachmentListProps) {
-  const [lightbox, setLightbox] = useState<{ url: string; filename: string } | null>(null)
+  const [lightbox, setLightbox] = useState<{ url: string; filename: string; attachmentId: string } | null>(null)
   const attachmentContext = useAttachmentContext()
   const hoveredAttachmentId = attachmentContext?.hoveredAttachmentId ?? null
 
@@ -300,8 +300,8 @@ export function AttachmentList({ attachments, workspaceId, className }: Attachme
   const imageAttachments = attachments.filter((a) => a.mimeType.startsWith("image/"))
   const fileAttachments = attachments.filter((a) => !a.mimeType.startsWith("image/"))
 
-  const handleImageClick = useCallback((url: string, filename: string) => {
-    setLightbox({ url, filename })
+  const handleImageClick = useCallback((url: string, filename: string, attachmentId: string) => {
+    setLightbox({ url, filename, attachmentId })
   }, [])
 
   const handleLightboxClose = useCallback(() => {
@@ -343,6 +343,8 @@ export function AttachmentList({ attachments, workspaceId, className }: Attachme
         onClose={handleLightboxClose}
         imageUrl={lightbox?.url ?? null}
         filename={lightbox?.filename ?? ""}
+        workspaceId={workspaceId}
+        attachmentId={lightbox?.attachmentId ?? null}
       />
     </>
   )

@@ -8,6 +8,18 @@ import { AttachmentSafetyStatuses, ProcessingStatuses } from "@threa/types"
 import { isAttachmentSafeForSharing, safetyStatusBlockReason, type MalwareScanner } from "./upload-safety-policy"
 import { logger } from "../../lib/logger"
 
+/**
+ * Builds a Content-Disposition header value with both ASCII fallback and
+ * RFC 5987 filename* parameter for non-ASCII filenames.
+ */
+function buildContentDisposition(filename: string): string {
+  // ASCII-safe fallback: replace non-ASCII chars with underscores, escape quotes
+  const asciiFallback = filename.replace(/[^\x20-\x7E]/g, "_").replace(/"/g, '\\"')
+  // RFC 5987 encoding for the full filename (percent-encode per UTF-8)
+  const encoded = encodeURIComponent(filename).replace(/'/g, "%27")
+  return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`
+}
+
 const STALE_PENDING_SCAN_THRESHOLD_MS = 5 * 60 * 1000
 const STALE_PENDING_SCAN_BATCH_SIZE = 200
 
@@ -158,8 +170,9 @@ export class AttachmentService {
     return AttachmentRepository.findByMessageIds(this.pool, messageIds)
   }
 
-  async getDownloadUrl(attachment: Attachment): Promise<string> {
-    return this.storage.getSignedDownloadUrl(attachment.storagePath)
+  async getDownloadUrl(attachment: Attachment, options?: { download?: boolean }): Promise<string> {
+    const responseContentDisposition = options?.download ? buildContentDisposition(attachment.filename) : undefined
+    return this.storage.getSignedDownloadUrl(attachment.storagePath, { responseContentDisposition })
   }
 
   async delete(id: string): Promise<boolean> {

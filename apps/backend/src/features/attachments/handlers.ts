@@ -1,4 +1,5 @@
 import type { Request, Response } from "express"
+import { z } from "zod"
 import type { AttachmentService } from "./service"
 import type { StreamService } from "../streams"
 
@@ -80,7 +81,10 @@ export function createAttachmentHandlers({ attachmentService, streamService }: D
         }
       }
 
-      const url = await attachmentService.getDownloadUrl(attachment)
+      const parsed = z.object({ download: z.enum(["true", "false"]).optional() }).safeParse(req.query)
+      if (!parsed.success) return res.status(400).json({ error: "Invalid query parameters" })
+      const { download } = parsed.data
+      const url = await attachmentService.getDownloadUrl(attachment, { download: download === "true" })
       res.json({ url, expiresIn: 900 })
     },
 
