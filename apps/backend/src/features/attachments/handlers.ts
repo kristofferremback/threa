@@ -1,4 +1,5 @@
 import type { Request, Response } from "express"
+import { z } from "zod"
 import type { AttachmentService } from "./service"
 import type { StreamService } from "../streams"
 
@@ -80,8 +81,8 @@ export function createAttachmentHandlers({ attachmentService, streamService }: D
         }
       }
 
-      const download = req.query.download === "true"
-      const url = await attachmentService.getDownloadUrl(attachment, { download })
+      const { download } = z.object({ download: z.enum(["true", "false"]).optional() }).parse(req.query)
+      const url = await attachmentService.getDownloadUrl(attachment, { download: download === "true" })
       res.json({ url, expiresIn: 900 })
     },
 
