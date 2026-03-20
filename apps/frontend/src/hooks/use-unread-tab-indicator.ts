@@ -41,7 +41,11 @@ function setFavicon(href: string) {
 
 function getTotalUnread(bootstrap: WorkspaceBootstrap | undefined): number {
   if (!bootstrap?.unreadCounts) return 0
-  return Object.values(bootstrap.unreadCounts).reduce<number>((sum, count) => sum + count, 0)
+  const muted = new Set(bootstrap.mutedStreamIds ?? [])
+  return Object.entries(bootstrap.unreadCounts).reduce<number>(
+    (sum, [streamId, count]) => (muted.has(streamId) ? sum : sum + count),
+    0
+  )
 }
 
 function arraysEqual(a: readonly unknown[], b: readonly unknown[]): boolean {
