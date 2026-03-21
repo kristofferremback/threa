@@ -29,7 +29,7 @@ export function serializeSearchResult(result: SearchResult) {
     authorId: result.authorId,
     authorType: result.authorType,
     replyCount: result.replyCount,
-    editedAt: result.editedAt?.toISOString() ?? null,
+    ...(result.editedAt != null && { editedAt: result.editedAt.toISOString() }),
     createdAt: result.createdAt.toISOString(),
     rank: result.rank,
   }

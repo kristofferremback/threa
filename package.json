@@ -41,6 +41,8 @@
     "docker:build:backend": "docker build -f Dockerfile.backend -t threa-backend .",
     "docker:build:control-plane": "docker build -f Dockerfile.control-plane -t threa-control-plane .",
     "docker:build": "bun run docker:build:backend && bun run docker:build:control-plane",
+    "generate:api-docs": "bun apps/backend/scripts/generate-api-docs.ts",
+    "generate:api-docs:check": "bun apps/backend/scripts/generate-api-docs.ts --check",
     "infra:validate": "cd infra/aws && terraform validate"
   },
   "devDependencies": {
