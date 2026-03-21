@@ -27,7 +27,7 @@ import { encodeCursor, decodeCursor } from "./cursor"
 
 const PUBLIC_SEARCH_MAX_LIMIT = 50
 
-const publicSearchSchema = z.object({
+export const publicSearchSchema = z.object({
   query: z.string().min(1, "query is required"),
   semantic: z.boolean().optional().default(false),
   streams: z.array(z.string()).optional(),
@@ -38,7 +38,7 @@ const publicSearchSchema = z.object({
   limit: z.coerce.number().int().min(1).max(PUBLIC_SEARCH_MAX_LIMIT).optional().default(20),
 })
 
-const listStreamsSchema = z.object({
+export const listStreamsSchema = z.object({
   type: z
     .union([z.enum(STREAM_TYPES), z.array(z.enum(STREAM_TYPES))])
     .optional()
@@ -48,7 +48,7 @@ const listStreamsSchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional().default(50),
 })
 
-const listMessagesSchema = z
+export const listMessagesSchema = z
   .object({
     before: z.string().regex(/^\d+$/, "must be a numeric sequence").optional(),
     after: z.string().regex(/^\d+$/, "must be a numeric sequence").optional(),
@@ -58,21 +58,21 @@ const listMessagesSchema = z
     message: "Provide at most one of 'before' or 'after'",
   })
 
-const sendMessageSchema = z.object({
+export const sendMessageSchema = z.object({
   content: z.string().min(1, "content is required"),
   clientMessageId: z.string().max(128).optional(),
 })
 
-const updateMessageSchema = z.object({
+export const updateMessageSchema = z.object({
   content: z.string().min(1, "content is required"),
 })
 
-const listMembersSchema = z.object({
+export const listMembersSchema = z.object({
   after: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(200).optional().default(50),
 })
 
-const listUsersSchema = z.object({
+export const listUsersSchema = z.object({
   query: z.string().optional(),
   after: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(200).optional().default(50),

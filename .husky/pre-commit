@@ -1,3 +1,5 @@
 bunx lint-staged
 bun run lint
 bun run typecheck
+bun run generate:api-docs
+git diff --quiet docs/public-api/openapi.json 2>/dev/null || git add docs/public-api/openapi.json
