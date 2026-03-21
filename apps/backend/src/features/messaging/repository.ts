@@ -12,6 +12,7 @@ interface MessageRow {
   content_json: JSONContent
   content_markdown: string
   reply_count: number
+  client_message_id: string | null
   edited_at: Date | null
   deleted_at: Date | null
   created_at: Date
@@ -33,6 +34,7 @@ export interface Message {
   contentJson: JSONContent
   contentMarkdown: string
   replyCount: number
+  clientMessageId: string | null
   reactions: Record<string, string[]>
   editedAt: Date | null
   deletedAt: Date | null
@@ -60,6 +62,7 @@ function mapRowToMessage(row: MessageRow, reactions: Record<string, string[]> = 
     contentJson: row.content_json,
     contentMarkdown: row.content_markdown,
     replyCount: row.reply_count,
+    clientMessageId: row.client_message_id,
     reactions,
     editedAt: row.edited_at,
     deletedAt: row.deleted_at,
@@ -101,7 +104,7 @@ function aggregateReactionsByMessage(rows: ReactionRow[]): Map<string, Record<st
 
 const SELECT_FIELDS = `
   id, stream_id, sequence, author_id, author_type,
-  content_json, content_markdown, reply_count,
+  content_json, content_markdown, reply_count, client_message_id,
   edited_at, deleted_at, created_at
 `
 

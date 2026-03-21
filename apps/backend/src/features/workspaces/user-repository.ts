@@ -198,38 +198,41 @@ export const UserRepository = {
   async listByWorkspace(
     db: Querier,
     workspaceId: string,
-    filters?: { query?: string; limit?: number }
+    filters?: { query?: string; limit?: number; cursorJoinedAt?: Date; cursorId?: string }
   ): Promise<User[]> {
+    const limit = filters?.limit ?? 200
+
     if (filters?.query) {
       const pattern = `%${filters.query}%`
-      const limit = filters?.limit ?? 200
       const result = await db.query<UserRow>(sql`
         SELECT ${sql.raw(SELECT_FIELDS_WITH_ALIAS)}
         FROM users u
         WHERE u.workspace_id = ${workspaceId}
           AND (u.name ILIKE ${pattern} OR u.email ILIKE ${pattern})
-        ORDER BY u.joined_at
+        ORDER BY u.joined_at, u.id
         LIMIT ${limit}
       `)
       return result.rows.map(mapRowToUser)
     }
 
-    const limit = filters?.limit
-    if (limit !== undefined) {
+    if (filters?.cursorJoinedAt && filters?.cursorId) {
       const result = await db.query<UserRow>(sql`
         SELECT ${sql.raw(SELECT_FIELDS_WITH_ALIAS)}
         FROM users u
         WHERE u.workspace_id = ${workspaceId}
-        ORDER BY u.joined_at
+          AND (u.joined_at, u.id) > (${filters.cursorJoinedAt}, ${filters.cursorId})
+        ORDER BY u.joined_at, u.id
         LIMIT ${limit}
       `)
       return result.rows.map(mapRowToUser)
     }
+
     const result = await db.query<UserRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS_WITH_ALIAS)}
       FROM users u
       WHERE u.workspace_id = ${workspaceId}
-      ORDER BY u.joined_at
+      ORDER BY u.joined_at, u.id
+      LIMIT ${limit}
     `)
     return result.rows.map(mapRowToUser)
   },

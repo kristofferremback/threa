@@ -5,8 +5,15 @@ import type { SearchService } from "../search"
 import { serializeSearchResult } from "../search"
 import type { ApiKeyChannelService } from "../api-keys"
 import type { EventService } from "../messaging"
-import { StreamRepository } from "../streams"
+import {
+  StreamRepository,
+  StreamMemberRepository,
+  getEffectiveDisplayName,
+  type Stream,
+  type DisplayNameContext,
+} from "../streams"
 import { UserRepository } from "../workspaces"
+import { PersonaRepository } from "../agents"
 import { BotRepository, type Bot } from "./bot-repository"
 import { STREAM_TYPES, AuthorTypes } from "@threa/types"
 import type { Bot as WireBot } from "@threa/types"
@@ -16,6 +23,7 @@ import { parseMarkdown } from "@threa/prosemirror"
 import { botId } from "../../lib/id"
 import { withTransaction } from "../../db"
 import { OutboxRepository } from "../../lib/outbox"
+import { encodeCursor, decodeCursor } from "./cursor"
 
 const PUBLIC_SEARCH_MAX_LIMIT = 50
 
@@ -36,6 +44,7 @@ const listStreamsSchema = z.object({
     .optional()
     .transform((v) => (typeof v === "string" ? [v] : v)),
   query: z.string().optional(),
+  after: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(200).optional().default(50),
 })
 
@@ -51,34 +60,38 @@ const listMessagesSchema = z
 
 const sendMessageSchema = z.object({
   content: z.string().min(1, "content is required"),
+  clientMessageId: z.string().max(128).optional(),
 })
 
 const updateMessageSchema = z.object({
   content: z.string().min(1, "content is required"),
 })
 
-const listUsersSchema = z.object({
-  query: z.string().optional(),
+const listMembersSchema = z.object({
+  after: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(200).optional().default(50),
 })
 
-function serializeStream(stream: {
-  id: string
-  type: string
-  displayName: string | null
-  slug: string | null
-  description: string | null
-  visibility: string
-  createdAt: Date
-  archivedAt: Date | null
-}) {
+const listUsersSchema = z.object({
+  query: z.string().optional(),
+  after: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional().default(50),
+})
+
+function serializeStream(stream: Stream, context?: DisplayNameContext) {
+  const effective = getEffectiveDisplayName(stream, context)
+  const displayName = stream.type === "channel" ? `#${effective.displayName}` : effective.displayName
+
   return {
     id: stream.id,
     type: stream.type,
-    displayName: stream.type === "channel" && stream.slug ? `#${stream.slug}` : stream.displayName,
+    displayName,
     slug: stream.slug,
     description: stream.description,
     visibility: stream.visibility,
+    parentStreamId: stream.parentStreamId,
+    rootStreamId: stream.rootStreamId,
+    parentMessageId: stream.parentMessageId,
     createdAt: stream.createdAt.toISOString(),
     archivedAt: stream.archivedAt?.toISOString() ?? null,
   }
@@ -93,10 +106,11 @@ function serializeMessage(
     authorType: string
     contentMarkdown: string
     replyCount: number
+    clientMessageId?: string | null
     editedAt: Date | null
     createdAt: Date
   },
-  authorDisplayName?: string | null
+  opts?: { authorDisplayName?: string | null; threadStreamId?: string | null }
 ) {
   return {
     id: message.id,
@@ -104,9 +118,11 @@ function serializeMessage(
     sequence: message.sequence.toString(),
     authorId: message.authorId,
     authorType: message.authorType,
-    authorDisplayName: authorDisplayName ?? null,
+    authorDisplayName: opts?.authorDisplayName ?? null,
     content: message.contentMarkdown,
     replyCount: message.replyCount,
+    threadStreamId: opts?.threadStreamId ?? null,
+    clientMessageId: message.clientMessageId ?? null,
     editedAt: message.editedAt?.toISOString() ?? null,
     createdAt: message.createdAt.toISOString(),
   }
@@ -140,6 +156,69 @@ function serializeUser(user: {
     avatarUrl: user.avatarUrl,
     role: user.role,
   }
+}
+
+/**
+ * Batch-fetch parent streams for threads that need display name context.
+ * Only fetches when there are unnamed threads in the result set.
+ */
+async function resolveParentStreams(pool: Pool, streams: Stream[]): Promise<Map<string, Stream>> {
+  const parentIds = [
+    ...new Set(
+      streams
+        .filter((s) => s.type === "thread" && s.displayName === null && s.parentStreamId)
+        .map((s) => s.parentStreamId!)
+    ),
+  ]
+  if (parentIds.length === 0) return new Map()
+  const parents = await StreamRepository.findByIds(pool, parentIds)
+  return new Map(parents.map((p) => [p.id, p]))
+}
+
+/**
+ * Batch-resolve display names for message authors across all author types.
+ */
+async function resolveAuthorDisplayNames(
+  pool: Pool,
+  workspaceId: string,
+  messages: { authorId: string; authorType: string }[]
+): Promise<Map<string, string>> {
+  const nameMap = new Map<string, string>()
+  const byType = { user: new Set<string>(), bot: new Set<string>(), persona: new Set<string>() }
+
+  for (const m of messages) {
+    if (m.authorType === "user") byType.user.add(m.authorId)
+    else if (m.authorType === "bot") byType.bot.add(m.authorId)
+    else if (m.authorType === "persona") byType.persona.add(m.authorId)
+    // System messages: authorDisplayName stays null — clients use authorType to format
+  }
+
+  const fetches: Promise<void>[] = []
+
+  if (byType.user.size > 0) {
+    fetches.push(
+      UserRepository.findByIds(pool, workspaceId, [...byType.user]).then((users) => {
+        for (const u of users) nameMap.set(u.id, u.name)
+      })
+    )
+  }
+  if (byType.bot.size > 0) {
+    fetches.push(
+      BotRepository.findByIds(pool, [...byType.bot]).then((bots) => {
+        for (const b of bots) nameMap.set(b.id, b.name)
+      })
+    )
+  }
+  if (byType.persona.size > 0) {
+    fetches.push(
+      PersonaRepository.findByIds(pool, [...byType.persona]).then((personas) => {
+        for (const p of personas) nameMap.set(p.id, p.name)
+      })
+    )
+  }
+
+  await Promise.all(fetches)
+  return nameMap
 }
 
 export interface PublicApiDeps {
@@ -229,9 +308,14 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
         skipEmbedding: !semantic,
       })
 
-      res.json({
-        data: results.map(serializeSearchResult),
-      })
+      // Resolve author display names for search results
+      const authorNames = await resolveAuthorDisplayNames(pool, workspaceId, results)
+      const serialized = results.map((r) => ({
+        ...serializeSearchResult(r),
+        authorDisplayName: authorNames.get(r.authorId) ?? null,
+      }))
+
+      res.json({ data: serialized })
     },
 
     /**
@@ -248,20 +332,121 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
         })
       }
 
-      const { type, query, limit } = result.data
+      const { type, query, after: afterCursor, limit } = result.data
       const accessibleStreamIds = await getAccessibleStreamIds(req)
 
       if (accessibleStreamIds.length === 0) {
-        return res.json({ data: [] })
+        return res.json({ data: [], hasMore: false, cursor: null })
       }
+
+      // Cursor pagination disabled when query is provided (relevance ordering)
+      const cursor = !query && afterCursor ? decodeCursor(afterCursor) : undefined
 
       const streams = await StreamRepository.listByIds(pool, req.workspaceId!, accessibleStreamIds, {
         types: type,
         query,
-        limit,
+        limit: limit + 1,
+        cursorCreatedAt: cursor?.sortKey,
+        cursorId: cursor?.id,
       })
 
-      res.json({ data: streams.map(serializeStream) })
+      const hasMore = streams.length > limit
+      const page = hasMore ? streams.slice(0, limit) : streams
+
+      // Batch-fetch parent streams for unnamed threads to compute display names
+      const parentStreamMap = await resolveParentStreams(pool, page)
+
+      const lastStream = page[page.length - 1]
+      res.json({
+        data: page.map((s) => {
+          const parentStream = s.parentStreamId ? parentStreamMap.get(s.parentStreamId) : undefined
+          return serializeStream(s, parentStream ? { parentStream } : undefined)
+        }),
+        hasMore,
+        cursor: !query && lastStream ? encodeCursor(lastStream.createdAt, lastStream.id) : null,
+      })
+    },
+
+    /**
+     * Get a single stream by ID.
+     *
+     * GET /api/v1/workspaces/:workspaceId/streams/:streamId
+     */
+    async getStream(req: Request, res: Response) {
+      const streamId = req.params.streamId
+
+      await assertStreamAccessible(req, streamId)
+
+      const stream = await StreamRepository.findById(pool, streamId)
+      if (!stream || stream.archivedAt) {
+        throw new HttpError("Stream not found", { status: 404, code: "NOT_FOUND" })
+      }
+
+      // Resolve parent stream for unnamed thread display names
+      let context: DisplayNameContext | undefined
+      if (stream.type === "thread" && stream.displayName === null && stream.parentStreamId) {
+        const parent = await StreamRepository.findById(pool, stream.parentStreamId)
+        if (parent) context = { parentStream: parent }
+      }
+
+      res.json({ data: serializeStream(stream, context) })
+    },
+
+    /**
+     * List members of a stream.
+     *
+     * GET /api/v1/workspaces/:workspaceId/streams/:streamId/members
+     */
+    async listMembers(req: Request, res: Response) {
+      const streamId = req.params.streamId
+      const workspaceId = req.workspaceId!
+
+      const result = listMembersSchema.safeParse(req.query)
+      if (!result.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: z.flattenError(result.error).fieldErrors,
+        })
+      }
+
+      const { after: afterCursor, limit } = result.data
+
+      await assertStreamAccessible(req, streamId)
+
+      const cursor = afterCursor ? decodeCursor(afterCursor) : undefined
+
+      const members = await StreamMemberRepository.listPaginated(pool, streamId, {
+        limit: limit + 1,
+        cursorJoinedAt: cursor?.sortKey,
+        cursorMemberId: cursor?.id,
+      })
+
+      const hasMore = members.length > limit
+      const page = hasMore ? members.slice(0, limit) : members
+
+      const memberIds = page.map((m) => m.memberId)
+      const users = memberIds.length > 0 ? await UserRepository.findByIds(pool, workspaceId, memberIds) : []
+      const userMap = new Map(users.map((u) => [u.id, u]))
+
+      const data = page
+        .filter((m) => userMap.has(m.memberId))
+        .map((m) => {
+          const user = userMap.get(m.memberId)!
+          return {
+            userId: m.memberId,
+            name: user.name,
+            slug: user.slug,
+            avatarUrl: user.avatarUrl,
+            joinedAt: m.joinedAt.toISOString(),
+          }
+        })
+
+      const lastMember = page[page.length - 1]
+      res.json({
+        data,
+        hasMore,
+        cursor: lastMember ? encodeCursor(lastMember.joinedAt, lastMember.memberId) : null,
+      })
     },
 
     /**
@@ -300,14 +485,19 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
         page = after ? messages.slice(0, limit) : messages.slice(-limit)
       }
 
-      // Resolve bot display names for bot-authored messages
-      const botAuthorIds = [...new Set(page.filter((m) => m.authorType === "bot").map((m) => m.authorId))]
-      const bots = botAuthorIds.length > 0 ? await BotRepository.findByIds(pool, botAuthorIds) : []
-      const botNameMap = new Map(bots.map((b) => [b.id, b.name]))
+      // Resolve author display names and thread stream IDs
+      const pageMessageIds = page.map((m) => m.id)
+      const [authorNames, threadMap] = await Promise.all([
+        resolveAuthorDisplayNames(pool, req.workspaceId!, page),
+        StreamRepository.findThreadsForMessageIds(pool, streamId, pageMessageIds),
+      ])
 
       res.json({
         data: page.map((m) =>
-          serializeMessage(m, m.authorType === "bot" ? (botNameMap.get(m.authorId) ?? null) : null)
+          serializeMessage(m, {
+            authorDisplayName: authorNames.get(m.authorId) ?? null,
+            threadStreamId: threadMap.get(m.id) ?? null,
+          })
         ),
         hasMore,
       })
@@ -331,7 +521,7 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
         })
       }
 
-      const { content } = result.data
+      const { content, clientMessageId } = result.data
       const botName = apiKey.name
 
       // Verify stream access
@@ -381,9 +571,10 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
         authorType: AuthorTypes.BOT,
         contentJson,
         contentMarkdown,
+        clientMessageId,
       })
 
-      res.status(201).json({ data: serializeMessage(message, bot.name) })
+      res.status(201).json({ data: serializeMessage(message, { authorDisplayName: bot.name }) })
     },
 
     /**
@@ -424,7 +615,14 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
         throw new HttpError("Message not found or was deleted", { status: 404, code: "NOT_FOUND" })
       }
 
-      res.json({ data: serializeMessage(updated, bot.name) })
+      // Look up thread for this message
+      const thread = await StreamRepository.findByParentMessage(pool, existing.streamId, messageId)
+      res.json({
+        data: serializeMessage(updated, {
+          authorDisplayName: bot.name,
+          threadStreamId: thread?.id ?? null,
+        }),
+      })
     },
 
     /**
@@ -469,11 +667,27 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
         })
       }
 
-      const { query, limit } = result.data
+      const { query, after: afterCursor, limit } = result.data
 
-      const users = await UserRepository.listByWorkspace(pool, workspaceId, { query, limit })
+      // Cursor pagination disabled when query is provided (relevance ordering)
+      const cursor = !query && afterCursor ? decodeCursor(afterCursor) : undefined
 
-      res.json({ data: users.map(serializeUser) })
+      const users = await UserRepository.listByWorkspace(pool, workspaceId, {
+        query,
+        limit: limit + 1,
+        cursorJoinedAt: cursor?.sortKey,
+        cursorId: cursor?.id,
+      })
+
+      const hasMore = users.length > limit
+      const page = hasMore ? users.slice(0, limit) : users
+
+      const lastUser = page[page.length - 1]
+      res.json({
+        data: page.map(serializeUser),
+        hasMore,
+        cursor: !query && lastUser ? encodeCursor(lastUser.joinedAt, lastUser.id) : null,
+      })
     },
   }
 }
