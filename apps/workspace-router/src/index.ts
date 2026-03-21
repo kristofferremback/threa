@@ -36,20 +36,30 @@ const DEV_WORKSPACE_ROUTE_RE = /^\/api\/dev\/workspaces\/([^/]+)(?:\/.+)?$/
 /** Matches /api/workspaces/:workspaceId/config exactly */
 const CONFIG_ROUTE_RE = /^\/api\/workspaces\/([^/]+)\/config$/
 
+/** KV key for dynamic regions config (used by staging CI to register PR backends) */
+const REGIONS_CONFIG_KV_KEY = "__regions_config__"
+
 /** Cache parsed regions per REGIONS string (static per env binding) */
 let cachedRegionsRaw: string | null = null
 let cachedRegions: RegionsMap | null = null
 
-function getRegions(raw: string): RegionsMap {
+function getRegionsFromEnv(raw: string): RegionsMap {
   if (raw === cachedRegionsRaw && cachedRegions) return cachedRegions
   cachedRegions = parseRegions(raw)
   cachedRegionsRaw = raw
   return cachedRegions
 }
 
+/** Resolve regions map: prefer KV-stored config (for staging), fall back to env var */
+async function getRegions(envRegions: string, kv: KVNamespace): Promise<RegionsMap> {
+  const kvRegions = await kv.get(REGIONS_CONFIG_KV_KEY)
+  if (kvRegions) return parseRegions(kvRegions)
+  return getRegionsFromEnv(envRegions)
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const regions = getRegions(env.REGIONS)
+    const regions = await getRegions(env.REGIONS, env.WORKSPACE_REGIONS)
     const url = new URL(request.url)
     const path = url.pathname
 

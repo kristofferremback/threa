@@ -5,7 +5,7 @@ import {
   MutationCache,
 } from "@tanstack/react-query"
 import { ReactNode, useState } from "react"
-import { ApiError } from "@/api/client"
+import { ApiError, API_BASE } from "@/api/client"
 
 const AUTH_REDIRECT_KEY = "auth_redirect_count"
 const AUTH_REDIRECT_TIMESTAMP_KEY = "auth_redirect_ts"
@@ -32,7 +32,7 @@ function handleGlobalError(error: Error) {
     sessionStorage.setItem(AUTH_REDIRECT_TIMESTAMP_KEY, String(now))
 
     const currentPath = window.location.pathname + window.location.search
-    window.location.href = `/api/auth/login?redirect_to=${encodeURIComponent(currentPath)}`
+    window.location.href = `${API_BASE}/api/auth/login?redirect_to=${encodeURIComponent(currentPath)}`
   }
 }
 
