@@ -7,5 +7,5 @@ export {
   updateMessageSchema,
   listMembersSchema,
   listUsersSchema,
-} from "./handlers"
+} from "./schemas"
 export { BotRepository, type Bot } from "./bot-repository"

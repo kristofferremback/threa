@@ -5,47 +5,22 @@
     "version": "1.0.0",
     "description": "The Threa Public API lets you programmatically read and write messages, list streams, search, and more.\n\n## Authentication\n\nAll requests require a Bearer token in the `Authorization` header:\n\n```\nAuthorization: Bearer thr_your_api_key_here\n```\n\nAPI keys are created by **workspace admins** in the Threa app under **Settings > API Keys**.\nEach key is scoped to a workspace and granted specific permissions (scopes).\n\n## Scopes\n\nAPI keys are granted specific scopes that control access:\n\n- `messages:search` — Grants access to search messages in public streams in a workspace. Application level stream grants can extend permissions to private streams.\n- `streams:read` — Grants access to list and search accessible streams in a workspace.\n- `messages:read` — Grants access to read messages in accessible streams.\n- `messages:write` — Grants access to send, update, and delete messages in accessible streams.\n- `users:read` — Grants access to list and search workspace users.\n\n## Rate Limits\n\nRequests are rate-limited per workspace and per API key. Rate limit headers are included in responses.\n\n## Pagination\n\nList endpoints return paginated results with `hasMore` and `cursor` fields.\nPass the `cursor` value as the `after` query parameter to fetch the next page."
   },
-  "servers": [
-    {
-      "url": "https://{region}.threa.app",
-      "description": "Production (region-specific)",
-      "variables": {
-        "region": {
-          "default": "us",
-          "description": "Deployment region"
-        }
-      }
-    }
-  ],
-  "security": [
-    {
-      "apiKey": []
-    }
-  ],
+  "servers": [{ "url": "https://app.threa.io", "description": "Production" }],
+  "security": [{ "apiKey": [] }],
   "paths": {
     "/api/v1/workspaces/{workspaceId}/messages/search": {
       "post": {
         "operationId": "searchMessages",
         "summary": "Search messages",
-        "tags": [
-          "Messages"
-        ],
+        "tags": ["Messages"],
         "description": "Full-text and optional semantic search across accessible streams.",
-        "security": [
-          {
-            "apiKey": [
-              "messages:search"
-            ]
-          }
-        ],
+        "security": [{ "apiKey": ["messages:search"] }],
         "parameters": [
           {
             "name": "workspaceId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Workspace ID (prefixed ULID)"
           }
         ],
@@ -57,58 +32,19 @@
                 "$schema": "https://json-schema.org/draft/2020-12/schema",
                 "type": "object",
                 "properties": {
-                  "query": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "semantic": {
-                    "default": false,
-                    "type": "boolean"
-                  },
-                  "streams": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  "from": {
-                    "type": "string"
-                  },
+                  "query": { "type": "string", "minLength": 1 },
+                  "semantic": { "default": false, "type": "boolean" },
+                  "streams": { "type": "array", "items": { "type": "string" } },
+                  "from": { "type": "string" },
                   "type": {
                     "type": "array",
-                    "items": {
-                      "type": "string",
-                      "enum": [
-                        "scratchpad",
-                        "channel",
-                        "dm",
-                        "thread",
-                        "system"
-                      ]
-                    }
+                    "items": { "type": "string", "enum": ["scratchpad", "channel", "dm", "thread", "system"] }
                   },
-                  "before": {
-                    "type": "string",
-                    "format": "date-time",
-                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-                  },
-                  "after": {
-                    "type": "string",
-                    "format": "date-time",
-                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-                  },
-                  "limit": {
-                    "default": 20,
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 50
-                  }
+                  "before": { "type": "string", "format": "date-time" },
+                  "after": { "type": "string", "format": "date-time" },
+                  "limit": { "default": 20, "type": "integer", "minimum": 1, "maximum": 50 }
                 },
-                "required": [
-                  "query",
-                  "semantic",
-                  "limit"
-                ],
+                "required": ["query", "semantic", "limit"],
                 "additionalProperties": false
               }
             }
@@ -128,66 +64,21 @@
                       "items": {
                         "type": "object",
                         "properties": {
-                          "id": {
-                            "type": "string"
-                          },
-                          "streamId": {
-                            "type": "string"
-                          },
-                          "sequence": {
-                            "type": "string",
-                            "description": "Numeric sequence as string"
-                          },
-                          "content": {
-                            "type": "string"
-                          },
-                          "authorId": {
-                            "type": "string"
-                          },
-                          "authorType": {
-                            "type": "string",
-                            "enum": [
-                              "user",
-                              "persona",
-                              "system",
-                              "bot"
-                            ]
-                          },
-                          "authorDisplayName": {
-                            "anyOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ]
-                          },
+                          "id": { "type": "string" },
+                          "streamId": { "type": "string" },
+                          "sequence": { "type": "string", "description": "Numeric sequence as string" },
+                          "content": { "type": "string" },
+                          "authorId": { "type": "string" },
+                          "authorType": { "type": "string", "enum": ["user", "persona", "system", "bot"] },
+                          "authorDisplayName": { "type": "string" },
                           "replyCount": {
                             "type": "integer",
                             "minimum": -9007199254740991,
                             "maximum": 9007199254740991
                           },
-                          "editedAt": {
-                            "anyOf": [
-                              {
-                                "type": "string",
-                                "format": "date-time",
-                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ]
-                          },
-                          "createdAt": {
-                            "type": "string",
-                            "format": "date-time",
-                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-                          },
-                          "rank": {
-                            "type": "number"
-                          }
+                          "editedAt": { "type": "string", "format": "date-time" },
+                          "createdAt": { "type": "string", "format": "date-time" },
+                          "rank": { "type": "number" }
                         },
                         "required": [
                           "id",
@@ -196,9 +87,7 @@
                           "content",
                           "authorId",
                           "authorType",
-                          "authorDisplayName",
                           "replyCount",
-                          "editedAt",
                           "createdAt",
                           "rank"
                         ],
@@ -206,9 +95,7 @@
                       }
                     }
                   },
-                  "required": [
-                    "data"
-                  ],
+                  "required": ["data"],
                   "additionalProperties": false
                 }
               }
@@ -222,36 +109,21 @@
                   "$schema": "https://json-schema.org/draft/2020-12/schema",
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
-                    },
+                    "error": { "type": "string" },
                     "details": {
                       "type": "object",
-                      "propertyNames": {
-                        "type": "string"
-                      },
-                      "additionalProperties": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      }
+                      "propertyNames": { "type": "string" },
+                      "additionalProperties": { "type": "array", "items": { "type": "string" } }
                     }
                   },
-                  "required": [
-                    "error"
-                  ],
+                  "required": ["error"],
                   "additionalProperties": false
                 }
               }
             }
           },
-          "401": {
-            "description": "Missing or invalid API key"
-          },
-          "403": {
-            "description": "Insufficient permissions or stream not accessible"
-          }
+          "401": { "description": "Missing or invalid API key" },
+          "403": { "description": "Insufficient permissions or stream not accessible" }
         }
       }
     },
@@ -259,59 +131,25 @@
       "get": {
         "operationId": "listStreams",
         "summary": "List streams",
-        "tags": [
-          "Streams"
-        ],
+        "tags": ["Streams"],
         "description": "List streams accessible to this API key, with optional type and text filters.",
-        "security": [
-          {
-            "apiKey": [
-              "streams:read"
-            ]
-          }
-        ],
+        "security": [{ "apiKey": ["streams:read"] }],
         "parameters": [
           {
             "name": "workspaceId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Workspace ID (prefixed ULID)"
           },
-          {
-            "name": "type",
-            "in": "query",
-            "required": true,
-            "schema": {}
-          },
-          {
-            "name": "query",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "after",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
+          { "name": "type", "in": "query", "required": true, "schema": {} },
+          { "name": "query", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "after", "in": "query", "required": false, "schema": { "type": "string" } },
           {
             "name": "limit",
             "in": "query",
             "required": true,
-            "schema": {
-              "default": 50,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 200
-            }
+            "schema": { "default": 50, "type": "integer", "minimum": 1, "maximum": 200 }
           }
         ],
         "responses": {
@@ -328,128 +166,26 @@
                       "items": {
                         "type": "object",
                         "properties": {
-                          "id": {
-                            "type": "string"
-                          },
-                          "type": {
-                            "type": "string",
-                            "enum": [
-                              "scratchpad",
-                              "channel",
-                              "dm",
-                              "thread",
-                              "system"
-                            ]
-                          },
-                          "displayName": {
-                            "type": "string"
-                          },
-                          "slug": {
-                            "anyOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ]
-                          },
-                          "description": {
-                            "anyOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ]
-                          },
-                          "visibility": {
-                            "type": "string"
-                          },
-                          "parentStreamId": {
-                            "anyOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ]
-                          },
-                          "rootStreamId": {
-                            "anyOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ]
-                          },
-                          "parentMessageId": {
-                            "anyOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ]
-                          },
-                          "createdAt": {
-                            "type": "string",
-                            "format": "date-time",
-                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-                          },
-                          "archivedAt": {
-                            "anyOf": [
-                              {
-                                "type": "string",
-                                "format": "date-time",
-                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ]
-                          }
+                          "id": { "type": "string" },
+                          "type": { "type": "string", "enum": ["scratchpad", "channel", "dm", "thread", "system"] },
+                          "displayName": { "type": "string" },
+                          "slug": { "type": "string" },
+                          "description": { "type": "string" },
+                          "visibility": { "type": "string" },
+                          "parentStreamId": { "type": "string" },
+                          "rootStreamId": { "type": "string" },
+                          "parentMessageId": { "type": "string" },
+                          "createdAt": { "type": "string", "format": "date-time" },
+                          "archivedAt": { "type": "string", "format": "date-time" }
                         },
-                        "required": [
-                          "id",
-                          "type",
-                          "displayName",
-                          "slug",
-                          "description",
-                          "visibility",
-                          "parentStreamId",
-                          "rootStreamId",
-                          "parentMessageId",
-                          "createdAt",
-                          "archivedAt"
-                        ],
+                        "required": ["id", "type", "displayName", "visibility", "createdAt"],
                         "additionalProperties": false
                       }
                     },
-                    "hasMore": {
-                      "type": "boolean"
-                    },
-                    "cursor": {
-                      "anyOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    }
+                    "hasMore": { "type": "boolean" },
+                    "cursor": { "anyOf": [{ "type": "string" }, { "type": "null" }] }
                   },
-                  "required": [
-                    "data",
-                    "hasMore",
-                    "cursor"
-                  ],
+                  "required": ["data", "hasMore", "cursor"],
                   "additionalProperties": false
                 }
               }
@@ -463,36 +199,21 @@
                   "$schema": "https://json-schema.org/draft/2020-12/schema",
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
-                    },
+                    "error": { "type": "string" },
                     "details": {
                       "type": "object",
-                      "propertyNames": {
-                        "type": "string"
-                      },
-                      "additionalProperties": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      }
+                      "propertyNames": { "type": "string" },
+                      "additionalProperties": { "type": "array", "items": { "type": "string" } }
                     }
                   },
-                  "required": [
-                    "error"
-                  ],
+                  "required": ["error"],
                   "additionalProperties": false
                 }
               }
             }
           },
-          "401": {
-            "description": "Missing or invalid API key"
-          },
-          "403": {
-            "description": "Insufficient permissions or stream not accessible"
-          }
+          "401": { "description": "Missing or invalid API key" },
+          "403": { "description": "Insufficient permissions or stream not accessible" }
         }
       }
     },
@@ -500,33 +221,21 @@
       "get": {
         "operationId": "getStream",
         "summary": "Get a stream",
-        "tags": [
-          "Streams"
-        ],
-        "security": [
-          {
-            "apiKey": [
-              "streams:read"
-            ]
-          }
-        ],
+        "tags": ["Streams"],
+        "security": [{ "apiKey": ["streams:read"] }],
         "parameters": [
           {
             "name": "workspaceId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Workspace ID (prefixed ULID)"
           },
           {
             "name": "streamId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Stream ID (prefixed ULID)"
           }
         ],
@@ -542,112 +251,23 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "id": {
-                          "type": "string"
-                        },
-                        "type": {
-                          "type": "string",
-                          "enum": [
-                            "scratchpad",
-                            "channel",
-                            "dm",
-                            "thread",
-                            "system"
-                          ]
-                        },
-                        "displayName": {
-                          "type": "string"
-                        },
-                        "slug": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "description": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "visibility": {
-                          "type": "string"
-                        },
-                        "parentStreamId": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "rootStreamId": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "parentMessageId": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "createdAt": {
-                          "type": "string",
-                          "format": "date-time",
-                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-                        },
-                        "archivedAt": {
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "format": "date-time",
-                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        }
+                        "id": { "type": "string" },
+                        "type": { "type": "string", "enum": ["scratchpad", "channel", "dm", "thread", "system"] },
+                        "displayName": { "type": "string" },
+                        "slug": { "type": "string" },
+                        "description": { "type": "string" },
+                        "visibility": { "type": "string" },
+                        "parentStreamId": { "type": "string" },
+                        "rootStreamId": { "type": "string" },
+                        "parentMessageId": { "type": "string" },
+                        "createdAt": { "type": "string", "format": "date-time" },
+                        "archivedAt": { "type": "string", "format": "date-time" }
                       },
-                      "required": [
-                        "id",
-                        "type",
-                        "displayName",
-                        "slug",
-                        "description",
-                        "visibility",
-                        "parentStreamId",
-                        "rootStreamId",
-                        "parentMessageId",
-                        "createdAt",
-                        "archivedAt"
-                      ],
+                      "required": ["id", "type", "displayName", "visibility", "createdAt"],
                       "additionalProperties": false
                     }
                   },
-                  "required": [
-                    "data"
-                  ],
+                  "required": ["data"],
                   "additionalProperties": false
                 }
               }
@@ -661,39 +281,22 @@
                   "$schema": "https://json-schema.org/draft/2020-12/schema",
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
-                    },
+                    "error": { "type": "string" },
                     "details": {
                       "type": "object",
-                      "propertyNames": {
-                        "type": "string"
-                      },
-                      "additionalProperties": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      }
+                      "propertyNames": { "type": "string" },
+                      "additionalProperties": { "type": "array", "items": { "type": "string" } }
                     }
                   },
-                  "required": [
-                    "error"
-                  ],
+                  "required": ["error"],
                   "additionalProperties": false
                 }
               }
             }
           },
-          "401": {
-            "description": "Missing or invalid API key"
-          },
-          "403": {
-            "description": "Insufficient permissions or stream not accessible"
-          },
-          "404": {
-            "description": "Resource not found"
-          }
+          "401": { "description": "Missing or invalid API key" },
+          "403": { "description": "Insufficient permissions or stream not accessible" },
+          "404": { "description": "Resource not found" }
         }
       }
     },
@@ -701,53 +304,29 @@
       "get": {
         "operationId": "listMembers",
         "summary": "List stream members",
-        "tags": [
-          "Streams"
-        ],
-        "security": [
-          {
-            "apiKey": [
-              "streams:read"
-            ]
-          }
-        ],
+        "tags": ["Streams"],
+        "security": [{ "apiKey": ["streams:read"] }],
         "parameters": [
           {
             "name": "workspaceId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Workspace ID (prefixed ULID)"
           },
           {
             "name": "streamId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Stream ID (prefixed ULID)"
           },
-          {
-            "name": "after",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
+          { "name": "after", "in": "query", "required": false, "schema": { "type": "string" } },
           {
             "name": "limit",
             "in": "query",
             "required": true,
-            "schema": {
-              "default": 50,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 200
-            }
+            "schema": { "default": 50, "type": "integer", "minimum": 1, "maximum": 200 }
           }
         ],
         "responses": {
@@ -764,60 +343,20 @@
                       "items": {
                         "type": "object",
                         "properties": {
-                          "userId": {
-                            "type": "string"
-                          },
-                          "name": {
-                            "type": "string"
-                          },
-                          "slug": {
-                            "type": "string"
-                          },
-                          "avatarUrl": {
-                            "anyOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ]
-                          },
-                          "joinedAt": {
-                            "type": "string",
-                            "format": "date-time",
-                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-                          }
+                          "userId": { "type": "string" },
+                          "name": { "type": "string" },
+                          "slug": { "type": "string" },
+                          "avatarUrl": { "type": "string" },
+                          "joinedAt": { "type": "string", "format": "date-time" }
                         },
-                        "required": [
-                          "userId",
-                          "name",
-                          "slug",
-                          "avatarUrl",
-                          "joinedAt"
-                        ],
+                        "required": ["userId", "name", "slug", "joinedAt"],
                         "additionalProperties": false
                       }
                     },
-                    "hasMore": {
-                      "type": "boolean"
-                    },
-                    "cursor": {
-                      "anyOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    }
+                    "hasMore": { "type": "boolean" },
+                    "cursor": { "anyOf": [{ "type": "string" }, { "type": "null" }] }
                   },
-                  "required": [
-                    "data",
-                    "hasMore",
-                    "cursor"
-                  ],
+                  "required": ["data", "hasMore", "cursor"],
                   "additionalProperties": false
                 }
               }
@@ -831,36 +370,21 @@
                   "$schema": "https://json-schema.org/draft/2020-12/schema",
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
-                    },
+                    "error": { "type": "string" },
                     "details": {
                       "type": "object",
-                      "propertyNames": {
-                        "type": "string"
-                      },
-                      "additionalProperties": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      }
+                      "propertyNames": { "type": "string" },
+                      "additionalProperties": { "type": "array", "items": { "type": "string" } }
                     }
                   },
-                  "required": [
-                    "error"
-                  ],
+                  "required": ["error"],
                   "additionalProperties": false
                 }
               }
             }
           },
-          "401": {
-            "description": "Missing or invalid API key"
-          },
-          "403": {
-            "description": "Insufficient permissions or stream not accessible"
-          }
+          "401": { "description": "Missing or invalid API key" },
+          "403": { "description": "Insufficient permissions or stream not accessible" }
         }
       }
     },
@@ -868,64 +392,31 @@
       "get": {
         "operationId": "listMessages",
         "summary": "List messages in a stream",
-        "tags": [
-          "Messages"
-        ],
+        "tags": ["Messages"],
         "description": "Cursor-paginated message list. Use `before` or `after` sequence numbers.",
-        "security": [
-          {
-            "apiKey": [
-              "messages:read"
-            ]
-          }
-        ],
+        "security": [{ "apiKey": ["messages:read"] }],
         "parameters": [
           {
             "name": "workspaceId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Workspace ID (prefixed ULID)"
           },
           {
             "name": "streamId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Stream ID (prefixed ULID)"
           },
-          {
-            "name": "before",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "pattern": "^\\d+$"
-            }
-          },
-          {
-            "name": "after",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "pattern": "^\\d+$"
-            }
-          },
+          { "name": "before", "in": "query", "required": false, "schema": { "type": "string", "pattern": "^\\d+$" } },
+          { "name": "after", "in": "query", "required": false, "schema": { "type": "string", "pattern": "^\\d+$" } },
           {
             "name": "limit",
             "in": "query",
             "required": true,
-            "schema": {
-              "default": 50,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 100
-            }
+            "schema": { "default": 50, "type": "integer", "minimum": 1, "maximum": 100 }
           }
         ],
         "responses": {
@@ -942,83 +433,22 @@
                       "items": {
                         "type": "object",
                         "properties": {
-                          "id": {
-                            "type": "string"
-                          },
-                          "streamId": {
-                            "type": "string"
-                          },
-                          "sequence": {
-                            "type": "string",
-                            "description": "Numeric sequence as string"
-                          },
-                          "authorId": {
-                            "type": "string"
-                          },
-                          "authorType": {
-                            "type": "string",
-                            "enum": [
-                              "user",
-                              "persona",
-                              "system",
-                              "bot"
-                            ]
-                          },
-                          "authorDisplayName": {
-                            "anyOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ]
-                          },
-                          "content": {
-                            "type": "string"
-                          },
+                          "id": { "type": "string" },
+                          "streamId": { "type": "string" },
+                          "sequence": { "type": "string", "description": "Numeric sequence as string" },
+                          "authorId": { "type": "string" },
+                          "authorType": { "type": "string", "enum": ["user", "persona", "system", "bot"] },
+                          "authorDisplayName": { "type": "string" },
+                          "content": { "type": "string" },
                           "replyCount": {
                             "type": "integer",
                             "minimum": -9007199254740991,
                             "maximum": 9007199254740991
                           },
-                          "threadStreamId": {
-                            "anyOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ]
-                          },
-                          "clientMessageId": {
-                            "anyOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ]
-                          },
-                          "editedAt": {
-                            "anyOf": [
-                              {
-                                "type": "string",
-                                "format": "date-time",
-                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ]
-                          },
-                          "createdAt": {
-                            "type": "string",
-                            "format": "date-time",
-                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-                          }
+                          "threadStreamId": { "type": "string" },
+                          "clientMessageId": { "type": "string" },
+                          "editedAt": { "type": "string", "format": "date-time" },
+                          "createdAt": { "type": "string", "format": "date-time" }
                         },
                         "required": [
                           "id",
@@ -1026,25 +456,16 @@
                           "sequence",
                           "authorId",
                           "authorType",
-                          "authorDisplayName",
                           "content",
                           "replyCount",
-                          "threadStreamId",
-                          "clientMessageId",
-                          "editedAt",
                           "createdAt"
                         ],
                         "additionalProperties": false
                       }
                     },
-                    "hasMore": {
-                      "type": "boolean"
-                    }
+                    "hasMore": { "type": "boolean" }
                   },
-                  "required": [
-                    "data",
-                    "hasMore"
-                  ],
+                  "required": ["data", "hasMore"],
                   "additionalProperties": false
                 }
               }
@@ -1058,69 +479,42 @@
                   "$schema": "https://json-schema.org/draft/2020-12/schema",
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
-                    },
+                    "error": { "type": "string" },
                     "details": {
                       "type": "object",
-                      "propertyNames": {
-                        "type": "string"
-                      },
-                      "additionalProperties": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      }
+                      "propertyNames": { "type": "string" },
+                      "additionalProperties": { "type": "array", "items": { "type": "string" } }
                     }
                   },
-                  "required": [
-                    "error"
-                  ],
+                  "required": ["error"],
                   "additionalProperties": false
                 }
               }
             }
           },
-          "401": {
-            "description": "Missing or invalid API key"
-          },
-          "403": {
-            "description": "Insufficient permissions or stream not accessible"
-          }
+          "401": { "description": "Missing or invalid API key" },
+          "403": { "description": "Insufficient permissions or stream not accessible" }
         }
       },
       "post": {
         "operationId": "sendMessage",
         "summary": "Send a message",
-        "tags": [
-          "Messages"
-        ],
+        "tags": ["Messages"],
         "description": "Send a message as a bot. The bot identity is derived from the API key name. Messages are sent as Markdown.",
-        "security": [
-          {
-            "apiKey": [
-              "messages:write"
-            ]
-          }
-        ],
+        "security": [{ "apiKey": ["messages:write"] }],
         "parameters": [
           {
             "name": "workspaceId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Workspace ID (prefixed ULID)"
           },
           {
             "name": "streamId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Stream ID (prefixed ULID)"
           }
         ],
@@ -1132,18 +526,10 @@
                 "$schema": "https://json-schema.org/draft/2020-12/schema",
                 "type": "object",
                 "properties": {
-                  "content": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "clientMessageId": {
-                    "type": "string",
-                    "maxLength": 128
-                  }
+                  "content": { "type": "string", "minLength": 1 },
+                  "clientMessageId": { "type": "string", "maxLength": 128 }
                 },
-                "required": [
-                  "content"
-                ],
+                "required": ["content"],
                 "additionalProperties": false
               }
             }
@@ -1161,83 +547,18 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "id": {
-                          "type": "string"
-                        },
-                        "streamId": {
-                          "type": "string"
-                        },
-                        "sequence": {
-                          "type": "string",
-                          "description": "Numeric sequence as string"
-                        },
-                        "authorId": {
-                          "type": "string"
-                        },
-                        "authorType": {
-                          "type": "string",
-                          "enum": [
-                            "user",
-                            "persona",
-                            "system",
-                            "bot"
-                          ]
-                        },
-                        "authorDisplayName": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "content": {
-                          "type": "string"
-                        },
-                        "replyCount": {
-                          "type": "integer",
-                          "minimum": -9007199254740991,
-                          "maximum": 9007199254740991
-                        },
-                        "threadStreamId": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "clientMessageId": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "editedAt": {
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "format": "date-time",
-                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "createdAt": {
-                          "type": "string",
-                          "format": "date-time",
-                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-                        }
+                        "id": { "type": "string" },
+                        "streamId": { "type": "string" },
+                        "sequence": { "type": "string", "description": "Numeric sequence as string" },
+                        "authorId": { "type": "string" },
+                        "authorType": { "type": "string", "enum": ["user", "persona", "system", "bot"] },
+                        "authorDisplayName": { "type": "string" },
+                        "content": { "type": "string" },
+                        "replyCount": { "type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991 },
+                        "threadStreamId": { "type": "string" },
+                        "clientMessageId": { "type": "string" },
+                        "editedAt": { "type": "string", "format": "date-time" },
+                        "createdAt": { "type": "string", "format": "date-time" }
                       },
                       "required": [
                         "id",
@@ -1245,20 +566,14 @@
                         "sequence",
                         "authorId",
                         "authorType",
-                        "authorDisplayName",
                         "content",
                         "replyCount",
-                        "threadStreamId",
-                        "clientMessageId",
-                        "editedAt",
                         "createdAt"
                       ],
                       "additionalProperties": false
                     }
                   },
-                  "required": [
-                    "data"
-                  ],
+                  "required": ["data"],
                   "additionalProperties": false
                 }
               }
@@ -1272,36 +587,21 @@
                   "$schema": "https://json-schema.org/draft/2020-12/schema",
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
-                    },
+                    "error": { "type": "string" },
                     "details": {
                       "type": "object",
-                      "propertyNames": {
-                        "type": "string"
-                      },
-                      "additionalProperties": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      }
+                      "propertyNames": { "type": "string" },
+                      "additionalProperties": { "type": "array", "items": { "type": "string" } }
                     }
                   },
-                  "required": [
-                    "error"
-                  ],
+                  "required": ["error"],
                   "additionalProperties": false
                 }
               }
             }
           },
-          "401": {
-            "description": "Missing or invalid API key"
-          },
-          "403": {
-            "description": "Insufficient permissions or stream not accessible"
-          }
+          "401": { "description": "Missing or invalid API key" },
+          "403": { "description": "Insufficient permissions or stream not accessible" }
         }
       }
     },
@@ -1309,34 +609,22 @@
       "patch": {
         "operationId": "updateMessage",
         "summary": "Update a message",
-        "tags": [
-          "Messages"
-        ],
+        "tags": ["Messages"],
         "description": "Update a message previously sent by this API key's bot.",
-        "security": [
-          {
-            "apiKey": [
-              "messages:write"
-            ]
-          }
-        ],
+        "security": [{ "apiKey": ["messages:write"] }],
         "parameters": [
           {
             "name": "workspaceId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Workspace ID (prefixed ULID)"
           },
           {
             "name": "messageId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Message ID (prefixed ULID)"
           }
         ],
@@ -1347,15 +635,8 @@
               "schema": {
                 "$schema": "https://json-schema.org/draft/2020-12/schema",
                 "type": "object",
-                "properties": {
-                  "content": {
-                    "type": "string",
-                    "minLength": 1
-                  }
-                },
-                "required": [
-                  "content"
-                ],
+                "properties": { "content": { "type": "string", "minLength": 1 } },
+                "required": ["content"],
                 "additionalProperties": false
               }
             }
@@ -1373,83 +654,18 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "id": {
-                          "type": "string"
-                        },
-                        "streamId": {
-                          "type": "string"
-                        },
-                        "sequence": {
-                          "type": "string",
-                          "description": "Numeric sequence as string"
-                        },
-                        "authorId": {
-                          "type": "string"
-                        },
-                        "authorType": {
-                          "type": "string",
-                          "enum": [
-                            "user",
-                            "persona",
-                            "system",
-                            "bot"
-                          ]
-                        },
-                        "authorDisplayName": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "content": {
-                          "type": "string"
-                        },
-                        "replyCount": {
-                          "type": "integer",
-                          "minimum": -9007199254740991,
-                          "maximum": 9007199254740991
-                        },
-                        "threadStreamId": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "clientMessageId": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "editedAt": {
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "format": "date-time",
-                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "createdAt": {
-                          "type": "string",
-                          "format": "date-time",
-                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-                        }
+                        "id": { "type": "string" },
+                        "streamId": { "type": "string" },
+                        "sequence": { "type": "string", "description": "Numeric sequence as string" },
+                        "authorId": { "type": "string" },
+                        "authorType": { "type": "string", "enum": ["user", "persona", "system", "bot"] },
+                        "authorDisplayName": { "type": "string" },
+                        "content": { "type": "string" },
+                        "replyCount": { "type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991 },
+                        "threadStreamId": { "type": "string" },
+                        "clientMessageId": { "type": "string" },
+                        "editedAt": { "type": "string", "format": "date-time" },
+                        "createdAt": { "type": "string", "format": "date-time" }
                       },
                       "required": [
                         "id",
@@ -1457,20 +673,14 @@
                         "sequence",
                         "authorId",
                         "authorType",
-                        "authorDisplayName",
                         "content",
                         "replyCount",
-                        "threadStreamId",
-                        "clientMessageId",
-                        "editedAt",
                         "createdAt"
                       ],
                       "additionalProperties": false
                     }
                   },
-                  "required": [
-                    "data"
-                  ],
+                  "required": ["data"],
                   "additionalProperties": false
                 }
               }
@@ -1484,79 +694,48 @@
                   "$schema": "https://json-schema.org/draft/2020-12/schema",
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
-                    },
+                    "error": { "type": "string" },
                     "details": {
                       "type": "object",
-                      "propertyNames": {
-                        "type": "string"
-                      },
-                      "additionalProperties": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      }
+                      "propertyNames": { "type": "string" },
+                      "additionalProperties": { "type": "array", "items": { "type": "string" } }
                     }
                   },
-                  "required": [
-                    "error"
-                  ],
+                  "required": ["error"],
                   "additionalProperties": false
                 }
               }
             }
           },
-          "401": {
-            "description": "Missing or invalid API key"
-          },
-          "403": {
-            "description": "Insufficient permissions or stream not accessible"
-          },
-          "404": {
-            "description": "Resource not found"
-          }
+          "401": { "description": "Missing or invalid API key" },
+          "403": { "description": "Insufficient permissions or stream not accessible" },
+          "404": { "description": "Resource not found" }
         }
       },
       "delete": {
         "operationId": "deleteMessage",
         "summary": "Delete a message",
-        "tags": [
-          "Messages"
-        ],
+        "tags": ["Messages"],
         "description": "Delete a message previously sent by this API key's bot.",
-        "security": [
-          {
-            "apiKey": [
-              "messages:write"
-            ]
-          }
-        ],
+        "security": [{ "apiKey": ["messages:write"] }],
         "parameters": [
           {
             "name": "workspaceId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Workspace ID (prefixed ULID)"
           },
           {
             "name": "messageId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Message ID (prefixed ULID)"
           }
         ],
         "responses": {
-          "204": {
-            "description": "No content"
-          },
+          "204": { "description": "No content" },
           "400": {
             "description": "Validation error",
             "content": {
@@ -1565,39 +744,22 @@
                   "$schema": "https://json-schema.org/draft/2020-12/schema",
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
-                    },
+                    "error": { "type": "string" },
                     "details": {
                       "type": "object",
-                      "propertyNames": {
-                        "type": "string"
-                      },
-                      "additionalProperties": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      }
+                      "propertyNames": { "type": "string" },
+                      "additionalProperties": { "type": "array", "items": { "type": "string" } }
                     }
                   },
-                  "required": [
-                    "error"
-                  ],
+                  "required": ["error"],
                   "additionalProperties": false
                 }
               }
             }
           },
-          "401": {
-            "description": "Missing or invalid API key"
-          },
-          "403": {
-            "description": "Insufficient permissions or stream not accessible"
-          },
-          "404": {
-            "description": "Resource not found"
-          }
+          "401": { "description": "Missing or invalid API key" },
+          "403": { "description": "Insufficient permissions or stream not accessible" },
+          "404": { "description": "Resource not found" }
         }
       }
     },
@@ -1605,53 +767,24 @@
       "get": {
         "operationId": "listUsers",
         "summary": "List workspace users",
-        "tags": [
-          "Users"
-        ],
+        "tags": ["Users"],
         "description": "List users in the workspace with optional text search and cursor pagination.",
-        "security": [
-          {
-            "apiKey": [
-              "users:read"
-            ]
-          }
-        ],
+        "security": [{ "apiKey": ["users:read"] }],
         "parameters": [
           {
             "name": "workspaceId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Workspace ID (prefixed ULID)"
           },
-          {
-            "name": "query",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "after",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
+          { "name": "query", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "after", "in": "query", "required": false, "schema": { "type": "string" } },
           {
             "name": "limit",
             "in": "query",
             "required": true,
-            "schema": {
-              "default": 50,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 200
-            }
+            "schema": { "default": 50, "type": "integer", "minimum": 1, "maximum": 200 }
           }
         ],
         "responses": {
@@ -1668,62 +801,21 @@
                       "items": {
                         "type": "object",
                         "properties": {
-                          "id": {
-                            "type": "string"
-                          },
-                          "name": {
-                            "type": "string"
-                          },
-                          "slug": {
-                            "type": "string"
-                          },
-                          "email": {
-                            "type": "string"
-                          },
-                          "avatarUrl": {
-                            "anyOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ]
-                          },
-                          "role": {
-                            "type": "string"
-                          }
+                          "id": { "type": "string" },
+                          "name": { "type": "string" },
+                          "slug": { "type": "string" },
+                          "email": { "type": "string" },
+                          "avatarUrl": { "type": "string" },
+                          "role": { "type": "string" }
                         },
-                        "required": [
-                          "id",
-                          "name",
-                          "slug",
-                          "email",
-                          "avatarUrl",
-                          "role"
-                        ],
+                        "required": ["id", "name", "slug", "email", "role"],
                         "additionalProperties": false
                       }
                     },
-                    "hasMore": {
-                      "type": "boolean"
-                    },
-                    "cursor": {
-                      "anyOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    }
+                    "hasMore": { "type": "boolean" },
+                    "cursor": { "anyOf": [{ "type": "string" }, { "type": "null" }] }
                   },
-                  "required": [
-                    "data",
-                    "hasMore",
-                    "cursor"
-                  ],
+                  "required": ["data", "hasMore", "cursor"],
                   "additionalProperties": false
                 }
               }
@@ -1737,36 +829,21 @@
                   "$schema": "https://json-schema.org/draft/2020-12/schema",
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
-                    },
+                    "error": { "type": "string" },
                     "details": {
                       "type": "object",
-                      "propertyNames": {
-                        "type": "string"
-                      },
-                      "additionalProperties": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      }
+                      "propertyNames": { "type": "string" },
+                      "additionalProperties": { "type": "array", "items": { "type": "string" } }
                     }
                   },
-                  "required": [
-                    "error"
-                  ],
+                  "required": ["error"],
                   "additionalProperties": false
                 }
               }
             }
           },
-          "401": {
-            "description": "Missing or invalid API key"
-          },
-          "403": {
-            "description": "Insufficient permissions or stream not accessible"
-          }
+          "401": { "description": "Missing or invalid API key" },
+          "403": { "description": "Insufficient permissions or stream not accessible" }
         }
       }
     }
@@ -1781,17 +858,8 @@
     }
   },
   "tags": [
-    {
-      "name": "Streams",
-      "description": "List and inspect streams (channels, scratchpads, threads)"
-    },
-    {
-      "name": "Messages",
-      "description": "Read, send, update, and delete messages"
-    },
-    {
-      "name": "Users",
-      "description": "List workspace users"
-    }
+    { "name": "Streams", "description": "List and inspect streams (channels, scratchpads, threads)" },
+    { "name": "Messages", "description": "Read, send, update, and delete messages" },
+    { "name": "Users", "description": "List workspace users" }
   ]
 }

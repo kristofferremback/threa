@@ -9,6 +9,7 @@
 import { z } from "zod"
 import { resolve, dirname } from "path"
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs"
+import * as prettier from "prettier"
 import { PUBLIC_API_ROUTES, errorSchema } from "../src/features/public-api/routes"
 import { API_KEY_PERMISSIONS } from "@threa/types"
 
@@ -20,11 +21,29 @@ const CHECK_MODE = process.argv.includes("--check")
 // Zod → JSON Schema conversion
 // ---------------------------------------------------------------------------
 
+/**
+ * Strip verbose regex patterns from date-time fields — `format: "date-time"` is
+ * sufficient for OpenAPI consumers and the Zod v4 leap-year regex is unreadable noise.
+ */
+function stripDateTimePatterns(obj: unknown): unknown {
+  if (Array.isArray(obj)) return obj.map(stripDateTimePatterns)
+  if (obj !== null && typeof obj === "object") {
+    const record = obj as Record<string, unknown>
+    if (record.format === "date-time") {
+      const { pattern: _, ...rest } = record
+      return Object.fromEntries(Object.entries(rest).map(([k, v]) => [k, stripDateTimePatterns(v)]))
+    }
+    return Object.fromEntries(Object.entries(record).map(([k, v]) => [k, stripDateTimePatterns(v)]))
+  }
+  return obj
+}
+
 function zodToJsonSchema(schema: z.ZodType): Record<string, unknown> {
   if (schema instanceof z.ZodVoid) {
     return {}
   }
-  return z.toJSONSchema(schema, { unrepresentable: "any" }) as Record<string, unknown>
+  const raw = z.toJSONSchema(schema, { unrepresentable: "any" }) as Record<string, unknown>
+  return stripDateTimePatterns(raw) as Record<string, unknown>
 }
 
 // ---------------------------------------------------------------------------
@@ -134,12 +153,6 @@ function buildSpec() {
     paths[pathKey][route.method] = operation
   }
 
-  // Build scope descriptions for security scheme
-  const scopeDescriptions: Record<string, string> = {}
-  for (const perm of API_KEY_PERMISSIONS) {
-    scopeDescriptions[perm.slug] = perm.description
-  }
-
   return {
     openapi: "3.0.3",
     info: {
@@ -177,14 +190,8 @@ function buildSpec() {
     },
     servers: [
       {
-        url: "https://{region}.threa.app",
-        description: "Production (region-specific)",
-        variables: {
-          region: {
-            default: "us",
-            description: "Deployment region",
-          },
-        },
+        url: "https://app.threa.io",
+        description: "Production",
       },
     ],
     security: [{ apiKey: [] }],
@@ -211,7 +218,11 @@ function buildSpec() {
 // ---------------------------------------------------------------------------
 
 const spec = buildSpec()
-const json = JSON.stringify(spec, null, 2) + "\n"
+const prettierConfig = await prettier.resolveConfig(OUTPUT_PATH)
+const json = await prettier.format(JSON.stringify(spec), {
+  ...prettierConfig,
+  filepath: OUTPUT_PATH,
+})
 
 if (CHECK_MODE) {
   if (!existsSync(OUTPUT_PATH)) {

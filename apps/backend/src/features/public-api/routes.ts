@@ -16,7 +16,7 @@ import {
   updateMessageSchema,
   listMembersSchema,
   listUsersSchema,
-} from "./handlers"
+} from "./schemas"
 
 // ---------------------------------------------------------------------------
 // Response schemas — the single source of truth for public API wire shapes.
@@ -28,14 +28,14 @@ const streamSchema = z.object({
   id: z.string(),
   type: z.enum(STREAM_TYPES),
   displayName: z.string(),
-  slug: z.string().nullable(),
-  description: z.string().nullable(),
+  slug: z.string().optional(),
+  description: z.string().optional(),
   visibility: z.string(),
-  parentStreamId: z.string().nullable(),
-  rootStreamId: z.string().nullable(),
-  parentMessageId: z.string().nullable(),
+  parentStreamId: z.string().optional(),
+  rootStreamId: z.string().optional(),
+  parentMessageId: z.string().optional(),
   createdAt: z.string().datetime(),
-  archivedAt: z.string().datetime().nullable(),
+  archivedAt: z.string().datetime().optional(),
 })
 
 const messageSchema = z.object({
@@ -44,12 +44,12 @@ const messageSchema = z.object({
   sequence: z.string().describe("Numeric sequence as string"),
   authorId: z.string(),
   authorType: z.enum(AUTHOR_TYPES),
-  authorDisplayName: z.string().nullable(),
+  authorDisplayName: z.string().optional(),
   content: z.string(),
   replyCount: z.number().int(),
-  threadStreamId: z.string().nullable(),
-  clientMessageId: z.string().nullable(),
-  editedAt: z.string().datetime().nullable(),
+  threadStreamId: z.string().optional(),
+  clientMessageId: z.string().optional(),
+  editedAt: z.string().datetime().optional(),
   createdAt: z.string().datetime(),
 })
 
@@ -60,9 +60,9 @@ const searchResultSchema = z.object({
   content: z.string(),
   authorId: z.string(),
   authorType: z.enum(AUTHOR_TYPES),
-  authorDisplayName: z.string().nullable(),
+  authorDisplayName: z.string().optional(),
   replyCount: z.number().int(),
-  editedAt: z.string().datetime().nullable(),
+  editedAt: z.string().datetime().optional(),
   createdAt: z.string().datetime(),
   rank: z.number(),
 })
@@ -71,7 +71,7 @@ const memberSchema = z.object({
   userId: z.string(),
   name: z.string(),
   slug: z.string(),
-  avatarUrl: z.string().nullable(),
+  avatarUrl: z.string().optional(),
   joinedAt: z.string().datetime(),
 })
 
@@ -80,7 +80,7 @@ const userSchema = z.object({
   name: z.string(),
   slug: z.string(),
   email: z.string(),
-  avatarUrl: z.string().nullable(),
+  avatarUrl: z.string().optional(),
   role: z.string(),
 })
 

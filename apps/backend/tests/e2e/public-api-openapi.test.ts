@@ -185,9 +185,6 @@ describe("Public API — OpenAPI Spec Validation", () => {
       const body = await res.json()
       const parsed = messageSchema.safeParse(body.data)
       expect(parsed.success).toBe(true)
-
-      // Use the created message for update/delete tests
-      ctx.messageId = body.data.id
     })
 
     test("PATCH /messages/:messageId returns data matching messageSchema", async () => {

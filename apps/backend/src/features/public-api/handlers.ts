@@ -15,7 +15,7 @@ import {
 import { UserRepository } from "../workspaces"
 import { PersonaRepository } from "../agents"
 import { BotRepository, type Bot } from "./bot-repository"
-import { STREAM_TYPES, AuthorTypes, type AuthorType } from "@threa/types"
+import { AuthorTypes, type AuthorType } from "@threa/types"
 import type { Bot as WireBot } from "@threa/types"
 import { HttpError } from "@threa/backend-common"
 import { normalizeMessage, toEmoji } from "../emoji"
@@ -25,59 +25,15 @@ import { withTransaction } from "../../db"
 import { OutboxRepository } from "../../lib/outbox"
 import { encodeCursor, decodeCursor } from "./cursor"
 import type { WireStream, WireMessage, WireSearchResult, WireUser, WireMember } from "./routes"
-
-const PUBLIC_SEARCH_MAX_LIMIT = 50
-
-export const publicSearchSchema = z.object({
-  query: z.string().min(1, "query is required"),
-  semantic: z.boolean().optional().default(false),
-  streams: z.array(z.string()).optional(),
-  from: z.string().optional(),
-  type: z.array(z.enum(STREAM_TYPES)).optional(),
-  before: z.string().datetime().optional(),
-  after: z.string().datetime().optional(),
-  limit: z.coerce.number().int().min(1).max(PUBLIC_SEARCH_MAX_LIMIT).optional().default(20),
-})
-
-export const listStreamsSchema = z.object({
-  type: z
-    .union([z.enum(STREAM_TYPES), z.array(z.enum(STREAM_TYPES))])
-    .optional()
-    .transform((v) => (typeof v === "string" ? [v] : v)),
-  query: z.string().optional(),
-  after: z.string().optional(),
-  limit: z.coerce.number().int().min(1).max(200).optional().default(50),
-})
-
-export const listMessagesSchema = z
-  .object({
-    before: z.string().regex(/^\d+$/, "must be a numeric sequence").optional(),
-    after: z.string().regex(/^\d+$/, "must be a numeric sequence").optional(),
-    limit: z.coerce.number().int().min(1).max(100).optional().default(50),
-  })
-  .refine((data) => !(data.before && data.after), {
-    message: "Provide at most one of 'before' or 'after'",
-  })
-
-export const sendMessageSchema = z.object({
-  content: z.string().min(1, "content is required"),
-  clientMessageId: z.string().max(128).optional(),
-})
-
-export const updateMessageSchema = z.object({
-  content: z.string().min(1, "content is required"),
-})
-
-export const listMembersSchema = z.object({
-  after: z.string().optional(),
-  limit: z.coerce.number().int().min(1).max(200).optional().default(50),
-})
-
-export const listUsersSchema = z.object({
-  query: z.string().optional(),
-  after: z.string().optional(),
-  limit: z.coerce.number().int().min(1).max(200).optional().default(50),
-})
+import {
+  publicSearchSchema,
+  listStreamsSchema,
+  listMessagesSchema,
+  sendMessageSchema,
+  updateMessageSchema,
+  listMembersSchema,
+  listUsersSchema,
+} from "./schemas"
 
 function serializeStream(stream: Stream, context?: DisplayNameContext): WireStream {
   const effective = getEffectiveDisplayName(stream, context)
@@ -87,14 +43,14 @@ function serializeStream(stream: Stream, context?: DisplayNameContext): WireStre
     id: stream.id,
     type: stream.type,
     displayName,
-    slug: stream.slug,
-    description: stream.description,
+    ...(stream.slug != null && { slug: stream.slug }),
+    ...(stream.description != null && { description: stream.description }),
     visibility: stream.visibility,
-    parentStreamId: stream.parentStreamId,
-    rootStreamId: stream.rootStreamId,
-    parentMessageId: stream.parentMessageId,
+    ...(stream.parentStreamId != null && { parentStreamId: stream.parentStreamId }),
+    ...(stream.rootStreamId != null && { rootStreamId: stream.rootStreamId }),
+    ...(stream.parentMessageId != null && { parentMessageId: stream.parentMessageId }),
     createdAt: stream.createdAt.toISOString(),
-    archivedAt: stream.archivedAt?.toISOString() ?? null,
+    ...(stream.archivedAt != null && { archivedAt: stream.archivedAt.toISOString() }),
   }
 }
 
@@ -119,12 +75,12 @@ function serializeMessage(
     sequence: message.sequence.toString(),
     authorId: message.authorId,
     authorType: message.authorType,
-    authorDisplayName: opts?.authorDisplayName ?? null,
+    ...(opts?.authorDisplayName != null && { authorDisplayName: opts.authorDisplayName }),
     content: message.contentMarkdown,
     replyCount: message.replyCount,
-    threadStreamId: opts?.threadStreamId ?? null,
-    clientMessageId: message.clientMessageId ?? null,
-    editedAt: message.editedAt?.toISOString() ?? null,
+    ...(opts?.threadStreamId != null && { threadStreamId: opts.threadStreamId }),
+    ...(message.clientMessageId != null && { clientMessageId: message.clientMessageId }),
+    ...(message.editedAt != null && { editedAt: message.editedAt.toISOString() }),
     createdAt: message.createdAt.toISOString(),
   }
 }
@@ -154,7 +110,7 @@ function serializeUser(user: {
     name: user.name,
     slug: user.slug,
     email: user.email,
-    avatarUrl: user.avatarUrl,
+    ...(user.avatarUrl != null && { avatarUrl: user.avatarUrl }),
     role: user.role,
   }
 }
@@ -311,10 +267,13 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
 
       // Resolve author display names for search results
       const authorNames = await resolveAuthorDisplayNames(pool, workspaceId, results)
-      const serialized: WireSearchResult[] = results.map((r) => ({
-        ...serializeSearchResult(r),
-        authorDisplayName: authorNames.get(r.authorId) ?? null,
-      }))
+      const serialized: WireSearchResult[] = results.map((r) => {
+        const name = authorNames.get(r.authorId)
+        return {
+          ...serializeSearchResult(r),
+          ...(name != null && { authorDisplayName: name }),
+        }
+      })
 
       res.json({ data: serialized })
     },
@@ -437,7 +396,7 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
             userId: m.memberId,
             name: user.name,
             slug: user.slug,
-            avatarUrl: user.avatarUrl,
+            ...(user.avatarUrl != null && { avatarUrl: user.avatarUrl }),
             joinedAt: m.joinedAt.toISOString(),
           }
         })
