@@ -204,18 +204,6 @@ export const UserRepository = {
 
     if (filters?.query) {
       const pattern = `%${filters.query}%`
-      if (filters?.cursorJoinedAt && filters?.cursorId) {
-        const result = await db.query<UserRow>(sql`
-          SELECT ${sql.raw(SELECT_FIELDS_WITH_ALIAS)}
-          FROM users u
-          WHERE u.workspace_id = ${workspaceId}
-            AND (u.name ILIKE ${pattern} OR u.email ILIKE ${pattern})
-            AND (u.joined_at, u.id) > (${filters.cursorJoinedAt}, ${filters.cursorId})
-          ORDER BY u.joined_at, u.id
-          LIMIT ${limit}
-        `)
-        return result.rows.map(mapRowToUser)
-      }
       const result = await db.query<UserRow>(sql`
         SELECT ${sql.raw(SELECT_FIELDS_WITH_ALIAS)}
         FROM users u
