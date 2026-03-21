@@ -366,6 +366,7 @@ export async function startServer(): Promise<ServerInstance> {
     apiKeyService,
     apiKeyChannelService,
     linkPreviewService,
+    workosOrgService,
   })
 
   app.use(errorHandler)

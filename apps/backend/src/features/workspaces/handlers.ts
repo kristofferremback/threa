@@ -10,7 +10,7 @@ import type { AvatarService } from "./avatar-service"
 import { getEmojiList } from "../emoji"
 import { getEffectiveLevel } from "../streams"
 import { BotRepository, serializeBot } from "../public-api"
-import { displayNameFromWorkos } from "@threa/backend-common"
+import { displayNameFromWorkos, type WorkosOrgService } from "@threa/backend-common"
 import { HttpError } from "../../lib/errors"
 
 const createWorkspaceSchema = z.object({
@@ -46,6 +46,7 @@ interface Dependencies {
   activityService?: ActivityService
   commandRegistry: CommandRegistry
   avatarService: AvatarService
+  workosOrgService: WorkosOrgService
   pool: import("pg").Pool
 }
 
@@ -57,6 +58,7 @@ export function createWorkspaceHandlers({
   activityService,
   commandRegistry,
   avatarService,
+  workosOrgService,
   pool,
 }: Dependencies) {
   return {
@@ -309,6 +311,33 @@ export function createWorkspaceHandlers({
       } catch {
         res.status(404).end()
       }
+    },
+
+    async getWidgetToken(req: Request, res: Response) {
+      const workspaceId = req.workspaceId!
+      const workosUserId = req.workosUserId!
+
+      // 1. Ensure WorkOS org exists (lazy 3-tier: cache → WorkOS lookup → create)
+      const orgId = await workspaceService.ensureWorkosOrganization(workspaceId)
+      if (!orgId) {
+        throw new HttpError("Could not provision WorkOS organization", { status: 500, code: "INTERNAL" })
+      }
+
+      // 2. Ensure user has org membership with admin role
+      await workosOrgService.ensureOrganizationMembership({
+        organizationId: orgId,
+        userId: workosUserId,
+        roleSlug: "admin",
+      })
+
+      // 3. Generate widget token
+      const token = await workosOrgService.getWidgetToken({
+        organizationId: orgId,
+        userId: workosUserId,
+        scopes: ["widgets:api-keys:manage"],
+      })
+
+      res.json({ token })
     },
   }
 }

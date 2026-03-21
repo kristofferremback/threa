@@ -476,3 +476,34 @@
 [data-message-display="compact"] .message-content {
   gap: 0.5rem;
 }
+
+/*
+ * WorkOS Widget containment — Radix Themes global CSS sets variables on
+ * :is(.dark, .dark-theme) which matches Threa's .dark class. These overrides
+ * keep the widget's internal theme scoped without bleeding into the parent.
+ */
+.api-keys-widget-container .radix-themes[data-is-root-theme="true"] {
+  background-color: transparent;
+  min-height: auto !important;
+  --focus-8: hsl(var(--ring));
+  --text-field-focus-color: hsl(var(--ring));
+}
+
+.api-keys-widget-container input:focus-visible,
+.api-keys-widget-container textarea:focus-visible {
+  outline: none;
+}
+
+/* NOTE: This intentionally raises z-index for ALL Radix Popper portals app-wide,
+   not just the WorkOS widget. Required because WorkOS widget portals render at
+   body level without a widget-specific attribute to scope against. This is benign
+   because Shadcn poppers inside dialogs already need to stack above the z-50
+   overlay — z-60 gives them that. Only problematic if a popper should appear
+   BELOW a dialog overlay, which doesn't exist in Threa's UI. */
+body > [data-radix-popper-content-wrapper] {
+  z-index: 60 !important;
+}
+body > .rt-DialogOverlay,
+body > .rt-AlertDialogOverlay {
+  z-index: 60;
+}

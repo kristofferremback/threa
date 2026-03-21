@@ -78,7 +78,7 @@ export class InvitationShadowService {
     // Single transaction: claim → regional call → membership insert.
     // The regional call is a fast localhost hop, so holding the connection is acceptable.
     // On any failure the transaction auto-rollbacks — shadow stays pending, no revert needed.
-    return await withTransaction(this.pool, async (client) => {
+    const result = await withTransaction(this.pool, async (client) => {
       // Atomic claim prevents accept-vs-revoke races (INV-20)
       const claimed = await InvitationShadowRepository.claimPending(client, shadow.id, "accepted")
       if (!claimed) {
@@ -103,6 +103,22 @@ export class InvitationShadowService {
       await WorkspaceRegistryRepository.insertMembership(client, shadow.workspace_id, user.id)
       return { workspaceId: shadow.workspace_id }
     })
+
+    // Best-effort WorkOS org membership sync (no DB connection held — INV-41)
+    const orgId = await this.ensureWorkosOrganization(shadow.workspace_id)
+    if (orgId) {
+      try {
+        await this.workosOrgService.ensureOrganizationMembership({
+          organizationId: orgId,
+          userId: user.id,
+          roleSlug: "member",
+        })
+      } catch (error) {
+        logger.warn({ err: error, workspaceId: shadow.workspace_id }, "Failed to sync WorkOS org membership on accept")
+      }
+    }
+
+    return result
   }
 
   /**

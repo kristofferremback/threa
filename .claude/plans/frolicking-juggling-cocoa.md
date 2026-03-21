@@ -1,300 +1,320 @@
-# Public API v1 — Phase 2 Architectural Rework
+# API Key Administration UI + WorkOS Role Sync
 
 ## Context
 
-PR #220 implemented CRUD endpoints (streams, messages, users) for the public API. After review feedback from Kris and Greptile, four architectural issues need addressing:
+The public API v1 is merged (PR #220) with WorkOS-validated API keys, but there's no UI for admins to create/manage keys. WorkOS provides an embeddable `<ApiKeys />` widget that handles key CRUD. Two gaps need filling:
 
-1. **Bot identity**: `author_display_name` and `api_key_id` as flat columns on messages breaks the established `authorType + authorId → entity table` pattern. Bots should be proper entities like personas.
-2. **Feature folder**: Public API handlers are misplaced in `features/api-keys/`. The public API is its own feature that wraps other features.
-3. **Display name consistency**: Public API should return formatted channel names (`#slug`) so consumers don't need to know Threa conventions.
-4. **OwnershipError handling**: Try/catch blocks in every handler are verbose; centralize in error middleware.
+1. **No key management UI** — admins must use the WorkOS dashboard directly
+2. **No WorkOS org memberships** — WorkOS organizations are created lazily (on first invitation), but users never get org memberships, so the widget token generation will fail
 
-Additionally, Greptile flagged that `resolveApiKeyMessage` allows soft-deleted messages through.
+The widget requires: a WorkOS org to exist, the user to have an org membership with a role that has `widgets:api-keys:manage` permission, and a widget token generated server-side.
 
 ---
 
-## Step 1: Replace Migration
+## Step 1: Extend `WorkosOrgService` with Membership + Widget Methods
 
-**Replace** `apps/backend/src/db/migrations/20260313120000_public_api_message_columns.sql`
+**`packages/backend-common/src/auth/workos-org-service.ts`** — add to interface:
 
-The current migration adds `author_display_name` and `api_key_id` to messages. Replace with a migration that creates the `bots` table and removes the flat columns. Safe to replace since this migration hasn't shipped (PR not merged).
+```ts
+ensureOrganizationMembership(params: {
+  organizationId: string
+  userId: string
+  roleSlug: string
+}): Promise<void>
 
-```sql
--- Bot entities for API-created messages.
--- Follows the persona pattern: authorType "bot" + authorId → bots.id
-CREATE TABLE bots (
-  id TEXT PRIMARY KEY,
-  workspace_id TEXT NOT NULL,
-  api_key_id TEXT NOT NULL,
-  name TEXT NOT NULL,
-  avatar_emoji TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- One bot per API key per workspace
-CREATE UNIQUE INDEX idx_bots_workspace_api_key ON bots (workspace_id, api_key_id);
+getWidgetToken(params: {
+  organizationId: string
+  userId: string
+  scopes: string[]
+}): Promise<string>
 ```
 
-No changes to the messages table — bots use the existing `author_id` + `author_type` columns.
+**`WorkosOrgServiceImpl`** — implement:
+
+- `ensureOrganizationMembership`: calls `workos.userManagement.createOrganizationMembership()`. Catches "already member" errors gracefully (user might already have a membership from a prior flow). If already a member, optionally update the role via `updateOrganizationMembership` if the current role doesn't match.
+- `getWidgetToken`: calls `workos.widgets.getToken({ organizationId, userId, scopes })`.
+
+**`packages/backend-common/src/auth/workos-org-service.stub.ts`** — add stub implementations:
+
+- `ensureOrganizationMembership`: no-op log
+- `getWidgetToken`: return a fake token string `"stub_widget_token"`
+
+**`packages/backend-common/src/index.ts`** — no new exports needed (interface changes are transparent).
 
 ---
 
-## Step 2: Create `features/public-api/` Feature Folder
+## Step 2: Backend Widget Token Endpoint
 
-New feature folder following INV-51 colocation:
-
-```
-features/public-api/
-├── handlers.ts          # All public API endpoint handlers (moved from api-keys/)
-├── bot-repository.ts    # Bot entity data access
-├── index.ts             # Barrel exports
-```
-
-### 2a: BotRepository (`features/public-api/bot-repository.ts`)
+**`apps/backend/src/features/workspaces/handlers.ts`** — add `getWidgetToken` handler:
 
 ```ts
-interface Bot {
-  id: string
-  workspaceId: string
-  apiKeyId: string
-  name: string
-  avatarEmoji: string | null
-  createdAt: Date
-  updatedAt: Date
-}
+async getWidgetToken(req: Request, res: Response) {
+  const workspaceId = req.workspaceId!
+  const workosUserId = req.workosUserId!
 
-// Key methods:
-findByApiKeyId(db, workspaceId, apiKeyId): Promise<Bot | null>
-upsert(db, params: { id, workspaceId, apiKeyId, name }): Promise<Bot>
-findById(db, id): Promise<Bot | null>
-```
+  // 1. Ensure WorkOS org exists (lazy 3-tier: cache → WorkOS lookup → create)
+  let orgId = await WorkspaceRepository.getWorkosOrganizationId(pool, workspaceId)
+  if (!orgId) {
+    orgId = await workspaceService.ensureWorkosOrganization(workspaceId)
+    if (!orgId) {
+      throw new HttpError("Could not provision WorkOS organization", { status: 500, code: "INTERNAL" })
+    }
+  }
 
-The `upsert` uses `ON CONFLICT (workspace_id, api_key_id) DO UPDATE SET name = EXCLUDED.name, updated_at = NOW()` (INV-20 race-safe). Called on every `sendMessage` — creates the bot on first use, updates name if changed.
-
-### 2b: Move Handlers
-
-Move `createPublicApiHandlers` and all serializers from `features/api-keys/handlers.ts` to `features/public-api/handlers.ts`. The api-keys barrel (`features/api-keys/index.ts`) stops exporting `createPublicApiHandlers`/`PublicApiDeps`.
-
-Update `PublicApiDeps` interface:
-```ts
-export interface PublicApiDeps {
-  searchService: SearchService
-  apiKeyChannelService: ApiKeyChannelService
-  eventService: EventService
-  pool: Pool
-}
-```
-
-### 2c: Update Barrel (`features/public-api/index.ts`)
-
-```ts
-export { createPublicApiHandlers, type PublicApiDeps } from "./handlers"
-```
-
-### 2d: Update Imports
-
-- `apps/backend/src/routes.ts`: import from `features/public-api` instead of `features/api-keys`
-- `apps/backend/src/features/api-keys/index.ts`: remove `createPublicApiHandlers`/`PublicApiDeps` exports
-
----
-
-## Step 3: Bot Identity in Message Flow
-
-### 3a: Remove Flat Columns from Backend Message Type
-
-**`apps/backend/src/features/messaging/repository.ts`**:
-- Remove `authorDisplayName` and `apiKeyId` from `Message` interface
-- Remove `authorDisplayName` and `apiKeyId` from `InsertMessageParams`
-- Remove from `SELECT_FIELDS`, `insert()` SQL, and `mapRowToMessage()`
-
-### 3b: Remove from EventService
-
-**`apps/backend/src/features/messaging/event-service.ts`**:
-- Remove `authorDisplayName` and `apiKeyId` from `CreateMessageParams`
-- Remove `apiKeyId` from `EditMessageParams` and `DeleteMessageParams`
-- Remove the `apiKeyId`-based ownership check in `editMessage` and `deleteMessage` (the standard `actorId` check handles ownership naturally when the caller passes `bot.id`)
-
-### 3c: Update `sendMessage` Handler
-
-```ts
-async sendMessage(req, res) {
-  // ... validate, check stream access ...
-
-  // Upsert bot entity (creates on first use, updates name if changed)
-  const bot = await BotRepository.upsert(pool, {
-    id: generateId("bot"),
-    workspaceId,
-    apiKeyId: apiKey.id,
-    name: displayName,
+  // 2. Ensure user has org membership with admin role
+  const roleSlug = "admin"  // WorkOS role slug with widgets:api-keys:manage permission
+  await workosOrgService.ensureOrganizationMembership({
+    organizationId: orgId,
+    userId: workosUserId,
+    roleSlug,
   })
 
-  // Create message with bot as author
-  const message = await eventService.createMessage({
-    workspaceId,
-    streamId,
-    authorId: bot.id,           // Bot entity ID, not API key ID
-    authorType: AuthorTypes.BOT,
-    contentJson,
-    contentMarkdown,
+  // 3. Generate widget token
+  const token = await workosOrgService.getWidgetToken({
+    organizationId: orgId,
+    userId: workosUserId,
+    scopes: ["widgets:api-keys:manage"],
   })
 
-  res.status(201).json({ data: serializeMessage(message) })
+  res.json({ token })
 }
 ```
 
-### 3d: Update `resolveApiKeyMessage` Helper
+The `ensureWorkosOrganization` method needs to be added to `WorkspaceService` (or extracted from the control-plane's `InvitationShadowService.ensureWorkosOrganization()`). The logic is identical — 3-tier lookup (local cache → WorkOS by external ID → create new). The backend already has `WorkspaceRepository.getWorkosOrganizationId()` and `setWorkosOrganizationId()`.
 
-The helper now also verifies bot ownership:
+**`apps/backend/src/routes.ts`** — register route:
 
 ```ts
-async function resolveApiKeyMessage(messageId: string, req: Request) {
-  const message = await eventService.getMessageById(messageId)
-  if (!message || message.deletedAt) {  // ← Greptile fix: reject soft-deleted
-    throw new HttpError("Message not found", { status: 404, code: "NOT_FOUND" })
-  }
-
-  // Verify stream access
-  const accessibleStreamIds = await getAccessibleStreamIds(req)
-  if (!accessibleStreamIds.includes(message.streamId)) {
-    throw new HttpError("Stream not accessible", { status: 403, code: "FORBIDDEN" })
-  }
-
-  // Verify bot ownership: message must be authored by a bot owned by this API key
-  if (message.authorType !== AuthorTypes.BOT) {
-    throw new HttpError("Cannot modify messages not created via API", { status: 403, code: "FORBIDDEN" })
-  }
-
-  const bot = await BotRepository.findById(pool, message.authorId)
-  if (!bot || bot.apiKeyId !== req.apiKey!.id) {
-    throw new HttpError("Cannot modify messages created by another API key", { status: 403, code: "FORBIDDEN" })
-  }
-
-  return { message, bot }
-}
+app.get(
+  "/api/workspaces/:workspaceId/widget-token",
+  ...authed,
+  requireRole("admin"),
+  workspace.getWidgetToken
+)
 ```
 
-### 3e: Update `updateMessage` and `deleteMessage` Handlers
+**Dependencies**: `workosOrgService` needs to be passed through to `registerRoutes` → handler factory. Currently `workosOrgService` is constructed in `server.ts` but not passed to routes. Add it to the `Dependencies` interface and wire it through.
 
-With ownership verified in `resolveApiKeyMessage`, the handlers become simpler — no try/catch for `OwnershipError`:
+---
+
+## Step 3: `WorkspaceService.ensureWorkosOrganization`
+
+**`apps/backend/src/features/workspaces/service.ts`** — add method:
 
 ```ts
-async updateMessage(req, res) {
-  const { message, bot } = await resolveApiKeyMessage(messageId, req)
-  const updated = await eventService.editMessage({
-    workspaceId,
-    messageId,
-    streamId: message.streamId,
-    contentJson,
-    contentMarkdown,
-    actorId: bot.id,
-    actorType: AuthorTypes.BOT,
-    // No apiKeyId — ownership already verified
+async ensureWorkosOrganization(workspaceId: string): Promise<string | null> {
+  // Tier 1: Local cache
+  const cached = await WorkspaceRepository.getWorkosOrganizationId(this.pool, workspaceId)
+  if (cached) return cached
+
+  // Tier 2: WorkOS by external ID
+  const existing = await this.workosOrgService.getOrganizationByExternalId(workspaceId)
+  if (existing) {
+    await WorkspaceRepository.setWorkosOrganizationId(this.pool, workspaceId, existing.id)
+    return existing.id
+  }
+
+  // Tier 3: Create new
+  const workspace = await WorkspaceRepository.findById(this.pool, workspaceId)
+  if (!workspace) return null
+
+  const org = await this.workosOrgService.createOrganization({
+    name: workspace.name,
+    externalId: workspaceId,
   })
-  if (!updated) throw new HttpError("Message not found or was deleted", { status: 404, code: "NOT_FOUND" })
-  res.json({ data: serializeMessage(updated) })
+  await WorkspaceRepository.setWorkosOrganizationId(this.pool, workspaceId, org.id)
+  return org.id
 }
 ```
 
-### 3f: Serialize Bot Display Name
+This mirrors `InvitationShadowService.ensureWorkosOrganization()` in the control-plane. Both share the same 3-tier pattern. The control-plane already handles the concurrent-creation race via `getOrganizationByExternalId` fallback, so if the backend creates the org first, the control-plane will find it via tier 2.
 
-The `serializeMessage` function needs the bot name for the response. Two options:
-- **Option A**: `resolveApiKeyMessage` already returns the bot — pass it through
-- **Option B**: Add `authorDisplayName` back to the serialized response by looking up the bot
+---
 
-For `listMessages` (read endpoint), messages don't go through `resolveApiKeyMessage`. The message itself no longer has `authorDisplayName`. To include bot names in list responses, join with the bots table or do a batch lookup.
+## Step 4: Proactive Role Sync on User Join
 
-**Approach**: Add an optional `authorDisplayName` to the serialize call. For bot messages in list responses, batch-fetch bot names by collecting unique bot authorIds and querying the bots table. For send/update responses, use the bot name from the upserted/resolved bot.
+Sync WorkOS org memberships proactively when users join workspaces, with the widget token endpoint as lazy fallback for existing users.
+
+### 4a: Control-plane — Sync on invitation acceptance
+
+**`apps/control-plane/src/features/invitation-shadows/service.ts`** — in `acceptShadow()`, after `insertMembership`:
 
 ```ts
-function serializeMessage(message: Message, authorDisplayName?: string | null) {
-  return {
-    ...baseFields,
-    authorDisplayName: authorDisplayName ?? null,
+// Best-effort WorkOS org membership (no DB connection held — INV-41)
+const orgId = await this.ensureWorkosOrganization(shadow.workspace_id)
+if (orgId) {
+  try {
+    await this.workosOrgService.ensureOrganizationMembership({
+      organizationId: orgId,
+      userId: user.id,       // WorkOS user ID
+      roleSlug: "member",    // Default role for invited users
+    })
+  } catch (error) {
+    logger.warn({ err: error, workspaceId: shadow.workspace_id }, "Failed to sync WorkOS org membership on accept")
   }
 }
 ```
 
-For `listMessages`:
-```ts
-// After fetching messages, resolve bot display names
-const botIds = [...new Set(page.filter(m => m.authorType === 'bot').map(m => m.authorId))]
-const bots = botIds.length > 0 ? await BotRepository.findByIds(pool, botIds) : []
-const botNameMap = new Map(bots.map(b => [b.id, b.name]))
+The role is `"member"` for regular invited users. If we later add admin invitations, the role should match the invited role.
 
-res.json({
-  data: page.map(m => serializeMessage(m, m.authorType === 'bot' ? botNameMap.get(m.authorId) : null)),
-  hasMore,
-})
-```
+### 4b: Control-plane — Sync on workspace creation
 
-Add `findByIds(db, ids: string[]): Promise<Bot[]>` to BotRepository (batch lookup, INV-56).
-
----
-
-## Step 4: Display Name Consistency
-
-**`features/public-api/handlers.ts` — `serializeStream`**:
+**`apps/control-plane/src/features/workspaces/service.ts`** (or wherever workspace creation happens) — after creating the workspace and the owner user:
 
 ```ts
-function serializeStream(stream: { type: string; slug: string | null; displayName: string | null; ... }) {
-  return {
-    ...otherFields,
-    displayName: stream.type === "channel" && stream.slug ? `#${stream.slug}` : stream.displayName,
-    slug: stream.slug,
-  }
+// Create WorkOS org and owner membership eagerly
+const orgId = await this.ensureWorkosOrganization(workspaceId)
+if (orgId) {
+  await this.workosOrgService.ensureOrganizationMembership({
+    organizationId: orgId,
+    userId: workosUserId,   // Creator's WorkOS user ID
+    roleSlug: "admin",      // Owner gets admin role
+  })
 }
 ```
 
-Channels get `#slug` as displayName. Other stream types keep their raw displayName. The `slug` field remains available separately for consumers who need the raw value.
+This ensures the workspace owner immediately has API key management access.
+
+### 4c: Role mapping
+
+| Threa Role | WorkOS Role Slug | Widget Access |
+|-----------|-----------------|---------------|
+| `owner`   | `admin`         | Yes           |
+| `admin`   | `admin`         | Yes           |
+| `user`    | `member`        | No            |
+
+The lazy fallback in the widget token endpoint (Step 2) catches existing users who joined before this sync was added.
 
 ---
 
-## Step 5: Centralize OwnershipError Handling
+## Step 5: Frontend — Install WorkOS Widgets
 
-**`apps/backend/src/middleware/error-handler.ts`**:
+Install dependencies:
+```bash
+bun add @workos-inc/widgets @radix-ui/themes
+```
+
+`@tanstack/react-query` v5 is already installed (^5.90.12).
+
+**CSS imports**: Radix Themes CSS and WorkOS Widgets CSS need to be imported. To avoid global style conflicts with Shadcn UI (which uses individual Radix primitives, not Radix Themes), scope the imports to the widget container only. The `<WorkOsWidgets>` provider scopes its theme internally.
+
+**`apps/frontend/src/components/workspace-settings/api-keys-tab.tsx`** — import CSS only in the widget component:
+```tsx
+// Only import in the widget component, not globally
+import "@radix-ui/themes/styles.css"
+import "@workos-inc/widgets/styles.css"
+```
+
+---
+
+## Step 5: Frontend — API Keys Tab in Workspace Settings
+
+### 5a: Add `useCurrentWorkspaceUser` hook convenience
+
+**`apps/frontend/src/hooks/use-workspaces.ts`** — add:
 
 ```ts
-import { OwnershipError } from "../features/messaging"
-
-export function errorHandler(err: Error, req: Request, res: Response, _next: NextFunction) {
-  if (err instanceof OwnershipError) {
-    return res.status(403).json({ error: err.message, code: "FORBIDDEN" })
-  }
-  // ... existing MulterError handling ...
+export function useCurrentWorkspaceUser(workspaceId: string): User | null {
+  const user = useUser()
+  const { data: wsBootstrap } = useWorkspaceBootstrap(workspaceId)
+  return useMemo(
+    () => wsBootstrap?.users?.find((u) => u.workosUserId === user?.id) ?? null,
+    [wsBootstrap?.users, user?.id]
+  )
 }
 ```
 
-This means any handler that encounters an OwnershipError gets an automatic 403 without try/catch. The public API handlers won't hit this path (they check ownership explicitly), but internal handlers benefit from the centralization.
+### 5b: Widget token fetching
+
+**`apps/frontend/src/api/workspaces.ts`** — add:
+
+```ts
+async getWidgetToken(workspaceId: string): Promise<string> {
+  const result = await api.get<{ token: string }>(`/api/workspaces/${workspaceId}/widget-token`)
+  return result.token
+}
+```
+
+### 5c: API Keys Tab component
+
+**`apps/frontend/src/components/workspace-settings/api-keys-tab.tsx`**:
+
+```tsx
+import { useQuery } from "@tanstack/react-query"
+import { ApiKeys, WorkOsWidgets } from "@workos-inc/widgets"
+import "@radix-ui/themes/styles.css"
+import "@workos-inc/widgets/styles.css"
+
+export function ApiKeysTab({ workspaceId }: { workspaceId: string }) {
+  const { data: tokenData, isLoading, error } = useQuery({
+    queryKey: ["widget-token", workspaceId],
+    queryFn: () => workspacesApi.getWidgetToken(workspaceId),
+    staleTime: 50 * 60 * 1000, // Token valid for 1 hour, refresh at 50 min
+  })
+
+  if (isLoading) return <div className="text-sm text-muted-foreground">Loading...</div>
+  if (error) return <div className="text-sm text-destructive">Failed to load API key management</div>
+
+  return (
+    <WorkOsWidgets theme={{
+      appearance: "dark",
+      accentColor: "iris",   // Match Threa's accent
+      radius: "medium",
+    }}>
+      <ApiKeys token={tokenData!} />
+    </WorkOsWidgets>
+  )
+}
+```
+
+The `theme` prop values need to be tuned to match Threa's actual design system. The widget renders its own UI within a scoped Radix Themes context.
+
+### 5d: Update workspace settings dialog
+
+**`apps/frontend/src/components/workspace-settings/workspace-settings-dialog.tsx`**:
+
+- Make tabs dynamic based on user role
+- Add "API Keys" tab, visible only to admin/owner
+
+```tsx
+import { useCurrentWorkspaceUser } from "@/hooks/use-workspaces"
+import { ApiKeysTab } from "./api-keys-tab"
+
+// Dynamic tabs based on role
+const currentUser = useCurrentWorkspaceUser(workspaceId)
+const isAdmin = currentUser?.role === "admin" || currentUser?.role === "owner"
+
+const tabs = isAdmin
+  ? (["general", "users", "api-keys"] as const)
+  : (["general", "users"] as const)
+
+const TAB_LABELS = {
+  general: "General",
+  users: "Users",
+  "api-keys": "API Keys",
+}
+```
+
+Add `TabsContent` for the new tab:
+```tsx
+<TabsContent value="api-keys" className="mt-0">
+  <ApiKeysTab workspaceId={workspaceId} />
+</TabsContent>
+```
 
 ---
 
-## Step 6: Remove `authorDisplayName` from Shared Domain Type
+## Step 6: WorkOS Dashboard Configuration (Manual)
 
-**`packages/types/src/domain.ts`**: The `Message` type should not have `authorDisplayName` — it's resolved from the bot entity, not stored on the message. (Note: `apiKeyId` was already removed from the shared type in the previous commit.)
+Before the widget works, configure in WorkOS dashboard:
 
----
+1. **Roles**: Ensure an "admin" role exists with the `widgets:api-keys:manage` permission. WorkOS may have a default "Admin" role — verify it has this permission, or add it.
 
-## Step 7: Update Routes and Server
+2. **CORS**: In WorkOS Dashboard → Authentication → Allowed origins, add:
+   - `http://localhost:5173` (dev)
+   - `https://app.threa.io` (production)
 
-**`apps/backend/src/routes.ts`**:
-- Change import from `"../features/api-keys"` to `"../features/public-api"` for `createPublicApiHandlers`/`PublicApiDeps`
-- No route path changes needed
-
-**`apps/backend/src/server.ts`**: No changes needed — `eventService` and `pool` are already passed through `registerRoutes`.
-
----
-
-## Step 8: Update E2E Tests
-
-**`apps/backend/tests/e2e/public-api-crud.test.ts`**:
-
-- Bot messages now have `authorId` as a `bot_xxx` ID (not the API key ID). Tests asserting `authorType: "bot"` and `authorDisplayName` still pass.
-- Cross-key tests still work: different API keys produce different bot entities, so ownership checks fail correctly.
-- Add test: verify `listMessages` includes `authorDisplayName` for bot messages.
-- Add test: verify `serializeStream` returns `#slug` for channels.
-- The soft-delete test (double-delete returning 404) already exists.
-- Add test: verify update/delete returns 404 for soft-deleted message (Greptile fix).
+3. **API Key Permissions**: Already synced via `scripts/sync-workos-permissions.ts`. The permissions (messages:search, streams:read, etc.) are what scope an API key — separate from the widget role permission.
 
 ---
 
@@ -302,28 +322,32 @@ This means any handler that encounters an OwnershipError gets an automatic 403 w
 
 | File | Action | Description |
 |------|--------|-------------|
-| `apps/backend/src/db/migrations/20260313120000_public_api_message_columns.sql` | Replace | Create bots table instead of message columns |
-| `apps/backend/src/features/public-api/handlers.ts` | New | Moved from api-keys, updated for bot entity |
-| `apps/backend/src/features/public-api/bot-repository.ts` | New | Bot entity data access |
-| `apps/backend/src/features/public-api/index.ts` | New | Barrel exports |
-| `apps/backend/src/features/api-keys/handlers.ts` | Delete | Moved to public-api (api-keys keeps only key management) |
-| `apps/backend/src/features/api-keys/index.ts` | Edit | Remove public API exports |
-| `apps/backend/src/features/messaging/repository.ts` | Edit | Remove authorDisplayName, apiKeyId from Message/insert |
-| `apps/backend/src/features/messaging/event-service.ts` | Edit | Remove apiKeyId from params and ownership checks |
-| `apps/backend/src/middleware/error-handler.ts` | Edit | Add OwnershipError → 403 handling |
-| `packages/types/src/domain.ts` | Edit | Remove authorDisplayName from Message |
-| `apps/backend/src/routes.ts` | Edit | Import from features/public-api |
-| `apps/backend/tests/e2e/public-api-crud.test.ts` | Edit | Update assertions for bot entity pattern |
+| `packages/backend-common/src/auth/workos-org-service.ts` | Edit | Add `ensureOrganizationMembership` + `getWidgetToken` to interface and impl |
+| `packages/backend-common/src/auth/workos-org-service.stub.ts` | Edit | Add stub implementations |
+| `apps/backend/src/features/workspaces/service.ts` | Edit | Add `ensureWorkosOrganization` method |
+| `apps/backend/src/features/workspaces/handlers.ts` | Edit | Add `getWidgetToken` handler |
+| `apps/backend/src/routes.ts` | Edit | Register widget token route, pass `workosOrgService` |
+| `apps/backend/src/server.ts` | Edit | Pass `workosOrgService` to `registerRoutes` |
+| `apps/control-plane/src/features/invitation-shadows/service.ts` | Edit | Sync org membership on invitation acceptance |
+| `apps/control-plane/src/features/workspaces/service.ts` | Edit | Sync org membership on workspace creation |
+| `apps/frontend/package.json` | Edit | Add `@workos-inc/widgets`, `@radix-ui/themes` |
+| `apps/frontend/src/api/workspaces.ts` | Edit | Add `getWidgetToken` API call |
+| `apps/frontend/src/hooks/use-workspaces.ts` | Edit | Add `useCurrentWorkspaceUser` hook |
+| `apps/frontend/src/components/workspace-settings/api-keys-tab.tsx` | New | API keys widget wrapper |
+| `apps/frontend/src/components/workspace-settings/workspace-settings-dialog.tsx` | Edit | Add role-gated API Keys tab |
+
+---
 
 ## Verification
 
-1. `bun run typecheck` — all types consistent after removing flat columns
-2. `bun run test` — unit tests pass (no internal code depends on authorDisplayName/apiKeyId on messages)
-3. `bun run test:e2e` — all 254+ E2E tests pass, including:
-   - Bot message has `authorType: "bot"` and `authorDisplayName` resolved from bot entity
-   - Cross-key ownership still enforced (403)
-   - Soft-deleted messages return 404 on update/delete
-   - Channel display names include `#` prefix
-   - Double-delete returns 404
-4. Manual: `curl` send → update → delete flow with a valid API key
-5. Real-time: Bot message appears in connected Threa client via outbox/WebSocket
+1. **Typecheck**: `bun run typecheck` — all types consistent
+2. **E2E tests**: `bun run test:e2e` — existing tests still pass (no regression)
+3. **Manual test**:
+   - Log in as workspace owner
+   - Open Workspace Settings → "API Keys" tab should be visible
+   - Widget loads with token, shows API key management UI
+   - Create a key, verify it appears
+   - Revoke a key, verify it's removed
+   - Log in as regular user → "API Keys" tab should NOT be visible
+4. **Widget token endpoint**: `curl` with admin session cookie → returns `{ token: "..." }`
+5. **Style check**: Widget should render in dark mode with accent colors matching Threa's palette
