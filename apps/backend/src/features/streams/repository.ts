@@ -178,7 +178,13 @@ export const StreamRepository = {
     db: Querier,
     workspaceId: string,
     ids: string[],
-    filters?: { types?: StreamType[]; query?: string; limit?: number }
+    filters?: {
+      types?: StreamType[]
+      query?: string
+      limit?: number
+      cursorCreatedAt?: Date
+      cursorId?: string
+    }
   ): Promise<Stream[]> {
     if (ids.length === 0) return []
 
@@ -197,12 +203,17 @@ export const StreamRepository = {
       paramIndex++
       values.push(pattern)
     }
+    if (filters?.cursorCreatedAt && filters?.cursorId) {
+      conditions.push(`(created_at, id) < ($${paramIndex}, $${paramIndex + 1})`)
+      values.push(filters.cursorCreatedAt, filters.cursorId)
+      paramIndex += 2
+    }
     values.push(limit)
 
     const result = await db.query<StreamRow>(
       `SELECT ${SELECT_FIELDS} FROM streams
         WHERE ${conditions.join(" AND ")}
-        ORDER BY display_name NULLS LAST
+        ORDER BY created_at DESC, id DESC
         LIMIT $${paramIndex}`,
       values
     )
@@ -676,6 +687,28 @@ export const StreamRepository = {
       SELECT parent_message_id, id FROM streams
       WHERE parent_stream_id = ${parentStreamId}
         AND parent_message_id IS NOT NULL
+    `)
+    const map = new Map<string, string>()
+    for (const row of result.rows) {
+      map.set(row.parent_message_id, row.id)
+    }
+    return map
+  },
+
+  /**
+   * Find threads for a specific set of message IDs within a parent stream.
+   * Returns a map of parentMessageId -> threadStreamId
+   */
+  async findThreadsForMessageIds(
+    db: Querier,
+    parentStreamId: string,
+    messageIds: string[]
+  ): Promise<Map<string, string>> {
+    if (messageIds.length === 0) return new Map()
+    const result = await db.query<{ parent_message_id: string; id: string }>(sql`
+      SELECT parent_message_id, id FROM streams
+      WHERE parent_stream_id = ${parentStreamId}
+        AND parent_message_id = ANY(${messageIds})
     `)
     const map = new Map<string, string>()
     for (const row of result.rows) {

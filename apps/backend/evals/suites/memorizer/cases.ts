@@ -55,6 +55,7 @@ export function createTestMessage(content: string, messageId: string, authorId: 
     contentMarkdown: content,
     replyCount: 0,
     reactions: {},
+    clientMessageId: null,
     editedAt: null,
     deletedAt: null,
     createdAt: new Date(),

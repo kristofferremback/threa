@@ -273,10 +273,10 @@ describe("Public API v1 — CRUD Endpoints", () => {
       expect(botMsg).toBeDefined()
       expect(botMsg!.authorDisplayName).toBe(STUB_API_KEY_NAME)
 
-      // User messages should have null authorDisplayName
+      // User messages should have their name resolved as authorDisplayName
       const userMsg = body.data.find((m) => m.authorType === "user")
       expect(userMsg).toBeDefined()
-      expect(userMsg!.authorDisplayName).toBeNull()
+      expect(userMsg!.authorDisplayName).toBeString()
     })
 
     test("should return 403 for inaccessible stream", async () => {

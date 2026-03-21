@@ -18,6 +18,9 @@ export interface SearchResult {
   content: string
   authorId: string
   authorType: AuthorType
+  sequence: bigint
+  replyCount: number
+  editedAt: Date | null
   createdAt: Date
   rank: number
 }
@@ -28,6 +31,9 @@ interface SearchResultRow {
   content_markdown: string
   author_id: string
   author_type: string
+  sequence: string
+  reply_count: number
+  edited_at: Date | null
   created_at: Date
   rank: number
 }
@@ -39,6 +45,9 @@ function mapRowToSearchResult(row: SearchResultRow): SearchResult {
     content: row.content_markdown,
     authorId: row.author_id,
     authorType: row.author_type as AuthorType,
+    sequence: BigInt(row.sequence),
+    replyCount: row.reply_count,
+    editedAt: row.edited_at,
     createdAt: row.created_at,
     rank: row.rank,
   }
@@ -191,6 +200,9 @@ export const SearchRepository = {
           m.content_markdown,
           m.author_id,
           m.author_type,
+          m.sequence,
+          m.reply_count,
+          m.edited_at,
           m.created_at,
           0 as rank
         FROM messages m
@@ -214,6 +226,9 @@ export const SearchRepository = {
         m.content_markdown,
         m.author_id,
         m.author_type,
+        m.sequence,
+        m.reply_count,
+        m.edited_at,
         m.created_at,
         ts_rank(m.search_vector, websearch_to_tsquery('english', ${query})) as rank
       FROM messages m
@@ -270,6 +285,9 @@ export const SearchRepository = {
           m.content_markdown,
           m.author_id,
           m.author_type,
+          m.sequence,
+          m.reply_count,
+          m.edited_at,
           m.created_at,
           ROW_NUMBER() OVER (ORDER BY ts_rank(m.search_vector, websearch_to_tsquery('english', ${query})) DESC) as rank
         FROM messages m
@@ -290,6 +308,9 @@ export const SearchRepository = {
           m.content_markdown,
           m.author_id,
           m.author_type,
+          m.sequence,
+          m.reply_count,
+          m.edited_at,
           m.created_at,
           ROW_NUMBER() OVER (ORDER BY m.embedding <=> ${embeddingLiteral}::vector) as rank
         FROM messages m
@@ -311,6 +332,9 @@ export const SearchRepository = {
           COALESCE(k.content_markdown, s.content_markdown) as content_markdown,
           COALESCE(k.author_id, s.author_id) as author_id,
           COALESCE(k.author_type, s.author_type) as author_type,
+          COALESCE(k.sequence, s.sequence) as sequence,
+          COALESCE(k.reply_count, s.reply_count) as reply_count,
+          COALESCE(k.edited_at, s.edited_at) as edited_at,
           COALESCE(k.created_at, s.created_at) as created_at,
           COALESCE(${keywordWeight}::float / (${k}::float + k.rank), 0) +
           COALESCE(${semanticWeight}::float / (${k}::float + s.rank), 0) as rank

@@ -733,6 +733,9 @@ Each query must have:
                 content: message.contentMarkdown,
                 authorId: message.authorId,
                 authorType: message.authorType,
+                sequence: message.sequence,
+                replyCount: message.replyCount,
+                editedAt: message.editedAt,
                 createdAt: message.createdAt,
                 rank: 0,
               })
@@ -754,6 +757,9 @@ Each query must have:
                 content: message.contentMarkdown,
                 authorId: message.authorId,
                 authorType: message.authorType,
+                sequence: message.sequence,
+                replyCount: message.replyCount,
+                editedAt: message.editedAt,
                 createdAt: message.createdAt,
                 rank: 0,
               })

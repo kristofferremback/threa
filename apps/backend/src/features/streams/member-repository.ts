@@ -106,6 +106,37 @@ export const StreamMemberRepository = {
     throw new Error("StreamMemberRepository.list requires either memberId, streamId, or streamIds filter")
   },
 
+  async listPaginated(
+    db: Querier,
+    streamId: string,
+    options?: { limit?: number; cursorJoinedAt?: Date; cursorMemberId?: string }
+  ): Promise<StreamMember[]> {
+    const limit = options?.limit ?? 50
+
+    if (options?.cursorJoinedAt && options?.cursorMemberId) {
+      const result = await db.query<StreamMemberRow>(sql`
+        SELECT stream_id, member_id, pinned, pinned_at, notification_level,
+               last_read_event_id, last_read_at, joined_at
+        FROM stream_members
+        WHERE stream_id = ${streamId}
+          AND (joined_at, member_id) > (${options.cursorJoinedAt}, ${options.cursorMemberId})
+        ORDER BY joined_at, member_id
+        LIMIT ${limit}
+      `)
+      return result.rows.map(mapRowToMember)
+    }
+
+    const result = await db.query<StreamMemberRow>(sql`
+      SELECT stream_id, member_id, pinned, pinned_at, notification_level,
+             last_read_event_id, last_read_at, joined_at
+      FROM stream_members
+      WHERE stream_id = ${streamId}
+      ORDER BY joined_at, member_id
+      LIMIT ${limit}
+    `)
+    return result.rows.map(mapRowToMember)
+  },
+
   async insert(db: Querier, streamId: string, memberId: string): Promise<StreamMember> {
     const result = await db.query<StreamMemberRow>(sql`
       INSERT INTO stream_members (stream_id, member_id)

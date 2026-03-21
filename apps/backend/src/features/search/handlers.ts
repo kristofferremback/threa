@@ -24,9 +24,12 @@ export function serializeSearchResult(result: SearchResult) {
   return {
     id: result.id,
     streamId: result.streamId,
+    sequence: result.sequence.toString(),
     content: result.content,
     authorId: result.authorId,
     authorType: result.authorType,
+    replyCount: result.replyCount,
+    editedAt: result.editedAt?.toISOString() ?? null,
     createdAt: result.createdAt.toISOString(),
     rank: result.rank,
   }

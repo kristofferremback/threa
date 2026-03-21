@@ -324,6 +324,18 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     requireApiKeyScope(API_KEY_SCOPES.STREAMS_READ),
     publicApi.listStreams
   )
+  app.get(
+    "/api/v1/workspaces/:workspaceId/streams/:streamId",
+    ...publicMiddleware,
+    requireApiKeyScope(API_KEY_SCOPES.STREAMS_READ),
+    publicApi.getStream
+  )
+  app.get(
+    "/api/v1/workspaces/:workspaceId/streams/:streamId/members",
+    ...publicMiddleware,
+    requireApiKeyScope(API_KEY_SCOPES.STREAMS_READ),
+    publicApi.listMembers
+  )
 
   // Messages
   app.get(
