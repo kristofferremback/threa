@@ -15,7 +15,7 @@ import {
 import { UserRepository } from "../workspaces"
 import { PersonaRepository } from "../agents"
 import { BotRepository, type Bot } from "./bot-repository"
-import { STREAM_TYPES, AuthorTypes } from "@threa/types"
+import { STREAM_TYPES, AuthorTypes, type AuthorType } from "@threa/types"
 import type { Bot as WireBot } from "@threa/types"
 import { HttpError } from "@threa/backend-common"
 import { normalizeMessage, toEmoji } from "../emoji"
@@ -24,6 +24,7 @@ import { botId } from "../../lib/id"
 import { withTransaction } from "../../db"
 import { OutboxRepository } from "../../lib/outbox"
 import { encodeCursor, decodeCursor } from "./cursor"
+import type { WireStream, WireMessage, WireSearchResult, WireUser, WireMember } from "./routes"
 
 const PUBLIC_SEARCH_MAX_LIMIT = 50
 
@@ -78,7 +79,7 @@ export const listUsersSchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional().default(50),
 })
 
-function serializeStream(stream: Stream, context?: DisplayNameContext) {
+function serializeStream(stream: Stream, context?: DisplayNameContext): WireStream {
   const effective = getEffectiveDisplayName(stream, context)
   const displayName = stream.type === "channel" ? `#${effective.displayName}` : effective.displayName
 
@@ -103,7 +104,7 @@ function serializeMessage(
     streamId: string
     sequence: bigint
     authorId: string
-    authorType: string
+    authorType: AuthorType
     contentMarkdown: string
     replyCount: number
     clientMessageId?: string | null
@@ -111,7 +112,7 @@ function serializeMessage(
     createdAt: Date
   },
   opts?: { authorDisplayName?: string | null; threadStreamId?: string | null }
-) {
+): WireMessage {
   return {
     id: message.id,
     streamId: message.streamId,
@@ -147,7 +148,7 @@ function serializeUser(user: {
   email: string
   avatarUrl: string | null
   role: string
-}) {
+}): WireUser {
   return {
     id: user.id,
     name: user.name,
@@ -310,7 +311,7 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
 
       // Resolve author display names for search results
       const authorNames = await resolveAuthorDisplayNames(pool, workspaceId, results)
-      const serialized = results.map((r) => ({
+      const serialized: WireSearchResult[] = results.map((r) => ({
         ...serializeSearchResult(r),
         authorDisplayName: authorNames.get(r.authorId) ?? null,
       }))
@@ -428,7 +429,7 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
       const users = memberIds.length > 0 ? await UserRepository.findByIds(pool, workspaceId, memberIds) : []
       const userMap = new Map(users.map((u) => [u.id, u]))
 
-      const data = page
+      const data: WireMember[] = page
         .filter((m) => userMap.has(m.memberId))
         .map((m) => {
           const user = userMap.get(m.memberId)!

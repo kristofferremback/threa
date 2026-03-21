@@ -19,8 +19,9 @@ import {
 } from "./handlers"
 
 // ---------------------------------------------------------------------------
-// Response schemas — describe the JSON shape returned by each endpoint.
-// These are used ONLY for doc generation, not for runtime validation.
+// Response schemas — the single source of truth for public API wire shapes.
+// Serializer return types are derived from these schemas (see WireStream etc.)
+// so any drift between docs and runtime is a compile-time error.
 // ---------------------------------------------------------------------------
 
 const streamSchema = z.object({
@@ -293,5 +294,12 @@ export const PUBLIC_API_ROUTES: PublicApiRoute[] = [
   },
 ]
 
-// Export response schemas for potential reuse in tests
+// Export response schemas for tests and derived wire types for serializers
 export { streamSchema, messageSchema, searchResultSchema, memberSchema, userSchema, errorSchema }
+
+// Wire types derived from schemas — serializers annotate their return types with these
+export type WireStream = z.infer<typeof streamSchema>
+export type WireMessage = z.infer<typeof messageSchema>
+export type WireSearchResult = z.infer<typeof searchResultSchema>
+export type WireMember = z.infer<typeof memberSchema>
+export type WireUser = z.infer<typeof userSchema>
