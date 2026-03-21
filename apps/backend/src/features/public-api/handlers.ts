@@ -363,7 +363,7 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
           return serializeStream(s, parentStream ? { parentStream } : undefined)
         }),
         hasMore,
-        cursor: lastStream ? encodeCursor(lastStream.createdAt, lastStream.id) : null,
+        cursor: !query && lastStream ? encodeCursor(lastStream.createdAt, lastStream.id) : null,
       })
     },
 
@@ -686,7 +686,7 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
       res.json({
         data: page.map(serializeUser),
         hasMore,
-        cursor: lastUser ? encodeCursor(lastUser.joinedAt, lastUser.id) : null,
+        cursor: !query && lastUser ? encodeCursor(lastUser.joinedAt, lastUser.id) : null,
       })
     },
   }
