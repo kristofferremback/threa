@@ -494,9 +494,12 @@
   outline: none;
 }
 
-/* WorkOS widget portals (dialogs, dropdowns, popovers) render at body level
-   and need a z-index above Threa's dialog overlay (z-50). Target both the
-   Radix Themes portal wrapper and the Radix primitive popper wrapper. */
+/* NOTE: This intentionally raises z-index for ALL Radix Popper portals app-wide,
+   not just the WorkOS widget. Required because WorkOS widget portals render at
+   body level without a widget-specific attribute to scope against. This is benign
+   because Shadcn poppers inside dialogs already need to stack above the z-50
+   overlay — z-60 gives them that. Only problematic if a popper should appear
+   BELOW a dialog overlay, which doesn't exist in Threa's UI. */
 body > [data-radix-popper-content-wrapper] {
   z-index: 60 !important;
 }

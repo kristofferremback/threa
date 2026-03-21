@@ -142,10 +142,32 @@ export class WorkosOrgServiceImpl implements WorkosOrgService {
     } catch (error) {
       const code = getWorkosErrorCode(error)
       if (code === "user_already_organization_member") {
-        logger.debug(
-          { organizationId: params.organizationId, userId: params.userId },
-          "User already has WorkOS org membership"
-        )
+        // Upgrade role if needed (e.g., member promoted to admin in Threa).
+        // Only upgrades to "admin" — never downgrades, so acceptShadow("member")
+        // won't demote an existing admin.
+        if (params.roleSlug === "admin") {
+          try {
+            const memberships = await this.workos.userManagement.listOrganizationMemberships({
+              organizationId: params.organizationId,
+              userId: params.userId,
+            })
+            const existing = memberships.data[0]
+            if (existing && existing.role?.slug !== params.roleSlug) {
+              await this.workos.userManagement.updateOrganizationMembership(existing.id, {
+                roleSlug: params.roleSlug,
+              })
+              logger.info(
+                { organizationId: params.organizationId, userId: params.userId, roleSlug: params.roleSlug },
+                "Upgraded WorkOS organization membership role"
+              )
+            }
+          } catch (upgradeError) {
+            logger.warn(
+              { err: upgradeError, organizationId: params.organizationId, userId: params.userId },
+              "Failed to upgrade WorkOS org membership role (best-effort)"
+            )
+          }
+        }
         return
       }
       throw error
