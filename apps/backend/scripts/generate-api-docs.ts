@@ -125,7 +125,7 @@ function buildSpec() {
     responses["401"] = { description: "Missing or invalid API key" }
     responses["403"] = { description: "Insufficient permissions or stream not accessible" }
 
-    if (route.method === "patch" || route.method === "delete" || route.operationId === "getStream") {
+    if (route.canReturn404) {
       responses["404"] = { description: "Resource not found" }
     }
 

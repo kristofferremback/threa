@@ -159,6 +159,8 @@ export interface PublicApiRoute {
   responseSchema: z.ZodType
   /** HTTP status code for successful response */
   successStatus?: number
+  /** Whether the endpoint can return 404 (resource not found) */
+  canReturn404?: boolean
 }
 
 export const PUBLIC_API_ROUTES: PublicApiRoute[] = [
@@ -200,6 +202,7 @@ export const PUBLIC_API_ROUTES: PublicApiRoute[] = [
     scopes: [API_KEY_SCOPES.STREAMS_READ],
     parameters: [workspaceIdParam, streamIdParam],
     responseSchema: dataEnvelope(streamSchema),
+    canReturn404: true,
   },
   {
     method: "get",
@@ -258,6 +261,7 @@ export const PUBLIC_API_ROUTES: PublicApiRoute[] = [
     requestSchema: updateMessageSchema,
     requestIn: "body",
     responseSchema: dataEnvelope(messageSchema),
+    canReturn404: true,
   },
   {
     method: "delete",
@@ -270,6 +274,7 @@ export const PUBLIC_API_ROUTES: PublicApiRoute[] = [
     parameters: [workspaceIdParam, messageIdParam],
     responseSchema: z.void(),
     successStatus: 204,
+    canReturn404: true,
   },
 
   // --- Users ---
