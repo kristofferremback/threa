@@ -20,6 +20,7 @@ export function ApiKeysTab({ workspaceId }: ApiKeysTabProps) {
     queryKey: ["widget-token", workspaceId],
     queryFn: () => workspacesApi.getWidgetToken(workspaceId),
     staleTime: 50 * 60 * 1000, // Token valid for 1 hour, refresh at 50 min
+    refetchInterval: 50 * 60 * 1000, // Proactively renew while tab is open
   })
 
   if (isLoading) return <div className="text-sm text-muted-foreground">Loading...</div>
