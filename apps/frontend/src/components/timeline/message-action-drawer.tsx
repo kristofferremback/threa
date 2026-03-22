@@ -5,7 +5,7 @@ import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
 import { Separator } from "@/components/ui/separator"
 import { MarkdownContent } from "@/components/ui/markdown-content"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
-import { useMessageReactions } from "@/hooks/use-message-reactions"
+import { useMessageReactions, stripColons } from "@/hooks/use-message-reactions"
 import { cn } from "@/lib/utils"
 import { type MessageActionContext, type MessageAction, getVisibleActions } from "./message-actions"
 
@@ -56,7 +56,7 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
     const active = new Set<string>()
     for (const [shortcode, userIds] of Object.entries(context.reactions)) {
       if (userIds.includes(context.currentUserId)) {
-        active.add(shortcode.replace(/^:|:$/g, ""))
+        active.add(stripColons(shortcode))
       }
     }
     return active

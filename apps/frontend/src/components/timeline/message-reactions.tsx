@@ -1,7 +1,7 @@
 import { useMemo, useCallback } from "react"
 import { SmilePlus, X } from "lucide-react"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { useActors, useMessageReactions } from "@/hooks"
+import { useActors, useMessageReactions, stripColons } from "@/hooks"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { cn } from "@/lib/utils"
@@ -36,8 +36,7 @@ export function MessageReactions({ reactions, workspaceId, messageId, currentUse
     const active = new Set<string>()
     for (const [shortcode, userIds] of Object.entries(reactions)) {
       if (userIds.includes(currentUserId)) {
-        // Strip colons: reactions dict keys are ":laughing:" but EmojiEntry.shortcode is "laughing"
-        active.add(shortcode.replace(/^:|:$/g, ""))
+        active.add(stripColons(shortcode))
       }
     }
     return active

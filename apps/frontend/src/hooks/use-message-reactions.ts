@@ -3,6 +3,11 @@ import { toast } from "sonner"
 import { messagesApi } from "@/api/messages"
 import { useWorkspaceEmoji } from "./use-workspace-emoji"
 
+/** Strip surrounding colons from a shortcode (":laughing:" → "laughing") */
+export function stripColons(shortcode: string): string {
+  return shortcode.startsWith(":") && shortcode.endsWith(":") ? shortcode.slice(1, -1) : shortcode
+}
+
 interface UseMessageReactionsResult {
   /** Add a reaction (emoji character, e.g. "👍") */
   addReaction: (emoji: string) => Promise<void>

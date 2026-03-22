@@ -15,6 +15,7 @@ import {
   useActors,
   useWorkspaceUserId,
   useMessageReactions,
+  stripColons,
   getStepLabel,
   focusAtEnd,
   type MessageAgentActivity,
@@ -395,7 +396,7 @@ function SentMessageEvent({
     const active = new Set<string>()
     for (const [shortcode, userIds] of Object.entries(payload.reactions)) {
       if (userIds.includes(currentUserId)) {
-        active.add(shortcode.replace(/^:|:$/g, ""))
+        active.add(stripColons(shortcode))
       }
     }
     return active
