@@ -87,14 +87,16 @@ function EmojiGridContent({
   open: boolean
   isMobile: boolean
 }) {
-  const sortedEmojis = useMemo(() => {
-    return [...emojis].sort((a, b) => {
-      // Active (already reacted) emojis first
-      const activeA = activeShortcodes.has(a.shortcode)
-      const activeB = activeShortcodes.has(b.shortcode)
-      if (activeA && !activeB) return -1
-      if (!activeA && activeB) return 1
+  // Separate active emojis from the rest
+  const activeEmojis = useMemo(() => {
+    if (activeShortcodes.size === 0) return []
+    return emojis.filter((e) => activeShortcodes.has(e.shortcode))
+  }, [emojis, activeShortcodes])
 
+  const sortedEmojis = useMemo(() => {
+    // Exclude active emojis from the main grid (they're shown in a dedicated row)
+    const base = activeShortcodes.size > 0 ? emojis.filter((e) => !activeShortcodes.has(e.shortcode)) : emojis
+    return [...base].sort((a, b) => {
       const weightA = emojiWeights[a.shortcode] ?? 0
       const weightB = emojiWeights[b.shortcode] ?? 0
       if (weightA > 0 && weightB === 0) return -1
@@ -112,8 +114,10 @@ function EmojiGridContent({
   const filtered = useMemo(() => {
     if (!search) return sortedEmojis
     const q = search.toLowerCase()
-    return sortedEmojis.filter((e) => e.aliases.some((a) => a.includes(q)))
-  }, [sortedEmojis, search])
+    // When searching, include active emojis too (search across everything)
+    const all = [...activeEmojis, ...sortedEmojis]
+    return all.filter((e) => e.aliases.some((a) => a.includes(q)))
+  }, [sortedEmojis, activeEmojis, search])
 
   const rows = useMemo(() => {
     const result: EmojiEntry[][] = []
@@ -277,6 +281,27 @@ function EmojiGridContent({
           className="w-full rounded-md border bg-transparent px-2.5 py-1.5 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
         />
       </div>
+
+      {/* Your reactions row — only when there are active reactions and no search */}
+      {activeEmojis.length > 0 && !search && (
+        <div className="px-2 pb-1">
+          <p className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wider px-0.5 mb-1">
+            Your reactions
+          </p>
+          <div className="flex gap-0.5 flex-wrap">
+            {activeEmojis.map((item) => (
+              <EmojiButton
+                key={item.shortcode}
+                item={item}
+                isSelected={false}
+                isActive={true}
+                onClick={() => onSelect(item)}
+                onMouseEnter={() => {}}
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Emoji grid */}
       <div
