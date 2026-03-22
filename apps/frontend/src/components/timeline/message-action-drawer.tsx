@@ -56,7 +56,9 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
     if (!context.currentUserId || !context.reactions) return new Set<string>()
     const active = new Set<string>()
     for (const [shortcode, userIds] of Object.entries(context.reactions)) {
-      if (userIds.includes(context.currentUserId)) active.add(shortcode)
+      if (userIds.includes(context.currentUserId)) {
+        active.add(shortcode.replace(/^:|:$/g, ""))
+      }
     }
     return active
   }, [context.currentUserId, context.reactions])

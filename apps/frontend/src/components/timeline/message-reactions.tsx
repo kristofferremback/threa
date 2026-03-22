@@ -35,7 +35,10 @@ export function MessageReactions({ reactions, workspaceId, messageId, currentUse
     if (!currentUserId) return new Set<string>()
     const active = new Set<string>()
     for (const [shortcode, userIds] of Object.entries(reactions)) {
-      if (userIds.includes(currentUserId)) active.add(shortcode)
+      if (userIds.includes(currentUserId)) {
+        // Strip colons: reactions dict keys are ":laughing:" but EmojiEntry.shortcode is "laughing"
+        active.add(shortcode.replace(/^:|:$/g, ""))
+      }
     }
     return active
   }, [currentUserId, reactions])

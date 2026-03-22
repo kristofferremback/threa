@@ -393,7 +393,9 @@ function SentMessageEvent({
     if (!currentUserId || !payload.reactions) return new Set<string>()
     const active = new Set<string>()
     for (const [shortcode, userIds] of Object.entries(payload.reactions)) {
-      if (userIds.includes(currentUserId)) active.add(shortcode)
+      if (userIds.includes(currentUserId)) {
+        active.add(shortcode.replace(/^:|:$/g, ""))
+      }
     }
     return active
   }, [currentUserId, payload.reactions])
