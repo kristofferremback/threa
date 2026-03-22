@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { useActors } from "@/hooks"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
@@ -20,6 +20,13 @@ export function AllReactionsPopover({ reactions, workspaceId, children }: AllRea
       .filter(([, users]) => users.length > 0)
       .sort((a, b) => b[1].length - a[1].length)
   }, [reactions])
+
+  // Reset selection if the selected emoji's reactions were removed in real-time
+  useEffect(() => {
+    if (selectedEmoji && !sortedEntries.some(([sc]) => sc === selectedEmoji)) {
+      setSelectedEmoji(null)
+    }
+  }, [selectedEmoji, sortedEntries])
 
   const totalCount = useMemo(() => sortedEntries.reduce((sum, [, users]) => sum + users.length, 0), [sortedEntries])
 
