@@ -4,7 +4,6 @@ import { toast } from "sonner"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useActors } from "@/hooks"
 import { useIsMobile } from "@/hooks/use-mobile"
-import { useLongPress } from "@/hooks/use-long-press"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { messagesApi } from "@/api/messages"
 import { cn } from "@/lib/utils"
@@ -38,17 +37,19 @@ export function MessageReactions({ reactions, workspaceId, messageId, currentUse
       if (!currentUserId) return
       const userIds = reactions[shortcode] ?? []
       const hasReacted = userIds.includes(currentUserId)
+      const emoji = toEmoji(shortcode)
+      if (!emoji) return
       try {
         if (hasReacted) {
-          await messagesApi.removeReaction(workspaceId, messageId, shortcode)
+          await messagesApi.removeReaction(workspaceId, messageId, emoji)
         } else {
-          await messagesApi.addReaction(workspaceId, messageId, shortcode)
+          await messagesApi.addReaction(workspaceId, messageId, emoji)
         }
       } catch {
         toast.error("Failed to update reaction")
       }
     },
-    [workspaceId, messageId, currentUserId, reactions]
+    [workspaceId, messageId, currentUserId, reactions, toEmoji]
   )
 
   const handleAddReaction = useCallback(
@@ -74,7 +75,6 @@ export function MessageReactions({ reactions, workspaceId, messageId, currentUse
           workspaceId={workspaceId}
           currentUserId={currentUserId}
           isMobile={isMobile}
-          reactions={reactions}
           onToggle={() => handleToggleReaction(shortcode)}
         />
       ))}
@@ -113,19 +113,10 @@ interface ReactionPillProps {
   workspaceId: string
   currentUserId: string | null
   isMobile: boolean
-  reactions: Record<string, string[]>
   onToggle: () => void
 }
 
-function ReactionPill({
-  emoji,
-  userIds,
-  workspaceId,
-  currentUserId,
-  isMobile,
-  reactions,
-  onToggle,
-}: ReactionPillProps) {
+function ReactionPill({ emoji, userIds, workspaceId, currentUserId, isMobile, onToggle }: ReactionPillProps) {
   const { getActorName } = useActors(workspaceId)
   const hasReacted = currentUserId ? userIds.includes(currentUserId) : false
 
@@ -134,12 +125,6 @@ function ReactionPill({
     if (names.length <= 3) return names.join(", ")
     return `${names.slice(0, 3).join(", ")} and ${names.length - 3} more`
   }, [userIds, currentUserId, getActorName])
-
-  const longPress = useLongPress({
-    onLongPress: () => {}, // Handled via AllReactionsPopover wrapping
-    enabled: isMobile,
-    threshold: 400,
-  })
 
   const pill = (
     <button
@@ -151,7 +136,6 @@ function ReactionPill({
           : "text-muted-foreground hover:bg-muted"
       )}
       onClick={onToggle}
-      {...(isMobile ? longPress.handlers : {})}
     >
       <span className="text-sm leading-none">{emoji}</span>
       <span>{userIds.length}</span>
@@ -159,12 +143,7 @@ function ReactionPill({
   )
 
   if (isMobile) {
-    // On mobile, long-press opens the all-reactions popover
-    return (
-      <AllReactionsPopover reactions={reactions} workspaceId={workspaceId}>
-        {pill}
-      </AllReactionsPopover>
-    )
+    return pill
   }
 
   return (
