@@ -52,6 +52,15 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
     return weighted
   }, [emojis, emojiWeights])
 
+  const activeShortcodes = useMemo(() => {
+    if (!context.currentUserId || !context.reactions) return new Set<string>()
+    const active = new Set<string>()
+    for (const [shortcode, userIds] of Object.entries(context.reactions)) {
+      if (userIds.includes(context.currentUserId)) active.add(shortcode)
+    }
+    return active
+  }, [context.currentUserId, context.reactions])
+
   // Quick-react toggles: removes if user already reacted, adds otherwise
   const handleQuickReact = useCallback(
     (shortcode: string) => {
@@ -121,6 +130,7 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
             <ReactionEmojiPicker
               workspaceId={context.workspaceId ?? ""}
               onSelect={(emoji) => handlePickerReact(emoji)}
+              activeShortcodes={activeShortcodes}
               trigger={
                 <button
                   type="button"

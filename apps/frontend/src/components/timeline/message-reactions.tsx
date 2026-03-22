@@ -31,6 +31,15 @@ export function MessageReactions({ reactions, workspaceId, messageId, currentUse
   const visibleReactions = sortedReactions.slice(0, MAX_VISIBLE_REACTIONS)
   const overflowCount = sortedReactions.length - MAX_VISIBLE_REACTIONS
 
+  const activeShortcodes = useMemo(() => {
+    if (!currentUserId) return new Set<string>()
+    const active = new Set<string>()
+    for (const [shortcode, userIds] of Object.entries(reactions)) {
+      if (userIds.includes(currentUserId)) active.add(shortcode)
+    }
+    return active
+  }, [currentUserId, reactions])
+
   const handleToggleReaction = useCallback(
     (shortcode: string) => toggleReaction(shortcode, reactions, currentUserId),
     [toggleReaction, reactions, currentUserId]
@@ -66,6 +75,7 @@ export function MessageReactions({ reactions, workspaceId, messageId, currentUse
       <ReactionEmojiPicker
         workspaceId={workspaceId}
         onSelect={(emoji) => toggleByEmoji(emoji, reactions, currentUserId)}
+        activeShortcodes={activeShortcodes}
         trigger={
           <button
             type="button"

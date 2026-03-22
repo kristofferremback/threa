@@ -389,6 +389,15 @@ function SentMessageEvent({
     [toggleByEmoji, payload.reactions, currentUserId]
   )
 
+  const activeReactionShortcodes = useMemo(() => {
+    if (!currentUserId || !payload.reactions) return new Set<string>()
+    const active = new Set<string>()
+    for (const [shortcode, userIds] of Object.entries(payload.reactions)) {
+      if (userIds.includes(currentUserId)) active.add(shortcode)
+    }
+    return active
+  }, [currentUserId, payload.reactions])
+
   const handleDelete = async () => {
     setIsDeleting(true)
     try {
@@ -476,7 +485,11 @@ function SentMessageEvent({
               isEditing && "!opacity-0 pointer-events-none"
             )}
           >
-            <ReactionEmojiPicker workspaceId={workspaceId} onSelect={handleAddReaction} />
+            <ReactionEmojiPicker
+              workspaceId={workspaceId}
+              onSelect={handleAddReaction}
+              activeShortcodes={activeReactionShortcodes}
+            />
             <MessageContextMenu context={actionContext} />
           </div>
         }

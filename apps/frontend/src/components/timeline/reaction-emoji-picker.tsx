@@ -20,16 +20,19 @@ interface ReactionEmojiPickerProps {
   trigger?: React.ReactNode
   /** Additional class for the trigger wrapper */
   triggerClassName?: string
+  /** Shortcodes the current user has already reacted with — shown first and highlighted */
+  activeShortcodes?: Set<string>
 }
 
 interface EmojiButtonProps {
   item: EmojiEntry
   isSelected: boolean
+  isActive: boolean
   onClick: () => void
   onMouseEnter: () => void
 }
 
-const EmojiButton = memo(function EmojiButton({ item, isSelected, onClick, onMouseEnter }: EmojiButtonProps) {
+const EmojiButton = memo(function EmojiButton({ item, isSelected, isActive, onClick, onMouseEnter }: EmojiButtonProps) {
   return (
     <button
       type="button"
@@ -41,7 +44,8 @@ const EmojiButton = memo(function EmojiButton({ item, isSelected, onClick, onMou
       className={cn(
         "flex items-center justify-center w-8 h-8 rounded text-xl",
         "cursor-pointer hover:bg-accent active:bg-accent",
-        isSelected && "bg-accent ring-1 ring-ring"
+        isSelected && "bg-accent ring-1 ring-ring",
+        isActive && !isSelected && "bg-primary/10 ring-1 ring-primary/30"
       )}
       onClick={onClick}
       onMouseEnter={onMouseEnter}
@@ -57,6 +61,7 @@ const GROUP_ORDER = ["smileys", "people", "animals", "food", "travel", "activiti
 function EmojiGridContent({
   emojis,
   emojiWeights,
+  activeShortcodes,
   search,
   setSearch,
   selectedIndex,
@@ -70,6 +75,7 @@ function EmojiGridContent({
 }: {
   emojis: EmojiEntry[]
   emojiWeights: Record<string, number>
+  activeShortcodes: Set<string>
   search: string
   setSearch: (s: string) => void
   selectedIndex: number
@@ -83,6 +89,12 @@ function EmojiGridContent({
 }) {
   const sortedEmojis = useMemo(() => {
     return [...emojis].sort((a, b) => {
+      // Active (already reacted) emojis first
+      const activeA = activeShortcodes.has(a.shortcode)
+      const activeB = activeShortcodes.has(b.shortcode)
+      if (activeA && !activeB) return -1
+      if (!activeA && activeB) return 1
+
       const weightA = emojiWeights[a.shortcode] ?? 0
       const weightB = emojiWeights[b.shortcode] ?? 0
       if (weightA > 0 && weightB === 0) return -1
@@ -95,7 +107,7 @@ function EmojiGridContent({
       if (effectiveA !== effectiveB) return effectiveA - effectiveB
       return a.order - b.order
     })
-  }, [emojis, emojiWeights])
+  }, [emojis, emojiWeights, activeShortcodes])
 
   const filtered = useMemo(() => {
     if (!search) return sortedEmojis
@@ -307,6 +319,7 @@ function EmojiGridContent({
                         key={item.shortcode}
                         item={item}
                         isSelected={itemIndex === selectedIndex}
+                        isActive={activeShortcodes.has(item.shortcode)}
                         onClick={() => onSelect(item)}
                         onMouseEnter={() => setSelectedIndex(itemIndex)}
                       />
@@ -330,7 +343,15 @@ function EmojiGridContent({
   )
 }
 
-export function ReactionEmojiPicker({ workspaceId, onSelect, trigger, triggerClassName }: ReactionEmojiPickerProps) {
+const EMPTY_SET = new Set<string>()
+
+export function ReactionEmojiPicker({
+  workspaceId,
+  onSelect,
+  trigger,
+  triggerClassName,
+  activeShortcodes = EMPTY_SET,
+}: ReactionEmojiPickerProps) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState("")
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -388,6 +409,7 @@ export function ReactionEmojiPicker({ workspaceId, onSelect, trigger, triggerCla
     <EmojiGridContent
       emojis={emojis}
       emojiWeights={emojiWeights}
+      activeShortcodes={activeShortcodes}
       search={search}
       setSearch={setSearch}
       selectedIndex={selectedIndex}
