@@ -1,10 +1,17 @@
-import { useCallback } from "react"
+import { useCallback, useMemo } from "react"
 import { Link } from "react-router-dom"
+import { SmilePlus } from "lucide-react"
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
 import { Separator } from "@/components/ui/separator"
 import { MarkdownContent } from "@/components/ui/markdown-content"
+import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
+import { useMessageReactions, stripColons } from "@/hooks/use-message-reactions"
 import { cn } from "@/lib/utils"
 import { type MessageActionContext, type MessageAction, getVisibleActions } from "./message-actions"
+
+const QUICK_REACTION_COUNT = 6
+
+const DEFAULT_QUICK_EMOJIS = ["+1", "heart", "joy", "open_mouth", "cry", "fire"]
 
 interface MessageActionDrawerProps {
   open: boolean
@@ -16,6 +23,53 @@ interface MessageActionDrawerProps {
 
 export function MessageActionDrawer({ open, onOpenChange, context, authorName }: MessageActionDrawerProps) {
   const actions = getVisibleActions(context)
+  const { emojis, emojiWeights } = useWorkspaceEmoji(context.workspaceId ?? "")
+  const { toggleReaction } = useMessageReactions(context.workspaceId ?? "", context.messageId ?? "")
+
+  const quickEmojis = useMemo(() => {
+    if (!emojis.length) return []
+
+    // Sort by weight descending, take top N
+    const weighted = emojis
+      .filter((e) => (emojiWeights[e.shortcode] ?? 0) > 0)
+      .sort((a, b) => (emojiWeights[b.shortcode] ?? 0) - (emojiWeights[a.shortcode] ?? 0))
+      .slice(0, QUICK_REACTION_COUNT)
+
+    if (weighted.length >= QUICK_REACTION_COUNT) return weighted
+
+    // Fill with defaults
+    const usedShortcodes = new Set(weighted.map((e) => e.shortcode))
+    const emojiMap = new Map(emojis.map((e) => [e.shortcode, e]))
+    for (const shortcode of DEFAULT_QUICK_EMOJIS) {
+      if (weighted.length >= QUICK_REACTION_COUNT) break
+      const entry = emojiMap.get(shortcode)
+      if (entry && !usedShortcodes.has(shortcode)) {
+        weighted.push(entry)
+        usedShortcodes.add(shortcode)
+      }
+    }
+    return weighted
+  }, [emojis, emojiWeights])
+
+  const activeShortcodes = useMemo(() => {
+    if (!context.currentUserId || !context.reactions) return new Set<string>()
+    const active = new Set<string>()
+    for (const [shortcode, userIds] of Object.entries(context.reactions)) {
+      if (userIds.includes(context.currentUserId)) {
+        active.add(stripColons(shortcode))
+      }
+    }
+    return active
+  }, [context.currentUserId, context.reactions])
+
+  // Quick-react toggles: removes if user already reacted, adds otherwise
+  const handleQuickReact = useCallback(
+    (shortcode: string) => {
+      onOpenChange(false)
+      toggleReaction(shortcode, context.reactions ?? {}, context.currentUserId ?? null)
+    },
+    [onOpenChange, toggleReaction, context.reactions, context.currentUserId]
+  )
 
   const handleAction = useCallback(
     (action: MessageAction) => {
@@ -50,6 +104,41 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
             </div>
           </div>
         </div>
+
+        {/* Quick reactions row + full picker button */}
+        {quickEmojis.length > 0 && context.onReact && (
+          <div className="flex justify-center gap-2 px-4 pb-3">
+            {quickEmojis.map((entry) => {
+              const isActive = activeShortcodes.has(entry.shortcode)
+              return (
+                <button
+                  key={entry.shortcode}
+                  type="button"
+                  className={cn(
+                    "flex items-center justify-center w-10 h-10 rounded-full transition-colors text-xl",
+                    isActive ? "bg-primary/10 ring-1 ring-primary/30" : "hover:bg-muted active:bg-muted/80"
+                  )}
+                  title={`:${entry.shortcode}:`}
+                  onClick={() => handleQuickReact(entry.shortcode)}
+                >
+                  {entry.emoji}
+                </button>
+              )
+            })}
+            <button
+              type="button"
+              className="flex items-center justify-center w-10 h-10 rounded-full hover:bg-muted active:bg-muted/80 transition-colors text-muted-foreground"
+              aria-label="More reactions"
+              onClick={() => {
+                onOpenChange(false)
+                // Deferred so the drawer finishes closing before the picker opens
+                setTimeout(() => context.onOpenFullPicker?.(), 150)
+              }}
+            >
+              <SmilePlus className="h-5 w-5" />
+            </button>
+          </div>
+        )}
 
         {/* Action list */}
         <div className="px-2 pb-[max(12px,env(safe-area-inset-bottom))]">

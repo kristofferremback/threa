@@ -11,7 +11,15 @@ import { usePendingMessages, usePanel, createDraftPanelId, useTrace, useMessageS
 import { useUserProfile } from "@/components/user-profile"
 import { useEditLastMessage } from "./edit-last-message-context"
 import { useInlineEdit } from "./inline-edit-context"
-import { useActors, useWorkspaceUserId, getStepLabel, focusAtEnd, type MessageAgentActivity } from "@/hooks"
+import {
+  useActors,
+  useWorkspaceUserId,
+  useMessageReactions,
+  stripColons,
+  getStepLabel,
+  focusAtEnd,
+  type MessageAgentActivity,
+} from "@/hooks"
 import { cn } from "@/lib/utils"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useLongPress } from "@/hooks/use-long-press"
@@ -25,6 +33,8 @@ import { DeleteMessageDialog } from "./delete-message-dialog"
 import { MessageEditForm } from "./message-edit-form"
 import { EditedIndicator } from "./edited-indicator"
 import { MessageHistoryDialog } from "./message-history-dialog"
+import { MessageReactions } from "./message-reactions"
+import { ReactionEmojiPicker } from "./reaction-emoji-picker"
 
 interface MessagePayload {
   messageId: string
@@ -36,6 +46,7 @@ interface MessagePayload {
   threadId?: string
   sessionId?: string
   editedAt?: string
+  reactions?: Record<string, string[]>
 }
 
 interface MessageEventProps {
@@ -253,6 +264,7 @@ function SentMessageEvent({
 
   const [isEditing, setIsEditing] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [mobilePickerOpen, setMobilePickerOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
 
@@ -373,6 +385,23 @@ function SentMessageEvent({
     </div>
   ) : null
 
+  const { toggleByEmoji } = useMessageReactions(workspaceId, payload.messageId)
+  const handleAddReaction = useCallback(
+    (emoji: string) => toggleByEmoji(emoji, payload.reactions ?? {}, currentUserId),
+    [toggleByEmoji, payload.reactions, currentUserId]
+  )
+
+  const activeReactionShortcodes = useMemo(() => {
+    if (!currentUserId || !payload.reactions) return new Set<string>()
+    const active = new Set<string>()
+    for (const [shortcode, userIds] of Object.entries(payload.reactions)) {
+      if (userIds.includes(currentUserId)) {
+        active.add(stripColons(shortcode))
+      }
+    }
+    return active
+  }, [currentUserId, payload.reactions])
+
   const handleDelete = async () => {
     setIsDeleting(true)
     try {
@@ -398,6 +427,7 @@ function SentMessageEvent({
           ? getTraceUrl(payload.sessionId, payload.messageId)
           : undefined,
       messageId: payload.messageId,
+      workspaceId,
       authorId: event.actorId ?? undefined,
       currentUserId: currentUserId ?? undefined,
       editedAt: payload.editedAt,
@@ -407,12 +437,16 @@ function SentMessageEvent({
       // before the Dialog opens — Radix emits synthetic pointer events on menu
       // close that trigger the Dialog's "click outside" handler otherwise.
       onShowHistory: () => setTimeout(() => setHistoryOpen(true), 0),
+      onReact: handleAddReaction,
+      onOpenFullPicker: () => setMobilePickerOpen(true),
+      reactions: payload.reactions,
     }),
     [
       payload.contentMarkdown,
       payload.sessionId,
       payload.messageId,
       payload.editedAt,
+      payload.reactions,
       event.actorType,
       event.actorId,
       panelId,
@@ -423,7 +457,9 @@ function SentMessageEvent({
       draftPanelUrl,
       getTraceUrl,
       currentUserId,
+      workspaceId,
       startEditing,
+      handleAddReaction,
     ]
   )
 
@@ -454,10 +490,29 @@ function SentMessageEvent({
               isEditing && "!opacity-0 pointer-events-none"
             )}
           >
+            <ReactionEmojiPicker
+              workspaceId={workspaceId}
+              onSelect={handleAddReaction}
+              activeShortcodes={activeReactionShortcodes}
+            />
             <MessageContextMenu context={actionContext} />
           </div>
         }
-        footer={isEditing && !isMobile ? undefined : threadFooter}
+        footer={
+          isEditing && !isMobile ? undefined : (
+            <>
+              {payload.reactions && Object.keys(payload.reactions).length > 0 && (
+                <MessageReactions
+                  reactions={payload.reactions}
+                  workspaceId={workspaceId}
+                  messageId={payload.messageId}
+                  currentUserId={currentUserId}
+                />
+              )}
+              {threadFooter}
+            </>
+          )
+        }
         containerRef={containerRef}
         isHighlighted={isHighlighted}
         isNew={isNew}
@@ -517,6 +572,15 @@ function SentMessageEvent({
           onOpenChange={setDrawerOpen}
           context={actionContext}
           authorName={actorName}
+        />
+      )}
+      {mobilePickerOpen && (
+        <ReactionEmojiPicker
+          workspaceId={workspaceId}
+          onSelect={handleAddReaction}
+          activeShortcodes={activeReactionShortcodes}
+          open={mobilePickerOpen}
+          onOpenChange={setMobilePickerOpen}
         />
       )}
     </>

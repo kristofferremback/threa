@@ -19,6 +19,8 @@ export interface MessageActionContext {
   traceUrl?: string
   /** Message ID for edit/delete operations */
   messageId?: string
+  /** Workspace ID for reaction API calls */
+  workspaceId?: string
   /** Author's user ID */
   authorId?: string
   /** Current user's user ID */
@@ -31,6 +33,12 @@ export interface MessageActionContext {
   onDelete?: () => void
   /** Callback to open edit history */
   onShowHistory?: () => void
+  /** Callback to add a reaction (emoji character) */
+  onReact?: (emoji: string) => void
+  /** Callback to open the full emoji picker (used by mobile drawer to lift picker out) */
+  onOpenFullPicker?: () => void
+  /** Current reactions on this message (shortcode → userIds) for toggle logic */
+  reactions?: Record<string, string[]>
 }
 
 /** A variant within a sub-menu (e.g. "Copy as Markdown" vs "Copy as Plain text"). */

@@ -1,0 +1,101 @@
+import { useCallback, useMemo } from "react"
+import { toast } from "sonner"
+import { messagesApi } from "@/api/messages"
+import { useWorkspaceEmoji } from "./use-workspace-emoji"
+
+/** Strip surrounding colons from a shortcode (":laughing:" → "laughing") */
+export function stripColons(shortcode: string): string {
+  return shortcode.startsWith(":") && shortcode.endsWith(":") ? shortcode.slice(1, -1) : shortcode
+}
+
+interface UseMessageReactionsResult {
+  /** Add a reaction (emoji character, e.g. "👍") */
+  addReaction: (emoji: string) => Promise<void>
+  /** Remove a reaction (emoji character) */
+  removeReaction: (emoji: string) => Promise<void>
+  /** Toggle by shortcode: remove if user already reacted, add otherwise */
+  toggleReaction: (
+    shortcode: string,
+    reactions: Record<string, string[]>,
+    currentUserId: string | null
+  ) => Promise<void>
+  /** Toggle by emoji character: looks up the shortcode in the reactions dict,
+   *  removes if user already reacted, adds otherwise */
+  toggleByEmoji: (emoji: string, reactions: Record<string, string[]>, currentUserId: string | null) => Promise<void>
+}
+
+export function useMessageReactions(workspaceId: string, messageId: string): UseMessageReactionsResult {
+  const { emojis, toEmoji } = useWorkspaceEmoji(workspaceId)
+
+  // Reverse lookup: emoji character → shortcode
+  const emojiToShortcode = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const entry of emojis) {
+      map.set(entry.emoji, entry.shortcode)
+    }
+    return map
+  }, [emojis])
+
+  const addReaction = useCallback(
+    async (emoji: string) => {
+      try {
+        await messagesApi.addReaction(workspaceId, messageId, emoji)
+      } catch {
+        toast.error("Failed to add reaction")
+      }
+    },
+    [workspaceId, messageId]
+  )
+
+  const removeReaction = useCallback(
+    async (emoji: string) => {
+      try {
+        await messagesApi.removeReaction(workspaceId, messageId, emoji)
+      } catch {
+        toast.error("Failed to update reaction")
+      }
+    },
+    [workspaceId, messageId]
+  )
+
+  const toggleReaction = useCallback(
+    async (shortcode: string, reactions: Record<string, string[]>, currentUserId: string | null) => {
+      if (!currentUserId) return
+      const emoji = toEmoji(shortcode)
+      if (!emoji) {
+        toast.error("Could not resolve emoji")
+        return
+      }
+      // Reactions dict keys are colon-wrapped (":laughing:"), check both formats
+      const colonWrapped = `:${shortcode}:`
+      const userIds = reactions[colonWrapped] ?? reactions[shortcode] ?? []
+      const hasReacted = userIds.includes(currentUserId)
+      if (hasReacted) {
+        await removeReaction(emoji)
+      } else {
+        await addReaction(emoji)
+      }
+    },
+    [toEmoji, addReaction, removeReaction]
+  )
+
+  const toggleByEmoji = useCallback(
+    async (emoji: string, reactions: Record<string, string[]>, currentUserId: string | null) => {
+      if (!currentUserId) return
+      const shortcode = emojiToShortcode.get(emoji)
+      if (shortcode) {
+        // Reactions dict keys are colon-wrapped (":laughing:"), check both formats
+        const colonWrapped = `:${shortcode}:`
+        const userIds = reactions[colonWrapped] ?? reactions[shortcode] ?? []
+        if (userIds.includes(currentUserId)) {
+          await removeReaction(emoji)
+          return
+        }
+      }
+      await addReaction(emoji)
+    },
+    [emojiToShortcode, addReaction, removeReaction]
+  )
+
+  return { addReaction, removeReaction, toggleReaction, toggleByEmoji }
+}
