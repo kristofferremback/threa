@@ -61,7 +61,9 @@ export function useMessageReactions(workspaceId: string, messageId: string): Use
         toast.error("Could not resolve emoji")
         return
       }
-      const userIds = reactions[shortcode] ?? []
+      // Reactions dict keys are colon-wrapped (":laughing:"), check both formats
+      const colonWrapped = `:${shortcode}:`
+      const userIds = reactions[colonWrapped] ?? reactions[shortcode] ?? []
       const hasReacted = userIds.includes(currentUserId)
       if (hasReacted) {
         await removeReaction(emoji)
@@ -77,7 +79,9 @@ export function useMessageReactions(workspaceId: string, messageId: string): Use
       if (!currentUserId) return
       const shortcode = emojiToShortcode.get(emoji)
       if (shortcode) {
-        const userIds = reactions[shortcode] ?? []
+        // Reactions dict keys are colon-wrapped (":laughing:"), check both formats
+        const colonWrapped = `:${shortcode}:`
+        const userIds = reactions[colonWrapped] ?? reactions[shortcode] ?? []
         if (userIds.includes(currentUserId)) {
           await removeReaction(emoji)
           return
