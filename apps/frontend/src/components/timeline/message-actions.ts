@@ -19,6 +19,8 @@ export interface MessageActionContext {
   traceUrl?: string
   /** Message ID for edit/delete operations */
   messageId?: string
+  /** Workspace ID for reaction API calls */
+  workspaceId?: string
   /** Author's user ID */
   authorId?: string
   /** Current user's user ID */
@@ -31,6 +33,8 @@ export interface MessageActionContext {
   onDelete?: () => void
   /** Callback to open edit history */
   onShowHistory?: () => void
+  /** Callback to add a reaction */
+  onReact?: (emoji: string) => void
 }
 
 /** A variant within a sub-menu (e.g. "Copy as Markdown" vs "Copy as Plain text"). */

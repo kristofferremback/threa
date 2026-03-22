@@ -2,6 +2,7 @@ import { type ReactNode, useRef, useEffect, useState, useMemo, useCallback } fro
 import type { StreamEvent, AttachmentSummary, JSONContent, LinkPreviewSummary } from "@threa/types"
 import { Link } from "react-router-dom"
 import { toast } from "sonner"
+import { messagesApi } from "@/api/messages"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { MarkdownContent, AttachmentProvider } from "@/components/ui/markdown-content"
@@ -25,6 +26,8 @@ import { DeleteMessageDialog } from "./delete-message-dialog"
 import { MessageEditForm } from "./message-edit-form"
 import { EditedIndicator } from "./edited-indicator"
 import { MessageHistoryDialog } from "./message-history-dialog"
+import { MessageReactions } from "./message-reactions"
+import { ReactionEmojiPicker } from "./reaction-emoji-picker"
 
 interface MessagePayload {
   messageId: string
@@ -36,6 +39,7 @@ interface MessagePayload {
   threadId?: string
   sessionId?: string
   editedAt?: string
+  reactions?: Record<string, string[]>
 }
 
 interface MessageEventProps {
@@ -373,6 +377,17 @@ function SentMessageEvent({
     </div>
   ) : null
 
+  const handleAddReaction = useCallback(
+    async (emoji: string) => {
+      try {
+        await messagesApi.addReaction(workspaceId, payload.messageId, emoji)
+      } catch {
+        toast.error("Failed to add reaction")
+      }
+    },
+    [workspaceId, payload.messageId]
+  )
+
   const handleDelete = async () => {
     setIsDeleting(true)
     try {
@@ -398,6 +413,7 @@ function SentMessageEvent({
           ? getTraceUrl(payload.sessionId, payload.messageId)
           : undefined,
       messageId: payload.messageId,
+      workspaceId,
       authorId: event.actorId ?? undefined,
       currentUserId: currentUserId ?? undefined,
       editedAt: payload.editedAt,
@@ -407,6 +423,7 @@ function SentMessageEvent({
       // before the Dialog opens — Radix emits synthetic pointer events on menu
       // close that trigger the Dialog's "click outside" handler otherwise.
       onShowHistory: () => setTimeout(() => setHistoryOpen(true), 0),
+      onReact: handleAddReaction,
     }),
     [
       payload.contentMarkdown,
@@ -423,7 +440,9 @@ function SentMessageEvent({
       draftPanelUrl,
       getTraceUrl,
       currentUserId,
+      workspaceId,
       startEditing,
+      handleAddReaction,
     ]
   )
 
@@ -454,10 +473,25 @@ function SentMessageEvent({
               isEditing && "!opacity-0 pointer-events-none"
             )}
           >
+            <ReactionEmojiPicker workspaceId={workspaceId} onSelect={handleAddReaction} />
             <MessageContextMenu context={actionContext} />
           </div>
         }
-        footer={isEditing && !isMobile ? undefined : threadFooter}
+        footer={
+          isEditing && !isMobile ? undefined : (
+            <>
+              {payload.reactions && Object.keys(payload.reactions).length > 0 && (
+                <MessageReactions
+                  reactions={payload.reactions}
+                  workspaceId={workspaceId}
+                  messageId={payload.messageId}
+                  currentUserId={currentUserId}
+                />
+              )}
+              {threadFooter}
+            </>
+          )
+        }
         containerRef={containerRef}
         isHighlighted={isHighlighted}
         isNew={isNew}

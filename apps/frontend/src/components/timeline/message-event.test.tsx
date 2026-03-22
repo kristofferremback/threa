@@ -107,6 +107,12 @@ const createMessageEvent = (messageId: string, contentMarkdown: string): StreamE
   payload: { messageId, contentMarkdown },
 })
 
+const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+
+function Wrapper({ children }: { children: React.ReactNode }) {
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+}
+
 describe("MessageEvent", () => {
   const workspaceId = "ws_123"
   const streamId = "stream_123"
@@ -116,7 +122,8 @@ describe("MessageEvent", () => {
       const event = createMessageEvent("msg_123", "Highlighted message")
 
       const { container } = render(
-        <MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} isHighlighted={true} />
+        <MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} isHighlighted={true} />,
+        { wrapper: Wrapper }
       )
 
       const messageContainer = container.querySelector(".message-item")
@@ -126,7 +133,9 @@ describe("MessageEvent", () => {
     it("should not apply highlight animation by default", () => {
       const event = createMessageEvent("msg_123", "Normal message")
 
-      const { container } = render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />)
+      const { container } = render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />, {
+        wrapper: Wrapper,
+      })
 
       const messageContainer = container.querySelector(".message-item")
       expect(messageContainer).not.toHaveClass("animate-highlight-flash")
@@ -137,7 +146,7 @@ describe("MessageEvent", () => {
     it("should render message content", () => {
       const event = createMessageEvent("msg_123", "Hello, world!")
 
-      render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />)
+      render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />, { wrapper: Wrapper })
 
       // Verify content is visible to user
       expect(screen.getByText("Hello, world!")).toBeInTheDocument()
@@ -146,7 +155,7 @@ describe("MessageEvent", () => {
     it("should render actor name", () => {
       const event = createMessageEvent("msg_123", "Test message")
 
-      render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />)
+      render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />, { wrapper: Wrapper })
 
       expect(screen.getByText("Test User")).toBeInTheDocument()
     })
@@ -158,7 +167,7 @@ describe("MessageEvent", () => {
         actorId: "persona_ariadne",
       }
 
-      render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />)
+      render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />, { wrapper: Wrapper })
 
       expect(screen.getByText("Ariadne")).toBeInTheDocument()
     })
@@ -172,7 +181,9 @@ describe("MessageEvent", () => {
         actorId: "persona_ariadne",
       }
 
-      const { container } = render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />)
+      const { container } = render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />, {
+        wrapper: Wrapper,
+      })
 
       // Real AriadneIcon renders an SVG with aria-label
       const ariadneIcon = container.querySelector('svg[aria-label="Ariadne"]')
@@ -182,7 +193,7 @@ describe("MessageEvent", () => {
     it("should render user initials for user messages", () => {
       const event = createMessageEvent("msg_123", "User message")
 
-      render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />)
+      render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />, { wrapper: Wrapper })
 
       // User avatar shows initials from getActorAvatar
       expect(screen.getByText("TU")).toBeInTheDocument()
@@ -194,7 +205,9 @@ describe("MessageEvent", () => {
         actorType: "persona",
       }
 
-      const { container } = render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />)
+      const { container } = render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />, {
+        wrapper: Wrapper,
+      })
 
       const messageContainer = container.querySelector(".message-item")
       // Persona messages have gradient background and gold left accent
@@ -205,7 +218,9 @@ describe("MessageEvent", () => {
     it("should not apply gold styling to user messages", () => {
       const event = createMessageEvent("msg_123", "User message")
 
-      const { container } = render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />)
+      const { container } = render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />, {
+        wrapper: Wrapper,
+      })
 
       const messageContainer = container.querySelector(".message-item")
       expect(messageContainer).not.toHaveClass("bg-gradient-to-r")
@@ -299,7 +314,7 @@ describe("MessageEvent", () => {
     it("does not open edit form when context is absent", () => {
       const event = createMessageEvent("msg_edit", "Hello world")
 
-      render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />)
+      render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />, { wrapper: Wrapper })
 
       expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument()
     })
