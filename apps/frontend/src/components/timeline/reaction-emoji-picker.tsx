@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useRef, useEffect, memo } from "react"
-import { SmilePlus } from "lucide-react"
+import { Search, SmilePlus } from "lucide-react"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -10,10 +10,11 @@ import { cn } from "@/lib/utils"
 import type { EmojiEntry } from "@threa/types"
 
 const DESKTOP_COLUMNS = 8
-const EMOJI_SIZE = 36 // w-8 (32px) + gap
-const ROW_HEIGHT = 32
+const MOBILE_EMOJI_SIZE = 44
+const MOBILE_ROW_HEIGHT = 44
+const DESKTOP_ROW_HEIGHT = 32
 const CONTAINER_HEIGHT = 256
-const MAX_MOBILE_COLUMNS = 7
+const MAX_MOBILE_COLUMNS = 8
 
 interface ReactionEmojiPickerProps {
   workspaceId: string
@@ -34,11 +35,19 @@ interface EmojiButtonProps {
   item: EmojiEntry
   isSelected: boolean
   isActive: boolean
+  isMobile: boolean
   onClick: () => void
   onMouseEnter: () => void
 }
 
-const EmojiButton = memo(function EmojiButton({ item, isSelected, isActive, onClick, onMouseEnter }: EmojiButtonProps) {
+const EmojiButton = memo(function EmojiButton({
+  item,
+  isSelected,
+  isActive,
+  isMobile,
+  onClick,
+  onMouseEnter,
+}: EmojiButtonProps) {
   return (
     <button
       type="button"
@@ -48,10 +57,12 @@ const EmojiButton = memo(function EmojiButton({ item, isSelected, isActive, onCl
       title={`:${item.shortcode}:`}
       data-selected={isSelected ? "true" : undefined}
       className={cn(
-        "flex items-center justify-center w-8 h-8 rounded text-xl",
-        "cursor-pointer hover:bg-accent active:bg-accent",
-        isSelected && "bg-accent ring-1 ring-ring",
-        isActive && !isSelected && "bg-primary/10 ring-1 ring-primary/30"
+        "flex items-center justify-center rounded cursor-pointer",
+        isMobile
+          ? "w-full aspect-square text-2xl active:scale-90 transition-transform duration-75"
+          : "w-8 h-8 text-xl hover:bg-accent active:bg-accent",
+        isSelected && !isMobile && "bg-accent ring-1 ring-ring",
+        isActive && "bg-primary/10 ring-1 ring-primary/30 rounded-lg"
       )}
       onClick={onClick}
       onMouseEnter={onMouseEnter}
@@ -95,16 +106,17 @@ function EmojiGridContent({
 }) {
   // Compute column count based on container width on mobile
   const [columns, setColumns] = useState(isMobile ? MAX_MOBILE_COLUMNS : DESKTOP_COLUMNS)
+  const rowHeight = isMobile ? MOBILE_ROW_HEIGHT : DESKTOP_ROW_HEIGHT
+
   useEffect(() => {
     if (!isMobile || !scrollContainerRef.current) return
     const measure = () => {
       const width = scrollContainerRef.current?.clientWidth ?? 0
       if (width > 0) {
-        const cols = Math.min(MAX_MOBILE_COLUMNS, Math.max(4, Math.floor(width / EMOJI_SIZE)))
+        const cols = Math.min(MAX_MOBILE_COLUMNS, Math.max(5, Math.floor(width / MOBILE_EMOJI_SIZE)))
         setColumns(cols)
       }
     }
-    // Measure after mount
     requestAnimationFrame(measure)
     const observer = new ResizeObserver(measure)
     observer.observe(scrollContainerRef.current)
@@ -118,7 +130,6 @@ function EmojiGridContent({
   }, [emojis, activeShortcodes])
 
   const sortedEmojis = useMemo(() => {
-    // Exclude active emojis from the main grid (they're shown in a dedicated row)
     const base = activeShortcodes.size > 0 ? emojis.filter((e) => !activeShortcodes.has(e.shortcode)) : emojis
     return [...base].sort((a, b) => {
       const weightA = emojiWeights[a.shortcode] ?? 0
@@ -138,7 +149,6 @@ function EmojiGridContent({
   const filtered = useMemo(() => {
     if (!search) return sortedEmojis
     const q = search.toLowerCase()
-    // When searching, include active emojis too (search across everything)
     const all = [...activeEmojis, ...sortedEmojis]
     return all.filter((e) => e.aliases.some((a) => a.includes(q)))
   }, [sortedEmojis, activeEmojis, search])
@@ -154,7 +164,7 @@ function EmojiGridContent({
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollContainerRef.current,
-    estimateSize: () => ROW_HEIGHT,
+    estimateSize: () => rowHeight,
     overscan: 3,
   })
 
@@ -181,7 +191,7 @@ function EmojiGridContent({
         virtualizer.scrollToIndex(row, { align: "auto" })
       }
     },
-    [virtualizer]
+    [virtualizer, columns]
   )
 
   const scrollToRow = useCallback(
@@ -189,10 +199,10 @@ function EmojiGridContent({
       const row = Math.floor(index / columns)
       virtualizer.scrollToIndex(row, { align: "start" })
     },
-    [virtualizer]
+    [virtualizer, columns]
   )
 
-  const visibleRowCount = Math.floor(CONTAINER_HEIGHT / ROW_HEIGHT)
+  const visibleRowCount = Math.floor(CONTAINER_HEIGHT / rowHeight)
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
@@ -296,8 +306,107 @@ function EmojiGridContent({
   )
 
   const selectedEmoji = filtered[selectedIndex]
-  const gridHeight = isMobile ? "min(50dvh, 320px)" : CONTAINER_HEIGHT
 
+  if (isMobile) {
+    return (
+      <>
+        {/* Search — pill-shaped with icon, full-bleed padding */}
+        <div className="px-4 pt-3 pb-2">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/50" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              placeholder="Search emoji..."
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value)
+                setSelectedIndex(0)
+              }}
+              className="w-full rounded-full bg-muted/60 pl-9 pr-4 py-2 text-sm outline-none placeholder:text-muted-foreground/50 focus-visible:ring-1 focus-visible:ring-ring"
+            />
+          </div>
+        </div>
+
+        {/* Your reactions — horizontal strip */}
+        {activeEmojis.length > 0 && !search && (
+          <div className="px-4 pb-2">
+            <p className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider mb-1.5">
+              Your reactions
+            </p>
+            <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
+              {activeEmojis.map((item) => (
+                <EmojiButton
+                  key={item.shortcode}
+                  item={item}
+                  isSelected={false}
+                  isActive={true}
+                  isMobile={true}
+                  onClick={() => onSelect(item)}
+                  onMouseEnter={() => {}}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Emoji grid — full-bleed CSS grid */}
+        <div
+          ref={scrollContainerRef}
+          className="overflow-y-auto flex-1 px-4"
+          style={{ height: "min(55dvh, 360px)" }}
+          role="listbox"
+          aria-label="Emoji picker"
+        >
+          {filtered.length === 0 ? (
+            <div className="flex items-center justify-center h-full text-sm text-muted-foreground">No emojis found</div>
+          ) : (
+            <div
+              style={{
+                height: virtualizer.getTotalSize(),
+                width: "100%",
+                position: "relative",
+              }}
+            >
+              {virtualizer.getVirtualItems().map((virtualRow) => {
+                const rowItems = rows[virtualRow.index]
+                return (
+                  <div
+                    key={virtualRow.key}
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      width: "100%",
+                      height: MOBILE_ROW_HEIGHT,
+                      transform: `translateY(${virtualRow.start}px)`,
+                      display: "grid",
+                      gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+                      gap: "2px",
+                    }}
+                  >
+                    {rowItems.map((item) => (
+                      <EmojiButton
+                        key={item.shortcode}
+                        item={item}
+                        isSelected={false}
+                        isActive={activeShortcodes.has(item.shortcode)}
+                        isMobile={true}
+                        onClick={() => onSelect(item)}
+                        onMouseEnter={() => {}}
+                      />
+                    ))}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </>
+    )
+  }
+
+  // Desktop layout
   return (
     <>
       {/* Search input */}
@@ -316,7 +425,7 @@ function EmojiGridContent({
         />
       </div>
 
-      {/* Your reactions row — only when there are active reactions and no search */}
+      {/* Your reactions row */}
       {activeEmojis.length > 0 && !search && (
         <div className="px-2 pb-1">
           <p className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wider px-0.5 mb-1">
@@ -329,6 +438,7 @@ function EmojiGridContent({
                 item={item}
                 isSelected={false}
                 isActive={true}
+                isMobile={false}
                 onClick={() => onSelect(item)}
                 onMouseEnter={() => {}}
               />
@@ -341,7 +451,7 @@ function EmojiGridContent({
       <div
         ref={scrollContainerRef}
         className="overflow-y-auto p-2"
-        style={{ height: gridHeight }}
+        style={{ height: CONTAINER_HEIGHT }}
         role="listbox"
         aria-label="Emoji picker"
       >
@@ -366,10 +476,10 @@ function EmojiGridContent({
                     top: 0,
                     left: 0,
                     width: "100%",
-                    height: ROW_HEIGHT,
+                    height: DESKTOP_ROW_HEIGHT,
                     transform: `translateY(${virtualRow.start}px)`,
                   }}
-                  className={cn("flex gap-0.5", isMobile && "justify-center")}
+                  className="flex gap-0.5"
                 >
                   {rowItems.map((item, colIndex) => {
                     const itemIndex = rowStartIndex + colIndex
@@ -379,6 +489,7 @@ function EmojiGridContent({
                         item={item}
                         isSelected={itemIndex === selectedIndex}
                         isActive={activeShortcodes.has(item.shortcode)}
+                        isMobile={false}
                         onClick={() => onSelect(item)}
                         onMouseEnter={() => setSelectedIndex(itemIndex)}
                       />
@@ -391,7 +502,7 @@ function EmojiGridContent({
         )}
       </div>
 
-      {/* Footer */}
+      {/* Footer — desktop only */}
       {selectedEmoji && (
         <div className="border-t px-2 py-1.5 text-xs text-muted-foreground truncate">
           <span className="mr-1.5">{selectedEmoji.emoji}</span>
@@ -423,19 +534,21 @@ export function ReactionEmojiPicker({
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { emojis, emojiWeights } = useWorkspaceEmoji(workspaceId)
   const isNarrow = useIsMobile()
-  // Use Drawer for touch devices (avoids keyboard pushing Popover off-screen),
-  // even on tablets/phones wider than the 640px mobile breakpoint.
   const isTouchDevice = typeof window !== "undefined" && "ontouchstart" in window
   const useDrawer = isNarrow || isTouchDevice
 
   const handleSelect = useCallback(
     (item: EmojiEntry) => {
       onSelect(item.emoji)
+      // On mobile, keep open when toggling off an active reaction
+      if (useDrawer && activeShortcodes.has(item.shortcode)) {
+        return
+      }
       setOpen(false)
       setSearch("")
       setSelectedIndex(0)
     },
-    [onSelect]
+    [onSelect, useDrawer, activeShortcodes]
   )
 
   const handleOpenChange = useCallback((nextOpen: boolean) => {
