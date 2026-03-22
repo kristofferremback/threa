@@ -383,7 +383,11 @@ function SentMessageEvent({
     </div>
   ) : null
 
-  const { addReaction: handleAddReaction } = useMessageReactions(workspaceId, payload.messageId)
+  const { toggleByEmoji } = useMessageReactions(workspaceId, payload.messageId)
+  const handleAddReaction = useCallback(
+    (emoji: string) => toggleByEmoji(emoji, payload.reactions ?? {}, currentUserId),
+    [toggleByEmoji, payload.reactions, currentUserId]
+  )
 
   const handleDelete = async () => {
     setIsDeleting(true)

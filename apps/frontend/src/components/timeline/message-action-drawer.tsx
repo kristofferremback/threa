@@ -25,7 +25,7 @@ interface MessageActionDrawerProps {
 export function MessageActionDrawer({ open, onOpenChange, context, authorName }: MessageActionDrawerProps) {
   const actions = getVisibleActions(context)
   const { emojis, emojiWeights } = useWorkspaceEmoji(context.workspaceId ?? "")
-  const { addReaction, toggleReaction } = useMessageReactions(context.workspaceId ?? "", context.messageId ?? "")
+  const { toggleReaction, toggleByEmoji } = useMessageReactions(context.workspaceId ?? "", context.messageId ?? "")
 
   const quickEmojis = useMemo(() => {
     if (!emojis.length) return []
@@ -61,13 +61,13 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
     [onOpenChange, toggleReaction, context.reactions, context.currentUserId]
   )
 
-  // Full picker always adds (user picked a new emoji)
+  // Full picker toggles: removes if user already reacted with this emoji
   const handlePickerReact = useCallback(
     (emoji: string) => {
       onOpenChange(false)
-      addReaction(emoji)
+      toggleByEmoji(emoji, context.reactions ?? {}, context.currentUserId ?? null)
     },
-    [onOpenChange, addReaction]
+    [onOpenChange, toggleByEmoji, context.reactions, context.currentUserId]
   )
 
   const handleAction = useCallback(

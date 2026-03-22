@@ -1,4 +1,4 @@
-import { useCallback } from "react"
+import { useCallback, useMemo } from "react"
 import { toast } from "sonner"
 import { messagesApi } from "@/api/messages"
 import { useWorkspaceEmoji } from "./use-workspace-emoji"
@@ -8,17 +8,28 @@ interface UseMessageReactionsResult {
   addReaction: (emoji: string) => Promise<void>
   /** Remove a reaction (emoji character) */
   removeReaction: (emoji: string) => Promise<void>
-  /** Toggle: remove if user already reacted with this shortcode, add otherwise.
-   *  Requires the current reactions dict and userId to determine direction. */
+  /** Toggle by shortcode: remove if user already reacted, add otherwise */
   toggleReaction: (
     shortcode: string,
     reactions: Record<string, string[]>,
     currentUserId: string | null
   ) => Promise<void>
+  /** Toggle by emoji character: looks up the shortcode in the reactions dict,
+   *  removes if user already reacted, adds otherwise */
+  toggleByEmoji: (emoji: string, reactions: Record<string, string[]>, currentUserId: string | null) => Promise<void>
 }
 
 export function useMessageReactions(workspaceId: string, messageId: string): UseMessageReactionsResult {
-  const { toEmoji } = useWorkspaceEmoji(workspaceId)
+  const { emojis, toEmoji } = useWorkspaceEmoji(workspaceId)
+
+  // Reverse lookup: emoji character → shortcode
+  const emojiToShortcode = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const entry of emojis) {
+      map.set(entry.emoji, entry.shortcode)
+    }
+    return map
+  }, [emojis])
 
   const addReaction = useCallback(
     async (emoji: string) => {
@@ -61,5 +72,21 @@ export function useMessageReactions(workspaceId: string, messageId: string): Use
     [toEmoji, addReaction, removeReaction]
   )
 
-  return { addReaction, removeReaction, toggleReaction }
+  const toggleByEmoji = useCallback(
+    async (emoji: string, reactions: Record<string, string[]>, currentUserId: string | null) => {
+      if (!currentUserId) return
+      const shortcode = emojiToShortcode.get(emoji)
+      if (shortcode) {
+        const userIds = reactions[shortcode] ?? []
+        if (userIds.includes(currentUserId)) {
+          await removeReaction(emoji)
+          return
+        }
+      }
+      await addReaction(emoji)
+    },
+    [emojiToShortcode, addReaction, removeReaction]
+  )
+
+  return { addReaction, removeReaction, toggleReaction, toggleByEmoji }
 }

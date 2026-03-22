@@ -20,7 +20,7 @@ interface MessageReactionsProps {
 export function MessageReactions({ reactions, workspaceId, messageId, currentUserId }: MessageReactionsProps) {
   const { toEmoji } = useWorkspaceEmoji(workspaceId)
   const isMobile = useIsMobile()
-  const { addReaction, toggleReaction } = useMessageReactions(workspaceId, messageId)
+  const { toggleReaction, toggleByEmoji } = useMessageReactions(workspaceId, messageId)
 
   const sortedReactions = useMemo(() => {
     return Object.entries(reactions)
@@ -65,7 +65,7 @@ export function MessageReactions({ reactions, workspaceId, messageId, currentUse
 
       <ReactionEmojiPicker
         workspaceId={workspaceId}
-        onSelect={addReaction}
+        onSelect={(emoji) => toggleByEmoji(emoji, reactions, currentUserId)}
         trigger={
           <button
             type="button"
