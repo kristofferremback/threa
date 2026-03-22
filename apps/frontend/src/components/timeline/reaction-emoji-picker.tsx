@@ -3,7 +3,9 @@ import { SmilePlus } from "lucide-react"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Drawer, DrawerContent, DrawerTitle, DrawerTrigger } from "@/components/ui/drawer"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
+import { useIsMobile } from "@/hooks/use-mobile"
 import { cn } from "@/lib/utils"
 import type { EmojiEntry } from "@threa/types"
 
@@ -38,7 +40,7 @@ const EmojiButton = memo(function EmojiButton({ item, isSelected, onClick, onMou
       data-selected={isSelected ? "true" : undefined}
       className={cn(
         "flex items-center justify-center w-8 h-8 rounded text-xl",
-        "cursor-pointer hover:bg-accent",
+        "cursor-pointer hover:bg-accent active:bg-accent",
         isSelected && "bg-accent ring-1 ring-ring"
       )}
       onClick={onClick}
@@ -51,14 +53,34 @@ const EmojiButton = memo(function EmojiButton({ item, isSelected, onClick, onMou
 
 const GROUP_ORDER = ["smileys", "people", "animals", "food", "travel", "activities", "objects", "symbols", "flags"]
 
-export function ReactionEmojiPicker({ workspaceId, onSelect, trigger, triggerClassName }: ReactionEmojiPickerProps) {
-  const [open, setOpen] = useState(false)
-  const [search, setSearch] = useState("")
-  const [selectedIndex, setSelectedIndex] = useState(0)
-  const scrollContainerRef = useRef<HTMLDivElement>(null)
-  const searchInputRef = useRef<HTMLInputElement>(null)
-  const { emojis, emojiWeights } = useWorkspaceEmoji(workspaceId)
-
+/** Shared emoji grid content used by both Popover (desktop) and Drawer (mobile) */
+function EmojiGridContent({
+  emojis,
+  emojiWeights,
+  search,
+  setSearch,
+  selectedIndex,
+  setSelectedIndex,
+  onSelect,
+  onClose,
+  searchInputRef,
+  scrollContainerRef,
+  open,
+  isMobile,
+}: {
+  emojis: EmojiEntry[]
+  emojiWeights: Record<string, number>
+  search: string
+  setSearch: (s: string) => void
+  selectedIndex: number
+  setSelectedIndex: (i: number) => void
+  onSelect: (item: EmojiEntry) => void
+  onClose: () => void
+  searchInputRef: React.RefObject<HTMLInputElement | null>
+  scrollContainerRef: React.RefObject<HTMLDivElement | null>
+  open: boolean
+  isMobile: boolean
+}) {
   const sortedEmojis = useMemo(() => {
     return [...emojis].sort((a, b) => {
       const weightA = emojiWeights[a.shortcode] ?? 0
@@ -96,11 +118,9 @@ export function ReactionEmojiPicker({ workspaceId, onSelect, trigger, triggerCla
     overscan: 3,
   })
 
-  // When the popover opens, the portal mounts the scroll container.
-  // The virtualizer was initialized with null — force a re-measure.
+  // Force re-measure when the container mounts (portals delay ref attachment)
   useEffect(() => {
     if (open) {
-      // Wait one frame for the popover portal to mount and attach the ref
       requestAnimationFrame(() => {
         virtualizer.measure()
       })
@@ -111,27 +131,8 @@ export function ReactionEmojiPicker({ workspaceId, onSelect, trigger, triggerCla
   useEffect(() => {
     setSelectedIndex(0)
     if (open) virtualizer.scrollToIndex(0)
-  }, [filtered.length, open, virtualizer])
+  }, [filtered.length, open, virtualizer, setSelectedIndex])
 
-  const handleSelect = useCallback(
-    (item: EmojiEntry) => {
-      onSelect(item.emoji)
-      setOpen(false)
-      setSearch("")
-      setSelectedIndex(0)
-    },
-    [onSelect]
-  )
-
-  const handleOpenChange = useCallback((nextOpen: boolean) => {
-    setOpen(nextOpen)
-    if (!nextOpen) {
-      setSearch("")
-      setSelectedIndex(0)
-    }
-  }, [])
-
-  // Scroll to row only if it's outside the visible range
   const scrollToRowIfNeeded = useCallback(
     (index: number) => {
       const row = Math.floor(index / GRID_COLUMNS)
@@ -153,7 +154,6 @@ export function ReactionEmojiPicker({ workspaceId, onSelect, trigger, triggerCla
 
   const visibleRowCount = Math.floor(CONTAINER_HEIGHT / ROW_HEIGHT)
 
-  // Keyboard navigation on the search input — mirrors the editor's EmojiGrid
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
       if (filtered.length === 0) return
@@ -232,38 +232,193 @@ export function ReactionEmojiPicker({ workspaceId, onSelect, trigger, triggerCla
         case "Tab": {
           event.preventDefault()
           const item = filtered[selectedIndex]
-          if (item) handleSelect(item)
+          if (item) onSelect(item)
           break
         }
         case "Escape": {
           event.preventDefault()
-          setOpen(false)
-          setSearch("")
-          setSelectedIndex(0)
+          onClose()
           break
         }
-        // All other keys (letters, numbers, etc.) are typed into the search input naturally
       }
     },
-    [filtered, selectedIndex, handleSelect, scrollToRowIfNeeded, scrollToRow, visibleRowCount]
+    [filtered, selectedIndex, setSelectedIndex, onSelect, onClose, scrollToRowIfNeeded, scrollToRow, visibleRowCount]
   )
 
   const selectedEmoji = filtered[selectedIndex]
+  const gridHeight = isMobile ? "min(50dvh, 320px)" : CONTAINER_HEIGHT
+
+  return (
+    <>
+      {/* Search input */}
+      <div className="px-2 pt-2 pb-1">
+        <input
+          ref={searchInputRef}
+          type="text"
+          placeholder="Search emoji..."
+          value={search}
+          onChange={(e) => {
+            setSearch(e.target.value)
+            setSelectedIndex(0)
+          }}
+          onKeyDown={handleKeyDown}
+          className="w-full rounded-md border bg-transparent px-2.5 py-1.5 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
+        />
+      </div>
+
+      {/* Emoji grid */}
+      <div
+        ref={scrollContainerRef}
+        className="overflow-y-auto p-2"
+        style={{ height: gridHeight }}
+        role="listbox"
+        aria-label="Emoji picker"
+      >
+        {filtered.length === 0 ? (
+          <div className="flex items-center justify-center h-full text-sm text-muted-foreground">No emojis found</div>
+        ) : (
+          <div
+            style={{
+              height: virtualizer.getTotalSize(),
+              width: "100%",
+              position: "relative",
+            }}
+          >
+            {virtualizer.getVirtualItems().map((virtualRow) => {
+              const rowItems = rows[virtualRow.index]
+              const rowStartIndex = virtualRow.index * GRID_COLUMNS
+              return (
+                <div
+                  key={virtualRow.key}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    height: ROW_HEIGHT,
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                  className="flex gap-0.5"
+                >
+                  {rowItems.map((item, colIndex) => {
+                    const itemIndex = rowStartIndex + colIndex
+                    return (
+                      <EmojiButton
+                        key={item.shortcode}
+                        item={item}
+                        isSelected={itemIndex === selectedIndex}
+                        onClick={() => onSelect(item)}
+                        onMouseEnter={() => setSelectedIndex(itemIndex)}
+                      />
+                    )
+                  })}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Footer */}
+      {selectedEmoji && (
+        <div className="border-t px-2 py-1.5 text-xs text-muted-foreground truncate">
+          <span className="mr-1.5">{selectedEmoji.emoji}</span>
+          <span className="font-mono">:{selectedEmoji.shortcode}:</span>
+        </div>
+      )}
+    </>
+  )
+}
+
+export function ReactionEmojiPicker({ workspaceId, onSelect, trigger, triggerClassName }: ReactionEmojiPickerProps) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState("")
+  const [selectedIndex, setSelectedIndex] = useState(0)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const { emojis, emojiWeights } = useWorkspaceEmoji(workspaceId)
+  const isMobile = useIsMobile()
+
+  const handleSelect = useCallback(
+    (item: EmojiEntry) => {
+      onSelect(item.emoji)
+      setOpen(false)
+      setSearch("")
+      setSelectedIndex(0)
+    },
+    [onSelect]
+  )
+
+  const handleOpenChange = useCallback((nextOpen: boolean) => {
+    setOpen(nextOpen)
+    if (!nextOpen) {
+      setSearch("")
+      setSelectedIndex(0)
+    }
+  }, [])
+
+  const handleClose = useCallback(() => {
+    setOpen(false)
+    setSearch("")
+    setSelectedIndex(0)
+  }, [])
+
+  const focusSearch = useCallback(() => {
+    requestAnimationFrame(() => {
+      searchInputRef.current?.focus()
+    })
+  }, [])
+
+  const triggerElement = trigger ?? (
+    <Button
+      variant="outline"
+      size="icon"
+      className={cn("h-6 w-6 shadow-sm hover:border-primary/30 text-muted-foreground shrink-0", triggerClassName)}
+      aria-label="Add reaction"
+    >
+      <SmilePlus className="h-3.5 w-3.5" />
+    </Button>
+  )
+
+  const gridContent = (
+    <EmojiGridContent
+      emojis={emojis}
+      emojiWeights={emojiWeights}
+      search={search}
+      setSearch={setSearch}
+      selectedIndex={selectedIndex}
+      setSelectedIndex={setSelectedIndex}
+      onSelect={handleSelect}
+      onClose={handleClose}
+      searchInputRef={searchInputRef}
+      scrollContainerRef={scrollContainerRef}
+      open={open}
+      isMobile={isMobile}
+    />
+  )
+
+  if (isMobile) {
+    return (
+      <Drawer open={open} onOpenChange={handleOpenChange}>
+        <DrawerTrigger asChild>{triggerElement}</DrawerTrigger>
+        <DrawerContent
+          className="max-h-[85dvh]"
+          onOpenAutoFocus={(e) => {
+            e.preventDefault()
+            focusSearch()
+          }}
+        >
+          <DrawerTitle className="sr-only">Pick an emoji</DrawerTitle>
+          {gridContent}
+          <div className="pb-[max(8px,env(safe-area-inset-bottom))]" />
+        </DrawerContent>
+      </Drawer>
+    )
+  }
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
-      <PopoverTrigger asChild>
-        {trigger ?? (
-          <Button
-            variant="outline"
-            size="icon"
-            className={cn("h-6 w-6 shadow-sm hover:border-primary/30 text-muted-foreground shrink-0", triggerClassName)}
-            aria-label="Add reaction"
-          >
-            <SmilePlus className="h-3.5 w-3.5" />
-          </Button>
-        )}
-      </PopoverTrigger>
+      <PopoverTrigger asChild>{triggerElement}</PopoverTrigger>
       <PopoverContent
         align="end"
         side="top"
@@ -271,88 +426,10 @@ export function ReactionEmojiPicker({ workspaceId, onSelect, trigger, triggerCla
         onCloseAutoFocus={(e) => e.preventDefault()}
         onOpenAutoFocus={(e) => {
           e.preventDefault()
-          // Focus the search input after the popover finishes animating
-          requestAnimationFrame(() => {
-            searchInputRef.current?.focus()
-          })
+          focusSearch()
         }}
       >
-        {/* Search input — captures all keyboard input including arrow nav */}
-        <div className="px-2 pt-2 pb-1">
-          <input
-            ref={searchInputRef}
-            type="text"
-            placeholder="Search emoji..."
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value)
-              setSelectedIndex(0)
-            }}
-            onKeyDown={handleKeyDown}
-            className="w-full rounded-md border bg-transparent px-2.5 py-1.5 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
-          />
-        </div>
-
-        {/* Emoji grid */}
-        <div
-          ref={scrollContainerRef}
-          className="overflow-y-auto p-2"
-          style={{ height: CONTAINER_HEIGHT }}
-          role="listbox"
-          aria-label="Emoji picker"
-        >
-          {filtered.length === 0 ? (
-            <div className="flex items-center justify-center h-full text-sm text-muted-foreground">No emojis found</div>
-          ) : (
-            <div
-              style={{
-                height: virtualizer.getTotalSize(),
-                width: "100%",
-                position: "relative",
-              }}
-            >
-              {virtualizer.getVirtualItems().map((virtualRow) => {
-                const rowItems = rows[virtualRow.index]
-                const rowStartIndex = virtualRow.index * GRID_COLUMNS
-                return (
-                  <div
-                    key={virtualRow.key}
-                    style={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      width: "100%",
-                      height: ROW_HEIGHT,
-                      transform: `translateY(${virtualRow.start}px)`,
-                    }}
-                    className="flex gap-0.5"
-                  >
-                    {rowItems.map((item, colIndex) => {
-                      const itemIndex = rowStartIndex + colIndex
-                      return (
-                        <EmojiButton
-                          key={item.shortcode}
-                          item={item}
-                          isSelected={itemIndex === selectedIndex}
-                          onClick={() => handleSelect(item)}
-                          onMouseEnter={() => setSelectedIndex(itemIndex)}
-                        />
-                      )
-                    })}
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        {selectedEmoji && (
-          <div className="border-t px-2 py-1.5 text-xs text-muted-foreground truncate">
-            <span className="mr-1.5">{selectedEmoji.emoji}</span>
-            <span className="font-mono">:{selectedEmoji.shortcode}:</span>
-          </div>
-        )}
+        {gridContent}
       </PopoverContent>
     </Popover>
   )
