@@ -257,7 +257,10 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
             const eventPayload = e.payload as { messageId: string; reactions?: Record<string, string[]> }
             if (eventPayload.messageId !== payload.messageId) return e
             const reactions = { ...(eventPayload.reactions ?? {}) }
-            reactions[payload.emoji] = [...(reactions[payload.emoji] || []), payload.userId]
+            const existing = reactions[payload.emoji] || []
+            if (!existing.includes(payload.userId)) {
+              reactions[payload.emoji] = [...existing, payload.userId]
+            }
             return { ...e, payload: { ...eventPayload, reactions } }
           }),
         }

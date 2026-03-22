@@ -337,7 +337,11 @@ export function ReactionEmojiPicker({ workspaceId, onSelect, trigger, triggerCla
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { emojis, emojiWeights } = useWorkspaceEmoji(workspaceId)
-  const isMobile = useIsMobile()
+  const isNarrow = useIsMobile()
+  // Use Drawer for touch devices (avoids keyboard pushing Popover off-screen),
+  // even on tablets/phones wider than the 640px mobile breakpoint.
+  const isTouchDevice = typeof window !== "undefined" && "ontouchstart" in window
+  const useDrawer = isNarrow || isTouchDevice
 
   const handleSelect = useCallback(
     (item: EmojiEntry) => {
@@ -393,21 +397,15 @@ export function ReactionEmojiPicker({ workspaceId, onSelect, trigger, triggerCla
       searchInputRef={searchInputRef}
       scrollContainerRef={scrollContainerRef}
       open={open}
-      isMobile={isMobile}
+      isMobile={useDrawer}
     />
   )
 
-  if (isMobile) {
+  if (useDrawer) {
     return (
       <Drawer open={open} onOpenChange={handleOpenChange}>
         <DrawerTrigger asChild>{triggerElement}</DrawerTrigger>
-        <DrawerContent
-          className="max-h-[85dvh]"
-          onOpenAutoFocus={(e) => {
-            e.preventDefault()
-            focusSearch()
-          }}
-        >
+        <DrawerContent className="max-h-[85dvh]">
           <DrawerTitle className="sr-only">Pick an emoji</DrawerTitle>
           {gridContent}
           <div className="pb-[max(8px,env(safe-area-inset-bottom))]" />
