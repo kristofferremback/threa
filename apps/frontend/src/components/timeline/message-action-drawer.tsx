@@ -118,17 +118,23 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
         {/* Quick reactions row + full picker button */}
         {quickEmojis.length > 0 && context.onReact && (
           <div className="flex justify-center gap-2 px-4 pb-3">
-            {quickEmojis.map((entry) => (
-              <button
-                key={entry.shortcode}
-                type="button"
-                className="flex items-center justify-center w-10 h-10 rounded-full hover:bg-muted active:bg-muted/80 transition-colors text-xl"
-                title={`:${entry.shortcode}:`}
-                onClick={() => handleQuickReact(entry.shortcode)}
-              >
-                {entry.emoji}
-              </button>
-            ))}
+            {quickEmojis.map((entry) => {
+              const isActive = activeShortcodes.has(entry.shortcode)
+              return (
+                <button
+                  key={entry.shortcode}
+                  type="button"
+                  className={cn(
+                    "flex items-center justify-center w-10 h-10 rounded-full transition-colors text-xl",
+                    isActive ? "bg-primary/10 ring-1 ring-primary/30" : "hover:bg-muted active:bg-muted/80"
+                  )}
+                  title={`:${entry.shortcode}:`}
+                  onClick={() => handleQuickReact(entry.shortcode)}
+                >
+                  {entry.emoji}
+                </button>
+              )
+            })}
             <ReactionEmojiPicker
               workspaceId={context.workspaceId ?? ""}
               onSelect={(emoji) => handlePickerReact(emoji)}
