@@ -38,7 +38,10 @@ export function MessageReactions({ reactions, workspaceId, messageId, currentUse
       const userIds = reactions[shortcode] ?? []
       const hasReacted = userIds.includes(currentUserId)
       const emoji = toEmoji(shortcode)
-      if (!emoji) return
+      if (!emoji) {
+        toast.error("Could not resolve emoji")
+        return
+      }
       try {
         if (hasReacted) {
           await messagesApi.removeReaction(workspaceId, messageId, emoji)

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll, afterAll } from "vitest"
+import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from "vitest"
 import { render, screen, act } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { TooltipProvider } from "@/components/ui/tooltip"
@@ -107,10 +107,17 @@ const createMessageEvent = (messageId: string, contentMarkdown: string): StreamE
   payload: { messageId, contentMarkdown },
 })
 
-const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+let queryClient: QueryClient
+beforeEach(() => {
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+})
 
 function Wrapper({ children }: { children: React.ReactNode }) {
-  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>{children}</TooltipProvider>
+    </QueryClientProvider>
+  )
 }
 
 describe("MessageEvent", () => {
@@ -170,6 +177,26 @@ describe("MessageEvent", () => {
       render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />, { wrapper: Wrapper })
 
       expect(screen.getByText("Ariadne")).toBeInTheDocument()
+    })
+  })
+
+  describe("reactions", () => {
+    it("should render reaction pills when reactions are present", () => {
+      const event: StreamEvent = {
+        ...createMessageEvent("msg_123", "Reacted message"),
+        payload: {
+          messageId: "msg_123",
+          contentMarkdown: "Reacted message",
+          reactions: { "+1": ["member_123"], heart: ["member_456"] },
+        },
+      }
+
+      render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />, { wrapper: Wrapper })
+
+      // Reaction pills show count
+      const buttons = screen.getAllByRole("button")
+      const reactionButtons = buttons.filter((b) => b.textContent?.match(/\d$/))
+      expect(reactionButtons.length).toBeGreaterThanOrEqual(2)
     })
   })
 
