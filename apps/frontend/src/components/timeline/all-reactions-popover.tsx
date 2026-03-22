@@ -25,7 +25,6 @@ export function AllReactionsPopover({ reactions, workspaceId, children }: AllRea
 
   const displayedUsers = useMemo(() => {
     if (!selectedEmoji) {
-      // "All" tab — show all unique users with their emoji
       const seen = new Map<string, string[]>()
       for (const [emoji, userIds] of sortedEntries) {
         for (const userId of userIds) {
@@ -47,13 +46,13 @@ export function AllReactionsPopover({ reactions, workspaceId, children }: AllRea
     <Popover>
       <PopoverTrigger asChild>{children}</PopoverTrigger>
       <PopoverContent align="start" side="top" className="w-[260px] p-0">
-        {/* Emoji tabs */}
-        <div className="flex gap-1 px-2 pt-2 pb-1 overflow-x-auto">
+        {/* Emoji filter tabs */}
+        <div className="flex gap-0.5 px-1.5 pt-1.5 pb-1 overflow-x-auto scrollbar-none">
           <button
             type="button"
             className={cn(
               "shrink-0 rounded-md px-2 py-1 text-xs font-medium transition-colors",
-              !selectedEmoji ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-muted"
+              !selectedEmoji ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted/80"
             )}
             onClick={() => setSelectedEmoji(null)}
           >
@@ -66,30 +65,31 @@ export function AllReactionsPopover({ reactions, workspaceId, children }: AllRea
                 key={shortcode}
                 type="button"
                 className={cn(
-                  "shrink-0 rounded-md px-2 py-1 text-xs transition-colors",
-                  selectedEmoji === shortcode
-                    ? "bg-accent text-accent-foreground"
-                    : "text-muted-foreground hover:bg-muted"
+                  "shrink-0 rounded-md px-1.5 py-1 text-xs transition-colors inline-flex items-center gap-0.5",
+                  selectedEmoji === shortcode ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted/80"
                 )}
                 onClick={() => setSelectedEmoji(shortcode)}
               >
-                <span className="mr-0.5">{emoji ?? shortcode}</span>
-                {users.length}
+                <span>{emoji ?? shortcode}</span>
+                <span className="tabular-nums">{users.length}</span>
               </button>
             )
           })}
         </div>
 
+        <div className="border-t border-border/50" />
+
         {/* User list */}
-        <div className="max-h-[200px] overflow-y-auto px-2 pb-2">
+        <div className="max-h-[180px] overflow-y-auto py-1 px-1">
           {displayedUsers.map(({ userId, emojis }) => (
-            <div key={userId} className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm">
-              <span className="truncate flex-1">{getActorName(userId, "user")}</span>
-              <span className="shrink-0 text-base">
+            <div
+              key={userId}
+              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted/50 transition-colors"
+            >
+              <span className="truncate flex-1 text-foreground/90">{getActorName(userId, "user")}</span>
+              <span className="shrink-0 text-base flex gap-0.5">
                 {emojis.map((shortcode) => (
-                  <span key={shortcode} className="ml-0.5">
-                    {toEmoji(shortcode) ?? shortcode}
-                  </span>
+                  <span key={shortcode}>{toEmoji(shortcode) ?? shortcode}</span>
                 ))}
               </span>
             </div>

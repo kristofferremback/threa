@@ -1,5 +1,5 @@
 import { useMemo, useCallback } from "react"
-import { Plus } from "lucide-react"
+import { Plus, X } from "lucide-react"
 import { toast } from "sonner"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useActors } from "@/hooks"
@@ -69,7 +69,7 @@ export function MessageReactions({ reactions, workspaceId, messageId, currentUse
   if (sortedReactions.length === 0) return null
 
   return (
-    <div className="flex flex-wrap items-center gap-1 mt-1">
+    <div className="flex flex-wrap items-center gap-1 mt-1.5">
       {visibleReactions.map(([shortcode, userIds]) => (
         <ReactionPill
           key={shortcode}
@@ -86,9 +86,9 @@ export function MessageReactions({ reactions, workspaceId, messageId, currentUse
         <AllReactionsPopover reactions={reactions} workspaceId={workspaceId}>
           <button
             type="button"
-            className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted transition-colors"
+            className="inline-flex items-center gap-1 rounded-full border border-border/60 px-2.5 py-0.5 text-xs text-muted-foreground hover:bg-muted/80 hover:border-border transition-all"
           >
-            +{overflowCount} more
+            +{overflowCount}
           </button>
         </AllReactionsPopover>
       )}
@@ -99,10 +99,10 @@ export function MessageReactions({ reactions, workspaceId, messageId, currentUse
         trigger={
           <button
             type="button"
-            className="inline-flex items-center justify-center rounded-full border border-dashed h-6 w-6 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+            className="inline-flex items-center justify-center rounded-full border border-dashed border-border/50 h-[22px] w-[22px] text-muted-foreground/60 hover:bg-muted/80 hover:text-foreground hover:border-border transition-all"
             aria-label="Add reaction"
           >
-            <Plus className="h-3 w-3" />
+            <Plus className="h-2.5 w-2.5" />
           </button>
         }
       />
@@ -133,15 +133,23 @@ function ReactionPill({ emoji, userIds, workspaceId, currentUserId, isMobile, on
     <button
       type="button"
       className={cn(
-        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors",
+        "group/pill relative inline-flex items-center gap-1 rounded-full border pl-1.5 pr-2 py-0.5 text-xs transition-all",
         hasReacted
-          ? "border-primary/40 bg-primary/10 text-primary hover:bg-primary/15"
-          : "text-muted-foreground hover:bg-muted"
+          ? "border-primary/30 bg-primary/[0.08] text-primary hover:bg-primary/[0.14] hover:border-primary/40"
+          : "border-border/60 text-muted-foreground hover:bg-muted/80 hover:border-border"
       )}
       onClick={onToggle}
     >
-      <span className="text-sm leading-none">{emoji}</span>
-      <span>{userIds.length}</span>
+      {/* Emoji — on desktop, fades to X icon on hover when user has reacted */}
+      <span className="relative text-sm leading-none w-4 h-4 flex items-center justify-center">
+        <span className={cn("transition-opacity", hasReacted && !isMobile && "group-hover/pill:opacity-0")}>
+          {emoji}
+        </span>
+        {hasReacted && !isMobile && (
+          <X className="absolute inset-0 h-4 w-4 opacity-0 group-hover/pill:opacity-100 transition-opacity text-primary/70" />
+        )}
+      </span>
+      <span className={cn("tabular-nums", hasReacted && "font-medium")}>{userIds.length}</span>
     </button>
   )
 
@@ -152,7 +160,7 @@ function ReactionPill({ emoji, userIds, workspaceId, currentUserId, isMobile, on
   return (
     <Tooltip>
       <TooltipTrigger asChild>{pill}</TooltipTrigger>
-      <TooltipContent side="top" className="text-xs">
+      <TooltipContent side="top" className="text-xs max-w-[200px]">
         {tooltipText}
       </TooltipContent>
     </Tooltip>
