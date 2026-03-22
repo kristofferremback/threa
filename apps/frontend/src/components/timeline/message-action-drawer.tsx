@@ -126,6 +126,7 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
                   type="button"
                   className="flex items-center justify-center w-10 h-10 rounded-full hover:bg-muted active:bg-muted/80 transition-colors text-muted-foreground"
                   aria-label="More reactions"
+                  onClick={() => onOpenChange(false)}
                 >
                   <SmilePlus className="h-5 w-5" />
                 </button>
