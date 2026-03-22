@@ -263,6 +263,7 @@ function SentMessageEvent({
 
   const [isEditing, setIsEditing] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [mobilePickerOpen, setMobilePickerOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
 
@@ -436,6 +437,7 @@ function SentMessageEvent({
       // close that trigger the Dialog's "click outside" handler otherwise.
       onShowHistory: () => setTimeout(() => setHistoryOpen(true), 0),
       onReact: handleAddReaction,
+      onOpenFullPicker: () => setMobilePickerOpen(true),
       reactions: payload.reactions,
     }),
     [
@@ -569,6 +571,15 @@ function SentMessageEvent({
           onOpenChange={setDrawerOpen}
           context={actionContext}
           authorName={actorName}
+        />
+      )}
+      {mobilePickerOpen && (
+        <ReactionEmojiPicker
+          workspaceId={workspaceId}
+          onSelect={handleAddReaction}
+          activeShortcodes={activeReactionShortcodes}
+          open={mobilePickerOpen}
+          onOpenChange={setMobilePickerOpen}
         />
       )}
     </>

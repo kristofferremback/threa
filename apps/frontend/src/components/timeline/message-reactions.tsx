@@ -1,5 +1,5 @@
 import { useMemo, useCallback } from "react"
-import { Plus, X } from "lucide-react"
+import { Plus, SmilePlus, X } from "lucide-react"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useActors, useMessageReactions } from "@/hooks"
 import { useIsMobile } from "@/hooks/use-mobile"
@@ -82,10 +82,13 @@ export function MessageReactions({ reactions, workspaceId, messageId, currentUse
         trigger={
           <button
             type="button"
-            className="inline-flex items-center justify-center rounded-full border border-dashed border-border/50 h-[22px] w-[22px] text-muted-foreground/60 hover:bg-muted/80 hover:text-foreground hover:border-border transition-all"
+            className={cn(
+              "inline-flex items-center justify-center rounded-full border border-dashed border-border/50 text-muted-foreground/60 hover:bg-muted/80 hover:text-foreground hover:border-border transition-all",
+              isMobile ? "h-7 w-7" : "h-[22px] w-[22px]"
+            )}
             aria-label="Add reaction"
           >
-            <Plus className="h-2.5 w-2.5" />
+            {isMobile ? <SmilePlus className="h-3.5 w-3.5" /> : <Plus className="h-2.5 w-2.5" />}
           </button>
         }
       />

@@ -35,6 +35,8 @@ export interface MessageActionContext {
   onShowHistory?: () => void
   /** Callback to add a reaction (emoji character) */
   onReact?: (emoji: string) => void
+  /** Callback to open the full emoji picker (used by mobile drawer to lift picker out) */
+  onOpenFullPicker?: () => void
   /** Current reactions on this message (shortcode → userIds) for toggle logic */
   reactions?: Record<string, string[]>
 }

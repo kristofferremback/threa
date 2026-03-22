@@ -9,9 +9,11 @@ import { useIsMobile } from "@/hooks/use-mobile"
 import { cn } from "@/lib/utils"
 import type { EmojiEntry } from "@threa/types"
 
-const GRID_COLUMNS = 8
+const DESKTOP_COLUMNS = 8
+const EMOJI_SIZE = 36 // w-8 (32px) + gap
 const ROW_HEIGHT = 32
 const CONTAINER_HEIGHT = 256
+const MAX_MOBILE_COLUMNS = 7
 
 interface ReactionEmojiPickerProps {
   workspaceId: string
@@ -22,6 +24,10 @@ interface ReactionEmojiPickerProps {
   triggerClassName?: string
   /** Shortcodes the current user has already reacted with — shown first and highlighted */
   activeShortcodes?: Set<string>
+  /** Controlled open state — when provided, the picker is externally controlled (no trigger rendered) */
+  open?: boolean
+  /** Controlled open change handler */
+  onOpenChange?: (open: boolean) => void
 }
 
 interface EmojiButtonProps {
@@ -87,6 +93,24 @@ function EmojiGridContent({
   open: boolean
   isMobile: boolean
 }) {
+  // Compute column count based on container width on mobile
+  const [columns, setColumns] = useState(isMobile ? MAX_MOBILE_COLUMNS : DESKTOP_COLUMNS)
+  useEffect(() => {
+    if (!isMobile || !scrollContainerRef.current) return
+    const measure = () => {
+      const width = scrollContainerRef.current?.clientWidth ?? 0
+      if (width > 0) {
+        const cols = Math.min(MAX_MOBILE_COLUMNS, Math.max(4, Math.floor(width / EMOJI_SIZE)))
+        setColumns(cols)
+      }
+    }
+    // Measure after mount
+    requestAnimationFrame(measure)
+    const observer = new ResizeObserver(measure)
+    observer.observe(scrollContainerRef.current)
+    return () => observer.disconnect()
+  }, [isMobile, open])
+
   // Separate active emojis from the rest
   const activeEmojis = useMemo(() => {
     if (activeShortcodes.size === 0) return []
@@ -121,11 +145,11 @@ function EmojiGridContent({
 
   const rows = useMemo(() => {
     const result: EmojiEntry[][] = []
-    for (let i = 0; i < filtered.length; i += GRID_COLUMNS) {
-      result.push(filtered.slice(i, i + GRID_COLUMNS))
+    for (let i = 0; i < filtered.length; i += columns) {
+      result.push(filtered.slice(i, i + columns))
     }
     return result
-  }, [filtered])
+  }, [filtered, columns])
 
   const virtualizer = useVirtualizer({
     count: rows.length,
@@ -151,7 +175,7 @@ function EmojiGridContent({
 
   const scrollToRowIfNeeded = useCallback(
     (index: number) => {
-      const row = Math.floor(index / GRID_COLUMNS)
+      const row = Math.floor(index / columns)
       const range = virtualizer.range
       if (range && (row < range.startIndex || row > range.endIndex)) {
         virtualizer.scrollToIndex(row, { align: "auto" })
@@ -162,7 +186,7 @@ function EmojiGridContent({
 
   const scrollToRow = useCallback(
     (index: number) => {
-      const row = Math.floor(index / GRID_COLUMNS)
+      const row = Math.floor(index / columns)
       virtualizer.scrollToIndex(row, { align: "start" })
     },
     [virtualizer]
@@ -174,15 +198,15 @@ function EmojiGridContent({
     (event: React.KeyboardEvent) => {
       if (filtered.length === 0) return
 
-      const totalRows = Math.ceil(filtered.length / GRID_COLUMNS)
-      const currentRow = Math.floor(selectedIndex / GRID_COLUMNS)
-      const currentCol = selectedIndex % GRID_COLUMNS
+      const totalRows = Math.ceil(filtered.length / columns)
+      const currentRow = Math.floor(selectedIndex / columns)
+      const currentCol = selectedIndex % columns
 
       switch (event.key) {
         case "ArrowUp": {
           event.preventDefault()
           if (currentRow > 0) {
-            const newIndex = selectedIndex - GRID_COLUMNS
+            const newIndex = selectedIndex - columns
             setSelectedIndex(newIndex)
             scrollToRowIfNeeded(newIndex)
           }
@@ -190,7 +214,7 @@ function EmojiGridContent({
         }
         case "ArrowDown": {
           event.preventDefault()
-          const nextRowIndex = selectedIndex + GRID_COLUMNS
+          const nextRowIndex = selectedIndex + columns
           if (nextRowIndex < filtered.length) {
             setSelectedIndex(nextRowIndex)
             scrollToRowIfNeeded(nextRowIndex)
@@ -231,7 +255,7 @@ function EmojiGridContent({
         case "PageUp": {
           event.preventDefault()
           const upRow = Math.max(0, currentRow - visibleRowCount)
-          const upIndex = Math.min(upRow * GRID_COLUMNS + currentCol, filtered.length - 1)
+          const upIndex = Math.min(upRow * columns + currentCol, filtered.length - 1)
           setSelectedIndex(upIndex)
           scrollToRow(upIndex)
           break
@@ -239,7 +263,7 @@ function EmojiGridContent({
         case "PageDown": {
           event.preventDefault()
           const downRow = Math.min(totalRows - 1, currentRow + visibleRowCount)
-          const downIndex = Math.min(downRow * GRID_COLUMNS + currentCol, filtered.length - 1)
+          const downIndex = Math.min(downRow * columns + currentCol, filtered.length - 1)
           setSelectedIndex(downIndex)
           scrollToRow(downIndex)
           break
@@ -258,7 +282,17 @@ function EmojiGridContent({
         }
       }
     },
-    [filtered, selectedIndex, setSelectedIndex, onSelect, onClose, scrollToRowIfNeeded, scrollToRow, visibleRowCount]
+    [
+      filtered,
+      selectedIndex,
+      setSelectedIndex,
+      onSelect,
+      onClose,
+      scrollToRowIfNeeded,
+      scrollToRow,
+      visibleRowCount,
+      columns,
+    ]
   )
 
   const selectedEmoji = filtered[selectedIndex]
@@ -323,7 +357,7 @@ function EmojiGridContent({
           >
             {virtualizer.getVirtualItems().map((virtualRow) => {
               const rowItems = rows[virtualRow.index]
-              const rowStartIndex = virtualRow.index * GRID_COLUMNS
+              const rowStartIndex = virtualRow.index * columns
               return (
                 <div
                   key={virtualRow.key}
@@ -335,7 +369,7 @@ function EmojiGridContent({
                     height: ROW_HEIGHT,
                     transform: `translateY(${virtualRow.start}px)`,
                   }}
-                  className="flex gap-0.5"
+                  className={cn("flex gap-0.5", isMobile && "justify-center")}
                 >
                   {rowItems.map((item, colIndex) => {
                     const itemIndex = rowStartIndex + colIndex
@@ -376,8 +410,13 @@ export function ReactionEmojiPicker({
   trigger,
   triggerClassName,
   activeShortcodes = EMPTY_SET,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
 }: ReactionEmojiPickerProps) {
-  const [open, setOpen] = useState(false)
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
+  const isControlled = controlledOpen !== undefined
+  const open = isControlled ? controlledOpen : uncontrolledOpen
+  const setOpen = isControlled ? (v: boolean) => controlledOnOpenChange?.(v) : setUncontrolledOpen
   const [search, setSearch] = useState("")
   const [selectedIndex, setSelectedIndex] = useState(0)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -451,7 +490,7 @@ export function ReactionEmojiPicker({
   if (useDrawer) {
     return (
       <Drawer open={open} onOpenChange={handleOpenChange}>
-        <DrawerTrigger asChild>{triggerElement}</DrawerTrigger>
+        {!isControlled && <DrawerTrigger asChild>{triggerElement}</DrawerTrigger>}
         <DrawerContent className="max-h-[85dvh]">
           <DrawerTitle className="sr-only">Pick an emoji</DrawerTitle>
           {gridContent}

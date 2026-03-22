@@ -8,7 +8,6 @@ import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { useMessageReactions } from "@/hooks/use-message-reactions"
 import { cn } from "@/lib/utils"
 import { type MessageActionContext, type MessageAction, getVisibleActions } from "./message-actions"
-import { ReactionEmojiPicker } from "./reaction-emoji-picker"
 
 const QUICK_REACTION_COUNT = 6
 
@@ -25,7 +24,7 @@ interface MessageActionDrawerProps {
 export function MessageActionDrawer({ open, onOpenChange, context, authorName }: MessageActionDrawerProps) {
   const actions = getVisibleActions(context)
   const { emojis, emojiWeights } = useWorkspaceEmoji(context.workspaceId ?? "")
-  const { toggleReaction, toggleByEmoji } = useMessageReactions(context.workspaceId ?? "", context.messageId ?? "")
+  const { toggleReaction } = useMessageReactions(context.workspaceId ?? "", context.messageId ?? "")
 
   const quickEmojis = useMemo(() => {
     if (!emojis.length) return []
@@ -70,15 +69,6 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
       toggleReaction(shortcode, context.reactions ?? {}, context.currentUserId ?? null)
     },
     [onOpenChange, toggleReaction, context.reactions, context.currentUserId]
-  )
-
-  // Full picker toggles: removes if user already reacted with this emoji
-  const handlePickerReact = useCallback(
-    (emoji: string) => {
-      onOpenChange(false)
-      toggleByEmoji(emoji, context.reactions ?? {}, context.currentUserId ?? null)
-    },
-    [onOpenChange, toggleByEmoji, context.reactions, context.currentUserId]
   )
 
   const handleAction = useCallback(
@@ -135,21 +125,18 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
                 </button>
               )
             })}
-            <ReactionEmojiPicker
-              workspaceId={context.workspaceId ?? ""}
-              onSelect={(emoji) => handlePickerReact(emoji)}
-              activeShortcodes={activeShortcodes}
-              trigger={
-                <button
-                  type="button"
-                  className="flex items-center justify-center w-10 h-10 rounded-full hover:bg-muted active:bg-muted/80 transition-colors text-muted-foreground"
-                  aria-label="More reactions"
-                  onClick={() => onOpenChange(false)}
-                >
-                  <SmilePlus className="h-5 w-5" />
-                </button>
-              }
-            />
+            <button
+              type="button"
+              className="flex items-center justify-center w-10 h-10 rounded-full hover:bg-muted active:bg-muted/80 transition-colors text-muted-foreground"
+              aria-label="More reactions"
+              onClick={() => {
+                onOpenChange(false)
+                // Deferred so the drawer finishes closing before the picker opens
+                setTimeout(() => context.onOpenFullPicker?.(), 150)
+              }}
+            >
+              <SmilePlus className="h-5 w-5" />
+            </button>
           </div>
         )}
 
