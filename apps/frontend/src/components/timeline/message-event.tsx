@@ -2,7 +2,6 @@ import { type ReactNode, useRef, useEffect, useState, useMemo, useCallback } fro
 import type { StreamEvent, AttachmentSummary, JSONContent, LinkPreviewSummary } from "@threa/types"
 import { Link } from "react-router-dom"
 import { toast } from "sonner"
-import { messagesApi } from "@/api/messages"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { MarkdownContent, AttachmentProvider } from "@/components/ui/markdown-content"
@@ -12,7 +11,14 @@ import { usePendingMessages, usePanel, createDraftPanelId, useTrace, useMessageS
 import { useUserProfile } from "@/components/user-profile"
 import { useEditLastMessage } from "./edit-last-message-context"
 import { useInlineEdit } from "./inline-edit-context"
-import { useActors, useWorkspaceUserId, getStepLabel, focusAtEnd, type MessageAgentActivity } from "@/hooks"
+import {
+  useActors,
+  useWorkspaceUserId,
+  useMessageReactions,
+  getStepLabel,
+  focusAtEnd,
+  type MessageAgentActivity,
+} from "@/hooks"
 import { cn } from "@/lib/utils"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useLongPress } from "@/hooks/use-long-press"
@@ -377,16 +383,7 @@ function SentMessageEvent({
     </div>
   ) : null
 
-  const handleAddReaction = useCallback(
-    async (emoji: string) => {
-      try {
-        await messagesApi.addReaction(workspaceId, payload.messageId, emoji)
-      } catch {
-        toast.error("Failed to add reaction")
-      }
-    },
-    [workspaceId, payload.messageId]
-  )
+  const { addReaction: handleAddReaction } = useMessageReactions(workspaceId, payload.messageId)
 
   const handleDelete = async () => {
     setIsDeleting(true)
@@ -424,12 +421,14 @@ function SentMessageEvent({
       // close that trigger the Dialog's "click outside" handler otherwise.
       onShowHistory: () => setTimeout(() => setHistoryOpen(true), 0),
       onReact: handleAddReaction,
+      reactions: payload.reactions,
     }),
     [
       payload.contentMarkdown,
       payload.sessionId,
       payload.messageId,
       payload.editedAt,
+      payload.reactions,
       event.actorType,
       event.actorId,
       panelId,

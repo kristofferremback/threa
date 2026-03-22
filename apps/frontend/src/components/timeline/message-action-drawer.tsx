@@ -5,6 +5,7 @@ import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
 import { Separator } from "@/components/ui/separator"
 import { MarkdownContent } from "@/components/ui/markdown-content"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
+import { useMessageReactions } from "@/hooks/use-message-reactions"
 import { cn } from "@/lib/utils"
 import { type MessageActionContext, type MessageAction, getVisibleActions } from "./message-actions"
 import { ReactionEmojiPicker } from "./reaction-emoji-picker"
@@ -24,6 +25,7 @@ interface MessageActionDrawerProps {
 export function MessageActionDrawer({ open, onOpenChange, context, authorName }: MessageActionDrawerProps) {
   const actions = getVisibleActions(context)
   const { emojis, emojiWeights } = useWorkspaceEmoji(context.workspaceId ?? "")
+  const { addReaction, toggleReaction } = useMessageReactions(context.workspaceId ?? "", context.messageId ?? "")
 
   const quickEmojis = useMemo(() => {
     if (!emojis.length) return []
@@ -50,12 +52,22 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
     return weighted
   }, [emojis, emojiWeights])
 
-  const handleReact = useCallback(
+  // Quick-react toggles: removes if user already reacted, adds otherwise
+  const handleQuickReact = useCallback(
+    (shortcode: string) => {
+      onOpenChange(false)
+      toggleReaction(shortcode, context.reactions ?? {}, context.currentUserId ?? null)
+    },
+    [onOpenChange, toggleReaction, context.reactions, context.currentUserId]
+  )
+
+  // Full picker always adds (user picked a new emoji)
+  const handlePickerReact = useCallback(
     (emoji: string) => {
       onOpenChange(false)
-      context.onReact?.(emoji)
+      addReaction(emoji)
     },
-    [context, onOpenChange]
+    [onOpenChange, addReaction]
   )
 
   const handleAction = useCallback(
@@ -101,14 +113,14 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
                 type="button"
                 className="flex items-center justify-center w-10 h-10 rounded-full hover:bg-muted active:bg-muted/80 transition-colors text-xl"
                 title={`:${entry.shortcode}:`}
-                onClick={() => handleReact(entry.emoji)}
+                onClick={() => handleQuickReact(entry.shortcode)}
               >
                 {entry.emoji}
               </button>
             ))}
             <ReactionEmojiPicker
               workspaceId={context.workspaceId ?? ""}
-              onSelect={(emoji) => handleReact(emoji)}
+              onSelect={(emoji) => handlePickerReact(emoji)}
               trigger={
                 <button
                   type="button"

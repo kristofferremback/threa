@@ -1,11 +1,9 @@
 import { useMemo, useCallback } from "react"
 import { Plus, X } from "lucide-react"
-import { toast } from "sonner"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { useActors } from "@/hooks"
+import { useActors, useMessageReactions } from "@/hooks"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
-import { messagesApi } from "@/api/messages"
 import { cn } from "@/lib/utils"
 import { ReactionEmojiPicker } from "./reaction-emoji-picker"
 import { AllReactionsPopover } from "./all-reactions-popover"
@@ -22,6 +20,7 @@ interface MessageReactionsProps {
 export function MessageReactions({ reactions, workspaceId, messageId, currentUserId }: MessageReactionsProps) {
   const { toEmoji } = useWorkspaceEmoji(workspaceId)
   const isMobile = useIsMobile()
+  const { addReaction, toggleReaction } = useMessageReactions(workspaceId, messageId)
 
   const sortedReactions = useMemo(() => {
     return Object.entries(reactions)
@@ -33,37 +32,8 @@ export function MessageReactions({ reactions, workspaceId, messageId, currentUse
   const overflowCount = sortedReactions.length - MAX_VISIBLE_REACTIONS
 
   const handleToggleReaction = useCallback(
-    async (shortcode: string) => {
-      if (!currentUserId) return
-      const userIds = reactions[shortcode] ?? []
-      const hasReacted = userIds.includes(currentUserId)
-      const emoji = toEmoji(shortcode)
-      if (!emoji) {
-        toast.error("Could not resolve emoji")
-        return
-      }
-      try {
-        if (hasReacted) {
-          await messagesApi.removeReaction(workspaceId, messageId, emoji)
-        } else {
-          await messagesApi.addReaction(workspaceId, messageId, emoji)
-        }
-      } catch {
-        toast.error("Failed to update reaction")
-      }
-    },
-    [workspaceId, messageId, currentUserId, reactions, toEmoji]
-  )
-
-  const handleAddReaction = useCallback(
-    async (emoji: string) => {
-      try {
-        await messagesApi.addReaction(workspaceId, messageId, emoji)
-      } catch {
-        toast.error("Failed to add reaction")
-      }
-    },
-    [workspaceId, messageId]
+    (shortcode: string) => toggleReaction(shortcode, reactions, currentUserId),
+    [toggleReaction, reactions, currentUserId]
   )
 
   if (sortedReactions.length === 0) return null
@@ -95,7 +65,7 @@ export function MessageReactions({ reactions, workspaceId, messageId, currentUse
 
       <ReactionEmojiPicker
         workspaceId={workspaceId}
-        onSelect={handleAddReaction}
+        onSelect={addReaction}
         trigger={
           <button
             type="button"

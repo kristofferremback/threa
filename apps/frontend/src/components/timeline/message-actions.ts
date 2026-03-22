@@ -33,8 +33,10 @@ export interface MessageActionContext {
   onDelete?: () => void
   /** Callback to open edit history */
   onShowHistory?: () => void
-  /** Callback to add a reaction */
+  /** Callback to add a reaction (emoji character) */
   onReact?: (emoji: string) => void
+  /** Current reactions on this message (shortcode → userIds) for toggle logic */
+  reactions?: Record<string, string[]>
 }
 
 /** A variant within a sub-menu (e.g. "Copy as Markdown" vs "Copy as Plain text"). */
