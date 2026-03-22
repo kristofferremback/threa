@@ -1,11 +1,13 @@
 import { useCallback, useMemo } from "react"
 import { Link } from "react-router-dom"
+import { SmilePlus } from "lucide-react"
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
 import { Separator } from "@/components/ui/separator"
 import { MarkdownContent } from "@/components/ui/markdown-content"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { cn } from "@/lib/utils"
 import { type MessageActionContext, type MessageAction, getVisibleActions } from "./message-actions"
+import { ReactionEmojiPicker } from "./reaction-emoji-picker"
 
 const QUICK_REACTION_COUNT = 6
 
@@ -90,7 +92,7 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
           </div>
         </div>
 
-        {/* Quick reactions row */}
+        {/* Quick reactions row + full picker button */}
         {quickEmojis.length > 0 && context.onReact && (
           <div className="flex justify-center gap-2 px-4 pb-3">
             {quickEmojis.map((entry) => (
@@ -104,6 +106,19 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
                 {entry.emoji}
               </button>
             ))}
+            <ReactionEmojiPicker
+              workspaceId={context.workspaceId ?? ""}
+              onSelect={(emoji) => handleReact(emoji)}
+              trigger={
+                <button
+                  type="button"
+                  className="flex items-center justify-center w-10 h-10 rounded-full hover:bg-muted active:bg-muted/80 transition-colors text-muted-foreground"
+                  aria-label="More reactions"
+                >
+                  <SmilePlus className="h-5 w-5" />
+                </button>
+              }
+            />
           </div>
         )}
 

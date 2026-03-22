@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef, memo } from "react"
+import { useState, useMemo, useCallback, useRef, useEffect, memo } from "react"
 import { SmilePlus } from "lucide-react"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { Button } from "@/components/ui/button"
@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils"
 import type { EmojiEntry } from "@threa/types"
 
 const GRID_COLUMNS = 8
-const ROW_HEIGHT = 36
+const ROW_HEIGHT = 32
 const CONTAINER_HEIGHT = 256
 
 interface ReactionEmojiPickerProps {
@@ -31,10 +31,13 @@ const EmojiButton = memo(function EmojiButton({ item, isSelected, onClick, onMou
   return (
     <button
       type="button"
+      role="option"
+      aria-selected={isSelected}
       aria-label={`:${item.shortcode}:`}
       title={`:${item.shortcode}:`}
+      data-selected={isSelected ? "true" : undefined}
       className={cn(
-        "flex items-center justify-center w-[34px] h-[34px] rounded text-xl",
+        "flex items-center justify-center w-8 h-8 rounded text-xl",
         "cursor-pointer hover:bg-accent",
         isSelected && "bg-accent ring-1 ring-ring"
       )}
@@ -93,6 +96,23 @@ export function ReactionEmojiPicker({ workspaceId, onSelect, trigger, triggerCla
     overscan: 3,
   })
 
+  // When the popover opens, the portal mounts the scroll container.
+  // The virtualizer was initialized with null — force a re-measure.
+  useEffect(() => {
+    if (open) {
+      // Wait one frame for the popover portal to mount and attach the ref
+      requestAnimationFrame(() => {
+        virtualizer.measure()
+      })
+    }
+  }, [open, virtualizer])
+
+  // Reset selection when filtered items change
+  useEffect(() => {
+    setSelectedIndex(0)
+    if (open) virtualizer.scrollToIndex(0)
+  }, [filtered.length, open, virtualizer])
+
   const handleSelect = useCallback(
     (item: EmojiEntry) => {
       onSelect(item.emoji)
@@ -110,6 +130,123 @@ export function ReactionEmojiPicker({ workspaceId, onSelect, trigger, triggerCla
       setSelectedIndex(0)
     }
   }, [])
+
+  // Scroll to row only if it's outside the visible range
+  const scrollToRowIfNeeded = useCallback(
+    (index: number) => {
+      const row = Math.floor(index / GRID_COLUMNS)
+      const range = virtualizer.range
+      if (range && (row < range.startIndex || row > range.endIndex)) {
+        virtualizer.scrollToIndex(row, { align: "auto" })
+      }
+    },
+    [virtualizer]
+  )
+
+  const scrollToRow = useCallback(
+    (index: number) => {
+      const row = Math.floor(index / GRID_COLUMNS)
+      virtualizer.scrollToIndex(row, { align: "start" })
+    },
+    [virtualizer]
+  )
+
+  const visibleRowCount = Math.floor(CONTAINER_HEIGHT / ROW_HEIGHT)
+
+  // Keyboard navigation on the search input — mirrors the editor's EmojiGrid
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent) => {
+      if (filtered.length === 0) return
+
+      const totalRows = Math.ceil(filtered.length / GRID_COLUMNS)
+      const currentRow = Math.floor(selectedIndex / GRID_COLUMNS)
+      const currentCol = selectedIndex % GRID_COLUMNS
+
+      switch (event.key) {
+        case "ArrowUp": {
+          event.preventDefault()
+          if (currentRow > 0) {
+            const newIndex = selectedIndex - GRID_COLUMNS
+            setSelectedIndex(newIndex)
+            scrollToRowIfNeeded(newIndex)
+          }
+          break
+        }
+        case "ArrowDown": {
+          event.preventDefault()
+          const nextRowIndex = selectedIndex + GRID_COLUMNS
+          if (nextRowIndex < filtered.length) {
+            setSelectedIndex(nextRowIndex)
+            scrollToRowIfNeeded(nextRowIndex)
+          }
+          break
+        }
+        case "ArrowLeft": {
+          event.preventDefault()
+          if (selectedIndex > 0) {
+            const newIndex = selectedIndex - 1
+            setSelectedIndex(newIndex)
+            scrollToRowIfNeeded(newIndex)
+          }
+          break
+        }
+        case "ArrowRight": {
+          event.preventDefault()
+          if (selectedIndex < filtered.length - 1) {
+            const newIndex = selectedIndex + 1
+            setSelectedIndex(newIndex)
+            scrollToRowIfNeeded(newIndex)
+          }
+          break
+        }
+        case "Home": {
+          event.preventDefault()
+          setSelectedIndex(0)
+          scrollToRow(0)
+          break
+        }
+        case "End": {
+          event.preventDefault()
+          const newIndex = filtered.length - 1
+          setSelectedIndex(newIndex)
+          scrollToRow(newIndex)
+          break
+        }
+        case "PageUp": {
+          event.preventDefault()
+          const upRow = Math.max(0, currentRow - visibleRowCount)
+          const upIndex = Math.min(upRow * GRID_COLUMNS + currentCol, filtered.length - 1)
+          setSelectedIndex(upIndex)
+          scrollToRow(upIndex)
+          break
+        }
+        case "PageDown": {
+          event.preventDefault()
+          const downRow = Math.min(totalRows - 1, currentRow + visibleRowCount)
+          const downIndex = Math.min(downRow * GRID_COLUMNS + currentCol, filtered.length - 1)
+          setSelectedIndex(downIndex)
+          scrollToRow(downIndex)
+          break
+        }
+        case "Enter":
+        case "Tab": {
+          event.preventDefault()
+          const item = filtered[selectedIndex]
+          if (item) handleSelect(item)
+          break
+        }
+        case "Escape": {
+          event.preventDefault()
+          setOpen(false)
+          setSearch("")
+          setSelectedIndex(0)
+          break
+        }
+        // All other keys (letters, numbers, etc.) are typed into the search input naturally
+      }
+    },
+    [filtered, selectedIndex, handleSelect, scrollToRowIfNeeded, scrollToRow, visibleRowCount]
+  )
 
   const selectedEmoji = filtered[selectedIndex]
 
@@ -130,14 +267,17 @@ export function ReactionEmojiPicker({ workspaceId, onSelect, trigger, triggerCla
       <PopoverContent
         align="end"
         side="top"
-        className="w-[296px] p-0"
+        className="w-[280px] p-0"
         onCloseAutoFocus={(e) => e.preventDefault()}
         onOpenAutoFocus={(e) => {
           e.preventDefault()
-          searchInputRef.current?.focus()
+          // Focus the search input after the popover finishes animating
+          requestAnimationFrame(() => {
+            searchInputRef.current?.focus()
+          })
         }}
       >
-        {/* Search input */}
+        {/* Search input — captures all keyboard input including arrow nav */}
         <div className="px-2 pt-2 pb-1">
           <input
             ref={searchInputRef}
@@ -148,12 +288,19 @@ export function ReactionEmojiPicker({ workspaceId, onSelect, trigger, triggerCla
               setSearch(e.target.value)
               setSelectedIndex(0)
             }}
+            onKeyDown={handleKeyDown}
             className="w-full rounded-md border bg-transparent px-2.5 py-1.5 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
           />
         </div>
 
         {/* Emoji grid */}
-        <div ref={scrollContainerRef} className="overflow-y-auto px-2" style={{ height: CONTAINER_HEIGHT }}>
+        <div
+          ref={scrollContainerRef}
+          className="overflow-y-auto p-2"
+          style={{ height: CONTAINER_HEIGHT }}
+          role="listbox"
+          aria-label="Emoji picker"
+        >
           {filtered.length === 0 ? (
             <div className="flex items-center justify-center h-full text-sm text-muted-foreground">No emojis found</div>
           ) : (

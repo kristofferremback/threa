@@ -193,6 +193,121 @@ test.describe("Message Reactions", () => {
     await expect(thumbsButton).toBeVisible({ timeout: 2000 })
   })
 
+  test("should render emoji grid with visible emojis on open", async ({ page }) => {
+    await loginAndCreateWorkspace(page, "grid")
+    const testId = Date.now().toString(36)
+    const channelName = `grid-${testId}`
+    await createChannel(page, channelName)
+
+    // Send a message
+    const editor = page.locator("[contenteditable='true']")
+    await editor.click()
+    const messageText = `Grid test ${testId}`
+    await page.keyboard.type(messageText)
+    await page.keyboard.press("Meta+Enter")
+    await expect(page.getByRole("main").getByText(messageText)).toBeVisible({ timeout: 5000 })
+
+    // Open reaction picker
+    const messageContainer = page.getByRole("main").locator(".group").filter({ hasText: messageText }).first()
+    await messageContainer.hover()
+    await messageContainer.getByRole("button", { name: "Add reaction" }).click()
+
+    // Search input should be visible and focused
+    const searchInput = page.getByPlaceholder("Search emoji...")
+    await expect(searchInput).toBeVisible({ timeout: 2000 })
+    await expect(searchInput).toBeFocused()
+
+    // Emoji buttons should be visible in the grid (not empty)
+    const emojiButtons = page.locator("[role='listbox'] button[role='option']")
+    await expect(emojiButtons.first()).toBeVisible({ timeout: 3000 })
+
+    // First emoji should be selected by default
+    await expect(emojiButtons.first()).toHaveAttribute("data-selected", "true")
+
+    // Footer should show the selected emoji shortcode
+    const footer = page.locator(".border-t .font-mono")
+    await expect(footer).toBeVisible()
+  })
+
+  test("should navigate emoji grid with arrow keys and select with Enter", async ({ page }) => {
+    await loginAndCreateWorkspace(page, "keynav")
+    const testId = Date.now().toString(36)
+    const channelName = `keynav-${testId}`
+    await createChannel(page, channelName)
+
+    // Send a message
+    const editor = page.locator("[contenteditable='true']")
+    await editor.click()
+    const messageText = `Keynav test ${testId}`
+    await page.keyboard.type(messageText)
+    await page.keyboard.press("Meta+Enter")
+    await expect(page.getByRole("main").getByText(messageText)).toBeVisible({ timeout: 5000 })
+
+    // Open reaction picker
+    const messageContainer = page.getByRole("main").locator(".group").filter({ hasText: messageText }).first()
+    await messageContainer.hover()
+    await messageContainer.getByRole("button", { name: "Add reaction" }).click()
+
+    const searchInput = page.getByPlaceholder("Search emoji...")
+    await expect(searchInput).toBeVisible({ timeout: 2000 })
+
+    // Wait for emoji grid to render
+    const emojiButtons = page.locator("[role='listbox'] button[role='option']")
+    await expect(emojiButtons.first()).toBeVisible({ timeout: 3000 })
+
+    // First item should be selected
+    await expect(emojiButtons.first()).toHaveAttribute("data-selected", "true")
+
+    // Press ArrowRight to move to second item
+    await page.keyboard.press("ArrowRight")
+    await expect(emojiButtons.nth(1)).toHaveAttribute("data-selected", "true")
+    await expect(emojiButtons.first()).not.toHaveAttribute("data-selected", "true")
+
+    // Press ArrowLeft to go back
+    await page.keyboard.press("ArrowLeft")
+    await expect(emojiButtons.first()).toHaveAttribute("data-selected", "true")
+
+    // Type a search query — characters should go into search input
+    await page.keyboard.type("fire")
+    await expect(searchInput).toHaveValue("fire")
+
+    // Press Enter to select the first filtered result
+    await page.keyboard.press("Enter")
+
+    // Popover should close and reaction pill should appear
+    await expect(searchInput).not.toBeVisible()
+    await expect(messageContainer.getByText("🔥")).toBeVisible({ timeout: 5000 })
+  })
+
+  test("should close emoji picker with Escape", async ({ page }) => {
+    await loginAndCreateWorkspace(page, "esc")
+    const testId = Date.now().toString(36)
+    const channelName = `esc-${testId}`
+    await createChannel(page, channelName)
+
+    // Send a message
+    const editor = page.locator("[contenteditable='true']")
+    await editor.click()
+    const messageText = `Escape test ${testId}`
+    await page.keyboard.type(messageText)
+    await page.keyboard.press("Meta+Enter")
+    await expect(page.getByRole("main").getByText(messageText)).toBeVisible({ timeout: 5000 })
+
+    // Open reaction picker
+    const messageContainer = page.getByRole("main").locator(".group").filter({ hasText: messageText }).first()
+    await messageContainer.hover()
+    await messageContainer.getByRole("button", { name: "Add reaction" }).click()
+
+    const searchInput = page.getByPlaceholder("Search emoji...")
+    await expect(searchInput).toBeVisible({ timeout: 2000 })
+
+    // Press Escape
+    await page.keyboard.press("Escape")
+
+    // Popover should close
+    await expect(searchInput).not.toBeVisible()
+  })
+
   test("should show inline + button to add more reactions when reactions exist", async ({ page }) => {
     await loginAndCreateWorkspace(page, "inline")
     const testId = Date.now().toString(36)
