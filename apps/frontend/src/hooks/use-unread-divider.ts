@@ -4,10 +4,10 @@ import { useScrollToElement } from "./use-scroll-to-element"
 
 /**
  * Event types that don't render as visible timeline items.
- * These should not trigger the unread divider since they produce no visible output
- * (reactions update existing messages in place, edits/deletes modify existing items).
+ * Reactions update existing messages in place and return null from EventItem,
+ * so they should not trigger the unread divider.
  */
-const INVISIBLE_EVENT_TYPES = new Set(["reaction_added", "reaction_removed", "message_edited", "message_deleted"])
+const INVISIBLE_EVENT_TYPES = new Set(["reaction_added", "reaction_removed"])
 
 interface UseUnreadDividerOptions {
   events: StreamEvent[]
