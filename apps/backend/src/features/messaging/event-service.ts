@@ -580,12 +580,11 @@ export class EventService {
     const messageCreatedEvents = events.filter((e) => e.eventType === "message_created")
     const messageIds = messageCreatedEvents.map((e) => (e.payload as MessageCreatedPayload).messageId)
 
-    // Only query the messages projection when edits or deletes exist in the event window.
-    // Operational events always have later sequences than the message_created they modify,
-    // so if a creation is in the window, any corresponding edit/delete is too.
-    const hasModifications = events.some((e) => e.eventType === "message_edited" || e.eventType === "message_deleted")
-    const messagesMap =
-      hasModifications && messageIds.length > 0 ? await this.getMessagesByIds(messageIds) : new Map<string, Message>()
+    // Reactions live on the messages projection (not in events), so we must always
+    // fetch when message_created events exist. This replaces an earlier guard that
+    // only fetched on edits/deletes — the extra query is the cost of real-time
+    // reaction enrichment on bootstrap.
+    const messagesMap = messageIds.length > 0 ? await this.getMessagesByIds(messageIds) : new Map<string, Message>()
 
     return events
       .filter((e) => e.eventType !== "message_edited" && e.eventType !== "message_deleted")
@@ -606,6 +605,9 @@ export class EventService {
           enrichments.editedAt = message.editedAt.toISOString()
           enrichments.contentJson = message.contentJson
           enrichments.contentMarkdown = message.contentMarkdown
+        }
+        if (message?.reactions && Object.keys(message.reactions).length > 0) {
+          enrichments.reactions = message.reactions
         }
 
         if (Object.keys(enrichments).length === 0) return event
