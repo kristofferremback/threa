@@ -211,11 +211,16 @@ test.describe("Message Reactions", () => {
       const { message } = (await sendRes.json()) as { message: { id: string } }
 
       // User B: open the channel and read the message (marks as read)
+      // Set up a listener for the mark-as-read API call BEFORE navigating
+      const markAsReadPromise = ctxB.page.waitForResponse(
+        (res) => res.url().includes(`/streams/${streamId}/read`) && res.status() === 200,
+        { timeout: 15000 }
+      )
       await ctxB.page.goto(`/w/${workspaceId}/s/${streamId}`)
       await expect(ctxB.page.getByRole("main").getByText(messageContent)).toBeVisible({ timeout: 10000 })
 
-      // Wait for auto-mark-as-read to fire (500ms debounce + buffer)
-      await ctxB.page.waitForTimeout(1500)
+      // Wait for auto-mark-as-read to actually complete (not just debounce)
+      await markAsReadPromise
 
       // User B: navigate away
       await ctxB.page.goto(`/w/${workspaceId}`)
