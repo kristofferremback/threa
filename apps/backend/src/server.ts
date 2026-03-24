@@ -338,7 +338,7 @@ export async function startServer(): Promise<ServerInstance> {
   const apiKeyChannelService = new ApiKeyChannelService({ pool })
 
   // Link preview service — created early for route registration
-  const linkPreviewService = new LinkPreviewService({ pool })
+  const linkPreviewService = new LinkPreviewService({ pool, streamService })
 
   const isProduction = process.env.NODE_ENV === "production"
   const app = createApp({ corsAllowedOrigins: config.corsAllowedOrigins, isProduction })

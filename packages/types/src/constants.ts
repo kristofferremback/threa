@@ -414,13 +414,14 @@ export const InjectionStrategies = {
 } as const satisfies Record<string, InjectionStrategy>
 
 // Link preview content types
-export const LINK_PREVIEW_CONTENT_TYPES = ["website", "pdf", "image"] as const
+export const LINK_PREVIEW_CONTENT_TYPES = ["website", "pdf", "image", "message_link"] as const
 export type LinkPreviewContentType = (typeof LINK_PREVIEW_CONTENT_TYPES)[number]
 
 export const LinkPreviewContentTypes = {
   WEBSITE: "website",
   PDF: "pdf",
   IMAGE: "image",
+  MESSAGE_LINK: "message_link",
 } as const satisfies Record<string, LinkPreviewContentType>
 
 // Link preview fetch statuses

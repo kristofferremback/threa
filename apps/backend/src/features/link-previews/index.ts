@@ -16,7 +16,8 @@ export { createLinkPreviewWorker } from "./worker"
 export { LinkPreviewOutboxHandler } from "./outbox-handler"
 
 // Utilities
-export { extractUrls, normalizeUrl, detectContentType, isBlockedUrl } from "./url-utils"
+export { extractUrls, normalizeUrl, detectContentType, isBlockedUrl, parseMessagePermalink } from "./url-utils"
+export type { MessagePermalink } from "./url-utils"
 
 // Config
-export { MAX_PREVIEWS_PER_MESSAGE } from "./config"
+export { MAX_PREVIEWS_PER_MESSAGE, getAppOrigins } from "./config"

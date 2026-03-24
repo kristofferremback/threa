@@ -1,14 +1,22 @@
 import type { Pool } from "pg"
 import { withTransaction } from "../../db"
 import { linkPreviewId } from "../../lib/id"
-import type { LinkPreviewSummary } from "@threa/types"
+import type { LinkPreviewSummary, MessageLinkPreviewData } from "@threa/types"
+import { getAvatarUrl } from "@threa/types"
 import { LinkPreviewRepository, type LinkPreview, type UpdateLinkPreviewParams } from "./repository"
+import { MessageRepository } from "../messaging"
+import { UserRepository } from "../workspaces"
+import type { StreamService } from "../streams"
 import { OutboxRepository } from "../../lib/outbox"
-import { extractUrls, normalizeUrl, detectContentType } from "./url-utils"
-import { MAX_PREVIEWS_PER_MESSAGE } from "./config"
+import { extractUrls, normalizeUrl, detectContentType, parseMessagePermalink } from "./url-utils"
+import { MAX_PREVIEWS_PER_MESSAGE, getAppOrigins } from "./config"
+
+/** Max characters for the content preview in a message link card */
+const CONTENT_PREVIEW_MAX_LENGTH = 200
 
 export interface LinkPreviewServiceDeps {
   pool: Pool
+  streamService: StreamService
 }
 
 export class LinkPreviewService {
@@ -17,13 +25,15 @@ export class LinkPreviewService {
   /**
    * Extract URLs from message content and create pending link preview records.
    * Returns the preview IDs and URLs that need to be fetched.
+   * Internal message permalinks are detected and marked as completed immediately.
    */
   async extractAndCreatePending(
     workspaceId: string,
     messageId: string,
     contentMarkdown: string
   ): Promise<Array<{ id: string; url: string }>> {
-    const urls = extractUrls(contentMarkdown).slice(0, MAX_PREVIEWS_PER_MESSAGE)
+    const appOrigins = getAppOrigins()
+    const urls = extractUrls(contentMarkdown, appOrigins).slice(0, MAX_PREVIEWS_PER_MESSAGE)
     if (urls.length === 0) return []
 
     return withTransaction(this.deps.pool, async (client) => {
@@ -32,14 +42,17 @@ export class LinkPreviewService {
       for (let i = 0; i < urls.length; i++) {
         const url = urls[i]
         const normalized = normalizeUrl(url)
-        const contentType = detectContentType(url)
+        const permalink = parseMessagePermalink(url, appOrigins)
 
         const preview = await LinkPreviewRepository.insert(client, {
           id: linkPreviewId(),
           workspaceId,
           url,
           normalizedUrl: normalized,
-          contentType,
+          contentType: permalink ? "message_link" : detectContentType(url),
+          targetWorkspaceId: permalink?.workspaceId,
+          targetStreamId: permalink?.streamId,
+          targetMessageId: permalink?.messageId,
         })
 
         await LinkPreviewRepository.linkToMessage(client, workspaceId, messageId, preview.id, i)
@@ -59,7 +72,8 @@ export class LinkPreviewService {
     messageId: string,
     contentMarkdown: string
   ): Promise<Array<{ id: string; url: string }>> {
-    const urls = extractUrls(contentMarkdown).slice(0, MAX_PREVIEWS_PER_MESSAGE)
+    const appOrigins = getAppOrigins()
+    const urls = extractUrls(contentMarkdown, appOrigins).slice(0, MAX_PREVIEWS_PER_MESSAGE)
 
     return withTransaction(this.deps.pool, async (client) => {
       // Clear old message-preview links
@@ -72,14 +86,17 @@ export class LinkPreviewService {
       for (let i = 0; i < urls.length; i++) {
         const url = urls[i]
         const normalized = normalizeUrl(url)
-        const contentType = detectContentType(url)
+        const permalink = parseMessagePermalink(url, appOrigins)
 
         const preview = await LinkPreviewRepository.insert(client, {
           id: linkPreviewId(),
           workspaceId,
           url,
           normalizedUrl: normalized,
-          contentType,
+          contentType: permalink ? "message_link" : detectContentType(url),
+          targetWorkspaceId: permalink?.workspaceId,
+          targetStreamId: permalink?.streamId,
+          targetMessageId: permalink?.messageId,
         })
 
         await LinkPreviewRepository.linkToMessage(client, workspaceId, messageId, preview.id, i)
@@ -149,9 +166,11 @@ export class LinkPreviewService {
         }
       }
 
-      // Publish if this worker wrote at least one row, or if forced (edit flow where
-      // the set of previews changed even though individual preview metadata was already cached).
-      if (completedPreviews.length > 0 && (hasNewWrites || options?.forcePublish)) {
+      // Publish if this worker wrote at least one row, if there are message_link previews
+      // (pre-completed at insert time, so they never trigger hasNewWrites), or if forced
+      // (edit flow where the set changed even though individual metadata was already cached).
+      const hasMessageLinks = completedPreviews.some((p) => p.contentType === "message_link")
+      if (completedPreviews.length > 0 && (hasNewWrites || hasMessageLinks || options?.forcePublish)) {
         await OutboxRepository.insert(client, "link_preview:ready", {
           workspaceId,
           streamId,
@@ -219,6 +238,67 @@ export class LinkPreviewService {
    */
   async getDismissals(workspaceId: string, userId: string, messageIds: string[]): Promise<Set<string>> {
     return LinkPreviewRepository.findDismissals(this.deps.pool, workspaceId, userId, messageIds)
+  }
+
+  /**
+   * Resolve a message link preview for a specific viewer.
+   * Returns access-tiered data: full content for accessible messages,
+   * limited info for private/cross-workspace messages.
+   */
+  async resolveMessageLink(
+    workspaceId: string,
+    userId: string,
+    linkPreviewId: string
+  ): Promise<MessageLinkPreviewData | null> {
+    const preview = await LinkPreviewRepository.findById(this.deps.pool, workspaceId, linkPreviewId)
+    if (!preview || preview.contentType !== "message_link") return null
+
+    const { targetWorkspaceId, targetStreamId, targetMessageId } = preview
+    if (!targetWorkspaceId || !targetStreamId || !targetMessageId) return null
+
+    // Cross-workspace: minimal info — intentionally does NOT check if target workspace exists
+    // to avoid leaking workspace existence.
+    if (targetWorkspaceId !== workspaceId) {
+      return { accessTier: "cross_workspace" }
+    }
+
+    // Same workspace — check stream access. tryAccess returns null for both
+    // non-existent and inaccessible streams, so no existence leak.
+    const stream = await this.deps.streamService.tryAccess(targetStreamId, workspaceId, userId)
+    if (!stream) {
+      return { accessTier: "private" }
+    }
+
+    // Full access — look up message and verify it belongs to this stream.
+    // Collapse all failure modes (not found, deleted, wrong stream) into the same
+    // response to avoid leaking message existence across streams.
+    const message = await MessageRepository.findById(this.deps.pool, targetMessageId)
+    if (!message || message.deletedAt || message.streamId !== targetStreamId) {
+      return { accessTier: "full", deleted: true }
+    }
+
+    let authorName: string | undefined
+    let authorAvatarUrl: string | undefined
+    if (message.authorType === "user") {
+      const user = await UserRepository.findById(this.deps.pool, workspaceId, message.authorId)
+      if (user) {
+        authorName = user.name
+        authorAvatarUrl = getAvatarUrl(workspaceId, user.avatarUrl, 64) ?? undefined
+      }
+    }
+
+    const contentPreview =
+      message.contentMarkdown.length > CONTENT_PREVIEW_MAX_LENGTH
+        ? message.contentMarkdown.slice(0, CONTENT_PREVIEW_MAX_LENGTH) + "…"
+        : message.contentMarkdown
+
+    return {
+      accessTier: "full",
+      authorName,
+      authorAvatarUrl,
+      contentPreview,
+      streamName: stream.displayName ?? stream.slug ?? undefined,
+    }
   }
 }
 

@@ -41,6 +41,10 @@ Never ship unexecuted tests. Run:
 - `bun run test:e2e` for E2E coverage
 - `bun run test` for unit/integration coverage
 
+### Greptile Reviews
+
+When asked to check Greptile comments, review feedback, confidence score, or anything Greptile-related, **always use the `/review-greptile` skill**. Never manually call the fetch script or GitHub API for Greptile data — the skill handles fetching, staleness detection, triage, and thread responses.
+
 If tests fail, fix them or explicitly isolate the failure in a separate follow-up change.
 
 ## Project Structure

@@ -41,5 +41,27 @@ export function createLinkPreviewHandlers(deps: HandlerDeps) {
         next(err)
       }
     },
+
+    /**
+     * GET /api/workspaces/:workspaceId/link-previews/:linkPreviewId/resolve
+     * Permission-checked resolve endpoint for message link previews.
+     * Returns different data depending on the viewer's access tier.
+     */
+    async resolveMessageLink(req: Request, res: Response, next: NextFunction) {
+      try {
+        const { workspaceId, linkPreviewId } = req.params
+        const userId = req.user!.id
+
+        const data = await linkPreviewService.resolveMessageLink(workspaceId, userId, linkPreviewId)
+        if (!data) {
+          res.status(404).json({ error: "Not found" })
+          return
+        }
+
+        res.json(data)
+      } catch (err) {
+        next(err)
+      }
+    },
   }
 }

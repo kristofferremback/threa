@@ -428,6 +428,7 @@ function SentMessageEvent({
           : undefined,
       messageId: payload.messageId,
       workspaceId,
+      streamId,
       authorId: event.actorId ?? undefined,
       currentUserId: currentUserId ?? undefined,
       editedAt: payload.editedAt,
@@ -458,6 +459,7 @@ function SentMessageEvent({
       getTraceUrl,
       currentUserId,
       workspaceId,
+      streamId,
       startEditing,
       handleAddReaction,
     ]

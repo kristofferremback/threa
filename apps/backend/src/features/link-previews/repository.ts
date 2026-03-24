@@ -17,6 +17,9 @@ export interface LinkPreview {
   siteName: string | null
   contentType: LinkPreviewContentType
   status: LinkPreviewStatus
+  targetWorkspaceId: string | null
+  targetStreamId: string | null
+  targetMessageId: string | null
   fetchedAt: Date | null
   createdAt: Date
 }
@@ -27,6 +30,9 @@ export interface InsertLinkPreviewParams {
   url: string
   normalizedUrl: string
   contentType: LinkPreviewContentType
+  targetWorkspaceId?: string
+  targetStreamId?: string
+  targetMessageId?: string
 }
 
 export interface UpdateLinkPreviewParams {
@@ -62,6 +68,9 @@ function mapRow(row: Record<string, unknown>): LinkPreview {
     siteName: row.site_name as string | null,
     contentType: row.content_type as LinkPreviewContentType,
     status: row.status as LinkPreviewStatus,
+    targetWorkspaceId: (row.target_workspace_id as string | null) ?? null,
+    targetStreamId: (row.target_stream_id as string | null) ?? null,
+    targetMessageId: (row.target_message_id as string | null) ?? null,
     fetchedAt: row.fetched_at ? new Date(row.fetched_at as string) : null,
     createdAt: new Date(row.created_at as string),
   }
@@ -73,12 +82,30 @@ function mapRow(row: Record<string, unknown>): LinkPreview {
 
 export const LinkPreviewRepository = {
   async insert(querier: Querier, params: InsertLinkPreviewParams): Promise<LinkPreview> {
+    const status = params.contentType === "message_link" ? "completed" : "pending"
     const result = await querier.query(
-      sql`INSERT INTO link_previews (id, workspace_id, url, normalized_url, content_type, status)
-          VALUES ($1, $2, $3, $4, $5, 'pending')
-          ON CONFLICT (workspace_id, normalized_url) DO NOTHING
+      sql`INSERT INTO link_previews (id, workspace_id, url, normalized_url, content_type, status,
+              target_workspace_id, target_stream_id, target_message_id)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          ON CONFLICT (workspace_id, normalized_url) DO UPDATE SET
+              content_type = EXCLUDED.content_type,
+              status = EXCLUDED.status,
+              target_workspace_id = EXCLUDED.target_workspace_id,
+              target_stream_id = EXCLUDED.target_stream_id,
+              target_message_id = EXCLUDED.target_message_id
+          WHERE link_previews.content_type != EXCLUDED.content_type
           RETURNING *`,
-      [params.id, params.workspaceId, params.url, params.normalizedUrl, params.contentType]
+      [
+        params.id,
+        params.workspaceId,
+        params.url,
+        params.normalizedUrl,
+        params.contentType,
+        status,
+        params.targetWorkspaceId ?? null,
+        params.targetStreamId ?? null,
+        params.targetMessageId ?? null,
+      ]
     )
     if (result.rows.length > 0) {
       return mapRow(result.rows[0])

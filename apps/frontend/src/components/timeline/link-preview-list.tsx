@@ -5,6 +5,7 @@ import { linkPreviewsApi } from "@/api"
 import { cn } from "@/lib/utils"
 import { usePreferences, useSocket } from "@/contexts"
 import { LinkPreviewCard } from "./link-preview-card"
+import { MessageLinkPreviewCard } from "./message-link-preview-card"
 import type { LinkPreviewSummary } from "@threa/types"
 
 /** Number of previews shown before the "show more" expansion */
@@ -116,6 +117,18 @@ export function LinkPreviewList({
   return (
     <div className={cn("flex flex-col gap-2 mt-2", className)}>
       {displayedPreviews.map((preview) => {
+        // Message link previews use a specialized card with permission-checked resolve
+        if (preview.contentType === "message_link") {
+          return (
+            <MessageLinkPreviewCard
+              key={preview.id}
+              preview={preview}
+              workspaceId={workspaceId}
+              onDismiss={handleDismiss}
+            />
+          )
+        }
+
         // Determine if this preview corresponds to the hovered inline link
         const isHighlighted = hoveredUrl ? normalizeForCompare(preview.url) === normalizeForCompare(hoveredUrl) : false
 

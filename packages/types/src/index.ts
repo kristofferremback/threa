@@ -183,6 +183,9 @@ export type {
   // Link previews
   LinkPreview,
   LinkPreviewSummary,
+  // Message link previews (internal permalinks)
+  MessageLinkAccessTier,
+  MessageLinkPreviewData,
 } from "./domain"
 
 // Slug validation

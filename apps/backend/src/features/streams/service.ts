@@ -113,6 +113,11 @@ export class StreamService {
     return stream
   }
 
+  /** Check if user has access to a stream without throwing. Returns the stream or null. */
+  async tryAccess(streamId: string, workspaceId: string, userId: string): Promise<Stream | null> {
+    return this.checkAccess(streamId, workspaceId, userId)
+  }
+
   private async checkAccess(streamId: string, workspaceId: string, userId: string): Promise<Stream | null> {
     return withClient(this.pool, async (client) => {
       const stream = await StreamRepository.findById(client, streamId)

@@ -311,6 +311,11 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     ...authed,
     linkPreview.dismiss
   )
+  app.get(
+    "/api/workspaces/:workspaceId/link-previews/:linkPreviewId/resolve",
+    ...authed,
+    linkPreview.resolveMessageLink
+  )
 
   // Public API v1 — API key auth
   const publicAuth = createPublicApiAuthMiddleware({ apiKeyService, pool })
