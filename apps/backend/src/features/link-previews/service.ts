@@ -256,27 +256,25 @@ export class LinkPreviewService {
     const { targetWorkspaceId, targetStreamId, targetMessageId } = preview
     if (!targetWorkspaceId || !targetStreamId || !targetMessageId) return null
 
-    // Cross-workspace: minimal info
+    // Cross-workspace: minimal info — intentionally does NOT check if target workspace exists
+    // to avoid leaking workspace existence.
     if (targetWorkspaceId !== workspaceId) {
       return { accessTier: "cross_workspace" }
     }
 
-    // Same workspace — check stream access
+    // Same workspace — check stream access. tryAccess returns null for both
+    // non-existent and inaccessible streams, so no existence leak.
     const stream = await this.deps.streamService.tryAccess(targetStreamId, workspaceId, userId)
     if (!stream) {
       return { accessTier: "private" }
     }
 
-    // Full access — look up message and author
+    // Full access — look up message and verify it belongs to this stream.
+    // Collapse all failure modes (not found, deleted, wrong stream) into the same
+    // response to avoid leaking message existence across streams.
     const message = await MessageRepository.findById(this.deps.pool, targetMessageId)
-    if (!message || message.deletedAt) {
+    if (!message || message.deletedAt || message.streamId !== targetStreamId) {
       return { accessTier: "full", deleted: true }
-    }
-
-    // Guard: message must belong to the stream the viewer was granted access to.
-    // Without this, a crafted permalink can pair a public stream ID with a private message ID.
-    if (message.streamId !== targetStreamId) {
-      return { accessTier: "private" }
     }
 
     let authorName: string | undefined
