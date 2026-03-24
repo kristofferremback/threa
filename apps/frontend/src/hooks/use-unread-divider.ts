@@ -2,6 +2,13 @@ import { useState, useEffect, useRef, useMemo } from "react"
 import type { StreamEvent } from "@threa/types"
 import { useScrollToElement } from "./use-scroll-to-element"
 
+/**
+ * Event types that don't render as visible timeline items.
+ * Reactions update existing messages in place and return null from EventItem,
+ * so they should not trigger the unread divider.
+ */
+const INVISIBLE_EVENT_TYPES = new Set(["reaction_added", "reaction_removed"])
+
 interface UseUnreadDividerOptions {
   events: StreamEvent[]
   lastReadEventId: string | null | undefined
@@ -52,9 +59,10 @@ export function useUnreadDivider({
       return undefined
     }
 
-    // Find first event from another user after the last read position
+    // Find first visible event from another user after the last read position.
+    // Skip event types that don't render as timeline items (e.g. reactions).
     for (let i = startIndex; i < events.length; i++) {
-      if (events[i].actorId !== currentUserId) {
+      if (events[i].actorId !== currentUserId && !INVISIBLE_EVENT_TYPES.has(events[i].eventType)) {
         return events[i].id
       }
     }

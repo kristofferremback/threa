@@ -163,6 +163,97 @@ test.describe("Message Reactions", () => {
     }
   })
 
+  test("reaction from another user should not trigger unread divider", async ({ browser }) => {
+    test.setTimeout(60000)
+
+    const testId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
+    const userAEmail = `unread-a-${testId}@example.com`
+    const userAName = `Unread A ${testId}`
+    const userBEmail = `unread-b-${testId}@example.com`
+    const userBName = `Unread B ${testId}`
+
+    const ctxA = await loginInNewContext(browser, userAEmail, userAName)
+    let ctxB: { context: BrowserContext; page: Page } | undefined
+
+    try {
+      // User A: create workspace + channel
+      const createWsRes = await ctxA.page.request.post("/api/workspaces", {
+        data: { name: `Unread Test ${testId}`, slug: `unread-${testId}` },
+      })
+      expect(createWsRes.ok()).toBeTruthy()
+      const { workspace } = (await createWsRes.json()) as { workspace: { id: string } }
+      const workspaceId = workspace.id
+      await waitForWorkspaceProvisioned(ctxA.page, workspaceId)
+
+      const channelSlug = `unread-react-${testId}`
+      const createStreamRes = await ctxA.page.request.post(`/api/workspaces/${workspaceId}/streams`, {
+        data: { type: "channel", slug: channelSlug, visibility: "public" },
+      })
+      expect(createStreamRes.ok()).toBeTruthy()
+      const { stream } = (await createStreamRes.json()) as { stream: { id: string } }
+      const streamId = stream.id
+
+      // User B: join workspace + channel
+      ctxB = await loginInNewContext(browser, userBEmail, userBName)
+      const joinWsRes = await ctxB.page.request.post(`/api/dev/workspaces/${workspaceId}/join`, {
+        data: { role: "user" },
+      })
+      expect(joinWsRes.ok()).toBeTruthy()
+      const joinStreamRes = await ctxB.page.request.post(`/api/dev/workspaces/${workspaceId}/streams/${streamId}/join`)
+      expect(joinStreamRes.ok()).toBeTruthy()
+
+      // User A: send a message
+      const messageContent = `Unread divider test ${testId}`
+      const sendRes = await ctxA.page.request.post(`/api/workspaces/${workspaceId}/messages`, {
+        data: { streamId, content: messageContent },
+      })
+      expect(sendRes.ok()).toBeTruthy()
+      const { message } = (await sendRes.json()) as { message: { id: string } }
+
+      // User B: open the channel, see the message, then explicitly mark as read via API
+      await ctxB.page.goto(`/w/${workspaceId}/s/${streamId}`)
+      await expect(ctxB.page.getByRole("main").getByText(messageContent)).toBeVisible({ timeout: 10000 })
+
+      // Get the last event ID from bootstrap and mark as read directly
+      const bootstrapRes = await ctxB.page.request.get(`/api/workspaces/${workspaceId}/streams/${streamId}/bootstrap`)
+      expect(bootstrapRes.ok()).toBeTruthy()
+      const { data: bootstrap } = (await bootstrapRes.json()) as {
+        data: { events: Array<{ id: string }> }
+      }
+      const lastEventId = bootstrap.events[bootstrap.events.length - 1].id
+      const markReadRes = await ctxB.page.request.post(`/api/workspaces/${workspaceId}/streams/${streamId}/read`, {
+        data: { lastEventId },
+      })
+      expect(markReadRes.ok()).toBeTruthy()
+
+      // User B: navigate away from the stream
+      await ctxB.page.goto(`/w/${workspaceId}`)
+      await ctxB.page.waitForURL(`**/w/${workspaceId}`, { timeout: 10000 })
+
+      // User A: add a reaction to the message while User B is away
+      const reactRes = await ctxA.page.request.post(`/api/workspaces/${workspaceId}/messages/${message.id}/reactions`, {
+        data: { emoji: "👍" },
+      })
+      expect(reactRes.ok()).toBeTruthy()
+
+      // User B: navigate back to the channel
+      await ctxB.page.goto(`/w/${workspaceId}/s/${streamId}`)
+      await expect(ctxB.page.getByRole("main").getByText(messageContent)).toBeVisible({ timeout: 10000 })
+
+      // The "New" unread divider should NOT appear — reactions are not new messages
+      // Check immediately after navigation settles, before the divider could auto-dismiss
+      const unreadDivider = ctxB.page.getByRole("main").getByText("New", { exact: true })
+      await expect(unreadDivider).not.toBeVisible({ timeout: 3000 })
+
+      // The reaction should be visible
+      const messageContainer = ctxB.page.getByRole("main").locator(".group").filter({ hasText: messageContent }).first()
+      await expect(messageContainer.locator("button").filter({ hasText: "👍" }).first()).toBeVisible({ timeout: 10000 })
+    } finally {
+      await ctxA.context.close()
+      await ctxB?.context.close()
+    }
+  })
+
   test("should filter emojis in reaction picker search", async ({ page }) => {
     await loginAndCreateWorkspace(page, "search")
     const testId = Date.now().toString(36)
