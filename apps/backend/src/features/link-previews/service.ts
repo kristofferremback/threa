@@ -271,6 +271,12 @@ export class LinkPreviewService {
       return { accessTier: "full", deleted: true }
     }
 
+    // Guard: message must belong to the stream the viewer was granted access to.
+    // Without this, a crafted permalink can pair a public stream ID with a private message ID.
+    if (message.streamId !== targetStreamId) {
+      return { accessTier: "private" }
+    }
+
     let authorName: string | undefined
     let authorAvatarUrl: string | undefined
     if (message.authorType === "user") {

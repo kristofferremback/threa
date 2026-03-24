@@ -1,6 +1,6 @@
 ---
 name: review-greptile
-description: Read and triage Greptile code review comments on a PR. Use when asked to "check Greptile", "Greptile review", "what did Greptile say", check confidence score, or when the user shares a Greptile link.
+description: Read and triage Greptile code review comments on a PR. Use when asked to "check Greptile", "Greptile review", "what did Greptile say", "Greptile comments", "refetch Greptile", "greptile concerns", check confidence score, or when the user shares a Greptile link. ALWAYS use this skill instead of manually calling the fetch script or GitHub API for Greptile data. Any mention of Greptile should trigger this skill.
 ---
 
 # Review Greptile
