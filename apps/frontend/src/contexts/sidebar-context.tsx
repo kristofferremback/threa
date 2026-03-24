@@ -185,7 +185,7 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
   const showPreview = useCallback(() => {
     clearHideTimeout()
     // Dismiss mobile keyboard when opening sidebar
-    if (isMobile && document.activeElement instanceof HTMLElement) {
+    if (isMobile && state === "collapsed" && document.activeElement instanceof HTMLElement) {
       document.activeElement.blur()
     }
     setState((current) => {
@@ -194,7 +194,7 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
       }
       return current
     })
-  }, [clearHideTimeout, isMobile])
+  }, [clearHideTimeout, isMobile, state])
 
   // Hide preview after delay (returns to collapsed)
   const hidePreview = useCallback(() => {
