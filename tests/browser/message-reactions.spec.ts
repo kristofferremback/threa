@@ -143,7 +143,7 @@ test.describe("Message Reactions", () => {
       const { message } = (await sendRes.json()) as { message: { id: string } }
 
       // User B: open the channel in browser
-      await ctxB.page.goto(`/w/${workspaceId}/stream/${streamId}`)
+      await ctxB.page.goto(`/w/${workspaceId}/s/${streamId}`)
       await expect(ctxB.page.getByRole("main").getByText(messageContent)).toBeVisible({ timeout: 10000 })
 
       // User A: add a reaction via API
@@ -270,15 +270,15 @@ test.describe("Message Reactions", () => {
     await expect(emojiButtons.first()).toHaveAttribute("data-selected", "true")
 
     // Type a search query — characters should go into search input
-    await page.keyboard.type("fire")
-    await expect(searchInput).toHaveValue("fire")
+    await page.keyboard.type("rocket")
+    await expect(searchInput).toHaveValue("rocket")
 
     // Press Enter to select the first filtered result
     await page.keyboard.press("Enter")
 
     // Popover should close and reaction pill should appear
     await expect(searchInput).not.toBeVisible()
-    await expect(messageContainer.getByText("🔥")).toBeVisible({ timeout: 5000 })
+    await expect(messageContainer.getByText("🚀")).toBeVisible({ timeout: 5000 })
   })
 
   test("should close emoji picker with Escape", async ({ page }) => {
