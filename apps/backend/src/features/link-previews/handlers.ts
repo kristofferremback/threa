@@ -1,24 +1,12 @@
 import type { Request, Response, NextFunction } from "express"
-import type { Pool } from "pg"
-import type { MessageLinkPreviewData } from "@threa/types"
-import { getAvatarUrl } from "@threa/types"
 import type { LinkPreviewService } from "./service"
-import { LinkPreviewRepository } from "./repository"
-import { MessageRepository } from "../messaging"
-import { UserRepository } from "../workspaces"
-import type { StreamService } from "../streams"
-
-/** Max characters for the content preview in a message link card */
-const CONTENT_PREVIEW_MAX_LENGTH = 200
 
 interface HandlerDeps {
-  pool: Pool
   linkPreviewService: LinkPreviewService
-  streamService: StreamService
 }
 
 export function createLinkPreviewHandlers(deps: HandlerDeps) {
-  const { pool, linkPreviewService, streamService } = deps
+  const { linkPreviewService } = deps
 
   return {
     /** GET /api/workspaces/:workspaceId/messages/:messageId/link-previews */
@@ -64,72 +52,12 @@ export function createLinkPreviewHandlers(deps: HandlerDeps) {
         const { workspaceId, linkPreviewId } = req.params
         const userId = req.user!.id
 
-        const preview = await LinkPreviewRepository.findById(pool, workspaceId, linkPreviewId)
-        if (!preview || preview.contentType !== "message_link") {
+        const data = await linkPreviewService.resolveMessageLink(workspaceId, userId, linkPreviewId)
+        if (!data) {
           res.status(404).json({ error: "Not found" })
           return
         }
 
-        const { targetWorkspaceId, targetStreamId, targetMessageId } = preview
-        if (!targetWorkspaceId || !targetStreamId || !targetMessageId) {
-          res.status(404).json({ error: "Not found" })
-          return
-        }
-
-        // Cross-workspace: minimal info
-        if (targetWorkspaceId !== workspaceId) {
-          const data: MessageLinkPreviewData = { accessTier: "cross_workspace" }
-          res.json(data)
-          return
-        }
-
-        // Same workspace — check stream access
-        const stream = await streamService.tryAccess(targetStreamId, workspaceId, userId)
-        if (!stream) {
-          const data: MessageLinkPreviewData = { accessTier: "private" }
-          res.json(data)
-          return
-        }
-
-        // Full access — look up message and author
-        const message = await MessageRepository.findById(pool, targetMessageId)
-        if (!message) {
-          const data: MessageLinkPreviewData = { accessTier: "full", deleted: true }
-          res.json(data)
-          return
-        }
-
-        if (message.deletedAt) {
-          const data: MessageLinkPreviewData = { accessTier: "full", deleted: true }
-          res.json(data)
-          return
-        }
-
-        // Look up author name
-        let authorName: string | undefined
-        let authorAvatarUrl: string | undefined
-        if (message.authorType === "user") {
-          const user = await UserRepository.findById(pool, workspaceId, message.authorId)
-          if (user) {
-            authorName = user.name
-            authorAvatarUrl = getAvatarUrl(workspaceId, user.avatarUrl, 64) ?? undefined
-          }
-        }
-
-        const contentPreview =
-          message.contentMarkdown.length > CONTENT_PREVIEW_MAX_LENGTH
-            ? message.contentMarkdown.slice(0, CONTENT_PREVIEW_MAX_LENGTH) + "…"
-            : message.contentMarkdown
-
-        const streamName = stream.displayName ?? stream.slug ?? undefined
-
-        const data: MessageLinkPreviewData = {
-          accessTier: "full",
-          authorName,
-          authorAvatarUrl,
-          contentPreview,
-          streamName,
-        }
         res.json(data)
       } catch (err) {
         next(err)

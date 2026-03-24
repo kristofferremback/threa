@@ -3,6 +3,7 @@ import { Link } from "react-router-dom"
 import { MessageSquare, Lock, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
+import { MarkdownContent } from "@/components/ui/markdown-content"
 import { linkPreviewsApi } from "@/api"
 import type { LinkPreviewSummary, MessageLinkPreviewData } from "@threa/types"
 
@@ -81,7 +82,9 @@ export function MessageLinkPreviewCard({ preview, workspaceId, onDismiss }: Mess
           <div className="flex-1 min-w-0">
             {data.authorName && <span className="text-xs font-medium text-foreground">{data.authorName}</span>}
             {data.contentPreview && (
-              <p className="text-xs text-muted-foreground line-clamp-3 mt-0.5">{data.contentPreview}</p>
+              <div className="line-clamp-3 mt-0.5">
+                <MarkdownContent content={data.contentPreview} className="text-xs text-muted-foreground" />
+              </div>
             )}
           </div>
         </div>

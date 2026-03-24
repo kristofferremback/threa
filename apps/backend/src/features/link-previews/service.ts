@@ -1,14 +1,22 @@
 import type { Pool } from "pg"
 import { withTransaction } from "../../db"
 import { linkPreviewId } from "../../lib/id"
-import type { LinkPreviewSummary } from "@threa/types"
+import type { LinkPreviewSummary, MessageLinkPreviewData } from "@threa/types"
+import { getAvatarUrl } from "@threa/types"
 import { LinkPreviewRepository, type LinkPreview, type UpdateLinkPreviewParams } from "./repository"
+import { MessageRepository } from "../messaging"
+import { UserRepository } from "../workspaces"
+import type { StreamService } from "../streams"
 import { OutboxRepository } from "../../lib/outbox"
 import { extractUrls, normalizeUrl, detectContentType, parseMessagePermalink } from "./url-utils"
 import { MAX_PREVIEWS_PER_MESSAGE, getAppOrigins } from "./config"
 
+/** Max characters for the content preview in a message link card */
+const CONTENT_PREVIEW_MAX_LENGTH = 200
+
 export interface LinkPreviewServiceDeps {
   pool: Pool
+  streamService: StreamService
 }
 
 export class LinkPreviewService {
@@ -64,8 +72,8 @@ export class LinkPreviewService {
     messageId: string,
     contentMarkdown: string
   ): Promise<Array<{ id: string; url: string }>> {
-    const urls = extractUrls(contentMarkdown).slice(0, MAX_PREVIEWS_PER_MESSAGE)
     const appOrigins = getAppOrigins()
+    const urls = extractUrls(contentMarkdown, appOrigins).slice(0, MAX_PREVIEWS_PER_MESSAGE)
 
     return withTransaction(this.deps.pool, async (client) => {
       // Clear old message-preview links
@@ -228,6 +236,63 @@ export class LinkPreviewService {
    */
   async getDismissals(workspaceId: string, userId: string, messageIds: string[]): Promise<Set<string>> {
     return LinkPreviewRepository.findDismissals(this.deps.pool, workspaceId, userId, messageIds)
+  }
+
+  /**
+   * Resolve a message link preview for a specific viewer.
+   * Returns access-tiered data: full content for accessible messages,
+   * limited info for private/cross-workspace messages.
+   */
+  async resolveMessageLink(
+    workspaceId: string,
+    userId: string,
+    linkPreviewId: string
+  ): Promise<MessageLinkPreviewData | null> {
+    const preview = await LinkPreviewRepository.findById(this.deps.pool, workspaceId, linkPreviewId)
+    if (!preview || preview.contentType !== "message_link") return null
+
+    const { targetWorkspaceId, targetStreamId, targetMessageId } = preview
+    if (!targetWorkspaceId || !targetStreamId || !targetMessageId) return null
+
+    // Cross-workspace: minimal info
+    if (targetWorkspaceId !== workspaceId) {
+      return { accessTier: "cross_workspace" }
+    }
+
+    // Same workspace — check stream access
+    const stream = await this.deps.streamService.tryAccess(targetStreamId, workspaceId, userId)
+    if (!stream) {
+      return { accessTier: "private" }
+    }
+
+    // Full access — look up message and author
+    const message = await MessageRepository.findById(this.deps.pool, targetMessageId)
+    if (!message || message.deletedAt) {
+      return { accessTier: "full", deleted: true }
+    }
+
+    let authorName: string | undefined
+    let authorAvatarUrl: string | undefined
+    if (message.authorType === "user") {
+      const user = await UserRepository.findById(this.deps.pool, workspaceId, message.authorId)
+      if (user) {
+        authorName = user.name
+        authorAvatarUrl = getAvatarUrl(workspaceId, user.avatarUrl, 64) ?? undefined
+      }
+    }
+
+    const contentPreview =
+      message.contentMarkdown.length > CONTENT_PREVIEW_MAX_LENGTH
+        ? message.contentMarkdown.slice(0, CONTENT_PREVIEW_MAX_LENGTH) + "…"
+        : message.contentMarkdown
+
+    return {
+      accessTier: "full",
+      authorName,
+      authorAvatarUrl,
+      contentPreview,
+      streamName: stream.displayName ?? stream.slug ?? undefined,
+    }
   }
 }
 

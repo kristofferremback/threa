@@ -142,7 +142,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const invitation = createInvitationHandlers({ invitationService })
   const activity = createActivityHandlers({ activityService })
   const agentSession = createAgentSessionHandlers({ pool })
-  const linkPreview = createLinkPreviewHandlers({ pool, linkPreviewService, streamService })
+  const linkPreview = createLinkPreviewHandlers({ linkPreviewService })
 
   // Ops endpoints - registered before rate limiter so probes aren't throttled
   app.get("/readyz", opsAccess, debug.readiness)
