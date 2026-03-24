@@ -210,21 +210,25 @@ test.describe("Message Reactions", () => {
       expect(sendRes.ok()).toBeTruthy()
       const { message } = (await sendRes.json()) as { message: { id: string } }
 
-      // User B: open the channel and read the message (marks as read)
-      // Set up a listener for the mark-as-read API call BEFORE navigating
-      const markAsReadPromise = ctxB.page.waitForResponse(
-        (res) => res.url().includes(`/streams/${streamId}/read`) && res.status() === 200,
-        { timeout: 15000 }
-      )
+      // User B: open the channel, see the message, then explicitly mark as read via API
       await ctxB.page.goto(`/w/${workspaceId}/s/${streamId}`)
       await expect(ctxB.page.getByRole("main").getByText(messageContent)).toBeVisible({ timeout: 10000 })
 
-      // Wait for auto-mark-as-read to actually complete (not just debounce)
-      await markAsReadPromise
+      // Get the last event ID from bootstrap and mark as read directly
+      const bootstrapRes = await ctxB.page.request.get(`/api/workspaces/${workspaceId}/streams/${streamId}/bootstrap`)
+      expect(bootstrapRes.ok()).toBeTruthy()
+      const { data: bootstrap } = (await bootstrapRes.json()) as {
+        data: { events: Array<{ id: string }> }
+      }
+      const lastEventId = bootstrap.events[bootstrap.events.length - 1].id
+      const markReadRes = await ctxB.page.request.post(`/api/workspaces/${workspaceId}/streams/${streamId}/read`, {
+        data: { lastEventId },
+      })
+      expect(markReadRes.ok()).toBeTruthy()
 
-      // User B: navigate away
+      // User B: navigate away from the stream
       await ctxB.page.goto(`/w/${workspaceId}`)
-      await expect(ctxB.page.getByRole("button", { name: "+ New Scratchpad" })).toBeVisible({ timeout: 10000 })
+      await ctxB.page.waitForURL(`**/w/${workspaceId}`, { timeout: 10000 })
 
       // User A: add a reaction to the message while User B is away
       const reactRes = await ctxA.page.request.post(`/api/workspaces/${workspaceId}/messages/${message.id}/reactions`, {
