@@ -52,8 +52,9 @@ test.describe("Message Reactions", () => {
     await expect(searchInput).not.toBeVisible()
 
     // Reaction pill should appear below the message with count "1"
-    await expect(messageContainer.getByText("🔥")).toBeVisible({ timeout: 5000 })
-    await expect(messageContainer.getByText("1")).toBeVisible()
+    const reactionPill = messageContainer.locator("button").filter({ hasText: "🔥" }).first()
+    await expect(reactionPill).toBeVisible({ timeout: 5000 })
+    await expect(reactionPill).toContainText("1")
   })
 
   test("should toggle reaction off by clicking the pill", async ({ page }) => {
@@ -153,8 +154,9 @@ test.describe("Message Reactions", () => {
 
       // User B: should see the reaction pill appear in real-time
       const messageContainer = ctxB.page.getByRole("main").locator(".group").filter({ hasText: messageContent }).first()
-      await expect(messageContainer.getByText("👍")).toBeVisible({ timeout: 10000 })
-      await expect(messageContainer.getByText("1")).toBeVisible({ timeout: 5000 })
+      const reactionPill = messageContainer.locator("button").filter({ hasText: "👍" }).first()
+      await expect(reactionPill).toBeVisible({ timeout: 10000 })
+      await expect(reactionPill).toContainText("1")
     } finally {
       await ctxA.context.close()
       await ctxB?.context.close()
