@@ -16,6 +16,16 @@ export const MAX_DESCRIPTION_LENGTH = 500
 /** Maximum title length to store */
 export const MAX_TITLE_LENGTH = 300
 
+/**
+ * Known app origins for detecting internal message permalinks.
+ * Loaded from CORS_ALLOWED_ORIGINS at startup, with dev defaults.
+ */
+export function getAppOrigins(): string[] {
+  const env = process.env.CORS_ALLOWED_ORIGINS
+  if (env) return env.split(",").map((s) => s.trim())
+  return ["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:5173"]
+}
+
 /** oEmbed providers: URL pattern → endpoint. Tried before HTML scraping for faster, more reliable results. */
 export const OEMBED_PROVIDERS: ReadonlyArray<{ pattern: RegExp; endpoint: string }> = [
   { pattern: /^https?:\/\/(?:www\.)?youtube\.com\/watch/, endpoint: "https://www.youtube.com/oembed" },

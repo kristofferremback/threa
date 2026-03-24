@@ -304,6 +304,7 @@ export function createLinkPreviewWorker(deps: WorkerDeps): JobHandler<LinkPrevie
 
     // 2. Check which previews are already cached, then fetch metadata for the rest
     //    Network work runs outside any DB transaction (INV-41)
+    //    Message link previews are already completed at insert time — skip fetch entirely.
     const fetchResults = await Promise.allSettled(
       pendingPreviews.map(async (p) => {
         const alreadyCompleted = await deps.linkPreviewService.isCompleted(workspaceId, p.id)

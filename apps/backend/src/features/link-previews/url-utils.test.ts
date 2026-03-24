@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test"
-import { normalizeUrl, extractUrls, detectContentType, isBlockedUrl } from "./url-utils"
+import { normalizeUrl, extractUrls, detectContentType, isBlockedUrl, parseMessagePermalink } from "./url-utils"
 
 describe("normalizeUrl", () => {
   test("lowercases hostname", () => {
@@ -208,5 +208,49 @@ describe("extractUrls SSRF filtering", () => {
   test("filters out cloud metadata URLs", () => {
     const md = "See http://169.254.169.254/latest/meta-data/"
     expect(extractUrls(md)).toEqual([])
+  })
+
+  test("allows known app origins to bypass SSRF check", () => {
+    const md = "See http://localhost:5173/w/ws_123/s/stream_456?m=msg_789"
+    expect(extractUrls(md)).toEqual([])
+    expect(extractUrls(md, ["http://localhost:5173"])).toEqual([
+      "http://localhost:5173/w/ws_123/s/stream_456?m=msg_789",
+    ])
+  })
+})
+
+describe("parseMessagePermalink", () => {
+  const origins = ["https://app.threa.io", "http://localhost:5173"]
+
+  test("parses valid message permalink", () => {
+    expect(parseMessagePermalink("https://app.threa.io/w/ws_123/s/stream_456?m=msg_789", origins)).toEqual({
+      workspaceId: "ws_123",
+      streamId: "stream_456",
+      messageId: "msg_789",
+    })
+  })
+
+  test("parses localhost permalink", () => {
+    expect(parseMessagePermalink("http://localhost:5173/w/ws_abc/s/stream_def?m=msg_ghi", origins)).toEqual({
+      workspaceId: "ws_abc",
+      streamId: "stream_def",
+      messageId: "msg_ghi",
+    })
+  })
+
+  test("returns null for unrecognized origin", () => {
+    expect(parseMessagePermalink("https://evil.com/w/ws_123/s/stream_456?m=msg_789", origins)).toBeNull()
+  })
+
+  test("returns null when missing message ID param", () => {
+    expect(parseMessagePermalink("https://app.threa.io/w/ws_123/s/stream_456", origins)).toBeNull()
+  })
+
+  test("returns null for non-stream paths", () => {
+    expect(parseMessagePermalink("https://app.threa.io/w/ws_123/drafts?m=msg_789", origins)).toBeNull()
+  })
+
+  test("returns null for invalid URL", () => {
+    expect(parseMessagePermalink("not-a-url", origins)).toBeNull()
   })
 })

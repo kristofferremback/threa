@@ -1,5 +1,41 @@
 import type { LinkPreviewContentType } from "@threa/types"
 
+/** Parsed internal message permalink reference */
+export interface MessagePermalink {
+  workspaceId: string
+  streamId: string
+  messageId: string
+}
+
+/**
+ * Parse an internal message permalink from a URL.
+ * Expected format: {origin}/w/{workspaceId}/s/{streamId}?m={messageId}
+ * Returns null if the URL doesn't match the expected pattern or the origin isn't recognized.
+ */
+export function parseMessagePermalink(url: string, appOrigins: string[]): MessagePermalink | null {
+  try {
+    const parsed = new URL(url)
+    const origin = parsed.origin
+
+    if (!appOrigins.some((o) => o === origin)) return null
+
+    // Match /w/:workspaceId/s/:streamId
+    const pathMatch = parsed.pathname.match(/^\/w\/([^/]+)\/s\/([^/]+)$/)
+    if (!pathMatch) return null
+
+    const messageId = parsed.searchParams.get("m")
+    if (!messageId) return null
+
+    return {
+      workspaceId: pathMatch[1],
+      streamId: pathMatch[2],
+      messageId,
+    }
+  } catch {
+    return null
+  }
+}
+
 /** Tracking parameters to strip during normalization */
 const TRACKING_PARAMS = new Set([
   "utm_source",
@@ -106,14 +142,16 @@ const SKIP_PATTERNS = [
 /**
  * Extract HTTP(S) URLs from markdown content.
  * Returns unique URLs in order of first appearance.
+ * Known app origins are allowlisted to bypass SSRF checks (internal message permalinks).
  */
-export function extractUrls(markdown: string): string[] {
+export function extractUrls(markdown: string, appOrigins?: string[]): string[] {
   // Match URLs in markdown links [text](url) and bare URLs.
   // Markdown-link group supports one level of balanced parentheses for Wikipedia-style URLs.
   // Bare URL group allows parens; unbalanced trailing parens are stripped post-match.
   const urlRegex = /(?:\[(?:[^\]]*)\]\(([^()]*(?:\([^()]*\)[^()]*)*)\))|(?:(?:^|\s)(https?:\/\/[^\s<>"]+))/gm
   const seen = new Set<string>()
   const urls: string[] = []
+  const originSet = appOrigins ? new Set(appOrigins) : null
 
   let match
   while ((match = urlRegex.exec(markdown)) !== null) {
@@ -129,14 +167,16 @@ export function extractUrls(markdown: string): string[] {
     if (SKIP_PATTERNS.some((p) => p.test(url))) continue
 
     // Must be a valid URL
+    let parsed: URL
     try {
-      new URL(url)
+      parsed = new URL(url)
     } catch {
       continue
     }
 
-    // SSRF protection: skip private/internal URLs
-    if (isBlockedUrl(url)) continue
+    // SSRF protection: skip private/internal URLs, unless it's a known app origin
+    const isKnownOrigin = originSet?.has(parsed.origin) ?? false
+    if (!isKnownOrigin && isBlockedUrl(url)) continue
 
     const normalized = normalizeUrl(url)
     if (!seen.has(normalized)) {

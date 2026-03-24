@@ -1,5 +1,5 @@
 import type { ComponentType } from "react"
-import { Sparkles, MessageSquareReply, Copy, FileText, Type, Pencil, Trash2, History } from "lucide-react"
+import { Sparkles, MessageSquareReply, Copy, FileText, Type, Pencil, Trash2, History, Link2 } from "lucide-react"
 import { toast } from "sonner"
 import { stripMarkdown } from "@/lib/markdown"
 
@@ -21,6 +21,8 @@ export interface MessageActionContext {
   messageId?: string
   /** Workspace ID for reaction API calls */
   workspaceId?: string
+  /** Stream ID for constructing permalink URLs */
+  streamId?: string
   /** Author's user ID */
   authorId?: string
   /** Current user's user ID */
@@ -139,6 +141,21 @@ export const messageActions: MessageAction[] = [
       },
     ],
     when: () => true,
+  },
+  {
+    id: "copy-link",
+    label: "Copy link to message",
+    icon: Link2,
+    when: (ctx) => !!ctx.messageId && !!ctx.workspaceId && !!ctx.streamId,
+    action: async (ctx) => {
+      try {
+        const url = `${window.location.origin}/w/${ctx.workspaceId}/s/${ctx.streamId}?m=${ctx.messageId}`
+        await copyToClipboard(url)
+        toast.success("Link copied")
+      } catch {
+        toast.error("Failed to copy link")
+      }
+    },
   },
   {
     id: "delete-message",

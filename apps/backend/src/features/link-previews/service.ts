@@ -4,8 +4,8 @@ import { linkPreviewId } from "../../lib/id"
 import type { LinkPreviewSummary } from "@threa/types"
 import { LinkPreviewRepository, type LinkPreview, type UpdateLinkPreviewParams } from "./repository"
 import { OutboxRepository } from "../../lib/outbox"
-import { extractUrls, normalizeUrl, detectContentType } from "./url-utils"
-import { MAX_PREVIEWS_PER_MESSAGE } from "./config"
+import { extractUrls, normalizeUrl, detectContentType, parseMessagePermalink } from "./url-utils"
+import { MAX_PREVIEWS_PER_MESSAGE, getAppOrigins } from "./config"
 
 export interface LinkPreviewServiceDeps {
   pool: Pool
@@ -17,13 +17,15 @@ export class LinkPreviewService {
   /**
    * Extract URLs from message content and create pending link preview records.
    * Returns the preview IDs and URLs that need to be fetched.
+   * Internal message permalinks are detected and marked as completed immediately.
    */
   async extractAndCreatePending(
     workspaceId: string,
     messageId: string,
     contentMarkdown: string
   ): Promise<Array<{ id: string; url: string }>> {
-    const urls = extractUrls(contentMarkdown).slice(0, MAX_PREVIEWS_PER_MESSAGE)
+    const appOrigins = getAppOrigins()
+    const urls = extractUrls(contentMarkdown, appOrigins).slice(0, MAX_PREVIEWS_PER_MESSAGE)
     if (urls.length === 0) return []
 
     return withTransaction(this.deps.pool, async (client) => {
@@ -32,14 +34,17 @@ export class LinkPreviewService {
       for (let i = 0; i < urls.length; i++) {
         const url = urls[i]
         const normalized = normalizeUrl(url)
-        const contentType = detectContentType(url)
+        const permalink = parseMessagePermalink(url, appOrigins)
 
         const preview = await LinkPreviewRepository.insert(client, {
           id: linkPreviewId(),
           workspaceId,
           url,
           normalizedUrl: normalized,
-          contentType,
+          contentType: permalink ? "message_link" : detectContentType(url),
+          targetWorkspaceId: permalink?.workspaceId,
+          targetStreamId: permalink?.streamId,
+          targetMessageId: permalink?.messageId,
         })
 
         await LinkPreviewRepository.linkToMessage(client, workspaceId, messageId, preview.id, i)
@@ -60,6 +65,7 @@ export class LinkPreviewService {
     contentMarkdown: string
   ): Promise<Array<{ id: string; url: string }>> {
     const urls = extractUrls(contentMarkdown).slice(0, MAX_PREVIEWS_PER_MESSAGE)
+    const appOrigins = getAppOrigins()
 
     return withTransaction(this.deps.pool, async (client) => {
       // Clear old message-preview links
@@ -72,14 +78,17 @@ export class LinkPreviewService {
       for (let i = 0; i < urls.length; i++) {
         const url = urls[i]
         const normalized = normalizeUrl(url)
-        const contentType = detectContentType(url)
+        const permalink = parseMessagePermalink(url, appOrigins)
 
         const preview = await LinkPreviewRepository.insert(client, {
           id: linkPreviewId(),
           workspaceId,
           url,
           normalizedUrl: normalized,
-          contentType,
+          contentType: permalink ? "message_link" : detectContentType(url),
+          targetWorkspaceId: permalink?.workspaceId,
+          targetStreamId: permalink?.streamId,
+          targetMessageId: permalink?.messageId,
         })
 
         await LinkPreviewRepository.linkToMessage(client, workspaceId, messageId, preview.id, i)

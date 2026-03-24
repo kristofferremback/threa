@@ -602,3 +602,28 @@ export interface LinkPreviewSummary {
   contentType: LinkPreviewContentType
   position: number
 }
+
+// =============================================================================
+// Message Link Previews (internal permalinks)
+// =============================================================================
+
+/** Access tiers for message link previews, resolved per-viewer at render time. */
+export type MessageLinkAccessTier = "full" | "private" | "cross_workspace"
+
+/**
+ * Resolved message link preview data returned by the permission-checked resolve endpoint.
+ * Content fields are only populated for the "full" access tier.
+ */
+export interface MessageLinkPreviewData {
+  accessTier: MessageLinkAccessTier
+  /** Author display name (full tier only) */
+  authorName?: string
+  /** Author avatar URL path (full tier only) */
+  authorAvatarUrl?: string
+  /** Truncated message content (full tier only) */
+  contentPreview?: string
+  /** Stream display name (full tier only) */
+  streamName?: string
+  /** Whether the target message has been deleted */
+  deleted?: boolean
+}

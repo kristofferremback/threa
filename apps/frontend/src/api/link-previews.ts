@@ -1,5 +1,5 @@
 import { api } from "./client"
-import type { LinkPreviewSummary } from "@threa/types"
+import type { LinkPreviewSummary, MessageLinkPreviewData } from "@threa/types"
 
 export interface LinkPreviewWithDismissed extends LinkPreviewSummary {
   dismissed: boolean
@@ -15,5 +15,9 @@ export const linkPreviewsApi = {
 
   async dismiss(workspaceId: string, messageId: string, linkPreviewId: string): Promise<void> {
     await api.post(`/api/workspaces/${workspaceId}/messages/${messageId}/link-previews/${linkPreviewId}/dismiss`)
+  },
+
+  async resolveMessageLink(workspaceId: string, linkPreviewId: string): Promise<MessageLinkPreviewData> {
+    return api.get<MessageLinkPreviewData>(`/api/workspaces/${workspaceId}/link-previews/${linkPreviewId}/resolve`)
   },
 }

@@ -142,7 +142,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const invitation = createInvitationHandlers({ invitationService })
   const activity = createActivityHandlers({ activityService })
   const agentSession = createAgentSessionHandlers({ pool })
-  const linkPreview = createLinkPreviewHandlers({ linkPreviewService })
+  const linkPreview = createLinkPreviewHandlers({ pool, linkPreviewService, streamService })
 
   // Ops endpoints - registered before rate limiter so probes aren't throttled
   app.get("/readyz", opsAccess, debug.readiness)
@@ -310,6 +310,11 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     "/api/workspaces/:workspaceId/messages/:messageId/link-previews/:linkPreviewId/dismiss",
     ...authed,
     linkPreview.dismiss
+  )
+  app.get(
+    "/api/workspaces/:workspaceId/link-previews/:linkPreviewId/resolve",
+    ...authed,
+    linkPreview.resolveMessageLink
   )
 
   // Public API v1 — API key auth
