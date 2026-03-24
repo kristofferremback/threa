@@ -184,13 +184,17 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
   // Show preview (only from collapsed state)
   const showPreview = useCallback(() => {
     clearHideTimeout()
+    // Dismiss mobile keyboard when opening sidebar
+    if (isMobile && state === "collapsed" && document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur()
+    }
     setState((current) => {
       if (current === "collapsed") {
         return "preview"
       }
       return current
     })
-  }, [clearHideTimeout])
+  }, [clearHideTimeout, isMobile, state])
 
   // Hide preview after delay (returns to collapsed)
   const hidePreview = useCallback(() => {
@@ -208,6 +212,10 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
   // Toggle between collapsed and pinned (or preview on mobile)
   const togglePinned = useCallback(() => {
     clearHideTimeout()
+    // Dismiss mobile keyboard when opening sidebar
+    if (isMobile && state === "collapsed" && document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur()
+    }
     setState((current) => {
       let next: SidebarState
       if (current === "pinned" || current === "preview") {
@@ -223,7 +231,7 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
       }
       return next
     })
-  }, [clearHideTimeout, isMobile, updatePersistedState])
+  }, [clearHideTimeout, isMobile, state, updatePersistedState])
 
   // Collapse the sidebar (skip localStorage persist on mobile to preserve desktop preference)
   const collapse = useCallback(() => {
