@@ -166,9 +166,11 @@ export class LinkPreviewService {
         }
       }
 
-      // Publish if this worker wrote at least one row, or if forced (edit flow where
-      // the set of previews changed even though individual preview metadata was already cached).
-      if (completedPreviews.length > 0 && (hasNewWrites || options?.forcePublish)) {
+      // Publish if this worker wrote at least one row, if there are message_link previews
+      // (pre-completed at insert time, so they never trigger hasNewWrites), or if forced
+      // (edit flow where the set changed even though individual metadata was already cached).
+      const hasMessageLinks = completedPreviews.some((p) => p.contentType === "message_link")
+      if (completedPreviews.length > 0 && (hasNewWrites || hasMessageLinks || options?.forcePublish)) {
         await OutboxRepository.insert(client, "link_preview:ready", {
           workspaceId,
           streamId,
