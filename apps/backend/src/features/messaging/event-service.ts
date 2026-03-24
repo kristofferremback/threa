@@ -580,7 +580,10 @@ export class EventService {
     const messageCreatedEvents = events.filter((e) => e.eventType === "message_created")
     const messageIds = messageCreatedEvents.map((e) => (e.payload as MessageCreatedPayload).messageId)
 
-    // Always fetch messages projection for reactions; also needed when edits/deletes exist.
+    // Reactions live on the messages projection (not in events), so we must always
+    // fetch when message_created events exist. This replaces an earlier guard that
+    // only fetched on edits/deletes — the extra query is the cost of real-time
+    // reaction enrichment on bootstrap.
     const messagesMap = messageIds.length > 0 ? await this.getMessagesByIds(messageIds) : new Map<string, Message>()
 
     return events

@@ -265,6 +265,8 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
           }),
         }
       })
+
+      await persistUpdatedMessageEvent(payload.messageId)
     }
 
     const handleReactionRemoved = async (payload: ReactionPayload) => {
@@ -290,6 +292,8 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
           }),
         }
       })
+
+      await persistUpdatedMessageEvent(payload.messageId)
     }
 
     // Handle thread creation - update parent message with threadId reference
