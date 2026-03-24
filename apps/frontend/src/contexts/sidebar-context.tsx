@@ -213,7 +213,7 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
   const togglePinned = useCallback(() => {
     clearHideTimeout()
     // Dismiss mobile keyboard when opening sidebar
-    if (isMobile && document.activeElement instanceof HTMLElement) {
+    if (isMobile && state === "collapsed" && document.activeElement instanceof HTMLElement) {
       document.activeElement.blur()
     }
     setState((current) => {
@@ -231,7 +231,7 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
       }
       return next
     })
-  }, [clearHideTimeout, isMobile, updatePersistedState])
+  }, [clearHideTimeout, isMobile, state, updatePersistedState])
 
   // Collapse the sidebar (skip localStorage persist on mobile to preserve desktop preference)
   const collapse = useCallback(() => {
