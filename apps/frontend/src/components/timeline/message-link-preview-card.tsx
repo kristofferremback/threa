@@ -71,7 +71,13 @@ export function MessageLinkPreviewCard({ preview, workspaceId, onDismiss }: Mess
 
   return (
     <div className="group/preview relative overflow-hidden rounded-lg border bg-card transition-all max-w-md hover:border-primary/50 hover:shadow-sm">
-      <Link to={preview.url.replace(window.location.origin, "")} className="block">
+      <Link
+        to={(() => {
+          const u = new URL(preview.url)
+          return u.pathname + u.search
+        })()}
+        className="block"
+      >
         <div className="flex items-center gap-2 px-3 py-1.5 border-b bg-muted/30">
           <MessageSquare className="h-4 w-4 text-primary shrink-0" />
           {data.streamName && <span className="text-xs text-muted-foreground truncate">#{data.streamName}</span>}
