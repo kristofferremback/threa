@@ -231,13 +231,14 @@ test.describe("Message Reactions", () => {
       await ctxB.page.goto(`/w/${workspaceId}/s/${streamId}`)
       await expect(ctxB.page.getByRole("main").getByText(messageContent)).toBeVisible({ timeout: 10000 })
 
+      // The "New" unread divider should NOT appear — reactions are not new messages
+      // Check immediately after navigation settles, before the divider could auto-dismiss
+      const unreadDivider = ctxB.page.getByRole("main").getByText("New", { exact: true })
+      await expect(unreadDivider).not.toBeVisible({ timeout: 3000 })
+
       // The reaction should be visible
       const messageContainer = ctxB.page.getByRole("main").locator(".group").filter({ hasText: messageContent }).first()
       await expect(messageContainer.locator("button").filter({ hasText: "👍" }).first()).toBeVisible({ timeout: 10000 })
-
-      // The "New" unread divider should NOT appear — reactions are not new messages
-      const unreadDivider = ctxB.page.getByRole("main").getByText("New", { exact: true })
-      await expect(unreadDivider).not.toBeVisible({ timeout: 3000 })
     } finally {
       await ctxA.context.close()
       await ctxB?.context.close()
