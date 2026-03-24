@@ -87,7 +87,13 @@ export const LinkPreviewRepository = {
       sql`INSERT INTO link_previews (id, workspace_id, url, normalized_url, content_type, status,
               target_workspace_id, target_stream_id, target_message_id)
           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-          ON CONFLICT (workspace_id, normalized_url) DO NOTHING
+          ON CONFLICT (workspace_id, normalized_url) DO UPDATE SET
+              content_type = EXCLUDED.content_type,
+              status = EXCLUDED.status,
+              target_workspace_id = EXCLUDED.target_workspace_id,
+              target_stream_id = EXCLUDED.target_stream_id,
+              target_message_id = EXCLUDED.target_message_id
+          WHERE link_previews.content_type != EXCLUDED.content_type
           RETURNING *`,
       [
         params.id,
