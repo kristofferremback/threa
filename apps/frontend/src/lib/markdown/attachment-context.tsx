@@ -1,5 +1,5 @@
 import { createContext, useContext, useCallback, useState, type ReactNode } from "react"
-import { ImageLightbox } from "@/components/image-lightbox"
+import { ImageGallery, type GalleryImage } from "@/components/image-gallery"
 import { attachmentsApi } from "@/api"
 import { triggerDownload } from "@/lib/image-utils"
 
@@ -28,11 +28,13 @@ interface AttachmentProviderProps {
 
 /**
  * Provider for attachment context in rendered markdown.
- * Enables attachment links to open images in lightbox or trigger downloads.
+ * Enables attachment links to open images in gallery or trigger downloads.
  */
 export function AttachmentProvider({ workspaceId, attachments, children }: AttachmentProviderProps) {
-  const [lightbox, setLightbox] = useState<{ url: string; filename: string; attachmentId: string } | null>(null)
+  const [galleryState, setGalleryState] = useState<{ images: GalleryImage[]; index: number } | null>(null)
   const [hoveredAttachmentId, setHoveredAttachmentId] = useState<string | null>(null)
+
+  const imageAttachments = attachments.filter((a) => a.mimeType.startsWith("image/"))
 
   const openAttachment = useCallback(
     async (attachmentId: string, metaKey: boolean) => {
@@ -42,23 +44,28 @@ export function AttachmentProvider({ workspaceId, attachments, children }: Attac
       const isImage = attachment.mimeType.startsWith("image/")
 
       try {
-        const url = await attachmentsApi.getDownloadUrl(workspaceId, attachmentId)
-
         if (metaKey) {
-          // Cmd/Ctrl+click: open in new tab
+          const url = await attachmentsApi.getDownloadUrl(workspaceId, attachmentId)
           window.open(url, "_blank")
         } else if (isImage) {
-          // Click on image: open lightbox
-          setLightbox({ url, filename: attachment.filename, attachmentId })
+          // Fetch URLs for all image attachments so the gallery can navigate between them
+          const urls = await Promise.all(
+            imageAttachments.map(async (a) => {
+              const url = await attachmentsApi.getDownloadUrl(workspaceId, a.id)
+              return { url, filename: a.filename, attachmentId: a.id }
+            })
+          )
+          const idx = urls.findIndex((u) => u.attachmentId === attachmentId)
+          setGalleryState({ images: urls, index: idx !== -1 ? idx : 0 })
         } else {
-          // Click on non-image: trigger download
+          const url = await attachmentsApi.getDownloadUrl(workspaceId, attachmentId)
           triggerDownload(url, attachment.filename)
         }
       } catch (error) {
         console.error("Failed to get attachment URL:", error)
       }
     },
-    [workspaceId, attachments]
+    [workspaceId, attachments, imageAttachments]
   )
 
   return (
@@ -66,14 +73,15 @@ export function AttachmentProvider({ workspaceId, attachments, children }: Attac
       value={{ workspaceId, attachments, openAttachment, hoveredAttachmentId, setHoveredAttachmentId }}
     >
       {children}
-      <ImageLightbox
-        isOpen={lightbox !== null}
-        onClose={() => setLightbox(null)}
-        imageUrl={lightbox?.url ?? null}
-        filename={lightbox?.filename ?? ""}
-        workspaceId={workspaceId}
-        attachmentId={lightbox?.attachmentId ?? null}
-      />
+      {galleryState && (
+        <ImageGallery
+          isOpen
+          onClose={() => setGalleryState(null)}
+          images={galleryState.images}
+          initialIndex={galleryState.index}
+          workspaceId={workspaceId}
+        />
+      )}
     </AttachmentContext.Provider>
   )
 }
