@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from "react"
+import React, { useState, useCallback, useEffect, useMemo } from "react"
 import { Download, FileText, File, Loader2, Copy } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
@@ -296,6 +296,28 @@ export function AttachmentList({ attachments, workspaceId, className }: Attachme
   const attachmentContext = useAttachmentContext()
   const hoveredAttachmentId = attachmentContext?.hoveredAttachmentId ?? null
 
+  const imageAttachments = useMemo(
+    () => (attachments ?? []).filter((a) => a.mimeType.startsWith("image/")),
+    [attachments]
+  )
+  const fileAttachments = useMemo(
+    () => (attachments ?? []).filter((a) => !a.mimeType.startsWith("image/")),
+    [attachments]
+  )
+
+  // Build gallery images from loaded URLs — stable reference when loadedUrls / attachments unchanged
+  const galleryImages: GalleryImage[] = useMemo(
+    () =>
+      imageAttachments
+        .map((a) => {
+          const url = loadedUrls.get(a.id)
+          if (!url) return null
+          return { url, filename: a.filename, attachmentId: a.id }
+        })
+        .filter((g): g is GalleryImage => g !== null),
+    [imageAttachments, loadedUrls]
+  )
+
   // Called by ImageAttachment children when their URL loads
   const registerImageUrl = useCallback((attachmentId: string, url: string) => {
     setLoadedUrls((prev) => {
@@ -306,31 +328,21 @@ export function AttachmentList({ attachments, workspaceId, className }: Attachme
     })
   }, [])
 
-  if (!attachments || attachments.length === 0) {
-    return null
-  }
-
-  const imageAttachments = attachments.filter((a) => a.mimeType.startsWith("image/"))
-  const fileAttachments = attachments.filter((a) => !a.mimeType.startsWith("image/"))
-
+  // Index into galleryImages (the loaded subset), not imageAttachments, so the
+  // gallery always opens on the correct image regardless of load order.
   const handleImageClick = useCallback(
     (_url: string, _filename: string, attachmentId: string) => {
-      const idx = imageAttachments.findIndex((a) => a.id === attachmentId)
+      const idx = galleryImages.findIndex((g) => g.attachmentId === attachmentId)
       if (idx !== -1) setGalleryIndex(idx)
     },
-    [imageAttachments]
+    [galleryImages]
   )
 
   const handleGalleryClose = useCallback(() => setGalleryIndex(null), [])
 
-  // Build gallery images from loaded URLs
-  const galleryImages: GalleryImage[] = imageAttachments
-    .map((a) => {
-      const url = loadedUrls.get(a.id)
-      if (!url) return null
-      return { url, filename: a.filename, attachmentId: a.id }
-    })
-    .filter((g): g is GalleryImage => g !== null)
+  if (!attachments || attachments.length === 0) {
+    return null
+  }
 
   return (
     <>

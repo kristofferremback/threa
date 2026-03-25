@@ -1,4 +1,4 @@
-import { createContext, useContext, useCallback, useState, type ReactNode } from "react"
+import { createContext, useContext, useCallback, useMemo, useState, type ReactNode } from "react"
 import { ImageGallery, type GalleryImage } from "@/components/image-gallery"
 import { attachmentsApi } from "@/api"
 import { triggerDownload } from "@/lib/image-utils"
@@ -34,7 +34,7 @@ export function AttachmentProvider({ workspaceId, attachments, children }: Attac
   const [galleryState, setGalleryState] = useState<{ images: GalleryImage[]; index: number } | null>(null)
   const [hoveredAttachmentId, setHoveredAttachmentId] = useState<string | null>(null)
 
-  const imageAttachments = attachments.filter((a) => a.mimeType.startsWith("image/"))
+  const imageAttachments = useMemo(() => attachments.filter((a) => a.mimeType.startsWith("image/")), [attachments])
 
   const openAttachment = useCallback(
     async (attachmentId: string, metaKey: boolean) => {
@@ -48,15 +48,34 @@ export function AttachmentProvider({ workspaceId, attachments, children }: Attac
           const url = await attachmentsApi.getDownloadUrl(workspaceId, attachmentId)
           window.open(url, "_blank")
         } else if (isImage) {
-          // Fetch URLs for all image attachments so the gallery can navigate between them
-          const urls = await Promise.all(
-            imageAttachments.map(async (a) => {
-              const url = await attachmentsApi.getDownloadUrl(workspaceId, a.id)
-              return { url, filename: a.filename, attachmentId: a.id }
-            })
+          // Fetch clicked image URL immediately, open gallery, then backfill others
+          const clickedUrl = await attachmentsApi.getDownloadUrl(workspaceId, attachmentId)
+          const clickedIdx = imageAttachments.findIndex((a) => a.id === attachmentId)
+          const initial: GalleryImage[] = imageAttachments.map((a) =>
+            a.id === attachmentId
+              ? { url: clickedUrl, filename: a.filename, attachmentId: a.id }
+              : { url: "", filename: a.filename, attachmentId: a.id }
           )
-          const idx = urls.findIndex((u) => u.attachmentId === attachmentId)
-          setGalleryState({ images: urls, index: idx !== -1 ? idx : 0 })
+          setGalleryState({ images: initial, index: clickedIdx !== -1 ? clickedIdx : 0 })
+
+          // Backfill remaining image URLs in the background
+          const others = imageAttachments.filter((a) => a.id !== attachmentId)
+          if (others.length > 0) {
+            const resolved = await Promise.all(
+              others.map(async (a) => {
+                const url = await attachmentsApi.getDownloadUrl(workspaceId, a.id)
+                return { attachmentId: a.id, url }
+              })
+            )
+            setGalleryState((prev) => {
+              if (!prev) return prev
+              const updated = prev.images.map((img) => {
+                const found = resolved.find((r) => r.attachmentId === img.attachmentId)
+                return found ? { ...img, url: found.url } : img
+              })
+              return { ...prev, images: updated }
+            })
+          }
         } else {
           const url = await attachmentsApi.getDownloadUrl(workspaceId, attachmentId)
           triggerDownload(url, attachment.filename)

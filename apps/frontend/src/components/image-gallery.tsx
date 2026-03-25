@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
-import { X, Download, Copy, ChevronLeft, ChevronRight, PanelRightClose, PanelRightOpen } from "lucide-react"
+import { X, Download, Copy, ChevronLeft, ChevronRight, PanelRightClose, PanelRightOpen, Loader2 } from "lucide-react"
 import { downloadImage, copyImage } from "@/lib/image-utils"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { cn } from "@/lib/utils"
@@ -213,12 +213,16 @@ export function ImageGallery({ isOpen, onClose, images, initialIndex, workspaceI
               className="flex items-center justify-center w-full h-full"
               style={isMobile && swipeOffset !== 0 ? { transform: `translateX(${swipeOffset}px)` } : undefined}
             >
-              <img
-                src={current.url}
-                alt={current.filename}
-                className="max-w-full max-h-[85vh] object-contain select-none"
-                draggable={false}
-              />
+              {current.url ? (
+                <img
+                  src={current.url}
+                  alt={current.filename}
+                  className="max-w-full max-h-[85vh] object-contain select-none"
+                  draggable={false}
+                />
+              ) : (
+                <Loader2 className="h-8 w-8 animate-spin text-white/50" />
+              )}
             </div>
 
             {/* Desktop: hover arrows */}
@@ -285,13 +289,19 @@ export function ImageGallery({ isOpen, onClose, images, initialIndex, workspaceI
                       aria-label={`View ${img.filename}`}
                       aria-current={i === currentIndex ? "true" : undefined}
                     >
-                      <img
-                        src={img.url}
-                        alt={img.filename}
-                        className="w-full h-20 object-cover"
-                        loading="lazy"
-                        draggable={false}
-                      />
+                      {img.url ? (
+                        <img
+                          src={img.url}
+                          alt={img.filename}
+                          className="w-full h-20 object-cover"
+                          loading="lazy"
+                          draggable={false}
+                        />
+                      ) : (
+                        <div className="w-full h-20 flex items-center justify-center bg-white/5">
+                          <Loader2 className="h-4 w-4 animate-spin text-white/40" />
+                        </div>
+                      )}
                     </button>
                   ))}
                 </div>
