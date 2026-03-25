@@ -291,7 +291,7 @@ function FileAttachment({ attachment, workspaceId, isHighlighted }: AttachmentIt
 }
 
 export function AttachmentList({ attachments, workspaceId, className }: AttachmentListProps) {
-  const [galleryIndex, setGalleryIndex] = useState<number | null>(null)
+  const [selectedAttachmentId, setSelectedAttachmentId] = useState<string | null>(null)
   const [loadedUrls, setLoadedUrls] = useState<Map<string, string>>(new Map())
   const attachmentContext = useAttachmentContext()
   const hoveredAttachmentId = attachmentContext?.hoveredAttachmentId ?? null
@@ -328,17 +328,16 @@ export function AttachmentList({ attachments, workspaceId, className }: Attachme
     })
   }, [])
 
-  // Index into galleryImages (the loaded subset), not imageAttachments, so the
-  // gallery always opens on the correct image regardless of load order.
-  const handleImageClick = useCallback(
-    (_url: string, _filename: string, attachmentId: string) => {
-      const idx = galleryImages.findIndex((g) => g.attachmentId === attachmentId)
-      if (idx !== -1) setGalleryIndex(idx)
-    },
-    [galleryImages]
-  )
+  // Track selected image by ID — derived index stays correct even as galleryImages grows
+  const galleryIndex = selectedAttachmentId
+    ? galleryImages.findIndex((g) => g.attachmentId === selectedAttachmentId)
+    : -1
 
-  const handleGalleryClose = useCallback(() => setGalleryIndex(null), [])
+  const handleImageClick = useCallback((_url: string, _filename: string, attachmentId: string) => {
+    setSelectedAttachmentId(attachmentId)
+  }, [])
+
+  const handleGalleryClose = useCallback(() => setSelectedAttachmentId(null), [])
 
   if (!attachments || attachments.length === 0) {
     return null
@@ -375,12 +374,12 @@ export function AttachmentList({ attachments, workspaceId, className }: Attachme
         )}
       </div>
 
-      {galleryImages.length > 0 && (
+      {galleryImages.length > 0 && galleryIndex !== -1 && (
         <ImageGallery
-          isOpen={galleryIndex !== null}
+          isOpen={selectedAttachmentId !== null}
           onClose={handleGalleryClose}
           images={galleryImages}
-          initialIndex={galleryIndex ?? 0}
+          initialIndex={galleryIndex}
           workspaceId={workspaceId}
         />
       )}

@@ -63,11 +63,11 @@ export function ImageGallery({ isOpen, onClose, images, initialIndex, workspaceI
   const goNext = useCallback(() => goTo(currentIndex + 1), [goTo, currentIndex])
 
   const handleDownload = useCallback(() => {
-    if (current) downloadImage(workspaceId, current.attachmentId, current.filename)
+    if (current?.url) downloadImage(workspaceId, current.attachmentId, current.filename)
   }, [workspaceId, current])
 
   const handleCopy = useCallback(() => {
-    if (current) copyImage(current.url)
+    if (current?.url) copyImage(current.url)
   }, [current])
 
   // Keyboard navigation
