@@ -42,9 +42,14 @@ export function ImageGallery({ isOpen, onClose, images, initialIndex, workspaceI
   // Scroll active thumbnail into view
   const thumbnailRefs = useRef<Map<number, HTMLButtonElement>>(new Map())
 
-  // Reset index when gallery opens with a new initial index
+  // Only sync currentIndex when the gallery opens — not on every initialIndex
+  // change, which can shift due to late-loading images growing galleryImages.
+  const prevOpen = useRef(false)
   useEffect(() => {
-    if (isOpen) setCurrentIndex(initialIndex)
+    if (isOpen && !prevOpen.current) {
+      setCurrentIndex(initialIndex)
+    }
+    prevOpen.current = isOpen
   }, [isOpen, initialIndex])
 
   // Scroll active thumbnail into view when index changes
