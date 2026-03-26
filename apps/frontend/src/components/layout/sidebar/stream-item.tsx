@@ -102,6 +102,7 @@ export function StreamItemPreview({
         compact && !hoverPreview && "hidden",
         hoverPreview && "absolute left-0 right-0 top-full z-10 opacity-0 group-hover:opacity-100"
       )}
+      aria-hidden={hoverPreview ? "true" : undefined}
     >
       <span className="truncate flex-1">
         {getActorName(preview.authorId, preview.authorType)}: {truncateContent(preview.content)}
