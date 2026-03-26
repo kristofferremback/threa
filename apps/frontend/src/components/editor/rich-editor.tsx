@@ -11,6 +11,7 @@ import { MentionPluginKey } from "./triggers/mention-extension"
 import { CommandPluginKey } from "./triggers/command-extension"
 import { EmojiPluginKey } from "./triggers/emoji-extension"
 import { shouldRemoveTriggerOnToggle, type SuggestionPluginState } from "./trigger-toggle"
+import { handleBeforeInputNewline, insertPastedText } from "./multiline-blocks"
 import { useMentionables } from "@/hooks/use-mentionables"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { cn } from "@/lib/utils"
@@ -65,6 +66,20 @@ interface RichEditorProps {
   onEscapeBlur?: () => void
   /** Stream context for filtering which broadcast mentions (@channel, @here) are available */
   streamContext?: MentionStreamContext
+}
+
+function isEditorCompletelyEmpty(editor: import("@tiptap/react").Editor | null | undefined): boolean {
+  if (!editor) {
+    return false
+  }
+
+  const { doc } = editor.state
+  return (
+    doc.childCount === 1 &&
+    !!doc.firstChild &&
+    doc.firstChild.type.name === "paragraph" &&
+    doc.firstChild.content.size === 0
+  )
 }
 
 export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function RichEditor(
@@ -323,13 +338,29 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
 
         // Parse pasted text through markdown parser to convert @mentions, #channels, :emoji:
         const text = event.clipboardData?.getData("text/plain")
-        if (text) {
-          event.preventDefault()
-          const parsed = parseMarkdown(text, getMentionTypeRef.current, toEmojiRef.current)
-          editorRef.current?.commands.insertContent(parsed)
-          return true
+        if (!text || !editorRef.current) {
+          return false
         }
-        return false
+
+        const handled = insertPastedText(editorRef.current, text, getMentionTypeRef.current, toEmojiRef.current)
+        if (handled) {
+          event.preventDefault()
+        }
+
+        return handled
+      },
+      handleDOMEvents: {
+        beforeinput: (_view, event) => {
+          if (messageSendModeRef.current !== "cmdEnter" || !editorRef.current) {
+            return false
+          }
+
+          if (isSuggestionActive(editorRef.current)) {
+            return false
+          }
+
+          return handleBeforeInputNewline(editorRef.current, event as InputEvent)
+        },
       },
       handleDrop: (_view, event, _slice, moved) => {
         // Internal drag-and-drop (reordering) - let TipTap handle it
@@ -347,8 +378,10 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
         return false
       },
       handleKeyDown: (_view, event) => {
+        const currentEditor = editorRef.current
+
         if (event.key === "Escape" && blurOnEscape) {
-          if (editorRef.current && isSuggestionActive(editorRef.current)) {
+          if (currentEditor && isSuggestionActive(currentEditor)) {
             return false
           }
           event.preventDefault()
@@ -359,8 +392,8 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
         // ArrowUp in empty editor: edit the last message sent by the current user
         if (
           event.key === "ArrowUp" &&
-          editorRef.current?.isEmpty &&
-          !isSuggestionActive(editorRef.current) &&
+          isEditorCompletelyEmpty(currentEditor) &&
+          !(currentEditor && isSuggestionActive(currentEditor)) &&
           onEditLastMessageRef.current
         ) {
           event.preventDefault()
@@ -375,7 +408,7 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
         }
         // Enter in "enter" send mode: send unless a suggestion popup is active
         if (event.key === "Enter" && !event.shiftKey && messageSendModeRef.current === "enter") {
-          if (editorRef.current && isSuggestionActive(editorRef.current)) {
+          if (currentEditor && isSuggestionActive(currentEditor)) {
             return false // Let suggestion popup handle Enter
           }
           event.preventDefault()

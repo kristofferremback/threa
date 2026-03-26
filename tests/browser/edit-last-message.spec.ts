@@ -29,6 +29,24 @@ test.describe("Edit last message (ArrowUp)", () => {
     await expect(editor).toContainText("I am typing something")
   })
 
+  test("does nothing when the composer has code block content", async ({ page }) => {
+    await loginAndCreateWorkspace(page, "elm-nonempty-code")
+
+    await page.getByRole("button", { name: "+ New Scratchpad" }).click()
+    await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
+
+    const editor = page.locator("[contenteditable='true']")
+    await editor.click()
+    await page.keyboard.type("```")
+    await page.keyboard.press("Shift+Enter")
+    await page.keyboard.type("const x = 1")
+
+    await page.keyboard.press("ArrowUp")
+
+    await expect(page.getByRole("button", { name: "Cancel" })).not.toBeVisible()
+    await expect(editor.locator("pre")).toContainText("const x = 1")
+  })
+
   test("opens the last message in edit mode when editor is empty", async ({ page }) => {
     await loginAndCreateWorkspace(page, "elm-basic")
 

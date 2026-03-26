@@ -2,6 +2,7 @@ import { Extension, type Editor } from "@tiptap/react"
 import { TextSelection, type Transaction } from "@tiptap/pm/state"
 import type { EditorState } from "@tiptap/pm/state"
 import type { MessageSendMode } from "@threa/types"
+import { handleEnterTextBehavior, toggleMultilineBlock } from "./multiline-blocks"
 
 export interface EditorBehaviorsOptions {
   /** Ref to current send mode - using ref avoids stale closure in keyboard shortcuts */
@@ -251,86 +252,6 @@ function handleTextTab(editor: Editor, dedent: boolean): boolean {
 }
 
 /**
- * Handle Enter key press for creating newlines / smart block exits.
- * This is the shared text manipulation behavior for both Enter and Shift+Enter.
- * Returns true if handled, false to let default behavior proceed.
- */
-function handleEnterTextBehavior(editor: Editor): boolean {
-  const { $from } = editor.state.selection
-
-  // Check for ``` code block trigger
-  if ($from.parent.isTextblock && !editor.isActive("codeBlock")) {
-    const lineText = $from.parent.textContent
-    const match = lineText.match(/^```(\w*)$/)
-    if (match) {
-      const language = match[1] || "plaintext"
-      const start = $from.start()
-      const end = $from.end()
-      return editor
-        .chain()
-        .focus()
-        .command(({ tr }) => {
-          tr.delete(start, end)
-          return true
-        })
-        .setCodeBlock({ language })
-        .run()
-    }
-  }
-
-  // In lists: exit on empty item, otherwise split to create new item
-  if (editor.isActive("listItem")) {
-    const listItem = $from.node($from.depth - 1)
-    if (listItem?.type.name === "listItem") {
-      const isEmpty =
-        listItem.childCount === 1 &&
-        listItem.firstChild?.type.name === "paragraph" &&
-        listItem.firstChild.content.size === 0
-
-      if (isEmpty) {
-        return editor.chain().focus().liftListItem("listItem").run()
-      }
-    }
-    // Split list item to create new one (same as Enter default)
-    return editor.chain().focus().splitListItem("listItem").run()
-  }
-
-  // In blockquotes: exit on empty line
-  if (editor.isActive("blockquote")) {
-    const paragraph = $from.parent
-    if (paragraph.type.name === "paragraph" && paragraph.content.size === 0) {
-      return editor.chain().focus().lift("blockquote").run()
-    }
-    return false
-  }
-
-  // In code blocks: insert newline, or exit on double empty line at end
-  if (editor.isActive("codeBlock")) {
-    const codeBlock = $from.parent
-    const text = codeBlock.textContent
-    const atEnd = $from.pos === $from.end()
-
-    if (atEnd && text.endsWith("\n\n")) {
-      return editor
-        .chain()
-        .focus()
-        .command(({ tr, state }: { tr: Transaction; state: EditorState }) => {
-          const pos = state.selection.$from.pos
-          tr.delete(pos - 2, pos)
-          return true
-        })
-        .exitCode()
-        .run()
-    }
-    // Insert newline in code block (handles both Enter and Shift+Enter uniformly)
-    return editor.chain().focus().insertContent("\n").run()
-  }
-
-  // Regular text: create new paragraph
-  return editor.chain().focus().splitBlock().run()
-}
-
-/**
  * Keyboard behaviors for the rich text editor:
  * - Formatting shortcuts (Mod-B/I/E/etc) toggle marks
  * - Tab/Shift-Tab indent/dedent (VS Code-like with selection support)
@@ -357,7 +278,7 @@ export const EditorBehaviors = Extension.create<EditorBehaviorsOptions>({
       "Mod-i": () => this.editor.chain().focus().toggleItalic().run(),
       "Mod-Shift-s": () => this.editor.chain().focus().toggleStrike().run(),
       "Mod-e": () => this.editor.chain().focus().toggleCode().run(),
-      "Mod-Shift-c": () => this.editor.chain().focus().toggleCodeBlock().run(),
+      "Mod-Shift-c": () => toggleMultilineBlock(this.editor, "codeBlock"),
 
       // Tab: VS Code-style indent (always trapped to prevent focus escape)
       Tab: () => {

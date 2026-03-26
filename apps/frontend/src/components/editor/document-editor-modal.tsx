@@ -26,12 +26,13 @@ import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
 import { createEditorExtensions } from "./editor-extensions"
-import { EditorBehaviors } from "./editor-behaviors"
+import { EditorBehaviors, isSuggestionActive } from "./editor-behaviors"
 import { serializeToMarkdown, parseMarkdown, type MentionTypeLookup } from "./editor-markdown"
 import { useMentionSuggestion, useChannelSuggestion, useEmojiSuggestion } from "./triggers"
 import { useMentionables } from "@/hooks/use-mentionables"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { LinkEditor } from "./link-editor"
+import { handleBeforeInputNewline, insertPastedText, toggleMultilineBlock } from "./multiline-blocks"
 import { cn } from "@/lib/utils"
 
 interface DocumentEditorModalProps {
@@ -76,8 +77,16 @@ export function DocumentEditorModal({
     return (slug: string) => slugToType.get(slug) ?? "user"
   }, [mentionables])
 
+  const initContentRef = useRef(initialContent)
+  const getMentionTypeRef = useRef(getMentionType)
+  const toEmojiRef = useRef(toEmoji)
+  initContentRef.current = initialContent
+  getMentionTypeRef.current = getMentionType
+  toEmojiRef.current = toEmoji
+
   // Ref for handleSubmit without re-creating extensions
   const handleSubmitRef = useRef(() => {})
+  const editorRef = useRef<ReturnType<typeof useEditor>>(null)
 
   // Create extensions (no cmdEnter handling - explicit Send button only)
   const extensions = useMemo(
@@ -119,6 +128,28 @@ export function DocumentEditorModal({
           "focus:outline-none"
         ),
       },
+      handlePaste: (_view, event) => {
+        const text = event.clipboardData?.getData("text/plain")
+        if (!text || !editorRef.current) {
+          return false
+        }
+
+        const handled = insertPastedText(editorRef.current, text, getMentionTypeRef.current, toEmojiRef.current)
+        if (handled) {
+          event.preventDefault()
+        }
+
+        return handled
+      },
+      handleDOMEvents: {
+        beforeinput: (_view, event) => {
+          if (!editorRef.current || isSuggestionActive(editorRef.current)) {
+            return false
+          }
+
+          return handleBeforeInputNewline(editorRef.current, event as InputEvent)
+        },
+      },
       handleKeyDown: (_view, event) => {
         // Cmd/Ctrl+Enter: send
         if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && !event.shiftKey) {
@@ -132,7 +163,6 @@ export function DocumentEditorModal({
   })
 
   // Store editor ref for accessing inside callbacks
-  const editorRef = useRef(editor)
   editorRef.current = editor
 
   // Handle send
@@ -156,17 +186,6 @@ export function DocumentEditorModal({
 
   // Update submit ref for keyboard shortcut
   handleSubmitRef.current = handleSubmit
-
-  // Capture open-time values in refs so the effect only depends on `open` and `editor`.
-  // Placing deps like initialContent/getMentionType/toEmoji in the array would cause the
-  // effect to fire while the modal is already open (e.g. async data resolves), silently
-  // overwriting whatever the user has typed.
-  const initContentRef = useRef(initialContent)
-  const getMentionTypeRef = useRef(getMentionType)
-  const toEmojiRef = useRef(toEmoji)
-  initContentRef.current = initialContent
-  getMentionTypeRef.current = getMentionType
-  toEmojiRef.current = toEmoji
 
   // Reset content only when dialog transitions from closed to open
   useEffect(() => {
@@ -285,7 +304,7 @@ export function DocumentEditorModal({
 
             {/* Block formatting */}
             <ToolbarButton
-              onAction={() => editor?.chain().focus().toggleBlockquote().run()}
+              onAction={() => editor && toggleMultilineBlock(editor, "blockquote")}
               icon={Quote}
               label="Quote"
               isActive={editor?.isActive("blockquote")}
@@ -303,7 +322,7 @@ export function DocumentEditorModal({
               isActive={editor?.isActive("orderedList")}
             />
             <ToolbarButton
-              onAction={() => editor?.chain().focus().toggleCodeBlock().run()}
+              onAction={() => editor && toggleMultilineBlock(editor, "codeBlock")}
               icon={Braces}
               label="Code block"
               shortcut="⌘⇧C"
