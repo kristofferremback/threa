@@ -14,8 +14,50 @@ interface AncestorInfo {
   pos: number
 }
 
+interface SelectedBlockInfo {
+  index: number
+  node: ProseMirrorNode
+  pos: number
+}
+
+interface SelectedBlockRange {
+  blocks: SelectedBlockInfo[]
+}
+
 function isEmptyParagraphNode(node: ProseMirrorNode | null | undefined): boolean {
   return !!node && node.type.name === "paragraph" && node.content.size === 0
+}
+
+function getSelectedBlockRange(editor: Editor): SelectedBlockRange | null {
+  const { state } = editor
+  const { selection } = state
+  if (selection.empty) {
+    return null
+  }
+
+  const selectionEnd = Math.max(selection.to - 1, selection.from)
+  const $to = state.doc.resolve(selectionEnd)
+  const range = selection.$from.blockRange($to)
+  if (!range) {
+    return null
+  }
+
+  const parentPos = range.depth === 0 ? -1 : range.$from.before(range.depth)
+  const blocks: SelectedBlockInfo[] = []
+
+  range.parent.forEach((node, offset, index) => {
+    if (index < range.startIndex || index >= range.endIndex) {
+      return
+    }
+
+    blocks.push({
+      index,
+      node,
+      pos: parentPos + 1 + offset,
+    })
+  })
+
+  return blocks.length > 0 ? { blocks } : null
 }
 
 function findAncestor(editor: Editor, nodeName: "codeBlock" | "blockquote"): AncestorInfo | null {
@@ -179,6 +221,99 @@ function createBlockquoteNode(
   return schema.nodes.blockquote.create(attrs, Fragment.fromArray(children.map((child) => child.node)))
 }
 
+function getFragmentChildren(fragment: Fragment): ProseMirrorNode[] {
+  const nodes: ProseMirrorNode[] = []
+  fragment.forEach((node) => {
+    nodes.push(node)
+  })
+  return nodes
+}
+
+function wrapSelectedBlocksInCodeBlock(editor: Editor, blocks: SelectedBlockInfo[]): boolean {
+  const { schema } = editor.state
+  const firstBlock = blocks[0]
+  const lastBlock = blocks[blocks.length - 1]
+  const lines = blocks.map((block) => block.node.textContent)
+  const codeBlock = createCodeBlockNode(schema, {}, lines)
+
+  return editor
+    .chain()
+    .focus()
+    .command(({ tr }) => {
+      tr.replaceWith(firstBlock.pos, lastBlock.pos + lastBlock.node.nodeSize, codeBlock)
+      setSelectionNearInsertedContent(tr, firstBlock.pos, 1)
+      return true
+    })
+    .run()
+}
+
+function wrapSelectedBlocksInBlockquote(editor: Editor, blocks: SelectedBlockInfo[]): boolean {
+  const { schema } = editor.state
+  const firstBlock = blocks[0]
+  const lastBlock = blocks[blocks.length - 1]
+  const children = blocks.flatMap((block) =>
+    block.node.type.name === "blockquote"
+      ? getFragmentChildren(block.node.content).map((node) => ({ node }))
+      : [{ node: block.node }]
+  )
+  const blockquote = createBlockquoteNode(schema, {}, children)
+
+  return editor
+    .chain()
+    .focus()
+    .command(({ tr }) => {
+      tr.replaceWith(firstBlock.pos, lastBlock.pos + lastBlock.node.nodeSize, blockquote)
+      setSelectionNearInsertedContent(tr, firstBlock.pos, 1)
+      return true
+    })
+    .run()
+}
+
+function toggleCodeBlockOffAcrossSelection(editor: Editor, selectedRange: SelectedBlockRange): boolean {
+  const { schema } = editor.state
+  const { blocks } = selectedRange
+  if (!blocks.every((block) => block.node.type.name === "codeBlock") || blocks.length <= 1) {
+    return false
+  }
+
+  const firstBlock = blocks[0]
+  const lastBlock = blocks[blocks.length - 1]
+  const replacementNodes = blocks.flatMap((block) =>
+    block.node.textContent.split("\n").map((line) => createParagraphNode(schema, line))
+  )
+
+  return editor
+    .chain()
+    .focus()
+    .command(({ tr }) => {
+      tr.replaceWith(firstBlock.pos, lastBlock.pos + lastBlock.node.nodeSize, Fragment.fromArray(replacementNodes))
+      setSelectionNearInsertedContent(tr, firstBlock.pos, 1)
+      return true
+    })
+    .run()
+}
+
+function toggleBlockquoteOffAcrossSelection(editor: Editor, selectedRange: SelectedBlockRange): boolean {
+  const { blocks } = selectedRange
+  if (!blocks.every((block) => block.node.type.name === "blockquote") || blocks.length <= 1) {
+    return false
+  }
+
+  const firstBlock = blocks[0]
+  const lastBlock = blocks[blocks.length - 1]
+  const replacementNodes = blocks.flatMap((block) => getFragmentChildren(block.node.content))
+
+  return editor
+    .chain()
+    .focus()
+    .command(({ tr }) => {
+      tr.replaceWith(firstBlock.pos, lastBlock.pos + lastBlock.node.nodeSize, Fragment.fromArray(replacementNodes))
+      setSelectionNearInsertedContent(tr, firstBlock.pos, 1)
+      return true
+    })
+    .run()
+}
+
 function toggleBlockquoteOff(editor: Editor): boolean {
   const ancestor = findAncestor(editor, "blockquote")
   if (!ancestor) {
@@ -225,7 +360,25 @@ function toggleBlockquoteOff(editor: Editor): boolean {
 }
 
 export function toggleMultilineBlock(editor: Editor, nodeName: "codeBlock" | "blockquote"): boolean {
+  const selectedRange = getSelectedBlockRange(editor)
+
+  if (nodeName === "codeBlock" && selectedRange && toggleCodeBlockOffAcrossSelection(editor, selectedRange)) {
+    return true
+  }
+
+  if (nodeName === "blockquote" && selectedRange && toggleBlockquoteOffAcrossSelection(editor, selectedRange)) {
+    return true
+  }
+
   if (!editor.isActive(nodeName)) {
+    if (selectedRange && selectedRange.blocks.length > 1) {
+      if (nodeName === "codeBlock") {
+        return wrapSelectedBlocksInCodeBlock(editor, selectedRange.blocks)
+      }
+
+      return wrapSelectedBlocksInBlockquote(editor, selectedRange.blocks)
+    }
+
     if (nodeName === "codeBlock") {
       return editor.chain().focus().toggleCodeBlock().run()
     }
@@ -322,14 +475,15 @@ export function handleEnterTextBehavior(editor: Editor): boolean {
     const codeBlock = $from.parent
     const text = codeBlock.textContent
     const atEnd = $from.pos === $from.end()
+    const trailingNewlineMatch = text.match(/\n+$/u)
 
-    if (atEnd && text.endsWith("\n\n")) {
+    if (atEnd && trailingNewlineMatch && trailingNewlineMatch[0].length >= 2) {
       return editor
         .chain()
         .focus()
         .command(({ tr, state }: { tr: Transaction; state: EditorState }) => {
           const pos = state.selection.$from.pos
-          tr.delete(pos - 1, pos)
+          tr.delete(pos - trailingNewlineMatch[0].length, pos)
           return true
         })
         .exitCode()

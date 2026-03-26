@@ -460,6 +460,43 @@ test.describe("Rich Text Editing", () => {
       await expect(editor.locator("blockquote")).toContainText("quoted")
     })
 
+    test("code block button wraps selected paragraphs in a single code block", async ({ page }) => {
+      const editor = page.locator("[contenteditable='true']")
+      await editor.click()
+      await page.keyboard.type("line 1")
+      await page.keyboard.press("Shift+Enter")
+      await page.keyboard.type("line 2")
+      await page.keyboard.press("Shift+Enter")
+      await page.keyboard.type("line 3")
+
+      await selectTextRange(page, "line 1", "line 3")
+      await page.getByRole("button", { name: "Formatting", exact: true }).click()
+      await page.getByRole("button", { name: "Code block" }).click()
+
+      await expect(editor.locator("pre")).toHaveCount(1)
+      await expect.poll(async () => await editor.locator("pre code").textContent()).toBe("line 1\nline 2\nline 3")
+    })
+
+    test("quote button wraps selected paragraphs in a single blockquote", async ({ page }) => {
+      const editor = page.locator("[contenteditable='true']")
+      await editor.click()
+      await page.keyboard.type("line 1")
+      await page.keyboard.press("Shift+Enter")
+      await page.keyboard.type("line 2")
+      await page.keyboard.press("Shift+Enter")
+      await page.keyboard.type("line 3")
+
+      await selectTextRange(page, "line 1", "line 3")
+      await page.getByRole("button", { name: "Formatting", exact: true }).click()
+      await page.getByRole("button", { name: "Quote" }).click()
+
+      await expect(editor.locator("blockquote")).toHaveCount(1)
+      await expect(editor.locator("blockquote p")).toHaveCount(3)
+      await expect(editor.locator("blockquote")).toContainText("line 1")
+      await expect(editor.locator("blockquote")).toContainText("line 2")
+      await expect(editor.locator("blockquote")).toContainText("line 3")
+    })
+
     test("code block button unwraps the full block when toggled off from the first line", async ({ page }) => {
       const editor = page.locator("[contenteditable='true']")
       await editor.click()
@@ -526,6 +563,33 @@ test.describe("Rich Text Editing", () => {
       await expect(editor.locator("p").filter({ hasText: "line 3" })).toHaveCount(1)
     })
 
+    test("code block button unwraps selected adjacent code blocks", async ({ page }) => {
+      const editor = page.locator("[contenteditable='true']")
+      await editor.click()
+      await page.keyboard.type("line 1")
+      await page.keyboard.press("Shift+Enter")
+      await page.keyboard.type("line 2")
+      await page.keyboard.press("Shift+Enter")
+      await page.keyboard.type("line 3")
+
+      for (const line of ["line 1", "line 2", "line 3"]) {
+        await selectTextRange(page, line, line)
+        await page.getByRole("button", { name: "Formatting", exact: true }).click()
+        await page.getByRole("button", { name: "Code block" }).click()
+      }
+
+      await expect(editor.locator("pre")).toHaveCount(3)
+
+      await selectTextRange(page, "line 1", "line 3")
+      await page.getByRole("button", { name: "Formatting", exact: true }).click()
+      await page.getByRole("button", { name: "Code block" }).click()
+
+      await expect(editor.locator("pre")).toHaveCount(0)
+      await expect(editor.locator("p").filter({ hasText: "line 1" })).toHaveCount(1)
+      await expect(editor.locator("p").filter({ hasText: "line 2" })).toHaveCount(1)
+      await expect(editor.locator("p").filter({ hasText: "line 3" })).toHaveCount(1)
+    })
+
     test("quote button unwraps the full block when toggled off from the first line", async ({ page }) => {
       const editor = page.locator("[contenteditable='true']")
       await editor.click()
@@ -584,6 +648,33 @@ test.describe("Rich Text Editing", () => {
       await expect(editor.locator("blockquote")).toContainText("line 1")
       await expect(editor.locator("blockquote")).not.toContainText("line 2")
       await expect(editor.locator("blockquote")).not.toContainText("line 3")
+      await expect(editor.locator("p").filter({ hasText: "line 2" })).toHaveCount(1)
+      await expect(editor.locator("p").filter({ hasText: "line 3" })).toHaveCount(1)
+    })
+
+    test("quote button unwraps selected adjacent blockquotes", async ({ page }) => {
+      const editor = page.locator("[contenteditable='true']")
+      await editor.click()
+      await page.keyboard.type("line 1")
+      await page.keyboard.press("Shift+Enter")
+      await page.keyboard.type("line 2")
+      await page.keyboard.press("Shift+Enter")
+      await page.keyboard.type("line 3")
+
+      for (const line of ["line 1", "line 2", "line 3"]) {
+        await selectTextRange(page, line, line)
+        await page.getByRole("button", { name: "Formatting", exact: true }).click()
+        await page.getByRole("button", { name: "Quote" }).click()
+      }
+
+      await expect(editor.locator("blockquote")).toHaveCount(3)
+
+      await selectTextRange(page, "line 1", "line 3")
+      await page.getByRole("button", { name: "Formatting", exact: true }).click()
+      await page.getByRole("button", { name: "Quote" }).click()
+
+      await expect(editor.locator("blockquote")).toHaveCount(0)
+      await expect(editor.locator("p").filter({ hasText: "line 1" })).toHaveCount(1)
       await expect(editor.locator("p").filter({ hasText: "line 2" })).toHaveCount(1)
       await expect(editor.locator("p").filter({ hasText: "line 3" })).toHaveCount(1)
     })
@@ -837,6 +928,7 @@ test.describe("Rich Text Editing", () => {
       await expect(editor.locator("pre")).toHaveCount(1)
       await expect(editor.locator("pre")).toContainText("line 1")
       await expect(editor.locator("pre")).not.toContainText("outside")
+      await expect.poll(async () => await editor.locator("pre code").textContent()).toBe("line 1")
       await expect(editor.locator("p").filter({ hasText: "outside" })).toHaveCount(1)
     })
 
@@ -875,6 +967,7 @@ test.describe("Rich Text Editing", () => {
       await expect(editor.locator("pre")).toHaveCount(1)
       await expect(editor.locator("pre")).toContainText("line 1")
       await expect(editor.locator("pre")).not.toContainText("outside")
+      await expect.poll(async () => await editor.locator("pre code").textContent()).toBe("line 1")
       await expect(editor.locator("p").filter({ hasText: "outside" })).toHaveCount(1)
     })
 

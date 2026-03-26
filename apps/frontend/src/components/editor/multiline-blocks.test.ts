@@ -35,6 +35,31 @@ function createBlockquote(lines: string[]): JSONContent {
   }
 }
 
+function createAdjacentCodeBlocks(lines: string[]): JSONContent {
+  return {
+    type: "doc",
+    content: lines.map((line) => ({
+      type: "codeBlock",
+      content: line ? [{ type: "text", text: line }] : undefined,
+    })),
+  }
+}
+
+function createAdjacentBlockquotes(lines: string[]): JSONContent {
+  return {
+    type: "doc",
+    content: lines.map((line) => ({
+      type: "blockquote",
+      content: [
+        {
+          type: "paragraph",
+          content: line ? [{ type: "text", text: line }] : undefined,
+        },
+      ],
+    })),
+  }
+}
+
 function findTextPosition(editor: Editor, text: string, occurrence = 1): number {
   let remaining = occurrence
   let found: number | null = null
@@ -92,6 +117,35 @@ function createBeforeInputEvent(inputType: "insertParagraph" | "insertLineBreak"
 }
 
 describe("multiline block toggles", () => {
+  it("wraps selected paragraphs in a single code block", () => {
+    const editor = createTestEditor("line 1\n\nline 2\n\nline 3")
+
+    selectLines(editor, "line 1", "line 3")
+    toggleMultilineBlock(editor, "codeBlock")
+
+    expect(editor.state.doc.childCount).toBe(1)
+    expect(editor.state.doc.firstChild?.type.name).toBe("codeBlock")
+    expect(editor.state.doc.firstChild?.textContent).toBe("line 1\nline 2\nline 3")
+    editor.destroy()
+  })
+
+  it("wraps selected paragraphs in a single blockquote", () => {
+    const editor = createTestEditor("line 1\n\nline 2\n\nline 3")
+
+    selectLines(editor, "line 1", "line 3")
+    toggleMultilineBlock(editor, "blockquote")
+
+    const blockquote = editor.state.doc.firstChild
+
+    expect(editor.state.doc.childCount).toBe(1)
+    expect(blockquote?.type.name).toBe("blockquote")
+    expect(blockquote?.childCount).toBe(3)
+    expect(
+      Array.from({ length: blockquote?.childCount ?? 0 }, (_, index) => blockquote?.child(index).textContent)
+    ).toEqual(["line 1", "line 2", "line 3"])
+    editor.destroy()
+  })
+
   it("unwraps only the current code block line when toggled off below the first line", () => {
     const editor = createTestEditor("```\nline 1\nline 2\nline 3\n```")
 
@@ -122,6 +176,16 @@ describe("multiline block toggles", () => {
     editor.destroy()
   })
 
+  it("unwraps selected adjacent code blocks", () => {
+    const editor = createTestEditor(createAdjacentCodeBlocks(["line 1", "line 2", "line 3"]))
+
+    selectLines(editor, "line 1", "line 3")
+    toggleMultilineBlock(editor, "codeBlock")
+
+    expect(serializeToMarkdown(editor.getJSON())).toBe("line 1\n\nline 2\n\nline 3")
+    editor.destroy()
+  })
+
   it("unwraps only the current blockquote line when toggled off below the first line", () => {
     const editor = createTestEditor(createBlockquote(["line 1", "line 2", "line 3"]))
 
@@ -149,6 +213,16 @@ describe("multiline block toggles", () => {
     toggleMultilineBlock(editor, "blockquote")
 
     expect(serializeToMarkdown(editor.getJSON())).toBe("> line 1\n\nline 2\n\nline 3")
+    editor.destroy()
+  })
+
+  it("unwraps selected adjacent blockquotes", () => {
+    const editor = createTestEditor(createAdjacentBlockquotes(["line 1", "line 2", "line 3"]))
+
+    selectLines(editor, "line 1", "line 3")
+    toggleMultilineBlock(editor, "blockquote")
+
+    expect(serializeToMarkdown(editor.getJSON())).toBe("line 1\n\nline 2\n\nline 3")
     editor.destroy()
   })
 })
@@ -208,7 +282,7 @@ describe("multiline beforeinput enter handling", () => {
     expect(handleBeforeInputNewline(editor, thirdEvent)).toBe(true)
     expect(thirdEvent.prevented).toBe(true)
     expect(editor.state.doc.firstChild?.type.name).toBe("codeBlock")
-    expect(editor.state.doc.firstChild?.textContent).toBe("const x = 1\n")
+    expect(editor.state.doc.firstChild?.textContent).toBe("const x = 1")
     expect(editor.state.doc.lastChild?.type.name).toBe("paragraph")
     expect(editor.isActive("codeBlock")).toBe(false)
     editor.destroy()
