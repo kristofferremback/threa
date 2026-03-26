@@ -2,7 +2,6 @@ import { useCallback, useMemo, useRef, type RefObject } from "react"
 import { Archive, FileEdit, Settings } from "lucide-react"
 import { Link } from "react-router-dom"
 import { MentionIndicator } from "@/components/mention-indicator"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useActors, useStreamOrDraft } from "@/hooks"
 import { useSidebar } from "@/contexts"
 import { useStreamSettings } from "@/components/stream-settings/use-stream-settings"
@@ -99,67 +98,51 @@ export function ScratchpadItem({
     collapseOnMobile,
   })
 
-  const showTooltipPreview = compact && showPreviewOnHover && !isMobile && !!preview?.content
-
-  const itemContent = (
-    <div className="group relative">
-      <Link
-        ref={itemRef}
-        to={`/w/${workspaceId}/s/${streamWithPreview.id}`}
-        onClick={handleClick}
-        onTouchStart={isMobile ? longPress.handlers.onTouchStart : undefined}
-        onTouchEnd={isMobile ? longPress.handlers.onTouchEnd : undefined}
-        onTouchMove={isMobile ? longPress.handlers.onTouchMove : undefined}
-        onContextMenu={isMobile ? longPress.handlers.onContextMenu : undefined}
-        className={cn(
-          "flex items-stretch rounded-lg text-sm transition-colors",
-          isActive ? "bg-primary/10" : "hover:bg-muted/50",
-          hasUnread && !isActive && "bg-primary/5 hover:bg-primary/10",
-          isMobile && actions.length > 0 && "select-none",
-          longPress.isPressed && "opacity-70 transition-opacity duration-100"
-        )}
-      >
-        {showUrgencyStrip && <UrgencyStrip urgency={streamWithPreview.urgency} />}
-
-        <div className="flex items-center gap-2.5 flex-1 min-w-0 px-2 py-2">
-          <StreamItemAvatar icon={<FileEdit className="h-3.5 w-3.5" />} className="bg-primary/10 text-primary" />
-
-          <div className="flex flex-col flex-1 min-w-0 gap-0.5">
-            <div className="flex items-center gap-2 pr-8">
-              <span className={cn("truncate text-sm", hasUnread ? "font-semibold" : "font-medium")}>
-                {name}
-                {isDraft && <span className="ml-1.5 text-xs text-muted-foreground font-normal">(draft)</span>}
-              </span>
-              <MentionIndicator count={mentionCount} className="ml-auto" />
-            </div>
-            <StreamItemPreview
-              preview={preview}
-              getActorName={getActorName}
-              compact={compact}
-              showPreviewOnHover={showPreviewOnHover}
-              isMobile={isMobile}
-            />
-          </div>
-        </div>
-      </Link>
-
-      <SidebarActionMenu actions={actions} ariaLabel="Stream actions" />
-    </div>
-  )
-
   return (
     <>
-      {showTooltipPreview ? (
-        <Tooltip>
-          <TooltipTrigger asChild>{itemContent}</TooltipTrigger>
-          <TooltipContent side="bottom" align="start" className="max-w-64 text-xs">
-            <span className="text-muted-foreground">{getActorName(preview.authorId, preview.authorType)}:</span>{" "}
-            {truncateContent(preview.content)}
-          </TooltipContent>
-        </Tooltip>
-      ) : (
-        itemContent
-      )}
+      <div className="group relative">
+        <Link
+          ref={itemRef}
+          to={`/w/${workspaceId}/s/${streamWithPreview.id}`}
+          onClick={handleClick}
+          onTouchStart={isMobile ? longPress.handlers.onTouchStart : undefined}
+          onTouchEnd={isMobile ? longPress.handlers.onTouchEnd : undefined}
+          onTouchMove={isMobile ? longPress.handlers.onTouchMove : undefined}
+          onContextMenu={isMobile ? longPress.handlers.onContextMenu : undefined}
+          className={cn(
+            "flex items-stretch rounded-lg text-sm transition-colors",
+            isActive ? "bg-primary/10" : "hover:bg-muted/50",
+            hasUnread && !isActive && "bg-primary/5 hover:bg-primary/10",
+            isMobile && actions.length > 0 && "select-none",
+            longPress.isPressed && "opacity-70 transition-opacity duration-100"
+          )}
+        >
+          {showUrgencyStrip && <UrgencyStrip urgency={streamWithPreview.urgency} />}
+
+          <div className="flex items-center gap-2.5 flex-1 min-w-0 px-2 py-2">
+            <StreamItemAvatar icon={<FileEdit className="h-3.5 w-3.5" />} className="bg-primary/10 text-primary" />
+
+            <div className="relative flex flex-col flex-1 min-w-0 gap-0.5">
+              <div className="flex items-center gap-2 pr-8">
+                <span className={cn("truncate text-sm", hasUnread ? "font-semibold" : "font-medium")}>
+                  {name}
+                  {isDraft && <span className="ml-1.5 text-xs text-muted-foreground font-normal">(draft)</span>}
+                </span>
+                <MentionIndicator count={mentionCount} className="ml-auto" />
+              </div>
+              <StreamItemPreview
+                preview={preview}
+                getActorName={getActorName}
+                compact={compact}
+                showPreviewOnHover={showPreviewOnHover}
+                isMobile={isMobile}
+              />
+            </div>
+          </div>
+        </Link>
+
+        <SidebarActionMenu actions={actions} ariaLabel="Stream actions" />
+      </div>
       {isMobile && actions.length > 0 && (
         <SidebarActionDrawer
           open={drawerOpen}
