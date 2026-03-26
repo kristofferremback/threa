@@ -202,11 +202,11 @@ describe("BroadcastHandler", () => {
     })
   })
 
-  it("should emit stream:created non-thread channel to workspace room", async () => {
+  it("should emit stream:created public channel to workspace room", async () => {
     const event = makeEvent(1n, "stream:created", {
       workspaceId: "ws_1",
       streamId: "stream_new",
-      stream: { id: "stream_new", parentMessageId: null, type: "channel" },
+      stream: { id: "stream_new", parentMessageId: null, type: "channel", visibility: "public" },
     })
 
     spyOn(OutboxRepository, "fetchAfterId").mockResolvedValue([event])
@@ -222,11 +222,17 @@ describe("BroadcastHandler", () => {
     })
   })
 
-  it("should emit stream:created scratchpad to creator user room only", async () => {
+  it("should emit stream:created private stream to creator user room only", async () => {
     const event = makeEvent(1n, "stream:created", {
       workspaceId: "ws_1",
       streamId: "stream_sp",
-      stream: { id: "stream_sp", parentMessageId: null, type: "scratchpad", createdBy: "usr_alice" },
+      stream: {
+        id: "stream_sp",
+        parentMessageId: null,
+        type: "scratchpad",
+        visibility: "private",
+        createdBy: "usr_alice",
+      },
     })
 
     spyOn(OutboxRepository, "fetchAfterId").mockResolvedValue([event])
@@ -237,6 +243,33 @@ describe("BroadcastHandler", () => {
 
     expect(emitChains).toContainEqual({
       room: "ws:ws_1:user:usr_alice",
+      eventType: "stream:created",
+      payload: event.payload,
+    })
+    expect(emitChains.some((chain) => chain.room === "ws:ws_1")).toBe(false)
+  })
+
+  it("should emit stream:created private channel to creator user room only", async () => {
+    const event = makeEvent(1n, "stream:created", {
+      workspaceId: "ws_1",
+      streamId: "stream_priv_ch",
+      stream: {
+        id: "stream_priv_ch",
+        parentMessageId: null,
+        type: "channel",
+        visibility: "private",
+        createdBy: "usr_bob",
+      },
+    })
+
+    spyOn(OutboxRepository, "fetchAfterId").mockResolvedValue([event])
+
+    const { handler, emitChains } = createHandler()
+    handler.handle()
+    await new Promise((r) => setTimeout(r, 300))
+
+    expect(emitChains).toContainEqual({
+      room: "ws:ws_1:user:usr_bob",
       eventType: "stream:created",
       payload: event.payload,
     })

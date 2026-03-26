@@ -19,7 +19,7 @@ import type {
   LastMessagePreview,
   ActivityCreatedPayload,
 } from "@threa/types"
-import { StreamTypes } from "@threa/types"
+import { StreamTypes, Visibilities } from "@threa/types"
 
 /**
  * Update the workspace bootstrap cache, or invalidate if it's not cached yet.
@@ -208,7 +208,7 @@ export function useSocketEvents(workspaceId: string) {
     // Handle stream created
     socket.on("stream:created", (payload: StreamPayload) => {
       let shouldJoinStreamRoom = false
-      let shouldCacheStream = payload.stream.type !== StreamTypes.SCRATCHPAD
+      let shouldCacheStream = payload.stream.visibility !== Visibilities.PRIVATE
 
       // Add to workspace bootstrap cache (sidebar)
       const applied = updateBootstrapOrInvalidate(queryClient, workspaceId, (old) => {
@@ -223,15 +223,17 @@ export function useSocketEvents(workspaceId: string) {
           payload.dmUserIds?.includes(currentUserId) === true
         const hasMembership = old.streamMemberships.some((m: StreamMember) => m.streamId === payload.stream.id)
         const shouldAddMembership = Boolean(currentUserId && !hasMembership && (isCreator || isDmParticipant))
+        const isPrivate = payload.stream.visibility === Visibilities.PRIVATE
         const shouldAddStream =
           !streamExists &&
           payload.stream.type !== StreamTypes.DM &&
-          // Scratchpads are private — only add to sidebar for the creator
-          (payload.stream.type !== StreamTypes.SCRATCHPAD || isCreator)
+          // Private streams (scratchpads, private channels) — only add to sidebar for the creator.
+          // Other members are added via stream:member_added.
+          (!isPrivate || isCreator)
 
         // Ensure members are subscribed immediately for follow-up stream activity.
         shouldJoinStreamRoom = hasMembership || shouldAddMembership
-        shouldCacheStream = payload.stream.type !== StreamTypes.SCRATCHPAD || isCreator
+        shouldCacheStream = !isPrivate || isCreator
 
         if (streamExists && !shouldAddMembership) return old
 
