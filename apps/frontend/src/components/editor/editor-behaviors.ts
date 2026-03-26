@@ -278,7 +278,6 @@ export const EditorBehaviors = Extension.create<EditorBehaviorsOptions>({
       "Mod-i": () => this.editor.chain().focus().toggleItalic().run(),
       "Mod-Shift-s": () => this.editor.chain().focus().toggleStrike().run(),
       "Mod-e": () => this.editor.chain().focus().toggleCode().run(),
-      "Mod-Shift-b": () => toggleMultilineBlock(this.editor, "blockquote"),
       "Mod-Shift-c": () => toggleMultilineBlock(this.editor, "codeBlock"),
 
       // Tab: VS Code-style indent (always trapped to prevent focus escape)
