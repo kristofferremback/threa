@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils"
 import { RelativeTime } from "@/components/relative-time"
+import { MarkdownContent } from "@/components/ui/markdown-content"
 
 const ACTIVITY_DISPLAY: Record<string, { verb: string }> = {
   mention: { verb: "mentioned you in" },
@@ -34,7 +35,9 @@ export function ActivityContent({
       </div>
 
       {contentPreview && (
-        <p className="mt-0.5 text-xs text-muted-foreground truncate">&ldquo;{contentPreview}&rdquo;</p>
+        <div className="mt-0.5 text-xs text-muted-foreground truncate">
+          <MarkdownContent content={contentPreview} className="text-xs text-muted-foreground [&>*]:inline" />
+        </div>
       )}
 
       <RelativeTime date={createdAt} className="text-xs text-muted-foreground/60 mt-1 block" />
