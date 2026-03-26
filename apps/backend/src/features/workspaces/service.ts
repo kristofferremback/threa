@@ -263,7 +263,11 @@ export class WorkspaceService {
     return EmojiUsageRepository.getWeights(this.pool, workspaceId, userId)
   }
 
-  async isSlugAvailable(workspaceId: string, slug: string): Promise<boolean> {
+  async isSlugAvailable(workspaceId: string, slug: string, excludeUserId?: string): Promise<boolean> {
+    if (excludeUserId) {
+      const user = await UserRepository.findById(this.pool, workspaceId, excludeUserId)
+      if (user && user.slug === slug) return true
+    }
     const exists = await UserRepository.slugExistsInWorkspace(this.pool, workspaceId, slug)
     return !exists
   }

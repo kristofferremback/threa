@@ -12,7 +12,11 @@ import { useUser } from "@/auth"
 import { workspacesApi } from "@/api/workspaces"
 
 function generateSlug(name: string): string {
-  return limax(name, { tone: false }).slice(0, 50)
+  return limax(name, { tone: false, separator: "_" })
+    .replace(/-/g, "_")
+    .replace(/_{2,}/g, "_")
+    .replace(/^_|_$/g, "")
+    .slice(0, 50)
 }
 
 type SlugStatus = "idle" | "checking" | "available" | "taken"
@@ -155,7 +159,7 @@ export function UserSetupPage() {
             <div className="relative">
               <Input
                 id="slug"
-                placeholder="e.g. kristoffer-remback"
+                placeholder="e.g. kristoffer_remback"
                 value={slug}
                 onChange={(e) => handleSlugChange(e.target.value)}
                 className="pr-8"

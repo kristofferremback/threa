@@ -3,7 +3,11 @@ import limax from "limax"
 const MAX_SLUG_LENGTH = 50
 
 export function generateSlug(name: string): string {
-  return limax(name, { tone: false }).slice(0, MAX_SLUG_LENGTH)
+  return limax(name, { tone: false, separator: "_" })
+    .replace(/-/g, "_")
+    .replace(/_{2,}/g, "_")
+    .replace(/^_|_$/g, "")
+    .slice(0, MAX_SLUG_LENGTH)
 }
 
 export async function generateUniqueSlug(
@@ -27,7 +31,7 @@ export async function generateUniqueSlug(
 
   while (await checkExists(slug)) {
     suffix++
-    slug = `${truncatedBase}-${suffix}`
+    slug = `${truncatedBase}_${suffix}`
   }
 
   return slug

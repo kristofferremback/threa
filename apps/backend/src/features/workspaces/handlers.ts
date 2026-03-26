@@ -239,6 +239,7 @@ export function createWorkspaceHandlers({
 
     async checkSlugAvailability(req: Request, res: Response) {
       const workspaceId = req.workspaceId!
+      const userId = req.user!.id
 
       const result = checkSlugAvailableSchema.safeParse(req.query)
       if (!result.success) {
@@ -248,7 +249,7 @@ export function createWorkspaceHandlers({
         })
       }
 
-      const available = await workspaceService.isSlugAvailable(workspaceId, result.data.slug)
+      const available = await workspaceService.isSlugAvailable(workspaceId, result.data.slug, userId)
       res.json({ available })
     },
 
