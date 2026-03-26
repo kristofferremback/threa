@@ -70,7 +70,7 @@ interface RichEditorProps {
 
 function isEditorCompletelyEmpty(editor: import("@tiptap/react").Editor | null | undefined): boolean {
   if (!editor) {
-    return true
+    return false
   }
 
   const { doc } = editor.state

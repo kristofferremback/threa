@@ -504,8 +504,6 @@ export function handleEnterTextBehavior(editor: Editor): boolean {
       if (isEmptyParagraphNode(previousChild)) {
         return editor.chain().focus().lift("blockquote").run()
       }
-
-      return editor.chain().focus().splitBlock().run()
     }
     return editor.chain().focus().splitBlock().run()
   }
