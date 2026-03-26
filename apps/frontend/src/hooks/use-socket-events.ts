@@ -19,7 +19,7 @@ import type {
   LastMessagePreview,
   ActivityCreatedPayload,
 } from "@threa/types"
-import { StreamTypes } from "@threa/types"
+import { StreamTypes, Visibilities } from "@threa/types"
 
 /**
  * Update the workspace bootstrap cache, or invalidate if it's not cached yet.
@@ -208,6 +208,7 @@ export function useSocketEvents(workspaceId: string) {
     // Handle stream created
     socket.on("stream:created", (payload: StreamPayload) => {
       let shouldJoinStreamRoom = false
+      let shouldCacheStream = payload.stream.visibility !== Visibilities.PRIVATE
 
       // Add to workspace bootstrap cache (sidebar)
       const applied = updateBootstrapOrInvalidate(queryClient, workspaceId, (old) => {
@@ -222,10 +223,17 @@ export function useSocketEvents(workspaceId: string) {
           payload.dmUserIds?.includes(currentUserId) === true
         const hasMembership = old.streamMemberships.some((m: StreamMember) => m.streamId === payload.stream.id)
         const shouldAddMembership = Boolean(currentUserId && !hasMembership && (isCreator || isDmParticipant))
-        const shouldAddStream = !streamExists && payload.stream.type !== StreamTypes.DM
+        const isPrivate = payload.stream.visibility === Visibilities.PRIVATE
+        const shouldAddStream =
+          !streamExists &&
+          payload.stream.type !== StreamTypes.DM &&
+          // Private streams (scratchpads, private channels) — only add to sidebar for the creator.
+          // Other members are added via stream:member_added.
+          (!isPrivate || isCreator)
 
         // Ensure members are subscribed immediately for follow-up stream activity.
         shouldJoinStreamRoom = hasMembership || shouldAddMembership
+        shouldCacheStream = !isPrivate || isCreator
 
         if (streamExists && !shouldAddMembership) return old
 
@@ -261,8 +269,11 @@ export function useSocketEvents(workspaceId: string) {
         )
       }
 
-      // Cache to IndexedDB
-      db.streams.put({ ...payload.stream, _cachedAt: Date.now() })
+      // Cache to IndexedDB — skip other users' scratchpads to avoid stale
+      // entries resurfacing on hydration if the event leaks during a deploy race.
+      if (shouldCacheStream) {
+        db.streams.put({ ...payload.stream, _cachedAt: Date.now() })
+      }
 
       // DM creation still requires bootstrap refetch for viewer-specific dmPeers and
       // resolved display names in the sidebar.

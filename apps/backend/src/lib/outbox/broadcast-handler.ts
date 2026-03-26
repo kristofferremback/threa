@@ -1,6 +1,6 @@
 import { Server } from "socket.io"
 import type { Pool } from "pg"
-import { StreamTypes } from "@threa/types"
+import { StreamTypes, Visibilities } from "@threa/types"
 import {
   OutboxRepository,
   isStreamScopedEvent,
@@ -147,6 +147,10 @@ export class BroadcastHandler implements OutboxHandler {
         for (const userId of new Set(payload.dmUserIds)) {
           this.io.to(`ws:${workspaceId}:user:${userId}`).emit(event.eventType, event.payload)
         }
+      } else if (payload.stream.visibility === Visibilities.PRIVATE) {
+        // Private streams (scratchpads, private channels) — only notify the creator.
+        // Additional members are notified via stream:member_added events.
+        this.io.to(`ws:${workspaceId}:user:${payload.stream.createdBy}`).emit(event.eventType, event.payload)
       } else {
         this.io.to(`ws:${workspaceId}`).emit(event.eventType, event.payload)
       }
