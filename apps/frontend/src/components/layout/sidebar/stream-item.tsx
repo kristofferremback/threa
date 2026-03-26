@@ -2,6 +2,7 @@ import { useMemo, useRef, type ReactNode, type RefObject } from "react"
 import { Bell, FileEdit, Hash, Lock, MessageSquareText, Settings, User } from "lucide-react"
 import { Link } from "react-router-dom"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { MentionIndicator } from "@/components/mention-indicator"
 import { RelativeTime } from "@/components/relative-time"
 import { getThreadRootContext } from "@/components/thread/breadcrumb-helpers"
@@ -93,16 +94,10 @@ export function StreamItemPreview({
 }: StreamItemPreviewProps) {
   if (!preview?.content) return null
 
-  const shouldShowPreviewOnHover = showPreviewOnHover && !isMobile
+  if (compact && showPreviewOnHover && !isMobile) return null
 
   return (
-    <div
-      className={cn(
-        "flex items-center gap-1.5 text-xs text-muted-foreground",
-        compact && !shouldShowPreviewOnHover && "hidden",
-        compact && shouldShowPreviewOnHover && "hidden group-hover:flex"
-      )}
-    >
+    <div className={cn("flex items-center gap-1.5 text-xs text-muted-foreground", compact && "hidden")}>
       <span className="truncate flex-1">
         {getActorName(preview.authorId, preview.authorType)}: {truncateContent(preview.content)}
       </span>
@@ -250,62 +245,78 @@ export function StreamItem({
     )
   }
 
+  const showTooltipPreview = compact && showPreviewOnHover && !isMobile && !!preview?.content
+
+  const itemContent = (
+    <div className="group relative">
+      <Link
+        ref={itemRef}
+        to={`/w/${workspaceId}/s/${stream.id}`}
+        onClick={handleClick}
+        onTouchStart={isMobile ? longPress.handlers.onTouchStart : undefined}
+        onTouchEnd={isMobile ? longPress.handlers.onTouchEnd : undefined}
+        onTouchMove={isMobile ? longPress.handlers.onTouchMove : undefined}
+        onContextMenu={isMobile ? longPress.handlers.onContextMenu : undefined}
+        className={cn(
+          "flex items-stretch rounded-lg text-sm transition-colors",
+          isActive ? "bg-primary/10" : "hover:bg-muted/50",
+          hasUnread && !isActive && "bg-primary/5 hover:bg-primary/10",
+          isMobile && canOpenDrawer && "select-none",
+          longPress.isPressed && "opacity-70 transition-opacity duration-100"
+        )}
+      >
+        {showUrgencyStrip && <UrgencyStrip urgency={stream.urgency} />}
+
+        <div className="flex items-center gap-2.5 flex-1 min-w-0 px-2 py-2">
+          <StreamItemAvatar
+            icon={avatar.icon}
+            className={avatar.className}
+            avatarUrl={dmPeerAvatar?.avatarUrl}
+            avatarAlt={name}
+            badge={threadBadge}
+          />
+
+          <div className="flex flex-col flex-1 min-w-0 gap-0.5">
+            <div className="flex items-center gap-2 pr-8">
+              <span className={cn("truncate text-sm", hasUnread ? "font-semibold" : "font-medium")}>
+                {name}
+                {threadRootContext && (
+                  <span className="font-normal text-muted-foreground/60 text-xs"> · {threadRootContext}</span>
+                )}
+              </span>
+              {stream.type === StreamTypes.CHANNEL && stream.visibility === Visibilities.PRIVATE && (
+                <Lock className="h-3 w-3 shrink-0 text-muted-foreground/60" />
+              )}
+              <MentionIndicator count={mentionCount} className="ml-auto" />
+            </div>
+            <StreamItemPreview
+              preview={preview}
+              getActorName={getActorName}
+              compact={compact}
+              showPreviewOnHover={showPreviewOnHover}
+              isMobile={isMobile}
+            />
+          </div>
+        </div>
+      </Link>
+
+      <SidebarActionMenu actions={actions} ariaLabel="Stream actions" />
+    </div>
+  )
+
   return (
     <>
-      <div className="group relative">
-        <Link
-          ref={itemRef}
-          to={`/w/${workspaceId}/s/${stream.id}`}
-          onClick={handleClick}
-          onTouchStart={isMobile ? longPress.handlers.onTouchStart : undefined}
-          onTouchEnd={isMobile ? longPress.handlers.onTouchEnd : undefined}
-          onTouchMove={isMobile ? longPress.handlers.onTouchMove : undefined}
-          onContextMenu={isMobile ? longPress.handlers.onContextMenu : undefined}
-          className={cn(
-            "flex items-stretch rounded-lg text-sm transition-colors",
-            isActive ? "bg-primary/10" : "hover:bg-muted/50",
-            hasUnread && !isActive && "bg-primary/5 hover:bg-primary/10",
-            isMobile && canOpenDrawer && "select-none",
-            longPress.isPressed && "opacity-70 transition-opacity duration-100"
-          )}
-        >
-          {showUrgencyStrip && <UrgencyStrip urgency={stream.urgency} />}
-
-          <div className="flex items-center gap-2.5 flex-1 min-w-0 px-2 py-2">
-            <StreamItemAvatar
-              icon={avatar.icon}
-              className={avatar.className}
-              avatarUrl={dmPeerAvatar?.avatarUrl}
-              avatarAlt={name}
-              badge={threadBadge}
-            />
-
-            <div className="flex flex-col flex-1 min-w-0 gap-0.5">
-              <div className="flex items-center gap-2 pr-8">
-                <span className={cn("truncate text-sm", hasUnread ? "font-semibold" : "font-medium")}>
-                  {name}
-                  {threadRootContext && (
-                    <span className="font-normal text-muted-foreground/60 text-xs"> · {threadRootContext}</span>
-                  )}
-                </span>
-                {stream.type === StreamTypes.CHANNEL && stream.visibility === Visibilities.PRIVATE && (
-                  <Lock className="h-3 w-3 shrink-0 text-muted-foreground/60" />
-                )}
-                <MentionIndicator count={mentionCount} className="ml-auto" />
-              </div>
-              <StreamItemPreview
-                preview={preview}
-                getActorName={getActorName}
-                compact={compact}
-                showPreviewOnHover={showPreviewOnHover}
-                isMobile={isMobile}
-              />
-            </div>
-          </div>
-        </Link>
-
-        <SidebarActionMenu actions={actions} ariaLabel="Stream actions" />
-      </div>
+      {showTooltipPreview ? (
+        <Tooltip>
+          <TooltipTrigger asChild>{itemContent}</TooltipTrigger>
+          <TooltipContent side="bottom" align="start" className="max-w-64 text-xs">
+            <span className="text-muted-foreground">{getActorName(preview.authorId, preview.authorType)}:</span>{" "}
+            {truncateContent(preview.content)}
+          </TooltipContent>
+        </Tooltip>
+      ) : (
+        itemContent
+      )}
       {isMobile && canOpenDrawer && (
         <SidebarActionDrawer
           open={drawerOpen}
