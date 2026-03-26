@@ -138,6 +138,9 @@ export function useSidebarSwipe({ isOpen, isMobile, onOpen, onClose }: UseSideba
       // (e.g. editor style bar, code blocks inside the sidebar) — let them scroll natively
       if (hasHorizontalScroll(touch.target as Element | null)) return
 
+      // Don't capture swipes inside modal overlays (e.g. image gallery dialog)
+      if (isInsideModalOverlay(touch.target as Element | null)) return
+
       trackerRef.current = {
         startX: touch.clientX,
         startY: touch.clientY,
@@ -338,6 +341,16 @@ function findVerticalScroller(el: Element | null): HTMLElement | null {
     node = node.parentElement
   }
   return null
+}
+
+/** Walk up the DOM checking if the touch target is inside a modal dialog overlay */
+function isInsideModalOverlay(el: Element | null): boolean {
+  let node = el
+  while (node && node !== document.documentElement) {
+    if (node instanceof HTMLElement && node.getAttribute("role") === "dialog") return true
+    node = node.parentElement
+  }
+  return false
 }
 
 /** Walk up the DOM checking if any ancestor can scroll horizontally */

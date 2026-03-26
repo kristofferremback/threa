@@ -1,8 +1,8 @@
-import React, { useState, useCallback, useEffect } from "react"
+import React, { useState, useCallback, useEffect, useMemo } from "react"
 import { Download, FileText, File, Loader2, Copy } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
-import { ImageLightbox } from "@/components/image-lightbox"
+import { ImageGallery, type GalleryImage } from "@/components/image-gallery"
 import { attachmentsApi } from "@/api"
 import { cn } from "@/lib/utils"
 import { downloadImage, copyImage, triggerDownload } from "@/lib/image-utils"
@@ -21,6 +21,7 @@ interface AttachmentItemProps {
   attachment: AttachmentSummary
   workspaceId: string
   onImageClick?: (url: string, filename: string, attachmentId: string) => void
+  onImageLoaded?: (attachmentId: string, url: string) => void
   isHighlighted?: boolean
 }
 
@@ -94,7 +95,7 @@ function ImageActionDrawer({
   )
 }
 
-function ImageAttachment({ attachment, workspaceId, onImageClick, isHighlighted }: AttachmentItemProps) {
+function ImageAttachment({ attachment, workspaceId, onImageClick, onImageLoaded, isHighlighted }: AttachmentItemProps) {
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState(false)
@@ -109,6 +110,7 @@ function ImageAttachment({ attachment, workspaceId, onImageClick, isHighlighted 
         const url = await attachmentsApi.getDownloadUrl(workspaceId, attachment.id)
         if (mounted) {
           setImageUrl(url)
+          onImageLoaded?.(attachment.id, url)
         }
       } catch {
         if (mounted) {
@@ -126,7 +128,7 @@ function ImageAttachment({ attachment, workspaceId, onImageClick, isHighlighted 
     return () => {
       mounted = false
     }
-  }, [workspaceId, attachment.id])
+  }, [workspaceId, attachment.id, onImageLoaded])
 
   const handleClick = useCallback(() => {
     if (imageUrl && onImageClick) {
@@ -289,24 +291,57 @@ function FileAttachment({ attachment, workspaceId, isHighlighted }: AttachmentIt
 }
 
 export function AttachmentList({ attachments, workspaceId, className }: AttachmentListProps) {
-  const [lightbox, setLightbox] = useState<{ url: string; filename: string; attachmentId: string } | null>(null)
+  const [selectedAttachmentId, setSelectedAttachmentId] = useState<string | null>(null)
+  const [loadedUrls, setLoadedUrls] = useState<Map<string, string>>(new Map())
   const attachmentContext = useAttachmentContext()
   const hoveredAttachmentId = attachmentContext?.hoveredAttachmentId ?? null
+
+  const imageAttachments = useMemo(
+    () => (attachments ?? []).filter((a) => a.mimeType.startsWith("image/")),
+    [attachments]
+  )
+  const fileAttachments = useMemo(
+    () => (attachments ?? []).filter((a) => !a.mimeType.startsWith("image/")),
+    [attachments]
+  )
+
+  // Build gallery images from loaded URLs — stable reference when loadedUrls / attachments unchanged
+  const galleryImages: GalleryImage[] = useMemo(
+    () =>
+      imageAttachments
+        .map((a) => {
+          const url = loadedUrls.get(a.id)
+          if (!url) return null
+          return { url, filename: a.filename, attachmentId: a.id }
+        })
+        .filter((g): g is GalleryImage => g !== null),
+    [imageAttachments, loadedUrls]
+  )
+
+  // Called by ImageAttachment children when their URL loads
+  const registerImageUrl = useCallback((attachmentId: string, url: string) => {
+    setLoadedUrls((prev) => {
+      if (prev.get(attachmentId) === url) return prev
+      const next = new Map(prev)
+      next.set(attachmentId, url)
+      return next
+    })
+  }, [])
+
+  // Track selected image by ID — derived index stays correct even as galleryImages grows
+  const galleryIndex = selectedAttachmentId
+    ? galleryImages.findIndex((g) => g.attachmentId === selectedAttachmentId)
+    : -1
+
+  const handleImageClick = useCallback((_url: string, _filename: string, attachmentId: string) => {
+    setSelectedAttachmentId(attachmentId)
+  }, [])
+
+  const handleGalleryClose = useCallback(() => setSelectedAttachmentId(null), [])
 
   if (!attachments || attachments.length === 0) {
     return null
   }
-
-  const imageAttachments = attachments.filter((a) => a.mimeType.startsWith("image/"))
-  const fileAttachments = attachments.filter((a) => !a.mimeType.startsWith("image/"))
-
-  const handleImageClick = useCallback((url: string, filename: string, attachmentId: string) => {
-    setLightbox({ url, filename, attachmentId })
-  }, [])
-
-  const handleLightboxClose = useCallback(() => {
-    setLightbox(null)
-  }, [])
 
   return (
     <>
@@ -319,6 +354,7 @@ export function AttachmentList({ attachments, workspaceId, className }: Attachme
                 attachment={attachment}
                 workspaceId={workspaceId}
                 onImageClick={handleImageClick}
+                onImageLoaded={registerImageUrl}
                 isHighlighted={attachment.id === hoveredAttachmentId}
               />
             ))}
@@ -338,13 +374,12 @@ export function AttachmentList({ attachments, workspaceId, className }: Attachme
         )}
       </div>
 
-      <ImageLightbox
-        isOpen={lightbox !== null}
-        onClose={handleLightboxClose}
-        imageUrl={lightbox?.url ?? null}
-        filename={lightbox?.filename ?? ""}
+      <ImageGallery
+        isOpen={selectedAttachmentId !== null && galleryIndex !== -1}
+        onClose={handleGalleryClose}
+        images={galleryImages.length > 0 ? galleryImages : []}
+        initialIndex={Math.max(0, galleryIndex)}
         workspaceId={workspaceId}
-        attachmentId={lightbox?.attachmentId ?? null}
       />
     </>
   )
