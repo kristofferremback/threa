@@ -77,16 +77,21 @@ async function selectTextRange(
           if (index !== -1) {
             startNode = current
             startOffset = index
+            endNode = null
+            resolvedEndOffset = 0
           }
         }
 
-        const endIndex = value.indexOf(endText)
+        if (!startNode) {
+          continue
+        }
+
+        const searchStart = current === startNode ? startOffset : 0
+        const endIndex = value.indexOf(endText, searchStart)
         if (endIndex !== -1) {
           endNode = current
           resolvedEndOffset = endIndex + endOffset
-          if (startNode) {
-            break
-          }
+          break
         }
       }
 

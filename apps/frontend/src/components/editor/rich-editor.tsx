@@ -324,15 +324,16 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
 
         // Parse pasted text through markdown parser to convert @mentions, #channels, :emoji:
         const text = event.clipboardData?.getData("text/plain")
-        if (text) {
-          event.preventDefault()
-          if (!editorRef.current) {
-            return false
-          }
-
-          return insertPastedText(editorRef.current, text, getMentionTypeRef.current, toEmojiRef.current)
+        if (!text || !editorRef.current) {
+          return false
         }
-        return false
+
+        const handled = insertPastedText(editorRef.current, text, getMentionTypeRef.current, toEmojiRef.current)
+        if (handled) {
+          event.preventDefault()
+        }
+
+        return handled
       },
       handleDOMEvents: {
         beforeinput: (_view, event) => {

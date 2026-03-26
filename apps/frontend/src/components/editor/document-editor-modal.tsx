@@ -134,8 +134,12 @@ export function DocumentEditorModal({
           return false
         }
 
-        event.preventDefault()
-        return insertPastedText(editorRef.current, text, getMentionTypeRef.current, toEmojiRef.current)
+        const handled = insertPastedText(editorRef.current, text, getMentionTypeRef.current, toEmojiRef.current)
+        if (handled) {
+          event.preventDefault()
+        }
+
+        return handled
       },
       handleDOMEvents: {
         beforeinput: (_view, event) => {

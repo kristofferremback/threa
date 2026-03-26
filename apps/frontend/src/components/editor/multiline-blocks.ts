@@ -259,7 +259,7 @@ export function insertPastedText(
   if (editor.isActive("blockquote") && normalizedText.includes("\n")) {
     const content = getParsedContent(normalizedText, getMentionType, getEmoji)
     if (!content || content.length === 0) {
-      return true
+      return false
     }
 
     return editor.chain().focus().insertContent(content).run()
