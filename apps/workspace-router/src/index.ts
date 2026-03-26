@@ -8,6 +8,8 @@ interface Env {
   CONTROL_PLANE_URL?: string
   /** Shared secret for control-plane internal API */
   INTERNAL_API_KEY?: string
+  /** When "true", resolve regions from KV before falling back to env var (staging only) */
+  USE_KV_REGIONS?: string
 }
 
 interface RegionConfig {
@@ -50,16 +52,18 @@ function getRegionsFromEnv(raw: string): RegionsMap {
   return cachedRegions
 }
 
-/** Resolve regions map: prefer KV-stored config (for staging), fall back to env var */
-async function getRegions(envRegions: string, kv: KVNamespace): Promise<RegionsMap> {
-  const kvRegions = await kv.get(REGIONS_CONFIG_KV_KEY)
-  if (kvRegions) return parseRegions(kvRegions)
+/** Resolve regions map: prefer KV-stored config (staging only), fall back to env var */
+async function getRegions(envRegions: string, kv: KVNamespace, useKv: boolean): Promise<RegionsMap> {
+  if (useKv) {
+    const kvRegions = await kv.get(REGIONS_CONFIG_KV_KEY)
+    if (kvRegions) return parseRegions(kvRegions)
+  }
   return getRegionsFromEnv(envRegions)
 }
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const regions = await getRegions(env.REGIONS, env.WORKSPACE_REGIONS)
+    const regions = await getRegions(env.REGIONS, env.WORKSPACE_REGIONS, env.USE_KV_REGIONS === "true")
     const url = new URL(request.url)
     const path = url.pathname
 

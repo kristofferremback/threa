@@ -122,8 +122,9 @@ async function cloneDatabase(sourceDb: string, targetDb: string): Promise<void> 
   const sourceUrl = STAGING_DATABASE_URL.replace(/\/([^/?]+)(\?.*)?$/, `/${sourceDb}$2`)
   const targetUrl = STAGING_DATABASE_URL.replace(/\/([^/?]+)(\?.*)?$/, `/${targetDb}$2`)
 
-  const result =
-    await $`bash -o pipefail -c "pg_dump --clean --if-exists ${sourceUrl} | psql ${targetUrl}"`.quiet().nothrow()
+  const result = await $`bash -o pipefail -c "pg_dump --clean --if-exists ${sourceUrl} | psql ${targetUrl}"`
+    .quiet()
+    .nothrow()
 
   if (result.exitCode !== 0) {
     const stderr = result.stderr.toString()
@@ -132,17 +133,11 @@ async function cloneDatabase(sourceDb: string, targetDb: string): Promise<void> 
 
   // Sync sequences (same pattern as setup-worktree.ts)
   console.log("Syncing sequences...")
-  await runPsql(
-    targetDb,
-    "SELECT setval('outbox_id_seq', COALESCE((SELECT MAX(id) FROM outbox), 0) + 1, false)"
-  )
+  await runPsql(targetDb, "SELECT setval('outbox_id_seq', COALESCE((SELECT MAX(id) FROM outbox), 0) + 1, false)")
 
   // Reset outbox listener cursors
   console.log("Resetting outbox listener cursors...")
-  await runPsql(
-    targetDb,
-    "UPDATE outbox_listeners SET last_processed_id = COALESCE((SELECT MAX(id) FROM outbox), 0)"
-  )
+  await runPsql(targetDb, "UPDATE outbox_listeners SET last_processed_id = COALESCE((SELECT MAX(id) FROM outbox), 0)")
 
   console.log(`Cloned '${sourceDb}' → '${targetDb}'`)
 }
@@ -168,10 +163,13 @@ async function updateWorkspaceSlug(dbName: string, branchName: string): Promise<
     .replace(/^-|-$/g, "")
     .slice(0, 48)
 
-  const name = `PR: ${branchName}`.slice(0, 100)
+  const name = `PR #${prNumber}`
 
   console.log(`Updating workspace slug to '${slug}' and name to '${name}'...`)
-  await runPsql(dbName, `UPDATE workspaces SET slug = '${slug}', name = '${name}' WHERE id = (SELECT id FROM workspaces LIMIT 1)`)
+  await runPsql(
+    dbName,
+    `UPDATE workspaces SET slug = '${slug}', name = '${name}' WHERE id = (SELECT id FROM workspaces LIMIT 1)`
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -179,8 +177,7 @@ async function updateWorkspaceSlug(dbName: string, branchName: string): Promise<
 // ---------------------------------------------------------------------------
 
 async function railwayServiceExists(): Promise<boolean> {
-  const result =
-    await $`railway service list --json`.env({ RAILWAY_TOKEN, RAILWAY_PROJECT_ID }).quiet().nothrow()
+  const result = await $`railway service list --json`.env({ RAILWAY_TOKEN, RAILWAY_PROJECT_ID }).quiet().nothrow()
   if (result.exitCode !== 0) return false
   const services = JSON.parse(result.stdout.toString())
   return services.some((s: { name: string }) => s.name === serviceName)
@@ -189,15 +186,26 @@ async function railwayServiceExists(): Promise<boolean> {
 async function createRailwayService(): Promise<string> {
   console.log(`Creating Railway service '${serviceName}'...`)
 
-  const result =
-    await $`railway service create ${serviceName} --json`.env({ RAILWAY_TOKEN, RAILWAY_PROJECT_ID }).quiet().nothrow()
+  let serviceId: string
 
-  if (result.exitCode !== 0) {
-    throw new Error(`Failed to create Railway service: ${result.stderr.toString()}`)
+  if (await railwayServiceExists()) {
+    console.log(`Railway service '${serviceName}' already exists, reusing...`)
+    const listResult = await $`railway service list --json`.env({ RAILWAY_TOKEN, RAILWAY_PROJECT_ID }).quiet().nothrow()
+    const services = JSON.parse(listResult.stdout.toString())
+    serviceId = services.find((s: { name: string }) => s.name === serviceName)?.id
+  } else {
+    const result = await $`railway service create ${serviceName} --json`
+      .env({ RAILWAY_TOKEN, RAILWAY_PROJECT_ID })
+      .quiet()
+      .nothrow()
+
+    if (result.exitCode !== 0) {
+      throw new Error(`Failed to create Railway service: ${result.stderr.toString()}`)
+    }
+
+    const service = JSON.parse(result.stdout.toString())
+    serviceId = service.id
   }
-
-  const service = JSON.parse(result.stdout.toString())
-  const serviceId = service.id
 
   // Set environment variables
   const prDbUrl = STAGING_DATABASE_URL.replace(/\/([^/?]+)(\?.*)?$/, `/${prDbName}$2`)
@@ -232,35 +240,29 @@ async function createRailwayService(): Promise<string> {
 async function deployRailwayService(): Promise<string> {
   console.log(`Deploying to Railway service '${serviceName}'...`)
 
-  const result =
-    await $`railway up --service ${serviceName} --detach`
-      .env({ RAILWAY_TOKEN, RAILWAY_PROJECT_ID })
-      .quiet()
-      .nothrow()
+  const result = await $`railway up --service ${serviceName} --detach`
+    .env({ RAILWAY_TOKEN, RAILWAY_PROJECT_ID })
+    .quiet()
+    .nothrow()
 
   if (result.exitCode !== 0) {
     throw new Error(`Railway deploy failed: ${result.stderr.toString()}`)
   }
 
   // Get the service URL
-  const urlResult =
-    await $`railway domain --service ${serviceName} --json`
-      .env({ RAILWAY_TOKEN, RAILWAY_PROJECT_ID })
-      .quiet()
-      .nothrow()
+  const urlResult = await $`railway domain --service ${serviceName} --json`
+    .env({ RAILWAY_TOKEN, RAILWAY_PROJECT_ID })
+    .quiet()
+    .nothrow()
 
   if (urlResult.exitCode !== 0) {
     // Generate a domain if none exists
-    await $`railway domain --service ${serviceName}`
+    await $`railway domain --service ${serviceName}`.env({ RAILWAY_TOKEN, RAILWAY_PROJECT_ID }).quiet().nothrow()
+
+    const retryResult = await $`railway domain --service ${serviceName} --json`
       .env({ RAILWAY_TOKEN, RAILWAY_PROJECT_ID })
       .quiet()
       .nothrow()
-
-    const retryResult =
-      await $`railway domain --service ${serviceName} --json`
-        .env({ RAILWAY_TOKEN, RAILWAY_PROJECT_ID })
-        .quiet()
-        .nothrow()
 
     return `https://${JSON.parse(retryResult.stdout.toString()).domain}`
   }
@@ -274,10 +276,7 @@ async function deleteRailwayService(): Promise<void> {
     return
   }
   console.log(`Deleting Railway service '${serviceName}'...`)
-  await $`railway service delete ${serviceName} --yes`
-    .env({ RAILWAY_TOKEN, RAILWAY_PROJECT_ID })
-    .quiet()
-    .nothrow()
+  await $`railway service delete ${serviceName} --yes`.env({ RAILWAY_TOKEN, RAILWAY_PROJECT_ID }).quiet().nothrow()
   console.log(`Deleted Railway service '${serviceName}'`)
 }
 
