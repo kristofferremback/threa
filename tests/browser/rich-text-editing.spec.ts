@@ -791,7 +791,37 @@ test.describe("Rich Text Editing", () => {
   })
 
   test.describe("Desktop Multiline Blocks", () => {
-    test("Shift+Enter exits a code block on the second newline", async ({ page }) => {
+    test("Shift+Enter twice keeps subsequent code inside the current code block", async ({ page }) => {
+      const editor = page.locator("[contenteditable='true']")
+      await editor.click()
+      await page.keyboard.type("```")
+      await page.keyboard.press("Shift+Enter")
+      await page.keyboard.type("line 1")
+      await page.keyboard.press("Shift+Enter")
+      await page.keyboard.press("Shift+Enter")
+      await page.keyboard.type("line 2")
+
+      await expect(editor.locator("pre")).toHaveCount(1)
+      await expect(editor.locator("pre")).toContainText("line 1")
+      await expect(editor.locator("pre")).toContainText("line 2")
+      await expect(editor.locator("p").filter({ hasText: "line 2" })).toHaveCount(0)
+    })
+
+    test("Shift+Enter twice keeps subsequent text inside the current blockquote", async ({ page }) => {
+      const editor = page.locator("[contenteditable='true']")
+      await editor.click()
+      await page.keyboard.type("> line 1")
+      await page.keyboard.press("Shift+Enter")
+      await page.keyboard.press("Shift+Enter")
+      await page.keyboard.type("line 2")
+
+      await expect(editor.locator("blockquote")).toHaveCount(1)
+      await expect(editor.locator("blockquote")).toContainText("line 1")
+      await expect(editor.locator("blockquote")).toContainText("line 2")
+      await expect(editor.locator(":scope > p").filter({ hasText: "line 2" })).toHaveCount(0)
+    })
+
+    test("Shift+Enter exits a code block on the third newline", async ({ page }) => {
       const editor = page.locator("[contenteditable='true']")
       await editor.click()
       await page.keyboard.type("```")
@@ -799,6 +829,7 @@ test.describe("Rich Text Editing", () => {
       await expect(editor.locator("pre")).toHaveCount(1)
 
       await page.keyboard.type("line 1")
+      await page.keyboard.press("Shift+Enter")
       await page.keyboard.press("Shift+Enter")
       await page.keyboard.press("Shift+Enter")
       await page.keyboard.type("outside")
@@ -809,10 +840,11 @@ test.describe("Rich Text Editing", () => {
       await expect(editor.locator("p").filter({ hasText: "outside" })).toHaveCount(1)
     })
 
-    test("Shift+Enter exits a blockquote on the second newline", async ({ page }) => {
+    test("Shift+Enter exits a blockquote on the third newline", async ({ page }) => {
       const editor = page.locator("[contenteditable='true']")
       await editor.click()
       await page.keyboard.type("> quoted line")
+      await page.keyboard.press("Shift+Enter")
       await page.keyboard.press("Shift+Enter")
       await page.keyboard.press("Shift+Enter")
       await page.keyboard.type("outside")
@@ -827,7 +859,7 @@ test.describe("Rich Text Editing", () => {
   test.describe("Mobile Multiline Blocks", () => {
     test.use({ viewport: { width: 390, height: 844 } })
 
-    test("beforeinput exits a code block on the second newline", async ({ page }) => {
+    test("beforeinput exits a code block on the third newline", async ({ page }) => {
       const editor = page.locator("[contenteditable='true']")
       await focusMobileComposer(page)
       await page.keyboard.type("```")
@@ -835,6 +867,7 @@ test.describe("Rich Text Editing", () => {
       await expect(editor.locator("pre")).toHaveCount(1)
 
       await page.keyboard.type("line 1")
+      await dispatchBeforeInput(page)
       await dispatchBeforeInput(page)
       await dispatchBeforeInput(page)
       await page.keyboard.type("outside")
@@ -845,10 +878,11 @@ test.describe("Rich Text Editing", () => {
       await expect(editor.locator("p").filter({ hasText: "outside" })).toHaveCount(1)
     })
 
-    test("beforeinput exits a blockquote on the second newline", async ({ page }) => {
+    test("beforeinput exits a blockquote on the third newline", async ({ page }) => {
       const editor = page.locator("[contenteditable='true']")
       await focusMobileComposer(page)
       await page.keyboard.type("> quoted line")
+      await dispatchBeforeInput(page)
       await dispatchBeforeInput(page)
       await dispatchBeforeInput(page)
       await page.keyboard.type("outside")

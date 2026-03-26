@@ -186,7 +186,7 @@ describe("multiline block paste handling", () => {
 })
 
 describe("multiline beforeinput enter handling", () => {
-  it("exits a code block after a second newline via beforeinput", () => {
+  it("exits a code block after a third newline via beforeinput", () => {
     const editor = createTestEditor("```\nconst x = 1\n```")
 
     editor.commands.setTextSelection(editor.state.doc.content.size - 1)
@@ -201,13 +201,20 @@ describe("multiline beforeinput enter handling", () => {
     expect(handleBeforeInputNewline(editor, secondEvent)).toBe(true)
     expect(secondEvent.prevented).toBe(true)
     expect(editor.state.doc.firstChild?.type.name).toBe("codeBlock")
-    expect(editor.state.doc.firstChild?.textContent).toBe("const x = 1")
+    expect(editor.state.doc.firstChild?.textContent).toBe("const x = 1\n\n")
+    expect(editor.isActive("codeBlock")).toBe(true)
+
+    const thirdEvent = createBeforeInputEvent()
+    expect(handleBeforeInputNewline(editor, thirdEvent)).toBe(true)
+    expect(thirdEvent.prevented).toBe(true)
+    expect(editor.state.doc.firstChild?.type.name).toBe("codeBlock")
+    expect(editor.state.doc.firstChild?.textContent).toBe("const x = 1\n")
     expect(editor.state.doc.lastChild?.type.name).toBe("paragraph")
     expect(editor.isActive("codeBlock")).toBe(false)
     editor.destroy()
   })
 
-  it("exits a blockquote after a second newline via beforeinput", () => {
+  it("exits a blockquote after a third newline via beforeinput", () => {
     const editor = createTestEditor(createBlockquote(["quoted line"]))
 
     editor.commands.setTextSelection(editor.state.doc.content.size - 1)
@@ -222,7 +229,14 @@ describe("multiline beforeinput enter handling", () => {
     expect(handleBeforeInputNewline(editor, secondEvent)).toBe(true)
     expect(secondEvent.prevented).toBe(true)
     expect(editor.state.doc.firstChild?.type.name).toBe("blockquote")
-    expect(editor.state.doc.firstChild?.childCount).toBe(1)
+    expect(editor.state.doc.firstChild?.childCount).toBe(3)
+    expect(editor.isActive("blockquote")).toBe(true)
+
+    const thirdEvent = createBeforeInputEvent()
+    expect(handleBeforeInputNewline(editor, thirdEvent)).toBe(true)
+    expect(thirdEvent.prevented).toBe(true)
+    expect(editor.state.doc.firstChild?.type.name).toBe("blockquote")
+    expect(editor.state.doc.firstChild?.childCount).toBe(2)
     expect(editor.state.doc.lastChild?.type.name).toBe("paragraph")
     expect(editor.isActive("blockquote")).toBe(false)
     editor.destroy()

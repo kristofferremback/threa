@@ -14,6 +14,10 @@ interface AncestorInfo {
   pos: number
 }
 
+function isEmptyParagraphNode(node: ProseMirrorNode | null | undefined): boolean {
+  return !!node && node.type.name === "paragraph" && node.content.size === 0
+}
+
 function findAncestor(editor: Editor, nodeName: "codeBlock" | "blockquote"): AncestorInfo | null {
   const { state } = editor
   const { selection } = state
@@ -313,13 +317,13 @@ export function handleEnterTextBehavior(editor: Editor): boolean {
     return editor.chain().focus().splitListItem("listItem").run()
   }
 
-  // In code blocks: newline on the first enter, exit on the second.
+  // In code blocks: keep one blank line inside the block, exit on the third newline.
   if (editor.isActive("codeBlock")) {
     const codeBlock = $from.parent
     const text = codeBlock.textContent
     const atEnd = $from.pos === $from.end()
 
-    if (atEnd && text.endsWith("\n")) {
+    if (atEnd && text.endsWith("\n\n")) {
       return editor
         .chain()
         .focus()
@@ -335,11 +339,19 @@ export function handleEnterTextBehavior(editor: Editor): boolean {
     return editor.chain().focus().insertContent("\n").run()
   }
 
-  // In blockquotes: exit on an empty line.
+  // In blockquotes: allow one blank quoted paragraph, then exit on the next empty line.
   if (editor.isActive("blockquote")) {
     const paragraph = $from.parent
-    if (paragraph.type.name === "paragraph" && paragraph.content.size === 0) {
-      return editor.chain().focus().lift("blockquote").run()
+    if (isEmptyParagraphNode(paragraph)) {
+      const blockquote = findAncestor(editor, "blockquote")
+      const childIndex = blockquote ? $from.index(blockquote.depth) : -1
+      const previousChild = blockquote && childIndex > 0 ? blockquote.node.child(childIndex - 1) : null
+
+      if (isEmptyParagraphNode(previousChild)) {
+        return editor.chain().focus().lift("blockquote").run()
+      }
+
+      return editor.chain().focus().splitBlock().run()
     }
     return editor.chain().focus().splitBlock().run()
   }

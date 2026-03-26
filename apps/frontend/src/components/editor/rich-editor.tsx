@@ -68,6 +68,20 @@ interface RichEditorProps {
   streamContext?: MentionStreamContext
 }
 
+function isEditorCompletelyEmpty(editor: import("@tiptap/react").Editor | null | undefined): boolean {
+  if (!editor) {
+    return true
+  }
+
+  const { doc } = editor.state
+  return (
+    doc.childCount === 1 &&
+    !!doc.firstChild &&
+    doc.firstChild.type.name === "paragraph" &&
+    doc.firstChild.content.size === 0
+  )
+}
+
 export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function RichEditor(
   {
     value,
@@ -364,8 +378,10 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
         return false
       },
       handleKeyDown: (_view, event) => {
+        const currentEditor = editorRef.current
+
         if (event.key === "Escape" && blurOnEscape) {
-          if (editorRef.current && isSuggestionActive(editorRef.current)) {
+          if (currentEditor && isSuggestionActive(currentEditor)) {
             return false
           }
           event.preventDefault()
@@ -376,8 +392,8 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
         // ArrowUp in empty editor: edit the last message sent by the current user
         if (
           event.key === "ArrowUp" &&
-          editorRef.current?.isEmpty &&
-          !isSuggestionActive(editorRef.current) &&
+          isEditorCompletelyEmpty(currentEditor) &&
+          !(currentEditor && isSuggestionActive(currentEditor)) &&
           onEditLastMessageRef.current
         ) {
           event.preventDefault()
@@ -392,7 +408,7 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
         }
         // Enter in "enter" send mode: send unless a suggestion popup is active
         if (event.key === "Enter" && !event.shiftKey && messageSendModeRef.current === "enter") {
-          if (editorRef.current && isSuggestionActive(editorRef.current)) {
+          if (currentEditor && isSuggestionActive(currentEditor)) {
             return false // Let suggestion popup handle Enter
           }
           event.preventDefault()
