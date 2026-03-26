@@ -374,15 +374,13 @@ export function AttachmentList({ attachments, workspaceId, className }: Attachme
         )}
       </div>
 
-      {galleryImages.length > 0 && galleryIndex !== -1 && (
-        <ImageGallery
-          isOpen={selectedAttachmentId !== null}
-          onClose={handleGalleryClose}
-          images={galleryImages}
-          initialIndex={galleryIndex}
-          workspaceId={workspaceId}
-        />
-      )}
+      <ImageGallery
+        isOpen={selectedAttachmentId !== null && galleryIndex !== -1}
+        onClose={handleGalleryClose}
+        images={galleryImages.length > 0 ? galleryImages : []}
+        initialIndex={Math.max(0, galleryIndex)}
+        workspaceId={workspaceId}
+      />
     </>
   )
 }

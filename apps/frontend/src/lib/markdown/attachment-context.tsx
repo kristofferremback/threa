@@ -58,23 +58,31 @@ export function AttachmentProvider({ workspaceId, attachments, children }: Attac
           )
           setGalleryState({ images: initial, index: clickedIdx !== -1 ? clickedIdx : 0 })
 
-          // Backfill remaining image URLs in the background
+          // Backfill remaining image URLs in the background — allSettled so
+          // a single failed fetch doesn't strand all other images as spinners
           const others = imageAttachments.filter((a) => a.id !== attachmentId)
           if (others.length > 0) {
-            const resolved = await Promise.all(
+            const settled = await Promise.allSettled(
               others.map(async (a) => {
                 const url = await attachmentsApi.getDownloadUrl(workspaceId, a.id)
                 return { attachmentId: a.id, url }
               })
             )
-            setGalleryState((prev) => {
-              if (!prev) return prev
-              const updated = prev.images.map((img) => {
-                const found = resolved.find((r) => r.attachmentId === img.attachmentId)
-                return found ? { ...img, url: found.url } : img
+            const resolved = settled
+              .filter(
+                (r): r is PromiseFulfilledResult<{ attachmentId: string; url: string }> => r.status === "fulfilled"
+              )
+              .map((r) => r.value)
+            if (resolved.length > 0) {
+              setGalleryState((prev) => {
+                if (!prev) return prev
+                const updated = prev.images.map((img) => {
+                  const found = resolved.find((r) => r.attachmentId === img.attachmentId)
+                  return found ? { ...img, url: found.url } : img
+                })
+                return { ...prev, images: updated }
               })
-              return { ...prev, images: updated }
-            })
+            }
           }
         } else {
           const url = await attachmentsApi.getDownloadUrl(workspaceId, attachmentId)
@@ -92,15 +100,13 @@ export function AttachmentProvider({ workspaceId, attachments, children }: Attac
       value={{ workspaceId, attachments, openAttachment, hoveredAttachmentId, setHoveredAttachmentId }}
     >
       {children}
-      {galleryState && (
-        <ImageGallery
-          isOpen
-          onClose={() => setGalleryState(null)}
-          images={galleryState.images}
-          initialIndex={galleryState.index}
-          workspaceId={workspaceId}
-        />
-      )}
+      <ImageGallery
+        isOpen={galleryState !== null}
+        onClose={() => setGalleryState(null)}
+        images={galleryState?.images ?? []}
+        initialIndex={galleryState?.index ?? 0}
+        workspaceId={workspaceId}
+      />
     </AttachmentContext.Provider>
   )
 }
