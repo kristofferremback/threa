@@ -52,6 +52,19 @@ export function ImageGallery({ isOpen, onClose, images, initialIndex, workspaceI
     prevOpen.current = isOpen
   }, [isOpen, initialIndex])
 
+  // Re-anchor currentIndex when the images array shifts underneath it
+  // (e.g. a late-loading image inserts before the currently-viewed one).
+  // Uses a ref for the viewed ID so the effect only fires when images changes.
+  const viewedIdRef = useRef<string | null>(null)
+  viewedIdRef.current = images[currentIndex]?.attachmentId ?? null
+  useEffect(() => {
+    if (!isOpen || !viewedIdRef.current) return
+    setCurrentIndex((prev) => {
+      const corrected = images.findIndex((i) => i.attachmentId === viewedIdRef.current)
+      return corrected !== -1 && corrected !== prev ? corrected : prev
+    })
+  }, [images, isOpen])
+
   // Scroll active thumbnail into view when index changes
   useEffect(() => {
     const el = thumbnailRefs.current.get(currentIndex)
