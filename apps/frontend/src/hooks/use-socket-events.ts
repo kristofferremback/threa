@@ -208,6 +208,7 @@ export function useSocketEvents(workspaceId: string) {
     // Handle stream created
     socket.on("stream:created", (payload: StreamPayload) => {
       let shouldJoinStreamRoom = false
+      let shouldCacheStream = false
 
       // Add to workspace bootstrap cache (sidebar)
       const applied = updateBootstrapOrInvalidate(queryClient, workspaceId, (old) => {
@@ -230,6 +231,7 @@ export function useSocketEvents(workspaceId: string) {
 
         // Ensure members are subscribed immediately for follow-up stream activity.
         shouldJoinStreamRoom = hasMembership || shouldAddMembership
+        shouldCacheStream = payload.stream.type !== StreamTypes.SCRATCHPAD || isCreator
 
         if (streamExists && !shouldAddMembership) return old
 
@@ -265,8 +267,11 @@ export function useSocketEvents(workspaceId: string) {
         )
       }
 
-      // Cache to IndexedDB
-      db.streams.put({ ...payload.stream, _cachedAt: Date.now() })
+      // Cache to IndexedDB — skip other users' scratchpads to avoid stale
+      // entries resurfacing on hydration if the event leaks during a deploy race.
+      if (shouldCacheStream) {
+        db.streams.put({ ...payload.stream, _cachedAt: Date.now() })
+      }
 
       // DM creation still requires bootstrap refetch for viewer-specific dmPeers and
       // resolved display names in the sidebar.
