@@ -208,7 +208,7 @@ export function useSocketEvents(workspaceId: string) {
     // Handle stream created
     socket.on("stream:created", (payload: StreamPayload) => {
       let shouldJoinStreamRoom = false
-      let shouldCacheStream = false
+      let shouldCacheStream = payload.stream.type !== StreamTypes.SCRATCHPAD
 
       // Add to workspace bootstrap cache (sidebar)
       const applied = updateBootstrapOrInvalidate(queryClient, workspaceId, (old) => {
