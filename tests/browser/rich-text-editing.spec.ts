@@ -14,12 +14,154 @@ import { loginAndCreateWorkspace } from "./helpers"
  * - Send modes still work with rich text
  */
 
+async function placeCursorInText(page: import("@playwright/test").Page, text: string, offset = 0) {
+  await page.evaluate(
+    ({ offset, text }) => {
+      const editor = document.querySelector<HTMLElement>("[contenteditable='true']")
+      if (!editor) {
+        throw new Error("Editor not found")
+      }
+
+      const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT)
+      let current: Node | null
+
+      while ((current = walker.nextNode())) {
+        const value = current.textContent ?? ""
+        const index = value.indexOf(text)
+        if (index === -1) {
+          continue
+        }
+
+        const range = document.createRange()
+        range.setStart(current, index + offset)
+        range.collapse(true)
+
+        const selection = window.getSelection()
+        selection?.removeAllRanges()
+        selection?.addRange(range)
+        editor.focus()
+        return
+      }
+
+      throw new Error(`Could not place cursor inside text: ${text}`)
+    },
+    { offset, text }
+  )
+}
+
+async function selectTextRange(
+  page: import("@playwright/test").Page,
+  startText: string,
+  endText: string,
+  endOffset = endText.length
+) {
+  await page.evaluate(
+    ({ endOffset, endText, startText }) => {
+      const editor = document.querySelector<HTMLElement>("[contenteditable='true']")
+      if (!editor) {
+        throw new Error("Editor not found")
+      }
+
+      const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT)
+      let current: Node | null
+      let startNode: Node | null = null
+      let endNode: Node | null = null
+      let startOffset = 0
+      let resolvedEndOffset = 0
+
+      while ((current = walker.nextNode())) {
+        const value = current.textContent ?? ""
+
+        if (!startNode) {
+          const index = value.indexOf(startText)
+          if (index !== -1) {
+            startNode = current
+            startOffset = index
+          }
+        }
+
+        const endIndex = value.indexOf(endText)
+        if (endIndex !== -1) {
+          endNode = current
+          resolvedEndOffset = endIndex + endOffset
+          if (startNode) {
+            break
+          }
+        }
+      }
+
+      if (!startNode || !endNode) {
+        throw new Error(`Could not select range from "${startText}" to "${endText}"`)
+      }
+
+      const range = document.createRange()
+      range.setStart(startNode, startOffset)
+      range.setEnd(endNode, resolvedEndOffset)
+
+      const selection = window.getSelection()
+      selection?.removeAllRanges()
+      selection?.addRange(range)
+      editor.focus()
+    },
+    { endOffset, endText, startText }
+  )
+}
+
+async function dispatchBeforeInput(
+  page: import("@playwright/test").Page,
+  inputType: "insertParagraph" | "insertLineBreak" = "insertParagraph"
+) {
+  await page.evaluate((type) => {
+    const editor = document.querySelector<HTMLElement>("[contenteditable='true']")
+    if (!editor) {
+      throw new Error("Editor not found")
+    }
+
+    editor.dispatchEvent(
+      new InputEvent("beforeinput", {
+        bubbles: true,
+        cancelable: true,
+        inputType: type,
+      })
+    )
+  }, inputType)
+}
+
+async function pastePlainText(page: import("@playwright/test").Page, text: string) {
+  await page.evaluate((value) => {
+    const editor = document.querySelector<HTMLElement>("[contenteditable='true']")
+    if (!editor) {
+      throw new Error("Editor not found")
+    }
+
+    const clipboardData = new DataTransfer()
+    clipboardData.setData("text/plain", value)
+    editor.dispatchEvent(new ClipboardEvent("paste", { clipboardData, bubbles: true, cancelable: true }))
+  }, text)
+}
+
+async function focusMobileComposer(page: import("@playwright/test").Page) {
+  await page.getByText("Type a message...").evaluate((element: HTMLElement) => element.click())
+  await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
+}
+
 test.describe("Rich Text Editing", () => {
   test.beforeEach(async ({ page }) => {
     await loginAndCreateWorkspace(page, "richtext")
 
     // Create a scratchpad for testing
-    await page.getByRole("button", { name: "+ New Scratchpad" }).click()
+    const newScratchpadButton = page.getByRole("button", { name: "+ New Scratchpad" })
+    if ((page.viewportSize()?.width ?? 0) < 640) {
+      await newScratchpadButton.evaluate((button: HTMLElement) => button.click())
+    } else {
+      await newScratchpadButton.click()
+    }
+
+    if ((page.viewportSize()?.width ?? 0) < 640) {
+      await expect(page.getByText("Type a message...")).toBeVisible({ timeout: 5000 })
+      return
+    }
+
     await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
   })
 
@@ -312,6 +454,134 @@ test.describe("Rich Text Editing", () => {
       await page.getByRole("button", { name: "Quote" }).click()
       await expect(editor.locator("blockquote")).toContainText("quoted")
     })
+
+    test("code block button unwraps the full block when toggled off from the first line", async ({ page }) => {
+      const editor = page.locator("[contenteditable='true']")
+      await editor.click()
+      await page.keyboard.type("```")
+      await page.keyboard.press("Shift+Enter")
+      await page.keyboard.type("line 1")
+      await page.keyboard.press("Shift+Enter")
+      await page.keyboard.type("line 2")
+      await page.keyboard.press("Shift+Enter")
+      await page.keyboard.type("line 3")
+
+      await placeCursorInText(page, "line 1", 2)
+      await page.getByRole("button", { name: "Formatting", exact: true }).click()
+      await page.getByRole("button", { name: "Code block" }).click()
+
+      await expect(editor.locator("pre")).toHaveCount(0)
+      await expect(editor.locator("p").filter({ hasText: "line 1" })).toHaveCount(1)
+      await expect(editor.locator("p").filter({ hasText: "line 2" })).toHaveCount(1)
+      await expect(editor.locator("p").filter({ hasText: "line 3" })).toHaveCount(1)
+    })
+
+    test("code block button unwraps only the current line when toggled off below the first line", async ({ page }) => {
+      const editor = page.locator("[contenteditable='true']")
+      await editor.click()
+      await page.keyboard.type("```")
+      await page.keyboard.press("Shift+Enter")
+      await page.keyboard.type("line 1")
+      await page.keyboard.press("Shift+Enter")
+      await page.keyboard.type("line 2")
+      await page.keyboard.press("Shift+Enter")
+      await page.keyboard.type("line 3")
+
+      await placeCursorInText(page, "line 2", 2)
+      await page.getByRole("button", { name: "Formatting", exact: true }).click()
+      await page.getByRole("button", { name: "Code block" }).click()
+
+      await expect(editor.locator("pre")).toHaveCount(2)
+      await expect(editor.locator("pre").nth(0)).toContainText("line 1")
+      await expect(editor.locator("pre").nth(1)).toContainText("line 3")
+      await expect(editor.locator("p").filter({ hasText: "line 2" })).toHaveCount(1)
+      await expect(editor.locator("pre").filter({ hasText: "line 2" })).toHaveCount(0)
+    })
+
+    test("code block button unwraps only the selected lines", async ({ page }) => {
+      const editor = page.locator("[contenteditable='true']")
+      await editor.click()
+      await page.keyboard.type("```")
+      await page.keyboard.press("Shift+Enter")
+      await page.keyboard.type("line 1")
+      await page.keyboard.press("Shift+Enter")
+      await page.keyboard.type("line 2")
+      await page.keyboard.press("Shift+Enter")
+      await page.keyboard.type("line 3")
+
+      await selectTextRange(page, "line 2", "line 3")
+      await page.getByRole("button", { name: "Formatting", exact: true }).click()
+      await page.getByRole("button", { name: "Code block" }).click()
+
+      await expect(editor.locator("pre")).toHaveCount(1)
+      await expect(editor.locator("pre")).toContainText("line 1")
+      await expect(editor.locator("pre")).not.toContainText("line 2")
+      await expect(editor.locator("pre")).not.toContainText("line 3")
+      await expect(editor.locator("p").filter({ hasText: "line 2" })).toHaveCount(1)
+      await expect(editor.locator("p").filter({ hasText: "line 3" })).toHaveCount(1)
+    })
+
+    test("quote button unwraps the full block when toggled off from the first line", async ({ page }) => {
+      const editor = page.locator("[contenteditable='true']")
+      await editor.click()
+      await page.keyboard.type("> line 1")
+      await page.keyboard.press("Shift+Enter")
+      await page.keyboard.type("line 2")
+      await page.keyboard.press("Shift+Enter")
+      await page.keyboard.type("line 3")
+
+      await placeCursorInText(page, "line 1", 2)
+      await page.getByRole("button", { name: "Formatting", exact: true }).click()
+      await page.getByRole("button", { name: "Quote" }).click()
+
+      await expect(editor.locator("blockquote")).toHaveCount(0)
+      await expect(editor.locator("p").filter({ hasText: "line 1" })).toHaveCount(1)
+      await expect(editor.locator("p").filter({ hasText: "line 2" })).toHaveCount(1)
+      await expect(editor.locator("p").filter({ hasText: "line 3" })).toHaveCount(1)
+    })
+
+    test("quote button unwraps only the current quoted line when toggled off below the first line", async ({
+      page,
+    }) => {
+      const editor = page.locator("[contenteditable='true']")
+      await editor.click()
+      await page.keyboard.type("> line 1")
+      await page.keyboard.press("Shift+Enter")
+      await page.keyboard.type("line 2")
+      await page.keyboard.press("Shift+Enter")
+      await page.keyboard.type("line 3")
+
+      await placeCursorInText(page, "line 2", 2)
+      await page.getByRole("button", { name: "Formatting", exact: true }).click()
+      await page.getByRole("button", { name: "Quote" }).click()
+
+      await expect(editor.locator("blockquote")).toHaveCount(2)
+      await expect(editor.locator("blockquote").nth(0)).toContainText("line 1")
+      await expect(editor.locator("blockquote").nth(1)).toContainText("line 3")
+      await expect(editor.locator("p").filter({ hasText: "line 2" })).toHaveCount(1)
+      await expect(editor.locator("blockquote").filter({ hasText: "line 2" })).toHaveCount(0)
+    })
+
+    test("quote button unwraps only the selected quoted lines", async ({ page }) => {
+      const editor = page.locator("[contenteditable='true']")
+      await editor.click()
+      await page.keyboard.type("> line 1")
+      await page.keyboard.press("Shift+Enter")
+      await page.keyboard.type("line 2")
+      await page.keyboard.press("Shift+Enter")
+      await page.keyboard.type("line 3")
+
+      await selectTextRange(page, "line 2", "line 3")
+      await page.getByRole("button", { name: "Formatting", exact: true }).click()
+      await page.getByRole("button", { name: "Quote" }).click()
+
+      await expect(editor.locator("blockquote")).toHaveCount(1)
+      await expect(editor.locator("blockquote")).toContainText("line 1")
+      await expect(editor.locator("blockquote")).not.toContainText("line 2")
+      await expect(editor.locator("blockquote")).not.toContainText("line 3")
+      await expect(editor.locator("p").filter({ hasText: "line 2" })).toHaveCount(1)
+      await expect(editor.locator("p").filter({ hasText: "line 3" })).toHaveCount(1)
+    })
   })
 
   test.describe("Send Mode Integration", () => {
@@ -360,6 +630,36 @@ test.describe("Rich Text Editing", () => {
 
       await expect(editor.locator("strong")).toHaveText("pasted bold")
       await expect(editor.locator("code")).toHaveText("code")
+    })
+
+    test("pasting multiline text inside a code block keeps it inside the same block", async ({ page }) => {
+      const editor = page.locator("[contenteditable='true']")
+      await editor.click()
+      await page.keyboard.type("```")
+      await page.keyboard.press("Shift+Enter")
+      await page.keyboard.type("seed")
+
+      await selectTextRange(page, "seed", "seed")
+      await pastePlainText(page, "line 1\nline 2")
+
+      await expect(editor.locator("pre")).toHaveCount(1)
+      await expect(editor.locator("pre code")).toContainText("line 1")
+      await expect(editor.locator("pre code")).toContainText("line 2")
+      await expect(editor.locator("p").filter({ hasText: "line 1" })).toHaveCount(0)
+    })
+
+    test("pasting multiline text inside a blockquote keeps it inside the same quote", async ({ page }) => {
+      const editor = page.locator("[contenteditable='true']")
+      await editor.click()
+      await page.keyboard.type("> seed")
+
+      await selectTextRange(page, "seed", "seed")
+      await pastePlainText(page, "line 1\nline 2")
+
+      await expect(editor.locator("blockquote")).toHaveCount(1)
+      await expect(editor.locator("blockquote")).toContainText("line 1")
+      await expect(editor.locator("blockquote")).toContainText("line 2")
+      await expect(editor.locator(":scope > p").filter({ hasText: "line 1" })).toHaveCount(0)
     })
   })
 
@@ -482,6 +782,76 @@ test.describe("Rich Text Editing", () => {
       await page.keyboard.type("code content")
 
       await expect(editor.locator("pre code")).toContainText("code content")
+    })
+  })
+
+  test.describe("Desktop Multiline Blocks", () => {
+    test("Shift+Enter exits a code block on the second newline", async ({ page }) => {
+      const editor = page.locator("[contenteditable='true']")
+      await editor.click()
+      await page.keyboard.type("```")
+      await page.keyboard.press("Shift+Enter")
+      await expect(editor.locator("pre")).toHaveCount(1)
+
+      await page.keyboard.type("line 1")
+      await page.keyboard.press("Shift+Enter")
+      await page.keyboard.press("Shift+Enter")
+      await page.keyboard.type("outside")
+
+      await expect(editor.locator("pre")).toHaveCount(1)
+      await expect(editor.locator("pre")).toContainText("line 1")
+      await expect(editor.locator("pre")).not.toContainText("outside")
+      await expect(editor.locator("p").filter({ hasText: "outside" })).toHaveCount(1)
+    })
+
+    test("Shift+Enter exits a blockquote on the second newline", async ({ page }) => {
+      const editor = page.locator("[contenteditable='true']")
+      await editor.click()
+      await page.keyboard.type("> quoted line")
+      await page.keyboard.press("Shift+Enter")
+      await page.keyboard.press("Shift+Enter")
+      await page.keyboard.type("outside")
+
+      await expect(editor.locator("blockquote")).toHaveCount(1)
+      await expect(editor.locator("blockquote")).toContainText("quoted line")
+      await expect(editor.locator("blockquote")).not.toContainText("outside")
+      await expect(editor.locator("p").filter({ hasText: "outside" })).toHaveCount(1)
+    })
+  })
+
+  test.describe("Mobile Multiline Blocks", () => {
+    test.use({ viewport: { width: 390, height: 844 } })
+
+    test("beforeinput exits a code block on the second newline", async ({ page }) => {
+      const editor = page.locator("[contenteditable='true']")
+      await focusMobileComposer(page)
+      await page.keyboard.type("```")
+      await dispatchBeforeInput(page)
+      await expect(editor.locator("pre")).toHaveCount(1)
+
+      await page.keyboard.type("line 1")
+      await dispatchBeforeInput(page)
+      await dispatchBeforeInput(page)
+      await page.keyboard.type("outside")
+
+      await expect(editor.locator("pre")).toHaveCount(1)
+      await expect(editor.locator("pre")).toContainText("line 1")
+      await expect(editor.locator("pre")).not.toContainText("outside")
+      await expect(editor.locator("p").filter({ hasText: "outside" })).toHaveCount(1)
+    })
+
+    test("beforeinput exits a blockquote on the second newline", async ({ page }) => {
+      const editor = page.locator("[contenteditable='true']")
+      await focusMobileComposer(page)
+      await page.keyboard.type("> quoted line")
+      await dispatchBeforeInput(page)
+      await dispatchBeforeInput(page)
+      await page.keyboard.type("outside")
+
+      await expect(editor.locator("blockquote")).toHaveCount(1)
+      await expect(editor.locator("blockquote")).toContainText("quoted line")
+      await expect(editor.locator("blockquote")).not.toContainText("outside")
+      await expect(editor.locator("p").filter({ hasText: "outside" })).toHaveCount(1)
     })
   })
 })

@@ -11,6 +11,7 @@ import { MentionPluginKey } from "./triggers/mention-extension"
 import { CommandPluginKey } from "./triggers/command-extension"
 import { EmojiPluginKey } from "./triggers/emoji-extension"
 import { shouldRemoveTriggerOnToggle, type SuggestionPluginState } from "./trigger-toggle"
+import { handleBeforeInputNewline, insertPastedText } from "./multiline-blocks"
 import { useMentionables } from "@/hooks/use-mentionables"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { cn } from "@/lib/utils"
@@ -325,11 +326,26 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
         const text = event.clipboardData?.getData("text/plain")
         if (text) {
           event.preventDefault()
-          const parsed = parseMarkdown(text, getMentionTypeRef.current, toEmojiRef.current)
-          editorRef.current?.commands.insertContent(parsed)
-          return true
+          if (!editorRef.current) {
+            return false
+          }
+
+          return insertPastedText(editorRef.current, text, getMentionTypeRef.current, toEmojiRef.current)
         }
         return false
+      },
+      handleDOMEvents: {
+        beforeinput: (_view, event) => {
+          if (messageSendModeRef.current !== "cmdEnter" || !editorRef.current) {
+            return false
+          }
+
+          if (isSuggestionActive(editorRef.current)) {
+            return false
+          }
+
+          return handleBeforeInputNewline(editorRef.current, event as InputEvent)
+        },
       },
       handleDrop: (_view, event, _slice, moved) => {
         // Internal drag-and-drop (reordering) - let TipTap handle it

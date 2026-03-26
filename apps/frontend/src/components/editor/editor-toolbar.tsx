@@ -22,6 +22,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { LinkEditor } from "./link-editor"
 import { indentSelection, dedentSelection, isSuggestionActive } from "./editor-behaviors"
+import { toggleMultilineBlock } from "./multiline-blocks"
 import { cn } from "@/lib/utils"
 
 interface EditorToolbarProps {
@@ -169,7 +170,7 @@ export function EditorToolbar({
       />
       <Separator orientation="vertical" className={separatorClassName} />
       <ToolbarButton
-        onAction={() => editor.chain().focus().toggleBlockquote().run()}
+        onAction={() => toggleMultilineBlock(editor, "blockquote")}
         icon={Quote}
         label="Quote"
         isActive={editor.isActive("blockquote")}
@@ -196,7 +197,7 @@ export function EditorToolbar({
         keyboardAccessible={inline}
       />
       <ToolbarButton
-        onAction={() => editor.chain().focus().toggleCodeBlock().run()}
+        onAction={() => toggleMultilineBlock(editor, "codeBlock")}
         icon={Braces}
         label="Code block"
         shortcut="⌘⇧C"
