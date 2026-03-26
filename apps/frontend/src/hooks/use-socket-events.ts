@@ -222,7 +222,11 @@ export function useSocketEvents(workspaceId: string) {
           payload.dmUserIds?.includes(currentUserId) === true
         const hasMembership = old.streamMemberships.some((m: StreamMember) => m.streamId === payload.stream.id)
         const shouldAddMembership = Boolean(currentUserId && !hasMembership && (isCreator || isDmParticipant))
-        const shouldAddStream = !streamExists && payload.stream.type !== StreamTypes.DM
+        const shouldAddStream =
+          !streamExists &&
+          payload.stream.type !== StreamTypes.DM &&
+          // Scratchpads are private — only add to sidebar for the creator
+          (payload.stream.type !== StreamTypes.SCRATCHPAD || isCreator)
 
         // Ensure members are subscribed immediately for follow-up stream activity.
         shouldJoinStreamRoom = hasMembership || shouldAddMembership

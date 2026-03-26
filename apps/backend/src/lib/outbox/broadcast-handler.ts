@@ -147,6 +147,9 @@ export class BroadcastHandler implements OutboxHandler {
         for (const userId of new Set(payload.dmUserIds)) {
           this.io.to(`ws:${workspaceId}:user:${userId}`).emit(event.eventType, event.payload)
         }
+      } else if (payload.stream.type === StreamTypes.SCRATCHPAD) {
+        // Scratchpads are private — only notify the creator
+        this.io.to(`ws:${workspaceId}:user:${payload.stream.createdBy}`).emit(event.eventType, event.payload)
       } else {
         this.io.to(`ws:${workspaceId}`).emit(event.eventType, event.payload)
       }
