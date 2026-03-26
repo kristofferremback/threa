@@ -233,6 +233,8 @@ export function StreamItem({
     collapseOnMobile,
   })
 
+  const showHoverPreview = compact && showPreviewOnHover && !isMobile && !!preview?.content
+
   // For scratchpads, support renaming
   if (stream.type === StreamTypes.SCRATCHPAD) {
     return (
@@ -280,7 +282,12 @@ export function StreamItem({
               badge={threadBadge}
             />
 
-            <div className="relative flex flex-col flex-1 min-w-0 gap-0.5">
+            <div
+              className={cn(
+                "relative flex flex-col flex-1 min-w-0 gap-0.5 transition-transform duration-150",
+                showHoverPreview && "group-hover:-translate-y-[0.3125rem]"
+              )}
+            >
               <div className="flex items-center gap-2 pr-8">
                 <span className={cn("truncate text-sm", hasUnread ? "font-semibold" : "font-medium")}>
                   {name}

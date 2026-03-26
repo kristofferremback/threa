@@ -98,6 +98,8 @@ export function ScratchpadItem({
     collapseOnMobile,
   })
 
+  const showHoverPreview = compact && showPreviewOnHover && !isMobile && !!preview?.content
+
   return (
     <>
       <div className="group relative">
@@ -122,7 +124,12 @@ export function ScratchpadItem({
           <div className="flex items-center gap-2.5 flex-1 min-w-0 px-2 py-2">
             <StreamItemAvatar icon={<FileEdit className="h-3.5 w-3.5" />} className="bg-primary/10 text-primary" />
 
-            <div className="relative flex flex-col flex-1 min-w-0 gap-0.5">
+            <div
+              className={cn(
+                "relative flex flex-col flex-1 min-w-0 gap-0.5 transition-transform duration-150",
+                showHoverPreview && "group-hover:-translate-y-[0.3125rem]"
+              )}
+            >
               <div className="flex items-center gap-2 pr-8">
                 <span className={cn("truncate text-sm", hasUnread ? "font-semibold" : "font-medium")}>
                   {name}
