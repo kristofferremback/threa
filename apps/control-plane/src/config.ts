@@ -21,6 +21,10 @@ export interface ControlPlaneConfig {
   cloudflareKv: CloudflareKvConfig | null
   workspaceCreationRequiresInvite: boolean
   fastShutdown: boolean
+  /** Base URL of the frontend app. Used for post-auth redirects when the frontend is on a different origin. */
+  frontendUrl: string
+  /** Allowed domain for forwarded-host redirects (e.g. "staging.threa.io"). Empty disables the feature. */
+  allowedRedirectDomain: string
   rateLimits: {
     globalMax: number
     authMax: number
@@ -104,6 +108,8 @@ export function loadControlPlaneConfig(): ControlPlaneConfig {
     cloudflareKv,
     workspaceCreationRequiresInvite: process.env.WORKSPACE_CREATION_SKIP_INVITE !== "true",
     fastShutdown: process.env.FAST_SHUTDOWN === "true",
+    frontendUrl: (process.env.FRONTEND_URL ?? "").replace(/\/+$/, ""),
+    allowedRedirectDomain: process.env.ALLOWED_REDIRECT_DOMAIN ?? "",
     rateLimits: {
       globalMax: Number(process.env.GLOBAL_RATE_LIMIT_MAX) || 300,
       authMax: Number(process.env.AUTH_RATE_LIMIT_MAX) || 20,

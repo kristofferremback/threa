@@ -126,6 +126,8 @@ export async function startServer(): Promise<ControlPlaneInstance> {
     shadowService,
     internalApiKey: config.internalApiKey,
     allowDevAuthRoutes: config.useStubAuth && !isProduction,
+    frontendUrl: config.frontendUrl,
+    allowedRedirectDomain: config.allowedRedirectDomain,
     rateLimits: config.rateLimits,
   })
 
