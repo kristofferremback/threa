@@ -181,38 +181,72 @@ async function updateWorkspaceSlug(dbName: string, branchName: string): Promise<
 // Railway helpers (uses Railway CLI via RAILWAY_TOKEN)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Railway GraphQL API helpers (replaces CLI calls for CI reliability)
+// ---------------------------------------------------------------------------
+
+const RAILWAY_API = "https://backboard.railway.com/graphql/v2"
+
+async function railwayGql(query: string): Promise<unknown> {
+  const res = await fetch(RAILWAY_API, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${RAILWAY_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ query }),
+  })
+  const json = (await res.json()) as { data?: unknown; errors?: { message: string }[] }
+  if (json.errors?.length) {
+    throw new Error(`Railway API error: ${json.errors[0].message}`)
+  }
+  return json.data
+}
+
+async function getEnvironmentId(): Promise<string> {
+  const data = (await railwayGql(`{
+    project(id: "${RAILWAY_PROJECT_ID}") {
+      environments { edges { node { id name } } }
+    }
+  }`)) as { project: { environments: { edges: { node: { id: string; name: string } }[] } } }
+  const prod = data.project.environments.edges.find((e) => e.node.name === "production")
+  if (!prod) throw new Error("No production environment found")
+  return prod.node.id
+}
+
+async function listServices(): Promise<{ id: string; name: string }[]> {
+  const data = (await railwayGql(`{
+    project(id: "${RAILWAY_PROJECT_ID}") {
+      services { edges { node { id name } } }
+    }
+  }`)) as { project: { services: { edges: { node: { id: string; name: string } }[] } } }
+  return data.project.services.edges.map((e) => e.node)
+}
+
 async function railwayServiceExists(): Promise<boolean> {
-  const result = await $`railway service list --json`.env({ RAILWAY_TOKEN, RAILWAY_PROJECT_ID }).quiet().nothrow()
-  if (result.exitCode !== 0) return false
-  const services = JSON.parse(result.stdout.toString())
-  return services.some((s: { name: string }) => s.name === serviceName)
+  const services = await listServices()
+  return services.some((s) => s.name === serviceName)
 }
 
 async function createRailwayService(): Promise<string> {
   console.log(`Creating Railway service '${serviceName}'...`)
 
   let serviceId: string
+  const services = await listServices()
+  const existing = services.find((s) => s.name === serviceName)
 
-  if (await railwayServiceExists()) {
+  if (existing) {
     console.log(`Railway service '${serviceName}' already exists, reusing...`)
-    const listResult = await $`railway service list --json`.env({ RAILWAY_TOKEN, RAILWAY_PROJECT_ID }).quiet().nothrow()
-    const services = JSON.parse(listResult.stdout.toString())
-    serviceId = services.find((s: { name: string }) => s.name === serviceName)?.id
+    serviceId = existing.id
   } else {
-    const result = await $`railway add --service ${serviceName} --json`
-      .env({ RAILWAY_TOKEN, RAILWAY_PROJECT_ID })
-      .quiet()
-      .nothrow()
-
-    if (result.exitCode !== 0) {
-      throw new Error(`Failed to create Railway service: ${result.stderr.toString()}`)
-    }
-
-    const service = JSON.parse(result.stdout.toString())
-    serviceId = service.id
+    const data = (await railwayGql(`mutation {
+      serviceCreate(input: { name: "${serviceName}", projectId: "${RAILWAY_PROJECT_ID}" }) { id }
+    }`)) as { serviceCreate: { id: string } }
+    serviceId = data.serviceCreate.id
   }
 
   // Set environment variables
+  const environmentId = await getEnvironmentId()
   const prDbUrl = STAGING_DATABASE_URL.replace(/\/([^/?]+)(\?.*)?$/, `/${prDbName}$2`)
   const envVars: Record<string, string> = {
     DATABASE_URL: prDbUrl,
@@ -226,57 +260,66 @@ async function createRailwayService(): Promise<string> {
     LOG_LEVEL: "info",
   }
 
-  for (const [key, value] of Object.entries(envVars)) {
-    await $`railway variables set ${key}=${value} --service ${serviceName}`
-      .env({ RAILWAY_TOKEN, RAILWAY_PROJECT_ID })
-      .quiet()
-      .nothrow()
-  }
+  await railwayGql(`mutation {
+    variableCollectionUpsert(input: {
+      projectId: "${RAILWAY_PROJECT_ID}",
+      environmentId: "${environmentId}",
+      serviceId: "${serviceId}",
+      variables: ${JSON.stringify(envVars)}
+    })
+  }`)
 
-  console.log(`Railway service '${serviceName}' created (ID: ${serviceId})`)
+  console.log(`Railway service '${serviceName}' ready (ID: ${serviceId})`)
   return serviceId
 }
 
 async function deployRailwayService(): Promise<string> {
   console.log(`Deploying to Railway service '${serviceName}'...`)
 
-  const result = await $`railway up --service ${serviceName} --detach`
-    .env({ RAILWAY_TOKEN, RAILWAY_PROJECT_ID })
+  // Link the project so the CLI knows where to deploy
+  await $`railway link --project ${RAILWAY_PROJECT_ID} --environment production`
+    .env({ RAILWAY_TOKEN })
     .quiet()
     .nothrow()
+
+  // Use CLI for the actual deploy (uploads code) — this is the one command that needs CLI
+  const result = await $`railway up --service ${serviceName} --detach`.env({ RAILWAY_TOKEN }).quiet().nothrow()
 
   if (result.exitCode !== 0) {
     throw new Error(`Railway deploy failed: ${result.stderr.toString()}`)
   }
 
-  // Get the service URL
-  const urlResult = await $`railway domain --service ${serviceName} --json`
-    .env({ RAILWAY_TOKEN, RAILWAY_PROJECT_ID })
-    .quiet()
-    .nothrow()
+  // Get or create service domain via API
+  const services = await listServices()
+  const service = services.find((s) => s.name === serviceName)
+  if (!service) throw new Error("Service not found after deploy")
 
-  if (urlResult.exitCode !== 0) {
-    // Generate a domain if none exists
-    await $`railway domain --service ${serviceName}`.env({ RAILWAY_TOKEN, RAILWAY_PROJECT_ID }).quiet().nothrow()
+  const environmentId = await getEnvironmentId()
+  const domainData = (await railwayGql(`{
+    serviceInstance(serviceId: "${service.id}", environmentId: "${environmentId}") {
+      domains { serviceDomains { domain } }
+    }
+  }`)) as { serviceInstance: { domains: { serviceDomains: { domain: string }[] } } }
 
-    const retryResult = await $`railway domain --service ${serviceName} --json`
-      .env({ RAILWAY_TOKEN, RAILWAY_PROJECT_ID })
-      .quiet()
-      .nothrow()
+  const existingDomain = domainData.serviceInstance.domains.serviceDomains[0]?.domain
+  if (existingDomain) return `https://${existingDomain}`
 
-    return `https://${JSON.parse(retryResult.stdout.toString()).domain}`
-  }
-
-  return `https://${JSON.parse(urlResult.stdout.toString()).domain}`
+  // Create a service domain if none exists
+  const newDomain = (await railwayGql(`mutation {
+    serviceDomainCreate(input: { serviceId: "${service.id}", environmentId: "${environmentId}" }) { domain }
+  }`)) as { serviceDomainCreate: { domain: string } }
+  return `https://${newDomain.serviceDomainCreate.domain}`
 }
 
 async function deleteRailwayService(): Promise<void> {
-  if (!(await railwayServiceExists())) {
+  const services = await listServices()
+  const service = services.find((s) => s.name === serviceName)
+  if (!service) {
     console.log(`Railway service '${serviceName}' does not exist, skipping`)
     return
   }
   console.log(`Deleting Railway service '${serviceName}'...`)
-  await $`railway service delete ${serviceName} --yes`.env({ RAILWAY_TOKEN, RAILWAY_PROJECT_ID }).quiet().nothrow()
+  await railwayGql(`mutation { serviceDelete(id: "${service.id}") }`)
   console.log(`Deleted Railway service '${serviceName}'`)
 }
 
