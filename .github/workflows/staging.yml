@@ -32,8 +32,6 @@ jobs:
 
       - name: Build frontend
         run: bun run --cwd apps/frontend build
-        env:
-          VITE_API_BASE_URL: https://staging.threa.io
 
       - name: Deploy frontend to CF Pages
         run: bunx wrangler pages deploy apps/frontend/dist --project-name threa-staging --branch pr-${{ github.event.pull_request.number }}
