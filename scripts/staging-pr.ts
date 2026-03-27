@@ -199,7 +199,7 @@ async function createRailwayService(): Promise<string> {
     const services = JSON.parse(listResult.stdout.toString())
     serviceId = services.find((s: { name: string }) => s.name === serviceName)?.id
   } else {
-    const result = await $`railway service create ${serviceName} --json`
+    const result = await $`railway add --service ${serviceName} --json`
       .env({ RAILWAY_TOKEN, RAILWAY_PROJECT_ID })
       .quiet()
       .nothrow()
@@ -218,16 +218,11 @@ async function createRailwayService(): Promise<string> {
     DATABASE_URL: prDbUrl,
     PORT: "8080",
     NODE_ENV: "production",
-    USE_STUB_AUTH: "true",
     CONTROL_PLANE_URL: STAGING_CONTROL_PLANE_URL,
     INTERNAL_API_KEY: STAGING_INTERNAL_API_KEY,
     REGION: regionName,
     CORS_ALLOWED_ORIGINS: STAGING_CORS_ORIGINS,
-    WORKSPACE_CREATION_SKIP_INVITE: "true",
     FAST_SHUTDOWN: "true",
-    USE_STUB_AI: "true",
-    USE_STUB_COMPANION: "true",
-    USE_STUB_BOUNDARY_EXTRACTION: "true",
     LOG_LEVEL: "info",
   }
 
