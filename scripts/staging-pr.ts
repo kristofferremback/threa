@@ -122,7 +122,12 @@ async function cloneDatabase(sourceDb: string, targetDb: string): Promise<void> 
   const sourceUrl = STAGING_DATABASE_URL.replace(/\/([^/?]+)(\?.*)?$/, `/${sourceDb}$2`)
   const targetUrl = STAGING_DATABASE_URL.replace(/\/([^/?]+)(\?.*)?$/, `/${targetDb}$2`)
 
-  const result = await $`bash -o pipefail -c "pg_dump --clean --if-exists ${sourceUrl} | psql ${targetUrl}"`
+  // Use versioned pg_dump path if available (GH Actions installs PG 18 client alongside default PG 16)
+  const pgDump =
+    (await $`which /usr/lib/postgresql/18/bin/pg_dump`.quiet().nothrow()).exitCode === 0
+      ? "/usr/lib/postgresql/18/bin/pg_dump"
+      : "pg_dump"
+  const result = await $`bash -o pipefail -c "${pgDump} --clean --if-exists ${sourceUrl} | psql ${targetUrl}"`
     .quiet()
     .nothrow()
 
