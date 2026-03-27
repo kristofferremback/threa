@@ -23,6 +23,8 @@ interface Dependencies {
   shadowService: InvitationShadowService
   internalApiKey: string
   allowDevAuthRoutes: boolean
+  frontendUrl: string
+  allowedRedirectDomain: string
   rateLimits: RateLimitConfig
 }
 
@@ -41,7 +43,11 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   })
   const authLimit = createRateLimit({ name: "cp-auth", windowMs: 60_000, max: deps.rateLimits.authMax, key: ipKey })
 
-  const authHandlers = createControlPlaneAuthHandlers({ authService })
+  const authHandlers = createControlPlaneAuthHandlers({
+    authService,
+    frontendUrl: deps.frontendUrl,
+    allowedRedirectDomain: deps.allowedRedirectDomain,
+  })
   const workspace = createWorkspaceHandlers({ workspaceService, shadowService })
   const shadow = createInvitationShadowHandlers({ shadowService })
 

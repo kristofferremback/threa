@@ -10,6 +10,12 @@ interface Env {
   INTERNAL_API_KEY?: string
   /** When "true", resolve regions from KV before falling back to env var (staging only) */
   USE_KV_REGIONS?: string
+  /** CF Pages project name for frontend proxying (staging only, e.g. "threa-staging") */
+  PAGES_PROJECT?: string
+  /** The staging base domain (e.g. "staging.threa.io") — used to extract PR subdomain */
+  STAGING_DOMAIN?: string
+  /** Staging WS domain (e.g. "ws-staging.threa.io") — enables hostname-based WS routing */
+  WS_STAGING_DOMAIN?: string
 }
 
 interface RegionConfig {
@@ -72,6 +78,15 @@ export default {
       return new Response("OK", { status: 200 })
     }
 
+    // Staging WS routing: ws-staging.threa.io → proxy to region backend
+    // Region is passed as a ?region= query param (set by the config endpoint's wsUrl)
+    if (env.WS_STAGING_DOMAIN && url.hostname === env.WS_STAGING_DOMAIN) {
+      const regionName = url.searchParams.get("region") || Object.keys(regions)[0]
+      const config = regionName ? getRegionConfig(regionName, regions) : null
+      if (!config) return errorResponse(404, "Unknown staging region")
+      return proxyRequest(request, config.apiUrl)
+    }
+
     // Control-plane routes (auth, workspace list/create, regions, dev auth)
     if (env.CONTROL_PLANE_URL) {
       const method = request.method
@@ -114,8 +129,11 @@ export default {
       return routeWorkspaceRequest(request, devWorkspaceMatch[1], regions, env)
     }
 
-    // All meaningful non-workspace routes are handled above (control-plane, config).
-    // Anything else is an unrecognized path.
+    // Non-API routes: proxy to CF Pages frontend (staging only)
+    if (env.PAGES_PROJECT && env.STAGING_DOMAIN) {
+      return proxyToPages(request, env.PAGES_PROJECT, env.STAGING_DOMAIN)
+    }
+
     return errorResponse(404, "Not found")
   },
 }
@@ -163,7 +181,9 @@ async function handleConfigRequest(workspaceId: string, regions: RegionsMap, env
     return errorResponse(502, "Region not configured")
   }
 
-  return Response.json({ region, wsUrl: config.wsUrl })
+  // In staging, construct the wsUrl with region as a query param
+  const wsUrl = env.WS_STAGING_DOMAIN ? `https://${env.WS_STAGING_DOMAIN}?region=${region}` : config.wsUrl
+  return Response.json({ region, wsUrl })
 }
 
 async function routeWorkspaceRequest(
@@ -209,6 +229,42 @@ async function proxyRequest(request: Request, targetBaseUrl: string): Promise<Re
     headers,
     body: request.body,
     redirect: "manual",
+  })
+}
+
+/**
+ * Proxy non-API requests to the CF Pages frontend deployment.
+ * Maps hostnames to Pages URLs:
+ *   staging.threa.io        → threa-staging.pages.dev
+ *   pr-123.staging.threa.io → pr-123.threa-staging.pages.dev
+ */
+async function proxyToPages(request: Request, pagesProject: string, stagingDomain: string): Promise<Response> {
+  const url = new URL(request.url)
+  const hostname = url.hostname
+
+  // Extract PR subdomain: "pr-123.staging.threa.io" → "pr-123"
+  let pagesHost = `${pagesProject}.pages.dev`
+  if (hostname !== stagingDomain) {
+    const suffix = `.${stagingDomain}`
+    if (hostname.endsWith(suffix)) {
+      const subdomain = hostname.slice(0, -suffix.length)
+      pagesHost = `${subdomain}.${pagesProject}.pages.dev`
+    }
+  }
+
+  const pagesUrl = new URL(url.pathname + url.search, `https://${pagesHost}`)
+  const response = await fetch(pagesUrl.toString(), {
+    method: request.method,
+    headers: request.headers,
+    body: request.body,
+    redirect: "manual",
+  })
+
+  // Return the response with original headers (CF Pages handles caching/content-type)
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
   })
 }
 

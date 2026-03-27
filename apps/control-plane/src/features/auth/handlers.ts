@@ -14,15 +14,36 @@ const callbackSchema = z.object({
   state: z.string().optional(),
 })
 
-interface Dependencies {
-  authService: AuthService
+/**
+ * Validate that a forwarded host is an allowed staging subdomain.
+ * Prevents open redirect via X-Forwarded-Host spoofing.
+ */
+function isAllowedForwardedHost(host: string, allowedDomain: string): boolean {
+  return host === allowedDomain || host.endsWith(`.${allowedDomain}`)
 }
 
-export function createControlPlaneAuthHandlers({ authService }: Dependencies) {
+interface Dependencies {
+  authService: AuthService
+  /** Base URL of the frontend app (e.g. "https://threa-staging.pages.dev"). Empty string for same-origin. */
+  frontendUrl: string
+  /** Allowed staging domain for forwarded-host redirects (e.g. "staging.threa.io") */
+  allowedRedirectDomain: string
+}
+
+export function createControlPlaneAuthHandlers({ authService, frontendUrl, allowedRedirectDomain }: Dependencies) {
   return {
     async login(req: Request, res: Response) {
       const redirectTo = req.query.redirect_to as string | undefined
-      const url = authService.getAuthorizationUrl(redirectTo)
+
+      // Capture the forwarded host so the callback can redirect back to the correct origin.
+      // The workspace-router sets X-Forwarded-Host on all proxied requests.
+      const forwardedHost = req.headers["x-forwarded-host"] as string | undefined
+      let statePayload = redirectTo
+      if (forwardedHost && allowedRedirectDomain && isAllowedForwardedHost(forwardedHost, allowedRedirectDomain)) {
+        statePayload = `${forwardedHost}|${redirectTo || "/"}`
+      }
+
+      const url = authService.getAuthorizationUrl(statePayload)
       res.redirect(url)
     },
 
@@ -40,7 +61,23 @@ export function createControlPlaneAuthHandlers({ authService }: Dependencies) {
         throw new HttpError("Authentication failed", { status: 401, code: "AUTH_FAILED" })
       }
 
-      const redirectUrl = state ? decodeAndSanitizeRedirectState(state) : "/"
+      let redirectUrl: string
+      const decoded = state ? Buffer.from(state, "base64").toString("utf-8") : ""
+      const pipeIndex = decoded.indexOf("|")
+
+      if (pipeIndex !== -1) {
+        // State contains "host|path" — redirect to the original forwarded host
+        const host = decoded.substring(0, pipeIndex)
+        const path = decodeAndSanitizeRedirectState(Buffer.from(decoded.substring(pipeIndex + 1)).toString("base64"))
+        if (isAllowedForwardedHost(host, allowedRedirectDomain)) {
+          redirectUrl = `https://${host}${path}`
+        } else {
+          redirectUrl = frontendUrl ? `${frontendUrl}${path}` : path
+        }
+      } else {
+        const path = state ? decodeAndSanitizeRedirectState(state) : "/"
+        redirectUrl = frontendUrl ? `${frontendUrl}${path}` : path
+      }
 
       res.cookie(SESSION_COOKIE_NAME, result.sealedSession, SESSION_COOKIE_CONFIG)
       res.redirect(redirectUrl)
@@ -59,7 +96,12 @@ export function createControlPlaneAuthHandlers({ authService }: Dependencies) {
         }
       }
 
-      res.redirect("/")
+      // Redirect to the forwarded host if available, otherwise frontendUrl or "/"
+      const forwardedHost = req.headers["x-forwarded-host"] as string | undefined
+      if (forwardedHost && allowedRedirectDomain && isAllowedForwardedHost(forwardedHost, allowedRedirectDomain)) {
+        return res.redirect(`https://${forwardedHost}`)
+      }
+      res.redirect(frontendUrl || "/")
     },
 
     async me(req: Request, res: Response) {
