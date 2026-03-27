@@ -187,14 +187,14 @@ async function updateWorkspaceSlug(dbName: string, branchName: string): Promise<
 
 const RAILWAY_API = "https://backboard.railway.com/graphql/v2"
 
-async function railwayGql(query: string): Promise<unknown> {
+async function railwayGql(query: string, variables?: Record<string, unknown>): Promise<unknown> {
   const res = await fetch(RAILWAY_API, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${RAILWAY_TOKEN}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ query }),
+    body: JSON.stringify({ query, variables }),
   })
   const json = (await res.json()) as { data?: unknown; errors?: { message: string }[] }
   if (json.errors?.length) {
@@ -260,14 +260,19 @@ async function createRailwayService(): Promise<string> {
     LOG_LEVEL: "info",
   }
 
-  await railwayGql(`mutation {
-    variableCollectionUpsert(input: {
-      projectId: "${RAILWAY_PROJECT_ID}",
-      environmentId: "${environmentId}",
-      serviceId: "${serviceId}",
-      variables: ${JSON.stringify(envVars)}
-    })
-  }`)
+  await railwayGql(
+    `mutation($input: VariableCollectionUpsertInput!) {
+      variableCollectionUpsert(input: $input)
+    }`,
+    {
+      input: {
+        projectId: RAILWAY_PROJECT_ID,
+        environmentId,
+        serviceId,
+        variables: envVars,
+      },
+    }
+  )
 
   console.log(`Railway service '${serviceName}' ready (ID: ${serviceId})`)
   return serviceId
