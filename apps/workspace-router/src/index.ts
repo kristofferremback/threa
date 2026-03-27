@@ -232,23 +232,25 @@ async function proxyRequest(request: Request, targetBaseUrl: string): Promise<Re
   })
 }
 
+/** Pattern for flat PR subdomains: pr-123-staging.threa.io → "pr-123" */
+const PR_STAGING_RE = /^pr-(\d+)-staging\.threa\.io$/
+
 /**
  * Proxy non-API requests to the CF Pages frontend deployment.
  * Maps hostnames to Pages URLs:
- *   staging.threa.io        → threa-staging.pages.dev
- *   pr-123.staging.threa.io → pr-123.threa-staging.pages.dev
+ *   staging.threa.io         → threa-staging.pages.dev
+ *   pr-123-staging.threa.io  → pr-123.threa-staging.pages.dev
  */
 async function proxyToPages(request: Request, pagesProject: string, stagingDomain: string): Promise<Response> {
   const url = new URL(request.url)
   const hostname = url.hostname
 
-  // Extract PR subdomain: "pr-123.staging.threa.io" → "pr-123"
   let pagesHost = `${pagesProject}.pages.dev`
   if (hostname !== stagingDomain) {
-    const suffix = `.${stagingDomain}`
-    if (hostname.endsWith(suffix)) {
-      const subdomain = hostname.slice(0, -suffix.length)
-      pagesHost = `${subdomain}.${pagesProject}.pages.dev`
+    // Flat PR subdomain: pr-123-staging.threa.io → pr-123.threa-staging.pages.dev
+    const prMatch = hostname.match(PR_STAGING_RE)
+    if (prMatch) {
+      pagesHost = `pr-${prMatch[1]}.${pagesProject}.pages.dev`
     }
   }
 

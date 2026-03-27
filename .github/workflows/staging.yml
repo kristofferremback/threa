@@ -61,21 +61,22 @@ jobs:
           STAGING_KV_NAMESPACE_ID: ${{ secrets.STAGING_KV_NAMESPACE_ID }}
           STAGING_INTERNAL_API_KEY: ${{ secrets.STAGING_INTERNAL_API_KEY }}
           STAGING_CONTROL_PLANE_URL: ${{ secrets.STAGING_CONTROL_PLANE_URL }}
-          STAGING_CORS_ORIGINS: "https://pr-${{ github.event.pull_request.number }}.threa-staging.pages.dev,https://staging.threa.io"
+          STAGING_CORS_ORIGINS: "https://pr-${{ github.event.pull_request.number }}-staging.threa.io,https://staging.threa.io"
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
 
       - name: Comment PR with staging URL
         uses: actions/github-script@v7
         with:
           script: |
             const prNumber = context.payload.pull_request.number;
-            const frontendUrl = `https://pr-${prNumber}.threa-staging.pages.dev`;
+            const frontendUrl = `https://pr-${prNumber}-staging.threa.io`;
             const body = [
               '## Staging Environment',
               '',
               `**Frontend:** ${frontendUrl}`,
               `**Region:** pr-${prNumber}`,
               '',
-              'Open the frontend URL on your phone to test. Stub auth is enabled — no login required.',
+              'Open the frontend URL on your phone to test. Login via WorkOS.',
               '',
               '_This environment will be torn down when the PR is closed or the `staging` label is removed._',
             ].join('\n');
@@ -129,9 +130,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client-18
 
-      - name: Install Railway CLI
-        run: curl -fsSL https://raw.githubusercontent.com/railwayapp/cli/master/install.sh | sh
-
       - name: Teardown PR environment
         run: bun scripts/staging-pr.ts --action=teardown --pr=${{ github.event.pull_request.number }}
         env:
@@ -143,3 +141,4 @@ jobs:
           STAGING_KV_NAMESPACE_ID: ${{ secrets.STAGING_KV_NAMESPACE_ID }}
           STAGING_INTERNAL_API_KEY: ${{ secrets.STAGING_INTERNAL_API_KEY }}
           STAGING_CONTROL_PLANE_URL: ${{ secrets.STAGING_CONTROL_PLANE_URL }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}

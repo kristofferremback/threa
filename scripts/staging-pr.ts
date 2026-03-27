@@ -68,12 +68,16 @@ const CLOUDFLARE_ACCOUNT_ID = requireEnv("CLOUDFLARE_ACCOUNT_ID")
 const STAGING_KV_NAMESPACE_ID = requireEnv("STAGING_KV_NAMESPACE_ID")
 const STAGING_INTERNAL_API_KEY = requireEnv("STAGING_INTERNAL_API_KEY")
 const STAGING_CONTROL_PLANE_URL = requireEnv("STAGING_CONTROL_PLANE_URL")
+const CLOUDFLARE_ZONE_ID = requireEnv("CLOUDFLARE_ZONE_ID")
+const STAGING_WORKER_NAME = process.env.STAGING_WORKER_NAME ?? "workspace-router-staging"
 const STAGING_CORS_ORIGINS = process.env.STAGING_CORS_ORIGINS ?? ""
 
 const prDbName = `pr_${prNumber}`
 const prCpDbName = `pr_${prNumber}_cp`
 const regionName = `pr-${prNumber}`
 const serviceName = `pr-${prNumber}-backend`
+/** Flat subdomain: pr-228-staging.threa.io (covered by *.threa.io cert) */
+const prHostname = `pr-${prNumber}-staging.threa.io`
 
 // ---------------------------------------------------------------------------
 // Database helpers (uses psql via STAGING_DATABASE_URL)
@@ -407,6 +411,97 @@ async function unregisterWorkspaceRegion(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Cloudflare DNS + Worker Route helpers (per-PR subdomain)
+// ---------------------------------------------------------------------------
+
+const CF_ZONE_BASE = `https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}`
+
+async function cfApi(
+  path: string,
+  method: string,
+  body?: unknown
+): Promise<{ success: boolean; result?: Record<string, unknown>; errors?: { message: string }[] }> {
+  const res = await fetch(`${CF_ZONE_BASE}${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${CLOUDFLARE_API_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  })
+  return res.json() as Promise<{ success: boolean; result?: Record<string, unknown>; errors?: { message: string }[] }>
+}
+
+async function findDnsRecord(name: string): Promise<string | null> {
+  const res = await fetch(`${CF_ZONE_BASE}/dns_records?name=${name}`, {
+    headers: { Authorization: `Bearer ${CLOUDFLARE_API_TOKEN}` },
+  })
+  const data = (await res.json()) as { result: { id: string }[] }
+  return data.result?.[0]?.id ?? null
+}
+
+async function findWorkerRoute(pattern: string): Promise<string | null> {
+  const res = await fetch(`${CF_ZONE_BASE}/workers/routes`, {
+    headers: { Authorization: `Bearer ${CLOUDFLARE_API_TOKEN}` },
+  })
+  const data = (await res.json()) as { result: { id: string; pattern: string }[] }
+  return data.result?.find((r) => r.pattern === pattern)?.id ?? null
+}
+
+async function createPrDnsAndRoute(): Promise<void> {
+  // Create proxied AAAA record for pr-N-staging.threa.io
+  const existingDns = await findDnsRecord(prHostname)
+  if (!existingDns) {
+    const dns = await cfApi("/dns_records", "POST", {
+      type: "AAAA",
+      name: `pr-${prNumber}-staging`,
+      content: "100::",
+      proxied: true,
+      comment: `Staging PR #${prNumber}`,
+    })
+    if (!dns.success) {
+      throw new Error(`Failed to create DNS record: ${dns.errors?.[0]?.message}`)
+    }
+    console.log(`Created DNS record for ${prHostname}`)
+  } else {
+    console.log(`DNS record for ${prHostname} already exists`)
+  }
+
+  // Create worker route
+  const routePattern = `${prHostname}/*`
+  const existingRoute = await findWorkerRoute(routePattern)
+  if (!existingRoute) {
+    const route = await cfApi("/workers/routes", "POST", {
+      pattern: routePattern,
+      script: STAGING_WORKER_NAME,
+    })
+    if (!route.success) {
+      throw new Error(`Failed to create worker route: ${route.errors?.[0]?.message}`)
+    }
+    console.log(`Created worker route ${routePattern} → ${STAGING_WORKER_NAME}`)
+  } else {
+    console.log(`Worker route for ${prHostname} already exists`)
+  }
+}
+
+async function deletePrDnsAndRoute(): Promise<void> {
+  // Delete worker route
+  const routePattern = `${prHostname}/*`
+  const routeId = await findWorkerRoute(routePattern)
+  if (routeId) {
+    await cfApi(`/workers/routes/${routeId}`, "DELETE")
+    console.log(`Deleted worker route for ${prHostname}`)
+  }
+
+  // Delete DNS record
+  const dnsId = await findDnsRecord(prHostname)
+  if (dnsId) {
+    await cfApi(`/dns_records/${dnsId}`, "DELETE")
+    console.log(`Deleted DNS record for ${prHostname}`)
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Actions
 // ---------------------------------------------------------------------------
 
@@ -437,7 +532,11 @@ async function deploy(): Promise<void> {
     await registerWorkspaceRegion(prDbName)
   }
 
+  // 4. Create DNS record + worker route for pr-N-staging.threa.io
+  await createPrDnsAndRoute()
+
   console.log(`\n=== Staging environment deployed ===`)
+  console.log(`Frontend: https://${prHostname}`)
   console.log(`Backend: ${backendUrl}`)
   console.log(`Region: ${regionName}`)
   console.log(`Database: ${prDbName}`)
@@ -450,10 +549,13 @@ async function teardown(): Promise<void> {
   await unregisterWorkspaceRegion()
   await unregisterRegion()
 
-  // 2. Delete Railway service
+  // 2. Delete DNS record + worker route
+  await deletePrDnsAndRoute()
+
+  // 3. Delete Railway service
   await deleteRailwayService()
 
-  // 3. Drop databases
+  // 4. Drop databases
   await dropDatabase(prDbName)
   await dropDatabase(prCpDbName)
 
