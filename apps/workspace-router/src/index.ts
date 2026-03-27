@@ -81,8 +81,9 @@ export default {
     // Staging WS routing: ws-staging.threa.io → proxy to region backend
     // Region is passed as a ?region= query param (set by the config endpoint's wsUrl)
     if (env.WS_STAGING_DOMAIN && url.hostname === env.WS_STAGING_DOMAIN) {
-      const regionName = url.searchParams.get("region") || Object.keys(regions)[0]
-      const config = regionName ? getRegionConfig(regionName, regions) : null
+      const regionName = url.searchParams.get("region")
+      if (!regionName) return errorResponse(400, "Missing region parameter")
+      const config = getRegionConfig(regionName, regions)
       if (!config) return errorResponse(404, "Unknown staging region")
       return proxyRequest(request, config.apiUrl)
     }

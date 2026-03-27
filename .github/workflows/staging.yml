@@ -49,7 +49,7 @@ jobs:
           sudo apt-get install -y postgresql-client-18
 
       - name: Deploy PR backend + database
-        run: bun scripts/staging-pr.ts --action=deploy --pr=${{ github.event.pull_request.number }} --branch=${{ github.head_ref }}
+        run: bun scripts/staging-pr.ts --action=deploy --pr=${{ github.event.pull_request.number }} --branch="$BRANCH_NAME"
         env:
           STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
@@ -61,6 +61,7 @@ jobs:
           STAGING_CONTROL_PLANE_URL: ${{ secrets.STAGING_CONTROL_PLANE_URL }}
           STAGING_CORS_ORIGINS: "https://pr-${{ github.event.pull_request.number }}-staging.threa.io,https://staging.threa.io"
           CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          BRANCH_NAME: ${{ github.head_ref }}
 
       - name: Comment PR with staging URL
         uses: actions/github-script@v7
