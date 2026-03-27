@@ -42,7 +42,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
       - name: Install Railway CLI
-        run: bash <(curl -fsSL cli.new)
+        run: npm install -g @railway/cli
 
       - name: Deploy PR backend + database
         run: bun scripts/staging-pr.ts --action=deploy --pr=${{ github.event.pull_request.number }} --branch=${{ github.head_ref }}
@@ -115,7 +115,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Install Railway CLI
-        run: bash <(curl -fsSL cli.new)
+        run: npm install -g @railway/cli
 
       - name: Teardown PR environment
         run: bun scripts/staging-pr.ts --action=teardown --pr=${{ github.event.pull_request.number }}
