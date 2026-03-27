@@ -50,9 +50,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client-18
 
-      - name: Install Railway CLI
-        run: curl -fsSL https://raw.githubusercontent.com/railwayapp/cli/master/install.sh | sh
-
       - name: Deploy PR backend + database
         run: bun scripts/staging-pr.ts --action=deploy --pr=${{ github.event.pull_request.number }} --branch=${{ github.head_ref }}
         env:

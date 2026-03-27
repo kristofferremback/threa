@@ -281,25 +281,25 @@ async function createRailwayService(): Promise<string> {
 async function deployRailwayService(): Promise<string> {
   console.log(`Deploying to Railway service '${serviceName}'...`)
 
-  // Link the project so the CLI knows where to deploy
-  await $`railway link --project ${RAILWAY_PROJECT_ID} --environment production`
-    .env({ RAILWAY_TOKEN })
-    .quiet()
-    .nothrow()
-
-  // Use CLI for the actual deploy (uploads code) — this is the one command that needs CLI
-  const result = await $`railway up --service ${serviceName} --detach`.env({ RAILWAY_TOKEN }).quiet().nothrow()
-
-  if (result.exitCode !== 0) {
-    throw new Error(`Railway deploy failed: ${result.stderr.toString()}`)
-  }
-
-  // Get or create service domain via API
   const services = await listServices()
   const service = services.find((s) => s.name === serviceName)
-  if (!service) throw new Error("Service not found after deploy")
+  if (!service) throw new Error("Service not found")
 
   const environmentId = await getEnvironmentId()
+
+  // Connect service to the repo + branch (idempotent — updates if already connected)
+  await railwayGql(`mutation {
+    serviceConnect(id: "${service.id}", input: { repo: "kristofferremback/threa", branch: "${branch}" })
+  }`)
+
+  // Trigger deploy from latest commit on the branch
+  await railwayGql(`mutation {
+    serviceInstanceDeploy(serviceId: "${service.id}", environmentId: "${environmentId}")
+  }`)
+
+  console.log("Deploy triggered — Railway will build from the branch")
+
+  // Get or create service domain
   const domainData = (await railwayGql(`{
     serviceInstance(serviceId: "${service.id}", environmentId: "${environmentId}") {
       domains { serviceDomains { domain } }
