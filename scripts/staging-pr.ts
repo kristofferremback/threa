@@ -265,18 +265,26 @@ async function createRailwayService(): Promise<string> {
     )
   }`)
 
-  // Set environment variables
+  // Copy env vars from the main staging backend, then override PR-specific ones.
+  // This ensures new vars (API keys, feature flags) propagate automatically.
+  const mainBackend = (await listServices()).find((s) => s.name === "backend")
+  let baseEnvVars: Record<string, string> = {}
+  if (mainBackend) {
+    baseEnvVars = (await railwayGql(`{
+      variables(projectId: "${RAILWAY_PROJECT_ID}", environmentId: "${environmentId}", serviceId: "${mainBackend.id}")
+    }`)) as Record<string, string>
+    // The query returns { variables: { ... } }, extract it
+    baseEnvVars = (baseEnvVars as unknown as { variables: Record<string, string> }).variables ?? {}
+  }
+
   const prDbUrl = STAGING_DATABASE_URL.replace(/\/([^/?]+)(\?.*)?$/, `/${prDbName}$2`)
   const envVars: Record<string, string> = {
+    ...baseEnvVars,
+    // PR-specific overrides
     DATABASE_URL: prDbUrl,
-    PORT: "8080",
-    NODE_ENV: "production",
-    CONTROL_PLANE_URL: STAGING_CONTROL_PLANE_URL,
-    INTERNAL_API_KEY: STAGING_INTERNAL_API_KEY,
     REGION: regionName,
     CORS_ALLOWED_ORIGINS: STAGING_CORS_ORIGINS,
     FAST_SHUTDOWN: "true",
-    LOG_LEVEL: "info",
   }
 
   await railwayGql(
