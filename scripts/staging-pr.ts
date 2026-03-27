@@ -249,8 +249,23 @@ async function createRailwayService(): Promise<string> {
     serviceId = data.serviceCreate.id
   }
 
-  // Set environment variables
+  // Configure service instance to use Dockerfile (same as main backend)
   const environmentId = await getEnvironmentId()
+  await railwayGql(`mutation {
+    serviceInstanceUpdate(
+      serviceId: "${serviceId}",
+      environmentId: "${environmentId}",
+      input: {
+        dockerfilePath: "Dockerfile.backend",
+        healthcheckPath: "/health",
+        restartPolicyType: ON_FAILURE,
+        restartPolicyMaxRetries: 5,
+        watchPatterns: ["apps/backend/**", "packages/**", "Dockerfile.backend", "bun.lock"]
+      }
+    )
+  }`)
+
+  // Set environment variables
   const prDbUrl = STAGING_DATABASE_URL.replace(/\/([^/?]+)(\?.*)?$/, `/${prDbName}$2`)
   const envVars: Record<string, string> = {
     DATABASE_URL: prDbUrl,
