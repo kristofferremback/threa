@@ -87,6 +87,47 @@ export default {
       return proxyRequest(request, config.apiUrl)
     }
 
+    // PR staging: pr-N-staging.threa.io — hostname determines the region.
+    // All API routes (including workspace-scoped) go to the PR backend directly,
+    // bypassing KV workspace→region lookup (the cloned workspace has the same ID).
+    const prMatch = url.hostname.match(PR_STAGING_RE)
+    const prRegion = prMatch ? `pr-${prMatch[1]}` : null
+    const prBackend = prRegion ? getRegionConfig(prRegion, regions) : null
+
+    if (prBackend) {
+      // Control-plane routes still go to the shared CP
+      if (env.CONTROL_PLANE_URL) {
+        const method = request.method
+        if (
+          AUTH_ROUTE_RE.test(path) ||
+          (WORKSPACES_COLLECTION_RE.test(path) && (method === "GET" || method === "POST")) ||
+          REGIONS_ROUTE_RE.test(path) ||
+          DEV_AUTH_ROUTE_RE.test(path) ||
+          (INVITATION_ACCEPT_RE.test(path) && method === "POST")
+        ) {
+          try {
+            return await proxyRequest(request, env.CONTROL_PLANE_URL)
+          } catch {
+            return errorResponse(502, "Control plane unavailable")
+          }
+        }
+      }
+
+      // Config endpoint: return the PR region's WS URL
+      const configMatch2 = path.match(CONFIG_ROUTE_RE)
+      if (configMatch2 && request.method === "GET") {
+        const wsUrl = env.WS_STAGING_DOMAIN ? `https://${env.WS_STAGING_DOMAIN}?region=${prRegion}` : prBackend.wsUrl
+        return Response.json({ region: prRegion, wsUrl })
+      }
+
+      // All other API routes go to the PR backend
+      if (path.startsWith("/api/")) {
+        return proxyRequest(request, prBackend.apiUrl)
+      }
+    }
+
+    // --- Standard routing (staging.threa.io and production) ---
+
     // Control-plane routes (auth, workspace list/create, regions, dev auth)
     if (env.CONTROL_PLANE_URL) {
       const method = request.method
