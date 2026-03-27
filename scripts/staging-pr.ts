@@ -131,7 +131,10 @@ async function cloneDatabase(sourceDb: string, targetDb: string): Promise<void> 
     (await $`which /usr/lib/postgresql/18/bin/pg_dump`.quiet().nothrow()).exitCode === 0
       ? "/usr/lib/postgresql/18/bin/pg_dump"
       : "pg_dump"
-  const result = await $`bash -o pipefail -c "${pgDump} --clean --if-exists ${sourceUrl} | psql ${targetUrl}"`
+  // Use Bun shell .pipe() to avoid bash -c string interpolation, which breaks on
+  // passwords containing shell-special characters ($, !, quotes, etc.)
+  const result = await $`${pgDump} --clean --if-exists ${sourceUrl}`
+    .pipe($`psql ${targetUrl}`)
     .quiet()
     .nothrow()
 
@@ -315,9 +318,12 @@ async function deployRailwayService(): Promise<string> {
   const environmentId = await getEnvironmentId()
 
   // Connect service to the repo + branch (idempotent — updates if already connected)
-  await railwayGql(`mutation {
-    serviceConnect(id: "${service.id}", input: { repo: "kristofferremback/threa", branch: "${branch}" }) { id }
-  }`)
+  await railwayGql(
+    `mutation($id: String!, $input: ServiceConnectInput!) {
+      serviceConnect(id: $id, input: $input) { id }
+    }`,
+    { id: service.id, input: { repo: "kristofferremback/threa", branch } }
+  )
 
   // Trigger deploy from latest commit on the branch
   await railwayGql(`mutation {
@@ -381,12 +387,24 @@ async function kvPut(key: string, value: string): Promise<void> {
 }
 
 async function kvDelete(key: string): Promise<void> {
-  await fetch(`${CF_KV_BASE}/values/${encodeURIComponent(key)}`, {
+  const res = await fetch(`${CF_KV_BASE}/values/${encodeURIComponent(key)}`, {
     method: "DELETE",
     headers: { Authorization: `Bearer ${CLOUDFLARE_API_TOKEN}` },
   })
+  if (!res.ok) {
+    throw new Error(`KV delete failed for key '${key}': ${await res.text()}`)
+  }
 }
 
+/**
+ * Register this PR's region in the shared KV regions config.
+ *
+ * WARNING: read-modify-write race condition. If two PR deploys run concurrently,
+ * one write can clobber the other's region entry. This is acceptable for now
+ * because staging PR deploys are infrequent and the lost region is re-registered
+ * on the next push. A proper fix would use KV metadata + compare-and-swap or a
+ * mutex (e.g. Cloudflare Durable Object lock).
+ */
 async function registerRegion(backendUrl: string): Promise<void> {
   // Read current regions config from KV
   const existing = await kvGet("__regions_config__")

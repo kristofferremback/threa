@@ -90,7 +90,8 @@ export default {
     // PR staging: pr-N-staging.threa.io — hostname determines the region.
     // All API routes (including workspace-scoped) go to the PR backend directly,
     // bypassing KV workspace→region lookup (the cloned workspace has the same ID).
-    const prMatch = url.hostname.match(PR_STAGING_RE)
+    const prStagingRe = buildPrStagingRe(env.STAGING_DOMAIN)
+    const prMatch = prStagingRe ? url.hostname.match(prStagingRe) : null
     const prRegion = prMatch ? `pr-${prMatch[1]}` : null
     const prBackend = prRegion ? getRegionConfig(prRegion, regions) : null
 
@@ -273,8 +274,18 @@ async function proxyRequest(request: Request, targetBaseUrl: string): Promise<Re
   })
 }
 
-/** Pattern for flat PR subdomains: pr-123-staging.threa.io → "pr-123" */
-const PR_STAGING_RE = /^pr-(\d+)-staging\.threa\.io$/
+/**
+ * Build a regex for flat PR subdomains from the STAGING_DOMAIN env var.
+ * e.g. staging.threa.io → /^pr-(\d+)-staging\.threa\.io$/
+ * Returns null when STAGING_DOMAIN is not set (production).
+ */
+function buildPrStagingRe(stagingDomain: string | undefined): RegExp | null {
+  if (!stagingDomain) return null
+  // staging.threa.io → pr-(\d+)-staging.threa.io
+  // Drop the leading subdomain label ("staging") and keep the base domain
+  const escapedDomain = stagingDomain.replace(/\./g, "\\.")
+  return new RegExp(`^pr-(\\d+)-${escapedDomain}$`)
+}
 
 /**
  * Proxy non-API requests to the CF Pages frontend deployment.
@@ -289,7 +300,8 @@ async function proxyToPages(request: Request, pagesProject: string, stagingDomai
   let pagesHost = `${pagesProject}.pages.dev`
   if (hostname !== stagingDomain) {
     // Flat PR subdomain: pr-123-staging.threa.io → pr-123.threa-staging.pages.dev
-    const prMatch = hostname.match(PR_STAGING_RE)
+    const prRe = buildPrStagingRe(stagingDomain)
+    const prMatch = prRe ? hostname.match(prRe) : null
     if (prMatch) {
       pagesHost = `pr-${prMatch[1]}.${pagesProject}.pages.dev`
     }
