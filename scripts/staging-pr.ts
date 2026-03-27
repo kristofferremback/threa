@@ -370,13 +370,19 @@ async function unregisterWorkspaceRegion(): Promise<void> {
 async function deploy(): Promise<void> {
   console.log(`\n=== Deploying staging environment for PR #${prNumber} (branch: ${branch}) ===\n`)
 
-  // 1. Create and clone databases
-  await createDatabase(prDbName)
-  await cloneDatabase("staging_main", prDbName)
-  await updateWorkspaceSlug(prDbName, branch!)
+  // 1. Create and clone databases (only on first deploy — skip if DBs already exist)
+  const isFirstDeploy = !(await databaseExists(prDbName))
 
-  await createDatabase(prCpDbName)
-  await cloneDatabase("staging_main_cp", prCpDbName)
+  if (isFirstDeploy) {
+    await createDatabase(prDbName)
+    await cloneDatabase("staging_main", prDbName)
+    await updateWorkspaceSlug(prDbName, branch!)
+
+    await createDatabase(prCpDbName)
+    await cloneDatabase("staging_main_cp", prCpDbName)
+  } else {
+    console.log(`Databases already exist — skipping clone (migrations run on backend startup)`)
+  }
 
   // 2. Create and deploy Railway service
   await createRailwayService()
@@ -384,7 +390,9 @@ async function deploy(): Promise<void> {
 
   // 3. Register in Cloudflare KV
   await registerRegion(backendUrl)
-  await registerWorkspaceRegion(prDbName)
+  if (isFirstDeploy) {
+    await registerWorkspaceRegion(prDbName)
+  }
 
   console.log(`\n=== Staging environment deployed ===`)
   console.log(`Backend: ${backendUrl}`)
