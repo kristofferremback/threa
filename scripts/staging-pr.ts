@@ -289,7 +289,7 @@ async function deployRailwayService(): Promise<string> {
 
   // Connect service to the repo + branch (idempotent — updates if already connected)
   await railwayGql(`mutation {
-    serviceConnect(id: "${service.id}", input: { repo: "kristofferremback/threa", branch: "${branch}" })
+    serviceConnect(id: "${service.id}", input: { repo: "kristofferremback/threa", branch: "${branch}" }) { id }
   }`)
 
   // Trigger deploy from latest commit on the branch
