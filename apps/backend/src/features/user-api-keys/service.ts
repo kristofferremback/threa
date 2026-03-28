@@ -1,5 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from "crypto"
 import type { Pool } from "pg"
+import { withTransaction, sql } from "../../db"
 import { UserApiKeyRepository, type UserApiKeyRow } from "./repository"
 import { userApiKeyId } from "../../lib/id"
 import { HttpError } from "../../lib/errors"
@@ -54,29 +55,38 @@ export class UserApiKeyService {
       throw new HttpError("At least one scope is required", { status: 400, code: "INVALID_SCOPE" })
     }
 
-    // Enforce per-user key limit
-    const existing = await UserApiKeyRepository.listByUser(this.pool, params.workspaceId, params.userId)
-    const activeCount = existing.filter((k) => !k.revokedAt).length
-    if (activeCount >= MAX_ACTIVE_KEYS_PER_USER) {
-      throw new HttpError(`Maximum of ${MAX_ACTIVE_KEYS_PER_USER} active API keys per user`, {
-        status: 400,
-        code: "KEY_LIMIT_REACHED",
-      })
-    }
-
     const value = generateKeyValue()
     const keyHash = hashKey(value)
     const keyPrefix = value.slice(KEY_PREFIX.length, KEY_PREFIX.length + STORED_PREFIX_LENGTH)
 
-    const row = await UserApiKeyRepository.insert(this.pool, {
-      id: userApiKeyId(),
-      workspaceId: params.workspaceId,
-      userId: params.userId,
-      name: params.name,
-      keyHash,
-      keyPrefix,
-      scopes: params.scopes,
-      expiresAt: params.expiresAt,
+    // Atomic count-check + insert in a transaction with FOR UPDATE to prevent
+    // concurrent creates from exceeding the key limit (INV-20).
+    const row = await withTransaction(this.pool, async (client) => {
+      const { rows } = await client.query<{ cnt: string }>(sql`
+        SELECT COUNT(*) AS cnt
+        FROM user_api_keys
+        WHERE workspace_id = ${params.workspaceId}
+          AND user_id = ${params.userId}
+          AND revoked_at IS NULL
+        FOR UPDATE
+      `)
+      if (Number(rows[0].cnt) >= MAX_ACTIVE_KEYS_PER_USER) {
+        throw new HttpError(`Maximum of ${MAX_ACTIVE_KEYS_PER_USER} active API keys per user`, {
+          status: 400,
+          code: "KEY_LIMIT_REACHED",
+        })
+      }
+
+      return UserApiKeyRepository.insert(client, {
+        id: userApiKeyId(),
+        workspaceId: params.workspaceId,
+        userId: params.userId,
+        name: params.name,
+        keyHash,
+        keyPrefix,
+        scopes: params.scopes,
+        expiresAt: params.expiresAt,
+      })
     })
 
     return { row, value }
