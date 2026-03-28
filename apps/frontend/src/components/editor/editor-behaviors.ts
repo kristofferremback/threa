@@ -135,11 +135,9 @@ function createCodeBoundaryWidget(boundary: CodeBoundaryDecorationState) {
     spacer.setAttribute("data-inline-code-mode", boundary.mode)
     spacer.setAttribute("aria-hidden", "true")
     spacer.contentEditable = "false"
-    spacer.textContent = "\u200b"
-    spacer.style.color = "transparent"
     spacer.style.display = "inline-block"
     spacer.style.fontSize = "inherit"
-    spacer.style.lineHeight = "inherit"
+    spacer.style.height = "1em"
     spacer.style.width = boundaryWidth
     spacer.style.marginLeft = `-${boundaryOffset}`
     spacer.style.marginRight = `-${boundaryOffset}`
