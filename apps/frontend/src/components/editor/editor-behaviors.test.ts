@@ -174,6 +174,9 @@ describe("editor-behaviors indentation commands", () => {
     const marginLeft = parseCh(widget?.style.marginLeft ?? "")
     const marginRight = parseCh(widget?.style.marginRight ?? "")
 
+    expect(widget?.textContent).toBe("\u200b")
+    expect(widget?.style.fontSize).toBe("inherit")
+    expect(widget?.style.lineHeight).toBe("inherit")
     expect(width + marginLeft + marginRight).toBeCloseTo(0, 5)
     editor.destroy()
   })
