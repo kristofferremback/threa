@@ -17,6 +17,7 @@ function makeMessage(sequence: bigint, content: string): Message {
     replyCount: 0,
     reactions: {},
     clientMessageId: null,
+    sentVia: null,
     editedAt: null,
     deletedAt: null,
     createdAt: new Date("2026-01-01T00:00:00.000Z"),

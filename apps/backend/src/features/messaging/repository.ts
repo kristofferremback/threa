@@ -13,6 +13,7 @@ interface MessageRow {
   content_markdown: string
   reply_count: number
   client_message_id: string | null
+  sent_via: string | null
   edited_at: Date | null
   deleted_at: Date | null
   created_at: Date
@@ -35,6 +36,7 @@ export interface Message {
   contentMarkdown: string
   replyCount: number
   clientMessageId: string | null
+  sentVia: string | null
   reactions: Record<string, string[]>
   editedAt: Date | null
   deletedAt: Date | null
@@ -50,6 +52,7 @@ export interface InsertMessageParams {
   contentJson: JSONContent
   contentMarkdown: string
   clientMessageId?: string
+  sentVia?: string
 }
 
 function mapRowToMessage(row: MessageRow, reactions: Record<string, string[]> = {}): Message {
@@ -63,6 +66,7 @@ function mapRowToMessage(row: MessageRow, reactions: Record<string, string[]> = 
     contentMarkdown: row.content_markdown,
     replyCount: row.reply_count,
     clientMessageId: row.client_message_id,
+    sentVia: row.sent_via,
     reactions,
     editedAt: row.edited_at,
     deletedAt: row.deleted_at,
@@ -104,7 +108,7 @@ function aggregateReactionsByMessage(rows: ReactionRow[]): Map<string, Record<st
 
 const SELECT_FIELDS = `
   id, stream_id, sequence, author_id, author_type,
-  content_json, content_markdown, reply_count, client_message_id,
+  content_json, content_markdown, reply_count, client_message_id, sent_via,
   edited_at, deleted_at, created_at
 `
 
@@ -222,6 +226,7 @@ export const MessageRepository = {
 
   async insert(db: Querier, params: InsertMessageParams): Promise<Message> {
     const clientMessageId = params.clientMessageId ?? null
+    const sentVia = params.sentVia ?? null
 
     // Use ON CONFLICT DO NOTHING when a clientMessageId is provided so that
     // concurrent retries don't throw a unique-constraint error (INV-20).
@@ -230,7 +235,7 @@ export const MessageRepository = {
       : ""
 
     const result = await db.query<MessageRow>(sql`
-      INSERT INTO messages (id, stream_id, sequence, author_id, author_type, content_json, content_markdown, client_message_id)
+      INSERT INTO messages (id, stream_id, sequence, author_id, author_type, content_json, content_markdown, client_message_id, sent_via)
       VALUES (
         ${params.id},
         ${params.streamId},
@@ -239,7 +244,8 @@ export const MessageRepository = {
         ${params.authorType},
         ${JSON.stringify(params.contentJson)},
         ${params.contentMarkdown},
-        ${clientMessageId}
+        ${clientMessageId},
+        ${sentVia}
       )
       ${sql.raw(onConflict)}
       RETURNING ${sql.raw(SELECT_FIELDS)}

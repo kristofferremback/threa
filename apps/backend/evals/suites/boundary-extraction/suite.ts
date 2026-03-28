@@ -67,6 +67,7 @@ function toMessage(evalMsg: EvalMessage, streamId: string, sequence: number = 1)
     replyCount: 0,
     reactions: {},
     clientMessageId: null,
+    sentVia: null,
     editedAt: null,
     deletedAt: null,
     createdAt: new Date(),

@@ -49,6 +49,7 @@ const messageSchema = z.object({
   replyCount: z.number().int(),
   threadStreamId: z.string().optional(),
   clientMessageId: z.string().optional(),
+  sentVia: z.string().optional().describe("Present when message was sent via API on behalf of a user"),
   editedAt: z.string().datetime().optional(),
   createdAt: z.string().datetime(),
 })
@@ -241,7 +242,7 @@ export const PUBLIC_API_ROUTES: PublicApiRoute[] = [
     operationId: "sendMessage",
     summary: "Send a message",
     description:
-      "Send a message as a bot. The bot identity is derived from the API key name. Messages are sent as Markdown.",
+      "Send a message. Workspace-scoped keys send as a bot; user-scoped keys send on behalf of the key owner.",
     tags: ["Messages"],
     scopes: [API_KEY_SCOPES.MESSAGES_WRITE],
     parameters: [workspaceIdParam, streamIdParam],

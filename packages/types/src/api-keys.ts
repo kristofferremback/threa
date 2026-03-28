@@ -48,3 +48,27 @@ export const API_KEY_PERMISSIONS: ApiKeyPermission[] = [
     description: "Grants access to list and search workspace users.",
   },
 ]
+
+// --- User-scoped API keys ---
+
+/** Sent via indicator for messages created through user-scoped API keys */
+export const SENT_VIA_API = "api" as const
+
+/** Wire format for user API keys (returned to frontend, key value never included) */
+export interface UserApiKey {
+  id: string
+  name: string
+  keyPrefix: string
+  scopes: ApiKeyScope[]
+  lastUsedAt: string | null
+  expiresAt: string | null
+  revokedAt: string | null
+  createdAt: string
+}
+
+/** Response when creating a user API key (includes the full key value once) */
+export interface CreateUserApiKeyResponse {
+  key: UserApiKey
+  /** The full API key value. Only returned on creation — store it securely. */
+  value: string
+}
