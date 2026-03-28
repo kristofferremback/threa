@@ -182,7 +182,13 @@ export function UserApiKeysSection({ workspaceId }: UserApiKeysSectionProps) {
               Cancel
             </Button>
           </div>
-          {createMutation.error && <p className="text-sm text-destructive">Failed to create key. Please try again.</p>}
+          {createMutation.error && (
+            <p className="text-sm text-destructive">
+              {createMutation.error instanceof Error
+                ? createMutation.error.message
+                : "Failed to create key. Please try again."}
+            </p>
+          )}
         </div>
       )}
 

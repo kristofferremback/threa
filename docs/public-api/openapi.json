@@ -618,7 +618,7 @@
         "operationId": "updateMessage",
         "summary": "Update a message",
         "tags": ["Messages"],
-        "description": "Update a message previously sent by this API key's bot.",
+        "description": "Update a message you previously sent via API.",
         "security": [{ "apiKey": ["messages:write"] }],
         "parameters": [
           {
@@ -728,7 +728,7 @@
         "operationId": "deleteMessage",
         "summary": "Delete a message",
         "tags": ["Messages"],
-        "description": "Delete a message previously sent by this API key's bot.",
+        "description": "Delete a message you previously sent via API.",
         "security": [{ "apiKey": ["messages:write"] }],
         "parameters": [
           {
