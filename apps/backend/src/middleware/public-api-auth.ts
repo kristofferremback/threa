@@ -53,7 +53,8 @@ export function createPublicApiAuthMiddleware({ apiKeyService, userApiKeyService
       // Resolve workspace user for stream access checks
       const user = await UserRepository.findById(pool, workspaceId, validated.userId)
       if (!user) {
-        next(new HttpError("API key owner is no longer a workspace member", { status: 403, code: "FORBIDDEN" }))
+        // Generic message — don't leak whether the workspace exists or the user was removed
+        next(new HttpError("API key does not have access to this workspace", { status: 403, code: "FORBIDDEN" }))
         return
       }
 
