@@ -5,8 +5,11 @@ import { parseMarkdown, serializeToMarkdown } from "./editor-markdown"
 import { EditorBehaviors, indentSelection, dedentSelection, handleLinkToolbarAction } from "./editor-behaviors"
 
 function createTestEditor(markdown: string) {
-  return new Editor({
-    element: document.createElement("div"),
+  const element = document.createElement("div")
+  document.body.append(element)
+
+  const editor = new Editor({
+    element,
     extensions: createEditorExtensions({ placeholder: "Type a message..." }),
     content: parseMarkdown(
       markdown,
@@ -14,6 +17,12 @@ function createTestEditor(markdown: string) {
       () => null
     ),
   })
+
+  editor.on("destroy", () => {
+    element.remove()
+  })
+
+  return editor
 }
 
 function selectAll(editor: Editor) {
@@ -21,8 +30,11 @@ function selectAll(editor: Editor) {
 }
 
 function createBehaviorEditor(markdown: string) {
-  return new Editor({
-    element: document.createElement("div"),
+  const element = document.createElement("div")
+  document.body.append(element)
+
+  const editor = new Editor({
+    element,
     extensions: [
       ...createEditorExtensions({ placeholder: "Type a message..." }),
       EditorBehaviors.configure({
@@ -36,6 +48,14 @@ function createBehaviorEditor(markdown: string) {
       () => null
     ),
   })
+
+  editor.view.hasFocus = () => true
+
+  editor.on("destroy", () => {
+    element.remove()
+  })
+
+  return editor
 }
 
 function pressKey(editor: Editor, key: string, options: Partial<KeyboardEventInit> = {}) {
@@ -80,11 +100,11 @@ function pressArrowKey(editor: Editor, direction: "left" | "right") {
 }
 
 function getCodeBoundaryWidget(editor: Editor) {
-  return editor.view.dom.querySelector<HTMLElement>("[data-inline-code-boundary]")
+  return editor.view.dom.ownerDocument.querySelector<HTMLElement>("[data-inline-code-boundary-overlay='true']")
 }
 
 function getCodeBoundaryCaret(editor: Editor) {
-  return editor.view.dom.querySelector<HTMLElement>(".inline-code-boundary-caret")
+  return getCodeBoundaryWidget(editor)
 }
 
 function insertCaret(text: string, offset: number) {
@@ -300,13 +320,12 @@ describe("editor-behaviors indentation commands", () => {
     expect(widget).toBeTruthy()
     expect(caret).toBeTruthy()
 
-    expect(widget?.textContent).toBe("")
-    expect(widget?.style.fontSize).toBe("inherit")
-    expect(widget?.style.height).toBe("1em")
+    expect(widget?.dataset.inlineCodeBoundary).toBe("end")
+    expect(widget?.dataset.inlineCodeMode).toBe("inside")
+    expect(widget?.style.position).toBe("fixed")
     expect(widget?.style.width).toBe("0px")
-    expect(widget?.style.overflow).toBe("visible")
     expect(caret?.style.width).toBe("0px")
-    expect(caret?.style.transform).toBe("")
+    expect(caret?.style.transform).toBe("translateX(-0.5px)")
     editor.destroy()
   })
 
