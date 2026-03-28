@@ -232,10 +232,10 @@ export function createPublicApiHandlers({
 
     await assertStreamAccessible(req, message.streamId)
 
-    // User-scoped key: can only modify own messages sent via API
+    // User-scoped key: can modify own messages (regardless of how they were sent)
     if (req.userApiKey) {
-      if (message.authorId !== req.user!.id || message.sentVia !== SENT_VIA_API) {
-        throw new HttpError("Cannot modify messages not sent via this API key's user", {
+      if (message.authorId !== req.user!.id) {
+        throw new HttpError("Cannot modify another user's messages", {
           status: 403,
           code: "FORBIDDEN",
         })

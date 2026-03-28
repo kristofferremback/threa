@@ -100,6 +100,15 @@ export const UserApiKeyRepository = {
     return (result.rowCount ?? 0) > 0
   },
 
+  async revokeAllByUser(db: Querier, workspaceId: string, userId: string): Promise<number> {
+    const result = await db.query(sql`
+      UPDATE user_api_keys
+      SET revoked_at = NOW()
+      WHERE workspace_id = ${workspaceId} AND user_id = ${userId} AND revoked_at IS NULL
+    `)
+    return result.rowCount ?? 0
+  },
+
   async touchLastUsed(db: Querier, id: string): Promise<void> {
     await db.query(sql`
       UPDATE user_api_keys SET last_used_at = NOW() WHERE id = ${id}

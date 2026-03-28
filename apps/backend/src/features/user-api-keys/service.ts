@@ -11,6 +11,7 @@ const KEY_BYTE_LENGTH = 32 // 256-bit random key
 const STORED_PREFIX_LENGTH = 8 // chars stored for identification (after threa_uk_)
 
 const ALL_SCOPES = new Set(Object.values(API_KEY_SCOPES))
+const MAX_ACTIVE_KEYS_PER_USER = 25
 
 function hashKey(value: string): string {
   return createHash("sha256").update(value).digest("hex")
@@ -51,6 +52,16 @@ export class UserApiKeyService {
 
     if (params.scopes.length === 0) {
       throw new HttpError("At least one scope is required", { status: 400, code: "INVALID_SCOPE" })
+    }
+
+    // Enforce per-user key limit
+    const existing = await UserApiKeyRepository.listByUser(this.pool, params.workspaceId, params.userId)
+    const activeCount = existing.filter((k) => !k.revokedAt).length
+    if (activeCount >= MAX_ACTIVE_KEYS_PER_USER) {
+      throw new HttpError(`Maximum of ${MAX_ACTIVE_KEYS_PER_USER} active API keys per user`, {
+        status: 400,
+        code: "KEY_LIMIT_REACHED",
+      })
     }
 
     const value = generateKeyValue()

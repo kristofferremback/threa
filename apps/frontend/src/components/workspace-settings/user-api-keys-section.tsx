@@ -6,6 +6,17 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { useFormattedDate } from "@/hooks/use-formatted-date"
 import { API_KEY_PERMISSIONS, type ApiKeyScope } from "@threa/types"
 import { Copy, Plus, Trash2, Eye, EyeOff } from "lucide-react"
 
@@ -16,6 +27,7 @@ interface UserApiKeysSectionProps {
 export function UserApiKeysSection({ workspaceId }: UserApiKeysSectionProps) {
   const queryClient = useQueryClient()
   const queryKey = ["user-api-keys", workspaceId]
+  const { formatDate } = useFormattedDate()
 
   const { data: keys = [], isLoading } = useQuery({
     queryKey,
@@ -27,6 +39,7 @@ export function UserApiKeysSection({ workspaceId }: UserApiKeysSectionProps) {
   const [selectedScopes, setSelectedScopes] = useState<Set<ApiKeyScope>>(new Set())
   const [createdKeyValue, setCreatedKeyValue] = useState<string | null>(null)
   const [showKeyValue, setShowKeyValue] = useState(false)
+  const [revokeTarget, setRevokeTarget] = useState<{ id: string; name: string } | null>(null)
 
   const createMutation = useMutation({
     mutationFn: (params: { name: string; scopes: ApiKeyScope[] }) =>
@@ -44,6 +57,7 @@ export function UserApiKeysSection({ workspaceId }: UserApiKeysSectionProps) {
   const revokeMutation = useMutation({
     mutationFn: (keyId: string) => workspacesApi.revokeUserApiKey(workspaceId, keyId),
     onSuccess: () => {
+      setRevokeTarget(null)
       queryClient.invalidateQueries({ queryKey })
     },
   })
@@ -179,15 +193,14 @@ export function UserApiKeysSection({ workspaceId }: UserApiKeysSectionProps) {
                   ))}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Created {new Date(key.createdAt).toLocaleDateString()}
-                  {key.lastUsedAt && ` · Last used ${new Date(key.lastUsedAt).toLocaleDateString()}`}
+                  Created {formatDate(new Date(key.createdAt))}
+                  {key.lastUsedAt && ` · Last used ${formatDate(new Date(key.lastUsedAt))}`}
                 </p>
               </div>
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => revokeMutation.mutate(key.id)}
-                disabled={revokeMutation.isPending}
+                onClick={() => setRevokeTarget({ id: key.id, name: key.name })}
                 title="Revoke key"
               >
                 <Trash2 className="h-4 w-4 text-destructive" />
@@ -219,6 +232,29 @@ export function UserApiKeysSection({ workspaceId }: UserApiKeysSectionProps) {
           </div>
         </details>
       )}
+
+      {revokeMutation.error && <p className="text-sm text-destructive">Failed to revoke key. Please try again.</p>}
+
+      <AlertDialog open={!!revokeTarget} onOpenChange={(open) => !open && setRevokeTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Revoke API key</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently revoke <strong>{revokeTarget?.name}</strong>. Any applications using this key will
+              lose access immediately. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => revokeTarget && revokeMutation.mutate(revokeTarget.id)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {revokeMutation.isPending ? "Revoking..." : "Revoke key"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
