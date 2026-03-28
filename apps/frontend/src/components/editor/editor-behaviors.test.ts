@@ -255,11 +255,13 @@ describe("editor-behaviors indentation commands", () => {
 
     expect(editor.isActive("code")).toBe(true)
     expect(getCodeBoundaryWidget(editor)?.dataset.inlineCodeBoundary).toBe("end")
+    expect(getCodeBoundaryWidget(editor)?.dataset.inlineCodeMode).toBe("inside")
     expect(editor.view.dom.style.caretColor).toBe("transparent")
     expect(pressKey(editor, "ArrowRight")).toBe(true)
     expect(editor.isActive("code")).toBe(false)
-    expect(getCodeBoundaryWidget(editor)).toBeNull()
-    expect(editor.view.dom.style.caretColor).toBe("")
+    expect(getCodeBoundaryWidget(editor)?.dataset.inlineCodeBoundary).toBe("end")
+    expect(getCodeBoundaryWidget(editor)?.dataset.inlineCodeMode).toBe("outside")
+    expect(editor.view.dom.style.caretColor).toBe("transparent")
 
     editor.commands.insertContent("x")
 
@@ -274,10 +276,12 @@ describe("editor-behaviors indentation commands", () => {
     pressKey(editor, "ArrowRight")
 
     expect(editor.isActive("code")).toBe(false)
-    expect(getCodeBoundaryWidget(editor)).toBeNull()
+    expect(getCodeBoundaryWidget(editor)?.dataset.inlineCodeBoundary).toBe("end")
+    expect(getCodeBoundaryWidget(editor)?.dataset.inlineCodeMode).toBe("outside")
     expect(pressKey(editor, "ArrowLeft")).toBe(true)
     expect(editor.isActive("code")).toBe(true)
     expect(getCodeBoundaryWidget(editor)?.dataset.inlineCodeBoundary).toBe("end")
+    expect(getCodeBoundaryWidget(editor)?.dataset.inlineCodeMode).toBe("inside")
     expect(editor.view.dom.style.caretColor).toBe("transparent")
 
     editor.commands.insertContent("x")
@@ -302,22 +306,24 @@ describe("editor-behaviors indentation commands", () => {
     expect(widget?.style.width).toBe("0px")
     expect(widget?.style.overflow).toBe("visible")
     expect(caret?.style.width).toBe("0px")
-    expect(caret?.style.transform).toBe("translateX(-0.375rem)")
+    expect(caret?.style.transform).toBe("")
     editor.destroy()
   })
 
-  it("shows the synthetic caret at the start edge only while inside inline code", () => {
+  it("shows the synthetic caret on both start-edge boundary modes", () => {
     const editor = createBehaviorEditor("`code`")
 
     editor.commands.focus("start")
 
     expect(editor.isActive("code")).toBe(true)
     expect(getCodeBoundaryWidget(editor)?.dataset.inlineCodeBoundary).toBe("start")
+    expect(getCodeBoundaryWidget(editor)?.dataset.inlineCodeMode).toBe("inside")
     expect(editor.view.dom.style.caretColor).toBe("transparent")
     expect(pressKey(editor, "ArrowLeft")).toBe(true)
     expect(editor.isActive("code")).toBe(false)
-    expect(getCodeBoundaryWidget(editor)).toBeNull()
-    expect(editor.view.dom.style.caretColor).toBe("")
+    expect(getCodeBoundaryWidget(editor)?.dataset.inlineCodeBoundary).toBe("start")
+    expect(getCodeBoundaryWidget(editor)?.dataset.inlineCodeMode).toBe("outside")
+    expect(editor.view.dom.style.caretColor).toBe("transparent")
 
     editor.destroy()
   })

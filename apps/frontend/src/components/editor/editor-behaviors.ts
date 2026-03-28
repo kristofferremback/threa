@@ -64,6 +64,7 @@ const codeBoundaryDecorationKey = new PluginKey("codeBoundaryDecoration")
 interface CodeBoundaryDecorationState {
   pos: number
   edge: "start" | "end"
+  mode: "inside" | "outside"
   side: -1 | 1
 }
 
@@ -71,10 +72,6 @@ interface CodeBoundaryContext {
   codeMark: ProseMirrorMark
   edge: "start" | "end"
 }
-
-// Matches the editor's inline code horizontal padding (`px-1.5`),
-// so the synthetic caret sits where the code pill already has room.
-const inlineCodeBoundaryCaretOffset = "0.375rem"
 
 function getEffectiveCursorMarks(state: EditorState): readonly ProseMirrorMark[] {
   return state.storedMarks ?? state.selection.$from.marks()
@@ -132,7 +129,7 @@ function getCodeBoundaryDecorationState(state: EditorState): CodeBoundaryDecorat
   const boundary = getCodeBoundaryContext(state, from)
   const isInsideCode = !!findMarkByName(getEffectiveCursorMarks(state), "code")
 
-  if (!boundary || !isInsideCode) {
+  if (!boundary) {
     return null
   }
 
@@ -140,14 +137,16 @@ function getCodeBoundaryDecorationState(state: EditorState): CodeBoundaryDecorat
     return {
       pos: from,
       edge: "end",
-      side: -1,
+      mode: isInsideCode ? "inside" : "outside",
+      side: isInsideCode ? -1 : 1,
     }
   }
 
   return {
     pos: from,
     edge: boundary.edge,
-    side: 1,
+    mode: isInsideCode ? "inside" : "outside",
+    side: isInsideCode ? 1 : -1,
   }
 }
 
@@ -155,10 +154,10 @@ function createCodeBoundaryWidget(boundary: CodeBoundaryDecorationState) {
   return () => {
     const overlay = document.createElement("span")
     const caret = document.createElement("span")
-    const offset = boundary.edge === "start" ? inlineCodeBoundaryCaretOffset : `-${inlineCodeBoundaryCaretOffset}`
 
     overlay.className = "inline-code-boundary"
     overlay.setAttribute("data-inline-code-boundary", boundary.edge)
+    overlay.setAttribute("data-inline-code-mode", boundary.mode)
     overlay.setAttribute("aria-hidden", "true")
     overlay.contentEditable = "false"
     overlay.style.display = "inline-block"
@@ -177,7 +176,6 @@ function createCodeBoundaryWidget(boundary: CodeBoundaryDecorationState) {
     caret.style.width = "0"
     caret.style.borderLeft = "1px solid currentColor"
     caret.style.pointerEvents = "none"
-    caret.style.transform = `translateX(${offset})`
 
     overlay.append(caret)
     return overlay
@@ -196,10 +194,8 @@ export function exitInlineMark(editor: Editor, markName: EscapableInlineMarkName
     return false
   }
 
-  const tr = state.tr
-  tr.removeStoredMark(currentMark)
-  editor.view.dispatch(tr)
-  return true
+  const remainingMarks = getEffectiveCursorMarks(state).filter((mark) => mark.type !== currentMark.type)
+  return setStoredMarks(editor, remainingMarks)
 }
 
 export function handleEscapableInlineMarkArrow(editor: Editor, direction: ArrowDirection): boolean {
@@ -524,7 +520,7 @@ export const EditorBehaviors = Extension.create<EditorBehaviorsOptions>({
             return DecorationSet.create(state.doc, [
               Decoration.widget(boundary.pos, createCodeBoundaryWidget(boundary), {
                 side: boundary.side,
-                key: `inline-code-boundary-${boundary.edge}`,
+                key: `inline-code-boundary-${boundary.edge}-${boundary.mode}`,
               }),
             ])
           },
