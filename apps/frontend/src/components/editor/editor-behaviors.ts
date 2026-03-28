@@ -64,9 +64,12 @@ const codeBoundaryDecorationKey = new PluginKey("codeBoundaryDecoration")
 interface CodeBoundaryDecorationState {
   pos: number
   edge: "start" | "end"
-  mode: "inside" | "outside"
   side: -1 | 1
 }
+
+// Matches the editor's inline code horizontal padding (`px-1.5`),
+// so the synthetic caret sits where the code pill already has room.
+const inlineCodeBoundaryCaretOffset = "0.375rem"
 
 function getEffectiveCursorMarks(state: EditorState): readonly ProseMirrorMark[] {
   return state.storedMarks ?? state.selection.$from.marks()
@@ -108,43 +111,55 @@ function getCodeBoundaryDecorationState(state: EditorState): CodeBoundaryDecorat
 
   const isInsideCode = !!findMarkByName(getEffectiveCursorMarks(state), "code")
 
+  if (!isInsideCode) {
+    return null
+  }
+
   if (beforeCode) {
     return {
       pos: from,
       edge: "end",
-      mode: isInsideCode ? "inside" : "outside",
-      side: isInsideCode ? 1 : -1,
+      side: -1,
     }
   }
 
   return {
     pos: from,
     edge: "start",
-    mode: isInsideCode ? "inside" : "outside",
-    side: isInsideCode ? -1 : 1,
+    side: 1,
   }
 }
 
 function createCodeBoundaryWidget(boundary: CodeBoundaryDecorationState) {
   return () => {
-    const spacer = document.createElement("span")
-    const boundaryWidth = "0.35ch"
-    const boundaryOffset = "0.175ch"
-    spacer.className = "inline-code-boundary"
-    spacer.setAttribute("data-inline-code-boundary", boundary.edge)
-    spacer.setAttribute("data-inline-code-mode", boundary.mode)
-    spacer.setAttribute("aria-hidden", "true")
-    spacer.contentEditable = "false"
-    spacer.style.display = "inline-block"
-    spacer.style.fontSize = "inherit"
-    spacer.style.height = "1em"
-    spacer.style.width = boundaryWidth
-    spacer.style.marginLeft = `-${boundaryOffset}`
-    spacer.style.marginRight = `-${boundaryOffset}`
-    spacer.style.pointerEvents = "none"
-    spacer.style.userSelect = "none"
-    spacer.style.verticalAlign = "baseline"
-    return spacer
+    const overlay = document.createElement("span")
+    const caret = document.createElement("span")
+    const offset = boundary.edge === "start" ? inlineCodeBoundaryCaretOffset : `-${inlineCodeBoundaryCaretOffset}`
+
+    overlay.className = "inline-code-boundary"
+    overlay.setAttribute("data-inline-code-boundary", boundary.edge)
+    overlay.setAttribute("aria-hidden", "true")
+    overlay.contentEditable = "false"
+    overlay.style.display = "inline-block"
+    overlay.style.fontSize = "inherit"
+    overlay.style.height = "1em"
+    overlay.style.pointerEvents = "none"
+    overlay.style.userSelect = "none"
+    overlay.style.verticalAlign = "baseline"
+    overlay.style.width = "0"
+    overlay.style.overflow = "visible"
+
+    caret.className = "inline-code-boundary-caret"
+    caret.setAttribute("aria-hidden", "true")
+    caret.style.display = "inline-block"
+    caret.style.height = "1em"
+    caret.style.width = "0"
+    caret.style.borderLeft = "1px solid currentColor"
+    caret.style.pointerEvents = "none"
+    caret.style.transform = `translateX(${offset})`
+
+    overlay.append(caret)
+    return overlay
   }
 }
 
@@ -459,10 +474,24 @@ export const EditorBehaviors = Extension.create<EditorBehaviorsOptions>({
             return DecorationSet.create(state.doc, [
               Decoration.widget(boundary.pos, createCodeBoundaryWidget(boundary), {
                 side: boundary.side,
-                key: `inline-code-boundary-${boundary.edge}-${boundary.mode}`,
+                key: `inline-code-boundary-${boundary.edge}`,
               }),
             ])
           },
+        },
+        view(view) {
+          const syncCaretColor = () => {
+            view.dom.style.caretColor = getCodeBoundaryDecorationState(view.state) ? "transparent" : ""
+          }
+
+          syncCaretColor()
+
+          return {
+            update: syncCaretColor,
+            destroy() {
+              view.dom.style.caretColor = ""
+            },
+          }
         },
       }),
     ]

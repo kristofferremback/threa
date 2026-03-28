@@ -62,12 +62,8 @@ function getCodeBoundaryWidget(editor: Editor) {
   return editor.view.dom.querySelector<HTMLElement>("[data-inline-code-boundary]")
 }
 
-function parseCh(value: string) {
-  const match = /^(-?\d*\.?\d+)ch$/.exec(value)
-  if (!match) {
-    throw new Error(`Expected a ch value, got "${value}"`)
-  }
-  return Number(match[1])
+function getCodeBoundaryCaret(editor: Editor) {
+  return editor.view.dom.querySelector<HTMLElement>(".inline-code-boundary-caret")
 }
 
 describe("editor-behaviors indentation commands", () => {
@@ -133,10 +129,12 @@ describe("editor-behaviors indentation commands", () => {
     editor.commands.focus("end")
 
     expect(editor.isActive("code")).toBe(true)
-    expect(getCodeBoundaryWidget(editor)?.dataset.inlineCodeMode).toBe("inside")
+    expect(getCodeBoundaryWidget(editor)?.dataset.inlineCodeBoundary).toBe("end")
+    expect(editor.view.dom.style.caretColor).toBe("transparent")
     expect(pressKey(editor, "ArrowRight")).toBe(true)
     expect(editor.isActive("code")).toBe(false)
-    expect(getCodeBoundaryWidget(editor)?.dataset.inlineCodeMode).toBe("outside")
+    expect(getCodeBoundaryWidget(editor)).toBeNull()
+    expect(editor.view.dom.style.caretColor).toBe("")
 
     editor.commands.insertContent("x")
 
@@ -151,10 +149,11 @@ describe("editor-behaviors indentation commands", () => {
     pressKey(editor, "ArrowRight")
 
     expect(editor.isActive("code")).toBe(false)
-    expect(getCodeBoundaryWidget(editor)?.dataset.inlineCodeMode).toBe("outside")
+    expect(getCodeBoundaryWidget(editor)).toBeNull()
     expect(pressKey(editor, "ArrowLeft")).toBe(true)
     expect(editor.isActive("code")).toBe(true)
-    expect(getCodeBoundaryWidget(editor)?.dataset.inlineCodeMode).toBe("inside")
+    expect(getCodeBoundaryWidget(editor)?.dataset.inlineCodeBoundary).toBe("end")
+    expect(editor.view.dom.style.caretColor).toBe("transparent")
 
     editor.commands.insertContent("x")
 
@@ -162,22 +161,39 @@ describe("editor-behaviors indentation commands", () => {
     editor.destroy()
   })
 
-  it("renders the inline code boundary widget with zero net layout footprint", () => {
+  it("renders the inline code boundary overlay without changing layout width", () => {
     const editor = createBehaviorEditor("`code`")
 
     editor.commands.focus("end")
 
     const widget = getCodeBoundaryWidget(editor)
+    const caret = getCodeBoundaryCaret(editor)
     expect(widget).toBeTruthy()
-
-    const width = parseCh(widget?.style.width ?? "")
-    const marginLeft = parseCh(widget?.style.marginLeft ?? "")
-    const marginRight = parseCh(widget?.style.marginRight ?? "")
+    expect(caret).toBeTruthy()
 
     expect(widget?.textContent).toBe("")
     expect(widget?.style.fontSize).toBe("inherit")
     expect(widget?.style.height).toBe("1em")
-    expect(width + marginLeft + marginRight).toBeCloseTo(0, 5)
+    expect(widget?.style.width).toBe("0px")
+    expect(widget?.style.overflow).toBe("visible")
+    expect(caret?.style.width).toBe("0px")
+    expect(caret?.style.transform).toBe("translateX(-0.375rem)")
+    editor.destroy()
+  })
+
+  it("shows the synthetic caret at the start edge only while inside inline code", () => {
+    const editor = createBehaviorEditor("`code`")
+
+    editor.commands.focus("start")
+
+    expect(editor.isActive("code")).toBe(true)
+    expect(getCodeBoundaryWidget(editor)?.dataset.inlineCodeBoundary).toBe("start")
+    expect(editor.view.dom.style.caretColor).toBe("transparent")
+    expect(pressKey(editor, "ArrowLeft")).toBe(true)
+    expect(editor.isActive("code")).toBe(false)
+    expect(getCodeBoundaryWidget(editor)).toBeNull()
+    expect(editor.view.dom.style.caretColor).toBe("")
+
     editor.destroy()
   })
 
