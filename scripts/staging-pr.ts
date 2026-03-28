@@ -111,11 +111,7 @@ async function databaseExists(dbName: string): Promise<boolean> {
 async function createDatabase(dbName: string): Promise<void> {
   if (await databaseExists(dbName)) {
     console.log(`Database '${dbName}' already exists, dropping first...`)
-    // Terminate connections before dropping
-    await runPsqlOnDefault(
-      `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='${dbName}' AND pid <> pg_backend_pid()`
-    )
-    await runPsqlOnDefault(`DROP DATABASE "${dbName}"`)
+    await runPsqlOnDefault(`DROP DATABASE "${dbName}" WITH (FORCE)`)
   }
   console.log(`Creating database '${dbName}'...`)
   await runPsqlOnDefault(`CREATE DATABASE "${dbName}"`)
@@ -131,12 +127,10 @@ async function cloneDatabase(sourceDb: string, targetDb: string): Promise<void> 
     (await $`which /usr/lib/postgresql/18/bin/pg_dump`.quiet().nothrow()).exitCode === 0
       ? "/usr/lib/postgresql/18/bin/pg_dump"
       : "pg_dump"
-  // Use Bun shell .pipe() to avoid bash -c string interpolation, which breaks on
-  // passwords containing shell-special characters ($, !, quotes, etc.)
-  const result = await $`${pgDump} --clean --if-exists ${sourceUrl}`
-    .pipe($`psql ${targetUrl}`)
-    .quiet()
-    .nothrow()
+  // Pipe pg_dump output into psql. Bun shell handles the pipe operator natively
+  // and escapes interpolated values, avoiding bash -c string interpolation issues
+  // with passwords containing shell-special characters ($, !, quotes, etc.)
+  const result = await $`${pgDump} --clean --if-exists ${sourceUrl} | psql ${targetUrl}`.quiet().nothrow()
 
   if (result.exitCode !== 0) {
     const stderr = result.stderr.toString()
