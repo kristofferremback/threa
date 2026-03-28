@@ -8,49 +8,80 @@ import { cn } from "@/lib/utils"
 interface LinkEditorProps {
   editor: Editor
   isActive: boolean
+  initialUrl?: string
+  autoFocusInput?: boolean
+  selectionRange?: {
+    from: number
+    to: number
+  }
   onClose: () => void
   className?: string
 }
 
-export function LinkEditor({ editor, isActive, onClose, className }: LinkEditorProps) {
+export function LinkEditor({
+  editor,
+  isActive,
+  initialUrl,
+  autoFocusInput = true,
+  selectionRange,
+  onClose,
+  className,
+}: LinkEditorProps) {
   const inputRef = useRef<HTMLInputElement>(null)
-  const currentUrl = editor.getAttributes("link").href || ""
-  const [url, setUrl] = useState(currentUrl)
+  const [url, setUrl] = useState(() => initialUrl ?? (editor.getAttributes("link").href || ""))
 
   useEffect(() => {
-    setUrl(currentUrl)
+    setUrl(initialUrl ?? (editor.getAttributes("link").href || ""))
+    if (!autoFocusInput) {
+      return
+    }
+
     const timer = setTimeout(() => inputRef.current?.focus(), 0)
     return () => clearTimeout(timer)
-  }, [currentUrl])
+  }, [autoFocusInput, editor, initialUrl])
+
+  const restoreSelection = useCallback(() => {
+    const chain = editor.chain().focus()
+
+    if (selectionRange) {
+      chain.setTextSelection(selectionRange)
+    }
+
+    return chain
+  }, [editor, selectionRange])
 
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault()
       if (url.trim()) {
         const finalUrl = url.startsWith("http") ? url : `https://${url}`
-        editor.chain().focus().extendMarkRange("link").setLink({ href: finalUrl }).run()
+        restoreSelection().extendMarkRange("link").setLink({ href: finalUrl }).run()
       } else {
-        editor.chain().focus().extendMarkRange("link").unsetLink().run()
+        restoreSelection().extendMarkRange("link").unsetLink().run()
       }
       onClose()
     },
-    [editor, url, onClose]
+    [restoreSelection, url, onClose]
   )
 
   const handleRemoveLink = useCallback(() => {
-    editor.chain().focus().extendMarkRange("link").unsetLink().run()
+    restoreSelection().extendMarkRange("link").unsetLink().run()
     onClose()
-  }, [editor, onClose])
+  }, [restoreSelection, onClose])
+
+  const handleClose = useCallback(() => {
+    restoreSelection().run()
+    onClose()
+  }, [restoreSelection, onClose])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault()
-        onClose()
-        editor.commands.focus()
+        handleClose()
       }
     },
-    [onClose, editor]
+    [handleClose]
   )
 
   return (
@@ -80,7 +111,14 @@ export function LinkEditor({ editor, isActive, onClose, className }: LinkEditorP
           </Button>
         )}
       </form>
-      <Button type="button" variant="ghost" size="sm" className="h-7 w-7 shrink-0 p-0" onClick={onClose}>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-7 w-7 shrink-0 p-0"
+        aria-label="Close link editor"
+        onClick={handleClose}
+      >
         <X className="h-4 w-4" />
       </Button>
     </div>

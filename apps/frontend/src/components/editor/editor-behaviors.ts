@@ -1,6 +1,8 @@
 import { Extension, type Editor } from "@tiptap/react"
-import { TextSelection, type Transaction } from "@tiptap/pm/state"
+import type { Mark as ProseMirrorMark } from "@tiptap/pm/model"
+import { TextSelection, type Transaction, Plugin, PluginKey } from "@tiptap/pm/state"
 import type { EditorState } from "@tiptap/pm/state"
+import { Decoration, DecorationSet } from "@tiptap/pm/view"
 import type { MessageSendMode } from "@threa/types"
 import { handleEnterTextBehavior, toggleMultilineBlock } from "./multiline-blocks"
 
@@ -50,6 +52,174 @@ export function isSuggestionActive(editor: Editor): boolean {
     s.slashCommand?.popupVisible ||
     s.emoji?.popupVisible
   )
+}
+
+type EscapableInlineMarkName = "code" | "link"
+type BoundaryNavigableInlineMarkName = "code"
+type ArrowDirection = "left" | "right"
+export type LinkToolbarAction = "opened" | "closed" | "exited"
+
+const codeBoundaryDecorationKey = new PluginKey("codeBoundaryDecoration")
+
+interface CodeBoundaryDecorationState {
+  pos: number
+  edge: "start" | "end"
+  mode: "inside" | "outside"
+  side: -1 | 1
+}
+
+function getEffectiveCursorMarks(state: EditorState): readonly ProseMirrorMark[] {
+  return state.storedMarks ?? state.selection.$from.marks()
+}
+
+function findMarkByName(
+  marks: readonly ProseMirrorMark[] | null | undefined,
+  markName: EscapableInlineMarkName | BoundaryNavigableInlineMarkName
+): ProseMirrorMark | undefined {
+  return marks?.find((mark) => mark.type.name === markName)
+}
+
+function setStoredMarks(editor: Editor, marks: readonly ProseMirrorMark[] | null): boolean {
+  const tr = editor.state.tr
+  tr.setStoredMarks(marks ? [...marks] : null)
+  editor.view.dispatch(tr)
+  return true
+}
+
+function enterInlineMark(editor: Editor, boundaryMark: ProseMirrorMark): boolean {
+  const currentMarks = getEffectiveCursorMarks(editor.state).filter((mark) => mark.type !== boundaryMark.type)
+  return setStoredMarks(editor, [...currentMarks, boundaryMark])
+}
+
+function getCodeBoundaryDecorationState(state: EditorState): CodeBoundaryDecorationState | null {
+  const { selection } = state
+
+  if (!selection.empty) {
+    return null
+  }
+
+  const { $from, from } = selection
+  const beforeCode = findMarkByName($from.nodeBefore?.marks ?? [], "code")
+  const afterCode = findMarkByName($from.nodeAfter?.marks ?? [], "code")
+
+  if (!!beforeCode === !!afterCode) {
+    return null
+  }
+
+  const isInsideCode = !!findMarkByName(getEffectiveCursorMarks(state), "code")
+
+  if (beforeCode) {
+    return {
+      pos: from,
+      edge: "end",
+      mode: isInsideCode ? "inside" : "outside",
+      side: isInsideCode ? 1 : -1,
+    }
+  }
+
+  return {
+    pos: from,
+    edge: "start",
+    mode: isInsideCode ? "inside" : "outside",
+    side: isInsideCode ? -1 : 1,
+  }
+}
+
+function createCodeBoundaryWidget(boundary: CodeBoundaryDecorationState) {
+  return () => {
+    const spacer = document.createElement("span")
+    const boundaryWidth = "0.35ch"
+    const boundaryOffset = "0.175ch"
+    spacer.className = "inline-code-boundary"
+    spacer.setAttribute("data-inline-code-boundary", boundary.edge)
+    spacer.setAttribute("data-inline-code-mode", boundary.mode)
+    spacer.setAttribute("aria-hidden", "true")
+    spacer.contentEditable = "false"
+    spacer.style.display = "inline-block"
+    spacer.style.width = boundaryWidth
+    spacer.style.marginLeft = `-${boundaryOffset}`
+    spacer.style.marginRight = `-${boundaryOffset}`
+    spacer.style.pointerEvents = "none"
+    spacer.style.userSelect = "none"
+    return spacer
+  }
+}
+
+export function exitInlineMark(editor: Editor, markName: EscapableInlineMarkName): boolean {
+  const { state } = editor
+
+  if (!state.selection.empty) {
+    return false
+  }
+
+  const currentMark = findMarkByName(getEffectiveCursorMarks(state), markName)
+  if (!currentMark) {
+    return false
+  }
+
+  const tr = state.tr
+  tr.removeStoredMark(currentMark)
+  editor.view.dispatch(tr)
+  return true
+}
+
+export function handleEscapableInlineMarkArrow(editor: Editor, direction: ArrowDirection): boolean {
+  const { state } = editor
+  const { selection } = state
+
+  if (!selection.empty) {
+    return false
+  }
+
+  const { $from } = selection
+  const beforeMarks = $from.nodeBefore?.marks ?? []
+  const afterMarks = $from.nodeAfter?.marks ?? []
+  const effectiveMarks = getEffectiveCursorMarks(state)
+
+  for (const markName of ["code"] as const satisfies readonly BoundaryNavigableInlineMarkName[]) {
+    const beforeMark = findMarkByName(beforeMarks, markName)
+    const afterMark = findMarkByName(afterMarks, markName)
+    const isInsideMark = !!findMarkByName(effectiveMarks, markName)
+
+    if (direction === "right") {
+      if (beforeMark && !afterMark && isInsideMark) {
+        return exitInlineMark(editor, markName)
+      }
+
+      if (!beforeMark && afterMark && !isInsideMark) {
+        return enterInlineMark(editor, afterMark)
+      }
+    } else {
+      if (beforeMark && !afterMark && !isInsideMark) {
+        return enterInlineMark(editor, beforeMark)
+      }
+
+      if (!beforeMark && afterMark && isInsideMark) {
+        return exitInlineMark(editor, markName)
+      }
+    }
+  }
+
+  return false
+}
+
+export function handleLinkToolbarAction(
+  editor: Editor,
+  linkPopoverOpen: boolean,
+  onLinkPopoverOpenChange?: (open: boolean) => void
+): LinkToolbarAction {
+  if (linkPopoverOpen) {
+    onLinkPopoverOpenChange?.(false)
+    editor.commands.focus()
+    return "closed"
+  }
+
+  if (exitInlineMark(editor, "link")) {
+    return "exited"
+  }
+
+  onLinkPopoverOpenChange?.(true)
+  return "opened"
 }
 
 /**
@@ -271,6 +441,30 @@ export const EditorBehaviors = Extension.create<EditorBehaviorsOptions>({
     }
   },
 
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: codeBoundaryDecorationKey,
+        props: {
+          decorations(state) {
+            const boundary = getCodeBoundaryDecorationState(state)
+
+            if (!boundary) {
+              return null
+            }
+
+            return DecorationSet.create(state.doc, [
+              Decoration.widget(boundary.pos, createCodeBoundaryWidget(boundary), {
+                side: boundary.side,
+                key: `inline-code-boundary-${boundary.edge}-${boundary.mode}`,
+              }),
+            ])
+          },
+        },
+      }),
+    ]
+  },
+
   addKeyboardShortcuts() {
     return {
       // Formatting shortcuts
@@ -279,6 +473,20 @@ export const EditorBehaviors = Extension.create<EditorBehaviorsOptions>({
       "Mod-Shift-s": () => this.editor.chain().focus().toggleStrike().run(),
       "Mod-e": () => this.editor.chain().focus().toggleCode().run(),
       "Mod-Shift-c": () => toggleMultilineBlock(this.editor, "codeBlock"),
+      ArrowLeft: () => {
+        if (isSuggestionActive(this.editor)) {
+          return false
+        }
+
+        return handleEscapableInlineMarkArrow(this.editor, "left")
+      },
+      ArrowRight: () => {
+        if (isSuggestionActive(this.editor)) {
+          return false
+        }
+
+        return handleEscapableInlineMarkArrow(this.editor, "right")
+      },
 
       // Tab: VS Code-style indent (always trapped to prevent focus escape)
       Tab: () => {

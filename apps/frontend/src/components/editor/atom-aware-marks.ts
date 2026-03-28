@@ -13,6 +13,7 @@ import { Bold } from "@tiptap/extension-bold"
 import { Italic } from "@tiptap/extension-italic"
 import { Strike } from "@tiptap/extension-strike"
 import { Code } from "@tiptap/extension-code"
+import Link from "@tiptap/extension-link"
 import { atomAwareMarkInputRule } from "./atom-aware-input-rules"
 
 /**
@@ -79,6 +80,8 @@ export const AtomAwareStrike = Strike.extend({
  * Mentions are converted to their text representation (e.g., @ariadne becomes plain text).
  */
 export const AtomAwareCode = Code.extend({
+  exitable: false,
+
   addInputRules() {
     return [
       atomAwareMarkInputRule({
@@ -88,5 +91,18 @@ export const AtomAwareCode = Code.extend({
         convertAtomsToText: true,
       }),
     ]
+  },
+})
+
+/**
+ * Link extension with explicit boundary behavior:
+ * typing at the end of a link should continue outside the link by default,
+ * while editing inside the linked text should keep extending the link naturally.
+ */
+export const BoundaryAwareLink = Link.extend({
+  exitable: false,
+
+  inclusive() {
+    return false
   },
 })

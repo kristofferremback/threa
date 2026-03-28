@@ -26,7 +26,7 @@ import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
 import { createEditorExtensions } from "./editor-extensions"
-import { EditorBehaviors, isSuggestionActive } from "./editor-behaviors"
+import { EditorBehaviors, handleLinkToolbarAction, isSuggestionActive } from "./editor-behaviors"
 import { serializeToMarkdown, parseMarkdown, type MentionTypeLookup } from "./editor-markdown"
 import { useMentionSuggestion, useChannelSuggestion, useEmojiSuggestion } from "./triggers"
 import { useMentionables } from "@/hooks/use-mentionables"
@@ -294,7 +294,7 @@ export function DocumentEditorModal({
               isActive={editor?.isActive("code")}
             />
             <ToolbarButton
-              onAction={() => setLinkEditorOpen(!linkEditorOpen)}
+              onAction={() => editor && handleLinkToolbarAction(editor, linkEditorOpen, setLinkEditorOpen)}
               icon={Link2}
               label="Link"
               isActive={editor?.isActive("link") || linkEditorOpen}

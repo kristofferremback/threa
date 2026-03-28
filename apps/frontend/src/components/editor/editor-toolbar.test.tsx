@@ -1,13 +1,15 @@
+import { useState } from "react"
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { render, screen, fireEvent } from "@testing-library/react"
+import { render, screen, fireEvent, act } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import type { Editor } from "@tiptap/react"
 import { EditorToolbar } from "./editor-toolbar"
-import { indentSelection, dedentSelection, isSuggestionActive } from "./editor-behaviors"
+import { indentSelection, dedentSelection, handleLinkToolbarAction, isSuggestionActive } from "./editor-behaviors"
 
 vi.mock("./editor-behaviors", () => ({
   indentSelection: vi.fn(),
   dedentSelection: vi.fn(),
+  handleLinkToolbarAction: vi.fn(() => "opened"),
   isSuggestionActive: vi.fn(() => false),
 }))
 
@@ -29,6 +31,13 @@ function createEditorStub() {
 
   return {
     isActive: vi.fn(() => false),
+    getAttributes: vi.fn(() => ({ href: "https://example.com" })),
+    state: {
+      selection: {
+        from: 1,
+        to: 4,
+      },
+    },
     chain: vi.fn(() => chain),
     commands: {
       focus: vi.fn(),
@@ -38,6 +47,19 @@ function createEditorStub() {
     __chainState: chain,
     __run: chain.run,
   } as unknown as Editor
+}
+
+function ToolbarHarness({ editor }: { editor: Editor }) {
+  const [linkPopoverOpen, setLinkPopoverOpen] = useState(false)
+
+  return (
+    <EditorToolbar
+      editor={editor}
+      isVisible
+      linkPopoverOpen={linkPopoverOpen}
+      onLinkPopoverOpenChange={setLinkPopoverOpen}
+    />
+  )
 }
 
 describe("EditorToolbar", () => {
@@ -92,6 +114,81 @@ describe("EditorToolbar", () => {
     expect(editor.__chainState.focus).toHaveBeenCalled()
     expect(editor.__chainState.toggleBold).toHaveBeenCalled()
     expect(editor.__run).toHaveBeenCalled()
+  })
+
+  it("routes the link button through the shared link toolbar action", async () => {
+    const user = userEvent.setup()
+    const editor = createEditorStub()
+
+    render(<EditorToolbar editor={editor} isVisible inline />)
+
+    await user.click(screen.getByRole("button", { name: "Link" }))
+
+    expect(handleLinkToolbarAction).toHaveBeenCalledWith(editor, false, undefined)
+  })
+
+  it("defers the link action until click so opening the editor does not race the click sequence", () => {
+    const editor = createEditorStub()
+
+    render(<EditorToolbar editor={editor} isVisible inline />)
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Link" }))
+    expect(handleLinkToolbarAction).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole("button", { name: "Link" }))
+    expect(handleLinkToolbarAction).toHaveBeenCalledWith(editor, false, undefined)
+  })
+
+  it("keeps the initially selected link URL after the editor selection changes", async () => {
+    const user = userEvent.setup()
+    const editor = createEditorStub()
+    vi.mocked(handleLinkToolbarAction).mockImplementation((_editor, _open, onLinkPopoverOpenChange) => {
+      onLinkPopoverOpenChange?.(true)
+      return "opened"
+    })
+
+    const { rerender } = render(<ToolbarHarness editor={editor} />)
+
+    await user.click(screen.getByRole("button", { name: "Link" }))
+    expect(screen.getByDisplayValue("https://example.com")).toBeInTheDocument()
+
+    vi.mocked(editor.getAttributes).mockReturnValue({ href: "" })
+    rerender(<ToolbarHarness editor={editor} />)
+
+    expect(screen.getByDisplayValue("https://example.com")).toBeInTheDocument()
+  })
+
+  it("focuses the link input when the floating link editor opens", () => {
+    vi.useFakeTimers()
+    const editor = createEditorStub()
+    vi.mocked(handleLinkToolbarAction).mockImplementation((_editor, _open, onLinkPopoverOpenChange) => {
+      onLinkPopoverOpenChange?.(true)
+      return "opened"
+    })
+
+    try {
+      render(<ToolbarHarness editor={editor} />)
+
+      fireEvent.click(screen.getByRole("button", { name: "Link" }))
+      act(() => vi.runAllTimers())
+
+      expect(screen.getByDisplayValue("https://example.com")).toHaveFocus()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("closes the floating link editor on outside pointer interaction", () => {
+    const editor = createEditorStub()
+    const onLinkPopoverOpenChange = vi.fn()
+
+    render(
+      <EditorToolbar editor={editor} isVisible linkPopoverOpen onLinkPopoverOpenChange={onLinkPopoverOpenChange} />
+    )
+
+    fireEvent.pointerDown(document.body)
+
+    expect(onLinkPopoverOpenChange).toHaveBeenCalledWith(false)
   })
 
   it("renders indent and dedent controls only when special input controls are enabled", () => {
