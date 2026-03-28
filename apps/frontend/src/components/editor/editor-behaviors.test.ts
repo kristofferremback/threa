@@ -58,12 +58,137 @@ function pressKey(editor: Editor, key: string, options: Partial<KeyboardEventIni
   return handled
 }
 
+function pressArrowKey(editor: Editor, direction: "left" | "right") {
+  const handled = pressKey(editor, direction === "right" ? "ArrowRight" : "ArrowLeft")
+
+  if (handled) {
+    return true
+  }
+
+  const { from, empty } = editor.state.selection
+  if (!empty) {
+    return false
+  }
+
+  const target = direction === "right" ? Math.min(from + 1, editor.state.doc.content.size) : Math.max(from - 1, 1)
+
+  if (target !== from) {
+    editor.commands.setTextSelection(target)
+  }
+
+  return false
+}
+
 function getCodeBoundaryWidget(editor: Editor) {
   return editor.view.dom.querySelector<HTMLElement>("[data-inline-code-boundary]")
 }
 
 function getCodeBoundaryCaret(editor: Editor) {
   return editor.view.dom.querySelector<HTMLElement>(".inline-code-boundary-caret")
+}
+
+function insertCaret(text: string, offset: number) {
+  return `${text.slice(0, offset)}|${text.slice(offset)}`
+}
+
+function getInlineCodeNavigationSnapshot(editor: Editor) {
+  const segments: Array<{
+    end: number
+    isCode: boolean
+    start: number
+    text: string
+  }> = []
+
+  editor.state.doc.descendants((node, pos) => {
+    if (!node.isText || !node.text) {
+      return
+    }
+
+    segments.push({
+      text: node.text,
+      start: pos,
+      end: pos + node.text.length,
+      isCode: node.marks.some((mark) => mark.type.name === "code"),
+    })
+  })
+
+  const codeSegments = segments.filter((segment) => segment.isCode)
+  if (codeSegments.length !== 1) {
+    throw new Error(`Expected exactly one inline code segment, got ${codeSegments.length}`)
+  }
+
+  const codeSegment = codeSegments[0]
+  const beforeSegments = segments.filter((segment) => segment.end <= codeSegment.start)
+  const afterSegments = segments.filter((segment) => segment.start >= codeSegment.end)
+  const beforeText = beforeSegments.map((segment) => segment.text).join("")
+  const codeText = codeSegment.text
+  const afterText = afterSegments.map((segment) => segment.text).join("")
+  const cursorPos = editor.state.selection.from
+  const insideCode = (editor.state.storedMarks ?? editor.state.selection.$from.marks()).some(
+    (mark) => mark.type.name === "code"
+  )
+
+  const plainOffsetForSegments = (
+    targetSegments: Array<{
+      end: number
+      start: number
+      text: string
+    }>,
+    pos: number
+  ) => {
+    let offset = 0
+
+    for (const segment of targetSegments) {
+      if (pos < segment.start) {
+        return offset
+      }
+
+      if (pos <= segment.end) {
+        return offset + (pos - segment.start)
+      }
+
+      offset += segment.text.length
+    }
+
+    return offset
+  }
+
+  if (cursorPos < codeSegment.start || (cursorPos === codeSegment.start && !insideCode)) {
+    return insertCaret(`${beforeText}[${codeText}]${afterText}`, plainOffsetForSegments(beforeSegments, cursorPos))
+  }
+
+  if (cursorPos > codeSegment.end || (cursorPos === codeSegment.end && !insideCode)) {
+    return insertCaret(
+      `${beforeText}[${codeText}]${afterText}`,
+      beforeText.length + codeText.length + 2 + plainOffsetForSegments(afterSegments, cursorPos)
+    )
+  }
+
+  return `${beforeText}[${insertCaret(codeText, cursorPos - codeSegment.start)}]${afterText}`
+}
+
+const inlineCodeNavigationStates = [
+  "|a [code] b",
+  "a| [code] b",
+  "a |[code] b",
+  "a [|code] b",
+  "a [c|ode] b",
+  "a [co|de] b",
+  "a [cod|e] b",
+  "a [code|] b",
+  "a [code]| b",
+  "a [code] |b",
+  "a [code] b|",
+] as const
+
+function moveInlineCodeCaret(editor: Editor, direction: "left" | "right", steps = 1) {
+  for (let step = 0; step < steps; step += 1) {
+    pressArrowKey(editor, direction)
+  }
+}
+
+function createInlineCodeNavigationEditor() {
+  return createBehaviorEditor("a `code` b")
 }
 
 describe("editor-behaviors indentation commands", () => {
@@ -195,6 +320,63 @@ describe("editor-behaviors indentation commands", () => {
     expect(editor.view.dom.style.caretColor).toBe("")
 
     editor.destroy()
+  })
+
+  it("walks every caret location from left to right through inline code with surrounding text", () => {
+    const editor = createInlineCodeNavigationEditor()
+
+    editor.commands.focus("start")
+
+    expect(getInlineCodeNavigationSnapshot(editor)).toBe(inlineCodeNavigationStates[0])
+
+    for (let index = 1; index < inlineCodeNavigationStates.length; index += 1) {
+      pressArrowKey(editor, "right")
+      expect(getInlineCodeNavigationSnapshot(editor)).toBe(inlineCodeNavigationStates[index])
+    }
+
+    editor.destroy()
+  })
+
+  it("walks every caret location from right to left through inline code with surrounding text", () => {
+    const editor = createInlineCodeNavigationEditor()
+
+    editor.commands.focus("end")
+
+    expect(getInlineCodeNavigationSnapshot(editor)).toBe(
+      inlineCodeNavigationStates[inlineCodeNavigationStates.length - 1]
+    )
+
+    for (let index = inlineCodeNavigationStates.length - 2; index >= 0; index -= 1) {
+      pressArrowKey(editor, "left")
+      expect(getInlineCodeNavigationSnapshot(editor)).toBe(inlineCodeNavigationStates[index])
+    }
+
+    editor.destroy()
+  })
+
+  it("moves one logical step left and right from every caret location around inline code", () => {
+    for (let index = 0; index < inlineCodeNavigationStates.length; index += 1) {
+      const editor = createInlineCodeNavigationEditor()
+
+      editor.commands.focus("start")
+      moveInlineCodeCaret(editor, "right", index)
+
+      expect(getInlineCodeNavigationSnapshot(editor)).toBe(inlineCodeNavigationStates[index])
+
+      if (index > 0) {
+        pressArrowKey(editor, "left")
+        expect(getInlineCodeNavigationSnapshot(editor)).toBe(inlineCodeNavigationStates[index - 1])
+        pressArrowKey(editor, "right")
+        expect(getInlineCodeNavigationSnapshot(editor)).toBe(inlineCodeNavigationStates[index])
+      }
+
+      if (index < inlineCodeNavigationStates.length - 1) {
+        pressArrowKey(editor, "right")
+        expect(getInlineCodeNavigationSnapshot(editor)).toBe(inlineCodeNavigationStates[index + 1])
+      }
+
+      editor.destroy()
+    }
   })
 
   it("treats link boundaries as outside by default", () => {

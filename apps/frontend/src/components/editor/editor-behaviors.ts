@@ -67,6 +67,11 @@ interface CodeBoundaryDecorationState {
   side: -1 | 1
 }
 
+interface CodeBoundaryContext {
+  codeMark: ProseMirrorMark
+  edge: "start" | "end"
+}
+
 // Matches the editor's inline code horizontal padding (`px-1.5`),
 // so the synthetic caret sits where the code pill already has room.
 const inlineCodeBoundaryCaretOffset = "0.375rem"
@@ -89,6 +94,28 @@ function setStoredMarks(editor: Editor, marks: readonly ProseMirrorMark[] | null
   return true
 }
 
+function getCodeBoundaryContext(state: EditorState, pos: number): CodeBoundaryContext | null {
+  const $pos = state.doc.resolve(pos)
+  const beforeCode = findMarkByName($pos.nodeBefore?.marks ?? [], "code")
+  const afterCode = findMarkByName($pos.nodeAfter?.marks ?? [], "code")
+
+  if (!!beforeCode === !!afterCode) {
+    return null
+  }
+
+  if (beforeCode) {
+    return {
+      codeMark: beforeCode,
+      edge: "end",
+    }
+  }
+
+  return {
+    codeMark: afterCode!,
+    edge: "start",
+  }
+}
+
 function enterInlineMark(editor: Editor, boundaryMark: ProseMirrorMark): boolean {
   const currentMarks = getEffectiveCursorMarks(editor.state).filter((mark) => mark.type !== boundaryMark.type)
   return setStoredMarks(editor, [...currentMarks, boundaryMark])
@@ -101,21 +128,15 @@ function getCodeBoundaryDecorationState(state: EditorState): CodeBoundaryDecorat
     return null
   }
 
-  const { $from, from } = selection
-  const beforeCode = findMarkByName($from.nodeBefore?.marks ?? [], "code")
-  const afterCode = findMarkByName($from.nodeAfter?.marks ?? [], "code")
-
-  if (!!beforeCode === !!afterCode) {
-    return null
-  }
-
+  const { from } = selection
+  const boundary = getCodeBoundaryContext(state, from)
   const isInsideCode = !!findMarkByName(getEffectiveCursorMarks(state), "code")
 
-  if (!isInsideCode) {
+  if (!boundary || !isInsideCode) {
     return null
   }
 
-  if (beforeCode) {
+  if (boundary.edge === "end") {
     return {
       pos: from,
       edge: "end",
@@ -125,7 +146,7 @@ function getCodeBoundaryDecorationState(state: EditorState): CodeBoundaryDecorat
 
   return {
     pos: from,
-    edge: "start",
+    edge: boundary.edge,
     side: 1,
   }
 }
@@ -219,6 +240,35 @@ export function handleEscapableInlineMarkArrow(editor: Editor, direction: ArrowD
   }
 
   return false
+}
+
+function moveCursorOntoInlineCodeBoundary(editor: Editor, direction: ArrowDirection): boolean {
+  const { state } = editor
+  const { selection } = state
+
+  if (!selection.empty) {
+    return false
+  }
+
+  const targetPos = selection.from + (direction === "right" ? 1 : -1)
+  if (targetPos < 1 || targetPos > state.doc.content.size) {
+    return false
+  }
+
+  const boundary = getCodeBoundaryContext(state, targetPos)
+  if (!boundary) {
+    return false
+  }
+
+  const marksWithoutCode = getEffectiveCursorMarks(state).filter((mark) => mark.type.name !== "code")
+  const shouldBeInside = direction === "right" ? boundary.edge === "end" : boundary.edge === "start"
+  const nextMarks = shouldBeInside ? [...marksWithoutCode, boundary.codeMark] : marksWithoutCode
+  const tr = state.tr
+
+  tr.setSelection(TextSelection.create(state.doc, targetPos))
+  tr.setStoredMarks(nextMarks)
+  editor.view.dispatch(tr)
+  return true
 }
 
 export function handleLinkToolbarAction(
@@ -510,14 +560,18 @@ export const EditorBehaviors = Extension.create<EditorBehaviorsOptions>({
           return false
         }
 
-        return handleEscapableInlineMarkArrow(this.editor, "left")
+        return (
+          handleEscapableInlineMarkArrow(this.editor, "left") || moveCursorOntoInlineCodeBoundary(this.editor, "left")
+        )
       },
       ArrowRight: () => {
         if (isSuggestionActive(this.editor)) {
           return false
         }
 
-        return handleEscapableInlineMarkArrow(this.editor, "right")
+        return (
+          handleEscapableInlineMarkArrow(this.editor, "right") || moveCursorOntoInlineCodeBoundary(this.editor, "right")
+        )
       },
 
       // Tab: VS Code-style indent (always trapped to prevent focus escape)
