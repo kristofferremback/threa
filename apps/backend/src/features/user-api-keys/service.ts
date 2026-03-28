@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "crypto"
+import { createHash, randomBytes, timingSafeEqual } from "crypto"
 import type { Pool } from "pg"
 import { UserApiKeyRepository, type UserApiKeyRow } from "./repository"
 import { userApiKeyId } from "../../lib/id"
@@ -109,7 +109,11 @@ export class UserApiKeyService {
     if (candidates.length === 0) return null
 
     const keyHash = hashKey(value)
-    const match = candidates.find((k) => k.keyHash === keyHash)
+    const keyHashBuf = Buffer.from(keyHash, "hex")
+    const match = candidates.find((k) => {
+      const candidateBuf = Buffer.from(k.keyHash, "hex")
+      return candidateBuf.length === keyHashBuf.length && timingSafeEqual(candidateBuf, keyHashBuf)
+    })
     if (!match) return null
 
     // Fire-and-forget last_used_at update — non-critical, don't block response

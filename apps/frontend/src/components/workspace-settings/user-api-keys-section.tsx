@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useCallback, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { workspacesApi } from "@/api/workspaces"
 import { Button } from "@/components/ui/button"
@@ -18,7 +18,9 @@ import {
 } from "@/components/ui/alert-dialog"
 import { useFormattedDate } from "@/hooks/use-formatted-date"
 import { API_KEY_PERMISSIONS, type ApiKeyScope } from "@threa/types"
-import { Copy, Plus, Trash2, Eye, EyeOff } from "lucide-react"
+import { Check, Copy, Plus, Trash2, Eye, EyeOff } from "lucide-react"
+
+const SCOPE_LABELS: Record<string, string> = Object.fromEntries(API_KEY_PERMISSIONS.map((p) => [p.slug, p.name]))
 
 interface UserApiKeysSectionProps {
   workspaceId: string
@@ -39,6 +41,7 @@ export function UserApiKeysSection({ workspaceId }: UserApiKeysSectionProps) {
   const [selectedScopes, setSelectedScopes] = useState<Set<ApiKeyScope>>(new Set())
   const [createdKeyValue, setCreatedKeyValue] = useState<string | null>(null)
   const [showKeyValue, setShowKeyValue] = useState(false)
+  const [copied, setCopied] = useState(false)
   const [revokeTarget, setRevokeTarget] = useState<{ id: string; name: string } | null>(null)
 
   const createMutation = useMutation({
@@ -47,6 +50,7 @@ export function UserApiKeysSection({ workspaceId }: UserApiKeysSectionProps) {
     onSuccess: (data) => {
       setCreatedKeyValue(data.value)
       setShowKeyValue(true)
+      setCopied(false)
       setNewKeyName("")
       setSelectedScopes(new Set())
       setShowCreateForm(false)
@@ -79,9 +83,15 @@ export function UserApiKeysSection({ workspaceId }: UserApiKeysSectionProps) {
     createMutation.mutate({ name: newKeyName.trim(), scopes: [...selectedScopes] })
   }
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text)
-  }
+  const copyToClipboard = useCallback(async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // Clipboard API unavailable
+    }
+  }, [])
 
   const activeKeys = keys.filter((k) => !k.revokedAt)
   const revokedKeys = keys.filter((k) => k.revokedAt)
@@ -101,7 +111,7 @@ export function UserApiKeysSection({ workspaceId }: UserApiKeysSectionProps) {
               {showKeyValue ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             </Button>
             <Button variant="ghost" size="icon" onClick={() => copyToClipboard(createdKeyValue)}>
-              <Copy className="h-4 w-4" />
+              {copied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
             </Button>
           </div>
           <Button variant="ghost" size="sm" onClick={() => setCreatedKeyValue(null)}>
@@ -188,7 +198,7 @@ export function UserApiKeysSection({ workspaceId }: UserApiKeysSectionProps) {
                 <div className="flex items-center gap-2 mt-1 flex-wrap">
                   {key.scopes.map((scope) => (
                     <Badge key={scope} variant="secondary" className="text-xs">
-                      {scope}
+                      {SCOPE_LABELS[scope] ?? scope}
                     </Badge>
                   ))}
                 </div>

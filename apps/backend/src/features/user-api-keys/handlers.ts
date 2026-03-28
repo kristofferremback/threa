@@ -77,7 +77,7 @@ export function createUserApiKeyHandlers({ userApiKeyService }: Dependencies) {
       }
 
       await userApiKeyService.revokeKey(workspaceId, userId, result.data.keyId)
-      res.json({ ok: true })
+      res.status(204).send()
     },
   }
 }
