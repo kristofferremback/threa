@@ -17,9 +17,19 @@ const callbackSchema = z.object({
 /**
  * Validate that a forwarded host is an allowed staging subdomain.
  * Prevents open redirect via X-Forwarded-Host spoofing.
+ *
+ * Matches both nested subdomains (foo.staging.threa.io) and flat PR subdomains
+ * (pr-123-staging.threa.io) which are siblings of the allowed domain, not children.
  */
 function isAllowedForwardedHost(host: string, allowedDomain: string): boolean {
-  return host === allowedDomain || host.endsWith(`.${allowedDomain}`)
+  if (host === allowedDomain) return true
+  // Nested subdomain: foo.staging.threa.io
+  if (host.endsWith(`.${allowedDomain}`)) return true
+  // Flat PR subdomain: pr-N-staging.threa.io is a sibling of staging.threa.io
+  // under the same base domain. Match the explicit PR pattern only.
+  const prPrefix = /^pr-\d+-/
+  if (prPrefix.test(host) && host.endsWith(`-${allowedDomain}`)) return true
+  return false
 }
 
 interface Dependencies {
