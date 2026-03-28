@@ -91,15 +91,6 @@ export const UserApiKeyRepository = {
     return result.rows.map(mapRow)
   },
 
-  async revoke(db: Querier, workspaceId: string, id: string): Promise<boolean> {
-    const result = await db.query(sql`
-      UPDATE user_api_keys
-      SET revoked_at = NOW()
-      WHERE id = ${id} AND workspace_id = ${workspaceId} AND revoked_at IS NULL
-    `)
-    return (result.rowCount ?? 0) > 0
-  },
-
   /**
    * Atomic revoke with ownership check — avoids select-then-update (INV-20).
    * Single UPDATE with all guards in the WHERE clause.
