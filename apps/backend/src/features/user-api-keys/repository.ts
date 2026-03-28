@@ -100,6 +100,31 @@ export const UserApiKeyRepository = {
     return (result.rowCount ?? 0) > 0
   },
 
+  /**
+   * Atomic revoke with ownership check — avoids select-then-update (INV-20).
+   * Single UPDATE with all guards in the WHERE clause.
+   */
+  async revokeOwned(
+    db: Querier,
+    workspaceId: string,
+    userId: string,
+    id: string
+  ): Promise<"ok" | "not_found" | "already_revoked"> {
+    // Try the strict UPDATE first (all conditions including revoked_at IS NULL)
+    const result = await db.query(sql`
+      UPDATE user_api_keys
+      SET revoked_at = NOW()
+      WHERE id = ${id} AND workspace_id = ${workspaceId} AND user_id = ${userId} AND revoked_at IS NULL
+    `)
+    if ((result.rowCount ?? 0) > 0) return "ok"
+
+    // No rows matched — distinguish "not found / wrong owner" from "already revoked"
+    const exists = await db.query(sql`
+      SELECT 1 FROM user_api_keys WHERE id = ${id} AND workspace_id = ${workspaceId} AND user_id = ${userId}
+    `)
+    return exists.rowCount === 0 ? "not_found" : "already_revoked"
+  },
+
   async revokeAllByUser(db: Querier, workspaceId: string, userId: string): Promise<number> {
     const result = await db.query(sql`
       UPDATE user_api_keys

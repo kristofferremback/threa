@@ -61,16 +61,17 @@ export class UserApiKeyService {
 
     // Atomic count-check + insert in a transaction with FOR UPDATE to prevent
     // concurrent creates from exceeding the key limit (INV-20).
+    // Note: SELECT id (not COUNT(*)) because FOR UPDATE is invalid with aggregates.
     const row = await withTransaction(this.pool, async (client) => {
-      const { rows } = await client.query<{ cnt: string }>(sql`
-        SELECT COUNT(*) AS cnt
+      const { rows: lockedRows } = await client.query<{ id: string }>(sql`
+        SELECT id
         FROM user_api_keys
         WHERE workspace_id = ${params.workspaceId}
           AND user_id = ${params.userId}
           AND revoked_at IS NULL
         FOR UPDATE
       `)
-      if (Number(rows[0].cnt) >= MAX_ACTIVE_KEYS_PER_USER) {
+      if (lockedRows.length >= MAX_ACTIVE_KEYS_PER_USER) {
         throw new HttpError(`Maximum of ${MAX_ACTIVE_KEYS_PER_USER} active API keys per user`, {
           status: 400,
           code: "KEY_LIMIT_REACHED",
@@ -97,14 +98,13 @@ export class UserApiKeyService {
   }
 
   async revokeKey(workspaceId: string, userId: string, keyId: string): Promise<void> {
-    const key = await UserApiKeyRepository.findById(this.pool, workspaceId, keyId)
-    if (!key || key.userId !== userId) {
+    const result = await UserApiKeyRepository.revokeOwned(this.pool, workspaceId, userId, keyId)
+    if (result === "not_found") {
       throw new HttpError("API key not found", { status: 404, code: "NOT_FOUND" })
     }
-    if (key.revokedAt) {
+    if (result === "already_revoked") {
       throw new HttpError("API key already revoked", { status: 400, code: "ALREADY_REVOKED" })
     }
-    await UserApiKeyRepository.revoke(this.pool, workspaceId, keyId)
   }
 
   /**
