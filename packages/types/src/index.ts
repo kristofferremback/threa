@@ -358,7 +358,9 @@ export {
 export {
   API_KEY_SCOPES,
   API_KEY_PERMISSIONS,
-  SENT_VIA_API,
+  SENT_VIA_API_PREFIX,
+  sentViaApiKey,
+  isSentViaApi,
   type ApiKeyScope,
   type ApiKeyPermission,
   type UserApiKey,

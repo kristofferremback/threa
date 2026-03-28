@@ -16,7 +16,7 @@ import {
 import { UserRepository } from "../workspaces"
 import { PersonaRepository } from "../agents"
 import { BotRepository, type Bot } from "./bot-repository"
-import { AuthorTypes, SENT_VIA_API, type AuthorType } from "@threa/types"
+import { AuthorTypes, sentViaApiKey, type AuthorType } from "@threa/types"
 import type { Bot as WireBot } from "@threa/types"
 import { HttpError } from "@threa/backend-common"
 import { normalizeMessage, toEmoji } from "../emoji"
@@ -533,7 +533,7 @@ export function createPublicApiHandlers({
           contentJson,
           contentMarkdown,
           clientMessageId,
-          sentVia: SENT_VIA_API,
+          sentVia: sentViaApiKey(req.userApiKey.id),
         })
 
         res.status(201).json({ data: serializeMessage(message, { authorDisplayName: user.name }) })

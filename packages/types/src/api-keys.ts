@@ -51,8 +51,18 @@ export const API_KEY_PERMISSIONS: ApiKeyPermission[] = [
 
 // --- User-scoped API keys ---
 
-/** Sent via indicator for messages created through user-scoped API keys */
-export const SENT_VIA_API = "api" as const
+/** Prefix for sentVia field on messages created through user-scoped API keys */
+export const SENT_VIA_API_PREFIX = "api_key:" as const
+
+/** Build the sentVia value for a user-scoped API key */
+export function sentViaApiKey(keyId: string): string {
+  return `${SENT_VIA_API_PREFIX}${keyId}`
+}
+
+/** Check if a sentVia value indicates it was sent via a user-scoped API key */
+export function isSentViaApi(sentVia: string | null): boolean {
+  return sentVia != null && sentVia.startsWith(SENT_VIA_API_PREFIX)
+}
 
 /** Wire format for user API keys (returned to frontend, key value never included) */
 export interface UserApiKey {
