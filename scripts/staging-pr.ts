@@ -549,8 +549,23 @@ async function deletePrDnsAndRoute(): Promise<void> {
 async function deploy(): Promise<void> {
   console.log(`\n=== Deploying staging environment for PR #${prNumber} (branch: ${branch}) ===\n`)
 
-  // 1. Create and clone databases (only on first deploy — skip if DBs already exist)
-  const isFirstDeploy = !(await databaseExists(prDbName))
+  // 1. Create and clone databases (only on first deploy — skip if DBs already exist
+  //    AND have valid data. If a previous deploy failed mid-clone, the DB exists
+  //    but is empty/broken — detect this and re-clone.)
+  const dbExists = await databaseExists(prDbName)
+  let isFirstDeploy = !dbExists
+  if (dbExists) {
+    try {
+      const workspaceCount = await runPsql(prDbName, "SELECT count(*) FROM workspaces")
+      if (workspaceCount === "0") {
+        console.log(`Database '${prDbName}' exists but has no workspaces — re-cloning`)
+        isFirstDeploy = true
+      }
+    } catch {
+      console.log(`Database '${prDbName}' exists but is not queryable — re-cloning`)
+      isFirstDeploy = true
+    }
+  }
 
   if (isFirstDeploy) {
     await createDatabase(prDbName)
