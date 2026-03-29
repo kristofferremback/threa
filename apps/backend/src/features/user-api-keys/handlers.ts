@@ -9,7 +9,14 @@ const ALL_SCOPES = Object.values(API_KEY_SCOPES)
 const createKeySchema = z.object({
   name: z.string().min(1, "name is required").max(100),
   scopes: z.array(z.enum(ALL_SCOPES as [string, ...string[]])).min(1, "at least one scope is required"),
-  expiresAt: z.string().datetime().nullable().optional(),
+  expiresAt: z
+    .string()
+    .datetime()
+    .nullable()
+    .optional()
+    .refine((val) => val == null || new Date(val) > new Date(), {
+      message: "expiresAt must be a future date",
+    }),
 })
 
 const revokeKeySchema = z.object({

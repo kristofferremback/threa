@@ -69,6 +69,9 @@ export function UserApiKeysSection({ workspaceId }: UserApiKeysSectionProps) {
       setRevokeTarget(null)
       queryClient.invalidateQueries({ queryKey })
     },
+    onError: () => {
+      setRevokeTarget(null)
+    },
   })
 
   const toggleScope = (scope: ApiKeyScope) => {
