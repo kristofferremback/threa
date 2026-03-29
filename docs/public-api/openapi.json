@@ -447,6 +447,10 @@
                           },
                           "threadStreamId": { "type": "string" },
                           "clientMessageId": { "type": "string" },
+                          "sentVia": {
+                            "description": "Present when message was sent via API on behalf of a user",
+                            "type": "string"
+                          },
                           "editedAt": { "type": "string", "format": "date-time" },
                           "createdAt": { "type": "string", "format": "date-time" }
                         },
@@ -500,7 +504,7 @@
         "operationId": "sendMessage",
         "summary": "Send a message",
         "tags": ["Messages"],
-        "description": "Send a message as a bot. The bot identity is derived from the API key name. Messages are sent as Markdown.",
+        "description": "Send a message. Workspace-scoped keys send as a bot; user-scoped keys send on behalf of the key owner.",
         "security": [{ "apiKey": ["messages:write"] }],
         "parameters": [
           {
@@ -557,6 +561,10 @@
                         "replyCount": { "type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991 },
                         "threadStreamId": { "type": "string" },
                         "clientMessageId": { "type": "string" },
+                        "sentVia": {
+                          "description": "Present when message was sent via API on behalf of a user",
+                          "type": "string"
+                        },
                         "editedAt": { "type": "string", "format": "date-time" },
                         "createdAt": { "type": "string", "format": "date-time" }
                       },
@@ -610,7 +618,7 @@
         "operationId": "updateMessage",
         "summary": "Update a message",
         "tags": ["Messages"],
-        "description": "Update a message previously sent by this API key's bot.",
+        "description": "Update a message you previously sent via API.",
         "security": [{ "apiKey": ["messages:write"] }],
         "parameters": [
           {
@@ -664,6 +672,10 @@
                         "replyCount": { "type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991 },
                         "threadStreamId": { "type": "string" },
                         "clientMessageId": { "type": "string" },
+                        "sentVia": {
+                          "description": "Present when message was sent via API on behalf of a user",
+                          "type": "string"
+                        },
                         "editedAt": { "type": "string", "format": "date-time" },
                         "createdAt": { "type": "string", "format": "date-time" }
                       },
@@ -716,7 +728,7 @@
         "operationId": "deleteMessage",
         "summary": "Delete a message",
         "tags": ["Messages"],
-        "description": "Delete a message previously sent by this API key's bot.",
+        "description": "Delete a message you previously sent via API.",
         "security": [{ "apiKey": ["messages:write"] }],
         "parameters": [
           {

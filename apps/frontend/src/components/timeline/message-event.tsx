@@ -1,8 +1,15 @@
 import { type ReactNode, useRef, useEffect, useState, useMemo, useCallback } from "react"
-import type { StreamEvent, AttachmentSummary, JSONContent, LinkPreviewSummary } from "@threa/types"
+import {
+  isSentViaApi,
+  type StreamEvent,
+  type AttachmentSummary,
+  type JSONContent,
+  type LinkPreviewSummary,
+} from "@threa/types"
 import { Link } from "react-router-dom"
 import { toast } from "sonner"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Button } from "@/components/ui/button"
 import { MarkdownContent, AttachmentProvider } from "@/components/ui/markdown-content"
 import { RelativeTime } from "@/components/relative-time"
@@ -46,6 +53,7 @@ interface MessagePayload {
   threadId?: string
   sessionId?: string
   editedAt?: string
+  sentVia?: string
   reactions?: Record<string, string[]>
 }
 
@@ -200,6 +208,14 @@ function MessageLayout({
             >
               {actorName}
             </span>
+          )}
+          {payload.sentVia && isSentViaApi(payload.sentVia) && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="text-[10px] text-muted-foreground/70 font-medium cursor-default">via API</span>
+              </TooltipTrigger>
+              <TooltipContent>Sent on behalf of this user by an API key</TooltipContent>
+            </Tooltip>
           )}
           {statusIndicator}
           {actions}

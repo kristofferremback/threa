@@ -10,6 +10,7 @@ import { createDatabasePools, warmPool, type DatabasePools } from "./db"
 import { runMigrations } from "./db/migrations"
 import { WorkosAuthService, StubAuthService, WorkosApiKeyService, StubApiKeyService } from "@threa/backend-common"
 import { ApiKeyChannelService } from "./features/api-keys"
+import { UserApiKeyService as UserApiKeyServiceImpl } from "./features/user-api-keys"
 import { LinkPreviewService, LinkPreviewOutboxHandler, createLinkPreviewWorker } from "./features/link-previews"
 import {
   WorkspaceService,
@@ -337,6 +338,9 @@ export async function startServer(): Promise<ServerInstance> {
   const apiKeyService = config.useStubAuth ? new StubApiKeyService() : new WorkosApiKeyService(config.workos)
   const apiKeyChannelService = new ApiKeyChannelService({ pool })
 
+  // User-scoped API key service — managed by Threa (not WorkOS)
+  const userApiKeyService = new UserApiKeyServiceImpl(pool)
+
   // Link preview service — created early for route registration
   const linkPreviewService = new LinkPreviewService({ pool, streamService })
 
@@ -367,6 +371,7 @@ export async function startServer(): Promise<ServerInstance> {
     apiKeyChannelService,
     linkPreviewService,
     workosOrgService,
+    userApiKeyService,
   })
 
   app.use(errorHandler)

@@ -160,6 +160,7 @@ export interface Message {
   contentJson: ThreaDocument
   contentMarkdown: string
   replyCount: number
+  sentVia: string | null
   reactions: Record<string, string[]>
   editedAt: string | null
   deletedAt: string | null

@@ -45,6 +45,7 @@ export function createTestMessage(input: ClassifierInput, messageId: string, aut
     replyCount: 0,
     reactions: {},
     clientMessageId: null,
+    sentVia: null,
     editedAt: null,
     deletedAt: null,
     createdAt: new Date(),

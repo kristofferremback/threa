@@ -13,6 +13,7 @@ import { logger } from "../../lib/logger"
 import { JobQueues } from "../../lib/queue"
 import type { QueueManager } from "../../lib/queue"
 import type { WorkosOrgService } from "@threa/backend-common"
+import { UserApiKeyRepository } from "../user-api-keys"
 import { AvatarUploadRepository } from "./avatar-upload-repository"
 import type { AvatarService } from "./avatar-service"
 
@@ -238,6 +239,7 @@ export class WorkspaceService {
 
   async removeUser(workspaceId: string, userId: string): Promise<void> {
     return withTransaction(this.pool, async (client) => {
+      await UserApiKeyRepository.revokeAllByUser(client, workspaceId, userId)
       await UserRepository.remove(client, workspaceId, userId)
 
       await OutboxRepository.insert(client, "workspace_user:removed", {

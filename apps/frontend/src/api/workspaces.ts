@@ -6,6 +6,9 @@ import type {
   CreateWorkspaceInput,
   CompleteUserSetupInput,
   PendingInvitation,
+  UserApiKey,
+  CreateUserApiKeyResponse,
+  ApiKeyScope,
 } from "@threa/types"
 
 export type { WorkspaceBootstrap, CreateWorkspaceInput }
@@ -116,5 +119,22 @@ export const workspacesApi = {
   async getWidgetToken(workspaceId: string): Promise<string> {
     const res = await api.get<{ token: string }>(`/api/workspaces/${workspaceId}/widget-token`)
     return res.token
+  },
+
+  // User-scoped API keys
+  async listUserApiKeys(workspaceId: string): Promise<UserApiKey[]> {
+    const res = await api.get<{ keys: UserApiKey[] }>(`/api/workspaces/${workspaceId}/user-api-keys`)
+    return res.keys
+  },
+
+  async createUserApiKey(
+    workspaceId: string,
+    params: { name: string; scopes: ApiKeyScope[]; expiresAt?: string | null }
+  ): Promise<CreateUserApiKeyResponse> {
+    return api.post<CreateUserApiKeyResponse>(`/api/workspaces/${workspaceId}/user-api-keys`, params)
+  },
+
+  async revokeUserApiKey(workspaceId: string, keyId: string): Promise<void> {
+    await api.post(`/api/workspaces/${workspaceId}/user-api-keys/${keyId}/revoke`)
   },
 }

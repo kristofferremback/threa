@@ -48,3 +48,37 @@ export const API_KEY_PERMISSIONS: ApiKeyPermission[] = [
     description: "Grants access to list and search workspace users.",
   },
 ]
+
+// --- User-scoped API keys ---
+
+/** Prefix for sentVia field on messages created through user-scoped API keys */
+export const SENT_VIA_API_PREFIX = "api_key:" as const
+
+/** Build the sentVia value for a user-scoped API key */
+export function sentViaApiKey(keyId: string): string {
+  return `${SENT_VIA_API_PREFIX}${keyId}`
+}
+
+/** Check if a sentVia value indicates it was sent via a user-scoped API key */
+export function isSentViaApi(sentVia: string | null): boolean {
+  return sentVia != null && sentVia.startsWith(SENT_VIA_API_PREFIX)
+}
+
+/** Wire format for user API keys (returned to frontend, key value never included) */
+export interface UserApiKey {
+  id: string
+  name: string
+  keyPrefix: string
+  scopes: ApiKeyScope[]
+  lastUsedAt: string | null
+  expiresAt: string | null
+  revokedAt: string | null
+  createdAt: string
+}
+
+/** Response when creating a user API key (includes the full key value once) */
+export interface CreateUserApiKeyResponse {
+  key: UserApiKey
+  /** The full API key value. Only returned on creation — store it securely. */
+  value: string
+}

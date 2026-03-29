@@ -2,7 +2,7 @@ import { z } from "zod"
 import type { Request, Response } from "express"
 import type { Pool } from "pg"
 import type { SearchService } from "../search"
-import { serializeSearchResult } from "../search"
+import { serializeSearchResult, resolveUserAccessibleStreamIds } from "../search"
 import type { ApiKeyChannelService } from "../api-keys"
 import type { EventService } from "../messaging"
 import {
@@ -11,11 +11,12 @@ import {
   getEffectiveDisplayName,
   type Stream,
   type DisplayNameContext,
+  type StreamService,
 } from "../streams"
 import { UserRepository } from "../workspaces"
 import { PersonaRepository } from "../agents"
 import { BotRepository, type Bot } from "./bot-repository"
-import { AuthorTypes, type AuthorType } from "@threa/types"
+import { AuthorTypes, sentViaApiKey, type AuthorType } from "@threa/types"
 import type { Bot as WireBot } from "@threa/types"
 import { HttpError } from "@threa/backend-common"
 import { normalizeMessage, toEmoji } from "../emoji"
@@ -64,6 +65,7 @@ function serializeMessage(
     contentMarkdown: string
     replyCount: number
     clientMessageId?: string | null
+    sentVia?: string | null
     editedAt: Date | null
     createdAt: Date
   },
@@ -80,6 +82,7 @@ function serializeMessage(
     replyCount: message.replyCount,
     ...(opts?.threadStreamId != null && { threadStreamId: opts.threadStreamId }),
     ...(message.clientMessageId != null && { clientMessageId: message.clientMessageId }),
+    ...(message.sentVia != null && { sentVia: message.sentVia }),
     ...(message.editedAt != null && { editedAt: message.editedAt.toISOString() }),
     createdAt: message.createdAt.toISOString(),
   }
@@ -181,18 +184,35 @@ async function resolveAuthorDisplayNames(
 export interface PublicApiDeps {
   searchService: SearchService
   apiKeyChannelService: ApiKeyChannelService
+  streamService: StreamService
   eventService: EventService
   pool: Pool
 }
 
-export function createPublicApiHandlers({ searchService, apiKeyChannelService, eventService, pool }: PublicApiDeps) {
-  /** Resolve accessible stream IDs for the current API key */
+export function createPublicApiHandlers({
+  searchService,
+  apiKeyChannelService,
+  streamService,
+  eventService,
+  pool,
+}: PublicApiDeps) {
+  /** Resolve accessible stream IDs for the current key (workspace or user-scoped) */
   async function getAccessibleStreamIds(req: Request): Promise<string[]> {
+    if (req.userApiKey) {
+      return resolveUserAccessibleStreamIds(pool, req.workspaceId!, req.user!.id, {})
+    }
     return apiKeyChannelService.getAccessibleStreamIdsForApiKey(req.workspaceId!, req.apiKey!.id)
   }
 
-  /** Check if a single stream is accessible for the current API key */
+  /** Check if a single stream is accessible for the current key */
   async function assertStreamAccessible(req: Request, streamId: string): Promise<void> {
+    if (req.userApiKey) {
+      const stream = await streamService.tryAccess(streamId, req.workspaceId!, req.user!.id)
+      if (!stream) {
+        throw new HttpError("Stream not accessible", { status: 403, code: "FORBIDDEN" })
+      }
+      return
+    }
     const accessible = await apiKeyChannelService.isStreamAccessibleForApiKey(
       req.workspaceId!,
       req.apiKey!.id,
@@ -203,8 +223,8 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
     }
   }
 
-  /** Find a message, verify stream access, and verify bot ownership. Used by update/delete. */
-  async function resolveApiKeyMessage(messageId: string, req: Request) {
+  /** Find a message, verify stream access, and verify ownership. Used by update/delete. */
+  async function resolveOwnedMessage(messageId: string, req: Request) {
     const message = await eventService.getMessageById(messageId)
     if (!message || message.deletedAt) {
       throw new HttpError("Message not found", { status: 404, code: "NOT_FOUND" })
@@ -212,7 +232,18 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
 
     await assertStreamAccessible(req, message.streamId)
 
-    // Verify bot ownership: message must be authored by a bot owned by this API key
+    // User-scoped key: can modify own messages (regardless of how they were sent)
+    if (req.userApiKey) {
+      if (message.authorId !== req.user!.id) {
+        throw new HttpError("Cannot modify another user's messages", {
+          status: 403,
+          code: "FORBIDDEN",
+        })
+      }
+      return { message, actorId: req.user!.id, actorType: AuthorTypes.USER as AuthorType, displayName: req.user!.name }
+    }
+
+    // Workspace-scoped key: verify bot ownership
     if (message.authorType !== AuthorTypes.BOT) {
       throw new HttpError("Cannot modify messages not created via API", { status: 403, code: "FORBIDDEN" })
     }
@@ -222,7 +253,7 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
       throw new HttpError("Cannot modify messages created by another API key", { status: 403, code: "FORBIDDEN" })
     }
 
-    return { message, bot }
+    return { message, actorId: bot.id, actorType: AuthorTypes.BOT as AuthorType, displayName: bot.name }
   }
 
   return {
@@ -464,14 +495,14 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
     },
 
     /**
-     * Send a message as a bot.
+     * Send a message. User-scoped keys send as the user (with sentVia indicator);
+     * workspace-scoped keys send as a bot entity.
      *
      * POST /api/v1/workspaces/:workspaceId/streams/:streamId/messages
      */
     async sendMessage(req: Request, res: Response) {
       const workspaceId = req.workspaceId!
       const streamId = req.params.streamId
-      const apiKey = req.apiKey!
 
       const result = sendMessageSchema.safeParse(req.body)
       if (!result.success) {
@@ -482,17 +513,38 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
       }
 
       const { content, clientMessageId } = result.data
-      const botName = apiKey.name
 
       // Verify stream access
       await assertStreamAccessible(req, streamId)
 
+      // Normalize and parse content
+      const contentMarkdown = normalizeMessage(content)
+      const contentJson = parseMarkdown(contentMarkdown, undefined, toEmoji)
+
+      // User-scoped key: send as the user with "api" indicator
+      if (req.userApiKey) {
+        const user = req.user!
+
+        const message = await eventService.createMessage({
+          workspaceId,
+          streamId,
+          authorId: user.id,
+          authorType: AuthorTypes.USER,
+          contentJson,
+          contentMarkdown,
+          clientMessageId,
+          sentVia: sentViaApiKey(req.userApiKey.id),
+        })
+
+        res.status(201).json({ data: serializeMessage(message, { authorDisplayName: user.name }) })
+        return
+      }
+
+      // Workspace-scoped key: send as a bot
+      const apiKey = req.apiKey!
+      const botName = apiKey.name
+
       // Upsert bot entity and emit outbox event in a transaction.
-      // Note: this commits separately from createMessage below. If createMessage
-      // fails, clients may briefly see the bot identity without a message. This is
-      // acceptable — the bot existing without messages is a benign state, and
-      // merging both into one transaction would require eventService to accept a
-      // Querier, which is a larger refactor deferred until needed.
       const { bot } = await withTransaction(pool, async (client) => {
         const {
           bot: upsertedBot,
@@ -519,10 +571,6 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
 
         return { bot: upsertedBot }
       })
-
-      // Normalize and parse content
-      const contentMarkdown = normalizeMessage(content)
-      const contentJson = parseMarkdown(contentMarkdown, undefined, toEmoji)
 
       const message = await eventService.createMessage({
         workspaceId,
@@ -555,7 +603,7 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
       }
 
       const { content } = result.data
-      const { message: existing, bot } = await resolveApiKeyMessage(messageId, req)
+      const { message: existing, actorId, actorType, displayName } = await resolveOwnedMessage(messageId, req)
 
       // Normalize and parse content
       const contentMarkdown = normalizeMessage(content)
@@ -567,8 +615,8 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
         streamId: existing.streamId,
         contentJson,
         contentMarkdown,
-        actorId: bot.id,
-        actorType: AuthorTypes.BOT,
+        actorId,
+        actorType,
       })
 
       if (!updated) {
@@ -579,7 +627,7 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
       const thread = await StreamRepository.findByParentMessage(pool, existing.streamId, messageId)
       res.json({
         data: serializeMessage(updated, {
-          authorDisplayName: bot.name,
+          authorDisplayName: displayName,
           threadStreamId: thread?.id ?? null,
         }),
       })
@@ -594,14 +642,14 @@ export function createPublicApiHandlers({ searchService, apiKeyChannelService, e
       const workspaceId = req.workspaceId!
       const messageId = req.params.messageId
 
-      const { message: existing, bot } = await resolveApiKeyMessage(messageId, req)
+      const { message: existing, actorId, actorType } = await resolveOwnedMessage(messageId, req)
 
       const deleted = await eventService.deleteMessage({
         workspaceId,
         messageId,
         streamId: existing.streamId,
-        actorId: bot.id,
-        actorType: AuthorTypes.BOT,
+        actorId,
+        actorType,
       })
 
       if (!deleted) {

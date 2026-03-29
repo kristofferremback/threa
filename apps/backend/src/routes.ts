@@ -26,6 +26,7 @@ import { createAuthStubHandlers } from "./auth/auth-stub-handlers"
 import { createAgentSessionHandlers } from "./features/agents"
 import { createLinkPreviewHandlers } from "./features/link-previews"
 import { createPublicApiHandlers } from "./features/public-api"
+import { createUserApiKeyHandlers, type UserApiKeyService } from "./features/user-api-keys"
 import {
   createInternalAuthMiddleware,
   errorHandler,
@@ -78,6 +79,7 @@ interface Dependencies {
   apiKeyChannelService: ApiKeyChannelService
   linkPreviewService: LinkPreviewService
   workosOrgService: WorkosOrgService
+  userApiKeyService: UserApiKeyService
 }
 
 export function registerRoutes(app: Express, deps: Dependencies) {
@@ -105,6 +107,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     apiKeyChannelService,
     linkPreviewService,
     workosOrgService,
+    userApiKeyService,
   } = deps
 
   const auth = createAuthMiddleware({ authService })
@@ -317,9 +320,15 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     linkPreview.resolveMessageLink
   )
 
-  // Public API v1 — API key auth
-  const publicAuth = createPublicApiAuthMiddleware({ apiKeyService, pool })
-  const publicApi = createPublicApiHandlers({ searchService, apiKeyChannelService, eventService, pool })
+  // User API key management (any authenticated user)
+  const userApiKeys = createUserApiKeyHandlers({ userApiKeyService })
+  app.get("/api/workspaces/:workspaceId/user-api-keys", ...authed, userApiKeys.list)
+  app.post("/api/workspaces/:workspaceId/user-api-keys", ...authed, userApiKeys.create)
+  app.post("/api/workspaces/:workspaceId/user-api-keys/:keyId/revoke", ...authed, userApiKeys.revoke)
+
+  // Public API v1 — API key auth (workspace-scoped or user-scoped)
+  const publicAuth = createPublicApiAuthMiddleware({ apiKeyService, userApiKeyService, pool })
+  const publicApi = createPublicApiHandlers({ searchService, apiKeyChannelService, streamService, eventService, pool })
   const publicMiddleware = [rateLimits.publicApiWorkspace, rateLimits.publicApiKey, publicAuth] as const
 
   app.post(

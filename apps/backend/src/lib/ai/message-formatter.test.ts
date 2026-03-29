@@ -24,6 +24,7 @@ function createMessage(overrides: Partial<Message> = {}): Message {
     replyCount: 0,
     reactions: {},
     clientMessageId: null,
+    sentVia: null,
     editedAt: null,
     deletedAt: null,
     createdAt: new Date("2024-01-01T10:00:00Z"),

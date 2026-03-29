@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import {
   ResponsiveDialog,
@@ -11,7 +11,6 @@ import { Tabs, TabsContent } from "@/components/ui/tabs"
 import { GeneralTab } from "./general-tab"
 import { UsersTab } from "./users-tab"
 import { ApiKeysTab } from "./api-keys-tab"
-import { useCurrentWorkspaceUser } from "@/hooks/use-workspaces"
 
 const ALL_TABS = ["general", "users", "api-keys"] as const
 type WorkspaceSettingsTab = (typeof ALL_TABS)[number]
@@ -29,19 +28,12 @@ interface WorkspaceSettingsDialogProps {
 export function WorkspaceSettingsDialog({ workspaceId }: WorkspaceSettingsDialogProps) {
   const [searchParams, setSearchParams] = useSearchParams()
   const [mounted, setMounted] = useState(false)
-  const currentUser = useCurrentWorkspaceUser(workspaceId)
-  const isAdmin = currentUser?.role === "admin" || currentUser?.role === "owner"
-
-  const visibleTabs: readonly WorkspaceSettingsTab[] = useMemo(
-    () => (isAdmin ? ALL_TABS : ALL_TABS.filter((t) => t !== "api-keys")),
-    [isAdmin]
-  )
 
   const settingsParam = searchParams.get("ws-settings")
   const normalizedSettingsParam = settingsParam === "members" ? "users" : settingsParam
   const isOpen = settingsParam !== null
   const activeTab: WorkspaceSettingsTab =
-    normalizedSettingsParam && visibleTabs.includes(normalizedSettingsParam as WorkspaceSettingsTab)
+    normalizedSettingsParam && ALL_TABS.includes(normalizedSettingsParam as WorkspaceSettingsTab)
       ? (normalizedSettingsParam as WorkspaceSettingsTab)
       : "general"
 
@@ -75,7 +67,7 @@ export function WorkspaceSettingsDialog({ workspaceId }: WorkspaceSettingsDialog
         </ResponsiveDialogHeader>
 
         <Tabs value={activeTab} onValueChange={setTab} className="flex-1 flex flex-col min-h-0 px-4 sm:px-6">
-          <ResponsiveTabs tabs={visibleTabs} labels={TAB_LABELS} value={activeTab} onValueChange={setTab} />
+          <ResponsiveTabs tabs={ALL_TABS} labels={TAB_LABELS} value={activeTab} onValueChange={setTab} />
 
           <div className="flex-1 overflow-y-auto mt-4 pb-4 sm:pb-6">
             <TabsContent value="general" className="mt-0">
@@ -84,11 +76,9 @@ export function WorkspaceSettingsDialog({ workspaceId }: WorkspaceSettingsDialog
             <TabsContent value="users" className="mt-0">
               <UsersTab workspaceId={workspaceId} />
             </TabsContent>
-            {isAdmin && (
-              <TabsContent value="api-keys" className="mt-0">
-                <ApiKeysTab workspaceId={workspaceId} />
-              </TabsContent>
-            )}
+            <TabsContent value="api-keys" className="mt-0">
+              <ApiKeysTab workspaceId={workspaceId} />
+            </TabsContent>
           </div>
         </Tabs>
       </ResponsiveDialogContent>

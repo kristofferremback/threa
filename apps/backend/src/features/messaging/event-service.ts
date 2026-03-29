@@ -37,6 +37,8 @@ export interface MessageCreatedPayload {
   sessionId?: string
   /** Client-generated ID for deterministic optimistic→real event dedup on the frontend */
   clientMessageId?: string
+  /** Present when message was sent via an API key on behalf of a user */
+  sentVia?: string
 }
 
 export interface MessageEditedPayload {
@@ -73,6 +75,8 @@ export interface CreateMessageParams {
   sessionId?: string
   /** Client-generated idempotency key to prevent duplicate sends on retry */
   clientMessageId?: string
+  /** Indicator for messages sent via API (e.g. "api" for user-scoped keys) */
+  sentVia?: string
 }
 
 export interface EditMessageParams {
@@ -210,6 +214,7 @@ export class EventService {
           ...(params.sources && params.sources.length > 0 && { sources: params.sources }),
           ...(params.sessionId && { sessionId: params.sessionId }),
           ...(params.clientMessageId && { clientMessageId: params.clientMessageId }),
+          ...(params.sentVia && { sentVia: params.sentVia }),
         } satisfies MessageCreatedPayload,
         actorId: params.authorId,
         actorType: params.authorType,
@@ -225,6 +230,7 @@ export class EventService {
         contentJson: params.contentJson,
         contentMarkdown: params.contentMarkdown,
         clientMessageId: params.clientMessageId,
+        sentVia: params.sentVia,
       })
 
       // Concurrent duplicate detected: ON CONFLICT DO NOTHING suppressed our INSERT,
@@ -608,6 +614,9 @@ export class EventService {
         }
         if (message?.reactions && Object.keys(message.reactions).length > 0) {
           enrichments.reactions = message.reactions
+        }
+        if (message?.sentVia) {
+          enrichments.sentVia = message.sentVia
         }
 
         if (Object.keys(enrichments).length === 0) return event

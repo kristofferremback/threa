@@ -355,7 +355,17 @@ export {
 } from "./preferences"
 
 // API Keys
-export { API_KEY_SCOPES, API_KEY_PERMISSIONS, type ApiKeyScope, type ApiKeyPermission } from "./api-keys"
+export {
+  API_KEY_SCOPES,
+  API_KEY_PERMISSIONS,
+  SENT_VIA_API_PREFIX,
+  sentViaApiKey,
+  isSentViaApi,
+  type ApiKeyScope,
+  type ApiKeyPermission,
+  type UserApiKey,
+  type CreateUserApiKeyResponse,
+} from "./api-keys"
 
 // Agent trace types
 export {

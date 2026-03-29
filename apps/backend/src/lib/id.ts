@@ -38,4 +38,5 @@ export {
   apiKeyChannelAccessId,
   botId,
   linkPreviewId,
+  userApiKeyId,
 } from "@threa/backend-common"
