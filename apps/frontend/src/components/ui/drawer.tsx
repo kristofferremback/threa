@@ -5,8 +5,16 @@ import { Drawer as DrawerPrimitive } from "vaul"
 
 import { cn } from "@/lib/utils"
 
-const Drawer = ({ shouldScaleBackground = true, ...props }: React.ComponentProps<typeof DrawerPrimitive.Root>) => (
-  <DrawerPrimitive.Root shouldScaleBackground={shouldScaleBackground} {...props} />
+const Drawer = ({
+  shouldScaleBackground = true,
+  repositionInputs = false,
+  ...props
+}: React.ComponentProps<typeof DrawerPrimitive.Root>) => (
+  // repositionInputs=false disables Vaul's built-in visualViewport keyboard
+  // handling which sets inline style.height on the drawer content. This conflicts
+  // with our dvh units that already account for the virtual keyboard, causing
+  // drawers to shrink to strange sizes after focus/blur cycles on mobile.
+  <DrawerPrimitive.Root shouldScaleBackground={shouldScaleBackground} repositionInputs={repositionInputs} {...props} />
 )
 Drawer.displayName = "Drawer"
 

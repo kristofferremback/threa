@@ -111,11 +111,7 @@ async function databaseExists(dbName: string): Promise<boolean> {
 async function createDatabase(dbName: string): Promise<void> {
   if (await databaseExists(dbName)) {
     console.log(`Database '${dbName}' already exists, dropping first...`)
-    // Terminate connections before dropping
-    await runPsqlOnDefault(
-      `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='${dbName}' AND pid <> pg_backend_pid()`
-    )
-    await runPsqlOnDefault(`DROP DATABASE "${dbName}"`)
+    await runPsqlOnDefault(`DROP DATABASE "${dbName}" WITH (FORCE)`)
   }
   console.log(`Creating database '${dbName}'...`)
   await runPsqlOnDefault(`CREATE DATABASE "${dbName}"`)
@@ -131,12 +127,10 @@ async function cloneDatabase(sourceDb: string, targetDb: string): Promise<void> 
     (await $`which /usr/lib/postgresql/18/bin/pg_dump`.quiet().nothrow()).exitCode === 0
       ? "/usr/lib/postgresql/18/bin/pg_dump"
       : "pg_dump"
-  // Use Bun shell .pipe() to avoid bash -c string interpolation, which breaks on
-  // passwords containing shell-special characters ($, !, quotes, etc.)
-  const result = await $`${pgDump} --clean --if-exists ${sourceUrl}`
-    .pipe($`psql ${targetUrl}`)
-    .quiet()
-    .nothrow()
+  // Pipe pg_dump output into psql. Bun shell handles the pipe operator natively
+  // and escapes interpolated values, avoiding bash -c string interpolation issues
+  // with passwords containing shell-special characters ($, !, quotes, etc.)
+  const result = await $`${pgDump} --clean --if-exists ${sourceUrl} | psql ${targetUrl}`.quiet().nothrow()
 
   if (result.exitCode !== 0) {
     const stderr = result.stderr.toString()
@@ -549,8 +543,38 @@ async function deletePrDnsAndRoute(): Promise<void> {
 async function deploy(): Promise<void> {
   console.log(`\n=== Deploying staging environment for PR #${prNumber} (branch: ${branch}) ===\n`)
 
-  // 1. Create and clone databases (only on first deploy — skip if DBs already exist)
-  const isFirstDeploy = !(await databaseExists(prDbName))
+  // 1. Create and clone databases (only on first deploy — skip if DBs already exist
+  //    AND have valid data. If a previous deploy failed mid-clone, the DB exists
+  //    but is empty/broken — detect this and re-clone.)
+  const dbExists = await databaseExists(prDbName)
+  let isFirstDeploy = !dbExists
+  if (dbExists) {
+    try {
+      const workspaceCount = await runPsql(prDbName, "SELECT count(*) FROM workspaces")
+      if (workspaceCount === "0") {
+        console.log(`Database '${prDbName}' exists but has no workspaces — re-cloning`)
+        isFirstDeploy = true
+      }
+    } catch {
+      console.log(`Database '${prDbName}' exists but is not queryable — re-cloning`)
+      isFirstDeploy = true
+    }
+  }
+  // Also check the control-plane DB — a deploy can fail between the two clone calls
+  if (!isFirstDeploy) {
+    const cpDbExists = await databaseExists(prCpDbName)
+    if (!cpDbExists) {
+      console.log(`Control-plane database '${prCpDbName}' missing — re-cloning both`)
+      isFirstDeploy = true
+    } else {
+      try {
+        await runPsql(prCpDbName, "SELECT 1 FROM workos_users LIMIT 1")
+      } catch {
+        console.log(`Control-plane database '${prCpDbName}' is not queryable — re-cloning both`)
+        isFirstDeploy = true
+      }
+    }
+  }
 
   if (isFirstDeploy) {
     await createDatabase(prDbName)

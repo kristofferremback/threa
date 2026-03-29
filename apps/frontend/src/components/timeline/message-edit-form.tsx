@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useCallback, useRef, useId, useMemo } from "react"
+import { useState, useEffect, useCallback, useRef, useId, useMemo } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { Expand } from "lucide-react"
@@ -52,20 +52,6 @@ export function MessageEditForm({
   const drawerContentRef = useRef<HTMLDivElement>(null)
   const [mobileToolbarEditor, setMobileToolbarEditor] = useState<Editor | null>(null)
   const instructionsId = useId()
-  // Clear Vaul's cached inline styles when toggling expansion or toolbar so our
-  // CSS classes take effect. Vaul's keyboard handling sets inline style.height
-  // which overrides class-based heights in Chrome and prevents flex recalculation
-  // when children change size. Since we use dvh units (which already account for
-  // the virtual keyboard), Vaul's height adjustments are redundant.
-  useLayoutEffect(() => {
-    const el = drawerContentRef.current
-    if (!el) return
-    el.style.height = ""
-    el.style.maxHeight = ""
-    el.style.bottom = ""
-    // Force reflow so Chrome's compositing layer updates
-    void el.offsetHeight
-  }, [mobileExpanded, formatOpen])
 
   useEffect(() => {
     if (isMobile) return // vaul handles Escape via onOpenChange

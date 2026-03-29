@@ -1,6 +1,10 @@
 ---
 name: github-api-web
-description: Navigate the GitHub API using curl when gh CLI is unavailable (Claude Code web sessions). Use when gh commands fail with "command not found" and you need to interact with GitHub PRs, issues, or repos.
+description: >-
+  Navigate the GitHub API using curl when gh CLI is unavailable (Claude Code web sessions).
+  Use when gh commands fail with "command not found" and you need to interact with GitHub PRs, issues, or repos.
+  ALSO USE THIS when you need to troubleshoot CI failures, fetch GitHub Actions job logs, or debug workflow runs.
+  When a check run fails, ALWAYS fetch the logs using this skill before speculating about the cause.
 ---
 
 # GitHub API via curl (Web Sessions)
@@ -184,6 +188,65 @@ import json
 body = open('/tmp/claude/pr-comment.md').read()
 print(json.dumps({'body': body}))
 ")"
+```
+
+## CI/CD Troubleshooting
+
+**IMPORTANT**: When a GitHub Actions check run fails, ALWAYS fetch the logs before guessing at the cause. Do not speculate — read the logs first.
+
+### Get failed check runs for a PR
+
+Use the MCP tool `mcp__github__pull_request_read` with `method: "get_check_runs"` to list all check runs. Then for any failed jobs, fetch logs using the job ID.
+
+### Fetch job logs by job ID
+
+The job ID is available from `get_check_runs` results (the `id` field). The logs endpoint returns plain text:
+
+```bash
+# Fetch full logs for a job (returns plain text, can be very large)
+curl -s -L -H "Authorization: token $GH_TOKEN" \
+  "https://api.github.com/repos/$OWNER/$REPO/actions/jobs/$JOB_ID/logs"
+```
+
+### Fetch only the tail of job logs (recommended)
+
+Job logs can be very large. Pipe through `tail` to get the relevant failure output:
+
+```bash
+# Last 80 lines — usually enough to see the error
+curl -s -L -H "Authorization: token $GH_TOKEN" \
+  "https://api.github.com/repos/$OWNER/$REPO/actions/jobs/$JOB_ID/logs" \
+  | tail -80
+```
+
+### Search job logs for errors
+
+```bash
+# Find lines containing error/failure messages
+curl -s -L -H "Authorization: token $GH_TOKEN" \
+  "https://api.github.com/repos/$OWNER/$REPO/actions/jobs/$JOB_ID/logs" \
+  | grep -i -A 5 'error\|failed\|fatal\|exception'
+```
+
+### List workflow runs for a PR branch
+
+```bash
+BRANCH=$(git branch --show-current)
+curl -s -H "Authorization: token $GH_TOKEN" \
+  "https://api.github.com/repos/$OWNER/$REPO/actions/runs?branch=$BRANCH&per_page=5" \
+  | python3 -c "
+import sys, json
+runs = json.load(sys.stdin)['workflow_runs']
+for r in runs:
+    print(f'{r[\"id\"]} | {r[\"name\"]} | {r[\"status\"]} / {r[\"conclusion\"]} | {r[\"created_at\"]}')
+"
+```
+
+### Re-run failed jobs in a workflow run
+
+```bash
+curl -s -H "Authorization: token $GH_TOKEN" \
+  -X POST "https://api.github.com/repos/$OWNER/$REPO/actions/runs/$RUN_ID/rerun-failed-jobs"
 ```
 
 ## Tips
