@@ -1,5 +1,11 @@
 import { type ReactNode, useRef, useEffect, useState, useMemo, useCallback } from "react"
-import type { StreamEvent, AttachmentSummary, JSONContent, LinkPreviewSummary } from "@threa/types"
+import {
+  isSentViaApi,
+  type StreamEvent,
+  type AttachmentSummary,
+  type JSONContent,
+  type LinkPreviewSummary,
+} from "@threa/types"
 import { Link } from "react-router-dom"
 import { toast } from "sonner"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
@@ -46,6 +52,7 @@ interface MessagePayload {
   threadId?: string
   sessionId?: string
   editedAt?: string
+  sentVia?: string
   reactions?: Record<string, string[]>
 }
 
@@ -200,6 +207,9 @@ function MessageLayout({
             >
               {actorName}
             </span>
+          )}
+          {payload.sentVia && isSentViaApi(payload.sentVia) && (
+            <span className="text-[10px] text-muted-foreground/70 font-medium">via API</span>
           )}
           {statusIndicator}
           {actions}
