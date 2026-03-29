@@ -560,6 +560,21 @@ async function deploy(): Promise<void> {
       isFirstDeploy = true
     }
   }
+  // Also check the control-plane DB — a deploy can fail between the two clone calls
+  if (!isFirstDeploy) {
+    const cpDbExists = await databaseExists(prCpDbName)
+    if (!cpDbExists) {
+      console.log(`Control-plane database '${prCpDbName}' missing — re-cloning both`)
+      isFirstDeploy = true
+    } else {
+      try {
+        await runPsql(prCpDbName, "SELECT 1 FROM workos_users LIMIT 1")
+      } catch {
+        console.log(`Control-plane database '${prCpDbName}' is not queryable — re-cloning both`)
+        isFirstDeploy = true
+      }
+    }
+  }
 
   if (isFirstDeploy) {
     await createDatabase(prDbName)
