@@ -9,6 +9,7 @@ import {
 import { Link } from "react-router-dom"
 import { toast } from "sonner"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Button } from "@/components/ui/button"
 import { MarkdownContent, AttachmentProvider } from "@/components/ui/markdown-content"
 import { RelativeTime } from "@/components/relative-time"
@@ -209,7 +210,12 @@ function MessageLayout({
             </span>
           )}
           {payload.sentVia && isSentViaApi(payload.sentVia) && (
-            <span className="text-[10px] text-muted-foreground/70 font-medium">via API</span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="text-[10px] text-muted-foreground/70 font-medium cursor-default">via API</span>
+              </TooltipTrigger>
+              <TooltipContent>Sent on behalf of this user by an API key</TooltipContent>
+            </Tooltip>
           )}
           {statusIndicator}
           {actions}
