@@ -345,7 +345,7 @@
 }
 
 .ProseMirror code {
-  @apply bg-muted px-1.5 py-0.5 rounded text-sm font-mono;
+  @apply bg-muted rounded px-1 py-0.5 text-sm font-mono;
 }
 
 .ProseMirror pre {
@@ -370,6 +370,18 @@
 
 .ProseMirror li p {
   @apply my-0;
+}
+
+@keyframes threa-inline-code-boundary-caret-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+
+  50%,
+  100% {
+    opacity: 0;
+  }
 }
 
 .ProseMirror blockquote {

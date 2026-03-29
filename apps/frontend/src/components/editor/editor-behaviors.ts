@@ -1,6 +1,6 @@
 import { Extension, type Editor } from "@tiptap/react"
 import type { Mark as ProseMirrorMark } from "@tiptap/pm/model"
-import { TextSelection, type Transaction, Plugin, PluginKey } from "@tiptap/pm/state"
+import { TextSelection, type Transaction, Plugin } from "@tiptap/pm/state"
 import type { EditorState } from "@tiptap/pm/state"
 import type { EditorView } from "@tiptap/pm/view"
 import type { MessageSendMode } from "@threa/types"
@@ -59,8 +59,6 @@ type BoundaryNavigableInlineMarkName = "code"
 type ArrowDirection = "left" | "right"
 export type LinkToolbarAction = "opened" | "closed" | "exited"
 
-const codeBoundaryDecorationKey = new PluginKey("codeBoundaryDecoration")
-
 interface CodeBoundaryDecorationState {
   pos: number
   edge: "start" | "end"
@@ -73,10 +71,18 @@ interface CodeBoundaryContext {
   edge: "start" | "end"
 }
 
-interface InlineCodeCaretRect {
+interface MeasuredCaretRect {
   height: number
   left: number
   top: number
+}
+
+function isTransparentColor(value: string | null | undefined): boolean {
+  if (!value) {
+    return false
+  }
+
+  return value === "transparent" || /^rgba?\([^)]*,\s*0\)$/.test(value)
 }
 
 function getEffectiveCursorMarks(state: EditorState): readonly ProseMirrorMark[] {
@@ -156,31 +162,13 @@ function getCodeBoundaryDecorationState(state: EditorState): CodeBoundaryDecorat
   }
 }
 
-function getRenderableClientRects(target: { getClientRects: () => DOMRectList }): DOMRect[] {
-  return Array.from(target.getClientRects()).filter((rect) => rect.width > 0 || rect.height > 0)
-}
-
-function getTextBoundaryRect(textNode: Text, edge: "start" | "end"): DOMRect | null {
-  if (textNode.data.length === 0) {
-    return null
-  }
-
-  const range = textNode.ownerDocument.createRange()
-
-  if (edge === "start") {
-    range.setStart(textNode, 0)
-    range.setEnd(textNode, Math.min(1, textNode.data.length))
-  } else {
-    range.setStart(textNode, Math.max(0, textNode.data.length - 1))
-    range.setEnd(textNode, textNode.data.length)
-  }
-
-  const rects = getRenderableClientRects(range)
-  if (rects.length > 0) {
-    return edge === "start" ? rects[0] : rects[rects.length - 1]
-  }
-
-  return range.getBoundingClientRect()
+function isSyntheticInlineCodeBoundary(
+  boundary: CodeBoundaryDecorationState
+): boundary is CodeBoundaryDecorationState & ({ edge: "start"; mode: "inside" } | { edge: "end"; mode: "outside" }) {
+  return (
+    (boundary.edge === "start" && boundary.mode === "inside") ||
+    (boundary.edge === "end" && boundary.mode === "outside")
+  )
 }
 
 function findNearestCodeElement(node: Node | null | undefined): HTMLElement | null {
@@ -219,6 +207,7 @@ function getBoundaryCodeElement(view: EditorView, boundary: CodeBoundaryDecorati
       if (index < 0 || index >= element.childNodes.length) {
         continue
       }
+
       candidates.push(element.childNodes[index])
     }
   }
@@ -247,95 +236,107 @@ function getCodeBoundaryTextNodes(codeElement: HTMLElement): Text[] {
   return textNodes
 }
 
-function getCodeEdgeRect(codeElement: HTMLElement, edge: "start" | "end"): DOMRect {
-  const rects = getRenderableClientRects(codeElement)
+function measureCollapsedCaretRect(document: Document, node: Node, offset: number): MeasuredCaretRect | null {
+  const range = document.createRange()
 
-  if (rects.length > 0) {
-    return edge === "start" ? rects[0] : rects[rects.length - 1]
+  try {
+    range.setStart(node, offset)
+    range.setEnd(node, offset)
+  } catch {
+    return null
   }
 
-  return codeElement.getBoundingClientRect()
+  if (typeof range.getBoundingClientRect !== "function" || typeof range.getClientRects !== "function") {
+    return null
+  }
+
+  const rect = range.getBoundingClientRect()
+  if (rect.height > 0) {
+    return {
+      left: rect.left,
+      top: rect.top,
+      height: rect.height,
+    }
+  }
+
+  const fallbackRect = range.getClientRects()[0]
+  if (!fallbackRect || fallbackRect.height <= 0) {
+    return null
+  }
+
+  return {
+    left: fallbackRect.left,
+    top: fallbackRect.top,
+    height: fallbackRect.height,
+  }
 }
 
-function getInlineCodeCaretRect(view: EditorView, boundary: CodeBoundaryDecorationState): InlineCodeCaretRect | null {
+function getSyntheticInlineCodeBoundaryCaretRect(
+  view: EditorView,
+  boundary: CodeBoundaryDecorationState
+): MeasuredCaretRect | null {
+  if (!isSyntheticInlineCodeBoundary(boundary)) {
+    return null
+  }
+
   const codeElement = getBoundaryCodeElement(view, boundary)
   if (!codeElement) {
     return null
   }
 
+  const document = codeElement.ownerDocument
   const textNodes = getCodeBoundaryTextNodes(codeElement)
-  if (textNodes.length === 0) {
-    return null
+  const codeRect = codeElement.getBoundingClientRect()
+  const computedStyle = document.defaultView?.getComputedStyle(codeElement)
+  const fallbackHeight =
+    Number.parseFloat(computedStyle?.lineHeight ?? "") ||
+    Number.parseFloat(computedStyle?.fontSize ?? "") ||
+    codeRect.height ||
+    16
+  const fallbackTop = codeRect.top
+
+  if (boundary.edge === "start") {
+    const firstTextNode = textNodes[0]
+    if (firstTextNode) {
+      const firstCaretRect = measureCollapsedCaretRect(document, firstTextNode, 0)
+      if (firstCaretRect) {
+        return firstCaretRect
+      }
+    }
+
+    return {
+      left: codeRect.left + (Number.parseFloat(computedStyle?.paddingLeft ?? "") || 0),
+      top: fallbackTop,
+      height: fallbackHeight,
+    }
   }
 
-  const boundaryTextNode = boundary.edge === "start" ? textNodes[0] : textNodes[textNodes.length - 1]
-  const textRect = getTextBoundaryRect(boundaryTextNode, boundary.edge)
-  const codeRect = getCodeEdgeRect(codeElement, boundary.edge)
-  const fallbackRect = view.coordsAtPos(boundary.pos, boundary.side)
-  const referenceRect = textRect ?? fallbackRect
+  const nextSibling = codeElement.nextSibling
+  if (nextSibling instanceof Text) {
+    const nextCaretRect = measureCollapsedCaretRect(document, nextSibling, 0)
+    if (nextCaretRect) {
+      return nextCaretRect
+    }
+  }
 
-  let left: number
-  if (boundary.mode === "inside") {
-    left = boundary.edge === "start" ? (textRect?.left ?? fallbackRect.left) : (textRect?.right ?? fallbackRect.left)
-  } else {
-    left = boundary.edge === "start" ? codeRect.left : codeRect.right
+  const lastTextNode = textNodes[textNodes.length - 1]
+  const insideEndRect = lastTextNode
+    ? measureCollapsedCaretRect(document, lastTextNode, lastTextNode.data.length)
+    : null
+
+  if (insideEndRect) {
+    return {
+      left: codeRect.right,
+      top: insideEndRect.top,
+      height: insideEndRect.height,
+    }
   }
 
   return {
-    left,
-    top: referenceRect.top,
-    height: Math.max(referenceRect.bottom - referenceRect.top, 1),
+    left: codeRect.right,
+    top: fallbackTop,
+    height: fallbackHeight,
   }
-}
-
-function createInlineCodeCaretOverlay(view: EditorView) {
-  const overlay = view.dom.ownerDocument.createElement("span")
-
-  overlay.className = "inline-code-boundary-caret"
-  overlay.setAttribute("data-inline-code-boundary-overlay", "true")
-  overlay.setAttribute("aria-hidden", "true")
-  overlay.style.position = "fixed"
-  overlay.style.display = "none"
-  overlay.style.pointerEvents = "none"
-  overlay.style.userSelect = "none"
-  overlay.style.width = "0"
-  overlay.style.borderLeft = "1px solid currentColor"
-  overlay.style.transform = "translateX(-0.5px)"
-
-  view.dom.ownerDocument.body.append(overlay)
-  return overlay
-}
-
-function syncInlineCodeCaretOverlay(view: EditorView, overlay: HTMLElement) {
-  const boundary = getCodeBoundaryDecorationState(view.state)
-  if (!boundary || !view.hasFocus() || !view.editable) {
-    overlay.style.display = "none"
-    overlay.removeAttribute("data-inline-code-boundary")
-    overlay.removeAttribute("data-inline-code-mode")
-    view.dom.style.caretColor = ""
-    return
-  }
-
-  const caretRect = getInlineCodeCaretRect(view, boundary)
-  if (!caretRect) {
-    overlay.style.display = "none"
-    overlay.removeAttribute("data-inline-code-boundary")
-    overlay.removeAttribute("data-inline-code-mode")
-    view.dom.style.caretColor = ""
-    return
-  }
-
-  const styles = view.dom.ownerDocument.defaultView?.getComputedStyle(view.dom)
-  const caretColor = styles?.caretColor && styles.caretColor !== "auto" ? styles.caretColor : styles?.color
-
-  overlay.dataset.inlineCodeBoundary = boundary.edge
-  overlay.dataset.inlineCodeMode = boundary.mode
-  overlay.style.display = "block"
-  overlay.style.left = `${caretRect.left}px`
-  overlay.style.top = `${caretRect.top}px`
-  overlay.style.height = `${caretRect.height}px`
-  overlay.style.borderLeftColor = caretColor ?? "currentColor"
-  view.dom.style.caretColor = "transparent"
 }
 
 export function exitInlineMark(editor: Editor, markName: EscapableInlineMarkName): boolean {
@@ -684,14 +685,55 @@ export const EditorBehaviors = Extension.create<EditorBehaviorsOptions>({
   addProseMirrorPlugins() {
     return [
       new Plugin({
-        key: codeBoundaryDecorationKey,
         view(view) {
-          const overlay = createInlineCodeCaretOverlay(view)
           const defaultView = view.dom.ownerDocument.defaultView
           let rafId: number | null = null
+          const overlay = view.dom.ownerDocument.createElement("div")
+
+          overlay.dataset.inlineCodeBoundaryOverlay = "true"
+          overlay.style.position = "fixed"
+          overlay.style.pointerEvents = "none"
+          overlay.style.display = "none"
+          overlay.style.width = "0"
+          overlay.style.borderLeft = "1px solid currentColor"
+          overlay.style.zIndex = "2147483647"
+          overlay.style.transform = "translateX(-0.5px)"
+          overlay.style.animation = "threa-inline-code-boundary-caret-blink 1.1s step-end infinite"
+          view.dom.ownerDocument.body.append(overlay)
+
+          const clearOverlay = () => {
+            overlay.style.display = "none"
+            view.dom.style.caretColor = ""
+          }
 
           const syncNow = () => {
-            syncInlineCodeCaretOverlay(view, overlay)
+            const boundary = getCodeBoundaryDecorationState(view.state)
+
+            if (!boundary || !view.hasFocus() || !view.editable || !isSyntheticInlineCodeBoundary(boundary)) {
+              clearOverlay()
+              return
+            }
+
+            const caretRect = getSyntheticInlineCodeBoundaryCaretRect(view, boundary)
+            if (!caretRect) {
+              clearOverlay()
+              return
+            }
+
+            const computedStyle = defaultView?.getComputedStyle(view.dom)
+            const caretColor =
+              computedStyle?.caretColor &&
+              computedStyle.caretColor !== "auto" &&
+              !isTransparentColor(computedStyle.caretColor)
+                ? computedStyle.caretColor
+                : (computedStyle?.color ?? "currentColor")
+
+            overlay.style.left = `${caretRect.left}px`
+            overlay.style.top = `${caretRect.top}px`
+            overlay.style.height = `${caretRect.height}px`
+            overlay.style.borderLeftColor = caretColor
+            overlay.style.display = "block"
+            view.dom.style.caretColor = "transparent"
           }
 
           const scheduleSync = () => {
@@ -711,12 +753,13 @@ export const EditorBehaviors = Extension.create<EditorBehaviorsOptions>({
             })
           }
 
+          view.dom.addEventListener("focus", scheduleSync)
+          view.dom.addEventListener("blur", clearOverlay)
+          view.dom.ownerDocument.addEventListener("selectionchange", scheduleSync)
           defaultView?.addEventListener("resize", scheduleSync)
           defaultView?.addEventListener("scroll", scheduleSync, true)
           defaultView?.visualViewport?.addEventListener("resize", scheduleSync)
           defaultView?.visualViewport?.addEventListener("scroll", scheduleSync)
-          view.dom.addEventListener("focus", scheduleSync)
-          view.dom.addEventListener("blur", scheduleSync)
 
           scheduleSync()
 
@@ -727,13 +770,14 @@ export const EditorBehaviors = Extension.create<EditorBehaviorsOptions>({
                 defaultView?.cancelAnimationFrame(rafId)
               }
 
+              view.dom.removeEventListener("focus", scheduleSync)
+              view.dom.removeEventListener("blur", clearOverlay)
+              view.dom.ownerDocument.removeEventListener("selectionchange", scheduleSync)
               defaultView?.removeEventListener("resize", scheduleSync)
               defaultView?.removeEventListener("scroll", scheduleSync, true)
               defaultView?.visualViewport?.removeEventListener("resize", scheduleSync)
               defaultView?.visualViewport?.removeEventListener("scroll", scheduleSync)
-              view.dom.removeEventListener("focus", scheduleSync)
-              view.dom.removeEventListener("blur", scheduleSync)
-              view.dom.style.caretColor = ""
+              clearOverlay()
               overlay.remove()
             },
           }

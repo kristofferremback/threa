@@ -302,9 +302,6 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
           // Code block styling
           "[&_pre]:my-2 [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-3",
           "[&_pre_code]:bg-transparent [&_pre_code]:p-0",
-          // Inline code styling
-          "[&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5",
-          "[&_code]:before:content-none [&_code]:after:content-none",
           // Blockquote styling
           "[&_blockquote]:my-2 [&_blockquote]:border-l-2 [&_blockquote]:border-muted-foreground/30 [&_blockquote]:pl-4 [&_blockquote]:italic",
           // Heading styling

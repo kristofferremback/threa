@@ -119,8 +119,6 @@ export function DocumentEditorModal({
           "[&_li]:my-0 [&_li]:pl-0.5",
           "[&_pre]:my-2 [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-3",
           "[&_pre_code]:bg-transparent [&_pre_code]:p-0",
-          "[&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5",
-          "[&_code]:before:content-none [&_code]:after:content-none",
           "[&_blockquote]:my-2 [&_blockquote]:border-l-2 [&_blockquote]:border-muted-foreground/30 [&_blockquote]:pl-4 [&_blockquote]:italic",
           "[&_h1]:text-xl [&_h1]:font-bold [&_h1]:my-2",
           "[&_h2]:text-lg [&_h2]:font-semibold [&_h2]:my-1.5",
