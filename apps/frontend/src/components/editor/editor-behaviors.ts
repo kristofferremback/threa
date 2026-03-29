@@ -236,6 +236,10 @@ function getCodeBoundaryTextNodes(codeElement: HTMLElement): Text[] {
   return textNodes
 }
 
+function getRenderableClientRects(target: { getClientRects: () => DOMRectList }): DOMRect[] {
+  return Array.from(target.getClientRects()).filter((rect) => rect.width > 0 || rect.height > 0)
+}
+
 function measureCollapsedCaretRect(document: Document, node: Node, offset: number): MeasuredCaretRect | null {
   const range = document.createRange()
 
@@ -287,6 +291,7 @@ function getSyntheticInlineCodeBoundaryCaretRect(
   const document = codeElement.ownerDocument
   const textNodes = getCodeBoundaryTextNodes(codeElement)
   const codeRect = codeElement.getBoundingClientRect()
+  const lastCodeRect = getRenderableClientRects(codeElement).at(-1) ?? codeRect
   const computedStyle = document.defaultView?.getComputedStyle(codeElement)
   const fallbackHeight =
     Number.parseFloat(computedStyle?.lineHeight ?? "") ||
@@ -326,16 +331,16 @@ function getSyntheticInlineCodeBoundaryCaretRect(
 
   if (insideEndRect) {
     return {
-      left: codeRect.right,
+      left: lastCodeRect.right,
       top: insideEndRect.top,
       height: insideEndRect.height,
     }
   }
 
   return {
-    left: codeRect.right,
-    top: fallbackTop,
-    height: fallbackHeight,
+    left: lastCodeRect.right,
+    top: lastCodeRect.top || fallbackTop,
+    height: lastCodeRect.height || fallbackHeight,
   }
 }
 

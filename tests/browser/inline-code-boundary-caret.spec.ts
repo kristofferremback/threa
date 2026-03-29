@@ -450,6 +450,7 @@ test.describe("Inline code boundary caret", () => {
   test("moves the painted caret forward at every logical step through inline code", async ({ page }) => {
     await setComposerContent(page, "paragraph")
     await focusInlineCodeNavigationStart(page)
+    await expectNavigationSnapshot(page, inlineCodeNavigationStates[0])
 
     let previousLeft = await getEffectiveCaretLeft(page)
 
@@ -488,6 +489,7 @@ test.describe("Inline code boundary caret", () => {
   test("moves the painted caret backward at every logical step through inline code", async ({ page }) => {
     await setComposerContent(page, "paragraph")
     await focusInlineCodeNavigationEnd(page)
+    await expectNavigationSnapshot(page, inlineCodeNavigationStates[inlineCodeNavigationStates.length - 1])
 
     let previousLeft = await getEffectiveCaretLeft(page)
 
@@ -499,5 +501,82 @@ test.describe("Inline code boundary caret", () => {
       expect(previousLeft - currentLeft).toBeGreaterThan(0.5)
       previousLeft = currentLeft
     }
+  })
+
+  test("keeps the synthetic outside-end caret on the last wrapped line when inline code ends a block", async ({
+    page,
+  }) => {
+    const metrics = await page.evaluate(async () => {
+      const editorElement = document.querySelector<HTMLElement>("[contenteditable='true']")
+      const editor = editorElement?.editor
+
+      if (!editorElement || !editor) {
+        throw new Error("Editor not found")
+      }
+
+      editorElement.style.width = "220px"
+      editor.commands.setContent({
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              { type: "text", text: "prefix " },
+              { type: "text", text: "verylonginlinecodewordthatshouldwrapattheend", marks: [{ type: "code" }] },
+            ],
+          },
+        ],
+      })
+
+      let codeEnd: number | null = null
+      editor.state.doc.descendants(
+        (node: { isText: boolean; marks?: Array<{ type: { name: string } }>; text?: string }, pos: number) => {
+          if (!node.isText || !node.text || !node.marks?.some((mark) => mark.type.name === "code")) {
+            return
+          }
+
+          codeEnd = pos + node.text.length
+          return false
+        }
+      )
+
+      if (codeEnd === null) {
+        throw new Error("Inline code range not found")
+      }
+
+      editor.commands.setTextSelection(codeEnd)
+      editor.view.dispatch(editor.state.tr.setStoredMarks([]))
+      editor.view.focus()
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+
+      const code = editorElement.querySelector<HTMLElement>("code")
+      const overlay = document.querySelector<HTMLElement>("[data-inline-code-boundary-overlay='true']")
+      const codeTextNode = code?.firstChild
+
+      if (!code || !(codeTextNode instanceof Text) || !overlay) {
+        throw new Error("Wrapped inline code geometry missing")
+      }
+
+      const endRange = document.createRange()
+      endRange.setStart(codeTextNode, codeTextNode.length)
+      endRange.setEnd(codeTextNode, codeTextNode.length)
+      const endRect = endRange.getBoundingClientRect()
+      const codeRects = Array.from(code.getClientRects()).filter((rect) => rect.width > 0 || rect.height > 0)
+      const lastCodeRect = codeRects[codeRects.length - 1]
+      const overlayRect = overlay.getBoundingClientRect()
+
+      if (!lastCodeRect) {
+        throw new Error("Wrapped inline code fragments missing")
+      }
+
+      return {
+        insideEndLeft: endRect.left,
+        lastCodeRight: lastCodeRect.right,
+        overlayLeft: overlayRect.left,
+      }
+    })
+
+    expect(Math.abs(metrics.overlayLeft - metrics.lastCodeRight)).toBeLessThan(1.25)
+    expect(metrics.overlayLeft - metrics.insideEndLeft).toBeGreaterThan(1)
   })
 })
