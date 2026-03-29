@@ -1,4 +1,4 @@
-import { useLayoutEffect, useEffect, useState, useCallback, useReducer } from "react"
+import { useLayoutEffect, useEffect, useState, useCallback, useReducer, useRef } from "react"
 import type { Editor } from "@tiptap/react"
 import { useFloating, offset, flip, shift, autoUpdate } from "@floating-ui/react"
 import {
@@ -21,7 +21,7 @@ import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { LinkEditor } from "./link-editor"
-import { indentSelection, dedentSelection, isSuggestionActive } from "./editor-behaviors"
+import { indentSelection, dedentSelection, handleLinkToolbarAction, isSuggestionActive } from "./editor-behaviors"
 import { toggleMultilineBlock } from "./multiline-blocks"
 import { cn } from "@/lib/utils"
 
@@ -45,6 +45,15 @@ interface EditorToolbarProps {
   showSpecialInputControls?: boolean
 }
 
+interface LinkEditorSnapshot {
+  initialUrl: string
+  isActive: boolean
+  selectionRange: {
+    from: number
+    to: number
+  }
+}
+
 export function EditorToolbar({
   editor,
   isVisible,
@@ -61,6 +70,9 @@ export function EditorToolbar({
     middleware: [offset(8), flip(), shift({ padding: 8 })],
     whileElementsMounted: autoUpdate,
   })
+  const floatingRootRef = useRef<HTMLDivElement | null>(null)
+  const lastSelectionRectRef = useRef<DOMRect>(new DOMRect())
+  const [linkEditorSnapshot, setLinkEditorSnapshot] = useState<LinkEditorSnapshot | null>(null)
 
   // Virtual reference: position the toolbar above the current text selection
   useLayoutEffect(() => {
@@ -68,12 +80,17 @@ export function EditorToolbar({
       getBoundingClientRect() {
         const sel = window.getSelection()
         if (sel && sel.rangeCount > 0 && !sel.isCollapsed) {
-          return sel.getRangeAt(0).getBoundingClientRect()
+          const rect = sel.getRangeAt(0).getBoundingClientRect()
+          lastSelectionRectRef.current = rect
+          return rect
+        }
+        if (linkPopoverOpen) {
+          return lastSelectionRectRef.current
         }
         return new DOMRect()
       },
     })
-  }, [refs])
+  }, [refs, linkPopoverOpen])
 
   // Re-position whenever the selection moves.
   // EditorToolbar is always mounted in the tree — `return null` below is a
@@ -99,11 +116,57 @@ export function EditorToolbar({
     }
   }, [editor, isVisible])
 
+  useEffect(() => {
+    if (inline || !linkPopoverOpen || !onLinkPopoverOpenChange) {
+      return
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target
+      if (!(target instanceof Node)) {
+        return
+      }
+
+      if (floatingRootRef.current?.contains(target)) {
+        return
+      }
+
+      onLinkPopoverOpenChange(false)
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown)
+    return () => document.removeEventListener("pointerdown", handlePointerDown)
+  }, [inline, linkPopoverOpen, onLinkPopoverOpenChange])
+
+  useEffect(() => {
+    if (!linkPopoverOpen) {
+      setLinkEditorSnapshot(null)
+    }
+  }, [linkPopoverOpen])
+
   if (!editor || !isVisible) return null
 
   const isLinkActive = editor.isActive("link")
   const isMobileInlineToolbar = inline && inlinePosition === "below"
   const separatorClassName = cn("mx-1 h-6 shrink-0", isMobileInlineToolbar && "mx-1.5")
+  const handleLinkButtonAction = () => {
+    const { from, to } = editor.state.selection
+    const initialUrl = editor.getAttributes("link").href || ""
+    const nextSnapshot = {
+      initialUrl,
+      isActive: isLinkActive || !!initialUrl,
+      selectionRange: { from, to },
+    }
+    const action = handleLinkToolbarAction(editor, !!linkPopoverOpen, onLinkPopoverOpenChange)
+
+    if (action === "opened") {
+      setLinkEditorSnapshot(nextSnapshot)
+    }
+
+    if (action === "closed") {
+      setLinkEditorSnapshot(null)
+    }
+  }
 
   const buttons = (
     <>
@@ -156,14 +219,11 @@ export function EditorToolbar({
         keyboardAccessible={inline}
       />
       <ToolbarButton
-        onAction={() => {
-          const isClosing = !!linkPopoverOpen
-          onLinkPopoverOpenChange?.(!linkPopoverOpen)
-          if (isClosing) editor.commands.focus()
-        }}
+        onAction={handleLinkButtonAction}
         icon={Link2}
         label="Link"
         isActive={isLinkActive || !!linkPopoverOpen}
+        deferActionUntilClick
         roomy={isMobileInlineToolbar}
         showTooltip={!isMobileInlineToolbar}
         keyboardAccessible={inline}
@@ -238,7 +298,9 @@ export function EditorToolbar({
         {linkPopoverOpen && (
           <LinkEditor
             editor={editor}
-            isActive={isLinkActive}
+            isActive={linkEditorSnapshot?.isActive ?? isLinkActive}
+            initialUrl={linkEditorSnapshot?.initialUrl}
+            selectionRange={linkEditorSnapshot?.selectionRange}
             onClose={() => onLinkPopoverOpenChange?.(false)}
             className="rounded-md border bg-popover p-2 shadow-md mb-1"
           />
@@ -273,11 +335,20 @@ export function EditorToolbar({
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div ref={refs.setFloating} style={floatingStyles} className="z-50 flex flex-col gap-1 max-w-[calc(100vw-16px)]">
+      <div
+        ref={(node) => {
+          floatingRootRef.current = node
+          refs.setFloating(node)
+        }}
+        style={floatingStyles}
+        className="z-50 flex flex-col gap-1 max-w-[calc(100vw-16px)]"
+      >
         {linkPopoverOpen && (
           <LinkEditor
             editor={editor}
-            isActive={isLinkActive}
+            isActive={linkEditorSnapshot?.isActive ?? isLinkActive}
+            initialUrl={linkEditorSnapshot?.initialUrl}
+            selectionRange={linkEditorSnapshot?.selectionRange}
             onClose={() => onLinkPopoverOpenChange?.(false)}
             className="rounded-md border bg-popover p-2 shadow-md animate-in fade-in-0 slide-in-from-bottom-2 duration-150"
           />
@@ -484,6 +555,7 @@ interface ToolbarButtonProps {
   roomy?: boolean
   showTooltip?: boolean
   keyboardAccessible?: boolean
+  deferActionUntilClick?: boolean
 }
 
 function ToolbarButton({
@@ -495,22 +567,30 @@ function ToolbarButton({
   roomy = false,
   showTooltip = true,
   keyboardAccessible = false,
+  deferActionUntilClick = false,
 }: ToolbarButtonProps) {
-  // Desktop (non-roomy): fire on pointerdown for snappy interaction.
+  // Desktop (non-roomy): fire on pointerdown for snappy interaction unless the
+  // action changes layout immediately (for example opening the link editor),
+  // in which case defer to click so the full click sequence still targets the button.
   // Mobile (roomy): use mousedown to prevent focus theft without blocking
   // touch-initiated scroll, then fire the action on click.
   const handlePointerDown = roomy
     ? undefined
     : (e: React.PointerEvent) => {
         e.preventDefault()
-        onAction()
+        if (!deferActionUntilClick) {
+          onAction()
+        }
       }
   const handleMouseDown = roomy ? (e: React.MouseEvent) => e.preventDefault() : undefined
-  const handleClick = roomy
-    ? () => onAction()
-    : (e: React.MouseEvent) => {
-        if (e.detail === 0) onAction()
-      }
+  let handleClick: ((e: React.MouseEvent) => void) | (() => void)
+  if (roomy || deferActionUntilClick) {
+    handleClick = () => onAction()
+  } else {
+    handleClick = (e: React.MouseEvent) => {
+      if (e.detail === 0) onAction()
+    }
+  }
 
   const button = (
     <Button

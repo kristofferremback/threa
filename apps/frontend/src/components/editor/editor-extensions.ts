@@ -5,10 +5,9 @@ import Text from "@tiptap/extension-text"
 import HardBreak from "@tiptap/extension-hard-break"
 import History from "@tiptap/extension-history"
 import Placeholder from "@tiptap/extension-placeholder"
-import Link from "@tiptap/extension-link"
 
 // Inline marks with atom-aware input rules
-import { AtomAwareBold, AtomAwareItalic, AtomAwareStrike, AtomAwareCode } from "./atom-aware-marks"
+import { AtomAwareBold, AtomAwareItalic, AtomAwareStrike, AtomAwareCode, BoundaryAwareLink } from "./atom-aware-marks"
 
 // Block extensions
 import Blockquote from "@tiptap/extension-blockquote"
@@ -84,7 +83,7 @@ export function createEditorExtensions(options: CreateEditorExtensionsOptions | 
     }),
 
     // Auto-link URLs (makes them clickable)
-    Link.configure({
+    BoundaryAwareLink.configure({
       openOnClick: false,
       autolink: true,
       linkOnPaste: true,

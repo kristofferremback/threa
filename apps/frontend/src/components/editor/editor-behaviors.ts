@@ -1,6 +1,8 @@
 import { Extension, type Editor } from "@tiptap/react"
-import { TextSelection, type Transaction } from "@tiptap/pm/state"
+import type { Mark as ProseMirrorMark } from "@tiptap/pm/model"
+import { TextSelection, type Transaction, Plugin } from "@tiptap/pm/state"
 import type { EditorState } from "@tiptap/pm/state"
+import type { EditorView } from "@tiptap/pm/view"
 import type { MessageSendMode } from "@threa/types"
 import { handleEnterTextBehavior, toggleMultilineBlock } from "./multiline-blocks"
 
@@ -50,6 +52,420 @@ export function isSuggestionActive(editor: Editor): boolean {
     s.slashCommand?.popupVisible ||
     s.emoji?.popupVisible
   )
+}
+
+type EscapableInlineMarkName = "code" | "link"
+type BoundaryNavigableInlineMarkName = "code"
+type ArrowDirection = "left" | "right"
+export type LinkToolbarAction = "opened" | "closed" | "exited"
+
+interface CodeBoundaryDecorationState {
+  pos: number
+  edge: "start" | "end"
+  mode: "inside" | "outside"
+  side: -1 | 1
+}
+
+interface CodeBoundaryContext {
+  codeMark: ProseMirrorMark
+  edge: "start" | "end"
+}
+
+interface MeasuredCaretRect {
+  height: number
+  left: number
+  top: number
+}
+
+function isTransparentColor(value: string | null | undefined): boolean {
+  if (!value) {
+    return false
+  }
+
+  return value === "transparent" || /^rgba?\([^)]*,\s*0\)$/.test(value)
+}
+
+function getEffectiveCursorMarks(state: EditorState): readonly ProseMirrorMark[] {
+  return state.storedMarks ?? state.selection.$from.marks()
+}
+
+function findMarkByName(
+  marks: readonly ProseMirrorMark[] | null | undefined,
+  markName: EscapableInlineMarkName | BoundaryNavigableInlineMarkName
+): ProseMirrorMark | undefined {
+  return marks?.find((mark) => mark.type.name === markName)
+}
+
+function setStoredMarks(editor: Editor, marks: readonly ProseMirrorMark[] | null): boolean {
+  const tr = editor.state.tr
+  tr.setStoredMarks(marks ? [...marks] : null)
+  editor.view.dispatch(tr)
+  return true
+}
+
+function getCodeBoundaryContext(state: EditorState, pos: number): CodeBoundaryContext | null {
+  const $pos = state.doc.resolve(pos)
+  const beforeCode = findMarkByName($pos.nodeBefore?.marks ?? [], "code")
+  const afterCode = findMarkByName($pos.nodeAfter?.marks ?? [], "code")
+
+  if (!!beforeCode === !!afterCode) {
+    return null
+  }
+
+  if (beforeCode) {
+    return {
+      codeMark: beforeCode,
+      edge: "end",
+    }
+  }
+
+  return {
+    codeMark: afterCode!,
+    edge: "start",
+  }
+}
+
+function enterInlineMark(editor: Editor, boundaryMark: ProseMirrorMark): boolean {
+  const currentMarks = getEffectiveCursorMarks(editor.state).filter((mark) => mark.type !== boundaryMark.type)
+  return setStoredMarks(editor, [...currentMarks, boundaryMark])
+}
+
+function getCodeBoundaryDecorationState(state: EditorState): CodeBoundaryDecorationState | null {
+  const { selection } = state
+
+  if (!selection.empty) {
+    return null
+  }
+
+  const { from } = selection
+  const boundary = getCodeBoundaryContext(state, from)
+  const isInsideCode = !!findMarkByName(getEffectiveCursorMarks(state), "code")
+
+  if (!boundary) {
+    return null
+  }
+
+  if (boundary.edge === "end") {
+    return {
+      pos: from,
+      edge: "end",
+      mode: isInsideCode ? "inside" : "outside",
+      side: isInsideCode ? -1 : 1,
+    }
+  }
+
+  return {
+    pos: from,
+    edge: boundary.edge,
+    mode: isInsideCode ? "inside" : "outside",
+    side: isInsideCode ? 1 : -1,
+  }
+}
+
+function isSyntheticInlineCodeBoundary(
+  boundary: CodeBoundaryDecorationState
+): boundary is CodeBoundaryDecorationState & ({ edge: "start"; mode: "inside" } | { edge: "end"; mode: "outside" }) {
+  return (
+    (boundary.edge === "start" && boundary.mode === "inside") ||
+    (boundary.edge === "end" && boundary.mode === "outside")
+  )
+}
+
+function findNearestCodeElement(node: Node | null | undefined): HTMLElement | null {
+  if (!node) {
+    return null
+  }
+
+  if (node.nodeType === Node.TEXT_NODE) {
+    return node.parentElement?.closest("code") ?? null
+  }
+
+  if (node.nodeType !== Node.ELEMENT_NODE) {
+    return null
+  }
+
+  const element = node as Element
+  const closest = element.closest("code")
+  if (closest instanceof HTMLElement) {
+    return closest
+  }
+
+  const nested = element.querySelector("code")
+  return nested instanceof HTMLElement ? nested : null
+}
+
+function getBoundaryCodeElement(view: EditorView, boundary: CodeBoundaryDecorationState): HTMLElement | null {
+  const insideSide = boundary.edge === "start" ? 1 : -1
+  const { node, offset } = view.domAtPos(boundary.pos, insideSide)
+  const candidates: Node[] = [node]
+
+  if (node.nodeType === Node.ELEMENT_NODE) {
+    const element = node as Element
+    const indexes = boundary.edge === "start" ? [offset, offset - 1, offset + 1] : [offset - 1, offset, offset - 2]
+
+    for (const index of indexes) {
+      if (index < 0 || index >= element.childNodes.length) {
+        continue
+      }
+
+      candidates.push(element.childNodes[index])
+    }
+  }
+
+  for (const candidate of candidates) {
+    const codeElement = findNearestCodeElement(candidate)
+    if (codeElement) {
+      return codeElement
+    }
+  }
+
+  return null
+}
+
+function getCodeBoundaryTextNodes(codeElement: HTMLElement): Text[] {
+  const textNodes: Text[] = []
+  const walker = codeElement.ownerDocument.createTreeWalker(codeElement, NodeFilter.SHOW_TEXT)
+  let current: Node | null
+
+  while ((current = walker.nextNode())) {
+    if ((current.textContent?.length ?? 0) > 0) {
+      textNodes.push(current as Text)
+    }
+  }
+
+  return textNodes
+}
+
+function getRenderableClientRects(target: { getClientRects: () => DOMRectList }): DOMRect[] {
+  return Array.from(target.getClientRects()).filter((rect) => rect.width > 0 || rect.height > 0)
+}
+
+function measureCollapsedCaretRect(document: Document, node: Node, offset: number): MeasuredCaretRect | null {
+  const range = document.createRange()
+
+  try {
+    range.setStart(node, offset)
+    range.setEnd(node, offset)
+  } catch {
+    return null
+  }
+
+  if (typeof range.getBoundingClientRect !== "function" || typeof range.getClientRects !== "function") {
+    return null
+  }
+
+  const rect = range.getBoundingClientRect()
+  if (rect.height > 0) {
+    return {
+      left: rect.left,
+      top: rect.top,
+      height: rect.height,
+    }
+  }
+
+  const fallbackRect = range.getClientRects()[0]
+  if (!fallbackRect || fallbackRect.height <= 0) {
+    return null
+  }
+
+  return {
+    left: fallbackRect.left,
+    top: fallbackRect.top,
+    height: fallbackRect.height,
+  }
+}
+
+function getSyntheticInlineCodeBoundaryCaretRect(
+  view: EditorView,
+  boundary: CodeBoundaryDecorationState
+): MeasuredCaretRect | null {
+  if (!isSyntheticInlineCodeBoundary(boundary)) {
+    return null
+  }
+
+  const codeElement = getBoundaryCodeElement(view, boundary)
+  if (!codeElement) {
+    return null
+  }
+
+  const document = codeElement.ownerDocument
+  const textNodes = getCodeBoundaryTextNodes(codeElement)
+  const codeRect = codeElement.getBoundingClientRect()
+  const lastCodeRect = getRenderableClientRects(codeElement).at(-1) ?? codeRect
+  const computedStyle = document.defaultView?.getComputedStyle(codeElement)
+  const fallbackHeight =
+    Number.parseFloat(computedStyle?.lineHeight ?? "") ||
+    Number.parseFloat(computedStyle?.fontSize ?? "") ||
+    codeRect.height ||
+    16
+  const fallbackTop = codeRect.top
+
+  if (boundary.edge === "start") {
+    const firstTextNode = textNodes[0]
+    if (firstTextNode) {
+      const firstCaretRect = measureCollapsedCaretRect(document, firstTextNode, 0)
+      if (firstCaretRect) {
+        return firstCaretRect
+      }
+    }
+
+    return {
+      left: codeRect.left + (Number.parseFloat(computedStyle?.paddingLeft ?? "") || 0),
+      top: fallbackTop,
+      height: fallbackHeight,
+    }
+  }
+
+  const nextSibling = codeElement.nextSibling
+  if (nextSibling instanceof Text) {
+    const nextCaretRect = measureCollapsedCaretRect(document, nextSibling, 0)
+    if (nextCaretRect) {
+      return nextCaretRect
+    }
+  }
+
+  const lastTextNode = textNodes[textNodes.length - 1]
+  const insideEndRect = lastTextNode
+    ? measureCollapsedCaretRect(document, lastTextNode, lastTextNode.data.length)
+    : null
+
+  if (insideEndRect) {
+    return {
+      left: lastCodeRect.right,
+      top: insideEndRect.top,
+      height: insideEndRect.height,
+    }
+  }
+
+  return {
+    left: lastCodeRect.right,
+    top: lastCodeRect.top || fallbackTop,
+    height: lastCodeRect.height || fallbackHeight,
+  }
+}
+
+export function exitInlineMark(editor: Editor, markName: EscapableInlineMarkName): boolean {
+  const { state } = editor
+
+  if (!state.selection.empty) {
+    return false
+  }
+
+  const currentMark = findMarkByName(getEffectiveCursorMarks(state), markName)
+  if (!currentMark) {
+    return false
+  }
+
+  const remainingMarks = getEffectiveCursorMarks(state).filter((mark) => mark.type !== currentMark.type)
+  return setStoredMarks(editor, remainingMarks)
+}
+
+export function handleEscapableInlineMarkArrow(editor: Editor, direction: ArrowDirection): boolean {
+  const { state } = editor
+  const { selection } = state
+
+  if (!selection.empty) {
+    return false
+  }
+
+  const { $from } = selection
+  const beforeMarks = $from.nodeBefore?.marks ?? []
+  const afterMarks = $from.nodeAfter?.marks ?? []
+  const effectiveMarks = getEffectiveCursorMarks(state)
+
+  for (const markName of ["code"] as const satisfies readonly BoundaryNavigableInlineMarkName[]) {
+    const beforeMark = findMarkByName(beforeMarks, markName)
+    const afterMark = findMarkByName(afterMarks, markName)
+    const isInsideMark = !!findMarkByName(effectiveMarks, markName)
+
+    if (direction === "right") {
+      if (beforeMark && !afterMark && isInsideMark) {
+        return exitInlineMark(editor, markName)
+      }
+
+      if (!beforeMark && afterMark && !isInsideMark) {
+        return enterInlineMark(editor, afterMark)
+      }
+    } else {
+      if (beforeMark && !afterMark && !isInsideMark) {
+        return enterInlineMark(editor, beforeMark)
+      }
+
+      if (!beforeMark && afterMark && isInsideMark) {
+        return exitInlineMark(editor, markName)
+      }
+    }
+  }
+
+  return false
+}
+
+function moveCursorOntoInlineCodeBoundary(editor: Editor, direction: ArrowDirection): boolean {
+  const { state } = editor
+  const { selection } = state
+
+  if (!selection.empty) {
+    return false
+  }
+
+  const currentBoundary = getCodeBoundaryDecorationState(state)
+  if (currentBoundary) {
+    const movingAwayFromBoundaryIntoRealContent =
+      (currentBoundary.edge === "start" && currentBoundary.mode === "inside" && direction === "right") ||
+      (currentBoundary.edge === "end" && currentBoundary.mode === "inside" && direction === "left") ||
+      (currentBoundary.edge === "start" && currentBoundary.mode === "outside" && direction === "left") ||
+      (currentBoundary.edge === "end" && currentBoundary.mode === "outside" && direction === "right")
+
+    if (movingAwayFromBoundaryIntoRealContent) {
+      const targetPos = selection.from + (direction === "right" ? 1 : -1)
+      if (targetPos >= 1 && targetPos <= state.doc.content.size) {
+        const tr = state.tr
+        tr.setSelection(TextSelection.create(state.doc, targetPos))
+        tr.setStoredMarks(null)
+        editor.view.dispatch(tr)
+        return true
+      }
+    }
+  }
+
+  const targetPos = selection.from + (direction === "right" ? 1 : -1)
+  if (targetPos < 1 || targetPos > state.doc.content.size) {
+    return false
+  }
+
+  const boundary = getCodeBoundaryContext(state, targetPos)
+  if (!boundary) {
+    return false
+  }
+
+  const marksWithoutCode = getEffectiveCursorMarks(state).filter((mark) => mark.type.name !== "code")
+  const shouldBeInside = direction === "right" ? boundary.edge === "end" : boundary.edge === "start"
+  const nextMarks = shouldBeInside ? [...marksWithoutCode, boundary.codeMark] : marksWithoutCode
+  const tr = state.tr
+
+  tr.setSelection(TextSelection.create(state.doc, targetPos))
+  tr.setStoredMarks(nextMarks)
+  editor.view.dispatch(tr)
+  return true
+}
+
+export function handleLinkToolbarAction(
+  editor: Editor,
+  linkPopoverOpen: boolean,
+  onLinkPopoverOpenChange?: (open: boolean) => void
+): LinkToolbarAction {
+  if (linkPopoverOpen) {
+    onLinkPopoverOpenChange?.(false)
+    editor.commands.focus()
+    return "closed"
+  }
+
+  if (exitInlineMark(editor, "link")) {
+    return "exited"
+  }
+
+  onLinkPopoverOpenChange?.(true)
+  return "opened"
 }
 
 /**
@@ -271,6 +687,110 @@ export const EditorBehaviors = Extension.create<EditorBehaviorsOptions>({
     }
   },
 
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        view(view) {
+          const defaultView = view.dom.ownerDocument.defaultView
+          let rafId: number | null = null
+          const overlay = view.dom.ownerDocument.createElement("div")
+
+          overlay.dataset.inlineCodeBoundaryOverlay = "true"
+          overlay.style.position = "fixed"
+          overlay.style.pointerEvents = "none"
+          overlay.style.display = "none"
+          overlay.style.width = "0"
+          overlay.style.borderLeft = "1px solid currentColor"
+          overlay.style.zIndex = "2147483647"
+          overlay.style.transform = "translateX(-0.5px)"
+          overlay.style.animation = "threa-inline-code-boundary-caret-blink 1.1s step-end infinite"
+          view.dom.ownerDocument.body.append(overlay)
+
+          const clearOverlay = () => {
+            overlay.style.display = "none"
+            view.dom.style.caretColor = ""
+          }
+
+          const syncNow = () => {
+            const boundary = getCodeBoundaryDecorationState(view.state)
+
+            if (!boundary || !view.hasFocus() || !view.editable || !isSyntheticInlineCodeBoundary(boundary)) {
+              clearOverlay()
+              return
+            }
+
+            const caretRect = getSyntheticInlineCodeBoundaryCaretRect(view, boundary)
+            if (!caretRect) {
+              clearOverlay()
+              return
+            }
+
+            const computedStyle = defaultView?.getComputedStyle(view.dom)
+            const caretColor =
+              computedStyle?.caretColor &&
+              computedStyle.caretColor !== "auto" &&
+              !isTransparentColor(computedStyle.caretColor)
+                ? computedStyle.caretColor
+                : (computedStyle?.color ?? "currentColor")
+
+            overlay.style.left = `${caretRect.left}px`
+            overlay.style.top = `${caretRect.top}px`
+            overlay.style.height = `${caretRect.height}px`
+            overlay.style.borderLeftColor = caretColor
+            overlay.style.display = "block"
+            view.dom.style.caretColor = "transparent"
+          }
+
+          const scheduleSync = () => {
+            syncNow()
+
+            if (!defaultView) {
+              return
+            }
+
+            if (rafId !== null) {
+              defaultView.cancelAnimationFrame(rafId)
+            }
+
+            rafId = defaultView.requestAnimationFrame(() => {
+              rafId = null
+              syncNow()
+            })
+          }
+
+          view.dom.addEventListener("focus", scheduleSync)
+          view.dom.addEventListener("blur", clearOverlay)
+          view.dom.ownerDocument.addEventListener("selectionchange", scheduleSync)
+          defaultView?.addEventListener("resize", scheduleSync)
+          defaultView?.addEventListener("scroll", scheduleSync, true)
+          defaultView?.visualViewport?.addEventListener("resize", scheduleSync)
+          defaultView?.visualViewport?.addEventListener("scroll", scheduleSync)
+
+          scheduleSync()
+
+          return {
+            update: scheduleSync,
+            destroy() {
+              if (rafId !== null) {
+                defaultView?.cancelAnimationFrame(rafId)
+              }
+
+              view.dom.removeEventListener("focus", scheduleSync)
+              view.dom.removeEventListener("blur", clearOverlay)
+              view.dom.ownerDocument.removeEventListener("selectionchange", scheduleSync)
+              defaultView?.removeEventListener("resize", scheduleSync)
+              defaultView?.removeEventListener("scroll", scheduleSync, true)
+              defaultView?.visualViewport?.removeEventListener("resize", scheduleSync)
+              defaultView?.visualViewport?.removeEventListener("scroll", scheduleSync)
+              clearOverlay()
+              overlay.remove()
+            },
+          }
+        },
+      }),
+    ]
+  },
+
   addKeyboardShortcuts() {
     return {
       // Formatting shortcuts
@@ -279,6 +799,24 @@ export const EditorBehaviors = Extension.create<EditorBehaviorsOptions>({
       "Mod-Shift-s": () => this.editor.chain().focus().toggleStrike().run(),
       "Mod-e": () => this.editor.chain().focus().toggleCode().run(),
       "Mod-Shift-c": () => toggleMultilineBlock(this.editor, "codeBlock"),
+      ArrowLeft: () => {
+        if (isSuggestionActive(this.editor)) {
+          return false
+        }
+
+        return (
+          handleEscapableInlineMarkArrow(this.editor, "left") || moveCursorOntoInlineCodeBoundary(this.editor, "left")
+        )
+      },
+      ArrowRight: () => {
+        if (isSuggestionActive(this.editor)) {
+          return false
+        }
+
+        return (
+          handleEscapableInlineMarkArrow(this.editor, "right") || moveCursorOntoInlineCodeBoundary(this.editor, "right")
+        )
+      },
 
       // Tab: VS Code-style indent (always trapped to prevent focus escape)
       Tab: () => {
