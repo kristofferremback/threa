@@ -68,16 +68,15 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
   const hideIndicatorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const workspaceSyncStatus = useSyncStatus(`workspace:${workspaceId}`)
-  const idbUsers = useWorkspaceUsers(workspaceId)
-  const hasIdbData = idbUsers.length > 0
-  // Workspace is loading when:
-  // - Sync status is idle/syncing AND we have no cached IDB data
-  // - Once synced OR IDB has data, workspace is ready
-  const workspaceLoading = (workspaceSyncStatus === "idle" || workspaceSyncStatus === "syncing") && !hasIdbData
+  // Wait for workspace bootstrap to complete — users, bots, stream names,
+  // memberships all need to be fresh before rendering to prevent layout shifts.
+  // Offline rendering from stale IDB is a Phase 5 concern (graceful degradation).
+  const workspaceLoading = workspaceSyncStatus === "idle" || workspaceSyncStatus === "syncing"
   const { loadState: streamsLoadState, results } = useCoordinatedStreamQueries(workspaceId, streamIds)
-  // Stream queries are still TanStack-driven. They fire when socket connects.
-  // Only block on them when we have no IDB data (fresh visit).
-  const streamsLoading = !hasIdbData && isQueryLoadStateLoading(streamsLoadState)
+  const streamsLoading = isQueryLoadStateLoading(streamsLoadState)
+
+  // Avatar preload still uses IDB for the URL list (populated by bootstrap)
+  const idbUsers = useWorkspaceUsers(workspaceId)
   const avatarUrls = useMemo(() => {
     return idbUsers
       .map((u) => getAvatarUrl(workspaceId, u.avatarUrl, 64))
