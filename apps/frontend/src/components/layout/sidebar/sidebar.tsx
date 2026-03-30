@@ -17,6 +17,7 @@ import {
   useWorkspaceStreamMemberships,
   useWorkspaceDmPeers,
   useWorkspaceFromStore,
+  useWorkspaceUnreadState,
 } from "@/stores/workspace-store"
 import { useCoordinatedLoading, useSidebar } from "@/contexts"
 import { useCreateChannel } from "@/components/create-channel"
@@ -48,8 +49,9 @@ export function Sidebar({ workspaceId }: SidebarProps) {
     collapseOnMobile,
   } = useSidebar()
   const { streamId: activeStreamId, "*": splat } = useParams<{ streamId: string; "*": string }>()
-  const { data: bootstrap, isLoading, error, retryBootstrap } = useWorkspaceBootstrap(workspaceId)
+  const { isLoading, error, retryBootstrap } = useWorkspaceBootstrap(workspaceId)
   const workspace = useWorkspaceFromStore(workspaceId)
+  const unreadState = useWorkspaceUnreadState(workspaceId)
   const workspaceUsers = useWorkspaceUsers(workspaceId)
   const idbStreams = useWorkspaceStreams(workspaceId)
   const idbStreamMemberships = useWorkspaceStreamMemberships(workspaceId)
@@ -75,8 +77,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   }, [idbStreamMemberships])
 
   // Build set of muted streams (for suppressing unread badges)
-  // mutedStreamIds is not in IDB; still read from bootstrap
-  const mutedStreamIdSet = useMemo(() => new Set(bootstrap?.mutedStreamIds ?? []), [bootstrap?.mutedStreamIds])
+  const mutedStreamIdSet = useMemo(() => new Set(unreadState?.mutedStreamIds ?? []), [unreadState?.mutedStreamIds])
   const dmPeerByStreamId = useMemo(() => new Map(idbDmPeers.map((peer) => [peer.streamId, peer.userId])), [idbDmPeers])
 
   // Process streams into enriched data with urgency and section
@@ -281,7 +282,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   }
 
   // Show error state with retry button
-  if (error && !bootstrap) {
+  if (error && idbStreams.length === 0) {
     return (
       <SidebarShell
         header={<HeaderSkeleton />}

@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useMemo, useRef, type R
 import { useWorkspaceBootstrap } from "@/hooks/use-workspaces"
 import { usePreloadImages } from "@/hooks/use-preload-images"
 import { useCoordinatedStreamQueries } from "@/hooks/use-coordinated-stream-queries"
+import { useWorkspaceUsers } from "@/stores/workspace-store"
 import { debugBootstrap } from "@/lib/bootstrap-debug"
 import { getQueryLoadState, isQueryLoadStateLoading } from "@/lib/query-load-state"
 import { StreamContentSkeleton } from "@/components/loading"
@@ -74,13 +75,12 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
   const streamsLoading = isQueryLoadStateLoading(streamsLoadState)
 
   // Preload user avatar images so they're in the browser cache before first render
+  const idbUsers = useWorkspaceUsers(workspaceId)
   const avatarUrls = useMemo(() => {
-    if (!workspaceQuery.data) return []
-    const users = workspaceQuery.data.users
-    return users
+    return idbUsers
       .map((u) => getAvatarUrl(workspaceId, u.avatarUrl, 64))
       .filter((url): url is string => url !== undefined)
-  }, [workspaceQuery.data])
+  }, [idbUsers, workspaceId])
   const avatarsReady = usePreloadImages(avatarUrls)
 
   const isLoading = workspaceLoading || streamsLoading
