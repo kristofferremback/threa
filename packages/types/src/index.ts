@@ -139,7 +139,7 @@ export {
 } from "./constants"
 
 // Domain entities (wire format)
-export { getAvatarUrl } from "./domain"
+export { getAvatarUrl, getBotAvatarUrl } from "./domain"
 export type {
   Workspace,
   User,

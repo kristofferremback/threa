@@ -47,13 +47,25 @@ export class AvatarService {
   }
 
   /**
-   * Upload the raw (unprocessed) image buffer to S3.
+   * Upload the raw (unprocessed) image buffer to S3 for a user avatar.
    * Returns the S3 key for later retrieval by the worker.
    */
   async uploadRaw(params: { buffer: Buffer; workspaceId: string; userId: string }): Promise<string> {
     const { buffer, workspaceId, userId } = params
     const timestamp = Date.now()
     const key = `avatars/${workspaceId}/${userId}/${timestamp}.original`
+    await this.storage.putObject(key, buffer, "application/octet-stream")
+    return key
+  }
+
+  /**
+   * Upload the raw (unprocessed) image buffer to S3 for a bot avatar.
+   * Returns the S3 key for later retrieval.
+   */
+  async uploadRawForBot(params: { buffer: Buffer; workspaceId: string; botId: string }): Promise<string> {
+    const { buffer, workspaceId, botId } = params
+    const timestamp = Date.now()
+    const key = `avatars/${workspaceId}/bots/${botId}/${timestamp}.original`
     await this.storage.putObject(key, buffer, "application/octet-stream")
     return key
   }
@@ -87,13 +99,22 @@ export class AvatarService {
   private static readonly AVATAR_FILE_PATTERN = /^\d+\.(256|64)\.webp$/
 
   /**
-   * Stream an avatar file from S3. Validates filename format and constructs
+   * Stream a user avatar file from S3. Validates filename format and constructs
    * the S3 key internally — callers don't need to know the storage layout.
    * Returns null if the filename doesn't match the expected pattern.
    */
   async streamAvatarFile(params: { workspaceId: string; userId: string; file: string }): Promise<Readable | null> {
     if (!AvatarService.AVATAR_FILE_PATTERN.test(params.file)) return null
     const s3Key = `avatars/${params.workspaceId}/${params.userId}/${params.file}`
+    return this.storage.getObjectStream(s3Key)
+  }
+
+  /**
+   * Stream a bot avatar file from S3.
+   */
+  async streamBotAvatarFile(params: { workspaceId: string; botId: string; file: string }): Promise<Readable | null> {
+    if (!AvatarService.AVATAR_FILE_PATTERN.test(params.file)) return null
+    const s3Key = `avatars/${params.workspaceId}/bots/${params.botId}/${params.file}`
     return this.storage.getObjectStream(s3Key)
   }
 

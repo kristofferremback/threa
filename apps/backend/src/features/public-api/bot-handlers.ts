@@ -3,12 +3,14 @@ import type { Request, Response } from "express"
 import type { Pool } from "pg"
 import { BotRepository } from "./bot-repository"
 import { BotApiKeyRepository, type BotApiKeyRow } from "./bot-api-key-repository"
+import type { AvatarService } from "../workspaces"
 import type { BotApiKeyService } from "./bot-api-key-service"
 import { serializeBot } from "./handlers"
 import { botId } from "../../lib/id"
 import { withTransaction } from "../../db"
 import { OutboxRepository } from "../../lib/outbox"
 import { HttpError } from "@threa/backend-common"
+import { isUniqueViolation } from "../../lib/errors"
 import { API_KEY_SCOPES, type ApiKeyScope, type BotApiKey } from "@threa/types"
 
 const ALL_SCOPES = Object.values(API_KEY_SCOPES)
@@ -65,10 +67,11 @@ function serializeBotKey(row: BotApiKeyRow): BotApiKey {
 
 interface BotHandlerDeps {
   botApiKeyService: BotApiKeyService
+  avatarService: AvatarService
   pool: Pool
 }
 
-export function createBotHandlers({ botApiKeyService, pool }: BotHandlerDeps) {
+export function createBotHandlers({ botApiKeyService, avatarService, pool }: BotHandlerDeps) {
   return {
     /** POST /api/workspaces/:workspaceId/bots */
     async create(req: Request, res: Response) {
@@ -84,23 +87,31 @@ export function createBotHandlers({ botApiKeyService, pool }: BotHandlerDeps) {
 
       const { name, slug, description, avatarEmoji } = result.data
 
-      const bot = await withTransaction(pool, async (client) => {
-        const created = await BotRepository.create(client, {
-          id: botId(),
-          workspaceId,
-          slug,
-          name,
-          description: description ?? null,
-          avatarEmoji: avatarEmoji ?? null,
-        })
+      let bot
+      try {
+        bot = await withTransaction(pool, async (client) => {
+          const created = await BotRepository.create(client, {
+            id: botId(),
+            workspaceId,
+            slug,
+            name,
+            description: description ?? null,
+            avatarEmoji: avatarEmoji ?? null,
+          })
 
-        await OutboxRepository.insert(client, "bot:created", {
-          workspaceId,
-          bot: serializeBot(created),
-        })
+          await OutboxRepository.insert(client, "bot:created", {
+            workspaceId,
+            bot: serializeBot(created),
+          })
 
-        return created
-      })
+          return created
+        })
+      } catch (error) {
+        if (isUniqueViolation(error, "idx_bots_workspace_slug")) {
+          throw new HttpError(`A bot with slug "${slug}" already exists`, { status: 409, code: "DUPLICATE_SLUG" })
+        }
+        throw error
+      }
 
       res.status(201).json({ data: serializeBot(bot) })
     },
@@ -118,19 +129,30 @@ export function createBotHandlers({ botApiKeyService, pool }: BotHandlerDeps) {
         })
       }
 
-      const bot = await withTransaction(pool, async (client) => {
-        const updated = await BotRepository.update(client, id, workspaceId, result.data)
-        if (!updated) {
-          throw new HttpError("Bot not found", { status: 404, code: "NOT_FOUND" })
-        }
+      let bot
+      try {
+        bot = await withTransaction(pool, async (client) => {
+          const updated = await BotRepository.update(client, id, workspaceId, result.data)
+          if (!updated) {
+            throw new HttpError("Bot not found", { status: 404, code: "NOT_FOUND" })
+          }
 
-        await OutboxRepository.insert(client, "bot:updated", {
-          workspaceId,
-          bot: serializeBot(updated),
+          await OutboxRepository.insert(client, "bot:updated", {
+            workspaceId,
+            bot: serializeBot(updated),
+          })
+
+          return updated
         })
-
-        return updated
-      })
+      } catch (error) {
+        if (result.data.slug && isUniqueViolation(error, "idx_bots_workspace_slug")) {
+          throw new HttpError(`A bot with slug "${result.data.slug}" already exists`, {
+            status: 409,
+            code: "DUPLICATE_SLUG",
+          })
+        }
+        throw error
+      }
 
       res.json({ data: serializeBot(bot) })
     },
@@ -245,6 +267,120 @@ export function createBotHandlers({ botApiKeyService, pool }: BotHandlerDeps) {
       const { botId: id, keyId } = req.params
       await botApiKeyService.revokeKey(workspaceId, id, keyId)
       res.status(204).send()
+    },
+
+    // --- Avatar management ---
+
+    /** POST /api/workspaces/:workspaceId/bots/:botId/avatar */
+    async uploadAvatar(req: Request, res: Response) {
+      const workspaceId = req.workspaceId!
+      const { botId: id } = req.params
+
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" })
+      }
+
+      const bot = await BotRepository.findById(pool, id)
+      if (!bot || bot.workspaceId !== workspaceId || bot.archivedAt) {
+        throw new HttpError("Bot not found or archived", { status: 404, code: "NOT_FOUND" })
+      }
+
+      // Process synchronously — bot avatar uploads are infrequent
+      const rawS3Key = await avatarService.uploadRawForBot({
+        buffer: req.file.buffer,
+        workspaceId,
+        botId: id,
+      })
+
+      const basePath = avatarService.rawKeyToBasePath(rawS3Key)
+      const images = await avatarService.processImages(req.file.buffer)
+      await avatarService.uploadImages(basePath, images)
+
+      // Clean up raw file (don't need it after inline processing)
+      avatarService.deleteRawFile(rawS3Key)
+
+      // Clean up old avatar files if replacing
+      const oldAvatarUrl = bot.avatarUrl
+      if (oldAvatarUrl) {
+        avatarService.deleteAvatarFiles(oldAvatarUrl)
+      }
+
+      // Update bot with new avatar URL
+      const updated = await withTransaction(pool, async (client) => {
+        const result = await BotRepository.updateAvatarUrl(client, id, workspaceId, basePath)
+        if (!result) {
+          throw new HttpError("Bot not found", { status: 404, code: "NOT_FOUND" })
+        }
+
+        await OutboxRepository.insert(client, "bot:updated", {
+          workspaceId,
+          bot: serializeBot(result),
+        })
+
+        return result
+      })
+
+      res.json({ data: serializeBot(updated) })
+    },
+
+    /** DELETE /api/workspaces/:workspaceId/bots/:botId/avatar */
+    async removeAvatar(req: Request, res: Response) {
+      const workspaceId = req.workspaceId!
+      const { botId: id } = req.params
+
+      const bot = await BotRepository.findById(pool, id)
+      if (!bot || bot.workspaceId !== workspaceId) {
+        throw new HttpError("Bot not found", { status: 404, code: "NOT_FOUND" })
+      }
+
+      if (!bot.avatarUrl) {
+        return res.json({ data: serializeBot(bot) })
+      }
+
+      // Clean up S3 files
+      avatarService.deleteAvatarFiles(bot.avatarUrl)
+
+      const updated = await withTransaction(pool, async (client) => {
+        const result = await BotRepository.updateAvatarUrl(client, id, workspaceId, null)
+        if (!result) {
+          throw new HttpError("Bot not found", { status: 404, code: "NOT_FOUND" })
+        }
+
+        await OutboxRepository.insert(client, "bot:updated", {
+          workspaceId,
+          bot: serializeBot(result),
+        })
+
+        return result
+      })
+
+      res.json({ data: serializeBot(updated) })
+    },
+
+    /** GET /api/workspaces/:workspaceId/bots/:botId/avatar/:file */
+    async serveAvatarFile(req: Request, res: Response) {
+      const { workspaceId, botId: id, file } = req.params
+      if (!workspaceId || !id || !file) {
+        return res.status(404).end()
+      }
+
+      try {
+        const stream = await avatarService.streamBotAvatarFile({ workspaceId, botId: id, file })
+        if (!stream) return res.status(404).end()
+
+        res.set("Content-Type", "image/webp")
+        res.set("Cache-Control", "public, max-age=31536000, immutable")
+        stream.on("error", () => {
+          if (!res.headersSent) {
+            res.status(500).end()
+          } else {
+            res.end()
+          }
+        })
+        stream.pipe(res)
+      } catch {
+        return res.status(404).end()
+      }
     },
   }
 }

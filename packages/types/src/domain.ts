@@ -96,6 +96,32 @@ export function getAvatarUrl(
   return `/api/workspaces/${workspaceId}/users/${userId}/avatar/${timestamp}.${size}.webp`
 }
 
+/**
+ * Get the display URL for a bot avatar image.
+ * avatarUrl stores the S3 key base path (avatars/{workspaceId}/bots/{botId}/{timestamp}).
+ */
+export function getBotAvatarUrl(
+  workspaceId: string,
+  avatarUrl: string | null | undefined,
+  size: 256 | 64
+): string | undefined {
+  if (!avatarUrl) return undefined
+
+  const match = avatarUrl.match(/^avatars\/([^/]+)\/bots\/([^/]+)\/([^/]+)$/)
+  if (!match) {
+    console.error(`Malformed bot avatarUrl: "${avatarUrl}" (expected avatars/{workspaceId}/bots/{botId}/{timestamp})`)
+    return undefined
+  }
+
+  const [, embeddedWorkspaceId, botId, timestamp] = match
+  if (embeddedWorkspaceId !== workspaceId) {
+    console.error(`Bot avatarUrl workspaceId mismatch: key has "${embeddedWorkspaceId}" but received "${workspaceId}"`)
+    return undefined
+  }
+
+  return `/api/workspaces/${workspaceId}/bots/${botId}/avatar/${timestamp}.${size}.webp`
+}
+
 export interface WorkspaceInvitation {
   id: string
   workspaceId: string

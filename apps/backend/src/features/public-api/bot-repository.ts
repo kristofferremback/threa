@@ -159,6 +159,17 @@ export const BotRepository = {
     return mapRowToBot(result.rows[0])
   },
 
+  async updateAvatarUrl(db: Querier, id: string, workspaceId: string, avatarUrl: string | null): Promise<Bot | null> {
+    const result = await db.query<BotRow>(sql`
+      UPDATE bots
+      SET avatar_url = ${avatarUrl}, updated_at = NOW()
+      WHERE id = ${id} AND workspace_id = ${workspaceId}
+      RETURNING ${sql.raw(BOT_COLUMNS)}
+    `)
+    if (!result.rows[0]) return null
+    return mapRowToBot(result.rows[0])
+  },
+
   async archive(db: Querier, id: string, workspaceId: string): Promise<Bot | null> {
     const result = await db.query<BotRow>(sql`
       UPDATE bots

@@ -331,7 +331,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.post("/api/workspaces/:workspaceId/user-api-keys/:keyId/revoke", ...authed, userApiKeys.revoke)
 
   // Bot management (admin-only)
-  const botHandlers = createBotHandlers({ botApiKeyService, pool })
+  const botHandlers = createBotHandlers({ botApiKeyService, avatarService, pool })
   app.get("/api/workspaces/:workspaceId/bots", ...authed, botHandlers.list)
   app.post("/api/workspaces/:workspaceId/bots", ...authed, requireRole("admin"), botHandlers.create)
   app.get("/api/workspaces/:workspaceId/bots/:botId", ...authed, botHandlers.get)
@@ -346,6 +346,21 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     requireRole("admin"),
     botHandlers.revokeKey
   )
+  app.post(
+    "/api/workspaces/:workspaceId/bots/:botId/avatar",
+    ...authed,
+    requireRole("admin"),
+    avatarUpload,
+    botHandlers.uploadAvatar
+  )
+  app.delete(
+    "/api/workspaces/:workspaceId/bots/:botId/avatar",
+    ...authed,
+    requireRole("admin"),
+    botHandlers.removeAvatar
+  )
+  // Bot avatar serving (unauthenticated — S3 keys contain unguessable ULIDs)
+  app.get("/api/workspaces/:workspaceId/bots/:botId/avatar/:file", botHandlers.serveAvatarFile)
 
   // Public API v1 — API key auth (workspace-scoped or user-scoped)
   const publicAuth = createPublicApiAuthMiddleware({ apiKeyService, userApiKeyService, botApiKeyService, pool })

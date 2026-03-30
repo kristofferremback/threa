@@ -1,6 +1,7 @@
-import { useCallback, useState } from "react"
+import { useCallback, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { botsApi, type CreateBotInput, type CreateBotKeyInput } from "@/api/bots"
+import { getBotAvatarUrl } from "@threa/types"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -36,9 +37,36 @@ import {
   Plus,
   BotIcon,
   Trash2,
+  Upload,
+  X,
 } from "lucide-react"
 
 const SCOPE_LABELS: Record<string, string> = Object.fromEntries(API_KEY_PERMISSIONS.map((p) => [p.slug, p.name]))
+
+function BotAvatar({
+  bot,
+  workspaceId,
+  size = 36,
+}: {
+  bot: { avatarUrl?: string | null; avatarEmoji?: string | null; name: string }
+  workspaceId: string
+  size?: number
+}) {
+  const avatarUrl = getBotAvatarUrl(workspaceId, bot.avatarUrl, size > 64 ? 256 : 64)
+
+  return (
+    <div
+      className="rounded-full bg-emerald-500/10 flex items-center justify-center shrink-0 overflow-hidden"
+      style={{ width: size, height: size }}
+    >
+      {avatarUrl && <img src={avatarUrl} alt={bot.name} className="w-full h-full object-cover" />}
+      {!avatarUrl && bot.avatarEmoji && <span style={{ fontSize: size * 0.5 }}>{bot.avatarEmoji}</span>}
+      {!avatarUrl && !bot.avatarEmoji && (
+        <BotIcon className="text-emerald-600" style={{ width: size * 0.45, height: size * 0.45 }} />
+      )}
+    </div>
+  )
+}
 
 interface BotsTabProps {
   workspaceId: string
@@ -221,13 +249,7 @@ function BotList({ workspaceId, onSelectBot }: { workspaceId: string; onSelectBo
               className="w-full flex items-center gap-3 px-3 py-3 hover:bg-accent/50 transition-colors text-left cursor-pointer"
               onClick={() => onSelectBot(bot.id)}
             >
-              <div className="h-9 w-9 rounded-full bg-emerald-500/10 flex items-center justify-center shrink-0">
-                {bot.avatarEmoji ? (
-                  <span className="text-lg">{bot.avatarEmoji}</span>
-                ) : (
-                  <BotIcon className="h-4 w-4 text-emerald-600" />
-                )}
-              </div>
+              <BotAvatar bot={bot} workspaceId={workspaceId} size={36} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline gap-2">
                   <span className="text-sm font-medium truncate">{bot.name}</span>
@@ -317,6 +339,31 @@ function BotDetail({ workspaceId, botId, onBack }: { workspaceId: string; botId:
       queryClient.invalidateQueries({ queryKey: ["bots", workspaceId] })
     },
   })
+
+  const avatarInputRef = useRef<HTMLInputElement>(null)
+  const uploadAvatarMutation = useMutation({
+    mutationFn: (file: File) => botsApi.uploadAvatar(workspaceId, botId, file),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: botQueryKey })
+      queryClient.invalidateQueries({ queryKey: ["bots", workspaceId] })
+    },
+  })
+
+  const removeAvatarMutation = useMutation({
+    mutationFn: () => botsApi.removeAvatar(workspaceId, botId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: botQueryKey })
+      queryClient.invalidateQueries({ queryKey: ["bots", workspaceId] })
+    },
+  })
+
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      uploadAvatarMutation.mutate(file)
+    }
+    e.target.value = ""
+  }
 
   const createKeyMutation = useMutation({
     mutationFn: (data: CreateBotKeyInput) => botsApi.createKey(workspaceId, botId, data),
@@ -418,18 +465,10 @@ function BotDetail({ workspaceId, botId, onBack }: { workspaceId: string; botId:
         <Button variant="ghost" size="sm" onClick={onBack} className="h-7 px-2">
           <ArrowLeft className="h-3.5 w-3.5" />
         </Button>
-        <div className="flex items-center gap-2">
-          <div className="h-8 w-8 rounded-full bg-emerald-500/10 flex items-center justify-center shrink-0">
-            {bot.avatarEmoji ? (
-              <span className="text-base">{bot.avatarEmoji}</span>
-            ) : (
-              <BotIcon className="h-4 w-4 text-emerald-600" />
-            )}
-          </div>
-          <div>
-            <h3 className="text-sm font-medium">{bot.name}</h3>
-            {bot.slug && <p className="text-xs text-muted-foreground">@{bot.slug}</p>}
-          </div>
+        <BotAvatar bot={bot} workspaceId={workspaceId} size={32} />
+        <div>
+          <h3 className="text-sm font-medium">{bot.name}</h3>
+          {bot.slug && <p className="text-xs text-muted-foreground">@{bot.slug}</p>}
         </div>
         {isArchived && (
           <Badge variant="secondary" className="ml-auto text-xs">
@@ -448,6 +487,52 @@ function BotDetail({ workspaceId, botId, onBack }: { workspaceId: string; botId:
             </Button>
           )}
         </div>
+
+        {/* Avatar upload */}
+        {!isArchived && (
+          <div className="flex items-center gap-3">
+            <BotAvatar bot={bot} workspaceId={workspaceId} size={56} />
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => avatarInputRef.current?.click()}
+                  disabled={uploadAvatarMutation.isPending}
+                >
+                  <Upload className="h-3 w-3 mr-1" />
+                  {uploadAvatarMutation.isPending ? "Uploading..." : "Upload image"}
+                </Button>
+                {bot.avatarUrl && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs text-muted-foreground"
+                    onClick={() => removeAvatarMutation.mutate()}
+                    disabled={removeAvatarMutation.isPending}
+                  >
+                    <X className="h-3 w-3 mr-1" />
+                    Remove
+                  </Button>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">JPEG, PNG, or WebP. Max 50MB.</p>
+              {uploadAvatarMutation.error && (
+                <p className="text-xs text-destructive">
+                  {uploadAvatarMutation.error instanceof Error ? uploadAvatarMutation.error.message : "Upload failed."}
+                </p>
+              )}
+            </div>
+            <input
+              ref={avatarInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={handleAvatarChange}
+            />
+          </div>
+        )}
 
         {editing ? (
           <div className="rounded-lg border bg-card p-4 space-y-3">

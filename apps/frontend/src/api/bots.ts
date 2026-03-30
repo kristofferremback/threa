@@ -1,4 +1,4 @@
-import { api } from "./client"
+import { api, API_BASE } from "./client"
 import type { Bot, BotApiKey, CreateBotApiKeyResponse } from "@threa/types"
 
 export interface CreateBotInput {
@@ -65,5 +65,28 @@ export const botsApi = {
 
   async revokeKey(workspaceId: string, botId: string, keyId: string): Promise<void> {
     await api.post(`/api/workspaces/${workspaceId}/bots/${botId}/keys/${keyId}/revoke`)
+  },
+
+  // Avatar management
+
+  async uploadAvatar(workspaceId: string, botId: string, file: File): Promise<Bot> {
+    const formData = new FormData()
+    formData.append("file", file)
+    const response = await fetch(`${API_BASE}/api/workspaces/${workspaceId}/bots/${botId}/avatar`, {
+      method: "POST",
+      credentials: "include",
+      body: formData,
+    })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body.error ?? "Failed to upload avatar")
+    }
+    const body = await response.json()
+    return body.data
+  },
+
+  async removeAvatar(workspaceId: string, botId: string): Promise<Bot> {
+    const res = await api.delete<{ data: Bot }>(`/api/workspaces/${workspaceId}/bots/${botId}/avatar`)
+    return res.data
   },
 }
