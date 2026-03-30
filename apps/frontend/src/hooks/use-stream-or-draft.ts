@@ -498,6 +498,7 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
 
       await db.events.add({
         ...optimisticEvent,
+        workspaceId,
         _clientId: clientId,
         _status: "pending",
         _cachedAt: Date.now(),

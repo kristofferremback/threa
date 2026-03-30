@@ -46,8 +46,31 @@ async function prefetchStreamBootstrap(workspaceId: string, streamId: string): P
   const response = await fetch(url, { credentials: "include" })
   if (!response.ok) return
 
+  // Clone before consuming body — Cache API and IDB write need separate copies
+  const cacheResponse = response.clone()
   const cache = await caches.open(PUSH_BOOTSTRAP_CACHE)
-  await cache.put(url, response)
+  await cache.put(url, cacheResponse)
+
+  // Write events to IndexedDB so useLiveQuery renders them instantly when the
+  // user taps the notification. Best-effort: errors are swallowed.
+  try {
+    const body = await response.json()
+    const bootstrap = body.data ?? body
+    if (bootstrap?.events?.length > 0) {
+      const now = Date.now()
+      // Dynamic import to avoid bundling Dexie into the SW critical path.
+      // The SW shares the same origin and IndexedDB database as the main thread.
+      const { db } = await import("./db/database")
+      await db.events.bulkPut(
+        bootstrap.events.map((e: Record<string, unknown>) => ({ ...e, workspaceId, _cachedAt: now }))
+      )
+      if (bootstrap.stream) {
+        await db.streams.put({ ...bootstrap.stream, _cachedAt: now })
+      }
+    }
+  } catch {
+    // Best-effort — normal fetch path takes over if this fails
+  }
 }
 
 // ============================================================================
@@ -274,7 +297,9 @@ self.addEventListener("notificationclick", (event) => {
   let targetUrl = "/"
 
   if (data?.workspaceId && data?.streamId) {
-    targetUrl = `/w/${data.workspaceId}/s/${data.streamId}`
+    targetUrl = data.messageId
+      ? `/w/${data.workspaceId}/s/${data.streamId}?m=${data.messageId}`
+      : `/w/${data.workspaceId}/s/${data.streamId}`
   } else if (data?.workspaceId) {
     targetUrl = `/w/${data.workspaceId}`
   }

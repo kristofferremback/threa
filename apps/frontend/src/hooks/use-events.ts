@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { useStreamBootstrap, streamKeys } from "./use-streams"
+import { useStreamBootstrap } from "./use-streams"
 import { useStreamService } from "@/contexts"
 import { useQueryClient, useInfiniteQuery } from "@tanstack/react-query"
 import { db } from "@/db"
 import { EVENT_PAGE_SIZE } from "@/lib/constants"
+import { useStreamEvents } from "@/stores/stream-store"
 import type { StreamEvent, EventsAroundResponse } from "@threa/types"
 
 export const eventKeys = {
@@ -42,30 +43,38 @@ function dedupeAndSort(eventArrays: StreamEvent[][]): StreamEvent[] {
   return sortBySequence(Array.from(eventMap.values()))
 }
 
-async function cacheToIndexedDB(events: StreamEvent[]) {
+async function cacheToIndexedDB(workspaceId: string, events: StreamEvent[]) {
   if (events.length === 0) return
   const now = Date.now()
-  await db.events.bulkPut(events.map((e) => ({ ...e, _cachedAt: now })))
+  await db.events.bulkPut(events.map((e) => ({ ...e, workspaceId, _cachedAt: now })))
 }
 
 export function useEvents(workspaceId: string, streamId: string, options?: { enabled?: boolean; loadAll?: boolean }) {
   const shouldFetch = options?.enabled ?? true
+
+  // Bootstrap query still drives the fetch lifecycle (loading/error states)
+  // and triggers IDB writes via applyStreamBootstrap in its queryFn.
   const {
-    data: bootstrap,
-    isLoading,
+    isLoading: isBootstrapLoading,
     error,
+    data: bootstrap,
   } = useStreamBootstrap(workspaceId, streamId, {
     enabled: shouldFetch,
   })
   const streamService = useStreamService()
   const queryClient = useQueryClient()
 
+  // Primary data source: IndexedDB via useLiveQuery.
+  // This returns ALL events for the stream cached in IDB — including events
+  // from previous sessions, bootstrap data, and real-time socket updates.
+  // Updates reactively whenever IDB is written to.
+  const idbEvents = useStreamEvents(streamId)
+
   // Jump-to-message state: when set, replaces bootstrap as the anchor window
   const [jumpState, setJumpState] = useState<JumpState | null>(null)
 
   // Infinite query for older events (backward pagination).
   // enabled: false — never auto-fetches. Triggered exclusively via seed + fetchOlderPage().
-  // This prevents an initial dummy page from poisoning the hasRunQuery check.
   const {
     data: olderData,
     fetchNextPage: fetchOlderPage,
@@ -81,12 +90,12 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
         before: pageParam,
         limit: EVENT_PAGE_SIZE,
       })
-      await cacheToIndexedDB(events)
+      // Write fetched events to IDB — they become available via useStreamEvents
+      await cacheToIndexedDB(workspaceId, events)
       return { events, hasMore: events.length === EVENT_PAGE_SIZE, cursor: undefined }
     },
     getNextPageParam: (lastPage) => {
       if (!lastPage.hasMore) return undefined
-      // Seed pages carry a cursor but no events
       if (lastPage.events.length === 0) return lastPage.cursor
       return lastPage.events[0].sequence
     },
@@ -95,7 +104,6 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
   })
 
   // Infinite query for newer events (forward pagination, only active in jump-to mode).
-  // Also enabled: false — triggered via seed + fetchNewerPage().
   const {
     data: newerData,
     fetchNextPage: fetchNewerPage,
@@ -111,7 +119,7 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
         after: pageParam,
         limit: EVENT_PAGE_SIZE,
       })
-      await cacheToIndexedDB(events)
+      await cacheToIndexedDB(workspaceId, events)
       return { events, hasMore: events.length === EVENT_PAGE_SIZE, cursor: undefined }
     },
     getNextPageParam: (lastPage) => {
@@ -123,27 +131,61 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
     enabled: false,
   })
 
-  // Combine all event sources
-  const events = useMemo(() => {
-    const olderEvents = olderData?.pages.flatMap((page) => page.events).filter(Boolean) ?? []
-    const newerEvents = newerData?.pages.flatMap((page) => page.events).filter(Boolean) ?? []
+  // The bootstrap's oldest event sequence defines the lower bound of the
+  // display window. Events older than this are from previous sessions and
+  // should not be shown (they'd break unread divider positioning and cause
+  // stale data to appear). Events at or newer than this bound include:
+  // - All bootstrap events
+  // - Socket events that arrived during or after bootstrap (INV-53 guarantee)
+  // - Pending/failed optimistic events (regardless of sequence)
+  const bootstrapFloor = useMemo(() => {
+    if (!bootstrap?.events?.length) return null
+    // Find the actual minimum sequence via BigInt comparison
+    let min = BigInt(bootstrap.events[0].sequence)
+    for (let i = 1; i < bootstrap.events.length; i++) {
+      const seq = BigInt(bootstrap.events[i].sequence)
+      if (seq < min) min = seq
+    }
+    return min
+  }, [bootstrap?.events])
 
+  // Combine all event sources.
+  // In jump mode: use jump window + paginated older/newer events.
+  // In normal mode: filter IDB events to bootstrap window + newer.
+  const events = useMemo(() => {
     if (jumpState) {
+      const olderEvents = olderData?.pages.flatMap((page) => page.events).filter(Boolean) ?? []
+      const newerEvents = newerData?.pages.flatMap((page) => page.events).filter(Boolean) ?? []
       return dedupeAndSort([jumpState.events, olderEvents, newerEvents])
     }
 
-    const bootstrapEvents = bootstrap?.events ?? []
-    return dedupeAndSort([bootstrapEvents, olderEvents])
-  }, [bootstrap?.events, olderData, newerData, jumpState])
+    // Before bootstrap loads, IDB events are unfiltered (stale from previous
+    // sessions). isLoading is true so components show skeletons, not events.
+    // After bootstrap loads, filter to the bootstrap window + newer.
+    if (bootstrapFloor !== null) {
+      const filtered = idbEvents.filter((e) => {
+        // Keep pending/failed optimistic events regardless of sequence
+        if (e._status === "pending" || e._status === "failed") return true
+        // Keep events within or newer than the bootstrap window
+        return BigInt(e.sequence) >= bootstrapFloor
+      })
+      return filtered as unknown as StreamEvent[]
+    }
+
+    return idbEvents as unknown as StreamEvent[]
+  }, [idbEvents, olderData, newerData, jumpState, bootstrapFloor])
+
+  // Loading state: true until bootstrap has completed at least once for this stream.
+  // Even if IDB has stale events from a previous session, we need the bootstrap
+  // to complete so that membership data (lastReadEventId), error states, and the
+  // bounded event window are established. The bootstrap replaces stale IDB events
+  // via applyStreamBootstrap, so showing stale events before that would cause
+  // flickering when the replacement happens.
+  const isLoading = isBootstrapLoading
 
   // Determine if older events exist.
-  // Once the infinite query has produced at least one page, trust hasOlderPage
-  // exclusively — the bootstrap hint is stale after the first fetch.
   const hasOlderEvents = useMemo(() => {
     if (hasOlderPage) return true
-    // Once a query has run and exhausted all pages, trust that over bootstrap/jump hints.
-    // hasOlderPage is checked first, so the seed-page case (pages.length = 1, hasOlderPage = true)
-    // is already handled above.
     const hasRunQuery = (olderData?.pages.length ?? 0) > 0
     if (hasRunQuery) return false
     if (jumpState) return jumpState.hasOlder
@@ -151,8 +193,6 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
   }, [hasOlderPage, jumpState, olderData?.pages.length, bootstrap?.hasOlderEvents])
 
   // Determine if newer events exist (only in jump mode).
-  // Once the newer query has produced at least one page, trust hasNewerPage
-  // exclusively — the jump state hint is stale after the first fetch.
   const hasNewerEvents = useMemo(() => {
     if (!jumpState) return false
     if (hasNewerPage) return true
@@ -170,18 +210,15 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
     }
 
     // Seed with a cursor-only page, then fetch immediately.
-    // This branch is only reachable when no pages exist yet (!hasOlderPage),
-    // so we never discard previously-fetched multi-page history.
-    // setQueryData updates TanStack Query's internal cache synchronously,
-    // so fetchOlderPage picks up the cursor without needing a second trigger.
-    const anchorEvents = jumpState ? jumpState.events : (bootstrap?.events ?? [])
+    const anchorEvents = jumpState ? jumpState.events : idbEvents
     if (anchorEvents.length === 0) return
+    const oldestSequence = anchorEvents[0].sequence
     queryClient.setQueryData(eventKeys.list(workspaceId, streamId), {
-      pages: [{ events: [], hasMore: true, cursor: anchorEvents[0].sequence }],
+      pages: [{ events: [], hasMore: true, cursor: oldestSequence }],
       pageParams: [undefined],
     })
     fetchOlderPage()
-  }, [isFetchingOlder, hasOlderPage, jumpState, bootstrap?.events, queryClient, workspaceId, streamId, fetchOlderPage])
+  }, [isFetchingOlder, hasOlderPage, jumpState, idbEvents, queryClient, workspaceId, streamId, fetchOlderPage])
 
   // Auto-load all older events on mount when loadAll is true (e.g. thread panels)
   const loadAll = options?.loadAll ?? false
@@ -206,8 +243,8 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
   }, [jumpState, isFetchingNewer, hasNewerPage, queryClient, workspaceId, streamId, fetchNewerPage])
 
   /**
-   * Jump to a specific event (e.g. from search). Loads events around it
-   * and switches to bidirectional pagination mode.
+   * Jump to a specific event (e.g. from search or push notification deep link).
+   * Loads events around it and switches to bidirectional pagination mode.
    */
   const jumpToEvent = useCallback(
     async (targetMessageId: string): Promise<boolean> => {
@@ -219,7 +256,8 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
       )
       if (result.events.length === 0) return false
 
-      await cacheToIndexedDB(result.events)
+      // Write to IDB so they persist across sessions
+      await cacheToIndexedDB(workspaceId, result.events)
 
       const sorted = sortBySequence([...result.events])
       setJumpState({
@@ -239,42 +277,31 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
     [streamService, workspaceId, streamId, queryClient]
   )
 
-  /** Exit jump mode and return to live tail (latest messages from bootstrap). */
+  /** Exit jump mode and return to live tail (latest messages from IDB). */
   const exitJumpMode = useCallback(() => {
     setJumpState(null)
     queryClient.removeQueries({ queryKey: eventKeys.list(workspaceId, streamId) })
     queryClient.removeQueries({ queryKey: eventKeys.newer(workspaceId, streamId) })
   }, [queryClient, workspaceId, streamId])
 
-  // Handler to add a new event (from WebSocket or optimistic update).
-  // Note: useStreamSocket writes directly to bootstrap cache for real-time events.
-  // These callbacks exist for programmatic use (e.g. optimistic updates).
+  // addEvent and updateEvent now write directly to IDB.
+  // useLiveQuery picks up changes automatically — no TanStack cache needed.
   const addEvent = useCallback(
     async (event: StreamEvent) => {
-      queryClient.setQueryData(streamKeys.bootstrap(workspaceId, streamId), (old: typeof bootstrap) => {
-        if (!old) return old
-        return {
-          ...old,
-          events: [...old.events, event],
-          latestSequence: event.sequence,
-        }
-      })
-      await db.events.put({ ...event, _cachedAt: Date.now() })
+      await db.events.put({ ...event, workspaceId, _cachedAt: Date.now() })
     },
-    [queryClient, workspaceId, streamId]
+    [workspaceId]
   )
 
-  // Handler to update an existing event (edit/delete)
-  const updateEvent = useCallback(
-    async (eventId: string, updates: Partial<StreamEvent>) => {
-      queryClient.setQueryData(streamKeys.bootstrap(workspaceId, streamId), (old: typeof bootstrap) => {
-        if (!old) return old
-        return { ...old, events: old.events.map((e) => (e.id === eventId ? { ...e, ...updates } : e)) }
-      })
-      await db.events.update(eventId, updates)
-    },
-    [queryClient, workspaceId, streamId]
-  )
+  const updateEvent = useCallback(async (eventId: string, updates: Partial<StreamEvent>) => {
+    await db.events.update(eventId, { ...updates, _cachedAt: Date.now() })
+  }, [])
+
+  // Latest sequence from IDB events
+  const latestSequence = useMemo(() => {
+    if (idbEvents.length === 0) return bootstrap?.latestSequence ?? "0"
+    return idbEvents[idbEvents.length - 1].sequence
+  }, [idbEvents, bootstrap?.latestSequence])
 
   return {
     events,
@@ -291,6 +318,6 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
     isJumpMode: !!jumpState,
     addEvent,
     updateEvent,
-    latestSequence: bootstrap?.latestSequence ?? "0",
+    latestSequence,
   }
 }

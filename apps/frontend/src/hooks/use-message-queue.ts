@@ -71,13 +71,14 @@ export function useMessageQueue(): void {
           })
 
           await db.pendingMessages.delete(next.clientId)
-          await db.events.delete(next.clientId)
 
-          // Don't remove the optimistic event from the React Query cache here.
-          // The socket handler (handleMessageCreated) atomically swaps the
-          // optimistic event for the real server event in a single setQueryData
-          // call, preventing the message from flickering out of view between
-          // the HTTP response and the socket broadcast.
+          // Do NOT delete the optimistic event from db.events here.
+          // The UI reads from IndexedDB via useLiveQuery — deleting the
+          // optimistic event before the socket delivers the real event
+          // would cause the message to flicker out of view. The socket
+          // handler (handleMessageCreated in stream-sync.ts) atomically
+          // swaps the optimistic event for the real server event in a
+          // single Dexie transaction.
           markSent(next.clientId)
         } catch {
           // Increment retry count only after a confirmed failure, so transient

@@ -4,6 +4,7 @@ import { debugBootstrap } from "@/lib/bootstrap-debug"
 import { getQueryLoadState, isTerminalBootstrapError } from "@/lib/query-load-state"
 import { db } from "@/db"
 import { joinRoomBestEffort } from "@/lib/socket-room"
+import { applyStreamBootstrap } from "@/sync/stream-sync"
 import type {
   Stream,
   StreamMember,
@@ -89,29 +90,10 @@ export function useStreamBootstrap(workspaceId: string, streamId: string, option
         streamId,
         eventCount: bootstrap.events.length,
       })
-      const now = Date.now()
 
-      // Cache stream and events to IndexedDB, and clean up any orphaned optimistic events.
-      // Optimistic events (temp_*) are created during send and should be swapped for real
-      // events by the socket handler. On bootstrap refetch, any remaining temp_ events for
-      // this stream are stale and must be removed to prevent ghost duplicates.
-      const staleOptimisticIds = await db.events
-        .where("streamId")
-        .equals(streamId)
-        .filter((e) => e.id.startsWith("temp_"))
-        .primaryKeys()
-
-      await Promise.all([
-        db.streams.put({
-          ...bootstrap.stream,
-          pinned: bootstrap.membership?.pinned,
-          notificationLevel: bootstrap.membership?.notificationLevel,
-          lastReadEventId: bootstrap.membership?.lastReadEventId,
-          _cachedAt: now,
-        }),
-        db.events.bulkPut(bootstrap.events.map((e) => ({ ...e, _cachedAt: now }))),
-        staleOptimisticIds.length > 0 ? db.events.bulkDelete(staleOptimisticIds) : Promise.resolve(),
-      ])
+      // Write events and stream metadata to IndexedDB.
+      // The sync module handles optimistic event cleanup.
+      await applyStreamBootstrap(workspaceId, streamId, bootstrap)
 
       return bootstrap
     },

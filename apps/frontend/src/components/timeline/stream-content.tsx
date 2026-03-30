@@ -17,7 +17,6 @@ import {
   workspaceKeys,
 } from "@/hooks"
 import { useSocket } from "@/contexts"
-import { useUser } from "@/auth"
 import { Button } from "@/components/ui/button"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
 import { ErrorView } from "@/components/error-view"
@@ -56,7 +55,6 @@ export function StreamContent({
   autoFocus,
 }: StreamContentProps) {
   const [, setSearchParams] = useSearchParams()
-  const user = useUser()
   const socket = useSocket()
   const jumpTriggeredRef = useRef<string | null>(null)
 
@@ -182,7 +180,7 @@ export function StreamContent({
   const { dividerEventId, isFading: isDividerFading } = useUnreadDivider({
     events,
     lastReadEventId: bootstrap?.membership?.lastReadEventId,
-    currentUserId: user?.id,
+    currentUserId: currentWorkspaceUserId ?? undefined,
     streamId,
     isLoading,
     highlightMessageId,

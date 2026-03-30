@@ -8,6 +8,8 @@ export type {
   CachedEvent,
   CachedPersona,
   CachedBot,
+  CachedUnreadState,
+  CachedUserPreferences,
   PendingMessage,
   SyncCursor,
   DraftScratchpad,

@@ -82,6 +82,7 @@ export interface CachedDmPeer {
 
 export interface CachedEvent {
   id: string
+  workspaceId: string
   streamId: string
   sequence: string // bigint as string
   eventType: EventType
@@ -177,6 +178,27 @@ export interface DraftMessage {
   updatedAt: number
 }
 
+export interface CachedUnreadState {
+  id: string // workspaceId
+  workspaceId: string
+  unreadCounts: Record<string, number>
+  mentionCounts: Record<string, number>
+  activityCounts: Record<string, number>
+  unreadActivityCount: number
+  mutedStreamIds: string[]
+  _cachedAt: number
+}
+
+export interface CachedUserPreferences {
+  id: string // workspaceId
+  workspaceId: string
+  userId: string
+  theme: string
+  sendMode: string
+  [key: string]: unknown
+  _cachedAt: number
+}
+
 // Database class with typed tables
 class ThreaDatabase extends Dexie {
   workspaces!: EntityTable<CachedWorkspace, "id">
@@ -191,6 +213,8 @@ class ThreaDatabase extends Dexie {
   syncCursors!: EntityTable<SyncCursor, "key">
   draftScratchpads!: EntityTable<DraftScratchpad, "id">
   draftMessages!: EntityTable<DraftMessage, "id">
+  unreadState!: EntityTable<CachedUnreadState, "id">
+  userPreferences!: EntityTable<CachedUserPreferences, "id">
 
   constructor() {
     super("threa")
@@ -296,6 +320,22 @@ class ThreaDatabase extends Dexie {
       bots: "id, workspaceId, _cachedAt",
     })
 
+    // v15: Add unreadState and userPreferences tables for offline-first sync engine.
+    // These tables hold workspace-scoped data that was previously only in TanStack Query
+    // cache (embedded in WorkspaceBootstrap). Persisting them enables offline rendering.
+    this.version(15).stores({
+      unreadState: "id, workspaceId",
+      userPreferences: "id, workspaceId",
+    })
+
+    // v16: Add workspaceId to events table for workspace-scoped cleanup and leak prevention.
+    // Clear existing events since they lack workspaceId; bootstrap refetch repopulates.
+    this.version(16)
+      .stores({
+        events: "id, workspaceId, streamId, sequence, [streamId+sequence], eventType, _clientId, _cachedAt",
+      })
+      .upgrade((tx) => tx.table("events").clear())
+
     this.workspaceUsers = this.table(WORKSPACE_USERS_STORE) as EntityTable<CachedWorkspaceUser, "id">
   }
 }
@@ -315,6 +355,8 @@ export async function clearAllCachedData(): Promise<void> {
     db.personas.clear(),
     db.bots.clear(),
     db.syncCursors.clear(),
+    db.unreadState.clear(),
+    db.userPreferences.clear(),
     // Note: we keep pendingMessages to retry sending after re-login
   ])
 }
