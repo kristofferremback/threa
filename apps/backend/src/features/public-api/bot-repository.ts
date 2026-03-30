@@ -119,32 +119,12 @@ export const BotRepository = {
       avatarEmoji?: string | null
     }
   ): Promise<Bot | null> {
-    const setClauses: string[] = []
-    const values: unknown[] = []
-    let paramIdx = 3 // $1 = id, $2 = workspaceId
-
-    if (fields.slug !== undefined) {
-      setClauses.push(`slug = $${paramIdx}`)
-      values.push(fields.slug)
-      paramIdx++
-    }
-    if (fields.name !== undefined) {
-      setClauses.push(`name = $${paramIdx}`)
-      values.push(fields.name)
-      paramIdx++
-    }
-    if (fields.description !== undefined) {
-      setClauses.push(`description = $${paramIdx}`)
-      values.push(fields.description)
-      paramIdx++
-    }
-    if (fields.avatarEmoji !== undefined) {
-      setClauses.push(`avatar_emoji = $${paramIdx}`)
-      values.push(fields.avatarEmoji)
-      paramIdx++
-    }
-
-    if (setClauses.length === 0) {
+    if (
+      fields.slug === undefined &&
+      fields.name === undefined &&
+      fields.description === undefined &&
+      fields.avatarEmoji === undefined
+    ) {
       const result = await db.query<BotRow>(sql`
         SELECT ${sql.raw(BOT_COLUMNS)}
         FROM bots
@@ -154,15 +134,36 @@ export const BotRepository = {
       return mapRowToBot(result.rows[0])
     }
 
-    setClauses.push("updated_at = NOW()")
+    // Dynamic SET with parameterized values. Column names are hardcoded constants;
+    // only user-provided values go through parameter binding ($N).
+    const setParts: string[] = []
+    const values: unknown[] = []
+    let idx = 1
+    if (fields.slug !== undefined) {
+      setParts.push(`slug = $${idx++}`)
+      values.push(fields.slug)
+    }
+    if (fields.name !== undefined) {
+      setParts.push(`name = $${idx++}`)
+      values.push(fields.name)
+    }
+    if (fields.description !== undefined) {
+      setParts.push(`description = $${idx++}`)
+      values.push(fields.description)
+    }
+    if (fields.avatarEmoji !== undefined) {
+      setParts.push(`avatar_emoji = $${idx++}`)
+      values.push(fields.avatarEmoji)
+    }
+    setParts.push("updated_at = NOW()")
+    const idIdx = idx++
+    const wsIdx = idx
+    values.push(id, workspaceId)
 
-    const query = `
-      UPDATE bots
-      SET ${setClauses.join(", ")}
-      WHERE id = $1 AND workspace_id = $2 AND archived_at IS NULL
-      RETURNING ${BOT_COLUMNS}
-    `
-    const result = await db.query<BotRow>({ text: query, values: [id, workspaceId, ...values] })
+    const result = await db.query<BotRow>({
+      text: `UPDATE bots SET ${setParts.join(", ")} WHERE id = $${idIdx} AND workspace_id = $${wsIdx} AND archived_at IS NULL RETURNING ${BOT_COLUMNS}`,
+      values,
+    })
     if (!result.rows[0]) return null
     return mapRowToBot(result.rows[0])
   },

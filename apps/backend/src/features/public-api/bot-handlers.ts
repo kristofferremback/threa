@@ -247,12 +247,6 @@ export function createBotHandlers({ botApiKeyService, avatarService, pool }: Bot
       const workspaceId = req.workspaceId!
       const { botId: id } = req.params
 
-      // Verify bot exists and is active
-      const bot = await BotRepository.findById(pool, id)
-      if (!bot || bot.workspaceId !== workspaceId || bot.archivedAt) {
-        throw new HttpError("Bot not found or archived", { status: 404, code: "NOT_FOUND" })
-      }
-
       const result = createBotKeySchema.safeParse(req.body)
       if (!result.success) {
         return res.status(400).json({

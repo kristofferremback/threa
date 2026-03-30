@@ -57,8 +57,19 @@ export class BotApiKeyService {
     const keyHash = hashKey(value)
     const keyPrefix = value.slice(BOT_KEY_PREFIX.length, BOT_KEY_PREFIX.length + STORED_PREFIX_LENGTH)
 
-    // Atomic count-check + insert to prevent exceeding key limit (INV-20)
+    // Atomic bot-check + count-check + insert to prevent keys on archived bots
+    // and exceeding the key limit (INV-20)
     const row = await withTransaction(this.pool, async (client) => {
+      // Lock the bot row to prevent concurrent archive from creating a TOCTOU gap
+      const { rows: botRows } = await client.query<{ id: string; archived_at: Date | null }>(sql`
+        SELECT id, archived_at FROM bots
+        WHERE id = ${params.botId} AND workspace_id = ${params.workspaceId}
+        FOR UPDATE
+      `)
+      if (botRows.length === 0 || botRows[0].archived_at !== null) {
+        throw new HttpError("Bot not found or archived", { status: 404, code: "NOT_FOUND" })
+      }
+
       const { rows: lockedRows } = await client.query<{ id: string }>(sql`
         SELECT id
         FROM bot_api_keys

@@ -2,6 +2,7 @@ import type { Pool } from "pg"
 import { sql } from "../../db"
 import { ApiKeyChannelAccessRepository } from "./repository"
 import { SearchRepository } from "../search"
+import { StreamRepository } from "../streams"
 
 interface ApiKeyChannelServiceDeps {
   pool: Pool
@@ -45,13 +46,6 @@ export class ApiKeyChannelService {
   }
 
   async isStreamPublic(workspaceId: string, streamId: string): Promise<boolean> {
-    const result = await this.pool.query(
-      sql`SELECT EXISTS(
-        SELECT 1 FROM streams
-        WHERE id = ${streamId} AND workspace_id = ${workspaceId} AND archived_at IS NULL
-          AND visibility = 'public'
-      ) AS accessible`
-    )
-    return result.rows[0].accessible
+    return StreamRepository.isPublic(this.pool, workspaceId, streamId)
   }
 }
