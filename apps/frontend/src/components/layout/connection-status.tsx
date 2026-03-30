@@ -1,9 +1,9 @@
 import { useSyncExternalStore } from "react"
 import { useSocketStatus } from "@/contexts"
-import { WifiOff, RefreshCw } from "lucide-react"
+import { WifiOff, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-function useIsOnline(): boolean {
+export function useIsOnline(): boolean {
   return useSyncExternalStore(
     (cb) => {
       window.addEventListener("online", cb)
@@ -17,45 +17,49 @@ function useIsOnline(): boolean {
   )
 }
 
-/**
- * Non-blocking banner that shows when the app is offline, reconnecting, or disconnected.
- * Renders nothing when connected. Placed above the main content area in the app shell.
- */
-export function ConnectionStatus() {
+type ConnectionState = "connected" | "offline" | "reconnecting" | "disconnected"
+
+export function useConnectionState(): ConnectionState {
   const socketStatus = useSocketStatus()
   const isOnline = useIsOnline()
 
-  if (socketStatus === "connected") return null
+  if (socketStatus === "connected") return "connected"
+  if (!isOnline) return "offline"
+  if (socketStatus === "reconnecting") return "reconnecting"
+  return "disconnected"
+}
 
-  // Offline (no network at all)
-  if (!isOnline) {
-    return (
-      <div className={cn("flex items-center gap-2 px-4 py-1.5 text-xs", "bg-amber-500/10 text-amber-600")}>
-        <WifiOff className="h-3.5 w-3.5 shrink-0" />
-        <span>You're offline. Messages will send when you reconnect.</span>
+/**
+ * Floating pill that overlays the content area when not connected.
+ * Uses absolute positioning so it never affects layout or pushes
+ * content under the mobile keyboard.
+ */
+export function ConnectionStatus() {
+  const state = useConnectionState()
+
+  if (state === "connected") return null
+
+  return (
+    <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex justify-center pt-2">
+      <div
+        className={cn(
+          "pointer-events-auto",
+          "inline-flex items-center gap-1.5 rounded-full px-3 py-1",
+          "text-[11px] font-medium tracking-wide",
+          "shadow-sm backdrop-blur-md",
+          "animate-in fade-in slide-in-from-top-2 duration-200",
+          state === "offline" && "bg-amber-500/15 text-amber-600 dark:text-amber-400 ring-1 ring-amber-500/20",
+          state === "reconnecting" && "bg-muted/80 text-muted-foreground ring-1 ring-border",
+          state === "disconnected" && "bg-destructive/10 text-destructive ring-1 ring-destructive/20"
+        )}
+      >
+        {state === "reconnecting" ? <Loader2 className="h-3 w-3 animate-spin" /> : <WifiOff className="h-3 w-3" />}
+        <span>
+          {state === "offline" && "Offline"}
+          {state === "reconnecting" && "Reconnecting"}
+          {state === "disconnected" && "Disconnected"}
+        </span>
       </div>
-    )
-  }
-
-  // Reconnecting (had connection, lost it, trying to recover)
-  if (socketStatus === "reconnecting") {
-    return (
-      <div className={cn("flex items-center gap-2 px-4 py-1.5 text-xs", "bg-blue-500/10 text-blue-500")}>
-        <RefreshCw className="h-3.5 w-3.5 shrink-0 animate-spin" />
-        <span>Reconnecting...</span>
-      </div>
-    )
-  }
-
-  // Disconnected (socket lost, not yet reconnecting — rare, usually transient)
-  if (socketStatus === "disconnected") {
-    return (
-      <div className={cn("flex items-center gap-2 px-4 py-1.5 text-xs", "bg-destructive/10 text-destructive")}>
-        <WifiOff className="h-3.5 w-3.5 shrink-0" />
-        <span>Connection lost. Reconnecting shortly...</span>
-      </div>
-    )
-  }
-
-  return null
+    </div>
+  )
 }

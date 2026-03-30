@@ -437,7 +437,7 @@ export function AppShell({ sidebar, children }: AppShellProps) {
 
           {/* Main content area — safe-area padding for notched devices when keyboard is closed */}
           <main
-            className="flex flex-1 flex-col overflow-hidden"
+            className="relative flex flex-1 flex-col overflow-hidden"
             style={!isKeyboardOpen ? { paddingBottom: "env(safe-area-inset-bottom)" } : undefined}
           >
             <ConnectionStatus />

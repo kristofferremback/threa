@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom"
 import { useDraftComposer, getDraftMessageKey, useStreamOrDraft, useWorkspaceBootstrap } from "@/hooks"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { usePreferences } from "@/contexts"
+import { useConnectionState } from "@/components/layout/connection-status"
 import { MessageComposer } from "@/components/composer"
 import { commandsApi } from "@/api"
 import { isCommand } from "@/lib/commands"
@@ -180,6 +181,9 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   }
 
   // Shared composer props used by both inline and expanded layouts
+  const connectionState = useConnectionState()
+  const isOffline = connectionState !== "connected"
+
   const composerProps = {
     content: composer.content,
     onContentChange: composer.handleContentChange,
@@ -193,6 +197,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     canSubmit: composer.canSend,
     isSubmitting: composer.isSending,
     hasFailed: composer.hasFailed,
+    placeholder: isOffline ? "Type a message — sent when back online" : undefined,
     messageSendMode,
     scopeId: streamId,
     onEditLastMessage: triggerEditLast,
