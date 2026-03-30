@@ -81,6 +81,12 @@ export function createBotHandlers({ botApiKeyService, avatarService, pool }: Bot
 
       const { name, description, avatarEmoji } = result.data
       const slug = generateSlug(result.data.slug)
+      if (!slug) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: { slug: ["Slug cannot be empty after normalization"] },
+        })
+      }
 
       let bot
       try {
@@ -127,6 +133,12 @@ export function createBotHandlers({ botApiKeyService, avatarService, pool }: Bot
       const fields = { ...result.data }
       if (fields.slug) {
         fields.slug = generateSlug(fields.slug)
+        if (!fields.slug) {
+          return res.status(400).json({
+            error: "Validation failed",
+            details: { slug: ["Slug cannot be empty after normalization"] },
+          })
+        }
       }
 
       let bot
@@ -307,20 +319,27 @@ export function createBotHandlers({ botApiKeyService, avatarService, pool }: Bot
 
       const oldAvatarUrl = bot.avatarUrl
 
-      // Update bot with new avatar URL
-      const updated = await withTransaction(pool, async (client) => {
-        const result = await BotRepository.updateAvatarUrl(client, id, workspaceId, basePath)
-        if (!result) {
-          throw new HttpError("Bot not found", { status: 404, code: "NOT_FOUND" })
-        }
+      // Update bot with new avatar URL. If the transaction fails (e.g. bot
+      // was archived concurrently), clean up the orphaned processed images.
+      let updated
+      try {
+        updated = await withTransaction(pool, async (client) => {
+          const result = await BotRepository.updateAvatarUrl(client, id, workspaceId, basePath)
+          if (!result) {
+            throw new HttpError("Bot not found", { status: 404, code: "NOT_FOUND" })
+          }
 
-        await OutboxRepository.insert(client, "bot:updated", {
-          workspaceId,
-          bot: serializeBot(result),
+          await OutboxRepository.insert(client, "bot:updated", {
+            workspaceId,
+            bot: serializeBot(result),
+          })
+
+          return result
         })
-
-        return result
-      })
+      } catch (error) {
+        avatarService.deleteAvatarFiles(basePath)
+        throw error
+      }
 
       // Clean up old avatar files after transaction succeeds
       if (oldAvatarUrl) {
