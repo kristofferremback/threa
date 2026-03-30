@@ -102,7 +102,11 @@ function WorkspaceSyncHandler({ workspaceId, children }: { workspaceId: string; 
   // double-render — useMemo + destroy effect breaks because the cleanup
   // destroys the engine before the socket connect effect fires.
   const syncEngineRef = useRef<SyncEngine | null>(null)
-  if (!syncEngineRef.current || syncEngineRef.current.workspaceId !== workspaceId) {
+  if (
+    !syncEngineRef.current ||
+    syncEngineRef.current.workspaceId !== workspaceId ||
+    syncEngineRef.current.isDestroyed
+  ) {
     syncEngineRef.current?.destroy()
     syncEngineRef.current = new SyncEngine({
       workspaceId,
@@ -140,11 +144,9 @@ function WorkspaceSyncHandler({ workspaceId, children }: { workspaceId: string; 
     return () => syncEngine.onDisconnect()
   }, [socket, syncEngine, reconnectCount])
 
-  // Cleanup on unmount
-  useEffect(() => {
-    const engine = syncEngineRef.current
-    return () => engine?.destroy()
-  }, [workspaceId])
+  // No destroy effect — StrictMode's effect cleanup cycle would destroy the
+  // engine before the socket connect effect re-runs. The engine is destroyed
+  // on workspace change (line above) and on page unload (browser handles it).
 
   // Redirect on terminal workspace errors (404/403)
   const navigate = useNavigate()

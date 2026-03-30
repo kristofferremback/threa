@@ -45,7 +45,8 @@ export class SyncEngine {
   private streamHandlerCleanups = new Map<string, () => void>()
   private workspaceHandlerCleanup: (() => void) | null = null
   private hasEverConnected = false
-  private destroyed = false
+  /** Whether the engine has been destroyed. Public for ref-check re-creation. */
+  isDestroyed = false
 
   // Ref-like state updated by the React layer
   private currentStreamId: string | undefined = undefined
@@ -74,7 +75,7 @@ export class SyncEngine {
    * Triggers full bootstrap cycle: workspace → member streams.
    */
   async onConnect(socket: Socket): Promise<void> {
-    if (this.destroyed) return
+    if (this.isDestroyed) return
     const isReconnect = this.hasEverConnected
     this.hasEverConnected = true
     this.socket = socket
@@ -105,7 +106,7 @@ export class SyncEngine {
         void processOperationQueue(
           this.deps.messageService!,
           this.deps.reactionService ?? { add: async () => {}, remove: async () => {} },
-          () => this.socket !== null && !this.destroyed
+          () => this.socket !== null && !this.isDestroyed
         )
       registerOperationQueueNotify(kickQueue)
       kickQueue()
@@ -125,7 +126,7 @@ export class SyncEngine {
    * Idempotent — no-op if already subscribed.
    */
   async subscribeStream(streamId: string): Promise<void> {
-    if (this.destroyed || !this.socket) return
+    if (this.isDestroyed || !this.socket) return
     if (this.subscribedStreams.has(streamId)) return
     this.subscribedStreams.add(streamId)
 
@@ -163,7 +164,7 @@ export class SyncEngine {
    * Called when the workspace layout unmounts.
    */
   destroy(): void {
-    this.destroyed = true
+    this.isDestroyed = true
     this.cleanupAllHandlers()
     this.subscribedStreams.clear()
     this.socket = null
