@@ -4,7 +4,8 @@ import { Bell, ArrowLeft, Check } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { useActivityFeed, useMarkActivityRead, useMarkAllActivityRead, useActors, useWorkspaceBootstrap } from "@/hooks"
+import { useActivityFeed, useMarkActivityRead, useMarkAllActivityRead, useActors } from "@/hooks"
+import { useWorkspaceStreams } from "@/stores/workspace-store"
 import { useActivityCounts } from "@/hooks/use-activity-counts"
 import { getStreamName, streamFallbackLabel } from "@/lib/streams"
 import { ActivityItem } from "@/components/activity/activity-item"
@@ -19,13 +20,12 @@ export function ActivityPage() {
   const markRead = useMarkActivityRead(workspaceId ?? "")
   const markAllRead = useMarkAllActivityRead(workspaceId ?? "")
   const { getActorName } = useActors(workspaceId ?? "")
-  const { data: bootstrap } = useWorkspaceBootstrap(workspaceId ?? "")
+  const idbStreams = useWorkspaceStreams(workspaceId ?? "")
   const { unreadActivityCount } = useActivityCounts(workspaceId ?? "")
 
   const streamById = useMemo(() => {
-    const streams = bootstrap?.streams ?? []
-    return new Map(streams.map((s) => [s.id, s]))
-  }, [bootstrap?.streams])
+    return new Map(idbStreams.map((s) => [s.id, s]))
+  }, [idbStreams])
 
   function resolveActivityStreamName(activity: Activity): string {
     const stream = streamById.get(activity.streamId)

@@ -3,33 +3,31 @@ import { useParams, useNavigate, Link } from "react-router-dom"
 import { MessageSquareText, ArrowLeft } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ItemList, type QuickSwitcherItem } from "@/components/quick-switcher"
-import { useWorkspaceBootstrap } from "@/hooks"
 import { StreamTypes } from "@threa/types"
+import { useWorkspaceStreams } from "@/stores/workspace-store"
 import { getThreadRootContext } from "@/components/thread/breadcrumb-helpers"
 import { getStreamName, streamFallbackLabel } from "@/lib/streams"
 
 export function ThreadsPage() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const navigate = useNavigate()
-  const { data: bootstrap } = useWorkspaceBootstrap(workspaceId ?? "")
+  const idbStreams = useWorkspaceStreams(workspaceId ?? "")
   const [selectedIndex, setSelectedIndex] = useState(0)
 
   // Filter for thread type streams
   const threads = useMemo(() => {
-    if (!bootstrap?.streams) return []
-    return bootstrap.streams.filter((s) => s.type === StreamTypes.THREAD)
-  }, [bootstrap?.streams])
+    return idbStreams.filter((s) => s.type === StreamTypes.THREAD)
+  }, [idbStreams])
 
   // Convert threads to QuickSwitcherItem format
   const items: QuickSwitcherItem[] = useMemo(() => {
-    if (!bootstrap?.streams) return []
-
     return threads.map((thread) => {
       const displayName = getStreamName(thread) ?? streamFallbackLabel("thread", "sidebar")
-      const preview = thread.lastMessagePreview
+      // CachedStream doesn't have lastMessagePreview
+      const preview = (thread as any).lastMessagePreview
       const previewText = preview ? `${preview.authorId}: ${preview.content ? "..." : "No messages"}` : "No messages"
 
-      const rootContext = getThreadRootContext(thread, bootstrap.streams)
+      const rootContext = getThreadRootContext(thread, idbStreams)
       const description = rootContext ? `in ${rootContext} · ${previewText}` : previewText
 
       return {
@@ -41,7 +39,7 @@ export function ThreadsPage() {
         onSelect: () => navigate(`/w/${workspaceId}/s/${thread.id}`),
       }
     })
-  }, [threads, bootstrap?.streams, workspaceId, navigate])
+  }, [threads, idbStreams, workspaceId, navigate])
 
   // Handle item selection (navigate or open in new tab)
   const handleSelectItem = useCallback((item: QuickSwitcherItem, withModifier: boolean) => {

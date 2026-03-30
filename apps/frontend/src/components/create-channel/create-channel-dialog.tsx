@@ -1,6 +1,5 @@
 import { useState, useCallback, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
@@ -16,10 +15,11 @@ import { ChannelSlugInput } from "@/components/stream-settings/channel-slug-inpu
 import { VisibilityPicker } from "@/components/ui/visibility-picker"
 import { UserPicker } from "./user-picker"
 import { useCreateChannel } from "./use-create-channel"
-import { useCreateStream, workspaceKeys } from "@/hooks"
+import { useCreateStream } from "@/hooks"
+import { useWorkspaceUsers } from "@/stores/workspace-store"
 import { useAuth } from "@/auth"
 import { toast } from "sonner"
-import type { Visibility, WorkspaceBootstrap } from "@threa/types"
+import type { Visibility } from "@threa/types"
 
 // ── Header ──────────────────────────────────────────────────────────────
 
@@ -139,7 +139,7 @@ export function CreateChannelDialog({ workspaceId }: CreateChannelDialogProps) {
   const { user } = useAuth()
   const navigate = useNavigate()
   const createStream = useCreateStream(workspaceId)
-  const queryClient = useQueryClient()
+  const idbUsers = useWorkspaceUsers(workspaceId)
 
   const [slug, setSlug] = useState("")
   const [slugValid, setSlugValid] = useState(false)
@@ -147,19 +147,10 @@ export function CreateChannelDialog({ workspaceId }: CreateChannelDialogProps) {
   const [description, setDescription] = useState("")
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([])
 
-  // Cache-only observer for workspace bootstrap to get current workspace user
-  const { data: wsBootstrap } = useQuery({
-    queryKey: workspaceKeys.bootstrap(workspaceId),
-    queryFn: () => queryClient.getQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId)) ?? null,
-    enabled: false,
-    staleTime: Infinity,
-  })
-
   const currentUserId = useMemo(() => {
-    if (!wsBootstrap || !user) return null
-    const users = wsBootstrap.users
-    return users.find((u) => u.workosUserId === user.id)?.id ?? null
-  }, [wsBootstrap, user])
+    if (!user) return null
+    return idbUsers.find((u) => u.workosUserId === user.id)?.id ?? null
+  }, [idbUsers, user])
 
   const resetForm = useCallback(() => {
     setSlug("")

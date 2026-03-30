@@ -1,14 +1,12 @@
 import { useState, useMemo, useCallback } from "react"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import { SearchableList } from "@/components/ui/searchable-list"
 import { renderUserListItem, type UserListItem } from "@/components/ui/user-list-item"
 import { UserPlus, X } from "lucide-react"
-import { workspaceKeys } from "@/hooks"
+import { useWorkspaceUsers } from "@/stores/workspace-store"
 import { getInitials } from "@/lib/initials"
 import { getAvatarColor } from "@/lib/avatar-color"
-import type { WorkspaceBootstrap } from "@threa/types"
 
 interface UserPickerProps {
   workspaceId: string
@@ -18,18 +16,8 @@ interface UserPickerProps {
 }
 
 export function UserPicker({ workspaceId, currentUserId, selectedUserIds, onChange }: UserPickerProps) {
-  const queryClient = useQueryClient()
   const [search, setSearch] = useState("")
-
-  // Cache-only observer for workspace bootstrap
-  const { data: wsBootstrap } = useQuery({
-    queryKey: workspaceKeys.bootstrap(workspaceId),
-    queryFn: () => queryClient.getQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId)) ?? null,
-    enabled: false,
-    staleTime: Infinity,
-  })
-
-  const workspaceUsers = wsBootstrap?.users ?? []
+  const workspaceUsers = useWorkspaceUsers(workspaceId)
   const selectedSet = useMemo(() => new Set(selectedUserIds), [selectedUserIds])
 
   // Users available to add: not current user, not already selected

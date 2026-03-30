@@ -18,10 +18,11 @@ import {
   ResponsiveAlertDialogTitle,
 } from "@/components/ui/responsive-alert-dialog"
 import { X, UserPlus, BotIcon } from "lucide-react"
-import { useAddStreamMember, useRemoveStreamMember, streamKeys, workspaceKeys } from "@/hooks"
+import { useAddStreamMember, useRemoveStreamMember, streamKeys } from "@/hooks"
 import { useStreamService } from "@/contexts"
 import { botsApi } from "@/api/bots"
-import { StreamTypes, type StreamMember, type Bot, type WorkspaceBootstrap } from "@threa/types"
+import { useWorkspaceUsers, useWorkspaceBots } from "@/stores/workspace-store"
+import { StreamTypes, type StreamMember } from "@threa/types"
 import { getInitials } from "@/lib/initials"
 import { getAvatarColor } from "@/lib/avatar-color"
 import { toast } from "sonner"
@@ -33,7 +34,6 @@ interface MembersTabProps {
 }
 
 export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabProps) {
-  const queryClient = useQueryClient()
   const streamService = useStreamService()
   const [search, setSearch] = useState("")
   const [addSearch, setAddSearch] = useState("")
@@ -49,18 +49,11 @@ export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabP
     queryFn: () => streamService.bootstrap(workspaceId, streamId),
     staleTime: Infinity,
   })
-  // Workspace bootstrap is always cached — cache-only observer
-  const { data: wsBootstrap } = useQuery({
-    queryKey: workspaceKeys.bootstrap(workspaceId),
-    queryFn: () => queryClient.getQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId)) ?? null,
-    enabled: false,
-    staleTime: Infinity,
-  })
+  const workspaceUsers = useWorkspaceUsers(workspaceId)
 
   const streamType = bootstrap?.stream?.type
   const canAddMembers = streamType === StreamTypes.CHANNEL || streamType === StreamTypes.THREAD
   const streamMembers = bootstrap?.members ?? []
-  const workspaceUsers = wsBootstrap?.users ?? []
   const currentWorkspaceUser = workspaceUsers.find((u) => u.id === currentUserId)
   const canManageMembers = currentWorkspaceUser?.role === "owner" || currentWorkspaceUser?.role === "admin"
 
@@ -227,15 +220,7 @@ export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabP
 function StreamBotsSection({ workspaceId, streamId }: { workspaceId: string; streamId: string }) {
   const queryClient = useQueryClient()
   const [botSearch, setBotSearch] = useState("")
-
-  const { data: wsBootstrap } = useQuery({
-    queryKey: workspaceKeys.bootstrap(workspaceId),
-    queryFn: () => queryClient.getQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId)) ?? null,
-    enabled: false,
-    staleTime: Infinity,
-  })
-
-  const allBots: Bot[] = wsBootstrap?.bots ?? []
+  const allBots = useWorkspaceBots(workspaceId)
 
   // Single query: which bots have been granted access to this stream
   const streamBotsQueryKey = ["stream-bots", workspaceId, streamId]

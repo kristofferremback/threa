@@ -3,7 +3,7 @@ import { useNavigate, useParams, useLocation } from "react-router-dom"
 import { FileText, Hash, MessageSquare, Bell, Search, Plus, Link as LinkIcon, Image, Paperclip } from "lucide-react"
 import { StreamTypes, getAvatarUrl } from "@threa/types"
 import type { Stream, StreamType } from "@threa/types"
-import { useWorkspaceBootstrap } from "@/hooks"
+import { useWorkspaceStreams, useWorkspaceDmPeers, useWorkspaceUsers } from "@/stores/workspace-store"
 import {
   useShareTarget,
   clearShareTargetCache,
@@ -12,7 +12,6 @@ import {
   type ShareMeta,
 } from "@/hooks/use-share-target"
 import { getStreamName, streamFallbackLabel } from "@/lib/streams"
-import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ItemList } from "@/components/quick-switcher/item-list"
 import type { QuickSwitcherItem } from "@/components/quick-switcher/types"
@@ -41,7 +40,9 @@ export function SharePickerPage() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const location = useLocation()
   const navigate = useNavigate()
-  const { data: bootstrap, error: bootstrapError } = useWorkspaceBootstrap(workspaceId!)
+  const idbStreams = useWorkspaceStreams(workspaceId!)
+  const idbDmPeers = useWorkspaceDmPeers(workspaceId!)
+  const idbUsers = useWorkspaceUsers(workspaceId!)
   const { createShareDraft, saveShareContent } = useShareTarget()
 
   const [query, setQuery] = useState("")
@@ -102,9 +103,9 @@ export function SharePickerPage() {
     return parts.join(", ")
   }, [hasFiles, files])
 
-  const streams = useMemo(() => bootstrap?.streams ?? [], [bootstrap?.streams])
-  const dmPeers = useMemo(() => bootstrap?.dmPeers ?? [], [bootstrap?.dmPeers])
-  const users = useMemo(() => bootstrap?.users ?? [], [bootstrap?.users])
+  const streams = idbStreams
+  const dmPeers = idbDmPeers
+  const users = idbUsers
 
   const handleSelectStream = useCallback(
     async (streamId: string) => {
@@ -203,20 +204,7 @@ export function SharePickerPage() {
     return [newScratchpadItem, ...streamItems]
   }, [streams, dmPeers, users, query, workspaceId, handleNewScratchpad, handleSelectStream])
 
-  const isLoading = (!bootstrap && !bootstrapError) || filesLoading || submitting
-
-  if (bootstrapError) {
-    return (
-      <div className="flex h-full items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-4 px-4 text-center">
-          <p className="text-sm text-destructive">Failed to load workspace data.</p>
-          <Button variant="link" onClick={() => navigate(`/w/${workspaceId}`, { replace: true })}>
-            Go to workspace
-          </Button>
-        </div>
-      </div>
-    )
-  }
+  const isLoading = filesLoading || submitting
 
   return (
     <div className="flex h-full items-center justify-center bg-background">

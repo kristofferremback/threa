@@ -9,7 +9,8 @@ import { Progress } from "@/components/ui/progress"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
-import { useAIUsage, useAIBudget, useUpdateAIBudget, useWorkspaceBootstrap } from "@/hooks"
+import { useAIUsage, useAIBudget, useUpdateAIBudget } from "@/hooks"
+import { useWorkspaceUsers } from "@/stores/workspace-store"
 import type { UpdateAIBudgetInput, AIUsageByUser } from "@threa/types"
 
 function formatCurrency(value: number): string {
@@ -434,7 +435,7 @@ function BudgetSettings({
 
 export function AIUsageAdminPage() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
-  const { data: bootstrap } = useWorkspaceBootstrap(workspaceId ?? "")
+  const idbUsers = useWorkspaceUsers(workspaceId ?? "")
 
   const { data: usage, isLoading: usageLoading } = useAIUsage(workspaceId ?? "")
   const { data: budget, isLoading: budgetLoading } = useAIBudget(workspaceId ?? "")
@@ -442,11 +443,11 @@ export function AIUsageAdminPage() {
   // Build workspace user name lookup map (userId -> display name).
   const userNames = useMemo(() => {
     const map = new Map<string, string>()
-    for (const user of bootstrap?.users ?? []) {
+    for (const user of idbUsers) {
       map.set(user.id, user.name || user.email || user.slug)
     }
     return map
-  }, [bootstrap?.users])
+  }, [idbUsers])
 
   // Get system usage from byOrigin data
   const systemCost = useMemo(() => {

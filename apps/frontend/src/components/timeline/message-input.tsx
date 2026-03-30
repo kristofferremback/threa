@@ -1,7 +1,8 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react"
 import { createPortal } from "react-dom"
 import { useNavigate } from "react-router-dom"
-import { useDraftComposer, getDraftMessageKey, useStreamOrDraft, useWorkspaceBootstrap } from "@/hooks"
+import { useDraftComposer, getDraftMessageKey, useStreamOrDraft } from "@/hooks"
+import { useWorkspaceStreams } from "@/stores/workspace-store"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { usePreferences } from "@/contexts"
 import { useConnectionState } from "@/components/layout/connection-status"
@@ -31,17 +32,17 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   const draftKey = getDraftMessageKey({ type: "stream", streamId })
 
   // Resolve stream context for broadcast mention filtering.
-  // For threads, look up the root stream's type from workspace bootstrap.
-  const { data: wsBootstrap } = useWorkspaceBootstrap(workspaceId)
+  // For threads, look up the root stream's type from IDB workspace streams.
+  const idbStreams = useWorkspaceStreams(workspaceId)
   const streamContext = useMemo<MentionStreamContext | undefined>(() => {
     if (!stream) return undefined
     const ctx: MentionStreamContext = { streamType: stream.type }
-    if (stream.type === StreamTypes.THREAD && stream.rootStreamId && wsBootstrap) {
-      const rootStream = wsBootstrap.streams.find((s) => s.id === stream.rootStreamId)
+    if (stream.type === StreamTypes.THREAD && stream.rootStreamId) {
+      const rootStream = idbStreams.find((s) => s.id === stream.rootStreamId)
       if (rootStream) ctx.rootStreamType = rootStream.type
     }
     return ctx
-  }, [stream, wsBootstrap])
+  }, [stream, idbStreams])
 
   const composer = useDraftComposer({ workspaceId, draftKey, scopeId: streamId })
   const [error, setError] = useState<string | null>(null)

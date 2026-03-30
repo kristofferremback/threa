@@ -12,14 +12,9 @@ import { useStreamSettings, STREAM_SETTINGS_TABS, type StreamSettingsTab } from 
 import { GeneralTab } from "./general-tab"
 import { CompanionTab } from "./companion-tab"
 import { MembersTab } from "./members-tab"
-import { streamKeys, workspaceKeys } from "@/hooks"
-import {
-  StreamTypes,
-  type Stream,
-  type StreamBootstrap,
-  type NotificationLevel,
-  type WorkspaceBootstrap,
-} from "@threa/types"
+import { streamKeys } from "@/hooks"
+import { useWorkspaceStreams, useWorkspaceStreamMemberships } from "@/stores/workspace-store"
+import { StreamTypes, type Stream, type StreamBootstrap, type NotificationLevel } from "@threa/types"
 
 const TAB_LABELS: Record<StreamSettingsTab, string> = {
   general: "General",
@@ -35,30 +30,26 @@ export function StreamSettingsDialog({ workspaceId }: StreamSettingsDialogProps)
   const { isOpen, activeTab, streamId, closeStreamSettings, setTab } = useStreamSettings()
 
   const queryClient = useQueryClient()
+  const idbStreams = useWorkspaceStreams(workspaceId)
+  const idbStreamMemberships = useWorkspaceStreamMemberships(workspaceId)
 
-  // Cache-only observers: subscribe to bootstrap cache updates without triggering fetches
+  // Cache-only observer for stream bootstrap (stays on TanStack - this is stream-level, not workspace)
   const { data: bootstrap } = useQuery({
     queryKey: streamKeys.bootstrap(workspaceId, streamId ?? ""),
     queryFn: () => queryClient.getQueryData<StreamBootstrap>(streamKeys.bootstrap(workspaceId, streamId ?? "")) ?? null,
     enabled: false,
     staleTime: Infinity,
   })
-  const { data: wsBootstrap } = useQuery({
-    queryKey: workspaceKeys.bootstrap(workspaceId),
-    queryFn: () => queryClient.getQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId)) ?? null,
-    enabled: false,
-    staleTime: Infinity,
-  })
 
-  // Get stream from bootstrap cache, fallback to workspace bootstrap
+  // Get stream from stream bootstrap cache, fallback to IDB workspace streams
   const stream = streamId ? (bootstrap?.stream ?? null) : null
-  const streamFromWs = streamId ? (wsBootstrap?.streams?.find((s) => s.id === streamId) ?? null) : null
-  const resolvedStream: Stream | null = stream ?? streamFromWs
+  const streamFromIdb = streamId ? (idbStreams.find((s) => s.id === streamId) ?? null) : null
+  const resolvedStream: Stream | null = stream ?? (streamFromIdb as Stream | null)
 
   const currentMembership = useMemo(() => {
-    if (!wsBootstrap?.streamMemberships || !streamId) return null
-    return wsBootstrap.streamMemberships.find((m) => m.streamId === streamId) ?? null
-  }, [wsBootstrap, streamId])
+    if (!streamId) return null
+    return idbStreamMemberships.find((m) => m.streamId === streamId) ?? null
+  }, [idbStreamMemberships, streamId])
 
   const currentUserId = currentMembership?.memberId ?? null
   const currentNotificationLevel: NotificationLevel | null = currentMembership?.notificationLevel ?? null

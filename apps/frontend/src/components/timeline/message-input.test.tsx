@@ -57,9 +57,12 @@ let mockComposerState = {
   isLoaded: true,
 }
 
+vi.mock("@/stores/workspace-store", () => ({
+  useWorkspaceStreams: () => [],
+}))
+
 vi.mock("@/hooks", () => ({
   useStreamOrDraft: () => ({ sendMessage: mockSendMessage }),
-  useWorkspaceBootstrap: () => ({ data: undefined }),
   getDraftMessageKey: () => "test-draft-key",
   useDraftComposer: () => ({
     content: mockComposerState.content,

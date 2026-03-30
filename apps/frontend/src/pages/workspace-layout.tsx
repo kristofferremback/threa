@@ -33,6 +33,7 @@ import {
   useMessageQueue,
   useUnreadTabIndicator,
 } from "@/hooks"
+import { useWorkspaceStreams } from "@/stores/workspace-store"
 import { QuickSwitcher, type QuickSwitcherMode } from "@/components/quick-switcher"
 import { SettingsDialog } from "@/components/settings"
 import { WorkspaceSettingsDialog } from "@/components/workspace-settings/workspace-settings-dialog"
@@ -148,9 +149,9 @@ export function WorkspaceLayout() {
     return [streamId, ...panelIds].filter((id): id is string => Boolean(id))
   }, [streamId, searchParams])
 
-  const { data: bootstrap, error: workspaceError } = useWorkspaceBootstrap(workspaceId ?? "")
+  const { error: workspaceError } = useWorkspaceBootstrap(workspaceId ?? "")
   const { mentionables } = useMentionables()
-  const streams = useMemo(() => bootstrap?.streams ?? [], [bootstrap])
+  const streams = useWorkspaceStreams(workspaceId ?? "")
 
   usePersistLastStream(workspaceId, streamId)
 

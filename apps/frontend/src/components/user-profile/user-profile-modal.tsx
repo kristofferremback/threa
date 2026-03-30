@@ -12,9 +12,9 @@ import {
   ResponsiveDialogDescription,
   ResponsiveDialogBody,
 } from "@/components/ui/responsive-dialog"
-import { useWorkspaceBootstrap } from "@/hooks"
-import { useAuth } from "@/auth"
 import { createDmDraftId } from "@/hooks"
+import { useWorkspaceUsers, useWorkspaceDmPeers } from "@/stores/workspace-store"
+import { useAuth } from "@/auth"
 import { getAvatarUrl, type User } from "@threa/types"
 import { getInitials } from "@/lib/initials"
 
@@ -38,13 +38,14 @@ interface UserProfileModalProps {
 export function UserProfileModal({ userId, open, onOpenChange }: UserProfileModalProps) {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const { user: authUser } = useAuth()
-  const { data: bootstrap } = useWorkspaceBootstrap(workspaceId ?? "")
+  const idbUsers = useWorkspaceUsers(workspaceId ?? "")
+  const idbDmPeers = useWorkspaceDmPeers(workspaceId ?? "")
 
-  const user = bootstrap?.users.find((u) => u.id === userId)
+  const user = idbUsers.find((u) => u.id === userId)
   const isOwnProfile = authUser && user?.workosUserId === authUser.id
   const avatarUrl = user ? getAvatarUrl(workspaceId!, user.avatarUrl, 256) : undefined
 
-  const existingDmStreamId = bootstrap?.dmPeers.find((p) => p.userId === userId)?.streamId
+  const existingDmStreamId = idbDmPeers.find((p) => p.userId === userId)?.streamId
   const messageStreamId = existingDmStreamId ?? createDmDraftId(userId)
   const messageHref = workspaceId ? `/w/${workspaceId}/s/${messageStreamId}` : undefined
 

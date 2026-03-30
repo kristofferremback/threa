@@ -6,7 +6,8 @@ import { db } from "@/db"
 import { useStreamService, useMessageService, usePendingMessages } from "@/contexts"
 import { useUser } from "@/auth"
 import { useStreamBootstrap, streamKeys } from "./use-streams"
-import { useWorkspaceBootstrap, workspaceKeys } from "./use-workspaces"
+import { workspaceKeys } from "./use-workspaces"
+import { useWorkspaceUsers, useWorkspaceStreams, useWorkspaceDmPeers } from "@/stores/workspace-store"
 import { createOptimisticBootstrap, type AttachmentSummary } from "./create-optimistic-bootstrap"
 import { serializeToMarkdown } from "@threa/prosemirror"
 import type { StreamType, CompanionMode, StreamEvent, JSONContent, WorkspaceBootstrap } from "@threa/types"
@@ -42,17 +43,17 @@ function resolveRealDmDisplayName(
   streamId: string,
   streamDisplayName: string | null,
   streamMembers: Array<{ memberId: string }>,
-  workspaceBootstrap: WorkspaceBootstrap | undefined,
+  idbStreams: Array<{ id: string; displayName: string | null }>,
+  idbUsers: Array<{ id: string; name: string }>,
   currentUserId: string | null
 ): string | null {
-  const workspaceName = workspaceBootstrap?.streams.find((stream) => stream.id === streamId)?.displayName
+  const workspaceName = idbStreams.find((stream) => stream.id === streamId)?.displayName
   if (workspaceName) return workspaceName
 
   const otherMemberId = streamMembers.find((member) => member.memberId !== currentUserId)?.memberId
   if (!otherMemberId) return streamDisplayName
 
-  const workspaceUsers = workspaceBootstrap?.users ?? []
-  const otherMemberName = workspaceUsers.find((u) => u.id === otherMemberId)?.name ?? null
+  const otherMemberName = idbUsers.find((u) => u.id === otherMemberId)?.name ?? null
   return otherMemberName ?? streamDisplayName
 }
 
@@ -189,15 +190,15 @@ function useDraftDmStream(workspaceId: string, streamId: string, enabled: boolea
   const navigate = useNavigate()
   const messageService = useMessageService()
   const user = useUser()
-  const { data: wsBootstrap, isLoading } = useWorkspaceBootstrap(workspaceId)
-  const workspaceUsers = wsBootstrap?.users ?? []
+  const idbUsers = useWorkspaceUsers(workspaceId)
+  const idbDmPeers = useWorkspaceDmPeers(workspaceId)
 
   const targetUserId = getDmDraftUserId(streamId)
-  const targetUser = workspaceUsers.find((u) => u.id === targetUserId) ?? null
+  const targetUser = idbUsers.find((u) => u.id === targetUserId) ?? null
   const targetUserName = targetUser?.name ?? null
-  const currentUserId = workspaceUsers.find((u) => u.workosUserId === user?.id)?.id ?? null
+  const currentUserId = idbUsers.find((u) => u.workosUserId === user?.id)?.id ?? null
   const existingDmStreamId =
-    targetUserId && currentUserId ? wsBootstrap?.dmPeers.find((peer) => peer.userId === targetUserId)?.streamId : null
+    targetUserId && currentUserId ? idbDmPeers.find((peer) => peer.userId === targetUserId)?.streamId : null
 
   useEffect(() => {
     if (!enabled || !existingDmStreamId) return
@@ -340,7 +341,7 @@ function useDraftDmStream(workspaceId: string, streamId: string, enabled: boolea
 
   return {
     stream,
-    isLoading: enabled && isLoading,
+    isLoading: false,
     isDraft: true,
     error: null,
     rename,
@@ -357,9 +358,9 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
   const streamService = useStreamService()
   const { markPending, notifyQueue } = usePendingMessages()
   const user = useUser()
-  const { data: wsBootstrap } = useWorkspaceBootstrap(workspaceId)
-  const workspaceUsers = wsBootstrap?.users ?? []
-  const currentUserId = workspaceUsers.find((u) => u.workosUserId === user?.id)?.id ?? null
+  const idbUsers = useWorkspaceUsers(workspaceId)
+  const idbStreams = useWorkspaceStreams(workspaceId)
+  const currentUserId = idbUsers.find((u) => u.workosUserId === user?.id)?.id ?? null
 
   const { data: bootstrap, isLoading, error } = useStreamBootstrap(workspaceId, streamId, { enabled })
   const displayName =
@@ -368,7 +369,8 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
           bootstrap.stream.id,
           bootstrap.stream.displayName,
           bootstrap.members,
-          wsBootstrap,
+          idbStreams,
+          idbUsers,
           currentUserId
         )
       : (bootstrap?.stream?.displayName ?? null)
