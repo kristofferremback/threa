@@ -291,9 +291,6 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/workspaces/:workspaceId/ai-budget", ...authed, aiUsage.getBudget)
   app.put("/api/workspaces/:workspaceId/ai-budget", ...authed, requireRole("admin"), aiUsage.updateBudget)
 
-  // Widget tokens (admin+ only — API key management widget)
-  app.get("/api/workspaces/:workspaceId/widget-token", ...authed, requireRole("admin"), workspace.getWidgetToken)
-
   // Activity feed
   app.get("/api/workspaces/:workspaceId/activity", ...authed, activity.list)
   app.post("/api/workspaces/:workspaceId/activity/read", ...authed, activity.markAllAsRead)
@@ -362,7 +359,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/workspaces/:workspaceId/bots/:botId/avatar/:file", botHandlers.serveAvatarFile)
 
   // Public API v1 — API key auth (workspace-scoped or user-scoped)
-  const publicAuth = createPublicApiAuthMiddleware({ apiKeyService, userApiKeyService, botApiKeyService, pool })
+  const publicAuth = createPublicApiAuthMiddleware({ userApiKeyService, botApiKeyService, pool })
   const publicApi = createPublicApiHandlers({ searchService, apiKeyChannelService, streamService, eventService, pool })
   const publicMiddleware = [rateLimits.publicApiWorkspace, rateLimits.publicApiKey, publicAuth] as const
 

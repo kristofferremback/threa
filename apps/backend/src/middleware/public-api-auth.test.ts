@@ -1,16 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import type { NextFunction, Request, Response } from "express"
-import { StubApiKeyService } from "@threa/backend-common"
 import { createPublicApiAuthMiddleware, requireApiKeyScope } from "./public-api-auth"
 import { API_KEY_SCOPES } from "@threa/types"
 
-// Minimal pool stub - just enough for getWorkosOrganizationId
-function createPoolStub(orgId: string | null) {
+function createPoolStub() {
   return {
-    query: async () => ({
-      rows: orgId ? [{ workos_organization_id: orgId }] : [],
-      rowCount: orgId ? 1 : 0,
-    }),
+    query: async () => ({ rows: [], rowCount: 0 }),
   } as any
 }
 
@@ -52,17 +47,17 @@ function runMiddleware(middleware: any, req: Request): Promise<{ nextCalled: boo
 }
 
 describe("createPublicApiAuthMiddleware", () => {
-  const ORG_ID = "org_test_123"
-
-  test("should return 401 for missing Authorization header", async () => {
-    const apiKeyService = new StubApiKeyService()
-    const middleware = createPublicApiAuthMiddleware({
-      apiKeyService,
+  function createMiddleware(overrides: { userApiKeyService?: any; botApiKeyService?: any; pool?: any } = {}) {
+    return createPublicApiAuthMiddleware({
       userApiKeyService: { validateKey: async () => null } as any,
       botApiKeyService: { validateKey: async () => null } as any,
-      pool: createPoolStub(ORG_ID),
+      pool: createPoolStub(),
+      ...overrides,
     })
+  }
 
+  test("should return 401 for missing Authorization header", async () => {
+    const middleware = createMiddleware()
     const req = createReq({ params: { workspaceId: "ws_1" } })
     const { error } = await runMiddleware(middleware, req)
 
@@ -71,14 +66,7 @@ describe("createPublicApiAuthMiddleware", () => {
   })
 
   test("should return 401 for non-Bearer Authorization header", async () => {
-    const apiKeyService = new StubApiKeyService()
-    const middleware = createPublicApiAuthMiddleware({
-      apiKeyService,
-      userApiKeyService: { validateKey: async () => null } as any,
-      botApiKeyService: { validateKey: async () => null } as any,
-      pool: createPoolStub(ORG_ID),
-    })
-
+    const middleware = createMiddleware()
     const req = createReq({
       headers: { authorization: "Basic abc123" } as any,
       params: { workspaceId: "ws_1" },
@@ -89,17 +77,10 @@ describe("createPublicApiAuthMiddleware", () => {
     expect(error!.status).toBe(401)
   })
 
-  test("should return 401 for invalid API key", async () => {
-    const apiKeyService = new StubApiKeyService()
-    const middleware = createPublicApiAuthMiddleware({
-      apiKeyService,
-      userApiKeyService: { validateKey: async () => null } as any,
-      botApiKeyService: { validateKey: async () => null } as any,
-      pool: createPoolStub(ORG_ID),
-    })
-
+  test("should return 401 for unrecognized key prefix", async () => {
+    const middleware = createMiddleware()
     const req = createReq({
-      headers: { authorization: "Bearer invalid_key" } as any,
+      headers: { authorization: "Bearer unknown_prefix_key" } as any,
       params: { workspaceId: "ws_1" },
     })
     const { error } = await runMiddleware(middleware, req)
@@ -108,24 +89,70 @@ describe("createPublicApiAuthMiddleware", () => {
     expect(error!.status).toBe(401)
   })
 
-  test("should return 403 for org mismatch", async () => {
-    const apiKeyService = new StubApiKeyService()
-    apiKeyService.addKey("valid_key", {
-      id: "key_1",
-      name: "Test Key",
-      organizationId: "org_different",
-      permissions: new Set(["messages:search"]),
-    })
-
-    const middleware = createPublicApiAuthMiddleware({
-      apiKeyService,
-      userApiKeyService: { validateKey: async () => null } as any,
-      botApiKeyService: { validateKey: async () => null } as any,
-      pool: createPoolStub(ORG_ID),
+  test("should authenticate valid user-scoped key", async () => {
+    const mockUser = { id: "user_1", workspaceId: "ws_1", name: "Test User" }
+    const middleware = createMiddleware({
+      userApiKeyService: {
+        validateKey: async (token: string) =>
+          token === "threa_uk_testkey123"
+            ? { id: "uak_1", workspaceId: "ws_1", userId: "user_1", name: "My Key", scopes: new Set(["messages:read"]) }
+            : null,
+      },
+      pool: {
+        query: async () => ({
+          rows: [
+            {
+              id: "user_1",
+              workspace_id: "ws_1",
+              name: "Test User",
+              email: "test@example.com",
+              role: "admin",
+              slug: "test",
+              workos_user_id: "wos_1",
+              description: null,
+              avatar_url: null,
+              timezone: null,
+              locale: null,
+              pronouns: null,
+              phone: null,
+              github_username: null,
+              setup_completed: true,
+              joined_at: new Date(),
+            },
+          ],
+          rowCount: 1,
+        }),
+      } as any,
     })
 
     const req = createReq({
-      headers: { authorization: "Bearer valid_key" } as any,
+      headers: { authorization: "Bearer threa_uk_testkey123" } as any,
+      params: { workspaceId: "ws_1" },
+    })
+    const { nextCalled, error } = await runMiddleware(middleware, req)
+
+    expect(nextCalled).toBe(true)
+    expect(error).toBeNull()
+    expect(req.userApiKey).toBeDefined()
+    expect(req.userApiKey!.id).toBe("uak_1")
+    expect(req.workspaceId).toBe("ws_1")
+  })
+
+  test("should return 403 for user key from wrong workspace", async () => {
+    const middleware = createMiddleware({
+      userApiKeyService: {
+        validateKey: async () => ({
+          id: "uak_1",
+          workspaceId: "ws_other",
+          userId: "user_1",
+          name: "My Key",
+          scopes: new Set(["messages:read"]),
+        }),
+      },
+    })
+
+    const req = createReq({
+      headers: { authorization: "Bearer threa_uk_testkey123" } as any,
       params: { workspaceId: "ws_1" },
     })
     const { error } = await runMiddleware(middleware, req)
@@ -134,44 +161,76 @@ describe("createPublicApiAuthMiddleware", () => {
     expect(error!.status).toBe(403)
   })
 
-  test("should set req.apiKey and req.workspaceId on success", async () => {
-    const apiKeyService = new StubApiKeyService()
-    apiKeyService.addKey("valid_key", {
-      id: "key_1",
-      name: "Test Key",
-      organizationId: ORG_ID,
-      permissions: new Set(["messages:search"]),
-    })
-
-    const middleware = createPublicApiAuthMiddleware({
-      apiKeyService,
-      userApiKeyService: { validateKey: async () => null } as any,
-      botApiKeyService: { validateKey: async () => null } as any,
-      pool: createPoolStub(ORG_ID),
+  test("should authenticate valid bot-scoped key", async () => {
+    const middleware = createMiddleware({
+      botApiKeyService: {
+        validateKey: async (token: string) =>
+          token === "threa_bk_testkey123"
+            ? { id: "bak_1", workspaceId: "ws_1", botId: "bot_1", name: "Bot Key", scopes: new Set(["messages:write"]) }
+            : null,
+      },
     })
 
     const req = createReq({
-      headers: { authorization: "Bearer valid_key" } as any,
+      headers: { authorization: "Bearer threa_bk_testkey123" } as any,
       params: { workspaceId: "ws_1" },
     })
     const { nextCalled, error } = await runMiddleware(middleware, req)
 
     expect(nextCalled).toBe(true)
     expect(error).toBeNull()
-    expect(req.apiKey).toEqual({
-      id: "key_1",
-      name: "Test Key",
-      permissions: new Set(["messages:search"]),
-    })
+    expect(req.botApiKey).toBeDefined()
+    expect(req.botApiKey!.botId).toBe("bot_1")
     expect(req.workspaceId).toBe("ws_1")
+  })
+
+  test("should return 403 for bot key from wrong workspace", async () => {
+    const middleware = createMiddleware({
+      botApiKeyService: {
+        validateKey: async () => ({
+          id: "bak_1",
+          workspaceId: "ws_other",
+          botId: "bot_1",
+          name: "Bot Key",
+          scopes: new Set(["messages:write"]),
+        }),
+      },
+    })
+
+    const req = createReq({
+      headers: { authorization: "Bearer threa_bk_testkey123" } as any,
+      params: { workspaceId: "ws_1" },
+    })
+    const { error } = await runMiddleware(middleware, req)
+
+    expect(error).not.toBeNull()
+    expect(error!.status).toBe(403)
+  })
+
+  test("should return 401 for invalid bot key", async () => {
+    const middleware = createMiddleware()
+    const req = createReq({
+      headers: { authorization: "Bearer threa_bk_invalid" } as any,
+      params: { workspaceId: "ws_1" },
+    })
+    const { error } = await runMiddleware(middleware, req)
+
+    expect(error).not.toBeNull()
+    expect(error!.status).toBe(401)
   })
 })
 
 describe("requireApiKeyScope", () => {
-  test("should pass when scope is present", () => {
+  test("should pass when user key has required scope", () => {
     const middleware = requireApiKeyScope(API_KEY_SCOPES.MESSAGES_SEARCH)
     const req = createReq()
-    req.apiKey = { id: "key_1", name: "Test", permissions: new Set(["messages:search"]) }
+    req.userApiKey = {
+      id: "uak_1",
+      workspaceId: "ws_1",
+      userId: "user_1",
+      name: "Test",
+      scopes: new Set(["messages:search"]),
+    }
 
     let nextCalled = false
     let error: any = null
@@ -185,10 +244,39 @@ describe("requireApiKeyScope", () => {
     expect(error).toBeUndefined()
   })
 
-  test("should return 403 when scope is missing", () => {
+  test("should pass when bot key has required scope", () => {
+    const middleware = requireApiKeyScope(API_KEY_SCOPES.MESSAGES_WRITE)
+    const req = createReq()
+    req.botApiKey = {
+      id: "bak_1",
+      workspaceId: "ws_1",
+      botId: "bot_1",
+      name: "Bot Key",
+      scopes: new Set(["messages:write"]),
+    }
+
+    let nextCalled = false
+    let error: any = null
+    const next: NextFunction = (err?: any) => {
+      nextCalled = true
+      error = err
+    }
+    middleware(req, {} as Response, next)
+
+    expect(nextCalled).toBe(true)
+    expect(error).toBeUndefined()
+  })
+
+  test("should return 403 when scope is missing from user key", () => {
     const middleware = requireApiKeyScope(API_KEY_SCOPES.MESSAGES_SEARCH)
     const req = createReq()
-    req.apiKey = { id: "key_1", name: "Test", permissions: new Set(["other:scope"]) }
+    req.userApiKey = {
+      id: "uak_1",
+      workspaceId: "ws_1",
+      userId: "user_1",
+      name: "Test",
+      scopes: new Set(["streams:read"]),
+    }
 
     let error: any = null
     const next: NextFunction = (err?: any) => {
@@ -200,7 +288,28 @@ describe("requireApiKeyScope", () => {
     expect(error.status).toBe(403)
   })
 
-  test("should return 401 when no apiKey on request", () => {
+  test("should return 403 when scope is missing from bot key", () => {
+    const middleware = requireApiKeyScope(API_KEY_SCOPES.MESSAGES_WRITE)
+    const req = createReq()
+    req.botApiKey = {
+      id: "bak_1",
+      workspaceId: "ws_1",
+      botId: "bot_1",
+      name: "Bot Key",
+      scopes: new Set(["messages:read"]),
+    }
+
+    let error: any = null
+    const next: NextFunction = (err?: any) => {
+      error = err
+    }
+    middleware(req, {} as Response, next)
+
+    expect(error).not.toBeNull()
+    expect(error.status).toBe(403)
+  })
+
+  test("should return 401 when no key context on request", () => {
     const middleware = requireApiKeyScope(API_KEY_SCOPES.MESSAGES_SEARCH)
     const req = createReq()
 

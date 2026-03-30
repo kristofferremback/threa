@@ -199,17 +199,15 @@ export function createPublicApiHandlers({
   eventService,
   pool,
 }: PublicApiDeps) {
-  /** Resolve accessible stream IDs for the current key (workspace, user-scoped, or bot) */
+  /** Resolve accessible stream IDs for the current key (user-scoped or bot) */
   async function getAccessibleStreamIds(req: Request): Promise<string[]> {
     if (req.userApiKey) {
       return resolveUserAccessibleStreamIds(pool, req.workspaceId!, req.user!.id, {})
     }
-    // Bot keys use the same workspace-wide channel access as workspace-scoped keys for now.
-    // Bot-specific channel grants can be added later.
     if (req.botApiKey) {
       return apiKeyChannelService.getPublicStreamIds(req.workspaceId!)
     }
-    return apiKeyChannelService.getAccessibleStreamIdsForApiKey(req.workspaceId!, req.apiKey!.id)
+    throw new HttpError("No API key context", { status: 401, code: "UNAUTHORIZED" })
   }
 
   /** Check if a single stream is accessible for the current key */
@@ -222,21 +220,13 @@ export function createPublicApiHandlers({
       return
     }
     if (req.botApiKey) {
-      // Bot keys currently have access to public streams only
       const accessible = await apiKeyChannelService.isStreamPublic(req.workspaceId!, streamId)
       if (!accessible) {
         throw new HttpError("Stream not accessible", { status: 403, code: "FORBIDDEN" })
       }
       return
     }
-    const accessible = await apiKeyChannelService.isStreamAccessibleForApiKey(
-      req.workspaceId!,
-      req.apiKey!.id,
-      streamId
-    )
-    if (!accessible) {
-      throw new HttpError("Stream not accessible", { status: 403, code: "FORBIDDEN" })
-    }
+    throw new HttpError("No API key context", { status: 401, code: "UNAUTHORIZED" })
   }
 
   /** Find a message, verify stream access, and verify ownership. Used by update/delete. */
@@ -271,17 +261,7 @@ export function createPublicApiHandlers({
       return { message, actorId: bot.id, actorType: AuthorTypes.BOT as AuthorType, displayName: bot.name }
     }
 
-    // Workspace-scoped key (WorkOS): verify bot ownership via api_key_id
-    if (message.authorType !== AuthorTypes.BOT) {
-      throw new HttpError("Cannot modify messages not created via API", { status: 403, code: "FORBIDDEN" })
-    }
-
-    const bot = await BotRepository.findById(pool, message.authorId)
-    if (!bot || bot.apiKeyId !== req.apiKey!.id) {
-      throw new HttpError("Cannot modify messages created by another API key", { status: 403, code: "FORBIDDEN" })
-    }
-
-    return { message, actorId: bot.id, actorType: AuthorTypes.BOT as AuthorType, displayName: bot.name }
+    throw new HttpError("No API key context", { status: 401, code: "UNAUTHORIZED" })
   }
 
   return {
@@ -589,39 +569,7 @@ export function createPublicApiHandlers({
         return
       }
 
-      // Workspace-scoped key (WorkOS, legacy): find-or-create bot without overriding profile
-      const apiKey = req.apiKey!
-      const botName = apiKey.name
-
-      const { bot } = await withTransaction(pool, async (client) => {
-        const { bot: resolvedBot, isInsert } = await BotRepository.findOrCreate(client, {
-          id: botId(),
-          workspaceId,
-          apiKeyId: apiKey.id,
-          name: botName,
-        })
-
-        if (isInsert) {
-          await OutboxRepository.insert(client, "bot:created", {
-            workspaceId,
-            bot: serializeBot(resolvedBot),
-          })
-        }
-
-        return { bot: resolvedBot }
-      })
-
-      const message = await eventService.createMessage({
-        workspaceId,
-        streamId,
-        authorId: bot.id,
-        authorType: AuthorTypes.BOT,
-        contentJson,
-        contentMarkdown,
-        clientMessageId,
-      })
-
-      res.status(201).json({ data: serializeMessage(message, { authorDisplayName: bot.name }) })
+      throw new HttpError("No API key context", { status: 401, code: "UNAUTHORIZED" })
     },
 
     /**

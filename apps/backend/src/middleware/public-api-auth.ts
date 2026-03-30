@@ -1,17 +1,15 @@
 import type { NextFunction, Request, Response } from "express"
 import type { Pool } from "pg"
-import { HttpError, type ApiKeyService } from "@threa/backend-common"
+import { HttpError } from "@threa/backend-common"
 import type { ApiKeyScope } from "@threa/types"
 import { BOT_KEY_PREFIX } from "@threa/types"
-import { WorkspaceRepository, UserRepository } from "../features/workspaces"
+import { UserRepository } from "../features/workspaces"
 import type { UserApiKeyService, ValidatedUserApiKey } from "../features/user-api-keys"
 import type { BotApiKeyService, ValidatedBotApiKey } from "../features/public-api"
 
 declare global {
   namespace Express {
     interface Request {
-      /** Set when authenticated via a workspace-scoped (WorkOS) API key */
-      apiKey?: { id: string; name: string; permissions: Set<string> }
       /** Set when authenticated via a user-scoped API key */
       userApiKey?: ValidatedUserApiKey
       /** Set when authenticated via a bot API key */
@@ -21,18 +19,12 @@ declare global {
 }
 
 interface PublicApiAuthDeps {
-  apiKeyService: ApiKeyService
   userApiKeyService: UserApiKeyService
   botApiKeyService: BotApiKeyService
   pool: Pool
 }
 
-export function createPublicApiAuthMiddleware({
-  apiKeyService,
-  userApiKeyService,
-  botApiKeyService,
-  pool,
-}: PublicApiAuthDeps) {
+export function createPublicApiAuthMiddleware({ userApiKeyService, botApiKeyService, pool }: PublicApiAuthDeps) {
   return async function publicApiAuth(req: Request, _res: Response, next: NextFunction): Promise<void> {
     const authHeader = req.headers.authorization
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -93,31 +85,8 @@ export function createPublicApiAuthMiddleware({
       return
     }
 
-    // Fall through to workspace-scoped (WorkOS) key validation
-    const validated = await apiKeyService.validateApiKey(token)
-    if (!validated) {
-      next(new HttpError("Invalid API key", { status: 401, code: "UNAUTHORIZED" }))
-      return
-    }
-
-    const orgId = await WorkspaceRepository.getWorkosOrganizationId(pool, workspaceId)
-    if (!orgId || orgId !== validated.organizationId) {
-      next(
-        new HttpError("API key does not have access to this workspace", {
-          status: 403,
-          code: "FORBIDDEN",
-        })
-      )
-      return
-    }
-
-    req.apiKey = {
-      id: validated.id,
-      name: validated.name,
-      permissions: validated.permissions,
-    }
-    req.workspaceId = workspaceId
-    next()
+    // No recognized key prefix
+    next(new HttpError("Invalid API key", { status: 401, code: "UNAUTHORIZED" }))
   }
 }
 
@@ -147,25 +116,6 @@ export function requireApiKeyScope(...scopes: ApiKeyScope[]) {
       return
     }
 
-    // Workspace-scoped keys (WorkOS)
-    const apiKey = req.apiKey
-    if (!apiKey) {
-      next(new HttpError("No API key context", { status: 401, code: "UNAUTHORIZED" }))
-      return
-    }
-
-    for (const scope of scopes) {
-      if (!apiKey.permissions.has(scope)) {
-        next(
-          new HttpError(`Missing required permission: ${scope}`, {
-            status: 403,
-            code: "FORBIDDEN",
-          })
-        )
-        return
-      }
-    }
-
-    next()
+    next(new HttpError("No API key context", { status: 401, code: "UNAUTHORIZED" }))
   }
 }

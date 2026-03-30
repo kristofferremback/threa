@@ -200,26 +200,4 @@ export const BotRepository = {
     if (!result.rows[0]) return null
     return mapRowToBot(result.rows[0])
   },
-
-  /**
-   * Legacy upsert for WorkOS API keys (migration period).
-   * On conflict, does NOT override name/profile — preserves admin customizations.
-   */
-  async findOrCreate(
-    db: Querier,
-    params: { id: string; workspaceId: string; apiKeyId: string; name: string }
-  ): Promise<{ bot: Bot; isInsert: boolean }> {
-    const result = await db.query<BotRow & { is_insert: boolean }>(sql`
-      INSERT INTO bots (id, workspace_id, api_key_id, name)
-      VALUES (${params.id}, ${params.workspaceId}, ${params.apiKeyId}, ${params.name})
-      ON CONFLICT (workspace_id, api_key_id)
-      DO UPDATE SET updated_at = NOW()
-      RETURNING ${sql.raw(BOT_COLUMNS)}, (xmax = 0) AS is_insert
-    `)
-    const row = result.rows[0]
-    return {
-      bot: mapRowToBot(row),
-      isInsert: row.is_insert,
-    }
-  },
 }
