@@ -42,16 +42,26 @@ export function useStreamFromStore(streamId: string | undefined): CachedStream |
 }
 
 /**
- * Reactively read the latest sequence number for a stream.
- * Used to determine the live tail position.
+ * Reactively read the latest (highest) sequence number for a stream.
+ * Uses BigInt comparison — Dexie's sortBy uses lexicographic order
+ * which is wrong for numeric sequences ("9" > "10" lexicographically).
  */
 export function useLatestSequence(streamId: string | undefined): string {
   const result = useLiveQuery(
     async () => {
       if (!streamId) return "0"
-      // Get the event with the highest sequence for this stream
-      const events = await db.events.where("streamId").equals(streamId).reverse().sortBy("sequence")
-      return events[0]?.sequence ?? "0"
+      const events = await db.events.where("streamId").equals(streamId).toArray()
+      if (events.length === 0) return "0"
+      let max = BigInt(events[0].sequence)
+      let maxStr = events[0].sequence
+      for (let i = 1; i < events.length; i++) {
+        const seq = BigInt(events[i].sequence)
+        if (seq > max) {
+          max = seq
+          maxStr = events[i].sequence
+        }
+      }
+      return maxStr
     },
     [streamId],
     "0"

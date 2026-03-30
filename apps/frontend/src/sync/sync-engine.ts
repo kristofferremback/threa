@@ -33,7 +33,7 @@ interface SyncEngineDeps {
 export class SyncEngine {
   private socket: Socket | null = null
   private subscribedStreams = new Set<string>()
-  private cleanupFns: (() => void)[] = []
+  private streamHandlerCleanups = new Map<string, () => void>()
   private workspaceHandlerCleanup: (() => void) | null = null
   private hasEverConnected = false
   private destroyed = false
@@ -101,12 +101,7 @@ export class SyncEngine {
    */
   async subscribeStream(streamId: string): Promise<void> {
     if (this.destroyed || !this.socket) return
-    if (this.subscribedStreams.has(streamId)) {
-      // Already subscribed — but if the stream bootstrap is stale (e.g.,
-      // navigated away and back), the TanStack query handles refetch via
-      // refetchOnMount: true. We just ensure the room is joined.
-      return
-    }
+    if (this.subscribedStreams.has(streamId)) return
     this.subscribedStreams.add(streamId)
 
     const room = `ws:${this.deps.workspaceId}:stream:${streamId}`
@@ -114,16 +109,20 @@ export class SyncEngine {
 
     // Register stream-level socket handlers (IDB-only writes)
     const cleanup = registerStreamSocketHandlers(this.socket, this.deps.workspaceId, streamId, this.deps.queryClient)
-    this.cleanupFns.push(cleanup)
+    this.streamHandlerCleanups.set(streamId, cleanup)
   }
 
   /**
    * Unsubscribe from a stream. Called when stream view unmounts.
-   * Does NOT leave the socket room (other hooks may still need it).
+   * Cleans up the stream's socket handlers to prevent accumulation.
    */
   unsubscribeStream(streamId: string): void {
     this.subscribedStreams.delete(streamId)
-    // Socket handler cleanup happens on destroy or reconnect
+    const cleanup = this.streamHandlerCleanups.get(streamId)
+    if (cleanup) {
+      cleanup()
+      this.streamHandlerCleanups.delete(streamId)
+    }
   }
 
   /**
@@ -173,10 +172,11 @@ export class SyncEngine {
 
       // Subscribe all member streams
       const memberStreamIds = bootstrap.streamMemberships.map((sm) => sm.streamId)
+      // Subscribe all member streams: join rooms + register socket handlers.
+      // On reconnect, cleanupStreamHandlers() already cleared the old handlers,
+      // so these are fresh registrations.
       for (const streamId of memberStreamIds) {
         if (!this.subscribedStreams.has(streamId)) {
-          // Just join the room — stream bootstrap is handled by useStreamBootstrap
-          // when the stream view mounts. We pre-join so socket events flow.
           this.subscribedStreams.add(streamId)
           joinRoomFireAndForget(
             this.socket!,
@@ -184,6 +184,8 @@ export class SyncEngine {
             new AbortController().signal,
             "SyncEngine"
           )
+          const cleanup = registerStreamSocketHandlers(this.socket!, workspaceId, streamId, this.deps.queryClient)
+          this.streamHandlerCleanups.set(streamId, cleanup)
         }
       }
     } catch (error) {
@@ -206,8 +208,8 @@ export class SyncEngine {
   }
 
   private cleanupStreamHandlers(): void {
-    for (const fn of this.cleanupFns) fn()
-    this.cleanupFns = []
+    for (const cleanup of this.streamHandlerCleanups.values()) cleanup()
+    this.streamHandlerCleanups.clear()
     this.subscribedStreams.clear()
   }
 
