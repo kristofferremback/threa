@@ -4,6 +4,7 @@ import { toast } from "sonner"
 import { preferencesApi } from "@/api"
 import { workspaceKeys } from "@/hooks/use-workspaces"
 import { useWorkspaceUserPreferences } from "@/stores/workspace-store"
+import { db } from "@/db"
 import { applyPreferencesToDOM, getResolvedTheme } from "@/lib/apply-preferences"
 import type {
   UserPreferences,
@@ -113,14 +114,31 @@ export function PreferencesProvider({ workspaceId, children }: PreferencesProvid
           ...previousBootstrap,
           userPreferences: newPreferences,
         })
+
+        // Write to IDB immediately so useLiveQuery consumers see the change
+        // without waiting for the socket event round-trip.
+        db.userPreferences.put({
+          ...newPreferences,
+          id: workspaceId,
+          workspaceId,
+          _cachedAt: Date.now(),
+        })
       }
 
       return { previousBootstrap }
     },
     onError: (_err, _input, context) => {
-      // Rollback on error
+      // Rollback on error — both TanStack and IDB
       if (context?.previousBootstrap) {
         queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), context.previousBootstrap)
+        if (context.previousBootstrap.userPreferences) {
+          db.userPreferences.put({
+            ...context.previousBootstrap.userPreferences,
+            id: workspaceId,
+            workspaceId,
+            _cachedAt: Date.now(),
+          })
+        }
       }
       toast.error("Failed to save settings")
     },

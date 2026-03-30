@@ -10,17 +10,24 @@ import type { WorkspaceBootstrap } from "@threa/types"
  */
 export async function applyWorkspaceBootstrap(workspaceId: string, bootstrap: WorkspaceBootstrap): Promise<void> {
   const now = Date.now()
+
+  // Build membership lookup for O(1) access when merging onto streams
+  const membershipByStream = new Map(bootstrap.streamMemberships.map((sm) => [sm.streamId, sm]))
+
   await Promise.all([
     db.workspaces.put({ ...bootstrap.workspace, _cachedAt: now }),
     db.workspaceUsers.bulkPut(bootstrap.users.map((u) => ({ ...u, _cachedAt: now }))),
     db.streams.bulkPut(
-      bootstrap.streams.map((s) => ({
-        ...s,
-        pinned: bootstrap.streamMemberships.find((sm) => sm.streamId === s.id)?.pinned,
-        notificationLevel: bootstrap.streamMemberships.find((sm) => sm.streamId === s.id)?.notificationLevel,
-        lastReadEventId: bootstrap.streamMemberships.find((sm) => sm.streamId === s.id)?.lastReadEventId,
-        _cachedAt: now,
-      }))
+      bootstrap.streams.map((s) => {
+        const membership = membershipByStream.get(s.id)
+        return {
+          ...s,
+          pinned: membership?.pinned,
+          notificationLevel: membership?.notificationLevel,
+          lastReadEventId: membership?.lastReadEventId,
+          _cachedAt: now,
+        }
+      })
     ),
     db.streamMemberships.bulkPut(
       bootstrap.streamMemberships.map((sm) => ({
