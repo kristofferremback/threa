@@ -108,6 +108,10 @@ export function useWorkspaceBootstrap(workspaceId: string) {
       }
       await joinRoomBestEffort(socket, `ws:${workspaceId}`, "WorkspaceBootstrap")
 
+      // Capture timestamp BEFORE fetch — any socket writes during the fetch
+      // will have _cachedAt > fetchStartedAt and survive stale cleanup.
+      const fetchStartedAt = Date.now()
+
       const bootstrap = await workspaceService.bootstrap(workspaceId)
       debugBootstrap("Workspace bootstrap fetch success", {
         workspaceId,
@@ -115,7 +119,7 @@ export function useWorkspaceBootstrap(workspaceId: string) {
         userCount: bootstrap.users.length,
       })
       // Shred bootstrap into individual IDB tables (including unreadState + userPreferences)
-      await applyWorkspaceBootstrap(workspaceId, bootstrap)
+      await applyWorkspaceBootstrap(workspaceId, bootstrap, fetchStartedAt)
 
       return bootstrap
     },
