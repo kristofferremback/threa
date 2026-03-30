@@ -43,10 +43,11 @@ export function useUnreadCounts(workspaceId: string) {
       })
 
       // Update IDB for immediate consistency with IDB-backed consumers
-      db.unreadState.get(workspaceId).then((state) => {
+      db.transaction("rw", [db.unreadState], async () => {
+        const state = await db.unreadState.get(workspaceId)
         if (!state) return
         const clearedActivity = state.activityCounts[streamId] ?? 0
-        db.unreadState.put({
+        await db.unreadState.put({
           ...state,
           unreadCounts: { ...state.unreadCounts, [streamId]: 0 },
           mentionCounts: { ...state.mentionCounts, [streamId]: 0 },
@@ -76,13 +77,14 @@ export function useUnreadCounts(workspaceId: string) {
       })
 
       // Update IDB
-      db.unreadState.get(workspaceId).then((state) => {
+      db.transaction("rw", [db.unreadState], async () => {
+        const state = await db.unreadState.get(workspaceId)
         if (!state) return
         const newUnreadCounts = { ...state.unreadCounts }
         for (const streamId of updatedStreamIds) {
           newUnreadCounts[streamId] = 0
         }
-        db.unreadState.put({ ...state, unreadCounts: newUnreadCounts, _cachedAt: Date.now() })
+        await db.unreadState.put({ ...state, unreadCounts: newUnreadCounts, _cachedAt: Date.now() })
       })
     },
   })
@@ -113,9 +115,10 @@ export function useUnreadCounts(workspaceId: string) {
       })
 
       // Update IDB
-      db.unreadState.get(workspaceId).then((state) => {
+      db.transaction("rw", [db.unreadState], async () => {
+        const state = await db.unreadState.get(workspaceId)
         if (!state) return
-        db.unreadState.put({
+        await db.unreadState.put({
           ...state,
           unreadCounts: {
             ...state.unreadCounts,

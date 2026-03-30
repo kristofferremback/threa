@@ -503,7 +503,7 @@ export function registerWorkspaceSocketHandlers(
       updated.mentionCounts = newMention
       updated.activityCounts = newActivity
       updated.unreadActivityCount = Math.max(0, state.unreadActivityCount - cleared)
-      db.unreadState.put(updated)
+      await db.unreadState.put(updated)
     })
 
     queryClient.invalidateQueries({ queryKey: ["activity", workspaceId] })
