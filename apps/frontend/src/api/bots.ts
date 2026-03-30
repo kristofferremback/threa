@@ -71,7 +71,7 @@ export const botsApi = {
 
   async uploadAvatar(workspaceId: string, botId: string, file: File): Promise<Bot> {
     const formData = new FormData()
-    formData.append("file", file)
+    formData.append("avatar", file)
     const response = await fetch(`${API_BASE}/api/workspaces/${workspaceId}/bots/${botId}/avatar`, {
       method: "POST",
       credentials: "include",
