@@ -5,7 +5,7 @@ import { db } from "@/db"
 import { joinRoomFireAndForget, joinRoomBestEffort } from "@/lib/socket-room"
 import { applyWorkspaceBootstrap, registerWorkspaceSocketHandlers } from "./workspace-sync"
 import { registerStreamSocketHandlers } from "./stream-sync"
-import { processOperationQueue } from "./operation-queue"
+import { processOperationQueue, registerOperationQueueNotify } from "./operation-queue"
 import { SyncStatusStore } from "./sync-status"
 import { workspaceKeys } from "@/hooks/use-workspaces"
 import type { WorkspaceBootstrap } from "@threa/types"
@@ -101,11 +101,14 @@ export class SyncEngine {
 
     // Process pending offline operations (edits, deletes, reactions)
     if (this.deps.messageService) {
-      void processOperationQueue(
-        this.deps.messageService,
-        this.deps.reactionService ?? { add: async () => {}, remove: async () => {} },
-        () => this.socket !== null
-      )
+      const kickQueue = () =>
+        void processOperationQueue(
+          this.deps.messageService!,
+          this.deps.reactionService ?? { add: async () => {}, remove: async () => {} },
+          () => this.socket !== null && !this.destroyed
+        )
+      registerOperationQueueNotify(kickQueue)
+      kickQueue()
     }
   }
 

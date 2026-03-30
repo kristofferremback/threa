@@ -167,20 +167,22 @@ export function registerWorkspaceSocketHandlers(
   const handleStreamCreated = (payload: StreamPayload) => {
     let shouldJoinStreamRoom = false
     let shouldCacheStream = payload.stream.visibility !== Visibilities.PRIVATE
+    let shouldAddMembership = false
+    let currentUserId: string | null = null
 
     // Add to workspace bootstrap cache (sidebar)
     const applied = updateBootstrapOrInvalidate(queryClient, workspaceId, (old) => {
       const streamExists = old.streams.some((s) => s.id === payload.stream.id)
       const currentUser = refs.getCurrentUser()
       const currentMember = currentUser && getWorkspaceUsers(old).find((u) => u.workosUserId === currentUser.id)
-      const currentUserId = currentMember?.id ?? null
+      currentUserId = currentMember?.id ?? null
       const isCreator = Boolean(currentMember && payload.stream.createdBy === currentMember.id)
       const isDmParticipant =
         payload.stream.type === StreamTypes.DM &&
         currentUserId !== null &&
         payload.dmUserIds?.includes(currentUserId) === true
       const hasMembership = old.streamMemberships.some((m: StreamMember) => m.streamId === payload.stream.id)
-      const shouldAddMembership = Boolean(currentUserId && !hasMembership && (isCreator || isDmParticipant))
+      shouldAddMembership = Boolean(currentUserId && !hasMembership && (isCreator || isDmParticipant))
       const isPrivate = payload.stream.visibility === Visibilities.PRIVATE
       const shouldAddStream =
         !streamExists &&
@@ -231,6 +233,23 @@ export function registerWorkspaceSocketHandlers(
     // entries resurfacing on hydration if the event leaks during a deploy race.
     if (shouldCacheStream) {
       db.streams.put({ ...payload.stream, _cachedAt: Date.now() })
+    }
+
+    // Persist membership to IDB so sidebar correctly filters public channels
+    if (shouldAddMembership && currentUserId) {
+      db.streamMemberships.put({
+        id: `${workspaceId}:${payload.stream.id}`,
+        workspaceId,
+        streamId: payload.stream.id,
+        memberId: currentUserId,
+        pinned: false,
+        pinnedAt: null,
+        notificationLevel: null,
+        lastReadEventId: null,
+        lastReadAt: null,
+        joinedAt: payload.stream.createdAt,
+        _cachedAt: Date.now(),
+      })
     }
 
     // DM creation still requires bootstrap refetch for viewer-specific dmPeers and

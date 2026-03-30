@@ -69,22 +69,43 @@ export function useUnreadCounts(workspaceId: string) {
       // Update TanStack cache (bridge)
       queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
         if (!old) return old
-        const newUnreadCounts = { ...old.unreadCounts }
+        const newUnread = { ...old.unreadCounts }
+        const newMention = { ...old.mentionCounts }
+        const newActivity = { ...old.activityCounts }
         for (const streamId of updatedStreamIds) {
-          newUnreadCounts[streamId] = 0
+          newUnread[streamId] = 0
+          newMention[streamId] = 0
+          newActivity[streamId] = 0
         }
-        return { ...old, unreadCounts: newUnreadCounts }
+        return {
+          ...old,
+          unreadCounts: newUnread,
+          mentionCounts: newMention,
+          activityCounts: newActivity,
+          unreadActivityCount: 0,
+        }
       })
 
       // Update IDB
       db.transaction("rw", [db.unreadState], async () => {
         const state = await db.unreadState.get(workspaceId)
         if (!state) return
-        const newUnreadCounts = { ...state.unreadCounts }
+        const newUnread = { ...state.unreadCounts }
+        const newMention = { ...state.mentionCounts }
+        const newActivity = { ...state.activityCounts }
         for (const streamId of updatedStreamIds) {
-          newUnreadCounts[streamId] = 0
+          newUnread[streamId] = 0
+          newMention[streamId] = 0
+          newActivity[streamId] = 0
         }
-        await db.unreadState.put({ ...state, unreadCounts: newUnreadCounts, _cachedAt: Date.now() })
+        await db.unreadState.put({
+          ...state,
+          unreadCounts: newUnread,
+          mentionCounts: newMention,
+          activityCounts: newActivity,
+          unreadActivityCount: 0,
+          _cachedAt: Date.now(),
+        })
       })
     },
   })
