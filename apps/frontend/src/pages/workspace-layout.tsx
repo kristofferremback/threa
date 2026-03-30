@@ -27,7 +27,6 @@ import {
   useTrace,
 } from "@/contexts"
 import {
-  useSocketEvents,
   useWorkspaceBootstrap,
   useKeyboardShortcuts,
   useMentionables,
@@ -36,6 +35,7 @@ import {
   useMessageQueue,
   useUnreadTabIndicator,
 } from "@/hooks"
+import { useAuth } from "@/auth"
 import { useWorkspaceStreams } from "@/stores/workspace-store"
 import { SyncEngine } from "@/sync/sync-engine"
 import { QuickSwitcher, type QuickSwitcherMode } from "@/components/quick-switcher"
@@ -82,9 +82,8 @@ function WorkspaceKeyboardHandler({
 
 /**
  * Constructs a SyncEngine per workspace and wires it to socket lifecycle.
- * The engine owns bootstrap + reconnection. useSocketEvents still registers
- * the workspace-level socket event handlers (transitional — these will move
- * into the engine in a future pass).
+ * The engine owns bootstrap, reconnection, and all workspace-level socket
+ * event handlers.
  */
 function WorkspaceSyncHandler({ workspaceId, children }: { workspaceId: string; children: ReactNode }) {
   const socket = useSocket()
@@ -93,6 +92,8 @@ function WorkspaceSyncHandler({ workspaceId, children }: { workspaceId: string; 
   const workspaceService = useWorkspaceService()
   const streamService = useStreamService()
   const syncStatusStore = useContext(SyncStatusContext)
+  const { user } = useAuth()
+  const { streamId: currentStreamId } = useParams<{ streamId: string }>()
 
   // Construct SyncEngine once per workspace (INV-13)
   const syncEngine = useMemo(
@@ -107,6 +108,15 @@ function WorkspaceSyncHandler({ workspaceId, children }: { workspaceId: string; 
     [workspaceId, syncStatusStore, queryClient, workspaceService, streamService]
   )
 
+  // Keep syncEngine refs in sync with React state
+  useEffect(() => {
+    syncEngine.setCurrentStreamId(currentStreamId)
+  }, [syncEngine, currentStreamId])
+
+  useEffect(() => {
+    syncEngine.setCurrentUser(user)
+  }, [syncEngine, user])
+
   // Wire SyncEngine to socket connect/disconnect/reconnect
   useEffect(() => {
     if (!socket) {
@@ -119,9 +129,6 @@ function WorkspaceSyncHandler({ workspaceId, children }: { workspaceId: string; 
 
   // Cleanup on unmount
   useEffect(() => () => syncEngine.destroy(), [syncEngine])
-
-  // Workspace-level socket handlers (still in the hook, will move to engine later)
-  useSocketEvents(workspaceId)
 
   return <>{children}</>
 }

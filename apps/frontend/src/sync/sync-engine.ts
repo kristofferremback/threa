@@ -2,7 +2,7 @@ import type { Socket } from "socket.io-client"
 import type { QueryClient } from "@tanstack/react-query"
 import { db } from "@/db"
 import { joinRoomFireAndForget, joinRoomBestEffort } from "@/lib/socket-room"
-import { applyWorkspaceBootstrap } from "./workspace-sync"
+import { applyWorkspaceBootstrap, registerWorkspaceSocketHandlers } from "./workspace-sync"
 import { registerStreamSocketHandlers } from "./stream-sync"
 import { SyncStatusStore } from "./sync-status"
 import { workspaceKeys } from "@/hooks/use-workspaces"
@@ -33,10 +33,25 @@ export class SyncEngine {
   private socket: Socket | null = null
   private subscribedStreams = new Set<string>()
   private cleanupFns: (() => void)[] = []
+  private workspaceHandlerCleanup: (() => void) | null = null
   private hasEverConnected = false
   private destroyed = false
 
+  // Ref-like state updated by the React layer
+  private currentStreamId: string | undefined = undefined
+  private currentUser: { id: string } | null = null
+
   constructor(private deps: SyncEngineDeps) {}
+
+  /** Update the current stream ID (called from React when route changes). */
+  setCurrentStreamId(id: string | undefined): void {
+    this.currentStreamId = id
+  }
+
+  /** Update the current auth user (called from React when auth state settles). */
+  setCurrentUser(user: { id: string } | null): void {
+    this.currentUser = user
+  }
 
   /**
    * Called when the socket connects or reconnects.
@@ -50,9 +65,21 @@ export class SyncEngine {
 
     if (isReconnect) {
       this.deps.syncStatus.setAllStale()
-      // Clean up old stream handlers before re-registering
+      // Clean up old handlers before re-registering
+      this.cleanupWorkspaceHandlers()
       this.cleanupStreamHandlers()
     }
+
+    // Register workspace-level socket handlers (stream:created, stream:updated, etc.)
+    this.workspaceHandlerCleanup = registerWorkspaceSocketHandlers(
+      socket,
+      this.deps.workspaceId,
+      this.deps.queryClient,
+      {
+        getCurrentStreamId: () => this.currentStreamId,
+        getCurrentUser: () => this.currentUser,
+      }
+    )
 
     await this.bootstrapWorkspace(isReconnect)
   }
@@ -158,6 +185,13 @@ export class SyncEngine {
     }
   }
 
+  private cleanupWorkspaceHandlers(): void {
+    if (this.workspaceHandlerCleanup) {
+      this.workspaceHandlerCleanup()
+      this.workspaceHandlerCleanup = null
+    }
+  }
+
   private cleanupStreamHandlers(): void {
     for (const fn of this.cleanupFns) fn()
     this.cleanupFns = []
@@ -165,6 +199,7 @@ export class SyncEngine {
   }
 
   private cleanupAllHandlers(): void {
+    this.cleanupWorkspaceHandlers()
     this.cleanupStreamHandlers()
   }
 }

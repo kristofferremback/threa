@@ -46,7 +46,7 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
       abortController.abort()
       cleanupHandlers()
       // Do NOT leave the room here. Socket.io rooms are not reference-counted:
-      // a single leave undoes ALL joins. useSocketEvents also joins this room
+      // a single leave undoes ALL joins. The SyncEngine also joins this room
       // for stream:activity delivery — leaving here would break sidebar updates.
     }
   }, [socket, workspaceId, streamId, shouldSubscribe, queryClient, reconnectCount])

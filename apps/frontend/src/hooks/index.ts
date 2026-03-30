@@ -43,8 +43,6 @@ export {
 
 export { useDraftMessage, getDraftMessageKey } from "./use-draft-message"
 
-export { useSocketEvents } from "./use-socket-events"
-
 export { useStreamSocket } from "./use-stream-socket"
 
 export { useMessageQueue } from "./use-message-queue"
