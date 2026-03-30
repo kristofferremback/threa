@@ -947,22 +947,35 @@ export async function applyWorkspaceBootstrap(
     ),
     db.personas.bulkPut(bootstrap.personas.map((p) => ({ ...p, _cachedAt: now }))),
     db.bots.bulkPut(bootstrap.bots.map((b) => ({ ...b, _cachedAt: now }))),
-    db.unreadState.put({
-      id: workspaceId,
-      workspaceId,
-      unreadCounts: bootstrap.unreadCounts,
-      mentionCounts: bootstrap.mentionCounts,
-      activityCounts: bootstrap.activityCounts,
-      unreadActivityCount: bootstrap.unreadActivityCount,
-      mutedStreamIds: bootstrap.mutedStreamIds,
-      _cachedAt: now,
-    }),
-    db.userPreferences.put({
-      ...bootstrap.userPreferences,
-      id: workspaceId,
-      workspaceId,
-      _cachedAt: now,
-    }),
+    // Only write unreadState if no concurrent socket handler has updated it
+    // since the fetch started. Socket handlers (stream:activity, activity:created)
+    // may have incremented counts during the fetch window.
+    (async () => {
+      const existing = await db.unreadState.get(workspaceId)
+      if (!existing || !fetchStartedAt || existing._cachedAt < fetchStartedAt) {
+        await db.unreadState.put({
+          id: workspaceId,
+          workspaceId,
+          unreadCounts: bootstrap.unreadCounts,
+          mentionCounts: bootstrap.mentionCounts,
+          activityCounts: bootstrap.activityCounts,
+          unreadActivityCount: bootstrap.unreadActivityCount,
+          mutedStreamIds: bootstrap.mutedStreamIds,
+          _cachedAt: now,
+        })
+      }
+    })(),
+    (async () => {
+      const existing = await db.userPreferences.get(workspaceId)
+      if (!existing || !fetchStartedAt || existing._cachedAt < fetchStartedAt) {
+        await db.userPreferences.put({
+          ...bootstrap.userPreferences,
+          id: workspaceId,
+          workspaceId,
+          _cachedAt: now,
+        })
+      }
+    })(),
     db.workspaceMetadata.put({
       id: workspaceId,
       workspaceId,
