@@ -737,6 +737,35 @@ Add a new Dexie table for file blobs: `pendingBlobs: "key"` (stores raw File/Blo
 | Multiple tabs | Each has own socket + sync engine; IDB writes are idempotent; outbox uses Web Locks |
 | Bootstrap races with socket events | Not a problem — IDB writes are idempotent by ID; last write wins |
 | Stale IDB data from weeks ago | SyncStatus shows "stale" until bootstrap completes; user sees old data with loading indicator |
+| Server returning 500s | Treat like offline — show cached data, queue messages, retry bootstrap with backoff. Only show error page if zero cached data (Phase 5) |
+| Socket connected but HTTP failing | "server-error" connection state — socket events still flow, but bootstrap/API calls fail. Show cached data + status pill (Phase 5) |
+
+## Phase 5: Graceful Degradation on Partial Server Outages
+
+**Goal**: A backend 500 and airplane mode should feel the same to the user. If the server is down, the app behaves as if offline — shows cached data, queues messages, retries in the background. No error screens when IDB has data.
+
+**Principle**: The app never blocks the user when it has cached data. Network failures (whether connectivity or server) are a sync problem, not a UI problem. The user sees their data and can keep working. Sync catches up when it can.
+
+**Changes needed** (implement in a later phase):
+
+1. **SyncEngine fetch resilience**: When bootstrap or any sync fetch fails (4xx auth errors excluded), the engine sets sync status to `"error"` but does NOT propagate the error to the UI if IDB has cached data. Only surfaces an error view when there is NO cached data at all (true first-ever load with server down).
+
+2. **ConnectionStatus aware of server errors**: Extend `useConnectionState` to include a `"server-error"` state when socket is connected but HTTP fetches are failing. The floating pill would show "Having trouble connecting" or similar.
+
+3. **Retry with backoff**: SyncEngine retries failed bootstraps with exponential backoff (separate from the message outbox backoff). Socket reconnection already handles socket-level recovery; this handles HTTP-level failures (server returning 500s while socket may or may not be connected).
+
+4. **Error toasts instead of error views**: When a fetch fails but cached data exists, show a dismissible toast ("Could not refresh — showing cached data") rather than replacing the content with an error page.
+
+5. **Auth errors are the exception**: 401/403 still redirect to login or show access denied. These are not transient — the user genuinely can't access the resource.
+
+**Key invariant**: `if (hasCachedData && !isAuthError) → show cached data + status indicator, never an error page`
+
+**Files affected**:
+- `apps/frontend/src/sync/sync-engine.ts` (Phase 3 SyncEngine)
+- `apps/frontend/src/components/layout/connection-status.tsx` (new state)
+- `apps/frontend/src/components/timeline/stream-content.tsx` (error view gating)
+- `apps/frontend/src/components/error-boundary.tsx` (cached data awareness)
+- `apps/frontend/src/hooks/use-streams.ts` (bootstrap error handling)
 
 ## Verification
 
@@ -747,4 +776,5 @@ After each phase:
 4. **Kill and reopen**: Force close app → reopen → unsent messages still in outbox, cached data visible
 5. **Reconnection**: Disable WiFi for 30s → re-enable → messages that arrived during gap appear
 6. **File upload + send**: Attach file → send immediately → message shows as "sending" → file uploads → message delivers
-7. Run `bun run test` and `bun run test:e2e`
+7. **Server outage (Phase 5)**: Kill the backend process → app shows cached data + "Having trouble connecting" pill → restart backend → app syncs automatically
+8. Run `bun run test` and `bun run test:e2e`
