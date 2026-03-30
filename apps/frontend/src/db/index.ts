@@ -11,6 +11,7 @@ export type {
   CachedUnreadState,
   CachedUserPreferences,
   CachedWorkspaceMetadata,
+  PendingOperation,
   PendingMessage,
   SyncCursor,
   DraftScratchpad,

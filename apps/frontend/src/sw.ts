@@ -41,6 +41,28 @@ const BOOTSTRAP_PATH_RE = /^\/api\/workspaces\/[^/]+\/streams\/[^/]+\/bootstrap$
  *
  * Best-effort: errors are swallowed — the normal fetch path takes over.
  */
+/**
+ * Pre-fetch events around a specific message so it's available in IDB
+ * when the user taps the push notification. Best-effort.
+ */
+async function prefetchEventsAround(workspaceId: string, streamId: string, messageId: string): Promise<void> {
+  try {
+    const url = `/api/workspaces/${workspaceId}/streams/${streamId}/events/around?messageId=${messageId}&limit=30`
+    const response = await fetch(url, { credentials: "include" })
+    if (!response.ok) return
+
+    const body = await response.json()
+    const data = body.data ?? body
+    if (data?.events?.length > 0) {
+      const now = Date.now()
+      const { db } = await import("./db/database")
+      await db.events.bulkPut(data.events.map((e: Record<string, unknown>) => ({ ...e, workspaceId, _cachedAt: now })))
+    }
+  } catch {
+    // Best-effort
+  }
+}
+
 async function prefetchStreamBootstrap(workspaceId: string, streamId: string): Promise<void> {
   const url = `/api/workspaces/${workspaceId}/streams/${streamId}/bootstrap`
   const response = await fetch(url, { credentials: "include" })
@@ -281,6 +303,11 @@ self.addEventListener("push", (event) => {
       // Best-effort: swallow errors so notification display is never affected.
       if (data.workspaceId && data.streamId) {
         await prefetchStreamBootstrap(data.workspaceId, data.streamId).catch(() => {})
+        // If targeting a specific message, also prefetch events around it
+        // so the message is in IDB when the user taps the notification.
+        if (data.messageId) {
+          await prefetchEventsAround(data.workspaceId, data.streamId, data.messageId).catch(() => {})
+        }
       }
     })
   )

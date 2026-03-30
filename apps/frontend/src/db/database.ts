@@ -148,6 +148,20 @@ export interface PendingMessage {
   retryAfter?: number
 }
 
+/**
+ * Generic offline operation queue for non-message writes (edits, deletes, reactions).
+ * Operations are retried when back online, similar to PendingMessage for sends.
+ */
+export interface PendingOperation {
+  id: string // ULID
+  workspaceId: string
+  type: "edit_message" | "delete_message" | "add_reaction" | "remove_reaction"
+  payload: Record<string, unknown>
+  createdAt: number
+  retryCount: number
+  retryAfter?: number
+}
+
 export interface SyncCursor {
   key: string // e.g., "workspace:xxx:streams" or "stream:xxx:events"
   cursor: string // Last synced ID/sequence
@@ -230,6 +244,7 @@ class ThreaDatabase extends Dexie {
   unreadState!: EntityTable<CachedUnreadState, "id">
   userPreferences!: EntityTable<CachedUserPreferences, "id">
   workspaceMetadata!: EntityTable<CachedWorkspaceMetadata, "id">
+  pendingOperations!: EntityTable<PendingOperation, "id">
 
   constructor() {
     super("threa")
@@ -354,6 +369,11 @@ class ThreaDatabase extends Dexie {
     // v17: Add workspaceMetadata table for emojis, emojiWeights, and commands.
     this.version(17).stores({
       workspaceMetadata: "id, workspaceId",
+    })
+
+    // v18: Add pendingOperations table for offline-queued writes (edits, deletes, reactions).
+    this.version(18).stores({
+      pendingOperations: "id, workspaceId, type, createdAt",
     })
 
     this.workspaceUsers = this.table(WORKSPACE_USERS_STORE) as EntityTable<CachedWorkspaceUser, "id">

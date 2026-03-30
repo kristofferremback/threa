@@ -377,7 +377,7 @@ describe("useDraftComposer", () => {
       expect(result.current.canSend).toBe(false)
     })
 
-    it("should be false when uploading", () => {
+    it("should be true when uploading (send enqueues, uploads finish in background)", () => {
       mockPendingAttachments = [
         { id: "temp_1", filename: "test.txt", mimeType: "text/plain", sizeBytes: 100, status: "uploading" },
       ]
@@ -388,10 +388,10 @@ describe("useDraftComposer", () => {
         result.current.setContent(makeDoc("Hello"))
       })
 
-      expect(result.current.canSend).toBe(false)
+      expect(result.current.canSend).toBe(true)
     })
 
-    it("should be false when uploads have failed", () => {
+    it("should be true when uploads have failed (send with whatever succeeded)", () => {
       mockPendingAttachments = [
         { id: "temp_1", filename: "test.txt", mimeType: "text/plain", sizeBytes: 100, status: "error" },
       ]
@@ -402,7 +402,7 @@ describe("useDraftComposer", () => {
         result.current.setContent(makeDoc("Hello"))
       })
 
-      expect(result.current.canSend).toBe(false)
+      expect(result.current.canSend).toBe(true)
     })
 
     it("should be false with empty content and no attachments", () => {

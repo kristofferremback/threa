@@ -14,6 +14,7 @@ import {
   useSocketReconnectCount,
   useWorkspaceService,
   useStreamService,
+  useMessageService,
   PanelProvider,
   QuickSwitcherProvider,
   PreferencesProvider,
@@ -37,6 +38,7 @@ import {
 import { useAuth } from "@/auth"
 import { useWorkspaceStreams } from "@/stores/workspace-store"
 import { SyncEngine, SyncEngineContext } from "@/sync/sync-engine"
+import { messagesApi } from "@/api"
 import { useSyncStatus } from "@/sync/sync-status"
 import { QuickSwitcher, type QuickSwitcherMode } from "@/components/quick-switcher"
 import { SettingsDialog } from "@/components/settings"
@@ -91,6 +93,7 @@ function WorkspaceSyncHandler({ workspaceId, children }: { workspaceId: string; 
   const queryClient = useQueryClient()
   const workspaceService = useWorkspaceService()
   const streamService = useStreamService()
+  const messageService = useMessageService()
   const syncStatusStore = useContext(SyncStatusContext)
   const { user } = useAuth()
   const { streamId: currentStreamId } = useParams<{ streamId: string }>()
@@ -104,6 +107,11 @@ function WorkspaceSyncHandler({ workspaceId, children }: { workspaceId: string; 
         queryClient,
         workspaceService,
         streamService,
+        messageService,
+        reactionService: {
+          add: (wid: string, mid: string, emoji: string) => messagesApi.addReaction(wid, mid, emoji),
+          remove: (wid: string, mid: string, emoji: string) => messagesApi.removeReaction(wid, mid, emoji),
+        },
       }),
     [workspaceId, syncStatusStore, queryClient, workspaceService, streamService]
   )

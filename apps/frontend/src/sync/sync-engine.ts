@@ -5,6 +5,7 @@ import { db } from "@/db"
 import { joinRoomFireAndForget, joinRoomBestEffort } from "@/lib/socket-room"
 import { applyWorkspaceBootstrap, registerWorkspaceSocketHandlers } from "./workspace-sync"
 import { registerStreamSocketHandlers } from "./stream-sync"
+import { processOperationQueue } from "./operation-queue"
 import { SyncStatusStore } from "./sync-status"
 import { workspaceKeys } from "@/hooks/use-workspaces"
 import type { WorkspaceBootstrap } from "@threa/types"
@@ -16,6 +17,14 @@ interface SyncEngineDeps {
   workspaceService: { bootstrap: (workspaceId: string) => Promise<WorkspaceBootstrap> }
   streamService: {
     bootstrap: (workspaceId: string, streamId: string) => Promise<import("@threa/types").StreamBootstrap>
+  }
+  messageService?: {
+    update: (workspaceId: string, messageId: string, data: any) => Promise<any>
+    delete: (workspaceId: string, messageId: string) => Promise<void>
+  }
+  reactionService?: {
+    add: (workspaceId: string, messageId: string, emoji: string) => Promise<void>
+    remove: (workspaceId: string, messageId: string, emoji: string) => Promise<void>
   }
 }
 
@@ -85,6 +94,16 @@ export class SyncEngine {
     )
 
     await this.bootstrapWorkspace(isReconnect)
+
+    // Process pending offline operations (edits, deletes, reactions)
+    void processOperationQueue(
+      this.deps.messageService as {
+        update: (wid: string, mid: string, data: unknown) => Promise<unknown>
+        delete: (wid: string, mid: string) => Promise<void>
+      },
+      this.deps.reactionService ?? { add: async () => {}, remove: async () => {} },
+      () => this.socket !== null
+    )
   }
 
   /**

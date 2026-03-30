@@ -2,6 +2,7 @@ import { useCallback, useMemo } from "react"
 import { toast } from "sonner"
 import { messagesApi } from "@/api/messages"
 import { useWorkspaceEmoji } from "./use-workspace-emoji"
+import { enqueueOperation } from "@/sync/operation-queue"
 
 /** Strip surrounding colons from a shortcode (":laughing:" → "laughing") */
 export function stripColons(shortcode: string): string {
@@ -41,7 +42,8 @@ export function useMessageReactions(workspaceId: string, messageId: string): Use
       try {
         await messagesApi.addReaction(workspaceId, messageId, emoji)
       } catch {
-        toast.error("Failed to add reaction")
+        // Enqueue for retry when back online
+        await enqueueOperation(workspaceId, "add_reaction", { messageId, emoji })
       }
     },
     [workspaceId, messageId]
@@ -52,7 +54,7 @@ export function useMessageReactions(workspaceId: string, messageId: string): Use
       try {
         await messagesApi.removeReaction(workspaceId, messageId, emoji)
       } catch {
-        toast.error("Failed to update reaction")
+        await enqueueOperation(workspaceId, "remove_reaction", { messageId, emoji })
       }
     },
     [workspaceId, messageId]

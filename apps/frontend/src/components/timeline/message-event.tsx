@@ -8,6 +8,7 @@ import {
 } from "@threa/types"
 import { Link } from "react-router-dom"
 import { toast } from "sonner"
+import { enqueueOperation } from "@/sync/operation-queue"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Button } from "@/components/ui/button"
@@ -425,7 +426,10 @@ function SentMessageEvent({
       await messageService.delete(workspaceId, payload.messageId)
       setDeleteDialogOpen(false)
     } catch {
-      toast.error("Failed to delete message")
+      // Enqueue for retry when back online
+      await enqueueOperation(workspaceId, "delete_message", { messageId: payload.messageId })
+      setDeleteDialogOpen(false)
+      toast.info("Delete queued — will complete when back online")
     } finally {
       setIsDeleting(false)
     }

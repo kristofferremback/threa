@@ -208,7 +208,10 @@ export function useDraftComposer({
       return true // Non-paragraph nodes count as content
     }) ?? false
 
-  const canSend = (hasContent || uploadedIds.length > 0) && !isSending && !isUploading && !hasFailed
+  // Allow sending while uploads are in progress — the message is enqueued
+  // and sent once all uploads complete. Failed uploads don't block send
+  // (the message sends with whatever attachments succeeded).
+  const canSend = (hasContent || uploadedIds.length > 0) && !isSending
 
   return {
     // Content
