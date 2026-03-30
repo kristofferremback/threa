@@ -1,5 +1,5 @@
 /**
- * E2E tests for public API v1 — message search with API key auth.
+ * E2E tests for public API v1 — message search with bot API key auth.
  *
  * Run with: bun test --preload ./tests/setup.ts tests/e2e/public-api-search.test.ts
  */
@@ -10,25 +10,18 @@ import { TestClient, loginAs, createWorkspace, createChannel, sendMessage } from
 const testRunId = Math.random().toString(36).substring(7)
 const testEmail = (name: string) => `${name}-pubapi-${testRunId}@test.com`
 
-const TEST_ORG_ID = `org_test_${testRunId}`
-const VALID_API_KEY = `test__${TEST_ORG_ID}__messages:search`
-const NO_SCOPE_API_KEY = `test__${TEST_ORG_ID}__streams:list`
-const WRONG_ORG_API_KEY = `test__org_wrong__messages:search`
-
 interface TestContext {
   workspaceId: string
   publicChannelId: string
   privateChannelId: string
   keyword: string
+  botApiKey: string
 }
 
 async function setupTestWorkspace(): Promise<TestContext> {
   const client = new TestClient()
   await loginAs(client, testEmail("setup"), "Setup User")
   const workspace = await createWorkspace(client, `PubAPI WS ${testRunId}`)
-
-  // Set the workspace org ID for API key matching
-  await client.post(`/api/dev/workspaces/${workspace.id}/set-org-id`, { orgId: TEST_ORG_ID })
 
   const publicChannel = await createChannel(client, workspace.id, `public-${testRunId}`, "public")
   const privateChannel = await createChannel(client, workspace.id, `private-${testRunId}`, "private")
@@ -37,11 +30,25 @@ async function setupTestWorkspace(): Promise<TestContext> {
   await sendMessage(client, workspace.id, publicChannel.id, `Public message about ${keyword}`)
   await sendMessage(client, workspace.id, privateChannel.id, `Private message about ${keyword}`)
 
+  // Create a bot with a key that has messages:search scope
+  const botRes = await client.post(`/api/workspaces/${workspace.id}/bots`, {
+    name: `Search Bot ${testRunId}`,
+    slug: `search-bot-${testRunId}`,
+  })
+  const bot = (botRes.data as { data: { id: string } }).data
+
+  const keyRes = await client.post(`/api/workspaces/${workspace.id}/bots/${bot.id}/keys`, {
+    name: "search-key",
+    scopes: ["messages:search", "streams:read", "messages:read", "messages:write"],
+  })
+  const botApiKey = (keyRes.data as { value: string }).value
+
   return {
     workspaceId: workspace.id,
     publicChannelId: publicChannel.id,
     privateChannelId: privateChannel.id,
     keyword,
+    botApiKey,
   }
 }
 
@@ -80,20 +87,15 @@ describe("Public API v1 — Message Search", () => {
       expect(res.status).toBe(401)
     })
 
-    test("should return 403 for API key from wrong organization", async () => {
-      const res = await publicApiRequest(ctx.workspaceId, { query: "test" }, WRONG_ORG_API_KEY)
-      expect(res.status).toBe(403)
-    })
-
-    test("should return 403 for API key missing required scope", async () => {
-      const res = await publicApiRequest(ctx.workspaceId, { query: "test" }, NO_SCOPE_API_KEY)
+    test("should return 401 for API key from wrong workspace", async () => {
+      const res = await publicApiRequest("ws_nonexistent", { query: "test" }, ctx.botApiKey)
       expect(res.status).toBe(403)
     })
   })
 
   describe("Search Results", () => {
     test("should return results from public channels", async () => {
-      const res = await publicApiRequest(ctx.workspaceId, { query: ctx.keyword }, VALID_API_KEY)
+      const res = await publicApiRequest(ctx.workspaceId, { query: ctx.keyword }, ctx.botApiKey)
       expect(res.status).toBe(200)
 
       const data = (await res.json()) as { data: Array<{ streamId: string; content: string }> }
@@ -105,7 +107,7 @@ describe("Public API v1 — Message Search", () => {
     })
 
     test("should NOT return results from private channels without grant", async () => {
-      const res = await publicApiRequest(ctx.workspaceId, { query: ctx.keyword }, VALID_API_KEY)
+      const res = await publicApiRequest(ctx.workspaceId, { query: ctx.keyword }, ctx.botApiKey)
       const data = (await res.json()) as { data: Array<{ streamId: string }> }
 
       const privateResults = data.data.filter((r) => r.streamId === ctx.privateChannelId)
@@ -115,17 +117,17 @@ describe("Public API v1 — Message Search", () => {
 
   describe("Validation", () => {
     test("should return 400 for empty query", async () => {
-      const res = await publicApiRequest(ctx.workspaceId, { query: "" }, VALID_API_KEY)
+      const res = await publicApiRequest(ctx.workspaceId, { query: "" }, ctx.botApiKey)
       expect(res.status).toBe(400)
     })
 
     test("should return 400 for missing query", async () => {
-      const res = await publicApiRequest(ctx.workspaceId, {}, VALID_API_KEY)
+      const res = await publicApiRequest(ctx.workspaceId, {}, ctx.botApiKey)
       expect(res.status).toBe(400)
     })
 
     test("should respect limit parameter", async () => {
-      const res = await publicApiRequest(ctx.workspaceId, { query: ctx.keyword, limit: 1 }, VALID_API_KEY)
+      const res = await publicApiRequest(ctx.workspaceId, { query: ctx.keyword, limit: 1 }, ctx.botApiKey)
       expect(res.status).toBe(200)
 
       const data = (await res.json()) as { data: unknown[] }
@@ -133,14 +135,14 @@ describe("Public API v1 — Message Search", () => {
     })
 
     test("should reject limit above maximum", async () => {
-      const res = await publicApiRequest(ctx.workspaceId, { query: "test", limit: 100 }, VALID_API_KEY)
+      const res = await publicApiRequest(ctx.workspaceId, { query: "test", limit: 100 }, ctx.botApiKey)
       expect(res.status).toBe(400)
     })
   })
 
   describe("Semantic Search", () => {
     test("should accept semantic flag and return results", async () => {
-      const res = await publicApiRequest(ctx.workspaceId, { query: ctx.keyword, semantic: true }, VALID_API_KEY)
+      const res = await publicApiRequest(ctx.workspaceId, { query: ctx.keyword, semantic: true }, ctx.botApiKey)
       expect(res.status).toBe(200)
 
       const data = (await res.json()) as { data: Array<{ streamId: string }> }
@@ -148,7 +150,7 @@ describe("Public API v1 — Message Search", () => {
     })
 
     test("should default to keyword-only search when semantic is false", async () => {
-      const res = await publicApiRequest(ctx.workspaceId, { query: ctx.keyword, semantic: false }, VALID_API_KEY)
+      const res = await publicApiRequest(ctx.workspaceId, { query: ctx.keyword, semantic: false }, ctx.botApiKey)
       expect(res.status).toBe(200)
 
       const data = (await res.json()) as { data: Array<{ streamId: string }> }
@@ -158,7 +160,7 @@ describe("Public API v1 — Message Search", () => {
 
   describe("Filters", () => {
     test("should filter by stream type", async () => {
-      const res = await publicApiRequest(ctx.workspaceId, { query: ctx.keyword, type: ["channel"] }, VALID_API_KEY)
+      const res = await publicApiRequest(ctx.workspaceId, { query: ctx.keyword, type: ["channel"] }, ctx.botApiKey)
       expect(res.status).toBe(200)
 
       const data = (await res.json()) as { data: Array<{ streamId: string }> }
@@ -169,7 +171,7 @@ describe("Public API v1 — Message Search", () => {
       const res = await publicApiRequest(
         ctx.workspaceId,
         { query: ctx.keyword, streams: [ctx.publicChannelId] },
-        VALID_API_KEY
+        ctx.botApiKey
       )
       expect(res.status).toBe(200)
 
@@ -181,7 +183,7 @@ describe("Public API v1 — Message Search", () => {
 
     test("should filter by date range", async () => {
       const futureDate = new Date(Date.now() + 86400000).toISOString()
-      const res = await publicApiRequest(ctx.workspaceId, { query: ctx.keyword, after: futureDate }, VALID_API_KEY)
+      const res = await publicApiRequest(ctx.workspaceId, { query: ctx.keyword, after: futureDate }, ctx.botApiKey)
       expect(res.status).toBe(200)
 
       const data = (await res.json()) as { data: unknown[] }
@@ -191,7 +193,7 @@ describe("Public API v1 — Message Search", () => {
 
   describe("Response Format", () => {
     test("should return properly formatted results", async () => {
-      const res = await publicApiRequest(ctx.workspaceId, { query: ctx.keyword }, VALID_API_KEY)
+      const res = await publicApiRequest(ctx.workspaceId, { query: ctx.keyword }, ctx.botApiKey)
       const data = (await res.json()) as {
         data: Array<{
           id: string

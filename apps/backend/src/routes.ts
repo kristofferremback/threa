@@ -186,15 +186,6 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     app.post("/api/dev/login", authStub.handleDevLogin)
     app.post("/api/dev/workspaces/:workspaceId/join", auth, authStub.handleWorkspaceJoin)
     app.post("/api/dev/workspaces/:workspaceId/streams/:streamId/join", auth, workspaceUser, authStub.handleStreamJoin)
-
-    // Dev-only: set workspace org ID for API key testing
-    const setOrgIdSchema = z.object({ orgId: z.string().min(1) })
-    app.post("/api/dev/workspaces/:workspaceId/set-org-id", auth, async (req, res) => {
-      const result = setOrgIdSchema.safeParse(req.body)
-      if (!result.success) return res.status(400).json({ error: "orgId is required" })
-      await WorkspaceRepository.setWorkosOrganizationId(pool, req.params.workspaceId, result.data.orgId)
-      res.json({ ok: true })
-    })
   }
 
   app.get("/api/auth/me", auth, authHandlers.me)
