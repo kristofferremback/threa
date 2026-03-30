@@ -4,6 +4,7 @@ import type { Pool } from "pg"
 import { BotRepository } from "./bot-repository"
 import { BotApiKeyRepository, type BotApiKeyRow } from "./bot-api-key-repository"
 import { BotChannelAccessRepository } from "../api-keys"
+import { StreamRepository } from "../streams"
 import type { AvatarService } from "../workspaces"
 import type { BotApiKeyService } from "./bot-api-key-service"
 import { serializeBot } from "./handlers"
@@ -411,6 +412,11 @@ export function createBotHandlers({ botApiKeyService, avatarService, pool }: Bot
       const bot = await BotRepository.findById(pool, id)
       if (!bot || bot.workspaceId !== workspaceId || bot.archivedAt) {
         throw new HttpError("Bot not found or archived", { status: 404, code: "NOT_FOUND" })
+      }
+
+      const stream = await StreamRepository.findById(pool, streamId)
+      if (!stream || stream.workspaceId !== workspaceId || stream.archivedAt) {
+        throw new HttpError("Stream not found", { status: 404, code: "NOT_FOUND" })
       }
 
       await BotChannelAccessRepository.grantAccess(pool, {

@@ -28,9 +28,8 @@ export class BotChannelService {
     const isPublic = await StreamRepository.isPublic(this.pool, workspaceId, streamId)
     if (isPublic) return true
 
-    // Check explicit grants
-    const granted = await BotChannelAccessRepository.getGrantedStreamIds(this.pool, workspaceId, botId)
-    return granted.includes(streamId)
+    // Point query for explicit grant (single EXISTS, no full scan)
+    return BotChannelAccessRepository.hasGrant(this.pool, workspaceId, botId, streamId)
   }
 
   async getPublicStreamIds(workspaceId: string): Promise<string[]> {

@@ -41,6 +41,16 @@ export const BotChannelAccessRepository = {
     `)
   },
 
+  async hasGrant(db: Querier, workspaceId: string, botId: string, streamId: string): Promise<boolean> {
+    const result = await db.query(sql`
+      SELECT EXISTS(
+        SELECT 1 FROM bot_channel_access
+        WHERE workspace_id = ${workspaceId} AND bot_id = ${botId} AND stream_id = ${streamId}
+      ) AS granted
+    `)
+    return result.rows[0].granted
+  },
+
   async getGrantedBotIds(db: Querier, workspaceId: string, streamId: string): Promise<string[]> {
     const result = await db.query<{ bot_id: string }>(sql`
       SELECT a.bot_id FROM bot_channel_access a

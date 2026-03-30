@@ -172,7 +172,7 @@ export const BotRepository = {
     const result = await db.query<BotRow>(sql`
       UPDATE bots
       SET avatar_url = ${avatarUrl}, updated_at = NOW()
-      WHERE id = ${id} AND workspace_id = ${workspaceId}
+      WHERE id = ${id} AND workspace_id = ${workspaceId} AND archived_at IS NULL
       RETURNING ${sql.raw(BOT_COLUMNS)}
     `)
     if (!result.rows[0]) return null
