@@ -26,4 +26,6 @@ CREATE TABLE bot_api_keys (
 );
 
 CREATE INDEX idx_bot_api_keys_bot ON bot_api_keys (workspace_id, bot_id) WHERE revoked_at IS NULL;
-CREATE INDEX idx_bot_api_keys_prefix ON bot_api_keys (key_prefix) WHERE revoked_at IS NULL AND (expires_at IS NULL OR expires_at > NOW());
+-- Prefix lookup index for key validation. Expiration is checked at query time
+-- (NOW() is STABLE, not IMMUTABLE, so it can't appear in a partial index predicate).
+CREATE INDEX idx_bot_api_keys_prefix ON bot_api_keys (key_prefix) WHERE revoked_at IS NULL;
