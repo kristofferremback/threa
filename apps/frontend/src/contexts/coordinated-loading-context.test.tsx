@@ -18,27 +18,13 @@ let mockStreamResults: Array<{
   error: Error | null
 }> = []
 
-function statusFromLoadState(state: QueryLoadState): "pending" | "success" | "error" {
-  if (state === QUERY_LOAD_STATE.ERROR) return "error"
-  if (state === QUERY_LOAD_STATE.READY) return "success"
-  return "pending"
-}
-
-function fetchStatusFromLoadState(state: QueryLoadState): "idle" | "fetching" | "paused" {
-  if (state === QUERY_LOAD_STATE.FETCHING) return "fetching"
-  return "idle"
-}
-
-vi.mock("@/hooks/use-workspaces", () => ({
-  useWorkspaceBootstrap: () => ({
-    loadState: mockWorkspaceLoadState,
-    status: statusFromLoadState(mockWorkspaceLoadState),
-    fetchStatus: fetchStatusFromLoadState(mockWorkspaceLoadState),
-    isLoading: mockWorkspaceLoadState === QUERY_LOAD_STATE.FETCHING,
-    isPending: mockWorkspaceLoadState === QUERY_LOAD_STATE.PENDING,
-    data: null,
-    error: null,
-  }),
+vi.mock("@/sync/sync-status", () => ({
+  useSyncStatus: () => {
+    if (mockWorkspaceLoadState === QUERY_LOAD_STATE.PENDING || mockWorkspaceLoadState === QUERY_LOAD_STATE.FETCHING)
+      return "syncing"
+    if (mockWorkspaceLoadState === QUERY_LOAD_STATE.ERROR) return "error"
+    return "synced"
+  },
 }))
 
 vi.mock("@/hooks/use-coordinated-stream-queries", () => ({

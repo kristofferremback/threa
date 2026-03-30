@@ -1,8 +1,8 @@
 import { createContext, useContext, useState, useEffect, useMemo, useRef, type ReactNode } from "react"
-import { useWorkspaceBootstrap } from "@/hooks/use-workspaces"
 import { usePreloadImages } from "@/hooks/use-preload-images"
 import { useCoordinatedStreamQueries } from "@/hooks/use-coordinated-stream-queries"
 import { useWorkspaceUsers } from "@/stores/workspace-store"
+import { useSyncStatus } from "@/sync/sync-status"
 import { debugBootstrap } from "@/lib/bootstrap-debug"
 import { getQueryLoadState, isQueryLoadStateLoading } from "@/lib/query-load-state"
 import { StreamContentSkeleton } from "@/components/loading"
@@ -67,11 +67,9 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
   const loadingIndicatorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hideIndicatorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const workspaceQuery = useWorkspaceBootstrap(workspaceId)
-  const workspaceLoadState =
-    workspaceQuery.loadState ?? getQueryLoadState(workspaceQuery.status, workspaceQuery.fetchStatus)
+  const workspaceSyncStatus = useSyncStatus(`workspace:${workspaceId}`)
+  const workspaceLoading = workspaceSyncStatus === "idle" || workspaceSyncStatus === "syncing"
   const { loadState: streamsLoadState, results } = useCoordinatedStreamQueries(workspaceId, streamIds)
-  const workspaceLoading = isQueryLoadStateLoading(workspaceLoadState)
   const streamsLoading = isQueryLoadStateLoading(streamsLoadState)
 
   // Preload user avatar images so they're in the browser cache before first render
@@ -88,7 +86,7 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
   debugBootstrap("Coordinated loading state", {
     workspaceId,
     streamIds,
-    workspaceLoadState,
+    workspaceSyncStatus,
     streamsLoadState,
     workspaceLoading,
     streamsLoading,

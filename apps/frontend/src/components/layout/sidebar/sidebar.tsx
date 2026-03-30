@@ -3,14 +3,9 @@ import { toast } from "sonner"
 import { RefreshCw } from "lucide-react"
 import { useNavigate, useParams } from "react-router-dom"
 import { useAuth } from "@/auth"
-import {
-  useActivityCounts,
-  useAllDrafts,
-  createDmDraftId,
-  useDraftScratchpads,
-  useUnreadCounts,
-  useWorkspaceBootstrap,
-} from "@/hooks"
+import { useActivityCounts, useAllDrafts, createDmDraftId, useDraftScratchpads, useUnreadCounts } from "@/hooks"
+import { useSyncStatus } from "@/sync/sync-status"
+import { useSyncEngine } from "@/sync/sync-engine"
 import {
   useWorkspaceUsers,
   useWorkspaceStreams,
@@ -49,7 +44,10 @@ export function Sidebar({ workspaceId }: SidebarProps) {
     collapseOnMobile,
   } = useSidebar()
   const { streamId: activeStreamId, "*": splat } = useParams<{ streamId: string; "*": string }>()
-  const { isLoading, error, retryBootstrap } = useWorkspaceBootstrap(workspaceId)
+  const syncStatus = useSyncStatus(`workspace:${workspaceId}`)
+  const syncEngine = useSyncEngine()
+  const isLoading = syncStatus === "syncing" || syncStatus === "idle"
+  const error = syncStatus === "error"
   const workspace = useWorkspaceFromStore(workspaceId)
   const unreadState = useWorkspaceUnreadState(workspaceId)
   const workspaceUsers = useWorkspaceUsers(workspaceId)
@@ -290,7 +288,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
         streamList={
           <div className="flex flex-col items-center justify-center h-full p-4 text-center">
             <p className="text-sm text-muted-foreground mb-3">Failed to load workspace</p>
-            <Button variant="outline" size="sm" onClick={retryBootstrap} className="gap-2">
+            <Button variant="outline" size="sm" onClick={() => syncEngine.retryWorkspace()} className="gap-2">
               <RefreshCw className="h-4 w-4" />
               Retry
             </Button>

@@ -27,7 +27,6 @@ import {
   useTrace,
 } from "@/contexts"
 import {
-  useWorkspaceBootstrap,
   useKeyboardShortcuts,
   useMentionables,
   usePersistLastStream,
@@ -37,7 +36,8 @@ import {
 } from "@/hooks"
 import { useAuth } from "@/auth"
 import { useWorkspaceStreams } from "@/stores/workspace-store"
-import { SyncEngine } from "@/sync/sync-engine"
+import { SyncEngine, SyncEngineContext } from "@/sync/sync-engine"
+import { useSyncStatus } from "@/sync/sync-status"
 import { QuickSwitcher, type QuickSwitcherMode } from "@/components/quick-switcher"
 import { SettingsDialog } from "@/components/settings"
 import { WorkspaceSettingsDialog } from "@/components/workspace-settings/workspace-settings-dialog"
@@ -130,7 +130,18 @@ function WorkspaceSyncHandler({ workspaceId, children }: { workspaceId: string; 
   // Cleanup on unmount
   useEffect(() => () => syncEngine.destroy(), [syncEngine])
 
-  return <>{children}</>
+  // Redirect on terminal workspace errors (404/403)
+  const navigate = useNavigate()
+  const workspaceSyncStatus = useSyncStatus(`workspace:${workspaceId}`)
+  useEffect(() => {
+    if (workspaceSyncStatus !== "error") return
+    const err = syncEngine.lastWorkspaceError
+    if (err && ApiError.isApiError(err) && (err.status === 404 || err.status === 403)) {
+      navigate("/workspaces", { replace: true })
+    }
+  }, [workspaceSyncStatus, syncEngine, navigate])
+
+  return <SyncEngineContext.Provider value={syncEngine}>{children}</SyncEngineContext.Provider>
 }
 
 function MessageQueueHandler() {
@@ -180,7 +191,6 @@ function MentionableWrapper({ children, mentionables }: Omit<MentionableMarkdown
 
 export function WorkspaceLayout() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
-  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const [switcherMode, setSwitcherMode] = useState<QuickSwitcherMode>("stream")
@@ -195,21 +205,10 @@ export function WorkspaceLayout() {
     return [streamId, ...panelIds].filter((id): id is string => Boolean(id))
   }, [streamId, searchParams])
 
-  const { error: workspaceError } = useWorkspaceBootstrap(workspaceId ?? "")
   const { mentionables } = useMentionables()
   const streams = useWorkspaceStreams(workspaceId ?? "")
 
   usePersistLastStream(workspaceId, streamId)
-
-  useEffect(() => {
-    if (
-      workspaceError &&
-      ApiError.isApiError(workspaceError) &&
-      (workspaceError.status === 404 || workspaceError.status === 403)
-    ) {
-      navigate("/workspaces", { replace: true })
-    }
-  }, [workspaceError, navigate])
 
   const openSwitcher = useCallback((mode: QuickSwitcherMode) => {
     setSwitcherMode(mode)

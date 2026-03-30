@@ -1,3 +1,4 @@
+import { createContext, useContext } from "react"
 import type { Socket } from "socket.io-client"
 import type { QueryClient } from "@tanstack/react-query"
 import { db } from "@/db"
@@ -40,6 +41,8 @@ export class SyncEngine {
   // Ref-like state updated by the React layer
   private currentStreamId: string | undefined = undefined
   private currentUser: { id: string } | null = null
+  /** Last workspace bootstrap error, if any. Consumers can check this for 404/403 handling. */
+  lastWorkspaceError: unknown = null
 
   constructor(private deps: SyncEngineDeps) {}
 
@@ -124,6 +127,14 @@ export class SyncEngine {
   }
 
   /**
+   * Re-trigger workspace bootstrap (e.g., user clicks "Retry" in sidebar error).
+   */
+  retryWorkspace(): void {
+    if (!this.socket) return
+    void this.bootstrapWorkspace(false)
+  }
+
+  /**
    * Tear down all subscriptions and handlers.
    * Called when the workspace layout unmounts.
    */
@@ -157,6 +168,7 @@ export class SyncEngine {
       // Write to TanStack cache (bridge for coordinated-loading, sidebar loading/error)
       queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
 
+      this.lastWorkspaceError = null
       syncStatus.set(`workspace:${workspaceId}`, "synced")
 
       // Subscribe all member streams
@@ -175,6 +187,7 @@ export class SyncEngine {
         }
       }
     } catch (error) {
+      this.lastWorkspaceError = error
       const hasCachedData = (await db.workspaces.get(workspaceId)) !== undefined
       syncStatus.set(`workspace:${workspaceId}`, hasCachedData ? "stale" : "error")
 
@@ -202,4 +215,13 @@ export class SyncEngine {
     this.cleanupWorkspaceHandlers()
     this.cleanupStreamHandlers()
   }
+}
+
+// React context for accessing the SyncEngine from any component
+export const SyncEngineContext = createContext<SyncEngine | null>(null)
+
+export function useSyncEngine(): SyncEngine {
+  const engine = useContext(SyncEngineContext)
+  if (!engine) throw new Error("useSyncEngine must be used within a SyncEngineContext provider")
+  return engine
 }
