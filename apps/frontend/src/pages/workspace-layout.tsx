@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, type ReactNode } from "react"
+import { useState, useEffect, useCallback, useContext, useMemo, type ReactNode } from "react"
 import { Outlet, useParams, useNavigate, useSearchParams, useMatch } from "react-router-dom"
 import { AppShell } from "@/components/layout/app-shell"
 import { Sidebar } from "@/components/layout/sidebar"
@@ -10,6 +10,10 @@ import { WorkspaceEmojiProvider } from "@/components/workspace-emoji"
 import { ChannelLinkProvider } from "@/lib/markdown/channel-link-context"
 import {
   SocketProvider,
+  useSocket,
+  useSocketReconnectCount,
+  useWorkspaceService,
+  useStreamService,
   PanelProvider,
   QuickSwitcherProvider,
   PreferencesProvider,
@@ -27,19 +31,20 @@ import {
   useWorkspaceBootstrap,
   useKeyboardShortcuts,
   useMentionables,
-  useReconnectBootstrap,
   usePersistLastStream,
   useAppUpdate,
   useMessageQueue,
   useUnreadTabIndicator,
 } from "@/hooks"
 import { useWorkspaceStreams } from "@/stores/workspace-store"
+import { SyncEngine } from "@/sync/sync-engine"
 import { QuickSwitcher, type QuickSwitcherMode } from "@/components/quick-switcher"
 import { SettingsDialog } from "@/components/settings"
 import { WorkspaceSettingsDialog } from "@/components/workspace-settings/workspace-settings-dialog"
 import { StreamSettingsDialog } from "@/components/stream-settings/stream-settings-dialog"
 import { CreateChannelDialog } from "@/components/create-channel"
 import { TraceDialog } from "@/components/trace"
+import { useQueryClient } from "@tanstack/react-query"
 import { ApiError } from "@/api/client"
 import { SyncStatusStore, SyncStatusContext } from "@/sync/sync-status"
 
@@ -75,15 +80,49 @@ function WorkspaceKeyboardHandler({
   return <>{children}</>
 }
 
-interface WorkspaceSocketHandlerProps {
-  workspaceId: string
-  streamIds: string[]
-  children: ReactNode
-}
+/**
+ * Constructs a SyncEngine per workspace and wires it to socket lifecycle.
+ * The engine owns bootstrap + reconnection. useSocketEvents still registers
+ * the workspace-level socket event handlers (transitional — these will move
+ * into the engine in a future pass).
+ */
+function WorkspaceSyncHandler({ workspaceId, children }: { workspaceId: string; children: ReactNode }) {
+  const socket = useSocket()
+  const reconnectCount = useSocketReconnectCount()
+  const queryClient = useQueryClient()
+  const workspaceService = useWorkspaceService()
+  const streamService = useStreamService()
+  const syncStatusStore = useContext(SyncStatusContext)
 
-function WorkspaceSocketHandler({ workspaceId, streamIds, children }: WorkspaceSocketHandlerProps) {
+  // Construct SyncEngine once per workspace (INV-13)
+  const syncEngine = useMemo(
+    () =>
+      new SyncEngine({
+        workspaceId,
+        syncStatus: syncStatusStore!,
+        queryClient,
+        workspaceService,
+        streamService,
+      }),
+    [workspaceId, syncStatusStore, queryClient, workspaceService, streamService]
+  )
+
+  // Wire SyncEngine to socket connect/disconnect/reconnect
+  useEffect(() => {
+    if (!socket) {
+      syncEngine.onDisconnect()
+      return
+    }
+    void syncEngine.onConnect(socket)
+    return () => syncEngine.onDisconnect()
+  }, [socket, syncEngine, reconnectCount])
+
+  // Cleanup on unmount
+  useEffect(() => () => syncEngine.destroy(), [syncEngine])
+
+  // Workspace-level socket handlers (still in the hook, will move to engine later)
   useSocketEvents(workspaceId)
-  useReconnectBootstrap(workspaceId, streamIds)
+
   return <>{children}</>
 }
 
@@ -184,7 +223,7 @@ export function WorkspaceLayout() {
   return (
     <SyncStatusContext.Provider value={syncStatusStore}>
       <SocketProvider workspaceId={workspaceId}>
-        <WorkspaceSocketHandler workspaceId={workspaceId} streamIds={streamIds}>
+        <WorkspaceSyncHandler workspaceId={workspaceId}>
           <UnreadTabIndicator workspaceId={workspaceId} />
           <AppUpdateChecker />
           <MessageQueueHandler />
@@ -235,7 +274,7 @@ export function WorkspaceLayout() {
               </UserProfileProvider>
             </ChannelLinkProvider>
           </CoordinatedLoadingProvider>
-        </WorkspaceSocketHandler>
+        </WorkspaceSyncHandler>
       </SocketProvider>
     </SyncStatusContext.Provider>
   )
