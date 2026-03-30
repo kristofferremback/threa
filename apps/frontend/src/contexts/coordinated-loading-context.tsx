@@ -69,12 +69,14 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
 
   const workspaceSyncStatus = useSyncStatus(`workspace:${workspaceId}`)
   const idbUsers = useWorkspaceUsers(workspaceId)
-  // When IDB has data from a previous session, treat "idle" (socket not yet connected)
-  // as ready — the user sees cached data while we connect in the background.
-  // Only show loading when IDB is empty AND we're still syncing/idle.
   const hasIdbData = idbUsers.length > 0
-  const workspaceLoading = !hasIdbData && (workspaceSyncStatus === "idle" || workspaceSyncStatus === "syncing")
+  // Workspace is loading when:
+  // - Sync status is idle/syncing AND we have no cached IDB data
+  // - Once synced OR IDB has data, workspace is ready
+  const workspaceLoading = (workspaceSyncStatus === "idle" || workspaceSyncStatus === "syncing") && !hasIdbData
   const { loadState: streamsLoadState, results } = useCoordinatedStreamQueries(workspaceId, streamIds)
+  // Stream queries are still TanStack-driven. They fire when socket connects.
+  // Only block on them when we have no IDB data (fresh visit).
   const streamsLoading = !hasIdbData && isQueryLoadStateLoading(streamsLoadState)
   const avatarUrls = useMemo(() => {
     return idbUsers

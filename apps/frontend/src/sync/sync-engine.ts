@@ -53,7 +53,11 @@ export class SyncEngine {
   /** Last workspace bootstrap error, if any. Consumers can check this for 404/403 handling. */
   lastWorkspaceError: unknown = null
 
-  constructor(private deps: SyncEngineDeps) {}
+  readonly workspaceId: string
+
+  constructor(private deps: SyncEngineDeps) {
+    this.workspaceId = deps.workspaceId
+  }
 
   /** Update the current stream ID (called from React when route changes). */
   setCurrentStreamId(id: string | undefined): void {
@@ -174,7 +178,9 @@ export class SyncEngine {
 
     try {
       // Subscribe-then-fetch (INV-53)
+      console.log("[SyncEngine] joining workspace room")
       await joinRoomBestEffort(this.socket, `ws:${workspaceId}`, "SyncEngine")
+      console.log("[SyncEngine] fetching bootstrap")
 
       const fetchStartedAt = Date.now()
       const bootstrap = await workspaceService.bootstrap(workspaceId)

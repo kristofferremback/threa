@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useContext, useMemo, type ReactNode } from "react"
+import { useState, useEffect, useCallback, useContext, useMemo, useRef, type ReactNode } from "react"
 import { Outlet, useParams, useNavigate, useSearchParams, useMatch } from "react-router-dom"
 import { AppShell } from "@/components/layout/app-shell"
 import { Sidebar } from "@/components/layout/sidebar"
@@ -98,23 +98,26 @@ function WorkspaceSyncHandler({ workspaceId, children }: { workspaceId: string; 
   const { user } = useAuth()
   const { streamId: currentStreamId } = useParams<{ streamId: string }>()
 
-  // Construct SyncEngine once per workspace (INV-13)
-  const syncEngine = useMemo(
-    () =>
-      new SyncEngine({
-        workspaceId,
-        syncStatus: syncStatusStore!,
-        queryClient,
-        workspaceService,
-        streamService,
-        messageService,
-        reactionService: {
-          add: (wid: string, mid: string, emoji: string) => messagesApi.addReaction(wid, mid, emoji),
-          remove: (wid: string, mid: string, emoji: string) => messagesApi.removeReaction(wid, mid, emoji),
-        },
-      }),
-    [workspaceId, syncStatusStore, queryClient, workspaceService, streamService]
-  )
+  // Construct SyncEngine once per workspace. Use ref to survive StrictMode
+  // double-render — useMemo + destroy effect breaks because the cleanup
+  // destroys the engine before the socket connect effect fires.
+  const syncEngineRef = useRef<SyncEngine | null>(null)
+  if (!syncEngineRef.current || syncEngineRef.current.workspaceId !== workspaceId) {
+    syncEngineRef.current?.destroy()
+    syncEngineRef.current = new SyncEngine({
+      workspaceId,
+      syncStatus: syncStatusStore!,
+      queryClient,
+      workspaceService,
+      streamService,
+      messageService,
+      reactionService: {
+        add: (wid: string, mid: string, emoji: string) => messagesApi.addReaction(wid, mid, emoji),
+        remove: (wid: string, mid: string, emoji: string) => messagesApi.removeReaction(wid, mid, emoji),
+      },
+    })
+  }
+  const syncEngine = syncEngineRef.current
 
   // Keep syncEngine refs in sync with React state
   useEffect(() => {
@@ -127,16 +130,21 @@ function WorkspaceSyncHandler({ workspaceId, children }: { workspaceId: string; 
 
   // Wire SyncEngine to socket connect/disconnect/reconnect
   useEffect(() => {
+    console.log("[WorkspaceSyncHandler] effect fired", { hasSocket: !!socket, reconnectCount })
     if (!socket) {
       syncEngine.onDisconnect()
       return
     }
+    console.log("[WorkspaceSyncHandler] calling syncEngine.onConnect")
     void syncEngine.onConnect(socket)
     return () => syncEngine.onDisconnect()
   }, [socket, syncEngine, reconnectCount])
 
   // Cleanup on unmount
-  useEffect(() => () => syncEngine.destroy(), [syncEngine])
+  useEffect(() => {
+    const engine = syncEngineRef.current
+    return () => engine?.destroy()
+  }, [workspaceId])
 
   // Redirect on terminal workspace errors (404/403)
   const navigate = useNavigate()
