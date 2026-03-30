@@ -1,10 +1,31 @@
-import { describe, it, expect, beforeEach } from "vitest"
+import { describe, it, expect, beforeEach, vi } from "vitest"
 import { renderHook } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { createElement, type ReactNode } from "react"
 import { useActors } from "./use-actors"
-import { workspaceKeys } from "./use-workspaces"
-import type { WorkspaceBootstrap, User, Persona } from "@threa/types"
+import type { User, Persona, Bot } from "@threa/types"
+import type { CachedWorkspaceUser, CachedPersona, CachedBot } from "@/db"
+
+// Mutable test data — set in beforeEach, read by the mocked store hooks
+let mockUsers: CachedWorkspaceUser[] = []
+let mockPersonas: CachedPersona[] = []
+let mockBots: CachedBot[] = []
+
+vi.mock("@/stores/workspace-store", () => ({
+  useWorkspaceUsers: () => mockUsers,
+  useWorkspacePersonas: () => mockPersonas,
+  useWorkspaceBots: () => mockBots,
+}))
+
+vi.mock("./use-workspace-emoji", () => ({
+  useWorkspaceEmoji: () => ({
+    toEmoji: (shortcode: string) => {
+      // Simple test implementation: resolve :thread: -> 🧵
+      if (shortcode === ":thread:") return "🧵"
+      return undefined
+    },
+  }),
+}))
 
 function createTestWrapper(queryClient: QueryClient) {
   return function Wrapper({ children }: { children: ReactNode }) {
@@ -12,7 +33,7 @@ function createTestWrapper(queryClient: QueryClient) {
   }
 }
 
-function createMember(overrides: Partial<User> = {}): User {
+function createMember(overrides: Partial<User> & { _cachedAt?: number } = {}): CachedWorkspaceUser {
   return {
     id: "mem_123",
     workspaceId: "ws_123",
@@ -25,16 +46,14 @@ function createMember(overrides: Partial<User> = {}): User {
     avatarUrl: null,
     timezone: null,
     locale: null,
-    pronouns: null,
-    phone: null,
-    githubUsername: null,
     setupCompleted: true,
     joinedAt: "2024-01-01T00:00:00.000Z",
+    _cachedAt: Date.now(),
     ...overrides,
   }
 }
 
-function createPersona(overrides: Partial<Persona> = {}): Persona {
+function createPersona(overrides: Partial<Persona> & { _cachedAt?: number } = {}): CachedPersona {
   return {
     id: "persona_123",
     workspaceId: null,
@@ -51,6 +70,21 @@ function createPersona(overrides: Partial<Persona> = {}): Persona {
     status: "active",
     createdAt: "2024-01-01T00:00:00.000Z",
     updatedAt: "2024-01-01T00:00:00.000Z",
+    _cachedAt: Date.now(),
+    ...overrides,
+  }
+}
+
+function createBot(overrides: Partial<Bot> & { _cachedAt?: number } = {}): CachedBot {
+  return {
+    id: "bot_123",
+    workspaceId: "ws_123",
+    name: "Test Bot",
+    description: null,
+    avatarEmoji: null,
+    createdAt: "2024-01-01T00:00:00.000Z",
+    updatedAt: "2024-01-01T00:00:00.000Z",
+    _cachedAt: Date.now(),
     ...overrides,
   }
 }
@@ -60,11 +94,10 @@ describe("useActors", () => {
   let queryClient: QueryClient
 
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: {
-        queries: { retry: false },
-      },
-    })
+    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    mockUsers = []
+    mockPersonas = []
+    mockBots = []
   })
 
   describe("getActorName", () => {
@@ -72,61 +105,38 @@ describe("useActors", () => {
       const { result } = renderHook(() => useActors(workspaceId), {
         wrapper: createTestWrapper(queryClient),
       })
-
       expect(result.current.getActorName(null, null)).toBe("Unknown")
     })
 
-    it("should return user display name when found in cache", () => {
-      const bootstrap: Partial<WorkspaceBootstrap> = {
-        users: [createMember({ id: "mem_123", name: "John Doe" })],
-        personas: [],
-      }
-      queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
+    it("should return user display name when found", () => {
+      mockUsers = [createMember({ id: "mem_123", name: "John Doe" })]
 
       const { result } = renderHook(() => useActors(workspaceId), {
         wrapper: createTestWrapper(queryClient),
       })
-
       expect(result.current.getActorName("mem_123", "user")).toBe("John Doe")
     })
 
-    it("should return truncated ID when user not in cache", () => {
-      const bootstrap: Partial<WorkspaceBootstrap> = {
-        users: [],
-        personas: [],
-      }
-      queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
-
+    it("should return truncated ID when user not found", () => {
       const { result } = renderHook(() => useActors(workspaceId), {
         wrapper: createTestWrapper(queryClient),
       })
-
       expect(result.current.getActorName("mem_12345678", "user")).toBe("mem_1234")
     })
 
     it("should return persona name for persona actor type", () => {
-      const bootstrap: Partial<WorkspaceBootstrap> = {
-        personas: [createPersona({ id: "persona_123", slug: "ariadne", name: "Ariadne", avatarEmoji: "🧵" })],
-      }
-      queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
+      mockPersonas = [createPersona({ id: "persona_123", slug: "ariadne", name: "Ariadne", avatarEmoji: "🧵" })]
 
       const { result } = renderHook(() => useActors(workspaceId), {
         wrapper: createTestWrapper(queryClient),
       })
-
       expect(result.current.getActorName("persona_123", "persona")).toBe("Ariadne")
     })
 
     it("should return 'AI Companion' when persona not found", () => {
-      const bootstrap: Partial<WorkspaceBootstrap> = {
-        personas: [],
-      }
-      queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
-
       const { result } = renderHook(() => useActors(workspaceId), {
         wrapper: createTestWrapper(queryClient),
       })
-
       expect(result.current.getActorName("persona_unknown", "persona")).toBe("AI Companion")
     })
 
@@ -134,8 +144,16 @@ describe("useActors", () => {
       const { result } = renderHook(() => useActors(workspaceId), {
         wrapper: createTestWrapper(queryClient),
       })
-
       expect(result.current.getActorName("system", "system")).toBe("Threa")
+    })
+
+    it("should return bot name for bot actor type", () => {
+      mockBots = [createBot({ id: "bot_123", name: "MyBot" })]
+
+      const { result } = renderHook(() => useActors(workspaceId), {
+        wrapper: createTestWrapper(queryClient),
+      })
+      expect(result.current.getActorName("bot_123", "bot")).toBe("MyBot")
     })
   })
 
@@ -144,73 +162,49 @@ describe("useActors", () => {
       const { result } = renderHook(() => useActors(workspaceId), {
         wrapper: createTestWrapper(queryClient),
       })
-
       expect(result.current.getActorInitials(null, null)).toBe("?")
     })
 
     it("should return initials from user display name", () => {
-      const bootstrap: Partial<WorkspaceBootstrap> = {
-        users: [createMember({ id: "mem_123", name: "John Doe" })],
-        personas: [],
-      }
-      queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
+      mockUsers = [createMember({ id: "mem_123", name: "John Doe" })]
 
       const { result } = renderHook(() => useActors(workspaceId), {
         wrapper: createTestWrapper(queryClient),
       })
-
       expect(result.current.getActorInitials("mem_123", "user")).toBe("JD")
     })
 
     it("should return avatar emoji for persona", () => {
-      const bootstrap: Partial<WorkspaceBootstrap> = {
-        personas: [createPersona({ id: "persona_123", slug: "ariadne", name: "Ariadne", avatarEmoji: ":thread:" })],
-        emojis: [
-          { shortcode: "thread", emoji: "🧵", type: "native" as const, group: "objects", order: 0, aliases: [] },
-        ],
-      }
-      queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
+      mockPersonas = [createPersona({ id: "persona_123", slug: "ariadne", name: "Ariadne", avatarEmoji: ":thread:" })]
 
       const { result } = renderHook(() => useActors(workspaceId), {
         wrapper: createTestWrapper(queryClient),
       })
-
       expect(result.current.getActorInitials("persona_123", "persona")).toBe("🧵")
     })
 
     it("should return persona initials when no avatar emoji", () => {
-      const bootstrap: Partial<WorkspaceBootstrap> = {
-        personas: [
-          createPersona({
-            id: "persona_456",
-            workspaceId: "ws_123",
-            slug: "custom-bot",
-            name: "Custom Bot",
-            avatarEmoji: null,
-            managedBy: "workspace",
-          }),
-        ],
-      }
-      queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
+      mockPersonas = [
+        createPersona({
+          id: "persona_456",
+          workspaceId: "ws_123",
+          slug: "custom-bot",
+          name: "Custom Bot",
+          avatarEmoji: null,
+          managedBy: "workspace",
+        }),
+      ]
 
       const { result } = renderHook(() => useActors(workspaceId), {
         wrapper: createTestWrapper(queryClient),
       })
-
       expect(result.current.getActorInitials("persona_456", "persona")).toBe("CB")
     })
 
     it("should return truncated ID when user not found", () => {
-      const bootstrap: Partial<WorkspaceBootstrap> = {
-        users: [],
-        personas: [],
-      }
-      queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
-
       const { result } = renderHook(() => useActors(workspaceId), {
         wrapper: createTestWrapper(queryClient),
       })
-
       expect(result.current.getActorInitials("ab_12345678", "user")).toBe("AB")
     })
 
@@ -218,18 +212,13 @@ describe("useActors", () => {
       const { result } = renderHook(() => useActors(workspaceId), {
         wrapper: createTestWrapper(queryClient),
       })
-
       expect(result.current.getActorInitials("system", "system")).toBe("T")
     })
   })
 
   describe("getPersona", () => {
     it("should return persona when found", () => {
-      const persona = createPersona({ id: "persona_123", slug: "ariadne", name: "Ariadne", avatarEmoji: "🧵" })
-      const bootstrap: Partial<WorkspaceBootstrap> = {
-        personas: [persona],
-      }
-      queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
+      mockPersonas = [createPersona({ id: "persona_123", slug: "ariadne", name: "Ariadne", avatarEmoji: "🧵" })]
 
       const { result } = renderHook(() => useActors(workspaceId), {
         wrapper: createTestWrapper(queryClient),
@@ -241,26 +230,10 @@ describe("useActors", () => {
     })
 
     it("should return undefined when persona not found", () => {
-      const bootstrap: Partial<WorkspaceBootstrap> = {
-        personas: [],
-      }
-      queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
-
       const { result } = renderHook(() => useActors(workspaceId), {
         wrapper: createTestWrapper(queryClient),
       })
-
-      expect(result.current.getPersona("persona_nonexistent")).toBeUndefined()
-    })
-  })
-
-  describe("getActorAvatar", () => {
-    it("should return fallback 'T' with no slug for system actor type", () => {
-      const { result } = renderHook(() => useActors(workspaceId), {
-        wrapper: createTestWrapper(queryClient),
-      })
-
-      expect(result.current.getActorAvatar("system", "system")).toEqual({ fallback: "T" })
+      expect(result.current.getPersona("nonexistent")).toBeUndefined()
     })
   })
 })

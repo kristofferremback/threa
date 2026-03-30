@@ -1,6 +1,9 @@
+import { useCallback } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { useWorkspaceService, useStreamService } from "@/contexts"
 import { workspaceKeys } from "./use-workspaces"
+import { useWorkspaceUnreadState } from "@/stores/workspace-store"
+import { db } from "@/db"
 import type { WorkspaceBootstrap } from "@threa/types"
 
 export function useUnreadCounts(workspaceId: string) {
@@ -8,17 +11,16 @@ export function useUnreadCounts(workspaceId: string) {
   const streamService = useStreamService()
   const workspaceService = useWorkspaceService()
 
-  // Get unread counts from the workspace bootstrap cache
-  const bootstrap = queryClient.getQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId))
-  const unreadCounts = bootstrap?.unreadCounts ?? {}
+  // Read from IDB via useLiveQuery — reactive and offline-capable
+  const unreadState = useWorkspaceUnreadState(workspaceId)
+  const unreadCounts = unreadState?.unreadCounts ?? {}
 
-  const getUnreadCount = (streamId: string): number => {
-    return unreadCounts[streamId] ?? 0
-  }
+  const getUnreadCount = useCallback((streamId: string): number => unreadCounts[streamId] ?? 0, [unreadCounts])
 
-  const getTotalUnreadCount = (): number => {
-    return Object.values(unreadCounts).reduce((sum, count) => sum + count, 0)
-  }
+  const getTotalUnreadCount = useCallback(
+    (): number => Object.values(unreadCounts).reduce((sum, count) => sum + count, 0),
+    [unreadCounts]
+  )
 
   const markAsReadMutation = useMutation({
     mutationFn: ({ streamId, lastEventId }: { streamId: string; lastEventId: string }) =>
@@ -27,27 +29,31 @@ export function useUnreadCounts(workspaceId: string) {
       const current = queryClient.getQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId))
       const hadActivity = (current?.activityCounts[streamId] ?? 0) > 0
 
-      // The backend marks ALL stream activity as read (mentions + message notifications)
-      // when a stream is read, so clear all activity counts for this stream.
+      // Update TanStack cache (bridge for unmigrated consumers)
       queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
         if (!old) return old
         const clearedActivity = old.activityCounts[streamId] ?? 0
         return {
           ...old,
-          unreadCounts: {
-            ...old.unreadCounts,
-            [streamId]: 0,
-          },
-          mentionCounts: {
-            ...old.mentionCounts,
-            [streamId]: 0,
-          },
-          activityCounts: {
-            ...old.activityCounts,
-            [streamId]: 0,
-          },
+          unreadCounts: { ...old.unreadCounts, [streamId]: 0 },
+          mentionCounts: { ...old.mentionCounts, [streamId]: 0 },
+          activityCounts: { ...old.activityCounts, [streamId]: 0 },
           unreadActivityCount: Math.max(0, (old.unreadActivityCount ?? 0) - clearedActivity),
         }
+      })
+
+      // Update IDB for immediate consistency with IDB-backed consumers
+      db.unreadState.get(workspaceId).then((state) => {
+        if (!state) return
+        const clearedActivity = state.activityCounts[streamId] ?? 0
+        db.unreadState.put({
+          ...state,
+          unreadCounts: { ...state.unreadCounts, [streamId]: 0 },
+          mentionCounts: { ...state.mentionCounts, [streamId]: 0 },
+          activityCounts: { ...state.activityCounts, [streamId]: 0 },
+          unreadActivityCount: Math.max(0, state.unreadActivityCount - clearedActivity),
+          _cachedAt: Date.now(),
+        })
       })
 
       if (hadActivity) {
@@ -59,49 +65,68 @@ export function useUnreadCounts(workspaceId: string) {
   const markAllAsReadMutation = useMutation({
     mutationFn: () => workspaceService.markAllAsRead(workspaceId),
     onSuccess: (updatedStreamIds) => {
-      // Update the workspace bootstrap cache to set unread count to 0 for all updated streams
+      // Update TanStack cache (bridge)
       queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
         if (!old) return old
         const newUnreadCounts = { ...old.unreadCounts }
         for (const streamId of updatedStreamIds) {
           newUnreadCounts[streamId] = 0
         }
-        return {
-          ...old,
-          unreadCounts: newUnreadCounts,
+        return { ...old, unreadCounts: newUnreadCounts }
+      })
+
+      // Update IDB
+      db.unreadState.get(workspaceId).then((state) => {
+        if (!state) return
+        const newUnreadCounts = { ...state.unreadCounts }
+        for (const streamId of updatedStreamIds) {
+          newUnreadCounts[streamId] = 0
         }
+        db.unreadState.put({ ...state, unreadCounts: newUnreadCounts, _cachedAt: Date.now() })
       })
     },
   })
 
-  const markAsRead = (streamId: string, lastEventId: string) => {
-    markAsReadMutation.mutate({ streamId, lastEventId })
-  }
+  const markAsRead = useCallback(
+    (streamId: string, lastEventId: string) => {
+      markAsReadMutation.mutate({ streamId, lastEventId })
+    },
+    [markAsReadMutation]
+  )
 
-  const markAllAsRead = () => {
+  const markAllAsRead = useCallback(() => {
     markAllAsReadMutation.mutate()
-  }
+  }, [markAllAsReadMutation])
 
-  /**
-   * Increment unread count for a stream.
-   *
-   * Note: This is wired up to real-time socket events via the `stream:activity`
-   * event in use-socket-events.ts. The backend broadcasts this workspace-scoped
-   * event when messages are created, and the frontend filters by stream membership
-   * and excludes the current user's own messages.
-   */
-  const incrementUnread = (streamId: string) => {
-    queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
-      if (!old) return old
-      return {
-        ...old,
-        unreadCounts: {
-          ...old.unreadCounts,
-          [streamId]: (old.unreadCounts[streamId] ?? 0) + 1,
-        },
-      }
-    })
-  }
+  const incrementUnread = useCallback(
+    (streamId: string) => {
+      // Update TanStack cache (bridge)
+      queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
+        if (!old) return old
+        return {
+          ...old,
+          unreadCounts: {
+            ...old.unreadCounts,
+            [streamId]: (old.unreadCounts[streamId] ?? 0) + 1,
+          },
+        }
+      })
+
+      // Update IDB
+      db.unreadState.get(workspaceId).then((state) => {
+        if (!state) return
+        db.unreadState.put({
+          ...state,
+          unreadCounts: {
+            ...state.unreadCounts,
+            [streamId]: (state.unreadCounts[streamId] ?? 0) + 1,
+          },
+          _cachedAt: Date.now(),
+        })
+      })
+    },
+    [queryClient, workspaceId]
+  )
 
   return {
     unreadCounts,

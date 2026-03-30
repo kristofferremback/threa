@@ -7,6 +7,7 @@ import { getQueryLoadState, isTerminalBootstrapError } from "@/lib/query-load-st
 import { db } from "@/db"
 import { joinRoomBestEffort } from "@/lib/socket-room"
 import { applyWorkspaceBootstrap } from "@/sync/workspace-sync"
+import { useWorkspaceUsers } from "@/stores/workspace-store"
 import type { WorkspaceBootstrap, User } from "@threa/types"
 import type { WorkspaceListResult } from "@/api/workspaces"
 
@@ -226,21 +227,15 @@ export function useUploadAvatar(workspaceId: string) {
 /** Returns the workspace-scoped user ID for the current WorkOS user, or null if not found. */
 export function useWorkspaceUserId(workspaceId: string): string | null {
   const user = useUser()
-  const { data: wsBootstrap } = useWorkspaceBootstrap(workspaceId)
-  return useMemo(
-    () => wsBootstrap?.users?.find((u) => u.workosUserId === user?.id)?.id ?? null,
-    [wsBootstrap?.users, user?.id]
-  )
+  const users = useWorkspaceUsers(workspaceId)
+  return useMemo(() => users.find((u) => u.workosUserId === user?.id)?.id ?? null, [users, user?.id])
 }
 
 /** Returns the full workspace-scoped User for the current WorkOS user, or null if not found. */
 export function useCurrentWorkspaceUser(workspaceId: string): User | null {
   const user = useUser()
-  const { data: wsBootstrap } = useWorkspaceBootstrap(workspaceId)
-  return useMemo(
-    () => wsBootstrap?.users?.find((u) => u.workosUserId === user?.id) ?? null,
-    [wsBootstrap?.users, user?.id]
-  )
+  const users = useWorkspaceUsers(workspaceId)
+  return useMemo(() => (users.find((u) => u.workosUserId === user?.id) as User | undefined) ?? null, [users, user?.id])
 }
 
 export function useRemoveAvatar(workspaceId: string) {

@@ -1,9 +1,8 @@
 import { useCallback, useMemo } from "react"
-import { useQueryClient } from "@tanstack/react-query"
 import { getAvatarUrl, getBotAvatarUrl } from "@threa/types"
-import { workspaceKeys } from "./use-workspaces"
 import { useWorkspaceEmoji } from "./use-workspace-emoji"
-import type { Persona, Bot, WorkspaceBootstrap, User, AuthorType } from "@threa/types"
+import { useWorkspaceUsers, useWorkspacePersonas, useWorkspaceBots } from "@/stores/workspace-store"
+import type { Persona, Bot, User, AuthorType } from "@threa/types"
 
 interface ActorAvatarInfo {
   fallback: string
@@ -22,131 +21,76 @@ interface ActorLookup {
 }
 
 /**
- * Resolve display name for a user ID.
- * Uses the workspace-scoped name stored on the user record.
- */
-function resolveUserName(userId: string, users: User[] | undefined): string | undefined {
-  const workspaceUser = users?.find((u) => u.id === userId)
-  return workspaceUser?.name || undefined
-}
-
-/**
  * Hook to look up actor names from cached workspace data.
- * Uses React Query cache for synchronous lookups.
+ * Reads from IndexedDB via useLiveQuery — reactive and offline-capable.
  */
 export function useActors(workspaceId: string): ActorLookup {
-  const queryClient = useQueryClient()
   const { toEmoji } = useWorkspaceEmoji(workspaceId)
 
-  const getBootstrapData = useCallback(() => {
-    return queryClient.getQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId))
-  }, [queryClient, workspaceId])
+  // Reactive data from IDB — updates automatically when IDB changes
+  const users = useWorkspaceUsers(workspaceId)
+  const personas = useWorkspacePersonas(workspaceId)
+  const bots = useWorkspaceBots(workspaceId)
 
-  const getUser = useCallback(
-    (userId: string): User | undefined => {
-      const bootstrap = getBootstrapData()
-      const users = bootstrap?.users ?? []
-      return users.find((u) => u.id === userId)
-    },
-    [getBootstrapData]
-  )
+  // Build lookup maps for O(1) access in callbacks
+  const userMap = useMemo(() => new Map(users.map((u) => [u.id, u])), [users])
+  const personaMap = useMemo(() => new Map(personas.map((p) => [p.id, p])), [personas])
+  const botMap = useMemo(() => new Map(bots.map((b) => [b.id, b])), [bots])
+
+  const getUser = useCallback((userId: string): User | undefined => userMap.get(userId) as User | undefined, [userMap])
 
   const getPersona = useCallback(
-    (personaId: string): Persona | undefined => {
-      const bootstrap = getBootstrapData()
-      return bootstrap?.personas?.find((p) => p.id === personaId)
-    },
-    [getBootstrapData]
+    (personaId: string): Persona | undefined => personaMap.get(personaId) as Persona | undefined,
+    [personaMap]
   )
 
-  const getBot = useCallback(
-    (botId: string): Bot | undefined => {
-      const bootstrap = getBootstrapData()
-      return bootstrap?.bots?.find((b) => b.id === botId)
-    },
-    [getBootstrapData]
-  )
+  const getBot = useCallback((botId: string): Bot | undefined => botMap.get(botId) as Bot | undefined, [botMap])
 
   const getActorName = useCallback(
     (actorId: string | null, actorType: AuthorType | null): string => {
       if (!actorId) return "Unknown"
-
       if (actorType === "system") return "Threa"
 
       if (actorType === "persona") {
-        const persona = getPersona(actorId)
-        return persona?.name ?? "AI Companion"
+        return personaMap.get(actorId)?.name ?? "AI Companion"
       }
 
       if (actorType === "bot") {
-        const bot = getBot(actorId)
-        return bot?.name ?? "Bot"
+        return botMap.get(actorId)?.name ?? "Bot"
       }
 
       // actorType === "user" — resolve workspace-scoped name
-      const bootstrap = getBootstrapData()
-      const users = bootstrap?.users
-      const name = resolveUserName(actorId, users)
-      return name ?? actorId.substring(0, 8)
+      return userMap.get(actorId)?.name || actorId.substring(0, 8)
     },
-    [getBootstrapData, getPersona, getBot]
+    [userMap, personaMap, botMap]
   )
 
   const getActorInitials = useCallback(
     (actorId: string | null, actorType: AuthorType | null): string => {
       if (!actorId) return "?"
-
       if (actorType === "system") return "T"
 
       if (actorType === "persona") {
-        const persona = getPersona(actorId)
+        const persona = personaMap.get(actorId)
         if (persona?.avatarEmoji) {
           const emoji = toEmoji(persona.avatarEmoji)
           if (emoji) return emoji
         }
-        if (persona?.name) {
-          const words = persona.name.split(" ")
-          return words
-            .slice(0, 2)
-            .map((w) => w[0])
-            .join("")
-            .toUpperCase()
-        }
-        return "AI"
+        return initialsFrom(persona?.name) ?? "AI"
       }
 
       if (actorType === "bot") {
-        const bot = getBot(actorId)
+        const bot = botMap.get(actorId)
         if (bot?.avatarEmoji) {
           const emoji = toEmoji(bot.avatarEmoji)
           if (emoji) return emoji
         }
-        if (bot?.name) {
-          const words = bot.name.split(" ")
-          return words
-            .slice(0, 2)
-            .map((w) => w[0])
-            .join("")
-            .toUpperCase()
-        }
-        return "B"
+        return initialsFrom(bot?.name) ?? "B"
       }
 
-      const bootstrap = getBootstrapData()
-      const users = bootstrap?.users
-      const name = resolveUserName(actorId, users)
-      if (name) {
-        const words = name.split(" ")
-        return words
-          .slice(0, 2)
-          .map((w) => w[0])
-          .join("")
-          .toUpperCase()
-      }
-
-      return actorId.substring(0, 2).toUpperCase()
+      return initialsFrom(userMap.get(actorId)?.name) ?? actorId.substring(0, 2).toUpperCase()
     },
-    [getBootstrapData, getPersona, getBot, toEmoji]
+    [userMap, personaMap, botMap, toEmoji]
   )
 
   const getActorAvatar = useCallback(
@@ -156,7 +100,7 @@ export function useActors(workspaceId: string): ActorLookup {
       if (actorType === "system") return { fallback }
 
       if (actorType === "persona" && actorId) {
-        const persona = getPersona(actorId)
+        const persona = personaMap.get(actorId)
         return { fallback, slug: persona?.slug }
       }
 
@@ -168,14 +112,14 @@ export function useActors(workspaceId: string): ActorLookup {
       }
 
       if (actorId) {
-        const workspaceUser = getUser(actorId)
+        const workspaceUser = userMap.get(actorId)
         const avatarUrl = getAvatarUrl(workspaceId, workspaceUser?.avatarUrl, 64)
         if (avatarUrl) return { fallback, avatarUrl }
       }
 
       return { fallback }
     },
-    [getActorInitials, getPersona, getBot, getUser, workspaceId]
+    [getActorInitials, getBot, userMap, workspaceId]
   )
 
   return useMemo(
@@ -189,4 +133,14 @@ export function useActors(workspaceId: string): ActorLookup {
     }),
     [getActorName, getActorInitials, getActorAvatar, getUser, getPersona, getBot]
   )
+}
+
+function initialsFrom(name: string | null | undefined): string | undefined {
+  if (!name) return undefined
+  const words = name.split(" ")
+  return words
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase()
 }
