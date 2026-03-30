@@ -209,6 +209,7 @@ function MessageLayout({
               {actorName}
             </span>
           )}
+          {isBot && <span className="text-[10px] text-emerald-600/70 font-medium cursor-default">BOT</span>}
           {payload.sentVia && isSentViaApi(payload.sentVia) && (
             <Tooltip>
               <TooltipTrigger asChild>
