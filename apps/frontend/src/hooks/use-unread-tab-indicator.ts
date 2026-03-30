@@ -77,7 +77,11 @@ export function useUnreadTabIndicator(workspaceId: string) {
       const nowDark = isDarkMode()
       if (nowDark === lastDark) return
       lastDark = nowDark
-      prevCountRef.current = -1 // force update
+      prevCountRef.current = -1
+      // Immediately update favicon for the new theme at the current unread count
+      const baseSvg = nowDark ? DARK_FAVICON_SVG : LIGHT_FAVICON_SVG
+      const svg = totalUnread > 0 ? addNotificationDot(baseSvg) : baseSvg
+      setFavicon(svgToDataUri(svg))
     })
     themeObserver.observe(document.documentElement, { attributeFilter: ["class"] })
     return () => {
@@ -86,5 +90,5 @@ export function useUnreadTabIndicator(workspaceId: string) {
       const dark = isDarkMode()
       setFavicon(svgToDataUri(dark ? DARK_FAVICON_SVG : LIGHT_FAVICON_SVG))
     }
-  }, [workspaceId])
+  }, [workspaceId, totalUnread])
 }

@@ -433,10 +433,11 @@ export function registerWorkspaceSocketHandlers(
     })
 
     // Update IDB unread state
-    db.unreadState.get(workspaceId).then((state) => {
+    db.transaction("rw", [db.unreadState], async () => {
+      const state = await db.unreadState.get(workspaceId)
       if (!state) return
       const clearedActivity = state.activityCounts[payload.streamId] ?? 0
-      db.unreadState.put({
+      await db.unreadState.put({
         ...state,
         unreadCounts: { ...state.unreadCounts, [payload.streamId]: 0 },
         mentionCounts: { ...state.mentionCounts, [payload.streamId]: 0 },
@@ -484,7 +485,8 @@ export function registerWorkspaceSocketHandlers(
     })
 
     // Update IDB unread state
-    db.unreadState.get(workspaceId).then((state) => {
+    db.transaction("rw", [db.unreadState], async () => {
+      const state = await db.unreadState.get(workspaceId)
       if (!state) return
       const updated = { ...state, _cachedAt: Date.now() }
       const newUnread = { ...state.unreadCounts }
@@ -578,15 +580,17 @@ export function registerWorkspaceSocketHandlers(
           : null
         if (currentMember && payload.authorId === currentMember.id) return
 
-        const state = await db.unreadState.get(workspaceId)
-        if (!state) return
-        await db.unreadState.put({
-          ...state,
-          unreadCounts: {
-            ...state.unreadCounts,
-            [payload.streamId]: (state.unreadCounts[payload.streamId] ?? 0) + 1,
-          },
-          _cachedAt: Date.now(),
+        await db.transaction("rw", [db.unreadState], async () => {
+          const state = await db.unreadState.get(workspaceId)
+          if (!state) return
+          await db.unreadState.put({
+            ...state,
+            unreadCounts: {
+              ...state.unreadCounts,
+              [payload.streamId]: (state.unreadCounts[payload.streamId] ?? 0) + 1,
+            },
+            _cachedAt: Date.now(),
+          })
         })
       })()
     }
@@ -821,9 +825,10 @@ export function registerWorkspaceSocketHandlers(
     }))
 
     // Update IDB unread state
-    db.unreadState.get(workspaceId).then((state) => {
+    db.transaction("rw", [db.unreadState], async () => {
+      const state = await db.unreadState.get(workspaceId)
       if (!state) return
-      db.unreadState.put({
+      await db.unreadState.put({
         ...state,
         mentionCounts:
           activityType === "mention"
