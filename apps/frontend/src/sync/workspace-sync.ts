@@ -1,4 +1,5 @@
 import { db } from "@/db"
+import { seedWorkspaceCache } from "@/stores/workspace-store"
 import type { Socket } from "socket.io-client"
 import type { QueryClient } from "@tanstack/react-query"
 import { joinRoomFireAndForget } from "@/lib/socket-room"
@@ -1016,6 +1017,35 @@ export async function applyWorkspaceBootstrap(
   if (fetchStartedAt !== undefined) {
     await cleanupStaleEntities(workspaceId, bootstrap, fetchStartedAt)
   }
+
+  // Populate in-memory cache so useLiveQuery hooks return real data on first
+  // synchronous render (the default value). Without this, every component sees
+  // empty arrays for one render cycle until the async IDB read resolves.
+  seedWorkspaceCache(workspaceId, {
+    workspace: { ...bootstrap.workspace, _cachedAt: now },
+    users: bootstrap.users.map((u) => ({ ...u, _cachedAt: now })),
+    streams: bootstrap.streams.map((s) => ({
+      ...s,
+      pinned: membershipByStream.get(s.id)?.pinned,
+      notificationLevel: membershipByStream.get(s.id)?.notificationLevel,
+      lastReadEventId: membershipByStream.get(s.id)?.lastReadEventId,
+      _cachedAt: now,
+    })),
+    memberships: bootstrap.streamMemberships.map((sm) => ({
+      ...sm,
+      id: `${workspaceId}:${sm.streamId}`,
+      workspaceId,
+      _cachedAt: now,
+    })),
+    dmPeers: bootstrap.dmPeers.map((dp) => ({
+      ...dp,
+      id: `${workspaceId}:${dp.streamId}`,
+      workspaceId,
+      _cachedAt: now,
+    })),
+    personas: bootstrap.personas.map((p) => ({ ...p, _cachedAt: now })),
+    bots: bootstrap.bots.map((b) => ({ ...b, _cachedAt: now })),
+  })
 }
 
 async function cleanupStaleEntities(workspaceId: string, bootstrap: WorkspaceBootstrap, now: number): Promise<void> {

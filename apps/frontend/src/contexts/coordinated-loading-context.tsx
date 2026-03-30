@@ -68,14 +68,13 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
   const hideIndicatorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const workspaceSyncStatus = useSyncStatus(`workspace:${workspaceId}`)
-  // Wait for workspace bootstrap to complete — users, bots, stream names,
-  // memberships all need to be fresh before rendering to prevent layout shifts.
-  // Offline rendering from stale IDB is a Phase 5 concern (graceful degradation).
+  // Wait for workspace + stream bootstraps to complete.
+  // The in-memory cache in workspace-store.ts ensures components see real data
+  // on their first synchronous render after the gate opens (no useLiveQuery flash).
   const workspaceLoading = workspaceSyncStatus === "idle" || workspaceSyncStatus === "syncing"
   const { loadState: streamsLoadState, results } = useCoordinatedStreamQueries(workspaceId, streamIds)
   const streamsLoading = isQueryLoadStateLoading(streamsLoadState)
 
-  // Avatar preload still uses IDB for the URL list (populated by bootstrap)
   const idbUsers = useWorkspaceUsers(workspaceId)
   const avatarUrls = useMemo(() => {
     return idbUsers

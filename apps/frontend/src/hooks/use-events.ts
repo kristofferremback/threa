@@ -175,11 +175,12 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
     return idbEvents as unknown as StreamEvent[]
   }, [idbEvents, olderData, newerData, jumpState, bootstrapFloor])
 
-  // Show loading only when bootstrap is loading AND IDB has no cached events.
-  // If IDB has events from a previous session, render them immediately —
-  // the bootstrap will update them in the background. This enables offline
-  // cold start: cached messages render instantly without waiting for network.
-  const isLoading = isBootstrapLoading && idbEvents.length === 0
+  // Show loading until bootstrap completes AND useLiveQuery has resolved
+  // the IDB events. Without the idbEvents check, components see empty data
+  // for one render cycle after bootstrap completes (useLiveQuery is async).
+  const bootstrapHasEvents = (bootstrap?.events?.length ?? 0) > 0
+  const idbResolved = !bootstrapHasEvents || idbEvents.length > 0
+  const isLoading = isBootstrapLoading || !idbResolved
 
   // Determine if older events exist.
   const hasOlderEvents = useMemo(() => {
