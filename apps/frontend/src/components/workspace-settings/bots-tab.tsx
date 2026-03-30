@@ -146,11 +146,14 @@ function BotList({ workspaceId, onSelectBot }: { workspaceId: string; onSelectBo
     <div className="space-y-4 p-1">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">
-          Bots are integration identities that send messages via API keys.
-        </p>
+        <div>
+          <h3 className="text-sm font-medium">Bots ({bots.length})</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Integration identities that send messages via API keys.
+          </p>
+        </div>
         {!showCreateForm && (
-          <Button variant="outline" size="sm" className="shrink-0 ml-4" onClick={() => setShowCreateForm(true)}>
+          <Button size="sm" className="shrink-0 ml-4" onClick={() => setShowCreateForm(true)}>
             <Plus className="h-3.5 w-3.5 mr-1.5" />
             New bot
           </Button>
@@ -246,7 +249,7 @@ function BotList({ workspaceId, onSelectBot }: { workspaceId: string; onSelectBo
           {bots.map((bot) => (
             <button
               key={bot.id}
-              className="w-full flex items-center gap-3 px-3 py-3 hover:bg-accent/50 transition-colors text-left cursor-pointer"
+              className="w-full flex items-center gap-3 px-3 py-3 hover:bg-accent/50 transition-colors text-left"
               onClick={() => onSelectBot(bot.id)}
             >
               <BotAvatar bot={bot} workspaceId={workspaceId} size={36} />
@@ -567,8 +570,11 @@ function BotDetail({ workspaceId, botId, onBack }: { workspaceId: string; botId:
             )}
           </div>
         ) : (
-          <div className="rounded-lg border p-3 space-y-1">
-            <p className="text-sm">{bot.name}</p>
+          <div className="rounded-md border px-3 py-2.5 space-y-1.5">
+            <div className="flex items-baseline gap-2">
+              <p className="text-sm font-medium">{bot.name}</p>
+              {bot.slug && <span className="text-xs text-muted-foreground font-mono">@{bot.slug}</span>}
+            </div>
             {bot.description && <p className="text-xs text-muted-foreground">{bot.description}</p>}
             {!bot.description && <p className="text-xs text-muted-foreground italic">No description</p>}
           </div>
