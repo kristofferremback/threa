@@ -96,14 +96,13 @@ export class SyncEngine {
     await this.bootstrapWorkspace(isReconnect)
 
     // Process pending offline operations (edits, deletes, reactions)
-    void processOperationQueue(
-      this.deps.messageService as {
-        update: (wid: string, mid: string, data: unknown) => Promise<unknown>
-        delete: (wid: string, mid: string) => Promise<void>
-      },
-      this.deps.reactionService ?? { add: async () => {}, remove: async () => {} },
-      () => this.socket !== null
-    )
+    if (this.deps.messageService) {
+      void processOperationQueue(
+        this.deps.messageService,
+        this.deps.reactionService ?? { add: async () => {}, remove: async () => {} },
+        () => this.socket !== null
+      )
+    }
   }
 
   /**

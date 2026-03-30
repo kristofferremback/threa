@@ -398,6 +398,7 @@ export async function clearAllCachedData(): Promise<void> {
     db.unreadState.clear(),
     db.userPreferences.clear(),
     db.workspaceMetadata.clear(),
+    db.pendingOperations.clear(),
     // Note: we keep pendingMessages to retry sending after re-login
   ])
 }
