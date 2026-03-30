@@ -165,9 +165,12 @@ export async function seedCacheFromIndexedDB(): Promise<void> {
       bots: bots.map((b: CachedBot) => ({
         id: b.id,
         workspaceId: b.workspaceId,
+        slug: b.slug ?? null,
         name: b.name,
         description: b.description,
         avatarEmoji: b.avatarEmoji,
+        avatarUrl: b.avatarUrl ?? null,
+        archivedAt: b.archivedAt ?? null,
         createdAt: b.createdAt,
         updatedAt: b.updatedAt,
       })),

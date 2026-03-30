@@ -26,6 +26,7 @@ import { createAuthStubHandlers } from "./auth/auth-stub-handlers"
 import { createAgentSessionHandlers } from "./features/agents"
 import { createLinkPreviewHandlers } from "./features/link-previews"
 import { createPublicApiHandlers } from "./features/public-api"
+import { createBotHandlers } from "./features/public-api/bot-handlers"
 import { createUserApiKeyHandlers, type UserApiKeyService } from "./features/user-api-keys"
 import {
   createInternalAuthMiddleware,
@@ -52,6 +53,7 @@ import type { AvatarService } from "./features/workspaces"
 import type { ApiKeyChannelService } from "./features/api-keys"
 import type { LinkPreviewService } from "./features/link-previews"
 import type { WorkosOrgService } from "@threa/backend-common"
+import type { BotApiKeyService } from "./features/public-api/bot-api-key-service"
 import type { Pool } from "pg"
 import type { PoolMonitor } from "./lib/observability"
 
@@ -80,6 +82,7 @@ interface Dependencies {
   linkPreviewService: LinkPreviewService
   workosOrgService: WorkosOrgService
   userApiKeyService: UserApiKeyService
+  botApiKeyService: BotApiKeyService
 }
 
 export function registerRoutes(app: Express, deps: Dependencies) {
@@ -108,6 +111,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     linkPreviewService,
     workosOrgService,
     userApiKeyService,
+    botApiKeyService,
   } = deps
 
   const auth = createAuthMiddleware({ authService })
@@ -326,8 +330,25 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.post("/api/workspaces/:workspaceId/user-api-keys", ...authed, userApiKeys.create)
   app.post("/api/workspaces/:workspaceId/user-api-keys/:keyId/revoke", ...authed, userApiKeys.revoke)
 
+  // Bot management (admin-only)
+  const botHandlers = createBotHandlers({ botApiKeyService, pool })
+  app.get("/api/workspaces/:workspaceId/bots", ...authed, botHandlers.list)
+  app.post("/api/workspaces/:workspaceId/bots", ...authed, requireRole("admin"), botHandlers.create)
+  app.get("/api/workspaces/:workspaceId/bots/:botId", ...authed, botHandlers.get)
+  app.patch("/api/workspaces/:workspaceId/bots/:botId", ...authed, requireRole("admin"), botHandlers.update)
+  app.post("/api/workspaces/:workspaceId/bots/:botId/archive", ...authed, requireRole("admin"), botHandlers.archive)
+  app.post("/api/workspaces/:workspaceId/bots/:botId/restore", ...authed, requireRole("admin"), botHandlers.restore)
+  app.get("/api/workspaces/:workspaceId/bots/:botId/keys", ...authed, requireRole("admin"), botHandlers.listKeys)
+  app.post("/api/workspaces/:workspaceId/bots/:botId/keys", ...authed, requireRole("admin"), botHandlers.createKey)
+  app.post(
+    "/api/workspaces/:workspaceId/bots/:botId/keys/:keyId/revoke",
+    ...authed,
+    requireRole("admin"),
+    botHandlers.revokeKey
+  )
+
   // Public API v1 — API key auth (workspace-scoped or user-scoped)
-  const publicAuth = createPublicApiAuthMiddleware({ apiKeyService, userApiKeyService, pool })
+  const publicAuth = createPublicApiAuthMiddleware({ apiKeyService, userApiKeyService, botApiKeyService, pool })
   const publicApi = createPublicApiHandlers({ searchService, apiKeyChannelService, streamService, eventService, pool })
   const publicMiddleware = [rateLimits.publicApiWorkspace, rateLimits.publicApiKey, publicAuth] as const
 

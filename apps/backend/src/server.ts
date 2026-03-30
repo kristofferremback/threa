@@ -11,6 +11,7 @@ import { runMigrations } from "./db/migrations"
 import { WorkosAuthService, StubAuthService, WorkosApiKeyService, StubApiKeyService } from "@threa/backend-common"
 import { ApiKeyChannelService } from "./features/api-keys"
 import { UserApiKeyService as UserApiKeyServiceImpl } from "./features/user-api-keys"
+import { BotApiKeyService } from "./features/public-api/bot-api-key-service"
 import { LinkPreviewService, LinkPreviewOutboxHandler, createLinkPreviewWorker } from "./features/link-previews"
 import {
   WorkspaceService,
@@ -341,6 +342,9 @@ export async function startServer(): Promise<ServerInstance> {
   // User-scoped API key service — managed by Threa (not WorkOS)
   const userApiKeyService = new UserApiKeyServiceImpl(pool)
 
+  // Bot API key service — self-managed keys for bot integrations
+  const botApiKeyService = new BotApiKeyService(pool)
+
   // Link preview service — created early for route registration
   const linkPreviewService = new LinkPreviewService({ pool, streamService })
 
@@ -372,6 +376,7 @@ export async function startServer(): Promise<ServerInstance> {
     linkPreviewService,
     workosOrgService,
     userApiKeyService,
+    botApiKeyService,
   })
 
   app.use(errorHandler)

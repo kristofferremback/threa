@@ -365,6 +365,9 @@ export {
   type ApiKeyPermission,
   type UserApiKey,
   type CreateUserApiKeyResponse,
+  BOT_KEY_PREFIX,
+  type BotApiKey,
+  type CreateBotApiKeyResponse,
 } from "./api-keys"
 
 // Agent trace types

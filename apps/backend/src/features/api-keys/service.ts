@@ -39,4 +39,19 @@ export class ApiKeyChannelService {
     )
     return result.rows[0].accessible
   }
+
+  async getPublicStreamIds(workspaceId: string): Promise<string[]> {
+    return SearchRepository.getPublicStreams(this.pool, workspaceId)
+  }
+
+  async isStreamPublic(workspaceId: string, streamId: string): Promise<boolean> {
+    const result = await this.pool.query(
+      sql`SELECT EXISTS(
+        SELECT 1 FROM streams
+        WHERE id = ${streamId} AND workspace_id = ${workspaceId} AND archived_at IS NULL
+          AND visibility = 'public'
+      ) AS accessible`
+    )
+    return result.rows[0].accessible
+  }
 }

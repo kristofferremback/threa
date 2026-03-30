@@ -59,6 +59,7 @@ describe("createPublicApiAuthMiddleware", () => {
     const middleware = createPublicApiAuthMiddleware({
       apiKeyService,
       userApiKeyService: { validateKey: async () => null } as any,
+      botApiKeyService: { validateKey: async () => null } as any,
       pool: createPoolStub(ORG_ID),
     })
 
@@ -74,6 +75,7 @@ describe("createPublicApiAuthMiddleware", () => {
     const middleware = createPublicApiAuthMiddleware({
       apiKeyService,
       userApiKeyService: { validateKey: async () => null } as any,
+      botApiKeyService: { validateKey: async () => null } as any,
       pool: createPoolStub(ORG_ID),
     })
 
@@ -92,6 +94,7 @@ describe("createPublicApiAuthMiddleware", () => {
     const middleware = createPublicApiAuthMiddleware({
       apiKeyService,
       userApiKeyService: { validateKey: async () => null } as any,
+      botApiKeyService: { validateKey: async () => null } as any,
       pool: createPoolStub(ORG_ID),
     })
 
@@ -117,6 +120,7 @@ describe("createPublicApiAuthMiddleware", () => {
     const middleware = createPublicApiAuthMiddleware({
       apiKeyService,
       userApiKeyService: { validateKey: async () => null } as any,
+      botApiKeyService: { validateKey: async () => null } as any,
       pool: createPoolStub(ORG_ID),
     })
 
@@ -142,6 +146,7 @@ describe("createPublicApiAuthMiddleware", () => {
     const middleware = createPublicApiAuthMiddleware({
       apiKeyService,
       userApiKeyService: { validateKey: async () => null } as any,
+      botApiKeyService: { validateKey: async () => null } as any,
       pool: createPoolStub(ORG_ID),
     })
 

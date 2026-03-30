@@ -209,9 +209,12 @@ export interface Persona {
 export interface Bot {
   id: string
   workspaceId: string
+  slug: string | null
   name: string
   description: string | null
   avatarEmoji: string | null
+  avatarUrl: string | null
+  archivedAt: string | null
   createdAt: string
   updatedAt: string
 }

@@ -2,8 +2,10 @@ import type { NextFunction, Request, Response } from "express"
 import type { Pool } from "pg"
 import { HttpError, type ApiKeyService } from "@threa/backend-common"
 import type { ApiKeyScope } from "@threa/types"
+import { BOT_KEY_PREFIX } from "@threa/types"
 import { WorkspaceRepository, UserRepository } from "../features/workspaces"
 import type { UserApiKeyService, ValidatedUserApiKey } from "../features/user-api-keys"
+import type { BotApiKeyService, ValidatedBotApiKey } from "../features/public-api/bot-api-key-service"
 
 declare global {
   namespace Express {
@@ -12,6 +14,8 @@ declare global {
       apiKey?: { id: string; name: string; permissions: Set<string> }
       /** Set when authenticated via a user-scoped API key */
       userApiKey?: ValidatedUserApiKey
+      /** Set when authenticated via a bot API key */
+      botApiKey?: ValidatedBotApiKey
     }
   }
 }
@@ -19,10 +23,16 @@ declare global {
 interface PublicApiAuthDeps {
   apiKeyService: ApiKeyService
   userApiKeyService: UserApiKeyService
+  botApiKeyService: BotApiKeyService
   pool: Pool
 }
 
-export function createPublicApiAuthMiddleware({ apiKeyService, userApiKeyService, pool }: PublicApiAuthDeps) {
+export function createPublicApiAuthMiddleware({
+  apiKeyService,
+  userApiKeyService,
+  botApiKeyService,
+  pool,
+}: PublicApiAuthDeps) {
   return async function publicApiAuth(req: Request, _res: Response, next: NextFunction): Promise<void> {
     const authHeader = req.headers.authorization
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -53,13 +63,31 @@ export function createPublicApiAuthMiddleware({ apiKeyService, userApiKeyService
       // Resolve workspace user for stream access checks
       const user = await UserRepository.findById(pool, workspaceId, validated.userId)
       if (!user) {
-        // Generic message — don't leak whether the workspace exists or the user was removed
         next(new HttpError("API key does not have access to this workspace", { status: 403, code: "FORBIDDEN" }))
         return
       }
 
       req.userApiKey = validated
       req.user = user
+      req.workspaceId = workspaceId
+      next()
+      return
+    }
+
+    // Try bot-scoped key (fast prefix check)
+    if (token.startsWith(BOT_KEY_PREFIX)) {
+      const validated = await botApiKeyService.validateKey(token)
+      if (!validated) {
+        next(new HttpError("Invalid API key", { status: 401, code: "UNAUTHORIZED" }))
+        return
+      }
+
+      if (validated.workspaceId !== workspaceId) {
+        next(new HttpError("API key does not have access to this workspace", { status: 403, code: "FORBIDDEN" }))
+        return
+      }
+
+      req.botApiKey = validated
       req.workspaceId = workspaceId
       next()
       return
@@ -107,7 +135,19 @@ export function requireApiKeyScope(...scopes: ApiKeyScope[]) {
       return
     }
 
-    // Workspace-scoped keys
+    // Bot-scoped keys: check scopes from the key
+    if (req.botApiKey) {
+      for (const scope of scopes) {
+        if (!req.botApiKey.scopes.has(scope)) {
+          next(new HttpError(`Missing required permission: ${scope}`, { status: 403, code: "FORBIDDEN" }))
+          return
+        }
+      }
+      next()
+      return
+    }
+
+    // Workspace-scoped keys (WorkOS)
     const apiKey = req.apiKey
     if (!apiKey) {
       next(new HttpError("No API key context", { status: 401, code: "UNAUTHORIZED" }))
