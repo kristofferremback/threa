@@ -9,6 +9,7 @@ import type { AvatarService } from "../workspaces"
 import type { BotApiKeyService } from "./bot-api-key-service"
 import { serializeBot } from "./handlers"
 import { botId, botChannelAccessId } from "../../lib/id"
+import { generateSlug } from "@threa/backend-common"
 import { withTransaction } from "../../db"
 import { OutboxRepository } from "../../lib/outbox"
 import { HttpError } from "@threa/backend-common"
@@ -19,23 +20,14 @@ const ALL_SCOPES = Object.values(API_KEY_SCOPES)
 
 const createBotSchema = z.object({
   name: z.string().min(1).max(100),
-  slug: z
-    .string()
-    .min(1)
-    .max(50)
-    .regex(/^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/, "Slug must be lowercase alphanumeric with optional hyphens"),
+  slug: z.string().min(1).max(50),
   description: z.string().max(500).nullable().optional(),
   avatarEmoji: z.string().nullable().optional(),
 })
 
 const updateBotSchema = z.object({
   name: z.string().min(1).max(100).optional(),
-  slug: z
-    .string()
-    .min(1)
-    .max(50)
-    .regex(/^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/, "Slug must be lowercase alphanumeric with optional hyphens")
-    .optional(),
+  slug: z.string().min(1).max(50).optional(),
   description: z.string().max(500).nullable().optional(),
   avatarEmoji: z.string().nullable().optional(),
 })
@@ -87,7 +79,8 @@ export function createBotHandlers({ botApiKeyService, avatarService, pool }: Bot
         })
       }
 
-      const { name, slug, description, avatarEmoji } = result.data
+      const { name, description, avatarEmoji } = result.data
+      const slug = generateSlug(result.data.slug)
 
       let bot
       try {
@@ -131,10 +124,15 @@ export function createBotHandlers({ botApiKeyService, avatarService, pool }: Bot
         })
       }
 
+      const fields = { ...result.data }
+      if (fields.slug) {
+        fields.slug = generateSlug(fields.slug)
+      }
+
       let bot
       try {
         bot = await withTransaction(pool, async (client) => {
-          const updated = await BotRepository.update(client, id, workspaceId, result.data)
+          const updated = await BotRepository.update(client, id, workspaceId, fields)
           if (!updated) {
             throw new HttpError("Bot not found", { status: 404, code: "NOT_FOUND" })
           }
@@ -147,8 +145,8 @@ export function createBotHandlers({ botApiKeyService, avatarService, pool }: Bot
           return updated
         })
       } catch (error) {
-        if (result.data.slug && isUniqueViolation(error, "idx_bots_workspace_slug")) {
-          throw new HttpError(`A bot with slug "${result.data.slug}" already exists`, {
+        if (fields.slug && isUniqueViolation(error, "idx_bots_workspace_slug")) {
+          throw new HttpError(`A bot with slug "${fields.slug}" already exists`, {
             status: 409,
             code: "DUPLICATE_SLUG",
           })
