@@ -60,7 +60,7 @@ describe("PendingMessagesContext", () => {
         await result.current.retryMessage("temp_retry")
       })
 
-      expect(mockUpdate).toHaveBeenCalledWith("temp_retry", { retryCount: 0 })
+      expect(mockUpdate).toHaveBeenCalledWith("temp_retry", { retryCount: 0, retryAfter: 0 })
       expect(mockEventsUpdate).toHaveBeenCalledWith("temp_retry", { _status: "pending" })
       expect(result.current.getStatus("temp_retry")).toBe("pending")
     })

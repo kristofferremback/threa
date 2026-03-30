@@ -474,6 +474,20 @@ export function useSocketEvents(workspaceId: string) {
         }
       })
 
+      // Update IDB unread state
+      db.unreadState.get(workspaceId).then((state) => {
+        if (!state) return
+        const clearedActivity = state.activityCounts[payload.streamId] ?? 0
+        db.unreadState.put({
+          ...state,
+          unreadCounts: { ...state.unreadCounts, [payload.streamId]: 0 },
+          mentionCounts: { ...state.mentionCounts, [payload.streamId]: 0 },
+          activityCounts: { ...state.activityCounts, [payload.streamId]: 0 },
+          unreadActivityCount: Math.max(0, state.unreadActivityCount - clearedActivity),
+          _cachedAt: Date.now(),
+        })
+      })
+
       if (hadActivity) {
         queryClient.invalidateQueries({ queryKey: ["activity", workspaceId] })
       }
@@ -509,6 +523,27 @@ export function useSocketEvents(workspaceId: string) {
           activityCounts: newActivityCounts,
           unreadActivityCount: Math.max(0, (old.unreadActivityCount ?? 0) - clearedActivity),
         }
+      })
+
+      // Update IDB unread state
+      db.unreadState.get(workspaceId).then((state) => {
+        if (!state) return
+        const updated = { ...state, _cachedAt: Date.now() }
+        const newUnread = { ...state.unreadCounts }
+        const newMention = { ...state.mentionCounts }
+        const newActivity = { ...state.activityCounts }
+        let cleared = 0
+        for (const sid of payload.streamIds) {
+          newUnread[sid] = 0
+          newMention[sid] = 0
+          cleared += newActivity[sid] ?? 0
+          newActivity[sid] = 0
+        }
+        updated.unreadCounts = newUnread
+        updated.mentionCounts = newMention
+        updated.activityCounts = newActivity
+        updated.unreadActivityCount = Math.max(0, state.unreadActivityCount - cleared)
+        db.unreadState.put(updated)
       })
 
       queryClient.invalidateQueries({ queryKey: ["activity", workspaceId] })
@@ -568,6 +603,35 @@ export function useSocketEvents(workspaceId: string) {
           ),
         }
       })
+
+      // Update IDB: increment unread count for others' messages when not viewing.
+      // We check membership via IDB to avoid dependency on the TanStack closure.
+      if (!isViewingStream) {
+        void (async () => {
+          const membership = await db.streamMemberships.get(`${workspaceId}:${payload.streamId}`)
+          if (!membership) return
+          const currentUser = userRef.current
+          const currentMember = currentUser
+            ? await db.workspaceUsers
+                .where("workspaceId")
+                .equals(workspaceId)
+                .filter((u) => u.workosUserId === currentUser.id)
+                .first()
+            : null
+          if (currentMember && payload.authorId === currentMember.id) return
+
+          const state = await db.unreadState.get(workspaceId)
+          if (!state) return
+          await db.unreadState.put({
+            ...state,
+            unreadCounts: {
+              ...state.unreadCounts,
+              [payload.streamId]: (state.unreadCounts[payload.streamId] ?? 0) + 1,
+            },
+            _cachedAt: Date.now(),
+          })
+        })()
+      }
     })
 
     // Handle stream display name updated (from auto-naming service)
@@ -643,6 +707,27 @@ export function useSocketEvents(workspaceId: string) {
           const membershipExists = old.streamMemberships.some((m: StreamMember) => m.streamId === payload.streamId)
           const streamExists = old.streams?.some((s) => s.id === payload.streamId)
 
+          // Write membership to IDB
+          if (!membershipExists) {
+            const now = Date.now()
+            db.streamMemberships.put({
+              id: `${workspaceId}:${payload.streamId}`,
+              workspaceId,
+              streamId: payload.streamId,
+              memberId: payload.memberId,
+              pinned: false,
+              pinnedAt: null,
+              notificationLevel: null,
+              lastReadEventId: null,
+              lastReadAt: null,
+              joinedAt: new Date().toISOString(),
+              _cachedAt: now,
+            })
+          }
+          if (!streamExists) {
+            db.streams.put({ ...payload.stream, _cachedAt: Date.now() })
+          }
+
           return {
             ...old,
             streamMemberships: membershipExists
@@ -691,8 +776,14 @@ export function useSocketEvents(workspaceId: string) {
         const currentMember = currentUser && getWorkspaceUsers(old).find((u) => u.workosUserId === currentUser.id)
         if (!currentMember || payload.memberId !== currentMember.id) return old
 
+        // Remove membership from IDB
+        db.streamMemberships.delete(`${workspaceId}:${payload.streamId}`)
+
         const removedStream = old.streams?.find((s) => s.id === payload.streamId)
         const shouldRemoveFromSidebar = removedStream?.visibility === "private"
+        if (shouldRemoveFromSidebar) {
+          db.streams.delete(payload.streamId)
+        }
 
         return {
           ...old,
@@ -713,6 +804,14 @@ export function useSocketEvents(workspaceId: string) {
           ...old,
           userPreferences: payload.preferences,
         }
+      })
+
+      // Write to IDB
+      db.userPreferences.put({
+        ...payload.preferences,
+        id: workspaceId,
+        workspaceId,
+        _cachedAt: Date.now(),
       })
     })
 
@@ -762,6 +861,24 @@ export function useSocketEvents(workspaceId: string) {
         },
         unreadActivityCount: (old.unreadActivityCount ?? 0) + 1,
       }))
+
+      // Update IDB unread state
+      db.unreadState.get(workspaceId).then((state) => {
+        if (!state) return
+        db.unreadState.put({
+          ...state,
+          mentionCounts:
+            activityType === "mention"
+              ? { ...state.mentionCounts, [streamId]: (state.mentionCounts[streamId] ?? 0) + 1 }
+              : state.mentionCounts,
+          activityCounts: {
+            ...state.activityCounts,
+            [streamId]: (state.activityCounts[streamId] ?? 0) + 1,
+          },
+          unreadActivityCount: state.unreadActivityCount + 1,
+          _cachedAt: Date.now(),
+        })
+      })
 
       // Invalidate activity feed so it refetches when the page is mounted
       queryClient.invalidateQueries({ queryKey: ["activity", workspaceId] })

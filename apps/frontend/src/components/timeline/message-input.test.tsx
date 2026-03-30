@@ -25,6 +25,7 @@ vi.mock("@/contexts", () => ({
   usePreferences: () => ({
     preferences: { messageSendMode: mockMessageSendMode },
   }),
+  useSocketStatus: () => "connected",
 }))
 
 // Mock hooks

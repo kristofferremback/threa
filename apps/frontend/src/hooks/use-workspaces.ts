@@ -6,6 +6,7 @@ import { debugBootstrap } from "@/lib/bootstrap-debug"
 import { getQueryLoadState, isTerminalBootstrapError } from "@/lib/query-load-state"
 import { db } from "@/db"
 import { joinRoomBestEffort } from "@/lib/socket-room"
+import { applyWorkspaceBootstrap } from "@/sync/workspace-sync"
 import type { WorkspaceBootstrap, User } from "@threa/types"
 import type { WorkspaceListResult } from "@/api/workspaces"
 
@@ -107,52 +108,13 @@ export function useWorkspaceBootstrap(workspaceId: string) {
       await joinRoomBestEffort(socket, `ws:${workspaceId}`, "WorkspaceBootstrap")
 
       const bootstrap = await workspaceService.bootstrap(workspaceId)
-      const users = bootstrap.users
       debugBootstrap("Workspace bootstrap fetch success", {
         workspaceId,
         streamCount: bootstrap.streams.length,
-        userCount: users.length,
+        userCount: bootstrap.users.length,
       })
-      const now = Date.now()
-
-      // Cache all data to IndexedDB
-      await Promise.all([
-        db.workspaces.put({ ...bootstrap.workspace, _cachedAt: now }),
-        db.workspaceUsers.bulkPut(
-          users.map((u) => ({
-            ...u,
-            _cachedAt: now,
-          }))
-        ),
-        db.streams.bulkPut(
-          bootstrap.streams.map((s) => ({
-            ...s,
-            // Merge membership data if available
-            pinned: bootstrap.streamMemberships.find((sm) => sm.streamId === s.id)?.pinned,
-            notificationLevel: bootstrap.streamMemberships.find((sm) => sm.streamId === s.id)?.notificationLevel,
-            lastReadEventId: bootstrap.streamMemberships.find((sm) => sm.streamId === s.id)?.lastReadEventId,
-            _cachedAt: now,
-          }))
-        ),
-        db.streamMemberships.bulkPut(
-          bootstrap.streamMemberships.map((sm) => ({
-            ...sm,
-            id: `${workspaceId}:${sm.streamId}`,
-            workspaceId,
-            _cachedAt: now,
-          }))
-        ),
-        db.dmPeers.bulkPut(
-          bootstrap.dmPeers.map((dp) => ({
-            ...dp,
-            id: `${workspaceId}:${dp.streamId}`,
-            workspaceId,
-            _cachedAt: now,
-          }))
-        ),
-        db.personas.bulkPut(bootstrap.personas.map((p) => ({ ...p, _cachedAt: now }))),
-        db.bots.bulkPut(bootstrap.bots.map((b) => ({ ...b, _cachedAt: now }))),
-      ])
+      // Shred bootstrap into individual IDB tables (including unreadState + userPreferences)
+      await applyWorkspaceBootstrap(workspaceId, bootstrap)
 
       return bootstrap
     },
