@@ -11,7 +11,7 @@ import { runMigrations } from "./db/migrations"
 import { WorkosAuthService, StubAuthService, WorkosApiKeyService, StubApiKeyService } from "@threa/backend-common"
 import { ApiKeyChannelService } from "./features/api-keys"
 import { UserApiKeyService as UserApiKeyServiceImpl } from "./features/user-api-keys"
-import { BotApiKeyService } from "./features/public-api/bot-api-key-service"
+import { BotApiKeyService } from "./features/public-api"
 import { LinkPreviewService, LinkPreviewOutboxHandler, createLinkPreviewWorker } from "./features/link-previews"
 import {
   WorkspaceService,

@@ -65,6 +65,7 @@ export class BotApiKeyService {
         WHERE workspace_id = ${params.workspaceId}
           AND bot_id = ${params.botId}
           AND revoked_at IS NULL
+          AND (expires_at IS NULL OR expires_at > NOW())
         FOR UPDATE
       `)
       if (lockedRows.length >= MAX_ACTIVE_KEYS_PER_BOT) {

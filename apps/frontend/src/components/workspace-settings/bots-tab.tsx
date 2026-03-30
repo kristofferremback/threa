@@ -23,7 +23,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { useFormattedDate } from "@/hooks/use-formatted-date"
-import { API_KEY_PERMISSIONS, type ApiKeyScope, type BotApiKey } from "@threa/types"
+import { API_KEY_PERMISSIONS, BOT_KEY_PREFIX, type ApiKeyScope, type BotApiKey } from "@threa/types"
 import {
   ArrowLeft,
   Archive,
@@ -709,7 +709,8 @@ function BotDetail({ workspaceId, botId, onBack }: { workspaceId: string; botId:
                   <div className="flex items-baseline gap-2">
                     <span className="text-sm font-medium truncate">{key.name}</span>
                     <code className="text-[11px] text-muted-foreground/70 font-mono hidden sm:inline">
-                      threa_bk_{key.keyPrefix}...
+                      {BOT_KEY_PREFIX}
+                      {key.keyPrefix}...
                     </code>
                   </div>
                   <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
@@ -766,7 +767,10 @@ function BotDetail({ workspaceId, botId, onBack }: { workspaceId: string; botId:
                 {revokedKeys.map((key: BotApiKey) => (
                   <div key={key.id} className="flex items-center gap-2 px-3 py-1.5 text-muted-foreground/50">
                     <span className="text-sm line-through truncate">{key.name}</span>
-                    <code className="text-[10px] font-mono">threa_bk_{key.keyPrefix}...</code>
+                    <code className="text-[10px] font-mono">
+                      {BOT_KEY_PREFIX}
+                      {key.keyPrefix}...
+                    </code>
                   </div>
                 ))}
               </div>

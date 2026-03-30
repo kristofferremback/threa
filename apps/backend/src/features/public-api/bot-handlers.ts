@@ -204,19 +204,30 @@ export function createBotHandlers({ botApiKeyService, avatarService, pool }: Bot
       const workspaceId = req.workspaceId!
       const { botId: id } = req.params
 
-      const bot = await withTransaction(pool, async (client) => {
-        const restored = await BotRepository.restore(client, id, workspaceId)
-        if (!restored) {
-          throw new HttpError("Bot not found or not archived", { status: 404, code: "NOT_FOUND" })
-        }
+      let bot
+      try {
+        bot = await withTransaction(pool, async (client) => {
+          const restored = await BotRepository.restore(client, id, workspaceId)
+          if (!restored) {
+            throw new HttpError("Bot not found or not archived", { status: 404, code: "NOT_FOUND" })
+          }
 
-        await OutboxRepository.insert(client, "bot:updated", {
-          workspaceId,
-          bot: serializeBot(restored),
+          await OutboxRepository.insert(client, "bot:updated", {
+            workspaceId,
+            bot: serializeBot(restored),
+          })
+
+          return restored
         })
-
-        return restored
-      })
+      } catch (error) {
+        if (isUniqueViolation(error, "idx_bots_workspace_slug")) {
+          throw new HttpError(
+            "Cannot restore bot: another bot with the same slug already exists. Rename the conflicting bot first.",
+            { status: 409, code: "DUPLICATE_SLUG" }
+          )
+        }
+        throw error
+      }
 
       res.json({ data: serializeBot(bot) })
     },
@@ -299,11 +310,7 @@ export function createBotHandlers({ botApiKeyService, avatarService, pool }: Bot
       // Clean up raw file (don't need it after inline processing)
       avatarService.deleteRawFile(rawS3Key)
 
-      // Clean up old avatar files if replacing
       const oldAvatarUrl = bot.avatarUrl
-      if (oldAvatarUrl) {
-        avatarService.deleteAvatarFiles(oldAvatarUrl)
-      }
 
       // Update bot with new avatar URL
       const updated = await withTransaction(pool, async (client) => {
@@ -320,6 +327,11 @@ export function createBotHandlers({ botApiKeyService, avatarService, pool }: Bot
         return result
       })
 
+      // Clean up old avatar files after transaction succeeds
+      if (oldAvatarUrl) {
+        avatarService.deleteAvatarFiles(oldAvatarUrl)
+      }
+
       res.json({ data: serializeBot(updated) })
     },
 
@@ -329,16 +341,15 @@ export function createBotHandlers({ botApiKeyService, avatarService, pool }: Bot
       const { botId: id } = req.params
 
       const bot = await BotRepository.findById(pool, id)
-      if (!bot || bot.workspaceId !== workspaceId) {
-        throw new HttpError("Bot not found", { status: 404, code: "NOT_FOUND" })
+      if (!bot || bot.workspaceId !== workspaceId || bot.archivedAt) {
+        throw new HttpError("Bot not found or archived", { status: 404, code: "NOT_FOUND" })
       }
 
       if (!bot.avatarUrl) {
         return res.json({ data: serializeBot(bot) })
       }
 
-      // Clean up S3 files
-      avatarService.deleteAvatarFiles(bot.avatarUrl)
+      const oldAvatarUrl = bot.avatarUrl
 
       const updated = await withTransaction(pool, async (client) => {
         const result = await BotRepository.updateAvatarUrl(client, id, workspaceId, null)
@@ -353,6 +364,9 @@ export function createBotHandlers({ botApiKeyService, avatarService, pool }: Bot
 
         return result
       })
+
+      // Clean up old S3 files after transaction succeeds
+      avatarService.deleteAvatarFiles(oldAvatarUrl)
 
       res.json({ data: serializeBot(updated) })
     },

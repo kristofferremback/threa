@@ -5,7 +5,7 @@ import type { ApiKeyScope } from "@threa/types"
 import { BOT_KEY_PREFIX } from "@threa/types"
 import { WorkspaceRepository, UserRepository } from "../features/workspaces"
 import type { UserApiKeyService, ValidatedUserApiKey } from "../features/user-api-keys"
-import type { BotApiKeyService, ValidatedBotApiKey } from "../features/public-api/bot-api-key-service"
+import type { BotApiKeyService, ValidatedBotApiKey } from "../features/public-api"
 
 declare global {
   namespace Express {

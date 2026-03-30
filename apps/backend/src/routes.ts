@@ -25,8 +25,7 @@ import { createInternalHandlers } from "./handlers/internal-handlers"
 import { createAuthStubHandlers } from "./auth/auth-stub-handlers"
 import { createAgentSessionHandlers } from "./features/agents"
 import { createLinkPreviewHandlers } from "./features/link-previews"
-import { createPublicApiHandlers } from "./features/public-api"
-import { createBotHandlers } from "./features/public-api/bot-handlers"
+import { createPublicApiHandlers, createBotHandlers } from "./features/public-api"
 import { createUserApiKeyHandlers, type UserApiKeyService } from "./features/user-api-keys"
 import {
   createInternalAuthMiddleware,
@@ -53,7 +52,7 @@ import type { AvatarService } from "./features/workspaces"
 import type { ApiKeyChannelService } from "./features/api-keys"
 import type { LinkPreviewService } from "./features/link-previews"
 import type { WorkosOrgService } from "@threa/backend-common"
-import type { BotApiKeyService } from "./features/public-api/bot-api-key-service"
+import type { BotApiKeyService } from "./features/public-api"
 import type { Pool } from "pg"
 import type { PoolMonitor } from "./lib/observability"
 
