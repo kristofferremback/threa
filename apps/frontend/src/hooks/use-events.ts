@@ -175,13 +175,11 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
     return idbEvents as unknown as StreamEvent[]
   }, [idbEvents, olderData, newerData, jumpState, bootstrapFloor])
 
-  // Loading state: true until bootstrap has completed at least once for this stream.
-  // Even if IDB has stale events from a previous session, we need the bootstrap
-  // to complete so that membership data (lastReadEventId), error states, and the
-  // bounded event window are established. The bootstrap replaces stale IDB events
-  // via applyStreamBootstrap, so showing stale events before that would cause
-  // flickering when the replacement happens.
-  const isLoading = isBootstrapLoading
+  // Show loading only when bootstrap is loading AND IDB has no cached events.
+  // If IDB has events from a previous session, render them immediately —
+  // the bootstrap will update them in the background. This enables offline
+  // cold start: cached messages render instantly without waiting for network.
+  const isLoading = isBootstrapLoading && idbEvents.length === 0
 
   // Determine if older events exist.
   const hasOlderEvents = useMemo(() => {

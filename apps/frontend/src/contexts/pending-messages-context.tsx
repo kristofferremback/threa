@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useRef, type ReactNode } from "react"
+import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from "react"
 import { db } from "@/db"
 
 type MessageStatus = "pending" | "failed"
@@ -28,6 +28,21 @@ export function PendingMessagesProvider({ children }: PendingMessagesProviderPro
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set())
   const [failedIds, setFailedIds] = useState<Set<string>>(new Set())
   const queueNotifyRef = useRef<(() => void) | null>(null)
+
+  // Hydrate pending/failed state from IDB on mount so it survives page reload.
+  // The _status field on CachedEvent is the durable source of truth.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const pending = await db.events.filter((e) => e._status === "pending").primaryKeys()
+        const failed = await db.events.filter((e) => e._status === "failed").primaryKeys()
+        if (pending.length > 0) setPendingIds(new Set(pending as string[]))
+        if (failed.length > 0) setFailedIds(new Set(failed as string[]))
+      } catch {
+        // Best-effort — works in browser, may fail in test environment mocks
+      }
+    })()
+  }, [])
 
   const getStatus = useCallback(
     (id: string): MessageStatus | null => {

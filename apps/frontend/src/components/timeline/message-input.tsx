@@ -144,19 +144,21 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     // Capture content before clearing
     const contentJson = composer.content
 
-    // Clear input immediately for responsiveness
-    const emptyDoc: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
-    composer.setContent(emptyDoc)
-    composer.clearDraft()
-    composer.clearAttachments()
-    setExpanded(false)
-
     try {
+      // sendMessage writes to IDB (pendingMessages + events) before returning.
+      // We clear the input AFTER the durable write so content is never lost.
       const result = await sendMessage({
         contentJson,
         attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
         attachments: attachments.length > 0 ? attachments : undefined,
       })
+
+      // Clear input after durable persist — content is safe in IDB now
+      const emptyDoc: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
+      composer.setContent(emptyDoc)
+      composer.clearDraft()
+      composer.clearAttachments()
+      setExpanded(false)
       if (result.navigateTo) {
         navigate(result.navigateTo, { replace: result.replace ?? false })
       }

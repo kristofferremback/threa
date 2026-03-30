@@ -231,7 +231,7 @@ export function StreamContent({
     }
   }, [isJumpMode, exitJumpMode, scrollContainerRef])
 
-  if (error && !isDraft) {
+  if (error && !isDraft && events.length === 0) {
     return (
       <ErrorView
         className="h-full border-0"

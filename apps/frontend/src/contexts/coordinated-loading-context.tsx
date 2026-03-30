@@ -68,12 +68,14 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
   const hideIndicatorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const workspaceSyncStatus = useSyncStatus(`workspace:${workspaceId}`)
-  const workspaceLoading = workspaceSyncStatus === "idle" || workspaceSyncStatus === "syncing"
-  const { loadState: streamsLoadState, results } = useCoordinatedStreamQueries(workspaceId, streamIds)
-  const streamsLoading = isQueryLoadStateLoading(streamsLoadState)
-
-  // Preload user avatar images so they're in the browser cache before first render
   const idbUsers = useWorkspaceUsers(workspaceId)
+  // When IDB has data from a previous session, treat "idle" (socket not yet connected)
+  // as ready — the user sees cached data while we connect in the background.
+  // Only show loading when IDB is empty AND we're still syncing/idle.
+  const hasIdbData = idbUsers.length > 0
+  const workspaceLoading = !hasIdbData && (workspaceSyncStatus === "idle" || workspaceSyncStatus === "syncing")
+  const { loadState: streamsLoadState, results } = useCoordinatedStreamQueries(workspaceId, streamIds)
+  const streamsLoading = !hasIdbData && isQueryLoadStateLoading(streamsLoadState)
   const avatarUrls = useMemo(() => {
     return idbUsers
       .map((u) => getAvatarUrl(workspaceId, u.avatarUrl, 64))
