@@ -40,6 +40,7 @@ import { StreamSettingsDialog } from "@/components/stream-settings/stream-settin
 import { CreateChannelDialog } from "@/components/create-channel"
 import { TraceDialog } from "@/components/trace"
 import { ApiError } from "@/api/client"
+import { SyncStatusStore, SyncStatusContext } from "@/sync/sync-status"
 
 interface WorkspaceKeyboardHandlerProps {
   switcherOpen: boolean
@@ -172,64 +173,69 @@ export function WorkspaceLayout() {
     setSwitcherOpen(false)
   }, [])
 
+  // Single SyncStatusStore instance per workspace — tracks sync state for all resources.
+  const syncStatusStore = useMemo(() => new SyncStatusStore(), [workspaceId])
+
   if (!workspaceId) {
     return null
   }
 
   return (
-    <SocketProvider workspaceId={workspaceId}>
-      <WorkspaceSocketHandler workspaceId={workspaceId} streamIds={streamIds}>
-        <UnreadTabIndicator workspaceId={workspaceId} />
-        <AppUpdateChecker />
-        <MessageQueueHandler />
-        <CoordinatedLoadingProvider workspaceId={workspaceId} streamIds={streamIds}>
-          <ChannelLinkProvider workspaceId={workspaceId} streams={streams}>
-            <UserProfileProvider>
-              <MentionableWrapper mentionables={mentionables}>
-                <WorkspaceEmojiProvider workspaceId={workspaceId}>
-                  <PreferencesProvider workspaceId={workspaceId}>
-                    <SettingsProvider>
-                      <WorkspaceKeyboardHandler
-                        switcherOpen={switcherOpen}
-                        onOpenSwitcher={openSwitcher}
-                        onCloseSwitcher={closeSwitcher}
-                      >
-                        <QuickSwitcherProvider openSwitcher={openSwitcher}>
-                          <PanelProvider>
-                            <TraceProvider>
-                              <SidebarProvider>
-                                <CoordinatedLoadingGate>
-                                  <AppShell sidebar={<Sidebar workspaceId={workspaceId} />}>
-                                    <MainContentGate>
-                                      <Outlet />
-                                    </MainContentGate>
-                                  </AppShell>
-                                </CoordinatedLoadingGate>
-                              </SidebarProvider>
-                              <QuickSwitcher
-                                workspaceId={workspaceId}
-                                open={switcherOpen}
-                                onOpenChange={setSwitcherOpen}
-                                initialMode={switcherMode}
-                              />
-                              <SettingsDialog />
-                              <WorkspaceSettingsDialog workspaceId={workspaceId} />
-                              <StreamSettingsDialog workspaceId={workspaceId} />
-                              <CreateChannelDialog workspaceId={workspaceId} />
-                              <TraceDialogContainer />
-                              <Toaster />
-                            </TraceProvider>
-                          </PanelProvider>
-                        </QuickSwitcherProvider>
-                      </WorkspaceKeyboardHandler>
-                    </SettingsProvider>
-                  </PreferencesProvider>
-                </WorkspaceEmojiProvider>
-              </MentionableWrapper>
-            </UserProfileProvider>
-          </ChannelLinkProvider>
-        </CoordinatedLoadingProvider>
-      </WorkspaceSocketHandler>
-    </SocketProvider>
+    <SyncStatusContext.Provider value={syncStatusStore}>
+      <SocketProvider workspaceId={workspaceId}>
+        <WorkspaceSocketHandler workspaceId={workspaceId} streamIds={streamIds}>
+          <UnreadTabIndicator workspaceId={workspaceId} />
+          <AppUpdateChecker />
+          <MessageQueueHandler />
+          <CoordinatedLoadingProvider workspaceId={workspaceId} streamIds={streamIds}>
+            <ChannelLinkProvider workspaceId={workspaceId} streams={streams}>
+              <UserProfileProvider>
+                <MentionableWrapper mentionables={mentionables}>
+                  <WorkspaceEmojiProvider workspaceId={workspaceId}>
+                    <PreferencesProvider workspaceId={workspaceId}>
+                      <SettingsProvider>
+                        <WorkspaceKeyboardHandler
+                          switcherOpen={switcherOpen}
+                          onOpenSwitcher={openSwitcher}
+                          onCloseSwitcher={closeSwitcher}
+                        >
+                          <QuickSwitcherProvider openSwitcher={openSwitcher}>
+                            <PanelProvider>
+                              <TraceProvider>
+                                <SidebarProvider>
+                                  <CoordinatedLoadingGate>
+                                    <AppShell sidebar={<Sidebar workspaceId={workspaceId} />}>
+                                      <MainContentGate>
+                                        <Outlet />
+                                      </MainContentGate>
+                                    </AppShell>
+                                  </CoordinatedLoadingGate>
+                                </SidebarProvider>
+                                <QuickSwitcher
+                                  workspaceId={workspaceId}
+                                  open={switcherOpen}
+                                  onOpenChange={setSwitcherOpen}
+                                  initialMode={switcherMode}
+                                />
+                                <SettingsDialog />
+                                <WorkspaceSettingsDialog workspaceId={workspaceId} />
+                                <StreamSettingsDialog workspaceId={workspaceId} />
+                                <CreateChannelDialog workspaceId={workspaceId} />
+                                <TraceDialogContainer />
+                                <Toaster />
+                              </TraceProvider>
+                            </PanelProvider>
+                          </QuickSwitcherProvider>
+                        </WorkspaceKeyboardHandler>
+                      </SettingsProvider>
+                    </PreferencesProvider>
+                  </WorkspaceEmojiProvider>
+                </MentionableWrapper>
+              </UserProfileProvider>
+            </ChannelLinkProvider>
+          </CoordinatedLoadingProvider>
+        </WorkspaceSocketHandler>
+      </SocketProvider>
+    </SyncStatusContext.Provider>
   )
 }

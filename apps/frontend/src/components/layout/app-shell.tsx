@@ -7,6 +7,7 @@ import { useResizeDrag, useVisualViewport, useSidebarSwipe, usePullToRefresh, wo
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { TopbarLoadingIndicator } from "./topbar-loading-indicator"
+import { ConnectionStatus } from "./connection-status"
 import { cn } from "@/lib/utils"
 
 /** Platform-appropriate modifier key symbol (⌘ on Mac, Ctrl on Windows/Linux) */
@@ -439,6 +440,7 @@ export function AppShell({ sidebar, children }: AppShellProps) {
             className="flex flex-1 flex-col overflow-hidden"
             style={!isKeyboardOpen ? { paddingBottom: "env(safe-area-inset-bottom)" } : undefined}
           >
+            <ConnectionStatus />
             {children}
           </main>
         </div>
