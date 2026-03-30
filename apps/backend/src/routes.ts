@@ -376,6 +376,13 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     requireRole("admin"),
     botHandlers.revokeStreamAccess
   )
+  // Stream → bots reverse lookup (admin-only)
+  app.get(
+    "/api/workspaces/:workspaceId/streams/:streamId/bots",
+    ...authed,
+    requireRole("admin"),
+    botHandlers.listStreamBots
+  )
 
   // Public API v1 — API key auth (workspace-scoped or user-scoped)
   const publicAuth = createPublicApiAuthMiddleware({ userApiKeyService, botApiKeyService, pool })

@@ -1,9 +1,10 @@
 import { useState, useMemo, useCallback } from "react"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
+import { Separator } from "@/components/ui/separator"
 import { SearchableList } from "@/components/ui/searchable-list"
 import { renderUserListItem, type UserListItem } from "@/components/ui/user-list-item"
 import {
@@ -16,10 +17,11 @@ import {
   ResponsiveAlertDialogHeader,
   ResponsiveAlertDialogTitle,
 } from "@/components/ui/responsive-alert-dialog"
-import { X, UserPlus } from "lucide-react"
+import { X, UserPlus, BotIcon } from "lucide-react"
 import { useAddStreamMember, useRemoveStreamMember, streamKeys, workspaceKeys } from "@/hooks"
 import { useStreamService } from "@/contexts"
-import { StreamTypes, type StreamMember, type WorkspaceBootstrap } from "@threa/types"
+import { botsApi } from "@/api/bots"
+import { StreamTypes, type StreamMember, type Bot, type WorkspaceBootstrap } from "@threa/types"
 import { getInitials } from "@/lib/initials"
 import { getAvatarColor } from "@/lib/avatar-color"
 import { toast } from "sonner"
@@ -195,6 +197,13 @@ export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabP
         </div>
       )}
 
+      {canManageMembers && streamType === StreamTypes.CHANNEL && (
+        <>
+          <Separator />
+          <StreamBotsSection workspaceId={workspaceId} streamId={streamId} />
+        </>
+      )}
+
       <ResponsiveAlertDialog open={removeMemberId !== null} onOpenChange={(open) => !open && setRemoveMemberId(null)}>
         <ResponsiveAlertDialogContent>
           <ResponsiveAlertDialogHeader>
@@ -209,6 +218,131 @@ export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabP
           </ResponsiveAlertDialogFooter>
         </ResponsiveAlertDialogContent>
       </ResponsiveAlertDialog>
+    </div>
+  )
+}
+
+// ─── Stream Bots Section ────────────────────────────────────────────────────
+
+function StreamBotsSection({ workspaceId, streamId }: { workspaceId: string; streamId: string }) {
+  const queryClient = useQueryClient()
+  const [botSearch, setBotSearch] = useState("")
+
+  const { data: wsBootstrap } = useQuery({
+    queryKey: workspaceKeys.bootstrap(workspaceId),
+    queryFn: () => queryClient.getQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId)) ?? null,
+    enabled: false,
+    staleTime: Infinity,
+  })
+
+  const allBots: Bot[] = wsBootstrap?.bots ?? []
+
+  // Single query: which bots have been granted access to this stream
+  const streamBotsQueryKey = ["stream-bots", workspaceId, streamId]
+  const { data: grantedBotIds = [] } = useQuery({
+    queryKey: streamBotsQueryKey,
+    queryFn: () => botsApi.listStreamBots(workspaceId, streamId),
+  })
+
+  const grantedBotIdSet = useMemo(() => new Set(grantedBotIds), [grantedBotIds])
+
+  const botsWithAccess = useMemo(() => allBots.filter((b) => grantedBotIdSet.has(b.id)), [allBots, grantedBotIdSet])
+
+  const availableToGrant = useMemo(() => {
+    if (!botSearch) return []
+    const q = botSearch.toLowerCase()
+    return allBots
+      .filter(
+        (b) =>
+          !b.archivedAt &&
+          !grantedBotIdSet.has(b.id) &&
+          (b.name.toLowerCase().includes(q) || b.slug?.toLowerCase().includes(q))
+      )
+      .slice(0, 10)
+  }, [allBots, grantedBotIdSet, botSearch])
+
+  const grantMutation = useMutation({
+    mutationFn: (botId: string) => botsApi.grantStreamAccess(workspaceId, botId, streamId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: streamBotsQueryKey })
+      setBotSearch("")
+    },
+  })
+
+  const revokeMutation = useMutation({
+    mutationFn: (botId: string) => botsApi.revokeStreamAccess(workspaceId, botId, streamId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: streamBotsQueryKey }),
+  })
+
+  return (
+    <div className="space-y-3">
+      <Label className="text-sm font-medium">Bots ({botsWithAccess.length})</Label>
+
+      {botsWithAccess.length > 0 && (
+        <div className="space-y-1">
+          {botsWithAccess.map((bot) => (
+            <div key={bot.id} className="flex items-center justify-between rounded-md border px-3 py-2 group">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="flex items-center justify-center h-7 w-7 rounded-full bg-emerald-500/10 text-emerald-600 text-xs font-medium shrink-0">
+                  {bot.avatarEmoji ?? <BotIcon className="h-3.5 w-3.5" />}
+                </div>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-sm font-medium truncate">{bot.name}</span>
+                  {bot.slug && <span className="text-xs text-muted-foreground">@{bot.slug}</span>}
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity shrink-0"
+                onClick={() => revokeMutation.mutate(bot.id)}
+                disabled={revokeMutation.isPending}
+              >
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {botsWithAccess.length === 0 && allBots.length > 0 && (
+        <p className="text-xs text-muted-foreground">No bots have been added to this channel.</p>
+      )}
+
+      {allBots.length === 0 && (
+        <p className="text-xs text-muted-foreground">No bots in this workspace. Create one in workspace settings.</p>
+      )}
+
+      {allBots.length > 0 && (
+        <div className="space-y-1.5">
+          <Input
+            placeholder="Search bots to add..."
+            value={botSearch}
+            onChange={(e) => setBotSearch(e.target.value)}
+            className="h-8"
+          />
+          {availableToGrant.length > 0 && (
+            <div className="rounded-md border divide-y max-h-40 overflow-y-auto">
+              {availableToGrant.map((bot) => (
+                <button
+                  key={bot.id}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-accent/50 transition-colors text-left"
+                  onClick={() => grantMutation.mutate(bot.id)}
+                >
+                  <div className="flex items-center justify-center h-6 w-6 rounded-full bg-emerald-500/10 text-emerald-600 text-xs shrink-0">
+                    {bot.avatarEmoji ?? <BotIcon className="h-3 w-3" />}
+                  </div>
+                  <span className="text-sm truncate">{bot.name}</span>
+                  {bot.slug && <span className="text-xs text-muted-foreground">@{bot.slug}</span>}
+                </button>
+              ))}
+            </div>
+          )}
+          {botSearch && availableToGrant.length === 0 && (
+            <p className="text-xs text-muted-foreground py-1">No matching bots</p>
+          )}
+        </div>
+      )}
     </div>
   )
 }

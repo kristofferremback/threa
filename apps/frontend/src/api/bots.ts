@@ -89,4 +89,30 @@ export const botsApi = {
     const res = await api.delete<{ data: Bot }>(`/api/workspaces/${workspaceId}/bots/${botId}/avatar`)
     return res.data
   },
+
+  // Channel access
+
+  async listStreamGrants(
+    workspaceId: string,
+    botId: string
+  ): Promise<Array<{ streamId: string; grantedBy: string; grantedAt: string }>> {
+    const res = await api.get<{ data: Array<{ streamId: string; grantedBy: string; grantedAt: string }> }>(
+      `/api/workspaces/${workspaceId}/bots/${botId}/streams`
+    )
+    return res.data
+  },
+
+  async grantStreamAccess(workspaceId: string, botId: string, streamId: string): Promise<void> {
+    await api.post(`/api/workspaces/${workspaceId}/bots/${botId}/streams/${streamId}/grant`)
+  },
+
+  async revokeStreamAccess(workspaceId: string, botId: string, streamId: string): Promise<void> {
+    await api.delete(`/api/workspaces/${workspaceId}/bots/${botId}/streams/${streamId}/grant`)
+  },
+
+  /** List bot IDs that have been granted access to a specific stream */
+  async listStreamBots(workspaceId: string, streamId: string): Promise<string[]> {
+    const res = await api.get<{ data: string[] }>(`/api/workspaces/${workspaceId}/streams/${streamId}/bots`)
+    return res.data
+  },
 }

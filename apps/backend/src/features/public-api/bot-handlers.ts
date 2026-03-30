@@ -432,5 +432,13 @@ export function createBotHandlers({ botApiKeyService, avatarService, pool }: Bot
       await BotChannelAccessRepository.revokeAccess(pool, workspaceId, id, streamId)
       res.status(204).send()
     },
+
+    /** GET /api/workspaces/:workspaceId/streams/:streamId/bots — list bot IDs with access to a stream */
+    async listStreamBots(req: Request, res: Response) {
+      const workspaceId = req.workspaceId!
+      const { streamId } = req.params
+      const botIds = await BotChannelAccessRepository.getGrantedBotIds(pool, workspaceId, streamId)
+      res.json({ data: botIds })
+    },
   }
 }

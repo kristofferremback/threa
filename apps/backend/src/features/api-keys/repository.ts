@@ -41,6 +41,17 @@ export const BotChannelAccessRepository = {
     `)
   },
 
+  async getGrantedBotIds(db: Querier, workspaceId: string, streamId: string): Promise<string[]> {
+    const result = await db.query<{ bot_id: string }>(sql`
+      SELECT a.bot_id FROM bot_channel_access a
+      JOIN bots b ON b.id = a.bot_id
+      WHERE a.workspace_id = ${workspaceId}
+        AND a.stream_id = ${streamId}
+        AND b.archived_at IS NULL
+    `)
+    return result.rows.map((r) => r.bot_id)
+  },
+
   async listGrants(
     db: Querier,
     workspaceId: string,
