@@ -2,7 +2,7 @@ import { useCallback, useMemo } from "react"
 import { useParams } from "react-router-dom"
 import type { CommandItem } from "./types"
 import { CommandList } from "./command-list"
-import { useWorkspaceBootstrap } from "@/hooks/use-workspaces"
+import { useWorkspaceMetadata } from "@/stores/workspace-store"
 import { useSuggestion } from "./use-suggestion"
 
 /**
@@ -24,17 +24,15 @@ function filterCommands(items: CommandItem[], query: string): CommandItem[] {
  */
 export function useCommandSuggestion() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
-  const { data: bootstrap } = useWorkspaceBootstrap(workspaceId ?? "")
+  const metadata = useWorkspaceMetadata(workspaceId)
 
-  // Get commands from bootstrap
   const commands = useMemo<CommandItem[]>(() => {
-    if (!bootstrap) return []
-
-    return bootstrap.commands.map((cmd) => ({
+    if (!metadata?.commands) return []
+    return metadata.commands.map((cmd) => ({
       name: cmd.name,
       description: cmd.description,
     }))
-  }, [bootstrap])
+  }, [metadata?.commands])
 
   const renderList = useCallback(
     (props: {

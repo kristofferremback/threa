@@ -78,6 +78,11 @@ vi.mock("@/hooks", async (importOriginal) => {
       data: mockWorkspaceBootstrap.data,
       isLoading: false,
     }),
+    useWorkspaceUsers: () => mockWorkspaceBootstrap.data.users ?? [],
+    useWorkspaceStreams: () => mockWorkspaceBootstrap.data.streams ?? [],
+    useWorkspaceStreamMemberships: () => mockWorkspaceBootstrap.data.streamMemberships ?? [],
+    useWorkspaceDmPeers: () => mockWorkspaceBootstrap.data.dmPeers ?? [],
+    useWorkspacePersonas: () => mockWorkspaceBootstrap.data.personas ?? [],
     useDraftScratchpads: () => ({ createDraft: vi.fn() }),
     useCreateStream: () => ({ mutateAsync: vi.fn() }),
     useSearch: () => ({
@@ -133,12 +138,13 @@ vi.mock("@/auth", () => ({
   useUser: () => ({ id: "workos_user_1", name: "Martin", slug: "martin" }),
 }))
 
-// Mock use-workspaces - called by useChannelSuggestion
-vi.mock("@/hooks/use-workspaces", () => ({
-  useWorkspaceBootstrap: () => ({
-    data: mockWorkspaceBootstrap.data,
-    isLoading: false,
-  }),
+// Mock use-workspace-store - called by useChannelSuggestion, useInChannelFilterSuggestion
+vi.mock("@/stores/workspace-store", () => ({
+  useWorkspaceStreams: () => mockWorkspaceBootstrap.data.streams ?? [],
+  useWorkspaceUsers: () => mockWorkspaceBootstrap.data.users ?? [],
+  useWorkspacePersonas: () => mockWorkspaceBootstrap.data.personas ?? [],
+  useWorkspaceDmPeers: () => mockWorkspaceBootstrap.data.dmPeers ?? [],
+  useWorkspaceStreamMemberships: () => mockWorkspaceBootstrap.data.streamMemberships ?? [],
 }))
 
 // Mock streams API - called by useQuery in useStreamItems for archived streams

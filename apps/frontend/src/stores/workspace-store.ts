@@ -10,6 +10,7 @@ import {
   type CachedBot,
   type CachedUnreadState,
   type CachedUserPreferences,
+  type CachedWorkspaceMetadata,
 } from "@/db"
 
 /**
@@ -109,4 +110,11 @@ export function useWorkspaceUnreadState(workspaceId: string | undefined): Cached
  */
 export function useWorkspaceUserPreferences(workspaceId: string | undefined): CachedUserPreferences | undefined {
   return useLiveQuery(() => (workspaceId ? db.userPreferences.get(workspaceId) : undefined), [workspaceId], undefined)
+}
+
+/**
+ * Reactively read workspace metadata (emojis, emojiWeights, commands) from IndexedDB.
+ */
+export function useWorkspaceMetadata(workspaceId: string | undefined): CachedWorkspaceMetadata | undefined {
+  return useLiveQuery(() => (workspaceId ? db.workspaceMetadata.get(workspaceId) : undefined), [workspaceId], undefined)
 }

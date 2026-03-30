@@ -1,6 +1,6 @@
 import { useMemo } from "react"
 import type { Mentionable } from "@/components/editor/triggers/types"
-import { useWorkspaceBootstrap } from "./use-workspaces"
+import { useWorkspaceUsers, useWorkspacePersonas } from "@/stores/workspace-store"
 import { useParams } from "react-router-dom"
 import { useUser } from "@/auth"
 import { useWorkspaceEmoji } from "./use-workspace-emoji"
@@ -73,17 +73,16 @@ export function filterBroadcastMentions(ctx?: MentionStreamContext): Mentionable
  */
 export function useMentionables(streamContext?: MentionStreamContext) {
   const { workspaceId } = useParams<{ workspaceId: string }>()
-  const { data: bootstrap, isLoading } = useWorkspaceBootstrap(workspaceId ?? "")
+  const workspaceUsers = useWorkspaceUsers(workspaceId ?? "")
+  const workspacePersonas = useWorkspacePersonas(workspaceId ?? "")
   const currentUser = useUser()
   const { toEmoji } = useWorkspaceEmoji(workspaceId ?? "")
 
   const mentionables = useMemo<Mentionable[]>(() => {
     const broadcasts = filterBroadcastMentions(streamContext)
-    if (!bootstrap) return broadcasts
 
     // Build user mentionables from workspace-scoped user profiles.
     const currentUserId = currentUser?.id
-    const workspaceUsers = bootstrap.users
     const users: Mentionable[] = workspaceUsers.map((u) => ({
       id: u.id,
       slug: u.slug,
@@ -99,7 +98,7 @@ export function useMentionables(streamContext?: MentionStreamContext) {
       return 0
     })
 
-    const personas: Mentionable[] = bootstrap.personas.map((persona) => {
+    const personas: Mentionable[] = workspacePersonas.map((persona) => {
       // Convert shortcode to emoji (e.g., ":thread:" -> "🧵")
       const emoji = persona.avatarEmoji ? toEmoji(persona.avatarEmoji) : undefined
       return {
@@ -112,11 +111,11 @@ export function useMentionables(streamContext?: MentionStreamContext) {
     })
 
     return [...users, ...personas, ...broadcasts]
-  }, [bootstrap, currentUser?.id, toEmoji, streamContext])
+  }, [workspaceUsers, workspacePersonas, currentUser?.id, toEmoji, streamContext])
 
   return {
     mentionables,
-    isLoading,
+    isLoading: false,
   }
 }
 

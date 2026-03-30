@@ -10,6 +10,7 @@ export type {
   CachedBot,
   CachedUnreadState,
   CachedUserPreferences,
+  CachedWorkspaceMetadata,
   PendingMessage,
   SyncCursor,
   DraftScratchpad,

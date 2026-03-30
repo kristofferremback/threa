@@ -1,7 +1,6 @@
 import { useCallback, useMemo } from "react"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { workspaceKeys } from "./use-workspaces"
-import type { WorkspaceBootstrap, EmojiEntry } from "@threa/types"
+import { useWorkspaceMetadata } from "@/stores/workspace-store"
+import type { EmojiEntry } from "@threa/types"
 
 interface WorkspaceEmojiData {
   /** All available emojis in the workspace */
@@ -15,34 +14,14 @@ interface WorkspaceEmojiData {
 }
 
 /**
- * Hook to look up emojis from workspace bootstrap data.
- * Subscribes to React Query cache updates so it re-renders when data loads.
+ * Hook to look up emojis from workspace data.
+ * Reads from IndexedDB via useLiveQuery — reactive and offline-capable.
  */
 export function useWorkspaceEmoji(workspaceId: string): WorkspaceEmojiData {
-  const queryClient = useQueryClient()
+  const metadata = useWorkspaceMetadata(workspaceId)
 
-  // Subscribe to the bootstrap query cache - this will re-render when data changes
-  // We don't fetch, just read from cache (the bootstrap query is made elsewhere)
-  const { data: bootstrap } = useQuery({
-    queryKey: workspaceKeys.bootstrap(workspaceId),
-    queryFn: () => queryClient.getQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId)) ?? null,
-    // Cache-only observer: never run this queryFn.
-    // Running it before the real bootstrap query can seed `null` as fresh data and block initial bootstrap.
-    enabled: false,
-    // Don't refetch - we just want to subscribe to cache updates
-    staleTime: Infinity,
-    refetchOnMount: false,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  })
-
-  const emojis = useMemo(() => {
-    return bootstrap?.emojis ?? []
-  }, [bootstrap])
-
-  const emojiWeights = useMemo(() => {
-    return bootstrap?.emojiWeights ?? {}
-  }, [bootstrap])
+  const emojis = useMemo(() => (metadata?.emojis ?? []) as EmojiEntry[], [metadata])
+  const emojiWeights = useMemo(() => metadata?.emojiWeights ?? {}, [metadata])
 
   const emojiMap = useMemo(() => {
     const map = new Map<string, EmojiEntry>()

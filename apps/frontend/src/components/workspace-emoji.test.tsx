@@ -1,10 +1,16 @@
-import { describe, it, expect, beforeEach } from "vitest"
+import { describe, it, expect, beforeEach, vi } from "vitest"
 import { render, screen } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { createElement, type ReactNode } from "react"
 import { WorkspaceEmoji } from "./workspace-emoji"
-import { workspaceKeys } from "@/hooks/use-workspaces"
-import type { WorkspaceBootstrap } from "@threa/types"
+// eslint-disable-next-line no-restricted-imports -- test file needs DB type for mock data
+import type { CachedWorkspaceMetadata } from "@/db"
+
+let mockMetadata: CachedWorkspaceMetadata | undefined
+
+vi.mock("@/stores/workspace-store", () => ({
+  useWorkspaceMetadata: () => mockMetadata,
+}))
 
 function createTestWrapper(queryClient: QueryClient) {
   return function Wrapper({ children }: { children: ReactNode }) {
@@ -12,93 +18,70 @@ function createTestWrapper(queryClient: QueryClient) {
   }
 }
 
+function makeMetadata(
+  emojis: CachedWorkspaceMetadata["emojis"],
+  emojiWeights: Record<string, number> = {}
+): CachedWorkspaceMetadata {
+  return { id: "ws_123", workspaceId: "ws_123", emojis, emojiWeights, commands: [], _cachedAt: Date.now() }
+}
+
 describe("WorkspaceEmoji", () => {
   const workspaceId = "ws_123"
   let queryClient: QueryClient
 
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: {
-        queries: { retry: false },
-      },
-    })
+    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    mockMetadata = undefined
   })
 
   it("should render emoji for known shortcode", () => {
-    const bootstrap: Partial<WorkspaceBootstrap> = {
-      emojis: [
-        {
-          shortcode: "thumbsup",
-          emoji: "👍",
-          type: "native" as const,
-          group: "people",
-          order: 0,
-          aliases: ["thumbsup", "+1"],
-        },
-      ],
-    }
-    queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
+    mockMetadata = makeMetadata([
+      { shortcode: "thumbsup", emoji: "👍", type: "native", group: "people", order: 0, aliases: ["thumbsup", "+1"] },
+    ])
 
     render(<WorkspaceEmoji workspaceId={workspaceId} shortcode=":thumbsup:" />, {
       wrapper: createTestWrapper(queryClient),
     })
-
     expect(screen.getByText("👍")).toBeInTheDocument()
   })
 
   it("should render emoji without colons in shortcode", () => {
-    const bootstrap: Partial<WorkspaceBootstrap> = {
-      emojis: [
-        { shortcode: "fire", emoji: "🔥", type: "native" as const, group: "smileys", order: 0, aliases: ["fire"] },
-      ],
-    }
-    queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
+    mockMetadata = makeMetadata([
+      { shortcode: "fire", emoji: "🔥", type: "native", group: "smileys", order: 0, aliases: ["fire"] },
+    ])
 
     render(<WorkspaceEmoji workspaceId={workspaceId} shortcode="fire" />, {
       wrapper: createTestWrapper(queryClient),
     })
-
     expect(screen.getByText("🔥")).toBeInTheDocument()
   })
 
   it("should render shortcode when emoji not found", () => {
-    const bootstrap: Partial<WorkspaceBootstrap> = {
-      emojis: [],
-    }
-    queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
+    mockMetadata = makeMetadata([])
 
     render(<WorkspaceEmoji workspaceId={workspaceId} shortcode=":unknown:" />, {
       wrapper: createTestWrapper(queryClient),
     })
-
     expect(screen.getByText(":unknown:")).toBeInTheDocument()
   })
 
   it("should render fallback when emoji not found and fallback provided", () => {
-    const bootstrap: Partial<WorkspaceBootstrap> = {
-      emojis: [],
-    }
-    queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
+    mockMetadata = makeMetadata([])
 
     render(<WorkspaceEmoji workspaceId={workspaceId} shortcode=":unknown:" fallback="❓" />, {
       wrapper: createTestWrapper(queryClient),
     })
-
     expect(screen.getByText("❓")).toBeInTheDocument()
   })
 
   it("should render thread emoji correctly", () => {
-    const bootstrap: Partial<WorkspaceBootstrap> = {
-      emojis: [
-        { shortcode: "thread", emoji: "🧵", type: "native" as const, group: "objects", order: 0, aliases: ["thread"] },
-      ],
-    }
-    queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
+    mockMetadata = makeMetadata([
+      { shortcode: "thread", emoji: "🧵", type: "native", group: "objects", order: 0, aliases: ["thread"] },
+    ])
 
     render(<WorkspaceEmoji workspaceId={workspaceId} shortcode=":thread:" />, {
       wrapper: createTestWrapper(queryClient),
     })
-
     expect(screen.getByText("🧵")).toBeInTheDocument()
   })
 })

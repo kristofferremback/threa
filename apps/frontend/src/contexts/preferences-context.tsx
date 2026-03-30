@@ -2,7 +2,8 @@ import { createContext, useContext, useEffect, useCallback, useMemo, type ReactN
 import { useQueryClient, useMutation } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { preferencesApi } from "@/api"
-import { useWorkspaceBootstrap, workspaceKeys } from "@/hooks/use-workspaces"
+import { workspaceKeys } from "@/hooks/use-workspaces"
+import { useWorkspaceUserPreferences } from "@/stores/workspace-store"
 import { applyPreferencesToDOM, getResolvedTheme } from "@/lib/apply-preferences"
 import type {
   UserPreferences,
@@ -51,9 +52,9 @@ interface PreferencesProviderProps {
 export function PreferencesProvider({ workspaceId, children }: PreferencesProviderProps) {
   const queryClient = useQueryClient()
 
-  // Subscribe to bootstrap data - this re-renders when socket events update the cache
-  const { data: bootstrap } = useWorkspaceBootstrap(workspaceId)
-  const preferences = bootstrap?.userPreferences ?? null
+  // Read preferences from IDB via useLiveQuery — reactive and offline-capable
+  const idbPrefs = useWorkspaceUserPreferences(workspaceId)
+  const preferences = (idbPrefs as UserPreferences | undefined) ?? null
 
   const resolvedTheme = useMemo(() => {
     if (!preferences) return "light"

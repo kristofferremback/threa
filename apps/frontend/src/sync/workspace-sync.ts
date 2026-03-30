@@ -56,5 +56,13 @@ export async function applyWorkspaceBootstrap(workspaceId: string, bootstrap: Wo
       workspaceId,
       _cachedAt: now,
     }),
+    db.workspaceMetadata.put({
+      id: workspaceId,
+      workspaceId,
+      emojis: bootstrap.emojis,
+      emojiWeights: bootstrap.emojiWeights,
+      commands: bootstrap.commands,
+      _cachedAt: now,
+    }),
   ])
 }
