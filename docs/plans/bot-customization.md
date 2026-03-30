@@ -9,39 +9,65 @@ Bots are currently a side-effect of API key usage, not a first-class entity:
 3. No UI to manage bot profiles (name, avatar, description)
 4. No way to define a bot before it starts sending messages
 5. Bot's name is always derived from the API key name — renaming the key renames the bot
+6. WorkOS widget is a black box — can't show bot associations, customize scopes, or control UX
 
 The bot is a shadow entity with no independent identity.
 
 ## Goal
 
-Make bots first-class workspace entities with rich profiles that admins can customize, similar to how users have profile settings. The API key becomes an **authentication mechanism** for the bot, not the bot's identity source.
+Make bots first-class workspace entities with rich profiles that admins can customize. Replace WorkOS API key management with self-managed bot keys (mirroring the existing user API key system). The bot becomes the primary entity; keys are its authentication credentials.
 
 ## Design Decisions
 
-### D1: Invert the relationship — Bot owns API keys, not the other way around
+### D1: Invert the relationship — Bot is primary, keys are credentials
 
-**Current**: API key → auto-creates bot (1:1 via `unique(workspace_id, api_key_id)`)
-**Proposed**: Admin creates a bot → then associates API key(s) to it
+**Current**: WorkOS API key → auto-creates bot on first message (1:1)
+**Proposed**: Admin creates bot → generates/manages keys for it
 
 This means:
 
-- `bots` table gets `avatar_url` column (like users) alongside existing `avatar_emoji`
-- The unique index `idx_bots_workspace_api_key` on `(workspace_id, api_key_id)` remains, but bot creation is decoupled from first message
-- Bots can exist without an API key (created but not yet connected)
-- Bot name is set independently of API key name
+- Bots can exist without any API key (created but not yet connected)
+- Bot identity (name, avatar, description, slug) is fully independent of keys
+- Multiple keys per bot become possible (rotation, environment separation)
+- `bots.api_key_id` column becomes nullable (standalone bots) and eventually removed in favor of the new `bot_api_keys` table
 
-### D2: Bot profile fields (mirroring user profiles)
+### D2: Bot profile fields
 
 | Field          | Type            | Notes                                             |
 | -------------- | --------------- | ------------------------------------------------- |
-| `name`         | `TEXT NOT NULL` | Already exists — display name                     |
+| `name`         | `TEXT NOT NULL` | Display name (freeform, not unique)               |
+| `slug`         | `TEXT NOT NULL` | **New** — unique per workspace, like user slugs   |
 | `description`  | `TEXT`          | Already exists — bio/about                        |
 | `avatar_emoji` | `TEXT`          | Already exists — emoji avatar                     |
 | `avatar_url`   | `TEXT`          | **New** — S3 key base path, same pattern as users |
+| `archived_at`  | `TIMESTAMPTZ`   | **New** — soft delete, messages keep showing bot  |
 
-We keep it focused: name, description, and avatar (emoji OR image). No pronouns/phone/github — those are human-specific. Bots are tools, not people.
+Slugs are unique per workspace (like users). Display names are freeform visual labels.
 
-### D3: Avatar system reuse
+### D3: Replace WorkOS API keys with self-managed bot keys
+
+The existing user API key system (`user_api_keys`, `UserApiKeyService`) already implements:
+
+- Secure key generation (`threa_uk_` prefix + 256-bit random + base64url)
+- SHA256 hashing with timing-safe comparison
+- Prefix-based candidate lookup
+- Scopes, expiration, revocation, last-used tracking
+
+We replicate this exact pattern for bot keys:
+
+- **New prefix**: `threa_bk_` (bot key)
+- **New table**: `bot_api_keys` (mirrors `user_api_keys` structure + `bot_id` column)
+- **New service**: `BotApiKeyService` (same crypto, same validation pattern)
+- **Scopes**: Same `API_KEY_SCOPES` enum initially, can diverge later
+
+This lets us:
+
+- Drop the WorkOS widget and its token endpoint for API key management
+- Show bot ↔ key associations in our own UI
+- Control the full key lifecycle (create, revoke, rotate)
+- Keep WorkOS for auth/SSO only (its core value)
+
+### D4: Avatar system reuse
 
 User avatars already have a full pipeline:
 
@@ -53,157 +79,271 @@ For bots, we reuse the same `AvatarService` but with bot-scoped S3 paths:
 
 - Key pattern: `avatars/{workspaceId}/bots/{botId}/{timestamp}` (vs `avatars/{workspaceId}/{userId}/{timestamp}` for users)
 - Serving endpoint: `GET /api/workspaces/:workspaceId/bots/:botId/avatar/:file`
-- Same processing pipeline (sharp resize → WebP → S3)
+- Same processing pipeline (sharp resize -> WebP -> S3)
 
-### D4: Admin-only management
+### D5: Admin-only management
 
-Bot management is admin/owner-only, consistent with workspace API key management. Add a "Bots" tab to workspace settings dialog, separate from API keys.
+Bot management is admin/owner-only. Add a "Bots" tab to workspace settings dialog, replacing the current WorkOS API key widget section with native bot + key management.
 
-### D5: Backwards compatibility for auto-creation
+### D6: Backwards compatibility for auto-creation
 
-The existing auto-create-on-first-message flow stays, but becomes a fallback:
+The existing auto-create-on-first-message flow stays as a fallback:
 
-- If a workspace API key already has a linked bot → use it (no name override)
-- If no linked bot exists → auto-create one (current behavior, preserves existing integrations)
+- If a key already has a linked bot -> use it (no profile override)
+- If no linked bot exists -> auto-create one (current behavior, preserves existing integrations)
+- During migration: existing WorkOS-linked bots continue working until keys are rotated to native bot keys
 
-This ensures existing integrations don't break while new bots get proper setup flows.
+### D7: Soft delete via `archived_at`
+
+Bots are soft-deleted. Archived bots:
+
+- Don't appear in active bot lists or settings UI
+- Keep their profile data for message display (historical messages still show bot name/avatar)
+- Have their API keys automatically revoked on archive
+- Can be restored by admin (clear `archived_at`)
 
 ## Implementation Plan
 
-### Phase 1: Database — Add `avatar_url` to bots
+### Phase 1: Database — Evolve bots table + create bot_api_keys
 
-**Migration**: `{timestamp}_add_avatar_url_to_bots.sql`
+**Migration**: `{timestamp}_bot_customization.sql`
 
 ```sql
+-- Evolve bots table
+ALTER TABLE bots ADD COLUMN slug TEXT;
 ALTER TABLE bots ADD COLUMN avatar_url TEXT;
-```
+ALTER TABLE bots ADD COLUMN archived_at TIMESTAMPTZ;
 
-Simple column addition. No data backfill needed.
+-- Make api_key_id nullable (bots can exist without keys)
+ALTER TABLE bots ALTER COLUMN api_key_id DROP NOT NULL;
+
+-- Unique slug per workspace (only among non-archived bots)
+CREATE UNIQUE INDEX idx_bots_workspace_slug
+  ON bots (workspace_id, slug) WHERE archived_at IS NULL;
+
+-- Backfill slugs for existing bots from name (slugified)
+-- Done in application code post-migration
+
+-- Self-managed bot API keys (mirrors user_api_keys)
+CREATE TABLE bot_api_keys (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL,
+  bot_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  key_hash TEXT NOT NULL,
+  key_prefix TEXT NOT NULL,
+  scopes TEXT[] NOT NULL,
+  last_used_at TIMESTAMPTZ,
+  expires_at TIMESTAMPTZ,
+  revoked_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_bot_api_keys_bot
+  ON bot_api_keys (workspace_id, bot_id) WHERE revoked_at IS NULL;
+CREATE INDEX idx_bot_api_keys_prefix
+  ON bot_api_keys (key_prefix) WHERE revoked_at IS NULL AND (expires_at IS NULL OR expires_at > NOW());
+```
 
 **Files changed**:
 
-- `apps/backend/src/db/migrations/{timestamp}_add_avatar_url_to_bots.sql` (new)
-- `apps/backend/src/features/public-api/bot-repository.ts` — add `avatar_url` to `BOT_COLUMNS`, `BotRow`, `Bot` interface, `mapRowToBot`
-- `packages/types/src/domain.ts` — add `avatarUrl: string | null` to `Bot` interface
+- `apps/backend/src/db/migrations/{timestamp}_bot_customization.sql` (new)
+- `apps/backend/src/features/public-api/bot-repository.ts` — add new columns to `BOT_COLUMNS`, `BotRow`, `Bot` interface, `mapRowToBot`
+- `packages/types/src/domain.ts` — add `avatarUrl`, `slug`, `archivedAt` to `Bot` interface
 
-### Phase 2: Bot CRUD API endpoints
+### Phase 2: Bot API key service
 
-Add bot management endpoints to the backend. These are workspace-scoped, admin-only.
+Create `BotApiKeyService` mirroring `UserApiKeyService`.
+
+**New prefix**: `threa_bk_`
+
+**Key operations**:
+
+- `createKey({ workspaceId, botId, name, scopes, expiresAt })` — same crypto as user keys
+- `validateKey(value)` — returns `{ id, workspaceId, botId, name, scopes }` or null
+- `listKeys(workspaceId, botId)` — active + revoked keys for a bot
+- `revokeKey(workspaceId, botId, keyId)` — soft revoke via `revoked_at`
+
+**Update auth middleware** (`public-api-auth.ts`):
+
+- Current chain: try `threa_uk_` → fall through to WorkOS
+- New chain: try `threa_uk_` → try `threa_bk_` → fall through to WorkOS (for migration period)
+- Eventually: try `threa_uk_` → try `threa_bk_` → reject
+
+**Files changed**:
+
+- `apps/backend/src/features/public-api/bot-api-key-repository.ts` (new) — DB operations
+- `apps/backend/src/features/public-api/bot-api-key-service.ts` (new) — key lifecycle
+- `apps/backend/src/middleware/public-api-auth.ts` — add bot key validation to chain
+- `packages/types/src/api-keys.ts` — add `BOT_KEY_PREFIX`, bot key types
+- `apps/backend/src/lib/id.ts` — add `botApiKeyId()` generator
+
+### Phase 3: Bot CRUD API endpoints
+
+Workspace-scoped, admin-only bot management.
 
 **New endpoints**:
 
-- `GET /api/workspaces/:workspaceId/bots` — list bots (already fetchable via bootstrap, but explicit endpoint)
-- `PATCH /api/workspaces/:workspaceId/bots/:botId` — update bot profile (name, description, avatarEmoji)
-- `POST /api/workspaces/:workspaceId/bots` — create a bot (without API key association)
-- `DELETE /api/workspaces/:workspaceId/bots/:botId` — delete a bot (soft? hard? — TBD, likely soft via archive)
+- `POST /api/workspaces/:workspaceId/bots` — create bot (name, slug, description, avatarEmoji)
+- `PATCH /api/workspaces/:workspaceId/bots/:botId` — update bot profile
+- `POST /api/workspaces/:workspaceId/bots/:botId/archive` — soft delete
+- `POST /api/workspaces/:workspaceId/bots/:botId/restore` — undo archive
+- `GET /api/workspaces/:workspaceId/bots` — list active bots (bootstrap already includes this)
 
-**Bot update schema** (Zod):
+**Bot key management endpoints** (nested under bot):
+
+- `POST /api/workspaces/:workspaceId/bots/:botId/keys` — generate new key
+- `GET /api/workspaces/:workspaceId/bots/:botId/keys` — list keys
+- `POST /api/workspaces/:workspaceId/bots/:botId/keys/:keyId/revoke` — revoke key
+
+**Validation schemas** (Zod, INV-55):
 
 ```ts
+const createBotSchema = z.object({
+  name: z.string().min(1).max(100),
+  slug: z
+    .string()
+    .min(1)
+    .max(50)
+    .regex(/^[a-z0-9-]+$/),
+  description: z.string().max(500).nullable().optional(),
+  avatarEmoji: z.string().nullable().optional(),
+})
+
 const updateBotSchema = z.object({
   name: z.string().min(1).max(100).optional(),
+  slug: z
+    .string()
+    .min(1)
+    .max(50)
+    .regex(/^[a-z0-9-]+$/)
+    .optional(),
   description: z.string().max(500).nullable().optional(),
-  avatarEmoji: z.string().emoji().optional().nullable(),
+  avatarEmoji: z.string().nullable().optional(),
+})
+
+const createBotKeySchema = z.object({
+  name: z.string().min(1).max(100),
+  scopes: z.array(z.enum([...Object.values(API_KEY_SCOPES)])).min(1),
+  expiresAt: z.string().datetime().nullable().optional(),
 })
 ```
 
 **Files changed**:
 
-- `apps/backend/src/features/public-api/bot-repository.ts` — add `update()`, `create()` methods
-- `apps/backend/src/features/public-api/handlers.ts` — add handler factories for new endpoints
+- `apps/backend/src/features/public-api/bot-repository.ts` — add `create()`, `update()`, `archive()`, `restore()` methods
+- `apps/backend/src/features/public-api/bot-service.ts` (new) — business logic, slug uniqueness, archive cascade
+- `apps/backend/src/features/public-api/handlers.ts` — handler factories for new endpoints
 - `apps/backend/src/features/public-api/router.ts` — register new routes
-- Outbox events: `bot:created`, `bot:updated` already exist and can be reused
+- Outbox events: `bot:created`, `bot:updated`, `bot:archived` (new)
 
-### Phase 3: Bot avatar upload
+### Phase 4: Update message-send flow to respect bot profiles
+
+**Current behavior**: On every message send, bot name is overwritten with API key name.
+**New behavior**: If bot already exists, use it as-is. No profile overrides.
+
+For bot keys (`threa_bk_`):
+
+- Middleware resolves `botId` from the validated key
+- Message handler uses bot directly — no upsert needed
+
+For legacy WorkOS keys (migration period):
+
+- Existing `findOrCreate` behavior, but `DO NOTHING` on conflict (no name update)
+
+**Files changed**:
+
+- `apps/backend/src/features/public-api/handlers.ts` — change upsert to insert-only on conflict, add bot key path
+- `apps/backend/src/features/public-api/bot-repository.ts` — add `findOrCreate()` that inserts but never updates
+
+### Phase 5: Bot avatar upload
 
 Reuse the user avatar pipeline with bot-scoped paths.
 
-**New endpoint**: `POST /api/workspaces/:workspaceId/bots/:botId/avatar`
+**New endpoints**:
 
-- Accepts multipart image upload
-- Validates file type/size (same constraints as user avatars)
-- Uses `AvatarService.uploadRaw()` with bot-scoped key pattern
-- Queues processing via existing avatar worker (or processes inline if simpler)
-- Updates `bots.avatar_url` with the S3 key base path
+- `POST /api/workspaces/:workspaceId/bots/:botId/avatar` — upload image
+- `GET /api/workspaces/:workspaceId/bots/:botId/avatar/:file` — serve processed image
+- `DELETE /api/workspaces/:workspaceId/bots/:botId/avatar` — remove avatar
 
-**New endpoint**: `GET /api/workspaces/:workspaceId/bots/:botId/avatar/:file`
-
-- Serves processed avatar WebP files from S3
-- Same streaming pattern as user avatar serving
-
-**New endpoint**: `DELETE /api/workspaces/:workspaceId/bots/:botId/avatar`
-
-- Removes avatar files from S3
-- Sets `bots.avatar_url = NULL`
+**S3 path**: `avatars/{workspaceId}/bots/{botId}/{timestamp}`
 
 **Files changed**:
 
-- `apps/backend/src/features/workspaces/avatar-service.ts` — generalize path helpers or add bot variants
+- `apps/backend/src/features/workspaces/avatar-service.ts` — add `uploadRawForBot()` and `streamBotAvatarFile()` (or generalize existing methods)
 - `apps/backend/src/features/public-api/handlers.ts` — avatar upload/serve/delete handlers
 - `apps/backend/src/features/public-api/router.ts` — register avatar routes
-- `packages/types/src/domain.ts` — add `getBotAvatarUrl()` helper (mirrors `getAvatarUrl()`)
+- `packages/types/src/domain.ts` — add `getBotAvatarUrl()` helper
 
-### Phase 4: Update auto-creation to not override bot profiles
+### Phase 6: Frontend — Bots tab in workspace settings
 
-**Current behavior**: On every message send, bot name is overwritten with API key name.
-**New behavior**: If bot already exists, don't touch the name (it was set by admin).
+Add a "Bots" tab to workspace settings dialog (admin-only), replacing the WorkOS API key widget section.
 
-Change the upsert in `handlers.ts` (message creation flow):
+**Tab contents**:
 
-- If bot exists for this API key → use as-is, no name update
-- If bot doesn't exist → create with API key name as default (backwards compat)
-
-**Files changed**:
-
-- `apps/backend/src/features/public-api/handlers.ts` — change upsert to insert-only (no name override on conflict)
-- `apps/backend/src/features/public-api/bot-repository.ts` — add `findOrCreate()` that only inserts, never updates name
-
-### Phase 5: Frontend — Bots tab in workspace settings
-
-Add a "Bots" tab to the workspace settings dialog (admin-only).
-
-**New tab contents**:
-
-- List of existing bots with avatar, name, description
-- Click bot → edit panel (inline or modal) with:
-  - Avatar picker (emoji selector OR image upload)
-  - Name input
-  - Description textarea
-  - Connected API key display (read-only reference)
-- "Create bot" button → creates a standalone bot entity
-- Delete/archive action
+- **Bot list**: cards showing avatar (emoji or image), name, slug, description, key count, status
+- **Create bot dialog**: name, slug (auto-generated from name), description, emoji picker
+- **Bot detail panel** (click to expand or navigate):
+  - Profile editing: name, slug, description, avatar (emoji selector + image upload)
+  - Keys section: list active/revoked keys, create new key (name + scopes + optional expiry), revoke key
+  - Archive action with confirmation
 
 **Files changed**:
 
-- `apps/frontend/src/components/workspace-settings/workspace-settings-dialog.tsx` — add "bots" tab (admin-only, conditionally rendered like the bot keys section)
-- `apps/frontend/src/components/workspace-settings/bots-tab.tsx` (new) — bot management UI
-- `apps/frontend/src/api/bots.ts` (new, or extend existing) — API client for bot CRUD + avatar upload
-- `apps/frontend/src/hooks/use-actors.ts` — update to use `avatarUrl` when available, fall back to `avatarEmoji`
+- `apps/frontend/src/components/workspace-settings/workspace-settings-dialog.tsx` — add "bots" tab, remove WorkOS widget from api-keys tab
+- `apps/frontend/src/components/workspace-settings/bots-tab.tsx` (new) — bot list + management UI
+- `apps/frontend/src/components/workspace-settings/bot-detail.tsx` (new) — bot profile + key management
+- `apps/frontend/src/api/bots.ts` (new) — API client for bot CRUD, key management, avatar upload
+- `apps/frontend/src/components/workspace-settings/api-keys-tab.tsx` — remove WorkOS `<ApiKeys>` widget and `WorkspaceApiKeysWidget`, keep only personal keys section
 
-### Phase 6: Frontend — Bot avatar display in messages
+### Phase 7: Frontend — Bot avatar display in messages
 
-Update the message rendering to show bot avatar images when available.
+Update message rendering to show bot avatar images when available.
+
+**Priority**: `avatarUrl` (image) > `avatarEmoji` (emoji) > initials from name
 
 **Files changed**:
 
-- `apps/frontend/src/components/timeline/message-event.tsx` — for bot messages, render `<img>` with `getBotAvatarUrl()` when `avatarUrl` is set, else fall back to emoji/initials
+- `apps/frontend/src/components/timeline/message-event.tsx` — render `<AvatarImage>` with `getBotAvatarUrl()` when `avatarUrl` is set
+- `apps/frontend/src/hooks/use-actors.ts` — expose `botAvatarUrl` alongside existing bot name/emoji resolution
 
-## Phasing recommendation
+## Phasing Recommendation
 
-**Ship together (MVP)**: Phases 1-2 + 4 + 5 (basic bot profiles without image avatars)
+### MVP (ship together)
 
-- This gives admins the ability to create/edit bots with name, description, emoji avatar
-- Decouples bot identity from API key name
-- Adds the Bots tab to workspace settings
+Phases 1, 2, 3, 4, 6 — bot profiles + self-managed keys + admin UI
 
-**Follow-up**: Phases 3 + 6 (image avatars)
+This gives:
 
-- Image upload is more complex (S3, processing pipeline, serving endpoint)
-- Emoji avatars are a good starting point and match the existing persona pattern
+- Admins create and customize bots (name, slug, description, emoji)
+- Self-managed bot keys replace WorkOS API key widget
+- Bot profiles are independent of key names
+- Soft delete with archive/restore
+- Full key lifecycle in native UI
 
-## Open questions
+### Follow-up
 
-1. **Bot deletion**: Soft delete (archive) or hard delete? Archived bots' messages should still show the bot name. Recommend: add `archived_at` column, filter from lists but keep for message display.
-2. **Bot creation without API key**: Should bots always require an API key association, or can they exist standalone (for future "create bot → then generate key" flow)? Recommend: allow standalone initially, associate key later.
-3. **API key ↔ bot association UI**: Should the "Bot keys" WorkOS widget show which bot each key is connected to? This might require custom UI replacing the WorkOS widget. Could be a follow-up.
-4. **Bot-to-bot uniqueness**: Should bot names be unique within a workspace? Recommend: no, like user names.
+Phase 5 + 7 — image avatar upload + display
+
+Image upload is more complex (S3, processing, serving) and emoji avatars are a good starting point matching the persona pattern.
+
+### Migration path (WorkOS key deprecation)
+
+1. **Phase A** (with MVP): Both WorkOS keys and bot keys work simultaneously. Auth middleware tries both.
+2. **Phase B** (later): Admin UI shows "migrate" action for existing WorkOS-linked bots — generates a native bot key, displays it once, bot continues working.
+3. **Phase C** (eventually): Remove WorkOS API key validation from middleware. Remove WorkOS widget dependencies (`@workos-inc/widgets` for API keys, widget token endpoint).
+
+## Dependency Graph
+
+```
+Phase 1 (DB migration)
+  ├── Phase 2 (Bot key service)
+  │     └── Phase 4 (Message flow update)
+  ├── Phase 3 (Bot CRUD API)
+  │     └── Phase 6 (Frontend bots tab)
+  └── Phase 5 (Avatar upload) ── follow-up
+        └── Phase 7 (Avatar display) ── follow-up
+```
+
+Phases 2 and 3 can be developed in parallel after Phase 1.
+Phases 4 and 6 can be developed in parallel after their respective parents.
