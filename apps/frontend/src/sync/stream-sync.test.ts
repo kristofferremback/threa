@@ -1,88 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from "vitest"
+import { describe, it, expect, beforeEach } from "vitest"
+import { db } from "@/db"
+import { applyStreamBootstrap } from "./stream-sync"
 import type { StreamBootstrap, StreamEvent } from "@threa/types"
 
-// ---------------------------------------------------------------------------
-// In-memory mock of the Dexie tables used by applyStreamBootstrap.
-// Tracks all mutations so tests can assert what was written / deleted.
-// ---------------------------------------------------------------------------
-
-let eventsStore: Map<string, Record<string, unknown>>
-let streamsStore: Map<string, Record<string, unknown>>
-let pendingMessagesStore: Map<string, Record<string, unknown>>
-
-function resetStores() {
-  eventsStore = new Map()
-  streamsStore = new Map()
-  pendingMessagesStore = new Map()
-}
-
-/** Build a chainable Dexie-like query mock for a Map-backed store */
-function mockTable(store: Map<string, Record<string, unknown>>, primaryKey = "id") {
-  return {
-    get: vi.fn((id: string) => Promise.resolve(store.get(id) ?? undefined)),
-    put: vi.fn((item: Record<string, unknown>) => {
-      store.set(item[primaryKey] as string, item)
-      return Promise.resolve()
-    }),
-    bulkPut: vi.fn((items: Record<string, unknown>[]) => {
-      for (const item of items) store.set(item[primaryKey] as string, item)
-      return Promise.resolve()
-    }),
-    delete: vi.fn((id: string) => {
-      store.delete(id)
-      return Promise.resolve()
-    }),
-    bulkDelete: vi.fn((ids: string[]) => {
-      for (const id of ids) store.delete(id)
-      return Promise.resolve()
-    }),
-    where: vi.fn((field: string) => ({
-      equals: vi.fn((value: unknown) => ({
-        filter: vi.fn((predicate: (item: Record<string, unknown>) => boolean) => ({
-          toArray: vi.fn(() =>
-            Promise.resolve(Array.from(store.values()).filter((item) => item[field] === value && predicate(item)))
-          ),
-        })),
-        toArray: vi.fn(() => Promise.resolve(Array.from(store.values()).filter((item) => item[field] === value))),
-      })),
-    })),
-  }
-}
-
-vi.mock("@/db", () => {
-  return {
-    db: {
-      get events() {
-        return mockTable(eventsStore)
-      },
-      get streams() {
-        return mockTable(streamsStore)
-      },
-      get pendingMessages() {
-        return mockTable(pendingMessagesStore, "clientId")
-      },
-      // transaction just runs the callback — no real IDB transaction semantics needed
-      transaction: vi.fn((_mode: string, _tables: unknown[], fn: () => Promise<void>) => fn()),
-    },
-  }
-})
-
-// Mock imports that stream-sync.ts pulls in (only needed for registerStreamSocketHandlers,
-// not for applyStreamBootstrap, but the module-level import must resolve)
-vi.mock("@/hooks/use-workspaces", () => ({
-  workspaceKeys: {
-    bootstrap: (wsId: string) => ["workspaces", "bootstrap", wsId],
-  },
-}))
-
-// ---------------------------------------------------------------------------
-// Import AFTER mocks are set up
-// ---------------------------------------------------------------------------
-const { applyStreamBootstrap } = await import("./stream-sync")
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+// With fake-indexeddb loaded in test setup, Dexie works against a real
+// in-memory IndexedDB. No mocks needed — tests exercise actual queries.
 
 function makeEvent(overrides: Partial<StreamEvent> & { id: string; streamId: string; sequence: string }): StreamEvent {
   return {
@@ -123,25 +45,21 @@ function makeBootstrap(events: StreamEvent[], streamId: string): StreamBootstrap
   }
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
-describe("applyStreamBootstrap", () => {
-  beforeEach(() => {
-    resetStores()
-    vi.clearAllMocks()
+describe("applyStreamBootstrap (real IndexedDB)", () => {
+  beforeEach(async () => {
+    await db.events.clear()
+    await db.streams.clear()
+    await db.pendingMessages.clear()
   })
 
   it("preserves a socket-delivered event that arrived during the bootstrap fetch (race condition)", async () => {
-    const streamId = "stream_1"
+    const streamId = "stream_race"
 
-    // Simulate: socket handler wrote event X to IDB while bootstrap was in flight.
-    // X has sequence 200 — it was created AFTER the server took the bootstrap snapshot.
+    // Simulate: socket handler wrote event X to IDB while bootstrap was in flight
     const socketEvent = makeEvent({ id: "evt_X", streamId, sequence: "200" })
-    eventsStore.set("evt_X", { ...socketEvent, _cachedAt: Date.now() })
+    await db.events.put({ ...socketEvent, workspaceId: "ws_1", _cachedAt: Date.now() })
 
-    // Bootstrap returns events A(100) and B(150) — snapshot taken before X existed.
+    // Bootstrap returns events A(100) and B(150) — snapshot taken before X existed
     const bootstrapEvents = [
       makeEvent({ id: "evt_A", streamId, sequence: "100" }),
       makeEvent({ id: "evt_B", streamId, sequence: "150" }),
@@ -150,79 +68,96 @@ describe("applyStreamBootstrap", () => {
 
     await applyStreamBootstrap("ws_1", streamId, bootstrap)
 
-    // All three events must be in IDB: A, B (from bootstrap), and X (from socket)
-    expect(eventsStore.has("evt_A")).toBe(true)
-    expect(eventsStore.has("evt_B")).toBe(true)
-    expect(eventsStore.has("evt_X")).toBe(true)
+    // All three events must be in IDB
+    const allEvents = await db.events.where("streamId").equals(streamId).toArray()
+    const ids = allEvents.map((e) => e.id).sort()
+    expect(ids).toEqual(["evt_A", "evt_B", "evt_X"])
   })
 
-  it("preserves events from previous sessions (IDB is append-only for non-temp events)", async () => {
-    const streamId = "stream_1"
+  it("preserves events from previous sessions (IDB is append-only)", async () => {
+    const streamId = "stream_prev"
 
-    // Old event from a previous session — still in IDB
+    // Old event from a previous session
     const oldEvent = makeEvent({ id: "evt_old", streamId, sequence: "50" })
-    eventsStore.set("evt_old", { ...oldEvent, _cachedAt: Date.now() - 86400000 })
-
-    const bootstrapEvents = [makeEvent({ id: "evt_A", streamId, sequence: "100" })]
-    const bootstrap = makeBootstrap(bootstrapEvents, streamId)
-
-    await applyStreamBootstrap("ws_1", streamId, bootstrap)
-
-    // Old event is preserved in IDB (not deleted)
-    expect(eventsStore.has("evt_old")).toBe(true)
-    expect(eventsStore.has("evt_A")).toBe(true)
-  })
-
-  it("removes stale optimistic events (temp_*) that are no longer in the send queue", async () => {
-    const streamId = "stream_1"
-
-    // Stale optimistic event — NOT in pendingMessages (already sent or abandoned)
-    eventsStore.set("temp_stale", {
-      id: "temp_stale",
-      streamId,
-      sequence: "999",
-      eventType: "message_created",
-      payload: {},
-      _status: "pending",
-      _cachedAt: Date.now(),
-    })
+    await db.events.put({ ...oldEvent, workspaceId: "ws_1", _cachedAt: Date.now() - 86400000 })
 
     const bootstrap = makeBootstrap([makeEvent({ id: "evt_A", streamId, sequence: "100" })], streamId)
 
     await applyStreamBootstrap("ws_1", streamId, bootstrap)
 
-    // Stale temp event should be deleted
-    expect(eventsStore.has("temp_stale")).toBe(false)
-    expect(eventsStore.has("evt_A")).toBe(true)
+    expect(await db.events.get("evt_old")).toBeDefined()
+    expect(await db.events.get("evt_A")).toBeDefined()
   })
 
-  it("preserves optimistic events that are still in the send queue", async () => {
-    const streamId = "stream_1"
+  it("removes stale optimistic events (temp_*) not in the send queue", async () => {
+    const streamId = "stream_stale"
 
-    // Optimistic event — still in pendingMessages (awaiting send)
-    eventsStore.set("temp_pending", {
-      id: "temp_pending",
+    // Stale optimistic event — NOT in pendingMessages
+    await db.events.put({
+      id: "temp_stale",
+      workspaceId: "ws_1",
       streamId,
       sequence: "999",
       eventType: "message_created",
       payload: {},
+      actorId: null,
+      actorType: null,
+      createdAt: new Date().toISOString(),
       _status: "pending",
       _cachedAt: Date.now(),
     })
-    pendingMessagesStore.set("temp_pending", {
+
+    const bootstrap = makeBootstrap([makeEvent({ id: "evt_A", streamId, sequence: "100" })], streamId)
+    await applyStreamBootstrap("ws_1", streamId, bootstrap)
+
+    expect(await db.events.get("temp_stale")).toBeUndefined()
+    expect(await db.events.get("evt_A")).toBeDefined()
+  })
+
+  it("preserves optimistic events that are still in the send queue", async () => {
+    const streamId = "stream_pending"
+
+    // Optimistic event — still in pendingMessages
+    await db.events.put({
+      id: "temp_pending",
+      workspaceId: "ws_1",
+      streamId,
+      sequence: "999",
+      eventType: "message_created",
+      payload: {},
+      actorId: null,
+      actorType: null,
+      createdAt: new Date().toISOString(),
+      _status: "pending",
+      _cachedAt: Date.now(),
+    })
+    await db.pendingMessages.add({
       clientId: "temp_pending",
+      workspaceId: "ws_1",
       streamId,
       content: "hello",
+      contentFormat: "markdown",
+      createdAt: Date.now(),
       retryCount: 0,
     })
 
     const bootstrap = makeBootstrap([makeEvent({ id: "evt_A", streamId, sequence: "100" })], streamId)
+    await applyStreamBootstrap("ws_1", streamId, bootstrap)
+
+    expect(await db.events.get("temp_pending")).toBeDefined()
+    expect(await db.events.get("evt_A")).toBeDefined()
+  })
+
+  it("writes stream metadata to IDB", async () => {
+    const streamId = "stream_meta"
+    const bootstrap = makeBootstrap([], streamId)
 
     await applyStreamBootstrap("ws_1", streamId, bootstrap)
 
-    // Pending temp event should be preserved
-    expect(eventsStore.has("temp_pending")).toBe(true)
-    expect(eventsStore.has("evt_A")).toBe(true)
+    const stream = await db.streams.get(streamId)
+    expect(stream).toBeDefined()
+    expect(stream?.workspaceId).toBe("ws_1")
+    expect(stream?.displayName).toBe("test")
   })
 })
 
@@ -231,10 +166,6 @@ describe("applyStreamBootstrap", () => {
 // ---------------------------------------------------------------------------
 
 describe("event display filtering", () => {
-  /**
-   * Extracted filter predicate matching the logic in useEvents.
-   * Given a bootstrapFloor (BigInt), returns only events that should be displayed.
-   */
   function filterEventsForDisplay(idbEvents: Array<{ sequence: string; _status?: string }>, bootstrapFloor: bigint) {
     return idbEvents.filter((e) => {
       if (e._status === "pending" || e._status === "failed") return true
@@ -243,75 +174,46 @@ describe("event display filtering", () => {
   }
 
   it("includes socket events newer than bootstrap window", () => {
-    const bootstrapFloor = 100n
-
     const events = [
-      { sequence: "50", _status: undefined }, // old, from previous session
-      { sequence: "100", _status: undefined }, // bootstrap oldest
-      { sequence: "150", _status: undefined }, // bootstrap middle
-      { sequence: "200", _status: undefined }, // socket event during bootstrap
-    ]
-
-    const displayed = filterEventsForDisplay(events, bootstrapFloor)
-
-    expect(displayed).toEqual([
+      { sequence: "50", _status: undefined },
       { sequence: "100", _status: undefined },
       { sequence: "150", _status: undefined },
-      { sequence: "200", _status: undefined }, // socket event preserved
-    ])
+      { sequence: "200", _status: undefined },
+    ]
+    const displayed = filterEventsForDisplay(events, 100n)
+    expect(displayed.map((e) => e.sequence)).toEqual(["100", "150", "200"])
   })
 
   it("excludes events from previous sessions below bootstrap window", () => {
-    const bootstrapFloor = 100n
-
     const events = [
       { sequence: "10", _status: undefined },
       { sequence: "50", _status: undefined },
       { sequence: "100", _status: undefined },
     ]
-
-    const displayed = filterEventsForDisplay(events, bootstrapFloor)
-
+    const displayed = filterEventsForDisplay(events, 100n)
     expect(displayed).toEqual([{ sequence: "100", _status: undefined }])
   })
 
   it("includes pending/failed optimistic events regardless of sequence", () => {
-    const bootstrapFloor = 100n
-
     const events = [
-      { sequence: "50", _status: undefined }, // excluded (old)
-      { sequence: "100", _status: undefined }, // included (>= floor)
-      { sequence: "999999", _status: "pending" }, // included (pending)
-      { sequence: "999998", _status: "failed" }, // included (failed)
-    ]
-
-    const displayed = filterEventsForDisplay(events, bootstrapFloor)
-
-    expect(displayed).toEqual([
+      { sequence: "50", _status: undefined },
       { sequence: "100", _status: undefined },
       { sequence: "999999", _status: "pending" },
       { sequence: "999998", _status: "failed" },
-    ])
+    ]
+    const displayed = filterEventsForDisplay(events, 100n)
+    expect(displayed).toHaveLength(3)
   })
 
-  it("the race condition scenario end-to-end: socket event during bootstrap is displayed", () => {
-    // Bootstrap returned events with sequences 100-150
-    // Socket delivered event with sequence 200 during the fetch
-    // bootstrapFloor = min(bootstrap sequences) = 100
-    const bootstrapFloor = 100n
-
+  it("the race condition scenario end-to-end", () => {
     const idbEvents = [
-      { sequence: "30", _status: undefined }, // stale from last session
-      { sequence: "100", _status: undefined }, // from bootstrap
-      { sequence: "120", _status: undefined }, // from bootstrap
-      { sequence: "150", _status: undefined }, // from bootstrap
-      { sequence: "200", _status: undefined }, // from socket (the race)
+      { sequence: "30", _status: undefined },
+      { sequence: "100", _status: undefined },
+      { sequence: "120", _status: undefined },
+      { sequence: "150", _status: undefined },
+      { sequence: "200", _status: undefined },
     ]
-
-    const displayed = filterEventsForDisplay(idbEvents, bootstrapFloor)
-
-    // Event at sequence 200 MUST be included — it arrived via socket during
-    // the bootstrap fetch window. Dropping it violates INV-53.
+    const displayed = filterEventsForDisplay(idbEvents, 100n)
     expect(displayed.map((e) => e.sequence)).toEqual(["100", "120", "150", "200"])
   })
 })

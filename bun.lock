@@ -212,6 +212,7 @@
         "@vitejs/plugin-react": "^4",
         "autoprefixer": "^10.4.23",
         "eslint": "^9.28.0",
+        "fake-indexeddb": "^6.2.5",
         "happy-dom": "^20.0.11",
         "jsdom": "^27.3.0",
         "postcss": "^8.5.6",
@@ -2000,6 +2001,8 @@
     "express-rate-limit": ["express-rate-limit@7.5.1", "", { "peerDependencies": { "express": ">= 4.11" } }, "sha512-7iN8iPMDzOMHPUYllBEsQdWVB6fPDMPqwjBaFrgr4Jgr/+okjvzAy+UHlYYL/Vs0OsOrMkwS6PJDkFlJwoxUnw=="],
 
     "extend": ["extend@3.0.2", "", {}, "sha512-fjquC59cD7CyW6urNXK0FBufkZcoiGG80wTuPujX590cB5Ttln20E2UB4S/WARVqhXffZl2LNgS+gQdPIIim/g=="],
+
+    "fake-indexeddb": ["fake-indexeddb@6.2.5", "", {}, "sha512-CGnyrvbhPlWYMngksqrSSUT1BAVP49dZocrHuK0SvtR0D5TMs5wP0o3j7jexDJW01KSadjBp1M/71o/KR3nD1w=="],
 
     "fast-copy": ["fast-copy@4.0.1", "", {}, "sha512-+uUOQlhsaswsizHFmEFAQhB3lSiQ+lisxl50N6ZP0wywlZeWsIESxSi9ftPEps8UGfiBzyYP7x27zA674WUvXw=="],
 

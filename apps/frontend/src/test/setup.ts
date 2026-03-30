@@ -1,3 +1,4 @@
+import "fake-indexeddb/auto"
 import "@testing-library/jest-dom/vitest"
 
 // Mock scrollIntoView (not available in jsdom)
