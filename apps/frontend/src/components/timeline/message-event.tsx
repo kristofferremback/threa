@@ -641,7 +641,7 @@ function FailedMessageEvent({
   personaSlug,
   actorAvatarUrl,
 }: MessageEventInnerProps) {
-  const { retryMessage } = usePendingMessages()
+  const { retryMessage, deleteMessage } = usePendingMessages()
 
   return (
     <MessageLayout
@@ -655,9 +655,19 @@ function FailedMessageEvent({
       containerClassName="border-l-2 border-destructive pl-2"
       statusIndicator={<span className="text-xs text-destructive">Failed to send</span>}
       actions={
-        <Button variant="ghost" size="sm" className="mt-1 h-6 px-2 text-xs" onClick={() => retryMessage(event.id)}>
-          Retry
-        </Button>
+        <div className="flex gap-1 mt-1">
+          <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => retryMessage(event.id)}>
+            Retry
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-2 text-xs text-muted-foreground"
+            onClick={() => deleteMessage(event.id)}
+          >
+            Delete
+          </Button>
+        </div>
       }
     />
   )

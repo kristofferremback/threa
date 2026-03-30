@@ -141,6 +141,8 @@ export interface PendingMessage {
   attachmentIds?: string[]
   createdAt: number // timestamp for ordering
   retryCount: number
+  /** Timestamp before which this message should not be retried (exponential backoff) */
+  retryAfter?: number
 }
 
 export interface SyncCursor {
