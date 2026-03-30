@@ -3,7 +3,7 @@ import type { Request, Response } from "express"
 import type { Pool } from "pg"
 import type { SearchService } from "../search"
 import { serializeSearchResult, resolveUserAccessibleStreamIds } from "../search"
-import type { ApiKeyChannelService } from "../api-keys"
+import type { BotChannelService } from "../api-keys"
 import type { EventService } from "../messaging"
 import {
   StreamRepository,
@@ -186,7 +186,7 @@ async function resolveAuthorDisplayNames(
 
 export interface PublicApiDeps {
   searchService: SearchService
-  apiKeyChannelService: ApiKeyChannelService
+  botChannelService: BotChannelService
   streamService: StreamService
   eventService: EventService
   pool: Pool
@@ -194,7 +194,7 @@ export interface PublicApiDeps {
 
 export function createPublicApiHandlers({
   searchService,
-  apiKeyChannelService,
+  botChannelService,
   streamService,
   eventService,
   pool,
@@ -205,7 +205,7 @@ export function createPublicApiHandlers({
       return resolveUserAccessibleStreamIds(pool, req.workspaceId!, req.user!.id, {})
     }
     if (req.botApiKey) {
-      return apiKeyChannelService.getPublicStreamIds(req.workspaceId!)
+      return botChannelService.getAccessibleStreamIdsForBot(req.workspaceId!, req.botApiKey.botId)
     }
     throw new HttpError("No API key context", { status: 401, code: "UNAUTHORIZED" })
   }
@@ -220,7 +220,11 @@ export function createPublicApiHandlers({
       return
     }
     if (req.botApiKey) {
-      const accessible = await apiKeyChannelService.isStreamPublic(req.workspaceId!, streamId)
+      const accessible = await botChannelService.isStreamAccessibleForBot(
+        req.workspaceId!,
+        req.botApiKey.botId,
+        streamId
+      )
       if (!accessible) {
         throw new HttpError("Stream not accessible", { status: 403, code: "FORBIDDEN" })
       }

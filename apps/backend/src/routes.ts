@@ -49,7 +49,7 @@ import type { S3Config } from "./lib/env"
 import type { CommandRegistry } from "./features/commands"
 import type { UserPreferencesService } from "./features/user-preferences"
 import type { AvatarService } from "./features/workspaces"
-import type { ApiKeyChannelService } from "./features/api-keys"
+import type { BotChannelService } from "./features/api-keys"
 import type { LinkPreviewService } from "./features/link-previews"
 import type { WorkosOrgService } from "@threa/backend-common"
 import type { BotApiKeyService } from "./features/public-api"
@@ -77,7 +77,7 @@ interface Dependencies {
   allowDevAuthRoutes: boolean
   internalApiKey: string | null
   apiKeyService: ApiKeyService
-  apiKeyChannelService: ApiKeyChannelService
+  botChannelService: BotChannelService
   linkPreviewService: LinkPreviewService
   workosOrgService: WorkosOrgService
   userApiKeyService: UserApiKeyService
@@ -106,7 +106,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     allowDevAuthRoutes,
     internalApiKey,
     apiKeyService,
-    apiKeyChannelService,
+    botChannelService,
     linkPreviewService,
     workosOrgService,
     userApiKeyService,
@@ -357,10 +357,29 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   )
   // Bot avatar serving (unauthenticated — S3 keys contain unguessable ULIDs)
   app.get("/api/workspaces/:workspaceId/bots/:botId/avatar/:file", botHandlers.serveAvatarFile)
+  // Bot channel access grants (admin-only)
+  app.get(
+    "/api/workspaces/:workspaceId/bots/:botId/streams",
+    ...authed,
+    requireRole("admin"),
+    botHandlers.listStreamGrants
+  )
+  app.post(
+    "/api/workspaces/:workspaceId/bots/:botId/streams/:streamId/grant",
+    ...authed,
+    requireRole("admin"),
+    botHandlers.grantStreamAccess
+  )
+  app.delete(
+    "/api/workspaces/:workspaceId/bots/:botId/streams/:streamId/grant",
+    ...authed,
+    requireRole("admin"),
+    botHandlers.revokeStreamAccess
+  )
 
   // Public API v1 — API key auth (workspace-scoped or user-scoped)
   const publicAuth = createPublicApiAuthMiddleware({ userApiKeyService, botApiKeyService, pool })
-  const publicApi = createPublicApiHandlers({ searchService, apiKeyChannelService, streamService, eventService, pool })
+  const publicApi = createPublicApiHandlers({ searchService, botChannelService, streamService, eventService, pool })
   const publicMiddleware = [rateLimits.publicApiWorkspace, rateLimits.publicApiKey, publicAuth] as const
 
   app.post(

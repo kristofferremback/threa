@@ -1,14 +1,13 @@
 import type { Querier } from "../../db"
 import { sql } from "../../db"
-import { apiKeyChannelAccessId } from "../../lib/id"
 
-export const ApiKeyChannelAccessRepository = {
-  async getGrantedStreamIds(db: Querier, workspaceId: string, apiKeyId: string): Promise<string[]> {
+export const BotChannelAccessRepository = {
+  async getGrantedStreamIds(db: Querier, workspaceId: string, botId: string): Promise<string[]> {
     const result = await db.query<{ stream_id: string }>(sql`
-      SELECT a.stream_id FROM api_key_channel_access a
+      SELECT a.stream_id FROM bot_channel_access a
       JOIN streams s ON s.id = a.stream_id
       WHERE a.workspace_id = ${workspaceId}
-        AND a.api_key_id = ${apiKeyId}
+        AND a.bot_id = ${botId}
         AND s.archived_at IS NULL
     `)
     return result.rows.map((r) => r.stream_id)
@@ -16,36 +15,43 @@ export const ApiKeyChannelAccessRepository = {
 
   async grantAccess(
     db: Querier,
-    params: { workspaceId: string; apiKeyId: string; streamId: string; grantedBy: string }
+    params: { id: string; workspaceId: string; botId: string; streamId: string; grantedBy: string }
   ): Promise<void> {
-    const id = apiKeyChannelAccessId()
     await db.query(sql`
-      INSERT INTO api_key_channel_access (id, workspace_id, api_key_id, stream_id, granted_by)
-      VALUES (${id}, ${params.workspaceId}, ${params.apiKeyId}, ${params.streamId}, ${params.grantedBy})
-      ON CONFLICT (workspace_id, api_key_id, stream_id) DO NOTHING
+      INSERT INTO bot_channel_access (id, workspace_id, bot_id, stream_id, granted_by)
+      VALUES (${params.id}, ${params.workspaceId}, ${params.botId}, ${params.streamId}, ${params.grantedBy})
+      ON CONFLICT (workspace_id, bot_id, stream_id) DO NOTHING
     `)
   },
 
-  async revokeAccess(db: Querier, workspaceId: string, apiKeyId: string, streamId: string): Promise<void> {
+  async revokeAccess(db: Querier, workspaceId: string, botId: string, streamId: string): Promise<void> {
     await db.query(sql`
-      DELETE FROM api_key_channel_access
+      DELETE FROM bot_channel_access
       WHERE workspace_id = ${workspaceId}
-        AND api_key_id = ${apiKeyId}
+        AND bot_id = ${botId}
         AND stream_id = ${streamId}
+    `)
+  },
+
+  async revokeAllByBot(db: Querier, workspaceId: string, botId: string): Promise<void> {
+    await db.query(sql`
+      DELETE FROM bot_channel_access
+      WHERE workspace_id = ${workspaceId}
+        AND bot_id = ${botId}
     `)
   },
 
   async listGrants(
     db: Querier,
     workspaceId: string,
-    apiKeyId: string
+    botId: string
   ): Promise<Array<{ streamId: string; grantedBy: string; grantedAt: Date }>> {
     const result = await db.query<{ stream_id: string; granted_by: string; granted_at: Date }>(sql`
       SELECT a.stream_id, a.granted_by, a.granted_at
-      FROM api_key_channel_access a
+      FROM bot_channel_access a
       JOIN streams s ON s.id = a.stream_id
       WHERE a.workspace_id = ${workspaceId}
-        AND a.api_key_id = ${apiKeyId}
+        AND a.bot_id = ${botId}
         AND s.archived_at IS NULL
       ORDER BY a.granted_at DESC
     `)

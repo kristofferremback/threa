@@ -9,7 +9,7 @@ import { registerSocketHandlers } from "./socket"
 import { createDatabasePools, warmPool, type DatabasePools } from "./db"
 import { runMigrations } from "./db/migrations"
 import { WorkosAuthService, StubAuthService, WorkosApiKeyService, StubApiKeyService } from "@threa/backend-common"
-import { ApiKeyChannelService } from "./features/api-keys"
+import { BotChannelService } from "./features/api-keys"
 import { UserApiKeyService as UserApiKeyServiceImpl } from "./features/user-api-keys"
 import { BotApiKeyService } from "./features/public-api"
 import { LinkPreviewService, LinkPreviewOutboxHandler, createLinkPreviewWorker } from "./features/link-previews"
@@ -337,7 +337,7 @@ export async function startServer(): Promise<ServerInstance> {
 
   // Public API key service — WorkOS validates API keys in production, stub in dev
   const apiKeyService = config.useStubAuth ? new StubApiKeyService() : new WorkosApiKeyService(config.workos)
-  const apiKeyChannelService = new ApiKeyChannelService({ pool })
+  const botChannelService = new BotChannelService({ pool })
 
   // User-scoped API key service — managed by Threa (not WorkOS)
   const userApiKeyService = new UserApiKeyServiceImpl(pool)
@@ -372,7 +372,7 @@ export async function startServer(): Promise<ServerInstance> {
     allowDevAuthRoutes: config.useStubAuth && !isProduction,
     internalApiKey: config.internalApiKey,
     apiKeyService,
-    apiKeyChannelService,
+    botChannelService,
     linkPreviewService,
     workosOrgService,
     userApiKeyService,

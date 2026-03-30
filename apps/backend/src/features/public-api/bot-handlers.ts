@@ -3,10 +3,11 @@ import type { Request, Response } from "express"
 import type { Pool } from "pg"
 import { BotRepository } from "./bot-repository"
 import { BotApiKeyRepository, type BotApiKeyRow } from "./bot-api-key-repository"
+import { BotChannelAccessRepository } from "../api-keys"
 import type { AvatarService } from "../workspaces"
 import type { BotApiKeyService } from "./bot-api-key-service"
 import { serializeBot } from "./handlers"
-import { botId } from "../../lib/id"
+import { botId, botChannelAccessId } from "../../lib/id"
 import { withTransaction } from "../../db"
 import { OutboxRepository } from "../../lib/outbox"
 import { HttpError } from "@threa/backend-common"
@@ -185,8 +186,9 @@ export function createBotHandlers({ botApiKeyService, avatarService, pool }: Bot
           throw new HttpError("Bot not found or already archived", { status: 404, code: "NOT_FOUND" })
         }
 
-        // Revoke all active keys on archive
+        // Revoke all active keys and channel grants on archive
         await BotApiKeyRepository.revokeAllByBot(client, workspaceId, id)
+        await BotChannelAccessRepository.revokeAllByBot(client, workspaceId, id)
 
         await OutboxRepository.insert(client, "bot:updated", {
           workspaceId,
@@ -389,6 +391,46 @@ export function createBotHandlers({ botApiKeyService, avatarService, pool }: Bot
       } catch {
         return res.status(404).end()
       }
+    },
+
+    // --- Channel access grants ---
+
+    /** GET /api/workspaces/:workspaceId/bots/:botId/streams */
+    async listStreamGrants(req: Request, res: Response) {
+      const workspaceId = req.workspaceId!
+      const { botId: id } = req.params
+      const grants = await BotChannelAccessRepository.listGrants(pool, workspaceId, id)
+      res.json({ data: grants })
+    },
+
+    /** POST /api/workspaces/:workspaceId/bots/:botId/streams/:streamId/grant */
+    async grantStreamAccess(req: Request, res: Response) {
+      const workspaceId = req.workspaceId!
+      const { botId: id, streamId } = req.params
+
+      const bot = await BotRepository.findById(pool, id)
+      if (!bot || bot.workspaceId !== workspaceId || bot.archivedAt) {
+        throw new HttpError("Bot not found or archived", { status: 404, code: "NOT_FOUND" })
+      }
+
+      await BotChannelAccessRepository.grantAccess(pool, {
+        id: botChannelAccessId(),
+        workspaceId,
+        botId: id,
+        streamId,
+        grantedBy: req.user!.id,
+      })
+
+      res.status(204).send()
+    },
+
+    /** DELETE /api/workspaces/:workspaceId/bots/:botId/streams/:streamId/grant */
+    async revokeStreamAccess(req: Request, res: Response) {
+      const workspaceId = req.workspaceId!
+      const { botId: id, streamId } = req.params
+
+      await BotChannelAccessRepository.revokeAccess(pool, workspaceId, id, streamId)
+      res.status(204).send()
     },
   }
 }

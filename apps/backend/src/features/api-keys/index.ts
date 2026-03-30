@@ -1,2 +1,2 @@
-export { ApiKeyChannelService } from "./service"
-export { ApiKeyChannelAccessRepository } from "./repository"
+export { BotChannelService } from "./service"
+export { BotChannelAccessRepository } from "./repository"
