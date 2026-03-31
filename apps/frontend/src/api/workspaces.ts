@@ -116,11 +116,6 @@ export const workspacesApi = {
     return res.user
   },
 
-  async getWidgetToken(workspaceId: string): Promise<string> {
-    const res = await api.get<{ token: string }>(`/api/workspaces/${workspaceId}/widget-token`)
-    return res.token
-  },
-
   // User-scoped API keys
   async listUserApiKeys(workspaceId: string): Promise<UserApiKey[]> {
     const res = await api.get<{ keys: UserApiKey[] }>(`/api/workspaces/${workspaceId}/user-api-keys`)

@@ -11,13 +11,15 @@ import { Tabs, TabsContent } from "@/components/ui/tabs"
 import { GeneralTab } from "./general-tab"
 import { UsersTab } from "./users-tab"
 import { ApiKeysTab } from "./api-keys-tab"
+import { BotsTab } from "./bots-tab"
 
-const ALL_TABS = ["general", "users", "api-keys"] as const
+const ALL_TABS = ["general", "users", "bots", "api-keys"] as const
 type WorkspaceSettingsTab = (typeof ALL_TABS)[number]
 
 const TAB_LABELS: Record<WorkspaceSettingsTab, string> = {
   general: "General",
   users: "Users",
+  bots: "Bots",
   "api-keys": "API Keys",
 }
 
@@ -75,6 +77,9 @@ export function WorkspaceSettingsDialog({ workspaceId }: WorkspaceSettingsDialog
             </TabsContent>
             <TabsContent value="users" className="mt-0">
               <UsersTab workspaceId={workspaceId} />
+            </TabsContent>
+            <TabsContent value="bots" className="mt-0">
+              <BotsTab workspaceId={workspaceId} />
             </TabsContent>
             <TabsContent value="api-keys" className="mt-0">
               <ApiKeysTab workspaceId={workspaceId} />

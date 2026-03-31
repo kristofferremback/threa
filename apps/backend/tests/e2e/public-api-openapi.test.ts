@@ -25,15 +25,14 @@ import { z } from "zod"
 
 const testRunId = Math.random().toString(36).substring(7)
 const testEmail = (name: string) => `${name}-openapi-${testRunId}@test.com`
-const TEST_ORG_ID = `org_openapi_${testRunId}`
-
-const ALL_SCOPES_KEY = `test__${TEST_ORG_ID}__streams:read,messages:read,messages:write,users:read,messages:search`
 
 interface TestContext {
   workspaceId: string
   channelId: string
   messageId: string
   userId: string
+  allScopesKey: string
+  readOnlyKey: string
 }
 
 const baseUrl = () => process.env.TEST_BASE_URL || "http://localhost:3001"
@@ -53,8 +52,6 @@ async function setupTestWorkspace(): Promise<TestContext> {
   const user = await loginAs(client, testEmail("setup"), `OpenAPIUser ${testRunId}`)
   const workspace = await createWorkspace(client, `OpenAPI WS ${testRunId}`)
 
-  await client.post(`/api/dev/workspaces/${workspace.id}/set-org-id`, { orgId: TEST_ORG_ID })
-
   const channel = await createChannel(client, workspace.id, `oa-chan-${testRunId}`, "public")
   const msg = await sendMessage(client, workspace.id, channel.id, `OpenAPI test message ${testRunId}`)
 
@@ -62,11 +59,32 @@ async function setupTestWorkspace(): Promise<TestContext> {
     data: { users: Array<{ id: string }> }
   }>(`/api/workspaces/${workspace.id}/bootstrap`)
 
+  // Create bot with all scopes
+  const botRes = await client.post(`/api/workspaces/${workspace.id}/bots`, {
+    name: `OpenAPI Bot ${testRunId}`,
+    slug: `oa-bot-${testRunId}`,
+  })
+  const botId = (botRes.data as { data: { id: string } }).data.id
+
+  const allKeyRes = await client.post(`/api/workspaces/${workspace.id}/bots/${botId}/keys`, {
+    name: "all-scopes",
+    scopes: ["streams:read", "messages:read", "messages:write", "users:read", "messages:search"],
+  })
+  const allScopesKey = (allKeyRes.data as { value: string }).value
+
+  const readKeyRes = await client.post(`/api/workspaces/${workspace.id}/bots/${botId}/keys`, {
+    name: "read-only",
+    scopes: ["streams:read"],
+  })
+  const readOnlyKey = (readKeyRes.data as { value: string }).value
+
   return {
     workspaceId: workspace.id,
     channelId: channel.id,
     messageId: msg.id,
     userId: bootstrapData.data.users[0].id,
+    allScopesKey,
+    readOnlyKey,
   }
 }
 
@@ -110,7 +128,7 @@ describe("Public API — OpenAPI Spec Validation", () => {
 
   describe("Response shape validation", () => {
     test("GET /streams returns data matching streamSchema", async () => {
-      const res = await apiRequest("GET", `/api/v1/workspaces/${ctx.workspaceId}/streams`, ALL_SCOPES_KEY)
+      const res = await apiRequest("GET", `/api/v1/workspaces/${ctx.workspaceId}/streams`, ctx.allScopesKey)
       expect(res.status).toBe(200)
 
       const body = await res.json()
@@ -128,7 +146,7 @@ describe("Public API — OpenAPI Spec Validation", () => {
       const res = await apiRequest(
         "GET",
         `/api/v1/workspaces/${ctx.workspaceId}/streams/${ctx.channelId}`,
-        ALL_SCOPES_KEY
+        ctx.allScopesKey
       )
       expect(res.status).toBe(200)
 
@@ -141,7 +159,7 @@ describe("Public API — OpenAPI Spec Validation", () => {
       const res = await apiRequest(
         "GET",
         `/api/v1/workspaces/${ctx.workspaceId}/streams/${ctx.channelId}/members`,
-        ALL_SCOPES_KEY
+        ctx.allScopesKey
       )
       expect(res.status).toBe(200)
 
@@ -159,7 +177,7 @@ describe("Public API — OpenAPI Spec Validation", () => {
       const res = await apiRequest(
         "GET",
         `/api/v1/workspaces/${ctx.workspaceId}/streams/${ctx.channelId}/messages`,
-        ALL_SCOPES_KEY
+        ctx.allScopesKey
       )
       expect(res.status).toBe(200)
 
@@ -177,7 +195,7 @@ describe("Public API — OpenAPI Spec Validation", () => {
       const res = await apiRequest(
         "POST",
         `/api/v1/workspaces/${ctx.workspaceId}/streams/${ctx.channelId}/messages`,
-        ALL_SCOPES_KEY,
+        ctx.allScopesKey,
         { content: `OpenAPI send test ${testRunId}` }
       )
       expect(res.status).toBe(201)
@@ -188,11 +206,10 @@ describe("Public API — OpenAPI Spec Validation", () => {
     })
 
     test("PATCH /messages/:messageId returns data matching messageSchema", async () => {
-      // First send a message via API so we own it
       const sendRes = await apiRequest(
         "POST",
         `/api/v1/workspaces/${ctx.workspaceId}/streams/${ctx.channelId}/messages`,
-        ALL_SCOPES_KEY,
+        ctx.allScopesKey,
         { content: `Will be updated ${testRunId}` }
       )
       const sentMsg = (await sendRes.json()).data
@@ -200,7 +217,7 @@ describe("Public API — OpenAPI Spec Validation", () => {
       const res = await apiRequest(
         "PATCH",
         `/api/v1/workspaces/${ctx.workspaceId}/messages/${sentMsg.id}`,
-        ALL_SCOPES_KEY,
+        ctx.allScopesKey,
         { content: `Updated content ${testRunId}` }
       )
       expect(res.status).toBe(200)
@@ -212,11 +229,10 @@ describe("Public API — OpenAPI Spec Validation", () => {
     })
 
     test("DELETE /messages/:messageId returns 204", async () => {
-      // Send a message to delete
       const sendRes = await apiRequest(
         "POST",
         `/api/v1/workspaces/${ctx.workspaceId}/streams/${ctx.channelId}/messages`,
-        ALL_SCOPES_KEY,
+        ctx.allScopesKey,
         { content: `Will be deleted ${testRunId}` }
       )
       const sentMsg = (await sendRes.json()).data
@@ -224,13 +240,13 @@ describe("Public API — OpenAPI Spec Validation", () => {
       const res = await apiRequest(
         "DELETE",
         `/api/v1/workspaces/${ctx.workspaceId}/messages/${sentMsg.id}`,
-        ALL_SCOPES_KEY
+        ctx.allScopesKey
       )
       expect(res.status).toBe(204)
     })
 
     test("POST /messages/search returns data matching searchResultSchema", async () => {
-      const res = await apiRequest("POST", `/api/v1/workspaces/${ctx.workspaceId}/messages/search`, ALL_SCOPES_KEY, {
+      const res = await apiRequest("POST", `/api/v1/workspaces/${ctx.workspaceId}/messages/search`, ctx.allScopesKey, {
         query: "OpenAPI test message",
       })
       expect(res.status).toBe(200)
@@ -245,7 +261,7 @@ describe("Public API — OpenAPI Spec Validation", () => {
     })
 
     test("GET /users returns data matching userSchema", async () => {
-      const res = await apiRequest("GET", `/api/v1/workspaces/${ctx.workspaceId}/users`, ALL_SCOPES_KEY)
+      const res = await apiRequest("GET", `/api/v1/workspaces/${ctx.workspaceId}/users`, ctx.allScopesKey)
       expect(res.status).toBe(200)
 
       const body = await res.json()
@@ -266,23 +282,19 @@ describe("Public API — OpenAPI Spec Validation", () => {
     })
 
     test("403 for insufficient scope", async () => {
-      const readOnlyKey = `test__${TEST_ORG_ID}__streams:read`
       const res = await apiRequest(
         "POST",
         `/api/v1/workspaces/${ctx.workspaceId}/streams/${ctx.channelId}/messages`,
-        readOnlyKey,
+        ctx.readOnlyKey,
         { content: "should fail" }
       )
       expect(res.status).toBe(403)
     })
 
     test("400 for invalid request body", async () => {
-      const res = await apiRequest(
-        "POST",
-        `/api/v1/workspaces/${ctx.workspaceId}/messages/search`,
-        ALL_SCOPES_KEY,
-        { query: "" } // empty query violates min(1)
-      )
+      const res = await apiRequest("POST", `/api/v1/workspaces/${ctx.workspaceId}/messages/search`, ctx.allScopesKey, {
+        query: "",
+      })
       expect(res.status).toBe(400)
 
       const body = await res.json()

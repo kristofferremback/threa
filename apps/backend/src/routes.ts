@@ -25,7 +25,7 @@ import { createInternalHandlers } from "./handlers/internal-handlers"
 import { createAuthStubHandlers } from "./auth/auth-stub-handlers"
 import { createAgentSessionHandlers } from "./features/agents"
 import { createLinkPreviewHandlers } from "./features/link-previews"
-import { createPublicApiHandlers } from "./features/public-api"
+import { createPublicApiHandlers, createBotHandlers } from "./features/public-api"
 import { createUserApiKeyHandlers, type UserApiKeyService } from "./features/user-api-keys"
 import {
   createInternalAuthMiddleware,
@@ -49,9 +49,10 @@ import type { S3Config } from "./lib/env"
 import type { CommandRegistry } from "./features/commands"
 import type { UserPreferencesService } from "./features/user-preferences"
 import type { AvatarService } from "./features/workspaces"
-import type { ApiKeyChannelService } from "./features/api-keys"
+import type { BotChannelService } from "./features/api-keys"
 import type { LinkPreviewService } from "./features/link-previews"
 import type { WorkosOrgService } from "@threa/backend-common"
+import type { BotApiKeyService } from "./features/public-api"
 import type { Pool } from "pg"
 import type { PoolMonitor } from "./lib/observability"
 
@@ -76,10 +77,11 @@ interface Dependencies {
   allowDevAuthRoutes: boolean
   internalApiKey: string | null
   apiKeyService: ApiKeyService
-  apiKeyChannelService: ApiKeyChannelService
+  botChannelService: BotChannelService
   linkPreviewService: LinkPreviewService
   workosOrgService: WorkosOrgService
   userApiKeyService: UserApiKeyService
+  botApiKeyService: BotApiKeyService
 }
 
 export function registerRoutes(app: Express, deps: Dependencies) {
@@ -104,10 +106,11 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     allowDevAuthRoutes,
     internalApiKey,
     apiKeyService,
-    apiKeyChannelService,
+    botChannelService,
     linkPreviewService,
     workosOrgService,
     userApiKeyService,
+    botApiKeyService,
   } = deps
 
   const auth = createAuthMiddleware({ authService })
@@ -183,15 +186,6 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     app.post("/api/dev/login", authStub.handleDevLogin)
     app.post("/api/dev/workspaces/:workspaceId/join", auth, authStub.handleWorkspaceJoin)
     app.post("/api/dev/workspaces/:workspaceId/streams/:streamId/join", auth, workspaceUser, authStub.handleStreamJoin)
-
-    // Dev-only: set workspace org ID for API key testing
-    const setOrgIdSchema = z.object({ orgId: z.string().min(1) })
-    app.post("/api/dev/workspaces/:workspaceId/set-org-id", auth, async (req, res) => {
-      const result = setOrgIdSchema.safeParse(req.body)
-      if (!result.success) return res.status(400).json({ error: "orgId is required" })
-      await WorkspaceRepository.setWorkosOrganizationId(pool, req.params.workspaceId, result.data.orgId)
-      res.json({ ok: true })
-    })
   }
 
   app.get("/api/auth/me", auth, authHandlers.me)
@@ -288,9 +282,6 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/workspaces/:workspaceId/ai-budget", ...authed, aiUsage.getBudget)
   app.put("/api/workspaces/:workspaceId/ai-budget", ...authed, requireRole("admin"), aiUsage.updateBudget)
 
-  // Widget tokens (admin+ only — API key management widget)
-  app.get("/api/workspaces/:workspaceId/widget-token", ...authed, requireRole("admin"), workspace.getWidgetToken)
-
   // Activity feed
   app.get("/api/workspaces/:workspaceId/activity", ...authed, activity.list)
   app.post("/api/workspaces/:workspaceId/activity/read", ...authed, activity.markAllAsRead)
@@ -326,9 +317,67 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.post("/api/workspaces/:workspaceId/user-api-keys", ...authed, userApiKeys.create)
   app.post("/api/workspaces/:workspaceId/user-api-keys/:keyId/revoke", ...authed, userApiKeys.revoke)
 
+  // Bot management (admin-only)
+  const botHandlers = createBotHandlers({ botApiKeyService, avatarService, pool })
+  app.get("/api/workspaces/:workspaceId/bots", ...authed, botHandlers.list)
+  app.post("/api/workspaces/:workspaceId/bots", ...authed, requireRole("admin"), botHandlers.create)
+  app.get("/api/workspaces/:workspaceId/bots/:botId", ...authed, botHandlers.get)
+  app.patch("/api/workspaces/:workspaceId/bots/:botId", ...authed, requireRole("admin"), botHandlers.update)
+  app.post("/api/workspaces/:workspaceId/bots/:botId/archive", ...authed, requireRole("admin"), botHandlers.archive)
+  app.post("/api/workspaces/:workspaceId/bots/:botId/restore", ...authed, requireRole("admin"), botHandlers.restore)
+  app.get("/api/workspaces/:workspaceId/bots/:botId/keys", ...authed, requireRole("admin"), botHandlers.listKeys)
+  app.post("/api/workspaces/:workspaceId/bots/:botId/keys", ...authed, requireRole("admin"), botHandlers.createKey)
+  app.post(
+    "/api/workspaces/:workspaceId/bots/:botId/keys/:keyId/revoke",
+    ...authed,
+    requireRole("admin"),
+    botHandlers.revokeKey
+  )
+  app.post(
+    "/api/workspaces/:workspaceId/bots/:botId/avatar",
+    ...authed,
+    requireRole("admin"),
+    avatarUpload,
+    botHandlers.uploadAvatar
+  )
+  app.delete(
+    "/api/workspaces/:workspaceId/bots/:botId/avatar",
+    ...authed,
+    requireRole("admin"),
+    botHandlers.removeAvatar
+  )
+  // Bot avatar serving (unauthenticated — S3 keys contain unguessable ULIDs)
+  app.get("/api/workspaces/:workspaceId/bots/:botId/avatar/:file", botHandlers.serveAvatarFile)
+  // Bot channel access grants (admin-only)
+  app.get(
+    "/api/workspaces/:workspaceId/bots/:botId/streams",
+    ...authed,
+    requireRole("admin"),
+    botHandlers.listStreamGrants
+  )
+  app.post(
+    "/api/workspaces/:workspaceId/bots/:botId/streams/:streamId/grant",
+    ...authed,
+    requireRole("admin"),
+    botHandlers.grantStreamAccess
+  )
+  app.delete(
+    "/api/workspaces/:workspaceId/bots/:botId/streams/:streamId/grant",
+    ...authed,
+    requireRole("admin"),
+    botHandlers.revokeStreamAccess
+  )
+  // Stream → bots reverse lookup (admin-only)
+  app.get(
+    "/api/workspaces/:workspaceId/streams/:streamId/bots",
+    ...authed,
+    requireRole("admin"),
+    botHandlers.listStreamBots
+  )
+
   // Public API v1 — API key auth (workspace-scoped or user-scoped)
-  const publicAuth = createPublicApiAuthMiddleware({ apiKeyService, userApiKeyService, pool })
-  const publicApi = createPublicApiHandlers({ searchService, apiKeyChannelService, streamService, eventService, pool })
+  const publicAuth = createPublicApiAuthMiddleware({ userApiKeyService, botApiKeyService, pool })
+  const publicApi = createPublicApiHandlers({ searchService, botChannelService, streamService, eventService, pool })
   const publicMiddleware = [rateLimits.publicApiWorkspace, rateLimits.publicApiKey, publicAuth] as const
 
   app.post(

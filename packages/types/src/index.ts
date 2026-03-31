@@ -139,7 +139,7 @@ export {
 } from "./constants"
 
 // Domain entities (wire format)
-export { getAvatarUrl } from "./domain"
+export { getAvatarUrl, getBotAvatarUrl } from "./domain"
 export type {
   Workspace,
   User,
@@ -365,6 +365,9 @@ export {
   type ApiKeyPermission,
   type UserApiKey,
   type CreateUserApiKeyResponse,
+  BOT_KEY_PREFIX,
+  type BotApiKey,
+  type CreateBotApiKeyResponse,
 } from "./api-keys"
 
 // Agent trace types

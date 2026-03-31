@@ -1,42 +1,38 @@
 import type { Pool } from "pg"
-import { sql } from "../../db"
-import { ApiKeyChannelAccessRepository } from "./repository"
+import { BotChannelAccessRepository } from "./repository"
 import { SearchRepository } from "../search"
+import { StreamRepository } from "../streams"
 
-interface ApiKeyChannelServiceDeps {
+interface BotChannelServiceDeps {
   pool: Pool
 }
 
-export class ApiKeyChannelService {
+export class BotChannelService {
   private pool: Pool
 
-  constructor(deps: ApiKeyChannelServiceDeps) {
+  constructor(deps: BotChannelServiceDeps) {
     this.pool = deps.pool
   }
 
-  async getAccessibleStreamIdsForApiKey(workspaceId: string, apiKeyId: string): Promise<string[]> {
+  async getAccessibleStreamIdsForBot(workspaceId: string, botId: string): Promise<string[]> {
     const [publicStreamIds, grantedStreamIds] = await Promise.all([
       SearchRepository.getPublicStreams(this.pool, workspaceId),
-      ApiKeyChannelAccessRepository.getGrantedStreamIds(this.pool, workspaceId, apiKeyId),
+      BotChannelAccessRepository.getGrantedStreamIds(this.pool, workspaceId, botId),
     ])
 
     return [...new Set([...publicStreamIds, ...grantedStreamIds])]
   }
 
-  async isStreamAccessibleForApiKey(workspaceId: string, apiKeyId: string, streamId: string): Promise<boolean> {
-    const result = await this.pool.query(
-      sql`SELECT EXISTS(
-        SELECT 1 FROM streams
-        WHERE id = ${streamId} AND workspace_id = ${workspaceId} AND archived_at IS NULL
-          AND (
-            visibility = 'public'
-            OR id IN (
-              SELECT stream_id FROM api_key_channel_access
-              WHERE workspace_id = ${workspaceId} AND api_key_id = ${apiKeyId} AND stream_id = ${streamId}
-            )
-          )
-      ) AS accessible`
-    )
-    return result.rows[0].accessible
+  async isStreamAccessibleForBot(workspaceId: string, botId: string, streamId: string): Promise<boolean> {
+    // Check public first (fast path)
+    const isPublic = await StreamRepository.isPublic(this.pool, workspaceId, streamId)
+    if (isPublic) return true
+
+    // Point query for explicit grant (single EXISTS, no full scan)
+    return BotChannelAccessRepository.hasGrant(this.pool, workspaceId, botId, streamId)
+  }
+
+  async getPublicStreamIds(workspaceId: string): Promise<string[]> {
+    return SearchRepository.getPublicStreams(this.pool, workspaceId)
   }
 }

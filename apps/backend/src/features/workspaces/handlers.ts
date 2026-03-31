@@ -313,32 +313,5 @@ export function createWorkspaceHandlers({
         res.status(404).end()
       }
     },
-
-    async getWidgetToken(req: Request, res: Response) {
-      const workspaceId = req.workspaceId!
-      const workosUserId = req.workosUserId!
-
-      // 1. Ensure WorkOS org exists (lazy 3-tier: cache → WorkOS lookup → create)
-      const orgId = await workspaceService.ensureWorkosOrganization(workspaceId)
-      if (!orgId) {
-        throw new HttpError("Could not provision WorkOS organization", { status: 500, code: "INTERNAL" })
-      }
-
-      // 2. Ensure user has org membership with admin role
-      await workosOrgService.ensureOrganizationMembership({
-        organizationId: orgId,
-        userId: workosUserId,
-        roleSlug: "admin",
-      })
-
-      // 3. Generate widget token
-      const token = await workosOrgService.getWidgetToken({
-        organizationId: orgId,
-        userId: workosUserId,
-        scopes: ["widgets:api-keys:manage"],
-      })
-
-      res.json({ token })
-    },
   }
 }

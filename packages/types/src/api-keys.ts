@@ -82,3 +82,27 @@ export interface CreateUserApiKeyResponse {
   /** The full API key value. Only returned on creation — store it securely. */
   value: string
 }
+
+// --- Bot API keys ---
+
+export const BOT_KEY_PREFIX = "threa_bk_" as const
+
+/** Wire format for bot API keys (returned to frontend, key value never included) */
+export interface BotApiKey {
+  id: string
+  botId: string
+  name: string
+  keyPrefix: string
+  scopes: ApiKeyScope[]
+  lastUsedAt: string | null
+  expiresAt: string | null
+  revokedAt: string | null
+  createdAt: string
+}
+
+/** Response when creating a bot API key (includes the full key value once) */
+export interface CreateBotApiKeyResponse {
+  key: BotApiKey
+  /** The full API key value. Only returned on creation — store it securely. */
+  value: string
+}

@@ -3,7 +3,7 @@ import type { Request, Response } from "express"
 import type { Pool } from "pg"
 import type { SearchService } from "../search"
 import { serializeSearchResult, resolveUserAccessibleStreamIds } from "../search"
-import type { ApiKeyChannelService } from "../api-keys"
+import type { BotChannelService } from "../api-keys"
 import type { EventService } from "../messaging"
 import {
   StreamRepository,
@@ -92,9 +92,12 @@ export function serializeBot(bot: Bot): WireBot {
   return {
     id: bot.id,
     workspaceId: bot.workspaceId,
+    slug: bot.slug,
     name: bot.name,
     description: bot.description,
     avatarEmoji: bot.avatarEmoji,
+    avatarUrl: bot.avatarUrl,
+    archivedAt: bot.archivedAt?.toISOString() ?? null,
     createdAt: bot.createdAt.toISOString(),
     updatedAt: bot.updatedAt.toISOString(),
   }
@@ -183,7 +186,7 @@ async function resolveAuthorDisplayNames(
 
 export interface PublicApiDeps {
   searchService: SearchService
-  apiKeyChannelService: ApiKeyChannelService
+  botChannelService: BotChannelService
   streamService: StreamService
   eventService: EventService
   pool: Pool
@@ -191,17 +194,20 @@ export interface PublicApiDeps {
 
 export function createPublicApiHandlers({
   searchService,
-  apiKeyChannelService,
+  botChannelService,
   streamService,
   eventService,
   pool,
 }: PublicApiDeps) {
-  /** Resolve accessible stream IDs for the current key (workspace or user-scoped) */
+  /** Resolve accessible stream IDs for the current key (user-scoped or bot) */
   async function getAccessibleStreamIds(req: Request): Promise<string[]> {
     if (req.userApiKey) {
       return resolveUserAccessibleStreamIds(pool, req.workspaceId!, req.user!.id, {})
     }
-    return apiKeyChannelService.getAccessibleStreamIdsForApiKey(req.workspaceId!, req.apiKey!.id)
+    if (req.botApiKey) {
+      return botChannelService.getAccessibleStreamIdsForBot(req.workspaceId!, req.botApiKey.botId)
+    }
+    throw new HttpError("No API key context", { status: 401, code: "UNAUTHORIZED" })
   }
 
   /** Check if a single stream is accessible for the current key */
@@ -213,14 +219,18 @@ export function createPublicApiHandlers({
       }
       return
     }
-    const accessible = await apiKeyChannelService.isStreamAccessibleForApiKey(
-      req.workspaceId!,
-      req.apiKey!.id,
-      streamId
-    )
-    if (!accessible) {
-      throw new HttpError("Stream not accessible", { status: 403, code: "FORBIDDEN" })
+    if (req.botApiKey) {
+      const accessible = await botChannelService.isStreamAccessibleForBot(
+        req.workspaceId!,
+        req.botApiKey.botId,
+        streamId
+      )
+      if (!accessible) {
+        throw new HttpError("Stream not accessible", { status: 403, code: "FORBIDDEN" })
+      }
+      return
     }
+    throw new HttpError("No API key context", { status: 401, code: "UNAUTHORIZED" })
   }
 
   /** Find a message, verify stream access, and verify ownership. Used by update/delete. */
@@ -243,17 +253,19 @@ export function createPublicApiHandlers({
       return { message, actorId: req.user!.id, actorType: AuthorTypes.USER as AuthorType, displayName: req.user!.name }
     }
 
-    // Workspace-scoped key: verify bot ownership
-    if (message.authorType !== AuthorTypes.BOT) {
-      throw new HttpError("Cannot modify messages not created via API", { status: 403, code: "FORBIDDEN" })
+    // Bot-scoped key: verify the message was authored by the bot this key belongs to
+    if (req.botApiKey) {
+      if (message.authorType !== AuthorTypes.BOT || message.authorId !== req.botApiKey.botId) {
+        throw new HttpError("Cannot modify messages created by another bot", { status: 403, code: "FORBIDDEN" })
+      }
+      const bot = await BotRepository.findById(pool, message.authorId)
+      if (!bot) {
+        throw new HttpError("Bot not found", { status: 404, code: "NOT_FOUND" })
+      }
+      return { message, actorId: bot.id, actorType: AuthorTypes.BOT as AuthorType, displayName: bot.name }
     }
 
-    const bot = await BotRepository.findById(pool, message.authorId)
-    if (!bot || bot.apiKeyId !== req.apiKey!.id) {
-      throw new HttpError("Cannot modify messages created by another API key", { status: 403, code: "FORBIDDEN" })
-    }
-
-    return { message, actorId: bot.id, actorType: AuthorTypes.BOT as AuthorType, displayName: bot.name }
+    throw new HttpError("No API key context", { status: 401, code: "UNAUTHORIZED" })
   }
 
   return {
@@ -540,49 +552,28 @@ export function createPublicApiHandlers({
         return
       }
 
-      // Workspace-scoped key: send as a bot
-      const apiKey = req.apiKey!
-      const botName = apiKey.name
-
-      // Upsert bot entity and emit outbox event in a transaction.
-      const { bot } = await withTransaction(pool, async (client) => {
-        const {
-          bot: upsertedBot,
-          isInsert,
-          nameChanged,
-        } = await BotRepository.upsert(client, {
-          id: botId(),
-          workspaceId,
-          apiKeyId: apiKey.id,
-          name: botName,
-        })
-
-        if (isInsert) {
-          await OutboxRepository.insert(client, "bot:created", {
-            workspaceId,
-            bot: serializeBot(upsertedBot),
-          })
-        } else if (nameChanged) {
-          await OutboxRepository.insert(client, "bot:updated", {
-            workspaceId,
-            bot: serializeBot(upsertedBot),
-          })
+      // Bot-scoped key: send as the bot directly (no upsert needed)
+      if (req.botApiKey) {
+        const bot = await BotRepository.findById(pool, req.botApiKey.botId)
+        if (!bot || bot.archivedAt) {
+          throw new HttpError("Bot not found or archived", { status: 404, code: "NOT_FOUND" })
         }
 
-        return { bot: upsertedBot }
-      })
+        const message = await eventService.createMessage({
+          workspaceId,
+          streamId,
+          authorId: bot.id,
+          authorType: AuthorTypes.BOT,
+          contentJson,
+          contentMarkdown,
+          clientMessageId,
+        })
 
-      const message = await eventService.createMessage({
-        workspaceId,
-        streamId,
-        authorId: bot.id,
-        authorType: AuthorTypes.BOT,
-        contentJson,
-        contentMarkdown,
-        clientMessageId,
-      })
+        res.status(201).json({ data: serializeMessage(message, { authorDisplayName: bot.name }) })
+        return
+      }
 
-      res.status(201).json({ data: serializeMessage(message, { authorDisplayName: bot.name }) })
+      throw new HttpError("No API key context", { status: 401, code: "UNAUTHORIZED" })
     },
 
     /**
