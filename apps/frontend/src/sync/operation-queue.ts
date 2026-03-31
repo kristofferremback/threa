@@ -12,16 +12,10 @@ function generateId(): string {
   return `op_${Date.now()}_${Math.random().toString(36).slice(2)}`
 }
 
-/** Callback to kick the operation queue processor. Set by the SyncEngine. */
-let queueNotify: (() => void) | null = null
-
-/** Register a callback that kicks queue processing (called by SyncEngine on connect). */
-export function registerOperationQueueNotify(fn: (() => void) | null): void {
-  queueNotify = fn
-}
-
 /**
- * Enqueue an offline operation. Writes to IDB and kicks the queue processor.
+ * Enqueue an offline operation. Writes to IDB and returns immediately.
+ * The operation will be processed when the SyncEngine kicks the queue
+ * (on connect/reconnect) or when explicitly kicked via the SyncEngine.
  */
 export async function enqueueOperation(
   workspaceId: string,
@@ -36,8 +30,6 @@ export async function enqueueOperation(
     createdAt: Date.now(),
     retryCount: 0,
   })
-  // Kick the queue so it processes immediately if online
-  queueNotify?.()
 }
 
 /**

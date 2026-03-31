@@ -88,7 +88,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
         return memberStreamIds.has(stream.id)
       })
       .map((stream): StreamItemData => {
-        const streamWithPreview = { ...stream, lastMessagePreview: null }
+        const streamWithPreview = { ...stream, lastMessagePreview: stream.lastMessagePreview ?? null }
         const unreadCount = getUnreadCount(stream.id)
         const mentionCount = getMentionCount(stream.id)
         const isMuted = mutedStreamIdSet.has(stream.id)

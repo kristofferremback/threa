@@ -39,6 +39,10 @@ vi.mock("react-router-dom", () => ({
   ),
 }))
 
+vi.mock("@/sync/sync-engine", () => ({
+  useSyncEngine: () => ({ kickOperationQueue: vi.fn() }),
+}))
+
 vi.mock("@/contexts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/contexts")>()
   return {

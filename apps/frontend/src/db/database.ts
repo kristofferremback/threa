@@ -52,6 +52,8 @@ export interface CachedStream {
   createdAt: string
   updatedAt: string
   archivedAt: string | null
+  // Sidebar preview (from workspace bootstrap StreamWithPreview)
+  lastMessagePreview?: { authorId: string; authorType: AuthorType; content: string; createdAt: string } | null
   // User-specific state (from membership)
   pinned?: boolean
   notificationLevel?: string | null

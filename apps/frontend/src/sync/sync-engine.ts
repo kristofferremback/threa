@@ -5,7 +5,7 @@ import { db } from "@/db"
 import { joinRoomFireAndForget, joinRoomBestEffort } from "@/lib/socket-room"
 import { applyWorkspaceBootstrap, registerWorkspaceSocketHandlers } from "./workspace-sync"
 import { registerStreamSocketHandlers } from "./stream-sync"
-import { processOperationQueue, registerOperationQueueNotify } from "./operation-queue"
+import { processOperationQueue } from "./operation-queue"
 import { SyncStatusStore } from "./sync-status"
 import { workspaceKeys } from "@/hooks/use-workspaces"
 import type { WorkspaceBootstrap } from "@threa/types"
@@ -101,16 +101,7 @@ export class SyncEngine {
     await this.bootstrapWorkspace(isReconnect)
 
     // Process pending offline operations (edits, deletes, reactions)
-    if (this.deps.messageService) {
-      const kickQueue = () =>
-        void processOperationQueue(
-          this.deps.messageService!,
-          this.deps.reactionService ?? { add: async () => {}, remove: async () => {} },
-          () => this.socket !== null && !this.isDestroyed
-        )
-      registerOperationQueueNotify(kickQueue)
-      kickQueue()
-    }
+    this.kickOperationQueue()
   }
 
   /**
@@ -149,6 +140,19 @@ export class SyncEngine {
       cleanup()
       this.streamHandlerCleanups.delete(streamId)
     }
+  }
+
+  /**
+   * Kick the offline operation queue (edits, deletes, reactions).
+   * Called on connect and can be called after enqueueOperation.
+   */
+  kickOperationQueue(): void {
+    if (!this.deps.messageService) return
+    void processOperationQueue(
+      this.deps.messageService,
+      this.deps.reactionService ?? { add: async () => {}, remove: async () => {} },
+      () => this.socket !== null && !this.isDestroyed
+    )
   }
 
   /**
