@@ -82,9 +82,12 @@ function createBot(overrides: Partial<Bot> & { _cachedAt?: number } = {}): Cache
   return {
     id: "bot_123",
     workspaceId: "ws_123",
+    slug: null,
     name: "Test Bot",
     description: null,
     avatarEmoji: null,
+    avatarUrl: null,
+    archivedAt: null,
     createdAt: "2024-01-01T00:00:00.000Z",
     updatedAt: "2024-01-01T00:00:00.000Z",
     _cachedAt: Date.now(),

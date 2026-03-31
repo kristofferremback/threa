@@ -70,6 +70,8 @@ interface MessageEventProps {
   isNew?: boolean
   /** Active agent session triggered by this message */
   activity?: MessageAgentActivity
+  /** Defer non-critical per-message hydration until coordinated reveal completes */
+  deferSecondaryHydration?: boolean
 }
 
 interface MessageLayoutProps {
@@ -91,6 +93,7 @@ interface MessageLayoutProps {
   isNew?: boolean
   isEditing?: boolean
   containerRef?: React.RefObject<HTMLDivElement | null>
+  deferSecondaryHydration?: boolean
   /** Touch event handlers for mobile long-press */
   touchHandlers?: {
     onTouchStart: (e: React.TouchEvent) => void
@@ -105,10 +108,12 @@ function MessageLinkPreviews({
   messageId,
   workspaceId,
   previews,
+  hydrateFromApi,
 }: {
   messageId: string
   workspaceId: string
   previews?: LinkPreviewSummary[]
+  hydrateFromApi?: boolean
 }) {
   const linkPreviewContext = useLinkPreviewContext()
   return (
@@ -117,6 +122,7 @@ function MessageLinkPreviews({
       workspaceId={workspaceId}
       previews={previews}
       hoveredUrl={linkPreviewContext?.hoveredLinkUrl}
+      hydrateFromApi={hydrateFromApi}
     />
   )
 }
@@ -138,6 +144,7 @@ function MessageLayout({
   isNew,
   isEditing,
   containerRef,
+  deferSecondaryHydration,
   touchHandlers,
 }: MessageLayoutProps) {
   const isPersona = event.actorType === "persona"
@@ -227,12 +234,17 @@ function MessageLayout({
             <AttachmentProvider workspaceId={workspaceId} attachments={payload.attachments ?? []}>
               <MarkdownContent content={payload.contentMarkdown} className="text-sm leading-relaxed" />
               {payload.attachments && payload.attachments.length > 0 && (
-                <AttachmentList attachments={payload.attachments} workspaceId={workspaceId} />
+                <AttachmentList
+                  attachments={payload.attachments}
+                  workspaceId={workspaceId}
+                  deferHydration={deferSecondaryHydration}
+                />
               )}
               <MessageLinkPreviews
                 messageId={payload.messageId}
                 workspaceId={workspaceId}
                 previews={payload.linkPreviews}
+                hydrateFromApi={!deferSecondaryHydration}
               />
             </AttachmentProvider>
           </LinkPreviewProvider>
@@ -256,6 +268,7 @@ interface MessageEventInnerProps {
   isHighlighted?: boolean
   isNew?: boolean
   activity?: MessageAgentActivity
+  deferSecondaryHydration?: boolean
 }
 
 function SentMessageEvent({
@@ -271,6 +284,7 @@ function SentMessageEvent({
   isHighlighted,
   isNew,
   activity,
+  deferSecondaryHydration,
 }: MessageEventInnerProps) {
   const { panelId, getPanelUrl } = usePanel()
   const messageService = useMessageService()
@@ -539,6 +553,7 @@ function SentMessageEvent({
         containerRef={containerRef}
         isHighlighted={isHighlighted}
         isNew={isNew}
+        deferSecondaryHydration={deferSecondaryHydration}
         containerClassName={cn(
           "scroll-mt-12",
           isMobile && !isEditing && "select-none",
@@ -618,6 +633,7 @@ function PendingMessageEvent({
   actorInitials,
   personaSlug,
   actorAvatarUrl,
+  deferSecondaryHydration,
 }: MessageEventInnerProps) {
   return (
     <MessageLayout
@@ -628,6 +644,7 @@ function PendingMessageEvent({
       actorInitials={actorInitials}
       personaSlug={personaSlug}
       actorAvatarUrl={actorAvatarUrl}
+      deferSecondaryHydration={deferSecondaryHydration}
       containerClassName="opacity-60"
       statusIndicator={
         <span className="text-xs text-muted-foreground opacity-0 animate-fade-in-delayed">Sending...</span>
@@ -644,6 +661,7 @@ function FailedMessageEvent({
   actorInitials,
   personaSlug,
   actorAvatarUrl,
+  deferSecondaryHydration,
 }: MessageEventInnerProps) {
   const { retryMessage, deleteMessage } = usePendingMessages()
 
@@ -656,6 +674,7 @@ function FailedMessageEvent({
       actorInitials={actorInitials}
       personaSlug={personaSlug}
       actorAvatarUrl={actorAvatarUrl}
+      deferSecondaryHydration={deferSecondaryHydration}
       containerClassName="border-l-2 border-destructive pl-2"
       statusIndicator={<span className="text-xs text-destructive">Failed to send</span>}
       actions={
@@ -685,6 +704,7 @@ export function MessageEvent({
   isHighlighted,
   isNew,
   activity,
+  deferSecondaryHydration = false,
 }: MessageEventProps) {
   const payload = event.payload as MessagePayload
   const { getStatus } = usePendingMessages()
@@ -710,6 +730,7 @@ export function MessageEvent({
           actorInitials={actorInitials}
           personaSlug={personaSlug}
           actorAvatarUrl={actorAvatarUrl}
+          deferSecondaryHydration={deferSecondaryHydration}
         />
       )
     case "failed":
@@ -723,6 +744,7 @@ export function MessageEvent({
           actorInitials={actorInitials}
           personaSlug={personaSlug}
           actorAvatarUrl={actorAvatarUrl}
+          deferSecondaryHydration={deferSecondaryHydration}
         />
       )
     default:
@@ -740,6 +762,7 @@ export function MessageEvent({
           isHighlighted={isHighlighted}
           isNew={isNew}
           activity={activity}
+          deferSecondaryHydration={deferSecondaryHydration}
         />
       )
   }

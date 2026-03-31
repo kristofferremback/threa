@@ -4,6 +4,7 @@ import type { DraftAttachment } from "@/db/database"
 import type { JSONContent } from "@threa/types"
 import { generateDraftId } from "@/hooks/use-draft-scratchpads"
 import { attachmentsApi } from "@/api/attachments"
+import { upsertDraftMessageInCache, upsertDraftScratchpadInCache } from "@/stores/draft-store"
 import { SHARE_TARGET_CACHE } from "@/lib/sw-messages"
 
 /** Data stashed by the service worker from a Web Share Target POST. */
@@ -161,23 +162,28 @@ export function useShareTarget() {
       const draftId = generateDraftId()
       const content = buildSharedContent(shared.title, shared.text, shared.url)
       const attachments = shared.files.length > 0 ? await uploadSharedFiles(workspaceId, shared.files) : undefined
+      const createdAt = Date.now()
+      const scratchpad = {
+        id: draftId,
+        workspaceId,
+        displayName: shared.title || null,
+        companionMode: "on" as const,
+        createdAt,
+      }
+      const draftMessage = {
+        id: `stream:${draftId}`,
+        workspaceId,
+        contentJson: content,
+        attachments,
+        updatedAt: createdAt,
+      }
 
       await db.transaction("rw", db.draftScratchpads, db.draftMessages, async () => {
-        await db.draftScratchpads.add({
-          id: draftId,
-          workspaceId,
-          displayName: shared.title || null,
-          companionMode: "on",
-          createdAt: Date.now(),
-        })
-        await db.draftMessages.put({
-          id: `stream:${draftId}`,
-          workspaceId,
-          contentJson: content,
-          attachments,
-          updatedAt: Date.now(),
-        })
+        await db.draftScratchpads.add(scratchpad)
+        await db.draftMessages.put(draftMessage)
       })
+      upsertDraftScratchpadInCache(workspaceId, scratchpad)
+      upsertDraftMessageInCache(workspaceId, draftMessage)
 
       return { draftId, path: `/w/${workspaceId}/s/${draftId}` }
     },
@@ -194,13 +200,15 @@ export function useShareTarget() {
       await db.transaction("rw", db.draftMessages, async () => {
         const existing = await db.draftMessages.get(`stream:${streamId}`)
         const mergedAttachments = [...(existing?.attachments ?? []), ...uploadedAttachments]
-        await db.draftMessages.put({
+        const nextDraft = {
           id: `stream:${streamId}`,
           workspaceId,
           contentJson: content,
           attachments: mergedAttachments.length > 0 ? mergedAttachments : undefined,
           updatedAt: Date.now(),
-        })
+        }
+        await db.draftMessages.put(nextDraft)
+        upsertDraftMessageInCache(workspaceId, nextDraft)
       })
     },
     []

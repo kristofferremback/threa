@@ -15,13 +15,80 @@ function sortBySequence(events: CachedEvent[]): CachedEvent[] {
   })
 }
 
+// Per-stream event cache — populated by seedStreamEventCache (called from
+// seedCacheFromIdb on mount) so that useStreamEvents returns cached events
+// on the first synchronous render after the coordinated loading gate opens.
+// Same pattern as the workspace in-memory cache in workspace-store.ts.
+const eventCache = new Map<string, CachedEvent[]>()
+
+function isTimelineMessageEvent(event: CachedEvent): boolean {
+  return event.eventType === "message_created" || event.eventType === "companion_response"
+}
+
+export function hasStreamEventCache(streamId: string | undefined): boolean {
+  return !!streamId && eventCache.has(streamId)
+}
+
+export function getCachedStreamEvents(streamId: string | undefined): CachedEvent[] {
+  return streamId ? (eventCache.get(streamId) ?? []) : []
+}
+
+export function hasCachedMessageAtOrAfter(streamId: string | undefined, createdAt: string | null | undefined): boolean {
+  if (!createdAt) return true
+
+  const threshold = Date.parse(createdAt)
+  if (Number.isNaN(threshold)) return true
+
+  const cachedEvents = getCachedStreamEvents(streamId)
+  return cachedEvents.some((event) => isTimelineMessageEvent(event) && Date.parse(event.createdAt) >= threshold)
+}
+
+export function resetStreamStoreCache(): void {
+  eventCache.clear()
+}
+
+/**
+ * Prime the event cache from IDB for all streams in a workspace.
+ * Called from seedCacheFromIdb so stream events are available instantly
+ * when the coordinated loading gate opens from IDB cache.
+ */
+export async function seedStreamEventCache(workspaceId: string, knownStreamIds: string[] = []): Promise<void> {
+  for (const streamId of knownStreamIds) {
+    eventCache.set(streamId, [])
+  }
+
+  const allEvents = await db.events.where("workspaceId").equals(workspaceId).toArray()
+  const byStream = new Map<string, CachedEvent[]>()
+  for (const e of allEvents) {
+    let arr = byStream.get(e.streamId)
+    if (!arr) {
+      arr = []
+      byStream.set(e.streamId, arr)
+    }
+    arr.push(e)
+  }
+  for (const [streamId, events] of byStream) {
+    eventCache.set(streamId, sortBySequence(events))
+  }
+}
+
+/**
+ * Seed the event cache for a single stream. Called by applyStreamBootstrap
+ * after writing events to IDB, so useStreamEvents returns data synchronously
+ * when the coordinated loading gate opens.
+ */
+export function seedStreamEvents(streamId: string, events: CachedEvent[]): void {
+  eventCache.set(streamId, sortBySequence([...events]))
+}
+
 /**
  * Reactively read all events for a stream from IndexedDB.
- * Returns an empty array while the initial IDB read resolves.
+ * Uses per-stream cache as default so returning users see events instantly.
  * Updates automatically when any write to db.events affects this stream.
  */
 export function useStreamEvents(streamId: string | undefined): CachedEvent[] {
-  return (
+  const cached = streamId ? (eventCache.get(streamId) ?? []) : []
+  const live =
     useLiveQuery(
       async () => {
         if (!streamId) return []
@@ -29,9 +96,17 @@ export function useStreamEvents(streamId: string | undefined): CachedEvent[] {
         return sortBySequence(events)
       },
       [streamId],
-      [] as CachedEvent[]
+      cached
     ) ?? []
-  )
+
+  // Update cache when liveQuery resolves, including known-empty streams.
+  if (streamId) {
+    eventCache.set(streamId, live)
+  }
+
+  // Bridge async gap: if liveQuery returned empty but cache has data
+  if (live.length === 0 && cached.length > 0) return cached
+  return live
 }
 
 /**

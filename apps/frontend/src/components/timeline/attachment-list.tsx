@@ -15,6 +15,8 @@ interface AttachmentListProps {
   attachments: AttachmentSummary[]
   workspaceId: string
   className?: string
+  /** Defer image URL hydration until coordinated reveal completes */
+  deferHydration?: boolean
 }
 
 interface AttachmentItemProps {
@@ -23,6 +25,7 @@ interface AttachmentItemProps {
   onImageClick?: (url: string, filename: string, attachmentId: string) => void
   onImageLoaded?: (attachmentId: string, url: string) => void
   isHighlighted?: boolean
+  deferHydration?: boolean
 }
 
 function getFileIcon(mimeType: string) {
@@ -95,7 +98,14 @@ function ImageActionDrawer({
   )
 }
 
-function ImageAttachment({ attachment, workspaceId, onImageClick, onImageLoaded, isHighlighted }: AttachmentItemProps) {
+function ImageAttachment({
+  attachment,
+  workspaceId,
+  onImageClick,
+  onImageLoaded,
+  isHighlighted,
+  deferHydration = false,
+}: AttachmentItemProps) {
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState(false)
@@ -103,6 +113,8 @@ function ImageAttachment({ attachment, workspaceId, onImageClick, onImageLoaded,
   const isMobile = useIsMobile()
 
   useEffect(() => {
+    if (deferHydration) return
+
     let mounted = true
 
     async function loadImage() {
@@ -128,7 +140,7 @@ function ImageAttachment({ attachment, workspaceId, onImageClick, onImageLoaded,
     return () => {
       mounted = false
     }
-  }, [workspaceId, attachment.id, onImageLoaded])
+  }, [workspaceId, attachment.id, onImageLoaded, deferHydration])
 
   const handleClick = useCallback(() => {
     if (imageUrl && onImageClick) {
@@ -290,7 +302,7 @@ function FileAttachment({ attachment, workspaceId, isHighlighted }: AttachmentIt
   )
 }
 
-export function AttachmentList({ attachments, workspaceId, className }: AttachmentListProps) {
+export function AttachmentList({ attachments, workspaceId, className, deferHydration = false }: AttachmentListProps) {
   const [selectedAttachmentId, setSelectedAttachmentId] = useState<string | null>(null)
   const [loadedUrls, setLoadedUrls] = useState<Map<string, string>>(new Map())
   const attachmentContext = useAttachmentContext()
@@ -356,6 +368,7 @@ export function AttachmentList({ attachments, workspaceId, className }: Attachme
                 onImageClick={handleImageClick}
                 onImageLoaded={registerImageUrl}
                 isHighlighted={attachment.id === hoveredAttachmentId}
+                deferHydration={deferHydration}
               />
             ))}
           </div>

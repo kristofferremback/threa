@@ -163,6 +163,18 @@ describe("MessageInput", () => {
       const sendButton = screen.getByRole("button", { name: /send/i })
       expect(sendButton).not.toBeDisabled()
     })
+
+    it("should not throw when toggling between disabled and enabled states", () => {
+      const { rerender } = render(
+        <MessageInput workspaceId={workspaceId} streamId={streamId} disabled disabledReason="Read-only stream" />
+      )
+
+      expect(screen.getByText("Read-only stream")).toBeInTheDocument()
+
+      rerender(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
+
+      expect(screen.getByTestId("message-composer")).toBeInTheDocument()
+    })
   })
 
   describe("sending messages", () => {

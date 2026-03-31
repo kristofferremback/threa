@@ -50,6 +50,8 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   const messageSendMode = preferences?.messageSendMode ?? "enter"
   const isMobile = useIsMobile()
   const hideForInlineEdit = isMobile && !!inlineEdit?.isEditingInline
+  const connectionState = useConnectionState()
+  const isOffline = connectionState !== "connected"
 
   // Resolve the portal target for the expanded overlay by walking up from our own DOM node
   // to the closest [data-editor-zone] ancestor. Works for both main stream view and thread panel.
@@ -184,9 +186,6 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   }
 
   // Shared composer props used by both inline and expanded layouts
-  const connectionState = useConnectionState()
-  const isOffline = connectionState !== "connected"
-
   const composerProps = {
     content: composer.content,
     onContentChange: composer.handleContentChange,

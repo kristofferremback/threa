@@ -1,7 +1,10 @@
-import { describe, it, expect, beforeEach } from "vitest"
+import { describe, it, expect, beforeEach, vi } from "vitest"
 import { db } from "@/db"
-import { applyWorkspaceBootstrap } from "./workspace-sync"
+import { QueryClient } from "@tanstack/react-query"
+import { workspaceKeys } from "@/hooks/use-workspaces"
+import { applyWorkspaceBootstrap, registerWorkspaceSocketHandlers } from "./workspace-sync"
 import type { WorkspaceBootstrap } from "@threa/types"
+import type { Socket } from "socket.io-client"
 
 function makeBootstrap(overrides: Partial<WorkspaceBootstrap> = {}): WorkspaceBootstrap {
   return {
@@ -204,5 +207,157 @@ describe("applyWorkspaceBootstrap (real IndexedDB)", () => {
     await applyWorkspaceBootstrap("ws_1", makeBootstrap())
 
     expect(await db.streams.get("stream_keep")).toBeDefined()
+  })
+})
+
+function createTestSocket() {
+  const handlers = new Map<string, Set<(payload: unknown) => void>>()
+
+  const socket = {
+    on(event: string, handler: (payload: unknown) => void) {
+      const set = handlers.get(event) ?? new Set()
+      set.add(handler)
+      handlers.set(event, set)
+      return this
+    },
+    off(event: string, handler: (payload: unknown) => void) {
+      handlers.get(event)?.delete(handler)
+      return this
+    },
+  } as unknown as Socket
+
+  return {
+    socket,
+    emit(event: string, payload: unknown) {
+      handlers.get(event)?.forEach((handler) => handler(payload))
+    },
+  }
+}
+
+function makeWorkspaceUser() {
+  return {
+    id: "member_1",
+    workspaceId: "ws_1",
+    workosUserId: "workos_1",
+    email: "kris@example.com",
+    role: "owner" as const,
+    slug: "kris",
+    name: "Kris",
+    description: null,
+    avatarUrl: null,
+    timezone: "Europe/Stockholm",
+    locale: "en",
+    pronouns: null,
+    phone: null,
+    githubUsername: null,
+    setupCompleted: true,
+    joinedAt: new Date().toISOString(),
+  }
+}
+
+describe("registerWorkspaceSocketHandlers", () => {
+  beforeEach(async () => {
+    await Promise.all([db.streams.clear(), db.streamMemberships.clear()])
+  })
+
+  it("subscribes the creator when a new stream is created at runtime", async () => {
+    const queryClient = new QueryClient()
+    queryClient.setQueryData(
+      workspaceKeys.bootstrap("ws_1"),
+      makeBootstrap({
+        users: [makeWorkspaceUser()],
+        streams: [],
+        streamMemberships: [],
+      })
+    )
+
+    const subscribeStream = vi.fn()
+    const { socket, emit } = createTestSocket()
+    const cleanup = registerWorkspaceSocketHandlers(socket, "ws_1", queryClient, {
+      getCurrentStreamId: () => undefined,
+      getCurrentUser: () => ({ id: "workos_1" }),
+      subscribeStream,
+    })
+
+    emit("stream:created", {
+      workspaceId: "ws_1",
+      streamId: "stream_new",
+      stream: {
+        id: "stream_new",
+        workspaceId: "ws_1",
+        type: "channel",
+        displayName: "Engineering",
+        slug: "engineering",
+        description: null,
+        visibility: "public",
+        parentStreamId: null,
+        parentMessageId: null,
+        rootStreamId: null,
+        companionMode: "off",
+        companionPersonaId: null,
+        createdBy: "member_1",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        archivedAt: null,
+      },
+    })
+
+    await Promise.resolve()
+
+    expect(subscribeStream).toHaveBeenCalledWith("stream_new")
+    expect(await db.streamMemberships.get("ws_1:stream_new")).toBeDefined()
+
+    cleanup()
+  })
+
+  it("subscribes the current user when they are added to a stream at runtime", async () => {
+    const queryClient = new QueryClient()
+    queryClient.setQueryData(
+      workspaceKeys.bootstrap("ws_1"),
+      makeBootstrap({
+        users: [makeWorkspaceUser()],
+        streams: [],
+        streamMemberships: [],
+      })
+    )
+
+    const subscribeStream = vi.fn()
+    const { socket, emit } = createTestSocket()
+    const cleanup = registerWorkspaceSocketHandlers(socket, "ws_1", queryClient, {
+      getCurrentStreamId: () => undefined,
+      getCurrentUser: () => ({ id: "workos_1" }),
+      subscribeStream,
+    })
+
+    emit("stream:member_added", {
+      workspaceId: "ws_1",
+      streamId: "stream_added",
+      memberId: "member_1",
+      stream: {
+        id: "stream_added",
+        workspaceId: "ws_1",
+        type: "channel",
+        displayName: "Added",
+        slug: "added",
+        description: null,
+        visibility: "public",
+        parentStreamId: null,
+        parentMessageId: null,
+        rootStreamId: null,
+        companionMode: "off",
+        companionPersonaId: null,
+        createdBy: "member_2",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        archivedAt: null,
+      },
+    })
+
+    await Promise.resolve()
+
+    expect(subscribeStream).toHaveBeenCalledWith("stream_added")
+    expect(await db.streamMemberships.get("ws_1:stream_added")).toBeDefined()
+
+    cleanup()
   })
 })

@@ -1,4 +1,5 @@
 import { db } from "@/db"
+import { seedStreamEvents } from "@/stores/stream-store"
 import type {
   StreamEvent,
   Stream,
@@ -35,6 +36,16 @@ export async function applyStreamBootstrap(
   bootstrap: StreamBootstrap
 ): Promise<void> {
   const now = Date.now()
+  const bootstrapEventIds = new Set(bootstrap.events.map((event) => event.id))
+  const bootstrapWindowFloor =
+    bootstrap.events.length > 0
+      ? bootstrap.events.reduce((min, event) => {
+          const sequence = BigInt(event.sequence)
+          return sequence < min ? sequence : min
+        }, BigInt(bootstrap.events[0].sequence))
+      : null
+  const bootstrapWindowCeiling = BigInt(bootstrap.latestSequence)
+
   await db.transaction("rw", [db.events, db.streams, db.pendingMessages], async () => {
     // Clean stale optimistic events — temp_* that are no longer pending
     const tempEvents = await db.events
@@ -50,15 +61,51 @@ export async function applyStreamBootstrap(
       }
     }
 
+    // Prune stale cached events inside the fetched bootstrap window.
+    // This keeps older paged history (< floor) and newer socket races (> latestSequence)
+    // while removing ghost events that no longer exist in the server snapshot.
+    if (bootstrapWindowFloor !== null) {
+      const staleWindowEvents = await db.events
+        .where("streamId")
+        .equals(streamId)
+        .filter((event) => {
+          if (bootstrapEventIds.has(event.id)) return false
+          if (event._status === "pending" || event._status === "failed") return false
+          const sequence = BigInt(event.sequence)
+          return sequence >= bootstrapWindowFloor && sequence <= bootstrapWindowCeiling
+        })
+        .toArray()
+
+      for (const staleEvent of staleWindowEvents) {
+        await db.events.delete(staleEvent.id)
+      }
+    }
+
     await db.events.bulkPut(bootstrap.events.map((e) => ({ ...e, workspaceId, _cachedAt: now })))
-    await db.streams.put({
+    // Merge stream metadata without destroying fields that only exist on the
+    // workspace bootstrap's StreamWithPreview (e.g. lastMessagePreview, which
+    // is the sidebar's activity sort key). Use update() for existing records
+    // and fall back to put() if the stream doesn't exist in IDB yet.
+    const streamData = {
       ...bootstrap.stream,
       pinned: bootstrap.membership?.pinned,
       notificationLevel: bootstrap.membership?.notificationLevel,
       lastReadEventId: bootstrap.membership?.lastReadEventId,
       _cachedAt: now,
-    })
+    }
+    const updated = await db.streams.update(bootstrap.stream.id, streamData)
+    if (updated === 0) {
+      await db.streams.put(streamData)
+    }
   })
+
+  // Seed the event cache so useStreamEvents returns data synchronously on the
+  // first render after the coordinated loading gate opens. Same pattern as
+  // seedWorkspaceCache for workspace store hooks.
+  seedStreamEvents(
+    streamId,
+    bootstrap.events.map((e) => ({ ...e, workspaceId, _cachedAt: now }))
+  )
 }
 
 // ============================================================================

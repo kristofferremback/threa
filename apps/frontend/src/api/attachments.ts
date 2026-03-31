@@ -1,6 +1,8 @@
 import { api, API_BASE, ApiError } from "./client"
 import type { Attachment } from "@threa/types"
 
+const inFlightDownloadUrlRequests = new Map<string, Promise<string>>()
+
 export const attachmentsApi = {
   /**
    * Upload a file to the workspace.
@@ -36,11 +38,22 @@ export const attachmentsApi = {
    * URL is valid for 15 minutes.
    */
   async getDownloadUrl(workspaceId: string, attachmentId: string, options?: { download?: boolean }): Promise<string> {
+    const key = `${workspaceId}:${attachmentId}:${options?.download ? "download" : "inline"}`
+    const existing = inFlightDownloadUrlRequests.get(key)
+    if (existing) return existing
+
     const params = options?.download ? "?download=true" : ""
-    const res = await api.get<{ url: string; expiresIn: number }>(
-      `/api/workspaces/${workspaceId}/attachments/${attachmentId}/url${params}`
-    )
-    return res.url
+    const request = api
+      .get<{ url: string; expiresIn: number }>(
+        `/api/workspaces/${workspaceId}/attachments/${attachmentId}/url${params}`
+      )
+      .then((res) => res.url)
+      .finally(() => {
+        inFlightDownloadUrlRequests.delete(key)
+      })
+
+    inFlightDownloadUrlRequests.set(key, request)
+    return request
   },
 
   /**

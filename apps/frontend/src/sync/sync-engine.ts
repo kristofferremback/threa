@@ -95,6 +95,7 @@ export class SyncEngine {
       {
         getCurrentStreamId: () => this.currentStreamId,
         getCurrentUser: () => this.currentUser,
+        subscribeStream: (streamId: string) => void this.subscribeStream(streamId),
       }
     )
 

@@ -10,11 +10,13 @@ import {
   type CommandFailedPayload,
 } from "@threa/types"
 import type { MessageAgentActivity } from "@/hooks"
+import { useCoordinatedLoading } from "@/contexts"
 import { EventItem } from "./event-item"
 import { AgentSessionEvent } from "./agent-session-event"
 import { CommandEvent } from "./command-event"
 import { UnreadDivider } from "./unread-divider"
 import { useUser } from "@/auth"
+import { Skeleton } from "@/components/ui/skeleton"
 
 interface EventListProps {
   events: StreamEvent[]
@@ -165,12 +167,27 @@ export function EventList({
   hideSessionCards,
   newMessageIds,
 }: EventListProps) {
+  const { phase } = useCoordinatedLoading()
   const user = useUser()
 
   if (isLoading) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <p className="text-muted-foreground">Loading...</p>
+      <div className="flex flex-col gap-4 px-4 py-6 sm:px-6">
+        <div className="flex gap-3">
+          <Skeleton className="h-9 w-9 rounded-full" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-4 w-32" />
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-2/3" />
+          </div>
+        </div>
+        <div className="flex gap-3">
+          <Skeleton className="h-9 w-9 rounded-full" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-4 w-24" />
+            <Skeleton className="h-4 w-5/6" />
+          </div>
+        </div>
       </div>
     )
   }
@@ -249,6 +266,7 @@ export function EventList({
                 highlightMessageId={highlightMessageId}
                 agentActivity={hideSessionCards ? agentActivity : undefined}
                 isNew={newMessageIds?.has(item.event.id)}
+                deferSecondaryHydration={phase !== "ready"}
               />
             )}
           </div>

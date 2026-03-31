@@ -19,8 +19,10 @@ import {
   streamKeys,
   useThreadAncestors,
 } from "@/hooks"
-import { usePanel, isDraftPanel, parseDraftPanel, useSidebar } from "@/contexts"
+import { useCoordinatedLoading, usePanel, isDraftPanel, parseDraftPanel, useSidebar } from "@/contexts"
 import { useStreamService, useMessageService } from "@/contexts"
+import { useStreamEvents } from "@/stores/stream-store"
+import { useWorkspaceStreams } from "@/stores/workspace-store"
 import { StreamLoadingIndicator } from "@/components/loading"
 import { StreamContent } from "@/components/timeline"
 import { StreamErrorBoundary } from "@/components/stream-error-boundary"
@@ -41,6 +43,7 @@ interface StreamPanelProps {
 
 export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
   const { isMobile } = useSidebar()
+  const { getStreamState } = useCoordinatedLoading()
   const [searchParams] = useSearchParams()
   const highlightMessageId = searchParams.get("m")
   const { panelId, openPanel, getPanelUrl, closePanel } = usePanel()
@@ -56,28 +59,42 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
   // Check if this is a draft panel
   const isDraft = panelId ? isDraftPanel(panelId) : false
   const draftInfo = isDraft ? parseDraftPanel(panelId!) : null
+  const idbStreams = useWorkspaceStreams(workspaceId)
+  const idbPanelStream = useMemo(
+    () => (!isDraft && panelId ? idbStreams.find((candidate) => candidate.id === panelId) : undefined),
+    [idbStreams, isDraft, panelId]
+  )
 
   // For real streams, fetch bootstrap
-  const {
-    data: bootstrap,
-    error,
-    isLoading: isBootstrapLoading,
-  } = useStreamBootstrap(workspaceId, isDraft ? "" : (panelId ?? ""), {
-    enabled: !!panelId && !isDraft,
+  const { data: bootstrap, error } = useStreamBootstrap(workspaceId, isDraft ? "" : (panelId ?? ""), {
+    enabled: !!panelId && !isDraft && !idbPanelStream,
   })
-  const stream = bootstrap?.stream
+  const stream = idbPanelStream ?? bootstrap?.stream
   const isThread = stream?.type === StreamTypes.THREAD
 
   // Show loading indicator only for real streams (not drafts) and only when actively loading after initial data
-  const showLoadingIndicator = !isDraft && isBootstrapLoading && !bootstrap
+  const showLoadingIndicator = !isDraft && !!panelId && getStreamState(panelId) === "loading"
 
   // For draft threads, fetch parent stream to get the parent message
+  const idbParentStream = useMemo(
+    () => (draftInfo ? idbStreams.find((candidate) => candidate.id === draftInfo.parentStreamId) : undefined),
+    [draftInfo, idbStreams]
+  )
+  const parentCachedEvents = useStreamEvents(draftInfo?.parentStreamId)
+  const cachedParentMessage = useMemo(() => {
+    if (!draftInfo) return null
+    return parentCachedEvents.find(
+      (event) =>
+        event.eventType === "message_created" &&
+        (event.payload as { messageId?: string })?.messageId === draftInfo.parentMessageId
+    )
+  }, [draftInfo, parentCachedEvents])
   const { data: parentBootstrap } = useStreamBootstrap(workspaceId, draftInfo?.parentStreamId ?? "", {
-    enabled: !!draftInfo,
+    enabled: !!draftInfo && (!idbParentStream || !cachedParentMessage),
   })
 
   // For draft threads, fetch parent stream's ancestors to build full breadcrumb trail
-  const parentStream = parentBootstrap?.stream
+  const parentStream = idbParentStream ?? parentBootstrap?.stream
   const { ancestors } = useThreadAncestors(
     workspaceId,
     parentStream?.id ?? "",
@@ -86,13 +103,14 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
   )
 
   const parentMessage = useMemo(() => {
+    if (cachedParentMessage) return cachedParentMessage
     if (!draftInfo || !parentBootstrap?.events) return null
     return parentBootstrap.events.find(
       (e) =>
         e.eventType === "message_created" &&
         (e.payload as { messageId?: string })?.messageId === draftInfo.parentMessageId
     )
-  }, [parentBootstrap, draftInfo])
+  }, [cachedParentMessage, parentBootstrap, draftInfo])
 
   // Auto-convert draft to real thread when created externally (e.g., agent eager thread creation)
   const externalThreadId = useMemo(() => {
@@ -241,23 +259,23 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
 
   // Build the full ancestor chain for draft breadcrumbs: hook ancestors + parent stream
   const fullChain = useMemo(() => {
-    if (!draftInfo || !parentBootstrap?.stream) return []
+    if (!draftInfo || !parentStream) return []
 
     const parentItem = {
       id: draftInfo.parentStreamId,
-      displayName: parentBootstrap.stream.displayName,
-      slug: parentBootstrap.stream.slug,
-      type: parentBootstrap.stream.type,
-      parentStreamId: parentBootstrap.stream.parentStreamId,
+      displayName: parentStream.displayName,
+      slug: parentStream.slug,
+      type: parentStream.type,
+      parentStreamId: parentStream.parentStreamId,
     }
 
     return [...ancestors, parentItem]
-  }, [ancestors, parentBootstrap?.stream, draftInfo])
+  }, [ancestors, draftInfo, parentStream])
 
   if (!panelId) return null
 
   let headerContent: React.ReactNode
-  if (isDraft && parentBootstrap?.stream) {
+  if (isDraft && parentStream) {
     headerContent = (
       <div className="flex items-center gap-1 min-w-0 flex-1 overflow-hidden pr-2">
         {!isMobile && (

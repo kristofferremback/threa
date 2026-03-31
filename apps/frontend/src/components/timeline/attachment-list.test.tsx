@@ -76,6 +76,27 @@ describe("AttachmentList", () => {
       expect(screen.getByText("photo.png")).toBeInTheDocument()
     })
 
+    it("should defer image URL hydration when requested", async () => {
+      const attachment = createAttachment({
+        id: "img_1",
+        filename: "photo.png",
+        mimeType: "image/png",
+      })
+      const { rerender } = render(
+        <AttachmentList attachments={[attachment]} workspaceId={workspaceId} deferHydration={true} />
+      )
+
+      await waitFor(() => {
+        expect(mockGetDownloadUrl).not.toHaveBeenCalled()
+      })
+
+      rerender(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} deferHydration={false} />)
+
+      await waitFor(() => {
+        expect(mockGetDownloadUrl).toHaveBeenCalledWith(workspaceId, "img_1")
+      })
+    })
+
     it("should separate images and files into different groups", async () => {
       const attachments = [
         createAttachment({ id: "1", filename: "photo.jpg", mimeType: "image/jpeg" }),

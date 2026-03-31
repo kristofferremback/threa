@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useStreamBootstrap } from "./use-streams"
 import { useStreamService } from "@/contexts"
 import { useQueryClient, useInfiniteQuery } from "@tanstack/react-query"
 import { db } from "@/db"
 import { EVENT_PAGE_SIZE } from "@/lib/constants"
 import { useStreamEvents } from "@/stores/stream-store"
+import { shouldSuppressBootstrapError } from "@/lib/query-load-state"
 import type { StreamEvent, EventsAroundResponse } from "@threa/types"
 
 export const eventKeys = {
@@ -21,6 +22,59 @@ interface JumpState {
   oldestSequence: string
   /** Sequence of the newest event in the jump window — cursor for forward pagination */
   newestSequence: string
+}
+
+type SequencedEvent = Pick<StreamEvent, "sequence">
+type DisplayableEvent = SequencedEvent & { _status?: string | null }
+
+export function getMinimumSequence(events: Array<Pick<StreamEvent, "sequence">> | null | undefined): bigint | null {
+  if (!events || events.length === 0) return null
+
+  let min = BigInt(events[0].sequence)
+  for (let i = 1; i < events.length; i++) {
+    const seq = BigInt(events[i].sequence)
+    if (seq < min) min = seq
+  }
+  return min
+}
+
+export function getDisplayFloor(bootstrapFloor: bigint | null, olderFloor: bigint | null): bigint | null {
+  if (bootstrapFloor === null) return olderFloor
+  if (olderFloor === null) return bootstrapFloor
+  return olderFloor < bootstrapFloor ? olderFloor : bootstrapFloor
+}
+
+export function getCachedWindowFloor<T extends DisplayableEvent>(events: T[], pageSize: number): bigint | null {
+  const persistedEvents = events.filter((event) => event._status !== "pending" && event._status !== "failed")
+  if (persistedEvents.length <= pageSize) return null
+
+  const firstVisibleEvent = persistedEvents[persistedEvents.length - pageSize]
+  return BigInt(firstVisibleEvent.sequence)
+}
+
+export function filterEventsForDisplay<T extends DisplayableEvent>(events: T[], displayFloor: bigint | null): T[] {
+  if (displayFloor === null) return events
+
+  return events.filter((event) => {
+    if (event._status === "pending" || event._status === "failed") return true
+    return BigInt(event.sequence) >= displayFloor
+  })
+}
+
+export function getOldestSequence(events: SequencedEvent[] | null | undefined): string | null {
+  if (!events || events.length === 0) return null
+
+  let oldest = events[0]
+  let oldestValue = BigInt(oldest.sequence)
+  for (let i = 1; i < events.length; i++) {
+    const value = BigInt(events[i].sequence)
+    if (value < oldestValue) {
+      oldest = events[i]
+      oldestValue = value
+    }
+  }
+
+  return oldest.sequence
 }
 
 function sortBySequence(events: StreamEvent[]): StreamEvent[] {
@@ -72,6 +126,7 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
 
   // Jump-to-message state: when set, replaces bootstrap as the anchor window
   const [jumpState, setJumpState] = useState<JumpState | null>(null)
+  const lastSuppressedErrorKeyRef = useRef<string | null>(null)
 
   // Infinite query for older events (backward pagination).
   // enabled: false — never auto-fetches. Triggered exclusively via seed + fetchOlderPage().
@@ -139,15 +194,23 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
   // - Socket events that arrived during or after bootstrap (INV-53 guarantee)
   // - Pending/failed optimistic events (regardless of sequence)
   const bootstrapFloor = useMemo(() => {
-    if (!bootstrap?.events?.length) return null
-    // Find the actual minimum sequence via BigInt comparison
-    let min = BigInt(bootstrap.events[0].sequence)
-    for (let i = 1; i < bootstrap.events.length; i++) {
-      const seq = BigInt(bootstrap.events[i].sequence)
-      if (seq < min) min = seq
-    }
-    return min
+    return getMinimumSequence(bootstrap?.events)
   }, [bootstrap?.events])
+
+  const olderFloor = useMemo(() => {
+    const olderEvents = olderData?.pages.flatMap((page) => page.events).filter(Boolean) ?? []
+    return getMinimumSequence(olderEvents)
+  }, [olderData])
+
+  const hasIdbEvents = idbEvents.length > 0
+  const suppressBootstrapError = shouldSuppressBootstrapError(error, hasIdbEvents)
+  const cachedWindowFloor = useMemo(() => getCachedWindowFloor(idbEvents, EVENT_PAGE_SIZE), [idbEvents])
+  const displayFloor = useMemo(() => {
+    const serverFloor = getDisplayFloor(bootstrapFloor, olderFloor)
+    if (serverFloor !== null) return serverFloor
+    if (suppressBootstrapError) return null
+    return cachedWindowFloor
+  }, [bootstrapFloor, olderFloor, suppressBootstrapError, cachedWindowFloor])
 
   // Combine all event sources.
   // In jump mode: use jump window + paginated older/newer events.
@@ -159,28 +222,28 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
       return dedupeAndSort([jumpState.events, olderEvents, newerEvents])
     }
 
-    // Before bootstrap loads, IDB events are unfiltered (stale from previous
-    // sessions). isLoading is true so components show skeletons, not events.
-    // After bootstrap loads, filter to the bootstrap window + newer.
-    if (bootstrapFloor !== null) {
-      const filtered = idbEvents.filter((e) => {
-        // Keep pending/failed optimistic events regardless of sequence
-        if (e._status === "pending" || e._status === "failed") return true
-        // Keep events within or newer than the bootstrap window
-        return BigInt(e.sequence) >= bootstrapFloor
-      })
-      return filtered as unknown as StreamEvent[]
-    }
+    // Before bootstrap resolves, show only a bootstrap-sized cached window so
+    // users cannot scroll into extra cached history that later disappears when
+    // the bootstrap floor arrives. If bootstrap fails and we fall back to the
+    // local cache, widen back out to the full cached timeline.
+    return filterEventsForDisplay(idbEvents, displayFloor) as unknown as StreamEvent[]
+  }, [idbEvents, olderData, newerData, jumpState, displayFloor])
 
-    return idbEvents as unknown as StreamEvent[]
-  }, [idbEvents, olderData, newerData, jumpState, bootstrapFloor])
-
-  // Show loading until bootstrap completes AND useLiveQuery has resolved
-  // the IDB events. Without the idbEvents check, components see empty data
-  // for one render cycle after bootstrap completes (useLiveQuery is async).
+  // IDB-first: if IDB has events, we're not loading — show them immediately.
+  // Only show loading when IDB truly has no events (first visit to stream).
+  // The ~10ms useLiveQuery async gap is acceptable; once it resolves, events
+  // appear without a spinner. Bootstrap syncs in the background.
   const bootstrapHasEvents = (bootstrap?.events?.length ?? 0) > 0
-  const idbResolved = !bootstrapHasEvents || idbEvents.length > 0
-  const isLoading = isBootstrapLoading || !idbResolved
+  const idbResolved = !bootstrapHasEvents || hasIdbEvents
+  const isLoading = !hasIdbEvents && (isBootstrapLoading || !idbResolved)
+
+  useEffect(() => {
+    if (!import.meta.env.DEV || !suppressBootstrapError || !error) return
+    const key = `${streamId}:${error.message}`
+    if (lastSuppressedErrorKeyRef.current === key) return
+    lastSuppressedErrorKeyRef.current = key
+    console.warn(`[useEvents] Suppressing bootstrap error for ${streamId} because local timeline data exists`, error)
+  }, [suppressBootstrapError, error, streamId])
 
   // Determine if older events exist.
   const hasOlderEvents = useMemo(() => {
@@ -209,15 +272,14 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
     }
 
     // Seed with a cursor-only page, then fetch immediately.
-    const anchorEvents = jumpState ? jumpState.events : idbEvents
-    if (anchorEvents.length === 0) return
-    const oldestSequence = anchorEvents[0].sequence
+    const oldestSequence = getOldestSequence(jumpState ? jumpState.events : events)
+    if (!oldestSequence) return
     queryClient.setQueryData(eventKeys.list(workspaceId, streamId), {
       pages: [{ events: [], hasMore: true, cursor: oldestSequence }],
       pageParams: [undefined],
     })
     fetchOlderPage()
-  }, [isFetchingOlder, hasOlderPage, jumpState, idbEvents, queryClient, workspaceId, streamId, fetchOlderPage])
+  }, [isFetchingOlder, hasOlderPage, jumpState, events, queryClient, workspaceId, streamId, fetchOlderPage])
 
   // Auto-load all older events on mount when loadAll is true (e.g. thread panels)
   const loadAll = options?.loadAll ?? false
@@ -305,7 +367,7 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
   return {
     events,
     isLoading,
-    error,
+    error: suppressBootstrapError ? null : error,
     fetchOlderEvents,
     hasOlderEvents,
     isFetchingOlder,

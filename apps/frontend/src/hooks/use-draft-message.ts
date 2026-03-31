@@ -1,6 +1,11 @@
-import { useLiveQuery } from "dexie-react-hooks"
 import { useCallback, useEffect, useRef } from "react"
 import { db, type DraftAttachment, type DraftMessage } from "@/db"
+import {
+  deleteDraftMessageFromCache,
+  hasSeededDraftCache,
+  upsertDraftMessageInCache,
+  useDraftMessagesFromStore,
+} from "@/stores/draft-store"
 import type { JSONContent } from "@threa/types"
 import { isEmptyContent } from "@/lib/prosemirror-utils"
 
@@ -18,20 +23,10 @@ export function getDraftMessageKey(
 
 const DEBOUNCE_MS = import.meta.env.VITE_DRAFT_DEBOUNCE_MS ? Number(import.meta.env.VITE_DRAFT_DEBOUNCE_MS) : 500
 
-// Sentinel value to distinguish "loading" from "loaded but not found"
-const LOADING = Symbol("loading")
-type DraftLiveQueryResult = typeof LOADING | { draftKey: string; draft: DraftMessage | undefined }
-
 export function useDraftMessage(workspaceId: string, draftKey: string) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  // Tag results with the current key so a previous query can't leak stale draft data
-  // into a freshly selected scope while Dexie is still resolving the new one.
-  const draftResult = useLiveQuery(
-    async () => ({ draftKey, draft: await db.draftMessages.get(draftKey) }),
-    [draftKey],
-    LOADING as DraftLiveQueryResult
-  )
+  const draftMessages = useDraftMessagesFromStore(workspaceId)
+  const resolvedDraft = draftMessages.find((draft) => draft.id === draftKey)
 
   const saveDraft = useCallback(
     async (contentJson: JSONContent, attachments?: DraftAttachment[]) => {
@@ -48,18 +43,21 @@ export function useDraftMessage(workspaceId: string, draftKey: string) {
       // Delete draft only if both content and attachments are empty
       if (isEmptyContent(contentJson) && finalAttachments.length === 0) {
         await db.draftMessages.delete(draftKey)
+        deleteDraftMessageFromCache(workspaceId, draftKey)
         return
       }
 
-      await db.draftMessages.put({
+      const nextDraft: DraftMessage = {
         id: draftKey,
         workspaceId,
         contentJson,
         attachments: finalAttachments,
         updatedAt: Date.now(),
-      })
+      }
+      await db.draftMessages.put(nextDraft)
+      upsertDraftMessageInCache(workspaceId, nextDraft)
     },
-    [draftKey, workspaceId]
+    [draftKey, workspaceId, resolvedDraft]
   )
 
   const saveDraftDebounced = useCallback(
@@ -93,13 +91,15 @@ export function useDraftMessage(workspaceId: string, draftKey: string) {
       // Default empty document
       const emptyDoc: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
 
-      await db.draftMessages.put({
+      const nextDraft: DraftMessage = {
         id: draftKey,
         workspaceId,
         contentJson: currentDraft?.contentJson ?? emptyDoc,
         attachments: [...currentAttachments, attachment],
         updatedAt: Date.now(),
-      })
+      }
+      await db.draftMessages.put(nextDraft)
+      upsertDraftMessageInCache(workspaceId, nextDraft)
     },
     [draftKey, workspaceId]
   )
@@ -118,16 +118,19 @@ export function useDraftMessage(workspaceId: string, draftKey: string) {
       // Delete draft if both content and attachments are empty
       if (isEmptyContent(currentDraft.contentJson) && remainingAttachments.length === 0) {
         await db.draftMessages.delete(draftKey)
+        deleteDraftMessageFromCache(workspaceId, draftKey)
         return
       }
 
-      await db.draftMessages.put({
+      const nextDraft: DraftMessage = {
         ...currentDraft,
         attachments: remainingAttachments,
         updatedAt: Date.now(),
-      })
+      }
+      await db.draftMessages.put(nextDraft)
+      upsertDraftMessageInCache(workspaceId, nextDraft)
     },
-    [draftKey]
+    [draftKey, workspaceId]
   )
 
   const clearDraft = useCallback(async () => {
@@ -138,7 +141,8 @@ export function useDraftMessage(workspaceId: string, draftKey: string) {
     }
 
     await db.draftMessages.delete(draftKey)
-  }, [draftKey])
+    deleteDraftMessageFromCache(workspaceId, draftKey)
+  }, [draftKey, workspaceId])
 
   // Cleanup timeout on unmount
   useEffect(() => {
@@ -149,19 +153,12 @@ export function useDraftMessage(workspaceId: string, draftKey: string) {
     }
   }, [])
 
-  let isLoading = true
-  let resolvedDraft: DraftMessage | undefined
-  if (draftResult !== LOADING && draftResult.draftKey === draftKey) {
-    isLoading = false
-    resolvedDraft = draftResult.draft
-  }
-
   // Default empty document
   const emptyDoc: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
 
   return {
     /** Whether Dexie has finished loading the draft (true even if no draft exists) */
-    isLoaded: !isLoading,
+    isLoaded: hasSeededDraftCache(workspaceId),
     contentJson: resolvedDraft?.contentJson ?? emptyDoc,
     attachments: resolvedDraft?.attachments ?? [],
     saveDraft,

@@ -16,6 +16,8 @@ interface EventItemProps {
   agentActivity?: Map<string, MessageAgentActivity>
   /** Whether this event just arrived via socket (brief visual indicator) */
   isNew?: boolean
+  /** Defer non-critical per-message hydration until coordinated reveal completes */
+  deferSecondaryHydration?: boolean
 }
 
 export function EventItem({
@@ -26,6 +28,7 @@ export function EventItem({
   highlightMessageId,
   agentActivity,
   isNew,
+  deferSecondaryHydration = false,
 }: EventItemProps) {
   // Check if this event's message should be highlighted
   const messageId = (event.payload as { messageId?: string })?.messageId
@@ -52,6 +55,7 @@ export function EventItem({
             isHighlighted={isHighlighted}
             isNew={isNew}
             activity={messageId ? agentActivity?.get(messageId) : undefined}
+            deferSecondaryHydration={deferSecondaryHydration}
           />
         </div>
       )

@@ -89,6 +89,42 @@ describe("applyStreamBootstrap (real IndexedDB)", () => {
     expect(await db.events.get("evt_A")).toBeDefined()
   })
 
+  it("prunes stale cached events that fall inside the fetched bootstrap window", async () => {
+    const streamId = "stream_stale_window"
+
+    await db.events.bulkPut([
+      {
+        ...makeEvent({ id: "evt_old_page", streamId, sequence: "50" }),
+        workspaceId: "ws_1",
+        _cachedAt: Date.now() - 1000,
+      },
+      {
+        ...makeEvent({
+          id: "evt_ghost",
+          streamId,
+          sequence: "120",
+          payload: { messageId: "evt_ghost", contentMarkdown: "ghost bot message" },
+        }),
+        workspaceId: "ws_1",
+        _cachedAt: Date.now() - 1000,
+      },
+      { ...makeEvent({ id: "evt_socket_new", streamId, sequence: "200" }), workspaceId: "ws_1", _cachedAt: Date.now() },
+    ])
+
+    const bootstrap = makeBootstrap(
+      [makeEvent({ id: "evt_A", streamId, sequence: "100" }), makeEvent({ id: "evt_B", streamId, sequence: "150" })],
+      streamId
+    )
+
+    await applyStreamBootstrap("ws_1", streamId, bootstrap)
+
+    expect(await db.events.get("evt_old_page")).toBeDefined()
+    expect(await db.events.get("evt_A")).toBeDefined()
+    expect(await db.events.get("evt_B")).toBeDefined()
+    expect(await db.events.get("evt_socket_new")).toBeDefined()
+    expect(await db.events.get("evt_ghost")).toBeUndefined()
+  })
+
   it("removes stale optimistic events (temp_*) not in the send queue", async () => {
     const streamId = "stream_stale"
 

@@ -2,7 +2,6 @@ import { db } from "@/db"
 import { seedWorkspaceCache } from "@/stores/workspace-store"
 import type { Socket } from "socket.io-client"
 import type { QueryClient } from "@tanstack/react-query"
-import { joinRoomFireAndForget } from "@/lib/socket-room"
 import { SW_MSG_CLEAR_NOTIFICATIONS } from "@/lib/sw-messages"
 import { streamKeys } from "@/hooks/use-streams"
 import { workspaceKeys } from "@/hooks/use-workspaces"
@@ -160,6 +159,7 @@ export function registerWorkspaceSocketHandlers(
   refs: {
     getCurrentStreamId: () => string | undefined
     getCurrentUser: () => { id: string } | null
+    subscribeStream: (streamId: string) => void
   }
 ): () => void {
   const abortController = new AbortController()
@@ -222,12 +222,7 @@ export function registerWorkspaceSocketHandlers(
     })
 
     if (applied && shouldJoinStreamRoom) {
-      joinRoomFireAndForget(
-        socket,
-        `ws:${workspaceId}:stream:${payload.stream.id}`,
-        abortController.signal,
-        "WorkspaceSync"
-      )
+      refs.subscribeStream(payload.stream.id)
     }
 
     // Cache to IndexedDB — skip other users' scratchpads to avoid stale
@@ -304,8 +299,10 @@ export function registerWorkspaceSocketHandlers(
       return old
     })
 
-    // Update IndexedDB
-    db.streams.put({ ...payload.stream, _cachedAt: Date.now() })
+    // Update IndexedDB — use update() (partial merge) instead of put() (full replace)
+    // to preserve fields not on the Stream payload: lastMessagePreview, pinned,
+    // notificationLevel, lastReadEventId (merged from membership during bootstrap).
+    db.streams.update(payload.stream.id, { ...payload.stream, _cachedAt: Date.now() })
   }
 
   // Handle stream archived
@@ -327,8 +324,8 @@ export function registerWorkspaceSocketHandlers(
       }
     })
 
-    // Update IndexedDB
-    db.streams.put({ ...payload.stream, _cachedAt: Date.now() })
+    // Update IndexedDB — partial merge to preserve lastMessagePreview etc.
+    db.streams.update(payload.stream.id, { ...payload.stream, _cachedAt: Date.now() })
   }
 
   // Handle stream unarchived
@@ -358,8 +355,8 @@ export function registerWorkspaceSocketHandlers(
       }
     })
 
-    // Update IndexedDB
-    db.streams.put({ ...payload.stream, _cachedAt: Date.now() })
+    // Update IndexedDB — partial merge to preserve lastMessagePreview etc.
+    db.streams.update(payload.stream.id, { ...payload.stream, _cachedAt: Date.now() })
   }
 
   // Handle workspace user added
@@ -466,6 +463,9 @@ export function registerWorkspaceSocketHandlers(
         _cachedAt: Date.now(),
       })
     })
+
+    // Persist lastReadEventId to IDB so it survives across sessions
+    db.streams.update(payload.streamId, { lastReadEventId: payload.lastReadEventId, _cachedAt: Date.now() })
 
     if (hadActivity) {
       queryClient.invalidateQueries({ queryKey: ["activity", workspaceId] })
@@ -584,6 +584,13 @@ export function registerWorkspaceSocketHandlers(
       }
     })
 
+    // Always persist lastMessagePreview to IDB so the cached sort order
+    // matches what the user last saw (sidebar sorts scratchpads by activity).
+    db.streams.update(payload.streamId, {
+      lastMessagePreview: payload.lastMessagePreview,
+      _cachedAt: Date.now(),
+    })
+
     // Update IDB: increment unread count for others' messages when not viewing.
     // We check membership via IDB to avoid dependency on the TanStack closure.
     if (!isViewingStream) {
@@ -657,6 +664,7 @@ export function registerWorkspaceSocketHandlers(
     stream: Stream
   }) => {
     if (payload.workspaceId !== workspaceId) return
+    let shouldSubscribeStream = false
 
     // Update stream bootstrap members list
     queryClient.setQueryData(streamKeys.bootstrap(workspaceId, payload.streamId), (old: unknown) => {
@@ -688,6 +696,7 @@ export function registerWorkspaceSocketHandlers(
       const currentUser = refs.getCurrentUser()
       const currentMember = currentUser && getWorkspaceUsers(old).find((u) => u.workosUserId === currentUser.id)
       if (!currentMember || payload.memberId !== currentMember.id) return old
+      shouldSubscribeStream = true
 
       const membershipExists = old.streamMemberships.some((m: StreamMember) => m.streamId === payload.streamId)
       const streamExists = old.streams?.some((s) => s.id === payload.streamId)
@@ -733,6 +742,10 @@ export function registerWorkspaceSocketHandlers(
         streams: streamExists ? old.streams : [...(old.streams ?? []), { ...payload.stream, lastMessagePreview: null }],
       }
     })
+
+    if (shouldSubscribeStream) {
+      refs.subscribeStream(payload.streamId)
+    }
   }
 
   // Handle stream member removed
@@ -970,7 +983,8 @@ export async function applyWorkspaceBootstrap(
     // Only write unreadState if no concurrent socket handler has updated it
     // since the fetch started. Socket handlers (stream:activity, activity:created)
     // may have incremented counts during the fetch window.
-    (async () => {
+    // Wrapped in a transaction so the read→check→write is atomic (INV-20).
+    db.transaction("rw", [db.unreadState], async () => {
       const existing = await db.unreadState.get(workspaceId)
       if (!existing || !fetchStartedAt || existing._cachedAt < fetchStartedAt) {
         await db.unreadState.put({
@@ -984,8 +998,8 @@ export async function applyWorkspaceBootstrap(
           _cachedAt: now,
         })
       }
-    })(),
-    (async () => {
+    }),
+    db.transaction("rw", [db.userPreferences], async () => {
       const existing = await db.userPreferences.get(workspaceId)
       if (!existing || !fetchStartedAt || existing._cachedAt < fetchStartedAt) {
         await db.userPreferences.put({
@@ -995,7 +1009,7 @@ export async function applyWorkspaceBootstrap(
           _cachedAt: now,
         })
       }
-    })(),
+    }),
     db.workspaceMetadata.put({
       id: workspaceId,
       workspaceId,
@@ -1045,6 +1059,31 @@ export async function applyWorkspaceBootstrap(
     })),
     personas: bootstrap.personas.map((p) => ({ ...p, workspaceId, _cachedAt: now })),
     bots: bootstrap.bots.map((b) => ({ ...b, workspaceId, _cachedAt: now })),
+    unreadState: {
+      id: workspaceId,
+      workspaceId,
+      unreadCounts: bootstrap.unreadCounts,
+      mentionCounts: bootstrap.mentionCounts,
+      activityCounts: bootstrap.activityCounts,
+      unreadActivityCount: bootstrap.unreadActivityCount,
+      mutedStreamIds: bootstrap.mutedStreamIds,
+      _cachedAt: now,
+    },
+    userPreferences: {
+      ...bootstrap.userPreferences,
+      id: workspaceId,
+      workspaceId,
+      sendMode: bootstrap.userPreferences.messageSendMode,
+      _cachedAt: now,
+    },
+    metadata: {
+      id: workspaceId,
+      workspaceId,
+      emojis: bootstrap.emojis,
+      emojiWeights: bootstrap.emojiWeights,
+      commands: bootstrap.commands,
+      _cachedAt: now,
+    },
   })
 }
 

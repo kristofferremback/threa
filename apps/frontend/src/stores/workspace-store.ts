@@ -1,4 +1,6 @@
+import { useSyncExternalStore } from "react"
 import { useLiveQuery } from "dexie-react-hooks"
+import { seedStreamEventCache } from "./stream-store"
 import {
   db,
   type CachedWorkspace,
@@ -37,6 +39,135 @@ const cache = {
   metadata: new Map<string, CachedWorkspaceMetadata>(),
 }
 
+// Monotonic version per workspace so seedCacheFromIdb (async IDB read) never
+// overwrites a fresher seedWorkspaceCache call (synchronous bootstrap write).
+const cacheVersion = new Map<string, number>()
+const cacheListeners = new Map<string, Set<() => void>>()
+
+function emitWorkspaceCacheChange(workspaceId: string): void {
+  const listeners = cacheListeners.get(workspaceId)
+  if (!listeners) return
+  for (const listener of listeners) listener()
+}
+
+function subscribeWorkspaceCache(workspaceId: string | undefined, listener: () => void): () => void {
+  if (!workspaceId) return () => {}
+
+  let listeners = cacheListeners.get(workspaceId)
+  if (!listeners) {
+    listeners = new Set()
+    cacheListeners.set(workspaceId, listeners)
+  }
+
+  listeners.add(listener)
+  return () => {
+    const currentListeners = cacheListeners.get(workspaceId)
+    if (!currentListeners) return
+    currentListeners.delete(listener)
+    if (currentListeners.size === 0) {
+      cacheListeners.delete(workspaceId)
+    }
+  }
+}
+
+function getWorkspaceCacheSnapshot(workspaceId: string | undefined): number {
+  return workspaceId ? (cacheVersion.get(workspaceId) ?? 0) : 0
+}
+
+function useWorkspaceCacheSignal(workspaceId: string | undefined): number {
+  return useSyncExternalStore(
+    (listener) => subscribeWorkspaceCache(workspaceId, listener),
+    () => getWorkspaceCacheSnapshot(workspaceId),
+    () => getWorkspaceCacheSnapshot(workspaceId)
+  )
+}
+
+export function hasSeededWorkspaceCache(workspaceId: string): boolean {
+  return (
+    cache.workspaces.has(workspaceId) &&
+    cache.users.has(workspaceId) &&
+    cache.streams.has(workspaceId) &&
+    cache.memberships.has(workspaceId) &&
+    cache.dmPeers.has(workspaceId) &&
+    cache.personas.has(workspaceId) &&
+    cache.bots.has(workspaceId) &&
+    cache.unreadState.has(workspaceId) &&
+    cache.metadata.has(workspaceId)
+  )
+}
+
+export function resetWorkspaceStoreCache(): void {
+  const workspaceIds = new Set([...cacheVersion.keys(), ...cacheListeners.keys()])
+  cache.workspaces.clear()
+  cache.users.clear()
+  cache.streams.clear()
+  cache.memberships.clear()
+  cache.dmPeers.clear()
+  cache.personas.clear()
+  cache.bots.clear()
+  cache.unreadState.clear()
+  cache.userPreferences.clear()
+  cache.metadata.clear()
+  cacheVersion.clear()
+  for (const workspaceId of workspaceIds) {
+    emitWorkspaceCacheChange(workspaceId)
+  }
+}
+
+/**
+ * Prime the in-memory cache from IndexedDB. Called on workspace layout mount
+ * so that returning users with cached data bypass the coordinated loading gate
+ * immediately — no network round-trip needed.
+ *
+ * Returns true if the cache was populated (IDB had workspace data), false otherwise.
+ */
+export async function seedCacheFromIdb(workspaceId: string): Promise<boolean> {
+  // Capture version before async work. If applyWorkspaceBootstrap runs
+  // concurrently and calls seedWorkspaceCache (which bumps the version),
+  // we skip the write to avoid overwriting fresh data with stale IDB reads.
+  const versionBefore = cacheVersion.get(workspaceId) ?? 0
+
+  const [workspace, users, streams, memberships, dmPeers, personas, bots, unreadState, prefs, metadata] =
+    await Promise.all([
+      db.workspaces.get(workspaceId),
+      db.workspaceUsers.where("workspaceId").equals(workspaceId).toArray(),
+      db.streams.where("workspaceId").equals(workspaceId).toArray(),
+      db.streamMemberships.where("workspaceId").equals(workspaceId).toArray(),
+      db.dmPeers.where("workspaceId").equals(workspaceId).toArray(),
+      db.personas.where("workspaceId").equals(workspaceId).toArray(),
+      db.bots.where("workspaceId").equals(workspaceId).toArray(),
+      db.unreadState.get(workspaceId),
+      db.userPreferences.get(workspaceId),
+      db.workspaceMetadata.get(workspaceId),
+    ])
+
+  if (!workspace) return false
+
+  await seedStreamEventCache(
+    workspaceId,
+    streams.map((stream) => stream.id)
+  )
+
+  // If the version bumped during our async reads, a bootstrap completed
+  // and seeded fresher data — skip writing stale cache.
+  if ((cacheVersion.get(workspaceId) ?? 0) !== versionBefore) return true
+
+  seedWorkspaceCache(workspaceId, {
+    workspace,
+    users,
+    streams,
+    memberships,
+    dmPeers,
+    personas,
+    bots,
+    unreadState,
+    userPreferences: prefs,
+    metadata,
+  })
+
+  return true
+}
+
 /**
  * Populate the in-memory cache from a workspace bootstrap response.
  * Called by applyWorkspaceBootstrap after writing to IDB.
@@ -56,6 +187,8 @@ export function seedWorkspaceCache(
     metadata?: CachedWorkspaceMetadata
   }
 ): void {
+  // Bump version so concurrent seedCacheFromIdb calls know to skip.
+  cacheVersion.set(workspaceId, (cacheVersion.get(workspaceId) ?? 0) + 1)
   cache.workspaces.set(workspaceId, data.workspace)
   cache.users.set(workspaceId, data.users)
   cache.streams.set(workspaceId, data.streams)
@@ -66,100 +199,131 @@ export function seedWorkspaceCache(
   if (data.unreadState) cache.unreadState.set(workspaceId, data.unreadState)
   if (data.userPreferences) cache.userPreferences.set(workspaceId, data.userPreferences)
   if (data.metadata) cache.metadata.set(workspaceId, data.metadata)
+  emitWorkspaceCacheChange(workspaceId)
 }
 
 // =============================================================================
 // Store hooks — useLiveQuery for reactivity, in-memory cache for first render
 // =============================================================================
 
+// ---------------------------------------------------------------------------
+// Helper: for array-valued hooks, if useLiveQuery resolved empty but the
+// in-memory cache has data, Dexie's async IDB notification hasn't arrived yet.
+// Return the cache so the first visible render after the coordinated-loading
+// gate opens shows real data instead of a flash of empty content.
+//
+// This is safe because the cache is always populated from the same bootstrap
+// that wrote to IDB (seedWorkspaceCache runs synchronously after IDB writes).
+// Once liveQuery catches up it will return >= the cache data.
+// ---------------------------------------------------------------------------
+
+function useArrayStoreHook<T>(queryFn: () => Promise<T[]> | T[], deps: unknown[], cached: T[]): T[] {
+  const live = useLiveQuery(queryFn, deps, cached) ?? []
+  // Cache is populated synchronously by seedWorkspaceCache. useLiveQuery may
+  // lag behind due to async IDB change notifications. If live resolved empty
+  // but cache has data, return cache until liveQuery catches up.
+  if (live.length === 0 && cached.length > 0) return cached
+  return live
+}
+
+function useSingletonStoreHook<T>(
+  queryFn: () => Promise<T | undefined> | T | undefined,
+  deps: unknown[],
+  cached: T | undefined
+): T | undefined {
+  const live = useLiveQuery(queryFn, deps, cached)
+  if (live === undefined && cached !== undefined) return cached
+  return live
+}
+
 export function useWorkspaceFromStore(workspaceId: string | undefined): CachedWorkspace | undefined {
-  return useLiveQuery(
-    () => (workspaceId ? db.workspaces.get(workspaceId) : undefined),
-    [workspaceId],
-    workspaceId ? cache.workspaces.get(workspaceId) : undefined
-  )
+  useWorkspaceCacheSignal(workspaceId)
+  const cached = workspaceId ? cache.workspaces.get(workspaceId) : undefined
+  return useSingletonStoreHook(() => (workspaceId ? db.workspaces.get(workspaceId) : undefined), [workspaceId], cached)
 }
 
 export function useWorkspaceUsers(workspaceId: string | undefined): CachedWorkspaceUser[] {
-  return (
-    useLiveQuery(
-      () => (workspaceId ? db.workspaceUsers.where("workspaceId").equals(workspaceId).toArray() : []),
-      [workspaceId],
-      workspaceId ? (cache.users.get(workspaceId) ?? []) : []
-    ) ?? []
+  useWorkspaceCacheSignal(workspaceId)
+  const cached = workspaceId ? (cache.users.get(workspaceId) ?? []) : []
+  return useArrayStoreHook(
+    () => (workspaceId ? db.workspaceUsers.where("workspaceId").equals(workspaceId).toArray() : []),
+    [workspaceId],
+    cached
   )
 }
 
 export function useWorkspaceStreams(workspaceId: string | undefined): CachedStream[] {
-  return (
-    useLiveQuery(
-      () => (workspaceId ? db.streams.where("workspaceId").equals(workspaceId).toArray() : []),
-      [workspaceId],
-      workspaceId ? (cache.streams.get(workspaceId) ?? []) : []
-    ) ?? []
+  useWorkspaceCacheSignal(workspaceId)
+  const cached = workspaceId ? (cache.streams.get(workspaceId) ?? []) : []
+  return useArrayStoreHook(
+    () => (workspaceId ? db.streams.where("workspaceId").equals(workspaceId).toArray() : []),
+    [workspaceId],
+    cached
   )
 }
 
 export function useWorkspaceStreamMemberships(workspaceId: string | undefined): CachedStreamMembership[] {
-  return (
-    useLiveQuery(
-      () => (workspaceId ? db.streamMemberships.where("workspaceId").equals(workspaceId).toArray() : []),
-      [workspaceId],
-      workspaceId ? (cache.memberships.get(workspaceId) ?? []) : []
-    ) ?? []
+  useWorkspaceCacheSignal(workspaceId)
+  const cached = workspaceId ? (cache.memberships.get(workspaceId) ?? []) : []
+  return useArrayStoreHook(
+    () => (workspaceId ? db.streamMemberships.where("workspaceId").equals(workspaceId).toArray() : []),
+    [workspaceId],
+    cached
   )
 }
 
 export function useWorkspaceDmPeers(workspaceId: string | undefined): CachedDmPeer[] {
-  return (
-    useLiveQuery(
-      () => (workspaceId ? db.dmPeers.where("workspaceId").equals(workspaceId).toArray() : []),
-      [workspaceId],
-      workspaceId ? (cache.dmPeers.get(workspaceId) ?? []) : []
-    ) ?? []
+  useWorkspaceCacheSignal(workspaceId)
+  const cached = workspaceId ? (cache.dmPeers.get(workspaceId) ?? []) : []
+  return useArrayStoreHook(
+    () => (workspaceId ? db.dmPeers.where("workspaceId").equals(workspaceId).toArray() : []),
+    [workspaceId],
+    cached
   )
 }
 
 export function useWorkspacePersonas(workspaceId: string | undefined): CachedPersona[] {
-  return (
-    useLiveQuery(
-      () => (workspaceId ? db.personas.where("workspaceId").equals(workspaceId).toArray() : []),
-      [workspaceId],
-      workspaceId ? (cache.personas.get(workspaceId) ?? []) : []
-    ) ?? []
+  useWorkspaceCacheSignal(workspaceId)
+  const cached = workspaceId ? (cache.personas.get(workspaceId) ?? []) : []
+  return useArrayStoreHook(
+    () => (workspaceId ? db.personas.where("workspaceId").equals(workspaceId).toArray() : []),
+    [workspaceId],
+    cached
   )
 }
 
 export function useWorkspaceBots(workspaceId: string | undefined): CachedBot[] {
-  return (
-    useLiveQuery(
-      () => (workspaceId ? db.bots.where("workspaceId").equals(workspaceId).toArray() : []),
-      [workspaceId],
-      workspaceId ? (cache.bots.get(workspaceId) ?? []) : []
-    ) ?? []
+  useWorkspaceCacheSignal(workspaceId)
+  const cached = workspaceId ? (cache.bots.get(workspaceId) ?? []) : []
+  return useArrayStoreHook(
+    () => (workspaceId ? db.bots.where("workspaceId").equals(workspaceId).toArray() : []),
+    [workspaceId],
+    cached
   )
 }
 
 export function useWorkspaceUnreadState(workspaceId: string | undefined): CachedUnreadState | undefined {
-  return useLiveQuery(
-    () => (workspaceId ? db.unreadState.get(workspaceId) : undefined),
-    [workspaceId],
-    workspaceId ? cache.unreadState.get(workspaceId) : undefined
-  )
+  useWorkspaceCacheSignal(workspaceId)
+  const cached = workspaceId ? cache.unreadState.get(workspaceId) : undefined
+  return useSingletonStoreHook(() => (workspaceId ? db.unreadState.get(workspaceId) : undefined), [workspaceId], cached)
 }
 
 export function useWorkspaceUserPreferences(workspaceId: string | undefined): CachedUserPreferences | undefined {
-  return useLiveQuery(
+  useWorkspaceCacheSignal(workspaceId)
+  const cached = workspaceId ? cache.userPreferences.get(workspaceId) : undefined
+  return useSingletonStoreHook(
     () => (workspaceId ? db.userPreferences.get(workspaceId) : undefined),
     [workspaceId],
-    workspaceId ? cache.userPreferences.get(workspaceId) : undefined
+    cached
   )
 }
 
 export function useWorkspaceMetadata(workspaceId: string | undefined): CachedWorkspaceMetadata | undefined {
-  return useLiveQuery(
+  useWorkspaceCacheSignal(workspaceId)
+  const cached = workspaceId ? cache.metadata.get(workspaceId) : undefined
+  return useSingletonStoreHook(
     () => (workspaceId ? db.workspaceMetadata.get(workspaceId) : undefined),
     [workspaceId],
-    workspaceId ? cache.metadata.get(workspaceId) : undefined
+    cached
   )
 }

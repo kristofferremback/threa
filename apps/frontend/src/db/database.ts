@@ -387,22 +387,33 @@ export const db = new ThreaDatabase()
 
 // Helper to clear all cached data (useful for logout)
 export async function clearAllCachedData(): Promise<void> {
-  await Promise.all([
-    db.workspaces.clear(),
-    db.workspaceUsers.clear(),
-    db.streams.clear(),
-    db.streamMemberships.clear(),
-    db.dmPeers.clear(),
-    db.events.clear(),
-    db.personas.clear(),
-    db.bots.clear(),
-    db.syncCursors.clear(),
-    db.unreadState.clear(),
-    db.userPreferences.clear(),
-    db.workspaceMetadata.clear(),
-    db.pendingOperations.clear(),
-    // Note: we keep pendingMessages to retry sending after re-login
-  ])
+  try {
+    await Promise.all([
+      db.workspaces.clear(),
+      db.workspaceUsers.clear(),
+      db.streams.clear(),
+      db.streamMemberships.clear(),
+      db.dmPeers.clear(),
+      db.events.clear(),
+      db.personas.clear(),
+      db.bots.clear(),
+      db.syncCursors.clear(),
+      db.unreadState.clear(),
+      db.userPreferences.clear(),
+      db.workspaceMetadata.clear(),
+      db.pendingOperations.clear(),
+      // Note: we keep pendingMessages to retry sending after re-login
+    ])
+  } finally {
+    const [{ resetWorkspaceStoreCache }, { resetStreamStoreCache }, { resetDraftStoreCache }] = await Promise.all([
+      import("@/stores/workspace-store"),
+      import("@/stores/stream-store"),
+      import("@/stores/draft-store"),
+    ])
+    resetWorkspaceStoreCache()
+    resetStreamStoreCache()
+    resetDraftStoreCache()
+  }
 }
 
 // Helper to clear pending messages (useful when explicitly canceling)

@@ -3,8 +3,9 @@ import type { Request, Response } from "express"
 import type { StreamService } from "./service"
 import type { EventService } from "../messaging"
 import type { ActivityService } from "../activity"
+import type { LinkPreviewService } from "../link-previews"
 import type { StreamEvent } from "./event-repository"
-import type { EventType, StreamType } from "@threa/types"
+import type { EventType, LinkPreviewSummary, StreamType } from "@threa/types"
 import { StreamTypes, SLUG_PATTERN } from "@threa/types"
 import { serializeBigInt } from "@threa/backend-common"
 import { HttpError } from "../../lib/errors"
@@ -153,13 +154,95 @@ interface Dependencies {
   streamService: StreamService
   eventService: EventService
   activityService?: ActivityService
+  linkPreviewService: LinkPreviewService
 }
 
 function serializeEvent(event: StreamEvent) {
   return serializeBigInt(event)
 }
 
-export function createStreamHandlers({ streamService, eventService, activityService }: Dependencies) {
+function areLinkPreviewArraysEqual(current: LinkPreviewSummary[] | undefined, next: LinkPreviewSummary[]): boolean {
+  if (!current) return next.length === 0
+  if (current.length !== next.length) return false
+
+  return current.every((preview, index) => {
+    const nextPreview = next[index]
+    return (
+      preview.id === nextPreview.id &&
+      preview.url === nextPreview.url &&
+      preview.title === nextPreview.title &&
+      preview.description === nextPreview.description &&
+      preview.imageUrl === nextPreview.imageUrl &&
+      preview.faviconUrl === nextPreview.faviconUrl &&
+      preview.siteName === nextPreview.siteName &&
+      preview.contentType === nextPreview.contentType &&
+      preview.position === nextPreview.position
+    )
+  })
+}
+
+export function applyLinkPreviewStateToEvents(
+  events: StreamEvent[],
+  previewMap: Map<string, LinkPreviewSummary[]>,
+  dismissals: Set<string>
+): StreamEvent[] {
+  if (previewMap.size === 0 && dismissals.size === 0) return events
+
+  let changed = false
+  const nextEvents = events.map((event) => {
+    if (event.eventType !== "message_created") return event
+
+    const payload = event.payload as { messageId?: string; linkPreviews?: LinkPreviewSummary[] }
+    if (!payload.messageId) return event
+
+    const previews = previewMap.get(payload.messageId) ?? payload.linkPreviews
+    if (!previews) return event
+
+    const visiblePreviews = previews.filter((preview) => !dismissals.has(`${payload.messageId}:${preview.id}`))
+    if (areLinkPreviewArraysEqual(payload.linkPreviews, visiblePreviews)) {
+      return event
+    }
+
+    changed = true
+    return {
+      ...event,
+      payload: {
+        ...payload,
+        linkPreviews: visiblePreviews,
+      },
+    }
+  })
+
+  return changed ? nextEvents : events
+}
+
+async function enrichEventsWithLinkPreviews(
+  linkPreviewService: LinkPreviewService,
+  workspaceId: string,
+  userId: string,
+  events: StreamEvent[]
+): Promise<StreamEvent[]> {
+  const messageIds = events
+    .filter((event) => event.eventType === "message_created")
+    .map((event) => (event.payload as { messageId?: string }).messageId)
+    .filter((messageId): messageId is string => !!messageId)
+
+  if (messageIds.length === 0) return events
+
+  const [previewMap, dismissals] = await Promise.all([
+    linkPreviewService.getPreviewsForMessages(workspaceId, messageIds),
+    linkPreviewService.getDismissals(workspaceId, userId, messageIds),
+  ])
+
+  return applyLinkPreviewStateToEvents(events, previewMap, dismissals)
+}
+
+export function createStreamHandlers({
+  streamService,
+  eventService,
+  activityService,
+  linkPreviewService,
+}: Dependencies) {
   return {
     async list(req: Request, res: Response) {
       const userId = req.user!.id
@@ -282,7 +365,9 @@ export function createStreamHandlers({ streamService, eventService, activityServ
         viewerId: userId,
       })
 
-      res.json({ events: events.map(serializeEvent) })
+      const eventsWithLinkPreviews = await enrichEventsWithLinkPreviews(linkPreviewService, workspaceId, userId, events)
+
+      res.json({ events: eventsWithLinkPreviews.map(serializeEvent) })
     },
 
     async listEventsAround(req: Request, res: Response) {
@@ -309,9 +394,15 @@ export function createStreamHandlers({ streamService, eventService, activityServ
       })
 
       const enrichedEvents = await eventService.enrichBootstrapEvents(result.events, new Map())
+      const eventsWithLinkPreviews = await enrichEventsWithLinkPreviews(
+        linkPreviewService,
+        workspaceId,
+        userId,
+        enrichedEvents
+      )
 
       res.json({
-        events: enrichedEvents.map(serializeEvent),
+        events: eventsWithLinkPreviews.map(serializeEvent),
         hasOlder: result.hasOlder,
         hasNewer: result.hasNewer,
       })
@@ -471,6 +562,12 @@ export function createStreamHandlers({ streamService, eventService, activityServ
       ])
 
       const enrichedEvents = await eventService.enrichBootstrapEvents(events, threadDataMap)
+      const eventsWithLinkPreviews = await enrichEventsWithLinkPreviews(
+        linkPreviewService,
+        workspaceId,
+        userId,
+        enrichedEvents
+      )
 
       // Get the latest sequence number from the most recent event
       const latestSequence = events.length > 0 ? events[events.length - 1].sequence : "0"
@@ -481,7 +578,7 @@ export function createStreamHandlers({ streamService, eventService, activityServ
       res.json({
         data: {
           stream,
-          events: enrichedEvents.map(serializeEvent),
+          events: eventsWithLinkPreviews.map(serializeEvent),
           members,
           membership,
           latestSequence: latestSequence.toString(),

@@ -6,6 +6,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { AncestorBreadcrumbItem } from "./breadcrumb-helpers"
 import { BreadcrumbEllipsisDropdown } from "./breadcrumb-ellipsis-dropdown"
@@ -171,7 +172,7 @@ export function ResponsiveBreadcrumbs({
           {isLoading ? (
             <>
               <BreadcrumbItem>
-                <span className="text-muted-foreground text-sm">Loading...</span>
+                <Skeleton className="h-4 w-20" />
               </BreadcrumbItem>
               <BreadcrumbSeparator />
             </>

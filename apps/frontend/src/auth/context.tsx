@@ -1,5 +1,6 @@
 import { createContext, useCallback, useEffect, useState, type ReactNode } from "react"
 import { API_BASE } from "@/api/client"
+import { clearAllCachedData } from "@/db"
 import type { AuthState, User } from "./types"
 
 declare global {
@@ -96,6 +97,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } catch {
       // Best-effort — don't block logout if push cleanup fails
     }
+    await clearAllCachedData().catch(() => {})
     window.location.href = `${API_BASE}/api/auth/logout`
   }, [])
 

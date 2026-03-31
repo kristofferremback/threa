@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useContext, useMemo, useRef, type ReactNode } from "react"
-import { Outlet, useParams, useNavigate, useSearchParams, useMatch } from "react-router-dom"
+import { Outlet, useParams, useNavigate, useSearchParams, useMatch, Navigate } from "react-router-dom"
 import { AppShell } from "@/components/layout/app-shell"
 import { Sidebar } from "@/components/layout/sidebar"
 import { Toaster } from "@/components/ui/sonner"
@@ -212,6 +212,7 @@ export function WorkspaceLayout() {
   const [searchParams] = useSearchParams()
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const [switcherMode, setSwitcherMode] = useState<QuickSwitcherMode>("stream")
+  const { user, loading: authLoading } = useAuth()
 
   // Extract streamId from nested route (if on /s/:streamId)
   const streamMatch = useMatch("/w/:workspaceId/s/:streamId")
@@ -242,6 +243,14 @@ export function WorkspaceLayout() {
 
   if (!workspaceId) {
     return null
+  }
+
+  if (authLoading) {
+    return null
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace />
   }
 
   return (

@@ -86,6 +86,23 @@ function waitForConnection(socket: Socket, room: string, timeoutMs: number, sign
   })
 }
 
+function isExpectedJoinInterruption(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  return (
+    error.message.startsWith("Join aborted for room") ||
+    error.message.startsWith("Socket disconnected while joining room")
+  )
+}
+
+function logJoinFailure(context: string, room: string, error: unknown, detail: string): void {
+  if (isExpectedJoinInterruption(error)) {
+    debugBootstrap(`${context} join interrupted`, { room, error: error instanceof Error ? error.message : error })
+    return
+  }
+
+  console.error(`[${context}] ${detail}`, error)
+}
+
 function emitJoinWithAck(socket: Socket, room: string, timeoutMs: number): Promise<void> {
   return new Promise((resolve, reject) => {
     let timeoutId: ReturnType<typeof setTimeout> | null = null
@@ -183,7 +200,7 @@ export async function joinRoomBestEffort(socket: Socket, room: string, context: 
   try {
     await joinRoomWithAck(socket, room)
   } catch (error) {
-    console.error(`[${context}] Failed to receive join ack for ${room}; continuing with bootstrap fetch`, error)
+    logJoinFailure(context, room, error, `Failed to receive join ack for ${room}; continuing with bootstrap fetch`)
   }
 }
 
@@ -194,7 +211,7 @@ export async function joinRoomBestEffort(socket: Socket, room: string, context: 
 export function joinRoomFireAndForget(socket: Socket, room: string, signal: AbortSignal, context: string): void {
   void joinRoomWithAck(socket, room, { signal }).catch((error) => {
     if (signal.aborted) return
-    console.error(`[${context}] Failed to join room ${room}`, error)
+    logJoinFailure(context, room, error, `Failed to join room ${room}`)
   })
 }
 

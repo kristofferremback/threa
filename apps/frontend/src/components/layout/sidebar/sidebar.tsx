@@ -318,7 +318,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
       sidebarRef={sidebarRef}
       header={
         <SidebarHeader
-          workspaceName={workspace?.name ?? "Loading..."}
+          workspaceName={workspace?.name ?? ""}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
           hideViewToggle={!hasUserStreams}

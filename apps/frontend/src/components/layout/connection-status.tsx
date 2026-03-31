@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react"
-import { useSocketStatus } from "@/contexts"
+import { useCoordinatedLoading, useSocketStatus } from "@/contexts"
+import { usePageActivity } from "@/hooks/use-page-activity"
 import { WifiOff, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -17,13 +18,14 @@ export function useIsOnline(): boolean {
   )
 }
 
-type ConnectionState = "connected" | "offline" | "reconnecting" | "disconnected"
+type ConnectionState = "connected" | "connecting" | "offline" | "reconnecting" | "disconnected"
 
 export function useConnectionState(): ConnectionState {
   const socketStatus = useSocketStatus()
   const isOnline = useIsOnline()
 
   if (socketStatus === "connected") return "connected"
+  if (socketStatus === "connecting") return "connecting"
   if (!isOnline) return "offline"
   if (socketStatus === "reconnecting") return "reconnecting"
   return "disconnected"
@@ -35,9 +37,11 @@ export function useConnectionState(): ConnectionState {
  * content under the mobile keyboard.
  */
 export function ConnectionStatus() {
+  const { phase } = useCoordinatedLoading()
   const state = useConnectionState()
+  const pageActivity = usePageActivity()
 
-  if (state === "connected") return null
+  if (phase !== "ready" || !pageActivity.isVisible || state === "connected" || state === "connecting") return null
 
   return (
     <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex justify-center pt-2">
