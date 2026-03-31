@@ -446,26 +446,56 @@ export function registerWorkspaceSocketHandlers(
           [payload.streamId]: 0,
         },
         unreadActivityCount: Math.max(0, (old.unreadActivityCount ?? 0) - clearedActivity),
+        streamMemberships: old.streamMemberships.map((membership) =>
+          membership.streamId === payload.streamId
+            ? { ...membership, lastReadEventId: payload.lastReadEventId }
+            : membership
+        ),
       }
     })
 
-    // Update IDB unread state
-    db.transaction("rw", [db.unreadState], async () => {
-      const state = await db.unreadState.get(workspaceId)
-      if (!state) return
-      const clearedActivity = state.activityCounts[payload.streamId] ?? 0
-      await db.unreadState.put({
-        ...state,
-        unreadCounts: { ...state.unreadCounts, [payload.streamId]: 0 },
-        mentionCounts: { ...state.mentionCounts, [payload.streamId]: 0 },
-        activityCounts: { ...state.activityCounts, [payload.streamId]: 0 },
-        unreadActivityCount: Math.max(0, state.unreadActivityCount - clearedActivity),
-        _cachedAt: Date.now(),
-      })
-    })
+    queryClient.setQueryData<import("@threa/types").StreamBootstrap | undefined>(
+      streamKeys.bootstrap(workspaceId, payload.streamId),
+      (old) => {
+        if (!old?.membership) return old
+        return {
+          ...old,
+          membership: { ...old.membership, lastReadEventId: payload.lastReadEventId },
+        }
+      }
+    )
 
-    // Persist lastReadEventId to IDB so it survives across sessions
-    db.streams.update(payload.streamId, { lastReadEventId: payload.lastReadEventId, _cachedAt: Date.now() })
+    // Keep both stream and membership mirrors in sync so unread-divider state
+    // updates immediately without waiting for a re-bootstrap/remount.
+    db.transaction("rw", [db.unreadState, db.streams, db.streamMemberships], async () => {
+      const now = Date.now()
+      const state = await db.unreadState.get(workspaceId)
+      if (state) {
+        const clearedActivity = state.activityCounts[payload.streamId] ?? 0
+        await db.unreadState.put({
+          ...state,
+          unreadCounts: { ...state.unreadCounts, [payload.streamId]: 0 },
+          mentionCounts: { ...state.mentionCounts, [payload.streamId]: 0 },
+          activityCounts: { ...state.activityCounts, [payload.streamId]: 0 },
+          unreadActivityCount: Math.max(0, state.unreadActivityCount - clearedActivity),
+          _cachedAt: now,
+        })
+      }
+
+      await db.streams.update(payload.streamId, { lastReadEventId: payload.lastReadEventId, _cachedAt: now })
+
+      const membershipId = `${workspaceId}:${payload.streamId}`
+      const membership = await db.streamMemberships.get(membershipId)
+      if (membership) {
+        await db.streamMemberships.put({
+          ...membership,
+          lastReadEventId: payload.lastReadEventId,
+          id: membershipId,
+          workspaceId,
+          _cachedAt: now,
+        })
+      }
+    })
 
     if (hadActivity) {
       queryClient.invalidateQueries({ queryKey: ["activity", workspaceId] })

@@ -26,7 +26,7 @@ export function useUnreadCounts(workspaceId: string) {
   const markAsReadMutation = useMutation({
     mutationFn: ({ streamId, lastEventId }: { streamId: string; lastEventId: string }) =>
       streamService.markAsRead(workspaceId, streamId, lastEventId),
-    onSuccess: (_membership, { streamId, lastEventId }) => {
+    onSuccess: async (membership, { streamId, lastEventId }) => {
       const current = queryClient.getQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId))
       const hadActivity = (current?.activityCounts[streamId] ?? 0) > 0
 
@@ -40,6 +40,9 @@ export function useUnreadCounts(workspaceId: string) {
           mentionCounts: { ...old.mentionCounts, [streamId]: 0 },
           activityCounts: { ...old.activityCounts, [streamId]: 0 },
           unreadActivityCount: Math.max(0, (old.unreadActivityCount ?? 0) - clearedActivity),
+          streamMemberships: old.streamMemberships.map((existingMembership) =>
+            existingMembership.streamId === streamId ? { ...existingMembership, ...membership } : existingMembership
+          ),
         }
       })
 
@@ -53,22 +56,43 @@ export function useUnreadCounts(workspaceId: string) {
         }
       )
 
-      // Update lastReadEventId on the cached stream in IDB
-      db.streams.update(streamId, { lastReadEventId: lastEventId, _cachedAt: Date.now() })
-
-      // Update IDB for immediate consistency with IDB-backed consumers
-      db.transaction("rw", [db.unreadState], async () => {
+      // Keep both the denormalized stream row and the membership row in sync:
+      // stream-content derives the unread divider from membership state.
+      await db.transaction("rw", [db.unreadState, db.streams, db.streamMemberships], async () => {
+        const now = Date.now()
         const state = await db.unreadState.get(workspaceId)
-        if (!state) return
-        const clearedActivity = state.activityCounts[streamId] ?? 0
-        await db.unreadState.put({
-          ...state,
-          unreadCounts: { ...state.unreadCounts, [streamId]: 0 },
-          mentionCounts: { ...state.mentionCounts, [streamId]: 0 },
-          activityCounts: { ...state.activityCounts, [streamId]: 0 },
-          unreadActivityCount: Math.max(0, state.unreadActivityCount - clearedActivity),
-          _cachedAt: Date.now(),
-        })
+        if (state) {
+          const clearedActivity = state.activityCounts[streamId] ?? 0
+          await db.unreadState.put({
+            ...state,
+            unreadCounts: { ...state.unreadCounts, [streamId]: 0 },
+            mentionCounts: { ...state.mentionCounts, [streamId]: 0 },
+            activityCounts: { ...state.activityCounts, [streamId]: 0 },
+            unreadActivityCount: Math.max(0, state.unreadActivityCount - clearedActivity),
+            _cachedAt: now,
+          })
+        }
+
+        await db.streams.update(streamId, { lastReadEventId: lastEventId, _cachedAt: now })
+
+        const membershipId = `${workspaceId}:${streamId}`
+        const existingMembership = await db.streamMemberships.get(membershipId)
+        if (existingMembership) {
+          await db.streamMemberships.put({
+            ...existingMembership,
+            ...membership,
+            id: membershipId,
+            workspaceId,
+            _cachedAt: now,
+          })
+        } else {
+          await db.streamMemberships.put({
+            ...membership,
+            id: membershipId,
+            workspaceId,
+            _cachedAt: now,
+          })
+        }
       })
 
       if (hadActivity) {

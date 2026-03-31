@@ -96,6 +96,7 @@ export function StreamContent({
     enabled: !isDraft && (!idbStream || !idbMembership),
   })
   const membership = idbMembership ?? bootstrap?.membership
+  const lastReadEventId = idbStream?.lastReadEventId ?? membership?.lastReadEventId
 
   const stream = streamFromProps ?? idbStream ?? bootstrap?.stream
   const isThread = stream?.type === StreamTypes.THREAD
@@ -205,7 +206,7 @@ export function StreamContent({
   // Unread divider state management (also handles scroll-to-first-unread)
   const { dividerEventId, isFading: isDividerFading } = useUnreadDivider({
     events,
-    lastReadEventId: membership?.lastReadEventId,
+    lastReadEventId,
     currentUserId: currentWorkspaceUserId ?? undefined,
     streamId,
     isLoading,

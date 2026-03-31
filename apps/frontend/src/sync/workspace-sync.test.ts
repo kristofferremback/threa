@@ -257,7 +257,7 @@ function makeWorkspaceUser() {
 
 describe("registerWorkspaceSocketHandlers", () => {
   beforeEach(async () => {
-    await Promise.all([db.streams.clear(), db.streamMemberships.clear()])
+    await Promise.all([db.streams.clear(), db.streamMemberships.clear(), db.unreadState.clear()])
   })
 
   it("subscribes the creator when a new stream is created at runtime", async () => {
@@ -357,6 +357,122 @@ describe("registerWorkspaceSocketHandlers", () => {
 
     expect(subscribeStream).toHaveBeenCalledWith("stream_added")
     expect(await db.streamMemberships.get("ws_1:stream_added")).toBeDefined()
+
+    cleanup()
+  })
+
+  it("updates the membership read pointer when a stream:read socket event arrives", async () => {
+    const queryClient = new QueryClient()
+    queryClient.setQueryData(
+      workspaceKeys.bootstrap("ws_1"),
+      makeBootstrap({
+        users: [makeWorkspaceUser()],
+        streams: [
+          {
+            id: "stream_1",
+            workspaceId: "ws_1",
+            type: "channel",
+            displayName: "Engineering",
+            slug: "engineering",
+            description: null,
+            visibility: "public",
+            parentStreamId: null,
+            parentMessageId: null,
+            rootStreamId: null,
+            companionMode: "off",
+            companionPersonaId: null,
+            createdBy: "member_1",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            archivedAt: null,
+            lastMessagePreview: null,
+          },
+        ],
+        streamMemberships: [
+          {
+            streamId: "stream_1",
+            memberId: "member_1",
+            pinned: false,
+            pinnedAt: null,
+            notificationLevel: "everything",
+            lastReadEventId: "event_old",
+            lastReadAt: null,
+            joinedAt: new Date().toISOString(),
+          },
+        ],
+        unreadCounts: { stream_1: 1 },
+        mentionCounts: { stream_1: 0 },
+        activityCounts: { stream_1: 0 },
+      })
+    )
+
+    await db.streams.put({
+      id: "stream_1",
+      workspaceId: "ws_1",
+      type: "channel",
+      displayName: "Engineering",
+      slug: "engineering",
+      description: null,
+      visibility: "public",
+      parentStreamId: null,
+      parentMessageId: null,
+      rootStreamId: null,
+      companionMode: "off",
+      companionPersonaId: null,
+      createdBy: "member_1",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      archivedAt: null,
+      lastReadEventId: "event_old",
+      _cachedAt: Date.now(),
+    })
+    await db.streamMemberships.put({
+      id: "ws_1:stream_1",
+      workspaceId: "ws_1",
+      streamId: "stream_1",
+      memberId: "member_1",
+      pinned: false,
+      pinnedAt: null,
+      notificationLevel: "everything",
+      lastReadEventId: "event_old",
+      lastReadAt: null,
+      joinedAt: new Date().toISOString(),
+      _cachedAt: Date.now(),
+    })
+    await db.unreadState.put({
+      id: "ws_1",
+      workspaceId: "ws_1",
+      unreadCounts: { stream_1: 1 },
+      mentionCounts: { stream_1: 0 },
+      activityCounts: { stream_1: 0 },
+      unreadActivityCount: 0,
+      mutedStreamIds: [],
+      _cachedAt: Date.now(),
+    })
+
+    const subscribeStream = vi.fn()
+    const { socket, emit } = createTestSocket()
+    const cleanup = registerWorkspaceSocketHandlers(socket, "ws_1", queryClient, {
+      getCurrentStreamId: () => "stream_1",
+      getCurrentUser: () => ({ id: "workos_1" }),
+      subscribeStream,
+    })
+
+    emit("stream:read", {
+      workspaceId: "ws_1",
+      authorId: "member_1",
+      streamId: "stream_1",
+      lastReadEventId: "event_new",
+    })
+
+    await Promise.resolve()
+
+    expect(await db.streamMemberships.get("ws_1:stream_1")).toMatchObject({
+      lastReadEventId: "event_new",
+    })
+    expect(await db.streams.get("stream_1")).toMatchObject({
+      lastReadEventId: "event_new",
+    })
 
     cleanup()
   })
