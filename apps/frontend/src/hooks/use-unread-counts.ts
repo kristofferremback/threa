@@ -2,6 +2,7 @@ import { useCallback } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { useWorkspaceService, useStreamService } from "@/contexts"
 import { workspaceKeys } from "./use-workspaces"
+import { streamKeys } from "./use-streams"
 import { useWorkspaceUnreadState } from "@/stores/workspace-store"
 import { db } from "@/db"
 import type { WorkspaceBootstrap } from "@threa/types"
@@ -25,11 +26,11 @@ export function useUnreadCounts(workspaceId: string) {
   const markAsReadMutation = useMutation({
     mutationFn: ({ streamId, lastEventId }: { streamId: string; lastEventId: string }) =>
       streamService.markAsRead(workspaceId, streamId, lastEventId),
-    onSuccess: (_membership, { streamId }) => {
+    onSuccess: (_membership, { streamId, lastEventId }) => {
       const current = queryClient.getQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId))
       const hadActivity = (current?.activityCounts[streamId] ?? 0) > 0
 
-      // Update TanStack cache (bridge for unmigrated consumers)
+      // Update TanStack workspace bootstrap (bridge)
       queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
         if (!old) return old
         const clearedActivity = old.activityCounts[streamId] ?? 0
@@ -41,6 +42,19 @@ export function useUnreadCounts(workspaceId: string) {
           unreadActivityCount: Math.max(0, (old.unreadActivityCount ?? 0) - clearedActivity),
         }
       })
+
+      // Update stream bootstrap's membership.lastReadEventId in TanStack
+      // so the unread divider repositions immediately
+      queryClient.setQueryData(
+        streamKeys.bootstrap(workspaceId, streamId),
+        (old: import("@threa/types").StreamBootstrap | undefined) => {
+          if (!old) return old
+          return { ...old, membership: { ...old.membership, lastReadEventId: lastEventId } }
+        }
+      )
+
+      // Update lastReadEventId on the cached stream in IDB
+      db.streams.update(streamId, { lastReadEventId: lastEventId, _cachedAt: Date.now() })
 
       // Update IDB for immediate consistency with IDB-backed consumers
       db.transaction("rw", [db.unreadState], async () => {

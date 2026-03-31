@@ -965,8 +965,8 @@ export async function applyWorkspaceBootstrap(
         _cachedAt: now,
       }))
     ),
-    db.personas.bulkPut(bootstrap.personas.map((p) => ({ ...p, _cachedAt: now }))),
-    db.bots.bulkPut(bootstrap.bots.map((b) => ({ ...b, _cachedAt: now }))),
+    db.personas.bulkPut(bootstrap.personas.map((p) => ({ ...p, workspaceId: workspaceId, _cachedAt: now }))),
+    db.bots.bulkPut(bootstrap.bots.map((b) => ({ ...b, workspaceId: workspaceId, _cachedAt: now }))),
     // Only write unreadState if no concurrent socket handler has updated it
     // since the fetch started. Socket handlers (stream:activity, activity:created)
     // may have incremented counts during the fetch window.
@@ -1043,8 +1043,8 @@ export async function applyWorkspaceBootstrap(
       workspaceId,
       _cachedAt: now,
     })),
-    personas: bootstrap.personas.map((p) => ({ ...p, _cachedAt: now })),
-    bots: bootstrap.bots.map((b) => ({ ...b, _cachedAt: now })),
+    personas: bootstrap.personas.map((p) => ({ ...p, workspaceId, _cachedAt: now })),
+    bots: bootstrap.bots.map((b) => ({ ...b, workspaceId, _cachedAt: now })),
   })
 }
 
