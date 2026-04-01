@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { ItemList, type QuickSwitcherItem } from "@/components/quick-switcher"
 import { StreamTypes } from "@threa/types"
 import { useWorkspaceStreams } from "@/stores/workspace-store"
+import { useActors } from "@/hooks"
 import { getThreadRootContext } from "@/components/thread/breadcrumb-helpers"
 import { getStreamName, streamFallbackLabel } from "@/lib/streams"
 
@@ -12,6 +13,7 @@ export function ThreadsPage() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const navigate = useNavigate()
   const idbStreams = useWorkspaceStreams(workspaceId ?? "")
+  const { getActorName } = useActors(workspaceId ?? "")
   const [selectedIndex, setSelectedIndex] = useState(0)
 
   // Filter for thread type streams
@@ -25,7 +27,8 @@ export function ThreadsPage() {
       const displayName = getStreamName(thread) ?? streamFallbackLabel("thread", "sidebar")
       // CachedStream doesn't have lastMessagePreview
       const preview = (thread as any).lastMessagePreview
-      const previewText = preview ? `${preview.authorId}: ${preview.content ? "..." : "No messages"}` : "No messages"
+      const authorName = preview ? getActorName(preview.authorId, preview.authorType) : null
+      const previewText = preview ? `${authorName}: ${preview.content ? "..." : "No messages"}` : "No messages"
 
       const rootContext = getThreadRootContext(thread, idbStreams)
       const description = rootContext ? `in ${rootContext} · ${previewText}` : previewText
@@ -39,7 +42,7 @@ export function ThreadsPage() {
         onSelect: () => navigate(`/w/${workspaceId}/s/${thread.id}`),
       }
     })
-  }, [threads, idbStreams, workspaceId, navigate])
+  }, [threads, idbStreams, workspaceId, navigate, getActorName])
 
   // Handle item selection (navigate or open in new tab)
   const handleSelectItem = useCallback((item: QuickSwitcherItem, withModifier: boolean) => {
