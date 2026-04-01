@@ -223,6 +223,10 @@ export function StreamContent({
   const queryClient = useQueryClient()
   const isPublicChannel = stream?.type === StreamTypes.CHANNEL && stream?.visibility === Visibilities.PUBLIC
   const isMember = !!membership
+  // Membership is only resolved once the workspace user ID loads from IDB or
+  // the stream bootstrap completes. Until then, default to showing the input
+  // (not the JoinChannelBar) to prevent flash-of-join-bar on public channels.
+  const membershipResolved = currentWorkspaceUserId !== null || bootstrap !== undefined
   let disabledReason: string | undefined
   if (isSystem) {
     disabledReason = "System notifications are read-only."
@@ -263,7 +267,7 @@ export function StreamContent({
     }
   }, [isJumpMode, exitJumpMode, scrollToBottom])
 
-  if (error && !isDraft && events.length === 0) {
+  if (error && !isDraft && events.length === 0 && !idbStream) {
     return (
       <ErrorView
         className="h-full border-0"
@@ -275,7 +279,7 @@ export function StreamContent({
 
   return (
     <EditLastMessageContext.Provider value={editLastMessageCtx}>
-      <InlineEditProvider>
+      <InlineEditProvider resetKey={streamId}>
         <div className="flex h-full flex-col">
           <div className="relative flex-1 overflow-hidden mb-1 sm:mb-4">
             <div
@@ -338,7 +342,7 @@ export function StreamContent({
               </div>
             )}
           </div>
-          {!isMember && isPublicChannel && (
+          {membershipResolved && !isMember && isPublicChannel && (
             <JoinChannelBar
               workspaceId={workspaceId}
               streamId={streamId}
@@ -346,7 +350,7 @@ export function StreamContent({
               onJoined={handleJoined}
             />
           )}
-          {(isMember || !isPublicChannel) && (
+          {(isMember || !isPublicChannel || !membershipResolved) && (
             <MessageInput
               workspaceId={workspaceId}
               streamId={streamId}

@@ -195,9 +195,29 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
   // - All bootstrap events
   // - Socket events that arrived during or after bootstrap (INV-53 guarantee)
   // - Pending/failed optimistic events (regardless of sequence)
+  //
+  // The floor must never jump upward on re-fetches (e.g. after socket reconnect).
+  // A higher floor would hide events already visible in IDB from the current
+  // session — the events are valid, just below the latest bootstrap page.
+  //
+  // NOTE: The ref mutation inside useMemo is intentional. Moving it to useEffect
+  // would introduce a one-render lag where the higher floor is applied before the
+  // ratchet corrects it, causing a visible flash of hidden messages. The mutation
+  // is idempotent for identical inputs so strict-mode double-invocation is safe.
+  const bootstrapFloorRef = useRef<{ streamId: string; floor: bigint } | null>(null)
   const bootstrapFloor = useMemo(() => {
-    return getMinimumSequence(bootstrap?.events)
-  }, [bootstrap?.events])
+    const newFloor = getMinimumSequence(bootstrap?.events)
+    // Reset when switching streams (component stays mounted across routes)
+    if (bootstrapFloorRef.current && bootstrapFloorRef.current.streamId !== streamId) {
+      bootstrapFloorRef.current = null
+    }
+    if (newFloor === null) return bootstrapFloorRef.current?.floor ?? null
+    if (bootstrapFloorRef.current !== null && bootstrapFloorRef.current.floor < newFloor) {
+      return bootstrapFloorRef.current.floor
+    }
+    bootstrapFloorRef.current = { streamId, floor: newFloor }
+    return newFloor
+  }, [bootstrap?.events, streamId])
 
   const olderFloor = useMemo(() => {
     const olderEvents = olderData?.pages.flatMap((page) => page.events).filter(Boolean) ?? []

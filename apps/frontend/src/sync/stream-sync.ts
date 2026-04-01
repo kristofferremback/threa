@@ -1,11 +1,12 @@
 import { db, sequenceToNum } from "@/db"
-import type {
-  StreamEvent,
-  Stream,
-  StreamBootstrap,
-  LastMessagePreview,
-  LinkPreviewSummary,
-  WorkspaceBootstrap,
+import {
+  StreamTypes,
+  type StreamEvent,
+  type Stream,
+  type StreamBootstrap,
+  type LastMessagePreview,
+  type LinkPreviewSummary,
+  type WorkspaceBootstrap,
 } from "@threa/types"
 import type { Socket } from "socket.io-client"
 import { workspaceKeys } from "@/hooks/use-workspaces"
@@ -43,7 +44,18 @@ export async function applyStreamBootstrap(
           return sequence < min ? sequence : min
         }, BigInt(bootstrap.events[0].sequence))
       : null
-  const bootstrapWindowCeiling = BigInt(bootstrap.latestSequence)
+  // Use the actual max event sequence as the ceiling, NOT latestSequence.
+  // latestSequence can be higher than the max returned event when new events
+  // are created between the server's event query and sequence query. Using
+  // latestSequence as the ceiling would delete valid socket events that
+  // arrived in that gap (subscribe-then-fetch race, INV-53).
+  const bootstrapWindowCeiling =
+    bootstrap.events.length > 0
+      ? bootstrap.events.reduce((max, event) => {
+          const sequence = BigInt(event.sequence)
+          return sequence > max ? sequence : max
+        }, BigInt(bootstrap.events[0].sequence))
+      : BigInt(bootstrap.latestSequence)
 
   await db.transaction("rw", [db.events, db.streams, db.pendingMessages], async () => {
     // Clean stale optimistic events — temp_* that are no longer pending
@@ -61,8 +73,9 @@ export async function applyStreamBootstrap(
     }
 
     // Prune stale cached events inside the fetched bootstrap window.
-    // This keeps older paged history (< floor) and newer socket races (> latestSequence)
-    // while removing ghost events that no longer exist in the server snapshot.
+    // This keeps older paged history (< floor) and newer socket races
+    // (> max bootstrap event sequence) while removing ghost events that
+    // no longer exist in the server snapshot.
     if (bootstrapWindowFloor !== null) {
       const staleWindowEvents = await db.events
         .where("streamId")
@@ -87,16 +100,28 @@ export async function applyStreamBootstrap(
     // workspace bootstrap's StreamWithPreview (e.g. lastMessagePreview, which
     // is the sidebar's activity sort key). Use update() for existing records
     // and fall back to put() if the stream doesn't exist in IDB yet.
-    const streamData = {
+    const fullStreamData = {
       ...bootstrap.stream,
       pinned: bootstrap.membership?.pinned,
       notificationLevel: bootstrap.membership?.notificationLevel,
       lastReadEventId: bootstrap.membership?.lastReadEventId,
       _cachedAt: now,
     }
-    const updated = await db.streams.update(bootstrap.stream.id, streamData)
-    if (updated === 0) {
-      await db.streams.put(streamData)
+    // For DMs, the stream bootstrap endpoint does not resolve viewer-specific
+    // display names (that's done at workspace level by resolveDmDisplayNames).
+    // Exclude displayName from the update so the resolved name in IDB survives.
+    const isDmWithNullName = bootstrap.stream.type === StreamTypes.DM && bootstrap.stream.displayName == null
+    if (isDmWithNullName) {
+      const { displayName: _, ...withoutDisplayName } = fullStreamData
+      const updated = await db.streams.update(bootstrap.stream.id, withoutDisplayName)
+      if (updated === 0) {
+        await db.streams.put(fullStreamData)
+      }
+    } else {
+      const updated = await db.streams.update(bootstrap.stream.id, fullStreamData)
+      if (updated === 0) {
+        await db.streams.put(fullStreamData)
+      }
     }
   })
 }
