@@ -209,8 +209,8 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
   // has data, use bootstrap events directly. This bridges the async gap between
   // bootstrap arrival (seedStreamEvents) and useLiveQuery re-query resolution,
   // preventing the empty state flash and content lag on stream switch.
-  const bootstrapEvents = bootstrap?.events ?? []
-  const effectiveEvents = hasIdbEvents ? idbEvents : (bootstrapEvents as typeof idbEvents)
+  const bootstrapEvents: DisplayableEvent[] = bootstrap?.events ?? []
+  const effectiveEvents: DisplayableEvent[] = hasIdbEvents ? idbEvents : bootstrapEvents
   const hasAnyEvents = effectiveEvents.length > 0
 
   const cachedWindowFloor = useMemo(() => getCachedWindowFloor(effectiveEvents, EVENT_PAGE_SIZE), [effectiveEvents])

@@ -17,7 +17,7 @@ import {
 import { getCachedStreamEvents, hasCachedMessageAtOrAfter, hasStreamEventCache } from "@/stores/stream-store"
 import { hasSeededDraftCache, seedDraftCacheFromIdb } from "@/stores/draft-store"
 import { useSyncStatus } from "@/sync/sync-status"
-import { debugBootstrap } from "@/lib/bootstrap-debug"
+import { debugBootstrap, isBootstrapDebugEnabled } from "@/lib/bootstrap-debug"
 import { getQueryLoadState, isQueryLoadStateLoading, shouldSuppressBootstrapError } from "@/lib/query-load-state"
 import { StreamContentSkeleton } from "@/components/loading"
 import { ApiError } from "@/api/client"
@@ -182,54 +182,56 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
   // EventList's skeleton/loading state within the stream content area.
   const isLoading = workspaceLoading || (!isReady && streamsLoading) || draftsLoading
 
-  debugBootstrap("Coordinated loading state", {
-    workspaceId,
-    streamIds,
-    serverStreamIds,
-    workspaceSyncStatus,
-    streamsLoadState,
-    hasSeededWorkspaceCache: hasSeededWorkspaceCache(workspaceId),
-    hasSeededDraftCache: hasSeededDraftCache(workspaceId),
-    idbCachePrimed,
-    workspaceDataReady,
-    draftDataReady,
-    visibleStreamIdsReady,
-    suppressedStreamErrors: suppressedStreamErrors.map((state) => ({
-      streamId: state.streamId,
-      message: state.result?.error?.message ?? "unknown error",
-    })),
-    visibleStreamTimelineFreshness: serverStreamIds.map((streamId) => {
-      const cachedStream = streamById.get(streamId)
-      const cachedEvents = getCachedStreamEvents(streamId)
-      return {
-        streamId,
-        previewCreatedAt: cachedStream?.lastMessagePreview?.createdAt ?? null,
-        latestCachedEventCreatedAt: cachedEvents.at(-1)?.createdAt ?? null,
-        latestCachedMessageCreatedAt:
-          [...cachedEvents]
-            .reverse()
-            .find((event) => event.eventType === "message_created" || event.eventType === "companion_response")
-            ?.createdAt ?? null,
-        matchesPreview: hasCachedMessageAtOrAfter(streamId, cachedStream?.lastMessagePreview?.createdAt),
-      }
-    }),
-    workspaceRecordReady: !!idbWorkspace,
-    streamCount: idbStreams.length,
-    userCount: idbUsers.length,
-    membershipCount: idbMemberships.length,
-    dmPeerCount: idbDmPeers.length,
-    personaCount: idbPersonas.length,
-    botCount: idbBots.length,
-    hasUnreadState: idbUnreadState !== undefined,
-    hasMetadata: idbMetadata !== undefined,
-    workspaceLoading,
-    streamsLoading,
-    draftsLoading,
-    isLoading,
-    isReady,
-    showSkeleton,
-    showLoadingIndicator,
-  })
+  if (isBootstrapDebugEnabled()) {
+    debugBootstrap("Coordinated loading state", {
+      workspaceId,
+      streamIds,
+      serverStreamIds,
+      workspaceSyncStatus,
+      streamsLoadState,
+      hasSeededWorkspaceCache: hasSeededWorkspaceCache(workspaceId),
+      hasSeededDraftCache: hasSeededDraftCache(workspaceId),
+      idbCachePrimed,
+      workspaceDataReady,
+      draftDataReady,
+      visibleStreamIdsReady,
+      suppressedStreamErrors: suppressedStreamErrors.map((state) => ({
+        streamId: state.streamId,
+        message: state.result?.error?.message ?? "unknown error",
+      })),
+      visibleStreamTimelineFreshness: serverStreamIds.map((streamId) => {
+        const cachedStream = streamById.get(streamId)
+        const cachedEvents = getCachedStreamEvents(streamId)
+        return {
+          streamId,
+          previewCreatedAt: cachedStream?.lastMessagePreview?.createdAt ?? null,
+          latestCachedEventCreatedAt: cachedEvents.at(-1)?.createdAt ?? null,
+          latestCachedMessageCreatedAt:
+            [...cachedEvents]
+              .reverse()
+              .find((event) => event.eventType === "message_created" || event.eventType === "companion_response")
+              ?.createdAt ?? null,
+          matchesPreview: hasCachedMessageAtOrAfter(streamId, cachedStream?.lastMessagePreview?.createdAt),
+        }
+      }),
+      workspaceRecordReady: !!idbWorkspace,
+      streamCount: idbStreams.length,
+      userCount: idbUsers.length,
+      membershipCount: idbMemberships.length,
+      dmPeerCount: idbDmPeers.length,
+      personaCount: idbPersonas.length,
+      botCount: idbBots.length,
+      hasUnreadState: idbUnreadState !== undefined,
+      hasMetadata: idbMetadata !== undefined,
+      workspaceLoading,
+      streamsLoading,
+      draftsLoading,
+      isLoading,
+      isReady,
+      showSkeleton,
+      showLoadingIndicator,
+    })
+  }
 
   useEffect(() => {
     if (!import.meta.env.DEV) return

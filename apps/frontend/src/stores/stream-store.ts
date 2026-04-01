@@ -104,7 +104,10 @@ export function useStreamEvents(streamId: string | undefined): CachedEvent[] {
   // from useLiveQuery during IDB re-query transitions. The bridge below
   // handles the return value, but without this guard the NEXT render would
   // find the cache corrupted to [] and the bridge can't save it.
-  if (streamId && (live.length > 0 || cached.length === 0)) {
+  // Allow empty writes when live and cached are the same reference (the
+  // default value), meaning liveQuery hasn't re-queried yet — no stale
+  // overwrite risk. Also allow when live has data or cache is already empty.
+  if (streamId && (live.length > 0 || cached.length === 0 || live !== cached)) {
     eventCache.set(streamId, live)
   }
 

@@ -149,8 +149,8 @@ function toWorkspaceUser(user: WorkspaceUserPayload): User {
  * Registers all workspace-level socket event handlers and returns a cleanup
  * function that unregisters them.
  *
- * Extracted from `useSocketEvents` so the SyncEngine can own handler lifecycle
- * without React hooks.
+ * Lives outside React so the SyncEngine can own handler lifecycle
+ * independently of component mount/unmount cycles.
  */
 export function registerWorkspaceSocketHandlers(
   socket: Socket,
