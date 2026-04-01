@@ -18,7 +18,7 @@ export function ActivityItem({ activity, actorName, streamName, workspaceId, onM
 
   return (
     <Link
-      to={`/w/${workspaceId}/s/${activity.streamId}`}
+      to={`/w/${workspaceId}/s/${activity.streamId}?m=${activity.messageId}`}
       onClick={() => {
         if (isUnread) onMarkAsRead(activity.id)
       }}
