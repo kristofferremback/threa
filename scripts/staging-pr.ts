@@ -1,5 +1,5 @@
 /**
- * Staging PR lifecycle management.
+ * Staging PR lifecycle management — deploys per-PR backend + database environments.
  *
  * Usage:
  *   bun scripts/staging-pr.ts --action=deploy  --pr=123 --branch=my-feature
