@@ -329,6 +329,10 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
       // Write to IDB so they persist across sessions
       await cacheToIndexedDB(workspaceId, result.events)
 
+      // If there are no newer events, the target is already at the bottom —
+      // skip jump mode and let the live tail render from IDB.
+      if (!result.hasNewer) return true
+
       const sorted = sortBySequence([...result.events])
       setJumpState({
         events: sorted,
