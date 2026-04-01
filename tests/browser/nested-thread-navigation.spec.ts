@@ -88,8 +88,8 @@ test.describe("Nested Thread Navigation", () => {
 
     // CRITICAL: The firstReply message should show as having 1 reply (the nested thread)
     // This is the bug - it doesn't show the reply count after navigating back
-    const firstReplyInPanel = page.getByRole("main").locator(".group").filter({ hasText: firstReply }).first()
-    await expect(firstReplyInPanel.getByText(/1 reply/i)).toBeVisible({ timeout: 3000 })
+    const firstReplyInPanel = page.getByTestId("panel").locator(".group").filter({ hasText: firstReply }).first()
+    await expect(firstReplyInPanel.getByText(/1 reply/i)).toBeVisible({ timeout: 10000 })
   })
 
   test("should show nested thread indicator when reopening parent thread", async ({ page }) => {

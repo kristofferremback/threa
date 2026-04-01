@@ -20,7 +20,7 @@ vi.mock("@/components/editor", () => {
       insertMention: () => void
       insertSlash: () => void
       insertEmoji: () => void
-      getEditor: () => { id: string } | null
+      getEditor: () => { id: string; getJSON: () => JSONContent } | null
     },
     {
       value: JSONContent
@@ -31,10 +31,15 @@ vi.mock("@/components/editor", () => {
       ariaLabel?: string
       ariaDescribedBy?: string
     }
-  >(function MockRichEditor({ onChange, onSubmit, placeholder, disabled, ariaLabel, ariaDescribedBy }, ref) {
-    const [editorInstance, setEditorInstance] = useState<{ id: string } | null>(null)
+  >(function MockRichEditor({ value, onChange, onSubmit, placeholder, disabled, ariaLabel, ariaDescribedBy }, ref) {
+    const valueRef = { current: value }
+    valueRef.current = value
+    const [editorInstance, setEditorInstance] = useState<{
+      id: string
+      getJSON: () => JSONContent
+    } | null>(null)
     useEffect(() => {
-      const timer = setTimeout(() => setEditorInstance({ id: "mock-editor" }), 0)
+      const timer = setTimeout(() => setEditorInstance({ id: "mock-editor", getJSON: () => valueRef.current }), 0)
       return () => clearTimeout(timer)
     }, [])
 

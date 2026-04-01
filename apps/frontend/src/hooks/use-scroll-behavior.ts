@@ -79,7 +79,12 @@ export function useScrollBehavior({
     }
 
     shouldAutoScroll.current = true
-    setIsScrolledFarFromBottom(false)
+    // Only eagerly clear the "far from bottom" state for forced scrolls (jump
+    // to latest button). Auto-scroll calls from useLayoutEffect should not
+    // trigger a React state update — the next handleScroll will set it naturally.
+    if (options?.force) {
+      setIsScrolledFarFromBottom(false)
+    }
 
     if (options?.behavior) {
       el.scrollTo({ top: el.scrollHeight, behavior: options.behavior })

@@ -138,8 +138,11 @@ test.describe("Edit last message (ArrowUp)", () => {
       })
     }
 
-    // ── User A: wait for filler messages to arrive, then test ──
-    await expect(userA.page.getByRole("main").getByText(`${fillerText} #20`).first()).toBeVisible({ timeout: 15000 })
+    // ── User A: wait for filler messages to arrive and auto-scroll to complete ──
+    const lastFillerEl = userA.page.getByRole("main").getByText(`${fillerText} #20`).first()
+    await expect(lastFillerEl).toBeVisible({ timeout: 15000 })
+    // Ensure auto-scroll has brought the latest message into the viewport
+    await expect(lastFillerEl).toBeInViewport({ timeout: 5000 })
 
     // Verify User A's first message has scrolled out of the visible area
     const firstMessageEl = userA.page.getByRole("main").getByText(firstMessage).first()
