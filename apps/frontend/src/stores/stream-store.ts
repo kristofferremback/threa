@@ -1,4 +1,3 @@
-import Dexie from "dexie"
 import { useLiveQuery } from "dexie-react-hooks"
 import { db, type CachedEvent, type CachedStream } from "@/db"
 
@@ -40,28 +39,23 @@ export function resetStreamStoreCache(): void {}
 export function useStreamEvents(streamId: string | undefined): CachedEvent[] | undefined {
   const result = useLiveQuery(async () => {
     if (!streamId) return []
-    // Use the compound index to load only the most recent events, avoiding
-    // OOM on mobile for streams with very large cached histories.
-    const events = await db.events
-      .where("[streamId+sequence]")
-      .between([streamId, Dexie.minKey], [streamId, Dexie.maxKey])
-      .reverse()
-      .limit(MAX_IDB_EVENTS_PER_STREAM)
-      .toArray()
-    // Also include any pending/failed optimistic events that may have
-    // placeholder sequences outside the loaded window.
-    const optimistic = await db.events
-      .where("streamId")
-      .equals(streamId)
-      .filter((e) => e._status === "pending" || e._status === "failed")
-      .toArray()
-    if (optimistic.length > 0) {
-      const loadedIds = new Set(events.map((e) => e.id))
-      for (const e of optimistic) {
-        if (!loadedIds.has(e.id)) events.push(e)
+    // Load all events for this stream, sort numerically by sequence, and
+    // keep only the most recent MAX_IDB_EVENTS_PER_STREAM to prevent OOM
+    // on mobile with large cached histories. We sort in JS because the
+    // IDB compound index sorts sequence strings lexicographically, not
+    // numerically (e.g. "9" > "10").
+    const events = await db.events.where("streamId").equals(streamId).toArray()
+    const sorted = sortBySequence(events)
+    if (sorted.length <= MAX_IDB_EVENTS_PER_STREAM) return sorted
+    // Keep optimistic events (pending/failed) regardless of window
+    const windowed = sorted.slice(-MAX_IDB_EVENTS_PER_STREAM)
+    const windowedIds = new Set(windowed.map((e) => e.id))
+    for (const e of sorted) {
+      if ((e._status === "pending" || e._status === "failed") && !windowedIds.has(e.id)) {
+        windowed.push(e)
       }
     }
-    return sortBySequence(events)
+    return windowed
   }, [streamId])
 
   if (result && result.length > 0 && streamId && result[0].streamId !== streamId) {
