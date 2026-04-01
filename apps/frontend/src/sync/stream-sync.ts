@@ -1,4 +1,4 @@
-import { db } from "@/db"
+import { db, sequenceToNum } from "@/db"
 import type {
   StreamEvent,
   Stream,
@@ -80,7 +80,9 @@ export async function applyStreamBootstrap(
       }
     }
 
-    await db.events.bulkPut(bootstrap.events.map((e) => ({ ...e, workspaceId, _cachedAt: now })))
+    await db.events.bulkPut(
+      bootstrap.events.map((e) => ({ ...e, workspaceId, _sequenceNum: sequenceToNum(e.sequence), _cachedAt: now }))
+    )
     // Merge stream metadata without destroying fields that only exist on the
     // workspace bootstrap's StreamWithPreview (e.g. lastMessagePreview, which
     // is the sidebar's activity sort key). Use update() for existing records
@@ -236,7 +238,7 @@ export function registerStreamSocketHandlers(
         }
       }
 
-      await db.events.put({ ...newEvent, workspaceId, _cachedAt: now })
+      await db.events.put({ ...newEvent, workspaceId, _sequenceNum: sequenceToNum(newEvent.sequence), _cachedAt: now })
     })
 
     // Update sidebar preview in both TanStack cache and IDB so the sort order
@@ -346,7 +348,12 @@ export function registerStreamSocketHandlers(
     // Dedupe by event ID
     const existing = await db.events.get(payload.event.id)
     if (existing) return
-    await db.events.put({ ...payload.event, workspaceId, _cachedAt: now })
+    await db.events.put({
+      ...payload.event,
+      workspaceId,
+      _sequenceNum: sequenceToNum(payload.event.sequence),
+      _cachedAt: now,
+    })
   }
 
   const handleLinkPreviewReady = async (payload: LinkPreviewReadyPayload) => {

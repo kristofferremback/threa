@@ -1,3 +1,4 @@
+import Dexie from "dexie"
 import { useLiveQuery } from "dexie-react-hooks"
 import { db, type CachedEvent, type CachedStream } from "@/db"
 
@@ -7,20 +8,6 @@ import { db, type CachedEvent, type CachedStream } from "@/db"
  * windowing in useEvents provides further filtering on top of this.
  */
 const MAX_IDB_EVENTS_PER_STREAM = 500
-
-/**
- * Sort events by sequence (bigint comparison, not lexicographic).
- * Sequences are stored as strings but represent bigints.
- */
-function sortBySequence(events: CachedEvent[]): CachedEvent[] {
-  return events.sort((a, b) => {
-    const seqA = BigInt(a.sequence)
-    const seqB = BigInt(b.sequence)
-    if (seqA < seqB) return -1
-    if (seqA > seqB) return 1
-    return 0
-  })
-}
 
 /** No-op — the in-memory event cache has been removed. Kept for clearAllCachedData compat. */
 export function resetStreamStoreCache(): void {}
@@ -39,23 +26,27 @@ export function resetStreamStoreCache(): void {}
 export function useStreamEvents(streamId: string | undefined): CachedEvent[] | undefined {
   const result = useLiveQuery(async () => {
     if (!streamId) return []
-    // Load all events for this stream, sort numerically by sequence, and
-    // keep only the most recent MAX_IDB_EVENTS_PER_STREAM to prevent OOM
-    // on mobile with large cached histories. We sort in JS because the
-    // IDB compound index sorts sequence strings lexicographically, not
-    // numerically (e.g. "9" > "10").
-    const events = await db.events.where("streamId").equals(streamId).toArray()
-    const sorted = sortBySequence(events)
-    if (sorted.length <= MAX_IDB_EVENTS_PER_STREAM) return sorted
-    // Keep optimistic events (pending/failed) regardless of window
-    const windowed = sorted.slice(-MAX_IDB_EVENTS_PER_STREAM)
-    const windowedIds = new Set(windowed.map((e) => e.id))
-    for (const e of sorted) {
-      if ((e._status === "pending" || e._status === "failed") && !windowedIds.has(e.id)) {
-        windowed.push(e)
-      }
-    }
-    return windowed
+    // Use the numeric [streamId+_sequenceNum] index so IDB returns
+    // events in correct numeric order. .reverse().limit() efficiently
+    // fetches only the most recent N events without loading all into JS.
+    const events = await db.events
+      .where("[streamId+_sequenceNum]")
+      .between([streamId, Dexie.minKey], [streamId, Dexie.maxKey])
+      .reverse()
+      .limit(MAX_IDB_EVENTS_PER_STREAM)
+      .toArray()
+    // Include any pending/failed optimistic events that may have
+    // placeholder sequences outside the loaded window.
+    const loadedIds = new Set(events.map((e) => e.id))
+    const unsent = await db.events
+      .where("streamId")
+      .equals(streamId)
+      .filter((e) => (e._status === "pending" || e._status === "failed") && !loadedIds.has(e.id))
+      .toArray()
+    for (const e of unsent) events.push(e)
+    // Already sorted descending from .reverse(); flip to ascending
+    events.reverse()
+    return events
   }, [streamId])
 
   if (result && result.length > 0 && streamId && result[0].streamId !== streamId) {

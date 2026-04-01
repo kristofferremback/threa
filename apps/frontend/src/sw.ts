@@ -55,8 +55,15 @@ async function prefetchEventsAround(workspaceId: string, streamId: string, messa
     const data = body.data ?? body
     if (data?.events?.length > 0) {
       const now = Date.now()
-      const { db } = await import("./db/database")
-      await db.events.bulkPut(data.events.map((e: Record<string, unknown>) => ({ ...e, workspaceId, _cachedAt: now })))
+      const { db, sequenceToNum } = await import("./db/database")
+      await db.events.bulkPut(
+        data.events.map((e: Record<string, unknown>) => ({
+          ...e,
+          workspaceId,
+          _sequenceNum: sequenceToNum(e.sequence as string),
+          _cachedAt: now,
+        }))
+      )
     }
   } catch {
     // Best-effort
@@ -82,9 +89,14 @@ async function prefetchStreamBootstrap(workspaceId: string, streamId: string): P
       const now = Date.now()
       // Dynamic import to avoid bundling Dexie into the SW critical path.
       // The SW shares the same origin and IndexedDB database as the main thread.
-      const { db } = await import("./db/database")
+      const { db, sequenceToNum } = await import("./db/database")
       await db.events.bulkPut(
-        bootstrap.events.map((e: Record<string, unknown>) => ({ ...e, workspaceId, _cachedAt: now }))
+        bootstrap.events.map((e: Record<string, unknown>) => ({
+          ...e,
+          workspaceId,
+          _sequenceNum: sequenceToNum(e.sequence as string),
+          _cachedAt: now,
+        }))
       )
       if (bootstrap.stream) {
         await db.streams.put({ ...bootstrap.stream, _cachedAt: now })

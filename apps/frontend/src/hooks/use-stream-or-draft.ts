@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "react-router-dom"
-import { db, type CachedStream } from "@/db"
+import { db, sequenceToNum, type CachedStream } from "@/db"
 import { useStreamService, useMessageService, usePendingMessages } from "@/contexts"
 import { useUser } from "@/auth"
 import { useStreamBootstrap, streamKeys } from "./use-streams"
@@ -585,6 +585,7 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
       await db.events.add({
         ...optimisticEvent,
         workspaceId,
+        _sequenceNum: sequenceToNum(optimisticEvent.sequence),
         _clientId: clientId,
         _status: "pending",
         _cachedAt: Date.now(),
