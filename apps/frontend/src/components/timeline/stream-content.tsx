@@ -147,7 +147,6 @@ export function StreamContent({
     jumpToEvent,
     exitJumpMode,
     isJumpMode,
-    bootstrapMaxSequence,
   } = useEvents(workspaceId, streamId, { enabled: !isDraft, loadAll: isThread })
 
   // Jump to highlighted message if it's not in the current event window
@@ -201,13 +200,10 @@ export function StreamContent({
   const lastEventId = events.length > 0 ? events[events.length - 1].id : undefined
   useAutoMarkAsRead(workspaceId, streamId, lastEventId, { enabled: !isDraft && !isLoading && !isJumpMode })
 
-  // Track live-arriving messages from other users for brief "new" indicator
-  const newMessageIds = useNewMessageIndicator(
-    events,
-    currentWorkspaceUserId ?? undefined,
-    streamId,
-    bootstrapMaxSequence
-  )
+  // Track live-arriving messages from other users for brief "new" indicator.
+  // Uses lastReadEventId as the read boundary — same data as the unread
+  // divider and sidebar unread indicator.
+  const newMessageIds = useNewMessageIndicator(events, currentWorkspaceUserId ?? undefined, streamId, lastReadEventId)
 
   // Unread divider state management (also handles scroll-to-first-unread)
   const { dividerEventId, isFading: isDividerFading } = useUnreadDivider({

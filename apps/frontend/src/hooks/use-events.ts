@@ -204,7 +204,16 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
 
   const hasIdbEvents = idbEvents.length > 0
   const suppressBootstrapError = shouldSuppressBootstrapError(error, hasIdbEvents)
-  const cachedWindowFloor = useMemo(() => getCachedWindowFloor(idbEvents, EVENT_PAGE_SIZE), [idbEvents])
+
+  // Synchronous fallback: when useLiveQuery hasn't resolved yet but bootstrap
+  // has data, use bootstrap events directly. This bridges the async gap between
+  // bootstrap arrival (seedStreamEvents) and useLiveQuery re-query resolution,
+  // preventing the empty state flash and content lag on stream switch.
+  const bootstrapEvents = bootstrap?.events ?? []
+  const effectiveEvents = hasIdbEvents ? idbEvents : (bootstrapEvents as typeof idbEvents)
+  const hasAnyEvents = effectiveEvents.length > 0
+
+  const cachedWindowFloor = useMemo(() => getCachedWindowFloor(effectiveEvents, EVENT_PAGE_SIZE), [effectiveEvents])
   const displayFloor = useMemo(() => {
     const serverFloor = getDisplayFloor(bootstrapFloor, olderFloor)
     if (serverFloor !== null) return serverFloor
@@ -214,7 +223,7 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
 
   // Combine all event sources.
   // In jump mode: use jump window + paginated older/newer events.
-  // In normal mode: filter IDB events to bootstrap window + newer.
+  // In normal mode: filter IDB/bootstrap events to display window.
   const events = useMemo(() => {
     if (jumpState) {
       const olderEvents = olderData?.pages.flatMap((page) => page.events).filter(Boolean) ?? []
@@ -226,16 +235,13 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
     // users cannot scroll into extra cached history that later disappears when
     // the bootstrap floor arrives. If bootstrap fails and we fall back to the
     // local cache, widen back out to the full cached timeline.
-    return filterEventsForDisplay(idbEvents, displayFloor) as unknown as StreamEvent[]
-  }, [idbEvents, olderData, newerData, jumpState, displayFloor])
+    return filterEventsForDisplay(effectiveEvents, displayFloor) as unknown as StreamEvent[]
+  }, [effectiveEvents, olderData, newerData, jumpState, displayFloor])
 
-  // IDB-first: if IDB has events, we're not loading — show them immediately.
-  // Only show loading when IDB truly has no events (first visit to stream).
-  // The ~10ms useLiveQuery async gap is acceptable; once it resolves, events
-  // appear without a spinner. Bootstrap syncs in the background.
-  const bootstrapHasEvents = (bootstrap?.events?.length ?? 0) > 0
-  const idbResolved = !bootstrapHasEvents || hasIdbEvents
-  const isLoading = !hasIdbEvents && (isBootstrapLoading || !idbResolved)
+  // IDB-first: if IDB or bootstrap has events, we're not loading — show them
+  // immediately. Only show loading when neither source has events and bootstrap
+  // is still fetching (first visit to a stream with no cached data).
+  const isLoading = !hasAnyEvents && isBootstrapLoading
 
   useEffect(() => {
     if (!import.meta.env.DEV || !suppressBootstrapError || !error) return
@@ -366,14 +372,6 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
     return idbEvents[idbEvents.length - 1].sequence
   }, [idbEvents, bootstrap?.latestSequence])
 
-  // The highest sequence from the bootstrap response. Used by
-  // useNewMessageIndicator so that events arriving via bootstrap don't flash
-  // as "new" — only events that arrive via socket after bootstrap are new.
-  const bootstrapMaxSequence = useMemo(() => {
-    if (!bootstrap?.events?.length) return null
-    return bootstrap.events[bootstrap.events.length - 1].sequence
-  }, [bootstrap?.events])
-
   return {
     events,
     isLoading,
@@ -390,6 +388,5 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
     addEvent,
     updateEvent,
     latestSequence,
-    bootstrapMaxSequence,
   }
 }

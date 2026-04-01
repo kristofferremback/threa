@@ -176,7 +176,11 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
   }, [idbUsers, workspaceId])
   const avatarsReady = usePreloadImages(avatarUrls)
 
-  const isLoading = workspaceLoading || streamsLoading || draftsLoading
+  // After the initial coordinated load completes, stream-specific bootstraps
+  // (triggered by navigating to a new stream) should not re-trigger the
+  // top-bar loading indicator. Individual stream loading is handled by
+  // EventList's skeleton/loading state within the stream content area.
+  const isLoading = workspaceLoading || (!isReady && streamsLoading) || draftsLoading
 
   debugBootstrap("Coordinated loading state", {
     workspaceId,

@@ -100,7 +100,11 @@ export function useStreamEvents(streamId: string | undefined): CachedEvent[] {
     ) ?? []
 
   // Update cache when liveQuery resolves, including known-empty streams.
-  if (streamId) {
+  // Guard: don't overwrite a freshly-seeded cache with a stale empty result
+  // from useLiveQuery during IDB re-query transitions. The bridge below
+  // handles the return value, but without this guard the NEXT render would
+  // find the cache corrupted to [] and the bridge can't save it.
+  if (streamId && (live.length > 0 || cached.length === 0)) {
     eventCache.set(streamId, live)
   }
 
