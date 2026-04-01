@@ -239,20 +239,26 @@ export function registerStreamSocketHandlers(
       await db.events.put({ ...newEvent, workspaceId, _cachedAt: now })
     })
 
-    // Transitional: update workspace bootstrap cache's stream preview for sidebar.
-    // This will be removed in Phase 3 when workspace data moves to IDB stores.
+    // Update sidebar preview in both TanStack cache and IDB so the sort order
+    // and preview text survive cold starts (offline-first).
+    const newPreview: LastMessagePreview = {
+      authorId: newEvent.actorId ?? "",
+      authorType: newEvent.actorType ?? "user",
+      content: newPayload.contentJson as string,
+      createdAt: newEvent.createdAt,
+    }
+
+    await db.streams.update(streamId, {
+      lastMessagePreview: newPreview,
+      _cachedAt: Date.now(),
+    })
+
     queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
       if (!old) return old
       return {
         ...old,
         streams: old.streams.map((stream) => {
           if (stream.id !== streamId) return stream
-          const newPreview: LastMessagePreview = {
-            authorId: newEvent.actorId ?? "",
-            authorType: newEvent.actorType ?? "user",
-            content: newPayload.contentJson as string,
-            createdAt: newEvent.createdAt,
-          }
           return { ...stream, lastMessagePreview: newPreview }
         }),
       }

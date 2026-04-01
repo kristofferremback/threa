@@ -72,6 +72,9 @@ export function useScrollBehavior({
   // between React re-renders while the user scrolls within the trigger zone.
   const olderFetchScheduled = useRef(false)
   const newerFetchScheduled = useRef(false)
+  // When a force-scroll (e.g. Jump to latest) is in progress, intermediate
+  // handleScroll events during smooth animation should not re-show the button.
+  const isForceScrolling = useRef(false)
 
   // Reset all scroll state when the content source changes (e.g. stream switch).
   // Must be useLayoutEffect (not useEffect) so the reset runs synchronously
@@ -97,10 +100,10 @@ export function useScrollBehavior({
     }
 
     shouldAutoScroll.current = true
-    // Only eagerly clear the "far from bottom" state for forced scrolls (jump
-    // to latest button). Auto-scroll calls from useLayoutEffect should not
-    // trigger a React state update — the next handleScroll will set it naturally.
+    // For forced scrolls (Jump to latest), suppress handleScroll from re-showing
+    // the button during smooth scroll animation. Cleared when scroll reaches bottom.
     if (options?.force) {
+      isForceScrolling.current = true
       setIsScrolledFarFromBottom(false)
     }
 
@@ -139,6 +142,16 @@ export function useScrollBehavior({
       }
     } else if (shouldAutoScroll.current) {
       scrollToBottom()
+    } else if (itemCount > oldCount && !olderContentJustArrived && prevScrollHeight.current > 0) {
+      // New content appended at bottom, but shouldAutoScroll was cleared by a
+      // rapid scroll event during content growth (scrollHeight grew faster than
+      // scrollTop could keep up). Check if the user was near the bottom before
+      // this batch arrived — if so, re-arm auto-scroll.
+      const wasNearBottom = prevScrollHeight.current - el.scrollTop - el.clientHeight < bottomThreshold
+      if (wasNearBottom) {
+        shouldAutoScroll.current = true
+        scrollToBottom()
+      }
     }
   }, [isLoading, itemCount, scrollToBottom, isFetchingOlder])
 
@@ -186,16 +199,25 @@ export function useScrollBehavior({
     // Resume auto-scroll if user scrolls back to bottom
     shouldAutoScroll.current = isNearBottom
 
+    // Clear force-scroll guard once we've reached the bottom
+    if (isNearBottom) {
+      isForceScrolling.current = false
+    }
+
     if (itemCount === 0) return
 
     // Estimate average item height and compute pixel threshold from item count
     const avgItemHeight = scrollHeight / itemCount
     const triggerPixels = triggerItemCount * avgItemHeight
 
-    // Track whether user is scrolled far enough from bottom to show "Jump to latest"
+    // Track whether user is scrolled far enough from bottom to show "Jump to latest".
+    // During a force scroll (smooth animation), suppress updates to avoid the button
+    // flickering back during intermediate scroll events.
     const distanceFromBottom = scrollHeight - scrollTop - clientHeight
     const jumpThresholdPixels = JUMP_TO_LATEST_ITEM_THRESHOLD * avgItemHeight
-    setIsScrolledFarFromBottom(distanceFromBottom > jumpThresholdPixels)
+    if (!isForceScrolling.current) {
+      setIsScrolledFarFromBottom(distanceFromBottom > jumpThresholdPixels)
+    }
 
     // Load older content when near top (one-shot until fetch completes)
     if (onScrollNearTop && scrollTop < triggerPixels && !isFetchingOlder && !olderFetchScheduled.current) {
