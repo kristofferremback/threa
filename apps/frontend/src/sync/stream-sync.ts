@@ -73,8 +73,9 @@ export async function applyStreamBootstrap(
     }
 
     // Prune stale cached events inside the fetched bootstrap window.
-    // This keeps older paged history (< floor) and newer socket races (> latestSequence)
-    // while removing ghost events that no longer exist in the server snapshot.
+    // This keeps older paged history (< floor) and newer socket races
+    // (> max bootstrap event sequence) while removing ghost events that
+    // no longer exist in the server snapshot.
     if (bootstrapWindowFloor !== null) {
       const staleWindowEvents = await db.events
         .where("streamId")
