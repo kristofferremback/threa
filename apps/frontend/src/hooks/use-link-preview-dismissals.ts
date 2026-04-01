@@ -10,6 +10,10 @@ type Socket = ReturnType<typeof useSocket>
  * this hook maintains one listener that fans out to per-message
  * subscribers via a module-level Map. With 300+ messages rendered,
  * this reduces socket listeners from O(n) to O(1).
+ *
+ * INV-9 exception: module-level state is intentional here — a React context
+ * would force the provider to re-render on every dismissal event, while
+ * this pattern delivers events only to the affected message's callback.
  */
 const subscribers = new Map<string, Set<DismissalHandler>>()
 let activeSocket: Socket = null
@@ -75,4 +79,16 @@ export function useLinkPreviewDismissal(messageId: string, onDismissed: Dismissa
       }
     }
   }, [socket, messageId])
+}
+
+/** @internal Test-only access to module internals. */
+export const _testing = {
+  get subscribers() {
+    return subscribers
+  },
+  ensureListener,
+  reset() {
+    if (cleanupFn) cleanupFn()
+    subscribers.clear()
+  },
 }
