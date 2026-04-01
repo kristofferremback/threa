@@ -82,6 +82,8 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   const processedStreams = useMemo(() => {
     return idbStreams
       .filter((stream) => {
+        // Archived streams don't appear in the sidebar
+        if (stream.archivedAt) return false
         // Non-public streams always appear (bootstrap only includes them if user has access)
         if (stream.visibility !== Visibilities.PUBLIC) return true
         // Public channels: only show if user is a member

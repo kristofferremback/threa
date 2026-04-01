@@ -493,7 +493,10 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
   const archive = useCallback(async () => {
     await streamService.archive(workspaceId, streamId)
     const archivedAt = new Date().toISOString()
-    await db.streams.delete(streamId)
+
+    // Update IDB (not delete) so useLiveQuery reactively picks up archivedAt.
+    // The sidebar filters out streams with archivedAt set.
+    await db.streams.update(streamId, { archivedAt })
 
     queryClient.setQueryData(streamKeys.bootstrap(workspaceId, streamId), (old: unknown) => {
       if (!old || typeof old !== "object") return old
@@ -503,17 +506,6 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
           ...(old as { stream?: Stream }).stream,
           archivedAt,
         },
-      }
-    })
-
-    // Remove from workspace sidebar (archived streams don't show there)
-    queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), (old: unknown) => {
-      if (!old || typeof old !== "object") return old
-      const wsBootstrap = old as { streams?: Array<{ id: string }> }
-      if (!wsBootstrap.streams) return old
-      return {
-        ...wsBootstrap,
-        streams: wsBootstrap.streams.filter((s) => s.id !== streamId),
       }
     })
   }, [streamId, workspaceId, streamService, queryClient])
