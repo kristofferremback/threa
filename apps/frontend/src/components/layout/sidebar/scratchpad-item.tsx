@@ -61,12 +61,13 @@ export function ScratchpadItem({
   const handleArchive = useCallback(async () => {
     if (isDraft) {
       await deleteDraft(streamWithPreview.id)
+      // Drafts are fully deleted — navigate away if viewing
+      if (isActive) {
+        navigate(`/w/${workspaceId}`)
+      }
     } else {
+      // Real streams stay viewable as read-only after archival
       await archiveStream.mutateAsync(streamWithPreview.id)
-    }
-
-    if (isActive) {
-      navigate(`/w/${workspaceId}`)
     }
   }, [archiveStream, deleteDraft, isActive, isDraft, navigate, streamWithPreview.id, workspaceId])
 
