@@ -19,6 +19,8 @@
 
 import { parseArgs } from "util"
 import { $ } from "bun"
+import path from "path"
+import { readdir } from "fs/promises"
 
 // ---------------------------------------------------------------------------
 // CLI args
@@ -115,6 +117,42 @@ async function createDatabase(dbName: string): Promise<void> {
   }
   console.log(`Creating database '${dbName}'...`)
   await runPsqlOnDefault(`CREATE DATABASE "${dbName}"`)
+}
+
+/**
+ * Ensure umzug_migrations exists and is populated in the target DB.
+ * If pg_dump silently failed or the source DB lacked this table, the backend's
+ * migration runner would see zero executed migrations and try to CREATE TABLE
+ * for tables that already exist, crashing on startup.
+ */
+async function verifyUmzugMigrations(dbName: string, migrationsRelPath: string): Promise<void> {
+  // Check if umzug_migrations exists and has rows
+  try {
+    const count = await runPsql(dbName, "SELECT count(*) FROM umzug_migrations")
+    if (parseInt(count, 10) > 0) {
+      console.log(`umzug_migrations OK (${count} rows)`)
+      return
+    }
+    console.log("umzug_migrations exists but is empty — seeding from migration files...")
+  } catch {
+    console.log("umzug_migrations missing — creating and seeding from migration files...")
+    await runPsql(
+      dbName,
+      "CREATE TABLE IF NOT EXISTS umzug_migrations (name VARCHAR(255) PRIMARY KEY, executed_at TIMESTAMPTZ DEFAULT NOW())"
+    )
+  }
+
+  // Read migration filenames and seed the table
+  const migrationsDir = path.join(import.meta.dirname, "..", migrationsRelPath)
+  const files = (await readdir(migrationsDir)).filter((f) => f.endsWith(".sql")).sort()
+
+  if (files.length === 0) {
+    throw new Error("No migration files found — cannot seed umzug_migrations")
+  }
+
+  const values = files.map((f) => `('${f}')`).join(", ")
+  await runPsql(dbName, `INSERT INTO umzug_migrations (name) VALUES ${values} ON CONFLICT DO NOTHING`)
+  console.log(`Seeded umzug_migrations with ${files.length} entries`)
 }
 
 async function cloneDatabase(sourceDb: string, targetDb: string): Promise<void> {
@@ -579,10 +617,12 @@ async function deploy(): Promise<void> {
   if (isFirstDeploy) {
     await createDatabase(prDbName)
     await cloneDatabase("staging_main", prDbName)
+    await verifyUmzugMigrations(prDbName, "apps/backend/src/db/migrations")
     await updateWorkspaceSlug(prDbName, branch!)
 
     await createDatabase(prCpDbName)
     await cloneDatabase("staging_main_cp", prCpDbName)
+    await verifyUmzugMigrations(prCpDbName, "apps/control-plane/src/db/migrations")
   } else {
     console.log(`Databases already exist — skipping clone (migrations run on backend startup)`)
   }
