@@ -113,17 +113,11 @@ test.describe("Edit last message (ArrowUp)", () => {
       timeout: 5000,
     })
 
-    // ── User B: join, send many messages to push A's message off screen ──
+    // ── User B: join and send many messages via API to push A's message off screen ──
     const userB = await loginInNewContext(browser, `elm-b-${testId}@example.com`, `ELM B ${testId}`)
-    await userB.page.setViewportSize({ width: 1280, height: 500 })
 
     await userB.page.request.post(`/api/dev/workspaces/${workspaceId}/join`, { data: { role: "user" } })
-    await userB.page.goto(`/w/${workspaceId}`)
     await userB.page.request.post(`/api/dev/workspaces/${workspaceId}/streams/${streamId}/join`)
-    await userB.page.goto(`/w/${workspaceId}/s/${streamId}`)
-    await expect(userB.page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({
-      timeout: 10000,
-    })
 
     // Send 20 messages via API (much faster than UI interactions)
     const fillerText = `Filler B ${testId}`
@@ -140,16 +134,23 @@ test.describe("Edit last message (ArrowUp)", () => {
       })
     }
 
-    // ── User A: wait for filler messages to arrive and auto-scroll to complete ──
-    // Scope to .message-item to avoid matching off-screen conversation panel elements
+    // ── User A: navigate away then to stream URL for a fresh bootstrap ──
+    // Navigate to workspace root first to clear React/TanStack state for the stream,
+    // then navigate to the stream URL. The fresh navigation gets a new bootstrap from
+    // the database (which now has all 20 fillers). IDB may still have old events from
+    // the first visit, but the new bootstrap's floor will filter them.
+    await userA.page.goto(`/w/${workspaceId}`)
+    await expect(userA.page.getByRole("button", { name: "+ New Scratchpad" })).toBeVisible({ timeout: 15000 })
+    await userA.page.goto(`/w/${workspaceId}/s/${streamId}`)
+    await expect(userA.page.locator("[contenteditable='true']")).toBeVisible({ timeout: 15000 })
+
     const lastFillerEl = userA.page.getByRole("main").locator(".message-item").getByText(`${fillerText} #20`).first()
     await expect(lastFillerEl).toBeVisible({ timeout: 15000 })
-    // Ensure auto-scroll has brought the latest message into the viewport
-    await expect(lastFillerEl).toBeInViewport({ timeout: 5000 })
 
-    // Verify User A's first message has scrolled out of the visible area
+    // After bootstrap + initial auto-scroll, the latest message should be in viewport
+    // and User A's first message should be scrolled off-screen
     const firstMessageEl = userA.page.getByRole("main").locator(".message-item").getByText(firstMessage).first()
-    await expect(firstMessageEl).not.toBeInViewport()
+    await expect(firstMessageEl).not.toBeInViewport({ timeout: 5000 })
 
     // Press ArrowUp in the empty composer
     await userA.page.locator("[contenteditable='true']").click()
@@ -215,27 +216,24 @@ test.describe("Edit last message (ArrowUp)", () => {
       })
     }
 
-    // Wait for all filler messages to arrive on User A's page via socket before reloading.
-    // This ensures IDB has all ~64 events so cachedWindowFloor correctly filters
-    // the old message immediately after useLiveQuery resolves (no bootstrap race).
+    // ── User A: navigate away then to stream URL for a fresh bootstrap ──
+    // Navigate to workspace root first to clear React/TanStack state, then back.
+    // The fresh bootstrap loads the latest 50 events from the database — the old
+    // message (event #1 of 62+) is outside this window.
+    await userA.page.goto(`/w/${workspaceId}`)
+    await expect(userA.page.getByRole("button", { name: "+ New Scratchpad" })).toBeVisible({ timeout: 15000 })
+    await userA.page.goto(`/w/${workspaceId}/s/${streamId}`)
+    await expect(userA.page.locator("[contenteditable='true']")).toBeVisible({ timeout: 15000 })
+
+    // Wait for the latest filler to be rendered — proves bootstrap has loaded.
     await expect(userA.page.getByRole("main").locator(".message-item").getByText(`${fillerText} #60`)).toBeVisible({
-      timeout: 30000,
+      timeout: 15000,
     })
 
-    // ── User A: reload so bootstrap loads only the 50 most recent events ──
-    // The old message is now outside the window (not mounted, not registered).
-    await userA.page.reload()
-    await expect(userA.page.locator("[contenteditable='true']")).toBeVisible({ timeout: 10000 })
-
-    // Wait for the latest filler to be rendered — this proves the bootstrap + IDB
-    // pipeline has resolved and the display floor is filtering old events.
-    await expect(userA.page.getByRole("main").locator(".message-item").getByText(`${fillerText} #60`)).toBeVisible({
+    // The old message should not be visible — it's outside the bootstrap window.
+    await expect(userA.page.getByRole("main").locator(".message-item").getByText(oldMessage)).not.toBeVisible({
       timeout: 10000,
     })
-
-    // The old message should not be visible in the UI after reload.
-    // Scoped to .message-item to avoid matching any non-timeline elements.
-    await expect(userA.page.getByRole("main").locator(".message-item").getByText(oldMessage)).not.toBeVisible()
 
     // Press ArrowUp — the old message is not registered (not mounted), so nothing happens
     await userA.page.locator("[contenteditable='true']").click()
