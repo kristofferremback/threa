@@ -202,15 +202,14 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
     return getMinimumSequence(olderEvents)
   }, [olderData])
 
-  const hasIdbEvents = idbEvents.length > 0
+  const idbResolved = idbEvents !== undefined
+  const hasIdbEvents = idbResolved && idbEvents.length > 0
   const suppressBootstrapError = shouldSuppressBootstrapError(error, hasIdbEvents)
 
-  // Synchronous fallback: when useLiveQuery hasn't resolved yet but bootstrap
-  // has data, use bootstrap events directly. This bridges the async gap between
-  // bootstrap arrival (seedStreamEvents) and useLiveQuery re-query resolution,
-  // preventing the empty state flash and content lag on stream switch.
+  // IDB is the primary read model. While useLiveQuery resolves (typically <10ms),
+  // fall back to bootstrap events if available. Once IDB resolves, use it exclusively.
   const bootstrapEvents: DisplayableEvent[] = bootstrap?.events ?? []
-  const effectiveEvents: DisplayableEvent[] = hasIdbEvents ? idbEvents : bootstrapEvents
+  const effectiveEvents: DisplayableEvent[] = idbResolved ? idbEvents : bootstrapEvents
   const hasAnyEvents = effectiveEvents.length > 0
 
   const cachedWindowFloor = useMemo(() => getCachedWindowFloor(effectiveEvents, EVENT_PAGE_SIZE), [effectiveEvents])
@@ -368,7 +367,7 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
 
   // Latest sequence from IDB events
   const latestSequence = useMemo(() => {
-    if (idbEvents.length === 0) return bootstrap?.latestSequence ?? "0"
+    if (!idbEvents || idbEvents.length === 0) return bootstrap?.latestSequence ?? "0"
     return idbEvents[idbEvents.length - 1].sequence
   }, [idbEvents, bootstrap?.latestSequence])
 

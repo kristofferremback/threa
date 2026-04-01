@@ -32,8 +32,6 @@ let mockPersonas: Array<{ id: string }> = []
 let mockBots: Array<{ id: string }> = []
 let mockUnreadState: { id: string } | undefined
 let mockMetadata: { id: string } | undefined
-let mockSeededStreamIds = new Set<string>()
-let mockCachedStreamEvents = new Map<string, Array<{ eventType: string; createdAt: string }>>()
 let mockHasSeededDraftCache = false
 
 vi.mock("@/sync/sync-status", () => ({
@@ -73,21 +71,7 @@ vi.mock("@/stores/workspace-store", () => ({
   useWorkspaceMetadata: vi.fn(() => mockMetadata),
 }))
 
-vi.mock("@/stores/stream-store", () => ({
-  hasStreamEventCache: vi.fn((streamId: string | undefined) => !!streamId && mockSeededStreamIds.has(streamId)),
-  getCachedStreamEvents: vi.fn((streamId: string | undefined) =>
-    streamId ? (mockCachedStreamEvents.get(streamId) ?? []) : []
-  ),
-  hasCachedMessageAtOrAfter: vi.fn((streamId: string | undefined, createdAt: string | null | undefined) => {
-    if (!createdAt) return true
-    const threshold = Date.parse(createdAt)
-    return (streamId ? (mockCachedStreamEvents.get(streamId) ?? []) : []).some(
-      (event) =>
-        (event.eventType === "message_created" || event.eventType === "companion_response") &&
-        Date.parse(event.createdAt) >= threshold
-    )
-  }),
-}))
+vi.mock("@/stores/stream-store", () => ({}))
 
 vi.mock("@/stores/draft-store", () => ({
   seedDraftCacheFromIdb: vi.fn(async () => undefined),
@@ -118,6 +102,7 @@ async function flushEffects() {
 function makeReadyWorkspaceState() {
   mockWorkspaceLoadState = QUERY_LOAD_STATE.READY
   mockStreamsLoadState = QUERY_LOAD_STATE.READY
+  mockSeedCacheFromIdbResult = true
   mockHasSeededWorkspaceCache = true
   mockHasSeededDraftCache = true
   mockWorkspace = { id: "workspace_1" }
@@ -125,10 +110,6 @@ function makeReadyWorkspaceState() {
   mockStreams = [{ id: "stream_1" }]
   mockUnreadState = { id: "workspace_1" }
   mockMetadata = { id: "workspace_1" }
-  mockSeededStreamIds = new Set(["stream_1"])
-  mockCachedStreamEvents = new Map([
-    ["stream_1", [{ eventType: "message_created", createdAt: "2026-03-01T10:00:00Z" }]],
-  ])
 }
 
 describe("CoordinatedLoadingProvider", () => {
@@ -148,8 +129,6 @@ describe("CoordinatedLoadingProvider", () => {
     mockBots = []
     mockUnreadState = undefined
     mockMetadata = undefined
-    mockSeededStreamIds = new Set()
-    mockCachedStreamEvents = new Map()
     mockHasSeededDraftCache = false
   })
 
@@ -191,7 +170,7 @@ describe("CoordinatedLoadingProvider", () => {
     expect(screen.getByTestId("phase").textContent).toBe("skeleton")
   })
 
-  it("does not bypass the network path when visible stream events are missing from cache", async () => {
+  it("is ready when IDB is primed and stream record exists (no per-stream cache needed)", async () => {
     mockSeedCacheFromIdbResult = true
     mockHasSeededWorkspaceCache = true
     mockHasSeededDraftCache = true
@@ -201,7 +180,7 @@ describe("CoordinatedLoadingProvider", () => {
     mockUnreadState = { id: "workspace_1" }
     mockMetadata = { id: "workspace_1" }
 
-    const { rerender } = render(
+    render(
       <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
         <TestConsumer />
       </CoordinatedLoadingProvider>
@@ -209,17 +188,7 @@ describe("CoordinatedLoadingProvider", () => {
 
     await flushEffects()
 
-    expect(screen.getByTestId("phase").textContent).toBe("loading")
-
-    mockSeededStreamIds = new Set(["stream_1"])
-    rerender(
-      <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
-        <TestConsumer />
-      </CoordinatedLoadingProvider>
-    )
-
-    await flushEffects()
-
+    // IDB primed + stream record exists = ready (useLiveQuery serves events from IDB)
     expect(screen.getByTestId("phase").textContent).toBe("ready")
   })
 
@@ -292,7 +261,7 @@ describe("CoordinatedLoadingProvider", () => {
     expect(screen.getByTestId("phase").textContent).toBe("ready")
   })
 
-  it("waits for visible stream bootstrap when the cached timeline lags behind the cached stream preview", async () => {
+  it("trusts IDB when primed — does not wait for bootstrap even with stale preview", async () => {
     makeReadyWorkspaceState()
     mockSeedCacheFromIdbResult = true
     mockStreams = [
@@ -301,13 +270,8 @@ describe("CoordinatedLoadingProvider", () => {
         lastMessagePreview: { createdAt: "2026-03-01T10:01:00Z" },
       },
     ]
-    mockCachedStreamEvents = new Map([
-      ["stream_1", [{ eventType: "message_created", createdAt: "2026-03-01T10:00:00Z" }]],
-    ])
-    mockStreamsLoadState = QUERY_LOAD_STATE.FETCHING
-    mockStreamResults = [{ status: "pending", fetchStatus: "fetching", isLoading: true, isError: false, error: null }]
 
-    const { rerender } = render(
+    render(
       <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
         <TestConsumer />
       </CoordinatedLoadingProvider>
@@ -315,27 +279,8 @@ describe("CoordinatedLoadingProvider", () => {
 
     await flushEffects()
 
-    expect(screen.getByTestId("phase").textContent).toBe("loading")
-
-    mockStreamsLoadState = QUERY_LOAD_STATE.READY
-    mockStreamResults = [
-      {
-        status: "success",
-        fetchStatus: "idle",
-        isLoading: false,
-        isError: false,
-        error: null,
-        data: { stream: { id: "stream_1" } },
-      },
-    ]
-    rerender(
-      <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
-        <TestConsumer />
-      </CoordinatedLoadingProvider>
-    )
-
-    await flushEffects()
-
+    // IDB is the source of truth — useLiveQuery serves events directly.
+    // No need to wait for bootstrap to confirm preview alignment.
     expect(screen.getByTestId("phase").textContent).toBe("ready")
   })
 
@@ -419,7 +364,6 @@ describe("CoordinatedLoadingGate", () => {
     mockStreams = []
     mockUnreadState = undefined
     mockMetadata = undefined
-    mockSeededStreamIds = new Set()
   })
 
   afterEach(() => {
@@ -488,7 +432,6 @@ describe("MainContentGate", () => {
     mockStreams = []
     mockUnreadState = undefined
     mockMetadata = undefined
-    mockSeededStreamIds = new Set()
   })
 
   afterEach(() => {

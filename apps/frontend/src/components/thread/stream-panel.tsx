@@ -86,7 +86,7 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
   )
   const parentCachedEvents = useStreamEvents(draftInfo?.parentStreamId)
   const cachedParentMessage = useMemo(() => {
-    if (!draftInfo) return null
+    if (!draftInfo || !parentCachedEvents) return null
     return parentCachedEvents.find(
       (event) =>
         event.eventType === "message_created" &&

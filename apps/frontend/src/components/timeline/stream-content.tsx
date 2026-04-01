@@ -106,7 +106,7 @@ export function StreamContent({
   const parentMessageId = stream?.parentMessageId
   const parentCachedEvents = useStreamEvents(parentStreamId ?? undefined)
   const cachedParentMessage = useMemo(() => {
-    if (!isThread || !parentStreamId || !parentMessageId) return null
+    if (!isThread || !parentStreamId || !parentMessageId || !parentCachedEvents) return null
     return parentCachedEvents.find(
       (event) =>
         event.eventType === "message_created" &&

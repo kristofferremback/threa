@@ -22,19 +22,16 @@ export function useNewMessageIndicator(
   lastReadEventId?: string | null
 ): Set<string> {
   const [newIds, setNewIds] = useState<Set<string>>(new Set())
-  /** Event IDs seen since the stream was opened — accumulates across renders
-   *  so bootstrap/IDB transitions don't cause false flashes. */
-  const knownEventIdsRef = useRef<Set<string>>(new Set())
-  /** True once lastReadEventId is available and the initial data has settled.
-   *  Until armed, all events are added to the known set without flashing. */
-  const isArmedRef = useRef(false)
+  /** Event IDs present when the stream was opened. With the eventCache removed,
+   *  useLiveQuery returns undefined until IDB resolves, then the complete event
+   *  set. The first defined render IS the full IDB state — no settling needed. */
+  const knownEventIdsRef = useRef<Set<string> | null>(null)
   const trackedIdsRef = useRef<Set<string>>(new Set())
   const timersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
 
   // Reset on stream change + cleanup on unmount
   useEffect(() => {
-    knownEventIdsRef.current = new Set()
-    isArmedRef.current = false
+    knownEventIdsRef.current = null
     trackedIdsRef.current = new Set()
     setNewIds(new Set())
     for (const t of timersRef.current) clearTimeout(t)
@@ -49,17 +46,9 @@ export function useNewMessageIndicator(
     if (events.length === 0) return
     if (currentUserId === undefined) return
 
-    if (!isArmedRef.current) {
-      // Not yet armed — absorb all current events as "known" without flashing.
-      // This covers bootstrap/IDB transitions that bring in events before
-      // lastReadEventId is available. Once lastReadEventId resolves (from
-      // membership bootstrap or IDB), we arm and start tracking socket arrivals.
-      for (const event of events) knownEventIdsRef.current.add(event.id)
-
-      const lastReadIndex = lastReadEventId ? events.findIndex((e) => e.id === lastReadEventId) : -1
-      if (lastReadIndex >= 0) {
-        isArmedRef.current = true
-      }
+    // First render with events: snapshot all IDs as "known". Nothing flashes.
+    if (knownEventIdsRef.current === null) {
+      knownEventIdsRef.current = new Set(events.map((e) => e.id))
       return
     }
 
@@ -70,10 +59,7 @@ export function useNewMessageIndicator(
     const freshIds: string[] = []
     for (let i = events.length - 1; i >= 0; i--) {
       const event = events[i]
-      // Hard guard: events at or before the server-tracked read boundary
-      // are definitively read — never flash, regardless of client state.
       if (lastReadIndex >= 0 && i <= lastReadIndex) break
-      // Events already seen in a previous render — not new socket arrivals.
       if (knownEventIdsRef.current.has(event.id)) break
       if (
         !trackedIdsRef.current.has(event.id) &&

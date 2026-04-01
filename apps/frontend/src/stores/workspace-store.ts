@@ -1,6 +1,5 @@
 import { useSyncExternalStore } from "react"
 import { useLiveQuery } from "dexie-react-hooks"
-import { seedStreamEventCache } from "./stream-store"
 import {
   db,
   type CachedWorkspace,
@@ -142,11 +141,6 @@ export async function seedCacheFromIdb(workspaceId: string): Promise<boolean> {
     ])
 
   if (!workspace) return false
-
-  await seedStreamEventCache(
-    workspaceId,
-    streams.map((stream) => stream.id)
-  )
 
   // If the version bumped during our async reads, a bootstrap completed
   // and seeded fresher data — skip writing stale cache.

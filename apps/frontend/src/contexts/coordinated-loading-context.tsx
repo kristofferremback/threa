@@ -14,7 +14,6 @@ import {
   useWorkspaceUnreadState,
   useWorkspaceUsers,
 } from "@/stores/workspace-store"
-import { getCachedStreamEvents, hasCachedMessageAtOrAfter, hasStreamEventCache } from "@/stores/stream-store"
 import { hasSeededDraftCache, seedDraftCacheFromIdb } from "@/stores/draft-store"
 import { useSyncStatus } from "@/sync/sync-status"
 import { debugBootstrap, isBootstrapDebugEnabled } from "@/lib/bootstrap-debug"
@@ -143,21 +142,19 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
         const result = results[index]
         const cachedStream = streamById.get(streamId)
         const hasStreamRecord = !!cachedStream || result?.data?.stream?.id === streamId
-        const hasEventCache = hasStreamEventCache(streamId) || result?.data !== undefined
-        const previewAlignedWithTimeline =
-          result?.data !== undefined || hasCachedMessageAtOrAfter(streamId, cachedStream?.lastMessagePreview?.createdAt)
-        const hasUsableLocalData = hasStreamRecord && hasEventCache && previewAlignedWithTimeline
+        // IDB is the source of truth — if the workspace was primed from IDB,
+        // stream events are there and useLiveQuery will serve them. Otherwise
+        // wait for the bootstrap query to resolve.
+        const hasUsableLocalData = hasStreamRecord && (idbCachePrimed || result?.data !== undefined)
         return {
           streamId,
           result,
           hasStreamRecord,
-          hasEventCache,
-          previewAlignedWithTimeline,
           hasUsableLocalData,
           suppressError: shouldSuppressBootstrapError(result?.error, hasUsableLocalData),
         }
       }),
-    [results, serverStreamIds, streamById]
+    [results, serverStreamIds, streamById, idbCachePrimed]
   )
   const visibleStreamIdsReady = streamQueryStates.every((state) => state.hasUsableLocalData)
   const canBypassVisibleStreamNetwork = idbCachePrimed && visibleStreamIdsReady
@@ -199,21 +196,6 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
         streamId: state.streamId,
         message: state.result?.error?.message ?? "unknown error",
       })),
-      visibleStreamTimelineFreshness: serverStreamIds.map((streamId) => {
-        const cachedStream = streamById.get(streamId)
-        const cachedEvents = getCachedStreamEvents(streamId)
-        return {
-          streamId,
-          previewCreatedAt: cachedStream?.lastMessagePreview?.createdAt ?? null,
-          latestCachedEventCreatedAt: cachedEvents.at(-1)?.createdAt ?? null,
-          latestCachedMessageCreatedAt:
-            [...cachedEvents]
-              .reverse()
-              .find((event) => event.eventType === "message_created" || event.eventType === "companion_response")
-              ?.createdAt ?? null,
-          matchesPreview: hasCachedMessageAtOrAfter(streamId, cachedStream?.lastMessagePreview?.createdAt),
-        }
-      }),
       workspaceRecordReady: !!idbWorkspace,
       streamCount: idbStreams.length,
       userCount: idbUsers.length,

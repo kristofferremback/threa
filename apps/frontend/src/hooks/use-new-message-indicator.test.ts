@@ -35,26 +35,7 @@ describe("useNewMessageIndicator", () => {
     expect(result.current.size).toBe(0)
   })
 
-  it("does not flash until lastReadEventId is available (arming)", () => {
-    const events = [makeEvent({ id: "evt_1", sequence: "1" }), makeEvent({ id: "evt_5", sequence: "5" })]
-
-    // No lastReadEventId yet — hook is not armed
-    const { result, rerender } = renderHook(
-      ({ events: evts, lastRead }) => useNewMessageIndicator(evts, currentUserId, streamId, lastRead),
-      { initialProps: { events, lastRead: null as string | null } }
-    )
-
-    // New events arrive before lastReadEventId — should NOT flash (still settling)
-    const withNew = [...events, makeEvent({ id: "evt_6", sequence: "6" })]
-    rerender({ events: withNew, lastRead: null })
-    expect(result.current.size).toBe(0)
-
-    // lastReadEventId arrives — arms the hook, absorbs all current events
-    rerender({ events: withNew, lastRead: "evt_5" })
-    expect(result.current.size).toBe(0)
-  })
-
-  it("flashes socket events that arrive after arming", () => {
+  it("flashes socket events that arrive after the initial snapshot", () => {
     const events = [makeEvent({ id: "evt_1", sequence: "1" }), makeEvent({ id: "evt_5", sequence: "5" })]
 
     const { result, rerender } = renderHook(
@@ -62,10 +43,8 @@ describe("useNewMessageIndicator", () => {
       { initialProps: { events, lastRead: "evt_5" as string | null } }
     )
 
-    // Hook arms on first render (lastReadEventId is available)
     expect(result.current.size).toBe(0)
 
-    // Socket event arrives after arming
     const withSocket = [...events, makeEvent({ id: "evt_6", sequence: "6" })]
     rerender({ events: withSocket, lastRead: "evt_5" })
 
@@ -96,13 +75,11 @@ describe("useNewMessageIndicator", () => {
 
     expect(result.current.size).toBe(0)
 
-    // Even if events array changes reference, read events never flash
     rerender({ events: [...events], lastRead: "evt_5" })
     expect(result.current.size).toBe(0)
   })
 
   it("does not flash already-present unread events (divider handles those)", () => {
-    // evt_5 is the last read; evt_8 and evt_10 are unread but already present
     const events = [
       makeEvent({ id: "evt_1", sequence: "1" }),
       makeEvent({ id: "evt_5", sequence: "5" }),
@@ -111,53 +88,6 @@ describe("useNewMessageIndicator", () => {
     ]
 
     const { result } = renderHook(() => useNewMessageIndicator(events, currentUserId, streamId, "evt_5"))
-
-    expect(result.current.size).toBe(0)
-  })
-
-  it("absorbs bootstrap events that arrive before lastReadEventId resolves", () => {
-    // IDB cache has events 1-5
-    const cached = [makeEvent({ id: "evt_1", sequence: "1" }), makeEvent({ id: "evt_5", sequence: "5" })]
-
-    const { result, rerender } = renderHook(
-      ({ events, lastRead }) => useNewMessageIndicator(events, currentUserId, streamId, lastRead),
-      { initialProps: { events: cached, lastRead: null as string | null } }
-    )
-
-    // Bootstrap resolves with more events — lastReadEventId still null
-    const withBootstrap = [
-      ...cached,
-      makeEvent({ id: "evt_8", sequence: "8" }),
-      makeEvent({ id: "evt_10", sequence: "10" }),
-    ]
-    rerender({ events: withBootstrap, lastRead: null })
-    expect(result.current.size).toBe(0)
-
-    // lastReadEventId arrives — arms, all current events are known
-    rerender({ events: withBootstrap, lastRead: "evt_5" })
-    expect(result.current.size).toBe(0)
-
-    // Now a genuine socket event arrives
-    const withSocket = [...withBootstrap, makeEvent({ id: "evt_11", sequence: "11" })]
-    rerender({ events: withSocket, lastRead: "evt_5" })
-    expect(result.current.has("evt_11")).toBe(true)
-  })
-
-  it("does not flash own messages during data source transitions", () => {
-    const initial = [
-      makeEvent({ id: "evt_1", sequence: "1", actorId: currentUserId }),
-      makeEvent({ id: "evt_3", sequence: "3", actorId: currentUserId }),
-    ]
-
-    const { result, rerender } = renderHook(
-      ({ events, lastRead }) => useNewMessageIndicator(events, currentUserId, streamId, lastRead),
-      { initialProps: { events: initial, lastRead: "evt_3" as string | null } }
-    )
-
-    expect(result.current.size).toBe(0)
-
-    const idbEvents = [...initial, makeEvent({ id: "evt_5", sequence: "5", actorId: currentUserId })]
-    rerender({ events: idbEvents, lastRead: "evt_3" })
 
     expect(result.current.size).toBe(0)
   })

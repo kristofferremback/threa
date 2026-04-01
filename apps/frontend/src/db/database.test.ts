@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest"
 import { clearAllCachedData, db } from "./database"
-import { hasStreamEventCache, seedStreamEvents } from "@/stores/stream-store"
 import { hasSeededWorkspaceCache, seedWorkspaceCache } from "@/stores/workspace-store"
 
 describe("clearAllCachedData", () => {
@@ -8,7 +7,7 @@ describe("clearAllCachedData", () => {
     await clearAllCachedData()
   })
 
-  it("clears the in-memory workspace and stream caches alongside IndexedDB", async () => {
+  it("clears the in-memory workspace cache alongside IndexedDB", async () => {
     seedWorkspaceCache("workspace_1", {
       workspace: {
         id: "workspace_1",
@@ -71,7 +70,6 @@ describe("clearAllCachedData", () => {
         _cachedAt: Date.now(),
       },
     })
-    seedStreamEvents("stream_1", [])
     await db.workspaces.put({
       id: "workspace_1",
       name: "Workspace",
@@ -82,12 +80,10 @@ describe("clearAllCachedData", () => {
     })
 
     expect(hasSeededWorkspaceCache("workspace_1")).toBe(true)
-    expect(hasStreamEventCache("stream_1")).toBe(true)
 
     await clearAllCachedData()
 
     expect(await db.workspaces.count()).toBe(0)
     expect(hasSeededWorkspaceCache("workspace_1")).toBe(false)
-    expect(hasStreamEventCache("stream_1")).toBe(false)
   })
 })

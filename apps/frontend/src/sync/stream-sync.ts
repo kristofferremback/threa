@@ -1,5 +1,4 @@
 import { db } from "@/db"
-import { appendToEventCache, seedStreamEvents } from "@/stores/stream-store"
 import type {
   StreamEvent,
   Stream,
@@ -98,14 +97,6 @@ export async function applyStreamBootstrap(
       await db.streams.put(streamData)
     }
   })
-
-  // Seed the event cache so useStreamEvents returns data synchronously on the
-  // first render after the coordinated loading gate opens. Same pattern as
-  // seedWorkspaceCache for workspace store hooks.
-  seedStreamEvents(
-    streamId,
-    bootstrap.events.map((e) => ({ ...e, workspaceId, _cachedAt: now }))
-  )
 }
 
 // ============================================================================
@@ -245,9 +236,7 @@ export function registerStreamSocketHandlers(
         }
       }
 
-      const cachedEvent = { ...newEvent, workspaceId, _cachedAt: now }
-      await db.events.put(cachedEvent)
-      appendToEventCache(streamId, cachedEvent)
+      await db.events.put({ ...newEvent, workspaceId, _cachedAt: now })
     })
 
     // Transitional: update workspace bootstrap cache's stream preview for sidebar.
@@ -351,9 +340,7 @@ export function registerStreamSocketHandlers(
     // Dedupe by event ID
     const existing = await db.events.get(payload.event.id)
     if (existing) return
-    const cachedEvent = { ...payload.event, workspaceId, _cachedAt: now }
-    await db.events.put(cachedEvent)
-    appendToEventCache(streamId, cachedEvent)
+    await db.events.put({ ...payload.event, workspaceId, _cachedAt: now })
   }
 
   const handleLinkPreviewReady = async (payload: LinkPreviewReadyPayload) => {
