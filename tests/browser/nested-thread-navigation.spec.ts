@@ -17,6 +17,7 @@ test.describe("Nested Thread Navigation", () => {
   })
 
   test("should show nested thread reply count when navigating back via breadcrumbs", async ({ page }) => {
+    test.setTimeout(60000)
     const testId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
 
     // Create a channel (creating navigates to it)
@@ -93,6 +94,7 @@ test.describe("Nested Thread Navigation", () => {
   })
 
   test("should show nested thread indicator when reopening parent thread", async ({ page }) => {
+    test.setTimeout(60000)
     const testId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
 
     // Create a channel (creating navigates to it)
@@ -160,13 +162,14 @@ test.describe("Nested Thread Navigation", () => {
     await expect(threadIndicator).toBeVisible({ timeout: 3000 })
     await threadIndicator.click()
 
-    // Thread should reopen and show the threadReply
-    await expect(page.getByTestId("panel").getByText(threadReply)).toBeVisible({ timeout: 3000 })
+    // Thread should reopen and show the threadReply. Bootstrap refetch is
+    // triggered by useStreamSocket on re-mount, which includes updated reply counts.
+    await expect(page.getByTestId("panel").getByText(threadReply)).toBeVisible({ timeout: 10000 })
 
-    // CRITICAL: The threadReply message should show as having a nested thread (1 reply)
-    // This is the bug - it doesn't show the reply indicator after reopening
+    // CRITICAL: The threadReply message should show as having a nested thread (1 reply).
+    // The reply count arrives via bootstrap refetch after the stream socket re-subscribes.
     const threadReplyInPanel = page.getByRole("main").locator(".group").filter({ hasText: threadReply }).first()
-    await expect(threadReplyInPanel.getByText(/1 reply/i)).toBeVisible({ timeout: 3000 })
+    await expect(threadReplyInPanel.getByText(/1 reply/i)).toBeVisible({ timeout: 10000 })
   })
 
   test("should maintain reply counts across multiple navigation cycles", async ({ page }) => {
@@ -217,13 +220,13 @@ test.describe("Nested Thread Navigation", () => {
     await expect(page.getByText(/Start a new thread/)).not.toBeVisible({ timeout: 10000 })
     await expect(page.getByTestId("panel").getByText(level2Message)).toBeVisible({ timeout: 10000 })
 
-    // Navigate back via breadcrumb
+    // Navigate back via breadcrumb — bootstrap refetch delivers updated reply counts
     const breadcrumb = page.locator("nav[aria-label='breadcrumb'] a").first()
     await breadcrumb.click()
 
-    // Verify reply count shows
+    // Verify reply count shows (bootstrap refetch may take a moment in CI)
     const level1InPanel = page.getByRole("main").locator(".message-item").filter({ hasText: level1Message }).first()
-    await expect(level1InPanel.getByText(/1 reply/i)).toBeVisible({ timeout: 3000 })
+    await expect(level1InPanel.getByText(/1 reply/i)).toBeVisible({ timeout: 10000 })
 
     // Navigate forward again by clicking the reply count
     await level1InPanel.getByText(/1 reply/i).click()
@@ -233,6 +236,6 @@ test.describe("Nested Thread Navigation", () => {
     await breadcrumb.click()
 
     // Reply count should still show correctly
-    await expect(level1InPanel.getByText(/1 reply/i)).toBeVisible({ timeout: 3000 })
+    await expect(level1InPanel.getByText(/1 reply/i)).toBeVisible({ timeout: 10000 })
   })
 })

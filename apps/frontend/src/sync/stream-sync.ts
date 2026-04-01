@@ -184,6 +184,26 @@ async function updateMessageEvent(
   await db.events.update(event.id, { payload: updatedPayload, _cachedAt: Date.now() })
 }
 
+/**
+ * Optimistically update a parent message's replyCount and threadId in IDB.
+ *
+ * Called after draft thread submission so the reply count appears instantly
+ * when the user navigates back via breadcrumb. The socket handler for
+ * message:updated may miss this event because the panel navigated away
+ * from the parent stream (handlers were cleaned up on unmount).
+ */
+export async function optimisticReplyCountUpdate(
+  parentStreamId: string,
+  parentMessageId: string,
+  threadId: string
+): Promise<void> {
+  await updateMessageEvent(parentStreamId, parentMessageId, (p) => ({
+    ...p,
+    threadId,
+    replyCount: ((p.replyCount as number) ?? 0) + 1,
+  }))
+}
+
 // ============================================================================
 // Socket event handlers — write exclusively to IndexedDB
 // ============================================================================

@@ -227,6 +227,12 @@ test.describe("Edit last message (ArrowUp)", () => {
     await userA.page.reload()
     await expect(userA.page.locator("[contenteditable='true']")).toBeVisible({ timeout: 10000 })
 
+    // Wait for the latest filler to be rendered — this proves the bootstrap + IDB
+    // pipeline has resolved and the display floor is filtering old events.
+    await expect(userA.page.getByRole("main").locator(".message-item").getByText(`${fillerText} #60`)).toBeVisible({
+      timeout: 10000,
+    })
+
     // The old message should not be visible in the UI after reload.
     // Scoped to .message-item to avoid matching any non-timeline elements.
     await expect(userA.page.getByRole("main").locator(".message-item").getByText(oldMessage)).not.toBeVisible()

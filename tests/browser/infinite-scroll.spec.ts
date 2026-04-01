@@ -68,15 +68,18 @@ async function scrollToTop(page: Page): Promise<void> {
     return container instanceof HTMLElement && container.scrollHeight > container.clientHeight
   })
 
+  // Directly set scrollTop and dispatch a single synthetic scroll event.
+  // Previously dispatched 3 events; one is sufficient to trigger React's onScroll handler.
   await page.evaluate(() => {
     const container = document.querySelector("[data-suppress-pull-refresh]")
     if (container instanceof HTMLElement) {
       container.scrollTop = 0
-      for (let i = 0; i < 3; i++) {
-        container.dispatchEvent(new Event("scroll", { bubbles: true }))
-      }
+      // Dispatch scroll event to trigger React's handler
+      container.dispatchEvent(new Event("scroll", { bubbles: true }))
     }
   })
+  // Small pause to let React process the scroll event
+  await page.waitForTimeout(50)
 }
 
 test.describe("Infinite Scroll", () => {
