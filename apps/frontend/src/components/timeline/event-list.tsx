@@ -171,6 +171,22 @@ export const EventList = memo(function EventList({
   const { phase } = useCoordinatedLoading()
   const user = useUser()
 
+  // Hooks must be called unconditionally (Rules of Hooks) — place above early returns
+  const timelineItems = useMemo(() => groupTimelineItems(events, user?.id), [events, user?.id])
+
+  const sessionLiveCounts = useMemo(() => {
+    const counts = new Map<string, { stepCount: number; messageCount: number }>()
+    if (agentActivity) {
+      for (const activity of agentActivity.values()) {
+        counts.set(activity.sessionId, {
+          stepCount: activity.stepCount,
+          messageCount: activity.messageCount,
+        })
+      }
+    }
+    return counts
+  }, [agentActivity])
+
   if (isLoading) {
     return (
       <div className="flex flex-col gap-4 px-4 py-6 sm:px-6">
@@ -204,8 +220,6 @@ export const EventList = memo(function EventList({
     )
   }
 
-  const timelineItems = useMemo(() => groupTimelineItems(events, user?.id), [events, user?.id])
-
   // Helper to check if an item is the first unread event
   const isFirstUnread = (item: TimelineItem): boolean => {
     if (!firstUnreadEventId) return false
@@ -214,20 +228,6 @@ export const EventList = memo(function EventList({
     }
     return item.event.id === firstUnreadEventId
   }
-
-  // Build sessionId → live counts lookup from agentActivity (keyed by triggerMessageId)
-  const sessionLiveCounts = useMemo(() => {
-    const counts = new Map<string, { stepCount: number; messageCount: number }>()
-    if (agentActivity) {
-      for (const activity of agentActivity.values()) {
-        counts.set(activity.sessionId, {
-          stepCount: activity.stepCount,
-          messageCount: activity.messageCount,
-        })
-      }
-    }
-    return counts
-  }, [agentActivity])
 
   return (
     <div className="flex flex-col py-3 sm:py-6 mx-auto max-w-[800px] w-full min-w-0">

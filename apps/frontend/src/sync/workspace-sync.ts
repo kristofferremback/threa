@@ -575,8 +575,10 @@ export function registerWorkspaceSocketHandlers(
 
     const isViewingStream = refs.getCurrentStreamId() === payload.streamId
 
-    // If not viewing this stream, invalidate its bootstrap cache so it refetches
-    // when the user navigates there. (If viewing, useStreamSocket handles updates.)
+    // If not viewing this stream and it has an active bootstrap observer,
+    // invalidate so it refetches. Dormant queries are not touched — IDB
+    // already has the latest data via socket writes, so navigation will
+    // read from useLiveQuery without a redundant HTTP refetch.
     if (!isViewingStream) {
       queryClient.invalidateQueries({
         queryKey: streamKeys.bootstrap(workspaceId, payload.streamId),
