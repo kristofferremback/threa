@@ -37,6 +37,8 @@ interface UseScrollBehaviorReturn {
   isScrolledFarFromBottom: boolean
   /** Imperatively scroll to the bottom and clear the jump-to-latest state */
   scrollToBottom: (options?: { behavior?: ScrollBehavior; force?: boolean }) => void
+  /** Disable auto-scroll (e.g. when navigating to a specific message via jump mode) */
+  disableAutoScroll: () => void
 }
 
 /**
@@ -205,20 +207,12 @@ export function useScrollBehavior({
     const triggerPixels = triggerItemCount * avgItemHeight
     const jumpThresholdPixels = JUMP_TO_LATEST_ITEM_THRESHOLD * avgItemHeight
 
-    // Resume auto-scroll when at bottom. Only disarm when the user has
-    // intentionally scrolled far enough away (beyond the jump-to-latest
-    // threshold, ~10 items). Small deviations from bottom — caused by content
-    // growth, browser layout reflows, or conversation panel rendering changing
-    // scroll position — are corrected by re-scrolling to bottom.
+    // Resume auto-scroll if user scrolls back to bottom
+    shouldAutoScroll.current = isNearBottom
+
+    // Clear force-scroll guard once we've reached the bottom
     if (isNearBottom) {
-      shouldAutoScroll.current = true
       isForceScrolling.current = false
-    } else if (shouldAutoScroll.current) {
-      if (distanceFromBottom > jumpThresholdPixels) {
-        shouldAutoScroll.current = false
-      } else {
-        el.scrollTop = el.scrollHeight
-      }
     }
 
     // Track whether user is scrolled far enough from bottom to show "Jump to latest".
@@ -255,10 +249,15 @@ export function useScrollBehavior({
     triggerItemCount,
   ])
 
+  const disableAutoScroll = useCallback(() => {
+    shouldAutoScroll.current = false
+  }, [])
+
   return {
     scrollContainerRef,
     handleScroll,
     isScrolledFarFromBottom,
     scrollToBottom,
+    disableAutoScroll,
   }
 }

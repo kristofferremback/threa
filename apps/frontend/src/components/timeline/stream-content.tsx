@@ -149,10 +149,31 @@ export function StreamContent({
     isJumpMode,
   } = useEvents(workspaceId, streamId, { enabled: !isDraft, loadAll: isThread })
 
+  const editLastMessageCtx = useEditLastMessageTrigger(events, currentWorkspaceUserId)
+
+  // Track live agent session progress for all stream types (step/message counts on session cards).
+  // In channels, session cards are hidden (responses go to threads) and inline activity shows on trigger messages instead.
+  const isChannel = stream?.type === StreamTypes.CHANNEL
+  const agentActivity = useAgentActivity(events, socket)
+
+  const { scrollContainerRef, handleScroll, isScrolledFarFromBottom, scrollToBottom, disableAutoScroll } =
+    useScrollBehavior({
+      isLoading,
+      itemCount: events.length,
+      onScrollNearTop: hasOlderEvents ? fetchOlderEvents : undefined,
+      onScrollNearBottom: hasNewerEvents ? fetchNewerEvents : undefined,
+      isFetchingOlder,
+      isFetchingNewer,
+      resetKey: streamId,
+    })
+
   // Jump to highlighted message if it's not in the current event window
   useEffect(() => {
     if (!highlightMessageId || isLoading || isDraft) return
     if (jumpTriggeredRef.current === highlightMessageId) return
+
+    // Disable auto-scroll so highlight scroll-into-view isn't overridden
+    disableAutoScroll()
 
     // Check if the message is already visible in current events
     const isVisible = events.some((e) => {
@@ -172,30 +193,13 @@ export function StreamContent({
           jumpTriggeredRef.current = null
         })
     }
-  }, [highlightMessageId, isLoading, isDraft, events, jumpToEvent])
+  }, [highlightMessageId, isLoading, isDraft, events, jumpToEvent, disableAutoScroll])
 
   // Reset jump state when switching streams (component stays mounted)
   useEffect(() => {
     jumpTriggeredRef.current = null
     exitJumpMode()
   }, [streamId, exitJumpMode])
-
-  const editLastMessageCtx = useEditLastMessageTrigger(events, currentWorkspaceUserId)
-
-  // Track live agent session progress for all stream types (step/message counts on session cards).
-  // In channels, session cards are hidden (responses go to threads) and inline activity shows on trigger messages instead.
-  const isChannel = stream?.type === StreamTypes.CHANNEL
-  const agentActivity = useAgentActivity(events, socket)
-
-  const { scrollContainerRef, handleScroll, isScrolledFarFromBottom, scrollToBottom } = useScrollBehavior({
-    isLoading,
-    itemCount: events.length,
-    onScrollNearTop: hasOlderEvents ? fetchOlderEvents : undefined,
-    onScrollNearBottom: hasNewerEvents ? fetchNewerEvents : undefined,
-    isFetchingOlder,
-    isFetchingNewer,
-    resetKey: streamId,
-  })
 
   // Auto-mark stream as read when viewing
   const lastEventId = events.length > 0 ? events[events.length - 1].id : undefined
