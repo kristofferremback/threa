@@ -474,6 +474,17 @@
   font-family: "OpenDyslexic", system-ui, sans-serif;
 }
 
+/*
+ * Off-screen message rendering optimization — the browser skips layout, paint,
+ * and hit-testing for messages outside the viewport while keeping them in the
+ * DOM so native Ctrl+F search still works. contain-intrinsic-size gives the
+ * browser a height estimate to keep the scrollbar stable.
+ */
+.message-item {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 80px;
+}
+
 /* Message Display - Compact mode reduces spacing in the timeline */
 [data-message-display="compact"] .message-item {
   padding-top: 0.25rem;

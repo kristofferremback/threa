@@ -3,7 +3,8 @@ import { ChevronDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { linkPreviewsApi } from "@/api"
 import { cn } from "@/lib/utils"
-import { usePreferences, useSocket } from "@/contexts"
+import { usePreferences } from "@/contexts"
+import { useLinkPreviewDismissal } from "@/hooks/use-link-preview-dismissals"
 import { LinkPreviewCard } from "./link-preview-card"
 import { MessageLinkPreviewCard } from "./message-link-preview-card"
 import type { LinkPreviewSummary } from "@threa/types"
@@ -63,22 +64,16 @@ export function LinkPreviewList({
     setPreviews(initialPreviews)
   }, [initialPreviews])
 
-  // Sync dismissals from other views/tabs via socket (author-scoped event)
-  const socket = useSocket()
-  useEffect(() => {
-    if (!socket) return
-    const handler = (payload: { messageId: string; linkPreviewId: string }) => {
-      if (payload.messageId !== messageId) return
+  // Sync dismissals from other views/tabs via a single shared socket listener
+  useLinkPreviewDismissal(
+    messageId,
+    useCallback((linkPreviewId: string) => {
       setDismissedIds((prev) => {
-        if (prev.has(payload.linkPreviewId)) return prev
-        return new Set([...prev, payload.linkPreviewId])
+        if (prev.has(linkPreviewId)) return prev
+        return new Set([...prev, linkPreviewId])
       })
-    }
-    socket.on("link_preview:dismissed", handler)
-    return () => {
-      socket.off("link_preview:dismissed", handler)
-    }
-  }, [socket, messageId])
+    }, [])
+  )
 
   const handleDismiss = useCallback(
     async (previewId: string) => {
