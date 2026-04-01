@@ -7,6 +7,7 @@ import { streamKeys } from "@/hooks/use-streams"
 import { workspaceKeys } from "@/hooks/use-workspaces"
 import type {
   Stream,
+  StreamBootstrap,
   User,
   Bot,
   WorkspaceBootstrap,
@@ -257,27 +258,24 @@ export function registerWorkspaceSocketHandlers(
 
   // Handle stream updated
   const handleStreamUpdated = (payload: StreamPayload) => {
-    // Update stream detail cache — for DMs, preserve the resolved displayName
-    // since the backend sends null (the name is derived from the peer user).
-    queryClient.setQueryData(streamKeys.detail(workspaceId, payload.stream.id), (old: unknown) => {
-      if (
-        payload.stream.type === StreamTypes.DM &&
-        payload.stream.displayName == null &&
-        old &&
-        typeof old === "object" &&
-        "displayName" in old
-      ) {
-        return { ...payload.stream, displayName: (old as { displayName: string | null }).displayName }
+    // For DMs the backend sends displayName: null (the name is derived from
+    // the peer user on the frontend). Preserve whatever name is already cached.
+    const isDmWithNullName = payload.stream.type === StreamTypes.DM && payload.stream.displayName == null
+
+    // Update stream detail cache
+    queryClient.setQueryData<Stream>(streamKeys.detail(workspaceId, payload.stream.id), (old) => {
+      if (isDmWithNullName && old?.displayName) {
+        return { ...payload.stream, displayName: old.displayName }
       }
       return payload.stream
     })
 
     // Update stream bootstrap cache (preserves events, members, etc.)
-    queryClient.setQueryData(streamKeys.bootstrap(workspaceId, payload.stream.id), (old: unknown) => {
-      if (!old || typeof old !== "object") return old
+    queryClient.setQueryData<StreamBootstrap>(streamKeys.bootstrap(workspaceId, payload.stream.id), (old) => {
+      if (!old) return old
       const stream =
-        payload.stream.type === StreamTypes.DM && payload.stream.displayName == null && "stream" in old
-          ? { ...payload.stream, displayName: (old as { stream: { displayName: string | null } }).stream.displayName }
+        isDmWithNullName && old.stream.displayName
+          ? { ...payload.stream, displayName: old.stream.displayName }
           : payload.stream
       return { ...old, stream }
     })
