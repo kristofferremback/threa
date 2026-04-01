@@ -77,6 +77,10 @@ export function useScrollBehavior({
   // When a force-scroll (e.g. Jump to latest) is in progress, intermediate
   // handleScroll events during smooth animation should not re-show the button.
   const isForceScrolling = useRef(false)
+  // Timestamp of the last programmatic scrollToBottom call. Prevents handleScroll
+  // from falsely clearing shouldAutoScroll when content grows rapidly (the native
+  // scroll event fires before the new scrollTop settles).
+  const lastProgrammaticScrollAt = useRef(0)
 
   // Reset all scroll state when the content source changes (e.g. stream switch).
   // Must be useLayoutEffect (not useEffect) so the reset runs synchronously
@@ -90,6 +94,7 @@ export function useScrollBehavior({
     prevIsFetchingNewer.current = false
     olderFetchScheduled.current = false
     newerFetchScheduled.current = false
+    lastProgrammaticScrollAt.current = 0
     setIsScrolledFarFromBottom(false)
   }, [resetKey])
 
@@ -102,6 +107,7 @@ export function useScrollBehavior({
     }
 
     shouldAutoScroll.current = true
+    lastProgrammaticScrollAt.current = performance.now()
     // For forced scrolls (Jump to latest), suppress handleScroll from re-showing
     // the button during smooth scroll animation. Cleared when scroll reaches bottom.
     if (options?.force) {
@@ -207,8 +213,17 @@ export function useScrollBehavior({
     const triggerPixels = triggerItemCount * avgItemHeight
     const jumpThresholdPixels = JUMP_TO_LATEST_ITEM_THRESHOLD * avgItemHeight
 
-    // Resume auto-scroll if user scrolls back to bottom
-    shouldAutoScroll.current = isNearBottom
+    // Resume auto-scroll if user scrolls back to bottom.
+    // Grace period: don't clear shouldAutoScroll within 150ms of a programmatic scroll.
+    // When content grows rapidly (many socket messages), native scroll events fire
+    // between React renders where scrollHeight has grown but scrollTop hasn't caught up,
+    // making the user falsely appear to not be at the bottom.
+    const isInGracePeriod = performance.now() - lastProgrammaticScrollAt.current < 150
+    if (isInGracePeriod) {
+      if (isNearBottom) shouldAutoScroll.current = true
+    } else {
+      shouldAutoScroll.current = isNearBottom
+    }
 
     // Clear force-scroll guard once we've reached the bottom
     if (isNearBottom) {

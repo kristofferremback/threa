@@ -3,6 +3,7 @@ import { useMemo, useCallback, useEffect, useState, useRef } from "react"
 import { createPortal } from "react-dom"
 import { useQueryClient } from "@tanstack/react-query"
 import { MessageSquare, ChevronLeft } from "lucide-react"
+import { optimisticReplyCountUpdate } from "@/sync/stream-sync"
 import {
   SidePanel,
   SidePanelHeader,
@@ -246,6 +247,13 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
           attachments: attachments.length > 0 ? attachments : undefined,
         })
       )
+
+      // Optimistically update the parent message's reply count and thread link in IDB.
+      // The socket handler for message:updated may miss this event because the panel
+      // navigated away from the parent stream (handlers were cleaned up). The bootstrap
+      // refetch will also deliver this, but this immediate write ensures the UI updates
+      // instantly when the user navigates back via breadcrumb.
+      await optimisticReplyCountUpdate(draftInfo.parentStreamId, draftInfo.parentMessageId, thread.id)
 
       // Invalidate parent stream's bootstrap to refetch with updated reply counts
       queryClient.invalidateQueries({

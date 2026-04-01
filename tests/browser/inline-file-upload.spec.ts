@@ -206,6 +206,10 @@ test.describe("Inline File Uploads", () => {
     const attachmentPill = page.locator("[role='button']:has(img[alt='pasted-image-1.png'])")
     await expect(attachmentPill).toBeVisible({ timeout: 10000 })
 
+    // Ensure the attachment image has loaded (src attribute is set and not a blob placeholder).
+    // The lightbox handler reads the attachment URL from the rendered img element.
+    await expect(attachmentPill.locator("img")).toHaveAttribute("src", /https?:|\/api\//, { timeout: 5000 })
+
     // Click on the image link
     await imageLink.click()
 

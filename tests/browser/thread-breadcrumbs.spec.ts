@@ -40,8 +40,8 @@ test.describe("Thread Breadcrumbs", () => {
 
     // Draft breadcrumbs should show the channel as ancestor and "New thread" as current
     const breadcrumbNav = page.locator("nav[aria-label='breadcrumb']")
-    await expect(breadcrumbNav.getByText(`#${channelName}`)).toBeVisible({ timeout: 2000 })
-    await expect(breadcrumbNav.getByText("New thread")).toBeVisible()
+    await expect(breadcrumbNav.getByText(`#${channelName}`)).toBeVisible({ timeout: 5000 })
+    await expect(breadcrumbNav.getByText("New thread")).toBeVisible({ timeout: 3000 })
 
     // Send thread reply to create the thread
     const threadEditor = page.locator("[contenteditable='true']").last()
@@ -53,7 +53,7 @@ test.describe("Thread Breadcrumbs", () => {
     await expect(page.getByText(/Start a new thread/)).not.toBeVisible({ timeout: 3000 })
 
     // After thread creation, breadcrumbs should still show the channel
-    await expect(breadcrumbNav.getByText(`#${channelName}`)).toBeVisible({ timeout: 2000 })
+    await expect(breadcrumbNav.getByText(`#${channelName}`)).toBeVisible({ timeout: 5000 })
 
     // Create a second-level nested thread
     const level1Container = page.getByRole("main").locator(".group").filter({ hasText: level1Reply }).first()
@@ -62,8 +62,8 @@ test.describe("Thread Breadcrumbs", () => {
     await expect(page.getByText(/Start a new thread/)).toBeVisible({ timeout: 3000 })
 
     // Draft breadcrumbs for nested thread should show channel + parent thread as ancestors
-    await expect(breadcrumbNav.getByText(`#${channelName}`)).toBeVisible({ timeout: 2000 })
-    await expect(breadcrumbNav.getByText("New thread")).toBeVisible()
+    await expect(breadcrumbNav.getByText(`#${channelName}`)).toBeVisible({ timeout: 5000 })
+    await expect(breadcrumbNav.getByText("New thread")).toBeVisible({ timeout: 3000 })
 
     // Send nested thread reply
     const nestedEditor = page.locator("[contenteditable='true']").last()

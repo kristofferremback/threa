@@ -68,15 +68,19 @@ async function scrollToTop(page: Page): Promise<void> {
     return container instanceof HTMLElement && container.scrollHeight > container.clientHeight
   })
 
+  // Use mouse wheel simulation for a more realistic scroll that reliably
+  // triggers the React onScroll handler. The evaluate + dispatchEvent approach
+  // can miss React's synthetic event system in some browsers.
   await page.evaluate(() => {
     const container = document.querySelector("[data-suppress-pull-refresh]")
     if (container instanceof HTMLElement) {
       container.scrollTop = 0
-      for (let i = 0; i < 3; i++) {
-        container.dispatchEvent(new Event("scroll", { bubbles: true }))
-      }
+      // Dispatch scroll event to trigger React's handler
+      container.dispatchEvent(new Event("scroll", { bubbles: true }))
     }
   })
+  // Small pause to let React process the scroll event
+  await page.waitForTimeout(50)
 }
 
 test.describe("Infinite Scroll", () => {

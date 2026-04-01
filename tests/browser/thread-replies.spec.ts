@@ -138,9 +138,11 @@ test.describe("Thread Replies", () => {
 
     await expect(page.getByTestId("panel").getByText(reply1)).toBeVisible({ timeout: 10000 })
 
-    // After first reply, panel transitions from draft to real thread
-    // Wait for the transition by checking the "Start a new thread" text disappears
-    // Send second reply (get fresh editor reference after transition)
+    // After first reply, panel transitions from draft to real thread.
+    // Wait for the transition to complete before interacting with the editor.
+    await expect(page.getByText(/Start a new thread/)).not.toBeVisible({ timeout: 10000 })
+
+    // Get fresh editor reference after the draft→thread transition
     const threadEditor2 = page.locator("[contenteditable='true']").last()
     await threadEditor2.click()
     const reply2 = `Second reply ${testId}`

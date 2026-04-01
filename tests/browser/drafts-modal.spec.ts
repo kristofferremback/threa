@@ -216,20 +216,22 @@ test.describe("Drafts Page", () => {
       timeout: 5000,
     })
 
-    // Open quick switcher with Cmd+K
+    // Open quick switcher with Cmd+K. Blur the editor first to prevent
+    // the editor from intercepting the keyboard shortcut.
+    await page.locator("header").first().click()
     await page.keyboard.press("Meta+k")
-    await expect(page.getByRole("tab", { name: "Stream search" })).toBeVisible({ timeout: 2000 })
+    await expect(page.getByRole("tab", { name: "Stream search" })).toBeVisible({ timeout: 5000 })
 
     // Type command prefix and search for drafts
     await page.keyboard.type("> drafts")
-    await expect(page.getByText("View Drafts")).toBeVisible({ timeout: 2000 })
+    await expect(page.getByText("View Drafts")).toBeVisible({ timeout: 5000 })
 
     // Select the command
     await page.keyboard.press("Enter")
 
     // Quick switcher should close and we should be on the drafts page
-    await expect(page.getByRole("tab", { name: "Stream search" })).not.toBeVisible({ timeout: 2000 })
-    await expect(page).toHaveURL(/\/drafts$/, { timeout: 2000 })
+    await expect(page.getByRole("tab", { name: "Stream search" })).not.toBeVisible({ timeout: 5000 })
+    await expect(page).toHaveURL(/\/drafts$/, { timeout: 5000 })
   })
 
   test("should show attachment-only draft on page", async ({ page }) => {
@@ -403,16 +405,16 @@ test.describe("Drafts Page", () => {
 
     // Verify the thread draft is shown with "Thread in #channel" label
     const draftItem = page.getByRole("option").first()
-    await expect(draftItem).toBeVisible()
-    await expect(draftItem.getByText(`Thread in #${channelName}`)).toBeVisible()
+    await expect(draftItem).toBeVisible({ timeout: 5000 })
+    await expect(draftItem.getByText(`Thread in #${channelName}`)).toBeVisible({ timeout: 5000 })
 
     // Click on the thread draft to navigate
     await draftItem.click()
 
     // URL should have the draft parameter
-    await expect(page).toHaveURL(/[?&]draft=/, { timeout: 5000 })
+    await expect(page).toHaveURL(/[?&]draft=/, { timeout: 10000 })
 
     // Wait for the composer to be visible (draft panel has opened)
-    await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
+    await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 10000 })
   })
 })

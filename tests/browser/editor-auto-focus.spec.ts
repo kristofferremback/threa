@@ -150,22 +150,18 @@ test.describe("Editor Auto-Focus", () => {
     const messageText = `Edit restore test ${testId}`
     await sendMessage(page, messageText)
 
-    // Open context menu and start editing. Use keyboard activation on the
-    // trigger so this path does not depend on a hover-reveal click race.
+    // Open context menu and start editing via click (more reliable than
+    // keyboard activation in CI where focus management can race).
     const messageContainer = page.getByRole("main").locator(".message-item").filter({ hasText: messageText }).first()
     await messageContainer.hover()
 
     const menuTrigger = messageContainer.getByRole("button", { name: "Message actions" })
     await expect(menuTrigger).toBeVisible({ timeout: 5000 })
-    await menuTrigger.focus()
-    await menuTrigger.press("Enter")
+    await menuTrigger.click()
 
     const editOption = page.getByRole("menuitem", { name: "Edit message" })
-    if (!(await editOption.isVisible())) {
-      await menuTrigger.click({ force: true })
-    }
     await expect(editOption).toBeVisible({ timeout: 5000 })
-    await editOption.press("Enter")
+    await editOption.click()
 
     // Verify edit form appeared
     const editEditor = page.locator("[data-inline-edit] [contenteditable='true']")

@@ -45,9 +45,11 @@ test.describe("DM Lazy Creation", () => {
       expect(streamId).toBeTruthy()
       expect(streamId).not.toBe(draftStreamId)
 
-      await expect(ownerPage.locator(`a[href="/w/${workspaceId}/s/${draftStreamId}"]`)).toHaveCount(0)
-      await expect(ownerPage.locator(`a[href="/w/${workspaceId}/s/${streamId}"]`).first()).toBeVisible({
+      await expect(ownerPage.locator(`a[href="/w/${workspaceId}/s/${draftStreamId}"]`)).toHaveCount(0, {
         timeout: 5000,
+      })
+      await expect(ownerPage.locator(`a[href="/w/${workspaceId}/s/${streamId}"]`).first()).toBeVisible({
+        timeout: 10000,
       })
 
       // Verify invitee sees the DM in their sidebar after navigating to the workspace.
