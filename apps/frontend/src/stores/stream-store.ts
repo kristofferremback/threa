@@ -43,9 +43,10 @@ export function useStreamEvents(streamId: string | undefined): CachedEvent[] | u
       .equals(streamId)
       .filter((e) => (e._status === "pending" || e._status === "failed") && !loadedIds.has(e.id))
       .toArray()
-    for (const e of unsent) events.push(e)
-    // Already sorted descending from .reverse(); flip to ascending
+    // Flip descending → ascending, then append unsent so they appear at the
+    // tail (newest position) where pending messages belong.
     events.reverse()
+    for (const e of unsent) events.push(e)
     return events
   }, [streamId])
 
