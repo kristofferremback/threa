@@ -62,14 +62,18 @@ function resolveRealDmDisplayName(
   idbUsers: Array<{ id: string; name: string }>,
   idbDmPeers: Array<{ streamId: string; userId: string }>
 ): string | null {
+  // Try resolving from the DM peer user first (most reliable for DMs)
+  const otherMemberId = idbDmPeers.find((peer) => peer.streamId === streamId)?.userId
+  if (otherMemberId) {
+    const otherMemberName = idbUsers.find((u) => u.id === otherMemberId)?.name ?? null
+    if (otherMemberName) return otherMemberName
+  }
+
+  // Fall back to workspace-level cached displayName
   const workspaceName = idbStreams.find((stream) => stream.id === streamId)?.displayName
   if (workspaceName) return workspaceName
 
-  const otherMemberId = idbDmPeers.find((peer) => peer.streamId === streamId)?.userId
-  if (!otherMemberId) return streamDisplayName
-
-  const otherMemberName = idbUsers.find((u) => u.id === otherMemberId)?.name ?? null
-  return otherMemberName ?? streamDisplayName
+  return streamDisplayName
 }
 
 function toCachedStream(stream: Stream, previous: CachedStream | undefined): CachedStream {

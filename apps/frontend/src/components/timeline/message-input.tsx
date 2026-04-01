@@ -198,7 +198,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   const isMobile = useIsMobile()
   const hideForInlineEdit = isMobile && !!inlineEdit?.isEditingInline
   const connectionState = useConnectionState()
-  const isOffline = connectionState !== "connected"
+  const isOffline = connectionState === "offline"
 
   // Resolve the portal target for the expanded overlay by walking up from our own DOM node
   // to the closest [data-editor-zone] ancestor. Works for both main stream view and thread panel.
@@ -354,7 +354,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     canSubmit: composer.canSend,
     isSubmitting: composer.isSending,
     hasFailed: composer.hasFailed,
-    placeholder: isOffline ? "Type a message — sent when back online" : undefined,
+    placeholder: isOffline ? "Type a message (sent when back online)" : undefined,
     messageSendMode,
     scopeId: streamId,
     onEditLastMessage: triggerEditLast,
