@@ -194,6 +194,7 @@ export function StreamContent({
     onScrollNearBottom: hasNewerEvents ? fetchNewerEvents : undefined,
     isFetchingOlder,
     isFetchingNewer,
+    resetKey: streamId,
   })
 
   // Auto-mark stream as read when viewing

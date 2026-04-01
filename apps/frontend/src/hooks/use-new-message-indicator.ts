@@ -22,15 +22,19 @@ export function useNewMessageIndicator(
   lastReadEventId?: string | null
 ): Set<string> {
   const [newIds, setNewIds] = useState<Set<string>>(new Set())
-  /** Event IDs that were present when the stream was opened — these get the
-   *  divider treatment, not the flash, even if they're after lastReadEventId. */
-  const knownEventIdsRef = useRef<Set<string> | null>(null)
+  /** Event IDs seen since the stream was opened — accumulates across renders
+   *  so bootstrap/IDB transitions don't cause false flashes. */
+  const knownEventIdsRef = useRef<Set<string>>(new Set())
+  /** True once lastReadEventId is available and the initial data has settled.
+   *  Until armed, all events are added to the known set without flashing. */
+  const isArmedRef = useRef(false)
   const trackedIdsRef = useRef<Set<string>>(new Set())
   const timersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
 
   // Reset on stream change + cleanup on unmount
   useEffect(() => {
-    knownEventIdsRef.current = null
+    knownEventIdsRef.current = new Set()
+    isArmedRef.current = false
     trackedIdsRef.current = new Set()
     setNewIds(new Set())
     for (const t of timersRef.current) clearTimeout(t)
@@ -45,17 +49,21 @@ export function useNewMessageIndicator(
     if (events.length === 0) return
     if (currentUserId === undefined) return
 
-    // First render with events: snapshot all current event IDs as "known".
-    // Nothing flashes — these were already present when the stream opened.
-    // Unread events among them are handled by the "--- New ---" divider.
-    if (knownEventIdsRef.current === null) {
-      knownEventIdsRef.current = new Set(events.map((e) => e.id))
+    if (!isArmedRef.current) {
+      // Not yet armed — absorb all current events as "known" without flashing.
+      // This covers bootstrap/IDB transitions that bring in events before
+      // lastReadEventId is available. Once lastReadEventId resolves (from
+      // membership bootstrap or IDB), we arm and start tracking socket arrivals.
+      for (const event of events) knownEventIdsRef.current.add(event.id)
+
+      const lastReadIndex = lastReadEventId ? events.findIndex((e) => e.id === lastReadEventId) : -1
+      if (lastReadIndex >= 0) {
+        isArmedRef.current = true
+      }
       return
     }
 
     // Read boundary: events at or before lastReadEventId are read.
-    // -1 means lastReadEventId isn't in the visible events — fall back to
-    // the known-IDs set only.
     const lastReadIndex = lastReadEventId ? events.findIndex((e) => e.id === lastReadEventId) : -1
 
     // Walk backwards from newest to find genuinely new socket events.
@@ -65,8 +73,7 @@ export function useNewMessageIndicator(
       // Hard guard: events at or before the server-tracked read boundary
       // are definitively read — never flash, regardless of client state.
       if (lastReadIndex >= 0 && i <= lastReadIndex) break
-      // Events that were in the timeline when we opened the stream get
-      // the divider, not the flash.
+      // Events already seen in a previous render — not new socket arrivals.
       if (knownEventIdsRef.current.has(event.id)) break
       if (
         !trackedIdsRef.current.has(event.id) &&

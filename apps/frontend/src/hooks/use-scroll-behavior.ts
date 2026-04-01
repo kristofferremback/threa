@@ -24,6 +24,8 @@ interface UseScrollBehaviorOptions {
    * Default: EVENT_PAGE_SIZE * SCROLL_FETCH_RATIO (25)
    */
   triggerItemCount?: number
+  /** When this key changes, all scroll state resets (e.g. streamId). */
+  resetKey?: string
 }
 
 interface UseScrollBehaviorReturn {
@@ -56,6 +58,7 @@ export function useScrollBehavior({
   isFetchingNewer = false,
   bottomThreshold = 100,
   triggerItemCount = Math.floor(EVENT_PAGE_SIZE * SCROLL_FETCH_RATIO),
+  resetKey,
 }: UseScrollBehaviorOptions): UseScrollBehaviorReturn {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const shouldAutoScroll = useRef(true)
@@ -69,6 +72,20 @@ export function useScrollBehavior({
   // between React re-renders while the user scrolls within the trigger zone.
   const olderFetchScheduled = useRef(false)
   const newerFetchScheduled = useRef(false)
+
+  // Reset all scroll state when the content source changes (e.g. stream switch).
+  // Without this, prevItemCount retains the old stream's count and the
+  // "initial load → scroll to bottom" path never fires.
+  useEffect(() => {
+    shouldAutoScroll.current = true
+    prevItemCount.current = 0
+    prevScrollHeight.current = 0
+    prevIsFetchingOlder.current = false
+    prevIsFetchingNewer.current = false
+    olderFetchScheduled.current = false
+    newerFetchScheduled.current = false
+    setIsScrolledFarFromBottom(false)
+  }, [resetKey])
 
   const scrollToBottom = useCallback((options?: { behavior?: ScrollBehavior; force?: boolean }) => {
     const el = scrollContainerRef.current
