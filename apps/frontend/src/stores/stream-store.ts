@@ -7,7 +7,7 @@ import { db, type CachedEvent, type CachedStream } from "@/db"
  * mobile devices with large conversation histories. The display-floor
  * windowing in useEvents provides further filtering on top of this.
  */
-const MAX_IDB_EVENTS_PER_STREAM = 500
+const MAX_IDB_EVENTS_PER_STREAM = 150
 
 /** No-op — the in-memory event cache has been removed. Kept for clearAllCachedData compat. */
 export function resetStreamStoreCache(): void {}
