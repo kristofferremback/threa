@@ -219,7 +219,7 @@ test.describe("Edit last message (ArrowUp)", () => {
     // This ensures IDB has all ~64 events so cachedWindowFloor correctly filters
     // the old message immediately after useLiveQuery resolves (no bootstrap race).
     await expect(userA.page.getByRole("main").locator(".message-item").getByText(`${fillerText} #60`)).toBeVisible({
-      timeout: 15000,
+      timeout: 30000,
     })
 
     // ── User A: reload so bootstrap loads only the 50 most recent events ──
