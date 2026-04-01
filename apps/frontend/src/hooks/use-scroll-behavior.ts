@@ -193,28 +193,37 @@ export function useScrollBehavior({
   const handleScroll = useCallback(() => {
     if (!scrollContainerRef.current) return
 
-    const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current
+    const el = scrollContainerRef.current
+    const { scrollTop, scrollHeight, clientHeight } = el
     const isNearBottom = scrollHeight - scrollTop - clientHeight < bottomThreshold
-
-    // Resume auto-scroll if user scrolls back to bottom
-    shouldAutoScroll.current = isNearBottom
-
-    // Clear force-scroll guard once we've reached the bottom
-    if (isNearBottom) {
-      isForceScrolling.current = false
-    }
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight
 
     if (itemCount === 0) return
 
     // Estimate average item height and compute pixel threshold from item count
     const avgItemHeight = scrollHeight / itemCount
     const triggerPixels = triggerItemCount * avgItemHeight
+    const jumpThresholdPixels = JUMP_TO_LATEST_ITEM_THRESHOLD * avgItemHeight
+
+    // Resume auto-scroll when at bottom. Only disarm when the user has
+    // intentionally scrolled far enough away (beyond the jump-to-latest
+    // threshold, ~10 items). Small deviations from bottom — caused by content
+    // growth, browser layout reflows, or conversation panel rendering changing
+    // scroll position — are corrected by re-scrolling to bottom.
+    if (isNearBottom) {
+      shouldAutoScroll.current = true
+      isForceScrolling.current = false
+    } else if (shouldAutoScroll.current) {
+      if (distanceFromBottom > jumpThresholdPixels) {
+        shouldAutoScroll.current = false
+      } else {
+        el.scrollTop = el.scrollHeight
+      }
+    }
 
     // Track whether user is scrolled far enough from bottom to show "Jump to latest".
     // During a force scroll (smooth animation), suppress updates to avoid the button
     // flickering back during intermediate scroll events.
-    const distanceFromBottom = scrollHeight - scrollTop - clientHeight
-    const jumpThresholdPixels = JUMP_TO_LATEST_ITEM_THRESHOLD * avgItemHeight
     if (!isForceScrolling.current) {
       setIsScrolledFarFromBottom(distanceFromBottom > jumpThresholdPixels)
     }

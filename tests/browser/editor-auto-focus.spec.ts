@@ -160,7 +160,7 @@ test.describe("Editor Auto-Focus", () => {
     await menuTrigger.focus()
     await menuTrigger.press("Enter")
 
-    const editOption = page.getByRole("menuitem", { name: "Edit" })
+    const editOption = page.getByRole("menuitem", { name: "Edit message" })
     if (!(await editOption.isVisible())) {
       await menuTrigger.click({ force: true })
     }

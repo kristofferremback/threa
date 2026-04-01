@@ -138,6 +138,10 @@ async function focusInlineCodeNavigationStart(page: Page) {
 
     editor.commands.focus("start")
   })
+  // Ensure the browser has settled focus before sending keyboard events.
+  // Under CPU contention, editor.commands.focus() may not synchronize
+  // the browser's native focus state immediately.
+  await expect(page.locator("[contenteditable='true']")).toBeFocused()
 }
 
 async function focusInlineCodeNavigationEnd(page: Page) {
@@ -151,6 +155,8 @@ async function focusInlineCodeNavigationEnd(page: Page) {
 
     editor.commands.focus("end")
   })
+  // Ensure the browser has settled focus before sending keyboard events.
+  await expect(page.locator("[contenteditable='true']")).toBeFocused()
 }
 
 async function getBoundarySelectionMetrics(page: Page): Promise<BoundarySelectionMetrics> {

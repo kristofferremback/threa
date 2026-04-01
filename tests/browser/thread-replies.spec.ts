@@ -32,11 +32,9 @@ test.describe("Thread Replies", () => {
     await page.keyboard.press("Meta+Enter")
 
     // Wait for the message to be sent and appear
-    await expect(page.getByText(parentMessage)).toBeVisible({ timeout: 5000 })
-
-    // Hover over the message to reveal "Reply in thread" link
-    // Scope to main content area to avoid matching sidebar preview
+    // Scope to .message-item to avoid matching sidebar preview text
     const messageContainer = page.getByRole("main").locator(".message-item").filter({ hasText: parentMessage }).first()
+    await expect(messageContainer).toBeVisible({ timeout: 5000 })
     await messageContainer.hover()
 
     // Click "Reply in thread" to open thread panel
@@ -47,8 +45,8 @@ test.describe("Thread Replies", () => {
     // Wait for thread panel to open - should see "Start a new thread" text
     await expect(page.getByText(/Start a new thread/)).toBeVisible({ timeout: 3000 })
 
-    // Verify parent message is visible in the thread panel (use .last() to get the panel instance)
-    await expect(page.getByText(parentMessage).last()).toBeVisible()
+    // Verify parent message is visible in the thread panel
+    await expect(page.getByTestId("panel").getByText(parentMessage)).toBeVisible()
 
     // Type a reply in the thread editor (use last editor since there are two now)
     const threadEditor = page.locator("[contenteditable='true']").last()
@@ -79,10 +77,11 @@ test.describe("Thread Replies", () => {
     await page.keyboard.type(parentMessage)
     await page.keyboard.press("Meta+Enter")
 
-    await expect(page.getByText(parentMessage)).toBeVisible({ timeout: 5000 })
+    // Scope to .message-item to avoid matching sidebar preview text
+    const messageContainer = page.getByRole("main").locator(".message-item").filter({ hasText: parentMessage }).first()
+    await expect(messageContainer).toBeVisible({ timeout: 5000 })
 
     // Open thread panel
-    const messageContainer = page.getByRole("main").locator(".message-item").filter({ hasText: parentMessage }).first()
     await messageContainer.hover()
     const replyLink = messageContainer.getByRole("link", { name: "Reply in thread" })
     await expect(replyLink).toBeVisible({ timeout: 5000 })
@@ -118,10 +117,11 @@ test.describe("Thread Replies", () => {
     await page.keyboard.type(parentMessage)
     await page.keyboard.press("Meta+Enter")
 
-    await expect(page.getByText(parentMessage)).toBeVisible({ timeout: 5000 })
+    // Scope to .message-item to avoid matching sidebar preview text
+    const messageContainer = page.getByRole("main").locator(".message-item").filter({ hasText: parentMessage }).first()
+    await expect(messageContainer).toBeVisible({ timeout: 5000 })
 
     // Open thread
-    const messageContainer = page.getByRole("main").locator(".message-item").filter({ hasText: parentMessage }).first()
     await messageContainer.hover()
     const replyLink = messageContainer.getByRole("link", { name: "Reply in thread" })
     await expect(replyLink).toBeVisible({ timeout: 5000 })
@@ -175,10 +175,11 @@ test.describe("Thread Replies", () => {
     await page.keyboard.type(parentMessage)
     await page.keyboard.press("Meta+Enter")
 
-    await expect(page.getByText(parentMessage)).toBeVisible({ timeout: 5000 })
+    // Scope to .message-item to avoid matching sidebar preview text
+    const messageContainer = page.getByRole("main").locator(".message-item").filter({ hasText: parentMessage }).first()
+    await expect(messageContainer).toBeVisible({ timeout: 5000 })
 
     // Open thread and send first reply
-    const messageContainer = page.getByRole("main").locator(".message-item").filter({ hasText: parentMessage }).first()
     await messageContainer.hover()
     let replyLink = messageContainer.getByRole("link", { name: "Reply in thread" })
     await expect(replyLink).toBeVisible({ timeout: 5000 })

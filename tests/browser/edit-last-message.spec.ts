@@ -109,7 +109,9 @@ test.describe("Edit last message (ArrowUp)", () => {
     await userA.page.locator("[contenteditable='true']").click()
     await userA.page.keyboard.type(firstMessage)
     await userA.page.getByRole("button", { name: "Send" }).click()
-    await expect(userA.page.getByRole("main").getByText(firstMessage)).toBeVisible({ timeout: 5000 })
+    await expect(userA.page.getByRole("main").locator(".message-item").getByText(firstMessage)).toBeVisible({
+      timeout: 5000,
+    })
 
     // ── User B: join, send many messages to push A's message off screen ──
     const userB = await loginInNewContext(browser, `elm-b-${testId}@example.com`, `ELM B ${testId}`)
@@ -139,13 +141,14 @@ test.describe("Edit last message (ArrowUp)", () => {
     }
 
     // ── User A: wait for filler messages to arrive and auto-scroll to complete ──
-    const lastFillerEl = userA.page.getByRole("main").getByText(`${fillerText} #20`).first()
+    // Scope to .message-item to avoid matching off-screen conversation panel elements
+    const lastFillerEl = userA.page.getByRole("main").locator(".message-item").getByText(`${fillerText} #20`).first()
     await expect(lastFillerEl).toBeVisible({ timeout: 15000 })
     // Ensure auto-scroll has brought the latest message into the viewport
     await expect(lastFillerEl).toBeInViewport({ timeout: 5000 })
 
     // Verify User A's first message has scrolled out of the visible area
-    const firstMessageEl = userA.page.getByRole("main").getByText(firstMessage).first()
+    const firstMessageEl = userA.page.getByRole("main").locator(".message-item").getByText(firstMessage).first()
     await expect(firstMessageEl).not.toBeInViewport()
 
     // Press ArrowUp in the empty composer
@@ -188,7 +191,9 @@ test.describe("Edit last message (ArrowUp)", () => {
     await userA.page.locator("[contenteditable='true']").click()
     await userA.page.keyboard.type(oldMessage)
     await userA.page.keyboard.press("Enter")
-    await expect(userA.page.getByRole("main").getByText(oldMessage)).toBeVisible({ timeout: 5000 })
+    await expect(userA.page.getByRole("main").locator(".message-item").getByText(oldMessage)).toBeVisible({
+      timeout: 5000,
+    })
 
     // ── User B: join workspace + channel, flood with 60 filler messages ──
     // Fillers must come from a different user so User A's only message remains the old one.
@@ -210,13 +215,21 @@ test.describe("Edit last message (ArrowUp)", () => {
       })
     }
 
+    // Wait for all filler messages to arrive on User A's page via socket before reloading.
+    // This ensures IDB has all ~64 events so cachedWindowFloor correctly filters
+    // the old message immediately after useLiveQuery resolves (no bootstrap race).
+    await expect(userA.page.getByRole("main").locator(".message-item").getByText(`${fillerText} #60`)).toBeVisible({
+      timeout: 15000,
+    })
+
     // ── User A: reload so bootstrap loads only the 50 most recent events ──
     // The old message is now outside the window (not mounted, not registered).
     await userA.page.reload()
     await expect(userA.page.locator("[contenteditable='true']")).toBeVisible({ timeout: 10000 })
 
-    // The old message should not be visible in the UI after reload
-    await expect(userA.page.getByRole("main").getByText(oldMessage)).not.toBeVisible()
+    // The old message should not be visible in the UI after reload.
+    // Scoped to .message-item to avoid matching any non-timeline elements.
+    await expect(userA.page.getByRole("main").locator(".message-item").getByText(oldMessage)).not.toBeVisible()
 
     // Press ArrowUp — the old message is not registered (not mounted), so nothing happens
     await userA.page.locator("[contenteditable='true']").click()
