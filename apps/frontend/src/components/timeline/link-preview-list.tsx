@@ -65,15 +65,12 @@ export function LinkPreviewList({
   }, [initialPreviews])
 
   // Sync dismissals from other views/tabs via a single shared socket listener
-  useLinkPreviewDismissal(
-    messageId,
-    useCallback((linkPreviewId: string) => {
-      setDismissedIds((prev) => {
-        if (prev.has(linkPreviewId)) return prev
-        return new Set([...prev, linkPreviewId])
-      })
-    }, [])
-  )
+  useLinkPreviewDismissal(messageId, (linkPreviewId: string) => {
+    setDismissedIds((prev) => {
+      if (prev.has(linkPreviewId)) return prev
+      return new Set([...prev, linkPreviewId])
+    })
+  })
 
   const handleDismiss = useCallback(
     async (previewId: string) => {

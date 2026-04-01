@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react"
 import { useSocket } from "@/contexts"
 
 type DismissalHandler = (linkPreviewId: string) => void
+type Socket = ReturnType<typeof useSocket>
 
 /**
  * Single shared socket listener for link_preview:dismissed events.
@@ -11,12 +12,11 @@ type DismissalHandler = (linkPreviewId: string) => void
  * this reduces socket listeners from O(n) to O(1).
  */
 const subscribers = new Map<string, Set<DismissalHandler>>()
-let activeSocket: unknown = null
+let activeSocket: Socket = null
 let cleanupFn: (() => void) | null = null
 
-function ensureListener(socket: ReturnType<typeof useSocket>) {
+function ensureListener(socket: Socket) {
   if (activeSocket === socket) return
-  // Clean up previous listener
   if (cleanupFn) cleanupFn()
 
   activeSocket = socket
@@ -58,19 +58,18 @@ export function useLinkPreviewDismissal(messageId: string, onDismissed: Dismissa
       handlerRef.current(linkPreviewId)
     }
 
-    let handlers = subscribers.get(messageId)
-    if (!handlers) {
-      handlers = new Set()
-      subscribers.set(messageId, handlers)
+    let set = subscribers.get(messageId)
+    if (!set) {
+      set = new Set()
+      subscribers.set(messageId, set)
     }
-    handlers.add(stableHandler)
+    set.add(stableHandler)
 
     return () => {
-      handlers!.delete(stableHandler)
-      if (handlers!.size === 0) {
+      set.delete(stableHandler)
+      if (set.size === 0) {
         subscribers.delete(messageId)
       }
-      // Clean up the global listener when no subscribers remain
       if (subscribers.size === 0 && cleanupFn) {
         cleanupFn()
       }
