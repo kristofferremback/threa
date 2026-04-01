@@ -86,8 +86,6 @@ export function useScrollBehavior({
     olderFetchScheduled.current = false
     newerFetchScheduled.current = false
     setIsScrolledFarFromBottom(false)
-    const el = scrollContainerRef.current
-    if (el) el.scrollTop = 0
   }, [resetKey])
 
   const scrollToBottom = useCallback((options?: { behavior?: ScrollBehavior; force?: boolean }) => {
