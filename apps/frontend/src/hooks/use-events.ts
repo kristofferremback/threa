@@ -366,6 +366,14 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
     return idbEvents[idbEvents.length - 1].sequence
   }, [idbEvents, bootstrap?.latestSequence])
 
+  // The highest sequence from the bootstrap response. Used by
+  // useNewMessageIndicator so that events arriving via bootstrap don't flash
+  // as "new" — only events that arrive via socket after bootstrap are new.
+  const bootstrapMaxSequence = useMemo(() => {
+    if (!bootstrap?.events?.length) return null
+    return bootstrap.events[bootstrap.events.length - 1].sequence
+  }, [bootstrap?.events])
+
   return {
     events,
     isLoading,
@@ -382,5 +390,6 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
     addEvent,
     updateEvent,
     latestSequence,
+    bootstrapMaxSequence,
   }
 }

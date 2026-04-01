@@ -7,11 +7,17 @@ import type { StreamEvent } from "@threa/types"
  * that should briefly display a "new message" visual indicator.
  *
  * Each ID auto-expires after the CSS animation completes (~2s).
+ *
+ * `bootstrapMaxSequence` prevents bootstrap events from being mistaken
+ * for live arrivals: the baseline is always at least as high as the
+ * bootstrap's newest event, so only events that arrive *after*
+ * bootstrap (via socket) can trigger the flash.
  */
 export function useNewMessageIndicator(
   events: StreamEvent[],
   currentUserId: string | undefined,
-  streamId: string
+  streamId: string,
+  bootstrapMaxSequence?: string | null
 ): Set<string> {
   const [newIds, setNewIds] = useState<Set<string>>(new Set())
   const baselineSequenceRef = useRef<string | null>(null)
@@ -37,10 +43,19 @@ export function useNewMessageIndicator(
 
     const maxSequence = events[events.length - 1].sequence
 
-    // First render with events: snapshot baseline, don't flag anything
+    // First render with events: snapshot baseline, don't flag anything.
+    // Use bootstrapMaxSequence when available so the baseline starts at
+    // the bootstrap ceiling instead of the (potentially stale) IDB ceiling.
     if (baselineSequenceRef.current === null) {
-      baselineSequenceRef.current = maxSequence
+      baselineSequenceRef.current =
+        bootstrapMaxSequence && BigInt(bootstrapMaxSequence) > BigInt(maxSequence) ? bootstrapMaxSequence : maxSequence
       return
+    }
+
+    // If the bootstrap arrived after the baseline was set (IDB loaded first),
+    // advance the baseline so bootstrap events don't flash.
+    if (bootstrapMaxSequence && BigInt(bootstrapMaxSequence) > BigInt(baselineSequenceRef.current)) {
+      baselineSequenceRef.current = bootstrapMaxSequence
     }
 
     const baseline = baselineSequenceRef.current
@@ -60,7 +75,7 @@ export function useNewMessageIndicator(
       }
     }
 
-    baselineSequenceRef.current = maxSequence
+    baselineSequenceRef.current = maxSequence > baseline ? maxSequence : baseline
 
     if (freshIds.length === 0) return
 
@@ -83,7 +98,7 @@ export function useNewMessageIndicator(
       })
     }, 2000)
     timersRef.current.add(timer)
-  }, [events, currentUserId])
+  }, [events, currentUserId, bootstrapMaxSequence])
 
   return newIds
 }
