@@ -8,6 +8,7 @@ import { useStreamBootstrap, streamKeys } from "./use-streams"
 import { workspaceKeys } from "./use-workspaces"
 import { useDraftScratchpads } from "./use-draft-scratchpads"
 import { useWorkspaceUsers, useWorkspaceStreams, useWorkspaceDmPeers } from "@/stores/workspace-store"
+import { useSyncEngine } from "@/sync/sync-engine"
 import {
   deleteDraftMessageFromCache,
   deleteDraftScratchpadFromCache,
@@ -15,8 +16,17 @@ import {
   upsertDraftMessageInCache,
 } from "@/stores/draft-store"
 import { createOptimisticBootstrap, type AttachmentSummary } from "./create-optimistic-bootstrap"
-import { serializeToMarkdown } from "@threa/prosemirror"
-import type { Stream, StreamType, CompanionMode, StreamEvent, JSONContent, WorkspaceBootstrap } from "@threa/types"
+import { escapeMarkdownLinkText, serializeAttachmentMetadata, serializeToMarkdown } from "@threa/prosemirror"
+import type {
+  Stream,
+  StreamMember,
+  StreamType,
+  CompanionMode,
+  StreamEvent,
+  JSONContent,
+  WorkspaceBootstrap,
+  StreamWithPreview,
+} from "@threa/types"
 import { StreamTypes, Visibilities, CompanionModes } from "@threa/types"
 
 const DM_DRAFT_PREFIX = "draft_dm_"
@@ -72,6 +82,37 @@ function toCachedStream(stream: Stream, previous: CachedStream | undefined): Cac
     lastReadEventId: previous?.lastReadEventId ?? null,
     _cachedAt: Date.now(),
   }
+}
+
+function ensureAttachmentMarkdown(contentMarkdown: string, attachments?: AttachmentSummary[]): string {
+  if (!attachments || attachments.length === 0) return contentMarkdown
+
+  const attachmentMatches = Array.from(contentMarkdown.matchAll(/\(attachment:([^)\"\s]+)/g))
+  const referencedAttachmentIds = new Set(attachmentMatches.map((match) => match[1]))
+  const missingAttachments = attachments.filter((attachment) => !referencedAttachmentIds.has(attachment.id))
+  if (missingAttachments.length === 0) return contentMarkdown
+
+  const existingImageIndices = Array.from(contentMarkdown.matchAll(/\[Image #(\d+)\]\(attachment:/g)).map((match) =>
+    Number.parseInt(match[1] ?? "0", 10)
+  )
+  let nextImageIndex = existingImageIndices.length > 0 ? Math.max(...existingImageIndices) + 1 : 1
+
+  const appendedMarkdown = missingAttachments
+    .map((attachment) => {
+      const isImage = attachment.mimeType.startsWith("image/")
+      const imageIndex = isImage ? nextImageIndex++ : null
+      const displayText = isImage ? `Image #${imageIndex}` : attachment.filename
+      const metadata = serializeAttachmentMetadata({
+        ...attachment,
+        status: "uploaded",
+        imageIndex,
+        error: null,
+      })
+      return `[${escapeMarkdownLinkText(displayText)}](attachment:${attachment.id}${metadata})`
+    })
+    .join(" ")
+
+  return contentMarkdown.trim().length > 0 ? `${contentMarkdown}\n\n${appendedMarkdown}` : appendedMarkdown
 }
 
 export interface VirtualStream {
@@ -158,7 +199,7 @@ function useDraftStream(workspaceId: string, streamId: string, enabled: boolean)
       })
 
       // Serialize JSON to markdown for API and optimistic UI
-      const contentMarkdown = serializeToMarkdown(input.contentJson)
+      const contentMarkdown = ensureAttachmentMarkdown(serializeToMarkdown(input.contentJson), input.attachments)
 
       const message = await messageService.create(workspaceId, newStream.id, {
         streamId: newStream.id,
@@ -211,6 +252,7 @@ function useDraftDmStream(workspaceId: string, streamId: string, enabled: boolea
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const messageService = useMessageService()
+  const syncEngine = useSyncEngine()
   const user = useUser()
   const idbUsers = useWorkspaceUsers(workspaceId)
   const idbDmPeers = useWorkspaceDmPeers(workspaceId)
@@ -285,7 +327,7 @@ function useDraftDmStream(workspaceId: string, streamId: string, enabled: boolea
         throw new Error("Invalid DM draft target")
       }
 
-      const contentMarkdown = serializeToMarkdown(input.contentJson)
+      const contentMarkdown = ensureAttachmentMarkdown(serializeToMarkdown(input.contentJson), input.attachments)
       const message = await messageService.createDm(workspaceId, targetUserId, {
         dmUserId: targetUserId,
         contentJson: input.contentJson,
@@ -293,76 +335,111 @@ function useDraftDmStream(workspaceId: string, streamId: string, enabled: boolea
         attachmentIds: input.attachmentIds,
       })
 
+      const now = Date.now()
+      const optimisticStream: CachedStream = {
+        id: message.streamId,
+        workspaceId,
+        type: StreamTypes.DM,
+        displayName: targetUserName ?? "Direct message",
+        slug: null,
+        description: null,
+        visibility: Visibilities.PRIVATE,
+        parentStreamId: null,
+        parentMessageId: null,
+        rootStreamId: null,
+        companionMode: CompanionModes.OFF,
+        companionPersonaId: null,
+        createdBy: message.authorId,
+        createdAt: message.createdAt,
+        updatedAt: message.createdAt,
+        archivedAt: null,
+        lastMessagePreview: {
+          authorId: message.authorId,
+          authorType: message.authorType,
+          content: message.contentMarkdown,
+          createdAt: message.createdAt,
+        },
+        _cachedAt: now,
+      }
+
+      await db.transaction("rw", [db.streams, db.streamMemberships, db.dmPeers], async () => {
+        await db.streams.put(optimisticStream)
+
+        if (currentUserId) {
+          await db.streamMemberships.put({
+            id: `${workspaceId}:${message.streamId}`,
+            workspaceId,
+            streamId: message.streamId,
+            memberId: currentUserId,
+            pinned: false,
+            pinnedAt: null,
+            notificationLevel: null,
+            lastReadEventId: null,
+            lastReadAt: null,
+            joinedAt: message.createdAt,
+            _cachedAt: now,
+          })
+        }
+
+        await db.dmPeers.put({
+          id: `${workspaceId}:${message.streamId}`,
+          workspaceId,
+          userId: targetUserId,
+          streamId: message.streamId,
+          _cachedAt: now,
+        })
+      })
+
+      void syncEngine.subscribeStream(message.streamId)
+
       // Keep sidebar state consistent immediately on sender side:
       // remove virtual DM draft and set viewer-specific DM name as soon as streamId is known.
       queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
         if (!old) return old
 
+        const optimisticBootstrapStream: StreamWithPreview = {
+          ...optimisticStream,
+          lastMessagePreview: optimisticStream.lastMessagePreview ?? null,
+        }
+
+        const optimisticMembership: StreamMember | null = currentUserId
+          ? {
+              streamId: message.streamId,
+              memberId: currentUserId,
+              pinned: false,
+              pinnedAt: null,
+              notificationLevel: null,
+              lastReadEventId: null,
+              lastReadAt: null,
+              joinedAt: message.createdAt,
+            }
+          : null
+
         const hasPeer = old.dmPeers.some((peer) => peer.userId === targetUserId && peer.streamId === message.streamId)
 
         const streamExists = old.streams.some((stream) => stream.id === message.streamId)
-        const optimisticStream = streamExists
-          ? old.streams
-          : [
-              ...old.streams,
-              {
-                id: message.streamId,
-                workspaceId,
-                type: StreamTypes.DM,
-                displayName: targetUserName ?? "Direct message",
-                slug: null,
-                description: null,
-                visibility: Visibilities.PRIVATE,
-                parentStreamId: null,
-                parentMessageId: null,
-                rootStreamId: null,
-                companionMode: CompanionModes.OFF,
-                companionPersonaId: null,
-                createdBy: message.authorId,
-                createdAt: message.createdAt,
-                updatedAt: message.createdAt,
-                archivedAt: null,
-                lastMessagePreview: {
-                  authorId: message.authorId,
-                  authorType: message.authorType,
-                  content: message.contentMarkdown,
-                  createdAt: message.createdAt,
-                },
-              },
-            ]
+        const streams = streamExists ? old.streams : [...old.streams, optimisticBootstrapStream]
 
         const membershipExists = old.streamMemberships.some((m) => m.streamId === message.streamId)
 
         return {
           ...old,
           dmPeers: hasPeer ? old.dmPeers : [...old.dmPeers, { userId: targetUserId, streamId: message.streamId }],
-          streams: optimisticStream.map((stream) =>
+          streams: streams.map((stream) =>
             stream.id === message.streamId && stream.type === StreamTypes.DM
               ? { ...stream, displayName: targetUserName ?? stream.displayName }
               : stream
           ),
           streamMemberships:
-            !membershipExists && currentUserId
-              ? [
-                  ...old.streamMemberships,
-                  {
-                    streamId: message.streamId,
-                    memberId: currentUserId,
-                    pinned: false,
-                    pinnedAt: null,
-                    notificationLevel: null,
-                    lastReadEventId: null,
-                    lastReadAt: null,
-                    joinedAt: message.createdAt,
-                  },
-                ]
+            !membershipExists && optimisticMembership
+              ? [...old.streamMemberships, optimisticMembership]
               : old.streamMemberships,
         }
       })
 
       return { navigateTo: `/w/${workspaceId}/s/${message.streamId}`, replace: true }
     },
-    [targetUserId, workspaceId, messageService, queryClient, targetUserName, currentUserId]
+    [targetUserId, workspaceId, messageService, queryClient, targetUserName, currentUserId, syncEngine]
   )
 
   return {
@@ -503,7 +580,7 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
       const clientId = generateClientId()
       const now = new Date().toISOString()
 
-      const contentMarkdown = serializeToMarkdown(input.contentJson)
+      const contentMarkdown = ensureAttachmentMarkdown(serializeToMarkdown(input.contentJson), input.attachments)
 
       // Use timestamp as sequence to ensure optimistic events sort after real events
       // Real events have low sequence numbers (1, 2, 3...), timestamps are ~13 digits
@@ -517,6 +594,7 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
         payload: {
           messageId: clientId,
           contentMarkdown,
+          ...(input.attachments && input.attachments.length > 0 ? { attachments: input.attachments } : {}),
         },
         actorId: currentUserId,
         actorType: "user",

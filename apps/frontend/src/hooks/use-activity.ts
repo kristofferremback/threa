@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useActivityService } from "@/contexts"
 import { workspaceKeys } from "./use-workspaces"
+import { db } from "@/db"
 import type { Activity, WorkspaceBootstrap } from "@threa/types"
 
 export const activityKeys = {
@@ -50,10 +51,21 @@ export function useMarkActivityRead(workspaceId: string) {
           unreadActivityCount: Math.max(0, (old.unreadActivityCount ?? 0) - 1),
         }
       })
+
+      db.transaction("rw", [db.unreadState], async () => {
+        const state = await db.unreadState.get(workspaceId)
+        if (!state) return
+        await db.unreadState.put({
+          ...state,
+          unreadActivityCount: Math.max(0, state.unreadActivityCount - 1),
+          _cachedAt: Date.now(),
+        })
+      })
     },
     onError: () => {
       // Rollback: refetch on error
       queryClient.invalidateQueries({ queryKey: activityKeys.list(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: workspaceKeys.bootstrap(workspaceId) })
     },
   })
 }
@@ -84,6 +96,28 @@ export function useMarkAllActivityRead(workspaceId: string) {
           activityCounts: clearedActivityCounts,
           unreadActivityCount: 0,
         }
+      })
+
+      db.transaction("rw", [db.unreadState], async () => {
+        const state = await db.unreadState.get(workspaceId)
+        if (!state) return
+
+        const clearedMentionCounts: Record<string, number> = {}
+        const clearedActivityCounts: Record<string, number> = {}
+        for (const key of Object.keys(state.mentionCounts)) {
+          clearedMentionCounts[key] = 0
+        }
+        for (const key of Object.keys(state.activityCounts)) {
+          clearedActivityCounts[key] = 0
+        }
+
+        await db.unreadState.put({
+          ...state,
+          mentionCounts: clearedMentionCounts,
+          activityCounts: clearedActivityCounts,
+          unreadActivityCount: 0,
+          _cachedAt: Date.now(),
+        })
       })
     },
   })

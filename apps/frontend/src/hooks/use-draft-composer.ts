@@ -34,6 +34,7 @@ export interface DraftComposerState {
 
   // Attachments
   pendingAttachments: PendingAttachment[]
+  getPendingAttachmentsSnapshot: () => PendingAttachment[]
   uploadedIds: string[]
   isUploading: boolean
   hasFailed: boolean
@@ -78,6 +79,7 @@ export function useDraftComposer({
   // Attachment handling
   const {
     pendingAttachments,
+    getPendingAttachmentsSnapshot,
     fileInputRef,
     handleFileSelect,
     uploadFile,
@@ -208,10 +210,10 @@ export function useDraftComposer({
       return true // Non-paragraph nodes count as content
     }) ?? false
 
-  // Allow sending while uploads are in progress — the message is enqueued
-  // and sent once all uploads complete. Failed uploads don't block send
-  // (the message sends with whatever attachments succeeded).
-  const canSend = (hasContent || uploadedIds.length > 0) && !isSending
+  // Sending while uploads are still in flight is not safe: the message would
+  // be created before attachment IDs exist, leaving uploaded files unattached.
+  // Failed uploads still don't block send; the user can send with whatever succeeded.
+  const canSend = (hasContent || uploadedIds.length > 0) && !isSending && !isUploading
 
   return {
     // Content
@@ -221,6 +223,7 @@ export function useDraftComposer({
 
     // Attachments
     pendingAttachments,
+    getPendingAttachmentsSnapshot,
     uploadedIds,
     isUploading,
     hasFailed,

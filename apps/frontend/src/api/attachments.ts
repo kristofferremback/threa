@@ -2,6 +2,12 @@ import { api, API_BASE, ApiError } from "./client"
 import type { Attachment } from "@threa/types"
 
 const inFlightDownloadUrlRequests = new Map<string, Promise<string>>()
+const resolvedDownloadUrlCache = new Map<string, { url: string; expiresAt: number }>()
+
+export function resetAttachmentUrlCache(): void {
+  inFlightDownloadUrlRequests.clear()
+  resolvedDownloadUrlCache.clear()
+}
 
 export const attachmentsApi = {
   /**
@@ -39,6 +45,14 @@ export const attachmentsApi = {
    */
   async getDownloadUrl(workspaceId: string, attachmentId: string, options?: { download?: boolean }): Promise<string> {
     const key = `${workspaceId}:${attachmentId}:${options?.download ? "download" : "inline"}`
+    const cached = resolvedDownloadUrlCache.get(key)
+    if (cached) {
+      if (cached.expiresAt > Date.now()) {
+        return cached.url
+      }
+      resolvedDownloadUrlCache.delete(key)
+    }
+
     const existing = inFlightDownloadUrlRequests.get(key)
     if (existing) return existing
 
@@ -47,7 +61,13 @@ export const attachmentsApi = {
       .get<{ url: string; expiresIn: number }>(
         `/api/workspaces/${workspaceId}/attachments/${attachmentId}/url${params}`
       )
-      .then((res) => res.url)
+      .then((res) => {
+        resolvedDownloadUrlCache.set(key, {
+          url: res.url,
+          expiresAt: Date.now() + Math.max(0, res.expiresIn * 1000 - 5_000),
+        })
+        return res.url
+      })
       .finally(() => {
         inFlightDownloadUrlRequests.delete(key)
       })

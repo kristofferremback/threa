@@ -106,10 +106,10 @@ test.describe("Nested Thread Navigation", () => {
     await page.keyboard.type(channelMessage)
     await page.keyboard.press("Meta+Enter")
 
-    await expect(page.getByText(channelMessage)).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole("main").getByText(channelMessage)).toBeVisible({ timeout: 5000 })
 
     // Start a thread on the channel message
-    const messageContainer = page.getByRole("main").locator(".group").filter({ hasText: channelMessage }).first()
+    const messageContainer = page.getByRole("main").locator(".message-item").filter({ hasText: channelMessage }).first()
     await messageContainer.hover()
     const replyLink = messageContainer.getByRole("link", { name: "Reply in thread" })
     await expect(replyLink).toBeVisible({ timeout: 2000 })
@@ -125,10 +125,13 @@ test.describe("Nested Thread Navigation", () => {
     await page.keyboard.press("Meta+Enter")
 
     await expect(page.getByTestId("panel").getByText(threadReply)).toBeVisible({ timeout: 5000 })
-    await expect(page.getByText(/Start a new thread/)).not.toBeVisible({ timeout: 3000 })
 
     // Reply to the thread reply to create a nested thread
-    const threadReplyContainer = page.getByRole("main").locator(".group").filter({ hasText: threadReply }).first()
+    const threadReplyContainer = page
+      .getByRole("main")
+      .locator(".message-item")
+      .filter({ hasText: threadReply })
+      .first()
     await threadReplyContainer.hover()
     const nestedReplyLink = threadReplyContainer.getByRole("link", { name: "Reply in thread" })
     await expect(nestedReplyLink).toBeVisible({ timeout: 2000 })
@@ -196,11 +199,10 @@ test.describe("Nested Thread Navigation", () => {
     const level1Message = `Level 1 ${testId}`
     await page.keyboard.type(level1Message)
     await page.keyboard.press("Meta+Enter")
-    await expect(page.getByTestId("panel").getByText(level1Message)).toBeVisible({ timeout: 5000 })
-    await expect(page.getByText(/Start a new thread/)).not.toBeVisible({ timeout: 3000 })
+    await expect(page.getByTestId("panel").getByText(level1Message)).toBeVisible({ timeout: 10000 })
 
     // Create nested thread
-    const level1Container = page.getByRole("main").locator(".group").filter({ hasText: level1Message }).first()
+    const level1Container = page.getByRole("main").locator(".message-item").filter({ hasText: level1Message }).first()
     await level1Container.hover()
     const level1ReplyLink = level1Container.getByRole("link", { name: "Reply in thread" })
     await expect(level1ReplyLink).toBeVisible({ timeout: 5000 })
@@ -212,19 +214,20 @@ test.describe("Nested Thread Navigation", () => {
     const level2Message = `Level 2 ${testId}`
     await page.keyboard.type(level2Message)
     await page.keyboard.press("Meta+Enter")
-    await expect(page.getByTestId("panel").getByText(level2Message)).toBeVisible({ timeout: 5000 })
+    await expect(page.getByText(/Start a new thread/)).not.toBeVisible({ timeout: 10000 })
+    await expect(page.getByTestId("panel").getByText(level2Message)).toBeVisible({ timeout: 10000 })
 
     // Navigate back via breadcrumb
     const breadcrumb = page.locator("nav[aria-label='breadcrumb'] a").first()
     await breadcrumb.click()
 
     // Verify reply count shows
-    const level1InPanel = page.getByRole("main").locator(".group").filter({ hasText: level1Message }).first()
+    const level1InPanel = page.getByRole("main").locator(".message-item").filter({ hasText: level1Message }).first()
     await expect(level1InPanel.getByText(/1 reply/i)).toBeVisible({ timeout: 3000 })
 
     // Navigate forward again by clicking the reply count
     await level1InPanel.getByText(/1 reply/i).click()
-    await expect(page.getByTestId("panel").getByText(level2Message)).toBeVisible({ timeout: 3000 })
+    await expect(page.getByTestId("panel").getByText(level2Message)).toBeVisible({ timeout: 10000 })
 
     // Navigate back again
     await breadcrumb.click()

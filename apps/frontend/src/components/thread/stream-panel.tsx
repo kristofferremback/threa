@@ -199,14 +199,17 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
     if (!draftInfo || !composer.canSend) return
 
     composer.setIsSending(true)
+    const pendingAttachments = composer.getPendingAttachmentsSnapshot()
 
     // Capture content before clearing
     const contentJson = composer.content
     const contentMarkdown = serializeToMarkdown(contentJson)
 
     // Capture full attachment info BEFORE clearing for optimistic UI
-    const attachmentIds = composer.uploadedIds
-    const attachments = composer.pendingAttachments
+    const attachmentIds = pendingAttachments
+      .filter((a) => a.status === "uploaded" && !a.id.startsWith("temp_"))
+      .map((a) => a.id)
+    const attachments = pendingAttachments
       .filter((a) => a.status === "uploaded" && !a.id.startsWith("temp_"))
       .map(({ id, filename, mimeType, sizeBytes }) => ({ id, filename, mimeType, sizeBytes }))
 

@@ -65,6 +65,7 @@ const mockRestoreAttachments = vi.fn()
 vi.mock("./use-attachments", () => ({
   useAttachments: () => ({
     pendingAttachments: mockPendingAttachments,
+    getPendingAttachmentsSnapshot: () => mockPendingAttachments,
     fileInputRef: mockFileInputRef,
     handleFileSelect: mockHandleFileSelect,
     removeAttachment: mockRemoveAttachment,
@@ -377,7 +378,7 @@ describe("useDraftComposer", () => {
       expect(result.current.canSend).toBe(false)
     })
 
-    it("should be true when uploading (send enqueues, uploads finish in background)", () => {
+    it("should be false while uploads are still in progress", () => {
       mockPendingAttachments = [
         { id: "temp_1", filename: "test.txt", mimeType: "text/plain", sizeBytes: 100, status: "uploading" },
       ]
@@ -388,7 +389,7 @@ describe("useDraftComposer", () => {
         result.current.setContent(makeDoc("Hello"))
       })
 
-      expect(result.current.canSend).toBe(true)
+      expect(result.current.canSend).toBe(false)
     })
 
     it("should be true when uploads have failed (send with whatever succeeded)", () => {

@@ -102,7 +102,7 @@ export interface MessageComposerProps {
   imageCount?: number
 
   // Submit
-  onSubmit: () => void
+  onSubmit: (content?: JSONContent) => void
   canSubmit: boolean
   submitLabel?: string
   submittingLabel?: string
@@ -265,7 +265,7 @@ export function MessageComposer({
     setFormatOpen(false)
     setMobileExpanded(false)
     setMobileLinkPopoverOpen(false)
-    onSubmit()
+    onSubmit(richEditorRef.current?.getEditor()?.getJSON() as JSONContent | undefined)
   }, [onSubmit])
 
   // Stable ref so TipTap's captured closure always invokes the current handler

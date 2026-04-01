@@ -103,6 +103,25 @@ interface MessageLayoutProps {
   }
 }
 
+function focusVisibleZoneEditor(zone: HTMLElement | null, attempt = 0) {
+  if (!zone) return
+
+  const editor = Array.from(zone.querySelectorAll<HTMLElement>('[contenteditable="true"]'))
+    .filter((element) => !element.closest("[data-inline-edit]"))
+    .reduceRight<HTMLElement | null>((match, element) => {
+      if (match) return match
+      return element.getClientRects().length > 0 ? element : null
+    }, null)
+
+  if (editor) {
+    focusAtEnd(editor)
+    return
+  }
+
+  if (attempt >= 4) return
+  requestAnimationFrame(() => focusVisibleZoneEditor(zone, attempt + 1))
+}
+
 /** Reads hovered link URL from context and passes to LinkPreviewList */
 function MessageLinkPreviews({
   messageId,
@@ -329,16 +348,13 @@ function SentMessageEvent({
 
   // Restore focus to the zone's editor after exiting inline edit mode
   const stopEditing = useCallback(() => {
+    const zone = containerRef.current?.closest<HTMLElement>("[data-editor-zone]") ?? null
     setIsEditing(false)
     if (isMobile) {
       inlineEdit?.setEditingInline(false)
       return
     }
-    requestAnimationFrame(() => {
-      const zone = containerRef.current?.closest<HTMLElement>("[data-editor-zone]")
-      const editor = zone?.querySelector<HTMLElement>('[contenteditable="true"]')
-      if (editor) focusAtEnd(editor)
-    })
+    requestAnimationFrame(() => focusVisibleZoneEditor(zone))
   }, [isMobile, inlineEdit])
 
   // Register this message's edit handler with the context so the composer's ArrowUp trigger

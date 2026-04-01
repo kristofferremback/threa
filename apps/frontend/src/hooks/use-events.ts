@@ -264,21 +264,22 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
   }, [jumpState, hasNewerPage, newerData?.pages.length])
 
   const fetchOlderEvents = useCallback(() => {
-    if (isFetchingOlder) return
+    if (isFetchingOlder) return false
 
     if (hasOlderPage) {
-      fetchOlderPage()
-      return
+      void fetchOlderPage()
+      return true
     }
 
     // Seed with a cursor-only page, then fetch immediately.
     const oldestSequence = getOldestSequence(jumpState ? jumpState.events : events)
-    if (!oldestSequence) return
+    if (!oldestSequence) return false
     queryClient.setQueryData(eventKeys.list(workspaceId, streamId), {
       pages: [{ events: [], hasMore: true, cursor: oldestSequence }],
       pageParams: [undefined],
     })
-    fetchOlderPage()
+    void fetchOlderPage()
+    return true
   }, [isFetchingOlder, hasOlderPage, jumpState, events, queryClient, workspaceId, streamId, fetchOlderPage])
 
   // Auto-load all older events on mount when loadAll is true (e.g. thread panels)
@@ -289,18 +290,19 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
   }, [loadAll, hasOlderEvents, isFetchingOlder, fetchOlderEvents])
 
   const fetchNewerEvents = useCallback(() => {
-    if (!jumpState || isFetchingNewer) return
+    if (!jumpState || isFetchingNewer) return false
 
     if (hasNewerPage) {
-      fetchNewerPage()
-      return
+      void fetchNewerPage()
+      return true
     }
 
     queryClient.setQueryData(eventKeys.newer(workspaceId, streamId), {
       pages: [{ events: [], hasMore: true, cursor: jumpState.newestSequence }],
       pageParams: [undefined],
     })
-    fetchNewerPage()
+    void fetchNewerPage()
+    return true
   }, [jumpState, isFetchingNewer, hasNewerPage, queryClient, workspaceId, streamId, fetchNewerPage])
 
   /**

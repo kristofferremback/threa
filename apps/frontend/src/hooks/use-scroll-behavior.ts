@@ -10,9 +10,9 @@ interface UseScrollBehaviorOptions {
   /** Number of items in the list (triggers scroll when changes) */
   itemCount: number
   /** Called when user scrolls near the top (for loading older messages) */
-  onScrollNearTop?: () => void
+  onScrollNearTop?: () => boolean
   /** Called when user scrolls near the bottom (for loading newer messages in jump-to mode) */
-  onScrollNearBottom?: () => void
+  onScrollNearBottom?: () => boolean
   /** Whether infinite scroll is currently fetching older events */
   isFetchingOlder?: boolean
   /** Whether infinite scroll is currently fetching newer events */
@@ -33,6 +33,8 @@ interface UseScrollBehaviorReturn {
   handleScroll: () => void
   /** True when scrolled ~10+ items away from the bottom */
   isScrolledFarFromBottom: boolean
+  /** Imperatively scroll to the bottom and clear the jump-to-latest state */
+  scrollToBottom: (options?: { behavior?: ScrollBehavior; force?: boolean }) => void
 }
 
 /**
@@ -68,10 +70,23 @@ export function useScrollBehavior({
   const olderFetchScheduled = useRef(false)
   const newerFetchScheduled = useRef(false)
 
-  const scrollToBottom = useCallback(() => {
-    if (scrollContainerRef.current && shouldAutoScroll.current) {
-      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight
+  const scrollToBottom = useCallback((options?: { behavior?: ScrollBehavior; force?: boolean }) => {
+    const el = scrollContainerRef.current
+    if (!el) return
+
+    if (!options?.force && !shouldAutoScroll.current) {
+      return
     }
+
+    shouldAutoScroll.current = true
+    setIsScrolledFarFromBottom(false)
+
+    if (options?.behavior) {
+      el.scrollTo({ top: el.scrollHeight, behavior: options.behavior })
+      return
+    }
+
+    el.scrollTop = el.scrollHeight
   }, [])
 
   // Scroll position preservation and initial scroll.
@@ -161,15 +176,19 @@ export function useScrollBehavior({
 
     // Load older content when near top (one-shot until fetch completes)
     if (onScrollNearTop && scrollTop < triggerPixels && !isFetchingOlder && !olderFetchScheduled.current) {
-      olderFetchScheduled.current = true
-      onScrollNearTop()
+      const started = onScrollNearTop()
+      if (started !== false) {
+        olderFetchScheduled.current = true
+      }
     }
 
     // Load newer content when near bottom (jump-to mode, one-shot)
     if (onScrollNearBottom && !isFetchingNewer && !newerFetchScheduled.current) {
       if (distanceFromBottom < triggerPixels) {
-        newerFetchScheduled.current = true
-        onScrollNearBottom()
+        const started = onScrollNearBottom()
+        if (started !== false) {
+          newerFetchScheduled.current = true
+        }
       }
     }
   }, [
@@ -186,5 +205,6 @@ export function useScrollBehavior({
     scrollContainerRef,
     handleScroll,
     isScrolledFarFromBottom,
+    scrollToBottom,
   }
 }

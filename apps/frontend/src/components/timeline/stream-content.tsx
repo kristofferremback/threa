@@ -187,7 +187,7 @@ export function StreamContent({
   const isChannel = stream?.type === StreamTypes.CHANNEL
   const agentActivity = useAgentActivity(events, socket)
 
-  const { scrollContainerRef, handleScroll, isScrolledFarFromBottom } = useScrollBehavior({
+  const { scrollContainerRef, handleScroll, isScrolledFarFromBottom, scrollToBottom } = useScrollBehavior({
     isLoading,
     itemCount: events.length,
     onScrollNearTop: hasOlderEvents ? fetchOlderEvents : undefined,
@@ -249,14 +249,12 @@ export function StreamContent({
       exitJumpMode()
       // Scroll to bottom after React re-renders with bootstrap events
       requestAnimationFrame(() => {
-        if (scrollContainerRef.current) {
-          scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight
-        }
+        scrollToBottom({ force: true })
       })
-    } else if (scrollContainerRef.current) {
-      scrollContainerRef.current.scrollTo({ top: scrollContainerRef.current.scrollHeight, behavior: "smooth" })
+    } else {
+      scrollToBottom({ force: true, behavior: "smooth" })
     }
-  }, [isJumpMode, exitJumpMode, scrollContainerRef])
+  }, [isJumpMode, exitJumpMode, scrollToBottom])
 
   if (error && !isDraft && events.length === 0) {
     return (

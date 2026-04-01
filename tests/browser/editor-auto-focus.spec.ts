@@ -71,7 +71,7 @@ test.describe("Editor Auto-Focus", () => {
     // Open thread panel
     const messageContainer = page
       .getByRole("main")
-      .locator(".group")
+      .locator(".message-item")
       .filter({ hasText: `Panel focus test ${testId}` })
       .first()
     await messageContainer.hover()
@@ -116,7 +116,7 @@ test.describe("Editor Auto-Focus", () => {
 
     const messageContainer = page
       .getByRole("main")
-      .locator(".group")
+      .locator(".message-item")
       .filter({ hasText: `Type panel test ${testId}` })
       .first()
     await messageContainer.hover()
@@ -150,19 +150,22 @@ test.describe("Editor Auto-Focus", () => {
     const messageText = `Edit restore test ${testId}`
     await sendMessage(page, messageText)
 
-    // Open context menu and start editing
-    const messageContainer = page.getByRole("main").locator(".group").filter({ hasText: messageText }).first()
+    // Open context menu and start editing. Use keyboard activation on the
+    // trigger so this path does not depend on a hover-reveal click race.
+    const messageContainer = page.getByRole("main").locator(".message-item").filter({ hasText: messageText }).first()
     await messageContainer.hover()
 
-    // Click the context menu trigger (the ... button)
     const menuTrigger = messageContainer.getByRole("button", { name: "Message actions" })
-    await expect(menuTrigger).toBeVisible({ timeout: 3000 })
-    await menuTrigger.click()
+    await expect(menuTrigger).toBeVisible({ timeout: 5000 })
+    await menuTrigger.focus()
+    await menuTrigger.press("Enter")
 
-    // Click Edit option
     const editOption = page.getByRole("menuitem", { name: "Edit" })
-    await expect(editOption).toBeVisible({ timeout: 3000 })
-    await editOption.click()
+    if (!(await editOption.isVisible())) {
+      await menuTrigger.click({ force: true })
+    }
+    await expect(editOption).toBeVisible({ timeout: 5000 })
+    await editOption.press("Enter")
 
     // Verify edit form appeared
     const editEditor = page.locator("[data-inline-edit] [contenteditable='true']")
@@ -170,6 +173,7 @@ test.describe("Editor Auto-Focus", () => {
 
     // Cancel by pressing Escape
     await page.keyboard.press("Escape")
+    await expect(editEditor).toBeHidden({ timeout: 3000 })
 
     // After cancel, the zone's message input editor should be focused
     const mainEditor = page.locator("[data-editor-zone='main'] [contenteditable='true']")

@@ -28,10 +28,15 @@ export function BotsTab({ workspaceId }: BotsTabProps) {
 function BotList({ workspaceId, onSelectBot }: { workspaceId: string; onSelectBot: (id: string) => void }) {
   const queryClient = useQueryClient()
   const queryKey = ["bots", workspaceId]
+  const [watchListUntil] = useState(() => Date.now() + 15_000)
 
   const { data: bots = [], isLoading } = useQuery({
     queryKey,
     queryFn: () => botsApi.list(workspaceId),
+    refetchInterval: () => (Date.now() < watchListUntil ? 500 : false),
+    refetchIntervalInBackground: true,
+    refetchOnMount: "always",
+    retry: 5,
   })
 
   const [showCreateForm, setShowCreateForm] = useState(false)
