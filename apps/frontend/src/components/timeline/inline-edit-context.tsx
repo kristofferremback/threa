@@ -11,8 +11,21 @@ export function useInlineEdit() {
   return useContext(InlineEditContext)
 }
 
-export function InlineEditProvider({ children }: { children: React.ReactNode }) {
+export function InlineEditProvider({
+  children,
+  resetKey,
+}: {
+  children: React.ReactNode
+  /** When this key changes, inline edit state resets (e.g. stream navigation). */
+  resetKey?: string
+}) {
   const [isEditingInline, setIsEditingInline] = useState(false)
+
+  // Reset when switching streams so a stuck flag from one stream
+  // doesn't hide the input on the next stream.
+  useEffect(() => {
+    setIsEditingInline(false)
+  }, [resetKey])
 
   // Reset inline edit state when the page becomes visible again (e.g. after
   // switching apps on mobile). The edit sheet/drawer may have closed while

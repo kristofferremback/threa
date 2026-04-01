@@ -195,9 +195,24 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
   // - All bootstrap events
   // - Socket events that arrived during or after bootstrap (INV-53 guarantee)
   // - Pending/failed optimistic events (regardless of sequence)
+  //
+  // The floor must never jump upward on re-fetches (e.g. after socket reconnect).
+  // A higher floor would hide events already visible in IDB from the current
+  // session — the events are valid, just below the latest bootstrap page.
+  const bootstrapFloorRef = useRef<{ streamId: string; floor: bigint } | null>(null)
   const bootstrapFloor = useMemo(() => {
-    return getMinimumSequence(bootstrap?.events)
-  }, [bootstrap?.events])
+    const newFloor = getMinimumSequence(bootstrap?.events)
+    // Reset when switching streams (component stays mounted across routes)
+    if (bootstrapFloorRef.current && bootstrapFloorRef.current.streamId !== streamId) {
+      bootstrapFloorRef.current = null
+    }
+    if (newFloor === null) return bootstrapFloorRef.current?.floor ?? null
+    if (bootstrapFloorRef.current !== null && bootstrapFloorRef.current.floor < newFloor) {
+      return bootstrapFloorRef.current.floor
+    }
+    bootstrapFloorRef.current = { streamId, floor: newFloor }
+    return newFloor
+  }, [bootstrap?.events, streamId])
 
   const olderFloor = useMemo(() => {
     const olderEvents = olderData?.pages.flatMap((page) => page.events).filter(Boolean) ?? []
