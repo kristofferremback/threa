@@ -3,14 +3,17 @@ import { toast } from "sonner"
 import { RefreshCw } from "lucide-react"
 import { useNavigate, useParams } from "react-router-dom"
 import { useAuth } from "@/auth"
+import { useActivityCounts, useAllDrafts, createDmDraftId, useDraftScratchpads, useUnreadCounts } from "@/hooks"
+import { useSyncStatus } from "@/sync/sync-status"
+import { useSyncEngine } from "@/sync/sync-engine"
 import {
-  useActivityCounts,
-  useAllDrafts,
-  createDmDraftId,
-  useDraftScratchpads,
-  useUnreadCounts,
-  useWorkspaceBootstrap,
-} from "@/hooks"
+  useWorkspaceUsers,
+  useWorkspaceStreams,
+  useWorkspaceStreamMemberships,
+  useWorkspaceDmPeers,
+  useWorkspaceFromStore,
+  useWorkspaceUnreadState,
+} from "@/stores/workspace-store"
 import { useCoordinatedLoading, useSidebar } from "@/contexts"
 import { useCreateChannel } from "@/components/create-channel"
 import { Button } from "@/components/ui/button"
@@ -41,7 +44,16 @@ export function Sidebar({ workspaceId }: SidebarProps) {
     collapseOnMobile,
   } = useSidebar()
   const { streamId: activeStreamId, "*": splat } = useParams<{ streamId: string; "*": string }>()
-  const { data: bootstrap, isLoading, error, retryBootstrap } = useWorkspaceBootstrap(workspaceId)
+  const syncStatus = useSyncStatus(`workspace:${workspaceId}`)
+  const syncEngine = useSyncEngine()
+  const isLoading = syncStatus === "syncing" || syncStatus === "idle"
+  const error = syncStatus === "error"
+  const workspace = useWorkspaceFromStore(workspaceId)
+  const unreadState = useWorkspaceUnreadState(workspaceId)
+  const workspaceUsers = useWorkspaceUsers(workspaceId)
+  const idbStreams = useWorkspaceStreams(workspaceId)
+  const idbStreamMemberships = useWorkspaceStreamMemberships(workspaceId)
+  const idbDmPeers = useWorkspaceDmPeers(workspaceId)
   const { createDraft } = useDraftScratchpads(workspaceId)
   const { getUnreadCount } = useUnreadCounts(workspaceId)
   const { getMentionCount, unreadActivityCount } = useActivityCounts(workspaceId)
@@ -49,7 +61,6 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   const { openCreateChannel } = useCreateChannel()
   const { user } = useAuth()
   const navigate = useNavigate()
-  const workspaceUsers = bootstrap?.users ?? []
   const currentUser = workspaceUsers.find((u) => u.workosUserId === user?.id) ?? null
 
   const draftCount = allDrafts.length
@@ -59,44 +70,42 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   // Build set of streams the user is a member of (for filtering public channels)
   const memberStreamIds = useMemo(() => {
     const ids = new Set<string>()
-    for (const m of bootstrap?.streamMemberships ?? []) ids.add(m.streamId)
+    for (const m of idbStreamMemberships) ids.add(m.streamId)
     return ids
-  }, [bootstrap?.streamMemberships])
+  }, [idbStreamMemberships])
 
   // Build set of muted streams (for suppressing unread badges)
-  const mutedStreamIdSet = useMemo(() => new Set(bootstrap?.mutedStreamIds ?? []), [bootstrap?.mutedStreamIds])
-  const dmPeerByStreamId = useMemo(
-    () => new Map((bootstrap?.dmPeers ?? []).map((peer) => [peer.streamId, peer.userId])),
-    [bootstrap?.dmPeers]
-  )
+  const mutedStreamIdSet = useMemo(() => new Set(unreadState?.mutedStreamIds ?? []), [unreadState?.mutedStreamIds])
+  const dmPeerByStreamId = useMemo(() => new Map(idbDmPeers.map((peer) => [peer.streamId, peer.userId])), [idbDmPeers])
 
   // Process streams into enriched data with urgency and section
   const processedStreams = useMemo(() => {
-    if (!bootstrap?.streams) return []
-
-    return bootstrap.streams
+    return idbStreams
       .filter((stream) => {
+        // Archived streams don't appear in the sidebar
+        if (stream.archivedAt) return false
         // Non-public streams always appear (bootstrap only includes them if user has access)
         if (stream.visibility !== Visibilities.PUBLIC) return true
         // Public channels: only show if user is a member
         return memberStreamIds.has(stream.id)
       })
       .map((stream): StreamItemData => {
+        const streamWithPreview = { ...stream, lastMessagePreview: stream.lastMessagePreview ?? null }
         const unreadCount = getUnreadCount(stream.id)
         const mentionCount = getMentionCount(stream.id)
         const isMuted = mutedStreamIdSet.has(stream.id)
-        const urgency = calculateUrgency(stream, unreadCount, mentionCount, isMuted)
-        const section = categorizeStream(stream, unreadCount, urgency)
+        const urgency = calculateUrgency(streamWithPreview, unreadCount, mentionCount, isMuted)
+        const section = categorizeStream(streamWithPreview, unreadCount, urgency)
         const dmPeerUserId = stream.type === StreamTypes.DM ? dmPeerByStreamId.get(stream.id) : undefined
 
         return {
-          ...stream,
+          ...streamWithPreview,
           urgency,
           section,
           dmPeerUserId,
         }
       })
-  }, [bootstrap?.streams, memberStreamIds, mutedStreamIdSet, getUnreadCount, getMentionCount, dmPeerByStreamId])
+  }, [idbStreams, memberStreamIds, mutedStreamIdSet, getUnreadCount, getMentionCount, dmPeerByStreamId, unreadState])
 
   // System streams are auto-created infrastructure — don't count toward "has content"
   const hasUserStreamsFromStreams = processedStreams.some((s) => s.type !== StreamTypes.SYSTEM)
@@ -105,7 +114,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   const virtualDmStreams = useMemo(() => {
     if (workspaceUsers.length === 0 || !currentUser) return []
 
-    const dmPeerIds = new Set((bootstrap?.dmPeers ?? []).map((peer) => peer.userId))
+    const dmPeerIds = new Set(idbDmPeers.map((peer) => peer.userId))
     const now = new Date().toISOString()
 
     return workspaceUsers
@@ -136,7 +145,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
         })
       )
       .sort((a, b) => (a.displayName ?? "").localeCompare(b.displayName ?? ""))
-  }, [workspaceUsers, bootstrap?.dmPeers, currentUser, workspaceId])
+  }, [workspaceUsers, idbDmPeers, currentUser, workspaceId])
 
   const hasUserStreams = hasUserStreamsFromStreams || virtualDmStreams.length > 0
 
@@ -273,7 +282,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   }
 
   // Show error state with retry button
-  if (error && !bootstrap) {
+  if (error && idbStreams.length === 0) {
     return (
       <SidebarShell
         header={<HeaderSkeleton />}
@@ -281,7 +290,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
         streamList={
           <div className="flex flex-col items-center justify-center h-full p-4 text-center">
             <p className="text-sm text-muted-foreground mb-3">Failed to load workspace</p>
-            <Button variant="outline" size="sm" onClick={retryBootstrap} className="gap-2">
+            <Button variant="outline" size="sm" onClick={() => syncEngine.retryWorkspace()} className="gap-2">
               <RefreshCw className="h-4 w-4" />
               Retry
             </Button>
@@ -311,7 +320,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
       sidebarRef={sidebarRef}
       header={
         <SidebarHeader
-          workspaceName={bootstrap?.workspace.name ?? "Loading..."}
+          workspaceName={workspace?.name ?? ""}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
           hideViewToggle={!hasUserStreams}

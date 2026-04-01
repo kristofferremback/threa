@@ -1,26 +1,26 @@
-import { useQueryClient } from "@tanstack/react-query"
-import { workspaceKeys } from "./use-workspaces"
-import type { WorkspaceBootstrap } from "@threa/types"
+import { useCallback, useRef } from "react"
+import { useWorkspaceUnreadState } from "@/stores/workspace-store"
 
 export function useActivityCounts(workspaceId: string) {
-  const queryClient = useQueryClient()
+  const unreadState = useWorkspaceUnreadState(workspaceId)
+  const mentionCounts = unreadState?.mentionCounts ?? {}
+  const activityCounts = unreadState?.activityCounts ?? {}
+  const unreadActivityCount = unreadState?.unreadActivityCount ?? 0
 
-  const bootstrap = queryClient.getQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId))
-  const mentionCounts = bootstrap?.mentionCounts ?? {}
-  const activityCounts = bootstrap?.activityCounts ?? {}
-  const unreadActivityCount = bootstrap?.unreadActivityCount ?? 0
+  // Refs keep callback identity stable so sidebar memos don't cascade
+  const mentionCountsRef = useRef(mentionCounts)
+  mentionCountsRef.current = mentionCounts
+  const activityCountsRef = useRef(activityCounts)
+  activityCountsRef.current = activityCounts
 
-  const getMentionCount = (streamId: string): number => {
-    return mentionCounts[streamId] ?? 0
-  }
+  const getMentionCount = useCallback((streamId: string): number => mentionCountsRef.current[streamId] ?? 0, [])
 
-  const getActivityCount = (streamId: string): number => {
-    return activityCounts[streamId] ?? 0
-  }
+  const getActivityCount = useCallback((streamId: string): number => activityCountsRef.current[streamId] ?? 0, [])
 
-  const getTotalMentionCount = (): number => {
-    return Object.values(mentionCounts).reduce((sum, count) => sum + count, 0)
-  }
+  const getTotalMentionCount = useCallback(
+    (): number => Object.values(mentionCountsRef.current).reduce((sum, count) => sum + count, 0),
+    []
+  )
 
   return {
     mentionCounts,

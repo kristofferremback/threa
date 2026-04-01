@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useRef, type ReactNode } from "react"
+import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from "react"
 import { db } from "@/db"
 
 type MessageStatus = "pending" | "failed"
@@ -10,6 +10,8 @@ interface PendingMessagesContextValue {
   markSent: (id: string) => void
   /** Reset a failed message's retry count and re-enqueue it for sending */
   retryMessage: (id: string) => Promise<void>
+  /** Permanently delete a failed message from the outbox and timeline */
+  deleteMessage: (id: string) => Promise<void>
   /** Kick the background message queue to process the next pending message */
   notifyQueue: () => void
   /** Register the queue's notify callback (called by useMessageQueue). Pass null to unregister. */
@@ -26,6 +28,21 @@ export function PendingMessagesProvider({ children }: PendingMessagesProviderPro
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set())
   const [failedIds, setFailedIds] = useState<Set<string>>(new Set())
   const queueNotifyRef = useRef<(() => void) | null>(null)
+
+  // Hydrate pending/failed state from IDB on mount so it survives page reload.
+  // The _status field on CachedEvent is the durable source of truth.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const pending = await db.events.where("_status").equals("pending").primaryKeys()
+        const failed = await db.events.where("_status").equals("failed").primaryKeys()
+        if (pending.length > 0) setPendingIds(new Set(pending as string[]))
+        if (failed.length > 0) setFailedIds(new Set(failed as string[]))
+      } catch {
+        // Best-effort — works in browser, may fail in test environment mocks
+      }
+    })()
+  }, [])
 
   const getStatus = useCallback(
     (id: string): MessageStatus | null => {
@@ -80,17 +97,17 @@ export function PendingMessagesProvider({ children }: PendingMessagesProviderPro
 
   const retryMessage = useCallback(
     async (id: string) => {
-      // Verify the message still exists — it may have been deleted after
-      // MAX_RETRY_COUNT exhaustion. Without this guard, markPending would
-      // lock the UI in "pending" with no queue record to resolve it.
+      // Verify the message still exists — the user may have deleted it
+      // while the retry button was visible. Without this guard, markPending
+      // would lock the UI in "pending" with no queue record to resolve it.
       const existing = await db.pendingMessages.get(id)
       if (!existing) return
 
-      // Reset retry count so the queue processor will pick it up again
+      // Reset retry count AND backoff so the queue picks it up immediately.
       // Dexie's deep KeyPaths inference hits a circular type on JSONContent.
       // Cast through unknown to bypass the broken type inference.
       type UpdateFn = (key: string, changes: Record<string, unknown>) => Promise<number>
-      await (db.pendingMessages.update as unknown as UpdateFn)(id, { retryCount: 0 })
+      await (db.pendingMessages.update as unknown as UpdateFn)(id, { retryCount: 0, retryAfter: 0 })
       await db.events.update(id, { _status: "pending" })
       markPending(id)
       notifyQueue()
@@ -98,9 +115,34 @@ export function PendingMessagesProvider({ children }: PendingMessagesProviderPro
     [markPending, notifyQueue]
   )
 
+  const deleteMessage = useCallback(async (id: string) => {
+    await db.pendingMessages.delete(id)
+    await db.events.delete(id)
+    // Clear from React state
+    setPendingIds((prev) => {
+      const next = new Set(prev)
+      next.delete(id)
+      return next
+    })
+    setFailedIds((prev) => {
+      const next = new Set(prev)
+      next.delete(id)
+      return next
+    })
+  }, [])
+
   return (
     <PendingMessagesContext.Provider
-      value={{ getStatus, markPending, markFailed, markSent, retryMessage, notifyQueue, registerQueueNotify }}
+      value={{
+        getStatus,
+        markPending,
+        markFailed,
+        markSent,
+        retryMessage,
+        deleteMessage,
+        notifyQueue,
+        registerQueueNotify,
+      }}
     >
       {children}
     </PendingMessagesContext.Provider>

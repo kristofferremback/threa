@@ -1,9 +1,11 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react"
 import { createPortal } from "react-dom"
 import { useNavigate } from "react-router-dom"
-import { useDraftComposer, getDraftMessageKey, useStreamOrDraft, useWorkspaceBootstrap } from "@/hooks"
+import { useDraftComposer, getDraftMessageKey, useStreamOrDraft } from "@/hooks"
+import { useWorkspaceStreams } from "@/stores/workspace-store"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { usePreferences } from "@/contexts"
+import { useConnectionState } from "@/components/layout/connection-status"
 import { MessageComposer } from "@/components/composer"
 import { commandsApi } from "@/api"
 import { isCommand } from "@/lib/commands"
@@ -12,6 +14,7 @@ import { useEditLastMessage } from "./edit-last-message-context"
 import { useInlineEdit } from "./inline-edit-context"
 import { StreamTypes, type JSONContent } from "@threa/types"
 import type { MentionStreamContext } from "@/hooks/use-mentionables"
+import type { PendingAttachment } from "@/hooks/use-attachments"
 
 interface MessageInputProps {
   workspaceId: string
@@ -19,6 +22,152 @@ interface MessageInputProps {
   disabled?: boolean
   disabledReason?: string
   autoFocus?: boolean
+}
+
+function attachmentMatchKey(attachment: Pick<PendingAttachment, "filename" | "mimeType">): string {
+  return `${attachment.filename}::${attachment.mimeType}`
+}
+
+export function extractUploadedAttachments(content: JSONContent): Array<{
+  id: string
+  filename: string
+  mimeType: string
+  sizeBytes: number
+}> {
+  const attachments = new Map<string, { id: string; filename: string; mimeType: string; sizeBytes: number }>()
+
+  const visitNode = (node: JSONContent): void => {
+    if (
+      node.type === "attachmentReference" &&
+      typeof node.attrs?.id === "string" &&
+      !node.attrs.id.startsWith("temp_") &&
+      typeof node.attrs?.filename === "string" &&
+      typeof node.attrs?.mimeType === "string" &&
+      typeof node.attrs?.sizeBytes === "number"
+    ) {
+      attachments.set(node.attrs.id, {
+        id: node.attrs.id,
+        filename: node.attrs.filename,
+        mimeType: node.attrs.mimeType,
+        sizeBytes: node.attrs.sizeBytes,
+      })
+    }
+
+    for (const child of node.content ?? []) {
+      visitNode(child)
+    }
+  }
+
+  visitNode(content)
+  return Array.from(attachments.values())
+}
+
+export function materializePendingAttachmentReferences(
+  content: JSONContent,
+  pendingAttachments: PendingAttachment[]
+): JSONContent {
+  const uploadedQueues = new Map<string, PendingAttachment[]>()
+  for (const attachment of pendingAttachments) {
+    if (attachment.status !== "uploaded") continue
+    const key = attachmentMatchKey(attachment)
+    const queue = uploadedQueues.get(key)
+    if (queue) {
+      queue.push(attachment)
+    } else {
+      uploadedQueues.set(key, [attachment])
+    }
+  }
+
+  let nextImageIndex = 1
+
+  const visitNode = (node: JSONContent): JSONContent => {
+    if (node.type === "attachmentReference") {
+      const filename = typeof node.attrs?.filename === "string" ? node.attrs.filename : ""
+      const mimeType =
+        typeof node.attrs?.mimeType === "string" && node.attrs.mimeType.length > 0
+          ? node.attrs.mimeType
+          : "application/octet-stream"
+      const isImage = mimeType.startsWith("image/")
+      const matchedUpload = uploadedQueues.get(attachmentMatchKey({ filename, mimeType }))?.shift()
+      let imageIndex = node.attrs?.imageIndex
+      if (isImage && typeof node.attrs?.imageIndex === "number" && node.attrs.imageIndex > 0) {
+        imageIndex = node.attrs.imageIndex
+      } else if (isImage && matchedUpload) {
+        imageIndex = nextImageIndex
+      }
+
+      if (matchedUpload) {
+        if (isImage) nextImageIndex += 1
+        return {
+          ...node,
+          attrs: {
+            ...node.attrs,
+            id: matchedUpload.id,
+            filename: matchedUpload.filename,
+            mimeType: matchedUpload.mimeType,
+            sizeBytes: matchedUpload.sizeBytes,
+            status: "uploaded",
+            imageIndex: isImage ? imageIndex : null,
+            error: null,
+          },
+        }
+      }
+
+      if (isImage && typeof imageIndex === "number" && imageIndex > 0) {
+        nextImageIndex = Math.max(nextImageIndex, imageIndex + 1)
+      }
+    }
+
+    if (!node.content) {
+      return node
+    }
+
+    return {
+      ...node,
+      content: node.content.map((child) => visitNode(child)),
+    }
+  }
+
+  const materializedContent = visitNode(content)
+  const remainingAttachments = Array.from(uploadedQueues.values()).flatMap((queue) => queue)
+  if (remainingAttachments.length === 0) {
+    return materializedContent
+  }
+
+  const fallbackParagraph: JSONContent = {
+    type: "paragraph",
+    content: remainingAttachments.flatMap((attachment, index) => {
+      const isImage = attachment.mimeType.startsWith("image/")
+      const imageIndex = isImage ? nextImageIndex++ : null
+
+      const nodes: JSONContent[] = [
+        {
+          type: "attachmentReference",
+          attrs: {
+            id: attachment.id,
+            filename: attachment.filename,
+            mimeType: attachment.mimeType,
+            sizeBytes: attachment.sizeBytes,
+            status: "uploaded",
+            imageIndex,
+            error: null,
+          },
+        },
+      ]
+
+      if (index < remainingAttachments.length - 1) {
+        nodes.push({ type: "text", text: " " })
+      }
+
+      return nodes
+    }),
+  }
+
+  return {
+    ...materializedContent,
+    type: materializedContent.type ?? "doc",
+    content: [...(materializedContent.content ?? []), fallbackParagraph],
+  }
 }
 
 export function MessageInput({ workspaceId, streamId, disabled, disabledReason, autoFocus }: MessageInputProps) {
@@ -30,17 +179,17 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   const draftKey = getDraftMessageKey({ type: "stream", streamId })
 
   // Resolve stream context for broadcast mention filtering.
-  // For threads, look up the root stream's type from workspace bootstrap.
-  const { data: wsBootstrap } = useWorkspaceBootstrap(workspaceId)
+  // For threads, look up the root stream's type from IDB workspace streams.
+  const idbStreams = useWorkspaceStreams(workspaceId)
   const streamContext = useMemo<MentionStreamContext | undefined>(() => {
     if (!stream) return undefined
     const ctx: MentionStreamContext = { streamType: stream.type }
-    if (stream.type === StreamTypes.THREAD && stream.rootStreamId && wsBootstrap) {
-      const rootStream = wsBootstrap.streams.find((s) => s.id === stream.rootStreamId)
+    if (stream.type === StreamTypes.THREAD && stream.rootStreamId) {
+      const rootStream = idbStreams.find((s) => s.id === stream.rootStreamId)
       if (rootStream) ctx.rootStreamType = rootStream.type
     }
     return ctx
-  }, [stream, wsBootstrap])
+  }, [stream, idbStreams])
 
   const composer = useDraftComposer({ workspaceId, draftKey, scopeId: streamId })
   const [error, setError] = useState<string | null>(null)
@@ -48,6 +197,8 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   const messageSendMode = preferences?.messageSendMode ?? "enter"
   const isMobile = useIsMobile()
   const hideForInlineEdit = isMobile && !!inlineEdit?.isEditingInline
+  const connectionState = useConnectionState()
+  const isOffline = connectionState !== "connected"
 
   // Resolve the portal target for the expanded overlay by walking up from our own DOM node
   // to the closest [data-editor-zone] ancestor. Works for both main stream view and thread panel.
@@ -99,73 +250,83 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     return () => document.removeEventListener("keydown", onKeyDown)
   }, [expanded])
 
-  const handleSubmit = useCallback(async () => {
-    if (!composer.canSend) return
+  const handleSubmit = useCallback(
+    async (editorContent?: JSONContent) => {
+      if (!composer.canSend) return
 
-    composer.setIsSending(true)
-    setError(null)
+      composer.setIsSending(true)
+      setError(null)
 
-    // Serialize content to markdown to check for commands
-    const contentMarkdown = serializeToMarkdown(composer.content)
+      const pendingAttachments = composer.getPendingAttachmentsSnapshot()
+      const liveContent = editorContent ?? composer.content
+      const normalizedContent = materializePendingAttachmentReferences(liveContent, pendingAttachments)
 
-    // Detect slash commands and dispatch them instead of sending as messages
-    if (isCommand(contentMarkdown.trim())) {
-      // Clear input immediately for responsiveness
+      // Serialize content to markdown to check for commands
+      const contentMarkdown = serializeToMarkdown(normalizedContent)
+
+      // Detect slash commands and dispatch them instead of sending as messages
+      if (isCommand(contentMarkdown.trim())) {
+        // Clear input immediately for responsiveness
+        const emptyDoc: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
+        composer.setContent(emptyDoc)
+        composer.clearDraft()
+        setExpanded(false)
+
+        try {
+          const result = await commandsApi.dispatch(workspaceId, {
+            command: contentMarkdown.trim(),
+            streamId,
+          })
+
+          if (!result.success) {
+            setError(result.error)
+          }
+        } catch {
+          setError("Failed to dispatch command. Please try again.")
+        } finally {
+          composer.setIsSending(false)
+        }
+        return
+      }
+
+      const attachments = extractUploadedAttachments(normalizedContent)
+      const attachmentIds = attachments.map((attachment) => attachment.id)
+
+      // Capture content before clearing
+      const contentJson = liveContent
       const emptyDoc: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
-      composer.setContent(emptyDoc)
-      composer.clearDraft()
-      setExpanded(false)
 
       try {
-        const result = await commandsApi.dispatch(workspaceId, {
-          command: contentMarkdown.trim(),
-          streamId,
+        // Clear the editor immediately so the composer does not briefly show the
+        // just-sent content alongside the optimistic timeline event.
+        // We keep the durable draft until send succeeds, so failures can still
+        // restore the UI without losing content.
+        composer.setContent(emptyDoc)
+        setExpanded(false)
+
+        const result = await sendMessage({
+          contentJson: normalizedContent,
+          attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
+          attachments: attachments.length > 0 ? attachments : undefined,
         })
 
-        if (!result.success) {
-          setError(result.error)
+        composer.setContent(emptyDoc)
+        composer.clearDraft()
+        composer.clearAttachments()
+        if (result.navigateTo) {
+          navigate(result.navigateTo, { replace: result.replace ?? false })
         }
       } catch {
-        setError("Failed to dispatch command. Please try again.")
+        // This only happens for draft promotion failure (stream creation failed)
+        // Real stream message failures are handled in the timeline with retry
+        composer.setContent(contentJson)
+        setError("Failed to create stream. Please try again.")
       } finally {
         composer.setIsSending(false)
       }
-      return
-    }
-
-    const attachmentIds = composer.uploadedIds
-    // Capture full attachment info BEFORE clearing for optimistic UI
-    const attachments = composer.pendingAttachments
-      .filter((a) => a.status === "uploaded" && !a.id.startsWith("temp_"))
-      .map(({ id, filename, mimeType, sizeBytes }) => ({ id, filename, mimeType, sizeBytes }))
-
-    // Capture content before clearing
-    const contentJson = composer.content
-
-    // Clear input immediately for responsiveness
-    const emptyDoc: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
-    composer.setContent(emptyDoc)
-    composer.clearDraft()
-    composer.clearAttachments()
-    setExpanded(false)
-
-    try {
-      const result = await sendMessage({
-        contentJson,
-        attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
-        attachments: attachments.length > 0 ? attachments : undefined,
-      })
-      if (result.navigateTo) {
-        navigate(result.navigateTo, { replace: result.replace ?? false })
-      }
-    } catch {
-      // This only happens for draft promotion failure (stream creation failed)
-      // Real stream message failures are handled in the timeline with retry
-      setError("Failed to create stream. Please try again.")
-    } finally {
-      composer.setIsSending(false)
-    }
-  }, [composer, sendMessage, navigate, workspaceId, streamId])
+    },
+    [composer, sendMessage, navigate, workspaceId, streamId]
+  )
 
   if (disabled && disabledReason) {
     return (
@@ -193,6 +354,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     canSubmit: composer.canSend,
     isSubmitting: composer.isSending,
     hasFailed: composer.hasFailed,
+    placeholder: isOffline ? "Type a message — sent when back online" : undefined,
     messageSendMode,
     scopeId: streamId,
     onEditLastMessage: triggerEditLast,

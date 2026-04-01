@@ -35,7 +35,7 @@ interface SidebarStreamListProps {
 export function SidebarStreamList({
   workspaceId,
   viewMode,
-  isLoading,
+  isLoading: _isLoading,
   hasError,
   hasUserStreams,
   activeStreamId,
@@ -52,9 +52,7 @@ export function SidebarStreamList({
 }: SidebarStreamListProps) {
   let content: React.ReactNode
 
-  if (isLoading) {
-    content = <p className="px-2 py-4 text-xs text-muted-foreground text-center">Loading...</p>
-  } else if (hasError) {
+  if (hasError) {
     content = <p className="px-2 py-4 text-xs text-destructive text-center">Failed to load</p>
   } else if (!hasUserStreams) {
     content = (

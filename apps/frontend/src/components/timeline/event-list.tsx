@@ -1,3 +1,4 @@
+import { memo, useMemo } from "react"
 import {
   COMMAND_EVENT_TYPES,
   AGENT_SESSION_EVENT_TYPES,
@@ -10,11 +11,13 @@ import {
   type CommandFailedPayload,
 } from "@threa/types"
 import type { MessageAgentActivity } from "@/hooks"
+import { useCoordinatedLoading } from "@/contexts"
 import { EventItem } from "./event-item"
 import { AgentSessionEvent } from "./agent-session-event"
 import { CommandEvent } from "./command-event"
 import { UnreadDivider } from "./unread-divider"
 import { useUser } from "@/auth"
+import { Skeleton } from "@/components/ui/skeleton"
 
 interface EventListProps {
   events: StreamEvent[]
@@ -153,7 +156,7 @@ export function groupTimelineItems(events: StreamEvent[], currentUserId: string 
   return result
 }
 
-export function EventList({
+export const EventList = memo(function EventList({
   events,
   isLoading,
   workspaceId,
@@ -165,12 +168,43 @@ export function EventList({
   hideSessionCards,
   newMessageIds,
 }: EventListProps) {
+  const { phase } = useCoordinatedLoading()
   const user = useUser()
+
+  // Hooks must be called unconditionally (Rules of Hooks) — place above early returns
+  const timelineItems = useMemo(() => groupTimelineItems(events, user?.id), [events, user?.id])
+
+  const sessionLiveCounts = useMemo(() => {
+    const counts = new Map<string, { stepCount: number; messageCount: number }>()
+    if (agentActivity) {
+      for (const activity of agentActivity.values()) {
+        counts.set(activity.sessionId, {
+          stepCount: activity.stepCount,
+          messageCount: activity.messageCount,
+        })
+      }
+    }
+    return counts
+  }, [agentActivity])
 
   if (isLoading) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <p className="text-muted-foreground">Loading...</p>
+      <div className="flex flex-col gap-4 px-4 py-6 sm:px-6">
+        <div className="flex gap-3">
+          <Skeleton className="h-9 w-9 rounded-full" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-4 w-32" />
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-2/3" />
+          </div>
+        </div>
+        <div className="flex gap-3">
+          <Skeleton className="h-9 w-9 rounded-full" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-4 w-24" />
+            <Skeleton className="h-4 w-5/6" />
+          </div>
+        </div>
       </div>
     )
   }
@@ -186,8 +220,6 @@ export function EventList({
     )
   }
 
-  const timelineItems = groupTimelineItems(events, user?.id)
-
   // Helper to check if an item is the first unread event
   const isFirstUnread = (item: TimelineItem): boolean => {
     if (!firstUnreadEventId) return false
@@ -195,17 +227,6 @@ export function EventList({
       return item.events[0]?.id === firstUnreadEventId
     }
     return item.event.id === firstUnreadEventId
-  }
-
-  // Build sessionId → live counts lookup from agentActivity (keyed by triggerMessageId)
-  const sessionLiveCounts = new Map<string, { stepCount: number; messageCount: number }>()
-  if (agentActivity) {
-    for (const activity of agentActivity.values()) {
-      sessionLiveCounts.set(activity.sessionId, {
-        stepCount: activity.stepCount,
-        messageCount: activity.messageCount,
-      })
-    }
   }
 
   return (
@@ -249,6 +270,7 @@ export function EventList({
                 highlightMessageId={highlightMessageId}
                 agentActivity={hideSessionCards ? agentActivity : undefined}
                 isNew={newMessageIds?.has(item.event.id)}
+                deferSecondaryHydration={phase !== "ready"}
               />
             )}
           </div>
@@ -256,4 +278,4 @@ export function EventList({
       })}
     </div>
   )
-}
+})

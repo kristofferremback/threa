@@ -22,6 +22,49 @@ test.describe("Agent Activity", () => {
     await loginAndCreateWorkspace(page, "agent-activity")
   })
 
+  function getWorkspaceAndStreamIds(page: import("@playwright/test").Page) {
+    const match = page.url().match(/\/w\/([^/]+)\/s\/([^/?]+)/)
+    if (!match) {
+      throw new Error(`Could not determine workspace/stream from URL: ${page.url()}`)
+    }
+    return { workspaceId: match[1], streamId: match[2] }
+  }
+
+  async function waitForThreadId(page: import("@playwright/test").Page, messageText: string) {
+    const { workspaceId, streamId } = getWorkspaceAndStreamIds(page)
+    const deadline = Date.now() + AGENT_COMPLETION_TIMEOUT
+
+    while (Date.now() < deadline) {
+      const bootstrapRes = await page.request.get(`/api/workspaces/${workspaceId}/streams/${streamId}/bootstrap`)
+      if (bootstrapRes.ok()) {
+        const { data } = (await bootstrapRes.json()) as {
+          data: {
+            events: Array<{
+              eventType: string
+              payload?: {
+                contentMarkdown?: string
+                threadId?: string
+                replyCount?: number
+              }
+            }>
+          }
+        }
+
+        const triggerEvent = data.events.find(
+          (event) => event.eventType === "message_created" && event.payload?.contentMarkdown?.includes(messageText)
+        )
+
+        if (triggerEvent?.payload?.threadId && (triggerEvent.payload.replyCount ?? 0) > 0) {
+          return { workspaceId, streamId, threadId: triggerEvent.payload.threadId }
+        }
+      }
+
+      await page.waitForTimeout(500)
+    }
+
+    throw new Error(`Timed out waiting for thread creation for message: ${messageText}`)
+  }
+
   /** Send an @ariadne mention in the current channel editor */
   async function sendMention(page: import("@playwright/test").Page, message: string) {
     const editor = page.locator("[contenteditable='true']")
@@ -32,19 +75,15 @@ test.describe("Agent Activity", () => {
     await expect(editor.locator('span[data-type="mention"][data-slug="ariadne"]')).toBeVisible()
     await page.keyboard.type(` ${message}`)
     await page.keyboard.press("Meta+Enter")
-    await expect(page.getByText(message)).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole("main").locator(".message-item").filter({ hasText: message }).first()).toBeVisible({
+      timeout: 5000,
+    })
   }
 
-  /** Wait for agent to complete and open the resulting thread */
+  /** Wait for agent to create the thread and open it directly */
   async function waitForAgentAndOpenThread(page: import("@playwright/test").Page, messageText: string) {
-    const triggerMessage = page.getByRole("main").locator(".group").filter({ hasText: messageText }).first()
-    const replyIndicator = triggerMessage.getByText(/\d+ repl/i)
-
-    // Wait for reply indicator — means the agent completed and sent a message to the thread
-    await expect(replyIndicator).toBeVisible({ timeout: AGENT_COMPLETION_TIMEOUT })
-
-    // Click the reply indicator to open the thread panel
-    await replyIndicator.click()
+    const { workspaceId, streamId, threadId } = await waitForThreadId(page, messageText)
+    await page.goto(`/w/${workspaceId}/s/${streamId}?panel=${threadId}`)
 
     // Wait for thread panel to load with content (not just the empty "Start a new thread" state)
     await expect(page.getByText("stub response from the companion")).toBeVisible({ timeout: 10000 })
@@ -70,15 +109,13 @@ test.describe("Agent Activity", () => {
     await sendMention(page, "do your thing")
 
     // Wait for agent to complete
-    const triggerMessage = page.getByRole("main").locator(".group").filter({ hasText: "do your thing" }).first()
-    const replyIndicator = triggerMessage.getByText(/\d+ repl/i)
-    await expect(replyIndicator).toBeVisible({ timeout: AGENT_COMPLETION_TIMEOUT })
+    const { workspaceId, streamId, threadId } = await waitForThreadId(page, "do your thing")
 
     // Session card should NOT be visible in the channel view
     await expect(page.getByText("Session complete")).not.toBeVisible({ timeout: 2000 })
 
     // Open thread
-    await replyIndicator.click()
+    await page.goto(`/w/${workspaceId}/s/${streamId}?panel=${threadId}`)
 
     // Session card SHOULD be visible in the thread
     await expect(page.getByText("Session complete")).toBeVisible({ timeout: 10000 })

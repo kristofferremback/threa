@@ -2,7 +2,13 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { useNavigate } from "react-router-dom"
 import { Search, Terminal, FileText } from "lucide-react"
 import { ResponsiveDialog, ResponsiveDialogContent } from "@/components/ui/responsive-dialog"
-import { useWorkspaceBootstrap, useDraftScratchpads } from "@/hooks"
+import { useDraftScratchpads } from "@/hooks"
+import {
+  useWorkspaceUsers,
+  useWorkspaceStreams,
+  useWorkspaceStreamMemberships,
+  useWorkspaceDmPeers,
+} from "@/stores/workspace-store"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useSettings } from "@/contexts"
 import { useUser } from "@/auth"
@@ -62,11 +68,15 @@ export function getDisplayQuery(query: string, mode: QuickSwitcherMode): string 
 
 export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: QuickSwitcherProps) {
   const navigate = useNavigate()
-  const { data: bootstrap } = useWorkspaceBootstrap(workspaceId)
   const user = useUser()
   const { createDraft } = useDraftScratchpads(workspaceId)
   const { openSettings } = useSettings()
   const { openCreateChannel } = useCreateChannel()
+
+  const streams = useWorkspaceStreams(workspaceId)
+  const streamMemberships = useWorkspaceStreamMemberships(workspaceId)
+  const users = useWorkspaceUsers(workspaceId)
+  const dmPeers = useWorkspaceDmPeers(workspaceId)
 
   const [query, setQuery] = useState("")
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -89,14 +99,10 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
     )
   }, [mode])
 
-  const streams = useMemo(() => bootstrap?.streams ?? [], [bootstrap?.streams])
-  const streamMemberships = useMemo(() => bootstrap?.streamMemberships ?? [], [bootstrap?.streamMemberships])
-  const users = useMemo(() => bootstrap?.users ?? [], [bootstrap?.users])
   const currentUserId = useMemo(
     () => users.find((workspaceUser) => workspaceUser.workosUserId === user?.id)?.id ?? null,
     [users, user?.id]
   )
-  const dmPeers = bootstrap?.dmPeers
 
   const isMobile = useIsMobile()
   const inputRef = useRef<HTMLInputElement>(null)

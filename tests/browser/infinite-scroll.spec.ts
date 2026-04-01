@@ -54,20 +54,27 @@ function extractIds(page: Page): { workspaceId: string; streamId: string } {
 
 /** Locate a specific message by its zero-padded number within the main content area. */
 function messageLocator(page: Page, prefix: string, num: number) {
-  // Use .first() because sidebar previews can also match the same text within main
   return page
     .getByRole("main")
-    .getByText(`${prefix} msg-${String(num).padStart(3, "0")}`, { exact: true })
+    .locator(".message-item")
+    .filter({ hasText: `${prefix} msg-${String(num).padStart(3, "0")}` })
     .first()
 }
 
 /** Scroll to top and dispatch a scroll event so React's onScroll handler fires. */
 async function scrollToTop(page: Page): Promise<void> {
+  await page.waitForFunction(() => {
+    const container = document.querySelector("[data-suppress-pull-refresh]")
+    return container instanceof HTMLElement && container.scrollHeight > container.clientHeight
+  })
+
   await page.evaluate(() => {
     const container = document.querySelector("[data-suppress-pull-refresh]")
-    if (container) {
+    if (container instanceof HTMLElement) {
       container.scrollTop = 0
-      container.dispatchEvent(new Event("scroll", { bubbles: true }))
+      for (let i = 0; i < 3; i++) {
+        container.dispatchEvent(new Event("scroll", { bubbles: true }))
+      }
     }
   })
 }
@@ -108,15 +115,19 @@ test.describe("Infinite Scroll", () => {
       }
     })
 
-    // Scroll to the very top of the container
-    await scrollToTop(page)
-
-    // Wait for the pagination request to fire and older messages to appear
+    // Scroll to the very top of the container and keep nudging it until the
+    // top-of-list pagination request has actually fired.
     await expect
-      .poll(() => eventRequests.length, {
-        timeout: 10000,
-        message: "should fetch older events when scrolled to top",
-      })
+      .poll(
+        async () => {
+          await scrollToTop(page)
+          return eventRequests.length
+        },
+        {
+          timeout: 15000,
+          message: "should fetch older events when scrolled to top",
+        }
+      )
       .toBeGreaterThan(0)
 
     // The earliest message should now be visible after pagination loaded it

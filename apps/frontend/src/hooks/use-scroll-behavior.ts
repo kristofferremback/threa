@@ -10,9 +10,9 @@ interface UseScrollBehaviorOptions {
   /** Number of items in the list (triggers scroll when changes) */
   itemCount: number
   /** Called when user scrolls near the top (for loading older messages) */
-  onScrollNearTop?: () => void
+  onScrollNearTop?: () => boolean
   /** Called when user scrolls near the bottom (for loading newer messages in jump-to mode) */
-  onScrollNearBottom?: () => void
+  onScrollNearBottom?: () => boolean
   /** Whether infinite scroll is currently fetching older events */
   isFetchingOlder?: boolean
   /** Whether infinite scroll is currently fetching newer events */
@@ -24,6 +24,8 @@ interface UseScrollBehaviorOptions {
    * Default: EVENT_PAGE_SIZE * SCROLL_FETCH_RATIO (25)
    */
   triggerItemCount?: number
+  /** When this key changes, all scroll state resets (e.g. streamId). */
+  resetKey?: string
 }
 
 interface UseScrollBehaviorReturn {
@@ -33,6 +35,10 @@ interface UseScrollBehaviorReturn {
   handleScroll: () => void
   /** True when scrolled ~10+ items away from the bottom */
   isScrolledFarFromBottom: boolean
+  /** Imperatively scroll to the bottom and clear the jump-to-latest state */
+  scrollToBottom: (options?: { behavior?: ScrollBehavior; force?: boolean }) => void
+  /** Disable auto-scroll (e.g. when navigating to a specific message via jump mode) */
+  disableAutoScroll: () => void
 }
 
 /**
@@ -54,6 +60,7 @@ export function useScrollBehavior({
   isFetchingNewer = false,
   bottomThreshold = 100,
   triggerItemCount = Math.floor(EVENT_PAGE_SIZE * SCROLL_FETCH_RATIO),
+  resetKey,
 }: UseScrollBehaviorOptions): UseScrollBehaviorReturn {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const shouldAutoScroll = useRef(true)
@@ -67,11 +74,47 @@ export function useScrollBehavior({
   // between React re-renders while the user scrolls within the trigger zone.
   const olderFetchScheduled = useRef(false)
   const newerFetchScheduled = useRef(false)
+  // When a force-scroll (e.g. Jump to latest) is in progress, intermediate
+  // handleScroll events during smooth animation should not re-show the button.
+  const isForceScrolling = useRef(false)
 
-  const scrollToBottom = useCallback(() => {
-    if (scrollContainerRef.current && shouldAutoScroll.current) {
-      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight
+  // Reset all scroll state when the content source changes (e.g. stream switch).
+  // Must be useLayoutEffect (not useEffect) so the reset runs synchronously
+  // BEFORE the scroll-adjustment useLayoutEffect below — otherwise the scroll
+  // logic reads stale prevItemCount from the old stream.
+  useLayoutEffect(() => {
+    shouldAutoScroll.current = true
+    prevItemCount.current = 0
+    prevScrollHeight.current = 0
+    prevIsFetchingOlder.current = false
+    prevIsFetchingNewer.current = false
+    olderFetchScheduled.current = false
+    newerFetchScheduled.current = false
+    setIsScrolledFarFromBottom(false)
+  }, [resetKey])
+
+  const scrollToBottom = useCallback((options?: { behavior?: ScrollBehavior; force?: boolean }) => {
+    const el = scrollContainerRef.current
+    if (!el) return
+
+    if (!options?.force && !shouldAutoScroll.current) {
+      return
     }
+
+    shouldAutoScroll.current = true
+    // For forced scrolls (Jump to latest), suppress handleScroll from re-showing
+    // the button during smooth scroll animation. Cleared when scroll reaches bottom.
+    if (options?.force) {
+      isForceScrolling.current = true
+      setIsScrolledFarFromBottom(false)
+    }
+
+    if (options?.behavior) {
+      el.scrollTo({ top: el.scrollHeight, behavior: options.behavior })
+      return
+    }
+
+    el.scrollTop = el.scrollHeight
   }, [])
 
   // Scroll position preservation and initial scroll.
@@ -101,6 +144,16 @@ export function useScrollBehavior({
       }
     } else if (shouldAutoScroll.current) {
       scrollToBottom()
+    } else if (itemCount > oldCount && !olderContentJustArrived && prevScrollHeight.current > 0) {
+      // New content appended at bottom, but shouldAutoScroll was cleared by a
+      // rapid scroll event during content growth (scrollHeight grew faster than
+      // scrollTop could keep up). Check if the user was near the bottom before
+      // this batch arrived — if so, re-arm auto-scroll.
+      const wasNearBottom = prevScrollHeight.current - el.scrollTop - el.clientHeight < bottomThreshold
+      if (wasNearBottom) {
+        shouldAutoScroll.current = true
+        scrollToBottom()
+      }
     }
   }, [isLoading, itemCount, scrollToBottom, isFetchingOlder])
 
@@ -142,34 +195,48 @@ export function useScrollBehavior({
   const handleScroll = useCallback(() => {
     if (!scrollContainerRef.current) return
 
-    const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current
+    const el = scrollContainerRef.current
+    const { scrollTop, scrollHeight, clientHeight } = el
     const isNearBottom = scrollHeight - scrollTop - clientHeight < bottomThreshold
-
-    // Resume auto-scroll if user scrolls back to bottom
-    shouldAutoScroll.current = isNearBottom
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight
 
     if (itemCount === 0) return
 
     // Estimate average item height and compute pixel threshold from item count
     const avgItemHeight = scrollHeight / itemCount
     const triggerPixels = triggerItemCount * avgItemHeight
-
-    // Track whether user is scrolled far enough from bottom to show "Jump to latest"
-    const distanceFromBottom = scrollHeight - scrollTop - clientHeight
     const jumpThresholdPixels = JUMP_TO_LATEST_ITEM_THRESHOLD * avgItemHeight
-    setIsScrolledFarFromBottom(distanceFromBottom > jumpThresholdPixels)
+
+    // Resume auto-scroll if user scrolls back to bottom
+    shouldAutoScroll.current = isNearBottom
+
+    // Clear force-scroll guard once we've reached the bottom
+    if (isNearBottom) {
+      isForceScrolling.current = false
+    }
+
+    // Track whether user is scrolled far enough from bottom to show "Jump to latest".
+    // During a force scroll (smooth animation), suppress updates to avoid the button
+    // flickering back during intermediate scroll events.
+    if (!isForceScrolling.current) {
+      setIsScrolledFarFromBottom(distanceFromBottom > jumpThresholdPixels)
+    }
 
     // Load older content when near top (one-shot until fetch completes)
     if (onScrollNearTop && scrollTop < triggerPixels && !isFetchingOlder && !olderFetchScheduled.current) {
-      olderFetchScheduled.current = true
-      onScrollNearTop()
+      const started = onScrollNearTop()
+      if (started !== false) {
+        olderFetchScheduled.current = true
+      }
     }
 
     // Load newer content when near bottom (jump-to mode, one-shot)
     if (onScrollNearBottom && !isFetchingNewer && !newerFetchScheduled.current) {
       if (distanceFromBottom < triggerPixels) {
-        newerFetchScheduled.current = true
-        onScrollNearBottom()
+        const started = onScrollNearBottom()
+        if (started !== false) {
+          newerFetchScheduled.current = true
+        }
       }
     }
   }, [
@@ -182,9 +249,15 @@ export function useScrollBehavior({
     triggerItemCount,
   ])
 
+  const disableAutoScroll = useCallback(() => {
+    shouldAutoScroll.current = false
+  }, [])
+
   return {
     scrollContainerRef,
     handleScroll,
     isScrolledFarFromBottom,
+    scrollToBottom,
+    disableAutoScroll,
   }
 }

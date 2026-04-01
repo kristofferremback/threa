@@ -32,6 +32,7 @@ function BotList({ workspaceId, onSelectBot }: { workspaceId: string; onSelectBo
   const { data: bots = [], isLoading } = useQuery({
     queryKey,
     queryFn: () => botsApi.list(workspaceId),
+    refetchOnMount: "always",
   })
 
   const [showCreateForm, setShowCreateForm] = useState(false)

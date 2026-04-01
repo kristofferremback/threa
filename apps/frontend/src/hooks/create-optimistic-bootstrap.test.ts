@@ -80,4 +80,24 @@ describe("createOptimisticBootstrap", () => {
 
     expect(result.events[0].actorId).toBe("member_AUTHOR")
   })
+
+  it("should include membership with lastReadEventId set to the optimistic event", () => {
+    const result = createOptimisticBootstrap({
+      stream: mockStream,
+      message: { id: "msg_01TEST", createdAt: "2024-01-01T00:00:00Z" },
+      contentMarkdown: "Hello",
+    })
+
+    expect(result.membership).toEqual({
+      streamId: mockStream.id,
+      memberId: mockStream.createdBy,
+      pinned: false,
+      pinnedAt: null,
+      notificationLevel: null,
+      lastReadEventId: result.events[0].id,
+      lastReadAt: "2024-01-01T00:00:00Z",
+      joinedAt: "2024-01-01T00:00:00Z",
+    })
+    expect(result.members).toHaveLength(1)
+  })
 })

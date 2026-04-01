@@ -1,13 +1,36 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { MessageInput } from "./message-input"
+import { MessageInput, materializePendingAttachmentReferences } from "./message-input"
 import type { JSONContent } from "@threa/types"
 
 const EMPTY_DOC: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
 const makeDoc = (text: string): JSONContent => ({
   type: "doc",
   content: [{ type: "paragraph", content: text ? [{ type: "text", text }] : undefined }],
+})
+const makeAttachmentDoc = (): JSONContent => ({
+  type: "doc",
+  content: [
+    {
+      type: "paragraph",
+      content: [
+        {
+          type: "attachmentReference",
+          attrs: {
+            id: "attach_1",
+            filename: "pasted-image-1.png",
+            mimeType: "image/png",
+            sizeBytes: 1234,
+            status: "uploaded",
+            imageIndex: 1,
+            error: null,
+          },
+        },
+        { type: "text", text: " Check out this image:" },
+      ],
+    },
+  ],
 })
 
 // Mock react-router-dom
@@ -25,6 +48,7 @@ vi.mock("@/contexts", () => ({
   usePreferences: () => ({
     preferences: { messageSendMode: mockMessageSendMode },
   }),
+  useSocketStatus: () => "connected",
 }))
 
 // Mock hooks
@@ -36,6 +60,7 @@ const mockSetIsSending = vi.fn()
 const mockHandleContentChange = vi.fn()
 const mockHandleRemoveAttachment = vi.fn()
 const mockHandleFileSelect = vi.fn()
+let mockSubmitContentOverride: JSONContent | undefined
 
 // Composer state that tests can modify
 let mockComposerState = {
@@ -56,15 +81,19 @@ let mockComposerState = {
   isLoaded: true,
 }
 
+vi.mock("@/stores/workspace-store", () => ({
+  useWorkspaceStreams: () => [],
+}))
+
 vi.mock("@/hooks", () => ({
   useStreamOrDraft: () => ({ sendMessage: mockSendMessage }),
-  useWorkspaceBootstrap: () => ({ data: undefined }),
   getDraftMessageKey: () => "test-draft-key",
   useDraftComposer: () => ({
     content: mockComposerState.content,
     setContent: mockSetContent,
     handleContentChange: mockHandleContentChange,
     pendingAttachments: mockComposerState.pendingAttachments,
+    getPendingAttachmentsSnapshot: () => mockComposerState.pendingAttachments,
     uploadedIds: mockComposerState.uploadedIds,
     isUploading: mockComposerState.isUploading,
     hasFailed: mockComposerState.hasFailed,
@@ -91,7 +120,7 @@ vi.mock("@/components/composer", () => ({
   }: {
     content: JSONContent
     onContentChange: (v: JSONContent) => void
-    onSubmit: () => void
+    onSubmit: (content?: JSONContent) => void
     canSubmit: boolean
     isSubmitting: boolean
     hasFailed: boolean
@@ -106,7 +135,7 @@ vi.mock("@/components/composer", () => ({
           {a.status === "error" && <span>Failed</span>}
         </div>
       ))}
-      <button onClick={onSubmit} disabled={!canSubmit || hasFailed}>
+      <button onClick={() => onSubmit(mockSubmitContentOverride)} disabled={!canSubmit || hasFailed}>
         {isSubmitting ? "Sending..." : "Send"}
       </button>
     </div>
@@ -131,6 +160,7 @@ describe("MessageInput", () => {
       isSending: false,
       isLoaded: true,
     }
+    mockSubmitContentOverride = undefined
   })
 
   describe("rendering", () => {
@@ -158,6 +188,18 @@ describe("MessageInput", () => {
 
       const sendButton = screen.getByRole("button", { name: /send/i })
       expect(sendButton).not.toBeDisabled()
+    })
+
+    it("should not throw when toggling between disabled and enabled states", () => {
+      const { rerender } = render(
+        <MessageInput workspaceId={workspaceId} streamId={streamId} disabled disabledReason="Read-only stream" />
+      )
+
+      expect(screen.getByText("Read-only stream")).toBeInTheDocument()
+
+      rerender(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
+
+      expect(screen.getByTestId("message-composer")).toBeInTheDocument()
     })
   })
 
@@ -190,6 +232,51 @@ describe("MessageInput", () => {
 
       expect(mockClearDraft).toHaveBeenCalled()
       expect(mockClearAttachments).toHaveBeenCalled()
+    })
+
+    it("should prefer the live editor content passed by the composer at submit time", async () => {
+      mockComposerState.canSend = true
+      mockComposerState.content = makeDoc("stale")
+      mockSubmitContentOverride = makeAttachmentDoc()
+
+      render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
+
+      await userEvent.click(screen.getByRole("button", { name: /send/i }))
+
+      expect(mockSendMessage).toHaveBeenCalledWith({
+        contentJson: makeAttachmentDoc(),
+        attachmentIds: ["attach_1"],
+        attachments: [
+          {
+            id: "attach_1",
+            filename: "pasted-image-1.png",
+            mimeType: "image/png",
+            sizeBytes: 1234,
+          },
+        ],
+      })
+    })
+
+    it("should clear the composer immediately before send resolves", async () => {
+      let resolveSend: ((value: unknown) => void) | undefined
+      mockComposerState.canSend = true
+      mockComposerState.content = makeDoc("Hello world")
+      mockSendMessage.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveSend = resolve
+          })
+      )
+
+      render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
+
+      const sendButton = screen.getByRole("button", { name: /send/i })
+      await userEvent.click(sendButton)
+
+      expect(mockSetContent).toHaveBeenCalledWith(EMPTY_DOC)
+      expect(mockClearDraft).not.toHaveBeenCalled()
+
+      resolveSend?.({})
     })
 
     it("should set isSending state during send", async () => {
@@ -287,9 +374,175 @@ describe("MessageInput", () => {
       await userEvent.click(sendButton)
 
       expect(mockSendMessage).toHaveBeenCalledWith({
-        contentJson: EMPTY_DOC,
+        contentJson: {
+          type: "doc",
+          content: [
+            { type: "paragraph" },
+            {
+              type: "paragraph",
+              content: [
+                {
+                  type: "attachmentReference",
+                  attrs: {
+                    id: "attach_123",
+                    filename: "test.txt",
+                    mimeType: "text/plain",
+                    sizeBytes: 1024,
+                    status: "uploaded",
+                    imageIndex: null,
+                    error: null,
+                  },
+                },
+              ],
+            },
+          ],
+        },
         attachmentIds: ["attach_123"],
         attachments: [{ id: "attach_123", filename: "test.txt", mimeType: "text/plain", sizeBytes: 1024 }],
+      })
+    })
+
+    it("should materialize uploaded attachment references before sending", async () => {
+      mockComposerState.canSend = true
+      mockComposerState.content = {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              { type: "text", text: "Check this " },
+              {
+                type: "attachmentReference",
+                attrs: {
+                  id: "temp_123",
+                  filename: "pasted-image-1.png",
+                  mimeType: "image/png",
+                  sizeBytes: 68,
+                  status: "uploading",
+                  imageIndex: null,
+                  error: null,
+                },
+              },
+            ],
+          },
+        ],
+      }
+      mockComposerState.uploadedIds = ["attach_123"]
+      mockComposerState.pendingAttachments = [
+        {
+          id: "attach_123",
+          filename: "pasted-image-1.png",
+          mimeType: "image/png",
+          sizeBytes: 68,
+          status: "uploaded",
+        },
+      ]
+
+      render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
+
+      await userEvent.click(screen.getByRole("button", { name: /send/i }))
+
+      expect(mockSendMessage).toHaveBeenCalledWith({
+        contentJson: {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                { type: "text", text: "Check this " },
+                {
+                  type: "attachmentReference",
+                  attrs: {
+                    id: "attach_123",
+                    filename: "pasted-image-1.png",
+                    mimeType: "image/png",
+                    sizeBytes: 68,
+                    status: "uploaded",
+                    imageIndex: 1,
+                    error: null,
+                  },
+                },
+              ],
+            },
+          ],
+        },
+        attachmentIds: ["attach_123"],
+        attachments: [{ id: "attach_123", filename: "pasted-image-1.png", mimeType: "image/png", sizeBytes: 68 }],
+      })
+    })
+  })
+
+  describe("attachment reference materialization", () => {
+    it("should keep existing numbered image references stable", () => {
+      const content: JSONContent = {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              {
+                type: "attachmentReference",
+                attrs: {
+                  id: "attach_123",
+                  filename: "pasted-image-1.png",
+                  mimeType: "image/png",
+                  sizeBytes: 68,
+                  status: "uploaded",
+                  imageIndex: 3,
+                  error: null,
+                },
+              },
+            ],
+          },
+        ],
+      }
+
+      expect(
+        materializePendingAttachmentReferences(content, [
+          {
+            id: "attach_123",
+            filename: "pasted-image-1.png",
+            mimeType: "image/png",
+            sizeBytes: 68,
+            status: "uploaded",
+          },
+        ])
+      ).toEqual(content)
+    })
+
+    it("should append uploaded attachments that are missing from the editor document", () => {
+      expect(
+        materializePendingAttachmentReferences(EMPTY_DOC, [
+          {
+            id: "attach_123",
+            filename: "pasted-image-1.png",
+            mimeType: "image/png",
+            sizeBytes: 68,
+            status: "uploaded",
+          },
+        ])
+      ).toEqual({
+        type: "doc",
+        content: [
+          { type: "paragraph" },
+          {
+            type: "paragraph",
+            content: [
+              {
+                type: "attachmentReference",
+                attrs: {
+                  id: "attach_123",
+                  filename: "pasted-image-1.png",
+                  mimeType: "image/png",
+                  sizeBytes: 68,
+                  status: "uploaded",
+                  imageIndex: 1,
+                  error: null,
+                },
+              },
+            ],
+          },
+        ],
       })
     })
   })

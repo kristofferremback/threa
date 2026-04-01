@@ -1,8 +1,8 @@
 import { useEffect, useMemo } from "react"
 import { useAuth } from "@/auth"
-import { useWorkspaceBootstrap } from "./use-workspaces"
+import { useWorkspaceStreams } from "@/stores/workspace-store"
 import { getLastStreamId, setLastStreamId, clearLastStreamId } from "@/lib/last-stream"
-import type { StreamWithPreview } from "@threa/types"
+import type { CachedStream } from "@/db"
 
 interface UseLastStreamResult {
   /** Stream ID to redirect to, or null if no stream is available */
@@ -28,14 +28,9 @@ interface UseLastStreamResult {
  */
 export function useLastStream(workspaceId: string): UseLastStreamResult {
   const { user } = useAuth()
-  const { data: bootstrap } = useWorkspaceBootstrap(workspaceId)
+  const streams = useWorkspaceStreams(workspaceId)
 
   const result = useMemo(() => {
-    if (!bootstrap) {
-      return { redirectStreamId: null, shouldOpenSidebar: false, staleStoredId: false }
-    }
-
-    const streams = bootstrap.streams
     const storedId = user ? getLastStreamId(user.id, workspaceId) : null
 
     if (storedId) {
@@ -56,7 +51,7 @@ export function useLastStream(workspaceId: string): UseLastStreamResult {
     }
 
     return { redirectStreamId: null, shouldOpenSidebar: true, staleStoredId: false }
-  }, [user, workspaceId, bootstrap])
+  }, [user, workspaceId, streams])
 
   // Evict stale localStorage entry as a proper side effect
   useEffect(() => {
@@ -79,9 +74,8 @@ export function usePersistLastStream(workspaceId: string | undefined, streamId: 
   }, [streamId, user, workspaceId])
 }
 
-function getMostRecentStreamId(streams: StreamWithPreview[]): string {
-  const withPreview = streams
-    .filter((s) => s.lastMessagePreview)
-    .sort((a, b) => b.lastMessagePreview!.createdAt.localeCompare(a.lastMessagePreview!.createdAt))
-  return withPreview[0]?.id ?? streams[0]?.id ?? streams[0].id
+function getMostRecentStreamId(streams: CachedStream[]): string {
+  // Sort by updatedAt descending to find the most recently active stream
+  const sorted = [...streams].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  return sorted[0]?.id ?? streams[0].id
 }

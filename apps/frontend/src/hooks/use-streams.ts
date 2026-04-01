@@ -4,6 +4,7 @@ import { debugBootstrap } from "@/lib/bootstrap-debug"
 import { getQueryLoadState, isTerminalBootstrapError } from "@/lib/query-load-state"
 import { db } from "@/db"
 import { joinRoomBestEffort } from "@/lib/socket-room"
+import { applyStreamBootstrap } from "@/sync/stream-sync"
 import type {
   Stream,
   StreamMember,
@@ -14,6 +15,7 @@ import type {
 } from "@threa/types"
 import type { CreateStreamInput, UpdateStreamInput } from "@/api"
 import { workspaceKeys } from "./use-workspaces"
+import { useSyncEngine } from "@/sync/sync-engine"
 
 // Query keys for cache management
 export const streamKeys = {
@@ -89,29 +91,10 @@ export function useStreamBootstrap(workspaceId: string, streamId: string, option
         streamId,
         eventCount: bootstrap.events.length,
       })
-      const now = Date.now()
 
-      // Cache stream and events to IndexedDB, and clean up any orphaned optimistic events.
-      // Optimistic events (temp_*) are created during send and should be swapped for real
-      // events by the socket handler. On bootstrap refetch, any remaining temp_ events for
-      // this stream are stale and must be removed to prevent ghost duplicates.
-      const staleOptimisticIds = await db.events
-        .where("streamId")
-        .equals(streamId)
-        .filter((e) => e.id.startsWith("temp_"))
-        .primaryKeys()
-
-      await Promise.all([
-        db.streams.put({
-          ...bootstrap.stream,
-          pinned: bootstrap.membership?.pinned,
-          notificationLevel: bootstrap.membership?.notificationLevel,
-          lastReadEventId: bootstrap.membership?.lastReadEventId,
-          _cachedAt: now,
-        }),
-        db.events.bulkPut(bootstrap.events.map((e) => ({ ...e, _cachedAt: now }))),
-        staleOptimisticIds.length > 0 ? db.events.bulkDelete(staleOptimisticIds) : Promise.resolve(),
-      ])
+      // Write events and stream metadata to IndexedDB.
+      // The sync module handles optimistic event cleanup.
+      await applyStreamBootstrap(workspaceId, streamId, bootstrap)
 
       return bootstrap
     },
@@ -124,7 +107,7 @@ export function useStreamBootstrap(workspaceId: string, streamId: string, option
     staleTime: Infinity,
     gcTime: Infinity,
     retry: false,
-    refetchOnMount: true,
+    refetchOnMount: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     structuralSharing: false,
@@ -149,34 +132,33 @@ export function useStreamBootstrap(workspaceId: string, streamId: string, option
 }
 
 export function useCreateStream(workspaceId: string) {
-  const socket = useSocket()
   const streamService = useStreamService()
   const queryClient = useQueryClient()
+  const syncEngine = useSyncEngine()
 
   return useMutation({
     mutationFn: (data: CreateStreamInput) => streamService.create(workspaceId, data),
-    onSuccess: (newStream) => {
-      if (socket) {
-        // Subscribe immediately so early stream:activity updates are not missed
-        // while the workspace bootstrap membership observer catches up.
-        void joinRoomBestEffort(socket, `ws:${workspaceId}:stream:${newStream.id}`, "CreateStream")
+    onSuccess: async (newStream) => {
+      const membership: StreamMember = {
+        streamId: newStream.id,
+        memberId: newStream.createdBy,
+        pinned: false,
+        pinnedAt: null,
+        notificationLevel: null,
+        lastReadEventId: null,
+        lastReadAt: null,
+        joinedAt: newStream.createdAt,
       }
+
+      // Register the new stream with the sync engine immediately so the
+      // creator gets stream-level realtime before the workspace socket echo
+      // or next bootstrap catches up.
+      void syncEngine.subscribeStream(newStream.id)
 
       // Update workspace bootstrap cache so sidebar shows the new stream immediately
       queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
         if (!old) return old
         if (old.streams.some((s) => s.id === newStream.id)) return old
-
-        const membership: StreamMember = {
-          streamId: newStream.id,
-          memberId: newStream.createdBy,
-          pinned: false,
-          pinnedAt: null,
-          notificationLevel: null,
-          lastReadEventId: null,
-          lastReadAt: null,
-          joinedAt: newStream.createdAt,
-        }
 
         return {
           ...old,
@@ -188,8 +170,23 @@ export function useCreateStream(workspaceId: string) {
       // Invalidate stream lists to refetch
       queryClient.invalidateQueries({ queryKey: streamKeys.lists() })
 
-      // Cache to IndexedDB
-      db.streams.put({ ...newStream, _cachedAt: Date.now() })
+      const now = Date.now()
+      await Promise.all([
+        db.streams.put({ ...newStream, _cachedAt: now }),
+        db.streamMemberships.put({
+          id: `${workspaceId}:${newStream.id}`,
+          workspaceId,
+          streamId: newStream.id,
+          memberId: newStream.createdBy,
+          pinned: false,
+          pinnedAt: null,
+          notificationLevel: null,
+          lastReadEventId: null,
+          lastReadAt: null,
+          joinedAt: newStream.createdAt,
+          _cachedAt: now,
+        }),
+      ])
     },
   })
 }

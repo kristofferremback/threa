@@ -8,18 +8,17 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useAuth } from "@/auth"
-import { useWorkspaceBootstrap, useUpdateProfile } from "@/hooks"
+import { useUpdateProfile } from "@/hooks"
+import { useWorkspaceUsers } from "@/stores/workspace-store"
 import { AvatarSection } from "./avatar-section"
 import { toast } from "sonner"
-import type { User } from "@threa/types"
 
 const PRONOUN_PRESETS = ["he/him", "she/her", "they/them", "xe/xem"] as const
 
-function useCurrentUser(workspaceId: string): User | null {
+function useCurrentUser(workspaceId: string): ReturnType<typeof useWorkspaceUsers>[number] | null {
   const { user } = useAuth()
-  const { data: bootstrap } = useWorkspaceBootstrap(workspaceId)
-  if (!user || !bootstrap) return null
-  const workspaceUsers = bootstrap.users
+  const workspaceUsers = useWorkspaceUsers(workspaceId)
+  if (!user) return null
   return workspaceUsers.find((u) => u.workosUserId === user.id) ?? null
 }
 

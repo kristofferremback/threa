@@ -22,7 +22,7 @@ function getCreateWorkspaceErrorMessage(error: unknown): string | null {
 
 export function WorkspaceSelectPage() {
   const { user, loading: authLoading } = useAuth()
-  const { workspaces, pendingInvitations, isLoading: workspacesLoading, isRefreshingSeed, error } = useWorkspaces()
+  const { workspaces, pendingInvitations, isLoading: workspacesLoading, error } = useWorkspaces()
   const { data: regions } = useRegions()
   const createWorkspace = useCreateWorkspace()
   const acceptInvitation = useAcceptInvitation()
@@ -87,25 +87,9 @@ export function WorkspaceSelectPage() {
     )
   }
 
-  // Only auto-redirect when there are no pending invitations and no accept in flight.
-  // Wait for seeded data to be replaced by a real fetch — seeded cache has
-  // pendingInvitations: [] which would cause a false redirect if a real invitation exists.
-  const willLikelyRedirect = workspaces?.length === 1 && pendingInvitations.length === 0 && !acceptingId
-  if (willLikelyRedirect && !isRefreshingSeed) {
+  // Auto-redirect when there's exactly one workspace and no pending invitations
+  if (workspaces?.length === 1 && pendingInvitations.length === 0 && !acceptingId) {
     return <Navigate to={`/w/${workspaces[0].id}`} replace />
-  }
-
-  // Show loading state (not the full picker) while seed data is being confirmed.
-  // Without this, the full workspace picker UI flashes briefly before the redirect.
-  if (willLikelyRedirect && isRefreshingSeed) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-4">
-          <ThreaLogo size="lg" className="animate-pulse" />
-          <p className="text-muted-foreground text-sm">Loading...</p>
-        </div>
-      </div>
-    )
   }
 
   return (

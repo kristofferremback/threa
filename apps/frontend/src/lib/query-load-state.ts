@@ -28,3 +28,15 @@ export function isQueryLoadStateLoading(state: QueryLoadState): boolean {
 export function isTerminalBootstrapError(error: unknown): boolean {
   return ApiError.isApiError(error) && (error.status === 403 || error.status === 404)
 }
+
+export function isRecoverableBootstrapError(error: unknown): boolean {
+  if (isTerminalBootstrapError(error)) return false
+  if (ApiError.isApiError(error)) {
+    return error.status === 429 || error.status >= 500
+  }
+  return true
+}
+
+export function shouldSuppressBootstrapError(error: unknown, hasLocalData: boolean): boolean {
+  return error != null && hasLocalData && isRecoverableBootstrapError(error)
+}

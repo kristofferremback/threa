@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useMemo, type ReactNode } from "react"
-import { Outlet, useParams, useNavigate, useSearchParams, useMatch } from "react-router-dom"
+import { useState, useEffect, useCallback, useContext, useMemo, useRef, type ReactNode } from "react"
+import { Outlet, useParams, useNavigate, useSearchParams, useMatch, Navigate } from "react-router-dom"
 import { AppShell } from "@/components/layout/app-shell"
 import { Sidebar } from "@/components/layout/sidebar"
 import { Toaster } from "@/components/ui/sonner"
@@ -10,6 +10,11 @@ import { WorkspaceEmojiProvider } from "@/components/workspace-emoji"
 import { ChannelLinkProvider } from "@/lib/markdown/channel-link-context"
 import {
   SocketProvider,
+  useSocket,
+  useSocketReconnectCount,
+  useWorkspaceService,
+  useStreamService,
+  useMessageService,
   PanelProvider,
   QuickSwitcherProvider,
   PreferencesProvider,
@@ -23,23 +28,27 @@ import {
   useTrace,
 } from "@/contexts"
 import {
-  useSocketEvents,
-  useWorkspaceBootstrap,
   useKeyboardShortcuts,
   useMentionables,
-  useReconnectBootstrap,
   usePersistLastStream,
   useAppUpdate,
   useMessageQueue,
   useUnreadTabIndicator,
 } from "@/hooks"
+import { useAuth } from "@/auth"
+import { useWorkspaceStreams } from "@/stores/workspace-store"
+import { SyncEngine, SyncEngineContext } from "@/sync/sync-engine"
+import { messagesApi } from "@/api"
+import { useSyncStatus } from "@/sync/sync-status"
 import { QuickSwitcher, type QuickSwitcherMode } from "@/components/quick-switcher"
 import { SettingsDialog } from "@/components/settings"
 import { WorkspaceSettingsDialog } from "@/components/workspace-settings/workspace-settings-dialog"
 import { StreamSettingsDialog } from "@/components/stream-settings/stream-settings-dialog"
 import { CreateChannelDialog } from "@/components/create-channel"
 import { TraceDialog } from "@/components/trace"
+import { useQueryClient } from "@tanstack/react-query"
 import { ApiError } from "@/api/client"
+import { SyncStatusStore, SyncStatusContext } from "@/sync/sync-status"
 
 interface WorkspaceKeyboardHandlerProps {
   switcherOpen: boolean
@@ -73,16 +82,84 @@ function WorkspaceKeyboardHandler({
   return <>{children}</>
 }
 
-interface WorkspaceSocketHandlerProps {
-  workspaceId: string
-  streamIds: string[]
-  children: ReactNode
-}
+/**
+ * Constructs a SyncEngine per workspace and wires it to socket lifecycle.
+ * The engine owns bootstrap, reconnection, and all workspace-level socket
+ * event handlers.
+ */
+function WorkspaceSyncHandler({ workspaceId, children }: { workspaceId: string; children: ReactNode }) {
+  const socket = useSocket()
+  const reconnectCount = useSocketReconnectCount()
+  const queryClient = useQueryClient()
+  const workspaceService = useWorkspaceService()
+  const streamService = useStreamService()
+  const messageService = useMessageService()
+  const syncStatusStore = useContext(SyncStatusContext)
+  const { user } = useAuth()
+  const { streamId: currentStreamId } = useParams<{ streamId: string }>()
 
-function WorkspaceSocketHandler({ workspaceId, streamIds, children }: WorkspaceSocketHandlerProps) {
-  useSocketEvents(workspaceId)
-  useReconnectBootstrap(workspaceId, streamIds)
-  return <>{children}</>
+  // Construct SyncEngine once per workspace. Use ref to survive StrictMode
+  // double-render — useMemo + destroy effect breaks because the cleanup
+  // destroys the engine before the socket connect effect fires.
+  const syncEngineRef = useRef<SyncEngine | null>(null)
+  if (
+    !syncEngineRef.current ||
+    syncEngineRef.current.workspaceId !== workspaceId ||
+    syncEngineRef.current.isDestroyed
+  ) {
+    syncEngineRef.current?.destroy()
+    syncEngineRef.current = new SyncEngine({
+      workspaceId,
+      syncStatus: syncStatusStore!,
+      queryClient,
+      workspaceService,
+      streamService,
+      messageService,
+      reactionService: {
+        add: (wid: string, mid: string, emoji: string) => messagesApi.addReaction(wid, mid, emoji),
+        remove: (wid: string, mid: string, emoji: string) => messagesApi.removeReaction(wid, mid, emoji),
+      },
+    })
+  }
+  const syncEngine = syncEngineRef.current
+
+  // Keep syncEngine refs in sync with React state
+  useEffect(() => {
+    syncEngine.setCurrentStreamId(currentStreamId)
+  }, [syncEngine, currentStreamId])
+
+  useEffect(() => {
+    syncEngine.setCurrentUser(user)
+  }, [syncEngine, user])
+
+  // Wire SyncEngine to socket connect/disconnect/reconnect
+  useEffect(() => {
+    console.log("[WorkspaceSyncHandler] effect fired", { hasSocket: !!socket, reconnectCount })
+    if (!socket) {
+      syncEngine.onDisconnect()
+      return
+    }
+    console.log("[WorkspaceSyncHandler] calling syncEngine.onConnect")
+    void syncEngine.onConnect(socket)
+    return () => syncEngine.onDisconnect()
+  }, [socket, syncEngine, reconnectCount])
+
+  // No destroy effect — StrictMode's effect cleanup cycle would destroy the
+  // engine before the socket connect effect re-runs. The engine is destroyed
+  // on workspace change (line above) and on page unload (browser handles it).
+
+  // Redirect on terminal workspace errors (404/403)
+  const navigate = useNavigate()
+  const workspaceSyncStatus = useSyncStatus(`workspace:${workspaceId}`)
+  useEffect(() => {
+    if (workspaceSyncStatus !== "error") return
+    const err = syncEngine.lastWorkspaceError
+    if (err && ApiError.isApiError(err) && (err.status === 404 || err.status === 403)) {
+      navigate("/workspaces", { replace: true })
+    }
+  }, [workspaceSyncStatus, syncEngine, navigate])
+
+  return <SyncEngineContext.Provider value={syncEngine}>{children}</SyncEngineContext.Provider>
 }
 
 function MessageQueueHandler() {
@@ -132,10 +209,10 @@ function MentionableWrapper({ children, mentionables }: Omit<MentionableMarkdown
 
 export function WorkspaceLayout() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
-  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const [switcherMode, setSwitcherMode] = useState<QuickSwitcherMode>("stream")
+  const { user, loading: authLoading } = useAuth()
 
   // Extract streamId from nested route (if on /s/:streamId)
   const streamMatch = useMatch("/w/:workspaceId/s/:streamId")
@@ -147,21 +224,10 @@ export function WorkspaceLayout() {
     return [streamId, ...panelIds].filter((id): id is string => Boolean(id))
   }, [streamId, searchParams])
 
-  const { data: bootstrap, error: workspaceError } = useWorkspaceBootstrap(workspaceId ?? "")
   const { mentionables } = useMentionables()
-  const streams = useMemo(() => bootstrap?.streams ?? [], [bootstrap])
+  const streams = useWorkspaceStreams(workspaceId ?? "")
 
   usePersistLastStream(workspaceId, streamId)
-
-  useEffect(() => {
-    if (
-      workspaceError &&
-      ApiError.isApiError(workspaceError) &&
-      (workspaceError.status === 404 || workspaceError.status === 403)
-    ) {
-      navigate("/workspaces", { replace: true })
-    }
-  }, [workspaceError, navigate])
 
   const openSwitcher = useCallback((mode: QuickSwitcherMode) => {
     setSwitcherMode(mode)
@@ -172,64 +238,77 @@ export function WorkspaceLayout() {
     setSwitcherOpen(false)
   }, [])
 
+  // Single SyncStatusStore instance per workspace — tracks sync state for all resources.
+  const syncStatusStore = useMemo(() => new SyncStatusStore(), [workspaceId])
+
   if (!workspaceId) {
     return null
   }
 
+  if (authLoading) {
+    return null
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace />
+  }
+
   return (
-    <SocketProvider workspaceId={workspaceId}>
-      <WorkspaceSocketHandler workspaceId={workspaceId} streamIds={streamIds}>
-        <UnreadTabIndicator workspaceId={workspaceId} />
-        <AppUpdateChecker />
-        <MessageQueueHandler />
-        <CoordinatedLoadingProvider workspaceId={workspaceId} streamIds={streamIds}>
-          <ChannelLinkProvider workspaceId={workspaceId} streams={streams}>
-            <UserProfileProvider>
-              <MentionableWrapper mentionables={mentionables}>
-                <WorkspaceEmojiProvider workspaceId={workspaceId}>
-                  <PreferencesProvider workspaceId={workspaceId}>
-                    <SettingsProvider>
-                      <WorkspaceKeyboardHandler
-                        switcherOpen={switcherOpen}
-                        onOpenSwitcher={openSwitcher}
-                        onCloseSwitcher={closeSwitcher}
-                      >
-                        <QuickSwitcherProvider openSwitcher={openSwitcher}>
-                          <PanelProvider>
-                            <TraceProvider>
-                              <SidebarProvider>
-                                <CoordinatedLoadingGate>
-                                  <AppShell sidebar={<Sidebar workspaceId={workspaceId} />}>
-                                    <MainContentGate>
-                                      <Outlet />
-                                    </MainContentGate>
-                                  </AppShell>
-                                </CoordinatedLoadingGate>
-                              </SidebarProvider>
-                              <QuickSwitcher
-                                workspaceId={workspaceId}
-                                open={switcherOpen}
-                                onOpenChange={setSwitcherOpen}
-                                initialMode={switcherMode}
-                              />
-                              <SettingsDialog />
-                              <WorkspaceSettingsDialog workspaceId={workspaceId} />
-                              <StreamSettingsDialog workspaceId={workspaceId} />
-                              <CreateChannelDialog workspaceId={workspaceId} />
-                              <TraceDialogContainer />
-                              <Toaster />
-                            </TraceProvider>
-                          </PanelProvider>
-                        </QuickSwitcherProvider>
-                      </WorkspaceKeyboardHandler>
-                    </SettingsProvider>
-                  </PreferencesProvider>
-                </WorkspaceEmojiProvider>
-              </MentionableWrapper>
-            </UserProfileProvider>
-          </ChannelLinkProvider>
-        </CoordinatedLoadingProvider>
-      </WorkspaceSocketHandler>
-    </SocketProvider>
+    <SyncStatusContext.Provider value={syncStatusStore}>
+      <SocketProvider workspaceId={workspaceId}>
+        <WorkspaceSyncHandler workspaceId={workspaceId}>
+          <UnreadTabIndicator workspaceId={workspaceId} />
+          <AppUpdateChecker />
+          <MessageQueueHandler />
+          <CoordinatedLoadingProvider workspaceId={workspaceId} streamIds={streamIds}>
+            <ChannelLinkProvider workspaceId={workspaceId} streams={streams}>
+              <UserProfileProvider>
+                <MentionableWrapper mentionables={mentionables}>
+                  <WorkspaceEmojiProvider workspaceId={workspaceId}>
+                    <PreferencesProvider workspaceId={workspaceId}>
+                      <SettingsProvider>
+                        <WorkspaceKeyboardHandler
+                          switcherOpen={switcherOpen}
+                          onOpenSwitcher={openSwitcher}
+                          onCloseSwitcher={closeSwitcher}
+                        >
+                          <QuickSwitcherProvider openSwitcher={openSwitcher}>
+                            <PanelProvider>
+                              <TraceProvider>
+                                <SidebarProvider>
+                                  <CoordinatedLoadingGate>
+                                    <AppShell sidebar={<Sidebar workspaceId={workspaceId} />}>
+                                      <MainContentGate>
+                                        <Outlet />
+                                      </MainContentGate>
+                                    </AppShell>
+                                  </CoordinatedLoadingGate>
+                                </SidebarProvider>
+                                <QuickSwitcher
+                                  workspaceId={workspaceId}
+                                  open={switcherOpen}
+                                  onOpenChange={setSwitcherOpen}
+                                  initialMode={switcherMode}
+                                />
+                                <SettingsDialog />
+                                <WorkspaceSettingsDialog workspaceId={workspaceId} />
+                                <StreamSettingsDialog workspaceId={workspaceId} />
+                                <CreateChannelDialog workspaceId={workspaceId} />
+                                <TraceDialogContainer />
+                                <Toaster />
+                              </TraceProvider>
+                            </PanelProvider>
+                          </QuickSwitcherProvider>
+                        </WorkspaceKeyboardHandler>
+                      </SettingsProvider>
+                    </PreferencesProvider>
+                  </WorkspaceEmojiProvider>
+                </MentionableWrapper>
+              </UserProfileProvider>
+            </ChannelLinkProvider>
+          </CoordinatedLoadingProvider>
+        </WorkspaceSyncHandler>
+      </SocketProvider>
+    </SyncStatusContext.Provider>
   )
 }

@@ -288,6 +288,7 @@ describe("useAttachments", () => {
       // Attachment should be in pending list
       expect(result.current.pendingAttachments).toHaveLength(1)
       expect(result.current.pendingAttachments[0].id).toBe("attach_456")
+      expect(result.current.getPendingAttachmentsSnapshot()).toEqual(result.current.pendingAttachments)
     })
 
     it("should assign sequential image indices for images", async () => {

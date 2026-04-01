@@ -74,6 +74,7 @@ export function useUnreadDivider({
   const [displayedUnreadId, setDisplayedUnreadId] = useState<string | undefined>(undefined)
   const [isFading, setIsFading] = useState(false)
   const hasShownDivider = useRef(false)
+  const previousStreamId = useRef(streamId)
 
   useEffect(() => {
     // Show divider when we have a firstUnreadEventId and haven't shown one yet
@@ -100,8 +101,22 @@ export function useUnreadDivider({
     }
   }, [firstUnreadEventId])
 
+  useEffect(() => {
+    if (firstUnreadEventId) return
+
+    // If the stream is now considered read, remove any divider immediately.
+    // Otherwise a lastReadEventId update can cancel the pending fade/remove
+    // timers from the previous effect and leave a stale divider rendered
+    // until remount.
+    setDisplayedUnreadId(undefined)
+    setIsFading(false)
+    hasShownDivider.current = false
+  }, [firstUnreadEventId])
+
   // Reset when stream changes
   useEffect(() => {
+    if (previousStreamId.current === streamId) return
+    previousStreamId.current = streamId
     hasShownDivider.current = false
     setDisplayedUnreadId(undefined)
     setIsFading(false)

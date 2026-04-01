@@ -8,6 +8,7 @@ import {
 } from "@threa/types"
 import { Link } from "react-router-dom"
 import { toast } from "sonner"
+import { enqueueOperation } from "@/sync/operation-queue"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Button } from "@/components/ui/button"
@@ -69,6 +70,8 @@ interface MessageEventProps {
   isNew?: boolean
   /** Active agent session triggered by this message */
   activity?: MessageAgentActivity
+  /** Defer non-critical per-message hydration until coordinated reveal completes */
+  deferSecondaryHydration?: boolean
 }
 
 interface MessageLayoutProps {
@@ -90,6 +93,7 @@ interface MessageLayoutProps {
   isNew?: boolean
   isEditing?: boolean
   containerRef?: React.RefObject<HTMLDivElement | null>
+  deferSecondaryHydration?: boolean
   /** Touch event handlers for mobile long-press */
   touchHandlers?: {
     onTouchStart: (e: React.TouchEvent) => void
@@ -99,15 +103,36 @@ interface MessageLayoutProps {
   }
 }
 
+function focusVisibleZoneEditor(zone: HTMLElement | null, attempt = 0) {
+  if (!zone) return
+
+  const editor = Array.from(zone.querySelectorAll<HTMLElement>('[contenteditable="true"]'))
+    .filter((element) => !element.closest("[data-inline-edit]"))
+    .reduceRight<HTMLElement | null>((match, element) => {
+      if (match) return match
+      return element.getClientRects().length > 0 ? element : null
+    }, null)
+
+  if (editor) {
+    focusAtEnd(editor)
+    return
+  }
+
+  if (attempt >= 4) return
+  requestAnimationFrame(() => focusVisibleZoneEditor(zone, attempt + 1))
+}
+
 /** Reads hovered link URL from context and passes to LinkPreviewList */
 function MessageLinkPreviews({
   messageId,
   workspaceId,
   previews,
+  hydrateFromApi,
 }: {
   messageId: string
   workspaceId: string
   previews?: LinkPreviewSummary[]
+  hydrateFromApi?: boolean
 }) {
   const linkPreviewContext = useLinkPreviewContext()
   return (
@@ -116,6 +141,7 @@ function MessageLinkPreviews({
       workspaceId={workspaceId}
       previews={previews}
       hoveredUrl={linkPreviewContext?.hoveredLinkUrl}
+      hydrateFromApi={hydrateFromApi}
     />
   )
 }
@@ -137,6 +163,7 @@ function MessageLayout({
   isNew,
   isEditing,
   containerRef,
+  deferSecondaryHydration,
   touchHandlers,
 }: MessageLayoutProps) {
   const isPersona = event.actorType === "persona"
@@ -226,12 +253,17 @@ function MessageLayout({
             <AttachmentProvider workspaceId={workspaceId} attachments={payload.attachments ?? []}>
               <MarkdownContent content={payload.contentMarkdown} className="text-sm leading-relaxed" />
               {payload.attachments && payload.attachments.length > 0 && (
-                <AttachmentList attachments={payload.attachments} workspaceId={workspaceId} />
+                <AttachmentList
+                  attachments={payload.attachments}
+                  workspaceId={workspaceId}
+                  deferHydration={deferSecondaryHydration}
+                />
               )}
               <MessageLinkPreviews
                 messageId={payload.messageId}
                 workspaceId={workspaceId}
                 previews={payload.linkPreviews}
+                hydrateFromApi={!deferSecondaryHydration}
               />
             </AttachmentProvider>
           </LinkPreviewProvider>
@@ -255,6 +287,7 @@ interface MessageEventInnerProps {
   isHighlighted?: boolean
   isNew?: boolean
   activity?: MessageAgentActivity
+  deferSecondaryHydration?: boolean
 }
 
 function SentMessageEvent({
@@ -270,6 +303,7 @@ function SentMessageEvent({
   isHighlighted,
   isNew,
   activity,
+  deferSecondaryHydration,
 }: MessageEventInnerProps) {
   const { panelId, getPanelUrl } = usePanel()
   const messageService = useMessageService()
@@ -314,16 +348,13 @@ function SentMessageEvent({
 
   // Restore focus to the zone's editor after exiting inline edit mode
   const stopEditing = useCallback(() => {
+    const zone = containerRef.current?.closest<HTMLElement>("[data-editor-zone]") ?? null
     setIsEditing(false)
     if (isMobile) {
       inlineEdit?.setEditingInline(false)
       return
     }
-    requestAnimationFrame(() => {
-      const zone = containerRef.current?.closest<HTMLElement>("[data-editor-zone]")
-      const editor = zone?.querySelector<HTMLElement>('[contenteditable="true"]')
-      if (editor) focusAtEnd(editor)
-    })
+    requestAnimationFrame(() => focusVisibleZoneEditor(zone))
   }, [isMobile, inlineEdit])
 
   // Register this message's edit handler with the context so the composer's ArrowUp trigger
@@ -425,7 +456,10 @@ function SentMessageEvent({
       await messageService.delete(workspaceId, payload.messageId)
       setDeleteDialogOpen(false)
     } catch {
-      toast.error("Failed to delete message")
+      // Enqueue for retry when back online
+      await enqueueOperation(workspaceId, "delete_message", { messageId: payload.messageId })
+      setDeleteDialogOpen(false)
+      toast.info("Delete queued — will complete when back online")
     } finally {
       setIsDeleting(false)
     }
@@ -535,6 +569,7 @@ function SentMessageEvent({
         containerRef={containerRef}
         isHighlighted={isHighlighted}
         isNew={isNew}
+        deferSecondaryHydration={deferSecondaryHydration}
         containerClassName={cn(
           "scroll-mt-12",
           isMobile && !isEditing && "select-none",
@@ -614,6 +649,7 @@ function PendingMessageEvent({
   actorInitials,
   personaSlug,
   actorAvatarUrl,
+  deferSecondaryHydration,
 }: MessageEventInnerProps) {
   return (
     <MessageLayout
@@ -624,6 +660,7 @@ function PendingMessageEvent({
       actorInitials={actorInitials}
       personaSlug={personaSlug}
       actorAvatarUrl={actorAvatarUrl}
+      deferSecondaryHydration={deferSecondaryHydration}
       containerClassName="opacity-60"
       statusIndicator={
         <span className="text-xs text-muted-foreground opacity-0 animate-fade-in-delayed">Sending...</span>
@@ -640,8 +677,9 @@ function FailedMessageEvent({
   actorInitials,
   personaSlug,
   actorAvatarUrl,
+  deferSecondaryHydration,
 }: MessageEventInnerProps) {
-  const { retryMessage } = usePendingMessages()
+  const { retryMessage, deleteMessage } = usePendingMessages()
 
   return (
     <MessageLayout
@@ -652,12 +690,23 @@ function FailedMessageEvent({
       actorInitials={actorInitials}
       personaSlug={personaSlug}
       actorAvatarUrl={actorAvatarUrl}
+      deferSecondaryHydration={deferSecondaryHydration}
       containerClassName="border-l-2 border-destructive pl-2"
       statusIndicator={<span className="text-xs text-destructive">Failed to send</span>}
       actions={
-        <Button variant="ghost" size="sm" className="mt-1 h-6 px-2 text-xs" onClick={() => retryMessage(event.id)}>
-          Retry
-        </Button>
+        <div className="flex gap-1 mt-1">
+          <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => retryMessage(event.id)}>
+            Retry
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-2 text-xs text-muted-foreground"
+            onClick={() => deleteMessage(event.id)}
+          >
+            Delete
+          </Button>
+        </div>
       }
     />
   )
@@ -671,6 +720,7 @@ export function MessageEvent({
   isHighlighted,
   isNew,
   activity,
+  deferSecondaryHydration = false,
 }: MessageEventProps) {
   const payload = event.payload as MessagePayload
   const { getStatus } = usePendingMessages()
@@ -696,6 +746,7 @@ export function MessageEvent({
           actorInitials={actorInitials}
           personaSlug={personaSlug}
           actorAvatarUrl={actorAvatarUrl}
+          deferSecondaryHydration={deferSecondaryHydration}
         />
       )
     case "failed":
@@ -709,6 +760,7 @@ export function MessageEvent({
           actorInitials={actorInitials}
           personaSlug={personaSlug}
           actorAvatarUrl={actorAvatarUrl}
+          deferSecondaryHydration={deferSecondaryHydration}
         />
       )
     default:
@@ -726,6 +778,7 @@ export function MessageEvent({
           isHighlighted={isHighlighted}
           isNew={isNew}
           activity={activity}
+          deferSecondaryHydration={deferSecondaryHydration}
         />
       )
   }

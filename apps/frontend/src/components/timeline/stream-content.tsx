@@ -17,7 +17,8 @@ import {
   workspaceKeys,
 } from "@/hooks"
 import { useSocket } from "@/contexts"
-import { useUser } from "@/auth"
+import { useStreamEvents } from "@/stores/stream-store"
+import { useWorkspaceStreams, useWorkspaceStreamMemberships } from "@/stores/workspace-store"
 import { Button } from "@/components/ui/button"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
 import { ErrorView } from "@/components/error-view"
@@ -25,6 +26,7 @@ import {
   StreamTypes,
   Visibilities,
   type Stream,
+  type StreamEvent,
   type StreamMember,
   type WorkspaceBootstrap,
   type StreamBootstrap,
@@ -56,7 +58,6 @@ export function StreamContent({
   autoFocus,
 }: StreamContentProps) {
   const [, setSearchParams] = useSearchParams()
-  const user = useUser()
   const socket = useSocket()
   const jumpTriggeredRef = useRef<string | null>(null)
 
@@ -76,32 +77,59 @@ export function StreamContent({
     }
   }, [highlightMessageId, setSearchParams])
 
-  // Get stream info - skip fetch if parent already provided it
+  const idbStreams = useWorkspaceStreams(workspaceId)
+  const idbMemberships = useWorkspaceStreamMemberships(workspaceId)
+  const idbStream = useMemo(() => idbStreams.find((candidate) => candidate.id === streamId), [idbStreams, streamId])
+
+  // Resolve current workspace-scoped user ID. The hook deduplicates with SentMessageEvent instances.
+  const currentWorkspaceUserId = useWorkspaceUserId(workspaceId)
+  const idbMembership = useMemo(
+    () =>
+      currentWorkspaceUserId
+        ? idbMemberships.find(
+            (membership) => membership.streamId === streamId && membership.memberId === currentWorkspaceUserId
+          )
+        : undefined,
+    [currentWorkspaceUserId, idbMemberships, streamId]
+  )
   const { data: bootstrap } = useStreamBootstrap(workspaceId, streamId, {
-    enabled: !isDraft && !streamFromProps,
+    enabled: !isDraft && (!idbStream || !idbMembership),
   })
-  const stream = streamFromProps ?? bootstrap?.stream
+  const membership = idbMembership ?? bootstrap?.membership
+  const lastReadEventId = idbStream?.lastReadEventId ?? membership?.lastReadEventId
+
+  const stream = streamFromProps ?? idbStream ?? bootstrap?.stream
   const isThread = stream?.type === StreamTypes.THREAD
   const isArchived = stream?.archivedAt != null
   const isSystem = stream?.type === StreamTypes.SYSTEM
   const parentStreamId = stream?.parentStreamId
   const parentMessageId = stream?.parentMessageId
+  const parentCachedEvents = useStreamEvents(parentStreamId ?? undefined)
+  const cachedParentMessage = useMemo(() => {
+    if (!isThread || !parentStreamId || !parentMessageId || !parentCachedEvents) return null
+    return parentCachedEvents.find(
+      (event) =>
+        event.eventType === "message_created" &&
+        (event.payload as { messageId?: string })?.messageId === parentMessageId
+    )
+  }, [isThread, parentStreamId, parentMessageId, parentCachedEvents])
 
   // Fetch parent stream bootstrap (for threads to get parent message)
   // Only fetch when we have a valid parentStreamId
   const { data: parentBootstrap } = useStreamBootstrap(workspaceId, parentStreamId!, {
-    enabled: !isDraft && isThread && !!parentStreamId,
+    enabled: !isDraft && isThread && !!parentStreamId && !!parentMessageId && !cachedParentMessage,
   })
 
   // Find parent message from parent stream's events
   const parentMessage = useMemo(() => {
     if (!isThread || !parentStreamId || !parentMessageId) return null
+    if (cachedParentMessage) return cachedParentMessage as unknown as StreamEvent
     if (!parentBootstrap?.events) return null
 
     return parentBootstrap.events.find(
       (e) => e.eventType === "message_created" && (e.payload as { messageId?: string })?.messageId === parentMessageId
     )
-  }, [isThread, parentStreamId, parentMessageId, parentBootstrap?.events])
+  }, [cachedParentMessage, isThread, parentStreamId, parentMessageId, parentBootstrap?.events])
 
   // Subscribe to stream room FIRST (subscribe-then-bootstrap pattern)
   useStreamSocket(workspaceId, streamId, { enabled: !isDraft })
@@ -121,10 +149,31 @@ export function StreamContent({
     isJumpMode,
   } = useEvents(workspaceId, streamId, { enabled: !isDraft, loadAll: isThread })
 
+  const editLastMessageCtx = useEditLastMessageTrigger(events, currentWorkspaceUserId)
+
+  // Track live agent session progress for all stream types (step/message counts on session cards).
+  // In channels, session cards are hidden (responses go to threads) and inline activity shows on trigger messages instead.
+  const isChannel = stream?.type === StreamTypes.CHANNEL
+  const agentActivity = useAgentActivity(events, socket)
+
+  const { scrollContainerRef, handleScroll, isScrolledFarFromBottom, scrollToBottom, disableAutoScroll } =
+    useScrollBehavior({
+      isLoading,
+      itemCount: events.length,
+      onScrollNearTop: hasOlderEvents ? fetchOlderEvents : undefined,
+      onScrollNearBottom: hasNewerEvents ? fetchNewerEvents : undefined,
+      isFetchingOlder,
+      isFetchingNewer,
+      resetKey: streamId,
+    })
+
   // Jump to highlighted message if it's not in the current event window
   useEffect(() => {
     if (!highlightMessageId || isLoading || isDraft) return
     if (jumpTriggeredRef.current === highlightMessageId) return
+
+    // Disable auto-scroll so highlight scroll-into-view isn't overridden
+    disableAutoScroll()
 
     // Check if the message is already visible in current events
     const isVisible = events.some((e) => {
@@ -144,45 +193,28 @@ export function StreamContent({
           jumpTriggeredRef.current = null
         })
     }
-  }, [highlightMessageId, isLoading, isDraft, events, jumpToEvent])
+  }, [highlightMessageId, isLoading, isDraft, events, jumpToEvent, disableAutoScroll])
 
-  // Reset jump trigger and exit jump mode when stream changes
+  // Reset jump state when switching streams (component stays mounted)
   useEffect(() => {
     jumpTriggeredRef.current = null
     exitJumpMode()
   }, [streamId, exitJumpMode])
 
-  // Resolve current workspace-scoped user ID. The hook deduplicates with SentMessageEvent instances.
-  const currentWorkspaceUserId = useWorkspaceUserId(workspaceId)
-
-  const editLastMessageCtx = useEditLastMessageTrigger(events, currentWorkspaceUserId)
-
-  // Track live agent session progress for all stream types (step/message counts on session cards).
-  // In channels, session cards are hidden (responses go to threads) and inline activity shows on trigger messages instead.
-  const isChannel = stream?.type === StreamTypes.CHANNEL
-  const agentActivity = useAgentActivity(events, socket)
-
-  const { scrollContainerRef, handleScroll, isScrolledFarFromBottom } = useScrollBehavior({
-    isLoading,
-    itemCount: events.length,
-    onScrollNearTop: hasOlderEvents ? fetchOlderEvents : undefined,
-    onScrollNearBottom: hasNewerEvents ? fetchNewerEvents : undefined,
-    isFetchingOlder,
-    isFetchingNewer,
-  })
-
   // Auto-mark stream as read when viewing
   const lastEventId = events.length > 0 ? events[events.length - 1].id : undefined
   useAutoMarkAsRead(workspaceId, streamId, lastEventId, { enabled: !isDraft && !isLoading && !isJumpMode })
 
-  // Track live-arriving messages from other users for brief "new" indicator
-  const newMessageIds = useNewMessageIndicator(events, currentWorkspaceUserId ?? undefined, streamId)
+  // Track live-arriving messages from other users for brief "new" indicator.
+  // Uses lastReadEventId as the read boundary — same data as the unread
+  // divider and sidebar unread indicator.
+  const newMessageIds = useNewMessageIndicator(events, currentWorkspaceUserId ?? undefined, streamId, lastReadEventId)
 
   // Unread divider state management (also handles scroll-to-first-unread)
   const { dividerEventId, isFading: isDividerFading } = useUnreadDivider({
     events,
-    lastReadEventId: bootstrap?.membership?.lastReadEventId,
-    currentUserId: user?.id,
+    lastReadEventId,
+    currentUserId: currentWorkspaceUserId ?? undefined,
     streamId,
     isLoading,
     highlightMessageId,
@@ -190,7 +222,7 @@ export function StreamContent({
 
   const queryClient = useQueryClient()
   const isPublicChannel = stream?.type === StreamTypes.CHANNEL && stream?.visibility === Visibilities.PUBLIC
-  const isMember = !!bootstrap?.membership
+  const isMember = !!membership
   let disabledReason: string | undefined
   if (isSystem) {
     disabledReason = "System notifications are read-only."
@@ -224,16 +256,14 @@ export function StreamContent({
       exitJumpMode()
       // Scroll to bottom after React re-renders with bootstrap events
       requestAnimationFrame(() => {
-        if (scrollContainerRef.current) {
-          scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight
-        }
+        scrollToBottom({ force: true })
       })
-    } else if (scrollContainerRef.current) {
-      scrollContainerRef.current.scrollTo({ top: scrollContainerRef.current.scrollHeight, behavior: "smooth" })
+    } else {
+      scrollToBottom({ force: true, behavior: "smooth" })
     }
-  }, [isJumpMode, exitJumpMode, scrollContainerRef])
+  }, [isJumpMode, exitJumpMode, scrollToBottom])
 
-  if (error && !isDraft) {
+  if (error && !isDraft && events.length === 0) {
     return (
       <ErrorView
         className="h-full border-0"

@@ -43,8 +43,6 @@ export {
 
 export { useDraftMessage, getDraftMessageKey } from "./use-draft-message"
 
-export { useSocketEvents } from "./use-socket-events"
-
 export { useStreamSocket } from "./use-stream-socket"
 
 export { useMessageQueue } from "./use-message-queue"
@@ -104,8 +102,6 @@ export { useAIUsage, useAIRecentUsage, useAIBudget, useUpdateAIBudget, aiUsageKe
 export { useThreadAncestors } from "./use-thread-ancestors"
 
 export { useAgentActivity, getStepLabel, type MessageAgentActivity } from "./use-agent-activity"
-
-export { useReconnectBootstrap } from "./use-reconnect-bootstrap"
 
 export { usePreloadImages } from "./use-preload-images"
 

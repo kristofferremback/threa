@@ -2,7 +2,7 @@ import { useCallback, useMemo } from "react"
 import { useParams } from "react-router-dom"
 import type { ChannelItem } from "./types"
 import { ChannelList } from "./channel-list"
-import { useWorkspaceBootstrap } from "@/hooks/use-workspaces"
+import { useWorkspaceStreams } from "@/stores/workspace-store"
 import { useSuggestion } from "./use-suggestion"
 
 /**
@@ -23,11 +23,10 @@ function filterChannels(items: ChannelItem[], query: string): ChannelItem[] {
  */
 export function useInChannelFilterSuggestion() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
-  const { data: bootstrap } = useWorkspaceBootstrap(workspaceId ?? "")
+  const streams = useWorkspaceStreams(workspaceId ?? "")
 
   const channels = useMemo<ChannelItem[]>(() => {
-    if (!bootstrap) return []
-    return bootstrap.streams
+    return streams
       .filter((stream) => stream.slug) // Only streams with slugs (channels)
       .map((stream) => ({
         id: stream.id,
@@ -35,7 +34,7 @@ export function useInChannelFilterSuggestion() {
         name: stream.displayName ?? stream.slug!,
         type: (stream.type === "scratchpad" ? "scratchpad" : "channel") as "channel" | "scratchpad",
       }))
-  }, [bootstrap])
+  }, [streams])
 
   const renderList = useCallback(
     (props: {

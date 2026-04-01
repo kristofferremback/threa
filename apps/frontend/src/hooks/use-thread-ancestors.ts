@@ -1,6 +1,6 @@
 import { useMemo } from "react"
 import type { StreamType } from "@threa/types"
-import { useWorkspaceBootstrap } from "./use-workspaces"
+import { useWorkspaceStreams } from "@/stores/workspace-store"
 
 interface ThreadAncestor {
   id: string
@@ -24,15 +24,15 @@ export function useThreadAncestors(
   ancestors: ThreadAncestor[]
   isLoading: boolean
 } {
-  const { data: bootstrap, isLoading } = useWorkspaceBootstrap(workspaceId)
+  const streams = useWorkspaceStreams(workspaceId)
 
   const ancestors = useMemo(() => {
-    if (!bootstrap?.streams || !parentStreamId) {
+    if (streams.length === 0 || !parentStreamId) {
       return []
     }
 
     // Build a lookup map for O(1) access
-    const streamMap = new Map(bootstrap.streams.map((s) => [s.id, s]))
+    const streamMap = new Map(streams.map((s) => [s.id, s]))
 
     // Walk up the parent chain starting from parentStreamId
     const chain: ThreadAncestor[] = []
@@ -58,7 +58,7 @@ export function useThreadAncestors(
     }
 
     return chain
-  }, [bootstrap?.streams, parentStreamId, currentStreamId])
+  }, [streams, parentStreamId, currentStreamId])
 
-  return { ancestors, isLoading }
+  return { ancestors, isLoading: false }
 }

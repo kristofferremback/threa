@@ -135,7 +135,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     workosOrgService,
     pool,
   })
-  const stream = createStreamHandlers({ streamService, eventService, activityService })
+  const stream = createStreamHandlers({ streamService, eventService, activityService, linkPreviewService })
   const message = createMessageHandlers({ pool, eventService, streamService, commandRegistry })
   const attachment = createAttachmentHandlers({ attachmentService, streamService })
   const search = createSearchHandlers({ pool, searchService })

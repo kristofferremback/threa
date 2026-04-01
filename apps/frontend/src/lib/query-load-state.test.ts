@@ -4,7 +4,9 @@ import {
   QUERY_LOAD_STATE,
   getQueryLoadState,
   isQueryLoadStateLoading,
+  isRecoverableBootstrapError,
   isTerminalBootstrapError,
+  shouldSuppressBootstrapError,
 } from "./query-load-state"
 
 describe("getQueryLoadState", () => {
@@ -43,5 +45,28 @@ describe("isTerminalBootstrapError", () => {
   it("returns false for non-terminal or non-api errors", () => {
     expect(isTerminalBootstrapError(new ApiError(500, "INTERNAL", "Internal error"))).toBe(false)
     expect(isTerminalBootstrapError(new Error("boom"))).toBe(false)
+  })
+})
+
+describe("isRecoverableBootstrapError", () => {
+  it("returns true for rate limits, server errors, and transient non-api errors", () => {
+    expect(isRecoverableBootstrapError(new ApiError(429, "RATE_LIMITED", "Slow down"))).toBe(true)
+    expect(isRecoverableBootstrapError(new ApiError(503, "UNAVAILABLE", "Unavailable"))).toBe(true)
+    expect(isRecoverableBootstrapError(new Error("socket closed"))).toBe(true)
+  })
+
+  it("returns false for terminal bootstrap errors", () => {
+    expect(isRecoverableBootstrapError(new ApiError(403, "FORBIDDEN", "Forbidden"))).toBe(false)
+    expect(isRecoverableBootstrapError(new ApiError(404, "NOT_FOUND", "Not found"))).toBe(false)
+  })
+})
+
+describe("shouldSuppressBootstrapError", () => {
+  it("suppresses only recoverable errors when local data exists", () => {
+    expect(shouldSuppressBootstrapError(new ApiError(429, "RATE_LIMITED", "Slow down"), true)).toBe(true)
+    expect(shouldSuppressBootstrapError(new Error("socket closed"), true)).toBe(true)
+    expect(shouldSuppressBootstrapError(new ApiError(404, "NOT_FOUND", "Not found"), true)).toBe(false)
+    expect(shouldSuppressBootstrapError(new ApiError(429, "RATE_LIMITED", "Slow down"), false)).toBe(false)
+    expect(shouldSuppressBootstrapError(null, true)).toBe(false)
   })
 })

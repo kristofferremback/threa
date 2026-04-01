@@ -93,9 +93,7 @@ export function SidebarFooter({ workspaceId, currentUser }: SidebarFooterProps) 
     )
   }, [collapseOnMobile, setSearchParams])
 
-  if (!currentUser) return null
-
-  const avatarSrc = getAvatarUrl(workspaceId, currentUser.avatarUrl, 64)
+  const avatarSrc = currentUser ? getAvatarUrl(workspaceId, currentUser.avatarUrl, 64) : null
   const menuActions = useMemo<SidebarActionItem[]>(
     () => [
       {
@@ -134,6 +132,8 @@ export function SidebarFooter({ workspaceId, currentUser }: SidebarFooterProps) 
     ],
     [handleOpenSettings, openWorkspaceSettings, collapseOnMobile, logout, workspaceId]
   )
+
+  if (!currentUser) return null
 
   if (isMobile) {
     return (

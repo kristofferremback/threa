@@ -362,16 +362,14 @@ test.describe("Drafts Page", () => {
     await page.keyboard.type(`Parent message ${testId}`)
     await page.keyboard.press("Meta+Enter")
 
-    // Wait for the message to be sent and appear in the timeline
-    await expect(page.getByText(`Parent message ${testId}`)).toBeVisible({ timeout: 5000 })
-
-    // Click "Reply in thread" link to start a thread draft (appears on hover)
-    // Scope to main content area to avoid matching sidebar preview
+    // Wait for the message to be sent and appear in the timeline.
+    // Scope to .message-item to avoid matching sidebar preview text.
     const messageContainer = page
       .getByRole("main")
-      .locator(".group")
+      .locator(".message-item")
       .filter({ hasText: `Parent message ${testId}` })
       .first()
+    await expect(messageContainer).toBeVisible({ timeout: 5000 })
     await messageContainer.hover()
 
     // Wait for the link to become visible, then click it

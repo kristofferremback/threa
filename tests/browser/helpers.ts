@@ -64,6 +64,7 @@ export async function loginAndCreateWorkspace(
     throw new Error("Workspace creation response is missing workspace.id")
   }
 
+  await waitForWorkspaceProvisioned(page, workspaceId)
   await page.goto(`/w/${workspaceId}`)
   await expect(page.getByRole("button", { name: "+ New Scratchpad" })).toBeVisible({ timeout: 10000 })
 

@@ -1,8 +1,8 @@
 import { useCallback, useMemo, useRef, type RefObject } from "react"
 import { Archive, FileEdit, Settings } from "lucide-react"
-import { Link } from "react-router-dom"
+import { Link, useNavigate } from "react-router-dom"
 import { MentionIndicator } from "@/components/mention-indicator"
-import { useActors, useStreamOrDraft } from "@/hooks"
+import { isDraftId, useActors, useArchiveStream, useDraftScratchpads } from "@/hooks"
 import { useSidebar } from "@/contexts"
 import { useStreamSettings } from "@/components/stream-settings/use-stream-settings"
 import { cn } from "@/lib/utils"
@@ -42,22 +42,34 @@ export function ScratchpadItem({
   showPreviewOnHover = false,
   scrollContainerRef,
 }: ScratchpadItemProps) {
-  const { stream, isDraft, archive } = useStreamOrDraft(workspaceId, streamWithPreview.id)
+  const navigate = useNavigate()
+  const archiveStream = useArchiveStream(workspaceId)
+  const { deleteDraft } = useDraftScratchpads(workspaceId)
   const { getActorName } = useActors(workspaceId)
   const { collapseOnMobile } = useSidebar()
   const { openStreamSettings } = useStreamSettings()
   const itemRef = useRef<HTMLAnchorElement>(null)
   const hasUnread = unreadCount > 0
+  const isDraft = isDraftId(streamWithPreview.id)
 
-  const currentDisplayName = stream?.displayName ?? streamWithPreview.displayName ?? null
+  const currentDisplayName = streamWithPreview.displayName ?? null
   const name = currentDisplayName || streamFallbackLabel("scratchpad", "sidebar")
   const preview = streamWithPreview.lastMessagePreview
 
   useUrgencyTracking(itemRef, streamWithPreview.id, streamWithPreview.urgency, scrollContainerRef)
 
   const handleArchive = useCallback(async () => {
-    await archive()
-  }, [archive])
+    if (isDraft) {
+      await deleteDraft(streamWithPreview.id)
+      // Drafts are fully deleted — navigate away if viewing
+      if (isActive) {
+        navigate(`/w/${workspaceId}`)
+      }
+    } else {
+      // Real streams stay viewable as read-only after archival
+      await archiveStream.mutateAsync(streamWithPreview.id)
+    }
+  }, [archiveStream, deleteDraft, isActive, isDraft, navigate, streamWithPreview.id, workspaceId])
 
   const actions = useMemo<SidebarActionItem[]>(
     () => [

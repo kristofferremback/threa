@@ -1,6 +1,7 @@
 import { useMemo } from "react"
 import { useParams } from "react-router-dom"
-import { useThreadAncestors, useWorkspaceBootstrap } from "@/hooks"
+import { useThreadAncestors } from "@/hooks"
+import { useWorkspaceStreams } from "@/stores/workspace-store"
 import { usePanel } from "@/contexts"
 import { ResponsiveBreadcrumbs } from "./responsive-breadcrumbs"
 import { getStreamName, streamFallbackLabel } from "@/lib/streams"
@@ -30,12 +31,12 @@ export function ThreadHeader({ workspaceId, stream, inPanel = false }: ThreadHea
     stream.rootStreamId
   )
 
-  const { data: bootstrap } = useWorkspaceBootstrap(workspaceId)
+  const streams = useWorkspaceStreams(workspaceId)
   const ancestors = useMemo(() => {
     if (hookAncestors.length > 0) return hookAncestors
 
-    if (stream.rootStreamId && bootstrap?.streams) {
-      const rootStream = bootstrap.streams.find((s) => s.id === stream.rootStreamId)
+    if (stream.rootStreamId && streams.length > 0) {
+      const rootStream = streams.find((s) => s.id === stream.rootStreamId)
       if (rootStream) {
         return [
           {
@@ -50,7 +51,7 @@ export function ThreadHeader({ workspaceId, stream, inPanel = false }: ThreadHea
     }
 
     return []
-  }, [hookAncestors, stream.rootStreamId, bootstrap?.streams])
+  }, [hookAncestors, stream.rootStreamId, streams])
 
   const { getPanelUrl, closePanel } = usePanel()
   const { streamId: mainViewStreamId } = useParams<{ streamId: string }>()

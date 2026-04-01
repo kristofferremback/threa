@@ -12,14 +12,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
-import {
-  useStreamOrDraft,
-  useStreamError,
-  usePanelLayout,
-  isDmDraftId,
-  useTypeToFocus,
-  useWorkspaceBootstrap,
-} from "@/hooks"
+import { useStreamOrDraft, useStreamError, usePanelLayout, isDmDraftId, useTypeToFocus } from "@/hooks"
+import { useWorkspaceDmPeers } from "@/stores/workspace-store"
 import { usePanel, useSidebar } from "@/contexts"
 import { useUserProfile } from "@/components/user-profile"
 import { TimelineView } from "@/components/timeline"
@@ -85,12 +79,12 @@ export function StreamPage() {
   }
 
   const { openUserProfile } = useUserProfile()
-  const { data: bootstrap } = useWorkspaceBootstrap(workspaceId ?? "")
+  const dmPeers = useWorkspaceDmPeers(workspaceId ?? "")
 
   const isThread = stream?.type === StreamTypes.THREAD
   const isChannel = stream?.type === StreamTypes.CHANNEL
   const isDm = stream?.type === StreamTypes.DM
-  const dmPeerUserId = isDm ? bootstrap?.dmPeers.find((p) => p.streamId === streamId)?.userId : null
+  const dmPeerUserId = isDm ? dmPeers.find((p) => p.streamId === streamId)?.userId : null
 
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState("")

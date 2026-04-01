@@ -4,7 +4,8 @@ import { X, Plus, User, Calendar, Hash, MessageSquare, Archive } from "lucide-re
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { useSearch, useWorkspaceBootstrap, useFormattedDate } from "@/hooks"
+import { useSearch, useFormattedDate } from "@/hooks"
+import { useWorkspaceUsers, useWorkspaceStreams } from "@/stores/workspace-store"
 import type { SearchFilters, ArchiveStatus } from "@/api"
 import type { StreamType } from "@threa/types"
 import { FilterSelect } from "./filter-select"
@@ -42,14 +43,15 @@ const ARCHIVE_STATUS_OPTIONS: { value: ArchiveStatus; label: string }[] = [
 export function useSearchItems(context: ModeContext): ModeResult {
   const { workspaceId, query, onQueryChange, closeDialog } = context
   const navigate = useNavigate()
-  const { data: bootstrap } = useWorkspaceBootstrap(workspaceId)
+  const idbUsers = useWorkspaceUsers(workspaceId)
+  const idbStreams = useWorkspaceStreams(workspaceId)
   const { results, isLoading, search, clear } = useSearch({ workspaceId })
   const { formatDate } = useFormattedDate()
 
   const [addingFilter, setAddingFilter] = useState<FilterType | null>(null)
 
-  const users = useMemo(() => bootstrap?.users ?? [], [bootstrap?.users])
-  const streams = useMemo(() => bootstrap?.streams ?? [], [bootstrap?.streams])
+  const users = idbUsers
+  const streams = idbStreams
 
   // Parse filters from query string (single source of truth)
   const { filters: parsedFilters, text: searchText } = useMemo(() => parseSearchQuery(query), [query])

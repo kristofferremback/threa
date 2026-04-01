@@ -1,15 +1,32 @@
-import { useCallback, useEffect } from "react"
-import { useLiveQuery } from "dexie-react-hooks"
+import { useCallback, useEffect, useMemo } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "react-router-dom"
-import { db } from "@/db"
+import { db, type CachedStream } from "@/db"
 import { useStreamService, useMessageService, usePendingMessages } from "@/contexts"
 import { useUser } from "@/auth"
 import { useStreamBootstrap, streamKeys } from "./use-streams"
-import { useWorkspaceBootstrap, workspaceKeys } from "./use-workspaces"
+import { workspaceKeys } from "./use-workspaces"
+import { useDraftScratchpads } from "./use-draft-scratchpads"
+import { useWorkspaceUsers, useWorkspaceStreams, useWorkspaceDmPeers } from "@/stores/workspace-store"
+import { useSyncEngine } from "@/sync/sync-engine"
+import {
+  deleteDraftMessageFromCache,
+  deleteDraftScratchpadFromCache,
+  hasSeededDraftCache,
+  upsertDraftMessageInCache,
+} from "@/stores/draft-store"
 import { createOptimisticBootstrap, type AttachmentSummary } from "./create-optimistic-bootstrap"
 import { serializeToMarkdown } from "@threa/prosemirror"
-import type { StreamType, CompanionMode, StreamEvent, JSONContent, WorkspaceBootstrap } from "@threa/types"
+import type {
+  Stream,
+  StreamMember,
+  StreamType,
+  CompanionMode,
+  StreamEvent,
+  JSONContent,
+  WorkspaceBootstrap,
+  StreamWithPreview,
+} from "@threa/types"
 import { StreamTypes, Visibilities, CompanionModes } from "@threa/types"
 
 const DM_DRAFT_PREFIX = "draft_dm_"
@@ -41,19 +58,30 @@ export function getDmDraftUserId(id: string): string | null {
 function resolveRealDmDisplayName(
   streamId: string,
   streamDisplayName: string | null,
-  streamMembers: Array<{ memberId: string }>,
-  workspaceBootstrap: WorkspaceBootstrap | undefined,
-  currentUserId: string | null
+  idbStreams: Array<{ id: string; displayName: string | null }>,
+  idbUsers: Array<{ id: string; name: string }>,
+  idbDmPeers: Array<{ streamId: string; userId: string }>
 ): string | null {
-  const workspaceName = workspaceBootstrap?.streams.find((stream) => stream.id === streamId)?.displayName
+  const workspaceName = idbStreams.find((stream) => stream.id === streamId)?.displayName
   if (workspaceName) return workspaceName
 
-  const otherMemberId = streamMembers.find((member) => member.memberId !== currentUserId)?.memberId
+  const otherMemberId = idbDmPeers.find((peer) => peer.streamId === streamId)?.userId
   if (!otherMemberId) return streamDisplayName
 
-  const workspaceUsers = workspaceBootstrap?.users ?? []
-  const otherMemberName = workspaceUsers.find((u) => u.id === otherMemberId)?.name ?? null
+  const otherMemberName = idbUsers.find((u) => u.id === otherMemberId)?.name ?? null
   return otherMemberName ?? streamDisplayName
+}
+
+function toCachedStream(stream: Stream, previous: CachedStream | undefined): CachedStream {
+  return {
+    ...previous,
+    ...stream,
+    lastMessagePreview: previous?.lastMessagePreview ?? null,
+    pinned: previous?.pinned,
+    notificationLevel: previous?.notificationLevel ?? null,
+    lastReadEventId: previous?.lastReadEventId ?? null,
+    _cachedAt: Date.now(),
+  }
 }
 
 export interface VirtualStream {
@@ -97,8 +125,8 @@ function useDraftStream(workspaceId: string, streamId: string, enabled: boolean)
   const navigate = useNavigate()
   const streamService = useStreamService()
   const messageService = useMessageService()
-
-  const draft = useLiveQuery(() => (enabled ? db.draftScratchpads.get(streamId) : undefined), [enabled, streamId])
+  const { getDraft, updateDraft, deleteDraft } = useDraftScratchpads(workspaceId)
+  const draft = enabled ? getDraft(streamId) : undefined
 
   const stream: VirtualStream | undefined = draft
     ? {
@@ -117,15 +145,15 @@ function useDraftStream(workspaceId: string, streamId: string, enabled: boolean)
 
   const rename = useCallback(
     async (newName: string) => {
-      await db.draftScratchpads.update(streamId, { displayName: newName })
+      await updateDraft(streamId, { displayName: newName })
     },
-    [streamId]
+    [streamId, updateDraft]
   )
 
   const archive = useCallback(async () => {
-    await db.draftScratchpads.delete(streamId)
+    await deleteDraft(streamId)
     navigate(`/w/${workspaceId}`)
-  }, [streamId, workspaceId, navigate])
+  }, [deleteDraft, streamId, workspaceId, navigate])
 
   const sendMessage = useCallback(
     async (input: SendMessageInput): Promise<{ navigateTo?: string; replace?: boolean }> => {
@@ -149,7 +177,12 @@ function useDraftStream(workspaceId: string, streamId: string, enabled: boolean)
         attachmentIds: input.attachmentIds,
       })
 
-      await db.draftScratchpads.delete(streamId)
+      await db.transaction("rw", db.draftScratchpads, db.draftMessages, async () => {
+        await db.draftScratchpads.delete(streamId)
+        await db.draftMessages.delete(`stream:${streamId}`)
+      })
+      deleteDraftScratchpadFromCache(workspaceId, streamId)
+      deleteDraftMessageFromCache(workspaceId, `stream:${streamId}`)
 
       // Pre-populate the new stream's cache so navigation is instant
       queryClient.setQueryData(
@@ -171,7 +204,7 @@ function useDraftStream(workspaceId: string, streamId: string, enabled: boolean)
 
   return {
     stream,
-    isLoading: enabled && draft === undefined,
+    isLoading: enabled && draft === undefined && !hasSeededDraftCache(workspaceId),
     isDraft: true,
     error: null,
     rename,
@@ -188,16 +221,17 @@ function useDraftDmStream(workspaceId: string, streamId: string, enabled: boolea
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const messageService = useMessageService()
+  const syncEngine = useSyncEngine()
   const user = useUser()
-  const { data: wsBootstrap, isLoading } = useWorkspaceBootstrap(workspaceId)
-  const workspaceUsers = wsBootstrap?.users ?? []
+  const idbUsers = useWorkspaceUsers(workspaceId)
+  const idbDmPeers = useWorkspaceDmPeers(workspaceId)
 
   const targetUserId = getDmDraftUserId(streamId)
-  const targetUser = workspaceUsers.find((u) => u.id === targetUserId) ?? null
+  const targetUser = idbUsers.find((u) => u.id === targetUserId) ?? null
   const targetUserName = targetUser?.name ?? null
-  const currentUserId = workspaceUsers.find((u) => u.workosUserId === user?.id)?.id ?? null
+  const currentUserId = idbUsers.find((u) => u.workosUserId === user?.id)?.id ?? null
   const existingDmStreamId =
-    targetUserId && currentUserId ? wsBootstrap?.dmPeers.find((peer) => peer.userId === targetUserId)?.streamId : null
+    targetUserId && currentUserId ? idbDmPeers.find((peer) => peer.userId === targetUserId)?.streamId : null
 
   useEffect(() => {
     if (!enabled || !existingDmStreamId) return
@@ -211,9 +245,12 @@ function useDraftDmStream(workspaceId: string, streamId: string, enabled: boolea
         if (draft) {
           const existingDraft = await db.draftMessages.get(realStreamKey)
           if (!existingDraft || existingDraft.updatedAt < draft.updatedAt) {
-            await db.draftMessages.put({ ...draft, id: realStreamKey })
+            const migratedDraft = { ...draft, id: realStreamKey }
+            await db.draftMessages.put(migratedDraft)
+            upsertDraftMessageInCache(workspaceId, migratedDraft)
           }
           await db.draftMessages.delete(draftKey)
+          deleteDraftMessageFromCache(workspaceId, draftKey)
         }
       }
 
@@ -249,6 +286,7 @@ function useDraftDmStream(workspaceId: string, streamId: string, enabled: boolea
 
   const archive = useCallback(async () => {
     await db.draftMessages.delete(`stream:${streamId}`)
+    deleteDraftMessageFromCache(workspaceId, `stream:${streamId}`)
     navigate(`/w/${workspaceId}`)
   }, [streamId, workspaceId, navigate])
 
@@ -266,81 +304,116 @@ function useDraftDmStream(workspaceId: string, streamId: string, enabled: boolea
         attachmentIds: input.attachmentIds,
       })
 
+      const now = Date.now()
+      const optimisticStream: CachedStream = {
+        id: message.streamId,
+        workspaceId,
+        type: StreamTypes.DM,
+        displayName: targetUserName ?? "Direct message",
+        slug: null,
+        description: null,
+        visibility: Visibilities.PRIVATE,
+        parentStreamId: null,
+        parentMessageId: null,
+        rootStreamId: null,
+        companionMode: CompanionModes.OFF,
+        companionPersonaId: null,
+        createdBy: message.authorId,
+        createdAt: message.createdAt,
+        updatedAt: message.createdAt,
+        archivedAt: null,
+        lastMessagePreview: {
+          authorId: message.authorId,
+          authorType: message.authorType,
+          content: message.contentMarkdown,
+          createdAt: message.createdAt,
+        },
+        _cachedAt: now,
+      }
+
+      await db.transaction("rw", [db.streams, db.streamMemberships, db.dmPeers], async () => {
+        await db.streams.put(optimisticStream)
+
+        if (currentUserId) {
+          await db.streamMemberships.put({
+            id: `${workspaceId}:${message.streamId}`,
+            workspaceId,
+            streamId: message.streamId,
+            memberId: currentUserId,
+            pinned: false,
+            pinnedAt: null,
+            notificationLevel: null,
+            lastReadEventId: null,
+            lastReadAt: null,
+            joinedAt: message.createdAt,
+            _cachedAt: now,
+          })
+        }
+
+        await db.dmPeers.put({
+          id: `${workspaceId}:${message.streamId}`,
+          workspaceId,
+          userId: targetUserId,
+          streamId: message.streamId,
+          _cachedAt: now,
+        })
+      })
+
+      void syncEngine.subscribeStream(message.streamId)
+
       // Keep sidebar state consistent immediately on sender side:
       // remove virtual DM draft and set viewer-specific DM name as soon as streamId is known.
       queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
         if (!old) return old
 
+        const optimisticBootstrapStream: StreamWithPreview = {
+          ...optimisticStream,
+          lastMessagePreview: optimisticStream.lastMessagePreview ?? null,
+        }
+
+        const optimisticMembership: StreamMember | null = currentUserId
+          ? {
+              streamId: message.streamId,
+              memberId: currentUserId,
+              pinned: false,
+              pinnedAt: null,
+              notificationLevel: null,
+              lastReadEventId: null,
+              lastReadAt: null,
+              joinedAt: message.createdAt,
+            }
+          : null
+
         const hasPeer = old.dmPeers.some((peer) => peer.userId === targetUserId && peer.streamId === message.streamId)
 
         const streamExists = old.streams.some((stream) => stream.id === message.streamId)
-        const optimisticStream = streamExists
-          ? old.streams
-          : [
-              ...old.streams,
-              {
-                id: message.streamId,
-                workspaceId,
-                type: StreamTypes.DM,
-                displayName: targetUserName ?? "Direct message",
-                slug: null,
-                description: null,
-                visibility: Visibilities.PRIVATE,
-                parentStreamId: null,
-                parentMessageId: null,
-                rootStreamId: null,
-                companionMode: CompanionModes.OFF,
-                companionPersonaId: null,
-                createdBy: message.authorId,
-                createdAt: message.createdAt,
-                updatedAt: message.createdAt,
-                archivedAt: null,
-                lastMessagePreview: {
-                  authorId: message.authorId,
-                  authorType: message.authorType,
-                  content: message.contentMarkdown,
-                  createdAt: message.createdAt,
-                },
-              },
-            ]
+        const streams = streamExists ? old.streams : [...old.streams, optimisticBootstrapStream]
 
         const membershipExists = old.streamMemberships.some((m) => m.streamId === message.streamId)
 
         return {
           ...old,
           dmPeers: hasPeer ? old.dmPeers : [...old.dmPeers, { userId: targetUserId, streamId: message.streamId }],
-          streams: optimisticStream.map((stream) =>
+          streams: streams.map((stream) =>
             stream.id === message.streamId && stream.type === StreamTypes.DM
               ? { ...stream, displayName: targetUserName ?? stream.displayName }
               : stream
           ),
           streamMemberships:
-            !membershipExists && currentUserId
-              ? [
-                  ...old.streamMemberships,
-                  {
-                    streamId: message.streamId,
-                    memberId: currentUserId,
-                    pinned: false,
-                    pinnedAt: null,
-                    notificationLevel: null,
-                    lastReadEventId: null,
-                    lastReadAt: null,
-                    joinedAt: message.createdAt,
-                  },
-                ]
+            !membershipExists && optimisticMembership
+              ? [...old.streamMemberships, optimisticMembership]
               : old.streamMemberships,
         }
       })
 
       return { navigateTo: `/w/${workspaceId}/s/${message.streamId}`, replace: true }
     },
-    [targetUserId, workspaceId, messageService, queryClient, targetUserName, currentUserId]
+    [targetUserId, workspaceId, messageService, queryClient, targetUserName, currentUserId, syncEngine]
   )
 
   return {
     stream,
-    isLoading: enabled && isLoading,
+    isLoading: false,
     isDraft: true,
     error: null,
     rename,
@@ -357,35 +430,38 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
   const streamService = useStreamService()
   const { markPending, notifyQueue } = usePendingMessages()
   const user = useUser()
-  const { data: wsBootstrap } = useWorkspaceBootstrap(workspaceId)
-  const workspaceUsers = wsBootstrap?.users ?? []
-  const currentUserId = workspaceUsers.find((u) => u.workosUserId === user?.id)?.id ?? null
+  const idbUsers = useWorkspaceUsers(workspaceId)
+  const idbStreams = useWorkspaceStreams(workspaceId)
+  const idbDmPeers = useWorkspaceDmPeers(workspaceId)
+  const currentUserId = idbUsers.find((u) => u.workosUserId === user?.id)?.id ?? null
+  const idbStream = useMemo(() => idbStreams.find((stream) => stream.id === streamId), [idbStreams, streamId])
 
-  const { data: bootstrap, isLoading, error } = useStreamBootstrap(workspaceId, streamId, { enabled })
+  const {
+    data: bootstrap,
+    isLoading: isBootstrapLoading,
+    error,
+  } = useStreamBootstrap(workspaceId, streamId, {
+    enabled: enabled && !idbStream,
+  })
+  const baseStream = idbStream ?? bootstrap?.stream
   const displayName =
-    bootstrap?.stream?.type === StreamTypes.DM
-      ? resolveRealDmDisplayName(
-          bootstrap.stream.id,
-          bootstrap.stream.displayName,
-          bootstrap.members,
-          wsBootstrap,
-          currentUserId
-        )
-      : (bootstrap?.stream?.displayName ?? null)
+    baseStream?.type === StreamTypes.DM
+      ? resolveRealDmDisplayName(baseStream.id, baseStream.displayName, idbStreams, idbUsers, idbDmPeers)
+      : (baseStream?.displayName ?? null)
 
-  const stream: VirtualStream | undefined = bootstrap?.stream
+  const stream: VirtualStream | undefined = baseStream
     ? {
-        id: bootstrap.stream.id,
-        workspaceId: bootstrap.stream.workspaceId,
-        type: bootstrap.stream.type,
-        slug: bootstrap.stream.slug,
+        id: baseStream.id,
+        workspaceId: baseStream.workspaceId,
+        type: baseStream.type,
+        slug: baseStream.slug,
         displayName,
-        companionMode: bootstrap.stream.companionMode,
+        companionMode: baseStream.companionMode,
         isDraft: false,
-        parentStreamId: bootstrap.stream.parentStreamId,
-        parentMessageId: bootstrap.stream.parentMessageId,
-        rootStreamId: bootstrap.stream.rootStreamId,
-        archivedAt: bootstrap.stream.archivedAt,
+        parentStreamId: baseStream.parentStreamId,
+        parentMessageId: baseStream.parentMessageId,
+        rootStreamId: baseStream.rootStreamId,
+        archivedAt: baseStream.archivedAt,
       }
     : undefined
 
@@ -394,6 +470,7 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
       const updatedStream = await streamService.update(workspaceId, streamId, {
         displayName: newName,
       })
+      await db.streams.put(toCachedStream(updatedStream, idbStream))
 
       queryClient.setQueryData(streamKeys.bootstrap(workspaceId, streamId), (old: unknown) => {
         if (!old || typeof old !== "object") return old
@@ -410,36 +487,50 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
         }
       })
     },
-    [streamId, workspaceId, streamService, queryClient]
+    [streamId, workspaceId, streamService, queryClient, idbStream]
   )
 
   const archive = useCallback(async () => {
     await streamService.archive(workspaceId, streamId)
+    const archivedAt = new Date().toISOString()
 
-    // Invalidate to refetch with updated archivedAt
-    queryClient.invalidateQueries({ queryKey: streamKeys.bootstrap(workspaceId, streamId) })
+    // Update IDB (not delete) so useLiveQuery reactively picks up archivedAt.
+    // The sidebar filters out streams with archivedAt set.
+    await db.streams.update(streamId, { archivedAt })
 
-    // Remove from workspace sidebar (archived streams don't show there)
-    queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), (old: unknown) => {
+    queryClient.setQueryData(streamKeys.bootstrap(workspaceId, streamId), (old: unknown) => {
       if (!old || typeof old !== "object") return old
-      const wsBootstrap = old as { streams?: Array<{ id: string }> }
-      if (!wsBootstrap.streams) return old
       return {
-        ...wsBootstrap,
-        streams: wsBootstrap.streams.filter((s) => s.id !== streamId),
+        ...old,
+        stream: {
+          ...(old as { stream?: Stream }).stream,
+          archivedAt,
+        },
       }
     })
   }, [streamId, workspaceId, streamService, queryClient])
 
   const unarchive = useCallback(async () => {
     await streamService.unarchive(workspaceId, streamId)
+    const restoredStream = bootstrap?.stream ?? idbStream
+    if (restoredStream) {
+      await db.streams.put(toCachedStream({ ...restoredStream, archivedAt: null }, idbStream))
+    }
 
-    // Invalidate to refetch with cleared archivedAt
-    queryClient.invalidateQueries({ queryKey: streamKeys.bootstrap(workspaceId, streamId) })
+    queryClient.setQueryData(streamKeys.bootstrap(workspaceId, streamId), (old: unknown) => {
+      if (!old || typeof old !== "object") return old
+      return {
+        ...old,
+        stream: {
+          ...(old as { stream?: Stream }).stream,
+          archivedAt: null,
+        },
+      }
+    })
 
     // Add back to workspace sidebar
     queryClient.invalidateQueries({ queryKey: workspaceKeys.bootstrap(workspaceId) })
-  }, [streamId, workspaceId, streamService, queryClient])
+  }, [streamId, workspaceId, streamService, queryClient, bootstrap?.stream, idbStream])
 
   const sendMessage = useCallback(
     async (input: SendMessageInput): Promise<{ navigateTo?: string }> => {
@@ -464,6 +555,7 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
         payload: {
           messageId: clientId,
           contentMarkdown,
+          ...(input.attachments && input.attachments.length > 0 ? { attachments: input.attachments } : {}),
         },
         actorId: currentUserId,
         actorType: "user",
@@ -471,16 +563,6 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
       }
 
       markPending(clientId)
-
-      // Update React Query cache immediately for instant UI feedback
-      queryClient.setQueryData(streamKeys.bootstrap(workspaceId, streamId), (old: unknown) => {
-        if (!old || typeof old !== "object") return old
-        const bootstrap = old as { events: StreamEvent[] }
-        return {
-          ...bootstrap,
-          events: [...bootstrap.events, optimisticEvent],
-        }
-      })
 
       // Persist to IndexedDB — this is the durable enqueue step.
       // The background message queue (useMessageQueue) will pick it up and send it.
@@ -498,6 +580,7 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
 
       await db.events.add({
         ...optimisticEvent,
+        workspaceId,
         _clientId: clientId,
         _status: "pending",
         _cachedAt: Date.now(),
@@ -513,9 +596,9 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
 
   return {
     stream,
-    isLoading,
+    isLoading: enabled && !stream && isBootstrapLoading,
     isDraft: false,
-    error: error ?? null,
+    error: stream ? null : (error ?? null),
     rename,
     archive,
     unarchive,

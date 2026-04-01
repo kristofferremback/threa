@@ -2,7 +2,7 @@ import { useCallback, useMemo } from "react"
 import { useParams } from "react-router-dom"
 import type { ChannelItem } from "./types"
 import { ChannelList } from "./channel-list"
-import { useWorkspaceBootstrap } from "@/hooks/use-workspaces"
+import { useWorkspaceStreams } from "@/stores/workspace-store"
 import { useSuggestion } from "./use-suggestion"
 
 /**
@@ -25,13 +25,11 @@ function filterChannels(items: ChannelItem[], query: string): ChannelItem[] {
  */
 export function useChannelSuggestion() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
-  const { data: bootstrap } = useWorkspaceBootstrap(workspaceId ?? "")
+  const streams = useWorkspaceStreams(workspaceId ?? "")
 
   // Convert streams to channel items
   const channels = useMemo<ChannelItem[]>(() => {
-    if (!bootstrap) return []
-
-    return bootstrap.streams
+    return streams
       .filter((stream) => stream.type === "channel" && stream.slug)
       .map((stream) => ({
         id: stream.id,
@@ -39,7 +37,7 @@ export function useChannelSuggestion() {
         name: stream.displayName ?? stream.slug!,
         type: "channel" as const,
       }))
-  }, [bootstrap])
+  }, [streams])
 
   const renderList = useCallback(
     (props: {

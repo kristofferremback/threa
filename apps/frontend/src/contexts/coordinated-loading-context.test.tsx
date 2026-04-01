@@ -7,38 +7,40 @@ import {
   useCoordinatedLoading,
 } from "./coordinated-loading-context"
 import { QUERY_LOAD_STATE, isQueryLoadStateLoading, type QueryLoadState } from "@/lib/query-load-state"
+import { ApiError } from "@/api/client"
 
-let mockWorkspaceLoadState: QueryLoadState = QUERY_LOAD_STATE.PENDING
-let mockStreamsLoadState: QueryLoadState = QUERY_LOAD_STATE.PENDING
-let mockStreamResults: Array<{
+type MockQueryResult = {
   status: "pending" | "success" | "error"
   fetchStatus: "idle" | "fetching" | "paused"
   isLoading: boolean
   isError: boolean
   error: Error | null
-}> = []
-
-function statusFromLoadState(state: QueryLoadState): "pending" | "success" | "error" {
-  if (state === QUERY_LOAD_STATE.ERROR) return "error"
-  if (state === QUERY_LOAD_STATE.READY) return "success"
-  return "pending"
+  data?: { stream?: { id: string } }
 }
 
-function fetchStatusFromLoadState(state: QueryLoadState): "idle" | "fetching" | "paused" {
-  if (state === QUERY_LOAD_STATE.FETCHING) return "fetching"
-  return "idle"
-}
+let mockWorkspaceLoadState: QueryLoadState = QUERY_LOAD_STATE.PENDING
+let mockStreamsLoadState: QueryLoadState = QUERY_LOAD_STATE.PENDING
+let mockStreamResults: MockQueryResult[] = []
+let mockSeedCacheFromIdbResult = false
+let mockHasSeededWorkspaceCache = false
+let mockWorkspace: { id: string } | undefined
+let mockUsers: Array<{ id: string; avatarUrl: string | null }> = []
+let mockStreams: Array<{ id: string; lastMessagePreview?: { createdAt: string } | null }> = []
+let mockMemberships: Array<{ streamId: string }> = []
+let mockDmPeers: Array<{ streamId: string; userId: string }> = []
+let mockPersonas: Array<{ id: string }> = []
+let mockBots: Array<{ id: string }> = []
+let mockUnreadState: { id: string } | undefined
+let mockMetadata: { id: string } | undefined
+let mockHasSeededDraftCache = false
 
-vi.mock("@/hooks/use-workspaces", () => ({
-  useWorkspaceBootstrap: () => ({
-    loadState: mockWorkspaceLoadState,
-    status: statusFromLoadState(mockWorkspaceLoadState),
-    fetchStatus: fetchStatusFromLoadState(mockWorkspaceLoadState),
-    isLoading: mockWorkspaceLoadState === QUERY_LOAD_STATE.FETCHING,
-    isPending: mockWorkspaceLoadState === QUERY_LOAD_STATE.PENDING,
-    data: null,
-    error: null,
-  }),
+vi.mock("@/sync/sync-status", () => ({
+  useSyncStatus: () => {
+    if (mockWorkspaceLoadState === QUERY_LOAD_STATE.PENDING || mockWorkspaceLoadState === QUERY_LOAD_STATE.FETCHING)
+      return "syncing"
+    if (mockWorkspaceLoadState === QUERY_LOAD_STATE.ERROR) return "error"
+    return "synced"
+  },
 }))
 
 vi.mock("@/hooks/use-coordinated-stream-queries", () => ({
@@ -51,18 +53,63 @@ vi.mock("@/hooks/use-coordinated-stream-queries", () => ({
   }),
 }))
 
+vi.mock("@/hooks/use-preload-images", () => ({
+  usePreloadImages: () => true,
+}))
+
+vi.mock("@/stores/workspace-store", () => ({
+  seedCacheFromIdb: vi.fn(async () => mockSeedCacheFromIdbResult),
+  hasSeededWorkspaceCache: vi.fn(() => mockHasSeededWorkspaceCache),
+  useWorkspaceFromStore: vi.fn(() => mockWorkspace),
+  useWorkspaceUsers: vi.fn(() => mockUsers),
+  useWorkspaceStreams: vi.fn(() => mockStreams),
+  useWorkspaceStreamMemberships: vi.fn(() => mockMemberships),
+  useWorkspaceDmPeers: vi.fn(() => mockDmPeers),
+  useWorkspacePersonas: vi.fn(() => mockPersonas),
+  useWorkspaceBots: vi.fn(() => mockBots),
+  useWorkspaceUnreadState: vi.fn(() => mockUnreadState),
+  useWorkspaceMetadata: vi.fn(() => mockMetadata),
+}))
+
+vi.mock("@/stores/stream-store", () => ({}))
+
+vi.mock("@/stores/draft-store", () => ({
+  seedDraftCacheFromIdb: vi.fn(async () => undefined),
+  hasSeededDraftCache: vi.fn(() => mockHasSeededDraftCache),
+}))
+
 vi.mock("@/components/loading", () => ({
   StreamContentSkeleton: () => <div data-testid="stream-content-skeleton">Stream Content Skeleton</div>,
 }))
 
 function TestConsumer() {
-  const { phase, getStreamState } = useCoordinatedLoading()
+  const { phase, getStreamState, hasErrors } = useCoordinatedLoading()
   return (
     <div>
       <span data-testid="phase">{phase}</span>
       <span data-testid="stream-state">{getStreamState("stream_1")}</span>
+      <span data-testid="has-errors">{String(hasErrors)}</span>
     </div>
   )
+}
+
+async function flushEffects() {
+  await act(async () => {
+    await Promise.resolve()
+  })
+}
+
+function makeReadyWorkspaceState() {
+  mockWorkspaceLoadState = QUERY_LOAD_STATE.READY
+  mockStreamsLoadState = QUERY_LOAD_STATE.READY
+  mockSeedCacheFromIdbResult = true
+  mockHasSeededWorkspaceCache = true
+  mockHasSeededDraftCache = true
+  mockWorkspace = { id: "workspace_1" }
+  mockUsers = [{ id: "user_1", avatarUrl: null }]
+  mockStreams = [{ id: "stream_1" }]
+  mockUnreadState = { id: "workspace_1" }
+  mockMetadata = { id: "workspace_1" }
 }
 
 describe("CoordinatedLoadingProvider", () => {
@@ -71,6 +118,18 @@ describe("CoordinatedLoadingProvider", () => {
     mockWorkspaceLoadState = QUERY_LOAD_STATE.PENDING
     mockStreamsLoadState = QUERY_LOAD_STATE.PENDING
     mockStreamResults = []
+    mockSeedCacheFromIdbResult = false
+    mockHasSeededWorkspaceCache = false
+    mockWorkspace = undefined
+    mockUsers = []
+    mockStreams = []
+    mockMemberships = []
+    mockDmPeers = []
+    mockPersonas = []
+    mockBots = []
+    mockUnreadState = undefined
+    mockMetadata = undefined
+    mockHasSeededDraftCache = false
   })
 
   afterEach(() => {
@@ -78,98 +137,154 @@ describe("CoordinatedLoadingProvider", () => {
     vi.clearAllMocks()
   })
 
-  it("should report phase='loading' initially while loading", () => {
+  it("reports loading initially while initial data is unresolved", async () => {
     render(
       <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
         <TestConsumer />
       </CoordinatedLoadingProvider>
     )
+
+    await flushEffects()
 
     expect(screen.getByTestId("phase").textContent).toBe("loading")
   })
 
-  it("should transition to phase='skeleton' after 1s if still loading", () => {
+  it("transitions to skeleton after 300ms if still loading", async () => {
     render(
       <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
         <TestConsumer />
       </CoordinatedLoadingProvider>
     )
 
+    await flushEffects()
     expect(screen.getByTestId("phase").textContent).toBe("loading")
 
     act(() => {
-      vi.advanceTimersByTime(1000)
+      vi.advanceTimersByTime(299)
     })
+    expect(screen.getByTestId("phase").textContent).toBe("loading")
 
+    act(() => {
+      vi.advanceTimersByTime(1)
+    })
     expect(screen.getByTestId("phase").textContent).toBe("skeleton")
   })
 
-  it("should transition directly to phase='ready' when loading completes before 1s", () => {
+  it("is ready when IDB is primed and stream record exists (no per-stream cache needed)", async () => {
+    mockSeedCacheFromIdbResult = true
+    mockHasSeededWorkspaceCache = true
+    mockHasSeededDraftCache = true
+    mockWorkspace = { id: "workspace_1" }
+    mockUsers = [{ id: "user_1", avatarUrl: null }]
+    mockStreams = [{ id: "stream_1" }]
+    mockUnreadState = { id: "workspace_1" }
+    mockMetadata = { id: "workspace_1" }
+
+    render(
+      <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
+        <TestConsumer />
+      </CoordinatedLoadingProvider>
+    )
+
+    await flushEffects()
+
+    // IDB primed + stream record exists = ready (useLiveQuery serves events from IDB)
+    expect(screen.getByTestId("phase").textContent).toBe("ready")
+  })
+
+  it("waits for workspace metadata before becoming ready", async () => {
+    makeReadyWorkspaceState()
+    mockMetadata = undefined
+    mockSeedCacheFromIdbResult = true
+
     const { rerender } = render(
       <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
         <TestConsumer />
       </CoordinatedLoadingProvider>
     )
 
+    await flushEffects()
+
     expect(screen.getByTestId("phase").textContent).toBe("loading")
 
-    act(() => {
-      vi.advanceTimersByTime(500)
-    })
-
-    // Simulate loading complete
-    mockWorkspaceLoadState = QUERY_LOAD_STATE.READY
-    mockStreamsLoadState = QUERY_LOAD_STATE.READY
-
+    mockMetadata = { id: "workspace_1" }
     rerender(
       <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
         <TestConsumer />
       </CoordinatedLoadingProvider>
     )
 
+    await flushEffects()
+
     expect(screen.getByTestId("phase").textContent).toBe("ready")
   })
 
-  it("should transition to phase='ready' when loading completes after 1s", () => {
+  it("waits for local draft cache before becoming ready", async () => {
+    makeReadyWorkspaceState()
+    mockHasSeededDraftCache = false
+    mockSeedCacheFromIdbResult = true
+
     const { rerender } = render(
       <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
         <TestConsumer />
       </CoordinatedLoadingProvider>
     )
 
-    act(() => {
-      vi.advanceTimersByTime(1000)
-    })
+    await flushEffects()
 
-    expect(screen.getByTestId("phase").textContent).toBe("skeleton")
+    expect(screen.getByTestId("phase").textContent).toBe("loading")
 
-    // Simulate loading complete
-    mockWorkspaceLoadState = QUERY_LOAD_STATE.READY
-    mockStreamsLoadState = QUERY_LOAD_STATE.READY
-
+    mockHasSeededDraftCache = true
     rerender(
       <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
         <TestConsumer />
       </CoordinatedLoadingProvider>
     )
 
+    await flushEffects()
+
     expect(screen.getByTestId("phase").textContent).toBe("ready")
   })
 
-  it("should be phase='ready' immediately when no data to load", () => {
-    mockWorkspaceLoadState = QUERY_LOAD_STATE.READY
-    mockStreamsLoadState = QUERY_LOAD_STATE.READY
+  it("is ready immediately when the cache already has the full visible read model", async () => {
+    makeReadyWorkspaceState()
+    mockSeedCacheFromIdbResult = true
 
     render(
-      <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={[]}>
+      <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
         <TestConsumer />
       </CoordinatedLoadingProvider>
     )
 
+    await flushEffects()
+
     expect(screen.getByTestId("phase").textContent).toBe("ready")
   })
 
-  it("should report stream state as 'idle' during initial load", () => {
+  it("trusts IDB when primed — does not wait for bootstrap even with stale preview", async () => {
+    makeReadyWorkspaceState()
+    mockSeedCacheFromIdbResult = true
+    mockStreams = [
+      {
+        id: "stream_1",
+        lastMessagePreview: { createdAt: "2026-03-01T10:01:00Z" },
+      },
+    ]
+
+    render(
+      <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
+        <TestConsumer />
+      </CoordinatedLoadingProvider>
+    )
+
+    await flushEffects()
+
+    // IDB is the source of truth — useLiveQuery serves events directly.
+    // No need to wait for bootstrap to confirm preview alignment.
+    expect(screen.getByTestId("phase").textContent).toBe("ready")
+  })
+
+  it("reports stream state as idle during the initial coordinated load", async () => {
     mockStreamResults = [{ status: "pending", fetchStatus: "fetching", isLoading: true, isError: false, error: null }]
 
     render(
@@ -177,13 +292,14 @@ describe("CoordinatedLoadingProvider", () => {
         <TestConsumer />
       </CoordinatedLoadingProvider>
     )
+
+    await flushEffects()
 
     expect(screen.getByTestId("stream-state").textContent).toBe("idle")
   })
 
-  it("should report stream state as 'loading' after initial load completes", () => {
-    mockWorkspaceLoadState = QUERY_LOAD_STATE.READY
-    mockStreamsLoadState = QUERY_LOAD_STATE.READY
+  it("reports stream state as loading after the initial load has completed", async () => {
+    makeReadyWorkspaceState()
     mockStreamResults = [{ status: "pending", fetchStatus: "fetching", isLoading: true, isError: false, error: null }]
 
     const { rerender } = render(
@@ -192,23 +308,33 @@ describe("CoordinatedLoadingProvider", () => {
       </CoordinatedLoadingProvider>
     )
 
-    // Now simulate stream starts loading again after initial load
-    mockStreamsLoadState = QUERY_LOAD_STATE.FETCHING
+    await flushEffects()
 
+    mockStreamsLoadState = QUERY_LOAD_STATE.FETCHING
     rerender(
       <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
         <TestConsumer />
       </CoordinatedLoadingProvider>
     )
 
-    // After initial load, stream reports its actual loading state
+    await flushEffects()
+
     expect(screen.getByTestId("phase").textContent).toBe("ready")
     expect(screen.getByTestId("stream-state").textContent).toBe("loading")
   })
 
-  it("should remain in loading phase while workspace query is pending", () => {
-    mockWorkspaceLoadState = QUERY_LOAD_STATE.PENDING
-    mockStreamsLoadState = QUERY_LOAD_STATE.READY
+  it("suppresses recoverable stream bootstrap errors when the cached stream is usable", async () => {
+    makeReadyWorkspaceState()
+    mockStreamResults = [
+      {
+        status: "error",
+        fetchStatus: "idle",
+        isLoading: false,
+        isError: true,
+        error: new ApiError(429, "RATE_LIMITED", "Too many requests"),
+      },
+    ]
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
 
     render(
       <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
@@ -216,7 +342,12 @@ describe("CoordinatedLoadingProvider", () => {
       </CoordinatedLoadingProvider>
     )
 
-    expect(screen.getByTestId("phase").textContent).toBe("loading")
+    await flushEffects()
+
+    expect(screen.getByTestId("phase").textContent).toBe("ready")
+    expect(screen.getByTestId("stream-state").textContent).toBe("idle")
+    expect(screen.getByTestId("has-errors").textContent).toBe("false")
+    warnSpy.mockRestore()
   })
 })
 
@@ -226,6 +357,13 @@ describe("CoordinatedLoadingGate", () => {
     mockWorkspaceLoadState = QUERY_LOAD_STATE.PENDING
     mockStreamsLoadState = QUERY_LOAD_STATE.PENDING
     mockStreamResults = []
+    mockSeedCacheFromIdbResult = false
+    mockHasSeededWorkspaceCache = false
+    mockWorkspace = undefined
+    mockUsers = []
+    mockStreams = []
+    mockUnreadState = undefined
+    mockMetadata = undefined
   })
 
   afterEach(() => {
@@ -233,7 +371,7 @@ describe("CoordinatedLoadingGate", () => {
     vi.clearAllMocks()
   })
 
-  it("should show nothing during 'loading' phase", () => {
+  it("shows nothing during the blank loading phase", async () => {
     render(
       <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
         <CoordinatedLoadingGate>
@@ -241,11 +379,13 @@ describe("CoordinatedLoadingGate", () => {
         </CoordinatedLoadingGate>
       </CoordinatedLoadingProvider>
     )
+
+    await flushEffects()
 
     expect(screen.queryByTestId("content")).not.toBeInTheDocument()
   })
 
-  it("should render children during 'skeleton' phase", () => {
+  it("renders children during the skeleton phase", async () => {
     render(
       <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
         <CoordinatedLoadingGate>
@@ -254,30 +394,18 @@ describe("CoordinatedLoadingGate", () => {
       </CoordinatedLoadingProvider>
     )
 
+    await flushEffects()
     act(() => {
-      vi.advanceTimersByTime(1000)
+      vi.advanceTimersByTime(300)
     })
 
     expect(screen.getByTestId("content")).toBeInTheDocument()
   })
 
-  it("should render children during 'ready' phase", () => {
-    mockWorkspaceLoadState = QUERY_LOAD_STATE.READY
-    mockStreamsLoadState = QUERY_LOAD_STATE.READY
+  it("renders children immediately in the ready phase", async () => {
+    makeReadyWorkspaceState()
 
     render(
-      <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={[]}>
-        <CoordinatedLoadingGate>
-          <div data-testid="content">Actual Content</div>
-        </CoordinatedLoadingGate>
-      </CoordinatedLoadingProvider>
-    )
-
-    expect(screen.getByTestId("content")).toBeInTheDocument()
-  })
-
-  it("should switch from nothing to content when loading completes before 1s", () => {
-    const { rerender } = render(
       <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
         <CoordinatedLoadingGate>
           <div data-testid="content">Actual Content</div>
@@ -285,18 +413,7 @@ describe("CoordinatedLoadingGate", () => {
       </CoordinatedLoadingProvider>
     )
 
-    expect(screen.queryByTestId("content")).not.toBeInTheDocument()
-
-    mockWorkspaceLoadState = QUERY_LOAD_STATE.READY
-    mockStreamsLoadState = QUERY_LOAD_STATE.READY
-
-    rerender(
-      <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
-        <CoordinatedLoadingGate>
-          <div data-testid="content">Actual Content</div>
-        </CoordinatedLoadingGate>
-      </CoordinatedLoadingProvider>
-    )
+    await flushEffects()
 
     expect(screen.getByTestId("content")).toBeInTheDocument()
   })
@@ -308,6 +425,13 @@ describe("MainContentGate", () => {
     mockWorkspaceLoadState = QUERY_LOAD_STATE.PENDING
     mockStreamsLoadState = QUERY_LOAD_STATE.PENDING
     mockStreamResults = []
+    mockSeedCacheFromIdbResult = false
+    mockHasSeededWorkspaceCache = false
+    mockWorkspace = undefined
+    mockUsers = []
+    mockStreams = []
+    mockUnreadState = undefined
+    mockMetadata = undefined
   })
 
   afterEach(() => {
@@ -315,7 +439,7 @@ describe("MainContentGate", () => {
     vi.clearAllMocks()
   })
 
-  it("should show stream content skeleton during 'loading' phase", () => {
+  it("shows the stream content skeleton during initial load", async () => {
     render(
       <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
         <MainContentGate>
@@ -324,11 +448,15 @@ describe("MainContentGate", () => {
       </CoordinatedLoadingProvider>
     )
 
+    await flushEffects()
+
     expect(screen.getByTestId("stream-content-skeleton")).toBeInTheDocument()
     expect(screen.queryByTestId("content")).not.toBeInTheDocument()
   })
 
-  it("should show stream content skeleton during 'skeleton' phase", () => {
+  it("shows children once the coordinated load is ready", async () => {
+    makeReadyWorkspaceState()
+
     render(
       <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
         <MainContentGate>
@@ -337,52 +465,7 @@ describe("MainContentGate", () => {
       </CoordinatedLoadingProvider>
     )
 
-    act(() => {
-      vi.advanceTimersByTime(1000)
-    })
-
-    expect(screen.getByTestId("stream-content-skeleton")).toBeInTheDocument()
-    expect(screen.queryByTestId("content")).not.toBeInTheDocument()
-  })
-
-  it("should show children during 'ready' phase", () => {
-    mockWorkspaceLoadState = QUERY_LOAD_STATE.READY
-    mockStreamsLoadState = QUERY_LOAD_STATE.READY
-
-    render(
-      <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={[]}>
-        <MainContentGate>
-          <div data-testid="content">Actual Content</div>
-        </MainContentGate>
-      </CoordinatedLoadingProvider>
-    )
-
-    expect(screen.queryByTestId("stream-content-skeleton")).not.toBeInTheDocument()
-    expect(screen.getByTestId("content")).toBeInTheDocument()
-  })
-
-  it("should switch from skeleton to content when loading completes", () => {
-    const { rerender } = render(
-      <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
-        <MainContentGate>
-          <div data-testid="content">Actual Content</div>
-        </MainContentGate>
-      </CoordinatedLoadingProvider>
-    )
-
-    expect(screen.getByTestId("stream-content-skeleton")).toBeInTheDocument()
-    expect(screen.queryByTestId("content")).not.toBeInTheDocument()
-
-    mockWorkspaceLoadState = QUERY_LOAD_STATE.READY
-    mockStreamsLoadState = QUERY_LOAD_STATE.READY
-
-    rerender(
-      <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
-        <MainContentGate>
-          <div data-testid="content">Actual Content</div>
-        </MainContentGate>
-      </CoordinatedLoadingProvider>
-    )
+    await flushEffects()
 
     expect(screen.queryByTestId("stream-content-skeleton")).not.toBeInTheDocument()
     expect(screen.getByTestId("content")).toBeInTheDocument()

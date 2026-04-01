@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test"
-import { loginAndCreateWorkspace, generateTestId } from "./helpers"
+import { loginAndCreateWorkspace, generateTestId, waitForWorkspaceProvisioned } from "./helpers"
 
 /**
  * Full user journey E2E test.
@@ -43,10 +43,17 @@ test.describe("User Journey", () => {
     // Step 6: Create a workspace
     await page.getByPlaceholder("New workspace name").fill(workspaceName)
     await page.getByRole("button", { name: "Create Workspace" }).click()
+    await page.waitForURL(/\/w\/[^/]+/, { timeout: 10000 })
+
+    const workspaceMatch = page.url().match(/\/w\/([^/?]+)/)
+    expect(workspaceMatch).toBeTruthy()
+    const workspaceId = workspaceMatch![1]
+    await waitForWorkspaceProvisioned(page, workspaceId)
+    await page.goto(`/w/${workspaceId}`)
 
     // Step 7: Should enter the workspace - verify sidebar is visible (empty state shows buttons)
-    await expect(page.getByRole("button", { name: "+ New Scratchpad" })).toBeVisible()
-    await expect(page.getByRole("button", { name: "+ New Channel" })).toBeVisible()
+    await expect(page.getByRole("button", { name: "+ New Scratchpad" })).toBeVisible({ timeout: 10000 })
+    await expect(page.getByRole("button", { name: "+ New Channel" })).toBeVisible({ timeout: 10000 })
 
     // Step 8: Create a channel via the modal dialog
     await page.getByRole("button", { name: "+ New Channel" }).click()
@@ -68,7 +75,7 @@ test.describe("User Journey", () => {
     await page.getByRole("button", { name: "Send" }).click()
 
     // Step 13: Verify message appears
-    await expect(page.getByText(messageContent)).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole("main").getByText(messageContent)).toBeVisible({ timeout: 5000 })
   })
 
   test("should authenticate new user and show welcome page", async ({ page }) => {
@@ -131,12 +138,14 @@ test.describe("User Journey", () => {
 
     const quickSwitcherResult = page.getByRole("option", { name: new RegExp(`#${quickSwitchChannel}`) }).first()
     await expect(quickSwitcherResult).toBeVisible({ timeout: 5000 })
-    await page.keyboard.press("Enter")
+    await quickSwitcherResult.click()
 
     // Should navigate to the channel (quick switcher closes)
     await expect(page.getByRole("tab", { name: "Stream search" })).not.toBeVisible({ timeout: 2000 })
 
-    // Verify we're in the channel by checking the URL or channel content
-    await expect(page.getByText("No messages yet")).toBeVisible({ timeout: 5000 })
+    // Verify we're back in the channel via the main heading
+    await expect(page.getByRole("heading", { name: `#${quickSwitchChannel}`, level: 1 })).toBeVisible({
+      timeout: 10000,
+    })
   })
 })

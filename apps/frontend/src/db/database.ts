@@ -27,6 +27,9 @@ export interface CachedWorkspaceUser {
   avatarUrl: string | null
   timezone: string | null
   locale: string | null
+  pronouns: string | null
+  phone: string | null
+  githubUsername: string | null
   setupCompleted: boolean
   joinedAt: string
   _cachedAt: number
@@ -49,6 +52,8 @@ export interface CachedStream {
   createdAt: string
   updatedAt: string
   archivedAt: string | null
+  // Sidebar preview (from workspace bootstrap StreamWithPreview)
+  lastMessagePreview?: { authorId: string; authorType: AuthorType; content: string; createdAt: string } | null
   // User-specific state (from membership)
   pinned?: boolean
   notificationLevel?: string | null
@@ -82,6 +87,7 @@ export interface CachedDmPeer {
 
 export interface CachedEvent {
   id: string
+  workspaceId: string
   streamId: string
   sequence: string // bigint as string
   eventType: EventType
@@ -140,6 +146,22 @@ export interface PendingMessage {
   attachmentIds?: string[]
   createdAt: number // timestamp for ordering
   retryCount: number
+  /** Timestamp before which this message should not be retried (exponential backoff) */
+  retryAfter?: number
+}
+
+/**
+ * Generic offline operation queue for non-message writes (edits, deletes, reactions).
+ * Operations are retried when back online, similar to PendingMessage for sends.
+ */
+export interface PendingOperation {
+  id: string // ULID
+  workspaceId: string
+  type: "edit_message" | "delete_message" | "add_reaction" | "remove_reaction"
+  payload: Record<string, unknown>
+  createdAt: number
+  retryCount: number
+  retryAfter?: number
 }
 
 export interface SyncCursor {
@@ -177,6 +199,36 @@ export interface DraftMessage {
   updatedAt: number
 }
 
+export interface CachedUnreadState {
+  id: string // workspaceId
+  workspaceId: string
+  unreadCounts: Record<string, number>
+  mentionCounts: Record<string, number>
+  activityCounts: Record<string, number>
+  unreadActivityCount: number
+  mutedStreamIds: string[]
+  _cachedAt: number
+}
+
+export interface CachedUserPreferences {
+  id: string // workspaceId
+  workspaceId: string
+  userId: string
+  theme: string
+  sendMode: string
+  [key: string]: unknown
+  _cachedAt: number
+}
+
+export interface CachedWorkspaceMetadata {
+  id: string // workspaceId
+  workspaceId: string
+  emojis: Array<{ shortcode: string; emoji: string; type: string; group: string; order: number; aliases: string[] }>
+  emojiWeights: Record<string, number>
+  commands: Array<{ name: string; description: string }>
+  _cachedAt: number
+}
+
 // Database class with typed tables
 class ThreaDatabase extends Dexie {
   workspaces!: EntityTable<CachedWorkspace, "id">
@@ -191,6 +243,10 @@ class ThreaDatabase extends Dexie {
   syncCursors!: EntityTable<SyncCursor, "key">
   draftScratchpads!: EntityTable<DraftScratchpad, "id">
   draftMessages!: EntityTable<DraftMessage, "id">
+  unreadState!: EntityTable<CachedUnreadState, "id">
+  userPreferences!: EntityTable<CachedUserPreferences, "id">
+  workspaceMetadata!: EntityTable<CachedWorkspaceMetadata, "id">
+  pendingOperations!: EntityTable<PendingOperation, "id">
 
   constructor() {
     super("threa")
@@ -296,6 +352,41 @@ class ThreaDatabase extends Dexie {
       bots: "id, workspaceId, _cachedAt",
     })
 
+    // v15: Add unreadState and userPreferences tables for offline-first sync engine.
+    // These tables hold workspace-scoped data that was previously only in TanStack Query
+    // cache (embedded in WorkspaceBootstrap). Persisting them enables offline rendering.
+    this.version(15).stores({
+      unreadState: "id, workspaceId",
+      userPreferences: "id, workspaceId",
+    })
+
+    // v16: Add workspaceId to events table for workspace-scoped cleanup and leak prevention.
+    // Clear existing events since they lack workspaceId; bootstrap refetch repopulates.
+    this.version(16)
+      .stores({
+        events: "id, workspaceId, streamId, sequence, [streamId+sequence], eventType, _clientId, _cachedAt",
+      })
+      .upgrade((tx) => tx.table("events").clear())
+
+    // v17: Add workspaceMetadata table for emojis, emojiWeights, and commands.
+    this.version(17).stores({
+      workspaceMetadata: "id, workspaceId",
+    })
+
+    // v18: Add pendingOperations table for offline-queued writes (edits, deletes, reactions).
+    this.version(18).stores({
+      pendingOperations: "id, workspaceId, type, createdAt",
+    })
+
+    // v19: Add [streamId+eventType] compound index for scoped event lookups
+    // (reactions, edits, deletes scan only message_created events instead of
+    // all events in a stream). Add _status index so pending/failed message
+    // hydration uses an index scan instead of a full table cursor.
+    this.version(19).stores({
+      events:
+        "id, workspaceId, streamId, sequence, [streamId+sequence], eventType, [streamId+eventType], _clientId, _cachedAt, _status",
+    })
+
     this.workspaceUsers = this.table(WORKSPACE_USERS_STORE) as EntityTable<CachedWorkspaceUser, "id">
   }
 }
@@ -305,18 +396,33 @@ export const db = new ThreaDatabase()
 
 // Helper to clear all cached data (useful for logout)
 export async function clearAllCachedData(): Promise<void> {
-  await Promise.all([
-    db.workspaces.clear(),
-    db.workspaceUsers.clear(),
-    db.streams.clear(),
-    db.streamMemberships.clear(),
-    db.dmPeers.clear(),
-    db.events.clear(),
-    db.personas.clear(),
-    db.bots.clear(),
-    db.syncCursors.clear(),
-    // Note: we keep pendingMessages to retry sending after re-login
-  ])
+  try {
+    await Promise.all([
+      db.workspaces.clear(),
+      db.workspaceUsers.clear(),
+      db.streams.clear(),
+      db.streamMemberships.clear(),
+      db.dmPeers.clear(),
+      db.events.clear(),
+      db.personas.clear(),
+      db.bots.clear(),
+      db.syncCursors.clear(),
+      db.unreadState.clear(),
+      db.userPreferences.clear(),
+      db.workspaceMetadata.clear(),
+      db.pendingOperations.clear(),
+      // Note: we keep pendingMessages to retry sending after re-login
+    ])
+  } finally {
+    const [{ resetWorkspaceStoreCache }, { resetStreamStoreCache }, { resetDraftStoreCache }] = await Promise.all([
+      import("@/stores/workspace-store"),
+      import("@/stores/stream-store"),
+      import("@/stores/draft-store"),
+    ])
+    resetWorkspaceStoreCache()
+    resetStreamStoreCache()
+    resetDraftStoreCache()
+  }
 }
 
 // Helper to clear pending messages (useful when explicitly canceling)

@@ -9,8 +9,8 @@ import {
   isTerminalBootstrapError,
   type QueryLoadState,
 } from "@/lib/query-load-state"
-import { db } from "@/db"
 import { joinRoomBestEffort } from "@/lib/socket-room"
+import { applyStreamBootstrap } from "@/sync/stream-sync"
 import { streamKeys } from "./use-streams"
 import type { Socket } from "socket.io-client"
 
@@ -45,19 +45,9 @@ function createBootstrapQueryFn(streamService: StreamService, socket: Socket, wo
       streamId,
       eventCount: bootstrap.events.length,
     })
-    const now = Date.now()
 
-    // Cache stream and events to IndexedDB (same as useStreamBootstrap)
-    await Promise.all([
-      db.streams.put({
-        ...bootstrap.stream,
-        pinned: bootstrap.membership?.pinned,
-        notificationLevel: bootstrap.membership?.notificationLevel,
-        lastReadEventId: bootstrap.membership?.lastReadEventId,
-        _cachedAt: now,
-      }),
-      db.events.bulkPut(bootstrap.events.map((e) => ({ ...e, _cachedAt: now }))),
-    ])
+    // Write events and stream metadata to IndexedDB via shared sync module
+    await applyStreamBootstrap(workspaceId, streamId, bootstrap)
 
     return bootstrap
   }

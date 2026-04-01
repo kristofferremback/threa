@@ -6,6 +6,8 @@ import { debugBootstrap } from "@/lib/bootstrap-debug"
 import { getQueryLoadState, isTerminalBootstrapError } from "@/lib/query-load-state"
 import { db } from "@/db"
 import { joinRoomBestEffort } from "@/lib/socket-room"
+import { applyWorkspaceBootstrap } from "@/sync/workspace-sync"
+import { useWorkspaceUsers } from "@/stores/workspace-store"
 import type { WorkspaceBootstrap, User } from "@threa/types"
 import type { WorkspaceListResult } from "@/api/workspaces"
 
@@ -21,7 +23,6 @@ export const workspaceKeys = {
 
 export function useWorkspaces() {
   const workspaceService = useWorkspaceService()
-  const queryClient = useQueryClient()
 
   const query = useQuery({
     queryKey: workspaceKeys.list(),
@@ -36,17 +37,10 @@ export function useWorkspaces() {
     },
   })
 
-  // True when seeded data is being replaced by a real fetch. cache-seed.ts sets
-  // data via setQueryData then immediately invalidates it (refetchType: "none").
-  // isInvalidated resets to false once the first real queryFn succeeds, so this
-  // flag only fires for the seed→fresh transition, not normal background refetches.
-  const isRefreshingSeed = query.isFetching && queryClient.getQueryState(workspaceKeys.list())?.isInvalidated === true
-
   return {
     ...query,
     workspaces: query.data?.workspaces,
     pendingInvitations: query.data?.pendingInvitations ?? [],
-    isRefreshingSeed,
   }
 }
 
@@ -90,12 +84,6 @@ export function useWorkspaceBootstrap(workspaceId: string) {
   // This prevents continuous refetching when the server is down
   const existingQueryState = queryClient.getQueryState(workspaceKeys.bootstrap(workspaceId))
   const hasTerminalError = existingQueryState?.status === "error" && isTerminalBootstrapError(existingQueryState.error)
-  // Detect if we have seeded data from IndexedDB cache (set before socket connects).
-  // Seeded data is marked as invalidated by cache-seed.ts, but with staleTime: Infinity
-  // and refetchOnMount: false, the queryFn might not run. Force refetch on mount when
-  // seeded so the queryFn executes (joining the socket room and fetching fresh data).
-  const hasSeededData = existingQueryState?.status === "success" && existingQueryState.isInvalidated
-
   const query = useQuery({
     queryKey: workspaceKeys.bootstrap(workspaceId),
     queryFn: async () => {
@@ -106,53 +94,18 @@ export function useWorkspaceBootstrap(workspaceId: string) {
       }
       await joinRoomBestEffort(socket, `ws:${workspaceId}`, "WorkspaceBootstrap")
 
+      // Capture timestamp BEFORE fetch — any socket writes during the fetch
+      // will have _cachedAt > fetchStartedAt and survive stale cleanup.
+      const fetchStartedAt = Date.now()
+
       const bootstrap = await workspaceService.bootstrap(workspaceId)
-      const users = bootstrap.users
       debugBootstrap("Workspace bootstrap fetch success", {
         workspaceId,
         streamCount: bootstrap.streams.length,
-        userCount: users.length,
+        userCount: bootstrap.users.length,
       })
-      const now = Date.now()
-
-      // Cache all data to IndexedDB
-      await Promise.all([
-        db.workspaces.put({ ...bootstrap.workspace, _cachedAt: now }),
-        db.workspaceUsers.bulkPut(
-          users.map((u) => ({
-            ...u,
-            _cachedAt: now,
-          }))
-        ),
-        db.streams.bulkPut(
-          bootstrap.streams.map((s) => ({
-            ...s,
-            // Merge membership data if available
-            pinned: bootstrap.streamMemberships.find((sm) => sm.streamId === s.id)?.pinned,
-            notificationLevel: bootstrap.streamMemberships.find((sm) => sm.streamId === s.id)?.notificationLevel,
-            lastReadEventId: bootstrap.streamMemberships.find((sm) => sm.streamId === s.id)?.lastReadEventId,
-            _cachedAt: now,
-          }))
-        ),
-        db.streamMemberships.bulkPut(
-          bootstrap.streamMemberships.map((sm) => ({
-            ...sm,
-            id: `${workspaceId}:${sm.streamId}`,
-            workspaceId,
-            _cachedAt: now,
-          }))
-        ),
-        db.dmPeers.bulkPut(
-          bootstrap.dmPeers.map((dp) => ({
-            ...dp,
-            id: `${workspaceId}:${dp.streamId}`,
-            workspaceId,
-            _cachedAt: now,
-          }))
-        ),
-        db.personas.bulkPut(bootstrap.personas.map((p) => ({ ...p, _cachedAt: now }))),
-        db.bots.bulkPut(bootstrap.bots.map((b) => ({ ...b, _cachedAt: now }))),
-      ])
+      // Shred bootstrap into individual IDB tables (including unreadState + userPreferences)
+      await applyWorkspaceBootstrap(workspaceId, bootstrap, fetchStartedAt)
 
       return bootstrap
     },
@@ -163,10 +116,7 @@ export function useWorkspaceBootstrap(workspaceId: string) {
     staleTime: Infinity,
     gcTime: Infinity,
     retry: false,
-    // When seeded from IndexedDB cache, force refetch to join the socket room
-    // and replace stale data. Otherwise skip mount refetch since socket events
-    // keep the data up to date after the initial fetch.
-    refetchOnMount: hasSeededData ? "always" : false,
+    refetchOnMount: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   })
@@ -264,21 +214,15 @@ export function useUploadAvatar(workspaceId: string) {
 /** Returns the workspace-scoped user ID for the current WorkOS user, or null if not found. */
 export function useWorkspaceUserId(workspaceId: string): string | null {
   const user = useUser()
-  const { data: wsBootstrap } = useWorkspaceBootstrap(workspaceId)
-  return useMemo(
-    () => wsBootstrap?.users?.find((u) => u.workosUserId === user?.id)?.id ?? null,
-    [wsBootstrap?.users, user?.id]
-  )
+  const users = useWorkspaceUsers(workspaceId)
+  return useMemo(() => users.find((u) => u.workosUserId === user?.id)?.id ?? null, [users, user?.id])
 }
 
 /** Returns the full workspace-scoped User for the current WorkOS user, or null if not found. */
 export function useCurrentWorkspaceUser(workspaceId: string): User | null {
   const user = useUser()
-  const { data: wsBootstrap } = useWorkspaceBootstrap(workspaceId)
-  return useMemo(
-    () => wsBootstrap?.users?.find((u) => u.workosUserId === user?.id) ?? null,
-    [wsBootstrap?.users, user?.id]
-  )
+  const users = useWorkspaceUsers(workspaceId)
+  return useMemo(() => (users.find((u) => u.workosUserId === user?.id) as User | undefined) ?? null, [users, user?.id])
 }
 
 export function useRemoveAvatar(workspaceId: string) {

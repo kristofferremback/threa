@@ -11,13 +11,24 @@ interface MessageLinkPreviewCardProps {
   preview: LinkPreviewSummary
   workspaceId: string
   onDismiss?: (previewId: string) => void
+  hydrate?: boolean
 }
 
-export function MessageLinkPreviewCard({ preview, workspaceId, onDismiss }: MessageLinkPreviewCardProps) {
+export function MessageLinkPreviewCard({
+  preview,
+  workspaceId,
+  onDismiss,
+  hydrate = true,
+}: MessageLinkPreviewCardProps) {
   const [data, setData] = useState<MessageLinkPreviewData | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(hydrate)
 
   useEffect(() => {
+    if (!hydrate) {
+      setLoading(true)
+      return
+    }
+
     let mounted = true
     linkPreviewsApi
       .resolveMessageLink(workspaceId, preview.id)
@@ -33,7 +44,7 @@ export function MessageLinkPreviewCard({ preview, workspaceId, onDismiss }: Mess
     return () => {
       mounted = false
     }
-  }, [workspaceId, preview.id])
+  }, [workspaceId, preview.id, hydrate])
 
   if (loading) {
     return (
@@ -69,34 +80,48 @@ export function MessageLinkPreviewCard({ preview, workspaceId, onDismiss }: Mess
     )
   }
 
+  const internalPath = getInternalMessagePath(preview.url)
+  const content = (
+    <>
+      <div className="flex items-center gap-2 px-3 py-1.5 border-b bg-muted/30">
+        <MessageSquare className="h-4 w-4 text-primary shrink-0" />
+        {data.streamName && <span className="text-xs text-muted-foreground truncate">#{data.streamName}</span>}
+        <DismissButton previewId={preview.id} onDismiss={onDismiss} />
+      </div>
+      <div className="flex gap-2.5 px-3 py-2">
+        <AuthorAvatar avatarUrl={data.authorAvatarUrl} authorName={data.authorName} />
+        <div className="flex-1 min-w-0">
+          {data.authorName && <span className="text-xs font-medium text-foreground">{data.authorName}</span>}
+          {data.contentPreview && (
+            <div className="line-clamp-3 mt-0.5">
+              <MarkdownContent content={data.contentPreview} className="text-xs text-muted-foreground" />
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  )
+
   return (
     <div className="group/preview relative overflow-hidden rounded-lg border bg-card transition-all max-w-md hover:border-primary/50 hover:shadow-sm">
-      <Link
-        to={(() => {
-          const u = new URL(preview.url)
-          return u.pathname + u.search
-        })()}
-        className="block"
-      >
-        <div className="flex items-center gap-2 px-3 py-1.5 border-b bg-muted/30">
-          <MessageSquare className="h-4 w-4 text-primary shrink-0" />
-          {data.streamName && <span className="text-xs text-muted-foreground truncate">#{data.streamName}</span>}
-          <DismissButton previewId={preview.id} onDismiss={onDismiss} />
-        </div>
-        <div className="flex gap-2.5 px-3 py-2">
-          <AuthorAvatar avatarUrl={data.authorAvatarUrl} authorName={data.authorName} />
-          <div className="flex-1 min-w-0">
-            {data.authorName && <span className="text-xs font-medium text-foreground">{data.authorName}</span>}
-            {data.contentPreview && (
-              <div className="line-clamp-3 mt-0.5">
-                <MarkdownContent content={data.contentPreview} className="text-xs text-muted-foreground" />
-              </div>
-            )}
-          </div>
-        </div>
-      </Link>
+      {internalPath ? (
+        <Link to={internalPath} className="block">
+          {content}
+        </Link>
+      ) : (
+        content
+      )}
     </div>
   )
+}
+
+function getInternalMessagePath(url: string): string | null {
+  try {
+    const parsed = new URL(url)
+    return parsed.pathname + parsed.search
+  } catch {
+    return null
+  }
 }
 
 function AuthorAvatar({ avatarUrl, authorName }: { avatarUrl?: string; authorName?: string }) {

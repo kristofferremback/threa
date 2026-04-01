@@ -1,4 +1,4 @@
-import type { Stream, StreamEvent } from "@threa/types"
+import type { Stream, StreamEvent, StreamMember } from "@threa/types"
 
 function generateOptimisticEventId(): string {
   const timestamp = Date.now().toString(36)
@@ -26,8 +26,8 @@ export interface CreateOptimisticBootstrapParams {
 export interface OptimisticBootstrap {
   stream: Stream
   events: StreamEvent[]
-  members: []
-  membership: null
+  members: StreamMember[]
+  membership: StreamMember
   latestSequence: string
 }
 
@@ -59,11 +59,22 @@ export function createOptimisticBootstrap({
     createdAt: message.createdAt,
   }
 
+  const membership: StreamMember = {
+    streamId: stream.id,
+    memberId: stream.createdBy,
+    pinned: false,
+    pinnedAt: null,
+    notificationLevel: null,
+    lastReadEventId: event.id,
+    lastReadAt: message.createdAt,
+    joinedAt: message.createdAt,
+  }
+
   return {
     stream,
     events: [event],
-    members: [],
-    membership: null,
+    members: [membership],
+    membership,
     latestSequence: "1",
   }
 }

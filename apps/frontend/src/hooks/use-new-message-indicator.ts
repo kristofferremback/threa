@@ -7,20 +7,31 @@ import type { StreamEvent } from "@threa/types"
  * that should briefly display a "new message" visual indicator.
  *
  * Each ID auto-expires after the CSS animation completes (~2s).
+ *
+ * Derives its boundary from `lastReadEventId` — the same server-tracked
+ * read state that drives the sidebar unread indicator and the "--- New ---"
+ * divider. Events at or before this boundary are read and never flash.
+ * Events after it that were already present when the stream opened get the
+ * divider instead (handled by useUnreadDivider). Only events that arrive
+ * via socket while viewing AND are after the read boundary flash here.
  */
 export function useNewMessageIndicator(
   events: StreamEvent[],
   currentUserId: string | undefined,
-  streamId: string
+  streamId: string,
+  lastReadEventId?: string | null
 ): Set<string> {
   const [newIds, setNewIds] = useState<Set<string>>(new Set())
-  const baselineSequenceRef = useRef<string | null>(null)
+  /** Event IDs present when the stream was opened. With the eventCache removed,
+   *  useLiveQuery returns undefined until IDB resolves, then the complete event
+   *  set. The first defined render IS the full IDB state — no settling needed. */
+  const knownEventIdsRef = useRef<Set<string> | null>(null)
   const trackedIdsRef = useRef<Set<string>>(new Set())
   const timersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
 
   // Reset on stream change + cleanup on unmount
   useEffect(() => {
-    baselineSequenceRef.current = null
+    knownEventIdsRef.current = null
     trackedIdsRef.current = new Set()
     setNewIds(new Set())
     for (const t of timersRef.current) clearTimeout(t)
@@ -35,32 +46,31 @@ export function useNewMessageIndicator(
     if (events.length === 0) return
     if (currentUserId === undefined) return
 
-    const maxSequence = events[events.length - 1].sequence
-
-    // First render with events: snapshot baseline, don't flag anything
-    if (baselineSequenceRef.current === null) {
-      baselineSequenceRef.current = maxSequence
+    // First render with events: snapshot all IDs as "known". Nothing flashes.
+    if (knownEventIdsRef.current === null) {
+      knownEventIdsRef.current = new Set(events.map((e) => e.id))
       return
     }
 
-    const baseline = baselineSequenceRef.current
-    const freshIds: string[] = []
+    // Read boundary: events at or before lastReadEventId are read.
+    const lastReadIndex = lastReadEventId ? events.findIndex((e) => e.id === lastReadEventId) : -1
 
-    // Walk backwards from newest; stop once we pass the baseline
+    // Walk backwards from newest to find genuinely new socket events.
+    const freshIds: string[] = []
     for (let i = events.length - 1; i >= 0; i--) {
       const event = events[i]
-      if (BigInt(event.sequence) <= BigInt(baseline)) break
+      if (lastReadIndex >= 0 && i <= lastReadIndex) break
+      if (knownEventIdsRef.current.has(event.id)) break
       if (
+        !trackedIdsRef.current.has(event.id) &&
         event.actorId !== currentUserId &&
         event.actorType === "user" &&
-        (event.eventType === "message_created" || event.eventType === "companion_response") &&
-        !trackedIdsRef.current.has(event.id)
+        (event.eventType === "message_created" || event.eventType === "companion_response")
       ) {
         freshIds.push(event.id)
       }
+      knownEventIdsRef.current.add(event.id)
     }
-
-    baselineSequenceRef.current = maxSequence
 
     if (freshIds.length === 0) return
 
@@ -83,7 +93,7 @@ export function useNewMessageIndicator(
       })
     }, 2000)
     timersRef.current.add(timer)
-  }, [events, currentUserId])
+  }, [events, currentUserId, lastReadEventId])
 
   return newIds
 }

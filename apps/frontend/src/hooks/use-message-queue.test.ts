@@ -41,6 +41,7 @@ interface MockPendingMessage {
   attachmentIds?: string[]
   createdAt: number
   retryCount: number
+  retryAfter?: number
 }
 
 let mockPendingMessages: MockPendingMessage[] = []
@@ -149,21 +150,25 @@ describe("useMessageQueue", () => {
       await new Promise((r) => setTimeout(r, 10))
     })
 
-    expect(mockUpdate).toHaveBeenCalledWith("temp_fail", { retryCount: 1 })
+    expect(mockUpdate).toHaveBeenCalledWith("temp_fail", {
+      retryCount: 1,
+      retryAfter: expect.any(Number),
+    })
     expect(mockEventsUpdate).toHaveBeenCalledWith("temp_fail", { _status: "failed" })
     expect(mockMarkFailed).toHaveBeenCalledWith("temp_fail")
   })
 
-  it("should skip messages that have exceeded max retry count", async () => {
+  it("should retry high-retry-count messages (no max retry cap) with backoff", async () => {
     mockPendingMessages = [
       {
-        clientId: "temp_exhausted",
+        clientId: "temp_many_retries",
         workspaceId: "ws_1",
         streamId: "stream_1",
-        content: "Exhausted",
+        content: "Persistent",
         contentFormat: "markdown",
         createdAt: 1000,
-        retryCount: 3,
+        retryCount: 10,
+        retryAfter: 0, // backoff expired, ready to retry
       },
     ]
 
@@ -173,10 +178,36 @@ describe("useMessageQueue", () => {
       await new Promise((r) => setTimeout(r, 10))
     })
 
+    // Should still attempt to send — no retry cap
+    expect(mockCreate).toHaveBeenCalled()
+    expect(mockMarkPending).toHaveBeenCalledWith("temp_many_retries")
+  })
+
+  it("should skip messages whose retryAfter has not passed", async () => {
+    mockPendingMessages = [
+      {
+        clientId: "temp_backoff",
+        workspaceId: "ws_1",
+        streamId: "stream_1",
+        content: "Waiting",
+        contentFormat: "markdown",
+        createdAt: 1000,
+        retryCount: 5,
+        retryAfter: Date.now() + 60_000, // 1 minute in the future
+      },
+    ]
+
+    renderHook(() => useMessageQueue())
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10))
+    })
+
+    // Should NOT attempt to send — backoff hasn't expired
     expect(mockCreate).not.toHaveBeenCalled()
-    expect(mockMarkFailed).toHaveBeenCalledWith("temp_exhausted")
-    expect(mockEventsUpdate).toHaveBeenCalledWith("temp_exhausted", { _status: "failed" })
-    expect(mockDelete).toHaveBeenCalledWith("temp_exhausted")
+    // Message stays in queue, not marked as failed
+    expect(mockDelete).not.toHaveBeenCalled()
+    expect(mockMarkFailed).not.toHaveBeenCalled()
   })
 
   it("should not attempt send or increment retryCount when offline", async () => {

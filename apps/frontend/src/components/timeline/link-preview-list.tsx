@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo, useRef } from "react"
+import { Component, useState, useCallback, useEffect, useMemo, type ReactNode } from "react"
 import { ChevronDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { linkPreviewsApi } from "@/api"
@@ -19,6 +19,24 @@ interface LinkPreviewListProps {
   /** Currently hovered link URL from inline text */
   hoveredUrl?: string | null
   className?: string
+  /** Whether to hydrate preview dismiss state/details from the API */
+  hydrateFromApi?: boolean
+}
+
+class PreviewRenderBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+  constructor(props: { children: ReactNode }) {
+    super(props)
+    this.state = { hasError: false }
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true }
+  }
+
+  render() {
+    if (this.state.hasError) return null
+    return this.props.children
+  }
 }
 
 export function LinkPreviewList({
@@ -27,50 +45,23 @@ export function LinkPreviewList({
   previews: initialPreviews,
   hoveredUrl,
   className,
+  hydrateFromApi = true,
 }: LinkPreviewListProps) {
   const [previews, setPreviews] = useState<LinkPreviewSummary[]>(initialPreviews ?? [])
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set())
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set())
   const [isExpanded, setIsExpanded] = useState(false)
-  const [fetchedFromApi, setFetchedFromApi] = useState(false)
   const { preferences } = usePreferences()
 
   const defaultCollapsed = preferences?.linkPreviewDefault === "collapsed"
 
-  // Track whether socket has delivered previews (ref avoids stale closure in API fetch callback)
-  const hasSocketPreviewsRef = useRef(initialPreviews !== undefined)
-
-  // Update previews when they arrive from props (real-time socket delivery).
-  // An explicit empty array (from an edited message that removed URLs) clears stale previews.
+  // Sync previews from stream event payloads.
+  // An explicit empty array (from an edited message that removed URLs or from
+  // backend dismissal filtering) clears stale previews.
   useEffect(() => {
     if (initialPreviews === undefined) return
     setPreviews(initialPreviews)
-    hasSocketPreviewsRef.current = true
   }, [initialPreviews])
-
-  // Fetch previews (and dismissal flags) from API.
-  // Always runs on mount to hydrate dismissedIds, even when previews came from IndexedDB cache.
-  useEffect(() => {
-    if (fetchedFromApi) return
-
-    let mounted = true
-    linkPreviewsApi
-      .getForMessage(workspaceId, messageId)
-      .then((result) => {
-        if (!mounted) return
-        if (!hasSocketPreviewsRef.current) {
-          setPreviews(result.map(({ dismissed, ...p }) => p))
-        }
-        setDismissedIds(new Set(result.filter((p) => p.dismissed).map((p) => p.id)))
-        setFetchedFromApi(true)
-      })
-      .catch(() => {
-        // Silently fail — previews are non-critical
-      })
-    return () => {
-      mounted = false
-    }
-  }, [workspaceId, messageId, fetchedFromApi])
 
   // Sync dismissals from other views/tabs via socket (author-scoped event)
   const socket = useSocket()
@@ -120,12 +111,14 @@ export function LinkPreviewList({
         // Message link previews use a specialized card with permission-checked resolve
         if (preview.contentType === "message_link") {
           return (
-            <MessageLinkPreviewCard
-              key={preview.id}
-              preview={preview}
-              workspaceId={workspaceId}
-              onDismiss={handleDismiss}
-            />
+            <PreviewRenderBoundary key={preview.id}>
+              <MessageLinkPreviewCard
+                preview={preview}
+                workspaceId={workspaceId}
+                onDismiss={handleDismiss}
+                hydrate={hydrateFromApi}
+              />
+            </PreviewRenderBoundary>
           )
         }
 
@@ -138,29 +131,30 @@ export function LinkPreviewList({
         const isCollapsed = explicitlyCollapsed || (defaultCollapsed && !explicitlyOpened)
 
         return (
-          <LinkPreviewCard
-            key={preview.id}
-            preview={preview}
-            isHighlighted={isHighlighted}
-            isCollapsed={isCollapsed}
-            onDismiss={handleDismiss}
-            onToggleCollapse={(id) => {
-              setCollapsedIds((prev) => {
-                const next = new Set(prev)
-                // Determine current effective collapsed state
-                const currentlyCollapsed = next.has(id) || (defaultCollapsed && !next.has(`__opened_${id}`))
-                // Clear both markers, then set the opposite
-                next.delete(id)
-                next.delete(`__opened_${id}`)
-                if (currentlyCollapsed) {
-                  next.add(`__opened_${id}`)
-                } else {
-                  next.add(id)
-                }
-                return next
-              })
-            }}
-          />
+          <PreviewRenderBoundary key={preview.id}>
+            <LinkPreviewCard
+              preview={preview}
+              isHighlighted={isHighlighted}
+              isCollapsed={isCollapsed}
+              onDismiss={handleDismiss}
+              onToggleCollapse={(id) => {
+                setCollapsedIds((prev) => {
+                  const next = new Set(prev)
+                  // Determine current effective collapsed state
+                  const currentlyCollapsed = next.has(id) || (defaultCollapsed && !next.has(`__opened_${id}`))
+                  // Clear both markers, then set the opposite
+                  next.delete(id)
+                  next.delete(`__opened_${id}`)
+                  if (currentlyCollapsed) {
+                    next.add(`__opened_${id}`)
+                  } else {
+                    next.add(id)
+                  }
+                  return next
+                })
+              }}
+            />
+          </PreviewRenderBoundary>
         )
       })}
 

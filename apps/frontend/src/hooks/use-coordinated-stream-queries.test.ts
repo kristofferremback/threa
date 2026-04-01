@@ -28,6 +28,10 @@ vi.mock("@/lib/socket-room", () => ({
   joinRoomBestEffort: mockJoinRoomBestEffort,
 }))
 
+vi.mock("@/sync/stream-sync", () => ({
+  applyStreamBootstrap: vi.fn(),
+}))
+
 function createTestQueryClient() {
   return new QueryClient({
     defaultOptions: {

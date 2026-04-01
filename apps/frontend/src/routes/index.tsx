@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react"
-import { createBrowserRouter, Navigate, useParams } from "react-router-dom"
+import { createBrowserRouter, Navigate, useLocation, useParams } from "react-router-dom"
 import { LoginPage } from "@/pages/login"
 import { WorkspaceSelectPage } from "@/pages/workspace-select"
 import { WorkspaceLayout } from "@/pages/workspace-layout"
@@ -81,8 +81,9 @@ export const router = createBrowserRouter([
 ])
 
 /** Workspace index route — redirects to a stream or opens the sidebar. */
-function WorkspaceHome() {
+export function WorkspaceHome() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
+  const location = useLocation()
   const { state, togglePinned } = useSidebar()
   const { redirectStreamId, shouldOpenSidebar } = useLastStream(workspaceId ?? "")
   const sidebarOpenedRef = useRef(false)
@@ -95,7 +96,15 @@ function WorkspaceHome() {
   }, [shouldOpenSidebar, state, togglePinned])
 
   if (redirectStreamId && workspaceId) {
-    return <Navigate to={`/w/${workspaceId}/s/${redirectStreamId}`} replace />
+    return (
+      <Navigate
+        to={{
+          pathname: `/w/${workspaceId}/s/${redirectStreamId}`,
+          search: location.search,
+        }}
+        replace
+      />
+    )
   }
 
   return (

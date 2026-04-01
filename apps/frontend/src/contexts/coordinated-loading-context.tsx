@@ -1,17 +1,31 @@
 import { createContext, useContext, useState, useEffect, useMemo, useRef, type ReactNode } from "react"
-import { useWorkspaceBootstrap } from "@/hooks/use-workspaces"
 import { usePreloadImages } from "@/hooks/use-preload-images"
 import { useCoordinatedStreamQueries } from "@/hooks/use-coordinated-stream-queries"
-import { debugBootstrap } from "@/lib/bootstrap-debug"
-import { getQueryLoadState, isQueryLoadStateLoading } from "@/lib/query-load-state"
+import {
+  hasSeededWorkspaceCache,
+  seedCacheFromIdb,
+  useWorkspaceBots,
+  useWorkspaceDmPeers,
+  useWorkspaceFromStore,
+  useWorkspaceMetadata,
+  useWorkspacePersonas,
+  useWorkspaceStreamMemberships,
+  useWorkspaceStreams,
+  useWorkspaceUnreadState,
+  useWorkspaceUsers,
+} from "@/stores/workspace-store"
+import { hasSeededDraftCache, seedDraftCacheFromIdb } from "@/stores/draft-store"
+import { useSyncStatus } from "@/sync/sync-status"
+import { debugBootstrap, isBootstrapDebugEnabled } from "@/lib/bootstrap-debug"
+import { getQueryLoadState, isQueryLoadStateLoading, shouldSuppressBootstrapError } from "@/lib/query-load-state"
 import { StreamContentSkeleton } from "@/components/loading"
 import { ApiError } from "@/api/client"
 import { getAvatarUrl } from "@threa/types"
 
 /**
  * Global coordinated loading phase - only applies during initial app load.
- * - "loading": First ~1s of initial load, UI shows blank
- * - "skeleton": After ~1s, UI shows skeleton placeholders
+ * - "loading": First ~300ms of initial load, UI shows blank
+ * - "skeleton": After ~300ms, UI shows skeleton placeholders
  * - "ready": Initial load complete, never returns to loading/skeleton
  */
 export type CoordinatedPhase = "loading" | "skeleton" | "ready"
@@ -56,47 +70,165 @@ interface CoordinatedLoadingProviderProps {
   children: ReactNode
 }
 
-const LOADING_DELAY_MS = 1000
+const LOADING_DELAY_MS = 300
 
 export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }: CoordinatedLoadingProviderProps) {
   const [showSkeleton, setShowSkeleton] = useState(false)
   const [showLoadingIndicator, setShowLoadingIndicator] = useState(false)
   const [isReady, setIsReady] = useState(false)
+  // Track which workspace has IDB cache primed. When true, the gate bypasses
+  // network checks — IDB has data from a previous session and store hooks
+  // return it synchronously via the in-memory cache. The phase system still
+  // applies (loading → skeleton → ready) including avatar preload.
+  const [primedWorkspaceId, setPrimedWorkspaceId] = useState<string | null>(null)
+  const [primedDraftWorkspaceId, setPrimedDraftWorkspaceId] = useState<string | null>(null)
+  const idbCachePrimed = primedWorkspaceId === workspaceId
   const initialLoadCompleteRef = useRef(false)
   const loadingIndicatorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hideIndicatorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const loggedSuppressedStreamErrorsRef = useRef(new Set<string>())
 
-  const workspaceQuery = useWorkspaceBootstrap(workspaceId)
-  const workspaceLoadState =
-    workspaceQuery.loadState ?? getQueryLoadState(workspaceQuery.status, workspaceQuery.fetchStatus)
+  // Prime the in-memory cache from IndexedDB on mount. If IDB has workspace
+  // data from a previous session, this populates the cache so store hooks
+  // return real data on their first synchronous render. When successful, the
+  // gate bypasses network wait — IDB IS the source of truth.
+  useEffect(() => {
+    let cancelled = false
+    seedCacheFromIdb(workspaceId).then((hasData) => {
+      if (!cancelled && hasData) setPrimedWorkspaceId(workspaceId)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [workspaceId])
+
+  useEffect(() => {
+    let cancelled = false
+    seedDraftCacheFromIdb(workspaceId).then(() => {
+      if (!cancelled) setPrimedDraftWorkspaceId(workspaceId)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [workspaceId])
+
+  const workspaceSyncStatus = useSyncStatus(`workspace:${workspaceId}`)
   const { loadState: streamsLoadState, results } = useCoordinatedStreamQueries(workspaceId, streamIds)
-  const workspaceLoading = isQueryLoadStateLoading(workspaceLoadState)
-  const streamsLoading = isQueryLoadStateLoading(streamsLoadState)
+  const serverStreamIds = useMemo(
+    () => streamIds.filter((id) => !id.startsWith("draft_") && !id.startsWith("draft:")),
+    [streamIds]
+  )
 
-  // Preload user avatar images so they're in the browser cache before first render
+  // When bypassing via IDB cache, verify the data is actually populated —
+  // don't just trust the loading flags. usePreloadImages resolves immediately
+  // for empty arrays (pre-cache) and then never blocks again, which can cause
+  // the gate to open before store hooks have data.
+  const idbWorkspace = useWorkspaceFromStore(workspaceId)
+  const idbStreams = useWorkspaceStreams(workspaceId)
+  const idbUsers = useWorkspaceUsers(workspaceId)
+  const idbMemberships = useWorkspaceStreamMemberships(workspaceId)
+  const idbDmPeers = useWorkspaceDmPeers(workspaceId)
+  const idbPersonas = useWorkspacePersonas(workspaceId)
+  const idbBots = useWorkspaceBots(workspaceId)
+  const idbUnreadState = useWorkspaceUnreadState(workspaceId)
+  const idbMetadata = useWorkspaceMetadata(workspaceId)
+  const streamById = useMemo(() => new Map(idbStreams.map((stream) => [stream.id, stream])), [idbStreams])
+  const workspaceDataReady =
+    hasSeededWorkspaceCache(workspaceId) && !!idbWorkspace && idbUnreadState !== undefined && idbMetadata !== undefined
+  const draftDataReady = primedDraftWorkspaceId === workspaceId && hasSeededDraftCache(workspaceId)
+  const streamQueryStates = useMemo(
+    () =>
+      serverStreamIds.map((streamId, index) => {
+        const result = results[index]
+        const cachedStream = streamById.get(streamId)
+        const hasStreamRecord = !!cachedStream || result?.data?.stream?.id === streamId
+        // IDB is the source of truth — if the workspace was primed from IDB,
+        // stream events are there and useLiveQuery will serve them. Otherwise
+        // wait for the bootstrap query to resolve.
+        const hasUsableLocalData = hasStreamRecord && (idbCachePrimed || result?.data !== undefined)
+        return {
+          streamId,
+          result,
+          hasStreamRecord,
+          hasUsableLocalData,
+          suppressError: shouldSuppressBootstrapError(result?.error, hasUsableLocalData),
+        }
+      }),
+    [results, serverStreamIds, streamById, idbCachePrimed]
+  )
+  const visibleStreamIdsReady = streamQueryStates.every((state) => state.hasUsableLocalData)
+  const canBypassVisibleStreamNetwork = idbCachePrimed && visibleStreamIdsReady
+  const workspaceLoading = !workspaceDataReady && workspaceSyncStatus !== "error"
+  const streamsLoading = !canBypassVisibleStreamNetwork && isQueryLoadStateLoading(streamsLoadState)
+  const draftsLoading = !draftDataReady
+  const suppressedStreamErrors = useMemo(
+    () => streamQueryStates.filter((state) => state.suppressError && state.result?.error),
+    [streamQueryStates]
+  )
+
   const avatarUrls = useMemo(() => {
-    if (!workspaceQuery.data) return []
-    const users = workspaceQuery.data.users
-    return users
+    return idbUsers
       .map((u) => getAvatarUrl(workspaceId, u.avatarUrl, 64))
       .filter((url): url is string => url !== undefined)
-  }, [workspaceQuery.data])
+  }, [idbUsers, workspaceId])
   const avatarsReady = usePreloadImages(avatarUrls)
 
-  const isLoading = workspaceLoading || streamsLoading
+  // After the initial coordinated load completes, stream-specific bootstraps
+  // (triggered by navigating to a new stream) should not re-trigger the
+  // top-bar loading indicator. Individual stream loading is handled by
+  // EventList's skeleton/loading state within the stream content area.
+  const isLoading = workspaceLoading || (!isReady && streamsLoading) || draftsLoading
 
-  debugBootstrap("Coordinated loading state", {
-    workspaceId,
-    streamIds,
-    workspaceLoadState,
-    streamsLoadState,
-    workspaceLoading,
-    streamsLoading,
-    isLoading,
-    isReady,
-    showSkeleton,
-    showLoadingIndicator,
-  })
+  if (isBootstrapDebugEnabled()) {
+    debugBootstrap("Coordinated loading state", {
+      workspaceId,
+      streamIds,
+      serverStreamIds,
+      workspaceSyncStatus,
+      streamsLoadState,
+      hasSeededWorkspaceCache: hasSeededWorkspaceCache(workspaceId),
+      hasSeededDraftCache: hasSeededDraftCache(workspaceId),
+      idbCachePrimed,
+      workspaceDataReady,
+      draftDataReady,
+      visibleStreamIdsReady,
+      suppressedStreamErrors: suppressedStreamErrors.map((state) => ({
+        streamId: state.streamId,
+        message: state.result?.error?.message ?? "unknown error",
+      })),
+      workspaceRecordReady: !!idbWorkspace,
+      streamCount: idbStreams.length,
+      userCount: idbUsers.length,
+      membershipCount: idbMemberships.length,
+      dmPeerCount: idbDmPeers.length,
+      personaCount: idbPersonas.length,
+      botCount: idbBots.length,
+      hasUnreadState: idbUnreadState !== undefined,
+      hasMetadata: idbMetadata !== undefined,
+      workspaceLoading,
+      streamsLoading,
+      draftsLoading,
+      isLoading,
+      isReady,
+      showSkeleton,
+      showLoadingIndicator,
+    })
+  }
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return
+
+    for (const state of suppressedStreamErrors) {
+      if (!state.result?.error) continue
+      const key = `${workspaceId}:${state.streamId}:${state.result.error.message}`
+      if (loggedSuppressedStreamErrorsRef.current.has(key)) continue
+      loggedSuppressedStreamErrorsRef.current.add(key)
+      console.warn(
+        `[CoordinatedLoading] Suppressing stream bootstrap error for ${state.streamId} because cached data is available`,
+        state.result.error
+      )
+    }
+  }, [suppressedStreamErrors, workspaceId])
 
   // Compute phase from state
   const phase = useMemo<CoordinatedPhase>(() => {
@@ -169,36 +301,32 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
   // Build a map of stream states for O(1) lookup
   // Filter out both draft scratchpads (draft_xxx) and draft thread panels (draft:xxx:xxx)
   const streamStateMap = useMemo(() => {
-    const serverStreamIds = streamIds.filter((id) => !id.startsWith("draft_") && !id.startsWith("draft:"))
     const map = new Map<string, { isLoading: boolean; error: Error | null }>()
 
-    results.forEach((result, index) => {
-      const streamId = serverStreamIds[index]
-      if (streamId) {
-        const loadState = getQueryLoadState(result.status, result.fetchStatus)
-        map.set(streamId, {
-          isLoading: isQueryLoadStateLoading(loadState) && !result.isError,
-          error: result.error ?? null,
+    streamQueryStates.forEach((state) => {
+      if (state.streamId && state.result) {
+        const loadState = getQueryLoadState(state.result.status, state.result.fetchStatus)
+        map.set(state.streamId, {
+          isLoading: isQueryLoadStateLoading(loadState) && !state.result.isError,
+          error: state.suppressError ? null : (state.result.error ?? null),
         })
       }
     })
 
     return map
-  }, [results, streamIds])
+  }, [streamQueryStates])
 
   // Extract errors for getStreamError
   // Filter out both draft scratchpads (draft_xxx) and draft thread panels (draft:xxx:xxx)
   const streamErrors = useMemo<StreamError[]>(() => {
-    const serverStreamIds = streamIds.filter((id) => !id.startsWith("draft_") && !id.startsWith("draft:"))
-    return results
-      .map((result, index) => {
-        if (!result.error) return null
-        const streamId = serverStreamIds[index]
-        const status = ApiError.isApiError(result.error) ? result.error.status : 500
-        return { streamId, status, error: result.error }
+    return streamQueryStates
+      .map((state) => {
+        if (!state.result?.error || state.suppressError) return null
+        const status = ApiError.isApiError(state.result.error) ? state.result.error.status : 500
+        return { streamId: state.streamId, status, error: state.result.error }
       })
       .filter((e): e is StreamError => e !== null)
-  }, [results, streamIds])
+  }, [streamQueryStates])
 
   const getStreamState = useMemo(
     () =>
@@ -248,7 +376,7 @@ interface CoordinatedLoadingGateProps {
 }
 
 /**
- * Gate component that shows nothing during the "loading" phase (first ~1s),
+ * Gate component that shows nothing during the "loading" phase (first ~300ms),
  * then renders children. Only applies during initial load.
  */
 export function CoordinatedLoadingGate({ children }: CoordinatedLoadingGateProps) {

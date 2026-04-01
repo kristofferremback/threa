@@ -1,6 +1,11 @@
-import { useLiveQuery } from "dexie-react-hooks"
 import { useCallback } from "react"
 import { db, type DraftScratchpad } from "@/db"
+import {
+  deleteDraftMessageFromCache,
+  deleteDraftScratchpadFromCache,
+  upsertDraftScratchpadInCache,
+  useDraftScratchpadsFromStore,
+} from "@/stores/draft-store"
 import type { CompanionMode } from "@threa/types"
 
 export function generateDraftId(): string {
@@ -14,22 +19,20 @@ export function isDraftId(id: string): boolean {
 }
 
 export function useDraftScratchpads(workspaceId: string) {
-  const drafts = useLiveQuery(
-    () => db.draftScratchpads.where("workspaceId").equals(workspaceId).toArray(),
-    [workspaceId],
-    []
-  )
+  const drafts = useDraftScratchpadsFromStore(workspaceId)
 
   const createDraft = useCallback(
     async (companionMode: CompanionMode = "on"): Promise<string> => {
       const id = generateDraftId()
-      await db.draftScratchpads.add({
+      const draft: DraftScratchpad = {
         id,
         workspaceId,
         displayName: null,
         companionMode,
         createdAt: Date.now(),
-      })
+      }
+      await db.draftScratchpads.add(draft)
+      upsertDraftScratchpadInCache(workspaceId, draft)
       return id
     },
     [workspaceId]
@@ -38,13 +41,25 @@ export function useDraftScratchpads(workspaceId: string) {
   const updateDraft = useCallback(
     async (id: string, data: Partial<Pick<DraftScratchpad, "displayName" | "companionMode">>) => {
       await db.draftScratchpads.update(id, data)
+      const existingDraft = drafts.find((draft) => draft.id === id)
+      if (existingDraft) {
+        upsertDraftScratchpadInCache(workspaceId, { ...existingDraft, ...data })
+      }
     },
-    []
+    [drafts, workspaceId]
   )
 
-  const deleteDraft = useCallback(async (id: string) => {
-    await db.draftScratchpads.delete(id)
-  }, [])
+  const deleteDraft = useCallback(
+    async (id: string) => {
+      await db.transaction("rw", db.draftScratchpads, db.draftMessages, async () => {
+        await db.draftScratchpads.delete(id)
+        await db.draftMessages.delete(`stream:${id}`)
+      })
+      deleteDraftScratchpadFromCache(workspaceId, id)
+      deleteDraftMessageFromCache(workspaceId, `stream:${id}`)
+    },
+    [workspaceId]
+  )
 
   const getDraft = useCallback(
     (id: string): DraftScratchpad | undefined => {
@@ -54,7 +69,7 @@ export function useDraftScratchpads(workspaceId: string) {
   )
 
   return {
-    drafts: drafts ?? [],
+    drafts,
     createDraft,
     updateDraft,
     deleteDraft,

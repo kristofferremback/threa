@@ -2,6 +2,8 @@ import { useCallback, useMemo } from "react"
 import { toast } from "sonner"
 import { messagesApi } from "@/api/messages"
 import { useWorkspaceEmoji } from "./use-workspace-emoji"
+import { enqueueOperation } from "@/sync/operation-queue"
+import { useSyncEngine } from "@/sync/sync-engine"
 
 /** Strip surrounding colons from a shortcode (":laughing:" → "laughing") */
 export function stripColons(shortcode: string): string {
@@ -26,6 +28,7 @@ interface UseMessageReactionsResult {
 
 export function useMessageReactions(workspaceId: string, messageId: string): UseMessageReactionsResult {
   const { emojis, toEmoji } = useWorkspaceEmoji(workspaceId)
+  const syncEngine = useSyncEngine()
 
   // Reverse lookup: emoji character → shortcode
   const emojiToShortcode = useMemo(() => {
@@ -41,10 +44,12 @@ export function useMessageReactions(workspaceId: string, messageId: string): Use
       try {
         await messagesApi.addReaction(workspaceId, messageId, emoji)
       } catch {
-        toast.error("Failed to add reaction")
+        // Enqueue for retry when back online
+        await enqueueOperation(workspaceId, "add_reaction", { messageId, emoji })
+        syncEngine.kickOperationQueue()
       }
     },
-    [workspaceId, messageId]
+    [workspaceId, messageId, syncEngine]
   )
 
   const removeReaction = useCallback(
@@ -52,10 +57,11 @@ export function useMessageReactions(workspaceId: string, messageId: string): Use
       try {
         await messagesApi.removeReaction(workspaceId, messageId, emoji)
       } catch {
-        toast.error("Failed to update reaction")
+        await enqueueOperation(workspaceId, "remove_reaction", { messageId, emoji })
+        syncEngine.kickOperationQueue()
       }
     },
-    [workspaceId, messageId]
+    [workspaceId, messageId, syncEngine]
   )
 
   const toggleReaction = useCallback(

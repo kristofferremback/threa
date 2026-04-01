@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { MessageEvent } from "./message-event"
 import { EditLastMessageContext } from "./edit-last-message-context"
 import * as editorModule from "@/components/editor"
+import * as hooksModule from "@/hooks"
 import * as prosemirrorModule from "@threa/prosemirror"
 import type { StreamEvent } from "@threa/types"
 import type { JSONContent } from "@threa/types"
@@ -37,6 +38,10 @@ vi.mock("react-router-dom", () => ({
       {children}
     </a>
   ),
+}))
+
+vi.mock("@/sync/sync-engine", () => ({
+  useSyncEngine: () => ({ kickOperationQueue: vi.fn() }),
 }))
 
 vi.mock("@/contexts", async (importOriginal) => {
@@ -93,6 +98,7 @@ vi.mock("@/hooks", async (importOriginal) => {
       data: { users: [{ id: "member_123", workosUserId: "workos_user_123" }] },
     }),
     useWorkspaceUserId: () => "member_123",
+    focusAtEnd: vi.fn(),
   }
 })
 
@@ -344,6 +350,51 @@ describe("MessageEvent", () => {
       render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />, { wrapper: Wrapper })
 
       expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument()
+    })
+
+    it("restores focus to the visible zone editor after canceling inline edit", async () => {
+      const event = createMessageEvent("msg_edit", "Hello world")
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      const focusAtEnd = vi.mocked(hooksModule.focusAtEnd)
+      focusAtEnd.mockClear()
+
+      let capturedHandler: (() => void) | undefined
+      const registerMessage = vi.fn((_messageId: string, handler: () => void) => {
+        capturedHandler = handler
+        return () => {}
+      })
+
+      render(
+        <div data-editor-zone="main">
+          <div data-testid="zone-editor" contentEditable />
+          <QueryClientProvider client={queryClient}>
+            <TooltipProvider>
+              <EditLastMessageContext.Provider value={{ registerMessage, triggerEditLast: vi.fn() }}>
+                <MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />
+              </EditLastMessageContext.Provider>
+            </TooltipProvider>
+          </QueryClientProvider>
+        </div>
+      )
+
+      const zoneEditor = screen.getByTestId("zone-editor")
+      const rects = {
+        length: 1,
+        item: (index: number) => (index === 0 ? ({ width: 1, height: 1 } as DOMRect) : null),
+        0: { width: 1, height: 1 } as DOMRect,
+      } as unknown as DOMRectList
+      vi.spyOn(zoneEditor, "getClientRects").mockReturnValue(rects)
+
+      await act(async () => {
+        capturedHandler?.()
+      })
+
+      await act(async () => {
+        screen.getByRole("button", { name: "Cancel" }).click()
+        await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)))
+      })
+
+      expect(focusAtEnd).toHaveBeenCalledWith(zoneEditor)
     })
   })
 })

@@ -1,6 +1,13 @@
 import { useLiveQuery } from "dexie-react-hooks"
 import { useCallback, useMemo } from "react"
 import { db, type CachedStream } from "@/db"
+import {
+  deleteDraftMessageFromCache,
+  deleteDraftScratchpadFromCache,
+  useDraftMessagesFromStore,
+  useDraftScratchpadsFromStore,
+} from "@/stores/draft-store"
+import { useWorkspaceStreams } from "@/stores/workspace-store"
 import { isDraftId } from "./use-draft-scratchpads"
 import { serializeToMarkdown } from "@threa/prosemirror"
 import type { JSONContent, StreamType } from "@threa/types"
@@ -74,40 +81,33 @@ function getContentPreview(contentJson: JSONContent | undefined): string {
  * Returns a unified list sorted by recency.
  */
 export function useAllDrafts(workspaceId: string) {
-  // Get draft scratchpads
-  const draftScratchpads = useLiveQuery(
-    () => db.draftScratchpads.where("workspaceId").equals(workspaceId).toArray(),
-    [workspaceId],
-    []
-  )
-
-  // Get draft messages
-  const draftMessages = useLiveQuery(
-    () => db.draftMessages.where("workspaceId").equals(workspaceId).toArray(),
-    [workspaceId],
-    []
-  )
-
-  // Get cached streams for looking up stream info
-  const cachedStreams = useLiveQuery(
-    () => db.streams.where("workspaceId").equals(workspaceId).toArray(),
-    [workspaceId],
-    []
-  )
+  const draftScratchpads = useDraftScratchpadsFromStore(workspaceId)
+  const draftMessages = useDraftMessagesFromStore(workspaceId)
+  const cachedStreams = useWorkspaceStreams(workspaceId)
 
   // Check if we have any thread drafts that need parent message resolution
   const hasThreadDrafts = useMemo(() => (draftMessages ?? []).some((m) => m.id.startsWith("thread:")), [draftMessages])
+
+  // Stable stream ID key — only changes when the set of IDs changes, not on
+  // every useLiveQuery re-fire of cachedStreams (which returns a new array ref
+  // even when the same streams are present).
+  const streamIdKey = useMemo(
+    () =>
+      (cachedStreams ?? [])
+        .map((s) => s.id)
+        .sort()
+        .join(","),
+    [cachedStreams]
+  )
 
   // Get cached events for looking up parent messages (for thread drafts)
   // Only query events if we have thread drafts to avoid expensive query for common case
   const cachedEvents = useLiveQuery(
     () => {
-      if (!hasThreadDrafts) return []
-      const streamIds = (cachedStreams ?? []).map((s) => s.id)
-      if (streamIds.length === 0) return []
-      return db.events.where("streamId").anyOf(streamIds).toArray()
+      if (!hasThreadDrafts || !streamIdKey) return []
+      return db.events.where("streamId").anyOf(streamIdKey.split(",")).toArray()
     },
-    [cachedStreams, hasThreadDrafts],
+    [streamIdKey, hasThreadDrafts],
     []
   )
 
@@ -236,19 +236,25 @@ export function useAllDrafts(workspaceId: string) {
     result.sort((a, b) => b.updatedAt - a.updatedAt)
 
     return result
-  }, [draftScratchpads, draftMessages, streamMap, messageToStreamMap])
+  }, [draftScratchpads, draftMessages, streamMap, messageToStreamMap, workspaceId])
 
   // Delete a draft
-  const deleteDraft = useCallback(async (draftId: string) => {
-    // If it's a draft scratchpad, delete both the scratchpad and any associated message
-    if (isDraftId(draftId)) {
-      await db.draftScratchpads.delete(draftId)
-      await db.draftMessages.delete(`stream:${draftId}`)
-    } else {
-      // Otherwise just delete the draft message
-      await db.draftMessages.delete(draftId)
-    }
-  }, [])
+  const deleteDraft = useCallback(
+    async (draftId: string) => {
+      // If it's a draft scratchpad, delete both the scratchpad and any associated message
+      if (isDraftId(draftId)) {
+        await db.draftScratchpads.delete(draftId)
+        await db.draftMessages.delete(`stream:${draftId}`)
+        deleteDraftScratchpadFromCache(workspaceId, draftId)
+        deleteDraftMessageFromCache(workspaceId, `stream:${draftId}`)
+      } else {
+        // Otherwise just delete the draft message
+        await db.draftMessages.delete(draftId)
+        deleteDraftMessageFromCache(workspaceId, draftId)
+      }
+    },
+    [workspaceId]
+  )
 
   return {
     drafts,

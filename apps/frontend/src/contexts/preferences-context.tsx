@@ -2,7 +2,9 @@ import { createContext, useContext, useEffect, useCallback, useMemo, type ReactN
 import { useQueryClient, useMutation } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { preferencesApi } from "@/api"
-import { useWorkspaceBootstrap, workspaceKeys } from "@/hooks/use-workspaces"
+import { workspaceKeys } from "@/hooks/use-workspaces"
+import { useWorkspaceUserPreferences } from "@/stores/workspace-store"
+import { db } from "@/db"
 import { applyPreferencesToDOM, getResolvedTheme } from "@/lib/apply-preferences"
 import type {
   UserPreferences,
@@ -51,9 +53,9 @@ interface PreferencesProviderProps {
 export function PreferencesProvider({ workspaceId, children }: PreferencesProviderProps) {
   const queryClient = useQueryClient()
 
-  // Subscribe to bootstrap data - this re-renders when socket events update the cache
-  const { data: bootstrap } = useWorkspaceBootstrap(workspaceId)
-  const preferences = bootstrap?.userPreferences ?? null
+  // Read preferences from IDB via useLiveQuery — reactive and offline-capable
+  const idbPrefs = useWorkspaceUserPreferences(workspaceId)
+  const preferences = (idbPrefs as UserPreferences | undefined) ?? null
 
   const resolvedTheme = useMemo(() => {
     if (!preferences) return "light"
@@ -112,14 +114,31 @@ export function PreferencesProvider({ workspaceId, children }: PreferencesProvid
           ...previousBootstrap,
           userPreferences: newPreferences,
         })
+
+        // Write to IDB immediately so useLiveQuery consumers see the change
+        // without waiting for the socket event round-trip.
+        db.userPreferences.put({
+          ...newPreferences,
+          id: workspaceId,
+          workspaceId,
+          _cachedAt: Date.now(),
+        })
       }
 
       return { previousBootstrap }
     },
     onError: (_err, _input, context) => {
-      // Rollback on error
+      // Rollback on error — both TanStack and IDB
       if (context?.previousBootstrap) {
         queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), context.previousBootstrap)
+        if (context.previousBootstrap.userPreferences) {
+          db.userPreferences.put({
+            ...context.previousBootstrap.userPreferences,
+            id: workspaceId,
+            workspaceId,
+            _cachedAt: Date.now(),
+          })
+        }
       }
       toast.error("Failed to save settings")
     },

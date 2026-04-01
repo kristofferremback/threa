@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useActivityService } from "@/contexts"
 import { workspaceKeys } from "./use-workspaces"
+import { db } from "@/db"
 import type { Activity, WorkspaceBootstrap } from "@threa/types"
 
 export const activityKeys = {
@@ -50,10 +51,26 @@ export function useMarkActivityRead(workspaceId: string) {
           unreadActivityCount: Math.max(0, (old.unreadActivityCount ?? 0) - 1),
         }
       })
+
+      const previousUnreadState = await db.unreadState.get(workspaceId)
+      if (previousUnreadState) {
+        await db.unreadState.put({
+          ...previousUnreadState,
+          unreadActivityCount: Math.max(0, previousUnreadState.unreadActivityCount - 1),
+          _cachedAt: Date.now(),
+        })
+      }
+
+      return { previousUnreadState }
     },
-    onError: () => {
+    onError: (_error, _activityId, context) => {
       // Rollback: refetch on error
       queryClient.invalidateQueries({ queryKey: activityKeys.list(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: workspaceKeys.bootstrap(workspaceId) })
+
+      if (context?.previousUnreadState) {
+        void db.unreadState.put(context.previousUnreadState)
+      }
     },
   })
 }
@@ -84,6 +101,28 @@ export function useMarkAllActivityRead(workspaceId: string) {
           activityCounts: clearedActivityCounts,
           unreadActivityCount: 0,
         }
+      })
+
+      void db.transaction("rw", [db.unreadState], async () => {
+        const state = await db.unreadState.get(workspaceId)
+        if (!state) return
+
+        const clearedMentionCounts: Record<string, number> = {}
+        const clearedActivityCounts: Record<string, number> = {}
+        for (const key of Object.keys(state.mentionCounts)) {
+          clearedMentionCounts[key] = 0
+        }
+        for (const key of Object.keys(state.activityCounts)) {
+          clearedActivityCounts[key] = 0
+        }
+
+        await db.unreadState.put({
+          ...state,
+          mentionCounts: clearedMentionCounts,
+          activityCounts: clearedActivityCounts,
+          unreadActivityCount: 0,
+          _cachedAt: Date.now(),
+        })
       })
     },
   })

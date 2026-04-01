@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, vi } from "vitest"
 import type { Socket } from "socket.io-client"
-import { joinRoomWithAck } from "./socket-room"
+import { joinRoomBestEffort, joinRoomFireAndForget, joinRoomWithAck } from "./socket-room"
 
 type EventHandler = (...args: unknown[]) => void
 
@@ -151,5 +151,37 @@ describe("joinRoomWithAck", () => {
 
     await expect(joinPromise).rejects.toThrow('Join aborted for room "ws:workspace_1"')
     expect(socket.emitCalls).toBe(0)
+  })
+})
+
+describe("join room logging", () => {
+  it("does not log expected disconnect interruptions as errors", async () => {
+    const socket = new MockSocket()
+    socket.ackDelayMs = 50
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    const joinPromise = joinRoomBestEffort(asSocket(socket), "ws:workspace_1", "SyncEngine")
+    setTimeout(() => {
+      socket.trigger("disconnect", "transport close")
+    }, 10)
+
+    await joinPromise
+
+    expect(errorSpy).not.toHaveBeenCalled()
+    errorSpy.mockRestore()
+  })
+
+  it("does not log aborted fire-and-forget joins as errors", async () => {
+    const socket = new MockSocket()
+    socket.connected = false
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+    const controller = new AbortController()
+
+    joinRoomFireAndForget(asSocket(socket), "ws:workspace_1", controller.signal, "StreamSocket")
+    controller.abort()
+    await Promise.resolve()
+
+    expect(errorSpy).not.toHaveBeenCalled()
+    errorSpy.mockRestore()
   })
 })
