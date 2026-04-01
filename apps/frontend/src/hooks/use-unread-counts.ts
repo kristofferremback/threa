@@ -1,4 +1,4 @@
-import { useCallback } from "react"
+import { useCallback, useRef } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { useWorkspaceService, useStreamService } from "@/contexts"
 import { workspaceKeys } from "./use-workspaces"
@@ -12,15 +12,19 @@ export function useUnreadCounts(workspaceId: string) {
   const streamService = useStreamService()
   const workspaceService = useWorkspaceService()
 
-  // Read from IDB via useLiveQuery — reactive and offline-capable
+  // Read from IDB via useLiveQuery — reactive and offline-capable.
+  // Use refs so callback identity stays stable; the sidebar memos that
+  // depend on these callbacks won't recompute on every IDB write.
   const unreadState = useWorkspaceUnreadState(workspaceId)
   const unreadCounts = unreadState?.unreadCounts ?? {}
+  const unreadCountsRef = useRef(unreadCounts)
+  unreadCountsRef.current = unreadCounts
 
-  const getUnreadCount = useCallback((streamId: string): number => unreadCounts[streamId] ?? 0, [unreadCounts])
+  const getUnreadCount = useCallback((streamId: string): number => unreadCountsRef.current[streamId] ?? 0, [])
 
   const getTotalUnreadCount = useCallback(
-    (): number => Object.values(unreadCounts).reduce((sum, count) => sum + count, 0),
-    [unreadCounts]
+    (): number => Object.values(unreadCountsRef.current).reduce((sum, count) => sum + count, 0),
+    []
   )
 
   const markAsReadMutation = useMutation({

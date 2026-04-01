@@ -177,14 +177,12 @@ async function updateMessageEvent(
   messageId: string,
   updater: (payload: Record<string, unknown>) => Record<string, unknown>
 ): Promise<void> {
-  // Find the event by scanning for message_created events in this stream
+  // Use compound index to narrow to message_created events for this stream,
+  // then filter by messageId in the payload (not indexed but over a small set).
   const events = await db.events
-    .where("streamId")
-    .equals(streamId)
-    .filter((e) => {
-      if (e.eventType !== "message_created") return false
-      return (e.payload as { messageId?: string })?.messageId === messageId
-    })
+    .where("[streamId+eventType]")
+    .equals([streamId, "message_created"])
+    .filter((e) => (e.payload as { messageId?: string })?.messageId === messageId)
     .toArray()
 
   if (events.length === 0) return

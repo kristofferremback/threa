@@ -1,4 +1,4 @@
-import { useCallback } from "react"
+import { useCallback, useRef } from "react"
 import { useWorkspaceUnreadState } from "@/stores/workspace-store"
 
 export function useActivityCounts(workspaceId: string) {
@@ -7,13 +7,19 @@ export function useActivityCounts(workspaceId: string) {
   const activityCounts = unreadState?.activityCounts ?? {}
   const unreadActivityCount = unreadState?.unreadActivityCount ?? 0
 
-  const getMentionCount = useCallback((streamId: string): number => mentionCounts[streamId] ?? 0, [mentionCounts])
+  // Refs keep callback identity stable so sidebar memos don't cascade
+  const mentionCountsRef = useRef(mentionCounts)
+  mentionCountsRef.current = mentionCounts
+  const activityCountsRef = useRef(activityCounts)
+  activityCountsRef.current = activityCounts
 
-  const getActivityCount = useCallback((streamId: string): number => activityCounts[streamId] ?? 0, [activityCounts])
+  const getMentionCount = useCallback((streamId: string): number => mentionCountsRef.current[streamId] ?? 0, [])
+
+  const getActivityCount = useCallback((streamId: string): number => activityCountsRef.current[streamId] ?? 0, [])
 
   const getTotalMentionCount = useCallback(
-    (): number => Object.values(mentionCounts).reduce((sum, count) => sum + count, 0),
-    [mentionCounts]
+    (): number => Object.values(mentionCountsRef.current).reduce((sum, count) => sum + count, 0),
+    []
   )
 
   return {

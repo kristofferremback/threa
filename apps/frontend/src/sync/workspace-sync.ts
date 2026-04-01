@@ -580,6 +580,7 @@ export function registerWorkspaceSocketHandlers(
     if (!isViewingStream) {
       queryClient.invalidateQueries({
         queryKey: streamKeys.bootstrap(workspaceId, payload.streamId),
+        type: "active",
       })
     }
 

@@ -103,7 +103,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
           dmPeerUserId,
         }
       })
-  }, [idbStreams, memberStreamIds, mutedStreamIdSet, getUnreadCount, getMentionCount, dmPeerByStreamId])
+  }, [idbStreams, memberStreamIds, mutedStreamIdSet, getUnreadCount, getMentionCount, dmPeerByStreamId, unreadState])
 
   // System streams are auto-created infrastructure — don't count toward "has content"
   const hasUserStreamsFromStreams = processedStreams.some((s) => s.type !== StreamTypes.SYSTEM)

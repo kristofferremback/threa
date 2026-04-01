@@ -34,8 +34,8 @@ export function PendingMessagesProvider({ children }: PendingMessagesProviderPro
   useEffect(() => {
     void (async () => {
       try {
-        const pending = await db.events.filter((e) => e._status === "pending").primaryKeys()
-        const failed = await db.events.filter((e) => e._status === "failed").primaryKeys()
+        const pending = await db.events.where("_status").equals("pending").primaryKeys()
+        const failed = await db.events.where("_status").equals("failed").primaryKeys()
         if (pending.length > 0) setPendingIds(new Set(pending as string[]))
         if (failed.length > 0) setFailedIds(new Set(failed as string[]))
       } catch {

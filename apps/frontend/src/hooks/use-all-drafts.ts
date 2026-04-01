@@ -88,16 +88,26 @@ export function useAllDrafts(workspaceId: string) {
   // Check if we have any thread drafts that need parent message resolution
   const hasThreadDrafts = useMemo(() => (draftMessages ?? []).some((m) => m.id.startsWith("thread:")), [draftMessages])
 
+  // Stable stream ID key — only changes when the set of IDs changes, not on
+  // every useLiveQuery re-fire of cachedStreams (which returns a new array ref
+  // even when the same streams are present).
+  const streamIdKey = useMemo(
+    () =>
+      (cachedStreams ?? [])
+        .map((s) => s.id)
+        .sort()
+        .join(","),
+    [cachedStreams]
+  )
+
   // Get cached events for looking up parent messages (for thread drafts)
   // Only query events if we have thread drafts to avoid expensive query for common case
   const cachedEvents = useLiveQuery(
     () => {
-      if (!hasThreadDrafts) return []
-      const streamIds = (cachedStreams ?? []).map((s) => s.id)
-      if (streamIds.length === 0) return []
-      return db.events.where("streamId").anyOf(streamIds).toArray()
+      if (!hasThreadDrafts || !streamIdKey) return []
+      return db.events.where("streamId").anyOf(streamIdKey.split(",")).toArray()
     },
-    [cachedStreams, hasThreadDrafts],
+    [streamIdKey, hasThreadDrafts],
     []
   )
 

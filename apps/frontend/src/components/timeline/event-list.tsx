@@ -1,3 +1,4 @@
+import { memo, useMemo } from "react"
 import {
   COMMAND_EVENT_TYPES,
   AGENT_SESSION_EVENT_TYPES,
@@ -155,7 +156,7 @@ export function groupTimelineItems(events: StreamEvent[], currentUserId: string 
   return result
 }
 
-export function EventList({
+export const EventList = memo(function EventList({
   events,
   isLoading,
   workspaceId,
@@ -203,7 +204,7 @@ export function EventList({
     )
   }
 
-  const timelineItems = groupTimelineItems(events, user?.id)
+  const timelineItems = useMemo(() => groupTimelineItems(events, user?.id), [events, user?.id])
 
   // Helper to check if an item is the first unread event
   const isFirstUnread = (item: TimelineItem): boolean => {
@@ -215,15 +216,18 @@ export function EventList({
   }
 
   // Build sessionId → live counts lookup from agentActivity (keyed by triggerMessageId)
-  const sessionLiveCounts = new Map<string, { stepCount: number; messageCount: number }>()
-  if (agentActivity) {
-    for (const activity of agentActivity.values()) {
-      sessionLiveCounts.set(activity.sessionId, {
-        stepCount: activity.stepCount,
-        messageCount: activity.messageCount,
-      })
+  const sessionLiveCounts = useMemo(() => {
+    const counts = new Map<string, { stepCount: number; messageCount: number }>()
+    if (agentActivity) {
+      for (const activity of agentActivity.values()) {
+        counts.set(activity.sessionId, {
+          stepCount: activity.stepCount,
+          messageCount: activity.messageCount,
+        })
+      }
     }
-  }
+    return counts
+  }, [agentActivity])
 
   return (
     <div className="flex flex-col py-3 sm:py-6 mx-auto max-w-[800px] w-full min-w-0">
@@ -274,4 +278,4 @@ export function EventList({
       })}
     </div>
   )
-}
+})

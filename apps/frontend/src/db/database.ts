@@ -378,6 +378,15 @@ class ThreaDatabase extends Dexie {
       pendingOperations: "id, workspaceId, type, createdAt",
     })
 
+    // v19: Add [streamId+eventType] compound index for scoped event lookups
+    // (reactions, edits, deletes scan only message_created events instead of
+    // all events in a stream). Add _status index so pending/failed message
+    // hydration uses an index scan instead of a full table cursor.
+    this.version(19).stores({
+      events:
+        "id, workspaceId, streamId, sequence, [streamId+sequence], eventType, [streamId+eventType], _clientId, _cachedAt, _status",
+    })
+
     this.workspaceUsers = this.table(WORKSPACE_USERS_STORE) as EntityTable<CachedWorkspaceUser, "id">
   }
 }
