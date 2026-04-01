@@ -74,9 +74,10 @@ export function useScrollBehavior({
   const newerFetchScheduled = useRef(false)
 
   // Reset all scroll state when the content source changes (e.g. stream switch).
-  // Without this, prevItemCount retains the old stream's count and the
-  // "initial load → scroll to bottom" path never fires.
-  useEffect(() => {
+  // Must be useLayoutEffect (not useEffect) so the reset runs synchronously
+  // BEFORE the scroll-adjustment useLayoutEffect below — otherwise the scroll
+  // logic reads stale prevItemCount from the old stream.
+  useLayoutEffect(() => {
     shouldAutoScroll.current = true
     prevItemCount.current = 0
     prevScrollHeight.current = 0
@@ -85,6 +86,8 @@ export function useScrollBehavior({
     olderFetchScheduled.current = false
     newerFetchScheduled.current = false
     setIsScrolledFarFromBottom(false)
+    const el = scrollContainerRef.current
+    if (el) el.scrollTop = 0
   }, [resetKey])
 
   const scrollToBottom = useCallback((options?: { behavior?: ScrollBehavior; force?: boolean }) => {

@@ -22,13 +22,25 @@ export function resetStreamStoreCache(): void {}
  * Reactively read all events for a stream from IndexedDB.
  * Returns `undefined` while the query is resolving, `CachedEvent[]` once resolved.
  * Updates automatically when any write to db.events affects this stream.
+ *
+ * Guard: when `streamId` changes, `useLiveQuery` returns the previous stream's
+ * events for one render (its internal useState hasn't been updated by the new
+ * useEffect subscription yet). We detect this by comparing the first event's
+ * streamId against the requested one, returning `undefined` to signal loading
+ * and prevent stale content from flashing during stream switches.
  */
 export function useStreamEvents(streamId: string | undefined): CachedEvent[] | undefined {
-  return useLiveQuery(async () => {
+  const result = useLiveQuery(async () => {
     if (!streamId) return []
     const events = await db.events.where("streamId").equals(streamId).toArray()
     return sortBySequence(events)
   }, [streamId])
+
+  if (result && result.length > 0 && streamId && result[0].streamId !== streamId) {
+    return undefined
+  }
+
+  return result
 }
 
 /**

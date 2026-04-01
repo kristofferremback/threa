@@ -174,7 +174,7 @@ export function StreamContent({
     }
   }, [highlightMessageId, isLoading, isDraft, events, jumpToEvent])
 
-  // Reset jump trigger and exit jump mode when stream changes
+  // Reset jump state when switching streams (component stays mounted)
   useEffect(() => {
     jumpTriggeredRef.current = null
     exitJumpMode()
