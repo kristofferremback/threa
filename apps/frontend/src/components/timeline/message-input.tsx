@@ -28,7 +28,7 @@ function attachmentMatchKey(attachment: Pick<PendingAttachment, "filename" | "mi
   return `${attachment.filename}::${attachment.mimeType}`
 }
 
-function extractUploadedAttachments(content: JSONContent): Array<{
+export function extractUploadedAttachments(content: JSONContent): Array<{
   id: string
   filename: string
   mimeType: string

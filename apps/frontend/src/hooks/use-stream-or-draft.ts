@@ -16,7 +16,7 @@ import {
   upsertDraftMessageInCache,
 } from "@/stores/draft-store"
 import { createOptimisticBootstrap, type AttachmentSummary } from "./create-optimistic-bootstrap"
-import { escapeMarkdownLinkText, serializeAttachmentMetadata, serializeToMarkdown } from "@threa/prosemirror"
+import { serializeToMarkdown } from "@threa/prosemirror"
 import type {
   Stream,
   StreamMember,
@@ -82,37 +82,6 @@ function toCachedStream(stream: Stream, previous: CachedStream | undefined): Cac
     lastReadEventId: previous?.lastReadEventId ?? null,
     _cachedAt: Date.now(),
   }
-}
-
-function ensureAttachmentMarkdown(contentMarkdown: string, attachments?: AttachmentSummary[]): string {
-  if (!attachments || attachments.length === 0) return contentMarkdown
-
-  const attachmentMatches = Array.from(contentMarkdown.matchAll(/\(attachment:([^)\"\s]+)/g))
-  const referencedAttachmentIds = new Set(attachmentMatches.map((match) => match[1]))
-  const missingAttachments = attachments.filter((attachment) => !referencedAttachmentIds.has(attachment.id))
-  if (missingAttachments.length === 0) return contentMarkdown
-
-  const existingImageIndices = Array.from(contentMarkdown.matchAll(/\[Image #(\d+)\]\(attachment:/g)).map((match) =>
-    Number.parseInt(match[1] ?? "0", 10)
-  )
-  let nextImageIndex = existingImageIndices.length > 0 ? Math.max(...existingImageIndices) + 1 : 1
-
-  const appendedMarkdown = missingAttachments
-    .map((attachment) => {
-      const isImage = attachment.mimeType.startsWith("image/")
-      const imageIndex = isImage ? nextImageIndex++ : null
-      const displayText = isImage ? `Image #${imageIndex}` : attachment.filename
-      const metadata = serializeAttachmentMetadata({
-        ...attachment,
-        status: "uploaded",
-        imageIndex,
-        error: null,
-      })
-      return `[${escapeMarkdownLinkText(displayText)}](attachment:${attachment.id}${metadata})`
-    })
-    .join(" ")
-
-  return contentMarkdown.trim().length > 0 ? `${contentMarkdown}\n\n${appendedMarkdown}` : appendedMarkdown
 }
 
 export interface VirtualStream {
@@ -199,7 +168,7 @@ function useDraftStream(workspaceId: string, streamId: string, enabled: boolean)
       })
 
       // Serialize JSON to markdown for API and optimistic UI
-      const contentMarkdown = ensureAttachmentMarkdown(serializeToMarkdown(input.contentJson), input.attachments)
+      const contentMarkdown = serializeToMarkdown(input.contentJson)
 
       const message = await messageService.create(workspaceId, newStream.id, {
         streamId: newStream.id,
@@ -327,7 +296,7 @@ function useDraftDmStream(workspaceId: string, streamId: string, enabled: boolea
         throw new Error("Invalid DM draft target")
       }
 
-      const contentMarkdown = ensureAttachmentMarkdown(serializeToMarkdown(input.contentJson), input.attachments)
+      const contentMarkdown = serializeToMarkdown(input.contentJson)
       const message = await messageService.createDm(workspaceId, targetUserId, {
         dmUserId: targetUserId,
         contentJson: input.contentJson,
@@ -580,7 +549,7 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
       const clientId = generateClientId()
       const now = new Date().toISOString()
 
-      const contentMarkdown = ensureAttachmentMarkdown(serializeToMarkdown(input.contentJson), input.attachments)
+      const contentMarkdown = serializeToMarkdown(input.contentJson)
 
       // Use timestamp as sequence to ensure optimistic events sort after real events
       // Real events have low sequence numbers (1, 2, 3...), timestamps are ~13 digits

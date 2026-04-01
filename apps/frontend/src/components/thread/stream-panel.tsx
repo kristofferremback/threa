@@ -24,7 +24,11 @@ import { useStreamService, useMessageService } from "@/contexts"
 import { useStreamEvents } from "@/stores/stream-store"
 import { useWorkspaceStreams } from "@/stores/workspace-store"
 import { StreamLoadingIndicator } from "@/components/loading"
-import { StreamContent } from "@/components/timeline"
+import {
+  StreamContent,
+  materializePendingAttachmentReferences,
+  extractUploadedAttachments,
+} from "@/components/timeline"
 import { StreamErrorBoundary } from "@/components/stream-error-boundary"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
 import { MessageComposer } from "@/components/composer"
@@ -201,17 +205,13 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
     composer.setIsSending(true)
     const pendingAttachments = composer.getPendingAttachmentsSnapshot()
 
-    // Capture content before clearing
-    const contentJson = composer.content
+    // Materialize temp attachment IDs → uploaded IDs at the JSONContent level
+    const contentJson = materializePendingAttachmentReferences(composer.content, pendingAttachments)
     const contentMarkdown = serializeToMarkdown(contentJson)
 
-    // Capture full attachment info BEFORE clearing for optimistic UI
-    const attachmentIds = pendingAttachments
-      .filter((a) => a.status === "uploaded" && !a.id.startsWith("temp_"))
-      .map((a) => a.id)
-    const attachments = pendingAttachments
-      .filter((a) => a.status === "uploaded" && !a.id.startsWith("temp_"))
-      .map(({ id, filename, mimeType, sizeBytes }) => ({ id, filename, mimeType, sizeBytes }))
+    // Extract attachment info from the materialized content
+    const attachments = extractUploadedAttachments(contentJson)
+    const attachmentIds = attachments.map((a) => a.id)
 
     // Clear input immediately for responsiveness
     const emptyDoc: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }

@@ -6,11 +6,11 @@ import { WorkspaceHome } from "./index"
 const mockUseLastStream = vi.fn()
 const mockTogglePinned = vi.fn()
 
-vi.mock("@/hooks", () => ({
+vi.mock("@/hooks/use-last-stream", () => ({
   useLastStream: (...args: unknown[]) => mockUseLastStream(...args),
 }))
 
-vi.mock("@/contexts", () => ({
+vi.mock("@/contexts/sidebar-context", () => ({
   useSidebar: () => ({
     state: "expanded",
     togglePinned: mockTogglePinned,

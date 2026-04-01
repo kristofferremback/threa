@@ -52,20 +52,25 @@ export function useMarkActivityRead(workspaceId: string) {
         }
       })
 
-      db.transaction("rw", [db.unreadState], async () => {
-        const state = await db.unreadState.get(workspaceId)
-        if (!state) return
+      const previousUnreadState = await db.unreadState.get(workspaceId)
+      if (previousUnreadState) {
         await db.unreadState.put({
-          ...state,
-          unreadActivityCount: Math.max(0, state.unreadActivityCount - 1),
+          ...previousUnreadState,
+          unreadActivityCount: Math.max(0, previousUnreadState.unreadActivityCount - 1),
           _cachedAt: Date.now(),
         })
-      })
+      }
+
+      return { previousUnreadState }
     },
-    onError: () => {
+    onError: (_error, _activityId, context) => {
       // Rollback: refetch on error
       queryClient.invalidateQueries({ queryKey: activityKeys.list(workspaceId) })
       queryClient.invalidateQueries({ queryKey: workspaceKeys.bootstrap(workspaceId) })
+
+      if (context?.previousUnreadState) {
+        void db.unreadState.put(context.previousUnreadState)
+      }
     },
   })
 }
@@ -98,7 +103,7 @@ export function useMarkAllActivityRead(workspaceId: string) {
         }
       })
 
-      db.transaction("rw", [db.unreadState], async () => {
+      void db.transaction("rw", [db.unreadState], async () => {
         const state = await db.unreadState.get(workspaceId)
         if (!state) return
 
