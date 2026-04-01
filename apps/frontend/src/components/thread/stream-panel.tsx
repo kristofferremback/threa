@@ -253,7 +253,8 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
       // navigated away from the parent stream (handlers were cleaned up). The bootstrap
       // refetch will also deliver this, but this immediate write ensures the UI updates
       // instantly when the user navigates back via breadcrumb.
-      await optimisticReplyCountUpdate(draftInfo.parentStreamId, draftInfo.parentMessageId, thread.id)
+      // Fire-and-forget: IDB failure must not block navigation after successful server-side creation.
+      optimisticReplyCountUpdate(draftInfo.parentStreamId, draftInfo.parentMessageId, thread.id).catch(() => {})
 
       // Invalidate parent stream's bootstrap to refetch with updated reply counts
       queryClient.invalidateQueries({
