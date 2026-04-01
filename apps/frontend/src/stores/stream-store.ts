@@ -82,6 +82,18 @@ export function seedStreamEvents(streamId: string, events: CachedEvent[]): void 
 }
 
 /**
+ * Append a single event to the in-memory cache for a stream.
+ * Called by socket handlers alongside IDB writes so the cache stays
+ * in sync without waiting for useLiveQuery to re-query.
+ */
+export function appendToEventCache(streamId: string, event: CachedEvent): void {
+  const existing = eventCache.get(streamId)
+  if (!existing) return // Stream not cached yet — useLiveQuery will pick it up
+  if (existing.some((e) => e.id === event.id)) return // Dedupe
+  eventCache.set(streamId, sortBySequence([...existing, event]))
+}
+
+/**
  * Reactively read all events for a stream from IndexedDB.
  * Uses per-stream cache as default so returning users see events instantly.
  * Updates automatically when any write to db.events affects this stream.
