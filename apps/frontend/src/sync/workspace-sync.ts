@@ -7,6 +7,7 @@ import { streamKeys } from "@/hooks/use-streams"
 import { workspaceKeys } from "@/hooks/use-workspaces"
 import type {
   Stream,
+  StreamBootstrap,
   User,
   Bot,
   WorkspaceBootstrap,
@@ -257,13 +258,26 @@ export function registerWorkspaceSocketHandlers(
 
   // Handle stream updated
   const handleStreamUpdated = (payload: StreamPayload) => {
+    // For DMs the backend sends displayName: null (the name is derived from
+    // the peer user on the frontend). Preserve whatever name is already cached.
+    const isDmWithNullName = payload.stream.type === StreamTypes.DM && payload.stream.displayName == null
+
     // Update stream detail cache
-    queryClient.setQueryData(streamKeys.detail(workspaceId, payload.stream.id), payload.stream)
+    queryClient.setQueryData<Stream>(streamKeys.detail(workspaceId, payload.stream.id), (old) => {
+      if (isDmWithNullName && old?.displayName) {
+        return { ...payload.stream, displayName: old.displayName }
+      }
+      return payload.stream
+    })
 
     // Update stream bootstrap cache (preserves events, members, etc.)
-    queryClient.setQueryData(streamKeys.bootstrap(workspaceId, payload.stream.id), (old: unknown) => {
-      if (!old || typeof old !== "object") return old
-      return { ...old, stream: payload.stream }
+    queryClient.setQueryData<StreamBootstrap>(streamKeys.bootstrap(workspaceId, payload.stream.id), (old) => {
+      if (!old) return old
+      const stream =
+        isDmWithNullName && old.stream.displayName
+          ? { ...payload.stream, displayName: old.stream.displayName }
+          : payload.stream
+      return { ...old, stream }
     })
 
     // Update workspace bootstrap cache (sidebar) - handle visibility changes
@@ -302,7 +316,15 @@ export function registerWorkspaceSocketHandlers(
     // Update IndexedDB — use update() (partial merge) instead of put() (full replace)
     // to preserve fields not on the Stream payload: lastMessagePreview, pinned,
     // notificationLevel, lastReadEventId (merged from membership during bootstrap).
-    db.streams.update(payload.stream.id, { ...payload.stream, _cachedAt: Date.now() })
+    // For DMs, also preserve the resolved displayName since the backend sends null.
+    const idbUpdate =
+      payload.stream.type === StreamTypes.DM && payload.stream.displayName == null
+        ? (() => {
+            const { displayName: _, ...rest } = payload.stream
+            return { ...rest, _cachedAt: Date.now() }
+          })()
+        : { ...payload.stream, _cachedAt: Date.now() }
+    db.streams.update(payload.stream.id, idbUpdate)
   }
 
   // Handle stream archived

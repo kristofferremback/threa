@@ -1,4 +1,4 @@
-export { db, clearAllCachedData, clearPendingMessages } from "./database"
+export { db, clearAllCachedData, clearPendingMessages, sequenceToNum } from "./database"
 export type {
   CachedWorkspace,
   CachedWorkspaceUser,

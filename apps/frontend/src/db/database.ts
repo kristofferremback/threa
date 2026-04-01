@@ -90,6 +90,8 @@ export interface CachedEvent {
   workspaceId: string
   streamId: string
   sequence: string // bigint as string
+  /** Numeric mirror of sequence for IDB index ordering (string indexes sort lexicographically). */
+  _sequenceNum: number
   eventType: EventType
   payload: unknown
   actorId: string | null
@@ -99,6 +101,14 @@ export interface CachedEvent {
   _clientId?: string
   _status?: "pending" | "sent" | "failed"
   _cachedAt: number
+}
+
+/**
+ * Convert a sequence string to a number for IDB indexing.
+ * Sequences fit well within Number.MAX_SAFE_INTEGER for practical use.
+ */
+export function sequenceToNum(sequence: string): number {
+  return Number(sequence)
 }
 
 export interface CachedBot {
@@ -386,6 +396,17 @@ class ThreaDatabase extends Dexie {
       events:
         "id, workspaceId, streamId, sequence, [streamId+sequence], eventType, [streamId+eventType], _clientId, _cachedAt, _status",
     })
+
+    // v20: Add _sequenceNum (numeric mirror of sequence) and compound index
+    // [streamId+_sequenceNum] so IDB can sort events numerically for efficient
+    // "most recent N" queries. Clear events so bootstrap re-populates them
+    // with the new field.
+    this.version(20)
+      .stores({
+        events:
+          "id, workspaceId, streamId, sequence, [streamId+sequence], [streamId+_sequenceNum], eventType, [streamId+eventType], _clientId, _cachedAt, _status",
+      })
+      .upgrade((tx) => tx.table("events").clear())
 
     this.workspaceUsers = this.table(WORKSPACE_USERS_STORE) as EntityTable<CachedWorkspaceUser, "id">
   }

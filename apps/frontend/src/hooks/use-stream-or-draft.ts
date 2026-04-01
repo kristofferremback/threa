@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "react-router-dom"
-import { db, type CachedStream } from "@/db"
+import { db, sequenceToNum, type CachedStream } from "@/db"
 import { useStreamService, useMessageService, usePendingMessages } from "@/contexts"
 import { useUser } from "@/auth"
 import { useStreamBootstrap, streamKeys } from "./use-streams"
@@ -62,14 +62,18 @@ function resolveRealDmDisplayName(
   idbUsers: Array<{ id: string; name: string }>,
   idbDmPeers: Array<{ streamId: string; userId: string }>
 ): string | null {
+  // Try resolving from the DM peer user first (most reliable for DMs)
+  const otherMemberId = idbDmPeers.find((peer) => peer.streamId === streamId)?.userId
+  if (otherMemberId) {
+    const otherMemberName = idbUsers.find((u) => u.id === otherMemberId)?.name ?? null
+    if (otherMemberName) return otherMemberName
+  }
+
+  // Fall back to workspace-level cached displayName
   const workspaceName = idbStreams.find((stream) => stream.id === streamId)?.displayName
   if (workspaceName) return workspaceName
 
-  const otherMemberId = idbDmPeers.find((peer) => peer.streamId === streamId)?.userId
-  if (!otherMemberId) return streamDisplayName
-
-  const otherMemberName = idbUsers.find((u) => u.id === otherMemberId)?.name ?? null
-  return otherMemberName ?? streamDisplayName
+  return streamDisplayName
 }
 
 function toCachedStream(stream: Stream, previous: CachedStream | undefined): CachedStream {
@@ -581,6 +585,7 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
       await db.events.add({
         ...optimisticEvent,
         workspaceId,
+        _sequenceNum: sequenceToNum(optimisticEvent.sequence),
         _clientId: clientId,
         _status: "pending",
         _cachedAt: Date.now(),

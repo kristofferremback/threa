@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useMemo } from "react"
+import { createContext, useContext, useState, useCallback, useMemo, useEffect } from "react"
 
 interface InlineEditContextValue {
   isEditingInline: boolean
@@ -13,6 +13,21 @@ export function useInlineEdit() {
 
 export function InlineEditProvider({ children }: { children: React.ReactNode }) {
   const [isEditingInline, setIsEditingInline] = useState(false)
+
+  // Reset inline edit state when the page becomes visible again (e.g. after
+  // switching apps on mobile). The edit sheet/drawer may have closed while
+  // the page was hidden, leaving the flag stuck and the message input hidden.
+  // Empty deps: setIsEditingInline is a stable state setter, and calling it
+  // with false when already false is a React no-op.
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        setIsEditingInline(false)
+      }
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange)
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange)
+  }, [])
 
   const setEditingInline = useCallback((editing: boolean) => {
     setIsEditingInline(editing)

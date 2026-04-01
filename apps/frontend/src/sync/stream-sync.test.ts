@@ -57,7 +57,7 @@ describe("applyStreamBootstrap (real IndexedDB)", () => {
 
     // Simulate: socket handler wrote event X to IDB while bootstrap was in flight
     const socketEvent = makeEvent({ id: "evt_X", streamId, sequence: "200" })
-    await db.events.put({ ...socketEvent, workspaceId: "ws_1", _cachedAt: Date.now() })
+    await db.events.put({ ...socketEvent, workspaceId: "ws_1", _sequenceNum: 200, _cachedAt: Date.now() })
 
     // Bootstrap returns events A(100) and B(150) — snapshot taken before X existed
     const bootstrapEvents = [
@@ -79,7 +79,7 @@ describe("applyStreamBootstrap (real IndexedDB)", () => {
 
     // Old event from a previous session
     const oldEvent = makeEvent({ id: "evt_old", streamId, sequence: "50" })
-    await db.events.put({ ...oldEvent, workspaceId: "ws_1", _cachedAt: Date.now() - 86400000 })
+    await db.events.put({ ...oldEvent, workspaceId: "ws_1", _sequenceNum: 50, _cachedAt: Date.now() - 86400000 })
 
     const bootstrap = makeBootstrap([makeEvent({ id: "evt_A", streamId, sequence: "100" })], streamId)
 
@@ -96,6 +96,7 @@ describe("applyStreamBootstrap (real IndexedDB)", () => {
       {
         ...makeEvent({ id: "evt_old_page", streamId, sequence: "50" }),
         workspaceId: "ws_1",
+        _sequenceNum: 50,
         _cachedAt: Date.now() - 1000,
       },
       {
@@ -106,9 +107,15 @@ describe("applyStreamBootstrap (real IndexedDB)", () => {
           payload: { messageId: "evt_ghost", contentMarkdown: "ghost bot message" },
         }),
         workspaceId: "ws_1",
+        _sequenceNum: 120,
         _cachedAt: Date.now() - 1000,
       },
-      { ...makeEvent({ id: "evt_socket_new", streamId, sequence: "200" }), workspaceId: "ws_1", _cachedAt: Date.now() },
+      {
+        ...makeEvent({ id: "evt_socket_new", streamId, sequence: "200" }),
+        workspaceId: "ws_1",
+        _sequenceNum: 200,
+        _cachedAt: Date.now(),
+      },
     ])
 
     const bootstrap = makeBootstrap(
@@ -134,6 +141,7 @@ describe("applyStreamBootstrap (real IndexedDB)", () => {
       workspaceId: "ws_1",
       streamId,
       sequence: "999",
+      _sequenceNum: 999,
       eventType: "message_created",
       payload: {},
       actorId: null,
@@ -159,6 +167,7 @@ describe("applyStreamBootstrap (real IndexedDB)", () => {
       workspaceId: "ws_1",
       streamId,
       sequence: "999",
+      _sequenceNum: 999,
       eventType: "message_created",
       payload: {},
       actorId: null,

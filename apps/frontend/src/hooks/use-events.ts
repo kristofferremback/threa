@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useStreamBootstrap } from "./use-streams"
 import { useStreamService } from "@/contexts"
 import { useQueryClient, useInfiniteQuery } from "@tanstack/react-query"
-import { db } from "@/db"
+import { db, sequenceToNum } from "@/db"
 import { EVENT_PAGE_SIZE } from "@/lib/constants"
 import { useStreamEvents } from "@/stores/stream-store"
 import { shouldSuppressBootstrapError } from "@/lib/query-load-state"
@@ -100,7 +100,9 @@ function dedupeAndSort(eventArrays: StreamEvent[][]): StreamEvent[] {
 async function cacheToIndexedDB(workspaceId: string, events: StreamEvent[]) {
   if (events.length === 0) return
   const now = Date.now()
-  await db.events.bulkPut(events.map((e) => ({ ...e, workspaceId, _cachedAt: now })))
+  await db.events.bulkPut(
+    events.map((e) => ({ ...e, workspaceId, _sequenceNum: sequenceToNum(e.sequence), _cachedAt: now }))
+  )
 }
 
 export function useEvents(workspaceId: string, streamId: string, options?: { enabled?: boolean; loadAll?: boolean }) {
@@ -356,7 +358,7 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
   // useLiveQuery picks up changes automatically — no TanStack cache needed.
   const addEvent = useCallback(
     async (event: StreamEvent) => {
-      await db.events.put({ ...event, workspaceId, _cachedAt: Date.now() })
+      await db.events.put({ ...event, workspaceId, _sequenceNum: sequenceToNum(event.sequence), _cachedAt: Date.now() })
     },
     [workspaceId]
   )

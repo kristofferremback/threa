@@ -1,19 +1,13 @@
+import Dexie from "dexie"
 import { useLiveQuery } from "dexie-react-hooks"
 import { db, type CachedEvent, type CachedStream } from "@/db"
 
 /**
- * Sort events by sequence (bigint comparison, not lexicographic).
- * Sequences are stored as strings but represent bigints.
+ * Cap the number of events loaded from IDB per stream to prevent OOM on
+ * mobile devices with large conversation histories. The display-floor
+ * windowing in useEvents provides further filtering on top of this.
  */
-function sortBySequence(events: CachedEvent[]): CachedEvent[] {
-  return events.sort((a, b) => {
-    const seqA = BigInt(a.sequence)
-    const seqB = BigInt(b.sequence)
-    if (seqA < seqB) return -1
-    if (seqA > seqB) return 1
-    return 0
-  })
-}
+const MAX_IDB_EVENTS_PER_STREAM = 500
 
 /** No-op — the in-memory event cache has been removed. Kept for clearAllCachedData compat. */
 export function resetStreamStoreCache(): void {}
@@ -32,8 +26,28 @@ export function resetStreamStoreCache(): void {}
 export function useStreamEvents(streamId: string | undefined): CachedEvent[] | undefined {
   const result = useLiveQuery(async () => {
     if (!streamId) return []
-    const events = await db.events.where("streamId").equals(streamId).toArray()
-    return sortBySequence(events)
+    // Use the numeric [streamId+_sequenceNum] index so IDB returns
+    // events in correct numeric order. .reverse().limit() efficiently
+    // fetches only the most recent N events without loading all into JS.
+    const events = await db.events
+      .where("[streamId+_sequenceNum]")
+      .between([streamId, Dexie.minKey], [streamId, Dexie.maxKey])
+      .reverse()
+      .limit(MAX_IDB_EVENTS_PER_STREAM)
+      .toArray()
+    // Include any pending/failed optimistic events that may have
+    // placeholder sequences outside the loaded window.
+    const loadedIds = new Set(events.map((e) => e.id))
+    const unsent = await db.events
+      .where("streamId")
+      .equals(streamId)
+      .filter((e) => (e._status === "pending" || e._status === "failed") && !loadedIds.has(e.id))
+      .toArray()
+    // Flip descending → ascending, then append unsent so they appear at the
+    // tail (newest position) where pending messages belong.
+    events.reverse()
+    for (const e of unsent) events.push(e)
+    return events
   }, [streamId])
 
   if (result && result.length > 0 && streamId && result[0].streamId !== streamId) {
