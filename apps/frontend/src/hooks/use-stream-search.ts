@@ -11,6 +11,8 @@ interface UseStreamSearchReturn {
   setQuery: (query: string) => void
   results: SearchResultItem[]
   isSearching: boolean
+  /** Whether at least one search has completed for the current query */
+  hasSearched: boolean
   error: Error | null
   /** Index of the currently focused result (0-based) */
   activeIndex: number
@@ -34,6 +36,7 @@ export function useStreamSearch({ workspaceId, streamId }: UseStreamSearchOption
   const [isSearching, setIsSearching] = useState(false)
   const [error, setError] = useState<Error | null>(null)
   const [activeIndex, setActiveIndex] = useState(0)
+  const [hasSearched, setHasSearched] = useState(false)
   // Dedup concurrent searches — only the latest one wins
   const searchIdRef = useRef(0)
   // Ref so search() always reads the latest query without needing it as a dep
@@ -61,6 +64,7 @@ export function useStreamSearch({ workspaceId, streamId }: UseStreamSearchOption
 
       setResults(response.results)
       setActiveIndex(response.results.length > 0 ? 0 : -1)
+      setHasSearched(true)
     } catch (e) {
       if (searchId !== searchIdRef.current) return
       setError(e instanceof Error ? e : new Error("Search failed"))
@@ -89,6 +93,7 @@ export function useStreamSearch({ workspaceId, streamId }: UseStreamSearchOption
     setActiveIndex(0)
     setError(null)
     setIsSearching(false)
+    setHasSearched(false)
     searchIdRef.current++
   }, [])
 
@@ -101,6 +106,7 @@ export function useStreamSearch({ workspaceId, streamId }: UseStreamSearchOption
     isSearching,
     error,
     activeIndex,
+    hasSearched,
     resultCount: results.length,
     search,
     nextResult,

@@ -86,7 +86,7 @@ export function StreamSearchBar({ search, onClose, onNavigate }: StreamSearchBar
   )
 
   const hasQuery = search.query.trim().length > 0
-  const showCount = hasQuery && !search.isSearching
+  const showCount = hasQuery && !search.isSearching && search.hasSearched
 
   return (
     <div
