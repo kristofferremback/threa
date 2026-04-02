@@ -3,11 +3,12 @@ import { useLiveQuery } from "dexie-react-hooks"
 import { db, type CachedEvent, type CachedStream } from "@/db"
 
 /**
- * Cap the number of events loaded from IDB per stream to prevent OOM on
- * mobile devices with large conversation histories. The display-floor
- * windowing in useEvents provides further filtering on top of this.
+ * Cap the number of events loaded from IDB per stream when no sequence floor
+ * is known (initial load before bootstrap resolves). Once the caller provides
+ * a floor, the IDB query switches to a range scan with no count limit —
+ * the floor itself bounds memory usage.
  */
-const MAX_IDB_EVENTS_PER_STREAM = 150
+const DEFAULT_IDB_EVENT_LIMIT = 150
 
 /** No-op — the in-memory event cache has been removed. Kept for clearAllCachedData compat. */
 export function resetStreamStoreCache(): void {}
@@ -23,18 +24,34 @@ export function resetStreamStoreCache(): void {}
  * streamId against the requested one, returning `undefined` to signal loading
  * and prevent stale content from flashing during stream switches.
  */
-export function useStreamEvents(streamId: string | undefined): CachedEvent[] | undefined {
+export function useStreamEvents(
+  streamId: string | undefined,
+  fromSequenceNum?: number | null
+): CachedEvent[] | undefined {
   const result = useLiveQuery(async () => {
     if (!streamId) return []
-    // Use the numeric [streamId+_sequenceNum] index so IDB returns
-    // events in correct numeric order. .reverse().limit() efficiently
-    // fetches only the most recent N events without loading all into JS.
-    const events = await db.events
-      .where("[streamId+_sequenceNum]")
-      .between([streamId, Dexie.minKey], [streamId, Dexie.maxKey])
-      .reverse()
-      .limit(MAX_IDB_EVENTS_PER_STREAM)
-      .toArray()
+
+    let events: CachedEvent[]
+    if (fromSequenceNum != null) {
+      // Floor-based range scan: return all events from the floor onward.
+      // The floor is controlled by the caller (bootstrap + pagination) so
+      // memory is bounded by how far the user has actually scrolled back.
+      events = await db.events
+        .where("[streamId+_sequenceNum]")
+        .between([streamId, fromSequenceNum], [streamId, Dexie.maxKey], true, true)
+        .toArray()
+    } else {
+      // No floor known yet (pre-bootstrap) — use a count-based cap so the
+      // initial load is bounded on low-memory devices.
+      events = await db.events
+        .where("[streamId+_sequenceNum]")
+        .between([streamId, Dexie.minKey], [streamId, Dexie.maxKey])
+        .reverse()
+        .limit(DEFAULT_IDB_EVENT_LIMIT)
+        .toArray()
+      events.reverse()
+    }
+
     // Include any pending/failed optimistic events that may have
     // placeholder sequences outside the loaded window.
     const loadedIds = new Set(events.map((e) => e.id))
@@ -43,12 +60,9 @@ export function useStreamEvents(streamId: string | undefined): CachedEvent[] | u
       .equals(streamId)
       .filter((e) => (e._status === "pending" || e._status === "failed") && !loadedIds.has(e.id))
       .toArray()
-    // Flip descending → ascending, then append unsent so they appear at the
-    // tail (newest position) where pending messages belong.
-    events.reverse()
     for (const e of unsent) events.push(e)
     return events
-  }, [streamId])
+  }, [streamId, fromSequenceNum])
 
   if (result && result.length > 0 && streamId && result[0].streamId !== streamId) {
     return undefined

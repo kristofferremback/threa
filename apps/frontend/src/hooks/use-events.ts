@@ -120,12 +120,6 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
   const streamService = useStreamService()
   const queryClient = useQueryClient()
 
-  // Primary data source: IndexedDB via useLiveQuery.
-  // This returns ALL events for the stream cached in IDB — including events
-  // from previous sessions, bootstrap data, and real-time socket updates.
-  // Updates reactively whenever IDB is written to.
-  const idbEvents = useStreamEvents(streamId)
-
   // Jump-to-message state: when set, replaces bootstrap as the anchor window
   const [jumpState, setJumpState] = useState<JumpState | null>(null)
   const lastSuppressedErrorKeyRef = useRef<string | null>(null)
@@ -223,6 +217,16 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
     const olderEvents = olderData?.pages.flatMap((page) => page.events).filter(Boolean) ?? []
     return getMinimumSequence(olderEvents)
   }, [olderData])
+
+  // Primary data source: IndexedDB via useLiveQuery.
+  // When a server-derived floor is known (bootstrap + older pagination),
+  // pass it as the IDB lower bound so paginated older events are included
+  // in the query results instead of being cut off by a fixed count limit.
+  // When no floor is known (pre-bootstrap), IDB falls back to a count-based
+  // cap for bounded initial load.
+  const idbFloor = useMemo(() => getDisplayFloor(bootstrapFloor, olderFloor), [bootstrapFloor, olderFloor])
+  const idbFloorNum = idbFloor !== null ? Number(idbFloor) : null
+  const idbEvents = useStreamEvents(streamId, idbFloorNum)
 
   const idbResolved = idbEvents !== undefined
   const hasIdbEvents = idbResolved && idbEvents.length > 0
