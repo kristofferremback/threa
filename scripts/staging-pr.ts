@@ -120,29 +120,26 @@ async function createDatabase(dbName: string): Promise<void> {
 }
 
 /**
- * Ensure umzug_migrations exists and is populated in the target DB.
- * If pg_dump silently failed or the source DB lacked this table, the backend's
- * migration runner would see zero executed migrations and try to CREATE TABLE
- * for tables that already exist, crashing on startup.
+ * Ensure umzug_migrations exists and contains an entry for every migration file.
+ *
+ * When a PR database is cloned from staging_main, the clone includes all tables
+ * (e.g. agent_sessions) but umzug_migrations may be incomplete — the source DB
+ * may be missing entries for migrations that were applied before tracking started,
+ * or pg_dump may have partially failed. If the backend then starts and sees a
+ * "pending" migration whose table already exists, it crashes with
+ * "relation already exists".
+ *
+ * This function unconditionally seeds ALL migration filenames into
+ * umzug_migrations with ON CONFLICT DO NOTHING, ensuring completeness.
  */
 async function verifyUmzugMigrations(dbName: string, migrationsRelPath: string): Promise<void> {
-  // Check if umzug_migrations exists and has rows
-  try {
-    const count = await runPsql(dbName, "SELECT count(*) FROM umzug_migrations")
-    if (parseInt(count, 10) > 0) {
-      console.log(`umzug_migrations OK (${count} rows)`)
-      return
-    }
-    console.log("umzug_migrations exists but is empty — seeding from migration files...")
-  } catch {
-    console.log("umzug_migrations missing — creating and seeding from migration files...")
-    await runPsql(
-      dbName,
-      "CREATE TABLE IF NOT EXISTS umzug_migrations (name VARCHAR(255) PRIMARY KEY, executed_at TIMESTAMPTZ DEFAULT NOW())"
-    )
-  }
+  // Ensure the table exists
+  await runPsql(
+    dbName,
+    "CREATE TABLE IF NOT EXISTS umzug_migrations (name VARCHAR(255) PRIMARY KEY, executed_at TIMESTAMPTZ DEFAULT NOW())"
+  )
 
-  // Read migration filenames and seed the table
+  // Read migration filenames from disk
   const migrationsDir = path.join(import.meta.dirname, "..", migrationsRelPath)
   const files = (await readdir(migrationsDir)).filter((f) => f.endsWith(".sql")).sort()
 
@@ -150,9 +147,33 @@ async function verifyUmzugMigrations(dbName: string, migrationsRelPath: string):
     throw new Error("No migration files found — cannot seed umzug_migrations")
   }
 
-  const values = files.map((f) => `('${f}')`).join(", ")
-  await runPsql(dbName, `INSERT INTO umzug_migrations (name) VALUES ${values} ON CONFLICT DO NOTHING`)
-  console.log(`Seeded umzug_migrations with ${files.length} entries`)
+  // Insert each migration individually to avoid large SQL statements and
+  // ensure partial failures are visible (runPsql throws on non-zero exit)
+  let seeded = 0
+  for (const file of files) {
+    const result = await runPsql(
+      dbName,
+      `INSERT INTO umzug_migrations (name) VALUES ('${file}') ON CONFLICT DO NOTHING RETURNING name`
+    )
+    if (result) seeded++
+  }
+
+  // Verify the final count matches
+  const count = await runPsql(dbName, "SELECT count(*) FROM umzug_migrations")
+  const countNum = parseInt(count, 10)
+
+  if (countNum < files.length) {
+    throw new Error(
+      `umzug_migrations has ${countNum} rows but ${files.length} migration files exist — ` +
+        `${files.length - countNum} entries are missing after seeding`
+    )
+  }
+
+  if (seeded > 0) {
+    console.log(`Seeded ${seeded} missing entries into umzug_migrations (${countNum} total, ${files.length} files)`)
+  } else {
+    console.log(`umzug_migrations OK (${countNum} rows, all ${files.length} files present)`)
+  }
 }
 
 async function cloneDatabase(sourceDb: string, targetDb: string): Promise<void> {
