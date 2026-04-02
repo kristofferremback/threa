@@ -1,0 +1,30 @@
+/**
+ * Lightweight in-memory event bus for draft-to-real stream promotions.
+ *
+ * When the background message queue successfully creates a stream from a draft
+ * (scratchpad or thread), it emits a promotion event. UI components listen for
+ * these events to navigate from the draft view to the real stream.
+ */
+
+export interface DraftPromotion {
+  draftId: string
+  realStreamId: string
+  workspaceId: string
+}
+
+type Listener = (promotion: DraftPromotion) => void
+
+const listeners = new Set<Listener>()
+
+export function onDraftPromoted(listener: Listener): () => void {
+  listeners.add(listener)
+  return () => {
+    listeners.delete(listener)
+  }
+}
+
+export function emitDraftPromoted(promotion: DraftPromotion): void {
+  for (const listener of listeners) {
+    listener(promotion)
+  }
+}

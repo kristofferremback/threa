@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from "dexie"
-import type { AuthorType, EventType, JSONContent, NotificationLevel, StreamType } from "@threa/types"
+import type { AuthorType, CompanionMode, EventType, JSONContent, NotificationLevel, StreamType } from "@threa/types"
 
 const WORKSPACE_USERS_STORE = "workspaceUsers"
 const LEGACY_WORKSPACE_USERS_STORE = "workspaceMembers"
@@ -144,6 +144,14 @@ export interface CachedPersona {
   _cachedAt: number
 }
 
+export interface PendingStreamCreation {
+  type: StreamType
+  displayName?: string
+  companionMode?: CompanionMode
+  parentStreamId?: string
+  parentMessageId?: string
+}
+
 export interface PendingMessage {
   clientId: string // ULID generated client-side
   workspaceId: string
@@ -158,6 +166,10 @@ export interface PendingMessage {
   retryCount: number
   /** Timestamp before which this message should not be retried (exponential backoff) */
   retryAfter?: number
+  /** When set, the queue creates this stream before sending the message */
+  streamCreation?: PendingStreamCreation
+  /** The draft ID to clean up after successful stream creation + message send */
+  draftId?: string
 }
 
 /**

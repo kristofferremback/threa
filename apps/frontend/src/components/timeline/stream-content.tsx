@@ -168,6 +168,11 @@ export function StreamContent({
     isJumpMode,
   } = useEvents(workspaceId, streamId, { enabled: !isDraft, loadAll: isThread })
 
+  // For drafts, query pending/failed events directly from IDB so optimistic
+  // messages are visible while offline or waiting for queue processing.
+  const draftPendingEvents = useStreamEvents(isDraft ? streamId : undefined)
+  const hasDraftPendingEvents = isDraft && draftPendingEvents && draftPendingEvents.length > 0
+
   const editLastMessageCtx = useEditLastMessageTrigger(events, currentWorkspaceUserId)
 
   // Track live agent session progress for all stream types (step/message counts on session cards).
@@ -217,6 +222,12 @@ export function StreamContent({
 
   // Compute timeline items in StreamContent so the virtualizer can use count + keys
   const timelineItems = useMemo(() => groupTimelineItems(events, user?.id), [events, user?.id])
+
+  // For drafts with pending events, compute timeline items from those events
+  const draftTimelineItems = useMemo(
+    () => (hasDraftPendingEvents ? groupTimelineItems(draftPendingEvents!, user?.id) : []),
+    [hasDraftPendingEvents, draftPendingEvents, user?.id]
+  )
 
   // Use virtualized scroll for non-thread views, plain scroll for threads
   const useVirtualized = !isThread
@@ -583,15 +594,24 @@ export function StreamContent({
             )}
             {isDraft && (
               <div className="h-full overflow-y-auto overflow-x-hidden overscroll-y-contain">
-                <Empty className="h-full border-0">
-                  <EmptyHeader>
-                    <EmptyMedia variant="icon">
-                      <MessageSquare />
-                    </EmptyMedia>
-                    <EmptyTitle>Start a conversation</EmptyTitle>
-                    <EmptyDescription>Type a message below to begin this scratchpad.</EmptyDescription>
-                  </EmptyHeader>
-                </Empty>
+                {hasDraftPendingEvents ? (
+                  <EventList
+                    timelineItems={draftTimelineItems}
+                    isLoading={false}
+                    workspaceId={workspaceId}
+                    streamId={streamId}
+                  />
+                ) : (
+                  <Empty className="h-full border-0">
+                    <EmptyHeader>
+                      <EmptyMedia variant="icon">
+                        <MessageSquare />
+                      </EmptyMedia>
+                      <EmptyTitle>Start a conversation</EmptyTitle>
+                      <EmptyDescription>Type a message below to begin this scratchpad.</EmptyDescription>
+                    </EmptyHeader>
+                  </Empty>
+                )}
               </div>
             )}
             {!isDraft && useVirtualized && (

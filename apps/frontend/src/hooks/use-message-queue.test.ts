@@ -10,16 +10,28 @@ const mockMarkSent = vi.fn()
 const mockRegisterQueueNotify = vi.fn()
 let mockIsConnected = true
 
+const mockStreamCreate = vi.fn()
+
 vi.mock("@/contexts", () => ({
   useSocketConnected: () => mockIsConnected,
   useMessageService: () => ({
     create: mockCreate,
+  }),
+  useStreamService: () => ({
+    create: mockStreamCreate,
   }),
   usePendingMessages: () => ({
     markPending: mockMarkPending,
     markFailed: mockMarkFailed,
     markSent: mockMarkSent,
     registerQueueNotify: mockRegisterQueueNotify,
+  }),
+}))
+
+const mockSubscribeStream = vi.fn()
+vi.mock("@/sync/sync-engine", () => ({
+  useSyncEngine: () => ({
+    subscribeStream: mockSubscribeStream,
   }),
 }))
 
@@ -64,10 +76,23 @@ vi.mock("@/db", () => ({
       update: (...args: unknown[]) => mockUpdate(...args),
     },
     events: {
+      get: vi.fn().mockResolvedValue(undefined),
+      put: vi.fn().mockResolvedValue(undefined),
       delete: (...args: unknown[]) => mockEventsDelete(...args),
       update: (...args: unknown[]) => mockEventsUpdate(...args),
     },
+    streams: {
+      put: vi.fn().mockResolvedValue(undefined),
+    },
+    draftScratchpads: {
+      delete: vi.fn().mockResolvedValue(undefined),
+    },
+    draftMessages: {
+      delete: vi.fn().mockResolvedValue(undefined),
+    },
+    transaction: vi.fn().mockImplementation((_mode: string, _tables: unknown, fn: () => Promise<void>) => fn()),
   },
+  sequenceToNum: (seq: string) => Number(seq),
 }))
 
 vi.mock("./use-streams", () => ({
@@ -76,11 +101,37 @@ vi.mock("./use-streams", () => ({
   },
 }))
 
+vi.mock("./use-workspaces", () => ({
+  workspaceKeys: {
+    bootstrap: (wsId: string) => ["workspace", "bootstrap", wsId],
+  },
+}))
+
 vi.mock("@threa/prosemirror", () => ({
   parseMarkdown: (md: string) => ({
     type: "doc",
     content: [{ type: "paragraph", content: [{ type: "text", text: md }] }],
   }),
+}))
+
+vi.mock("@/lib/draft-promotions", () => ({
+  emitDraftPromoted: vi.fn(),
+}))
+
+vi.mock("@/sync/stream-sync", () => ({
+  optimisticReplyCountUpdate: vi.fn(),
+}))
+
+vi.mock("@/stores/draft-store", () => ({
+  deleteDraftScratchpadFromCache: vi.fn(),
+  deleteDraftMessageFromCache: vi.fn(),
+}))
+
+vi.mock("@threa/types", () => ({
+  StreamTypes: {
+    THREAD: "thread",
+    SCRATCHPAD: "scratchpad",
+  },
 }))
 
 describe("useMessageQueue", () => {

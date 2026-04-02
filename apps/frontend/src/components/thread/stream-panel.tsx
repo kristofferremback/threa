@@ -1,9 +1,7 @@
 import { useSearchParams, useParams } from "react-router-dom"
 import { useMemo, useCallback, useEffect, useState, useRef } from "react"
 import { createPortal } from "react-dom"
-import { useQueryClient } from "@tanstack/react-query"
 import { MessageSquare, ChevronLeft } from "lucide-react"
-import { optimisticReplyCountUpdate } from "@/sync/stream-sync"
 import {
   SidePanel,
   SidePanelHeader,
@@ -16,17 +14,19 @@ import {
   useStreamBootstrap,
   useDraftComposer,
   getDraftMessageKey,
-  createOptimisticBootstrap,
-  streamKeys,
   useThreadAncestors,
+  useQueueDraftMessage,
 } from "@/hooks"
 import { useCoordinatedLoading, usePanel, isDraftPanel, parseDraftPanel, useSidebar } from "@/contexts"
-import { useStreamService, useMessageService } from "@/contexts"
+import { useUser } from "@/auth"
 import { useStreamEvents } from "@/stores/stream-store"
 import { useWorkspaceStreams } from "@/stores/workspace-store"
+import { onDraftPromoted } from "@/lib/draft-promotions"
 import { StreamLoadingIndicator } from "@/components/loading"
 import {
   StreamContent,
+  EventList,
+  groupTimelineItems,
   materializePendingAttachmentReferences,
   extractUploadedAttachments,
 } from "@/components/timeline"
@@ -39,7 +39,6 @@ import { ResponsiveBreadcrumbs } from "./responsive-breadcrumbs"
 import { StreamTypes, type JSONContent, type StreamType } from "@threa/types"
 import type { MentionStreamContext } from "@/hooks/use-mentionables"
 import { getStreamName, streamFallbackLabel } from "@/lib/streams"
-import { serializeToMarkdown } from "@threa/prosemirror"
 
 interface StreamPanelProps {
   workspaceId: string
@@ -52,9 +51,8 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
   const [searchParams] = useSearchParams()
   const highlightMessageId = searchParams.get("m")
   const { panelId, openPanel, getPanelUrl, closePanel } = usePanel()
-  const queryClient = useQueryClient()
-  const streamService = useStreamService()
-  const messageService = useMessageService()
+  const user = useUser()
+  const { queueDraftMessage, currentUserId } = useQueueDraftMessage(workspaceId)
   const { streamId: mainViewStreamId } = useParams<{ streamId: string }>()
 
   const isMainViewStream = (streamId: string) => {
@@ -86,6 +84,13 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
     [draftInfo, idbStreams]
   )
   const parentCachedEvents = useStreamEvents(draftInfo?.parentStreamId)
+  // Query pending events for the draft thread panel (uses panelId as synthetic streamId)
+  const draftThreadPendingEvents = useStreamEvents(isDraft ? (panelId ?? undefined) : undefined)
+  const hasDraftThreadPendingEvents = isDraft && draftThreadPendingEvents && draftThreadPendingEvents.length > 0
+  const draftThreadTimelineItems = useMemo(
+    () => (hasDraftThreadPendingEvents ? groupTimelineItems(draftThreadPendingEvents!, user?.id) : []),
+    [hasDraftThreadPendingEvents, draftThreadPendingEvents, user?.id]
+  )
   const cachedParentMessage = useMemo(() => {
     if (!draftInfo || !parentCachedEvents) return null
     return parentCachedEvents.find(
@@ -199,16 +204,25 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
     return { streamType: StreamTypes.THREAD, rootStreamType: rootType }
   }, [parentStream, ancestors])
 
+  // Listen for draft thread promotion and navigate to the real thread panel
+  useEffect(() => {
+    if (!isDraft || !panelId) return
+    return onDraftPromoted((promotion) => {
+      if (promotion.draftId === panelId && promotion.workspaceId === workspaceId) {
+        openPanel(promotion.realStreamId)
+      }
+    })
+  }, [isDraft, panelId, workspaceId, openPanel])
+
   // Handle draft thread submission
   const handleSubmit = useCallback(async () => {
-    if (!draftInfo || !composer.canSend) return
+    if (!draftInfo || !composer.canSend || !currentUserId || !panelId) return
 
     composer.setIsSending(true)
     const pendingAttachments = composer.getPendingAttachmentsSnapshot()
 
     // Materialize temp attachment IDs → uploaded IDs at the JSONContent level
     const contentJson = materializePendingAttachmentReferences(composer.content, pendingAttachments)
-    const contentMarkdown = serializeToMarkdown(contentJson)
 
     // Extract attachment info from the materialized content
     const attachments = extractUploadedAttachments(contentJson)
@@ -221,53 +235,26 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
     composer.clearAttachments()
     setDraftExpanded(false)
 
-    try {
-      // Create the thread
-      const thread = await streamService.create(workspaceId, {
-        type: StreamTypes.THREAD,
-        parentStreamId: draftInfo.parentStreamId,
-        parentMessageId: draftInfo.parentMessageId,
-      })
-
-      // Send the first message with attachments
-      const message = await messageService.create(workspaceId, thread.id, {
-        streamId: thread.id,
+    await queueDraftMessage(
+      {
         contentJson,
-        contentMarkdown,
         attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
-      })
+        attachments: attachments.length > 0 ? attachments : undefined,
+      },
+      {
+        workspaceId,
+        streamId: panelId,
+        streamCreation: {
+          type: StreamTypes.THREAD,
+          parentStreamId: draftInfo.parentStreamId,
+          parentMessageId: draftInfo.parentMessageId,
+        },
+        draftId: panelId,
+      }
+    )
 
-      // Pre-populate the thread's cache so transition is instant
-      queryClient.setQueryData(
-        streamKeys.bootstrap(workspaceId, thread.id),
-        createOptimisticBootstrap({
-          stream: thread,
-          message,
-          contentMarkdown,
-          attachments: attachments.length > 0 ? attachments : undefined,
-        })
-      )
-
-      // Optimistically update the parent message's reply count and thread link in IDB.
-      // The socket handler for message:updated may miss this event because the panel
-      // navigated away from the parent stream (handlers were cleaned up). The bootstrap
-      // refetch will also deliver this, but this immediate write ensures the UI updates
-      // instantly when the user navigates back via breadcrumb.
-      // Fire-and-forget: IDB failure must not block navigation after successful server-side creation.
-      optimisticReplyCountUpdate(draftInfo.parentStreamId, draftInfo.parentMessageId, thread.id).catch(() => {})
-
-      // Invalidate parent stream's bootstrap to refetch with updated reply counts
-      queryClient.invalidateQueries({
-        queryKey: streamKeys.bootstrap(workspaceId, draftInfo.parentStreamId),
-      })
-
-      // Transition: open the new thread panel (replaces draft panel)
-      openPanel(thread.id)
-    } catch (error) {
-      console.error("Failed to create thread:", error)
-      composer.setIsSending(false)
-    }
-  }, [draftInfo, composer, streamService, workspaceId, messageService, queryClient, openPanel])
+    composer.setIsSending(false)
+  }, [draftInfo, composer, currentUserId, panelId, workspaceId, queueDraftMessage])
 
   // Build the full ancestor chain for draft breadcrumbs: hook ancestors + parent stream
   const fullChain = useMemo(() => {
@@ -370,18 +357,27 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
                   event={parentMessage}
                   workspaceId={workspaceId}
                   streamId={draftInfo.parentStreamId}
-                  replyCount={0}
+                  replyCount={hasDraftThreadPendingEvents ? draftThreadPendingEvents!.length : 0}
                 />
               )}
-              <Empty className="h-full border-0">
-                <EmptyHeader>
-                  <EmptyMedia variant="icon">
-                    <MessageSquare />
-                  </EmptyMedia>
-                  <EmptyTitle>Start a new thread</EmptyTitle>
-                  <EmptyDescription>Write your reply below to create this thread.</EmptyDescription>
-                </EmptyHeader>
-              </Empty>
+              {hasDraftThreadPendingEvents ? (
+                <EventList
+                  timelineItems={draftThreadTimelineItems}
+                  isLoading={false}
+                  workspaceId={workspaceId}
+                  streamId={panelId!}
+                />
+              ) : (
+                <Empty className="h-full border-0">
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon">
+                      <MessageSquare />
+                    </EmptyMedia>
+                    <EmptyTitle>Start a new thread</EmptyTitle>
+                    <EmptyDescription>Write your reply below to create this thread.</EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              )}
             </div>
             <div className={draftExpanded ? "border-t hidden" : "border-t"}>
               <div className="pt-3 px-3 pb-1 sm:pt-6 sm:px-6 sm:pb-1 mx-auto max-w-[800px] w-full min-w-0">
