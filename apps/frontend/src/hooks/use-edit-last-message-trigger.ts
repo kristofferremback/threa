@@ -37,9 +37,9 @@ export function useEditLastMessageTrigger(
 
   // Scan events newest-first for the current user's last non-deleted message,
   // then call its registered handler. Silent no-op if nothing qualifies or not loaded.
-  const triggerEditLast = useCallback(() => {
+  const triggerEditLast = useCallback((): string | null => {
     const userId = currentUserIdRef.current
-    if (!userId) return
+    if (!userId) return null
 
     // Collect deleted message IDs from message_deleted events. Bootstrap-window events
     // have deletedAt injected into message_created payloads, but paginated events don't —
@@ -60,10 +60,17 @@ export function useEditLastMessageTrigger(
       const payload = event.payload as { messageId?: string; deletedAt?: string }
       if (!payload.messageId) continue
       if (payload.deletedAt || deletedIds.has(payload.messageId)) continue
-      // If the message is not mounted (e.g., not yet loaded), nothing is registered — correct no-op.
-      editRegistryRef.current.get(payload.messageId)?.()
-      return
+
+      const handler = editRegistryRef.current.get(payload.messageId)
+      if (handler) {
+        handler()
+        return null
+      }
+      // Message found but not mounted (off-screen in virtualized list).
+      // Return the messageId so the caller can scroll it into view and retry.
+      return payload.messageId
     }
+    return null
   }, []) // stable — reads from refs, never recreated
 
   return useMemo(() => ({ registerMessage, triggerEditLast }), [registerMessage, triggerEditLast])
