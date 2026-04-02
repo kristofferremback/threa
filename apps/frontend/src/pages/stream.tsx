@@ -1,6 +1,6 @@
 import { useState, useRef } from "react"
 import { useParams, useSearchParams } from "react-router-dom"
-import { MoreHorizontal, Pencil, Archive, MessageCircle, X, ArchiveX } from "lucide-react"
+import { MoreHorizontal, Pencil, Archive, MessageCircle, X, ArchiveX, Search } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -199,6 +199,17 @@ export function StreamPage() {
           )}
         </div>
         <div className="flex items-center gap-1">
+          {!isThread && !isDraft && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              title="Search in conversation"
+              onClick={() => document.dispatchEvent(new CustomEvent("threa:open-stream-search"))}
+            >
+              <Search className="h-4 w-4" />
+            </Button>
+          )}
           {isChannel && (
             <Button
               variant="ghost"

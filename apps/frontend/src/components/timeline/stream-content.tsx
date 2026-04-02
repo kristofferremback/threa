@@ -1,6 +1,6 @@
 import { useMemo, useEffect, useCallback, useRef, useState } from "react"
 import { useSearchParams } from "react-router-dom"
-import { MessageSquare, ArrowDown, Search } from "lucide-react"
+import { MessageSquare, ArrowDown } from "lucide-react"
 import { useQueryClient } from "@tanstack/react-query"
 import {
   useEvents,
@@ -167,19 +167,22 @@ export function StreamContent({
   const clearSearch = streamSearch.clear
 
   // Cmd+F / Ctrl+F opens in-stream search or re-focuses if already open.
+  // Also listens for the custom event from the header search button.
   // Escape closes search when focus is outside the input.
-  // Skip in thread views to avoid double search bar when a thread panel
-  // and main stream are mounted simultaneously.
+  // Skip in thread views to avoid double search bar.
   useEffect(() => {
     if (isThread) return
+    const openOrFocus = () => {
+      if (isSearchOpen) {
+        streamSearch.focus()
+      } else {
+        setIsSearchOpen(true)
+      }
+    }
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "f") {
         e.preventDefault()
-        if (isSearchOpen) {
-          streamSearch.focus()
-        } else {
-          setIsSearchOpen(true)
-        }
+        openOrFocus()
       }
       if (e.key === "Escape" && isSearchOpen) {
         setIsSearchOpen(false)
@@ -187,7 +190,11 @@ export function StreamContent({
       }
     }
     document.addEventListener("keydown", handleKeyDown)
-    return () => document.removeEventListener("keydown", handleKeyDown)
+    document.addEventListener("threa:open-stream-search", openOrFocus)
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown)
+      document.removeEventListener("threa:open-stream-search", openOrFocus)
+    }
   }, [isThread, isSearchOpen, streamSearch, clearSearch])
 
   const handleSearchClose = useCallback(() => {
@@ -379,23 +386,8 @@ export function StreamContent({
       <InlineEditProvider resetKey={streamId}>
         <div className="flex h-full flex-col">
           <div className="relative flex-1 overflow-hidden mb-1 sm:mb-4">
-            {isSearchOpen ? (
+            {isSearchOpen && (
               <StreamSearchBar search={streamSearch} onClose={handleSearchClose} onNavigate={handleSearchNavigate} />
-            ) : (
-              !isThread &&
-              !isDraft && (
-                <div className="absolute top-1 right-2 z-10">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 opacity-60 hover:opacity-100"
-                    onClick={() => setIsSearchOpen(true)}
-                    aria-label="Search in conversation"
-                  >
-                    <Search className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              )
             )}
             <div
               ref={scrollContainerRef}
