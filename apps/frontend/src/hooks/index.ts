@@ -53,6 +53,10 @@ export { useDraftComposer, type UseDraftComposerOptions, type DraftComposerState
 
 export { useScrollBehavior } from "./use-scroll-behavior"
 
+export { useVirtualizedScroll } from "./use-virtualized-scroll"
+
+export { useStreamSearch } from "./use-stream-search"
+
 export {
   createOptimisticBootstrap,
   type AttachmentSummary,
