@@ -228,14 +228,16 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
     const attachments = extractUploadedAttachments(contentJson)
     const attachmentIds = attachments.map((a) => a.id)
 
-    // Clear input immediately for responsiveness
+    // Capture content before clearing so we can restore on failure
     const emptyDoc: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
-    composer.setContent(emptyDoc)
-    composer.clearDraft()
-    composer.clearAttachments()
     setDraftExpanded(false)
 
     try {
+      // Clear input optimistically inside try so we can restore on failure
+      composer.setContent(emptyDoc)
+      composer.clearDraft()
+      composer.clearAttachments()
+
       await queueDraftMessage(
         {
           contentJson,
@@ -253,6 +255,9 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
           draftId: panelId,
         }
       )
+    } catch {
+      // Restore content so the user can retry
+      composer.setContent(contentJson)
     } finally {
       composer.setIsSending(false)
     }
