@@ -52,8 +52,6 @@ interface UseVirtualizedScrollReturn {
   scrollToBottom: (options?: { behavior?: "auto" | "smooth"; force?: boolean }) => void
   /** Disable auto-scroll (e.g. when navigating to a specific message via jump mode) */
   disableAutoScroll: () => void
-  /** Scroll a specific item index into view */
-  scrollToIndex: (index: number, options?: { align?: "start" | "center" | "end"; behavior?: "auto" | "smooth" }) => void
 }
 
 export function useVirtualizedScroll({
@@ -136,16 +134,6 @@ export function useVirtualizedScroll({
       })
     },
     [virtualizer, itemCount]
-  )
-
-  const scrollToIndex = useCallback(
-    (index: number, options?: { align?: "start" | "center" | "end"; behavior?: "auto" | "smooth" }) => {
-      virtualizer.scrollToIndex(index, {
-        align: options?.align ?? "center",
-        behavior: options?.behavior,
-      })
-    },
-    [virtualizer]
   )
 
   // --- Prepend stability ---
@@ -312,6 +300,5 @@ export function useVirtualizedScroll({
     isScrolledFarFromBottom,
     scrollToBottom: scrollToBottomImpl,
     disableAutoScroll,
-    scrollToIndex,
   }
 }

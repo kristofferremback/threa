@@ -36,9 +36,12 @@ export function useStreamSearch({ workspaceId, streamId }: UseStreamSearchOption
   const [activeIndex, setActiveIndex] = useState(0)
   // Dedup concurrent searches — only the latest one wins
   const searchIdRef = useRef(0)
+  // Ref so search() always reads the latest query without needing it as a dep
+  const queryRef = useRef(query)
+  queryRef.current = query
 
   const search = useCallback(async () => {
-    const trimmed = query.trim()
+    const trimmed = queryRef.current.trim()
     if (!trimmed) {
       setResults([])
       setActiveIndex(0)
@@ -68,7 +71,7 @@ export function useStreamSearch({ workspaceId, streamId }: UseStreamSearchOption
         setIsSearching(false)
       }
     }
-  }, [query, workspaceId, streamId])
+  }, [workspaceId, streamId])
 
   const nextResult = useCallback(() => {
     if (results.length === 0) return
