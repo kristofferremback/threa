@@ -170,6 +170,8 @@ export interface PendingMessage {
   streamCreation?: PendingStreamCreation
   /** The draft ID to clean up after successful stream creation + message send */
   draftId?: string
+  /** Set by the queue after stream creation succeeds — prevents duplicate creation on retry */
+  promotedStreamId?: string
 }
 
 /**

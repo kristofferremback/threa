@@ -4,6 +4,13 @@
  * When the background message queue successfully creates a stream from a draft
  * (scratchpad or thread), it emits a promotion event. UI components listen for
  * these events to navigate from the draft view to the real stream.
+ *
+ * INV-9 exception: module-level singleton is intentional here. This is a
+ * transient in-memory pub/sub scoped to the current tab — listeners are
+ * added/removed via React effect cleanup, so no leak risk. A context-based
+ * alternative would require threading the emitter through the component tree
+ * from the message queue (hook layer) to unrelated UI consumers, adding
+ * coupling for no practical benefit.
  */
 
 export interface DraftPromotion {

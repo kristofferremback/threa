@@ -235,25 +235,27 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
     composer.clearAttachments()
     setDraftExpanded(false)
 
-    await queueDraftMessage(
-      {
-        contentJson,
-        attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
-        attachments: attachments.length > 0 ? attachments : undefined,
-      },
-      {
-        workspaceId,
-        streamId: panelId,
-        streamCreation: {
-          type: StreamTypes.THREAD,
-          parentStreamId: draftInfo.parentStreamId,
-          parentMessageId: draftInfo.parentMessageId,
+    try {
+      await queueDraftMessage(
+        {
+          contentJson,
+          attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
+          attachments: attachments.length > 0 ? attachments : undefined,
         },
-        draftId: panelId,
-      }
-    )
-
-    composer.setIsSending(false)
+        {
+          workspaceId,
+          streamId: panelId,
+          streamCreation: {
+            type: StreamTypes.THREAD,
+            parentStreamId: draftInfo.parentStreamId,
+            parentMessageId: draftInfo.parentMessageId,
+          },
+          draftId: panelId,
+        }
+      )
+    } finally {
+      composer.setIsSending(false)
+    }
   }, [draftInfo, composer, currentUserId, panelId, workspaceId, queueDraftMessage])
 
   // Build the full ancestor chain for draft breadcrumbs: hook ancestors + parent stream

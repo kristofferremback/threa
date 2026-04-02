@@ -28,8 +28,10 @@ function getRetryDelay(retryCount: number): number {
  * Promote a draft by creating the real stream, moving the optimistic event,
  * and cleaning up draft data. Returns the real stream ID.
  *
- * Idempotent: if stream creation succeeds but subsequent steps fail, the
- * realStreamId is persisted on the pending message so retries skip creation.
+ * Idempotent: `promotedStreamId` is persisted on the pending message
+ * immediately after stream creation succeeds. On retry, if the field is
+ * already set we skip creation and reuse the existing stream, preventing
+ * duplicates even when the IDB update that clears `streamCreation` fails.
  */
 async function promoteDraft(
   next: PendingMessage,
@@ -40,21 +42,54 @@ async function promoteDraft(
   const creation = next.streamCreation!
   const draftStreamId = next.streamId
 
-  // Check if we already created the stream on a previous attempt
-  // (streamCreation is cleared after successful creation + IDB update)
-  const newStream = await streamService.create(next.workspaceId, {
-    type: creation.type,
-    displayName: creation.displayName,
-    companionMode: creation.companionMode,
-    parentStreamId: creation.parentStreamId,
-    parentMessageId: creation.parentMessageId,
-  })
+  let realStreamId: string
 
-  const realStreamId = newStream.id
+  if (next.promotedStreamId) {
+    // Stream was already created on a previous attempt — reuse it
+    realStreamId = next.promotedStreamId
+  } else {
+    const newStream = await streamService.create(next.workspaceId, {
+      type: creation.type,
+      displayName: creation.displayName,
+      companionMode: creation.companionMode,
+      parentStreamId: creation.parentStreamId,
+      parentMessageId: creation.parentMessageId,
+    })
+    realStreamId = newStream.id
 
-  // Persist the real streamId and clear streamCreation atomically.
-  // If subsequent steps fail, the retry loop will see streamCreation is
-  // already cleared and skip promoteDraft entirely, sending to the real stream.
+    // Persist realStreamId immediately so retries never create a duplicate.
+    // This write is the durable idempotency marker — even if everything
+    // after this point fails, the next attempt will find promotedStreamId
+    // and skip stream creation.
+    type PromoteFn = (key: string, changes: Record<string, unknown>) => Promise<number>
+    await (db.pendingMessages.update as unknown as PromoteFn)(next.clientId, {
+      promotedStreamId: realStreamId,
+    })
+
+    // Write the new stream to IDB so the sidebar picks it up immediately
+    await db.streams.put({
+      ...newStream,
+      lastMessagePreview: null,
+      _cachedAt: Date.now(),
+    })
+
+    // Add the new stream to the sidebar bootstrap cache
+    queryClient.setQueryData(workspaceKeys.bootstrap(next.workspaceId), (old: any) => {
+      if (!old) return old
+      const streamExists = old.streams?.some((s: { id: string }) => s.id === realStreamId)
+      if (streamExists) return old
+      const optimisticBootstrapStream: StreamWithPreview = {
+        ...newStream,
+        lastMessagePreview: null,
+      }
+      return {
+        ...old,
+        streams: [...(old.streams ?? []), optimisticBootstrapStream],
+      }
+    })
+  }
+
+  // Update the pending message's streamId and clear streamCreation
   type UpdateFn = (key: string, changes: Record<string, unknown>) => Promise<number>
   await (db.pendingMessages.update as unknown as UpdateFn)(next.clientId, {
     streamId: realStreamId,
@@ -70,13 +105,6 @@ async function promoteDraft(
       _sequenceNum: sequenceToNum(optimisticEvent.sequence),
     })
   }
-
-  // Write the new stream to IDB so the sidebar picks it up immediately
-  await db.streams.put({
-    ...newStream,
-    lastMessagePreview: null,
-    _cachedAt: Date.now(),
-  })
 
   // Subscribe to the real stream's socket room before sending so we catch
   // the message:created event for the optimistic swap
@@ -96,21 +124,6 @@ async function promoteDraft(
     deleteDraftScratchpadFromCache(next.workspaceId, next.draftId)
     deleteDraftMessageFromCache(next.workspaceId, `stream:${next.draftId}`)
   }
-
-  // Add the new stream to the sidebar bootstrap cache
-  queryClient.setQueryData(workspaceKeys.bootstrap(next.workspaceId), (old: any) => {
-    if (!old) return old
-    const streamExists = old.streams?.some((s: { id: string }) => s.id === realStreamId)
-    if (streamExists) return old
-    const optimisticBootstrapStream: StreamWithPreview = {
-      ...newStream,
-      lastMessagePreview: null,
-    }
-    return {
-      ...old,
-      streams: [...(old.streams ?? []), optimisticBootstrapStream],
-    }
-  })
 
   // Notify UI to navigate from draft to real stream
   emitDraftPromoted({
