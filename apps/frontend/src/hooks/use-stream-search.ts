@@ -77,7 +77,7 @@ async function searchLocalEvents(streamId: string, query: string): Promise<Searc
     .where("streamId")
     .equals(streamId)
     .filter((e) => {
-      if (e.eventType !== "message_created") return false
+      if (e.eventType !== "message_created" && e.eventType !== "companion_response") return false
       const payload = e.payload as { contentMarkdown?: string }
       return !!payload.contentMarkdown && payload.contentMarkdown.toLowerCase().includes(lowerQuery)
     })

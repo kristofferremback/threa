@@ -84,7 +84,6 @@ export function StreamSearchBar({ search, onClose, onNavigate }: StreamSearchBar
   )
 
   const hasQuery = search.query.trim().length > 0
-  const showCount = hasQuery && !search.isSearching && search.hasSearched
 
   return (
     <div
@@ -108,14 +107,14 @@ export function StreamSearchBar({ search, onClose, onNavigate }: StreamSearchBar
       </div>
 
       {/* Result count / loading indicator */}
-      <div className="flex items-center gap-0.5 text-xs text-muted-foreground shrink-0 min-w-[60px] justify-center">
-        {search.isSearching && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-        {showCount && search.matchCount > 0 && (
+      <div className="flex items-center gap-1 text-xs text-muted-foreground shrink-0 min-w-[60px] justify-center">
+        {search.hasSearched && search.matchCount > 0 && (
           <span>
             {search.activeMatchIndex + 1}/{search.matchCount}
           </span>
         )}
-        {showCount && search.matchCount === 0 && <span>No results</span>}
+        {search.isSearching && <Loader2 className="h-3 w-3 animate-spin" />}
+        {hasQuery && !search.isSearching && search.hasSearched && search.matchCount === 0 && <span>No results</span>}
       </div>
 
       {/* Navigation arrows: Up = older (prev), Down = newer (next) */}
