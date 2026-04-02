@@ -40,12 +40,22 @@ export function ErrorBoundary() {
               <Link to="/workspaces">Back to Workspaces</Link>
             </Button>
           </div>
-          {import.meta.env.DEV && error instanceof Error && (
+          {error instanceof Error && (
             <details className="mt-4 max-w-md text-left">
-              <summary className="cursor-pointer text-sm text-muted-foreground">Error details (dev only)</summary>
-              <pre className="mt-2 overflow-auto rounded bg-muted p-2 text-xs">
+              <summary className="cursor-pointer text-sm text-muted-foreground">Error details</summary>
+              <pre className="mt-2 overflow-auto rounded bg-muted p-2 text-xs whitespace-pre-wrap break-words">
                 {error.message}
                 {error.stack && `\n\n${error.stack}`}
+              </pre>
+            </details>
+          )}
+          {!(error instanceof Error) && error != null && (
+            <details className="mt-4 max-w-md text-left">
+              <summary className="cursor-pointer text-sm text-muted-foreground">Error details</summary>
+              <pre className="mt-2 overflow-auto rounded bg-muted p-2 text-xs whitespace-pre-wrap break-words">
+                {isRouteErrorResponse(error)
+                  ? `${error.status} ${error.statusText}\n${typeof error.data === "string" ? error.data : JSON.stringify(error.data, null, 2)}`
+                  : JSON.stringify(error, null, 2)}
               </pre>
             </details>
           )}
