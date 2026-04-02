@@ -1,6 +1,7 @@
 import { useMemo, useEffect, useCallback, useRef, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { MessageSquare, ArrowDown } from "lucide-react"
+import { cn } from "@/lib/utils"
 import { useQueryClient } from "@tanstack/react-query"
 import {
   useEvents,
@@ -400,7 +401,7 @@ export function StreamContent({
             )}
             <div
               ref={scrollContainerRef}
-              className="h-full overflow-y-auto overflow-x-hidden overscroll-y-contain"
+              className={cn("h-full overflow-y-auto overflow-x-hidden overscroll-y-contain", isSearchOpen && "pt-11")}
               data-suppress-pull-refresh="true"
               onScroll={useVirtualized ? undefined : plainHandleScroll}
             >
