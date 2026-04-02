@@ -129,10 +129,22 @@ export function useVirtualizedScroll({
         setIsScrolledFarFromBottom(false)
       }
 
-      virtualizer.scrollToIndex(itemCount - 1, {
-        align: "end",
-        behavior: options?.behavior,
-      })
+      // Use virtualizer.scrollToIndex for smooth/forced scrolls, but fall back
+      // to direct DOM scrollTop for initial load — scrollToIndex relies on
+      // measurements that may not be available yet on first render.
+      const el = scrollContainerRef.current
+      if (options?.behavior === "smooth") {
+        virtualizer.scrollToIndex(itemCount - 1, {
+          align: "end",
+          behavior: "smooth",
+        })
+      } else if (el) {
+        // Immediate scroll via DOM — works even before virtualizer measures items.
+        // Use rAF to ensure the DOM has the virtualizer's container height applied.
+        requestAnimationFrame(() => {
+          el.scrollTop = el.scrollHeight
+        })
+      }
     },
     [virtualizer, itemCount]
   )

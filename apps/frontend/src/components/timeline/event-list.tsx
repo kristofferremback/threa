@@ -70,6 +70,31 @@ export type TimelineItem =
   | { type: "command_group"; commandId: string; events: StreamEvent[] }
   | { type: "session_group"; sessionId: string; sessionVersion: number; events: StreamEvent[] }
 
+/** Event types that render as null in EventItem (handled elsewhere or invisible) */
+const ZERO_HEIGHT_EVENT_TYPES = new Set([
+  "reaction_added",
+  "reaction_removed",
+  "command_dispatched",
+  "command_completed",
+  "command_failed",
+  "agent_session:started",
+  "agent_session:completed",
+  "agent_session:failed",
+  "agent_session:deleted",
+])
+
+/**
+ * Filters out timeline items that would render as zero-height elements.
+ * Must be applied before computing virtualizer count/keys to prevent overlap.
+ */
+export function filterVisibleItems(items: TimelineItem[], hideSessionCards?: boolean): TimelineItem[] {
+  return items.filter((item) => {
+    if (item.type === "session_group" && hideSessionCards) return false
+    if (item.type === "event" && ZERO_HEIGHT_EVENT_TYPES.has(item.event.eventType)) return false
+    return true
+  })
+}
+
 /** Returns a stable key string for a timeline item */
 export function getTimelineItemKey(item: TimelineItem): string {
   switch (item.type) {

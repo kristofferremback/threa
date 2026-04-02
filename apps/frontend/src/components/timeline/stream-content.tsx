@@ -33,7 +33,7 @@ import {
   type WorkspaceBootstrap,
   type StreamBootstrap,
 } from "@threa/types"
-import { EventList, groupTimelineItems, getTimelineItemKey } from "./event-list"
+import { EventList, groupTimelineItems, getTimelineItemKey, filterVisibleItems } from "./event-list"
 import { MessageInput } from "./message-input"
 import { JoinChannelBar } from "./join-channel-bar"
 import { ThreadParentMessage } from "../thread/thread-parent-message"
@@ -189,16 +189,24 @@ export function StreamContent({
   // Compute timeline items in StreamContent so the virtualizer can use count + keys
   const timelineItems = useMemo(() => groupTimelineItems(events, user?.id), [events, user?.id])
 
-  const getItemKey = useCallback(
-    (index: number) => {
-      const item = timelineItems[index]
-      return item ? getTimelineItemKey(item) : String(index)
-    },
-    [timelineItems]
-  )
-
   // Use virtualized scroll for non-thread views, plain scroll for threads
   const useVirtualized = !isThread
+
+  // Filter out zero-height items (reactions, hidden session cards) for the virtualizer.
+  // Without this, items that render as empty wrappers get measured as 0px, causing
+  // subsequent items to overlap at the same Y position.
+  const visibleItems = useMemo(
+    () => (useVirtualized ? filterVisibleItems(timelineItems, isChannel) : timelineItems),
+    [timelineItems, useVirtualized, isChannel]
+  )
+
+  const getItemKey = useCallback(
+    (index: number) => {
+      const item = visibleItems[index]
+      return item ? getTimelineItemKey(item) : String(index)
+    },
+    [visibleItems]
+  )
 
   // --- Virtualized scroll (main streams, channels, scratchpads) ---
   const {
@@ -209,7 +217,7 @@ export function StreamContent({
     disableAutoScroll: virtualDisableAutoScroll,
   } = useVirtualizedScroll({
     isLoading,
-    itemCount: useVirtualized ? timelineItems.length : 0,
+    itemCount: useVirtualized ? visibleItems.length : 0,
     getItemKey: useVirtualized ? getItemKey : () => "0",
     onScrollNearTop: useVirtualized && hasOlderEvents ? fetchOlderEvents : undefined,
     onScrollNearBottom: useVirtualized && hasNewerEvents ? fetchNewerEvents : undefined,
@@ -393,7 +401,7 @@ export function StreamContent({
                 </Empty>
               ) : (
                 <EventList
-                  timelineItems={timelineItems}
+                  timelineItems={useVirtualized ? visibleItems : timelineItems}
                   isLoading={isLoading}
                   workspaceId={workspaceId}
                   streamId={streamId}
