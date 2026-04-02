@@ -233,10 +233,11 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
   const suppressBootstrapError = shouldSuppressBootstrapError(error, hasIdbEvents)
 
   // IDB is the primary read model. While useLiveQuery resolves (typically <10ms),
-  // fall back to bootstrap events if available. Once IDB resolves, use it exclusively.
-  const bootstrapEvents: DisplayableEvent[] = bootstrap?.events ?? []
-  const effectiveEvents: DisplayableEvent[] = idbResolved ? idbEvents : bootstrapEvents
-  const hasAnyEvents = effectiveEvents.length > 0
+  // treat it as a brief loading state rather than falling back to stale bootstrap
+  // events. The bootstrap cache only contains the original snapshot and would hide
+  // messages sent or received via socket after the first bootstrap.
+  const effectiveEvents: DisplayableEvent[] = idbResolved ? idbEvents : []
+  const hasAnyEvents = effectiveEvents.length > 0 || (bootstrap?.events ?? []).length > 0
 
   const cachedWindowFloor = useMemo(() => getCachedWindowFloor(effectiveEvents, EVENT_PAGE_SIZE), [effectiveEvents])
   const displayFloor = useMemo(() => {
