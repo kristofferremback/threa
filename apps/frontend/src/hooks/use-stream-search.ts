@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useMemo } from "react"
-import { searchMessages, type SearchFilters, type SearchResultItem } from "@/api"
+import { type SearchResultItem } from "@/api"
 import { db } from "@/db"
 
 interface UseStreamSearchOptions {
@@ -99,15 +99,7 @@ async function searchLocalEvents(streamId: string, query: string): Promise<Searc
     })
 }
 
-/** Merge local and server results, dedup by id, sort chronologically (oldest first) */
-function mergeAndSort(local: SearchResultItem[], server: SearchResultItem[]): SearchResultItem[] {
-  const seen = new Map<string, SearchResultItem>()
-  for (const r of local) seen.set(r.id, r)
-  for (const r of server) seen.set(r.id, r)
-  return Array.from(seen.values()).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
-}
-
-export function useStreamSearch({ workspaceId, streamId }: UseStreamSearchOptions): UseStreamSearchReturn {
+export function useStreamSearch({ streamId }: UseStreamSearchOptions): UseStreamSearchReturn {
   const [query, setQuery] = useState("")
   const [results, setResults] = useState<SearchResultItem[]>([])
   const [isSearching, setIsSearching] = useState(false)
@@ -135,41 +127,27 @@ export function useStreamSearch({ workspaceId, streamId }: UseStreamSearchOption
     setError(null)
 
     try {
+      // Local-only exact substring search on IDB-cached events.
+      // No server call — avoids semantic/fuzzy matches that can't be
+      // visually highlighted (no matching text in the message).
       const localResults = await searchLocalEvents(streamId, trimmed)
       if (searchId !== searchIdRef.current) return
 
-      if (localResults.length > 0) {
-        setResults(localResults)
-        // Start at the last match (most recent message, last occurrence)
-        const localFlat = buildFlatMatches(localResults, trimmed)
-        setActiveMatchIndex(localFlat.length > 0 ? localFlat.length - 1 : 0)
-        setHasSearched(true)
-      }
-
-      const filters: SearchFilters = { in: [streamId] }
-      const response = await searchMessages(workspaceId, { query: trimmed, filters, limit: 50 })
-      if (searchId !== searchIdRef.current) return
-
-      const merged = mergeAndSort(localResults, response.results)
-      setResults(merged)
-      if (localResults.length === 0) {
-        const mergedFlat = buildFlatMatches(merged, trimmed)
-        setActiveMatchIndex(mergedFlat.length > 0 ? mergedFlat.length - 1 : -1)
-      }
+      setResults(localResults)
+      const flat = buildFlatMatches(localResults, trimmed)
+      setActiveMatchIndex(flat.length > 0 ? flat.length - 1 : -1)
       setHasSearched(true)
     } catch (e) {
       if (searchId !== searchIdRef.current) return
       setError(e instanceof Error ? e : new Error("Search failed"))
-      if (results.length === 0) {
-        setResults([])
-        setActiveMatchIndex(-1)
-      }
+      setResults([])
+      setActiveMatchIndex(-1)
     } finally {
       if (searchId === searchIdRef.current) {
         setIsSearching(false)
       }
     }
-  }, [workspaceId, streamId])
+  }, [streamId])
 
   const prevResult = useCallback(() => {
     if (flatMatches.length === 0) return
