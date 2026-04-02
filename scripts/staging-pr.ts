@@ -638,15 +638,19 @@ async function deploy(): Promise<void> {
   if (isFirstDeploy) {
     await createDatabase(prDbName)
     await cloneDatabase("staging_main", prDbName)
-    await verifyUmzugMigrations(prDbName, "apps/backend/src/db/migrations")
     await updateWorkspaceSlug(prDbName, branch!)
 
     await createDatabase(prCpDbName)
     await cloneDatabase("staging_main_cp", prCpDbName)
-    await verifyUmzugMigrations(prCpDbName, "apps/control-plane/src/db/migrations")
   } else {
-    console.log(`Databases already exist — skipping clone (migrations run on backend startup)`)
+    console.log(`Databases already exist — skipping clone`)
   }
+
+  // Always ensure umzug_migrations is complete — even on re-deploys the table
+  // may be incomplete from a previous failed clone. This is idempotent
+  // (ON CONFLICT DO NOTHING) so safe to run every time.
+  await verifyUmzugMigrations(prDbName, "apps/backend/src/db/migrations")
+  await verifyUmzugMigrations(prCpDbName, "apps/control-plane/src/db/migrations")
 
   // 2. Create and deploy Railway service
   await createRailwayService()

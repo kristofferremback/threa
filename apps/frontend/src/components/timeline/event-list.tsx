@@ -34,6 +34,8 @@ interface EventListProps {
   newMessageIds?: Set<string>
   /** Virtualizer instance — when provided, renders only visible items */
   virtualizer?: Virtualizer<HTMLDivElement, Element>
+  /** True during initial measurement settle — items render hidden so ResizeObserver can measure */
+  isSettling?: boolean
 }
 
 function isCommandEvent(event: StreamEvent): boolean {
@@ -198,6 +200,7 @@ export function groupTimelineItems(events: StreamEvent[], currentUserId: string 
 export const EventList = memo(function EventList({
   timelineItems,
   isLoading,
+  isSettling,
   workspaceId,
   streamId,
   highlightMessageId,
@@ -303,36 +306,62 @@ export const EventList = memo(function EventList({
   if (virtualizer) {
     const virtualItems = virtualizer.getVirtualItems()
     return (
-      <div className="py-3 sm:py-6 mx-auto max-w-[800px] w-full min-w-0">
-        <div
-          style={{
-            height: virtualizer.getTotalSize(),
-            width: "100%",
-            position: "relative",
-          }}
-        >
-          {virtualItems.map((virtualRow) => {
-            const item = timelineItems[virtualRow.index]
-            if (!item) return null
-            return (
-              <div
-                key={virtualRow.key}
-                data-index={virtualRow.index}
-                ref={virtualizer.measureElement}
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  width: "100%",
-                  transform: `translateY(${virtualRow.start - virtualizer.options.scrollMargin}px)`,
-                }}
-              >
-                {renderItem(item)}
+      <>
+        {/* During settle phase, show skeleton so the user never sees the layout dance.
+            Items still render (visibility:hidden) so ResizeObserver can measure them. */}
+        {isSettling && (
+          <div className="flex flex-col gap-4 px-4 py-6 sm:px-6" aria-hidden="true">
+            <div className="flex gap-3">
+              <Skeleton className="h-9 w-9 rounded-full" />
+              <div className="flex-1 space-y-2">
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-2/3" />
               </div>
-            )
-          })}
+            </div>
+            <div className="flex gap-3">
+              <Skeleton className="h-9 w-9 rounded-full" />
+              <div className="flex-1 space-y-2">
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-4 w-5/6" />
+              </div>
+            </div>
+          </div>
+        )}
+        <div
+          className="py-3 sm:py-6 mx-auto max-w-[800px] w-full min-w-0"
+          style={isSettling ? { visibility: "hidden", position: "absolute", top: 0, left: 0, right: 0 } : undefined}
+        >
+          <div
+            style={{
+              height: virtualizer.getTotalSize(),
+              width: "100%",
+              position: "relative",
+            }}
+          >
+            {virtualItems.map((virtualRow) => {
+              const item = timelineItems[virtualRow.index]
+              if (!item) return null
+              return (
+                <div
+                  key={virtualRow.key}
+                  data-index={virtualRow.index}
+                  ref={virtualizer.measureElement}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    transform: `translateY(${virtualRow.start - virtualizer.options.scrollMargin}px)`,
+                  }}
+                >
+                  {renderItem(item)}
+                </div>
+              )
+            })}
+          </div>
         </div>
-      </div>
+      </>
     )
   }
 

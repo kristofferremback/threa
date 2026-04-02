@@ -215,6 +215,7 @@ export function StreamContent({
     isScrolledFarFromBottom: virtualIsScrolledFar,
     scrollToBottom: virtualScrollToBottom,
     disableAutoScroll: virtualDisableAutoScroll,
+    isSettling,
   } = useVirtualizedScroll({
     isLoading,
     itemCount: useVirtualized ? visibleItems.length : 0,
@@ -403,6 +404,7 @@ export function StreamContent({
                 <EventList
                   timelineItems={useVirtualized ? visibleItems : timelineItems}
                   isLoading={isLoading}
+                  isSettling={isSettling}
                   workspaceId={workspaceId}
                   streamId={streamId}
                   highlightMessageId={streamSearch.activeResult?.id ?? highlightMessageId}
