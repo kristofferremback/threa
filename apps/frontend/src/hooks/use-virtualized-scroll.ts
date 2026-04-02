@@ -52,6 +52,8 @@ interface UseVirtualizedScrollOptions {
   resetKey?: string
   /** Pixel offset for content above the virtual list (e.g. thread parent message) */
   scrollMargin?: number
+  /** Skip the settle phase (e.g. when jumping to a specific message via deep link) */
+  skipSettle?: boolean
 }
 
 interface UseVirtualizedScrollReturn {
@@ -87,6 +89,7 @@ export function useVirtualizedScroll({
   triggerItemCount = Math.floor(EVENT_PAGE_SIZE * SCROLL_FETCH_RATIO),
   resetKey,
   scrollMargin = 0,
+  skipSettle = false,
 }: UseVirtualizedScrollOptions): UseVirtualizedScrollReturn {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const shouldAutoScroll = useRef(true)
@@ -182,9 +185,12 @@ export function useVirtualizedScroll({
       prevScrollHeightRef.current = el?.scrollHeight ?? 0
       if (!initialScrollDone.current) {
         initialScrollDone.current = true
-        setIsSettling(true)
-        // Initial scroll — will be corrected during settle phase
-        if (el) el.scrollTop = el.scrollHeight
+        if (!skipSettle) {
+          setIsSettling(true)
+        }
+        // Initial scroll — will be corrected during settle phase.
+        // Skip when settle is skipped (jump-to-message handles its own scroll).
+        if (el && !skipSettle) el.scrollTop = el.scrollHeight
       }
       return
     }
