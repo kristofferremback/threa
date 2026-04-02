@@ -134,13 +134,11 @@ test.describe("Edit last message (ArrowUp)", () => {
       })
     }
 
-    // ── User A: navigate away then to stream URL for a fresh bootstrap ──
-    // Navigate to workspace root first to clear React/TanStack state for the stream,
-    // then navigate to the stream URL. The fresh navigation gets a new bootstrap from
-    // the database (which now has all 20 fillers). IDB may still have old events from
-    // the first visit, but the new bootstrap's floor will filter them.
-    await userA.page.goto(`/w/${workspaceId}`)
-    await expect(userA.page.getByRole("button", { name: "+ New Scratchpad" })).toBeVisible({ timeout: 15000 })
+    // ── User A: hard-reload to get a fresh bootstrap with filler messages ──
+    // Navigate to about:blank first to fully teardown React state (TanStack cache,
+    // hook state), then navigate to the stream URL. This gets a clean bootstrap from
+    // the database which now has all 20 fillers plus User A's original message.
+    await userA.page.goto("about:blank")
     await userA.page.goto(`/w/${workspaceId}/s/${streamId}`)
     await expect(userA.page.locator("[contenteditable='true']")).toBeVisible({ timeout: 15000 })
 
@@ -216,12 +214,11 @@ test.describe("Edit last message (ArrowUp)", () => {
       })
     }
 
-    // ── User A: navigate away then to stream URL for a fresh bootstrap ──
-    // Navigate to workspace root first to clear React/TanStack state, then back.
-    // The fresh bootstrap loads the latest 50 events from the database — the old
-    // message (event #1 of 62+) is outside this window.
-    await userA.page.goto(`/w/${workspaceId}`)
-    await expect(userA.page.getByRole("button", { name: "+ New Scratchpad" })).toBeVisible({ timeout: 15000 })
+    // ── User A: hard-reload to get a fresh bootstrap with only the latest 50 events ──
+    // Navigate to about:blank first to fully teardown React state (TanStack cache,
+    // hook state), then navigate to the stream. The old message (event #1 of 62+)
+    // is outside the bootstrap window.
+    await userA.page.goto("about:blank")
     await userA.page.goto(`/w/${workspaceId}/s/${streamId}`)
     await expect(userA.page.locator("[contenteditable='true']")).toBeVisible({ timeout: 15000 })
 
