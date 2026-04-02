@@ -306,62 +306,63 @@ export const EventList = memo(function EventList({
   if (virtualizer) {
     const virtualItems = virtualizer.getVirtualItems()
     return (
-      <>
-        {/* During settle phase, show skeleton so the user never sees the layout dance.
-            Items still render (visibility:hidden) so ResizeObserver can measure them. */}
+      <div className="relative py-3 sm:py-6 mx-auto max-w-[800px] w-full min-w-0">
+        {/* Skeleton overlay during settle — covers the virtualizer container while
+            items are measured. The virtualizer stays in normal flow (contributes to
+            scrollHeight) so scroll-to-bottom works correctly during measurement. */}
         {isSettling && (
-          <div className="flex flex-col gap-4 px-4 py-6 sm:px-6" aria-hidden="true">
-            <div className="flex gap-3">
-              <Skeleton className="h-9 w-9 rounded-full" />
-              <div className="flex-1 space-y-2">
-                <Skeleton className="h-4 w-32" />
-                <Skeleton className="h-4 w-full" />
-                <Skeleton className="h-4 w-2/3" />
+          <div className="absolute inset-0 z-10 bg-background" aria-hidden="true">
+            <div className="flex flex-col gap-4 px-4 py-6 sm:px-6">
+              <div className="flex gap-3">
+                <Skeleton className="h-9 w-9 rounded-full" />
+                <div className="flex-1 space-y-2">
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-2/3" />
+                </div>
               </div>
-            </div>
-            <div className="flex gap-3">
-              <Skeleton className="h-9 w-9 rounded-full" />
-              <div className="flex-1 space-y-2">
-                <Skeleton className="h-4 w-24" />
-                <Skeleton className="h-4 w-5/6" />
+              <div className="flex gap-3">
+                <Skeleton className="h-9 w-9 rounded-full" />
+                <div className="flex-1 space-y-2">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-4 w-5/6" />
+                </div>
               </div>
             </div>
           </div>
         )}
         <div
-          className="py-3 sm:py-6 mx-auto max-w-[800px] w-full min-w-0"
-          style={isSettling ? { visibility: "hidden", position: "absolute", top: 0, left: 0, right: 0 } : undefined}
+          style={{
+            height: virtualizer.getTotalSize(),
+            width: "100%",
+            position: "relative",
+            // Items are invisible during settle so ResizeObserver can measure them
+            // without the user seeing the estimation-based layout dance
+            visibility: isSettling ? "hidden" : undefined,
+          }}
         >
-          <div
-            style={{
-              height: virtualizer.getTotalSize(),
-              width: "100%",
-              position: "relative",
-            }}
-          >
-            {virtualItems.map((virtualRow) => {
-              const item = timelineItems[virtualRow.index]
-              if (!item) return null
-              return (
-                <div
-                  key={virtualRow.key}
-                  data-index={virtualRow.index}
-                  ref={virtualizer.measureElement}
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    width: "100%",
-                    transform: `translateY(${virtualRow.start - virtualizer.options.scrollMargin}px)`,
-                  }}
-                >
-                  {renderItem(item)}
-                </div>
-              )
-            })}
-          </div>
+          {virtualItems.map((virtualRow) => {
+            const item = timelineItems[virtualRow.index]
+            if (!item) return null
+            return (
+              <div
+                key={virtualRow.key}
+                data-index={virtualRow.index}
+                ref={virtualizer.measureElement}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  transform: `translateY(${virtualRow.start - virtualizer.options.scrollMargin}px)`,
+                }}
+              >
+                {renderItem(item)}
+              </div>
+            )
+          })}
         </div>
-      </>
+      </div>
     )
   }
 
