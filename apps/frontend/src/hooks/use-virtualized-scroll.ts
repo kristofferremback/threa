@@ -73,10 +73,11 @@ export function useVirtualizedScroll({
   const shouldAutoScroll = useRef(true)
   const [isScrolledFarFromBottom, setIsScrolledFarFromBottom] = useState(false)
 
-  // Prepend stability tracking
+  // Prepend stability tracking — uses scrollHeight (DOM) not virtualizer.getTotalSize()
+  // to avoid infinite render loops (getTotalSize triggers measurements → onChange → re-render)
   const prevItemCountRef = useRef(0)
   const prevFirstKeyRef = useRef<string | null>(null)
-  const prevTotalSizeRef = useRef(0)
+  const prevScrollHeightRef = useRef(0)
 
   // Fetch guards
   const prevIsFetchingOlder = useRef(false)
@@ -105,7 +106,7 @@ export function useVirtualizedScroll({
     shouldAutoScroll.current = true
     prevItemCountRef.current = 0
     prevFirstKeyRef.current = null
-    prevTotalSizeRef.current = 0
+    prevScrollHeightRef.current = 0
     prevIsFetchingOlder.current = false
     prevIsFetchingNewer.current = false
     olderFetchScheduled.current = false
@@ -139,9 +140,12 @@ export function useVirtualizedScroll({
   // --- Prepend stability ---
   // When older items are prepended, adjust scroll to maintain the user's position.
   // Runs synchronously before paint to prevent visible jumps.
+  // Uses scrollHeight from the DOM element — NOT virtualizer.getTotalSize() which
+  // triggers measurements → onChange → re-render → infinite loop.
   useLayoutEffect(() => {
     if (isLoading || itemCount === 0) return
 
+    const el = scrollContainerRef.current
     const prevCount = prevItemCountRef.current
     const prevFirstKey = prevFirstKeyRef.current
     const currentFirstKey = itemCount > 0 ? getItemKey(0) : null
@@ -150,10 +154,9 @@ export function useVirtualizedScroll({
     if (prevCount === 0 && itemCount > 0) {
       prevItemCountRef.current = itemCount
       prevFirstKeyRef.current = currentFirstKey
-      prevTotalSizeRef.current = virtualizer.getTotalSize()
+      prevScrollHeightRef.current = el?.scrollHeight ?? 0
       if (!initialScrollDone.current) {
         initialScrollDone.current = true
-        // Scroll to bottom on initial load
         scrollToBottomImpl()
       }
       return
@@ -168,12 +171,8 @@ export function useVirtualizedScroll({
       !shouldAutoScroll.current &&
       olderContentJustArrived
     ) {
-      const el = scrollContainerRef.current
       if (el) {
-        // The virtualizer's total size grew by the estimated height of prepended items.
-        // Shift scrollTop by that delta to keep the same content in view.
-        const newTotalSize = virtualizer.getTotalSize()
-        const delta = newTotalSize - prevTotalSizeRef.current
+        const delta = el.scrollHeight - prevScrollHeightRef.current
         if (delta > 0) {
           el.scrollTop += delta
         }
@@ -185,8 +184,8 @@ export function useVirtualizedScroll({
 
     prevItemCountRef.current = itemCount
     prevFirstKeyRef.current = currentFirstKey
-    prevTotalSizeRef.current = virtualizer.getTotalSize()
-  }, [isLoading, itemCount, getItemKey, isFetchingOlder, scrollToBottomImpl, virtualizer])
+    prevScrollHeightRef.current = el?.scrollHeight ?? 0
+  }, [isLoading, itemCount, getItemKey, isFetchingOlder, scrollToBottomImpl])
 
   // Track fetching state transitions (reset one-shot guards)
   useLayoutEffect(() => {
@@ -194,7 +193,10 @@ export function useVirtualizedScroll({
     if (prevIsFetchingNewer.current && !isFetchingNewer) newerFetchScheduled.current = false
     prevIsFetchingOlder.current = isFetchingOlder
     prevIsFetchingNewer.current = isFetchingNewer
-    prevTotalSizeRef.current = virtualizer.getTotalSize()
+    const el = scrollContainerRef.current
+    if (el) {
+      prevScrollHeightRef.current = el.scrollHeight
+    }
   })
 
   // Auto-scroll to bottom when the container shrinks (e.g. mobile keyboard opens)
@@ -217,7 +219,6 @@ export function useVirtualizedScroll({
   }, [virtualizer, itemCount])
 
   // --- Scroll event handler (fetch triggers + auto-scroll tracking) ---
-  // Attached via virtualizer's scrollElement, fires on every scroll frame.
   useEffect(() => {
     const el = scrollContainerRef.current
     if (!el) return
