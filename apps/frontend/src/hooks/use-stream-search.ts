@@ -118,6 +118,8 @@ export function useStreamSearch({ workspaceId, streamId }: UseStreamSearchOption
   const queryRef = useRef(query)
   queryRef.current = query
   const inputRef = useRef<HTMLInputElement>(null)
+  const activeMatchIndexRef = useRef(activeMatchIndex)
+  activeMatchIndexRef.current = activeMatchIndex
 
   // Build flat matches from results + current query
   const flatMatches = useMemo(() => buildFlatMatches(results, query), [results, query])
@@ -155,8 +157,23 @@ export function useStreamSearch({ workspaceId, streamId }: UseStreamSearchOption
 
       const merged = mergeAndSort(localResults, response.results)
       setResults(merged)
-      if (localResults.length === 0) {
-        const mergedFlat = buildFlatMatches(merged, trimmed)
+      // Stabilize the active match after merge — server results may insert
+      // older items before the current selection, shifting all indices.
+      // Find the previously active message in the new flat list to keep the
+      // user on the same match instead of silently redirecting them.
+      const mergedFlat = buildFlatMatches(merged, trimmed)
+      const prevActiveId =
+        localResults.length > 0 ? buildFlatMatches(localResults, trimmed)[activeMatchIndexRef.current]?.messageId : null
+      if (prevActiveId) {
+        let restoredIdx = -1
+        for (let i = mergedFlat.length - 1; i >= 0; i--) {
+          if (mergedFlat[i].messageId === prevActiveId) {
+            restoredIdx = i
+            break
+          }
+        }
+        setActiveMatchIndex(restoredIdx >= 0 ? restoredIdx : mergedFlat.length - 1)
+      } else {
         setActiveMatchIndex(mergedFlat.length > 0 ? mergedFlat.length - 1 : -1)
       }
       setHasSearched(true)
