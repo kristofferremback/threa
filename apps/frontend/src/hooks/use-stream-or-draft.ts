@@ -7,6 +7,7 @@ import { useUser } from "@/auth"
 import { useStreamBootstrap, streamKeys } from "./use-streams"
 import { workspaceKeys } from "./use-workspaces"
 import { useDraftScratchpads } from "./use-draft-scratchpads"
+import { useQueueDraftMessage } from "./use-queue-draft-message"
 import { useWorkspaceUsers, useWorkspaceStreams, useWorkspaceDmPeers } from "@/stores/workspace-store"
 import { useSyncEngine } from "@/sync/sync-engine"
 import { deleteDraftMessageFromCache, hasSeededDraftCache, upsertDraftMessageInCache } from "@/stores/draft-store"
@@ -122,10 +123,7 @@ export interface UseStreamOrDraftReturn {
  */
 function useDraftStream(workspaceId: string, streamId: string, enabled: boolean): UseStreamOrDraftReturn {
   const navigate = useNavigate()
-  const user = useUser()
-  const idbUsers = useWorkspaceUsers(workspaceId)
-  const currentUserId = idbUsers.find((u) => u.workosUserId === user?.id)?.id ?? null
-  const { markPending, notifyQueue } = usePendingMessages()
+  const { queueDraftMessage, currentUserId } = useQueueDraftMessage(workspaceId)
   const { getDraft, updateDraft, deleteDraft } = useDraftScratchpads(workspaceId)
   const draft = enabled ? getDraft(streamId) : undefined
 
@@ -174,39 +172,9 @@ function useDraftStream(workspaceId: string, streamId: string, enabled: boolean)
       const draftData = await db.draftScratchpads.get(streamId)
       const companionMode = draftData?.companionMode ?? "on"
 
-      const clientId = generateClientId()
-      const now = new Date().toISOString()
-      const contentMarkdown = serializeToMarkdown(input.contentJson)
-      const optimisticSequence = Date.now().toString()
-
-      const optimisticEvent: StreamEvent = {
-        id: clientId,
-        streamId,
-        sequence: optimisticSequence,
-        eventType: "message_created",
-        payload: {
-          messageId: clientId,
-          contentMarkdown,
-          ...(input.attachments && input.attachments.length > 0 ? { attachments: input.attachments } : {}),
-        },
-        actorId: currentUserId,
-        actorType: "user",
-        createdAt: now,
-      }
-
-      markPending(clientId)
-
-      // Enqueue for background processing — works offline
-      await db.pendingMessages.add({
-        clientId,
+      await queueDraftMessage(input, {
         workspaceId,
         streamId,
-        content: contentMarkdown,
-        contentFormat: "markdown",
-        contentJson: input.contentJson,
-        attachmentIds: input.attachmentIds,
-        createdAt: Date.now(),
-        retryCount: 0,
         streamCreation: {
           type: StreamTypes.SCRATCHPAD,
           displayName: draftData?.displayName ?? undefined,
@@ -215,21 +183,10 @@ function useDraftStream(workspaceId: string, streamId: string, enabled: boolean)
         draftId: streamId,
       })
 
-      await db.events.add({
-        ...optimisticEvent,
-        workspaceId,
-        _sequenceNum: sequenceToNum(optimisticEvent.sequence),
-        _clientId: clientId,
-        _status: "pending",
-        _cachedAt: Date.now(),
-      })
-
-      notifyQueue()
-
       // Navigation is handled by the promotion listener above
       return {}
     },
-    [streamId, workspaceId, markPending, notifyQueue, currentUserId]
+    [streamId, workspaceId, currentUserId, queueDraftMessage]
   )
 
   return {

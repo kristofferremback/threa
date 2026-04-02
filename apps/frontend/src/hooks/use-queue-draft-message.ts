@@ -4,14 +4,9 @@ import { useUser } from "@/auth"
 import { useWorkspaceUsers } from "@/stores/workspace-store"
 import { db, sequenceToNum, type PendingStreamCreation } from "@/db"
 import { serializeToMarkdown } from "@threa/prosemirror"
+import { generateClientId } from "./use-stream-or-draft"
 import type { JSONContent, StreamEvent } from "@threa/types"
 import type { AttachmentSummary } from "./create-optimistic-bootstrap"
-
-function generateClientId(): string {
-  const timestamp = Date.now().toString(36)
-  const random = Math.random().toString(36).substring(2, 10)
-  return `temp_${timestamp}${random}`
-}
 
 export interface QueueDraftMessageInput {
   contentJson: JSONContent

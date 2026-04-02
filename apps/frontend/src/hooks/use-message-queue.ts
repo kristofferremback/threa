@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback } from "react"
-import { useQueryClient } from "@tanstack/react-query"
+import { useQueryClient, type QueryClient } from "@tanstack/react-query"
 import { useSocketConnected, useMessageService, useStreamService, usePendingMessages } from "@/contexts"
 import { useSyncEngine } from "@/sync/sync-engine"
 import { db, sequenceToNum } from "@/db"
@@ -10,7 +10,7 @@ import { deleteDraftScratchpadFromCache, deleteDraftMessageFromCache } from "@/s
 import { workspaceKeys } from "./use-workspaces"
 import { StreamTypes } from "@threa/types"
 import type { PendingMessage } from "@/db"
-import type { StreamWithPreview } from "@threa/types"
+import type { CreateStreamInput, Stream, StreamWithPreview } from "@threa/types"
 
 /**
  * Exponential backoff delay based on retry count.
@@ -27,15 +27,21 @@ function getRetryDelay(retryCount: number): number {
 /**
  * Promote a draft by creating the real stream, moving the optimistic event,
  * and cleaning up draft data. Returns the real stream ID.
+ *
+ * Idempotent: if stream creation succeeds but subsequent steps fail, the
+ * realStreamId is persisted on the pending message so retries skip creation.
  */
 async function promoteDraft(
   next: PendingMessage,
-  streamService: { create: (...args: any[]) => Promise<any> },
+  streamService: { create: (workspaceId: string, data: CreateStreamInput) => Promise<Stream> },
   syncEngine: { subscribeStream: (id: string) => Promise<void> },
-  queryClient: any
+  queryClient: QueryClient
 ): Promise<string> {
   const creation = next.streamCreation!
+  const draftStreamId = next.streamId
 
+  // Check if we already created the stream on a previous attempt
+  // (streamCreation is cleared after successful creation + IDB update)
   const newStream = await streamService.create(next.workspaceId, {
     type: creation.type,
     displayName: creation.displayName,
@@ -44,8 +50,16 @@ async function promoteDraft(
     parentMessageId: creation.parentMessageId,
   })
 
-  const draftStreamId = next.streamId
   const realStreamId = newStream.id
+
+  // Persist the real streamId and clear streamCreation atomically.
+  // If subsequent steps fail, the retry loop will see streamCreation is
+  // already cleared and skip promoteDraft entirely, sending to the real stream.
+  type UpdateFn = (key: string, changes: Record<string, unknown>) => Promise<number>
+  await (db.pendingMessages.update as unknown as UpdateFn)(next.clientId, {
+    streamId: realStreamId,
+    streamCreation: undefined,
+  })
 
   // Move the optimistic event from draft streamId to real streamId
   const optimisticEvent = await db.events.get(next.clientId)
@@ -56,13 +70,6 @@ async function promoteDraft(
       _sequenceNum: sequenceToNum(optimisticEvent.sequence),
     })
   }
-
-  // Update the pending message's streamId so the send step uses the real stream
-  type UpdateFn = (key: string, changes: Record<string, unknown>) => Promise<number>
-  await (db.pendingMessages.update as unknown as UpdateFn)(next.clientId, {
-    streamId: realStreamId,
-    streamCreation: undefined,
-  })
 
   // Write the new stream to IDB so the sidebar picks it up immediately
   await db.streams.put({

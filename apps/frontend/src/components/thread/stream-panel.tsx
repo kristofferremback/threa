@@ -357,7 +357,11 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
                   event={parentMessage}
                   workspaceId={workspaceId}
                   streamId={draftInfo.parentStreamId}
-                  replyCount={hasDraftThreadPendingEvents ? draftThreadPendingEvents!.length : 0}
+                  replyCount={
+                    hasDraftThreadPendingEvents
+                      ? draftThreadPendingEvents!.filter((e) => e.eventType === "message_created").length
+                      : 0
+                  }
                 />
               )}
               {hasDraftThreadPendingEvents ? (
