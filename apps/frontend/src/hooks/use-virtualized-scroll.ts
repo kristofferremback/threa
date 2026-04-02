@@ -218,7 +218,7 @@ export function useVirtualizedScroll({
     prevItemCountRef.current = itemCount
     prevFirstKeyRef.current = currentFirstKey
     prevScrollHeightRef.current = el?.scrollHeight ?? 0
-  }, [isLoading, itemCount, getItemKey, isFetchingOlder, scrollToBottomImpl])
+  }, [isLoading, itemCount, getItemKey, isFetchingOlder, scrollToBottomImpl, skipSettle])
 
   // Track fetching state transitions
   useLayoutEffect(() => {
