@@ -291,6 +291,22 @@ export function useVirtualizedScroll({
     }
   }, [isSettling])
 
+  // Post-settle: one final scroll after React re-renders with visibility restored.
+  // The settle finish() scrolls before setIsSettling(false), but the re-render that
+  // removes visibility:hidden can cause a tiny reflow shifting scrollHeight by a few px.
+  const prevIsSettlingRef = useRef(false)
+  useLayoutEffect(() => {
+    const wasSettling = prevIsSettlingRef.current
+    prevIsSettlingRef.current = isSettling
+    if (wasSettling && !isSettling && shouldAutoScroll.current) {
+      const el = scrollContainerRef.current
+      if (el) {
+        lastProgrammaticScrollAt.current = performance.now()
+        el.scrollTop = el.scrollHeight
+      }
+    }
+  }, [isSettling])
+
   // Auto-scroll to bottom when the container shrinks (e.g. mobile keyboard opens)
   useEffect(() => {
     const el = scrollContainerRef.current
