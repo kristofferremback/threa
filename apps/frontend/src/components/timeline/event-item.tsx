@@ -46,7 +46,7 @@ export function EventItem({
         )
       }
       return (
-        <div data-event-id={event.id}>
+        <div data-event-id={event.id} data-message-id={messageId}>
           <MessageEvent
             event={event}
             workspaceId={workspaceId}

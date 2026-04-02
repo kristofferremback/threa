@@ -41,6 +41,7 @@ import { EditLastMessageContext } from "./edit-last-message-context"
 import { InlineEditProvider } from "./inline-edit-context"
 import { StreamSearchBar } from "./stream-search-bar"
 import { useStreamSearch } from "@/hooks/use-stream-search"
+import { useSearchHighlight } from "@/hooks/use-search-highlight"
 
 interface StreamContentProps {
   workspaceId: string
@@ -278,6 +279,14 @@ export function StreamContent({
     [jumpToEvent, disableAutoScroll]
   )
 
+  // Highlight search matches in the DOM via CSS Custom Highlight API
+  useSearchHighlight(
+    scrollContainerRef,
+    isSearchOpen ? streamSearch.query : "",
+    streamSearch.activeMessageId,
+    streamSearch.activeOccurrence
+  )
+
   // Jump to highlighted message if it's not in the current event window
   useEffect(() => {
     if (!highlightMessageId || isLoading || isDraft) return
@@ -426,7 +435,7 @@ export function StreamContent({
                   isSettling={isSettling}
                   workspaceId={workspaceId}
                   streamId={streamId}
-                  highlightMessageId={streamSearch.activeResult?.id ?? highlightMessageId}
+                  highlightMessageId={streamSearch.activeMessageId ?? highlightMessageId}
                   firstUnreadEventId={dividerEventId}
                   isDividerFading={isDividerFading}
                   agentActivity={agentActivity}

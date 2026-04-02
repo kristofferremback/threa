@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react"
+import { useState, useCallback, useRef, useMemo } from "react"
 import { searchMessages, type SearchFilters, type SearchResultItem } from "@/api"
 import { db } from "@/db"
 
@@ -7,32 +7,67 @@ interface UseStreamSearchOptions {
   streamId: string
 }
 
+/** A single navigable match: one text occurrence within one message */
+export interface FlatMatch {
+  messageId: string
+  /** Which occurrence within this message (0-based) */
+  occurrence: number
+}
+
 interface UseStreamSearchReturn {
   query: string
   setQuery: (query: string) => void
   results: SearchResultItem[]
   isSearching: boolean
-  /** Whether at least one search has completed for the current query */
   hasSearched: boolean
   error: Error | null
-  /** Index of the currently focused result (0-based) */
-  activeIndex: number
-  /** Total result count */
-  resultCount: number
+  /** All flat matches (every text occurrence across all messages) */
+  flatMatches: FlatMatch[]
+  /** Index into flatMatches for the currently active match */
+  activeMatchIndex: number
+  /** Total flat match count */
+  matchCount: number
   /** Execute search with current query */
   search: () => Promise<void>
-  /** Move to next (newer) result */
+  /** Move to next (newer) match */
   nextResult: () => void
-  /** Move to previous (older) result */
+  /** Move to previous (older) match */
   prevResult: () => void
   /** Reset search state */
   clear: () => void
-  /** The currently active result (if any) */
-  activeResult: SearchResultItem | null
-  /** Re-focus the search input (for Cmd+F when already open) */
+  /** The message ID of the currently active match */
+  activeMessageId: string | null
+  /** The occurrence index within the active message */
+  activeOccurrence: number
+  /** Re-focus the search input */
   focus: () => void
-  /** Ref to attach to the search input for programmatic focus */
   inputRef: React.RefObject<HTMLInputElement | null>
+}
+
+/** Count non-overlapping occurrences of `query` in `text` (case-insensitive) */
+function countOccurrences(text: string, query: string): number {
+  if (!query) return 0
+  const lower = text.toLowerCase()
+  const q = query.toLowerCase()
+  let count = 0
+  let pos = 0
+  while ((pos = lower.indexOf(q, pos)) !== -1) {
+    count++
+    pos += q.length
+  }
+  return count
+}
+
+/** Build a flat list of all matches: one entry per text occurrence, ordered chronologically */
+function buildFlatMatches(results: SearchResultItem[], query: string): FlatMatch[] {
+  const matches: FlatMatch[] = []
+  for (const result of results) {
+    const count = countOccurrences(result.content, query)
+    for (let i = 0; i < Math.max(count, 1); i++) {
+      matches.push({ messageId: result.id, occurrence: i })
+    }
+  }
+  return matches
 }
 
 /** Search local IDB events for a text match (case-insensitive substring) */
@@ -67,7 +102,6 @@ async function searchLocalEvents(streamId: string, query: string): Promise<Searc
 /** Merge local and server results, dedup by id, sort chronologically (oldest first) */
 function mergeAndSort(local: SearchResultItem[], server: SearchResultItem[]): SearchResultItem[] {
   const seen = new Map<string, SearchResultItem>()
-  // Server results take precedence (richer data)
   for (const r of local) seen.set(r.id, r)
   for (const r of server) seen.set(r.id, r)
   return Array.from(seen.values()).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
@@ -78,18 +112,21 @@ export function useStreamSearch({ workspaceId, streamId }: UseStreamSearchOption
   const [results, setResults] = useState<SearchResultItem[]>([])
   const [isSearching, setIsSearching] = useState(false)
   const [error, setError] = useState<Error | null>(null)
-  const [activeIndex, setActiveIndex] = useState(0)
+  const [activeMatchIndex, setActiveMatchIndex] = useState(0)
   const [hasSearched, setHasSearched] = useState(false)
   const searchIdRef = useRef(0)
   const queryRef = useRef(query)
   queryRef.current = query
   const inputRef = useRef<HTMLInputElement>(null)
 
+  // Build flat matches from results + current query
+  const flatMatches = useMemo(() => buildFlatMatches(results, query), [results, query])
+
   const search = useCallback(async () => {
     const trimmed = queryRef.current.trim()
     if (!trimmed) {
       setResults([])
-      setActiveIndex(0)
+      setActiveMatchIndex(0)
       return
     }
 
@@ -98,36 +135,34 @@ export function useStreamSearch({ workspaceId, streamId }: UseStreamSearchOption
     setError(null)
 
     try {
-      // Phase 1: instant local IDB search
       const localResults = await searchLocalEvents(streamId, trimmed)
       if (searchId !== searchIdRef.current) return
 
       if (localResults.length > 0) {
         setResults(localResults)
-        // Start at the most recent match (bottom of conversation)
-        setActiveIndex(localResults.length - 1)
+        // Start at the last match (most recent message, last occurrence)
+        const localFlat = buildFlatMatches(localResults, trimmed)
+        setActiveMatchIndex(localFlat.length > 0 ? localFlat.length - 1 : 0)
         setHasSearched(true)
       }
 
-      // Phase 2: server search (richer results, covers events not in IDB)
       const filters: SearchFilters = { in: [streamId] }
       const response = await searchMessages(workspaceId, { query: trimmed, filters, limit: 50 })
       if (searchId !== searchIdRef.current) return
 
       const merged = mergeAndSort(localResults, response.results)
       setResults(merged)
-      // If this is the first result set (no local hits), start at most recent
       if (localResults.length === 0) {
-        setActiveIndex(merged.length > 0 ? merged.length - 1 : -1)
+        const mergedFlat = buildFlatMatches(merged, trimmed)
+        setActiveMatchIndex(mergedFlat.length > 0 ? mergedFlat.length - 1 : -1)
       }
       setHasSearched(true)
     } catch (e) {
       if (searchId !== searchIdRef.current) return
       setError(e instanceof Error ? e : new Error("Search failed"))
-      // Keep local results if server fails
       if (results.length === 0) {
         setResults([])
-        setActiveIndex(-1)
+        setActiveMatchIndex(-1)
       }
     } finally {
       if (searchId === searchIdRef.current) {
@@ -136,22 +171,20 @@ export function useStreamSearch({ workspaceId, streamId }: UseStreamSearchOption
     }
   }, [workspaceId, streamId])
 
-  // Navigate up = older (lower index in chronological array)
   const prevResult = useCallback(() => {
-    if (results.length === 0) return
-    setActiveIndex((prev) => (prev > 0 ? prev - 1 : results.length - 1))
-  }, [results.length])
+    if (flatMatches.length === 0) return
+    setActiveMatchIndex((prev) => (prev > 0 ? prev - 1 : flatMatches.length - 1))
+  }, [flatMatches.length])
 
-  // Navigate down = newer (higher index in chronological array)
   const nextResult = useCallback(() => {
-    if (results.length === 0) return
-    setActiveIndex((prev) => (prev < results.length - 1 ? prev + 1 : 0))
-  }, [results.length])
+    if (flatMatches.length === 0) return
+    setActiveMatchIndex((prev) => (prev < flatMatches.length - 1 ? prev + 1 : 0))
+  }, [flatMatches.length])
 
   const clear = useCallback(() => {
     setQuery("")
     setResults([])
-    setActiveIndex(0)
+    setActiveMatchIndex(0)
     setError(null)
     setIsSearching(false)
     setHasSearched(false)
@@ -163,7 +196,7 @@ export function useStreamSearch({ workspaceId, streamId }: UseStreamSearchOption
     inputRef.current?.select()
   }, [])
 
-  const activeResult = results.length > 0 && activeIndex >= 0 ? (results[activeIndex] ?? null) : null
+  const activeMatch = flatMatches.length > 0 && activeMatchIndex >= 0 ? flatMatches[activeMatchIndex] : null
 
   return {
     query,
@@ -171,14 +204,16 @@ export function useStreamSearch({ workspaceId, streamId }: UseStreamSearchOption
     results,
     isSearching,
     error,
-    activeIndex,
+    flatMatches,
+    activeMatchIndex,
     hasSearched,
-    resultCount: results.length,
+    matchCount: flatMatches.length,
     search,
     nextResult,
     prevResult,
     clear,
-    activeResult,
+    activeMessageId: activeMatch?.messageId ?? null,
+    activeOccurrence: activeMatch?.occurrence ?? 0,
     focus,
     inputRef,
   }

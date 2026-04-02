@@ -24,14 +24,14 @@ export function StreamSearchBar({ search, onClose, onNavigate }: StreamSearchBar
     search.inputRef.current?.focus()
   }, [search.inputRef])
 
-  // Navigate when active result changes
+  // Navigate when active message changes
   useEffect(() => {
-    const resultId = search.activeResult?.id ?? null
-    if (resultId && resultId !== prevActiveResultIdRef.current) {
-      onNavigate(resultId)
+    const msgId = search.activeMessageId
+    if (msgId && msgId !== prevActiveResultIdRef.current) {
+      onNavigate(msgId)
     }
-    prevActiveResultIdRef.current = resultId
-  }, [search.activeResult, onNavigate])
+    prevActiveResultIdRef.current = msgId
+  }, [search.activeMessageId, onNavigate])
 
   // Debounced search on query change
   const handleQueryChange = useCallback(
@@ -71,7 +71,7 @@ export function StreamSearchBar({ search, onClose, onNavigate }: StreamSearchBar
         if (e.shiftKey) {
           search.prevResult()
         } else {
-          if (search.resultCount === 0 && search.query.trim()) {
+          if (search.matchCount === 0 && search.query.trim()) {
             search.search()
           } else {
             search.nextResult()
@@ -110,12 +110,12 @@ export function StreamSearchBar({ search, onClose, onNavigate }: StreamSearchBar
       {/* Result count / loading indicator */}
       <div className="flex items-center gap-0.5 text-xs text-muted-foreground shrink-0 min-w-[60px] justify-center">
         {search.isSearching && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-        {showCount && search.resultCount > 0 && (
+        {showCount && search.matchCount > 0 && (
           <span>
-            {search.activeIndex + 1}/{search.resultCount}
+            {search.activeMatchIndex + 1}/{search.matchCount}
           </span>
         )}
-        {showCount && search.resultCount === 0 && <span>No results</span>}
+        {showCount && search.matchCount === 0 && <span>No results</span>}
       </div>
 
       {/* Navigation arrows: Up = older (prev), Down = newer (next) */}
@@ -125,7 +125,7 @@ export function StreamSearchBar({ search, onClose, onNavigate }: StreamSearchBar
           size="icon"
           className="h-7 w-7"
           onClick={search.prevResult}
-          disabled={search.resultCount === 0}
+          disabled={search.matchCount === 0}
           aria-label="Previous result (older)"
         >
           <ChevronUp className="h-3.5 w-3.5" />
@@ -135,7 +135,7 @@ export function StreamSearchBar({ search, onClose, onNavigate }: StreamSearchBar
           size="icon"
           className="h-7 w-7"
           onClick={search.nextResult}
-          disabled={search.resultCount === 0}
+          disabled={search.matchCount === 0}
           aria-label="Next result (newer)"
         >
           <ChevronDown className="h-3.5 w-3.5" />
