@@ -1,6 +1,6 @@
 import { useMemo, useEffect, useCallback, useRef, useState } from "react"
 import { useSearchParams } from "react-router-dom"
-import { MessageSquare, ArrowDown } from "lucide-react"
+import { MessageSquare, ArrowDown, Search } from "lucide-react"
 import { useQueryClient } from "@tanstack/react-query"
 import {
   useEvents,
@@ -370,8 +370,23 @@ export function StreamContent({
       <InlineEditProvider resetKey={streamId}>
         <div className="flex h-full flex-col">
           <div className="relative flex-1 overflow-hidden mb-1 sm:mb-4">
-            {isSearchOpen && (
+            {isSearchOpen ? (
               <StreamSearchBar search={streamSearch} onClose={handleSearchClose} onNavigate={handleSearchNavigate} />
+            ) : (
+              !isThread &&
+              !isDraft && (
+                <div className="absolute top-1 right-2 z-10">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 opacity-60 hover:opacity-100"
+                    onClick={() => setIsSearchOpen(true)}
+                    aria-label="Search in conversation"
+                  >
+                    <Search className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              )
             )}
             <div
               ref={scrollContainerRef}
