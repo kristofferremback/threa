@@ -166,7 +166,8 @@ export function StreamContent({
   const streamSearch = useStreamSearch({ workspaceId, streamId })
   const clearSearch = streamSearch.clear
 
-  // Cmd+F / Ctrl+F opens in-stream search (intercepts browser find).
+  // Cmd+F / Ctrl+F opens in-stream search or re-focuses if already open.
+  // Escape closes search when focus is outside the input.
   // Skip in thread views to avoid double search bar when a thread panel
   // and main stream are mounted simultaneously.
   useEffect(() => {
@@ -174,12 +175,20 @@ export function StreamContent({
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "f") {
         e.preventDefault()
-        setIsSearchOpen(true)
+        if (isSearchOpen) {
+          streamSearch.focus()
+        } else {
+          setIsSearchOpen(true)
+        }
+      }
+      if (e.key === "Escape" && isSearchOpen) {
+        setIsSearchOpen(false)
+        clearSearch()
       }
     }
     document.addEventListener("keydown", handleKeyDown)
     return () => document.removeEventListener("keydown", handleKeyDown)
-  }, [isThread])
+  }, [isThread, isSearchOpen, streamSearch, clearSearch])
 
   const handleSearchClose = useCallback(() => {
     setIsSearchOpen(false)

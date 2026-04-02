@@ -16,14 +16,13 @@ interface StreamSearchBarProps {
 const DEBOUNCE_MS = 300
 
 export function StreamSearchBar({ search, onClose, onNavigate }: StreamSearchBarProps) {
-  const inputRef = useRef<HTMLInputElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const prevActiveResultIdRef = useRef<string | null>(null)
 
   // Auto-focus the input when the bar mounts
   useEffect(() => {
-    inputRef.current?.focus()
-  }, [])
+    search.inputRef.current?.focus()
+  }, [search.inputRef])
 
   // Navigate when active result changes
   useEffect(() => {
@@ -72,7 +71,6 @@ export function StreamSearchBar({ search, onClose, onNavigate }: StreamSearchBar
         if (e.shiftKey) {
           search.prevResult()
         } else {
-          // If no results yet, trigger search; otherwise go to next
           if (search.resultCount === 0 && search.query.trim()) {
             search.search()
           } else {
@@ -99,7 +97,7 @@ export function StreamSearchBar({ search, onClose, onNavigate }: StreamSearchBar
       <div className="relative flex-1 min-w-0">
         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
         <Input
-          ref={inputRef}
+          ref={search.inputRef}
           type="text"
           placeholder="Search in conversation..."
           value={search.query}
@@ -120,7 +118,7 @@ export function StreamSearchBar({ search, onClose, onNavigate }: StreamSearchBar
         {showCount && search.resultCount === 0 && <span>No results</span>}
       </div>
 
-      {/* Navigation arrows */}
+      {/* Navigation arrows: Up = older (prev), Down = newer (next) */}
       <div className="flex items-center gap-0.5 shrink-0">
         <Button
           variant="ghost"
@@ -128,7 +126,7 @@ export function StreamSearchBar({ search, onClose, onNavigate }: StreamSearchBar
           className="h-7 w-7"
           onClick={search.prevResult}
           disabled={search.resultCount === 0}
-          aria-label="Previous result"
+          aria-label="Previous result (older)"
         >
           <ChevronUp className="h-3.5 w-3.5" />
         </Button>
@@ -138,7 +136,7 @@ export function StreamSearchBar({ search, onClose, onNavigate }: StreamSearchBar
           className="h-7 w-7"
           onClick={search.nextResult}
           disabled={search.resultCount === 0}
-          aria-label="Next result"
+          aria-label="Next result (newer)"
         >
           <ChevronDown className="h-3.5 w-3.5" />
         </Button>
