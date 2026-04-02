@@ -485,6 +485,17 @@
   contain-intrinsic-size: auto 80px;
 }
 
+/* In-stream search highlighting via CSS Custom Highlight API */
+::highlight(stream-search) {
+  background-color: rgba(250, 204, 21, 0.35);
+  color: inherit;
+}
+
+::highlight(stream-search-active) {
+  background-color: rgba(249, 115, 22, 0.6);
+  color: inherit;
+}
+
 /* Message Display - Compact mode reduces spacing in the timeline */
 [data-message-display="compact"] .message-item {
   padding-top: 0.25rem;

@@ -1,4 +1,5 @@
 import { memo, useMemo } from "react"
+import type { Virtualizer } from "@tanstack/react-virtual"
 import {
   COMMAND_EVENT_TYPES,
   AGENT_SESSION_EVENT_TYPES,
@@ -16,11 +17,10 @@ import { EventItem } from "./event-item"
 import { AgentSessionEvent } from "./agent-session-event"
 import { CommandEvent } from "./command-event"
 import { UnreadDivider } from "./unread-divider"
-import { useUser } from "@/auth"
 import { Skeleton } from "@/components/ui/skeleton"
 
 interface EventListProps {
-  events: StreamEvent[]
+  timelineItems: TimelineItem[]
   isLoading: boolean
   workspaceId: string
   streamId: string
@@ -32,6 +32,10 @@ interface EventListProps {
   hideSessionCards?: boolean
   /** Event IDs that just arrived via socket and should flash briefly */
   newMessageIds?: Set<string>
+  /** Virtualizer instance — when provided, renders only visible items */
+  virtualizer?: Virtualizer<HTMLDivElement, Element>
+  /** True during initial measurement settle — items render hidden so ResizeObserver can measure */
+  isSettling?: boolean
 }
 
 function isCommandEvent(event: StreamEvent): boolean {
@@ -63,10 +67,47 @@ function getSessionSlotKey(sessionId: string, triggerMessageId: string | null): 
 }
 
 /** Represents either a regular event, a group of command events, or a group of agent session events */
-type TimelineItem =
+export type TimelineItem =
   | { type: "event"; event: StreamEvent }
   | { type: "command_group"; commandId: string; events: StreamEvent[] }
   | { type: "session_group"; sessionId: string; sessionVersion: number; events: StreamEvent[] }
+
+/** Event types that render as null in EventItem (handled elsewhere or invisible) */
+const ZERO_HEIGHT_EVENT_TYPES = new Set([
+  "reaction_added",
+  "reaction_removed",
+  "command_dispatched",
+  "command_completed",
+  "command_failed",
+  "agent_session:started",
+  "agent_session:completed",
+  "agent_session:failed",
+  "agent_session:deleted",
+])
+
+/**
+ * Filters out timeline items that would render as zero-height elements.
+ * Must be applied before computing virtualizer count/keys to prevent overlap.
+ */
+export function filterVisibleItems(items: TimelineItem[], hideSessionCards?: boolean): TimelineItem[] {
+  return items.filter((item) => {
+    if (item.type === "session_group" && hideSessionCards) return false
+    if (item.type === "event" && ZERO_HEIGHT_EVENT_TYPES.has(item.event.eventType)) return false
+    return true
+  })
+}
+
+/** Returns a stable key string for a timeline item */
+export function getTimelineItemKey(item: TimelineItem): string {
+  switch (item.type) {
+    case "command_group":
+      return item.commandId
+    case "session_group":
+      return item.sessionId
+    default:
+      return item.event.id
+  }
+}
 
 /**
  * Groups command events by commandId and agent session events by trigger-message slot.
@@ -157,8 +198,9 @@ export function groupTimelineItems(events: StreamEvent[], currentUserId: string 
 }
 
 export const EventList = memo(function EventList({
-  events,
+  timelineItems,
   isLoading,
+  isSettling,
   workspaceId,
   streamId,
   highlightMessageId,
@@ -167,12 +209,9 @@ export const EventList = memo(function EventList({
   agentActivity,
   hideSessionCards,
   newMessageIds,
+  virtualizer,
 }: EventListProps) {
   const { phase } = useCoordinatedLoading()
-  const user = useUser()
-
-  // Hooks must be called unconditionally (Rules of Hooks) — place above early returns
-  const timelineItems = useMemo(() => groupTimelineItems(events, user?.id), [events, user?.id])
 
   const sessionLiveCounts = useMemo(() => {
     const counts = new Map<string, { stepCount: number; messageCount: number }>()
@@ -209,7 +248,7 @@ export const EventList = memo(function EventList({
     )
   }
 
-  if (events.length === 0) {
+  if (timelineItems.length === 0) {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="text-center">
@@ -229,50 +268,113 @@ export const EventList = memo(function EventList({
     return item.event.id === firstUnreadEventId
   }
 
+  const renderItem = (item: TimelineItem) => {
+    const showUnreadDivider = isFirstUnread(item)
+    return (
+      <>
+        {showUnreadDivider && <UnreadDivider isFading={isDividerFading} />}
+        {item.type === "command_group" && (
+          <div className="px-3 sm:px-6">
+            <CommandEvent events={item.events} />
+          </div>
+        )}
+        {item.type === "session_group" && !hideSessionCards && (
+          <div className="px-3 sm:px-6">
+            <AgentSessionEvent
+              events={item.events}
+              sessionVersion={item.sessionVersion}
+              liveCounts={sessionLiveCounts.get(item.sessionId)}
+            />
+          </div>
+        )}
+        {item.type === "event" && (
+          <EventItem
+            event={item.event}
+            workspaceId={workspaceId}
+            streamId={streamId}
+            highlightMessageId={highlightMessageId}
+            agentActivity={hideSessionCards ? agentActivity : undefined}
+            isNew={newMessageIds?.has(item.event.id)}
+            deferSecondaryHydration={phase !== "ready"}
+          />
+        )}
+      </>
+    )
+  }
+
+  // --- Virtualized rendering ---
+  if (virtualizer) {
+    const virtualItems = virtualizer.getVirtualItems()
+    return (
+      <div className="relative py-3 sm:py-6 mx-auto max-w-[800px] w-full min-w-0">
+        {/* Skeleton overlay during settle — covers the virtualizer container while
+            items are measured. The virtualizer stays in normal flow (contributes to
+            scrollHeight) so scroll-to-bottom works correctly during measurement. */}
+        {isSettling && (
+          <div className="absolute inset-0 z-10 bg-background" aria-hidden="true">
+            <div className="flex flex-col gap-4 px-4 py-6 sm:px-6">
+              <div className="flex gap-3">
+                <Skeleton className="h-9 w-9 rounded-full" />
+                <div className="flex-1 space-y-2">
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-2/3" />
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <Skeleton className="h-9 w-9 rounded-full" />
+                <div className="flex-1 space-y-2">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-4 w-5/6" />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        <div
+          style={{
+            height: virtualizer.getTotalSize(),
+            width: "100%",
+            position: "relative",
+            // Items are transparent during settle so ResizeObserver can measure them
+            // without the user seeing the estimation-based layout dance.
+            // Uses opacity instead of visibility so Playwright's toBeVisible() still passes.
+            opacity: isSettling ? 0 : undefined,
+          }}
+        >
+          {virtualItems.map((virtualRow) => {
+            const item = timelineItems[virtualRow.index]
+            if (!item) return null
+            return (
+              <div
+                key={virtualRow.key}
+                data-index={virtualRow.index}
+                ref={virtualizer.measureElement}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  transform: `translateY(${virtualRow.start - virtualizer.options.scrollMargin}px)`,
+                }}
+              >
+                {renderItem(item)}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
+  // --- Non-virtualized fallback (for threads, etc.) ---
   return (
     <div className="flex flex-col py-3 sm:py-6 mx-auto max-w-[800px] w-full min-w-0">
       {timelineItems.map((item) => {
-        const showUnreadDivider = isFirstUnread(item)
-        let eventId: string
-        switch (item.type) {
-          case "command_group":
-            eventId = item.commandId
-            break
-          case "session_group":
-            eventId = item.sessionId
-            break
-          default:
-            eventId = item.event.id
-        }
-
+        const itemKey = getTimelineItemKey(item)
         return (
-          <div key={eventId} className={showUnreadDivider ? "relative" : undefined}>
-            {showUnreadDivider && <UnreadDivider isFading={isDividerFading} />}
-            {item.type === "command_group" && (
-              <div className="px-3 sm:px-6">
-                <CommandEvent events={item.events} />
-              </div>
-            )}
-            {item.type === "session_group" && !hideSessionCards && (
-              <div className="px-3 sm:px-6">
-                <AgentSessionEvent
-                  events={item.events}
-                  sessionVersion={item.sessionVersion}
-                  liveCounts={sessionLiveCounts.get(item.sessionId)}
-                />
-              </div>
-            )}
-            {item.type === "event" && (
-              <EventItem
-                event={item.event}
-                workspaceId={workspaceId}
-                streamId={streamId}
-                highlightMessageId={highlightMessageId}
-                agentActivity={hideSessionCards ? agentActivity : undefined}
-                isNew={newMessageIds?.has(item.event.id)}
-                deferSecondaryHydration={phase !== "ready"}
-              />
-            )}
+          <div key={itemKey} className={isFirstUnread(item) ? "relative" : undefined}>
+            {renderItem(item)}
           </div>
         )
       })}

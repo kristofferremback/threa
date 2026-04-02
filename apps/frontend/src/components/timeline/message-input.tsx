@@ -357,7 +357,22 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     placeholder: isOffline ? "Type a message (sent when back online)" : undefined,
     messageSendMode,
     scopeId: streamId,
-    onEditLastMessage: triggerEditLast,
+    onEditLastMessage: triggerEditLast
+      ? () => {
+          const unmountedId = triggerEditLast()
+          if (unmountedId) {
+            // Message is off-screen (virtualized out). Scroll it into view,
+            // wait for mount + register, then retry.
+            const el = document.querySelector(`[data-message-id="${CSS.escape(unmountedId)}"]`)
+            if (el) {
+              el.scrollIntoView({ block: "center" })
+              setTimeout(() => triggerEditLast(), 100)
+            } else {
+              // Element not in DOM at all — would need jumpToEvent. For now, no-op.
+            }
+          }
+        }
+      : undefined,
     streamContext,
   } as const
 

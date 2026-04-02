@@ -1,10 +1,12 @@
-import { useMemo, useEffect, useCallback, useRef } from "react"
+import { useMemo, useEffect, useCallback, useRef, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { MessageSquare, ArrowDown } from "lucide-react"
+import { cn } from "@/lib/utils"
 import { useQueryClient } from "@tanstack/react-query"
 import {
   useEvents,
   useStreamSocket,
+  useVirtualizedScroll,
   useScrollBehavior,
   useStreamBootstrap,
   useWorkspaceUserId,
@@ -19,6 +21,7 @@ import {
 import { useSocket } from "@/contexts"
 import { useStreamEvents } from "@/stores/stream-store"
 import { useWorkspaceStreams, useWorkspaceStreamMemberships } from "@/stores/workspace-store"
+import { useUser } from "@/auth"
 import { Button } from "@/components/ui/button"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
 import { ErrorView } from "@/components/error-view"
@@ -31,12 +34,15 @@ import {
   type WorkspaceBootstrap,
   type StreamBootstrap,
 } from "@threa/types"
-import { EventList } from "./event-list"
+import { EventList, groupTimelineItems, getTimelineItemKey, filterVisibleItems } from "./event-list"
 import { MessageInput } from "./message-input"
 import { JoinChannelBar } from "./join-channel-bar"
 import { ThreadParentMessage } from "../thread/thread-parent-message"
 import { EditLastMessageContext } from "./edit-last-message-context"
 import { InlineEditProvider } from "./inline-edit-context"
+import { StreamSearchBar } from "./stream-search-bar"
+import { useStreamSearch } from "@/hooks/use-stream-search"
+import { useSearchHighlight } from "@/hooks/use-search-highlight"
 
 interface StreamContentProps {
   workspaceId: string
@@ -60,6 +66,8 @@ export function StreamContent({
   const [, setSearchParams] = useSearchParams()
   const socket = useSocket()
   const jumpTriggeredRef = useRef<string | null>(null)
+  const user = useUser()
+  const [isSearchOpen, setIsSearchOpen] = useState(false)
 
   // Clear highlight param after delay (works for both main view and panels)
   useEffect(() => {
@@ -156,16 +164,156 @@ export function StreamContent({
   const isChannel = stream?.type === StreamTypes.CHANNEL
   const agentActivity = useAgentActivity(events, socket)
 
-  const { scrollContainerRef, handleScroll, isScrolledFarFromBottom, scrollToBottom, disableAutoScroll } =
-    useScrollBehavior({
-      isLoading,
-      itemCount: events.length,
-      onScrollNearTop: hasOlderEvents ? fetchOlderEvents : undefined,
-      onScrollNearBottom: hasNewerEvents ? fetchNewerEvents : undefined,
-      isFetchingOlder,
-      isFetchingNewer,
-      resetKey: streamId,
-    })
+  // --- In-stream search ---
+  const streamSearch = useStreamSearch({ workspaceId, streamId })
+  const clearSearch = streamSearch.clear
+
+  // Cmd+F / Ctrl+F opens in-stream search or re-focuses if already open.
+  // Also listens for the custom event from the header search button.
+  // Escape closes search when focus is outside the input.
+  // Skip in thread views to avoid double search bar.
+  useEffect(() => {
+    if (isThread) return
+    const openOrFocus = () => {
+      if (isSearchOpen) {
+        streamSearch.focus()
+      } else {
+        setIsSearchOpen(true)
+      }
+    }
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "f") {
+        e.preventDefault()
+        openOrFocus()
+      }
+      if (e.key === "Escape" && isSearchOpen) {
+        setIsSearchOpen(false)
+        clearSearch()
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown)
+    document.addEventListener("threa:open-stream-search", openOrFocus)
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown)
+      document.removeEventListener("threa:open-stream-search", openOrFocus)
+    }
+  }, [isThread, isSearchOpen, streamSearch, clearSearch])
+
+  const handleSearchClose = useCallback(() => {
+    setIsSearchOpen(false)
+    clearSearch()
+  }, [clearSearch])
+
+  // Compute timeline items in StreamContent so the virtualizer can use count + keys
+  const timelineItems = useMemo(() => groupTimelineItems(events, user?.id), [events, user?.id])
+
+  // Use virtualized scroll for non-thread views, plain scroll for threads
+  const useVirtualized = !isThread
+
+  // Filter out zero-height items (reactions, hidden session cards) for the virtualizer.
+  // Without this, items that render as empty wrappers get measured as 0px, causing
+  // subsequent items to overlap at the same Y position.
+  const visibleItems = useMemo(
+    () => (useVirtualized ? filterVisibleItems(timelineItems, isChannel) : timelineItems),
+    [timelineItems, useVirtualized, isChannel]
+  )
+
+  const getItemKey = useCallback(
+    (index: number) => {
+      const item = visibleItems[index]
+      return item ? getTimelineItemKey(item) : String(index)
+    },
+    [visibleItems]
+  )
+
+  // --- Virtualized scroll (main streams, channels, scratchpads) ---
+  const {
+    scrollContainerRef: virtualScrollRef,
+    virtualizer,
+    isScrolledFarFromBottom: virtualIsScrolledFar,
+    scrollToBottom: virtualScrollToBottom,
+    disableAutoScroll: virtualDisableAutoScroll,
+    isSettling,
+  } = useVirtualizedScroll({
+    isLoading,
+    itemCount: useVirtualized ? visibleItems.length : 0,
+    getItemKey: useVirtualized ? getItemKey : () => "0",
+    onScrollNearTop: useVirtualized && hasOlderEvents ? fetchOlderEvents : undefined,
+    onScrollNearBottom: useVirtualized && hasNewerEvents ? fetchNewerEvents : undefined,
+    isFetchingOlder,
+    isFetchingNewer,
+    resetKey: streamId,
+    // Skip the settle phase when navigating to a specific message — the settle
+    // phase scrolls to bottom and hides items, which fights with jumpToEvent
+    skipSettle: !!highlightMessageId,
+  })
+
+  // --- Plain scroll for threads (they load all events) ---
+  const {
+    scrollContainerRef: plainScrollRef,
+    handleScroll: plainHandleScroll,
+    isScrolledFarFromBottom: plainIsScrolledFar,
+    scrollToBottom: plainScrollToBottom,
+    disableAutoScroll: plainDisableAutoScroll,
+  } = useScrollBehavior({
+    isLoading,
+    itemCount: !useVirtualized ? events.length : 0,
+    onScrollNearTop: !useVirtualized && hasOlderEvents ? fetchOlderEvents : undefined,
+    onScrollNearBottom: !useVirtualized && hasNewerEvents ? fetchNewerEvents : undefined,
+    isFetchingOlder,
+    isFetchingNewer,
+    resetKey: streamId,
+  })
+
+  // Unified API regardless of scroll mode
+  const scrollContainerRef = useVirtualized ? virtualScrollRef : plainScrollRef
+  const isScrolledFarFromBottom = useVirtualized ? virtualIsScrolledFar : plainIsScrolledFar
+  const scrollToBottom = useVirtualized ? virtualScrollToBottom : plainScrollToBottom
+  const disableAutoScroll = useVirtualized ? virtualDisableAutoScroll : plainDisableAutoScroll
+
+  // When a search result is selected, navigate to that message.
+  // If the message is already in the loaded events, just scroll to it in the DOM —
+  // don't call jumpToEvent which loads a new event window and disrupts scroll position.
+  // Only use jumpToEvent for messages outside the current window (older history).
+  const handleSearchNavigate = useCallback(
+    (messageId: string) => {
+      const isInCurrentEvents = events.some((e) => {
+        const payload = e.payload as { messageId?: string }
+        return payload?.messageId === messageId
+      })
+
+      if (isInCurrentEvents) {
+        // Message is loaded. If it's in the DOM, the useSearchHighlight hook
+        // scrolls the active range into view. If it's outside the virtualizer's
+        // rendered window, scroll the virtualizer to make it visible first.
+        const el = document.querySelector(`[data-message-id="${CSS.escape(messageId)}"]`)
+        if (!el && useVirtualized) {
+          // Find the item's index in visibleItems and scroll the virtualizer
+          const idx = visibleItems.findIndex((item) => {
+            if (item.type !== "event") return false
+            return (item.event.payload as { messageId?: string })?.messageId === messageId
+          })
+          if (idx >= 0) {
+            virtualizer.scrollToIndex(idx, { align: "center" })
+          }
+        }
+        return
+      }
+
+      // Message not in current window — load events around it
+      disableAutoScroll()
+      jumpToEvent(messageId)
+    },
+    [events, jumpToEvent, disableAutoScroll]
+  )
+
+  // Highlight search matches in the DOM via CSS Custom Highlight API
+  useSearchHighlight(
+    scrollContainerRef,
+    isSearchOpen ? streamSearch.query : "",
+    streamSearch.activeMessageId,
+    streamSearch.activeOccurrence
+  )
 
   // Jump to highlighted message if it's not in the current event window
   useEffect(() => {
@@ -195,19 +343,19 @@ export function StreamContent({
     }
   }, [highlightMessageId, isLoading, isDraft, events, jumpToEvent, disableAutoScroll])
 
-  // Reset jump state when switching streams (component stays mounted)
+  // Reset jump and search state when switching streams (component stays mounted)
   useEffect(() => {
     jumpTriggeredRef.current = null
     exitJumpMode()
-  }, [streamId, exitJumpMode])
+    setIsSearchOpen(false)
+    clearSearch()
+  }, [streamId, exitJumpMode, clearSearch])
 
   // Auto-mark stream as read when viewing
   const lastEventId = events.length > 0 ? events[events.length - 1].id : undefined
   useAutoMarkAsRead(workspaceId, streamId, lastEventId, { enabled: !isDraft && !isLoading && !isJumpMode })
 
   // Track live-arriving messages from other users for brief "new" indicator.
-  // Uses lastReadEventId as the read boundary — same data as the unread
-  // divider and sidebar unread indicator.
   const newMessageIds = useNewMessageIndicator(events, currentWorkspaceUserId ?? undefined, streamId, lastReadEventId)
 
   // Unread divider state management (also handles scroll-to-first-unread)
@@ -223,9 +371,6 @@ export function StreamContent({
   const queryClient = useQueryClient()
   const isPublicChannel = stream?.type === StreamTypes.CHANNEL && stream?.visibility === Visibilities.PUBLIC
   const isMember = !!membership
-  // Membership is only resolved once the workspace user ID loads from IDB or
-  // the stream bootstrap completes. Until then, default to showing the input
-  // (not the JoinChannelBar) to prevent flash-of-join-bar on public channels.
   const membershipResolved = currentWorkspaceUserId !== null || bootstrap !== undefined
   let disabledReason: string | undefined
   if (isSystem) {
@@ -236,13 +381,10 @@ export function StreamContent({
 
   const handleJoined = useCallback(
     (membership: StreamMember) => {
-      // Update stream bootstrap cache — set membership so join bar disappears
       queryClient.setQueryData(streamKeys.bootstrap(workspaceId, streamId), (old: unknown) => {
         if (!old || typeof old !== "object") return old
         return { ...(old as StreamBootstrap), membership }
       })
-
-      // Update workspace bootstrap cache — append to streamMemberships so sidebar shows the channel
       queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), (old: unknown) => {
         if (!old || typeof old !== "object") return old
         const ws = old as WorkspaceBootstrap
@@ -258,7 +400,6 @@ export function StreamContent({
   const handleJumpToLatest = useCallback(() => {
     if (isJumpMode) {
       exitJumpMode()
-      // Scroll to bottom after React re-renders with bootstrap events
       requestAnimationFrame(() => {
         scrollToBottom({ force: true })
       })
@@ -282,11 +423,14 @@ export function StreamContent({
       <InlineEditProvider resetKey={streamId}>
         <div className="flex h-full flex-col">
           <div className="relative flex-1 overflow-hidden mb-1 sm:mb-4">
+            {isSearchOpen && (
+              <StreamSearchBar search={streamSearch} onClose={handleSearchClose} onNavigate={handleSearchNavigate} />
+            )}
             <div
               ref={scrollContainerRef}
-              className="h-full overflow-y-auto overflow-x-hidden overscroll-y-contain"
+              className={cn("h-full overflow-y-auto overflow-x-hidden overscroll-y-contain", isSearchOpen && "pt-11")}
               data-suppress-pull-refresh="true"
-              onScroll={handleScroll}
+              onScroll={useVirtualized ? undefined : plainHandleScroll}
             >
               {/* Show parent message for threads */}
               {isThread && parentMessage && parentStreamId && (
@@ -314,16 +458,18 @@ export function StreamContent({
                 </Empty>
               ) : (
                 <EventList
-                  events={events}
+                  timelineItems={useVirtualized ? visibleItems : timelineItems}
                   isLoading={isLoading}
+                  isSettling={isSettling}
                   workspaceId={workspaceId}
                   streamId={streamId}
-                  highlightMessageId={highlightMessageId}
+                  highlightMessageId={streamSearch.activeMessageId ?? highlightMessageId}
                   firstUnreadEventId={dividerEventId}
                   isDividerFading={isDividerFading}
                   agentActivity={agentActivity}
                   hideSessionCards={isChannel}
                   newMessageIds={newMessageIds}
+                  virtualizer={useVirtualized ? virtualizer : undefined}
                 />
               )}
               {!isDraft && isFetchingNewer && (

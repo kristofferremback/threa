@@ -17,6 +17,8 @@ export interface SearchRequest {
   query?: string
   limit?: number
   filters?: SearchFilters
+  /** Use exact substring matching (ILIKE) instead of full-text/semantic search */
+  exact?: boolean
 }
 
 export interface SearchResultItem {
@@ -43,6 +45,7 @@ export async function searchMessages(workspaceId: string, request: SearchRequest
     status: request.filters?.status,
     before: request.filters?.before,
     after: request.filters?.after,
+    exact: request.exact,
     limit: request.limit,
   }
 

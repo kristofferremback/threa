@@ -2,6 +2,25 @@ import { useRouteError, isRouteErrorResponse, Link } from "react-router-dom"
 import { AlertTriangle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent } from "@/components/ui/empty"
+import { ErrorDetails } from "./error-details"
+
+function formatError(error: unknown): string | null {
+  if (error instanceof Error) {
+    return error.stack ?? error.message
+  }
+  if (isRouteErrorResponse(error)) {
+    const data = typeof error.data === "string" ? error.data : JSON.stringify(error.data, null, 2)
+    return `${error.status} ${error.statusText}\n${data}`
+  }
+  if (error != null) {
+    try {
+      return JSON.stringify(error, null, 2)
+    } catch {
+      return String(error)
+    }
+  }
+  return null
+}
 
 export function ErrorBoundary() {
   const error = useRouteError()
@@ -23,9 +42,11 @@ export function ErrorBoundary() {
     window.location.reload()
   }
 
+  const errorText = formatError(error)
+
   return (
-    <div className="flex h-screen w-full items-center justify-center bg-background">
-      <Empty className="border-0">
+    <div className="flex h-screen w-full items-center justify-center bg-background p-4">
+      <Empty className="border-0 max-w-md w-full">
         <EmptyHeader>
           <EmptyMedia variant="icon">
             <AlertTriangle />
@@ -40,15 +61,7 @@ export function ErrorBoundary() {
               <Link to="/workspaces">Back to Workspaces</Link>
             </Button>
           </div>
-          {import.meta.env.DEV && error instanceof Error && (
-            <details className="mt-4 max-w-md text-left">
-              <summary className="cursor-pointer text-sm text-muted-foreground">Error details (dev only)</summary>
-              <pre className="mt-2 overflow-auto rounded bg-muted p-2 text-xs">
-                {error.message}
-                {error.stack && `\n\n${error.stack}`}
-              </pre>
-            </details>
-          )}
+          {errorText && <ErrorDetails text={errorText} />}
         </EmptyContent>
       </Empty>
     </div>

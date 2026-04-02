@@ -17,6 +17,7 @@ const searchQuerySchema = z.object({
   status: z.array(z.enum(ARCHIVE_STATUSES)).optional(), // Archive status (active, archived)
   before: z.string().datetime().optional(), // Exclusive (<)
   after: z.string().datetime().optional(), // Inclusive (>=)
+  exact: z.boolean().optional(), // Use ILIKE substring matching instead of full-text
   limit: z.coerce.number().int().min(1).max(100).optional(),
 })
 
@@ -70,7 +71,18 @@ export function createSearchHandlers({ pool, searchService }: Dependencies) {
         })
       }
 
-      const { query, from, with: withParticipants, in: inStreams, type, status, before, after, limit } = result.data
+      const {
+        query,
+        from,
+        with: withParticipants,
+        in: inStreams,
+        type,
+        status,
+        before,
+        after,
+        exact,
+        limit,
+      } = result.data
 
       const filters = {
         authorId: from,
@@ -90,6 +102,7 @@ export function createSearchHandlers({ pool, searchService }: Dependencies) {
         permissions: { accessibleStreamIds },
         query,
         filters,
+        exact,
         limit,
       })
 

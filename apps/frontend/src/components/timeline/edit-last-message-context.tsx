@@ -9,9 +9,12 @@ export interface EditLastMessageContextValue {
   /**
    * Called by the composer on ArrowUp in an empty editor.
    * Scans loaded events newest-first for the current user's last non-deleted message,
-   * then imperatively calls its registered handler. Silent no-op when nothing qualifies.
+   * then imperatively calls its registered handler.
+   * Returns the target messageId if the message was found but not mounted (off-screen
+   * in a virtualized list), so the caller can scroll to it and retry.
+   * Returns null if the edit was triggered or no qualifying message exists.
    */
-  triggerEditLast: () => void
+  triggerEditLast: () => string | null
 }
 
 export const EditLastMessageContext = createContext<EditLastMessageContextValue | null>(null)
