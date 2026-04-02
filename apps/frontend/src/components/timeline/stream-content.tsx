@@ -164,6 +164,7 @@ export function StreamContent({
 
   // --- In-stream search ---
   const streamSearch = useStreamSearch({ workspaceId, streamId })
+  const clearSearch = streamSearch.clear
 
   // Cmd+F / Ctrl+F opens in-stream search (intercepts browser find)
   useEffect(() => {
@@ -179,8 +180,8 @@ export function StreamContent({
 
   const handleSearchClose = useCallback(() => {
     setIsSearchOpen(false)
-    streamSearch.clear()
-  }, [streamSearch])
+    clearSearch()
+  }, [clearSearch])
 
   // Compute timeline items in StreamContent so the virtualizer can use count + keys
   const timelineItems = useMemo(() => groupTimelineItems(events, user?.id), [events, user?.id])
@@ -274,11 +275,13 @@ export function StreamContent({
     }
   }, [highlightMessageId, isLoading, isDraft, events, jumpToEvent, disableAutoScroll])
 
-  // Reset jump state when switching streams (component stays mounted)
+  // Reset jump and search state when switching streams (component stays mounted)
   useEffect(() => {
     jumpTriggeredRef.current = null
     exitJumpMode()
-  }, [streamId, exitJumpMode])
+    setIsSearchOpen(false)
+    clearSearch()
+  }, [streamId, exitJumpMode, clearSearch])
 
   // Auto-mark stream as read when viewing
   const lastEventId = events.length > 0 ? events[events.length - 1].id : undefined
