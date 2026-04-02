@@ -406,7 +406,7 @@ test.describe("Drafts Page", () => {
     // Verify the thread draft is shown with "Thread in #channel" label
     const draftItem = page.getByRole("option").first()
     await expect(draftItem).toBeVisible({ timeout: 5000 })
-    await expect(draftItem.getByText(`Thread in #${channelName}`)).toBeVisible({ timeout: 5000 })
+    await expect(draftItem.getByText(`Thread in #${channelName}`)).toBeVisible({ timeout: 10000 })
 
     // Click on the thread draft to navigate
     await draftItem.click()

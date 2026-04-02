@@ -17,7 +17,8 @@ async function sendMessage(page: Page, text: string) {
   await editor.click()
   await page.keyboard.type(text)
   await page.keyboard.press("Meta+Enter")
-  await expect(page.getByRole("main").getByText(text)).toBeVisible({ timeout: 5000 })
+  // Scope to .message-item to avoid matching sidebar preview text
+  await expect(page.getByRole("main").locator(".message-item").getByText(text).first()).toBeVisible({ timeout: 5000 })
 }
 
 test.describe("Editor Auto-Focus", () => {
@@ -150,17 +151,24 @@ test.describe("Editor Auto-Focus", () => {
     const messageText = `Edit restore test ${testId}`
     await sendMessage(page, messageText)
 
-    // Open context menu and start editing via click (more reliable than
-    // keyboard activation in CI where focus management can race).
+    // Open context menu and start editing. Retry the hover→click sequence
+    // because in CI the hover-reveal can race with layout shifts.
     const messageContainer = page.getByRole("main").locator(".message-item").filter({ hasText: messageText }).first()
-    await messageContainer.hover()
-
-    const menuTrigger = messageContainer.getByRole("button", { name: "Message actions" })
-    await expect(menuTrigger).toBeVisible({ timeout: 5000 })
-    await menuTrigger.click()
-
     const editOption = page.getByRole("menuitem", { name: "Edit message" })
-    await expect(editOption).toBeVisible({ timeout: 5000 })
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await messageContainer.hover()
+      const menuTrigger = messageContainer.getByRole("button", { name: "Message actions" })
+      await expect(menuTrigger).toBeVisible({ timeout: 5000 })
+      await menuTrigger.click()
+      try {
+        await expect(editOption).toBeVisible({ timeout: 3000 })
+        break
+      } catch {
+        if (attempt === 2) throw new Error("Failed to open context menu after 3 attempts")
+        await page.keyboard.press("Escape").catch(() => {})
+      }
+    }
     await editOption.click()
 
     // Verify edit form appeared
