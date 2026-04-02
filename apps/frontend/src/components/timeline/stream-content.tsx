@@ -271,13 +271,40 @@ export function StreamContent({
   const scrollToBottom = useVirtualized ? virtualScrollToBottom : plainScrollToBottom
   const disableAutoScroll = useVirtualized ? virtualDisableAutoScroll : plainDisableAutoScroll
 
-  // When a search result is selected, jump to that message
+  // When a search result is selected, navigate to that message.
+  // If the message is already in the loaded events, just scroll to it in the DOM —
+  // don't call jumpToEvent which loads a new event window and disrupts scroll position.
+  // Only use jumpToEvent for messages outside the current window (older history).
   const handleSearchNavigate = useCallback(
     (messageId: string) => {
+      const isInCurrentEvents = events.some((e) => {
+        const payload = e.payload as { messageId?: string }
+        return payload?.messageId === messageId
+      })
+
+      if (isInCurrentEvents) {
+        // Message is loaded. If it's in the DOM, the useSearchHighlight hook
+        // scrolls the active range into view. If it's outside the virtualizer's
+        // rendered window, scroll the virtualizer to make it visible first.
+        const el = document.querySelector(`[data-message-id="${CSS.escape(messageId)}"]`)
+        if (!el && useVirtualized) {
+          // Find the item's index in visibleItems and scroll the virtualizer
+          const idx = visibleItems.findIndex((item) => {
+            if (item.type !== "event") return false
+            return (item.event.payload as { messageId?: string })?.messageId === messageId
+          })
+          if (idx >= 0) {
+            virtualizer.scrollToIndex(idx, { align: "center" })
+          }
+        }
+        return
+      }
+
+      // Message not in current window — load events around it
       disableAutoScroll()
       jumpToEvent(messageId)
     },
-    [jumpToEvent, disableAutoScroll]
+    [events, jumpToEvent, disableAutoScroll]
   )
 
   // Highlight search matches in the DOM via CSS Custom Highlight API
