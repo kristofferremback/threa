@@ -2,12 +2,22 @@ import { useRef, useState, useEffect, useLayoutEffect, useCallback, type RefObje
 import { useVirtualizer, type Virtualizer } from "@tanstack/react-virtual"
 import { EVENT_PAGE_SIZE, SCROLL_FETCH_RATIO } from "@/lib/constants"
 
-/** Default estimated item height in pixels */
-const DEFAULT_ESTIMATE = 72
+/**
+ * Default estimated item height. Overestimating is better than underestimating:
+ * underestimate → items overlap on first render before measurement completes.
+ * Real messages with avatar + name + content are ~120-200px.
+ */
+const DEFAULT_ESTIMATE = 140
 /** Items from the bottom before showing "Jump to latest" */
 const JUMP_TO_LATEST_ITEM_THRESHOLD = 10
 /** Grace period (ms) after programmatic scroll to avoid false auto-scroll disabling */
 const PROGRAMMATIC_SCROLL_GRACE_MS = 150
+/**
+ * Duration (ms) after initial load during which we keep re-scrolling to bottom
+ * as item measurements settle. Prevents the "near bottom but not at bottom" issue
+ * when estimated sizes differ from measured sizes.
+ */
+const SETTLE_SCROLL_DURATION_MS = 800
 
 interface UseVirtualizedScrollOptions {
   /** Whether data is currently loading (delays initial scroll) */
@@ -16,7 +26,7 @@ interface UseVirtualizedScrollOptions {
   itemCount: number
   /** Stable key for each item (event ID, session ID, etc.) */
   getItemKey: (index: number) => string
-  /** Estimated item height (default: 72px) */
+  /** Estimated item height (default: 140px) */
   estimateSize?: (index: number) => number
   /** Extra items rendered above/below viewport (default: 15) */
   overscan?: number
@@ -92,6 +102,9 @@ export function useVirtualizedScroll({
   // Whether initial scroll-to-bottom has been performed for this stream
   const initialScrollDone = useRef(false)
 
+  // Timestamp of initial load — used for settle-scrolling window
+  const initialLoadAt = useRef(0)
+
   const virtualizer = useVirtualizer({
     count: itemCount,
     getScrollElement: () => scrollContainerRef.current,
@@ -113,7 +126,13 @@ export function useVirtualizedScroll({
     newerFetchScheduled.current = false
     lastProgrammaticScrollAt.current = 0
     initialScrollDone.current = false
+    initialLoadAt.current = 0
     setIsScrolledFarFromBottom(false)
+
+    // Reset scroll position immediately on stream switch to prevent
+    // the old stream's scroll position from being visible for one frame
+    const el = scrollContainerRef.current
+    if (el) el.scrollTop = 0
   }, [resetKey])
 
   const scrollToBottomImpl = useCallback(
@@ -129,9 +148,6 @@ export function useVirtualizedScroll({
         setIsScrolledFarFromBottom(false)
       }
 
-      // Use virtualizer.scrollToIndex for smooth/forced scrolls, but fall back
-      // to direct DOM scrollTop for initial load — scrollToIndex relies on
-      // measurements that may not be available yet on first render.
       const el = scrollContainerRef.current
       if (options?.behavior === "smooth") {
         virtualizer.scrollToIndex(itemCount - 1, {
@@ -139,21 +155,13 @@ export function useVirtualizedScroll({
           behavior: "smooth",
         })
       } else if (el) {
-        // Immediate scroll via DOM — works even before virtualizer measures items.
-        // Use rAF to ensure the DOM has the virtualizer's container height applied.
-        requestAnimationFrame(() => {
-          el.scrollTop = el.scrollHeight
-        })
+        el.scrollTop = el.scrollHeight
       }
     },
     [virtualizer, itemCount]
   )
 
-  // --- Prepend stability ---
-  // When older items are prepended, adjust scroll to maintain the user's position.
-  // Runs synchronously before paint to prevent visible jumps.
-  // Uses scrollHeight from the DOM element — NOT virtualizer.getTotalSize() which
-  // triggers measurements → onChange → re-render → infinite loop.
+  // --- Prepend stability + initial scroll ---
   useLayoutEffect(() => {
     if (isLoading || itemCount === 0) return
 
@@ -169,6 +177,7 @@ export function useVirtualizedScroll({
       prevScrollHeightRef.current = el?.scrollHeight ?? 0
       if (!initialScrollDone.current) {
         initialScrollDone.current = true
+        initialLoadAt.current = performance.now()
         scrollToBottomImpl()
       }
       return
@@ -211,6 +220,44 @@ export function useVirtualizedScroll({
     }
   })
 
+  // --- Settle scroll ---
+  // After initial load, item measurements arrive asynchronously via ResizeObserver.
+  // Each measurement changes scrollHeight. Watch for these changes and re-scroll
+  // to bottom during a brief settle window, so the user always sees the latest message.
+  useEffect(() => {
+    const el = scrollContainerRef.current
+    if (!el || !initialScrollDone.current) return
+
+    const observer = new ResizeObserver(() => {
+      if (!shouldAutoScroll.current) return
+
+      // Only re-scroll during the settle window after initial load
+      const elapsed = performance.now() - initialLoadAt.current
+      if (elapsed > SETTLE_SCROLL_DURATION_MS) {
+        observer.disconnect()
+        return
+      }
+
+      lastProgrammaticScrollAt.current = performance.now()
+      el.scrollTop = el.scrollHeight
+    })
+
+    // Observe the scroll container's first child (the virtualizer's sized container)
+    // — its height changes as items are measured
+    const inner = el.firstElementChild
+    if (inner) {
+      observer.observe(inner)
+    }
+
+    // Self-clean after settle window
+    const timer = setTimeout(() => observer.disconnect(), SETTLE_SCROLL_DURATION_MS)
+
+    return () => {
+      observer.disconnect()
+      clearTimeout(timer)
+    }
+  }, [resetKey, isLoading, itemCount])
+
   // Auto-scroll to bottom when the container shrinks (e.g. mobile keyboard opens)
   useEffect(() => {
     const el = scrollContainerRef.current
@@ -221,14 +268,14 @@ export function useVirtualizedScroll({
     const observer = new ResizeObserver(() => {
       const newHeight = el.clientHeight
       if (newHeight < prevHeight && shouldAutoScroll.current) {
-        virtualizer.scrollToIndex(itemCount - 1, { align: "end" })
+        el.scrollTop = el.scrollHeight
       }
       prevHeight = newHeight
     })
 
     observer.observe(el)
     return () => observer.disconnect()
-  }, [virtualizer, itemCount])
+  }, [])
 
   // --- Scroll event handler (fetch triggers + auto-scroll tracking) ---
   useEffect(() => {
