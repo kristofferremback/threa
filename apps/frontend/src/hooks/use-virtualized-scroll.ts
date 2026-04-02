@@ -133,6 +133,7 @@ export function useVirtualizedScroll({
     prevIsFetchingNewer.current = false
     olderFetchScheduled.current = false
     newerFetchScheduled.current = false
+    isForceScrolling.current = false
     lastProgrammaticScrollAt.current = 0
     initialScrollDone.current = false
     setIsScrolledFarFromBottom(false)

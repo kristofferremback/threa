@@ -44,6 +44,11 @@ if (!action || !prNumber) {
   process.exit(1)
 }
 
+if (!/^\d+$/.test(prNumber)) {
+  console.error("--pr must be a positive integer")
+  process.exit(1)
+}
+
 if (action === "deploy" && !branch) {
   console.error("--branch is required for deploy action")
   process.exit(1)
