@@ -101,9 +101,14 @@ export function useVirtualizedScroll({
   const prevFirstKeyRef = useRef<string | null>(null)
   const prevScrollHeightRef = useRef(0)
 
-  // Fetch guards
+  // Fetch guards — current refs let the scroll handler read live values
+  // without needing isFetchingOlder/Newer in its dependency array
   const prevIsFetchingOlder = useRef(false)
   const prevIsFetchingNewer = useRef(false)
+  const isFetchingOlderRef = useRef(isFetchingOlder)
+  isFetchingOlderRef.current = isFetchingOlder
+  const isFetchingNewerRef = useRef(isFetchingNewer)
+  isFetchingNewerRef.current = isFetchingNewer
   const olderFetchScheduled = useRef(false)
   const newerFetchScheduled = useRef(false)
 
@@ -368,7 +373,12 @@ export function useVirtualizedScroll({
       const firstVisibleIndex = virtualItems[0].index
       const lastVisibleIndex = virtualItems[virtualItems.length - 1].index
 
-      if (onScrollNearTop && firstVisibleIndex < triggerItemCount && !isFetchingOlder && !olderFetchScheduled.current) {
+      if (
+        onScrollNearTop &&
+        firstVisibleIndex < triggerItemCount &&
+        !isFetchingOlderRef.current &&
+        !olderFetchScheduled.current
+      ) {
         const started = onScrollNearTop()
         if (started !== false) {
           olderFetchScheduled.current = true
@@ -377,7 +387,7 @@ export function useVirtualizedScroll({
 
       if (
         onScrollNearBottom &&
-        !isFetchingNewer &&
+        !isFetchingNewerRef.current &&
         !newerFetchScheduled.current &&
         itemCount - lastVisibleIndex < triggerItemCount
       ) {
@@ -390,16 +400,7 @@ export function useVirtualizedScroll({
 
     el.addEventListener("scroll", handleScroll, { passive: true })
     return () => el.removeEventListener("scroll", handleScroll)
-  }, [
-    virtualizer,
-    onScrollNearTop,
-    onScrollNearBottom,
-    isFetchingOlder,
-    isFetchingNewer,
-    bottomThreshold,
-    itemCount,
-    triggerItemCount,
-  ])
+  }, [virtualizer, onScrollNearTop, onScrollNearBottom, bottomThreshold, itemCount, triggerItemCount])
 
   const disableAutoScroll = useCallback(() => {
     shouldAutoScroll.current = false

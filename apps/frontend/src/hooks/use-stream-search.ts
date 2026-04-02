@@ -133,10 +133,11 @@ export function useStreamSearch({ workspaceId, streamId }: UseStreamSearchOption
     const searchId = ++searchIdRef.current
     setIsSearching(true)
     setError(null)
+    let localResults: SearchResultItem[] = []
 
     try {
       // Phase 1: instant local IDB substring search
-      const localResults = await searchLocalEvents(streamId, trimmed)
+      localResults = await searchLocalEvents(streamId, trimmed)
       if (searchId !== searchIdRef.current) return
 
       if (localResults.length > 0) {
@@ -163,7 +164,7 @@ export function useStreamSearch({ workspaceId, streamId }: UseStreamSearchOption
       if (searchId !== searchIdRef.current) return
       setError(e instanceof Error ? e : new Error("Search failed"))
       // Keep local results if server fails
-      if (results.length === 0) {
+      if (localResults.length === 0) {
         setResults([])
         setActiveMatchIndex(-1)
       }
