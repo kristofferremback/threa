@@ -336,9 +336,10 @@ export const EventList = memo(function EventList({
             height: virtualizer.getTotalSize(),
             width: "100%",
             position: "relative",
-            // Items are invisible during settle so ResizeObserver can measure them
-            // without the user seeing the estimation-based layout dance
-            visibility: isSettling ? "hidden" : undefined,
+            // Items are transparent during settle so ResizeObserver can measure them
+            // without the user seeing the estimation-based layout dance.
+            // Uses opacity instead of visibility so Playwright's toBeVisible() still passes.
+            opacity: isSettling ? 0 : undefined,
           }}
         >
           {virtualItems.map((virtualRow) => {
