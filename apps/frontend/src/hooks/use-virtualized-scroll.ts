@@ -21,6 +21,18 @@ const PROGRAMMATIC_SCROLL_GRACE_MS = 150
 const SETTLE_MAX_MS = 1000
 /** If scrollHeight doesn't change for this long during settle, we're done early. */
 const SETTLE_STABLE_MS = 150
+/**
+ * Cooldown (ms) after a fetch completes before allowing another fetch in the
+ * same direction. Prevents runaway loading caused by estimate→measurement
+ * scroll drift repositioning the viewport near the edge again.
+ */
+const FETCH_COOLDOWN_MS = 500
+/**
+ * Number of rAF frames to run the post-prepend drift correction loop.
+ * ~20 frames ≈ 330ms at 60fps — enough for measureElement to re-measure
+ * the newly rendered items and for us to compensate the scroll position.
+ */
+const PREPEND_CORRECTION_FRAMES = 20
 
 interface UseVirtualizedScrollOptions {
   /** Whether data is currently loading (delays initial scroll) */
@@ -80,7 +92,7 @@ export function useVirtualizedScroll({
   itemCount,
   getItemKey,
   estimateSize,
-  overscan = 15,
+  overscan = 25,
   onScrollNearTop,
   onScrollNearBottom,
   isFetchingOlder = false,
@@ -95,6 +107,10 @@ export function useVirtualizedScroll({
   const shouldAutoScroll = useRef(true)
   const [isScrolledFarFromBottom, setIsScrolledFarFromBottom] = useState(false)
   const [isSettling, setIsSettling] = useState(false)
+
+  // Mirror isSettling as a ref so the scroll handler can read it without re-subscribing
+  const isSettlingRef = useRef(false)
+  isSettlingRef.current = isSettling
 
   // Prepend stability tracking
   const prevItemCountRef = useRef(0)
@@ -111,6 +127,15 @@ export function useVirtualizedScroll({
   isFetchingNewerRef.current = isFetchingNewer
   const olderFetchScheduled = useRef(false)
   const newerFetchScheduled = useRef(false)
+
+  // Per-direction cooldown: earliest time another fetch is allowed
+  const olderFetchCooldownUntil = useRef(0)
+  const newerFetchCooldownUntil = useRef(0)
+
+  // Post-prepend drift correction: while true, skip fetch triggers to avoid
+  // runaway loading caused by estimate→measurement scroll drift.
+  const isPrependCorrecting = useRef(false)
+  const prependCorrectionRaf = useRef<number | null>(null)
 
   // Force-scroll and programmatic scroll tracking
   const isForceScrolling = useRef(false)
@@ -138,6 +163,13 @@ export function useVirtualizedScroll({
     prevIsFetchingNewer.current = false
     olderFetchScheduled.current = false
     newerFetchScheduled.current = false
+    olderFetchCooldownUntil.current = 0
+    newerFetchCooldownUntil.current = 0
+    isPrependCorrecting.current = false
+    if (prependCorrectionRaf.current) {
+      cancelAnimationFrame(prependCorrectionRaf.current)
+      prependCorrectionRaf.current = null
+    }
     isForceScrolling.current = false
     lastProgrammaticScrollAt.current = 0
     initialScrollDone.current = false
@@ -215,6 +247,31 @@ export function useVirtualizedScroll({
         if (delta > 0) {
           el.scrollTop += delta
         }
+
+        // Post-prepend drift correction: new items are initially sized by
+        // estimateSize. As measureElement fires, actual sizes replace estimates
+        // and scrollHeight changes. We track that drift over a brief rAF loop
+        // and keep adjusting scrollTop so the viewport stays anchored.
+        if (prependCorrectionRaf.current) cancelAnimationFrame(prependCorrectionRaf.current)
+        let lastH = el.scrollHeight
+        let frames = 0
+        isPrependCorrecting.current = true
+
+        const correctDrift = () => {
+          const h = el.scrollHeight
+          if (h !== lastH) {
+            el.scrollTop += h - lastH
+            lastH = h
+          }
+          frames++
+          if (frames < PREPEND_CORRECTION_FRAMES) {
+            prependCorrectionRaf.current = requestAnimationFrame(correctDrift)
+          } else {
+            isPrependCorrecting.current = false
+            prependCorrectionRaf.current = null
+          }
+        }
+        prependCorrectionRaf.current = requestAnimationFrame(correctDrift)
       }
     } else if (shouldAutoScroll.current && itemCount > prevCount) {
       scrollToBottomImpl()
@@ -225,10 +282,16 @@ export function useVirtualizedScroll({
     prevScrollHeightRef.current = el?.scrollHeight ?? 0
   }, [isLoading, itemCount, getItemKey, isFetchingOlder, scrollToBottomImpl, skipSettle])
 
-  // Track fetching state transitions
+  // Track fetching state transitions and start cooldown timers
   useLayoutEffect(() => {
-    if (prevIsFetchingOlder.current && !isFetchingOlder) olderFetchScheduled.current = false
-    if (prevIsFetchingNewer.current && !isFetchingNewer) newerFetchScheduled.current = false
+    if (prevIsFetchingOlder.current && !isFetchingOlder) {
+      olderFetchScheduled.current = false
+      olderFetchCooldownUntil.current = performance.now() + FETCH_COOLDOWN_MS
+    }
+    if (prevIsFetchingNewer.current && !isFetchingNewer) {
+      newerFetchScheduled.current = false
+      newerFetchCooldownUntil.current = performance.now() + FETCH_COOLDOWN_MS
+    }
     prevIsFetchingOlder.current = isFetchingOlder
     prevIsFetchingNewer.current = isFetchingNewer
     const el = scrollContainerRef.current
@@ -367,9 +430,14 @@ export function useVirtualizedScroll({
         setIsScrolledFarFromBottom(distanceFromBottom > jumpThresholdPixels)
       }
 
+      // Skip fetch triggers during settle (measurements are in flux) and
+      // during post-prepend drift correction (viewport position is unstable).
+      if (isSettlingRef.current || isPrependCorrecting.current) return
+
       const virtualItems = virtualizer.getVirtualItems()
       if (virtualItems.length === 0) return
 
+      const now = performance.now()
       const firstVisibleIndex = virtualItems[0].index
       const lastVisibleIndex = virtualItems[virtualItems.length - 1].index
 
@@ -377,7 +445,8 @@ export function useVirtualizedScroll({
         onScrollNearTop &&
         firstVisibleIndex < triggerItemCount &&
         !isFetchingOlderRef.current &&
-        !olderFetchScheduled.current
+        !olderFetchScheduled.current &&
+        now > olderFetchCooldownUntil.current
       ) {
         const started = onScrollNearTop()
         if (started !== false) {
@@ -389,7 +458,8 @@ export function useVirtualizedScroll({
         onScrollNearBottom &&
         !isFetchingNewerRef.current &&
         !newerFetchScheduled.current &&
-        itemCount - lastVisibleIndex < triggerItemCount
+        itemCount - lastVisibleIndex < triggerItemCount &&
+        now > newerFetchCooldownUntil.current
       ) {
         const started = onScrollNearBottom()
         if (started !== false) {

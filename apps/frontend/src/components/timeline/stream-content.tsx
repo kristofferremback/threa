@@ -34,7 +34,13 @@ import {
   type WorkspaceBootstrap,
   type StreamBootstrap,
 } from "@threa/types"
-import { EventList, groupTimelineItems, getTimelineItemKey, filterVisibleItems } from "./event-list"
+import {
+  EventList,
+  groupTimelineItems,
+  getTimelineItemKey,
+  filterVisibleItems,
+  estimateTimelineItemHeight,
+} from "./event-list"
 import { MessageInput } from "./message-input"
 import { JoinChannelBar } from "./join-channel-bar"
 import { ThreadParentMessage } from "../thread/thread-parent-message"
@@ -226,6 +232,14 @@ export function StreamContent({
     [visibleItems]
   )
 
+  const estimateSize = useCallback(
+    (index: number) => {
+      const item = visibleItems[index]
+      return item ? estimateTimelineItemHeight(item) : 100
+    },
+    [visibleItems]
+  )
+
   // --- Virtualized scroll (main streams, channels, scratchpads) ---
   const {
     scrollContainerRef: virtualScrollRef,
@@ -238,6 +252,7 @@ export function StreamContent({
     isLoading,
     itemCount: useVirtualized ? visibleItems.length : 0,
     getItemKey: useVirtualized ? getItemKey : () => "0",
+    estimateSize: useVirtualized ? estimateSize : undefined,
     onScrollNearTop: useVirtualized && hasOlderEvents ? fetchOlderEvents : undefined,
     onScrollNearBottom: useVirtualized && hasNewerEvents ? fetchNewerEvents : undefined,
     isFetchingOlder,

@@ -72,6 +72,61 @@ export type TimelineItem =
   | { type: "command_group"; commandId: string; events: StreamEvent[] }
   | { type: "session_group"; sessionId: string; sessionVersion: number; events: StreamEvent[] }
 
+/**
+ * Content-aware height estimate for a timeline item. Used by the virtualizer
+ * for items that haven't been measured yet — closer estimates reduce layout
+ * jumps, scroll drift after prepend, and visual gaps while scrolling.
+ */
+export function estimateTimelineItemHeight(item: TimelineItem): number {
+  if (item.type === "command_group") return 56
+  if (item.type === "session_group") return 72
+
+  const event = item.event
+  const { eventType } = event
+
+  // Compact system/membership events
+  if (
+    eventType === "message_deleted" ||
+    eventType === "member_joined" ||
+    eventType === "member_left" ||
+    eventType === "member_added" ||
+    eventType === "thread_created" ||
+    eventType === "stream_archived" ||
+    eventType === "stream_unarchived"
+  ) {
+    return 36
+  }
+
+  if (eventType === "message_created" || eventType === "companion_response") {
+    const payload = event.payload as Record<string, unknown>
+    if (payload.deletedAt) return 36
+
+    // Base: avatar row + name/timestamp + bottom margin (mb-5 = 20px)
+    let height = 72
+
+    // Text: ~20px per line, ~80 chars per line on mobile-ish widths
+    const markdown = (payload.contentMarkdown as string) ?? ""
+    height += Math.max(1, Math.ceil(markdown.length / 80)) * 20
+
+    // Image attachments: h-32 (128px) + gap/margin
+    const attachments = payload.attachments as Array<{ mimeType?: string }> | undefined
+    if (attachments && attachments.length > 0) {
+      if (attachments.some((a) => a.mimeType?.startsWith("image/"))) height += 150
+      if (attachments.some((a) => !a.mimeType?.startsWith("image/"))) height += 40
+    }
+
+    // Link previews: ~90px per card (capped at DEFAULT_VISIBLE_COUNT=3)
+    const linkPreviews = payload.linkPreviews as Array<unknown> | undefined
+    if (linkPreviews && linkPreviews.length > 0) {
+      height += Math.min(linkPreviews.length, 3) * 90
+    }
+
+    return height
+  }
+
+  return 100
+}
+
 /** Event types that render as null in EventItem (handled elsewhere or invisible) */
 const ZERO_HEIGHT_EVENT_TYPES = new Set([
   "reaction_added",
