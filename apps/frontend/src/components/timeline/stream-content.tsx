@@ -441,6 +441,7 @@ export function StreamContent({
             <div
               ref={scrollContainerRef}
               className={cn("h-full overflow-y-auto overflow-x-hidden overscroll-y-contain", isSearchOpen && "pt-11")}
+              style={useVirtualized ? { overflowAnchor: "none" } : undefined}
               data-suppress-pull-refresh="true"
               onScroll={useVirtualized ? undefined : plainHandleScroll}
             >
