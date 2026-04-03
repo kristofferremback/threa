@@ -271,19 +271,27 @@ export function useVirtualizedScroll({
   // item's key and start position. If the SAME item's start changed (not a
   // different item from scrolling), we adjust scrollTop by the delta so the
   // visible content stays visually pinned.
+  //
+  // Guard: adjusting scrollTop triggers a virtualizer re-render. The guard
+  // prevents the next run from re-adjusting (which would loop infinitely).
+  const isScrollCorrecting = useRef(false)
+
   useLayoutEffect(() => {
-    if (shouldAutoScroll.current) {
-      // When auto-scrolling, drift correction handles bottom-pinning.
-      // Just track the current position for when auto-scroll disengages.
-      const items = virtualizer.getVirtualItems()
-      if (items.length > 0) {
-        prevFirstVirtualItem.current = { key: items[0].key, start: items[0].start }
-      }
+    const items = virtualizer.getVirtualItems()
+    if (items.length === 0) return
+
+    // After a correction, the virtualizer re-renders with updated positions.
+    // Just update the ref and skip to prevent an infinite loop.
+    if (isScrollCorrecting.current) {
+      isScrollCorrecting.current = false
+      prevFirstVirtualItem.current = { key: items[0].key, start: items[0].start }
       return
     }
 
-    const items = virtualizer.getVirtualItems()
-    if (items.length === 0) return
+    if (shouldAutoScroll.current) {
+      prevFirstVirtualItem.current = { key: items[0].key, start: items[0].start }
+      return
+    }
 
     const first = items[0]
     const prev = prevFirstVirtualItem.current
@@ -292,6 +300,7 @@ export function useVirtualizedScroll({
       const delta = first.start - prev.start
       const el = scrollContainerRef.current
       if (el) {
+        isScrollCorrecting.current = true
         el.scrollTop += delta
         lastProgrammaticScrollAt.current = performance.now()
       }
