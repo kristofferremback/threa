@@ -357,11 +357,10 @@ export function EventList({
   }
 
   // --- Virtualized rendering ---
-  // Uses the TanStack Virtual "dynamic" example pattern: a single absolutely-
-  // positioned wrapper translated to the first virtual item's offset, with
-  // items in normal document flow inside. This prevents overlap and gaps
-  // because the browser's layout engine spaces items naturally rather than
-  // relying on the virtualizer's per-item position calculations.
+  // Uses per-item absolute positioning — each item is independently placed
+  // at virtualRow.start, avoiding the discrete jumps that the single-wrapper
+  // pattern causes when items enter/leave the virtual window with any
+  // measurement discrepancy.
   if (virtualizer) {
     const virtualItems = virtualizer.getVirtualItems()
     return (
@@ -373,25 +372,28 @@ export function EventList({
             position: "relative",
           }}
         >
-          <div
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              width: "100%",
-              transform: `translateY(${virtualItems[0]?.start ?? 0}px)`,
-            }}
-          >
-            {virtualItems.map((virtualRow) => {
-              const item = timelineItems[virtualRow.index]
-              if (!item) return null
-              return (
-                <div key={virtualRow.key} data-index={virtualRow.index} ref={virtualizer.measureElement}>
-                  {renderItem(item)}
-                </div>
-              )
-            })}
-          </div>
+          {virtualItems.map((virtualRow) => {
+            const item = timelineItems[virtualRow.index]
+            if (!item) return null
+            return (
+              <div
+                key={virtualRow.key}
+                data-index={virtualRow.index}
+                ref={virtualizer.measureElement}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  transform: `translateY(${virtualRow.start}px)`,
+                  contain: "layout style paint",
+                  willChange: "transform",
+                }}
+              >
+                {renderItem(item)}
+              </div>
+            )
+          })}
         </div>
       </div>
     )
