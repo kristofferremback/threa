@@ -293,6 +293,53 @@ export function useVirtualizedScroll({
     }
   }, [itemCount])
 
+  // --- Measurement drift correction ---
+  // After the virtualizer re-measures items (via ResizeObserver on measureElement),
+  // scrollHeight changes but scrollTop doesn't, drifting the viewport away from
+  // the bottom. We use a MutationObserver on the scroll container's subtree to
+  // detect layout changes and correct scrollTop when auto-scroll is active.
+  useEffect(() => {
+    const el = scrollContainerRef.current
+    if (!el) return
+
+    let prevScrollHeight = el.scrollHeight
+
+    const correct = () => {
+      if (!shouldAutoScroll.current || userScrollingRef.current) return
+      const newScrollHeight = el.scrollHeight
+      if (newScrollHeight !== prevScrollHeight) {
+        const distFromBottom = newScrollHeight - el.scrollTop - el.clientHeight
+        if (distFromBottom > 1) {
+          lastProgrammaticScrollAt.current = performance.now()
+          el.scrollTop = newScrollHeight
+        }
+      }
+      prevScrollHeight = newScrollHeight
+    }
+
+    // ResizeObserver on children detects measurement changes from the virtualizer
+    const resizeObserver = new ResizeObserver(correct)
+    // Observe direct children (the virtual list wrapper)
+    for (const child of el.children) {
+      resizeObserver.observe(child)
+    }
+    // Also observe newly added children
+    const mutationObserver = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) {
+          if (node instanceof HTMLElement) resizeObserver.observe(node)
+        }
+      }
+      correct()
+    })
+    mutationObserver.observe(el, { childList: true })
+
+    return () => {
+      resizeObserver.disconnect()
+      mutationObserver.disconnect()
+    }
+  }, [])
+
   // Auto-scroll to bottom when the container shrinks (e.g. mobile keyboard opens)
   useEffect(() => {
     const el = scrollContainerRef.current

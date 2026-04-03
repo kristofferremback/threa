@@ -1,4 +1,4 @@
-import { memo, useMemo } from "react"
+import { useMemo } from "react"
 import type { Virtualizer } from "@tanstack/react-virtual"
 import {
   COMMAND_EVENT_TYPES,
@@ -252,7 +252,7 @@ export function groupTimelineItems(events: StreamEvent[], currentUserId: string 
   return result
 }
 
-export const EventList = memo(function EventList({
+export function EventList({
   timelineItems,
   isLoading,
   workspaceId,
@@ -410,4 +410,4 @@ export const EventList = memo(function EventList({
       })}
     </div>
   )
-})
+}
