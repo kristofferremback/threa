@@ -35,7 +35,7 @@ interface UseVirtualizedScrollOptions {
   getItemKey: (index: number) => string
   /** Estimated item height (default: 120px) */
   estimateSize?: (index: number) => number
-  /** Extra items rendered above/below viewport (default: 50) */
+  /** Extra items rendered above/below viewport (default: 15) */
   overscan?: number
   /** Called when user scrolls near the top (for loading older messages) */
   onScrollNearTop?: () => boolean
@@ -84,7 +84,7 @@ export function useVirtualizedScroll({
   itemCount,
   getItemKey,
   estimateSize,
-  overscan = 50,
+  overscan = 15,
   onScrollNearTop,
   onScrollNearBottom,
   isFetchingOlder = false,
@@ -130,6 +130,12 @@ export function useVirtualizedScroll({
   // Grace period after initial load: prevents measurement-driven scroll
   // shifts from disabling auto-scroll while sizes are still settling.
   const recentlyLoadedUntil = useRef(0)
+
+  // Scroll correction: track the first virtual item to detect measurement-
+  // driven shifts. When items above the viewport get measured and their size
+  // differs from the estimate, items[0].start changes, shifting the wrapper.
+  // We compensate scrollTop by the same delta so visible content stays put.
+  const prevFirstVirtualItem = useRef<{ key: React.Key; start: number } | null>(null)
 
   const virtualizer = useVirtualizer({
     count: itemCount,
@@ -255,6 +261,43 @@ export function useVirtualizedScroll({
     if (el) {
       prevScrollHeightRef.current = el.scrollHeight
     }
+  })
+
+  // --- Measurement-driven scroll correction ---
+  // When items above the viewport are measured for the first time and their
+  // actual height differs from the estimate, the virtualizer recalculates all
+  // item positions. The shifted container wrapper moves by the delta, causing
+  // all visible items to jump. We detect this by tracking the first virtual
+  // item's key and start position. If the SAME item's start changed (not a
+  // different item from scrolling), we adjust scrollTop by the delta so the
+  // visible content stays visually pinned.
+  useLayoutEffect(() => {
+    if (shouldAutoScroll.current) {
+      // When auto-scrolling, drift correction handles bottom-pinning.
+      // Just track the current position for when auto-scroll disengages.
+      const items = virtualizer.getVirtualItems()
+      if (items.length > 0) {
+        prevFirstVirtualItem.current = { key: items[0].key, start: items[0].start }
+      }
+      return
+    }
+
+    const items = virtualizer.getVirtualItems()
+    if (items.length === 0) return
+
+    const first = items[0]
+    const prev = prevFirstVirtualItem.current
+
+    if (prev && prev.key === first.key && prev.start !== first.start) {
+      const delta = first.start - prev.start
+      const el = scrollContainerRef.current
+      if (el) {
+        el.scrollTop += delta
+        lastProgrammaticScrollAt.current = performance.now()
+      }
+    }
+
+    prevFirstVirtualItem.current = { key: first.key, start: first.start }
   })
 
   // --- User scroll tracking + snap-to-bottom on scroll end ---
