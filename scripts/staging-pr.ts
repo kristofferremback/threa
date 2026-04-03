@@ -20,6 +20,7 @@
 import { parseArgs } from "util"
 import { $ } from "bun"
 import path from "path"
+import { readdir } from "fs/promises"
 
 // ---------------------------------------------------------------------------
 // CLI args
@@ -112,6 +113,67 @@ async function runPsqlOnDefault(sql: string): Promise<string> {
 async function databaseExists(dbName: string): Promise<boolean> {
   const result = await runPsqlOnDefault(`SELECT 1 FROM pg_database WHERE datname='${dbName}'`)
   return result === "1"
+}
+
+/**
+ * Seed umzug_migrations in the cloned PR database for migrations that were
+ * applied to the source DB before Umzug tracking was introduced.
+ *
+ * Strategy: query the source DB for its latest tracked migration (high-water
+ * mark). All migration files at or before that point were already applied to
+ * the source — and therefore exist in the clone. Files AFTER that point are
+ * new PR-branch migrations that Umzug should run incrementally.
+ */
+async function seedPreExistingMigrations(prDb: string, sourceDb: string, migrationsRelPath: string): Promise<void> {
+  // Ensure umzug_migrations exists in the PR DB (may be missing if source
+  // was set up before Umzug, or if pg_dump didn't include it)
+  await runPsql(
+    prDb,
+    "CREATE TABLE IF NOT EXISTS umzug_migrations (name VARCHAR(255) PRIMARY KEY, executed_at TIMESTAMPTZ DEFAULT NOW())"
+  )
+
+  // High-water mark: the latest migration the source DB has tracked
+  let latestTracked: string
+  try {
+    latestTracked = await runPsql(sourceDb, "SELECT name FROM umzug_migrations ORDER BY name DESC LIMIT 1")
+  } catch {
+    // Source DB may not have umzug_migrations at all
+    console.log(`Could not read umzug_migrations from '${sourceDb}' — seeding all migration files`)
+    latestTracked = ""
+  }
+
+  const migrationsDir = path.join(import.meta.dirname, "..", migrationsRelPath)
+  const files = (await readdir(migrationsDir)).filter((f) => f.endsWith(".sql")).sort()
+
+  if (files.length === 0) {
+    throw new Error(`No migration files found in ${migrationsRelPath}`)
+  }
+
+  // If the source has no tracked migrations, seed ALL files from disk.
+  // This means the source was set up before Umzug — every migration has
+  // been applied but none are tracked. New PR migrations will also be
+  // seeded (and thus skipped), but this is the safe default to avoid
+  // "relation already exists" crashes. PRs that add new migrations against
+  // a fully-untracked source should fix the source's umzug_migrations first.
+  const seedUpTo = latestTracked || files[files.length - 1]
+
+  let seeded = 0
+  for (const file of files) {
+    if (file > seedUpTo) break
+    const result = await runPsql(
+      prDb,
+      `INSERT INTO umzug_migrations (name) VALUES ('${file}') ON CONFLICT DO NOTHING RETURNING name`
+    )
+    if (result) seeded++
+  }
+
+  if (seeded > 0) {
+    console.log(
+      `Seeded ${seeded} pre-existing migration entries into '${prDb}' umzug_migrations (high-water mark: ${seedUpTo})`
+    )
+  } else {
+    console.log(`All pre-existing migrations already tracked in '${prDb}'`)
+  }
 }
 
 async function cloneDatabase(sourceDb: string, targetDb: string): Promise<void> {
@@ -570,12 +632,12 @@ async function deploy(): Promise<void> {
     console.log(`Databases already exist — skipping clone`)
   }
 
-  // Migration strategy: the cloned DB already contains staging_main's
-  // umzug_migrations table (via pg_dump). The backend's runMigrations()
-  // uses Umzug which reads that table and only runs migrations not yet
-  // recorded — i.e. any NEW migrations introduced by the PR branch.
-  // We intentionally do NOT pre-seed all migration filenames here, as
-  // that would prevent new PR migrations from ever executing.
+  // Always ensure umzug_migrations tracks pre-existing migrations. This is
+  // idempotent (ON CONFLICT DO NOTHING) and uses staging_main's latest
+  // tracked entry as a high-water mark — migrations after that point are
+  // new PR-branch additions that the backend's runMigrations() will execute.
+  await seedPreExistingMigrations(prDbName, "staging_main", "apps/backend/src/db/migrations")
+  await seedPreExistingMigrations(prCpDbName, "staging_main_cp", "apps/control-plane/src/db/migrations")
 
   // 2. Create and deploy Railway service
   await createRailwayService()
