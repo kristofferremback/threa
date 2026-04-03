@@ -165,6 +165,7 @@ export async function startServer(): Promise<ServerInstance> {
   poolMonitor.start()
 
   await runMigrations(pool)
+  logger.info("Migrations complete, starting server initialization...")
 
   // Pre-warm pool before starting workers to prevent thundering herd
   // When 15+ workers start simultaneously, they all try to connect at once
