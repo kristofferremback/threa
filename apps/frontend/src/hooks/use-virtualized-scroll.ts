@@ -279,9 +279,9 @@ export function useVirtualizedScroll({
     }
   }, [])
 
-  // Correct measurement drift: only when auto-scroll is on, user isn't
-  // actively scrolling, and the virtualizer's total size actually changed.
-  const totalSize = virtualizer.getTotalSize()
+  // Correct scroll position when new items arrive while auto-scroll is active.
+  // Only depends on itemCount (not totalSize) to avoid infinite render loops
+  // from measurement changes.
   useLayoutEffect(() => {
     if (!shouldAutoScroll.current || itemCount === 0 || userScrollingRef.current) return
     const el = scrollContainerRef.current
@@ -291,7 +291,7 @@ export function useVirtualizedScroll({
       lastProgrammaticScrollAt.current = performance.now()
       el.scrollTop = el.scrollHeight
     }
-  }, [totalSize, itemCount])
+  }, [itemCount])
 
   // Auto-scroll to bottom when the container shrinks (e.g. mobile keyboard opens)
   useEffect(() => {
