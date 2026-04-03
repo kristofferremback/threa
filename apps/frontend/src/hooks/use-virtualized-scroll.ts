@@ -130,9 +130,11 @@ export function useVirtualizedScroll({
   const recentlyLoadedUntil = useRef(0)
 
   // The virtualizer auto-corrects scroll when items above the viewport
-  // resize (via internal shouldAdjustScrollPositionOnItemSizeChange).
-  // We rely on accurate estimates to minimize the delta, and let the
-  // virtualizer handle the rest. No manual scroll correction needed.
+  // resize. We suppress corrections for small deltas (< 30px) to avoid
+  // micro-jumps from estimate→measurement discrepancies during scroll.
+  // Large deltas (e.g. images loading) still get corrected.
+  // Note: shouldAdjustScrollPositionOnItemSizeChange exists in virtual-core
+  // 3.13.23 but the React adapter types haven't been updated yet.
   const virtualizer = useVirtualizer({
     count: itemCount,
     getScrollElement: () => scrollContainerRef.current,
@@ -142,6 +144,10 @@ export function useVirtualizedScroll({
     scrollMargin,
     paddingStart,
     paddingEnd,
+    ...({
+      shouldAdjustScrollPositionOnItemSizeChange: (_item: unknown, delta: number, _instance: unknown) =>
+        Math.abs(delta) > 30,
+    } as Record<string, unknown>),
   })
 
   // Reset all state when stream changes
