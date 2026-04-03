@@ -258,6 +258,8 @@ export function StreamContent({
     isFetchingOlder,
     isFetchingNewer,
     resetKey: streamId,
+    paddingStart: 24,
+    paddingEnd: 24,
   })
 
   // --- Plain scroll for threads (they load all events) ---
@@ -441,7 +443,7 @@ export function StreamContent({
             <div
               ref={scrollContainerRef}
               className={cn("h-full overflow-y-auto overflow-x-hidden overscroll-y-contain", isSearchOpen && "pt-11")}
-              style={useVirtualized ? { overflowAnchor: "none" } : undefined}
+              style={useVirtualized ? { overflowAnchor: "none", contain: "strict" } : undefined}
               data-suppress-pull-refresh="true"
               onScroll={useVirtualized ? undefined : plainHandleScroll}
             >

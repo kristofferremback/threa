@@ -357,39 +357,39 @@ export function EventList({
   }
 
   // --- Virtualized rendering ---
-  // Uses per-item absolute positioning — each item is independently placed
-  // at virtualRow.start, avoiding the discrete jumps that the single-wrapper
-  // pattern causes when items enter/leave the virtual window with any
-  // measurement discrepancy.
+  // Follows the TanStack Virtual "dynamic" example pattern exactly:
+  // - Layer 1: Total-size div creates correct scrollbar height
+  // - Layer 2: Shifted container positioned at first item's offset
+  // - Layer 3: Items in NORMAL FLOW (no absolute positioning, no explicit height)
+  // Items flow naturally so the browser's layout engine spaces them. The
+  // measureElement ref + data-index let the virtualizer track actual heights.
+  // This avoids the per-item position jumps that absolute positioning causes
+  // when measurements change and shift all subsequent items.
   if (virtualizer) {
     const virtualItems = virtualizer.getVirtualItems()
     return (
-      <div className="relative py-3 sm:py-6 mx-auto max-w-[800px] w-full min-w-0">
+      <div
+        style={{
+          height: virtualizer.getTotalSize(),
+          width: "100%",
+          position: "relative",
+        }}
+        className="mx-auto max-w-[800px]"
+      >
         <div
           style={{
-            height: virtualizer.getTotalSize(),
+            position: "absolute",
+            top: 0,
+            left: 0,
             width: "100%",
-            position: "relative",
+            transform: `translateY(${virtualItems[0]?.start ?? 0}px)`,
           }}
         >
           {virtualItems.map((virtualRow) => {
             const item = timelineItems[virtualRow.index]
             if (!item) return null
             return (
-              <div
-                key={virtualRow.key}
-                data-index={virtualRow.index}
-                ref={virtualizer.measureElement}
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  width: "100%",
-                  transform: `translateY(${virtualRow.start}px)`,
-                  contain: "layout style paint",
-                  willChange: "transform",
-                }}
-              >
+              <div key={virtualRow.key} data-index={virtualRow.index} ref={virtualizer.measureElement}>
                 {renderItem(item)}
               </div>
             )

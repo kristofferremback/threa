@@ -56,6 +56,10 @@ interface UseVirtualizedScrollOptions {
   resetKey?: string
   /** Pixel offset for content above the virtual list (e.g. thread parent message) */
   scrollMargin?: number
+  /** Virtual padding before first item (included in getTotalSize) */
+  paddingStart?: number
+  /** Virtual padding after last item (included in getTotalSize) */
+  paddingEnd?: number
 }
 
 interface UseVirtualizedScrollReturn {
@@ -89,6 +93,8 @@ export function useVirtualizedScroll({
   triggerItemCount = Math.floor(EVENT_PAGE_SIZE * SCROLL_FETCH_RATIO),
   resetKey,
   scrollMargin = 0,
+  paddingStart = 0,
+  paddingEnd = 0,
 }: UseVirtualizedScrollOptions): UseVirtualizedScrollReturn {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const shouldAutoScroll = useRef(true)
@@ -132,6 +138,8 @@ export function useVirtualizedScroll({
     overscan,
     getItemKey,
     scrollMargin,
+    paddingStart,
+    paddingEnd,
   })
 
   // Reset all state when stream changes
@@ -170,15 +178,12 @@ export function useVirtualizedScroll({
         setIsScrolledFarFromBottom(false)
       }
 
-      const el = scrollContainerRef.current
-      if (options?.behavior === "smooth") {
-        virtualizer.scrollToIndex(itemCount - 1, {
-          align: "end",
-          behavior: "smooth",
-        })
-      } else if (el) {
-        el.scrollTop = el.scrollHeight
-      }
+      // Always use virtualizer.scrollToIndex for consistent positioning
+      // that respects padding and item measurements.
+      virtualizer.scrollToIndex(itemCount - 1, {
+        align: "end",
+        behavior: options?.behavior === "smooth" ? "smooth" : "auto",
+      })
     },
     [virtualizer, itemCount]
   )
@@ -201,17 +206,11 @@ export function useVirtualizedScroll({
         initialScrollDone.current = true
         lastProgrammaticScrollAt.current = performance.now()
         recentlyLoadedUntil.current = performance.now() + RECENTLY_LOADED_GRACE_MS
-        // Use scrollToIndex for virtualizer-aware positioning, then raw
-        // scrollTop as a safety net. Schedule a rAF correction to handle
-        // the gap between estimated and measured sizes.
+        // Single scroll-to-bottom via scrollToIndex. The measurement drift
+        // correction (ResizeObserver) handles any estimate→actual size gap.
+        // Avoid multiple scroll adjustments (scrollToIndex + scrollTop + rAF)
+        // which cause visible bouncing.
         virtualizer.scrollToIndex(itemCount - 1, { align: "end" })
-        if (el) el.scrollTop = el.scrollHeight
-        requestAnimationFrame(() => {
-          if (el) {
-            lastProgrammaticScrollAt.current = performance.now()
-            el.scrollTop = el.scrollHeight
-          }
-        })
       }
       return
     }
