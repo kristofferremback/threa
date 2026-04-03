@@ -17,6 +17,14 @@ const PROGRAMMATIC_SCROLL_GRACE_MS = 150
  * scroll drift repositioning the viewport near the edge again.
  */
 const FETCH_COOLDOWN_MS = 500
+/**
+ * Grace period (ms) after initial load during which measurement-driven scroll
+ * shifts cannot disable auto-scroll. Measurements trickle in over several
+ * hundred milliseconds and can shift the viewport away from the bottom,
+ * falsely disabling auto-scroll and leaving the user "stuck" a few messages
+ * above the bottom with no way to recover.
+ */
+const RECENTLY_LOADED_GRACE_MS = 1500
 
 interface UseVirtualizedScrollOptions {
   /** Whether data is currently loading (delays initial scroll) */
@@ -62,10 +70,7 @@ interface UseVirtualizedScrollReturn {
   /** Disable auto-scroll (e.g. when navigating to a specific message via jump mode) */
   disableAutoScroll: () => void
   /**
-   * True for a brief window (~2 frames) after initial load while the scroll
-   * position is being set. Items render with opacity:0 to hide the single
-   * frame where items are at the wrong position before the virtualizer
-   * processes the scroll event.
+   * @deprecated No longer used — always false. Kept for API compatibility.
    */
   isSettling: boolean
 }
@@ -88,14 +93,6 @@ export function useVirtualizedScroll({
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const shouldAutoScroll = useRef(true)
   const [isScrolledFarFromBottom, setIsScrolledFarFromBottom] = useState(false)
-
-  // Brief opacity:0 window during initial scroll-to-bottom.
-  // Prevents the single frame where items are rendered for scrollTop=0
-  // before the virtualizer processes the scroll event.
-  const [isSettling, setIsSettling] = useState(false)
-  const isSettlingRef = useRef(false)
-  isSettlingRef.current = isSettling
-  const settleRafRef = useRef<number | null>(null)
 
   // Prepend stability tracking
   const prevItemCountRef = useRef(0)
@@ -124,6 +121,10 @@ export function useVirtualizedScroll({
   // Whether initial scroll-to-bottom has been performed for this stream
   const initialScrollDone = useRef(false)
 
+  // Grace period after initial load: prevents measurement-driven scroll
+  // shifts from disabling auto-scroll while sizes are still settling.
+  const recentlyLoadedUntil = useRef(0)
+
   const virtualizer = useVirtualizer({
     count: itemCount,
     getScrollElement: () => scrollContainerRef.current,
@@ -148,12 +149,8 @@ export function useVirtualizedScroll({
     isForceScrolling.current = false
     lastProgrammaticScrollAt.current = 0
     initialScrollDone.current = false
-    if (settleRafRef.current) {
-      cancelAnimationFrame(settleRafRef.current)
-      settleRafRef.current = null
-    }
+    recentlyLoadedUntil.current = 0
     setIsScrolledFarFromBottom(false)
-    setIsSettling(false)
 
     // Reset scroll position immediately to prevent old stream position showing
     const el = scrollContainerRef.current
@@ -202,26 +199,9 @@ export function useVirtualizedScroll({
       prevScrollHeightRef.current = el?.scrollHeight ?? 0
       if (!initialScrollDone.current) {
         initialScrollDone.current = true
-        // Hide items for 2 frames while the virtualizer processes the scroll
-        // event and re-renders items at the correct positions.
-        setIsSettling(true)
-        if (el) {
-          lastProgrammaticScrollAt.current = performance.now()
-          el.scrollTop = el.scrollHeight
-        }
-        // Reveal after 2 frames — enough for scroll event → virtualizer
-        // recalculation → React re-render to complete.
-        settleRafRef.current = requestAnimationFrame(() => {
-          settleRafRef.current = requestAnimationFrame(() => {
-            // Final scroll correction with measured sizes
-            if (el) {
-              lastProgrammaticScrollAt.current = performance.now()
-              el.scrollTop = el.scrollHeight
-            }
-            setIsSettling(false)
-            settleRafRef.current = null
-          })
-        })
+        lastProgrammaticScrollAt.current = performance.now()
+        recentlyLoadedUntil.current = performance.now() + RECENTLY_LOADED_GRACE_MS
+        if (el) el.scrollTop = el.scrollHeight
       }
       return
     }
@@ -268,6 +248,25 @@ export function useVirtualizedScroll({
     }
   })
 
+  // --- Auto-scroll maintenance ---
+  // After every render, if auto-scroll is active and we're not at the
+  // bottom, snap there. This runs in useLayoutEffect (before paint) so the
+  // user never sees a frame where measurements shifted the viewport away
+  // from the bottom. This single effect replaces the old settle phase,
+  // post-settle correction, and rAF drift correction — the virtualizer
+  // triggers re-renders when measureElement updates sizes, and we just
+  // keep scrollTop pinned to the bottom on each commit.
+  useLayoutEffect(() => {
+    if (!shouldAutoScroll.current || itemCount === 0) return
+    const el = scrollContainerRef.current
+    if (!el) return
+    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+    if (distFromBottom > 1) {
+      lastProgrammaticScrollAt.current = performance.now()
+      el.scrollTop = el.scrollHeight
+    }
+  })
+
   // Auto-scroll to bottom when the container shrinks (e.g. mobile keyboard opens)
   useEffect(() => {
     const el = scrollContainerRef.current
@@ -299,8 +298,14 @@ export function useVirtualizedScroll({
       const distanceFromBottom = scrollHeight - scrollTop - clientHeight
       const isNearBottom = distanceFromBottom < bottomThreshold
 
-      const isInGracePeriod = performance.now() - lastProgrammaticScrollAt.current < PROGRAMMATIC_SCROLL_GRACE_MS
-      if (isInGracePeriod) {
+      const now = performance.now()
+      const isInGracePeriod = now - lastProgrammaticScrollAt.current < PROGRAMMATIC_SCROLL_GRACE_MS
+      const isRecentlyLoaded = now < recentlyLoadedUntil.current
+
+      // During grace period or recently-loaded window, only ENABLE auto-scroll
+      // (when near bottom), never DISABLE it. This prevents measurement-driven
+      // scroll shifts from killing auto-scroll while sizes are still settling.
+      if (isInGracePeriod || isRecentlyLoaded) {
         if (isNearBottom) shouldAutoScroll.current = true
       } else {
         shouldAutoScroll.current = isNearBottom
@@ -316,13 +321,9 @@ export function useVirtualizedScroll({
         setIsScrolledFarFromBottom(distanceFromBottom > jumpThresholdPixels)
       }
 
-      // Skip fetch triggers during the brief initial settle
-      if (isSettlingRef.current) return
-
       const virtualItems = virtualizer.getVirtualItems()
       if (virtualItems.length === 0) return
 
-      const now = performance.now()
       const firstVisibleIndex = virtualItems[0].index
       const lastVisibleIndex = virtualItems[virtualItems.length - 1].index
 
@@ -367,6 +368,6 @@ export function useVirtualizedScroll({
     isScrolledFarFromBottom,
     scrollToBottom: scrollToBottomImpl,
     disableAutoScroll,
-    isSettling,
+    isSettling: false,
   }
 }

@@ -255,7 +255,6 @@ export function groupTimelineItems(events: StreamEvent[], currentUserId: string 
 export const EventList = memo(function EventList({
   timelineItems,
   isLoading,
-  isSettling,
   workspaceId,
   streamId,
   highlightMessageId,
@@ -367,9 +366,6 @@ export const EventList = memo(function EventList({
             height: virtualizer.getTotalSize(),
             width: "100%",
             position: "relative",
-            // Brief opacity:0 during initial scroll-to-bottom (2 frames) so the
-            // user doesn't see items at the wrong scroll position.
-            opacity: isSettling ? 0 : undefined,
           }}
         >
           {virtualItems.map((virtualRow) => {
