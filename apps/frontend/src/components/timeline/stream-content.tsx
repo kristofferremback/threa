@@ -258,9 +258,6 @@ export function StreamContent({
     isFetchingOlder,
     isFetchingNewer,
     resetKey: streamId,
-    // Skip the settle phase when navigating to a specific message — the settle
-    // phase scrolls to bottom and hides items, which fights with jumpToEvent
-    skipSettle: !!highlightMessageId,
   })
 
   // --- Plain scroll for threads (they load all events) ---

@@ -362,38 +362,13 @@ export const EventList = memo(function EventList({
     const virtualItems = virtualizer.getVirtualItems()
     return (
       <div className="relative py-3 sm:py-6 mx-auto max-w-[800px] w-full min-w-0">
-        {/* Skeleton overlay during settle — covers the virtualizer container while
-            items are measured. The virtualizer stays in normal flow (contributes to
-            scrollHeight) so scroll-to-bottom works correctly during measurement. */}
-        {isSettling && (
-          <div className="absolute inset-0 z-10 bg-background" aria-hidden="true">
-            <div className="flex flex-col gap-4 px-4 py-6 sm:px-6">
-              <div className="flex gap-3">
-                <Skeleton className="h-9 w-9 rounded-full" />
-                <div className="flex-1 space-y-2">
-                  <Skeleton className="h-4 w-32" />
-                  <Skeleton className="h-4 w-full" />
-                  <Skeleton className="h-4 w-2/3" />
-                </div>
-              </div>
-              <div className="flex gap-3">
-                <Skeleton className="h-9 w-9 rounded-full" />
-                <div className="flex-1 space-y-2">
-                  <Skeleton className="h-4 w-24" />
-                  <Skeleton className="h-4 w-5/6" />
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
         <div
           style={{
             height: virtualizer.getTotalSize(),
             width: "100%",
             position: "relative",
-            // Items are transparent during settle so ResizeObserver can measure them
-            // without the user seeing the estimation-based layout dance.
-            // Uses opacity instead of visibility so Playwright's toBeVisible() still passes.
+            // Brief opacity:0 during initial scroll-to-bottom (2 frames) so the
+            // user doesn't see items at the wrong scroll position.
             opacity: isSettling ? 0 : undefined,
           }}
         >

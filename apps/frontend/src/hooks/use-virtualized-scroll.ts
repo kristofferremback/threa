@@ -3,9 +3,8 @@ import { useVirtualizer, type Virtualizer } from "@tanstack/react-virtual"
 import { EVENT_PAGE_SIZE, SCROLL_FETCH_RATIO } from "@/lib/constants"
 
 /**
- * Default estimated item height. This only matters for the hidden settle phase —
- * items are invisible until measured, so the exact estimate just affects how many
- * items the virtualizer renders in the first pass (overscan calculations).
+ * Default estimated item height. Only used when no custom estimateSize is provided.
+ * With content-aware estimates, this is a fallback for edge cases.
  */
 const DEFAULT_ESTIMATE = 120
 /** Items from the bottom before showing "Jump to latest" */
@@ -13,26 +12,11 @@ const JUMP_TO_LATEST_ITEM_THRESHOLD = 10
 /** Grace period (ms) after programmatic scroll to avoid false auto-scroll disabling */
 const PROGRAMMATIC_SCROLL_GRACE_MS = 150
 /**
- * Maximum duration (ms) for the settle phase after initial load.
- * During this window, items are hidden (visibility: hidden) and scroll is
- * continuously adjusted to the bottom as ResizeObserver measurements arrive.
- * The phase ends early if scrollHeight stabilizes (no changes for 150ms).
- */
-const SETTLE_MAX_MS = 1000
-/** If scrollHeight doesn't change for this long during settle, we're done early. */
-const SETTLE_STABLE_MS = 150
-/**
  * Cooldown (ms) after a fetch completes before allowing another fetch in the
  * same direction. Prevents runaway loading caused by estimate→measurement
  * scroll drift repositioning the viewport near the edge again.
  */
 const FETCH_COOLDOWN_MS = 500
-/**
- * Number of rAF frames to run the post-prepend drift correction loop.
- * ~20 frames ≈ 330ms at 60fps — enough for measureElement to re-measure
- * the newly rendered items and for us to compensate the scroll position.
- */
-const PREPEND_CORRECTION_FRAMES = 20
 
 interface UseVirtualizedScrollOptions {
   /** Whether data is currently loading (delays initial scroll) */
@@ -43,7 +27,7 @@ interface UseVirtualizedScrollOptions {
   getItemKey: (index: number) => string
   /** Estimated item height (default: 120px) */
   estimateSize?: (index: number) => number
-  /** Extra items rendered above/below viewport (default: 15) */
+  /** Extra items rendered above/below viewport (default: 25) */
   overscan?: number
   /** Called when user scrolls near the top (for loading older messages) */
   onScrollNearTop?: () => boolean
@@ -64,8 +48,6 @@ interface UseVirtualizedScrollOptions {
   resetKey?: string
   /** Pixel offset for content above the virtual list (e.g. thread parent message) */
   scrollMargin?: number
-  /** Skip the settle phase (e.g. when jumping to a specific message via deep link) */
-  skipSettle?: boolean
 }
 
 interface UseVirtualizedScrollReturn {
@@ -80,9 +62,10 @@ interface UseVirtualizedScrollReturn {
   /** Disable auto-scroll (e.g. when navigating to a specific message via jump mode) */
   disableAutoScroll: () => void
   /**
-   * True during the initial measurement settle phase. Items are rendered with
-   * visibility:hidden so ResizeObserver can measure them without showing the
-   * layout dance. The component should show a loading skeleton while this is true.
+   * True for a brief window (~2 frames) after initial load while the scroll
+   * position is being set. Items render with opacity:0 to hide the single
+   * frame where items are at the wrong position before the virtualizer
+   * processes the scroll event.
    */
   isSettling: boolean
 }
@@ -101,16 +84,18 @@ export function useVirtualizedScroll({
   triggerItemCount = Math.floor(EVENT_PAGE_SIZE * SCROLL_FETCH_RATIO),
   resetKey,
   scrollMargin = 0,
-  skipSettle = false,
 }: UseVirtualizedScrollOptions): UseVirtualizedScrollReturn {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const shouldAutoScroll = useRef(true)
   const [isScrolledFarFromBottom, setIsScrolledFarFromBottom] = useState(false)
-  const [isSettling, setIsSettling] = useState(false)
 
-  // Mirror isSettling as a ref so the scroll handler can read it without re-subscribing
+  // Brief opacity:0 window during initial scroll-to-bottom.
+  // Prevents the single frame where items are rendered for scrollTop=0
+  // before the virtualizer processes the scroll event.
+  const [isSettling, setIsSettling] = useState(false)
   const isSettlingRef = useRef(false)
   isSettlingRef.current = isSettling
+  const settleRafRef = useRef<number | null>(null)
 
   // Prepend stability tracking
   const prevItemCountRef = useRef(0)
@@ -131,11 +116,6 @@ export function useVirtualizedScroll({
   // Per-direction cooldown: earliest time another fetch is allowed
   const olderFetchCooldownUntil = useRef(0)
   const newerFetchCooldownUntil = useRef(0)
-
-  // Post-prepend drift correction: while true, skip fetch triggers to avoid
-  // runaway loading caused by estimate→measurement scroll drift.
-  const isPrependCorrecting = useRef(false)
-  const prependCorrectionRaf = useRef<number | null>(null)
 
   // Force-scroll and programmatic scroll tracking
   const isForceScrolling = useRef(false)
@@ -165,14 +145,13 @@ export function useVirtualizedScroll({
     newerFetchScheduled.current = false
     olderFetchCooldownUntil.current = 0
     newerFetchCooldownUntil.current = 0
-    isPrependCorrecting.current = false
-    if (prependCorrectionRaf.current) {
-      cancelAnimationFrame(prependCorrectionRaf.current)
-      prependCorrectionRaf.current = null
-    }
     isForceScrolling.current = false
     lastProgrammaticScrollAt.current = 0
     initialScrollDone.current = false
+    if (settleRafRef.current) {
+      cancelAnimationFrame(settleRafRef.current)
+      settleRafRef.current = null
+    }
     setIsScrolledFarFromBottom(false)
     setIsSettling(false)
 
@@ -223,12 +202,26 @@ export function useVirtualizedScroll({
       prevScrollHeightRef.current = el?.scrollHeight ?? 0
       if (!initialScrollDone.current) {
         initialScrollDone.current = true
-        if (!skipSettle) {
-          setIsSettling(true)
+        // Hide items for 2 frames while the virtualizer processes the scroll
+        // event and re-renders items at the correct positions.
+        setIsSettling(true)
+        if (el) {
+          lastProgrammaticScrollAt.current = performance.now()
+          el.scrollTop = el.scrollHeight
         }
-        // Initial scroll — will be corrected during settle phase.
-        // Skip when settle is skipped (jump-to-message handles its own scroll).
-        if (el && !skipSettle) el.scrollTop = el.scrollHeight
+        // Reveal after 2 frames — enough for scroll event → virtualizer
+        // recalculation → React re-render to complete.
+        settleRafRef.current = requestAnimationFrame(() => {
+          settleRafRef.current = requestAnimationFrame(() => {
+            // Final scroll correction with measured sizes
+            if (el) {
+              lastProgrammaticScrollAt.current = performance.now()
+              el.scrollTop = el.scrollHeight
+            }
+            setIsSettling(false)
+            settleRafRef.current = null
+          })
+        })
       }
       return
     }
@@ -247,31 +240,6 @@ export function useVirtualizedScroll({
         if (delta > 0) {
           el.scrollTop += delta
         }
-
-        // Post-prepend drift correction: new items are initially sized by
-        // estimateSize. As measureElement fires, actual sizes replace estimates
-        // and scrollHeight changes. We track that drift over a brief rAF loop
-        // and keep adjusting scrollTop so the viewport stays anchored.
-        if (prependCorrectionRaf.current) cancelAnimationFrame(prependCorrectionRaf.current)
-        let lastH = el.scrollHeight
-        let frames = 0
-        isPrependCorrecting.current = true
-
-        const correctDrift = () => {
-          const h = el.scrollHeight
-          if (h !== lastH) {
-            el.scrollTop += h - lastH
-            lastH = h
-          }
-          frames++
-          if (frames < PREPEND_CORRECTION_FRAMES) {
-            prependCorrectionRaf.current = requestAnimationFrame(correctDrift)
-          } else {
-            isPrependCorrecting.current = false
-            prependCorrectionRaf.current = null
-          }
-        }
-        prependCorrectionRaf.current = requestAnimationFrame(correctDrift)
       }
     } else if (shouldAutoScroll.current && itemCount > prevCount) {
       scrollToBottomImpl()
@@ -280,7 +248,7 @@ export function useVirtualizedScroll({
     prevItemCountRef.current = itemCount
     prevFirstKeyRef.current = currentFirstKey
     prevScrollHeightRef.current = el?.scrollHeight ?? 0
-  }, [isLoading, itemCount, getItemKey, isFetchingOlder, scrollToBottomImpl, skipSettle])
+  }, [isLoading, itemCount, getItemKey, isFetchingOlder, scrollToBottomImpl])
 
   // Track fetching state transitions and start cooldown timers
   useLayoutEffect(() => {
@@ -299,88 +267,6 @@ export function useVirtualizedScroll({
       prevScrollHeightRef.current = el.scrollHeight
     }
   })
-
-  // --- Settle phase ---
-  // Items render with visibility:hidden. ResizeObserver measures them and the
-  // virtualizer repositions. We keep scrolling to bottom and watch for
-  // scrollHeight to stabilize. Once stable (or timeout), reveal items.
-  useEffect(() => {
-    if (!isSettling) return
-
-    const el = scrollContainerRef.current
-    if (!el) {
-      setIsSettling(false)
-      return
-    }
-
-    let lastScrollHeight = el.scrollHeight
-    let stableTimer: ReturnType<typeof setTimeout> | null = null
-    const startedAt = performance.now()
-
-    const finish = () => {
-      observer.disconnect()
-      if (stableTimer) clearTimeout(stableTimer)
-      if (maxTimer) clearTimeout(maxTimer)
-
-      // Final scroll to bottom with correct measurements
-      lastProgrammaticScrollAt.current = performance.now()
-      el.scrollTop = el.scrollHeight
-      setIsSettling(false)
-    }
-
-    const checkStability = () => {
-      const newScrollHeight = el.scrollHeight
-      // Keep scrolling to bottom during settle
-      el.scrollTop = newScrollHeight
-
-      if (newScrollHeight !== lastScrollHeight) {
-        // Height changed — reset the stability timer
-        lastScrollHeight = newScrollHeight
-        if (stableTimer) clearTimeout(stableTimer)
-        stableTimer = setTimeout(finish, SETTLE_STABLE_MS)
-      }
-    }
-
-    // Watch the virtualizer's container for size changes (item measurements)
-    const observer = new ResizeObserver(checkStability)
-    // Observe all children of the scroll container (the virtualizer container
-    // and any non-virtual elements like thread parent, loading indicators)
-    for (const child of el.children) {
-      observer.observe(child)
-    }
-
-    // Start the stability check — if nothing changes, finish quickly
-    stableTimer = setTimeout(finish, SETTLE_STABLE_MS)
-
-    // Hard timeout — don't wait forever
-    const maxTimer = setTimeout(() => {
-      if (performance.now() - startedAt >= SETTLE_MAX_MS) {
-        finish()
-      }
-    }, SETTLE_MAX_MS)
-
-    return () => {
-      observer.disconnect()
-      if (stableTimer) clearTimeout(stableTimer)
-      if (maxTimer) clearTimeout(maxTimer)
-    }
-  }, [isSettling])
-
-  // Post-settle: one final scroll after React re-renders with visibility restored.
-  // The settle finish() scrolls before setIsSettling(false), but the re-render that
-  // removes visibility:hidden can cause a tiny reflow shifting scrollHeight by a few px.
-  const prevIsSettlingRef = useRef(false)
-  useLayoutEffect(() => {
-    const wasSettling = prevIsSettlingRef.current
-    prevIsSettlingRef.current = isSettling
-    if (wasSettling && !isSettling && shouldAutoScroll.current) {
-      const el = scrollContainerRef.current
-      if (el) {
-        lastProgrammaticScrollAt.current = performance.now()
-        el.scrollTop = el.scrollHeight
-      }
-    }
-  }, [isSettling])
 
   // Auto-scroll to bottom when the container shrinks (e.g. mobile keyboard opens)
   useEffect(() => {
@@ -430,9 +316,8 @@ export function useVirtualizedScroll({
         setIsScrolledFarFromBottom(distanceFromBottom > jumpThresholdPixels)
       }
 
-      // Skip fetch triggers during settle (measurements are in flux) and
-      // during post-prepend drift correction (viewport position is unstable).
-      if (isSettlingRef.current || isPrependCorrecting.current) return
+      // Skip fetch triggers during the brief initial settle
+      if (isSettlingRef.current) return
 
       const virtualItems = virtualizer.getVirtualItems()
       if (virtualItems.length === 0) return
