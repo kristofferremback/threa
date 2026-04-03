@@ -115,69 +115,64 @@ async function databaseExists(dbName: string): Promise<boolean> {
   return result === "1"
 }
 
-async function createDatabase(dbName: string): Promise<void> {
-  if (await databaseExists(dbName)) {
-    console.log(`Database '${dbName}' already exists, dropping first...`)
-    await runPsqlOnDefault(`DROP DATABASE "${dbName}" WITH (FORCE)`)
-  }
-  console.log(`Creating database '${dbName}'...`)
-  await runPsqlOnDefault(`CREATE DATABASE "${dbName}"`)
-}
-
 /**
- * Ensure umzug_migrations exists and contains an entry for every migration file.
+ * Seed umzug_migrations in the cloned PR database for migrations that were
+ * applied to the source DB before Umzug tracking was introduced.
  *
- * When a PR database is cloned from staging_main, the clone includes all tables
- * (e.g. agent_sessions) but umzug_migrations may be incomplete — the source DB
- * may be missing entries for migrations that were applied before tracking started,
- * or pg_dump may have partially failed. If the backend then starts and sees a
- * "pending" migration whose table already exists, it crashes with
- * "relation already exists".
- *
- * This function unconditionally seeds ALL migration filenames into
- * umzug_migrations with ON CONFLICT DO NOTHING, ensuring completeness.
+ * Strategy: query the source DB for its latest tracked migration (high-water
+ * mark). All migration files at or before that point were already applied to
+ * the source — and therefore exist in the clone. Files AFTER that point are
+ * new PR-branch migrations that Umzug should run incrementally.
  */
-async function verifyUmzugMigrations(dbName: string, migrationsRelPath: string): Promise<void> {
-  // Ensure the table exists
+async function seedPreExistingMigrations(prDb: string, sourceDb: string, migrationsRelPath: string): Promise<void> {
+  // Ensure umzug_migrations exists in the PR DB (may be missing if source
+  // was set up before Umzug, or if pg_dump didn't include it)
   await runPsql(
-    dbName,
+    prDb,
     "CREATE TABLE IF NOT EXISTS umzug_migrations (name VARCHAR(255) PRIMARY KEY, executed_at TIMESTAMPTZ DEFAULT NOW())"
   )
 
-  // Read migration filenames from disk
+  // High-water mark: the latest migration the source DB has tracked
+  let latestTracked: string
+  try {
+    latestTracked = await runPsql(sourceDb, "SELECT name FROM umzug_migrations ORDER BY name DESC LIMIT 1")
+  } catch {
+    // Source DB may not have umzug_migrations at all
+    console.log(`Could not read umzug_migrations from '${sourceDb}' — seeding all migration files`)
+    latestTracked = ""
+  }
+
   const migrationsDir = path.join(import.meta.dirname, "..", migrationsRelPath)
   const files = (await readdir(migrationsDir)).filter((f) => f.endsWith(".sql")).sort()
 
   if (files.length === 0) {
-    throw new Error("No migration files found — cannot seed umzug_migrations")
+    throw new Error(`No migration files found in ${migrationsRelPath}`)
   }
 
-  // Insert each migration individually to avoid large SQL statements and
-  // ensure partial failures are visible (runPsql throws on non-zero exit)
+  // If the source has no tracked migrations, seed ALL files from disk.
+  // This means the source was set up before Umzug — every migration has
+  // been applied but none are tracked. New PR migrations will also be
+  // seeded (and thus skipped), but this is the safe default to avoid
+  // "relation already exists" crashes. PRs that add new migrations against
+  // a fully-untracked source should fix the source's umzug_migrations first.
+  const seedUpTo = latestTracked || files[files.length - 1]
+
   let seeded = 0
   for (const file of files) {
+    if (file > seedUpTo) break
     const result = await runPsql(
-      dbName,
+      prDb,
       `INSERT INTO umzug_migrations (name) VALUES ('${file}') ON CONFLICT DO NOTHING RETURNING name`
     )
     if (result) seeded++
   }
 
-  // Verify the final count matches
-  const count = await runPsql(dbName, "SELECT count(*) FROM umzug_migrations")
-  const countNum = parseInt(count, 10)
-
-  if (countNum < files.length) {
-    throw new Error(
-      `umzug_migrations has ${countNum} rows but ${files.length} migration files exist — ` +
-        `${files.length - countNum} entries are missing after seeding`
-    )
-  }
-
   if (seeded > 0) {
-    console.log(`Seeded ${seeded} missing entries into umzug_migrations (${countNum} total, ${files.length} files)`)
+    console.log(
+      `Seeded ${seeded} pre-existing migration entries into '${prDb}' umzug_migrations (high-water mark: ${seedUpTo})`
+    )
   } else {
-    console.log(`umzug_migrations OK (${countNum} rows, all ${files.length} files present)`)
+    console.log(`All pre-existing migrations already tracked in '${prDb}'`)
   }
 }
 
@@ -607,55 +602,42 @@ async function deletePrDnsAndRoute(): Promise<void> {
 async function deploy(): Promise<void> {
   console.log(`\n=== Deploying staging environment for PR #${prNumber} (branch: ${branch}) ===\n`)
 
-  // 1. Create and clone databases (only on first deploy — skip if DBs already exist
-  //    AND have valid data. If a previous deploy failed mid-clone, the DB exists
-  //    but is empty/broken — detect this and re-clone.)
+  // 1. Create and clone databases on first deploy only.
+  //    We check pure existence — NOT data integrity. Dropping a live DB to
+  //    "re-clone" kills the running backend's connections and causes cascading
+  //    failures. If a clone was partial, the backend's runMigrations() will
+  //    either fix it or fail loudly on its own.
   const dbExists = await databaseExists(prDbName)
-  let isFirstDeploy = !dbExists
-  if (dbExists) {
-    try {
-      const workspaceCount = await runPsql(prDbName, "SELECT count(*) FROM workspaces")
-      if (workspaceCount === "0") {
-        console.log(`Database '${prDbName}' exists but has no workspaces — re-cloning`)
-        isFirstDeploy = true
-      }
-    } catch {
-      console.log(`Database '${prDbName}' exists but is not queryable — re-cloning`)
-      isFirstDeploy = true
-    }
-  }
-  // Also check the control-plane DB — a deploy can fail between the two clone calls
-  if (!isFirstDeploy) {
-    const cpDbExists = await databaseExists(prCpDbName)
-    if (!cpDbExists) {
-      console.log(`Control-plane database '${prCpDbName}' missing — re-cloning both`)
-      isFirstDeploy = true
+  const cpDbExists = await databaseExists(prCpDbName)
+  const needsClone = !dbExists || !cpDbExists
+
+  if (needsClone) {
+    if (!dbExists) {
+      console.log(`Creating and cloning backend database '${prDbName}'...`)
+      await runPsqlOnDefault(`CREATE DATABASE "${prDbName}"`)
+      await cloneDatabase("staging_main", prDbName)
+      await updateWorkspaceSlug(prDbName, branch!)
     } else {
-      try {
-        await runPsql(prCpDbName, "SELECT 1 FROM workos_users LIMIT 1")
-      } catch {
-        console.log(`Control-plane database '${prCpDbName}' is not queryable — re-cloning both`)
-        isFirstDeploy = true
-      }
+      console.log(`Backend database '${prDbName}' already exists — skipping clone`)
     }
-  }
 
-  if (isFirstDeploy) {
-    await createDatabase(prDbName)
-    await cloneDatabase("staging_main", prDbName)
-    await updateWorkspaceSlug(prDbName, branch!)
-
-    await createDatabase(prCpDbName)
-    await cloneDatabase("staging_main_cp", prCpDbName)
+    if (!cpDbExists) {
+      console.log(`Creating and cloning control-plane database '${prCpDbName}'...`)
+      await runPsqlOnDefault(`CREATE DATABASE "${prCpDbName}"`)
+      await cloneDatabase("staging_main_cp", prCpDbName)
+    } else {
+      console.log(`Control-plane database '${prCpDbName}' already exists — skipping clone`)
+    }
   } else {
     console.log(`Databases already exist — skipping clone`)
   }
 
-  // Always ensure umzug_migrations is complete — even on re-deploys the table
-  // may be incomplete from a previous failed clone. This is idempotent
-  // (ON CONFLICT DO NOTHING) so safe to run every time.
-  await verifyUmzugMigrations(prDbName, "apps/backend/src/db/migrations")
-  await verifyUmzugMigrations(prCpDbName, "apps/control-plane/src/db/migrations")
+  // Always ensure umzug_migrations tracks pre-existing migrations. This is
+  // idempotent (ON CONFLICT DO NOTHING) and uses staging_main's latest
+  // tracked entry as a high-water mark — migrations after that point are
+  // new PR-branch additions that the backend's runMigrations() will execute.
+  await seedPreExistingMigrations(prDbName, "staging_main", "apps/backend/src/db/migrations")
+  await seedPreExistingMigrations(prCpDbName, "staging_main_cp", "apps/control-plane/src/db/migrations")
 
   // 2. Create and deploy Railway service
   await createRailwayService()
@@ -663,7 +645,7 @@ async function deploy(): Promise<void> {
 
   // 3. Register in Cloudflare KV
   await registerRegion(backendUrl)
-  if (isFirstDeploy) {
+  if (needsClone) {
     await registerWorkspaceRegion(prDbName)
   }
 
