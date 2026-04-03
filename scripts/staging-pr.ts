@@ -114,15 +114,6 @@ async function databaseExists(dbName: string): Promise<boolean> {
   return result === "1"
 }
 
-async function createDatabase(dbName: string): Promise<void> {
-  if (await databaseExists(dbName)) {
-    console.log(`Database '${dbName}' already exists, dropping first...`)
-    await runPsqlOnDefault(`DROP DATABASE "${dbName}" WITH (FORCE)`)
-  }
-  console.log(`Creating database '${dbName}'...`)
-  await runPsqlOnDefault(`CREATE DATABASE "${dbName}"`)
-}
-
 async function cloneDatabase(sourceDb: string, targetDb: string): Promise<void> {
   console.log(`Cloning '${sourceDb}' → '${targetDb}'...`)
   const sourceUrl = STAGING_DATABASE_URL.replace(/\/([^/?]+)(\?.*)?$/, `/${sourceDb}$2`)
@@ -549,46 +540,32 @@ async function deletePrDnsAndRoute(): Promise<void> {
 async function deploy(): Promise<void> {
   console.log(`\n=== Deploying staging environment for PR #${prNumber} (branch: ${branch}) ===\n`)
 
-  // 1. Create and clone databases (only on first deploy — skip if DBs already exist
-  //    AND have valid data. If a previous deploy failed mid-clone, the DB exists
-  //    but is empty/broken — detect this and re-clone.)
+  // 1. Create and clone databases on first deploy only.
+  //    We check pure existence — NOT data integrity. Dropping a live DB to
+  //    "re-clone" kills the running backend's connections and causes cascading
+  //    failures. If a clone was partial, the backend's runMigrations() will
+  //    either fix it or fail loudly on its own.
   const dbExists = await databaseExists(prDbName)
-  let isFirstDeploy = !dbExists
-  if (dbExists) {
-    try {
-      const workspaceCount = await runPsql(prDbName, "SELECT count(*) FROM workspaces")
-      if (workspaceCount === "0") {
-        console.log(`Database '${prDbName}' exists but has no workspaces — re-cloning`)
-        isFirstDeploy = true
-      }
-    } catch {
-      console.log(`Database '${prDbName}' exists but is not queryable — re-cloning`)
-      isFirstDeploy = true
-    }
-  }
-  // Also check the control-plane DB — a deploy can fail between the two clone calls
-  if (!isFirstDeploy) {
-    const cpDbExists = await databaseExists(prCpDbName)
-    if (!cpDbExists) {
-      console.log(`Control-plane database '${prCpDbName}' missing — re-cloning both`)
-      isFirstDeploy = true
+  const cpDbExists = await databaseExists(prCpDbName)
+  const needsClone = !dbExists || !cpDbExists
+
+  if (needsClone) {
+    if (!dbExists) {
+      console.log(`Creating and cloning backend database '${prDbName}'...`)
+      await runPsqlOnDefault(`CREATE DATABASE "${prDbName}"`)
+      await cloneDatabase("staging_main", prDbName)
+      await updateWorkspaceSlug(prDbName, branch!)
     } else {
-      try {
-        await runPsql(prCpDbName, "SELECT 1 FROM workos_users LIMIT 1")
-      } catch {
-        console.log(`Control-plane database '${prCpDbName}' is not queryable — re-cloning both`)
-        isFirstDeploy = true
-      }
+      console.log(`Backend database '${prDbName}' already exists — skipping clone`)
     }
-  }
 
-  if (isFirstDeploy) {
-    await createDatabase(prDbName)
-    await cloneDatabase("staging_main", prDbName)
-    await updateWorkspaceSlug(prDbName, branch!)
-
-    await createDatabase(prCpDbName)
-    await cloneDatabase("staging_main_cp", prCpDbName)
+    if (!cpDbExists) {
+      console.log(`Creating and cloning control-plane database '${prCpDbName}'...`)
+      await runPsqlOnDefault(`CREATE DATABASE "${prCpDbName}"`)
+      await cloneDatabase("staging_main_cp", prCpDbName)
+    } else {
+      console.log(`Control-plane database '${prCpDbName}' already exists — skipping clone`)
+    }
   } else {
     console.log(`Databases already exist — skipping clone`)
   }
@@ -606,7 +583,7 @@ async function deploy(): Promise<void> {
 
   // 3. Register in Cloudflare KV
   await registerRegion(backendUrl)
-  if (isFirstDeploy) {
+  if (needsClone) {
     await registerWorkspaceRegion(prDbName)
   }
 
