@@ -1,4 +1,4 @@
-// PR deploy verification — safe to remove
+// PR deploy verification v2 — safe to remove
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { App } from "./App"
