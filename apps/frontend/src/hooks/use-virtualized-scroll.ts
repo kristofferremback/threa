@@ -131,12 +131,6 @@ export function useVirtualizedScroll({
   // shifts from disabling auto-scroll while sizes are still settling.
   const recentlyLoadedUntil = useRef(0)
 
-  // Scroll correction: track the first virtual item to detect measurement-
-  // driven shifts. When items above the viewport get measured and their size
-  // differs from the estimate, items[0].start changes, shifting the wrapper.
-  // We compensate scrollTop by the same delta so visible content stays put.
-  const prevFirstVirtualItem = useRef<{ key: React.Key; start: number } | null>(null)
-
   const virtualizer = useVirtualizer({
     count: itemCount,
     getScrollElement: () => scrollContainerRef.current,
@@ -261,52 +255,6 @@ export function useVirtualizedScroll({
     if (el) {
       prevScrollHeightRef.current = el.scrollHeight
     }
-  })
-
-  // --- Measurement-driven scroll correction ---
-  // When items above the viewport are measured for the first time and their
-  // actual height differs from the estimate, the virtualizer recalculates all
-  // item positions. The shifted container wrapper moves by the delta, causing
-  // all visible items to jump. We detect this by tracking the first virtual
-  // item's key and start position. If the SAME item's start changed (not a
-  // different item from scrolling), we adjust scrollTop by the delta so the
-  // visible content stays visually pinned.
-  //
-  // Guard: adjusting scrollTop triggers a virtualizer re-render. The guard
-  // prevents the next run from re-adjusting (which would loop infinitely).
-  const isScrollCorrecting = useRef(false)
-
-  useLayoutEffect(() => {
-    const items = virtualizer.getVirtualItems()
-    if (items.length === 0) return
-
-    // After a correction, the virtualizer re-renders with updated positions.
-    // Just update the ref and skip to prevent an infinite loop.
-    if (isScrollCorrecting.current) {
-      isScrollCorrecting.current = false
-      prevFirstVirtualItem.current = { key: items[0].key, start: items[0].start }
-      return
-    }
-
-    if (shouldAutoScroll.current) {
-      prevFirstVirtualItem.current = { key: items[0].key, start: items[0].start }
-      return
-    }
-
-    const first = items[0]
-    const prev = prevFirstVirtualItem.current
-
-    if (prev && prev.key === first.key && prev.start !== first.start) {
-      const delta = first.start - prev.start
-      const el = scrollContainerRef.current
-      if (el) {
-        isScrollCorrecting.current = true
-        el.scrollTop += delta
-        lastProgrammaticScrollAt.current = performance.now()
-      }
-    }
-
-    prevFirstVirtualItem.current = { key: first.key, start: first.start }
   })
 
   // --- User scroll tracking + snap-to-bottom on scroll end ---
