@@ -35,7 +35,7 @@ interface UseVirtualizedScrollOptions {
   getItemKey: (index: number) => string
   /** Estimated item height (default: 120px) */
   estimateSize?: (index: number) => number
-  /** Extra items rendered above/below viewport (default: 25) */
+  /** Extra items rendered above/below viewport (default: 50) */
   overscan?: number
   /** Called when user scrolls near the top (for loading older messages) */
   onScrollNearTop?: () => boolean
@@ -49,7 +49,7 @@ interface UseVirtualizedScrollOptions {
   bottomThreshold?: number
   /**
    * Number of items from the edge that triggers a fetch.
-   * Default: EVENT_PAGE_SIZE * SCROLL_FETCH_RATIO (25)
+   * Default: EVENT_PAGE_SIZE * SCROLL_FETCH_RATIO (37)
    */
   triggerItemCount?: number
   /** When this key changes, all scroll state resets (e.g. streamId). */
@@ -80,7 +80,7 @@ export function useVirtualizedScroll({
   itemCount,
   getItemKey,
   estimateSize,
-  overscan = 25,
+  overscan = 50,
   onScrollNearTop,
   onScrollNearBottom,
   isFetchingOlder = false,
@@ -201,7 +201,17 @@ export function useVirtualizedScroll({
         initialScrollDone.current = true
         lastProgrammaticScrollAt.current = performance.now()
         recentlyLoadedUntil.current = performance.now() + RECENTLY_LOADED_GRACE_MS
+        // Use scrollToIndex for virtualizer-aware positioning, then raw
+        // scrollTop as a safety net. Schedule a rAF correction to handle
+        // the gap between estimated and measured sizes.
+        virtualizer.scrollToIndex(itemCount - 1, { align: "end" })
         if (el) el.scrollTop = el.scrollHeight
+        requestAnimationFrame(() => {
+          if (el) {
+            lastProgrammaticScrollAt.current = performance.now()
+            el.scrollTop = el.scrollHeight
+          }
+        })
       }
       return
     }
@@ -248,11 +258,10 @@ export function useVirtualizedScroll({
     }
   })
 
-  // --- Auto-scroll maintenance on measurement changes ---
-  // When the virtualizer re-measures items and scrollHeight changes, the
-  // viewport can drift away from the bottom. We correct this only when
-  // auto-scroll is active AND the user isn't actively scrolling, to avoid
-  // fighting with user intent (which caused the "stuck at bottom" bug).
+  // --- User scroll tracking + snap-to-bottom on scroll end ---
+  // Tracks whether the user is actively scrolling (vs programmatic scroll).
+  // When a scroll sequence ends (including inertia) and auto-scroll is active,
+  // snaps exactly to bottom to eliminate the ~4px offset from inertia/momentum.
   const userScrollingRef = useRef(false)
   const userScrollTimeoutRef = useRef<number | undefined>(undefined)
 
@@ -260,24 +269,43 @@ export function useVirtualizedScroll({
     const el = scrollContainerRef.current
     if (!el) return
 
-    const onScrollStart = () => {
+    const onScroll = () => {
       const now = performance.now()
-      // Only mark as user-scrolling if this wasn't a programmatic scroll
       if (now - lastProgrammaticScrollAt.current > PROGRAMMATIC_SCROLL_GRACE_MS) {
         userScrollingRef.current = true
       }
+      // Fallback for browsers without scrollend: clear after 150ms of no scroll
       window.clearTimeout(userScrollTimeoutRef.current)
       userScrollTimeoutRef.current = window.setTimeout(() => {
         userScrollingRef.current = false
-      }, 200)
+        snapToBottomIfNeeded(el)
+      }, 150)
     }
 
-    el.addEventListener("scroll", onScrollStart, { passive: true })
+    // scrollend fires once after scroll momentum/inertia completes
+    const onScrollEnd = () => {
+      userScrollingRef.current = false
+      window.clearTimeout(userScrollTimeoutRef.current)
+      snapToBottomIfNeeded(el)
+    }
+
+    el.addEventListener("scroll", onScroll, { passive: true })
+    el.addEventListener("scrollend", onScrollEnd, { passive: true })
     return () => {
-      el.removeEventListener("scroll", onScrollStart)
+      el.removeEventListener("scroll", onScroll)
+      el.removeEventListener("scrollend", onScrollEnd)
       window.clearTimeout(userScrollTimeoutRef.current)
     }
   }, [])
+
+  function snapToBottomIfNeeded(el: HTMLElement) {
+    if (!shouldAutoScroll.current) return
+    const dist = el.scrollHeight - el.scrollTop - el.clientHeight
+    if (dist > 0.5) {
+      lastProgrammaticScrollAt.current = performance.now()
+      el.scrollTop = el.scrollHeight
+    }
+  }
 
   // Correct scroll position when new items arrive while auto-scroll is active.
   // Only depends on itemCount (not totalSize) to avoid infinite render loops
@@ -296,8 +324,9 @@ export function useVirtualizedScroll({
   // --- Measurement drift correction ---
   // After the virtualizer re-measures items (via ResizeObserver on measureElement),
   // scrollHeight changes but scrollTop doesn't, drifting the viewport away from
-  // the bottom. We use a MutationObserver on the scroll container's subtree to
-  // detect layout changes and correct scrollTop when auto-scroll is active.
+  // the bottom. We observe child size changes and correct scrollTop when
+  // auto-scroll is active. During the recently-loaded grace period, we skip the
+  // userScrolling check since those "scrolls" are measurement-driven, not user input.
   useEffect(() => {
     const el = scrollContainerRef.current
     if (!el) return
@@ -305,7 +334,12 @@ export function useVirtualizedScroll({
     let prevScrollHeight = el.scrollHeight
 
     const correct = () => {
-      if (!shouldAutoScroll.current || userScrollingRef.current) return
+      if (!shouldAutoScroll.current) return
+      // During grace period, always correct (measurements are still settling).
+      // Outside grace, respect user scroll intent.
+      const inGrace = performance.now() < recentlyLoadedUntil.current
+      if (!inGrace && userScrollingRef.current) return
+
       const newScrollHeight = el.scrollHeight
       if (newScrollHeight !== prevScrollHeight) {
         const distFromBottom = newScrollHeight - el.scrollTop - el.clientHeight
@@ -319,11 +353,9 @@ export function useVirtualizedScroll({
 
     // ResizeObserver on children detects measurement changes from the virtualizer
     const resizeObserver = new ResizeObserver(correct)
-    // Observe direct children (the virtual list wrapper)
     for (const child of el.children) {
       resizeObserver.observe(child)
     }
-    // Also observe newly added children
     const mutationObserver = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
         for (const node of mutation.addedNodes) {
