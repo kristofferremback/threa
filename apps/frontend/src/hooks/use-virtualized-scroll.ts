@@ -248,16 +248,42 @@ export function useVirtualizedScroll({
     }
   })
 
-  // --- Auto-scroll maintenance ---
-  // After every render, if auto-scroll is active and we're not at the
-  // bottom, snap there. This runs in useLayoutEffect (before paint) so the
-  // user never sees a frame where measurements shifted the viewport away
-  // from the bottom. This single effect replaces the old settle phase,
-  // post-settle correction, and rAF drift correction — the virtualizer
-  // triggers re-renders when measureElement updates sizes, and we just
-  // keep scrollTop pinned to the bottom on each commit.
+  // --- Auto-scroll maintenance on measurement changes ---
+  // When the virtualizer re-measures items and scrollHeight changes, the
+  // viewport can drift away from the bottom. We correct this only when
+  // auto-scroll is active AND the user isn't actively scrolling, to avoid
+  // fighting with user intent (which caused the "stuck at bottom" bug).
+  const userScrollingRef = useRef(false)
+  const userScrollTimeoutRef = useRef<number | undefined>(undefined)
+
+  useEffect(() => {
+    const el = scrollContainerRef.current
+    if (!el) return
+
+    const onScrollStart = () => {
+      const now = performance.now()
+      // Only mark as user-scrolling if this wasn't a programmatic scroll
+      if (now - lastProgrammaticScrollAt.current > PROGRAMMATIC_SCROLL_GRACE_MS) {
+        userScrollingRef.current = true
+      }
+      window.clearTimeout(userScrollTimeoutRef.current)
+      userScrollTimeoutRef.current = window.setTimeout(() => {
+        userScrollingRef.current = false
+      }, 200)
+    }
+
+    el.addEventListener("scroll", onScrollStart, { passive: true })
+    return () => {
+      el.removeEventListener("scroll", onScrollStart)
+      window.clearTimeout(userScrollTimeoutRef.current)
+    }
+  }, [])
+
+  // Correct measurement drift: only when auto-scroll is on, user isn't
+  // actively scrolling, and the virtualizer's total size actually changed.
+  const totalSize = virtualizer.getTotalSize()
   useLayoutEffect(() => {
-    if (!shouldAutoScroll.current || itemCount === 0) return
+    if (!shouldAutoScroll.current || itemCount === 0 || userScrollingRef.current) return
     const el = scrollContainerRef.current
     if (!el) return
     const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
@@ -265,7 +291,7 @@ export function useVirtualizedScroll({
       lastProgrammaticScrollAt.current = performance.now()
       el.scrollTop = el.scrollHeight
     }
-  })
+  }, [totalSize, itemCount])
 
   // Auto-scroll to bottom when the container shrinks (e.g. mobile keyboard opens)
   useEffect(() => {
