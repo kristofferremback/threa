@@ -129,13 +129,10 @@ export function useVirtualizedScroll({
   // Grace period after initial load
   const recentlyLoadedUntil = useRef(0)
 
-  // The virtualizer handles scroll correction for measurement changes via
-  // shouldAdjustScrollPositionOnItemSizeChange (default: adjusts when item
-  // is above viewport). We do NOT need manual ResizeObserver/MutationObserver
-  // correction — that fought the virtualizer and caused infinite loops.
-  //
-  // For auto-scroll (pinning to bottom), we use the virtualizer's onChange
-  // callback to detect when measurements settle and re-scroll to bottom.
+  // The virtualizer auto-corrects scroll when items above the viewport
+  // resize (via internal shouldAdjustScrollPositionOnItemSizeChange).
+  // We rely on accurate estimates to minimize the delta, and let the
+  // virtualizer handle the rest. No manual scroll correction needed.
   const virtualizer = useVirtualizer({
     count: itemCount,
     getScrollElement: () => scrollContainerRef.current,
@@ -145,21 +142,6 @@ export function useVirtualizedScroll({
     scrollMargin,
     paddingStart,
     paddingEnd,
-    // When the virtualizer's state changes (measurements, scroll, resize),
-    // check if we need to pin to bottom. `sync` is true during active scroll.
-    onChange: (instance, sync) => {
-      if (!shouldAutoScroll.current || itemCount === 0) return
-      // Only correct when NOT actively scrolling (sync=false means scroll ended
-      // or a measurement/resize happened). This prevents fighting user scroll.
-      if (sync) return
-      const el = instance.scrollElement
-      if (!el) return
-      const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
-      if (distFromBottom > 1) {
-        lastProgrammaticScrollAt.current = performance.now()
-        instance.scrollToIndex(itemCount - 1, { align: "end" })
-      }
-    },
   })
 
   // Reset all state when stream changes
@@ -260,22 +242,31 @@ export function useVirtualizedScroll({
     prevIsFetchingNewer.current = isFetchingNewer
   })
 
-  // --- Auto-scroll to bottom when container shrinks (e.g. mobile keyboard) ---
+  // --- Auto-scroll to bottom when container resizes (e.g. mobile keyboard) ---
+  // Only scrolls when auto-scroll is active. Uses a debounce to wait for
+  // the resize to finish before scrolling, preventing the flicker loop that
+  // occurred when onChange + scrollToIndex fought with resize events.
+  const resizeTimerRef = useRef<number | undefined>(undefined)
+
   useEffect(() => {
     const el = scrollContainerRef.current
     if (!el) return
 
-    let prevHeight = el.clientHeight
     const observer = new ResizeObserver(() => {
-      const newHeight = el.clientHeight
-      if (newHeight < prevHeight && shouldAutoScroll.current && itemCount > 0) {
+      if (!shouldAutoScroll.current || itemCount === 0) return
+      // Debounce: wait for resize to settle before scrolling
+      window.clearTimeout(resizeTimerRef.current)
+      resizeTimerRef.current = window.setTimeout(() => {
+        lastProgrammaticScrollAt.current = performance.now()
         virtualizer.scrollToIndex(itemCount - 1, { align: "end" })
-      }
-      prevHeight = newHeight
+      }, 100)
     })
 
     observer.observe(el)
-    return () => observer.disconnect()
+    return () => {
+      observer.disconnect()
+      window.clearTimeout(resizeTimerRef.current)
+    }
   }, [virtualizer, itemCount])
 
   // --- Scroll event handler ---
@@ -346,8 +337,23 @@ export function useVirtualizedScroll({
       }
     }
 
+    // When scroll momentum ends and auto-scroll is active, snap to bottom.
+    // This handles measurement drift and inertia ending near-but-not-at bottom.
+    const handleScrollEnd = () => {
+      if (!shouldAutoScroll.current || itemCount === 0) return
+      const dist = el.scrollHeight - el.scrollTop - el.clientHeight
+      if (dist > 1) {
+        lastProgrammaticScrollAt.current = performance.now()
+        virtualizer.scrollToIndex(itemCount - 1, { align: "end" })
+      }
+    }
+
     el.addEventListener("scroll", handleScroll, { passive: true })
-    return () => el.removeEventListener("scroll", handleScroll)
+    el.addEventListener("scrollend", handleScrollEnd, { passive: true })
+    return () => {
+      el.removeEventListener("scroll", handleScroll)
+      el.removeEventListener("scrollend", handleScrollEnd)
+    }
   }, [virtualizer, onScrollNearTop, onScrollNearBottom, bottomThreshold, itemCount, triggerItemCount])
 
   const disableAutoScroll = useCallback(() => {

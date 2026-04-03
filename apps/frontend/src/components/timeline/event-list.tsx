@@ -101,12 +101,14 @@ export function estimateTimelineItemHeight(item: TimelineItem): number {
     const payload = event.payload as Record<string, unknown>
     if (payload.deletedAt) return 36
 
-    // Base: avatar row + name/timestamp + bottom margin (mb-5 = 20px)
-    let height = 72
+    // Layout: flex row with gap-[14px], avatar h-9 (36px), mb-5 (20px) margin.
+    // Bot/persona messages add py-4 (32px). Name row ~22px. Text ~24px/line.
+    const isBot = event.actorType === "bot" || event.actorType === "persona"
+    let height = isBot ? 100 : 68
 
-    // Text: ~20px per line, ~80 chars per line on mobile-ish widths
+    // Text: ~24px per line, ~80 chars per line on mobile-ish widths
     const markdown = (payload.contentMarkdown as string) ?? ""
-    height += Math.max(1, Math.ceil(markdown.length / 80)) * 20
+    height += Math.max(1, Math.ceil(markdown.length / 80)) * 24
 
     // Image attachments: h-32 (128px) + gap/margin
     const attachments = payload.attachments as Array<{ mimeType?: string }> | undefined
