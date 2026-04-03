@@ -20,7 +20,6 @@
 import { parseArgs } from "util"
 import { $ } from "bun"
 import path from "path"
-import { readdir } from "fs/promises"
 
 // ---------------------------------------------------------------------------
 // CLI args
@@ -122,63 +121,6 @@ async function createDatabase(dbName: string): Promise<void> {
   }
   console.log(`Creating database '${dbName}'...`)
   await runPsqlOnDefault(`CREATE DATABASE "${dbName}"`)
-}
-
-/**
- * Ensure umzug_migrations exists and contains an entry for every migration file.
- *
- * When a PR database is cloned from staging_main, the clone includes all tables
- * (e.g. agent_sessions) but umzug_migrations may be incomplete — the source DB
- * may be missing entries for migrations that were applied before tracking started,
- * or pg_dump may have partially failed. If the backend then starts and sees a
- * "pending" migration whose table already exists, it crashes with
- * "relation already exists".
- *
- * This function unconditionally seeds ALL migration filenames into
- * umzug_migrations with ON CONFLICT DO NOTHING, ensuring completeness.
- */
-async function verifyUmzugMigrations(dbName: string, migrationsRelPath: string): Promise<void> {
-  // Ensure the table exists
-  await runPsql(
-    dbName,
-    "CREATE TABLE IF NOT EXISTS umzug_migrations (name VARCHAR(255) PRIMARY KEY, executed_at TIMESTAMPTZ DEFAULT NOW())"
-  )
-
-  // Read migration filenames from disk
-  const migrationsDir = path.join(import.meta.dirname, "..", migrationsRelPath)
-  const files = (await readdir(migrationsDir)).filter((f) => f.endsWith(".sql")).sort()
-
-  if (files.length === 0) {
-    throw new Error("No migration files found — cannot seed umzug_migrations")
-  }
-
-  // Insert each migration individually to avoid large SQL statements and
-  // ensure partial failures are visible (runPsql throws on non-zero exit)
-  let seeded = 0
-  for (const file of files) {
-    const result = await runPsql(
-      dbName,
-      `INSERT INTO umzug_migrations (name) VALUES ('${file}') ON CONFLICT DO NOTHING RETURNING name`
-    )
-    if (result) seeded++
-  }
-
-  // Verify the final count matches
-  const count = await runPsql(dbName, "SELECT count(*) FROM umzug_migrations")
-  const countNum = parseInt(count, 10)
-
-  if (countNum < files.length) {
-    throw new Error(
-      `umzug_migrations has ${countNum} rows but ${files.length} migration files exist — ` +
-        `${files.length - countNum} entries are missing after seeding`
-    )
-  }
-
-  if (seeded > 0) {
-    console.log(`Seeded ${seeded} missing entries into umzug_migrations (${countNum} total, ${files.length} files)`)
-  } else {
-    console.log(`umzug_migrations OK (${countNum} rows, all ${files.length} files present)`)
-  }
 }
 
 async function cloneDatabase(sourceDb: string, targetDb: string): Promise<void> {
@@ -651,11 +593,12 @@ async function deploy(): Promise<void> {
     console.log(`Databases already exist — skipping clone`)
   }
 
-  // Always ensure umzug_migrations is complete — even on re-deploys the table
-  // may be incomplete from a previous failed clone. This is idempotent
-  // (ON CONFLICT DO NOTHING) so safe to run every time.
-  await verifyUmzugMigrations(prDbName, "apps/backend/src/db/migrations")
-  await verifyUmzugMigrations(prCpDbName, "apps/control-plane/src/db/migrations")
+  // Migration strategy: the cloned DB already contains staging_main's
+  // umzug_migrations table (via pg_dump). The backend's runMigrations()
+  // uses Umzug which reads that table and only runs migrations not yet
+  // recorded — i.e. any NEW migrations introduced by the PR branch.
+  // We intentionally do NOT pre-seed all migration filenames here, as
+  // that would prevent new PR migrations from ever executing.
 
   // 2. Create and deploy Railway service
   await createRailwayService()
