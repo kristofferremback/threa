@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useLayoutEffect, useCallback, type RefObject } from "react"
-import { useVirtualizer, type Virtualizer } from "@tanstack/react-virtual"
+import { useVirtualizer, elementScroll, type Virtualizer } from "@tanstack/react-virtual"
 import { EVENT_PAGE_SIZE, SCROLL_FETCH_RATIO } from "@/lib/constants"
 
 /**
@@ -139,17 +139,16 @@ export function useVirtualizedScroll({
   // Grace period after initial load
   const recentlyLoadedUntil = useRef(0)
 
-  // True while the user is actively scrolling (between first scroll event and
-  // scrollend). During this window, we suppress the virtualizer's scroll
-  // position corrections to prevent estimate→measurement deltas from fighting
-  // with the user's scroll momentum. The accumulated drift is negligible
-  // (~0.25px per item with accurate estimates) and self-corrects when scrolling
-  // stops and new measurements apply their corrections normally.
-  const isUserScrolling = useRef(false)
-
-  // Content-aware estimates are close to actual sizes, so the virtualizer's
-  // default scroll correction (for items above viewport) keeps drift minimal.
-  // During user scroll we suppress corrections to avoid fighting scroll input.
+  // Custom scrollToFn marks all virtualizer-initiated scrolls (including
+  // measurement corrections) as programmatic. Without this, TanStack's
+  // element.scrollTo() calls for item-size corrections fire scroll events that
+  // our handler misinterprets as user-initiated, which can falsely disable
+  // auto-scroll or interfere with settling logic.
+  //
+  // We let TanStack's default shouldAdjustScrollPositionOnItemSizeChange run
+  // (corrects items above viewport). This keeps the viewport stable when item
+  // heights change — e.g. link previews loading — regardless of whether the
+  // user is actively scrolling.
   const virtualizer = useVirtualizer({
     count: itemCount,
     getScrollElement: () => scrollContainerRef.current,
@@ -159,9 +158,10 @@ export function useVirtualizedScroll({
     scrollMargin,
     paddingStart,
     paddingEnd,
-    ...({
-      shouldAdjustScrollPositionOnItemSizeChange: () => !isUserScrolling.current,
-    } as Record<string, unknown>),
+    scrollToFn: (offset, options, instance) => {
+      lastProgrammaticScrollAt.current = performance.now()
+      elementScroll(offset, options, instance)
+    },
   })
 
   // Reset all state when stream changes
@@ -272,8 +272,11 @@ export function useVirtualizedScroll({
       // before new items were added. This preserves their exact viewport
       // position regardless of how many items were prepended or how accurate
       // the estimates are — no estimate-based math needed.
+      // Mark as programmatic so the scroll handler doesn't interpret the
+      // resulting scroll event as user-initiated (which would affect auto-scroll).
       const el = scrollContainerRef.current
       if (el) {
+        lastProgrammaticScrollAt.current = performance.now()
         el.scrollTop = el.scrollHeight - el.clientHeight - lastDistFromBottom.current
       }
     } else if (shouldAutoScroll.current && itemCount > prevCount) {
@@ -343,11 +346,6 @@ export function useVirtualizedScroll({
       const isProgrammatic = now - lastProgrammaticScrollAt.current < PROGRAMMATIC_SCROLL_GRACE_MS
       const isSettling = isProgrammatic || now < recentlyLoadedUntil.current
 
-      // Track user scroll state for correction suppression
-      if (!isProgrammatic) {
-        isUserScrolling.current = true
-      }
-
       // During settling (programmatic scroll or recent load), only disable
       // auto-scroll for clearly intentional user scrolls (3x threshold).
       // Otherwise, measurement-driven shifts would falsely kill auto-scroll.
@@ -404,8 +402,6 @@ export function useVirtualizedScroll({
     // When scroll momentum ends and auto-scroll is active, snap to bottom.
     // This handles measurement drift and inertia ending near-but-not-at bottom.
     const handleScrollEnd = () => {
-      isUserScrolling.current = false
-
       if (!shouldAutoScroll.current || itemCount === 0) return
       if (performance.now() - lastProgrammaticScrollAt.current < PROGRAMMATIC_SCROLL_GRACE_MS) return
       const dist = el.scrollHeight - el.scrollTop - el.clientHeight
