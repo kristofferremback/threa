@@ -129,9 +129,10 @@ export function useVirtualizedScroll({
   // Grace period after initial load
   const recentlyLoadedUntil = useRef(0)
 
-  // With content-aware estimates close to actual sizes, we let the virtualizer
-  // always correct scroll position when items are measured. This prevents drift
-  // (accumulated small errors) while keeping corrections imperceptibly small.
+  // Content-aware estimates are close to actual sizes, so the virtualizer's
+  // default scroll correction (for items above viewport) keeps drift minimal.
+  // useFlushSync ensures measurement → scrollTop adjustment → React re-render
+  // all happen in the same frame, preventing visible jank from stale translateY.
   const virtualizer = useVirtualizer({
     count: itemCount,
     getScrollElement: () => scrollContainerRef.current,
@@ -141,7 +142,6 @@ export function useVirtualizedScroll({
     scrollMargin,
     paddingStart,
     paddingEnd,
-    useFlushSync: false,
   })
 
   // Reset all state when stream changes
@@ -203,31 +203,21 @@ export function useVirtualizedScroll({
         initialScrollDone.current = true
         lastProgrammaticScrollAt.current = performance.now()
         recentlyLoadedUntil.current = performance.now() + RECENTLY_LOADED_GRACE_MS
-        virtualizer.scrollToIndex(itemCount - 1, { align: "end" })
 
-        // Hide content during initial measurement settle to prevent visible
-        // position jank. Items are rendered with estimated sizes, then measured
-        // over 2-4 frames by ResizeObserver. During this window, positions shift
-        // as estimates are replaced by actual measurements. Hiding the container
-        // for this brief period (~8 frames ≈ 130ms at 60fps) masks the shifts.
-        // Each frame also re-snaps to bottom so the final reveal is at the
-        // correct scroll position.
+        // Scroll to bottom. With useFlushSync (default), measurements trigger
+        // synchronous re-renders, so most items settle in the first frame.
+        // Hide briefly and re-snap after 2 frames to catch any stragglers.
         const el = scrollContainerRef.current
-        if (el) {
-          el.style.opacity = "0"
-          let frame = 0
-          const settle = () => {
-            frame++
-            lastProgrammaticScrollAt.current = performance.now()
+        if (el) el.style.opacity = "0"
+        virtualizer.scrollToIndex(itemCount - 1, { align: "end" })
+        requestAnimationFrame(() => {
+          lastProgrammaticScrollAt.current = performance.now()
+          virtualizer.scrollToIndex(itemCount - 1, { align: "end" })
+          requestAnimationFrame(() => {
             virtualizer.scrollToIndex(itemCount - 1, { align: "end" })
-            if (frame < 8) {
-              requestAnimationFrame(settle)
-            } else {
-              el.style.opacity = "1"
-            }
-          }
-          requestAnimationFrame(settle)
-        }
+            if (el) el.style.opacity = "1"
+          })
+        })
       }
       return
     }
@@ -316,22 +306,15 @@ export function useVirtualizedScroll({
       const isNearBottom = distanceFromBottom < bottomThreshold
 
       const now = performance.now()
-      const isInGracePeriod = now - lastProgrammaticScrollAt.current < PROGRAMMATIC_SCROLL_GRACE_MS
-      const isRecentlyLoaded = now < recentlyLoadedUntil.current
+      const isSettling =
+        now - lastProgrammaticScrollAt.current < PROGRAMMATIC_SCROLL_GRACE_MS || now < recentlyLoadedUntil.current
 
-      // During grace period or recently-loaded window, only ENABLE auto-scroll
-      // (when near bottom), never DISABLE it. This prevents measurement-driven
-      // scroll shifts from killing auto-scroll while sizes are still settling.
-      if (isInGracePeriod || isRecentlyLoaded) {
-        if (isNearBottom) {
-          shouldAutoScroll.current = true
-        }
-        // During grace periods, only disable auto-scroll if the user has scrolled
-        // well beyond the bottom threshold — small measurement-driven shifts should
-        // not kill auto-scroll, but deliberate scrolling should be respected.
-        else if (distanceFromBottom > bottomThreshold * 3) {
-          shouldAutoScroll.current = false
-        }
+      // During settling (programmatic scroll or recent load), only disable
+      // auto-scroll for clearly intentional user scrolls (3x threshold).
+      // Otherwise, measurement-driven shifts would falsely kill auto-scroll.
+      if (isSettling) {
+        if (isNearBottom) shouldAutoScroll.current = true
+        else if (distanceFromBottom > bottomThreshold * 3) shouldAutoScroll.current = false
       } else {
         shouldAutoScroll.current = isNearBottom
       }
