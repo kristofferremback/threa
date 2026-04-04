@@ -76,15 +76,17 @@ export type TimelineItem =
  * jumps, scroll drift after prepend, and visual gaps while scrolling.
  */
 export function estimateTimelineItemHeight(item: TimelineItem): number {
-  if (item.type === "command_group") return 56
-  if (item.type === "session_group") return 72
+  if (item.type === "command_group") return 36
+  if (item.type === "session_group") return 48
 
   const event = item.event
   const { eventType } = event
 
-  // Compact system/membership events
+  // Deleted message: py-0.5 (4px) + text-xs (16px line-height) = 20px
+  if (eventType === "message_deleted") return 20
+
+  // System/membership events: py-2 (16px) + text-sm (20px line-height) = 36px
   if (
-    eventType === "message_deleted" ||
     eventType === "member_joined" ||
     eventType === "member_left" ||
     eventType === "member_added" ||
@@ -97,34 +99,39 @@ export function estimateTimelineItemHeight(item: TimelineItem): number {
 
   if (eventType === "message_created" || eventType === "companion_response") {
     const payload = event.payload as Record<string, unknown>
-    if (payload.deletedAt) return 36
+    // Soft-deleted message renders as DeletedMessageEvent
+    if (payload.deletedAt) return 20
 
-    // Layout: flex row with gap-[14px], avatar h-9 (36px), mb-5 (20px) margin.
-    // Bot/persona messages add py-4 (32px). Name row ~22px. Text ~24px/line.
+    // Layout: flex row with gap-[14px], avatar h-9 (36px).
+    // Name row: text-sm (20px) + mb-1 (4px) = 24px.
+    // mb-5 (20px) margin-bottom on container.
+    // Bot/persona/system messages add py-4 (32px).
+    // Base (non-text) = name(24) + mb-5(20) = 44px; bot adds 32 → 76px.
     const isBot = event.actorType === "bot" || event.actorType === "persona"
-    let height = isBot ? 100 : 68
+    let height = isBot ? 76 : 44
 
-    // Text: ~24px per line, ~80 chars per line on mobile-ish widths
+    // Text: text-sm leading-relaxed = 14px * 1.625 ≈ 23px per line.
+    // ~80 chars per line on typical widths.
     const markdown = (payload.contentMarkdown as string) ?? ""
-    height += Math.max(1, Math.ceil(markdown.length / 80)) * 24
+    height += Math.max(1, Math.ceil(markdown.length / 80)) * 23
 
-    // Image attachments: h-32 (128px) + gap/margin
+    // Image attachments: h-32 (128px) + mt-2 (8px) = 136px
     const attachments = payload.attachments as Array<{ mimeType?: string }> | undefined
     if (attachments && attachments.length > 0) {
-      if (attachments.some((a) => a.mimeType?.startsWith("image/"))) height += 150
+      if (attachments.some((a) => a.mimeType?.startsWith("image/"))) height += 136
       if (attachments.some((a) => !a.mimeType?.startsWith("image/"))) height += 40
     }
 
-    // Link previews: ~90px per card (capped at DEFAULT_VISIBLE_COUNT=3)
+    // Link previews: ~80px per card (capped at DEFAULT_VISIBLE_COUNT=3)
     const linkPreviews = payload.linkPreviews as Array<unknown> | undefined
     if (linkPreviews && linkPreviews.length > 0) {
-      height += Math.min(linkPreviews.length, 3) * 90
+      height += Math.min(linkPreviews.length, 3) * 80
     }
 
     return height
   }
 
-  return 100
+  return 60
 }
 
 /** Event types that render as null in EventItem (handled elsewhere or invisible) */

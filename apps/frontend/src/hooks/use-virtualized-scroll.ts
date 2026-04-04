@@ -99,7 +99,6 @@ export function useVirtualizedScroll({
   // Prepend stability tracking
   const prevItemCountRef = useRef(0)
   const prevFirstKeyRef = useRef<string | null>(null)
-  const prevScrollHeightRef = useRef(0)
 
   // Fetch guards — current refs let the scroll handler read live values
   // without needing isFetchingOlder/Newer in its dependency array
@@ -126,12 +125,9 @@ export function useVirtualizedScroll({
   // Grace period after initial load
   const recentlyLoadedUntil = useRef(0)
 
-  // The virtualizer auto-corrects scroll when items above the viewport
-  // resize. We suppress corrections for small deltas (< 30px) to avoid
-  // micro-jumps from estimate→measurement discrepancies during scroll.
-  // Large deltas (e.g. images loading) still get corrected.
-  // Note: shouldAdjustScrollPositionOnItemSizeChange exists in virtual-core
-  // 3.13.23 but the React adapter types haven't been updated yet.
+  // With content-aware estimates close to actual sizes, we let the virtualizer
+  // always correct scroll position when items are measured. This prevents drift
+  // (accumulated small errors) while keeping corrections imperceptibly small.
   const virtualizer = useVirtualizer({
     count: itemCount,
     getScrollElement: () => scrollContainerRef.current,
@@ -142,10 +138,6 @@ export function useVirtualizedScroll({
     paddingStart,
     paddingEnd,
     useFlushSync: false,
-    ...({
-      shouldAdjustScrollPositionOnItemSizeChange: (_item: unknown, delta: number, _instance: unknown) =>
-        Math.abs(delta) > 30,
-    } as Record<string, unknown>),
   })
 
   // Reset all state when stream changes
@@ -163,7 +155,6 @@ export function useVirtualizedScroll({
     lastProgrammaticScrollAt.current = 0
     initialScrollDone.current = false
     recentlyLoadedUntil.current = 0
-    prevScrollHeightRef.current = 0
     setIsScrolledFarFromBottom(false)
   }, [resetKey])
 
@@ -221,23 +212,24 @@ export function useVirtualizedScroll({
       !shouldAutoScroll.current &&
       olderContentJustArrived
     ) {
-      // After prepend, adjust scrollTop by the height delta to keep the same
-      // content in view. This preserves exact viewport position instead of
-      // snapping the previously-first item to the top of the viewport.
-      const el = scrollContainerRef.current
-      if (el && prevScrollHeightRef.current > 0) {
-        const delta = el.scrollHeight - prevScrollHeightRef.current
-        if (delta > 0) {
-          el.scrollTop += delta
-        }
+      // After prepend, adjust scroll offset by the estimated height of new items
+      // to keep the same content in view. Uses the virtualizer's internal offset
+      // (like the TanStack infinite-scroll example) for synchronous correction
+      // that avoids timing issues with DOM scrollHeight measurement.
+      const newItemCount = itemCount - prevCount
+      let addedHeight = 0
+      for (let i = 0; i < newItemCount; i++) {
+        addedHeight += virtualizer.options.estimateSize(i)
       }
+      const newOffset = (virtualizer.scrollOffset ?? 0) + addedHeight
+      virtualizer.scrollOffset = newOffset
+      virtualizer.scrollToOffset(newOffset, { align: "start" })
     } else if (shouldAutoScroll.current && itemCount > prevCount) {
       scrollToBottomImpl()
     }
 
     prevItemCountRef.current = itemCount
     prevFirstKeyRef.current = currentFirstKey
-    prevScrollHeightRef.current = scrollContainerRef.current?.scrollHeight ?? 0
   }, [isLoading, itemCount, getItemKey, isFetchingOlder, scrollToBottomImpl, virtualizer])
 
   // Track fetching state transitions and start cooldown timers
@@ -245,7 +237,6 @@ export function useVirtualizedScroll({
     if (prevIsFetchingOlder.current && !isFetchingOlder) {
       olderFetchScheduled.current = false
       olderFetchCooldownUntil.current = performance.now() + FETCH_COOLDOWN_MS
-      prevScrollHeightRef.current = scrollContainerRef.current?.scrollHeight ?? 0
     }
     if (prevIsFetchingNewer.current && !isFetchingNewer) {
       newerFetchScheduled.current = false
