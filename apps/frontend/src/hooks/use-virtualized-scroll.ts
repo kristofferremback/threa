@@ -99,6 +99,10 @@ export function useVirtualizedScroll({
   // Prepend stability tracking
   const prevItemCountRef = useRef(0)
   const prevFirstKeyRef = useRef<string | null>(null)
+  // Continuously updated distance from the bottom of the scroll container.
+  // Used to restore exact viewport position after prepend — we capture before,
+  // then after the DOM updates we set scrollTop = scrollHeight - clientHeight - savedDist.
+  const lastDistFromBottom = useRef(0)
 
   // Fetch guards — current refs let the scroll handler read live values
   // without needing isFetchingOlder/Newer in its dependency array
@@ -240,21 +244,16 @@ export function useVirtualizedScroll({
       prevFirstKey !== null &&
       !shouldAutoScroll.current
     ) {
-      // After prepend, adjust scrollTop by the estimated height of new items
-      // to keep the same content in view. Uses estimates (not DOM scrollHeight)
-      // because at this point in useLayoutEffect the new items haven't been
-      // laid out yet. The virtualizer's measurement corrections will handle
-      // any small differences between estimates and actuals.
+      // Prepend: restore the same distance from the bottom that the user had
+      // before new items were added. This preserves their exact viewport
+      // position regardless of how many items were prepended or how accurate
+      // the estimates are — no estimate-based math needed.
       const el = scrollContainerRef.current
       if (el) {
-        const newItemCount = itemCount - prevCount
-        let addedHeight = 0
-        for (let i = 0; i < newItemCount; i++) {
-          addedHeight += virtualizer.options.estimateSize(i)
-        }
-        el.scrollTop += addedHeight
+        el.scrollTop = el.scrollHeight - el.clientHeight - lastDistFromBottom.current
       }
     } else if (shouldAutoScroll.current && itemCount > prevCount) {
+      // Append with auto-scroll: lock to bottom (distance = 0)
       scrollToBottomImpl()
     }
 
@@ -313,6 +312,7 @@ export function useVirtualizedScroll({
       if (itemCount === 0) return
 
       const distanceFromBottom = scrollHeight - scrollTop - clientHeight
+      lastDistFromBottom.current = distanceFromBottom
       const isNearBottom = distanceFromBottom < bottomThreshold
 
       const now = performance.now()
