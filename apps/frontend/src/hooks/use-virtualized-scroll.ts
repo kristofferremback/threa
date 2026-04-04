@@ -279,8 +279,14 @@ export function useVirtualizedScroll({
       // resulting scroll event as user-initiated (which would affect auto-scroll).
       const el = scrollContainerRef.current
       if (el) {
+        const targetScrollTop = el.scrollHeight - el.clientHeight - lastDistFromBottom.current
         lastProgrammaticScrollAt.current = performance.now()
-        el.scrollTop = el.scrollHeight - el.clientHeight - lastDistFromBottom.current
+        el.scrollTop = targetScrollTop
+        // Update TanStack's scrollOffset so measurement corrections use the
+        // new position as their base. Without this, corrections use the stale
+        // pre-prepend offset (the scroll event that updates it hasn't fired
+        // yet), overwriting our restoration and jumping back to the old spot.
+        virtualizer.scrollOffset = targetScrollTop
       }
     } else if (shouldAutoScroll.current && itemCount > prevCount) {
       // Append with auto-scroll: lock to bottom
