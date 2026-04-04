@@ -121,8 +121,6 @@ export function useVirtualizedScroll({
 
   // Whether initial scroll-to-bottom has been performed for this stream
   const initialScrollDone = useRef(false)
-  // Timer for follow-up scroll correction after initial measurement settles
-  const initialSettleTimerRef = useRef<number | undefined>(undefined)
 
   // Grace period after initial load
   const recentlyLoadedUntil = useRef(0)
@@ -157,8 +155,11 @@ export function useVirtualizedScroll({
     lastProgrammaticScrollAt.current = 0
     initialScrollDone.current = false
     recentlyLoadedUntil.current = 0
-    window.clearTimeout(initialSettleTimerRef.current)
     setIsScrolledFarFromBottom(false)
+    // Ensure opacity is restored if switching streams during settle phase
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.style.opacity = "1"
+    }
   }, [resetKey])
 
   const scrollToBottomImpl = useCallback(
@@ -199,13 +200,30 @@ export function useVirtualizedScroll({
         lastProgrammaticScrollAt.current = performance.now()
         recentlyLoadedUntil.current = performance.now() + RECENTLY_LOADED_GRACE_MS
         virtualizer.scrollToIndex(itemCount - 1, { align: "end" })
-        // Follow-up correction: after measurements settle (~150ms), snap to
-        // bottom again to correct any drift from estimate→measurement deltas.
-        window.clearTimeout(initialSettleTimerRef.current)
-        initialSettleTimerRef.current = window.setTimeout(() => {
-          lastProgrammaticScrollAt.current = performance.now()
-          virtualizer.scrollToIndex(itemCount - 1, { align: "end" })
-        }, 150)
+
+        // Hide content during initial measurement settle to prevent visible
+        // position jank. Items are rendered with estimated sizes, then measured
+        // over 2-4 frames by ResizeObserver. During this window, positions shift
+        // as estimates are replaced by actual measurements. Hiding the container
+        // for this brief period (~8 frames ≈ 130ms at 60fps) masks the shifts.
+        // Each frame also re-snaps to bottom so the final reveal is at the
+        // correct scroll position.
+        const el = scrollContainerRef.current
+        if (el) {
+          el.style.opacity = "0"
+          let frame = 0
+          const settle = () => {
+            frame++
+            lastProgrammaticScrollAt.current = performance.now()
+            virtualizer.scrollToIndex(itemCount - 1, { align: "end" })
+            if (frame < 8) {
+              requestAnimationFrame(settle)
+            } else {
+              el.style.opacity = "1"
+            }
+          }
+          requestAnimationFrame(settle)
+        }
       }
       return
     }
