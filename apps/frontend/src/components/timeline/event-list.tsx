@@ -1,4 +1,4 @@
-import { memo, useMemo } from "react"
+import { useMemo } from "react"
 import type { Virtualizer } from "@tanstack/react-virtual"
 import {
   COMMAND_EVENT_TYPES,
@@ -260,7 +260,10 @@ export function groupTimelineItems(events: StreamEvent[], currentUserId: string 
   return result
 }
 
-export const EventList = memo(function EventList({
+// Not memoized: the `virtualizer` prop is reference-stable but its internal
+// state (visible items) changes on scroll — memo would block those re-renders.
+// Render cost is bounded by virtualizer overscan (~25 items), not total count.
+export function EventList({
   timelineItems,
   isLoading,
   workspaceId,
@@ -425,4 +428,4 @@ export const EventList = memo(function EventList({
       })}
     </div>
   )
-})
+}
