@@ -35,7 +35,7 @@ interface UseVirtualizedScrollOptions {
   getItemKey: (index: number) => string
   /** Estimated item height (default: 120px) */
   estimateSize?: (index: number) => number
-  /** Extra items rendered above/below viewport (default: 50) */
+  /** Extra items rendered above/below viewport (default: 25) */
   overscan?: number
   /** Called when user scrolls near the top (for loading older messages) */
   onScrollNearTop?: () => boolean
@@ -86,7 +86,7 @@ export function useVirtualizedScroll({
   itemCount,
   getItemKey,
   estimateSize,
-  overscan = 50,
+  overscan = 25,
   onScrollNearTop,
   onScrollNearBottom,
   isFetchingOlder = false,
@@ -144,6 +144,12 @@ export function useVirtualizedScroll({
   // element.scrollTo() calls for item-size corrections fire scroll events that
   // our handler misinterprets as user-initiated, which can falsely disable
   // auto-scroll or interfere with settling logic.
+  //
+  // useAnimationFrameWithResizeObserver batches ResizeObserver measurements
+  // into a single rAF instead of firing mid-layout. This reduces read-write
+  // layout thrashing that Firefox's Gecko engine is sensitive to (Blink handles
+  // it better). The trade-off is one frame of estimated sizing before the
+  // actual measurement applies — imperceptible with content-aware estimates.
   const virtualizer = useVirtualizer({
     count: itemCount,
     getScrollElement: () => scrollContainerRef.current,
@@ -153,6 +159,7 @@ export function useVirtualizedScroll({
     scrollMargin,
     paddingStart,
     paddingEnd,
+    useAnimationFrameWithResizeObserver: true,
     scrollToFn: (offset, options, instance) => {
       lastProgrammaticScrollAt.current = performance.now()
       elementScroll(offset, options, instance)
