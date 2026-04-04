@@ -25,13 +25,6 @@ const FETCH_COOLDOWN_MS = 500
  * above the bottom with no way to recover.
  */
 const RECENTLY_LOADED_GRACE_MS = 500
-/**
- * Delay (ms) before snapping to bottom after a visible item grows while
- * auto-scrolling. Batches multiple rapid measurements (e.g. several link
- * previews loading at once) into a single snap instead of correcting each
- * one inline (which causes visible upward flicker).
- */
-const BOTTOM_SNAP_DELAY_MS = 80
 
 interface UseVirtualizedScrollOptions {
   /** Whether data is currently loading (delays initial scroll) */
@@ -146,31 +139,6 @@ export function useVirtualizedScroll({
   // Grace period after initial load
   const recentlyLoadedUntil = useRef(0)
 
-  // Deferred snap-to-bottom timer. When a visible item grows while we're
-  // pinned to bottom (e.g. link preview loads), we don't correct inline
-  // (that causes flicker). Instead we let content push down naturally and
-  // schedule a single snap after measurements settle.
-  const bottomSnapTimer = useRef<number | undefined>(undefined)
-
-  // Track which DOM nodes have been force-measured. WeakSet so unmounted nodes
-  // are garbage-collected automatically when they leave the overscan zone.
-  const measuredNodes = useRef(new WeakSet<Element>())
-
-  // Flag set during render when a prepend is about to happen. Refs fire before
-  // layout effects, so we need to tell the measureElement wrapper not to force
-  // measurements that would fight with the prepend scroll restoration.
-  const isPrependingRef = useRef(false)
-  if (!isLoading && itemCount > 0 && prevItemCountRef.current > 0) {
-    const currentFirstKey = getItemKey(0)
-    isPrependingRef.current =
-      itemCount > prevItemCountRef.current &&
-      currentFirstKey !== prevFirstKeyRef.current &&
-      prevFirstKeyRef.current !== null &&
-      !shouldAutoScroll.current
-  } else {
-    isPrependingRef.current = false
-  }
-
   // Custom scrollToFn marks all virtualizer-initiated scrolls (including
   // measurement corrections) as programmatic. Without this, TanStack's
   // element.scrollTo() calls for item-size corrections fire scroll events that
@@ -191,60 +159,6 @@ export function useVirtualizedScroll({
     },
   })
 
-  // TanStack skips synchronous measurement in the ref callback during user
-  // scroll (isScrolling=true, scrollState=null). Items enter the DOM at their
-  // estimated size, then ResizeObserver corrects a frame later — causing a
-  // visible shift/jump. We wrap measureElement to force synchronous measurement
-  // for newly mounted nodes. React batches the resulting resizeItem → notify →
-  // setState into the current commit, so the browser only paints the final
-  // correct layout. The WeakSet ensures we only force-measure each node once.
-  const measureRef = useRef<typeof virtualizer.measureElement | null>(null)
-  if (!measureRef.current) {
-    const original = virtualizer.measureElement
-    measureRef.current = (node) => {
-      original(node)
-      // Skip forced measurement during prepend — the layout effect handles scroll
-      // restoration via distance-from-bottom, and forced resizeItem calls would
-      // apply corrections that fight with that restoration.
-      if (node && !measuredNodes.current.has(node) && !isPrependingRef.current) {
-        measuredNodes.current.add(node)
-        const index = Number(node.getAttribute("data-index"))
-        if (index >= 0) {
-          virtualizer.resizeItem(index, Math.round(node.getBoundingClientRect().height))
-        }
-      }
-    }
-  }
-  virtualizer.measureElement = measureRef.current
-
-  // TanStack's default correction only fires for items above the viewport
-  // (item.start < scrollOffset). For items visible in the viewport, we want
-  // content to push down naturally (pure DOM feel). But when pinned to bottom,
-  // visible item growth (link previews, attachments) pushes us away from the
-  // bottom — so we schedule a deferred snap instead of correcting inline.
-  //
-  // Exception: during the initial settle window (opacity=0, measurements
-  // trickling in) we correct all items immediately so the invisible settle
-  // phase converges quickly without deferred-snap jank.
-  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) => {
-    const scrollOffset = instance.scrollOffset ?? 0
-    // Items above viewport: correct immediately (maintains viewport position)
-    if (item.start < scrollOffset) return true
-    // During initial settle: correct all items (invisible, fast convergence)
-    if (performance.now() < recentlyLoadedUntil.current) return true
-    // Items in/below viewport while pinned to bottom: let content push down
-    // naturally, then snap to bottom after measurements settle.
-    if (shouldAutoScroll.current) {
-      window.clearTimeout(bottomSnapTimer.current)
-      bottomSnapTimer.current = window.setTimeout(() => {
-        if (!shouldAutoScroll.current || itemCount === 0) return
-        lastProgrammaticScrollAt.current = performance.now()
-        virtualizer.scrollToIndex(itemCount - 1, { align: "end" })
-      }, BOTTOM_SNAP_DELAY_MS)
-    }
-    return false
-  }
-
   // Reset all state when stream changes
   useLayoutEffect(() => {
     shouldAutoScroll.current = true
@@ -261,12 +175,11 @@ export function useVirtualizedScroll({
     initialScrollDone.current = false
     recentlyLoadedUntil.current = 0
     setIsScrolledFarFromBottom(false)
-    // Cancel any in-flight rAF settle chain or deferred snap from a previous stream
+    // Cancel any in-flight rAF settle chain from a previous stream
     if (settleRafRef.current !== undefined) {
       cancelAnimationFrame(settleRafRef.current)
       settleRafRef.current = undefined
     }
-    window.clearTimeout(bottomSnapTimer.current)
     // Ensure opacity is restored if switching streams during settle phase
     if (scrollContainerRef.current) {
       scrollContainerRef.current.style.opacity = "1"
@@ -369,21 +282,9 @@ export function useVirtualizedScroll({
         lastProgrammaticScrollAt.current = performance.now()
         el.scrollTop = el.scrollHeight - el.clientHeight - lastDistFromBottom.current
       }
-      isPrependingRef.current = false
     } else if (shouldAutoScroll.current && itemCount > prevCount) {
-      // Append with auto-scroll: snap to bottom immediately, then re-snap
-      // after one frame so ResizeObserver measurements for the new item have
-      // applied. Without the re-snap, the first scrollToIndex uses the
-      // *estimated* height and the measurement delta for the last item goes
-      // uncorrected (TanStack's default only corrects items above viewport).
+      // Append with auto-scroll: lock to bottom
       scrollToBottomImpl()
-      settleRafRef.current = requestAnimationFrame(() => {
-        if (shouldAutoScroll.current) {
-          lastProgrammaticScrollAt.current = performance.now()
-          virtualizer.scrollToIndex(itemCount - 1, { align: "end" })
-        }
-        settleRafRef.current = undefined
-      })
     }
 
     prevItemCountRef.current = itemCount
