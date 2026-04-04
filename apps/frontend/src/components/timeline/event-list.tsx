@@ -77,7 +77,8 @@ export type TimelineItem =
  */
 export function estimateTimelineItemHeight(item: TimelineItem): number {
   if (item.type === "command_group") return 36
-  if (item.type === "session_group") return 48
+  // Session card: py-3 outer (24px) + Link py-2.5 (20px) + border (2px) + content (~40px) ≈ 86px
+  if (item.type === "session_group") return 86
 
   const event = item.event
   const { eventType } = event
@@ -104,11 +105,11 @@ export function estimateTimelineItemHeight(item: TimelineItem): number {
 
     // Layout: flex row with gap-[14px], avatar h-9 (36px).
     // Name row: text-sm (20px) + mb-1 (4px) = 24px.
-    // mb-5 (20px) margin-bottom on container.
+    // mb-5 (20px) margin-bottom on container (captured by flow-root wrapper).
     // Bot/persona/system messages add py-4 (32px).
-    // Base (non-text) = name(24) + mb-5(20) = 44px; bot adds 32 → 76px.
-    const isBot = event.actorType === "bot" || event.actorType === "persona"
-    let height = isBot ? 76 : 44
+    // Base (non-text) = name(24) + mb-5(20) = 44px; bot/system adds 32 → 76px.
+    const hasExtraPadding = event.actorType === "bot" || event.actorType === "persona" || event.actorType === "system"
+    let height = hasExtraPadding ? 76 : 44
 
     // Text: text-sm leading-relaxed = 14px * 1.625 ≈ 23px per line.
     // ~80 chars per line on typical widths.

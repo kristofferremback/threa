@@ -121,6 +121,8 @@ export function useVirtualizedScroll({
 
   // Whether initial scroll-to-bottom has been performed for this stream
   const initialScrollDone = useRef(false)
+  // Timer for follow-up scroll correction after initial measurement settles
+  const initialSettleTimerRef = useRef<number | undefined>(undefined)
 
   // Grace period after initial load
   const recentlyLoadedUntil = useRef(0)
@@ -155,6 +157,7 @@ export function useVirtualizedScroll({
     lastProgrammaticScrollAt.current = 0
     initialScrollDone.current = false
     recentlyLoadedUntil.current = 0
+    window.clearTimeout(initialSettleTimerRef.current)
     setIsScrolledFarFromBottom(false)
   }, [resetKey])
 
@@ -196,6 +199,13 @@ export function useVirtualizedScroll({
         lastProgrammaticScrollAt.current = performance.now()
         recentlyLoadedUntil.current = performance.now() + RECENTLY_LOADED_GRACE_MS
         virtualizer.scrollToIndex(itemCount - 1, { align: "end" })
+        // Follow-up correction: after measurements settle (~150ms), snap to
+        // bottom again to correct any drift from estimate→measurement deltas.
+        window.clearTimeout(initialSettleTimerRef.current)
+        initialSettleTimerRef.current = window.setTimeout(() => {
+          lastProgrammaticScrollAt.current = performance.now()
+          virtualizer.scrollToIndex(itemCount - 1, { align: "end" })
+        }, 150)
       }
       return
     }
