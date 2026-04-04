@@ -129,10 +129,17 @@ export function useVirtualizedScroll({
   // Grace period after initial load
   const recentlyLoadedUntil = useRef(0)
 
+  // True while the user is actively scrolling (between first scroll event and
+  // scrollend). During this window, we suppress the virtualizer's scroll
+  // position corrections to prevent estimate→measurement deltas from fighting
+  // with the user's scroll momentum. The accumulated drift is negligible
+  // (~0.25px per item with accurate estimates) and self-corrects when scrolling
+  // stops and new measurements apply their corrections normally.
+  const isUserScrolling = useRef(false)
+
   // Content-aware estimates are close to actual sizes, so the virtualizer's
   // default scroll correction (for items above viewport) keeps drift minimal.
-  // useFlushSync ensures measurement → scrollTop adjustment → React re-render
-  // all happen in the same frame, preventing visible jank from stale translateY.
+  // During user scroll we suppress corrections to avoid fighting scroll input.
   const virtualizer = useVirtualizer({
     count: itemCount,
     getScrollElement: () => scrollContainerRef.current,
@@ -142,6 +149,9 @@ export function useVirtualizedScroll({
     scrollMargin,
     paddingStart,
     paddingEnd,
+    ...({
+      shouldAdjustScrollPositionOnItemSizeChange: () => !isUserScrolling.current,
+    } as Record<string, unknown>),
   })
 
   // Reset all state when stream changes
@@ -306,8 +316,13 @@ export function useVirtualizedScroll({
       const isNearBottom = distanceFromBottom < bottomThreshold
 
       const now = performance.now()
-      const isSettling =
-        now - lastProgrammaticScrollAt.current < PROGRAMMATIC_SCROLL_GRACE_MS || now < recentlyLoadedUntil.current
+      const isProgrammatic = now - lastProgrammaticScrollAt.current < PROGRAMMATIC_SCROLL_GRACE_MS
+      const isSettling = isProgrammatic || now < recentlyLoadedUntil.current
+
+      // Track user scroll state for correction suppression
+      if (!isProgrammatic) {
+        isUserScrolling.current = true
+      }
 
       // During settling (programmatic scroll or recent load), only disable
       // auto-scroll for clearly intentional user scrolls (3x threshold).
@@ -365,9 +380,9 @@ export function useVirtualizedScroll({
     // When scroll momentum ends and auto-scroll is active, snap to bottom.
     // This handles measurement drift and inertia ending near-but-not-at bottom.
     const handleScrollEnd = () => {
+      isUserScrolling.current = false
+
       if (!shouldAutoScroll.current || itemCount === 0) return
-      // Skip if a programmatic scroll is still settling — scrollToIndex runs a
-      // multi-frame reconciliation loop and we don't need to pile on.
       if (performance.now() - lastProgrammaticScrollAt.current < PROGRAMMATIC_SCROLL_GRACE_MS) return
       const dist = el.scrollHeight - el.scrollTop - el.clientHeight
       if (dist > 1) {
