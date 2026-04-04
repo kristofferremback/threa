@@ -404,7 +404,7 @@ export function EventList({
                 key={virtualRow.key}
                 data-index={virtualRow.index}
                 ref={virtualizer.measureElement}
-                style={{ display: "flow-root", contain: "content" }}
+                style={{ display: "flow-root" }}
               >
                 {renderItem(item)}
               </div>

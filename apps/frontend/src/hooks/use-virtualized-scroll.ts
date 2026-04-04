@@ -274,21 +274,29 @@ export function useVirtualizedScroll({
         lastProgrammaticScrollAt.current = performance.now()
         recentlyLoadedUntil.current = performance.now() + RECENTLY_LOADED_GRACE_MS
 
-        // Scroll to bottom. With useFlushSync (default), measurements trigger
-        // synchronous re-renders, so most items settle in the first frame.
-        // Hide briefly and re-snap after 2 frames to catch any stragglers.
+        // Scroll to bottom, hidden until measurements stabilize. Instead of a
+        // fixed 2-frame wait, loop until scrollHeight stops changing (meaning
+        // all ResizeObserver measurements have applied). Cap at 500ms to avoid
+        // blocking forever if something keeps changing (e.g. lazy images).
         const el = scrollContainerRef.current
         if (el) el.style.opacity = "0"
         virtualizer.scrollToIndex(itemCount - 1, { align: "end" })
-        settleRafRef.current = requestAnimationFrame(() => {
+        const settleStart = performance.now()
+        let prevScrollHeight = el?.scrollHeight ?? 0
+        const settle = () => {
           lastProgrammaticScrollAt.current = performance.now()
           virtualizer.scrollToIndex(itemCount - 1, { align: "end" })
-          settleRafRef.current = requestAnimationFrame(() => {
-            virtualizer.scrollToIndex(itemCount - 1, { align: "end" })
+          const currentScrollHeight = el?.scrollHeight ?? 0
+          const stable = currentScrollHeight === prevScrollHeight
+          prevScrollHeight = currentScrollHeight
+          if (stable || performance.now() - settleStart > RECENTLY_LOADED_GRACE_MS) {
             if (el) el.style.opacity = "1"
             settleRafRef.current = undefined
-          })
-        })
+          } else {
+            settleRafRef.current = requestAnimationFrame(settle)
+          }
+        }
+        settleRafRef.current = requestAnimationFrame(settle)
       }
       return
     }
