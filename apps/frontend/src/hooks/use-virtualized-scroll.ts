@@ -35,7 +35,7 @@ interface UseVirtualizedScrollOptions {
   getItemKey: (index: number) => string
   /** Estimated item height (default: 120px) */
   estimateSize?: (index: number) => number
-  /** Extra items rendered above/below viewport (default: 15) */
+  /** Extra items rendered above/below viewport (default: 50) */
   overscan?: number
   /** Called when user scrolls near the top (for loading older messages) */
   onScrollNearTop?: () => boolean
@@ -86,7 +86,7 @@ export function useVirtualizedScroll({
   itemCount,
   getItemKey,
   estimateSize,
-  overscan = 25,
+  overscan = 50,
   onScrollNearTop,
   onScrollNearBottom,
   isFetchingOlder = false,
@@ -158,19 +158,6 @@ export function useVirtualizedScroll({
       elementScroll(offset, options, instance)
     },
   })
-
-  // Set directly on the Virtualizer instance (public class property that
-  // resizeItem checks — not a constructor option). TanStack's default only
-  // corrects items above the viewport (item.start < scrollOffset), which is
-  // correct for mid-scroll stability. But when auto-scrolling, the *last*
-  // item (the newly appended message) is below scrollOffset, so its
-  // estimate→measurement delta goes uncorrected — causing a visible micro-jump
-  // between the estimated and measured scroll positions. By returning true for
-  // all items when pinned to bottom, every measurement keeps us at dist=0.
-  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) => {
-    if (shouldAutoScroll.current) return true
-    return item.start < (instance.scrollOffset ?? 0)
-  }
 
   // Reset all state when stream changes
   useLayoutEffect(() => {
@@ -288,8 +275,19 @@ export function useVirtualizedScroll({
         el.scrollTop = el.scrollHeight - el.clientHeight - lastDistFromBottom.current
       }
     } else if (shouldAutoScroll.current && itemCount > prevCount) {
-      // Append with auto-scroll: lock to bottom (distance = 0)
+      // Append with auto-scroll: snap to bottom immediately, then re-snap
+      // after one frame so ResizeObserver measurements for the new item have
+      // applied. Without the re-snap, the first scrollToIndex uses the
+      // *estimated* height and the measurement delta for the last item goes
+      // uncorrected (TanStack's default only corrects items above viewport).
       scrollToBottomImpl()
+      settleRafRef.current = requestAnimationFrame(() => {
+        if (shouldAutoScroll.current) {
+          lastProgrammaticScrollAt.current = performance.now()
+          virtualizer.scrollToIndex(itemCount - 1, { align: "end" })
+        }
+        settleRafRef.current = undefined
+      })
     }
 
     prevItemCountRef.current = itemCount
