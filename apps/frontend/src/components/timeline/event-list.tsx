@@ -393,7 +393,6 @@ export function EventList({
             top: 0,
             left: 0,
             width: "100%",
-            willChange: "transform",
             transform: `translateY(${virtualItems[0]?.start ?? 0}px)`,
           }}
         >

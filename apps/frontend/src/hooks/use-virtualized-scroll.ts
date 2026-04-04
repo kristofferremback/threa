@@ -25,6 +25,13 @@ const FETCH_COOLDOWN_MS = 500
  * above the bottom with no way to recover.
  */
 const RECENTLY_LOADED_GRACE_MS = 500
+/**
+ * Delay (ms) before snapping to bottom after a visible item grows while
+ * auto-scrolling. Batches multiple rapid measurements (e.g. several link
+ * previews loading at once) into a single snap instead of correcting each
+ * one inline (which causes visible upward flicker).
+ */
+const BOTTOM_SNAP_DELAY_MS = 80
 
 interface UseVirtualizedScrollOptions {
   /** Whether data is currently loading (delays initial scroll) */
@@ -139,17 +146,17 @@ export function useVirtualizedScroll({
   // Grace period after initial load
   const recentlyLoadedUntil = useRef(0)
 
+  // Deferred snap-to-bottom timer. When a visible item grows while we're
+  // pinned to bottom (e.g. link preview loads), we don't correct inline
+  // (that causes flicker). Instead we let content push down naturally and
+  // schedule a single snap after measurements settle.
+  const bottomSnapTimer = useRef<number | undefined>(undefined)
+
   // Custom scrollToFn marks all virtualizer-initiated scrolls (including
   // measurement corrections) as programmatic. Without this, TanStack's
   // element.scrollTo() calls for item-size corrections fire scroll events that
   // our handler misinterprets as user-initiated, which can falsely disable
   // auto-scroll or interfere with settling logic.
-  //
-  // useAnimationFrameWithResizeObserver batches ResizeObserver measurements
-  // into a single rAF instead of firing mid-layout. This reduces read-write
-  // layout thrashing that Firefox's Gecko engine is sensitive to (Blink handles
-  // it better). The trade-off is one frame of estimated sizing before the
-  // actual measurement applies — imperceptible with content-aware estimates.
   const virtualizer = useVirtualizer({
     count: itemCount,
     getScrollElement: () => scrollContainerRef.current,
@@ -159,12 +166,33 @@ export function useVirtualizedScroll({
     scrollMargin,
     paddingStart,
     paddingEnd,
-    useAnimationFrameWithResizeObserver: true,
     scrollToFn: (offset, options, instance) => {
       lastProgrammaticScrollAt.current = performance.now()
       elementScroll(offset, options, instance)
     },
   })
+
+  // TanStack's default correction only fires for items above the viewport
+  // (item.start < scrollOffset). For items visible in the viewport, we want
+  // content to push down naturally (pure DOM feel). But when pinned to bottom,
+  // visible item growth (link previews, attachments) pushes us away from the
+  // bottom — so we schedule a deferred snap instead of correcting inline.
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) => {
+    const scrollOffset = instance.scrollOffset ?? 0
+    // Items above viewport: correct immediately (maintains viewport position)
+    if (item.start < scrollOffset) return true
+    // Items in/below viewport while pinned to bottom: let content push down
+    // naturally, then snap to bottom after measurements settle.
+    if (shouldAutoScroll.current) {
+      window.clearTimeout(bottomSnapTimer.current)
+      bottomSnapTimer.current = window.setTimeout(() => {
+        if (!shouldAutoScroll.current || itemCount === 0) return
+        lastProgrammaticScrollAt.current = performance.now()
+        virtualizer.scrollToIndex(itemCount - 1, { align: "end" })
+      }, BOTTOM_SNAP_DELAY_MS)
+    }
+    return false
+  }
 
   // Reset all state when stream changes
   useLayoutEffect(() => {
@@ -182,11 +210,12 @@ export function useVirtualizedScroll({
     initialScrollDone.current = false
     recentlyLoadedUntil.current = 0
     setIsScrolledFarFromBottom(false)
-    // Cancel any in-flight rAF settle chain from a previous stream
+    // Cancel any in-flight rAF settle chain or deferred snap from a previous stream
     if (settleRafRef.current !== undefined) {
       cancelAnimationFrame(settleRafRef.current)
       settleRafRef.current = undefined
     }
+    window.clearTimeout(bottomSnapTimer.current)
     // Ensure opacity is restored if switching streams during settle phase
     if (scrollContainerRef.current) {
       scrollContainerRef.current.style.opacity = "1"
