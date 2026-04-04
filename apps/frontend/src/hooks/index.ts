@@ -53,7 +53,7 @@ export { useDraftComposer, type UseDraftComposerOptions, type DraftComposerState
 
 export { useScrollBehavior } from "./use-scroll-behavior"
 
-export { useVirtualizedScroll } from "./use-virtualized-scroll"
+export { useVirtuosoScroll } from "./use-virtuoso-scroll"
 
 export { useStreamSearch } from "./use-stream-search"
 
