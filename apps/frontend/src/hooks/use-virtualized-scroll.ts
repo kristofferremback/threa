@@ -152,6 +152,10 @@ export function useVirtualizedScroll({
   // schedule a single snap after measurements settle.
   const bottomSnapTimer = useRef<number | undefined>(undefined)
 
+  // Track which DOM nodes have been force-measured. WeakSet so unmounted nodes
+  // are garbage-collected automatically when they leave the overscan zone.
+  const measuredNodes = useRef(new WeakSet<Element>())
+
   // Custom scrollToFn marks all virtualizer-initiated scrolls (including
   // measurement corrections) as programmatic. Without this, TanStack's
   // element.scrollTo() calls for item-size corrections fire scroll events that
@@ -171,6 +175,29 @@ export function useVirtualizedScroll({
       elementScroll(offset, options, instance)
     },
   })
+
+  // TanStack skips synchronous measurement in the ref callback during user
+  // scroll (isScrolling=true, scrollState=null). Items enter the DOM at their
+  // estimated size, then ResizeObserver corrects a frame later — causing a
+  // visible shift/jump. We wrap measureElement to force synchronous measurement
+  // for newly mounted nodes. React batches the resulting resizeItem → notify →
+  // setState into the current commit, so the browser only paints the final
+  // correct layout. The WeakSet ensures we only force-measure each node once.
+  const measureRef = useRef<typeof virtualizer.measureElement | null>(null)
+  if (!measureRef.current) {
+    const original = virtualizer.measureElement
+    measureRef.current = (node) => {
+      original(node)
+      if (node && !measuredNodes.current.has(node)) {
+        measuredNodes.current.add(node)
+        const index = Number(node.getAttribute("data-index"))
+        if (index >= 0) {
+          virtualizer.resizeItem(index, Math.round(node.getBoundingClientRect().height))
+        }
+      }
+    }
+  }
+  virtualizer.measureElement = measureRef.current
 
   // TanStack's default correction only fires for items above the viewport
   // (item.start < scrollOffset). For items visible in the viewport, we want
