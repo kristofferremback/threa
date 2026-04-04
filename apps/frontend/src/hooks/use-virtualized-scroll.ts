@@ -177,10 +177,16 @@ export function useVirtualizedScroll({
   // content to push down naturally (pure DOM feel). But when pinned to bottom,
   // visible item growth (link previews, attachments) pushes us away from the
   // bottom — so we schedule a deferred snap instead of correcting inline.
+  //
+  // Exception: during the initial settle window (opacity=0, measurements
+  // trickling in) we correct all items immediately so the invisible settle
+  // phase converges quickly without deferred-snap jank.
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) => {
     const scrollOffset = instance.scrollOffset ?? 0
     // Items above viewport: correct immediately (maintains viewport position)
     if (item.start < scrollOffset) return true
+    // During initial settle: correct all items (invisible, fast convergence)
+    if (performance.now() < recentlyLoadedUntil.current) return true
     // Items in/below viewport while pinned to bottom: let content push down
     // naturally, then snap to bottom after measurements settle.
     if (shouldAutoScroll.current) {
