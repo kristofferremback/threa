@@ -60,6 +60,12 @@ interface UseVirtualizedScrollOptions {
   paddingStart?: number
   /** Virtual padding after last item (included in getTotalSize) */
   paddingEnd?: number
+  /**
+   * When true, skip the initial scroll-to-bottom on first load.
+   * Used for deep-link / jump-to-message navigation where the caller
+   * will position the viewport after loading completes.
+   */
+  skipInitialScroll?: boolean
 }
 
 interface UseVirtualizedScrollReturn {
@@ -80,7 +86,7 @@ export function useVirtualizedScroll({
   itemCount,
   getItemKey,
   estimateSize,
-  overscan = 15,
+  overscan = 25,
   onScrollNearTop,
   onScrollNearBottom,
   isFetchingOlder = false,
@@ -91,6 +97,7 @@ export function useVirtualizedScroll({
   scrollMargin = 0,
   paddingStart = 0,
   paddingEnd = 0,
+  skipInitialScroll = false,
 }: UseVirtualizedScrollOptions): UseVirtualizedScrollReturn {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const shouldAutoScroll = useRef(true)
@@ -125,6 +132,9 @@ export function useVirtualizedScroll({
 
   // Whether initial scroll-to-bottom has been performed for this stream
   const initialScrollDone = useRef(false)
+
+  // Track pending rAF IDs so we can cancel on stream switch
+  const settleRafRef = useRef<number | undefined>(undefined)
 
   // Grace period after initial load
   const recentlyLoadedUntil = useRef(0)
@@ -170,6 +180,11 @@ export function useVirtualizedScroll({
     initialScrollDone.current = false
     recentlyLoadedUntil.current = 0
     setIsScrolledFarFromBottom(false)
+    // Cancel any in-flight rAF settle chain from a previous stream
+    if (settleRafRef.current !== undefined) {
+      cancelAnimationFrame(settleRafRef.current)
+      settleRafRef.current = undefined
+    }
     // Ensure opacity is restored if switching streams during settle phase
     if (scrollContainerRef.current) {
       scrollContainerRef.current.style.opacity = "1"
@@ -211,6 +226,14 @@ export function useVirtualizedScroll({
       prevFirstKeyRef.current = currentFirstKey
       if (!initialScrollDone.current) {
         initialScrollDone.current = true
+
+        // When navigating to a specific message (deep link), skip the
+        // scroll-to-bottom so jumpToEvent can position the viewport.
+        if (skipInitialScroll) {
+          shouldAutoScroll.current = false
+          return
+        }
+
         lastProgrammaticScrollAt.current = performance.now()
         recentlyLoadedUntil.current = performance.now() + RECENTLY_LOADED_GRACE_MS
 
@@ -220,12 +243,13 @@ export function useVirtualizedScroll({
         const el = scrollContainerRef.current
         if (el) el.style.opacity = "0"
         virtualizer.scrollToIndex(itemCount - 1, { align: "end" })
-        requestAnimationFrame(() => {
+        settleRafRef.current = requestAnimationFrame(() => {
           lastProgrammaticScrollAt.current = performance.now()
           virtualizer.scrollToIndex(itemCount - 1, { align: "end" })
-          requestAnimationFrame(() => {
+          settleRafRef.current = requestAnimationFrame(() => {
             virtualizer.scrollToIndex(itemCount - 1, { align: "end" })
             if (el) el.style.opacity = "1"
+            settleRafRef.current = undefined
           })
         })
       }

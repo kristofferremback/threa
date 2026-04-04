@@ -259,6 +259,7 @@ export function StreamContent({
     resetKey: streamId,
     paddingStart: 24,
     paddingEnd: 24,
+    skipInitialScroll: !!highlightMessageId,
   })
 
   // --- Plain scroll for threads (they load all events) ---
