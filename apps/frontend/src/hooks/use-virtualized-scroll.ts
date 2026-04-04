@@ -232,23 +232,34 @@ export function useVirtualizedScroll({
         lastProgrammaticScrollAt.current = performance.now()
         recentlyLoadedUntil.current = performance.now() + RECENTLY_LOADED_GRACE_MS
 
-        // Scroll to bottom, hidden until measurements stabilize. Instead of a
-        // fixed 2-frame wait, loop until scrollHeight stops changing (meaning
-        // all ResizeObserver measurements have applied). Cap at 500ms to avoid
-        // blocking forever if something keeps changing (e.g. lazy images).
+        // Scroll to bottom, hidden until measurements stabilize. Loop until
+        // scrollHeight is stable for multiple consecutive frames — a single
+        // stable frame isn't enough because ResizeObserver callbacks are batched
+        // and may not fire until the next rendering cycle. Cap at 500ms.
         const el = scrollContainerRef.current
         if (el) el.style.opacity = "0"
         virtualizer.scrollToIndex(itemCount - 1, { align: "end" })
         const settleStart = performance.now()
         let prevScrollHeight = el?.scrollHeight ?? 0
+        let stableFrames = 0
+        const REQUIRED_STABLE_FRAMES = 3
         const settle = () => {
           lastProgrammaticScrollAt.current = performance.now()
           virtualizer.scrollToIndex(itemCount - 1, { align: "end" })
           const currentScrollHeight = el?.scrollHeight ?? 0
-          const stable = currentScrollHeight === prevScrollHeight
+          if (currentScrollHeight === prevScrollHeight) {
+            stableFrames++
+          } else {
+            stableFrames = 0
+          }
           prevScrollHeight = currentScrollHeight
-          if (stable || performance.now() - settleStart > RECENTLY_LOADED_GRACE_MS) {
-            if (el) el.style.opacity = "1"
+          if (stableFrames >= REQUIRED_STABLE_FRAMES || performance.now() - settleStart > RECENTLY_LOADED_GRACE_MS) {
+            // Final snap: go to absolute bottom (scrollToIndex leaves paddingEnd
+            // gap, el.scrollTop = max ensures we're flush at the bottom).
+            if (el) {
+              el.scrollTop = el.scrollHeight
+              el.style.opacity = "1"
+            }
             settleRafRef.current = undefined
           } else {
             settleRafRef.current = requestAnimationFrame(settle)
