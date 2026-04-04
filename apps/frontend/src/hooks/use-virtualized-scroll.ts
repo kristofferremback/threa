@@ -229,16 +229,16 @@ export function useVirtualizedScroll({
     }
 
     // Detect prepend: item count grew and the first key changed.
-    // The virtualizer's built-in shouldAdjustScrollPositionOnItemSizeChange
-    // handles measurement-driven scroll correction, but prepends add new items
-    // above the viewport which requires explicit offset correction.
-    const olderContentJustArrived = prevIsFetchingOlder.current && !isFetchingOlder
+    // These conditions uniquely identify prepend — appended items don't change
+    // the first key. We don't check isFetchingOlder because events arrive from
+    // IDB (useLiveQuery) asynchronously, often in a different render than the
+    // fetch state transition. Relying on fetch state caused the correction to
+    // miss entirely, jumping the viewport by 50 messages.
     if (
       itemCount > prevCount &&
       currentFirstKey !== prevFirstKey &&
       prevFirstKey !== null &&
-      !shouldAutoScroll.current &&
-      olderContentJustArrived
+      !shouldAutoScroll.current
     ) {
       // After prepend, adjust scrollTop by the estimated height of new items
       // to keep the same content in view. Uses estimates (not DOM scrollHeight)
@@ -260,7 +260,7 @@ export function useVirtualizedScroll({
 
     prevItemCountRef.current = itemCount
     prevFirstKeyRef.current = currentFirstKey
-  }, [isLoading, itemCount, getItemKey, isFetchingOlder, scrollToBottomImpl, virtualizer])
+  }, [isLoading, itemCount, getItemKey, scrollToBottomImpl, virtualizer])
 
   // Track fetching state transitions and start cooldown timers
   useLayoutEffect(() => {
