@@ -263,7 +263,11 @@ export function registerStreamSocketHandlers(
       const existing = await db.events.get(newEvent.id)
       if (existing) return
 
-      // Swap optimistic event for real one
+      // Add the real event BEFORE deleting the optimistic one so that
+      // Dexie live-query observers never see a frame with neither event.
+      await db.events.put({ ...newEvent, workspaceId, _sequenceNum: sequenceToNum(newEvent.sequence), _cachedAt: now })
+
+      // Now remove the optimistic event
       if (newPayload.clientMessageId) {
         await db.events.delete(newPayload.clientMessageId).catch(() => {})
         await db.pendingMessages.delete(newPayload.clientMessageId).catch(() => {})
@@ -282,8 +286,6 @@ export function registerStreamSocketHandlers(
           await db.events.delete(tempEvents[0].id)
         }
       }
-
-      await db.events.put({ ...newEvent, workspaceId, _sequenceNum: sequenceToNum(newEvent.sequence), _cachedAt: now })
     })
 
     // Update sidebar preview in both TanStack cache and IDB so the sort order

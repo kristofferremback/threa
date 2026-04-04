@@ -3,9 +3,8 @@ import { useVirtualizer, type Virtualizer } from "@tanstack/react-virtual"
 import { EVENT_PAGE_SIZE, SCROLL_FETCH_RATIO } from "@/lib/constants"
 
 /**
- * Default estimated item height. This only matters for the hidden settle phase —
- * items are invisible until measured, so the exact estimate just affects how many
- * items the virtualizer renders in the first pass (overscan calculations).
+ * Default estimated item height. Only used when no custom estimateSize is provided.
+ * With content-aware estimates, this is a fallback for edge cases.
  */
 const DEFAULT_ESTIMATE = 120
 /** Items from the bottom before showing "Jump to latest" */
@@ -13,14 +12,19 @@ const JUMP_TO_LATEST_ITEM_THRESHOLD = 10
 /** Grace period (ms) after programmatic scroll to avoid false auto-scroll disabling */
 const PROGRAMMATIC_SCROLL_GRACE_MS = 150
 /**
- * Maximum duration (ms) for the settle phase after initial load.
- * During this window, items are hidden (visibility: hidden) and scroll is
- * continuously adjusted to the bottom as ResizeObserver measurements arrive.
- * The phase ends early if scrollHeight stabilizes (no changes for 150ms).
+ * Cooldown (ms) after a fetch completes before allowing another fetch in the
+ * same direction. Prevents runaway loading caused by estimate→measurement
+ * scroll drift repositioning the viewport near the edge again.
  */
-const SETTLE_MAX_MS = 1000
-/** If scrollHeight doesn't change for this long during settle, we're done early. */
-const SETTLE_STABLE_MS = 150
+const FETCH_COOLDOWN_MS = 500
+/**
+ * Grace period (ms) after initial load during which measurement-driven scroll
+ * shifts cannot disable auto-scroll. Measurements trickle in over several
+ * hundred milliseconds and can shift the viewport away from the bottom,
+ * falsely disabling auto-scroll and leaving the user "stuck" a few messages
+ * above the bottom with no way to recover.
+ */
+const RECENTLY_LOADED_GRACE_MS = 500
 
 interface UseVirtualizedScrollOptions {
   /** Whether data is currently loading (delays initial scroll) */
@@ -45,15 +49,23 @@ interface UseVirtualizedScrollOptions {
   bottomThreshold?: number
   /**
    * Number of items from the edge that triggers a fetch.
-   * Default: EVENT_PAGE_SIZE * SCROLL_FETCH_RATIO (25)
+   * Default: EVENT_PAGE_SIZE * SCROLL_FETCH_RATIO (37)
    */
   triggerItemCount?: number
   /** When this key changes, all scroll state resets (e.g. streamId). */
   resetKey?: string
   /** Pixel offset for content above the virtual list (e.g. thread parent message) */
   scrollMargin?: number
-  /** Skip the settle phase (e.g. when jumping to a specific message via deep link) */
-  skipSettle?: boolean
+  /** Virtual padding before first item (included in getTotalSize) */
+  paddingStart?: number
+  /** Virtual padding after last item (included in getTotalSize) */
+  paddingEnd?: number
+  /**
+   * When true, skip the initial scroll-to-bottom on first load.
+   * Used for deep-link / jump-to-message navigation where the caller
+   * will position the viewport after loading completes.
+   */
+  skipInitialScroll?: boolean
 }
 
 interface UseVirtualizedScrollReturn {
@@ -67,12 +79,6 @@ interface UseVirtualizedScrollReturn {
   scrollToBottom: (options?: { behavior?: "auto" | "smooth"; force?: boolean }) => void
   /** Disable auto-scroll (e.g. when navigating to a specific message via jump mode) */
   disableAutoScroll: () => void
-  /**
-   * True during the initial measurement settle phase. Items are rendered with
-   * visibility:hidden so ResizeObserver can measure them without showing the
-   * layout dance. The component should show a loading skeleton while this is true.
-   */
-  isSettling: boolean
 }
 
 export function useVirtualizedScroll({
@@ -80,7 +86,7 @@ export function useVirtualizedScroll({
   itemCount,
   getItemKey,
   estimateSize,
-  overscan = 15,
+  overscan = 25,
   onScrollNearTop,
   onScrollNearBottom,
   isFetchingOlder = false,
@@ -89,17 +95,21 @@ export function useVirtualizedScroll({
   triggerItemCount = Math.floor(EVENT_PAGE_SIZE * SCROLL_FETCH_RATIO),
   resetKey,
   scrollMargin = 0,
-  skipSettle = false,
+  paddingStart = 0,
+  paddingEnd = 0,
+  skipInitialScroll = false,
 }: UseVirtualizedScrollOptions): UseVirtualizedScrollReturn {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const shouldAutoScroll = useRef(true)
   const [isScrolledFarFromBottom, setIsScrolledFarFromBottom] = useState(false)
-  const [isSettling, setIsSettling] = useState(false)
 
   // Prepend stability tracking
   const prevItemCountRef = useRef(0)
   const prevFirstKeyRef = useRef<string | null>(null)
-  const prevScrollHeightRef = useRef(0)
+  // Continuously updated distance from the bottom of the scroll container.
+  // Used to restore exact viewport position after prepend — we capture before,
+  // then after the DOM updates we set scrollTop = scrollHeight - clientHeight - savedDist.
+  const lastDistFromBottom = useRef(0)
 
   // Fetch guards — current refs let the scroll handler read live values
   // without needing isFetchingOlder/Newer in its dependency array
@@ -112,6 +122,10 @@ export function useVirtualizedScroll({
   const olderFetchScheduled = useRef(false)
   const newerFetchScheduled = useRef(false)
 
+  // Per-direction cooldown: earliest time another fetch is allowed
+  const olderFetchCooldownUntil = useRef(0)
+  const newerFetchCooldownUntil = useRef(0)
+
   // Force-scroll and programmatic scroll tracking
   const isForceScrolling = useRef(false)
   const lastProgrammaticScrollAt = useRef(0)
@@ -119,6 +133,23 @@ export function useVirtualizedScroll({
   // Whether initial scroll-to-bottom has been performed for this stream
   const initialScrollDone = useRef(false)
 
+  // Track pending rAF IDs so we can cancel on stream switch
+  const settleRafRef = useRef<number | undefined>(undefined)
+
+  // Grace period after initial load
+  const recentlyLoadedUntil = useRef(0)
+
+  // True while the user is actively scrolling (between first scroll event and
+  // scrollend). During this window, we suppress the virtualizer's scroll
+  // position corrections to prevent estimate→measurement deltas from fighting
+  // with the user's scroll momentum. The accumulated drift is negligible
+  // (~0.25px per item with accurate estimates) and self-corrects when scrolling
+  // stops and new measurements apply their corrections normally.
+  const isUserScrolling = useRef(false)
+
+  // Content-aware estimates are close to actual sizes, so the virtualizer's
+  // default scroll correction (for items above viewport) keeps drift minimal.
+  // During user scroll we suppress corrections to avoid fighting scroll input.
   const virtualizer = useVirtualizer({
     count: itemCount,
     getScrollElement: () => scrollContainerRef.current,
@@ -126,6 +157,11 @@ export function useVirtualizedScroll({
     overscan,
     getItemKey,
     scrollMargin,
+    paddingStart,
+    paddingEnd,
+    ...({
+      shouldAdjustScrollPositionOnItemSizeChange: () => !isUserScrolling.current,
+    } as Record<string, unknown>),
   })
 
   // Reset all state when stream changes
@@ -133,20 +169,26 @@ export function useVirtualizedScroll({
     shouldAutoScroll.current = true
     prevItemCountRef.current = 0
     prevFirstKeyRef.current = null
-    prevScrollHeightRef.current = 0
     prevIsFetchingOlder.current = false
     prevIsFetchingNewer.current = false
     olderFetchScheduled.current = false
     newerFetchScheduled.current = false
+    olderFetchCooldownUntil.current = 0
+    newerFetchCooldownUntil.current = 0
     isForceScrolling.current = false
     lastProgrammaticScrollAt.current = 0
     initialScrollDone.current = false
+    recentlyLoadedUntil.current = 0
     setIsScrolledFarFromBottom(false)
-    setIsSettling(false)
-
-    // Reset scroll position immediately to prevent old stream position showing
-    const el = scrollContainerRef.current
-    if (el) el.scrollTop = 0
+    // Cancel any in-flight rAF settle chain from a previous stream
+    if (settleRafRef.current !== undefined) {
+      cancelAnimationFrame(settleRafRef.current)
+      settleRafRef.current = undefined
+    }
+    // Ensure opacity is restored if switching streams during settle phase
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.style.opacity = "1"
+    }
   }, [resetKey])
 
   const scrollToBottomImpl = useCallback(
@@ -162,15 +204,10 @@ export function useVirtualizedScroll({
         setIsScrolledFarFromBottom(false)
       }
 
-      const el = scrollContainerRef.current
-      if (options?.behavior === "smooth") {
-        virtualizer.scrollToIndex(itemCount - 1, {
-          align: "end",
-          behavior: "smooth",
-        })
-      } else if (el) {
-        el.scrollTop = el.scrollHeight
-      }
+      virtualizer.scrollToIndex(itemCount - 1, {
+        align: "end",
+        behavior: options?.behavior === "smooth" ? "smooth" : "auto",
+      })
     },
     [virtualizer, itemCount]
   )
@@ -179,7 +216,6 @@ export function useVirtualizedScroll({
   useLayoutEffect(() => {
     if (isLoading || itemCount === 0) return
 
-    const el = scrollContainerRef.current
     const prevCount = prevItemCountRef.current
     const prevFirstKey = prevFirstKeyRef.current
     const currentFirstKey = itemCount > 0 ? getItemKey(0) : null
@@ -188,155 +224,107 @@ export function useVirtualizedScroll({
     if (prevCount === 0 && itemCount > 0) {
       prevItemCountRef.current = itemCount
       prevFirstKeyRef.current = currentFirstKey
-      prevScrollHeightRef.current = el?.scrollHeight ?? 0
       if (!initialScrollDone.current) {
         initialScrollDone.current = true
-        if (!skipSettle) {
-          setIsSettling(true)
+
+        // When navigating to a specific message (deep link), skip the
+        // scroll-to-bottom so jumpToEvent can position the viewport.
+        if (skipInitialScroll) {
+          shouldAutoScroll.current = false
+          return
         }
-        // Initial scroll — will be corrected during settle phase.
-        // Skip when settle is skipped (jump-to-message handles its own scroll).
-        if (el && !skipSettle) el.scrollTop = el.scrollHeight
+
+        lastProgrammaticScrollAt.current = performance.now()
+        recentlyLoadedUntil.current = performance.now() + RECENTLY_LOADED_GRACE_MS
+
+        // Scroll to bottom. With useFlushSync (default), measurements trigger
+        // synchronous re-renders, so most items settle in the first frame.
+        // Hide briefly and re-snap after 2 frames to catch any stragglers.
+        const el = scrollContainerRef.current
+        if (el) el.style.opacity = "0"
+        virtualizer.scrollToIndex(itemCount - 1, { align: "end" })
+        settleRafRef.current = requestAnimationFrame(() => {
+          lastProgrammaticScrollAt.current = performance.now()
+          virtualizer.scrollToIndex(itemCount - 1, { align: "end" })
+          settleRafRef.current = requestAnimationFrame(() => {
+            virtualizer.scrollToIndex(itemCount - 1, { align: "end" })
+            if (el) el.style.opacity = "1"
+            settleRafRef.current = undefined
+          })
+        })
       }
       return
     }
 
-    // Detect prepend: item count grew and the first key changed
-    const olderContentJustArrived = prevIsFetchingOlder.current && !isFetchingOlder
+    // Detect prepend: item count grew and the first key changed.
+    // These conditions uniquely identify prepend — appended items don't change
+    // the first key. We don't check isFetchingOlder because events arrive from
+    // IDB (useLiveQuery) asynchronously, often in a different render than the
+    // fetch state transition. Relying on fetch state caused the correction to
+    // miss entirely, jumping the viewport by 50 messages.
     if (
       itemCount > prevCount &&
       currentFirstKey !== prevFirstKey &&
       prevFirstKey !== null &&
-      !shouldAutoScroll.current &&
-      olderContentJustArrived
+      !shouldAutoScroll.current
     ) {
+      // Prepend: restore the same distance from the bottom that the user had
+      // before new items were added. This preserves their exact viewport
+      // position regardless of how many items were prepended or how accurate
+      // the estimates are — no estimate-based math needed.
+      const el = scrollContainerRef.current
       if (el) {
-        const delta = el.scrollHeight - prevScrollHeightRef.current
-        if (delta > 0) {
-          el.scrollTop += delta
-        }
+        el.scrollTop = el.scrollHeight - el.clientHeight - lastDistFromBottom.current
       }
     } else if (shouldAutoScroll.current && itemCount > prevCount) {
+      // Append with auto-scroll: lock to bottom (distance = 0)
       scrollToBottomImpl()
     }
 
     prevItemCountRef.current = itemCount
     prevFirstKeyRef.current = currentFirstKey
-    prevScrollHeightRef.current = el?.scrollHeight ?? 0
-  }, [isLoading, itemCount, getItemKey, isFetchingOlder, scrollToBottomImpl, skipSettle])
+  }, [isLoading, itemCount, getItemKey, scrollToBottomImpl, virtualizer])
 
-  // Track fetching state transitions
+  // Track fetching state transitions and start cooldown timers
   useLayoutEffect(() => {
-    if (prevIsFetchingOlder.current && !isFetchingOlder) olderFetchScheduled.current = false
-    if (prevIsFetchingNewer.current && !isFetchingNewer) newerFetchScheduled.current = false
+    if (prevIsFetchingOlder.current && !isFetchingOlder) {
+      olderFetchScheduled.current = false
+      olderFetchCooldownUntil.current = performance.now() + FETCH_COOLDOWN_MS
+    }
+    if (prevIsFetchingNewer.current && !isFetchingNewer) {
+      newerFetchScheduled.current = false
+      newerFetchCooldownUntil.current = performance.now() + FETCH_COOLDOWN_MS
+    }
     prevIsFetchingOlder.current = isFetchingOlder
     prevIsFetchingNewer.current = isFetchingNewer
-    const el = scrollContainerRef.current
-    if (el) {
-      prevScrollHeightRef.current = el.scrollHeight
-    }
   })
 
-  // --- Settle phase ---
-  // Items render with visibility:hidden. ResizeObserver measures them and the
-  // virtualizer repositions. We keep scrolling to bottom and watch for
-  // scrollHeight to stabilize. Once stable (or timeout), reveal items.
-  useEffect(() => {
-    if (!isSettling) return
+  // --- Auto-scroll to bottom when container resizes (e.g. mobile keyboard) ---
+  // Only scrolls when auto-scroll is active. Uses a debounce to wait for
+  // the resize to finish before scrolling, preventing the flicker loop that
+  // occurred when onChange + scrollToIndex fought with resize events.
+  const resizeTimerRef = useRef<number | undefined>(undefined)
 
-    const el = scrollContainerRef.current
-    if (!el) {
-      setIsSettling(false)
-      return
-    }
-
-    let lastScrollHeight = el.scrollHeight
-    let stableTimer: ReturnType<typeof setTimeout> | null = null
-    const startedAt = performance.now()
-
-    const finish = () => {
-      observer.disconnect()
-      if (stableTimer) clearTimeout(stableTimer)
-      if (maxTimer) clearTimeout(maxTimer)
-
-      // Final scroll to bottom with correct measurements
-      lastProgrammaticScrollAt.current = performance.now()
-      el.scrollTop = el.scrollHeight
-      setIsSettling(false)
-    }
-
-    const checkStability = () => {
-      const newScrollHeight = el.scrollHeight
-      // Keep scrolling to bottom during settle
-      el.scrollTop = newScrollHeight
-
-      if (newScrollHeight !== lastScrollHeight) {
-        // Height changed — reset the stability timer
-        lastScrollHeight = newScrollHeight
-        if (stableTimer) clearTimeout(stableTimer)
-        stableTimer = setTimeout(finish, SETTLE_STABLE_MS)
-      }
-    }
-
-    // Watch the virtualizer's container for size changes (item measurements)
-    const observer = new ResizeObserver(checkStability)
-    // Observe all children of the scroll container (the virtualizer container
-    // and any non-virtual elements like thread parent, loading indicators)
-    for (const child of el.children) {
-      observer.observe(child)
-    }
-
-    // Start the stability check — if nothing changes, finish quickly
-    stableTimer = setTimeout(finish, SETTLE_STABLE_MS)
-
-    // Hard timeout — don't wait forever
-    const maxTimer = setTimeout(() => {
-      if (performance.now() - startedAt >= SETTLE_MAX_MS) {
-        finish()
-      }
-    }, SETTLE_MAX_MS)
-
-    return () => {
-      observer.disconnect()
-      if (stableTimer) clearTimeout(stableTimer)
-      if (maxTimer) clearTimeout(maxTimer)
-    }
-  }, [isSettling])
-
-  // Post-settle: one final scroll after React re-renders with visibility restored.
-  // The settle finish() scrolls before setIsSettling(false), but the re-render that
-  // removes visibility:hidden can cause a tiny reflow shifting scrollHeight by a few px.
-  const prevIsSettlingRef = useRef(false)
-  useLayoutEffect(() => {
-    const wasSettling = prevIsSettlingRef.current
-    prevIsSettlingRef.current = isSettling
-    if (wasSettling && !isSettling && shouldAutoScroll.current) {
-      const el = scrollContainerRef.current
-      if (el) {
-        lastProgrammaticScrollAt.current = performance.now()
-        el.scrollTop = el.scrollHeight
-      }
-    }
-  }, [isSettling])
-
-  // Auto-scroll to bottom when the container shrinks (e.g. mobile keyboard opens)
   useEffect(() => {
     const el = scrollContainerRef.current
     if (!el) return
 
-    let prevHeight = el.clientHeight
-
     const observer = new ResizeObserver(() => {
-      const newHeight = el.clientHeight
-      if (newHeight < prevHeight && shouldAutoScroll.current) {
-        el.scrollTop = el.scrollHeight
-      }
-      prevHeight = newHeight
+      if (!shouldAutoScroll.current || itemCount === 0) return
+      // Debounce: wait for resize to settle before scrolling
+      window.clearTimeout(resizeTimerRef.current)
+      resizeTimerRef.current = window.setTimeout(() => {
+        lastProgrammaticScrollAt.current = performance.now()
+        virtualizer.scrollToIndex(itemCount - 1, { align: "end" })
+      }, 100)
     })
 
     observer.observe(el)
-    return () => observer.disconnect()
-  }, [])
+    return () => {
+      observer.disconnect()
+      window.clearTimeout(resizeTimerRef.current)
+    }
+  }, [virtualizer, itemCount])
 
   // --- Scroll event handler ---
   useEffect(() => {
@@ -348,11 +336,24 @@ export function useVirtualizedScroll({
       if (itemCount === 0) return
 
       const distanceFromBottom = scrollHeight - scrollTop - clientHeight
+      lastDistFromBottom.current = distanceFromBottom
       const isNearBottom = distanceFromBottom < bottomThreshold
 
-      const isInGracePeriod = performance.now() - lastProgrammaticScrollAt.current < PROGRAMMATIC_SCROLL_GRACE_MS
-      if (isInGracePeriod) {
+      const now = performance.now()
+      const isProgrammatic = now - lastProgrammaticScrollAt.current < PROGRAMMATIC_SCROLL_GRACE_MS
+      const isSettling = isProgrammatic || now < recentlyLoadedUntil.current
+
+      // Track user scroll state for correction suppression
+      if (!isProgrammatic) {
+        isUserScrolling.current = true
+      }
+
+      // During settling (programmatic scroll or recent load), only disable
+      // auto-scroll for clearly intentional user scrolls (3x threshold).
+      // Otherwise, measurement-driven shifts would falsely kill auto-scroll.
+      if (isSettling) {
         if (isNearBottom) shouldAutoScroll.current = true
+        else if (distanceFromBottom > bottomThreshold * 3) shouldAutoScroll.current = false
       } else {
         shouldAutoScroll.current = isNearBottom
       }
@@ -377,7 +378,8 @@ export function useVirtualizedScroll({
         onScrollNearTop &&
         firstVisibleIndex < triggerItemCount &&
         !isFetchingOlderRef.current &&
-        !olderFetchScheduled.current
+        !olderFetchScheduled.current &&
+        now > olderFetchCooldownUntil.current
       ) {
         const started = onScrollNearTop()
         if (started !== false) {
@@ -389,7 +391,8 @@ export function useVirtualizedScroll({
         onScrollNearBottom &&
         !isFetchingNewerRef.current &&
         !newerFetchScheduled.current &&
-        itemCount - lastVisibleIndex < triggerItemCount
+        itemCount - lastVisibleIndex < triggerItemCount &&
+        now > newerFetchCooldownUntil.current
       ) {
         const started = onScrollNearBottom()
         if (started !== false) {
@@ -398,8 +401,26 @@ export function useVirtualizedScroll({
       }
     }
 
+    // When scroll momentum ends and auto-scroll is active, snap to bottom.
+    // This handles measurement drift and inertia ending near-but-not-at bottom.
+    const handleScrollEnd = () => {
+      isUserScrolling.current = false
+
+      if (!shouldAutoScroll.current || itemCount === 0) return
+      if (performance.now() - lastProgrammaticScrollAt.current < PROGRAMMATIC_SCROLL_GRACE_MS) return
+      const dist = el.scrollHeight - el.scrollTop - el.clientHeight
+      if (dist > 1) {
+        lastProgrammaticScrollAt.current = performance.now()
+        virtualizer.scrollToIndex(itemCount - 1, { align: "end" })
+      }
+    }
+
     el.addEventListener("scroll", handleScroll, { passive: true })
-    return () => el.removeEventListener("scroll", handleScroll)
+    el.addEventListener("scrollend", handleScrollEnd, { passive: true })
+    return () => {
+      el.removeEventListener("scroll", handleScroll)
+      el.removeEventListener("scrollend", handleScrollEnd)
+    }
   }, [virtualizer, onScrollNearTop, onScrollNearBottom, bottomThreshold, itemCount, triggerItemCount])
 
   const disableAutoScroll = useCallback(() => {
@@ -412,6 +433,5 @@ export function useVirtualizedScroll({
     isScrolledFarFromBottom,
     scrollToBottom: scrollToBottomImpl,
     disableAutoScroll,
-    isSettling,
   }
 }

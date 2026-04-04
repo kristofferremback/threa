@@ -1,4 +1,4 @@
-import { memo, useMemo } from "react"
+import { useMemo } from "react"
 import type { Virtualizer } from "@tanstack/react-virtual"
 import {
   COMMAND_EVENT_TYPES,
@@ -34,8 +34,6 @@ interface EventListProps {
   newMessageIds?: Set<string>
   /** Virtualizer instance — when provided, renders only visible items */
   virtualizer?: Virtualizer<HTMLDivElement, Element>
-  /** True during initial measurement settle — items render hidden so ResizeObserver can measure */
-  isSettling?: boolean
 }
 
 function isCommandEvent(event: StreamEvent): boolean {
@@ -71,6 +69,71 @@ export type TimelineItem =
   | { type: "event"; event: StreamEvent }
   | { type: "command_group"; commandId: string; events: StreamEvent[] }
   | { type: "session_group"; sessionId: string; sessionVersion: number; events: StreamEvent[] }
+
+/**
+ * Content-aware height estimate for a timeline item. Used by the virtualizer
+ * for items that haven't been measured yet — closer estimates reduce layout
+ * jumps, scroll drift after prepend, and visual gaps while scrolling.
+ */
+export function estimateTimelineItemHeight(item: TimelineItem): number {
+  if (item.type === "command_group") return 36
+  // Session card: py-3 outer (24px) + Link py-2.5 (20px) + border (2px) + content (~40px) ≈ 86px
+  if (item.type === "session_group") return 86
+
+  const event = item.event
+  const { eventType } = event
+
+  // Deleted message: py-0.5 (4px) + text-xs (16px line-height) = 20px
+  if (eventType === "message_deleted") return 20
+
+  // System/membership events: py-2 (16px) + text-sm (20px line-height) = 36px
+  if (
+    eventType === "member_joined" ||
+    eventType === "member_left" ||
+    eventType === "member_added" ||
+    eventType === "thread_created" ||
+    eventType === "stream_archived" ||
+    eventType === "stream_unarchived"
+  ) {
+    return 36
+  }
+
+  if (eventType === "message_created" || eventType === "companion_response") {
+    const payload = event.payload as Record<string, unknown>
+    // Soft-deleted message renders as DeletedMessageEvent
+    if (payload.deletedAt) return 20
+
+    // Layout: flex row with gap-[14px], avatar h-9 (36px).
+    // Name row: text-sm (20px) + mb-1 (4px) = 24px.
+    // mb-5 (20px) margin-bottom on container (captured by flow-root wrapper).
+    // Bot/persona/system messages add py-4 (32px).
+    // Base (non-text) = name(24) + mb-5(20) = 44px; bot/system adds 32 → 76px.
+    const hasExtraPadding = event.actorType === "bot" || event.actorType === "persona" || event.actorType === "system"
+    let height = hasExtraPadding ? 76 : 44
+
+    // Text: text-sm leading-relaxed = 14px * 1.625 ≈ 23px per line.
+    // ~80 chars per line on typical widths.
+    const markdown = (payload.contentMarkdown as string) ?? ""
+    height += Math.max(1, Math.ceil(markdown.length / 80)) * 23
+
+    // Image attachments: h-32 (128px) + mt-2 (8px) = 136px
+    const attachments = payload.attachments as Array<{ mimeType?: string }> | undefined
+    if (attachments && attachments.length > 0) {
+      if (attachments.some((a) => a.mimeType?.startsWith("image/"))) height += 136
+      if (attachments.some((a) => !a.mimeType?.startsWith("image/"))) height += 40
+    }
+
+    // Link previews: ~80px per card (capped at DEFAULT_VISIBLE_COUNT=3)
+    const linkPreviews = payload.linkPreviews as Array<unknown> | undefined
+    if (linkPreviews && linkPreviews.length > 0) {
+      height += Math.min(linkPreviews.length, 3) * 80
+    }
+
+    return height
+  }
+
+  return 60
+}
 
 /** Event types that render as null in EventItem (handled elsewhere or invisible) */
 const ZERO_HEIGHT_EVENT_TYPES = new Set([
@@ -197,10 +260,12 @@ export function groupTimelineItems(events: StreamEvent[], currentUserId: string 
   return result
 }
 
-export const EventList = memo(function EventList({
+// Not memoized: the `virtualizer` prop is reference-stable but its internal
+// state (visible items) changes on scroll — memo would block those re-renders.
+// Render cost is bounded by virtualizer overscan (~25 items), not total count.
+export function EventList({
   timelineItems,
   isLoading,
-  isSettling,
   workspaceId,
   streamId,
   highlightMessageId,
@@ -303,43 +368,32 @@ export const EventList = memo(function EventList({
   }
 
   // --- Virtualized rendering ---
+  // Follows the TanStack Virtual "dynamic" example pattern exactly:
+  // - Layer 1: Total-size div creates correct scrollbar height
+  // - Layer 2: Shifted container positioned at first item's offset
+  // - Layer 3: Items in NORMAL FLOW (no absolute positioning, no explicit height)
+  // Items flow naturally so the browser's layout engine spaces them. The
+  // measureElement ref + data-index let the virtualizer track actual heights.
+  // This avoids the per-item position jumps that absolute positioning causes
+  // when measurements change and shift all subsequent items.
   if (virtualizer) {
     const virtualItems = virtualizer.getVirtualItems()
     return (
-      <div className="relative py-3 sm:py-6 mx-auto max-w-[800px] w-full min-w-0">
-        {/* Skeleton overlay during settle — covers the virtualizer container while
-            items are measured. The virtualizer stays in normal flow (contributes to
-            scrollHeight) so scroll-to-bottom works correctly during measurement. */}
-        {isSettling && (
-          <div className="absolute inset-0 z-10 bg-background" aria-hidden="true">
-            <div className="flex flex-col gap-4 px-4 py-6 sm:px-6">
-              <div className="flex gap-3">
-                <Skeleton className="h-9 w-9 rounded-full" />
-                <div className="flex-1 space-y-2">
-                  <Skeleton className="h-4 w-32" />
-                  <Skeleton className="h-4 w-full" />
-                  <Skeleton className="h-4 w-2/3" />
-                </div>
-              </div>
-              <div className="flex gap-3">
-                <Skeleton className="h-9 w-9 rounded-full" />
-                <div className="flex-1 space-y-2">
-                  <Skeleton className="h-4 w-24" />
-                  <Skeleton className="h-4 w-5/6" />
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+      <div
+        style={{
+          height: virtualizer.getTotalSize(),
+          width: "100%",
+          position: "relative",
+        }}
+        className="mx-auto max-w-[800px]"
+      >
         <div
           style={{
-            height: virtualizer.getTotalSize(),
+            position: "absolute",
+            top: 0,
+            left: 0,
             width: "100%",
-            position: "relative",
-            // Items are transparent during settle so ResizeObserver can measure them
-            // without the user seeing the estimation-based layout dance.
-            // Uses opacity instead of visibility so Playwright's toBeVisible() still passes.
-            opacity: isSettling ? 0 : undefined,
+            transform: `translateY(${virtualItems[0]?.start ?? 0}px)`,
           }}
         >
           {virtualItems.map((virtualRow) => {
@@ -350,13 +404,7 @@ export const EventList = memo(function EventList({
                 key={virtualRow.key}
                 data-index={virtualRow.index}
                 ref={virtualizer.measureElement}
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  width: "100%",
-                  transform: `translateY(${virtualRow.start - virtualizer.options.scrollMargin}px)`,
-                }}
+                style={{ display: "flow-root" }}
               >
                 {renderItem(item)}
               </div>
@@ -380,4 +428,4 @@ export const EventList = memo(function EventList({
       })}
     </div>
   )
-})
+}

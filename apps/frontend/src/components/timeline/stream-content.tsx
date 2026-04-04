@@ -34,7 +34,13 @@ import {
   type WorkspaceBootstrap,
   type StreamBootstrap,
 } from "@threa/types"
-import { EventList, groupTimelineItems, getTimelineItemKey, filterVisibleItems } from "./event-list"
+import {
+  EventList,
+  groupTimelineItems,
+  getTimelineItemKey,
+  filterVisibleItems,
+  estimateTimelineItemHeight,
+} from "./event-list"
 import { MessageInput } from "./message-input"
 import { JoinChannelBar } from "./join-channel-bar"
 import { ThreadParentMessage } from "../thread/thread-parent-message"
@@ -226,6 +232,14 @@ export function StreamContent({
     [visibleItems]
   )
 
+  const estimateSize = useCallback(
+    (index: number) => {
+      const item = visibleItems[index]
+      return item ? estimateTimelineItemHeight(item) : 100
+    },
+    [visibleItems]
+  )
+
   // --- Virtualized scroll (main streams, channels, scratchpads) ---
   const {
     scrollContainerRef: virtualScrollRef,
@@ -233,19 +247,19 @@ export function StreamContent({
     isScrolledFarFromBottom: virtualIsScrolledFar,
     scrollToBottom: virtualScrollToBottom,
     disableAutoScroll: virtualDisableAutoScroll,
-    isSettling,
   } = useVirtualizedScroll({
     isLoading,
     itemCount: useVirtualized ? visibleItems.length : 0,
     getItemKey: useVirtualized ? getItemKey : () => "0",
+    estimateSize: useVirtualized ? estimateSize : undefined,
     onScrollNearTop: useVirtualized && hasOlderEvents ? fetchOlderEvents : undefined,
     onScrollNearBottom: useVirtualized && hasNewerEvents ? fetchNewerEvents : undefined,
     isFetchingOlder,
     isFetchingNewer,
     resetKey: streamId,
-    // Skip the settle phase when navigating to a specific message — the settle
-    // phase scrolls to bottom and hides items, which fights with jumpToEvent
-    skipSettle: !!highlightMessageId,
+    paddingStart: 24,
+    paddingEnd: 24,
+    skipInitialScroll: !!highlightMessageId,
   })
 
   // --- Plain scroll for threads (they load all events) ---
@@ -429,6 +443,7 @@ export function StreamContent({
             <div
               ref={scrollContainerRef}
               className={cn("h-full overflow-y-auto overflow-x-hidden overscroll-y-contain", isSearchOpen && "pt-11")}
+              style={useVirtualized ? { overflowAnchor: "none" } : undefined}
               data-suppress-pull-refresh="true"
               onScroll={useVirtualized ? undefined : plainHandleScroll}
             >
@@ -460,7 +475,6 @@ export function StreamContent({
                 <EventList
                   timelineItems={useVirtualized ? visibleItems : timelineItems}
                   isLoading={isLoading}
-                  isSettling={isSettling}
                   workspaceId={workspaceId}
                   streamId={streamId}
                   highlightMessageId={streamSearch.activeMessageId ?? highlightMessageId}
