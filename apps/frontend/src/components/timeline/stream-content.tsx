@@ -546,6 +546,29 @@ export function StreamContent({
   )
 }
 
+/** Context passed to Virtuoso's stable Header/Footer components via the context prop */
+type VirtuosoListContext = { isFetchingOlder: boolean; isFetchingNewer: boolean }
+
+function VirtuosoListHeader({ context }: { context?: VirtuosoListContext }) {
+  if (!context?.isFetchingOlder) return null
+  return (
+    <div className="flex justify-center py-2">
+      <p className="text-sm text-muted-foreground">Loading older messages...</p>
+    </div>
+  )
+}
+
+function VirtuosoListFooter({ context }: { context?: VirtuosoListContext }) {
+  if (!context?.isFetchingNewer) return null
+  return (
+    <div className="flex justify-center py-2">
+      <p className="text-sm text-muted-foreground">Loading newer messages...</p>
+    </div>
+  )
+}
+
+const VIRTUOSO_COMPONENTS = { Header: VirtuosoListHeader, Footer: VirtuosoListFooter }
+
 /** Virtuoso-powered message list for streams, channels, and scratchpads */
 function VirtuosoMessageList({
   visibleItems,
@@ -729,20 +752,8 @@ function VirtuosoMessageList({
       endReached={handleEndReached}
       atBottomThreshold={100}
       increaseViewportBy={{ top: 600, bottom: 600 }}
-      components={{
-        Header: () =>
-          isFetchingOlder ? (
-            <div className="flex justify-center py-2">
-              <p className="text-sm text-muted-foreground">Loading older messages...</p>
-            </div>
-          ) : null,
-        Footer: () =>
-          isFetchingNewer ? (
-            <div className="flex justify-center py-2">
-              <p className="text-sm text-muted-foreground">Loading newer messages...</p>
-            </div>
-          ) : null,
-      }}
+      context={{ isFetchingOlder, isFetchingNewer }}
+      components={VIRTUOSO_COMPONENTS}
     />
   )
 }
