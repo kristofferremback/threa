@@ -212,18 +212,20 @@ export function useVirtualizedScroll({
       !shouldAutoScroll.current &&
       olderContentJustArrived
     ) {
-      // After prepend, adjust scroll offset by the estimated height of new items
-      // to keep the same content in view. Uses the virtualizer's internal offset
-      // (like the TanStack infinite-scroll example) for synchronous correction
-      // that avoids timing issues with DOM scrollHeight measurement.
-      const newItemCount = itemCount - prevCount
-      let addedHeight = 0
-      for (let i = 0; i < newItemCount; i++) {
-        addedHeight += virtualizer.options.estimateSize(i)
+      // After prepend, adjust scrollTop by the estimated height of new items
+      // to keep the same content in view. Uses estimates (not DOM scrollHeight)
+      // because at this point in useLayoutEffect the new items haven't been
+      // laid out yet. The virtualizer's measurement corrections will handle
+      // any small differences between estimates and actuals.
+      const el = scrollContainerRef.current
+      if (el) {
+        const newItemCount = itemCount - prevCount
+        let addedHeight = 0
+        for (let i = 0; i < newItemCount; i++) {
+          addedHeight += virtualizer.options.estimateSize(i)
+        }
+        el.scrollTop += addedHeight
       }
-      const newOffset = (virtualizer.scrollOffset ?? 0) + addedHeight
-      virtualizer.scrollOffset = newOffset
-      virtualizer.scrollToOffset(newOffset, { align: "start" })
     } else if (shouldAutoScroll.current && itemCount > prevCount) {
       scrollToBottomImpl()
     }

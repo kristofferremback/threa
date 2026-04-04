@@ -396,7 +396,12 @@ export function EventList({
             const item = timelineItems[virtualRow.index]
             if (!item) return null
             return (
-              <div key={virtualRow.key} data-index={virtualRow.index} ref={virtualizer.measureElement}>
+              <div
+                key={virtualRow.key}
+                data-index={virtualRow.index}
+                ref={virtualizer.measureElement}
+                style={{ display: "flow-root" }}
+              >
                 {renderItem(item)}
               </div>
             )
