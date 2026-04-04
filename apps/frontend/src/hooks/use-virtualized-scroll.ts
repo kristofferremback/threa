@@ -144,11 +144,6 @@ export function useVirtualizedScroll({
   // element.scrollTo() calls for item-size corrections fire scroll events that
   // our handler misinterprets as user-initiated, which can falsely disable
   // auto-scroll or interfere with settling logic.
-  //
-  // We let TanStack's default shouldAdjustScrollPositionOnItemSizeChange run
-  // (corrects items above viewport). This keeps the viewport stable when item
-  // heights change — e.g. link previews loading — regardless of whether the
-  // user is actively scrolling.
   const virtualizer = useVirtualizer({
     count: itemCount,
     getScrollElement: () => scrollContainerRef.current,
@@ -163,6 +158,19 @@ export function useVirtualizedScroll({
       elementScroll(offset, options, instance)
     },
   })
+
+  // Set directly on the Virtualizer instance (public class property that
+  // resizeItem checks — not a constructor option). TanStack's default only
+  // corrects items above the viewport (item.start < scrollOffset), which is
+  // correct for mid-scroll stability. But when auto-scrolling, the *last*
+  // item (the newly appended message) is below scrollOffset, so its
+  // estimate→measurement delta goes uncorrected — causing a visible micro-jump
+  // between the estimated and measured scroll positions. By returning true for
+  // all items when pinned to bottom, every measurement keeps us at dist=0.
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) => {
+    if (shouldAutoScroll.current) return true
+    return item.start < (instance.scrollOffset ?? 0)
+  }
 
   // Reset all state when stream changes
   useLayoutEffect(() => {
