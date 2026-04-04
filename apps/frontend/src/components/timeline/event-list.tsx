@@ -34,8 +34,6 @@ interface EventListProps {
   newMessageIds?: Set<string>
   /** Virtualizer instance — when provided, renders only visible items */
   virtualizer?: Virtualizer<HTMLDivElement, Element>
-  /** True during initial measurement settle — items render hidden so ResizeObserver can measure */
-  isSettling?: boolean
 }
 
 function isCommandEvent(event: StreamEvent): boolean {

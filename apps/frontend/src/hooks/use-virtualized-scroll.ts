@@ -24,7 +24,7 @@ const FETCH_COOLDOWN_MS = 500
  * falsely disabling auto-scroll and leaving the user "stuck" a few messages
  * above the bottom with no way to recover.
  */
-const RECENTLY_LOADED_GRACE_MS = 1500
+const RECENTLY_LOADED_GRACE_MS = 500
 
 interface UseVirtualizedScrollOptions {
   /** Whether data is currently loading (delays initial scroll) */
@@ -73,10 +73,6 @@ interface UseVirtualizedScrollReturn {
   scrollToBottom: (options?: { behavior?: "auto" | "smooth"; force?: boolean }) => void
   /** Disable auto-scroll (e.g. when navigating to a specific message via jump mode) */
   disableAutoScroll: () => void
-  /**
-   * @deprecated No longer used — always false. Kept for API compatibility.
-   */
-  isSettling: boolean
 }
 
 export function useVirtualizedScroll({
@@ -103,6 +99,7 @@ export function useVirtualizedScroll({
   // Prepend stability tracking
   const prevItemCountRef = useRef(0)
   const prevFirstKeyRef = useRef<string | null>(null)
+  const prevScrollHeightRef = useRef(0)
 
   // Fetch guards — current refs let the scroll handler read live values
   // without needing isFetchingOlder/Newer in its dependency array
@@ -144,6 +141,7 @@ export function useVirtualizedScroll({
     scrollMargin,
     paddingStart,
     paddingEnd,
+    useFlushSync: false,
     ...({
       shouldAdjustScrollPositionOnItemSizeChange: (_item: unknown, delta: number, _instance: unknown) =>
         Math.abs(delta) > 30,
@@ -165,6 +163,7 @@ export function useVirtualizedScroll({
     lastProgrammaticScrollAt.current = 0
     initialScrollDone.current = false
     recentlyLoadedUntil.current = 0
+    prevScrollHeightRef.current = 0
     setIsScrolledFarFromBottom(false)
   }, [resetKey])
 
@@ -222,16 +221,23 @@ export function useVirtualizedScroll({
       !shouldAutoScroll.current &&
       olderContentJustArrived
     ) {
-      // After prepend, scroll to maintain the item that was at the top of the
-      // viewport. The previously-first item is now at index (itemCount - prevCount).
-      const prevFirstIndex = itemCount - prevCount
-      virtualizer.scrollToIndex(prevFirstIndex, { align: "start" })
+      // After prepend, adjust scrollTop by the height delta to keep the same
+      // content in view. This preserves exact viewport position instead of
+      // snapping the previously-first item to the top of the viewport.
+      const el = scrollContainerRef.current
+      if (el && prevScrollHeightRef.current > 0) {
+        const delta = el.scrollHeight - prevScrollHeightRef.current
+        if (delta > 0) {
+          el.scrollTop += delta
+        }
+      }
     } else if (shouldAutoScroll.current && itemCount > prevCount) {
       scrollToBottomImpl()
     }
 
     prevItemCountRef.current = itemCount
     prevFirstKeyRef.current = currentFirstKey
+    prevScrollHeightRef.current = scrollContainerRef.current?.scrollHeight ?? 0
   }, [isLoading, itemCount, getItemKey, isFetchingOlder, scrollToBottomImpl, virtualizer])
 
   // Track fetching state transitions and start cooldown timers
@@ -239,6 +245,7 @@ export function useVirtualizedScroll({
     if (prevIsFetchingOlder.current && !isFetchingOlder) {
       olderFetchScheduled.current = false
       olderFetchCooldownUntil.current = performance.now() + FETCH_COOLDOWN_MS
+      prevScrollHeightRef.current = scrollContainerRef.current?.scrollHeight ?? 0
     }
     if (prevIsFetchingNewer.current && !isFetchingNewer) {
       newerFetchScheduled.current = false
@@ -295,7 +302,15 @@ export function useVirtualizedScroll({
       // (when near bottom), never DISABLE it. This prevents measurement-driven
       // scroll shifts from killing auto-scroll while sizes are still settling.
       if (isInGracePeriod || isRecentlyLoaded) {
-        if (isNearBottom) shouldAutoScroll.current = true
+        if (isNearBottom) {
+          shouldAutoScroll.current = true
+        }
+        // During grace periods, only disable auto-scroll if the user has scrolled
+        // well beyond the bottom threshold — small measurement-driven shifts should
+        // not kill auto-scroll, but deliberate scrolling should be respected.
+        else if (distanceFromBottom > bottomThreshold * 3) {
+          shouldAutoScroll.current = false
+        }
       } else {
         shouldAutoScroll.current = isNearBottom
       }
@@ -347,6 +362,9 @@ export function useVirtualizedScroll({
     // This handles measurement drift and inertia ending near-but-not-at bottom.
     const handleScrollEnd = () => {
       if (!shouldAutoScroll.current || itemCount === 0) return
+      // Skip if a programmatic scroll is still settling — scrollToIndex runs a
+      // multi-frame reconciliation loop and we don't need to pile on.
+      if (performance.now() - lastProgrammaticScrollAt.current < PROGRAMMATIC_SCROLL_GRACE_MS) return
       const dist = el.scrollHeight - el.scrollTop - el.clientHeight
       if (dist > 1) {
         lastProgrammaticScrollAt.current = performance.now()
@@ -372,6 +390,5 @@ export function useVirtualizedScroll({
     isScrolledFarFromBottom,
     scrollToBottom: scrollToBottomImpl,
     disableAutoScroll,
-    isSettling: false,
   }
 }
