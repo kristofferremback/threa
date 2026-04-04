@@ -156,6 +156,21 @@ export function useVirtualizedScroll({
   // are garbage-collected automatically when they leave the overscan zone.
   const measuredNodes = useRef(new WeakSet<Element>())
 
+  // Flag set during render when a prepend is about to happen. Refs fire before
+  // layout effects, so we need to tell the measureElement wrapper not to force
+  // measurements that would fight with the prepend scroll restoration.
+  const isPrependingRef = useRef(false)
+  if (!isLoading && itemCount > 0 && prevItemCountRef.current > 0) {
+    const currentFirstKey = getItemKey(0)
+    isPrependingRef.current =
+      itemCount > prevItemCountRef.current &&
+      currentFirstKey !== prevFirstKeyRef.current &&
+      prevFirstKeyRef.current !== null &&
+      !shouldAutoScroll.current
+  } else {
+    isPrependingRef.current = false
+  }
+
   // Custom scrollToFn marks all virtualizer-initiated scrolls (including
   // measurement corrections) as programmatic. Without this, TanStack's
   // element.scrollTo() calls for item-size corrections fire scroll events that
@@ -188,7 +203,10 @@ export function useVirtualizedScroll({
     const original = virtualizer.measureElement
     measureRef.current = (node) => {
       original(node)
-      if (node && !measuredNodes.current.has(node)) {
+      // Skip forced measurement during prepend — the layout effect handles scroll
+      // restoration via distance-from-bottom, and forced resizeItem calls would
+      // apply corrections that fight with that restoration.
+      if (node && !measuredNodes.current.has(node) && !isPrependingRef.current) {
         measuredNodes.current.add(node)
         const index = Number(node.getAttribute("data-index"))
         if (index >= 0) {
@@ -351,6 +369,7 @@ export function useVirtualizedScroll({
         lastProgrammaticScrollAt.current = performance.now()
         el.scrollTop = el.scrollHeight - el.clientHeight - lastDistFromBottom.current
       }
+      isPrependingRef.current = false
     } else if (shouldAutoScroll.current && itemCount > prevCount) {
       // Append with auto-scroll: snap to bottom immediately, then re-snap
       // after one frame so ResizeObserver measurements for the new item have
