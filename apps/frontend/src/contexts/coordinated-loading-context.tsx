@@ -70,7 +70,7 @@ interface CoordinatedLoadingProviderProps {
   children: ReactNode
 }
 
-const LOADING_DELAY_MS = 300
+const LOADING_DELAY_MS = 400
 
 export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }: CoordinatedLoadingProviderProps) {
   const [showSkeleton, setShowSkeleton] = useState(false)
