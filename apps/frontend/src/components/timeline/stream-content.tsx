@@ -631,7 +631,9 @@ export function StreamContent({
                 <div
                   aria-hidden={!isFetchingNewer}
                   className={cn(
-                    "pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 z-10 rounded-full bg-background/90 px-3 py-1 shadow-sm border text-xs text-muted-foreground transition-opacity",
+                    "pointer-events-none absolute left-1/2 -translate-x-1/2 z-20 rounded-full bg-background/90 px-3 py-1 shadow-sm border text-xs text-muted-foreground transition-opacity",
+                    // Sit above the Jump to latest button (bottom-4 + button height) when visible
+                    isJumpMode || isScrolledFarFromBottom ? "bottom-16" : "bottom-2",
                     isFetchingNewer ? "opacity-100" : "opacity-0"
                   )}
                 >
