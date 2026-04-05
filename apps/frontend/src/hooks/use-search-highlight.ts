@@ -1,4 +1,4 @@
-import { useEffect, useRef, type RefObject } from "react"
+import { useEffect, useRef, useState, type RefObject } from "react"
 
 const HIGHLIGHT_NAME = "stream-search"
 const ACTIVE_HIGHLIGHT_NAME = "stream-search-active"
@@ -76,6 +76,26 @@ export function useSearchHighlight(
   // Track the last active range so we can scroll it into view
   const lastActiveRef = useRef<Range | null>(null)
 
+  // Tick bumped by a MutationObserver so highlights re-compute when virtualized
+  // items enter or leave the DOM (otherwise matches outside the initial
+  // rendered window never get highlighted).
+  const [domTick, setDomTick] = useState(0)
+
+  useEffect(() => {
+    const root = containerRef.current
+    if (!root || !query) return
+    let raf = 0
+    const observer = new MutationObserver(() => {
+      cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(() => setDomTick((t) => t + 1))
+    })
+    observer.observe(root, { childList: true, subtree: true, characterData: true })
+    return () => {
+      observer.disconnect()
+      cancelAnimationFrame(raf)
+    }
+  }, [containerRef, query])
+
   useEffect(() => {
     // Clean up highlights when query changes or clears
     if (typeof CSS === "undefined" || !("highlights" in CSS)) return
@@ -130,5 +150,5 @@ export function useSearchHighlight(
       highlights.delete(HIGHLIGHT_NAME)
       highlights.delete(ACTIVE_HIGHLIGHT_NAME)
     }
-  }, [containerRef, query, activeMessageId, activeOccurrence])
+  }, [containerRef, query, activeMessageId, activeOccurrence, domTick])
 }

@@ -281,7 +281,10 @@ export function StreamContent({
   const disableAutoScroll = useVirtualized ? virtualDisableAutoScroll : plainDisableAutoScroll
 
   // Scroll to a specific message by finding its index in visibleItems and
-  // using Virtuoso's scrollToIndex. Returns true if the message was found.
+  // using Virtuoso's scrollToIndex. Retries after a short delay so items
+  // rendered with estimated heights get a second pass once they're measured
+  // (otherwise the target drifts out of view as surrounding items resize).
+  // Returns true if the message was found.
   const scrollToMessage = useCallback(
     (messageId: string) => {
       if (!useVirtualized) return false
@@ -290,7 +293,13 @@ export function StreamContent({
         return (item.event.payload as { messageId?: string })?.messageId === messageId
       })
       if (idx < 0) return false
-      virtuosoRef.current?.scrollToIndex({ index: firstItemIndex + idx, align: "center" })
+      const virtualIndex = firstItemIndex + idx
+      const doScroll = () =>
+        virtuosoRef.current?.scrollToIndex({ index: virtualIndex, align: "center", behavior: "auto" })
+      doScroll()
+      // Second pass after measurement settles
+      window.setTimeout(doScroll, 120)
+      window.setTimeout(doScroll, 320)
       return true
     },
     [useVirtualized, visibleItems, firstItemIndex, virtuosoRef]
@@ -779,7 +788,7 @@ function VirtuosoMessageList({
       firstItemIndex={firstItemIndex}
       initialTopMostItemIndex={initialTopMostItemIndex}
       data={visibleItems}
-      defaultItemHeight={80}
+      defaultItemHeight={120}
       skipAnimationFrameInResizeObserver
       itemContent={itemContent}
       followOutput={followOutput}
