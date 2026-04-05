@@ -247,6 +247,7 @@ export function StreamContent({
     handleAtBottomChange,
     handleRangeChanged,
     handleScrollerRef,
+    resetPrependState,
   } = useVirtuosoScroll({
     itemCount: useVirtualized ? visibleItems.length : 0,
     getItemKey: useVirtualized ? getItemKey : () => "0",
@@ -481,9 +482,14 @@ export function StreamContent({
     }
   }, [highlightMessageId, isLoading, isDraft, events, jumpToEvent, disableAutoScroll, scrollToMessage])
 
-  // Reset jump and search state when switching streams (component stays mounted)
+  // Reset jump and search state when switching streams (component stays mounted).
+  // Also abort any in-flight scrollToMessage retry loop so its stale closure
+  // (holding an index from the previous stream) doesn't scroll the new stream
+  // to the wrong position.
   useEffect(() => {
     jumpTriggeredRef.current = null
+    scrollAbortRef.current?.()
+    pendingScrollTarget.current = null
     exitJumpMode()
     setIsSearchOpen(false)
     clearSearch()
@@ -538,13 +544,17 @@ export function StreamContent({
   const handleJumpToLatest = useCallback(() => {
     if (isJumpMode) {
       exitJumpMode()
+      // The event window is about to be replaced wholesale (jump window →
+      // latest window). Clear the prepend baseline so the next render isn't
+      // mis-detected as a real prepend.
+      resetPrependState()
       requestAnimationFrame(() => {
         scrollToBottom({ force: true })
       })
     } else {
       scrollToBottom({ force: true, behavior: "smooth" })
     }
-  }, [isJumpMode, exitJumpMode, scrollToBottom])
+  }, [isJumpMode, exitJumpMode, resetPrependState, scrollToBottom])
 
   if (error && !isDraft && events.length === 0 && !idbStream) {
     return (

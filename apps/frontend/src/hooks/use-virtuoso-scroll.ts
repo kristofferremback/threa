@@ -46,6 +46,12 @@ interface UseVirtuosoScrollReturn {
   handleRangeChanged: (range: { startIndex: number; endIndex: number }) => void
   /** Attach to Virtuoso's scrollerRef to enable resize handling */
   handleScrollerRef: (ref: HTMLElement | Window | null) => void
+  /**
+   * Reset the prepend-detection baseline. Call this when the event window is
+   * replaced wholesale (e.g. after exitJumpMode) so the next render isn't
+   * mis-detected as a prepend.
+   */
+  resetPrependState: () => void
 }
 
 export function useVirtuosoScroll({
@@ -69,8 +75,10 @@ export function useVirtuosoScroll({
   const prevItemCountRef = useRef(0)
   const prevFirstKeyRef = useRef<string | null>(null)
 
-  // Scroller ref for resize handling
-  const scrollerRef = useRef<HTMLElement | null>(null)
+  // Scroller element stored in state (not a ref) so the ResizeObserver effect
+  // re-runs when Virtuoso mounts its scroller asynchronously (e.g. after an
+  // isLoading skeleton is replaced).
+  const [scrollerEl, setScrollerEl] = useState<HTMLElement | null>(null)
 
   // Reset all state when stream changes
   useLayoutEffect(() => {
@@ -147,7 +155,7 @@ export function useVirtuosoScroll({
 
   const handleScrollerRef = useCallback((ref: HTMLElement | Window | null) => {
     const el = ref as HTMLElement | null
-    scrollerRef.current = el
+    setScrollerEl(el)
     // Apply scroll-related CSS to Virtuoso's actual scroller element (not the outer wrapper)
     if (el) {
       el.style.overflowX = "hidden"
@@ -157,8 +165,7 @@ export function useVirtuosoScroll({
   }, [])
 
   useEffect(() => {
-    const el = scrollerRef.current
-    if (!el) return
+    if (!scrollerEl) return
 
     const observer = new ResizeObserver(() => {
       if (!isAtBottomRef.current) return
@@ -172,12 +179,17 @@ export function useVirtuosoScroll({
       }, 100)
     })
 
-    observer.observe(el)
+    observer.observe(scrollerEl)
     return () => {
       observer.disconnect()
       window.clearTimeout(resizeTimerRef.current)
     }
-  }, [resetKey])
+  }, [scrollerEl])
+
+  const resetPrependState = useCallback(() => {
+    prevItemCountRef.current = 0
+    prevFirstKeyRef.current = null
+  }, [])
 
   const initialTopMostItemIndex =
     skipInitialScroll || itemCount === 0 ? undefined : ({ index: "LAST", align: "end" } as const)
@@ -193,5 +205,6 @@ export function useVirtuosoScroll({
     handleAtBottomChange,
     handleRangeChanged,
     handleScrollerRef,
+    resetPrependState,
   }
 }
