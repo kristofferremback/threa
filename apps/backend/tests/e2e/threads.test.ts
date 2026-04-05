@@ -36,7 +36,7 @@ describe("Thread E2E Tests", () => {
       const client = new TestClient()
       await loginAs(client, testEmail("thread-create"), "Thread Create Test")
       const workspace = await createWorkspace(client, `Thread Create WS ${testRunId}`)
-      const scratchpad = await createScratchpad(client, workspace.id)
+      const scratchpad = await createScratchpad(client, workspace.id, "off")
 
       // Create a message
       const message = await sendMessage(client, workspace.id, scratchpad.id, "Parent message")
@@ -54,7 +54,7 @@ describe("Thread E2E Tests", () => {
       const client = new TestClient()
       await loginAs(client, testEmail("thread-idem"), "Thread Idempotency Test")
       const workspace = await createWorkspace(client, `Thread Idem WS ${testRunId}`)
-      const scratchpad = await createScratchpad(client, workspace.id)
+      const scratchpad = await createScratchpad(client, workspace.id, "off")
 
       const message = await sendMessage(client, workspace.id, scratchpad.id, "Parent message")
 
@@ -71,7 +71,7 @@ describe("Thread E2E Tests", () => {
       const client = new TestClient()
       await loginAs(client, testEmail("reply-zero"), "Reply Zero Test")
       const workspace = await createWorkspace(client, `Reply Zero WS ${testRunId}`)
-      const scratchpad = await createScratchpad(client, workspace.id)
+      const scratchpad = await createScratchpad(client, workspace.id, "off")
 
       // Create a message
       const message = await sendMessage(client, workspace.id, scratchpad.id, "Parent message")
@@ -97,7 +97,7 @@ describe("Thread E2E Tests", () => {
       const client = new TestClient()
       await loginAs(client, testEmail("reply-count"), "Reply Count Test")
       const workspace = await createWorkspace(client, `Reply Count WS ${testRunId}`)
-      const scratchpad = await createScratchpad(client, workspace.id)
+      const scratchpad = await createScratchpad(client, workspace.id, "off")
 
       // Create a message
       const parentMessage = await sendMessage(client, workspace.id, scratchpad.id, "Parent message")
@@ -128,7 +128,7 @@ describe("Thread E2E Tests", () => {
       const client = new TestClient()
       await loginAs(client, testEmail("no-thread"), "No Thread Test")
       const workspace = await createWorkspace(client, `No Thread WS ${testRunId}`)
-      const scratchpad = await createScratchpad(client, workspace.id)
+      const scratchpad = await createScratchpad(client, workspace.id, "off")
 
       // Create a message (no thread)
       const message = await sendMessage(client, workspace.id, scratchpad.id, "Regular message")
@@ -151,7 +151,7 @@ describe("Thread E2E Tests", () => {
       const client = new TestClient()
       await loginAs(client, testEmail("multi-thread"), "Multi Thread Test")
       const workspace = await createWorkspace(client, `Multi Thread WS ${testRunId}`)
-      const scratchpad = await createScratchpad(client, workspace.id)
+      const scratchpad = await createScratchpad(client, workspace.id, "off")
 
       // Create two messages
       const message1 = await sendMessage(client, workspace.id, scratchpad.id, "First parent")
@@ -201,7 +201,7 @@ describe("Thread E2E Tests", () => {
       const client = new TestClient()
       await loginAs(client, testEmail("thread-boot"), "Thread Bootstrap Test")
       const workspace = await createWorkspace(client, `Thread Boot WS ${testRunId}`)
-      const scratchpad = await createScratchpad(client, workspace.id)
+      const scratchpad = await createScratchpad(client, workspace.id, "off")
 
       // Create parent message and thread
       const parentMessage = await sendMessage(client, workspace.id, scratchpad.id, "Parent message")
