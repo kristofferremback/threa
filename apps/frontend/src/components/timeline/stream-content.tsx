@@ -286,6 +286,12 @@ export function StreamContent({
   // as surrounding items are measured; this loop keeps correcting until
   // stable (or a short timeout). User input (wheel / touch / key) aborts
   // the loop immediately so manual scrolling always wins.
+  //
+  // Implementation notes: Virtuoso's scrollToIndex expects the 0-based
+  // index within the current data array (NOT firstItemIndex + idx). Once
+  // the item is rendered in the DOM we use native scrollTo on the scroller
+  // to position it precisely — this sidesteps Virtuoso's internal offset
+  // estimation which tends to overshoot with unmeasured items.
   const scrollRetryTimerRef = useRef<number | null>(null)
   const scrollAbortRef = useRef<(() => void) | null>(null)
   const scrollToMessage = useCallback(
@@ -296,7 +302,6 @@ export function StreamContent({
         return (item.event.payload as { messageId?: string })?.messageId === messageId
       })
       if (idx < 0) return false
-      const virtualIndex = firstItemIndex + idx
 
       // Cancel any previous retry loop
       if (scrollRetryTimerRef.current !== null) {
@@ -311,6 +316,7 @@ export function StreamContent({
       disableAutoScroll()
 
       const scroller = virtuosoScrollerRef.current
+      if (!scroller) return false
 
       // Abort the retry loop the moment the user takes over
       let aborted = false
@@ -320,15 +326,15 @@ export function StreamContent({
           window.clearTimeout(scrollRetryTimerRef.current)
           scrollRetryTimerRef.current = null
         }
-        scroller?.removeEventListener("wheel", abort)
-        scroller?.removeEventListener("touchmove", abort)
-        scroller?.removeEventListener("keydown", abort)
+        scroller.removeEventListener("wheel", abort)
+        scroller.removeEventListener("touchmove", abort)
+        scroller.removeEventListener("keydown", abort)
         scrollAbortRef.current = null
       }
       scrollAbortRef.current = abort
-      scroller?.addEventListener("wheel", abort, { passive: true })
-      scroller?.addEventListener("touchmove", abort, { passive: true })
-      scroller?.addEventListener("keydown", abort)
+      scroller.addEventListener("wheel", abort, { passive: true })
+      scroller.addEventListener("touchmove", abort, { passive: true })
+      scroller.addEventListener("keydown", abort)
 
       const started = performance.now()
       const MAX_MS = 1200
@@ -336,19 +342,25 @@ export function StreamContent({
 
       const attempt = () => {
         if (aborted) return
-        virtuosoRef.current?.scrollToIndex({ index: virtualIndex, align: "center", behavior: "auto" })
 
-        const el = scroller?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(messageId)}"]`)
-        const elapsed = performance.now() - started
+        const el = scroller.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(messageId)}"]`)
 
-        if (scroller && el) {
+        if (el) {
+          // Target is rendered — scroll via DOM so we get pixel-precise positioning
           const sr = scroller.getBoundingClientRect()
           const er = el.getBoundingClientRect()
-          const fullyVisible = er.top >= sr.top && er.bottom <= sr.bottom
-          // In small chats where the full list fits, the item can't be centered
-          // because there's no scroll room. Accept fullyVisible as success there.
+          const elCenter = (er.top + er.bottom) / 2
+          const scCenter = (sr.top + sr.bottom) / 2
+          const delta = elCenter - scCenter
+          if (Math.abs(delta) > 2) {
+            scroller.scrollTop += delta
+          }
+
+          // Re-measure after the scroll
+          const er2 = el.getBoundingClientRect()
+          const fullyVisible = er2.top >= sr.top - 1 && er2.bottom <= sr.bottom + 1
           const hasScrollRoom = scroller.scrollHeight > scroller.clientHeight + 8
-          const centered = !hasScrollRoom || Math.abs((er.top + er.bottom) / 2 - (sr.top + sr.bottom) / 2) < 40
+          const centered = !hasScrollRoom || Math.abs((er2.top + er2.bottom) / 2 - scCenter) < 40
           if (fullyVisible && centered) {
             stableFrames += 1
             if (stableFrames >= 2) {
@@ -358,10 +370,15 @@ export function StreamContent({
           } else {
             stableFrames = 0
           }
+        } else {
+          // Target is virtualized out — ask Virtuoso to render it (0-based index)
+          virtuosoRef.current?.scrollToIndex({ index: idx, align: "center", behavior: "auto" })
+          stableFrames = 0
         }
 
+        const elapsed = performance.now() - started
         if (elapsed < MAX_MS) {
-          scrollRetryTimerRef.current = window.setTimeout(attempt, 70)
+          scrollRetryTimerRef.current = window.setTimeout(attempt, 60)
         } else {
           abort()
         }
@@ -369,7 +386,7 @@ export function StreamContent({
       attempt()
       return true
     },
-    [useVirtualized, visibleItems, firstItemIndex, virtuosoRef, disableAutoScroll]
+    [useVirtualized, visibleItems, virtuosoRef, disableAutoScroll]
   )
 
   useEffect(() => {
