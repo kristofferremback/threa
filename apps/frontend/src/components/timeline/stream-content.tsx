@@ -316,7 +316,10 @@ export function StreamContent({
           const sr = scroller.getBoundingClientRect()
           const er = el.getBoundingClientRect()
           const fullyVisible = er.top >= sr.top && er.bottom <= sr.bottom
-          const centered = Math.abs((er.top + er.bottom) / 2 - (sr.top + sr.bottom) / 2) < 40
+          // In small chats where the full list fits, the item can't be centered
+          // because there's no scroll room. Accept fullyVisible as success there.
+          const hasScrollRoom = scroller.scrollHeight > scroller.clientHeight + 8
+          const centered = !hasScrollRoom || Math.abs((er.top + er.bottom) / 2 - (sr.top + sr.bottom) / 2) < 40
           if (fullyVisible && centered) {
             stableFrames += 1
             if (stableFrames >= 2) {
