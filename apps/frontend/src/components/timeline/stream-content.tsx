@@ -284,8 +284,10 @@ export function StreamContent({
   // element is actually visible in the scroller viewport. Items rendered
   // with estimated heights cause the target to drift after the first scroll
   // as surrounding items are measured; this loop keeps correcting until
-  // stable (or a short timeout).
+  // stable (or a short timeout). User input (wheel / touch / key) aborts
+  // the loop immediately so manual scrolling always wins.
   const scrollRetryTimerRef = useRef<number | null>(null)
+  const scrollAbortRef = useRef<(() => void) | null>(null)
   const scrollToMessage = useCallback(
     (messageId: string) => {
       if (!useVirtualized) return false
@@ -296,19 +298,46 @@ export function StreamContent({
       if (idx < 0) return false
       const virtualIndex = firstItemIndex + idx
 
+      // Cancel any previous retry loop
       if (scrollRetryTimerRef.current !== null) {
         window.clearTimeout(scrollRetryTimerRef.current)
         scrollRetryTimerRef.current = null
       }
+      scrollAbortRef.current?.()
+      scrollAbortRef.current = null
+
+      // Disable auto-scroll so followOutput doesn't snap back to bottom
+      // while we're trying to scroll the target into view.
+      disableAutoScroll()
+
+      const scroller = virtuosoScrollerRef.current
+
+      // Abort the retry loop the moment the user takes over
+      let aborted = false
+      const abort = () => {
+        aborted = true
+        if (scrollRetryTimerRef.current !== null) {
+          window.clearTimeout(scrollRetryTimerRef.current)
+          scrollRetryTimerRef.current = null
+        }
+        scroller?.removeEventListener("wheel", abort)
+        scroller?.removeEventListener("touchmove", abort)
+        scroller?.removeEventListener("keydown", abort)
+        scrollAbortRef.current = null
+      }
+      scrollAbortRef.current = abort
+      scroller?.addEventListener("wheel", abort, { passive: true })
+      scroller?.addEventListener("touchmove", abort, { passive: true })
+      scroller?.addEventListener("keydown", abort)
 
       const started = performance.now()
       const MAX_MS = 1200
       let stableFrames = 0
 
       const attempt = () => {
+        if (aborted) return
         virtuosoRef.current?.scrollToIndex({ index: virtualIndex, align: "center", behavior: "auto" })
 
-        const scroller = virtuosoScrollerRef.current
         const el = scroller?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(messageId)}"]`)
         const elapsed = performance.now() - started
 
@@ -323,7 +352,7 @@ export function StreamContent({
           if (fullyVisible && centered) {
             stableFrames += 1
             if (stableFrames >= 2) {
-              scrollRetryTimerRef.current = null
+              abort()
               return
             }
           } else {
@@ -334,21 +363,18 @@ export function StreamContent({
         if (elapsed < MAX_MS) {
           scrollRetryTimerRef.current = window.setTimeout(attempt, 70)
         } else {
-          scrollRetryTimerRef.current = null
+          abort()
         }
       }
       attempt()
       return true
     },
-    [useVirtualized, visibleItems, firstItemIndex, virtuosoRef]
+    [useVirtualized, visibleItems, firstItemIndex, virtuosoRef, disableAutoScroll]
   )
 
   useEffect(() => {
     return () => {
-      if (scrollRetryTimerRef.current !== null) {
-        window.clearTimeout(scrollRetryTimerRef.current)
-        scrollRetryTimerRef.current = null
-      }
+      scrollAbortRef.current?.()
     }
   }, [])
 
