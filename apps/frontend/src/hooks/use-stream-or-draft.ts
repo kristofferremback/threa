@@ -12,6 +12,7 @@ import { useWorkspaceUsers, useWorkspaceStreams, useWorkspaceDmPeers } from "@/s
 import { useSyncEngine } from "@/sync/sync-engine"
 import { deleteDraftMessageFromCache, hasSeededDraftCache, upsertDraftMessageInCache } from "@/stores/draft-store"
 import { type AttachmentSummary } from "./create-optimistic-bootstrap"
+import { resolveDmDisplayName } from "@/lib/streams"
 import { serializeToMarkdown } from "@threa/prosemirror"
 import { onDraftPromoted } from "@/lib/draft-promotions"
 import type {
@@ -59,14 +60,11 @@ function resolveRealDmDisplayName(
   idbUsers: Array<{ id: string; name: string }>,
   idbDmPeers: Array<{ streamId: string; userId: string }>
 ): string | null {
-  // Try resolving from the DM peer user first (most reliable for DMs)
-  const otherMemberId = idbDmPeers.find((peer) => peer.streamId === streamId)?.userId
-  if (otherMemberId) {
-    const otherMemberName = idbUsers.find((u) => u.id === otherMemberId)?.name ?? null
-    if (otherMemberName) return otherMemberName
-  }
+  // Try resolving from the DM peer user first (most reliable for DMs).
+  const peerName = resolveDmDisplayName(streamId, idbUsers, idbDmPeers)
+  if (peerName) return peerName
 
-  // Fall back to workspace-level cached displayName
+  // Fall back to workspace-level cached displayName.
   const workspaceName = idbStreams.find((stream) => stream.id === streamId)?.displayName
   if (workspaceName) return workspaceName
 

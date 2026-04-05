@@ -35,6 +35,13 @@ export function categorizeStream(stream: StreamWithPreview, unreadCount: number,
     return "important"
   }
 
+  // Any stream with unread activity stays in Recent regardless of age or
+  // whether a preview has been cached yet. An active chat should never sink
+  // into "Everything else" while the user is still catching up.
+  if (unreadCount > 0) {
+    return "recent"
+  }
+
   // Recent: activity in last 7 days
   if (stream.lastMessagePreview) {
     const diff = Date.now() - new Date(stream.lastMessagePreview.createdAt).getTime()

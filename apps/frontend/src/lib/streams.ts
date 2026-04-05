@@ -18,6 +18,29 @@ export function getStreamName(stream: {
   return stream.displayName ?? null
 }
 
+/**
+ * Resolves the display name for a DM stream from local workspace caches.
+ *
+ * DM display names are viewer-specific and only computed on the backend at
+ * bootstrap time. Socket events (`stream:created`, `stream:updated`) carry the
+ * raw DB row with `displayName: null`, which can overwrite IDB state before a
+ * bootstrap refetch lands. Resolving from the peer user via `dmPeers` +
+ * `workspaceUsers` keeps the UI correct regardless of what the cached
+ * `stream.displayName` happens to contain.
+ *
+ * Returns null when the peer user cannot be resolved yet (caller should fall
+ * back to whatever name it already has).
+ */
+export function resolveDmDisplayName(
+  streamId: string,
+  workspaceUsers: Array<{ id: string; name: string }>,
+  dmPeers: Array<{ streamId: string; userId: string }>
+): string | null {
+  const peerUserId = dmPeers.find((peer) => peer.streamId === streamId)?.userId
+  if (!peerUserId) return null
+  return workspaceUsers.find((u) => u.id === peerUserId)?.name ?? null
+}
+
 type FallbackContext = "sidebar" | "activity" | "breadcrumb" | "generic"
 
 const FALLBACK_LABELS: Record<string, Record<FallbackContext, string>> = {
