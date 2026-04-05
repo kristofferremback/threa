@@ -5,7 +5,7 @@ import { useSyncEngine } from "@/sync/sync-engine"
 import { db, sequenceToNum } from "@/db"
 import { parseMarkdown } from "@threa/prosemirror"
 import { emitDraftPromoted } from "@/lib/draft-promotions"
-import { optimisticReplyCountUpdate } from "@/sync/stream-sync"
+import { setParentThreadId } from "@/sync/stream-sync"
 import { deleteDraftScratchpadFromCache, deleteDraftMessageFromCache } from "@/stores/draft-store"
 import { workspaceKeys } from "./use-workspaces"
 import { StreamTypes } from "@threa/types"
@@ -110,16 +110,23 @@ async function promoteDraft(
   // the message:created event for the optimistic swap
   void syncEngine.subscribeStream(realStreamId)
 
-  // For threads, optimistically update the parent message's reply count
+  // For threads, swap the parent message's threadId from the draft panel ID
+  // to the real thread stream. The replyCount was already bumped at queue time
+  // so we don't re-increment here.
   if (creation.type === StreamTypes.THREAD && creation.parentStreamId && creation.parentMessageId) {
-    optimisticReplyCountUpdate(creation.parentStreamId, creation.parentMessageId, realStreamId).catch(() => {})
+    setParentThreadId(creation.parentStreamId, creation.parentMessageId, realStreamId).catch(() => {})
   }
 
-  // Clean up draft data (no-ops gracefully for non-scratchpad drafts)
+  // Clean up draft data (no-ops gracefully for non-scratchpad drafts).
+  // Also delete the optimistic scratchpad stream entry that was created at
+  // queue time — the real stream now replaces it in the sidebar.
   if (next.draftId) {
-    await db.transaction("rw", db.draftScratchpads, db.draftMessages, async () => {
+    await db.transaction("rw", db.draftScratchpads, db.draftMessages, db.streams, async () => {
       await db.draftScratchpads.delete(next.draftId!)
       await db.draftMessages.delete(`stream:${next.draftId!}`)
+      if (draftStreamId !== realStreamId) {
+        await db.streams.delete(draftStreamId)
+      }
     })
     deleteDraftScratchpadFromCache(next.workspaceId, next.draftId)
     deleteDraftMessageFromCache(next.workspaceId, `stream:${next.draftId}`)

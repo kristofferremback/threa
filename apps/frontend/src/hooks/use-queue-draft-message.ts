@@ -2,10 +2,12 @@ import { useCallback } from "react"
 import { usePendingMessages } from "@/contexts"
 import { useUser } from "@/auth"
 import { useWorkspaceUsers } from "@/stores/workspace-store"
-import { db, sequenceToNum, type PendingStreamCreation } from "@/db"
+import { db, sequenceToNum, type CachedStream, type PendingStreamCreation } from "@/db"
 import { serializeToMarkdown } from "@threa/prosemirror"
+import { StreamTypes, Visibilities, type JSONContent, type StreamEvent } from "@threa/types"
+import { createDraftPanelId } from "@/contexts/panel-context"
+import { optimisticReplyCountUpdate } from "@/sync/stream-sync"
 import { generateClientId } from "./use-stream-or-draft"
-import type { JSONContent, StreamEvent } from "@threa/types"
 import type { AttachmentSummary } from "./create-optimistic-bootstrap"
 
 export interface QueueDraftMessageInput {
@@ -88,9 +90,62 @@ export function useQueueDraftMessage(workspaceId: string) {
         _cachedAt: Date.now(),
       })
 
+      // Surface the committed draft in the sidebar and quick switcher so the
+      // user can navigate back to it even before the real stream exists. The
+      // promotion step will replace this entry with the server-assigned one.
+      if (params.streamCreation.type === StreamTypes.SCRATCHPAD) {
+        const draftScratchpad = await db.draftScratchpads.get(params.draftId)
+        const optimisticStream: CachedStream = {
+          id: params.streamId,
+          workspaceId: params.workspaceId,
+          type: StreamTypes.SCRATCHPAD,
+          displayName: draftScratchpad?.displayName ?? params.streamCreation.displayName ?? null,
+          slug: null,
+          description: null,
+          visibility: Visibilities.PRIVATE,
+          parentStreamId: null,
+          parentMessageId: null,
+          rootStreamId: null,
+          companionMode: params.streamCreation.companionMode ?? "on",
+          companionPersonaId: null,
+          createdBy: currentUserId,
+          createdAt: draftScratchpad ? new Date(draftScratchpad.createdAt).toISOString() : now,
+          updatedAt: now,
+          archivedAt: null,
+          lastMessagePreview: {
+            authorId: currentUserId,
+            authorType: "user",
+            content: contentMarkdown,
+            createdAt: now,
+          },
+          _cachedAt: Date.now(),
+        }
+        await db.streams.put(optimisticStream)
+      }
+
+      // For thread drafts, show a pending reply indicator on the parent message
+      // by temporarily setting the parent's threadId to the draft panel ID and
+      // bumping its replyCount. The promotion step swaps the threadId to the
+      // real thread stream without re-incrementing.
+      if (
+        params.streamCreation.type === StreamTypes.THREAD &&
+        params.streamCreation.parentStreamId &&
+        params.streamCreation.parentMessageId
+      ) {
+        const draftPanelId = createDraftPanelId(
+          params.streamCreation.parentStreamId,
+          params.streamCreation.parentMessageId
+        )
+        await optimisticReplyCountUpdate(
+          params.streamCreation.parentStreamId,
+          params.streamCreation.parentMessageId,
+          draftPanelId
+        ).catch(() => {})
+      }
+
       notifyQueue()
     },
-    [workspaceId, currentUserId, markPending, notifyQueue]
+    [currentUserId, markPending, notifyQueue]
   )
 
   return { queueDraftMessage, currentUserId }

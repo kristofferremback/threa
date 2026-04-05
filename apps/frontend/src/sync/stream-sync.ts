@@ -229,6 +229,26 @@ export async function optimisticReplyCountUpdate(
   }))
 }
 
+/**
+ * Swap the threadId on a parent message without touching replyCount.
+ *
+ * Used when promoting a draft thread: the initial optimistic update set the
+ * threadId to the draft panel ID (and incremented replyCount by 1) so the UI
+ * surfaced the pending reply immediately. Once the real thread stream is
+ * created, we swap the threadId to the server-assigned one so navigation
+ * targets the real thread.
+ */
+export async function setParentThreadId(
+  parentStreamId: string,
+  parentMessageId: string,
+  threadId: string
+): Promise<void> {
+  await updateMessageEvent(parentStreamId, parentMessageId, (p) => ({
+    ...p,
+    threadId,
+  }))
+}
+
 // ============================================================================
 // Socket event handlers — write exclusively to IndexedDB
 // ============================================================================
