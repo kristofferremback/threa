@@ -280,11 +280,12 @@ export function StreamContent({
   const scrollToBottom = useVirtualized ? virtualScrollToBottom : plainScrollToBottom
   const disableAutoScroll = useVirtualized ? virtualDisableAutoScroll : plainDisableAutoScroll
 
-  // Scroll to a specific message by finding its index in visibleItems and
-  // using Virtuoso's scrollToIndex. Retries after a short delay so items
-  // rendered with estimated heights get a second pass once they're measured
-  // (otherwise the target drifts out of view as surrounding items resize).
-  // Returns true if the message was found.
+  // Scroll to a specific message and keep re-scrolling until the target
+  // element is actually visible in the scroller viewport. Items rendered
+  // with estimated heights cause the target to drift after the first scroll
+  // as surrounding items are measured; this loop keeps correcting until
+  // stable (or a short timeout).
+  const scrollRetryTimerRef = useRef<number | null>(null)
   const scrollToMessage = useCallback(
     (messageId: string) => {
       if (!useVirtualized) return false
@@ -294,16 +295,59 @@ export function StreamContent({
       })
       if (idx < 0) return false
       const virtualIndex = firstItemIndex + idx
-      const doScroll = () =>
+
+      if (scrollRetryTimerRef.current !== null) {
+        window.clearTimeout(scrollRetryTimerRef.current)
+        scrollRetryTimerRef.current = null
+      }
+
+      const started = performance.now()
+      const MAX_MS = 1200
+      let stableFrames = 0
+
+      const attempt = () => {
         virtuosoRef.current?.scrollToIndex({ index: virtualIndex, align: "center", behavior: "auto" })
-      doScroll()
-      // Second pass after measurement settles
-      window.setTimeout(doScroll, 120)
-      window.setTimeout(doScroll, 320)
+
+        const scroller = virtuosoScrollerRef.current
+        const el = scroller?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(messageId)}"]`)
+        const elapsed = performance.now() - started
+
+        if (scroller && el) {
+          const sr = scroller.getBoundingClientRect()
+          const er = el.getBoundingClientRect()
+          const fullyVisible = er.top >= sr.top && er.bottom <= sr.bottom
+          const centered = Math.abs((er.top + er.bottom) / 2 - (sr.top + sr.bottom) / 2) < 40
+          if (fullyVisible && centered) {
+            stableFrames += 1
+            if (stableFrames >= 2) {
+              scrollRetryTimerRef.current = null
+              return
+            }
+          } else {
+            stableFrames = 0
+          }
+        }
+
+        if (elapsed < MAX_MS) {
+          scrollRetryTimerRef.current = window.setTimeout(attempt, 70)
+        } else {
+          scrollRetryTimerRef.current = null
+        }
+      }
+      attempt()
       return true
     },
     [useVirtualized, visibleItems, firstItemIndex, virtuosoRef]
   )
+
+  useEffect(() => {
+    return () => {
+      if (scrollRetryTimerRef.current !== null) {
+        window.clearTimeout(scrollRetryTimerRef.current)
+        scrollRetryTimerRef.current = null
+      }
+    }
+  }, [])
 
   // After jumpToEvent loads events around a target, scroll to it once the
   // events array updates and the target is present.
@@ -488,33 +532,56 @@ export function StreamContent({
               </div>
             )}
             {!isDraft && useVirtualized && (
-              <VirtuosoMessageList
-                visibleItems={visibleItems}
-                isLoading={isLoading}
-                virtuosoRef={virtuosoRef}
-                virtuosoScrollerRef={virtuosoScrollerRef}
-                handleScrollerRef={handleScrollerRef}
-                firstItemIndex={firstItemIndex}
-                initialTopMostItemIndex={initialTopMostItemIndex}
-                shouldFollowOutput={shouldFollowOutput}
-                handleAtBottomChange={handleAtBottomChange}
-                handleRangeChanged={handleRangeChanged}
-                hasOlderEvents={hasOlderEvents}
-                hasNewerEvents={hasNewerEvents}
-                fetchOlderEvents={fetchOlderEvents}
-                fetchNewerEvents={fetchNewerEvents}
-                isFetchingOlder={isFetchingOlder}
-                isFetchingNewer={isFetchingNewer}
-                workspaceId={workspaceId}
-                streamId={streamId}
-                highlightMessageId={streamSearch.activeMessageId ?? highlightMessageId}
-                firstUnreadEventId={dividerEventId}
-                isDividerFading={isDividerFading}
-                agentActivity={agentActivity}
-                hideSessionCards={isChannel}
-                newMessageIds={newMessageIds}
-                isSearchOpen={isSearchOpen}
-              />
+              <>
+                <VirtuosoMessageList
+                  visibleItems={visibleItems}
+                  isLoading={isLoading}
+                  virtuosoRef={virtuosoRef}
+                  virtuosoScrollerRef={virtuosoScrollerRef}
+                  handleScrollerRef={handleScrollerRef}
+                  firstItemIndex={firstItemIndex}
+                  initialTopMostItemIndex={initialTopMostItemIndex}
+                  shouldFollowOutput={shouldFollowOutput}
+                  handleAtBottomChange={handleAtBottomChange}
+                  handleRangeChanged={handleRangeChanged}
+                  hasOlderEvents={hasOlderEvents}
+                  hasNewerEvents={hasNewerEvents}
+                  fetchOlderEvents={fetchOlderEvents}
+                  fetchNewerEvents={fetchNewerEvents}
+                  isFetchingOlder={isFetchingOlder}
+                  isFetchingNewer={isFetchingNewer}
+                  workspaceId={workspaceId}
+                  streamId={streamId}
+                  highlightMessageId={streamSearch.activeMessageId ?? highlightMessageId}
+                  firstUnreadEventId={dividerEventId}
+                  isDividerFading={isDividerFading}
+                  agentActivity={agentActivity}
+                  hideSessionCards={isChannel}
+                  newMessageIds={newMessageIds}
+                  isSearchOpen={isSearchOpen}
+                />
+                {/* Overlay loading indicators — absolutely positioned so they
+                    don't cause layout shift when prepending older messages. */}
+                <div
+                  aria-hidden={!isFetchingOlder}
+                  className={cn(
+                    "pointer-events-none absolute left-1/2 -translate-x-1/2 z-10 rounded-full bg-background/90 px-3 py-1 shadow-sm border text-xs text-muted-foreground transition-opacity",
+                    isSearchOpen ? "top-14" : "top-2",
+                    isFetchingOlder ? "opacity-100" : "opacity-0"
+                  )}
+                >
+                  Loading older messages...
+                </div>
+                <div
+                  aria-hidden={!isFetchingNewer}
+                  className={cn(
+                    "pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 z-10 rounded-full bg-background/90 px-3 py-1 shadow-sm border text-xs text-muted-foreground transition-opacity",
+                    isFetchingNewer ? "opacity-100" : "opacity-0"
+                  )}
+                >
+                  Loading newer messages...
+                </div>
+              </>
             )}
             {!isDraft && !useVirtualized && (
               <div
@@ -587,29 +654,6 @@ export function StreamContent({
     </EditLastMessageContext.Provider>
   )
 }
-
-/** Context passed to Virtuoso's stable Header/Footer components via the context prop */
-type VirtuosoListContext = { isFetchingOlder: boolean; isFetchingNewer: boolean }
-
-function VirtuosoListHeader({ context }: { context?: VirtuosoListContext }) {
-  if (!context?.isFetchingOlder) return null
-  return (
-    <div className="flex justify-center py-2">
-      <p className="text-sm text-muted-foreground">Loading older messages...</p>
-    </div>
-  )
-}
-
-function VirtuosoListFooter({ context }: { context?: VirtuosoListContext }) {
-  if (!context?.isFetchingNewer) return null
-  return (
-    <div className="flex justify-center py-2">
-      <p className="text-sm text-muted-foreground">Loading newer messages...</p>
-    </div>
-  )
-}
-
-const VIRTUOSO_COMPONENTS = { Header: VirtuosoListHeader, Footer: VirtuosoListFooter }
 
 /** Virtuoso-powered message list for streams, channels, and scratchpads */
 function VirtuosoMessageList({
@@ -798,8 +842,6 @@ function VirtuosoMessageList({
       endReached={handleEndReached}
       atBottomThreshold={30}
       increaseViewportBy={{ top: 600, bottom: 600 }}
-      context={{ isFetchingOlder, isFetchingNewer }}
-      components={VIRTUOSO_COMPONENTS}
     />
   )
 }
