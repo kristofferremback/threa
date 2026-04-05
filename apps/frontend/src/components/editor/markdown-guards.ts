@@ -2,6 +2,18 @@ import type { ResolvedPos } from "@tiptap/pm/model"
 import type { EditorState } from "@tiptap/pm/state"
 
 /**
+ * Returns the plain text of `$pos`'s parent block from the block start up to
+ * the cursor offset, with U+FFFC (object replacement character) for atom leaf
+ * nodes so mentions/channels/emojis don't silently collapse into adjacent text.
+ *
+ * This is the canonical "what has the user typed so far in this block?" query
+ * for composer trigger matchers and markdown input rules.
+ */
+export function getParentTextBefore($pos: ResolvedPos): string {
+  return $pos.parent.textBetween(0, $pos.parentOffset, undefined, "\ufffc")
+}
+
+/**
  * Returns true if the "current word" ending at `$pos` contains a literal
  * backtick in its parent block.
  *

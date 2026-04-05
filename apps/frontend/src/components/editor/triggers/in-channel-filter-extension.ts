@@ -15,6 +15,7 @@ import Suggestion from "@tiptap/suggestion"
 import { PluginKey } from "@tiptap/pm/state"
 import type { SuggestionProps, SuggestionKeyDownProps } from "@tiptap/suggestion"
 import type { ChannelItem } from "./types"
+import { getParentTextBefore } from "../markdown-guards"
 
 export const InChannelFilterPluginKey = new PluginKey("inChannelFilter")
 
@@ -44,8 +45,7 @@ function findInChannelFilterMatch(config: {
 }) {
   const { $position } = config
 
-  // Get text from start of text block to cursor
-  const textBefore = $position.parent.textBetween(0, $position.parentOffset, undefined, "\ufffc")
+  const textBefore = getParentTextBefore($position)
 
   // Match `in:` or `in:#` at word boundary, but NOT if followed by @
   // - `in:` → matches (shows streams)

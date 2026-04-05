@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { Schema } from "@tiptap/pm/model"
 import { EditorState } from "@tiptap/pm/state"
-import { isInBacktickWord, currentWordContainsBacktick } from "./markdown-guards"
+import { isInBacktickWord, currentWordContainsBacktick, getParentTextBefore } from "./markdown-guards"
 
 const schema = new Schema({
   nodes: {
@@ -104,5 +104,34 @@ describe("currentWordContainsBacktick", () => {
   it("treats Unicode whitespace (non-breaking space) as a word break", () => {
     const state = stateWithParagraph("`foo\u00a0_bar")
     expect(isInBacktickWord(state, state.doc.content.size - 1)).toBe(false)
+  })
+})
+
+describe("getParentTextBefore", () => {
+  it("returns parent text from block start to the cursor offset", () => {
+    const state = stateWithParagraph("hello world")
+    // Resolve at position 7 → after "hello " (6 chars) inside paragraph
+    const $pos = state.doc.resolve(7)
+    expect(getParentTextBefore($pos)).toBe("hello ")
+  })
+
+  it("returns an empty string when the cursor is at block start", () => {
+    const state = stateWithParagraph("hello")
+    const $pos = state.doc.resolve(1)
+    expect(getParentTextBefore($pos)).toBe("")
+  })
+
+  it("replaces atom leaf nodes with U+FFFC so adjacent text doesn't collapse", () => {
+    const doc = schema.nodes.doc.create({}, [
+      schema.nodes.paragraph.create({}, [
+        schema.text("hi "),
+        schema.nodes.mention.create({ slug: "ariadne" }),
+        schema.text(" there"),
+      ]),
+    ])
+    const state = EditorState.create({ doc, schema })
+    // Cursor at end of paragraph content.
+    const $pos = state.doc.resolve(state.doc.content.size - 1)
+    expect(getParentTextBefore($pos)).toBe("hi \ufffc there")
   })
 })

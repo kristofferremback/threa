@@ -9,6 +9,7 @@ import { Extension } from "@tiptap/core"
 import Suggestion from "@tiptap/suggestion"
 import { PluginKey } from "@tiptap/pm/state"
 import type { SuggestionProps, SuggestionKeyDownProps } from "@tiptap/suggestion"
+import { getParentTextBefore } from "../markdown-guards"
 
 export const FilterTypePluginKey = new PluginKey("filterType")
 
@@ -53,8 +54,7 @@ function findFilterTypeMatch(config: {
 }) {
   const { $position } = config
 
-  // Get text from start of text block to cursor
-  const textBefore = $position.parent.textBetween(0, $position.parentOffset, undefined, "\ufffc")
+  const textBefore = getParentTextBefore($position)
 
   // Match `is:` at word boundary (start of text or after whitespace)
   // Also match after `?` since search mode uses `?` prefix
