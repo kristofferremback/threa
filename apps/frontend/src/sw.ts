@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 import { precacheAndRoute } from "workbox-precaching"
-import { ActivityTypes } from "@threa/types"
+import { ActivityTypes, AuthorTypes, type LastMessagePreview, type StreamEvent } from "@threa/types"
 import {
   SW_MSG_NOTIFICATION_CLICK,
   SW_MSG_SUBSCRIPTION_CHANGED,
@@ -34,13 +34,6 @@ const PUSH_BOOTSTRAP_CACHE = "push-bootstrap"
 /** Regex matching stream bootstrap API paths. */
 const BOOTSTRAP_PATH_RE = /^\/api\/workspaces\/[^/]+\/streams\/[^/]+\/bootstrap$/
 
-/**
- * Pre-fetch the stream bootstrap API and store the response in the Cache API
- * so the next fetch for this URL (when the user taps the notification and the
- * app mounts the stream view) can be served instantly from cache.
- *
- * Best-effort: errors are swallowed — the normal fetch path takes over.
- */
 /**
  * Pre-fetch events around a specific message so it's available in IDB
  * when the user taps the push notification. Best-effort.
@@ -85,25 +78,63 @@ async function prefetchStreamBootstrap(workspaceId: string, streamId: string): P
   try {
     const body = await response.json()
     const bootstrap = body.data ?? body
-    if (bootstrap?.events?.length > 0) {
-      const now = Date.now()
-      // Dynamic import to avoid bundling Dexie into the SW critical path.
-      // The SW shares the same origin and IndexedDB database as the main thread.
-      const { db, sequenceToNum } = await import("./db/database")
+    if (!bootstrap?.events?.length) return
+
+    const now = Date.now()
+    // Dynamic import to avoid bundling Dexie into the SW critical path.
+    // The SW shares the same origin and IndexedDB database as the main thread.
+    const { db, sequenceToNum } = await import("./db/database")
+
+    const events: StreamEvent[] = bootstrap.events
+    const latestMessageEvent = findLatestMessageEvent(events)
+    const derivedPreview = latestMessageEvent ? buildPreviewFromEvent(latestMessageEvent) : null
+
+    // The stream bootstrap endpoint returns a plain Stream without
+    // lastMessagePreview — a blind put would wipe the sidebar preview and
+    // sink the stream into "Other". Merge via update() so lastMessagePreview
+    // and membership-derived fields (pinned, notificationLevel,
+    // lastReadEventId) from applyWorkspaceBootstrap survive.
+    await db.transaction("rw", [db.events, db.streams], async () => {
       await db.events.bulkPut(
-        bootstrap.events.map((e: Record<string, unknown>) => ({
+        events.map((e) => ({
           ...e,
           workspaceId,
-          _sequenceNum: sequenceToNum(e.sequence as string),
+          _sequenceNum: sequenceToNum(e.sequence),
           _cachedAt: now,
         }))
       )
-      if (bootstrap.stream) {
-        await db.streams.put({ ...bootstrap.stream, _cachedAt: now })
+
+      if (!bootstrap.stream) return
+
+      const patch: { _cachedAt: number; lastMessagePreview?: LastMessagePreview } = { _cachedAt: now }
+      if (derivedPreview) patch.lastMessagePreview = derivedPreview
+
+      const updated = await db.streams.update(bootstrap.stream.id, patch)
+      if (updated === 0) {
+        await db.streams.put({ ...bootstrap.stream, ...patch })
       }
-    }
+    })
   } catch {
     // Best-effort — normal fetch path takes over if this fails
+  }
+}
+
+/** Find the most recent message_created event. Bootstrap events are ordered oldest → newest. */
+function findLatestMessageEvent(events: StreamEvent[]): StreamEvent | null {
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (events[i].eventType === "message_created") return events[i]
+  }
+  return null
+}
+
+function buildPreviewFromEvent(event: StreamEvent): LastMessagePreview {
+  const payload = (event.payload ?? {}) as { contentJson?: unknown; contentMarkdown?: string }
+  return {
+    authorId: event.actorId ?? "",
+    authorType: event.actorType ?? AuthorTypes.USER,
+    // Sidebar's truncateContent accepts either JSONContent or a markdown string.
+    content: (payload.contentJson ?? payload.contentMarkdown ?? "") as string,
+    createdAt: event.createdAt,
   }
 }
 
