@@ -35,13 +35,6 @@ const PUSH_BOOTSTRAP_CACHE = "push-bootstrap"
 const BOOTSTRAP_PATH_RE = /^\/api\/workspaces\/[^/]+\/streams\/[^/]+\/bootstrap$/
 
 /**
- * Pre-fetch the stream bootstrap API and store the response in the Cache API
- * so the next fetch for this URL (when the user taps the notification and the
- * app mounts the stream view) can be served instantly from cache.
- *
- * Best-effort: errors are swallowed — the normal fetch path takes over.
- */
-/**
  * Pre-fetch events around a specific message so it's available in IDB
  * when the user taps the push notification. Best-effort.
  */
