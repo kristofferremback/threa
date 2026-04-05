@@ -109,7 +109,7 @@ export const EmojiExtension = Node.create<EmojiExtensionOptions>({
           const emoji = toEmoji(shortcode)
           if (!emoji) return null
 
-          // Suppress inside a backtick-owned word (unclosed inline code).
+          // Suppress inside an unclosed inline-code word (see markdown-guards).
           if (isInBacktickWord(state, range.from)) return null
 
           const nodeType = this.type
@@ -165,7 +165,7 @@ export const EmojiExtension = Node.create<EmojiExtensionOptions>({
             return false
           }
 
-          // Suppress inside a backtick-owned word (unclosed inline code).
+          // Suppress inside an unclosed inline-code word (see markdown-guards).
           if (currentWordContainsBacktick($from)) {
             return false
           }

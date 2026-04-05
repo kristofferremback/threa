@@ -152,9 +152,7 @@ export function createTriggerExtension<TItem, TAttrs extends object>(config: Tri
               return false
             }
 
-            // Suppress triggers while the current word still contains an
-            // unclosed literal backtick. The user is typing inside what will
-            // become inline code once they close the backtick.
+            // Suppress inside an unclosed inline-code word (see markdown-guards).
             if (currentWordContainsBacktick($from)) {
               return false
             }

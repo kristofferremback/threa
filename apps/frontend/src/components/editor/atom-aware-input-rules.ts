@@ -1,6 +1,6 @@
 import { InputRule } from "@tiptap/core"
 import type { MarkType, Node as ProseMirrorNode } from "@tiptap/pm/model"
-import { isInBacktickWord } from "./markdown-guards"
+import { currentWordContainsBacktick } from "./markdown-guards"
 
 /**
  * Configuration for an atom-aware mark input rule.
@@ -35,17 +35,11 @@ export function atomAwareMarkInputRule(config: AtomAwareMarkInputRuleConfig): In
   const openEsc = escapeRegex(openMarker)
   const closeEsc = escapeRegex(closeMarker)
 
-  // Markdown-style marks only apply when the opening marker is at the start of
-  // the matched text window or immediately preceded by whitespace. This prevents
-  // `f_name_2.py` from italicizing `name`, while still allowing `hi _friend_!`.
-  // The `(?<=^|\s)` lookbehind enforces this and also naturally prevents
-  // `**hello*` from matching as italic at position 1 (preceded by `*`, not
-  // whitespace).
-  //
-  // For single-char markers we additionally require the content not to start
-  // with the same marker char, so `***hello*` does not match as italic with
-  // content `**hello`.
-
+  // The opening marker must be at the start of the match window or preceded
+  // by whitespace; this is re-verified against the real parent text in the
+  // handler because TipTap's match window is capped at 500 chars. Single-char
+  // markers additionally forbid content starting with the same char so e.g.
+  // `***hello*` does not match as italic with content `**hello`.
   let contentPattern: string
   const lookbehind = `(?<=^|\\s)`
 
@@ -170,13 +164,26 @@ export function atomAwareMarkInputRule(config: AtomAwareMarkInputRuleConfig): In
         return null
       }
 
-      // If the opening marker sits inside a word that still contains an
-      // unclosed literal backtick (i.e. the user is typing inside what will
-      // become inline code), suppress the mark. The user's text is still
-      // "owned" by the pending backtick until the next whitespace breaks the
-      // word. We skip this guard for the code mark itself, since the closing
-      // backtick is exactly how that ownership is resolved.
-      if (type.name !== "code" && isInBacktickWord(state, start)) {
+      // TipTap caps the InputRule match window at 500 chars, so the regex
+      // `^` anchor can land mid-paragraph. Re-check the real preceding char
+      // in the parent so a long paragraph can't produce a false word boundary.
+      const $openStart = state.doc.resolve(start)
+      if ($openStart.parentOffset > 0) {
+        const prev = $openStart.parent.textBetween(
+          $openStart.parentOffset - 1,
+          $openStart.parentOffset,
+          undefined,
+          "\ufffc"
+        )
+        if (prev && !/\s/.test(prev)) {
+          return null
+        }
+      }
+
+      // Suppress inside an unclosed inline-code word (see markdown-guards).
+      // The code mark itself is exempt because the closing backtick is
+      // exactly how the backtick-owned word is resolved.
+      if (type.name !== "code" && currentWordContainsBacktick($openStart)) {
         return null
       }
 

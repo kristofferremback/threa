@@ -13,6 +13,21 @@ const schema = new Schema({
       toDOM: () => ["p", 0],
     },
     text: { group: "inline" },
+    hardBreak: {
+      group: "inline",
+      inline: true,
+      selectable: false,
+      parseDOM: [{ tag: "br" }],
+      toDOM: () => ["br"],
+    },
+    mention: {
+      group: "inline",
+      inline: true,
+      atom: true,
+      attrs: { slug: { default: "" } },
+      parseDOM: [{ tag: 'span[data-type="mention"]' }],
+      toDOM: (node) => ["span", { "data-type": "mention" }, `@${node.attrs.slug}`],
+    },
   },
 })
 
@@ -62,5 +77,32 @@ describe("currentWordContainsBacktick", () => {
     const state = stateWithParagraph("`abc")
     const $pos = state.doc.resolve(state.doc.content.size - 1)
     expect(currentWordContainsBacktick($pos)).toBe(true)
+  })
+
+  it("treats a hard break as whitespace that resets the word", () => {
+    const doc = schema.nodes.doc.create({}, [
+      schema.nodes.paragraph.create({}, [schema.text("`foo"), schema.nodes.hardBreak.create(), schema.text("_bar")]),
+    ])
+    const state = EditorState.create({ doc, schema })
+    // Cursor at end of "_bar".
+    expect(isInBacktickWord(state, state.doc.content.size - 1)).toBe(false)
+  })
+
+  it("does not treat an atom node as whitespace", () => {
+    // `@ariadne_foo — the atom continues the backtick-owned word.
+    const doc = schema.nodes.doc.create({}, [
+      schema.nodes.paragraph.create({}, [
+        schema.text("`"),
+        schema.nodes.mention.create({ slug: "ariadne" }),
+        schema.text("_foo"),
+      ]),
+    ])
+    const state = EditorState.create({ doc, schema })
+    expect(isInBacktickWord(state, state.doc.content.size - 1)).toBe(true)
+  })
+
+  it("treats Unicode whitespace (non-breaking space) as a word break", () => {
+    const state = stateWithParagraph("`foo\u00a0_bar")
+    expect(isInBacktickWord(state, state.doc.content.size - 1)).toBe(false)
   })
 })
