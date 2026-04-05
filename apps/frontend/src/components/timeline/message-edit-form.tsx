@@ -9,6 +9,7 @@ import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
 import { RichEditor, EditorToolbar, EditorActionBar, DocumentEditorModal } from "@/components/editor"
 import type { RichEditorHandle } from "@/components/editor"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { useInlineEditRegistration } from "./inline-edit-context"
 import { useMessageService } from "@/contexts"
 import { messageKeys } from "@/api/messages"
 import { serializeToMarkdown, parseMarkdown } from "@threa/prosemirror"
@@ -39,6 +40,10 @@ export function MessageEditForm({
   const queryClient = useQueryClient()
   const messageService = useMessageService()
   const isMobile = useIsMobile()
+  // While this form is mounted on mobile, hide the main stream composer. The
+  // registration is tied to this component's lifecycle, so it is released on
+  // unmount for any reason (cancel, save, virtualization, navigation).
+  useInlineEditRegistration(isMobile)
   const [contentJson, setContentJson] = useState<JSONContent>(initialContentJson ?? EMPTY_DOC)
   const [isSaving, setIsSaving] = useState(false)
   const [docEditorOpen, setDocEditorOpen] = useState(false)
