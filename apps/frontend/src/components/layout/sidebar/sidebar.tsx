@@ -26,6 +26,7 @@ import { SidebarFooter } from "./sidebar-footer"
 import { ALL_SECTIONS, SMART_SECTIONS } from "./config"
 import { calculateUrgency, categorizeStream, sortStreams } from "./utils"
 import type { StreamItemData } from "./types"
+import { resolveDmDisplayName } from "@/lib/streams"
 import { StreamTypes, Visibilities } from "@threa/types"
 
 interface SidebarProps {
@@ -98,14 +99,33 @@ export function Sidebar({ workspaceId }: SidebarProps) {
         const section = categorizeStream(streamWithPreview, unreadCount, urgency)
         const dmPeerUserId = stream.type === StreamTypes.DM ? dmPeerByStreamId.get(stream.id) : undefined
 
+        // DM names are viewer-specific and can be stale/null in the cached stream
+        // record when socket events overwrite IDB before a bootstrap refetch.
+        // Resolve from workspaceUsers via dmPeers so the sidebar stays correct.
+        const resolvedDisplayName =
+          stream.type === StreamTypes.DM
+            ? (resolveDmDisplayName(stream.id, workspaceUsers, idbDmPeers) ?? streamWithPreview.displayName)
+            : streamWithPreview.displayName
+
         return {
           ...streamWithPreview,
+          displayName: resolvedDisplayName,
           urgency,
           section,
           dmPeerUserId,
         }
       })
-  }, [idbStreams, memberStreamIds, mutedStreamIdSet, getUnreadCount, getMentionCount, dmPeerByStreamId, unreadState])
+  }, [
+    idbStreams,
+    memberStreamIds,
+    mutedStreamIdSet,
+    getUnreadCount,
+    getMentionCount,
+    dmPeerByStreamId,
+    idbDmPeers,
+    workspaceUsers,
+    unreadState,
+  ])
 
   // System streams are auto-created infrastructure — don't count toward "has content"
   const hasUserStreamsFromStreams = processedStreams.some((s) => s.type !== StreamTypes.SYSTEM)
