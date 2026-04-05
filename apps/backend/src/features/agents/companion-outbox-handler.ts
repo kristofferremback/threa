@@ -4,7 +4,7 @@ import { StreamRepository } from "../streams"
 import { PersonaRepository } from "./persona-repository"
 import { AgentSessionRepository, SessionStatuses } from "./session-repository"
 import { parseMessagePayload } from "../../lib/outbox"
-import { AuthorTypes, CompanionModes } from "@threa/types"
+import { AuthorTypes, CompanionModes, StreamTypes } from "@threa/types"
 import { logger } from "../../lib/logger"
 import { JobQueues } from "../../lib/queue"
 import type { QueueManager } from "../../lib/queue"
@@ -131,13 +131,29 @@ export class CompanionHandler implements OutboxHandler {
             continue
           }
 
-          if (stream.companionMode !== CompanionModes.ON) {
+          // Resolve companion settings: for threads rooted in a scratchpad,
+          // inherit the root scratchpad's companion mode and persona so
+          // Ariadna responds in nested threads the same way she responds
+          // in the scratchpad itself.
+          let companionSource = stream
+          if (stream.companionMode !== CompanionModes.ON && stream.rootStreamId) {
+            const rootStream = await StreamRepository.findById(this.db, stream.rootStreamId)
+            if (
+              rootStream &&
+              rootStream.type === StreamTypes.SCRATCHPAD &&
+              rootStream.companionMode === CompanionModes.ON
+            ) {
+              companionSource = rootStream
+            }
+          }
+
+          if (companionSource.companionMode !== CompanionModes.ON) {
             seen.push(event.id)
             continue
           }
 
-          let persona = stream.companionPersonaId
-            ? await PersonaRepository.findById(this.db, stream.companionPersonaId!)
+          let persona = companionSource.companionPersonaId
+            ? await PersonaRepository.findById(this.db, companionSource.companionPersonaId!)
             : null
 
           if (!persona || persona.status !== "active") {
