@@ -18,11 +18,12 @@ export function resetStreamStoreCache(): void {}
  * Returns `undefined` while the query is resolving, `CachedEvent[]` once resolved.
  * Updates automatically when any write to db.events affects this stream.
  *
- * Guard: when `streamId` changes, `useLiveQuery` returns the previous stream's
- * events for one render (its internal useState hasn't been updated by the new
- * useEffect subscription yet). We detect this by comparing the first event's
- * streamId against the requested one, returning `undefined` to signal loading
- * and prevent stale content from flashing during stream switches.
+ * Correctness: when `streamId` changes, `useLiveQuery` keeps returning the
+ * previous stream's result until the new query resolves. We can't trust that
+ * result even when it's empty (an empty previous-stream result would otherwise
+ * be interpreted as "current stream is empty"). We track which `streamId`
+ * the live result has actually been resolved for and return `undefined`
+ * until the two match.
  */
 export function useStreamEvents(
   streamId: string | undefined,
@@ -60,11 +61,20 @@ export function useStreamEvents(
       .equals(streamId)
       .filter((e) => (e._status === "pending" || e._status === "failed") && !loadedIds.has(e.id))
       .toArray()
-    for (const e of unsent) events.push(e)
+    for (const e of unsent)
+      events.push(e)
+      // Stamp the result with the streamId it was fetched for so the caller
+      // can distinguish a fresh empty result from a stale empty result left
+      // over from the previous stream.
+    ;(events as CachedEvent[] & { __streamId?: string }).__streamId = streamId
     return events
   }, [streamId, fromSequenceNum])
 
-  if (result && result.length > 0 && streamId && result[0].streamId !== streamId) {
+  // Until `useLiveQuery` re-runs after a streamId change, `result` is still
+  // the previous stream's array. Our stamp lets us detect that regardless of
+  // whether the previous result happened to be non-empty or empty.
+  const resultStreamId = (result as (CachedEvent[] & { __streamId?: string }) | undefined)?.__streamId
+  if (streamId && resultStreamId !== streamId) {
     return undefined
   }
 

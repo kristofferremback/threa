@@ -155,6 +155,7 @@ export function StreamContent({
   const {
     events,
     isLoading,
+    isConfirmedEmpty,
     error,
     fetchOlderEvents,
     hasOlderEvents,
@@ -598,6 +599,7 @@ export function StreamContent({
                 <VirtuosoMessageList
                   visibleItems={visibleItems}
                   isLoading={isLoading}
+                  isConfirmedEmpty={isConfirmedEmpty}
                   virtuosoRef={virtuosoRef}
                   virtuosoScrollerRef={virtuosoScrollerRef}
                   handleScrollerRef={handleScrollerRef}
@@ -723,6 +725,7 @@ export function StreamContent({
 function VirtuosoMessageList({
   visibleItems,
   isLoading,
+  isConfirmedEmpty,
   virtuosoRef,
   virtuosoScrollerRef,
   handleScrollerRef,
@@ -749,6 +752,10 @@ function VirtuosoMessageList({
 }: {
   visibleItems: TimelineItem[]
   isLoading: boolean
+  /** True only when we've fully resolved IDB and bootstrap and the stream is
+   *  actually empty. During mid-switch transitions this is false, so we avoid
+   *  flashing the "No messages yet" state before useLiveQuery catches up. */
+  isConfirmedEmpty: boolean
   virtuosoRef: React.RefObject<import("react-virtuoso").VirtuosoHandle | null>
   virtuosoScrollerRef: React.MutableRefObject<HTMLDivElement | null>
   handleScrollerRef: (ref: HTMLElement | Window | null) => void
@@ -884,7 +891,13 @@ function VirtuosoMessageList({
     )
   }
 
-  if (visibleItems.length === 0) {
+  // Only render the empty state when we're *certain* the stream has no events.
+  // Without this guard, the mid-switch gap where visibleItems is briefly [] (IDB
+  // re-subscribing after a streamId change) flashes the empty state before the
+  // real data arrives. When visibleItems is empty but !isConfirmedEmpty, we
+  // fall through and render <Virtuoso data={[]} /> — a blank scroll area that
+  // doesn't visually disrupt the transition.
+  if (visibleItems.length === 0 && isConfirmedEmpty) {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="text-center">

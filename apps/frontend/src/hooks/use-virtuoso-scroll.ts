@@ -63,6 +63,12 @@ export function useVirtuosoScroll({
   const virtuosoRef = useRef<VirtuosoHandle>(null)
   const [isScrolledFarFromBottom, setIsScrolledFarFromBottom] = useState(false)
 
+  // True once Virtuoso has reported an initial atBottomStateChange for the
+  // current stream — before that, `rangeChanged` fires with transitional
+  // ranges (e.g. during the scroll to `initialTopMostItemIndex`) that would
+  // briefly flash the "Jump to latest" button on long streams.
+  const hasSettledRef = useRef(false)
+
   // Auto-scroll state: when true, new messages cause scroll to bottom
   const isAtBottomRef = useRef(!skipInitialScroll)
   const [shouldFollowOutput, setShouldFollowOutput] = useState(!skipInitialScroll)
@@ -88,6 +94,7 @@ export function useVirtuosoScroll({
     setShouldFollowOutput(true)
     prevItemCountRef.current = 0
     prevFirstKeyRef.current = null
+    hasSettledRef.current = false
   }, [resetKey])
 
   // Detect prepends synchronously during render. This runs in the same
@@ -95,6 +102,14 @@ export function useVirtuosoScroll({
   // firstItemIndex and data array together — no one-frame-late jump.
   if (itemCount > 0) {
     const currentFirstKey = getItemKey(0)
+    // When the list goes from empty to populated (e.g. mid stream-switch
+    // where the previous stream's empty result was stamped as settled),
+    // Virtuoso needs to run its initial scroll again. Re-arm hasSettledRef
+    // so transitional rangeChanged events during that scroll can't flash
+    // the "Jump to latest" button.
+    if (prevItemCountRef.current === 0) {
+      hasSettledRef.current = false
+    }
     if (
       prevItemCountRef.current > 0 &&
       itemCount > prevItemCountRef.current &&
@@ -131,17 +146,30 @@ export function useVirtuosoScroll({
     setShouldFollowOutput(false)
   }, [])
 
-  const handleAtBottomChange = useCallback((atBottom: boolean) => {
-    isAtBottomRef.current = atBottom
-    setShouldFollowOutput(atBottom)
-    if (atBottom) {
-      setIsScrolledFarFromBottom(false)
-    }
-  }, [])
+  const handleAtBottomChange = useCallback(
+    (atBottom: boolean) => {
+      // Ignore atBottomStateChange while the list is empty — Virtuoso reports
+      // "at bottom" for an empty list, which would prematurely settle the ref
+      // and let transitional rangeChanged events flash the Jump button once
+      // real items arrive.
+      if (itemCount === 0) return
+      hasSettledRef.current = true
+      isAtBottomRef.current = atBottom
+      setShouldFollowOutput(atBottom)
+      if (atBottom) {
+        setIsScrolledFarFromBottom(false)
+      }
+    },
+    [itemCount]
+  )
 
   const handleRangeChanged = useCallback(
     (range: { startIndex: number; endIndex: number }) => {
       if (itemCount === 0) return
+      // Ignore range updates until Virtuoso reports its initial bottom state.
+      // The transient ranges that fire during the initial scroll to LAST would
+      // otherwise flash the "Jump to latest" button on long streams.
+      if (!hasSettledRef.current) return
       const lastVirtualIndex = firstItemIndexRef.current + itemCount - 1
       const distFromEnd = lastVirtualIndex - range.endIndex
       setIsScrolledFarFromBottom(distFromEnd > JUMP_TO_LATEST_ITEM_THRESHOLD)

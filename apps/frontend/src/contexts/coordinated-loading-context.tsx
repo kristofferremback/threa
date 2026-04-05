@@ -70,7 +70,12 @@ interface CoordinatedLoadingProviderProps {
   children: ReactNode
 }
 
-const LOADING_DELAY_MS = 400
+/**
+ * Delay before any loading skeleton becomes visible. Shared by the global
+ * initial-load gate in this file and the per-stream skeleton in
+ * VirtuosoMessageList so fast switches never flash a skeleton.
+ */
+export const LOADING_DELAY_MS = 300
 
 export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }: CoordinatedLoadingProviderProps) {
   const [showSkeleton, setShowSkeleton] = useState(false)

@@ -33,6 +33,7 @@ export {
   CoordinatedLoadingGate,
   MainContentGate,
   useCoordinatedLoading,
+  LOADING_DELAY_MS,
   type CoordinatedPhase,
   type StreamState,
 } from "./coordinated-loading-context"

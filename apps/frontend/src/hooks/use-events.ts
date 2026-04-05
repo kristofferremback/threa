@@ -237,6 +237,7 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
   // events. The bootstrap cache only contains the original snapshot and would hide
   // messages sent or received via socket after the first bootstrap.
   const effectiveEvents: DisplayableEvent[] = idbResolved ? idbEvents : []
+  const hasAnyEvents = effectiveEvents.length > 0 || (bootstrap?.events ?? []).length > 0
 
   const cachedWindowFloor = useMemo(() => getCachedWindowFloor(effectiveEvents, EVENT_PAGE_SIZE), [effectiveEvents])
   const displayFloor = useMemo(() => {
@@ -263,13 +264,18 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
     return filterEventsForDisplay(effectiveEvents, displayFloor) as unknown as StreamEvent[]
   }, [effectiveEvents, olderData, newerData, jumpState, displayFloor])
 
-  // IDB is the source of truth for the rendered events, so we must keep
-  // reporting "loading" until it resolves — even when the bootstrap query is
-  // served from TanStack's cache. Otherwise switching to a previously-visited
-  // stream briefly returns `effectiveEvents = []` with `isBootstrapLoading =
-  // false`, which caused the "No messages yet" empty state to flash for one
-  // frame before useLiveQuery populated.
-  const isLoading = effectiveEvents.length === 0 && (isBootstrapLoading || !idbResolved)
+  // Hard loading: neither source has anything AND bootstrap is still fetching.
+  // Gated on `idbResolved` so we don't claim "loading" during the ~10-50ms
+  // window where useLiveQuery is still resolving for the new stream — during
+  // that window we render an empty scroll area instead of a skeleton, which
+  // would only flash for a frame or two before IDB catches up anyway.
+  const isLoading = idbResolved && !hasAnyEvents && isBootstrapLoading
+
+  // Only render "No messages yet" once we're *certain* the stream is empty —
+  // both bootstrap and useLiveQuery must have resolved. During the 10-50ms
+  // gap after a stream switch where useLiveQuery hasn't re-resolved yet,
+  // `events` is briefly empty but we shouldn't show the empty state UI.
+  const isConfirmedEmpty = idbResolved && !isBootstrapLoading
 
   useEffect(() => {
     if (!import.meta.env.DEV || !suppressBootstrapError || !error) return
@@ -407,6 +413,7 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
   return {
     events,
     isLoading,
+    isConfirmedEmpty,
     error: suppressBootstrapError ? null : error,
     fetchOlderEvents,
     hasOlderEvents,
