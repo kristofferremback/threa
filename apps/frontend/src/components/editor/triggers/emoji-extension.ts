@@ -4,6 +4,7 @@ import Suggestion from "@tiptap/suggestion"
 import { PluginKey } from "@tiptap/pm/state"
 import type { SuggestionProps, SuggestionKeyDownProps } from "@tiptap/suggestion"
 import type { EmojiEntry } from "@threa/types"
+import { currentWordContainsBacktick, isInBacktickWord } from "../markdown-guards"
 
 export const EmojiPluginKey = new PluginKey("emoji")
 
@@ -108,6 +109,9 @@ export const EmojiExtension = Node.create<EmojiExtensionOptions>({
           const emoji = toEmoji(shortcode)
           if (!emoji) return null
 
+          // Suppress inside a backtick-owned word (unclosed inline code).
+          if (isInBacktickWord(state, range.from)) return null
+
           const nodeType = this.type
 
           // Get marks at current position to preserve styling
@@ -158,6 +162,11 @@ export const EmojiExtension = Node.create<EmojiExtensionOptions>({
           // Check stored marks too
           const storedMarks = state.storedMarks || $from.marks()
           if (storedMarks.some((mark) => mark.type.name === "code")) {
+            return false
+          }
+
+          // Suppress inside a backtick-owned word (unclosed inline code).
+          if (currentWordContainsBacktick($from)) {
             return false
           }
 

@@ -1,5 +1,6 @@
 import { InputRule } from "@tiptap/core"
 import type { MarkType, Node as ProseMirrorNode } from "@tiptap/pm/model"
+import { isInBacktickWord } from "./markdown-guards"
 
 /**
  * Configuration for an atom-aware mark input rule.
@@ -34,25 +35,24 @@ export function atomAwareMarkInputRule(config: AtomAwareMarkInputRuleConfig): In
   const openEsc = escapeRegex(openMarker)
   const closeEsc = escapeRegex(closeMarker)
 
-  // For single-char markers (*, _, `), we need two disambiguations:
-  // 1. Content cannot START with the same char (prevents * matching content *foo* in **foo**)
-  // 2. Opening marker cannot be PRECEDED by same char (prevents *foo* matching in **foo*)
+  // Markdown-style marks only apply when the opening marker is at the start of
+  // the matched text window or immediately preceded by whitespace. This prevents
+  // `f_name_2.py` from italicizing `name`, while still allowing `hi _friend_!`.
+  // The `(?<=^|\s)` lookbehind enforces this and also naturally prevents
+  // `**hello*` from matching as italic at position 1 (preceded by `*`, not
+  // whitespace).
   //
-  // Example: For `**hello*`:
-  // - Without (1): italic would match position 0 with content `*hello`
-  // - Without (2): italic would match position 1 with content `hello`
-  // - With both: italic correctly fails, waits for second closing `*`
+  // For single-char markers we additionally require the content not to start
+  // with the same marker char, so `***hello*` does not match as italic with
+  // content `**hello`.
 
   let contentPattern: string
-  let lookbehind = ""
+  const lookbehind = `(?<=^|\\s)`
 
   if (openMarker.length === 1) {
-    // Single-char marker: add lookbehind and content-start exclusion
-    lookbehind = `(?<!${openEsc})`
     const charExclusion = openEsc
     contentPattern = `[^\\s${charExclusion}]|[^\\s${charExclusion}][\\s\\S]*?[^\\s]`
   } else {
-    // Multi-char marker: standard pattern, no lookbehind needed
     contentPattern = `[^\\s]|[^\\s][\\s\\S]*?[^\\s]`
   }
 
@@ -167,6 +167,16 @@ export function atomAwareMarkInputRule(config: AtomAwareMarkInputRuleConfig): In
       // Check if already marked (prevents double-application)
       const $start = state.doc.resolve(contentStart)
       if ($start.marks().some((m) => m.type === type)) {
+        return null
+      }
+
+      // If the opening marker sits inside a word that still contains an
+      // unclosed literal backtick (i.e. the user is typing inside what will
+      // become inline code), suppress the mark. The user's text is still
+      // "owned" by the pending backtick until the next whitespace breaks the
+      // word. We skip this guard for the code mark itself, since the closing
+      // backtick is exactly how that ownership is resolved.
+      if (type.name !== "code" && isInBacktickWord(state, start)) {
         return null
       }
 

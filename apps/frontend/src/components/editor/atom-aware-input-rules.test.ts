@@ -19,10 +19,9 @@ function buildPattern(openMarker: string, closeMarker: string): RegExp {
   const closeEsc = escapeRegex(closeMarker)
 
   let contentPattern: string
-  let lookbehind = ""
+  const lookbehind = `(?<=^|\\s)`
 
   if (openMarker.length === 1) {
-    lookbehind = `(?<!${openEsc})`
     const charExclusion = openEsc
     contentPattern = `[^\\s${charExclusion}]|[^\\s${charExclusion}][\\s\\S]*?[^\\s]`
   } else {
@@ -90,10 +89,16 @@ describe("Atom-aware input rule patterns", () => {
       expect(match).toBeNull()
     })
 
-    it("should match in text like: prefix*hello*", () => {
+    it("should NOT match in word like prefix*hello* (no leading whitespace)", () => {
+      // Opening `*` must be preceded by whitespace or start-of-text.
       const match = "prefix*hello*".match(pattern)
+      expect(match).toBeNull()
+    })
+
+    it("should match after a space: hi *friend*", () => {
+      const match = "hi *friend*".match(pattern)
       expect(match).not.toBeNull()
-      expect(match![1]).toBe("hello")
+      expect(match![1]).toBe("friend")
     })
   })
 
@@ -109,6 +114,23 @@ describe("Atom-aware input rule patterns", () => {
     it("should NOT match __hello__ (should be bold, not italic)", () => {
       const match = "__hello__".match(pattern)
       expect(match).toBeNull()
+    })
+
+    it("should NOT match f_name_2.py (no leading whitespace)", () => {
+      // Opening `_` must be preceded by whitespace or start-of-text.
+      const match = "f_name_2.py".match(pattern)
+      expect(match).toBeNull()
+    })
+
+    it("should NOT match hi_friend_ (no leading whitespace before opening _)", () => {
+      const match = "hi_friend_".match(pattern)
+      expect(match).toBeNull()
+    })
+
+    it("should match hi _friend_ (leading space before opening _)", () => {
+      const match = "hi _friend_".match(pattern)
+      expect(match).not.toBeNull()
+      expect(match![1]).toBe("friend")
     })
   })
 
