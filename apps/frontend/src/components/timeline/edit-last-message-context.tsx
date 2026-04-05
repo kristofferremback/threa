@@ -15,6 +15,13 @@ export interface EditLastMessageContextValue {
    * Returns null if the edit was triggered or no qualifying message exists.
    */
   triggerEditLast: () => string | null
+  /**
+   * Scrolls a known-loaded message into view (mounting it in the virtualized list).
+   * Returns true if the scroll was initiated, false if the message isn't in the
+   * current data array or no virtualized scroller is wired up. Used by the composer
+   * to mount an off-screen target before retrying `triggerEditLast`.
+   */
+  scrollToMessage?: (messageId: string) => boolean
 }
 
 export const EditLastMessageContext = createContext<EditLastMessageContextValue | null>(null)

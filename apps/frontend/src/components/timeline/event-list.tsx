@@ -1,5 +1,4 @@
 import { useMemo } from "react"
-import type { Virtualizer } from "@tanstack/react-virtual"
 import {
   COMMAND_EVENT_TYPES,
   AGENT_SESSION_EVENT_TYPES,
@@ -32,8 +31,6 @@ interface EventListProps {
   hideSessionCards?: boolean
   /** Event IDs that just arrived via socket and should flash briefly */
   newMessageIds?: Set<string>
-  /** Virtualizer instance — when provided, renders only visible items */
-  virtualizer?: Virtualizer<HTMLDivElement, Element>
 }
 
 function isCommandEvent(event: StreamEvent): boolean {
@@ -69,71 +66,6 @@ export type TimelineItem =
   | { type: "event"; event: StreamEvent }
   | { type: "command_group"; commandId: string; events: StreamEvent[] }
   | { type: "session_group"; sessionId: string; sessionVersion: number; events: StreamEvent[] }
-
-/**
- * Content-aware height estimate for a timeline item. Used by the virtualizer
- * for items that haven't been measured yet — closer estimates reduce layout
- * jumps, scroll drift after prepend, and visual gaps while scrolling.
- */
-export function estimateTimelineItemHeight(item: TimelineItem): number {
-  if (item.type === "command_group") return 36
-  // Session card: py-3 outer (24px) + Link py-2.5 (20px) + border (2px) + content (~40px) ≈ 86px
-  if (item.type === "session_group") return 86
-
-  const event = item.event
-  const { eventType } = event
-
-  // Deleted message: py-0.5 (4px) + text-xs (16px line-height) = 20px
-  if (eventType === "message_deleted") return 20
-
-  // System/membership events: py-2 (16px) + text-sm (20px line-height) = 36px
-  if (
-    eventType === "member_joined" ||
-    eventType === "member_left" ||
-    eventType === "member_added" ||
-    eventType === "thread_created" ||
-    eventType === "stream_archived" ||
-    eventType === "stream_unarchived"
-  ) {
-    return 36
-  }
-
-  if (eventType === "message_created" || eventType === "companion_response") {
-    const payload = event.payload as Record<string, unknown>
-    // Soft-deleted message renders as DeletedMessageEvent
-    if (payload.deletedAt) return 20
-
-    // Layout: flex row with gap-[14px], avatar h-9 (36px).
-    // Name row: text-sm (20px) + mb-1 (4px) = 24px.
-    // mb-5 (20px) margin-bottom on container (captured by flow-root wrapper).
-    // Bot/persona/system messages add py-4 (32px).
-    // Base (non-text) = name(24) + mb-5(20) = 44px; bot/system adds 32 → 76px.
-    const hasExtraPadding = event.actorType === "bot" || event.actorType === "persona" || event.actorType === "system"
-    let height = hasExtraPadding ? 76 : 44
-
-    // Text: text-sm leading-relaxed = 14px * 1.625 ≈ 23px per line.
-    // ~80 chars per line on typical widths.
-    const markdown = (payload.contentMarkdown as string) ?? ""
-    height += Math.max(1, Math.ceil(markdown.length / 80)) * 23
-
-    // Image attachments: h-32 (128px) + mt-2 (8px) = 136px
-    const attachments = payload.attachments as Array<{ mimeType?: string }> | undefined
-    if (attachments && attachments.length > 0) {
-      if (attachments.some((a) => a.mimeType?.startsWith("image/"))) height += 136
-      if (attachments.some((a) => !a.mimeType?.startsWith("image/"))) height += 40
-    }
-
-    // Link previews: ~80px per card (capped at DEFAULT_VISIBLE_COUNT=3)
-    const linkPreviews = payload.linkPreviews as Array<unknown> | undefined
-    if (linkPreviews && linkPreviews.length > 0) {
-      height += Math.min(linkPreviews.length, 3) * 80
-    }
-
-    return height
-  }
-
-  return 60
-}
 
 /** Event types that render as null in EventItem (handled elsewhere or invisible) */
 const ZERO_HEIGHT_EVENT_TYPES = new Set([
@@ -260,9 +192,67 @@ export function groupTimelineItems(events: StreamEvent[], currentUserId: string 
   return result
 }
 
-// Not memoized: the `virtualizer` prop is reference-stable but its internal
-// state (visible items) changes on scroll — memo would block those re-renders.
-// Render cost is bounded by virtualizer overscan (~25 items), not total count.
+/** Shared context for rendering a timeline item (used by both Virtuoso and non-virtualized paths) */
+export interface TimelineItemRenderContext {
+  workspaceId: string
+  streamId: string
+  highlightMessageId?: string | null
+  firstUnreadEventId?: string
+  isDividerFading?: boolean
+  agentActivity?: Map<string, MessageAgentActivity>
+  hideSessionCards?: boolean
+  newMessageIds?: Set<string>
+  sessionLiveCounts: Map<string, { stepCount: number; messageCount: number }>
+  phase: string
+}
+
+function isFirstUnread(item: TimelineItem, firstUnreadEventId?: string): boolean {
+  if (!firstUnreadEventId) return false
+  if (item.type === "command_group" || item.type === "session_group") {
+    return item.events[0]?.id === firstUnreadEventId
+  }
+  return item.event.id === firstUnreadEventId
+}
+
+/** Renders a single timeline item. Used by Virtuoso's itemContent and non-virtualized lists. */
+export function TimelineItemContent({ item, ctx }: { item: TimelineItem; ctx: TimelineItemRenderContext }) {
+  const showUnreadDivider = isFirstUnread(item, ctx.firstUnreadEventId)
+  return (
+    <>
+      {showUnreadDivider && <UnreadDivider isFading={ctx.isDividerFading} />}
+      {item.type === "command_group" && (
+        <div className="px-3 sm:px-6">
+          <CommandEvent events={item.events} />
+        </div>
+      )}
+      {item.type === "session_group" && !ctx.hideSessionCards && (
+        <div className="px-3 sm:px-6">
+          <AgentSessionEvent
+            events={item.events}
+            sessionVersion={item.sessionVersion}
+            liveCounts={ctx.sessionLiveCounts.get(item.sessionId)}
+          />
+        </div>
+      )}
+      {item.type === "event" && (
+        <EventItem
+          event={item.event}
+          workspaceId={ctx.workspaceId}
+          streamId={ctx.streamId}
+          highlightMessageId={ctx.highlightMessageId}
+          agentActivity={ctx.hideSessionCards ? ctx.agentActivity : undefined}
+          isNew={ctx.newMessageIds?.has(item.event.id)}
+          deferSecondaryHydration={ctx.phase !== "ready"}
+        />
+      )}
+    </>
+  )
+}
+
+/**
+ * Non-virtualized event list for threads and other cases where all items are rendered.
+ * For virtualized streams/channels, use `<Virtuoso>` directly with `TimelineItemContent`.
+ */
 export function EventList({
   timelineItems,
   isLoading,
@@ -274,7 +264,6 @@ export function EventList({
   agentActivity,
   hideSessionCards,
   newMessageIds,
-  virtualizer,
 }: EventListProps) {
   const { phase } = useCoordinatedLoading()
 
@@ -324,105 +313,26 @@ export function EventList({
     )
   }
 
-  // Helper to check if an item is the first unread event
-  const isFirstUnread = (item: TimelineItem): boolean => {
-    if (!firstUnreadEventId) return false
-    if (item.type === "command_group" || item.type === "session_group") {
-      return item.events[0]?.id === firstUnreadEventId
-    }
-    return item.event.id === firstUnreadEventId
+  const ctx: TimelineItemRenderContext = {
+    workspaceId,
+    streamId,
+    highlightMessageId,
+    firstUnreadEventId,
+    isDividerFading,
+    agentActivity,
+    hideSessionCards,
+    newMessageIds,
+    sessionLiveCounts,
+    phase,
   }
 
-  const renderItem = (item: TimelineItem) => {
-    const showUnreadDivider = isFirstUnread(item)
-    return (
-      <>
-        {showUnreadDivider && <UnreadDivider isFading={isDividerFading} />}
-        {item.type === "command_group" && (
-          <div className="px-3 sm:px-6">
-            <CommandEvent events={item.events} />
-          </div>
-        )}
-        {item.type === "session_group" && !hideSessionCards && (
-          <div className="px-3 sm:px-6">
-            <AgentSessionEvent
-              events={item.events}
-              sessionVersion={item.sessionVersion}
-              liveCounts={sessionLiveCounts.get(item.sessionId)}
-            />
-          </div>
-        )}
-        {item.type === "event" && (
-          <EventItem
-            event={item.event}
-            workspaceId={workspaceId}
-            streamId={streamId}
-            highlightMessageId={highlightMessageId}
-            agentActivity={hideSessionCards ? agentActivity : undefined}
-            isNew={newMessageIds?.has(item.event.id)}
-            deferSecondaryHydration={phase !== "ready"}
-          />
-        )}
-      </>
-    )
-  }
-
-  // --- Virtualized rendering ---
-  // Follows the TanStack Virtual "dynamic" example pattern exactly:
-  // - Layer 1: Total-size div creates correct scrollbar height
-  // - Layer 2: Shifted container positioned at first item's offset
-  // - Layer 3: Items in NORMAL FLOW (no absolute positioning, no explicit height)
-  // Items flow naturally so the browser's layout engine spaces them. The
-  // measureElement ref + data-index let the virtualizer track actual heights.
-  // This avoids the per-item position jumps that absolute positioning causes
-  // when measurements change and shift all subsequent items.
-  if (virtualizer) {
-    const virtualItems = virtualizer.getVirtualItems()
-    return (
-      <div
-        style={{
-          height: virtualizer.getTotalSize(),
-          width: "100%",
-          position: "relative",
-        }}
-        className="mx-auto max-w-[800px]"
-      >
-        <div
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            width: "100%",
-            transform: `translateY(${virtualItems[0]?.start ?? 0}px)`,
-          }}
-        >
-          {virtualItems.map((virtualRow) => {
-            const item = timelineItems[virtualRow.index]
-            if (!item) return null
-            return (
-              <div
-                key={virtualRow.key}
-                data-index={virtualRow.index}
-                ref={virtualizer.measureElement}
-                style={{ display: "flow-root" }}
-              >
-                {renderItem(item)}
-              </div>
-            )
-          })}
-        </div>
-      </div>
-    )
-  }
-
-  // --- Non-virtualized fallback (for threads, etc.) ---
   return (
     <div className="flex flex-col py-3 sm:py-6 mx-auto max-w-[800px] w-full min-w-0">
       {timelineItems.map((item) => {
         const itemKey = getTimelineItemKey(item)
         return (
-          <div key={itemKey} className={isFirstUnread(item) ? "relative" : undefined}>
-            {renderItem(item)}
+          <div key={itemKey} className={isFirstUnread(item, firstUnreadEventId) ? "relative" : undefined}>
+            <TimelineItemContent item={item} ctx={ctx} />
           </div>
         )
       })}

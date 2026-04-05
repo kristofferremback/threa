@@ -177,15 +177,13 @@ function MessageLayout({
       ref={containerRef}
       {...touchHandlers}
       className={cn(
-        "message-item group relative flex gap-[14px] mb-5 px-3 sm:px-6",
+        "message-item group relative flex gap-[14px] py-4 px-3 sm:px-6",
         // AI/Persona messages get full-width gradient with gold accent
-        isPersona &&
-          "bg-gradient-to-r from-primary/[0.06] to-transparent py-4 shadow-[inset_3px_0_0_hsl(var(--primary))]",
+        isPersona && "bg-gradient-to-r from-primary/[0.06] to-transparent shadow-[inset_3px_0_0_hsl(var(--primary))]",
         // Bot messages get emerald accent
-        isBot && "bg-gradient-to-r from-emerald-500/[0.06] to-transparent py-4 shadow-[inset_3px_0_0_hsl(152_69%_41%)]",
+        isBot && "bg-gradient-to-r from-emerald-500/[0.06] to-transparent shadow-[inset_3px_0_0_hsl(152_69%_41%)]",
         // System messages get a subtle info-toned accent
-        isSystem &&
-          "bg-gradient-to-r from-blue-500/[0.04] to-transparent py-4 shadow-[inset_3px_0_0_hsl(210_100%_55%)]",
+        isSystem && "bg-gradient-to-r from-blue-500/[0.04] to-transparent shadow-[inset_3px_0_0_hsl(210_100%_55%)]",
         // Edit mode: pseudo-element background so no layout shift — zero padding/margin changes
         isEditing &&
           !isPersona &&

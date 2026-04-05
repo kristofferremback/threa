@@ -70,7 +70,12 @@ interface CoordinatedLoadingProviderProps {
   children: ReactNode
 }
 
-const LOADING_DELAY_MS = 300
+/**
+ * Delay before the loading skeleton becomes visible in the global
+ * initial-load gate (`CoordinatedLoadingProvider`) so fast switches
+ * never flash a skeleton.
+ */
+export const LOADING_DELAY_MS = 300
 
 export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }: CoordinatedLoadingProviderProps) {
   const [showSkeleton, setShowSkeleton] = useState(false)

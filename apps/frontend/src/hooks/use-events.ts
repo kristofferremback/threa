@@ -264,10 +264,18 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
     return filterEventsForDisplay(effectiveEvents, displayFloor) as unknown as StreamEvent[]
   }, [effectiveEvents, olderData, newerData, jumpState, displayFloor])
 
-  // IDB-first: if IDB or bootstrap has events, we're not loading — show them
-  // immediately. Only show loading when neither source has events and bootstrap
-  // is still fetching (first visit to a stream with no cached data).
-  const isLoading = !hasAnyEvents && isBootstrapLoading
+  // Hard loading: neither source has anything AND bootstrap is still fetching.
+  // Gated on `idbResolved` so we don't claim "loading" during the ~10-50ms
+  // window where useLiveQuery is still resolving for the new stream — during
+  // that window we render an empty scroll area instead of a skeleton, which
+  // would only flash for a frame or two before IDB catches up anyway.
+  const isLoading = idbResolved && !hasAnyEvents && isBootstrapLoading
+
+  // Only render "No messages yet" once we're *certain* the stream is empty —
+  // both bootstrap and useLiveQuery must have resolved. During the 10-50ms
+  // gap after a stream switch where useLiveQuery hasn't re-resolved yet,
+  // `events` is briefly empty but we shouldn't show the empty state UI.
+  const isConfirmedEmpty = idbResolved && !isBootstrapLoading
 
   useEffect(() => {
     if (!import.meta.env.DEV || !suppressBootstrapError || !error) return
@@ -405,6 +413,7 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
   return {
     events,
     isLoading,
+    isConfirmedEmpty,
     error: suppressBootstrapError ? null : error,
     fetchOlderEvents,
     hasOlderEvents,

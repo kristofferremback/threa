@@ -474,17 +474,6 @@
   font-family: "OpenDyslexic", system-ui, sans-serif;
 }
 
-/*
- * Off-screen message rendering optimization — the browser skips layout, paint,
- * and hit-testing for messages outside the viewport while keeping them in the
- * DOM so native Ctrl+F search still works. contain-intrinsic-size gives the
- * browser a height estimate to keep the scrollbar stable.
- */
-.message-item {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 80px;
-}
-
 /* In-stream search highlighting via CSS Custom Highlight API */
 ::highlight(stream-search) {
   background-color: rgba(250, 204, 21, 0.35);

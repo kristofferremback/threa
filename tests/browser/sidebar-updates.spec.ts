@@ -24,7 +24,13 @@ test.describe("Sidebar Updates", () => {
       await page.locator("[contenteditable='true']").click()
       await page.keyboard.type(testMessage)
       await page.getByRole("button", { name: "Send" }).click()
-      await expect(page.getByText(testMessage)).toBeVisible({ timeout: 5000 })
+      // Scope to the main region so the sidebar preview (which may also match)
+      // doesn't trigger a strict-mode violation, and target the rendered
+      // message body specifically so Virtuoso's overscan (which can render
+      // out-of-viewport items with visibility: hidden) can't race us.
+      await expect(page.getByRole("main").locator(".message-item").getByText(testMessage)).toBeVisible({
+        timeout: 10000,
+      })
 
       // Navigate away to a scratchpad
       await page.getByRole("button", { name: "+ New Scratchpad" }).click()
