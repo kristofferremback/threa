@@ -24,6 +24,7 @@ import { useStreamEvents } from "@/stores/stream-store"
 import { useWorkspaceStreams, useWorkspaceStreamMemberships } from "@/stores/workspace-store"
 import { useUser } from "@/auth"
 import { Button } from "@/components/ui/button"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
 import { ErrorView } from "@/components/error-view"
 import {
@@ -566,11 +567,16 @@ export function StreamContent({
     )
   }
 
+  const editLastMessageCtxWithScroll = useMemo(
+    () => ({ ...editLastMessageCtx, scrollToMessage }),
+    [editLastMessageCtx, scrollToMessage]
+  )
+
   return (
-    <EditLastMessageContext.Provider value={editLastMessageCtx}>
+    <EditLastMessageContext.Provider value={editLastMessageCtxWithScroll}>
       <InlineEditProvider resetKey={streamId}>
         <div className="flex h-full flex-col">
-          <div className="relative flex-1 overflow-hidden mb-1 sm:mb-4">
+          <div className="relative flex-1 overflow-hidden">
             {isSearchOpen && (
               <StreamSearchBar search={streamSearch} onClose={handleSearchClose} onNavigate={handleSearchNavigate} />
             )}
@@ -852,15 +858,26 @@ function VirtuosoMessageList({
     [renderCtx]
   )
 
+  // Stable scroller ref callback — wrapping in useCallback avoids Virtuoso
+  // calling the old callback with null and the new one with the element
+  // on every render, which would disconnect/reconnect the ResizeObserver.
+  const handleVirtuosoScrollerRef = useCallback(
+    (ref: HTMLElement | Window | null) => {
+      virtuosoScrollerRef.current = ref as HTMLDivElement | null
+      handleScrollerRef(ref)
+    },
+    [virtuosoScrollerRef, handleScrollerRef]
+  )
+
   if (isLoading) {
     return (
       <div className="flex flex-col gap-4 px-4 py-6 sm:px-6">
         <div className="flex gap-3">
-          <div className="h-9 w-9 rounded-full bg-muted animate-pulse" />
+          <Skeleton className="h-9 w-9 rounded-full" />
           <div className="flex-1 space-y-2">
-            <div className="h-4 w-32 bg-muted animate-pulse rounded" />
-            <div className="h-4 w-full bg-muted animate-pulse rounded" />
-            <div className="h-4 w-2/3 bg-muted animate-pulse rounded" />
+            <Skeleton className="h-4 w-32" />
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-2/3" />
           </div>
         </div>
       </div>
@@ -881,10 +898,7 @@ function VirtuosoMessageList({
   return (
     <Virtuoso
       ref={virtuosoRef}
-      scrollerRef={(ref) => {
-        virtuosoScrollerRef.current = ref as HTMLDivElement | null
-        handleScrollerRef(ref)
-      }}
+      scrollerRef={handleVirtuosoScrollerRef}
       className={cn("h-full", isSearchOpen && "pt-11")}
       data-suppress-pull-refresh="true"
       firstItemIndex={firstItemIndex}

@@ -171,7 +171,9 @@ export function materializePendingAttachmentReferences(
 }
 
 export function MessageInput({ workspaceId, streamId, disabled, disabledReason, autoFocus }: MessageInputProps) {
-  const { triggerEditLast } = useEditLastMessage() ?? {}
+  const editLastCtx = useEditLastMessage()
+  const triggerEditLast = editLastCtx?.triggerEditLast
+  const scrollToMessage = editLastCtx?.scrollToMessage
   const inlineEdit = useInlineEdit()
   const navigate = useNavigate()
   const { preferences } = usePreferences()
@@ -360,17 +362,26 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     onEditLastMessage: triggerEditLast
       ? () => {
           const unmountedId = triggerEditLast()
-          if (unmountedId) {
-            // Message is off-screen (virtualized out). Scroll it into view,
-            // wait for mount + register, then retry.
+          if (!unmountedId) return
+          // Message is in the loaded events but not mounted (virtualized out).
+          // Ask the stream to scroll it into view — scrollToMessage walks
+          // Virtuoso up to the right index and retries until the element lands
+          // in the DOM. Poll triggerEditLast until the registry picks up the
+          // newly-mounted message (or give up after ~1.2s).
+          const scrolled = scrollToMessage?.(unmountedId) ?? false
+          if (!scrolled) {
+            // No virtualized scroller (non-virtualized path); fall back to
+            // a best-effort DOM scroll so keyboard-edit still works.
             const el = document.querySelector(`[data-message-id="${CSS.escape(unmountedId)}"]`)
-            if (el) {
-              el.scrollIntoView({ block: "center" })
-              setTimeout(() => triggerEditLast(), 100)
-            } else {
-              // Element not in DOM at all — would need jumpToEvent. For now, no-op.
-            }
+            el?.scrollIntoView({ block: "center" })
           }
+          const deadline = performance.now() + 1200
+          const retry = () => {
+            if (triggerEditLast() === null) return
+            if (performance.now() >= deadline) return
+            setTimeout(retry, 60)
+          }
+          setTimeout(retry, 80)
         }
       : undefined,
     streamContext,

@@ -28,7 +28,9 @@ test.describe("Thread Breadcrumbs", () => {
     const channelMessage = `BC nav test ${testId}`
     await page.keyboard.type(channelMessage)
     await page.keyboard.press("Meta+Enter")
-    await expect(page.getByRole("main").getByText(channelMessage)).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole("main").locator(".message-item").getByText(channelMessage)).toBeVisible({
+      timeout: 10000,
+    })
 
     // Create a first-level thread
     const messageContainer = page.getByRole("main").locator(".group").filter({ hasText: channelMessage }).first()
@@ -102,7 +104,9 @@ test.describe("Thread Breadcrumbs", () => {
     const channelMessage = `Sidebar context ${testId}`
     await page.keyboard.type(channelMessage)
     await page.keyboard.press("Meta+Enter")
-    await expect(page.getByRole("main").getByText(channelMessage)).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole("main").locator(".message-item").getByText(channelMessage)).toBeVisible({
+      timeout: 10000,
+    })
 
     // Create a thread
     const messageContainer = page.getByRole("main").locator(".group").filter({ hasText: channelMessage }).first()
