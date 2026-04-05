@@ -1,5 +1,6 @@
 import { InputRule } from "@tiptap/core"
 import type { MarkType, Node as ProseMirrorNode } from "@tiptap/pm/model"
+import { currentWordContainsBacktick } from "./markdown-guards"
 
 /**
  * Configuration for an atom-aware mark input rule.
@@ -34,25 +35,18 @@ export function atomAwareMarkInputRule(config: AtomAwareMarkInputRuleConfig): In
   const openEsc = escapeRegex(openMarker)
   const closeEsc = escapeRegex(closeMarker)
 
-  // For single-char markers (*, _, `), we need two disambiguations:
-  // 1. Content cannot START with the same char (prevents * matching content *foo* in **foo**)
-  // 2. Opening marker cannot be PRECEDED by same char (prevents *foo* matching in **foo*)
-  //
-  // Example: For `**hello*`:
-  // - Without (1): italic would match position 0 with content `*hello`
-  // - Without (2): italic would match position 1 with content `hello`
-  // - With both: italic correctly fails, waits for second closing `*`
-
+  // The opening marker must be at the start of the match window or preceded
+  // by whitespace; this is re-verified against the real parent text in the
+  // handler because TipTap's match window is capped at 500 chars. Single-char
+  // markers additionally forbid content starting with the same char so e.g.
+  // `***hello*` does not match as italic with content `**hello`.
   let contentPattern: string
-  let lookbehind = ""
+  const lookbehind = `(?<=^|\\s)`
 
   if (openMarker.length === 1) {
-    // Single-char marker: add lookbehind and content-start exclusion
-    lookbehind = `(?<!${openEsc})`
     const charExclusion = openEsc
     contentPattern = `[^\\s${charExclusion}]|[^\\s${charExclusion}][\\s\\S]*?[^\\s]`
   } else {
-    // Multi-char marker: standard pattern, no lookbehind needed
     contentPattern = `[^\\s]|[^\\s][\\s\\S]*?[^\\s]`
   }
 
@@ -167,6 +161,29 @@ export function atomAwareMarkInputRule(config: AtomAwareMarkInputRuleConfig): In
       // Check if already marked (prevents double-application)
       const $start = state.doc.resolve(contentStart)
       if ($start.marks().some((m) => m.type === type)) {
+        return null
+      }
+
+      // TipTap caps the InputRule match window at 500 chars, so the regex
+      // `^` anchor can land mid-paragraph. Re-check the real preceding char
+      // in the parent so a long paragraph can't produce a false word boundary.
+      const $openStart = state.doc.resolve(start)
+      if ($openStart.parentOffset > 0) {
+        const prev = $openStart.parent.textBetween(
+          $openStart.parentOffset - 1,
+          $openStart.parentOffset,
+          undefined,
+          "\ufffc"
+        )
+        if (prev && !/\s/.test(prev)) {
+          return null
+        }
+      }
+
+      // Suppress inside an unclosed inline-code word (see markdown-guards).
+      // The code mark itself is exempt because the closing backtick is
+      // exactly how the backtick-owned word is resolved.
+      if (type.name !== "code" && currentWordContainsBacktick($openStart)) {
         return null
       }
 

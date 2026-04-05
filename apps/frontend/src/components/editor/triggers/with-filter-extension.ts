@@ -9,6 +9,7 @@ import Suggestion from "@tiptap/suggestion"
 import { PluginKey } from "@tiptap/pm/state"
 import type { SuggestionProps, SuggestionKeyDownProps } from "@tiptap/suggestion"
 import type { Mentionable } from "./types"
+import { getParentTextBefore } from "../markdown-guards"
 
 export const WithFilterPluginKey = new PluginKey("withFilter")
 
@@ -38,8 +39,7 @@ function findWithFilterMatch(config: {
 }) {
   const { $position } = config
 
-  // Get text from start of text block to cursor
-  const textBefore = $position.parent.textBetween(0, $position.parentOffset, undefined, "\ufffc")
+  const textBefore = getParentTextBefore($position)
 
   // Match `with:` at word boundary, optionally followed by `@`
   // Also match after `?` since search mode uses `?` prefix

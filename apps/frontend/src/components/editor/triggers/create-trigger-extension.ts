@@ -2,6 +2,7 @@ import { Node, mergeAttributes } from "@tiptap/react"
 import Suggestion from "@tiptap/suggestion"
 import { PluginKey } from "@tiptap/pm/state"
 import type { SuggestionProps, SuggestionKeyDownProps } from "@tiptap/suggestion"
+import { currentWordContainsBacktick } from "../markdown-guards"
 
 /**
  * Configuration for a single attribute on a trigger node.
@@ -148,6 +149,11 @@ export function createTriggerExtension<TItem, TAttrs extends object>(config: Tri
             // by looking at stored marks
             const storedMarks = state.storedMarks || $from.marks()
             if (storedMarks.some((mark) => mark.type.name === "code")) {
+              return false
+            }
+
+            // Suppress inside an unclosed inline-code word (see markdown-guards).
+            if (currentWordContainsBacktick($from)) {
               return false
             }
 

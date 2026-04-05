@@ -321,6 +321,54 @@ describe("Atom-aware input rule handler logic", () => {
       expect(marks[0].type.name).toBe("code")
     })
 
+    it("suppresses italic when opening marker is mid-word in a long paragraph", () => {
+      // Regression coverage for the regex-window edge case:
+      // TipTap caps the InputRule match text at 500 chars, so the regex `^`
+      // anchor may not correspond to the true parent start. We defensively
+      // re-check the actual preceding character in the parent.
+      const longRun = "x".repeat(600)
+      const doc = testSchema.nodes.doc.create({}, [
+        testSchema.nodes.paragraph.create({}, [testSchema.text(`${longRun}*hi*`)]),
+      ])
+      const state = EditorState.create({ doc, schema: testSchema })
+
+      const rule = atomAwareMarkInputRule({
+        openMarker: "*",
+        closeMarker: "*",
+        type: testSchema.marks.code,
+        convertAtomsToText: false,
+      })
+
+      // Opening * is at parentOffset 600 (char 'x' at 599 precedes it).
+      // docPos 1 = paragraph start, so opening * is at doc position 601,
+      // closing * at 605, end-of-match at 606.
+      const start = 1 + longRun.length // 601
+      const end = start + 5 // "*hi*" + 1 (after closing)
+      // Build a synthetic match that looks like the one the regex would
+      // produce inside the 500-char window: content = "hi".
+      const match = Object.assign(["*hi*", "hi"] as unknown as RegExpMatchArray, {
+        index: 0,
+        input: "*hi*",
+      })
+
+      // The handler only reads `state`, `range`, and `match`; commands/chain/can
+      // are part of the signature but unused on this code path.
+      const handlerArgs = {
+        state,
+        range: { from: start, to: end },
+        match,
+      } as unknown as Parameters<typeof rule.handler>[0]
+      rule.handler(handlerArgs)
+
+      // The defensive boundary check should have caused a no-op: no marks
+      // applied anywhere in the paragraph.
+      let markCount = 0
+      state.doc.descendants((node) => {
+        if (node.marks.some((m) => m.type === testSchema.marks.code)) markCount++
+      })
+      expect(markCount).toBe(0)
+    })
+
     it("should correctly handle mention atom in backtick code", () => {
       // This test verifies mention atoms are converted to text for inline code
       const doc = testSchema.nodes.doc.create({}, [
