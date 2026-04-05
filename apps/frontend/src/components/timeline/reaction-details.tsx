@@ -152,7 +152,13 @@ export function ReactionPillDetails({ emoji, reactions, workspaceId, children }:
             <DrawerDescription className="sr-only">People who reacted to this message</DrawerDescription>
           </DrawerHeader>
           <div className="pb-4">
-            <ReactionDetailsContent reactions={reactions} workspaceId={workspaceId} defaultEmoji={emoji} />
+            {/* key forces a fresh mount per open so selectedEmoji resets to this pill's emoji */}
+            <ReactionDetailsContent
+              key={drawerOpen ? emoji : "closed"}
+              reactions={reactions}
+              workspaceId={workspaceId}
+              defaultEmoji={emoji}
+            />
           </div>
         </DrawerContent>
       </Drawer>
