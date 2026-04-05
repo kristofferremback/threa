@@ -13,6 +13,7 @@ export type {
   CachedWorkspaceMetadata,
   PendingOperation,
   PendingMessage,
+  PendingStreamCreation,
   SyncCursor,
   DraftScratchpad,
   DraftMessage,

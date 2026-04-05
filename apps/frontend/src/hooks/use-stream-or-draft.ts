@@ -7,16 +7,13 @@ import { useUser } from "@/auth"
 import { useStreamBootstrap, streamKeys } from "./use-streams"
 import { workspaceKeys } from "./use-workspaces"
 import { useDraftScratchpads } from "./use-draft-scratchpads"
+import { useQueueDraftMessage } from "./use-queue-draft-message"
 import { useWorkspaceUsers, useWorkspaceStreams, useWorkspaceDmPeers } from "@/stores/workspace-store"
 import { useSyncEngine } from "@/sync/sync-engine"
-import {
-  deleteDraftMessageFromCache,
-  deleteDraftScratchpadFromCache,
-  hasSeededDraftCache,
-  upsertDraftMessageInCache,
-} from "@/stores/draft-store"
-import { createOptimisticBootstrap, type AttachmentSummary } from "./create-optimistic-bootstrap"
+import { deleteDraftMessageFromCache, hasSeededDraftCache, upsertDraftMessageInCache } from "@/stores/draft-store"
+import { type AttachmentSummary } from "./create-optimistic-bootstrap"
 import { serializeToMarkdown } from "@threa/prosemirror"
+import { onDraftPromoted } from "@/lib/draft-promotions"
 import type {
   Stream,
   StreamMember,
@@ -31,7 +28,7 @@ import { StreamTypes, Visibilities, CompanionModes } from "@threa/types"
 
 const DM_DRAFT_PREFIX = "draft_dm_"
 
-function generateClientId(): string {
+export function generateClientId(): string {
   const timestamp = Date.now().toString(36)
   const random = Math.random().toString(36).substring(2, 10)
   return `temp_${timestamp}${random}`
@@ -125,10 +122,8 @@ export interface UseStreamOrDraftReturn {
  * Implementation for draft streams (stored in IndexedDB).
  */
 function useDraftStream(workspaceId: string, streamId: string, enabled: boolean): UseStreamOrDraftReturn {
-  const queryClient = useQueryClient()
   const navigate = useNavigate()
-  const streamService = useStreamService()
-  const messageService = useMessageService()
+  const { queueDraftMessage, currentUserId } = useQueueDraftMessage(workspaceId)
   const { getDraft, updateDraft, deleteDraft } = useDraftScratchpads(workspaceId)
   const draft = enabled ? getDraft(streamId) : undefined
 
@@ -159,51 +154,39 @@ function useDraftStream(workspaceId: string, streamId: string, enabled: boolean)
     navigate(`/w/${workspaceId}`)
   }, [deleteDraft, streamId, workspaceId, navigate])
 
+  // Listen for draft promotion and navigate to the real stream
+  useEffect(() => {
+    return onDraftPromoted((promotion) => {
+      if (promotion.draftId === streamId && promotion.workspaceId === workspaceId) {
+        navigate(`/w/${workspaceId}/s/${promotion.realStreamId}`, { replace: true })
+      }
+    })
+  }, [streamId, workspaceId, navigate])
+
   const sendMessage = useCallback(
     async (input: SendMessageInput): Promise<{ navigateTo?: string; replace?: boolean }> => {
-      // Promote draft to real stream
+      if (!currentUserId) {
+        throw new Error("Cannot send message: user identity not resolved yet")
+      }
+
       const draftData = await db.draftScratchpads.get(streamId)
       const companionMode = draftData?.companionMode ?? "on"
 
-      const newStream = await streamService.create(workspaceId, {
-        type: StreamTypes.SCRATCHPAD,
-        displayName: draftData?.displayName ?? undefined,
-        companionMode,
+      await queueDraftMessage(input, {
+        workspaceId,
+        streamId,
+        streamCreation: {
+          type: StreamTypes.SCRATCHPAD,
+          displayName: draftData?.displayName ?? undefined,
+          companionMode,
+        },
+        draftId: streamId,
       })
 
-      // Serialize JSON to markdown for API and optimistic UI
-      const contentMarkdown = serializeToMarkdown(input.contentJson)
-
-      const message = await messageService.create(workspaceId, newStream.id, {
-        streamId: newStream.id,
-        contentJson: input.contentJson,
-        contentMarkdown,
-        attachmentIds: input.attachmentIds,
-      })
-
-      await db.transaction("rw", db.draftScratchpads, db.draftMessages, async () => {
-        await db.draftScratchpads.delete(streamId)
-        await db.draftMessages.delete(`stream:${streamId}`)
-      })
-      deleteDraftScratchpadFromCache(workspaceId, streamId)
-      deleteDraftMessageFromCache(workspaceId, `stream:${streamId}`)
-
-      // Pre-populate the new stream's cache so navigation is instant
-      queryClient.setQueryData(
-        streamKeys.bootstrap(workspaceId, newStream.id),
-        createOptimisticBootstrap({
-          stream: newStream,
-          message,
-          contentMarkdown,
-          attachments: input.attachments,
-        })
-      )
-
-      queryClient.invalidateQueries({ queryKey: workspaceKeys.bootstrap(workspaceId) })
-
-      return { navigateTo: `/w/${workspaceId}/s/${newStream.id}`, replace: true }
+      // Navigation is handled by the promotion listener above
+      return {}
     },
-    [streamId, workspaceId, streamService, messageService, queryClient]
+    [streamId, workspaceId, currentUserId, queueDraftMessage]
   )
 
   return {

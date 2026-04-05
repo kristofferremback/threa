@@ -37,6 +37,7 @@ export {
   createDmDraftId,
   isDmDraftId,
   getDmDraftUserId,
+  generateClientId,
   type VirtualStream,
   type UseStreamOrDraftReturn,
 } from "./use-stream-or-draft"
@@ -128,5 +129,7 @@ export { usePullToRefresh } from "./use-pull-to-refresh"
 export { useEditLastMessageTrigger } from "./use-edit-last-message-trigger"
 
 export { useAppUpdate } from "./use-app-update"
+
+export { useQueueDraftMessage } from "./use-queue-draft-message"
 
 export { useUnreadTabIndicator } from "./use-unread-tab-indicator"
