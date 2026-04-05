@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 import { precacheAndRoute } from "workbox-precaching"
-import { ActivityTypes } from "@threa/types"
+import { ActivityTypes, type AuthorType, type LastMessagePreview } from "@threa/types"
 import {
   SW_MSG_NOTIFICATION_CLICK,
   SW_MSG_SUBSCRIPTION_CHANGED,
@@ -98,12 +98,67 @@ async function prefetchStreamBootstrap(workspaceId: string, streamId: string): P
           _cachedAt: now,
         }))
       )
+
+      // Derive a sidebar preview from the latest message_created event and
+      // MERGE onto the cached stream record. The stream bootstrap endpoint
+      // returns a plain Stream without lastMessagePreview (that's only on the
+      // workspace bootstrap's StreamWithPreview), so a blind `put` here would
+      // wipe the sidebar preview — leaving the stream showing stale text and
+      // sinking it into the "Other" section because categorization relies on
+      // lastMessagePreview.createdAt.
+      const latestMessageEvent = findLatestMessageEvent(bootstrap.events)
       if (bootstrap.stream) {
-        await db.streams.put({ ...bootstrap.stream, _cachedAt: now })
+        const existing = await db.streams.get(bootstrap.stream.id)
+        const derivedPreview = latestMessageEvent
+          ? buildPreviewFromEvent(latestMessageEvent)
+          : (existing?.lastMessagePreview ?? null)
+        if (existing) {
+          // Preserve membership-derived fields (pinned, notificationLevel,
+          // lastReadEventId) that only applyWorkspaceBootstrap writes.
+          await db.streams.update(bootstrap.stream.id, {
+            lastMessagePreview: derivedPreview,
+            _cachedAt: now,
+          })
+        } else {
+          await db.streams.put({
+            ...bootstrap.stream,
+            lastMessagePreview: derivedPreview,
+            _cachedAt: now,
+          })
+        }
       }
     }
   } catch {
     // Best-effort — normal fetch path takes over if this fails
+  }
+}
+
+interface BootstrapEvent {
+  eventType: string
+  actorId: string | null
+  actorType: AuthorType | null
+  createdAt: string
+  payload: { contentJson?: unknown; contentMarkdown?: string } | null
+}
+
+/** Find the most recent message_created event (events are ordered oldest → newest). */
+function findLatestMessageEvent(events: unknown[]): BootstrapEvent | null {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i] as BootstrapEvent
+    if (e?.eventType === "message_created") return e
+  }
+  return null
+}
+
+function buildPreviewFromEvent(event: BootstrapEvent): LastMessagePreview {
+  const payload = event.payload ?? {}
+  return {
+    authorId: event.actorId ?? "",
+    authorType: event.actorType ?? "user",
+    // Mirror handleMessageCreated in stream-sync.ts: sidebar's truncateContent
+    // accepts either JSONContent or a markdown string.
+    content: (payload.contentJson ?? payload.contentMarkdown ?? "") as string,
+    createdAt: event.createdAt,
   }
 }
 
