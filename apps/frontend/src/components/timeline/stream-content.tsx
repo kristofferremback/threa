@@ -876,6 +876,41 @@ function VirtuosoMessageList({
     [virtuosoScrollerRef, handleScrollerRef]
   )
 
+  // Virtuoso's `startReached` / `endReached` observables throttle via
+  // `zt(200)` and use `distinctUntilChanged` on the emitted index, which
+  // means they can silently miss boundary crossings after a prepend
+  // (firstItemIndex decrements, but the distinct tracker may still hold a
+  // stale value if the user never scrolled away from the top between
+  // prepends). Tracking the range ourselves via `rangeChanged` guarantees
+  // the fetch triggers fire whenever the user is actually within a few
+  // items of either edge. Gated on `hasSettledRef` so transient ranges
+  // during the initial scroll-to-LAST don't kick off an unwanted fetch.
+  const hasRangeSettledRef = useRef(false)
+  useEffect(() => {
+    hasRangeSettledRef.current = false
+  }, [streamId])
+
+  const wrappedHandleAtBottomChange = useCallback(
+    (atBottom: boolean) => {
+      if (visibleItems.length > 0) hasRangeSettledRef.current = true
+      handleAtBottomChange(atBottom)
+    },
+    [handleAtBottomChange, visibleItems.length]
+  )
+
+  const wrappedHandleRangeChanged = useCallback(
+    (range: { startIndex: number; endIndex: number }) => {
+      handleRangeChanged(range)
+      if (!hasRangeSettledRef.current || visibleItems.length === 0) return
+      const distFromStart = range.startIndex - firstItemIndex
+      if (distFromStart <= 3) handleStartReached()
+      const lastVirtualIndex = firstItemIndex + visibleItems.length - 1
+      const distFromEnd = lastVirtualIndex - range.endIndex
+      if (distFromEnd <= 3) handleEndReached()
+    },
+    [handleRangeChanged, firstItemIndex, visibleItems.length, handleStartReached, handleEndReached]
+  )
+
   if (isLoading) {
     return (
       <div className="flex flex-col gap-4 px-4 py-6 sm:px-6">
@@ -921,8 +956,8 @@ function VirtuosoMessageList({
       skipAnimationFrameInResizeObserver
       itemContent={itemContent}
       followOutput={followOutput}
-      atBottomStateChange={handleAtBottomChange}
-      rangeChanged={handleRangeChanged}
+      atBottomStateChange={wrappedHandleAtBottomChange}
+      rangeChanged={wrappedHandleRangeChanged}
       startReached={handleStartReached}
       endReached={handleEndReached}
       atBottomThreshold={30}
