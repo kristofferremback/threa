@@ -91,4 +91,26 @@ describe("categorizeStream", () => {
     const stream = makeStream({ lastMessagePreview: null })
     expect(categorizeStream(stream, 0, "quiet")).toBe("other")
   })
+
+  it("does not promote muted streams with unreads into 'recent'", () => {
+    // Regression: muting is an explicit deprioritization signal. A muted
+    // stream with unread messages must not bubble back up to Recent just
+    // because it has outstanding unread content — that defeats the purpose
+    // of muting. It falls through to the standard recency check and, if the
+    // preview is older than 7 days (or missing), lands in "other".
+    const stream = makeStream({ lastMessagePreview: null })
+    expect(categorizeStream(stream, 5, "quiet")).toBe("other")
+  })
+
+  it("still respects the 7-day window for muted streams with a recent preview", () => {
+    const stream = makeStream({
+      lastMessagePreview: {
+        authorId: "user_2",
+        authorType: "user",
+        content: "hello",
+        createdAt: "2026-04-04T12:00:00Z", // 1 day ago
+      },
+    })
+    expect(categorizeStream(stream, 5, "quiet")).toBe("recent")
+  })
 })

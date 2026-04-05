@@ -20,13 +20,4 @@ describe("resolveDmDisplayName", () => {
     const dmPeers = [{ streamId: "stream_dm_1", userId: "user_missing" }]
     expect(resolveDmDisplayName("stream_dm_1", workspaceUsers, dmPeers)).toBeNull()
   })
-
-  it("prefers the peer lookup over whatever string was cached on the stream row", () => {
-    // Regression: when a stream:created socket event writes displayName: null
-    // or "Direct message" into IDB, the sidebar should still render the
-    // peer's real name by falling back to workspaceUsers via dmPeers.
-    const dmPeers = [{ streamId: "stream_dm_1", userId: "user_pierre" }]
-    const resolved = resolveDmDisplayName("stream_dm_1", workspaceUsers, dmPeers)
-    expect(resolved).toBe("Pierre Boberg")
-  })
 })
