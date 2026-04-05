@@ -2,6 +2,7 @@ import type { Pool } from "pg"
 import {
   OutboxRepository,
   type ActivityCreatedOutboxPayload,
+  type OutboxEvent,
   type StreamReadOutboxPayload,
   type StreamsReadAllOutboxPayload,
 } from "../../lib/outbox"
@@ -80,47 +81,57 @@ export class PushNotificationHandler implements OutboxHandler {
         return { status: "no_events" }
       }
 
-      const seen: bigint[] = []
+      // Process events in parallel within a batch: each push delivery is independent
+      // network I/O (webpush.sendNotification) and must not serialize across events,
+      // otherwise a single slow device blocks the whole batch.
+      //
+      // We mark every event processed regardless of individual delivery success —
+      // push is best-effort, and we don't want to retry the whole cursor batch just
+      // because one device's webpush call failed. Per-device failures are handled
+      // inside PushService (stale subscription eviction).
+      const results = await Promise.allSettled(events.map((event) => this.deliverEvent(event)))
 
-      try {
-        for (const event of events) {
-          if (event.eventType === "activity:created") {
-            const payload = event.payload as ActivityCreatedOutboxPayload
-            if (!payload?.workspaceId || !payload?.targetUserId || !payload?.activity) {
-              logger.warn({ eventId: event.id }, "Skipping malformed activity:created payload")
-              seen.push(event.id)
-              continue
-            }
-            await this.pushService.deliverPushForActivity(payload)
-          } else if (event.eventType === "stream:read") {
-            const payload = event.payload as StreamReadOutboxPayload
-            if (!payload?.workspaceId || !payload?.authorId || !payload?.streamId) {
-              logger.warn({ eventId: event.id }, "Skipping malformed stream:read payload")
-              seen.push(event.id)
-              continue
-            }
-            await this.pushService.deliverClearForStream(payload.workspaceId, payload.authorId, payload.streamId)
-          } else if (event.eventType === "stream:read_all") {
-            const payload = event.payload as StreamsReadAllOutboxPayload
-            if (!payload?.workspaceId || !payload?.authorId || !payload?.streamIds?.length) {
-              logger.warn({ eventId: event.id }, "Skipping malformed stream:read_all payload")
-              seen.push(event.id)
-              continue
-            }
-            await this.pushService.deliverClearForStreams(payload.workspaceId, payload.authorId, payload.streamIds)
-          }
-
-          seen.push(event.id)
+      for (const [index, result] of results.entries()) {
+        if (result.status === "rejected") {
+          logger.warn(
+            { eventId: events[index].id, eventType: events[index].eventType, err: result.reason },
+            "Push delivery failed for event"
+          )
         }
-
-        return { status: "processed", processedIds: seen }
-      } catch (err) {
-        const error = err instanceof Error ? err : new Error(String(err))
-        if (seen.length > 0) {
-          return { status: "error", error, processedIds: seen }
-        }
-        return { status: "error", error }
       }
+
+      return { status: "processed", processedIds: events.map((e) => e.id) }
     })
+  }
+
+  private async deliverEvent(event: OutboxEvent): Promise<void> {
+    if (event.eventType === "activity:created") {
+      const payload = event.payload as ActivityCreatedOutboxPayload
+      if (!payload?.workspaceId || !payload?.targetUserId || !payload?.activity) {
+        logger.warn({ eventId: event.id }, "Skipping malformed activity:created payload")
+        return
+      }
+      await this.pushService.deliverPushForActivity(payload)
+      return
+    }
+
+    if (event.eventType === "stream:read") {
+      const payload = event.payload as StreamReadOutboxPayload
+      if (!payload?.workspaceId || !payload?.authorId || !payload?.streamId) {
+        logger.warn({ eventId: event.id }, "Skipping malformed stream:read payload")
+        return
+      }
+      await this.pushService.deliverClearForStream(payload.workspaceId, payload.authorId, payload.streamId)
+      return
+    }
+
+    if (event.eventType === "stream:read_all") {
+      const payload = event.payload as StreamsReadAllOutboxPayload
+      if (!payload?.workspaceId || !payload?.authorId || !payload?.streamIds?.length) {
+        logger.warn({ eventId: event.id }, "Skipping malformed stream:read_all payload")
+        return
+      }
+      await this.pushService.deliverClearForStreams(payload.workspaceId, payload.authorId, payload.streamIds)
+    }
   }
 }

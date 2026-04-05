@@ -494,4 +494,115 @@ describe("QueueManager", () => {
       }
     })
   })
+
+  describe("tier budgets", () => {
+    const INTERACTIVE_QUEUE = "test.tier.interactive" as JobQueueName
+    const HEAVY_QUEUE = "test.tier.heavy" as JobQueueName
+
+    beforeEach(async () => {
+      await pool.query("DELETE FROM queue_messages WHERE queue_name IN ($1, $2)", [INTERACTIVE_QUEUE, HEAVY_QUEUE])
+      await pool.query("DELETE FROM queue_tokens WHERE queue_name IN ($1, $2)", [INTERACTIVE_QUEUE, HEAVY_QUEUE])
+    })
+
+    test("heavy tier can't starve interactive tier under load", async () => {
+      // Track max concurrent by tier.
+      let heavyInFlight = 0
+      let interactiveInFlight = 0
+      let heavyPeak = 0
+      let interactivePeak = 0
+
+      // Heavy handler blocks so the tier's budget stays saturated.
+      let releaseHeavy: () => void = () => {}
+      const heavyBlocked = new Promise<void>((resolve) => {
+        releaseHeavy = resolve
+      })
+      const heavyHandler: JobHandler<TestJobData> = async () => {
+        heavyInFlight++
+        heavyPeak = Math.max(heavyPeak, heavyInFlight)
+        try {
+          await heavyBlocked
+        } finally {
+          heavyInFlight--
+        }
+      }
+
+      let interactiveCompleted = 0
+      const interactiveHandler: JobHandler<TestJobData> = async () => {
+        interactiveInFlight++
+        interactivePeak = Math.max(interactivePeak, interactiveInFlight)
+        await new Promise((resolve) => setTimeout(resolve, 30))
+        interactiveInFlight--
+        interactiveCompleted++
+      }
+
+      const manager = new QueueManager({
+        pool,
+        queueRepository: QueueRepository,
+        tokenPoolRepository: TokenPoolRepository,
+        pollIntervalMs: 50,
+        lockDurationMs: 10_000,
+        processingConcurrency: 1,
+        tiers: {
+          interactive: { maxActiveTokens: 3 },
+          heavy: { maxActiveTokens: 2 },
+        },
+      })
+
+      manager.registerHandler(HEAVY_QUEUE, heavyHandler as JobHandler<unknown>, {
+        tier: "heavy",
+        fairness: "none",
+      })
+      manager.registerHandler(INTERACTIVE_QUEUE, interactiveHandler as JobHandler<unknown>, {
+        tier: "interactive",
+        fairness: "none",
+      })
+
+      // Seed many heavy jobs (enough to over-subscribe the heavy budget if it
+      // leaked into other tiers) and a few interactive jobs.
+      const now = new Date()
+      for (let i = 0; i < 10; i++) {
+        await QueueRepository.insert(pool, {
+          id: `queue_tier_heavy_${i}_${Date.now()}`,
+          queueName: HEAVY_QUEUE,
+          workspaceId: "ws_test_tier",
+          payload: { workspaceId: "ws_test_tier", testValue: `h${i}` },
+          processAfter: now,
+          insertedAt: now,
+        })
+      }
+      for (let i = 0; i < 5; i++) {
+        await QueueRepository.insert(pool, {
+          id: `queue_tier_interactive_${i}_${Date.now()}`,
+          queueName: INTERACTIVE_QUEUE,
+          workspaceId: "ws_test_tier",
+          payload: { workspaceId: "ws_test_tier", testValue: `i${i}` },
+          processAfter: now,
+          insertedAt: now,
+        })
+      }
+
+      manager.start()
+
+      try {
+        // Interactive jobs should drain even while heavy is fully saturated
+        // and blocked. If the tier budgets were shared, the heavy jobs would
+        // claim all 3 slots and interactive work would wait forever.
+        await waitForCondition(
+          async () => interactiveCompleted >= 5,
+          5000,
+          "Interactive jobs did not drain while heavy tier was saturated"
+        )
+
+        // Heavy tier should never exceed its budget (2).
+        expect(heavyPeak).toBeLessThanOrEqual(2)
+        // Interactive tier should have used its budget (>= 1 at some point).
+        expect(interactivePeak).toBeGreaterThanOrEqual(1)
+      } finally {
+        releaseHeavy()
+        await manager.stop()
+        await pool.query("DELETE FROM queue_messages WHERE queue_name IN ($1, $2)", [INTERACTIVE_QUEUE, HEAVY_QUEUE])
+        await pool.query("DELETE FROM queue_tokens WHERE queue_name IN ($1, $2)", [INTERACTIVE_QUEUE, HEAVY_QUEUE])
+      }
+    })
+  })
 })

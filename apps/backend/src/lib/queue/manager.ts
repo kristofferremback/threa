@@ -6,7 +6,16 @@ import type { TokenPoolRepository } from "./token-pool-repository"
 import { CronRepository, type CronTick } from "./cron-repository"
 import { calculateBackoffMs } from "@threa/backend-common"
 import { logger } from "../logger"
-import type { JobDataMap, JobQueueName, JobHandler, HandlerOptions, HandlerHooks } from "./job-queue"
+import type {
+  JobDataMap,
+  JobQueueName,
+  JobHandler,
+  HandlerOptions,
+  HandlerHooks,
+  QueueTier,
+  QueueFairnessMode,
+} from "./job-queue"
+import { QueueFairness, QueueTiers } from "./job-queue"
 import { queueId, workerId, tickerId, cronId } from "../id"
 import {
   queueMessagesEnqueued,
@@ -15,6 +24,16 @@ import {
   queueMessageDuration,
 } from "../observability"
 import { isUniqueViolation } from "../errors"
+
+/**
+ * Per-tier configuration. Each tier has its own concurrency budget so that
+ * slow heavy work (PDF/image/memo) cannot starve interactive work (persona
+ * agent responses) by holding every available token.
+ */
+export interface TierConfig {
+  /** Max tokens in flight at once for this tier. */
+  maxActiveTokens: number
+}
 
 /**
  * Configuration for QueueManager
@@ -36,7 +55,17 @@ export interface QueueManagerConfig {
   // Adaptive polling config
   pollIntervalMs?: number // Default 500 (sleep between cycles when idle)
   refillDebounceMs?: number // Default 100 (debounce before fetching more tokens)
-  maxActiveTokens?: number // Default 5 (max tokens in flight at once)
+
+  /**
+   * Per-tier concurrency budgets. If not provided, all handlers share a single
+   * synthetic "default" tier sized by `maxActiveTokens` (legacy behaviour).
+   */
+  tiers?: Partial<Record<QueueTier, TierConfig>>
+  /**
+   * Legacy single global budget. Ignored when `tiers` is provided.
+   * @deprecated Prefer `tiers` so interactive work isn't starved by heavy jobs.
+   */
+  maxActiveTokens?: number // Default 5
 }
 
 const DEFAULT_CONFIG = {
@@ -50,6 +79,23 @@ const DEFAULT_CONFIG = {
   pollIntervalMs: 500,
   refillDebounceMs: 100,
   maxActiveTokens: 5,
+}
+
+/** Synthetic tier used when no `tiers` config is provided. */
+const DEFAULT_TIER: QueueTier = QueueTiers.INTERACTIVE
+
+/**
+ * Mutable per-tier runtime state. Kept on the QueueManager so polling cycles
+ * can enforce each tier's budget independently.
+ */
+interface TierRuntimeState {
+  tier: QueueTier
+  budget: number
+  fairness: QueueFairnessMode
+  queueNames: string[]
+  activeTokens: Map<string, Promise<void>>
+  refillTimer: Timer | null
+  cycleExhausted: boolean
 }
 
 /**
@@ -74,18 +120,22 @@ export class QueueManager {
   private readonly processingConcurrency: number
   private readonly pollIntervalMs: number
   private readonly refillDebounceMs: number
-  private readonly maxActiveTokens: number
+  /** Configured tier budgets. Undefined tiers fall back to `legacyTierBudget`. */
+  private readonly tierBudgets: Partial<Record<QueueTier, number>>
+  /** Budget used for tiers not explicitly configured. */
+  private readonly legacyTierBudget: number
   private readonly handlers = new Map<string, JobHandler<unknown>>()
   private readonly handlerHooks = new Map<string, HandlerHooks<unknown>>()
+  private readonly handlerTiers = new Map<string, QueueTier>()
+  private readonly handlerFairness = new Map<string, QueueFairnessMode>()
   private readonly managerId: string
   private isStarted = false
   private isStopping = false
 
-  // Adaptive polling state
+  // Adaptive polling state. Keyed by `${tier}::${fairness}` — a tier may be
+  // split across fairness modes, so each combination gets its own budget slot.
   private pollTimer: Timer | null = null
-  private readonly activeTokens = new Map<string, Promise<void>>()
-  private refillTimer: Timer | null = null
-  private cycleExhausted = false
+  private readonly tierState = new Map<string, TierRuntimeState>()
   private cycleStart = 0
 
   // Track cron tick workers for graceful shutdown (separate from token processing)
@@ -106,6 +156,7 @@ export class QueueManager {
       pollIntervalMs = DEFAULT_CONFIG.pollIntervalMs,
       refillDebounceMs = DEFAULT_CONFIG.refillDebounceMs,
       maxActiveTokens = DEFAULT_CONFIG.maxActiveTokens,
+      tiers,
     } = config
 
     this.pool = pool
@@ -120,7 +171,17 @@ export class QueueManager {
     this.processingConcurrency = processingConcurrency
     this.pollIntervalMs = pollIntervalMs
     this.refillDebounceMs = refillDebounceMs
-    this.maxActiveTokens = maxActiveTokens
+
+    // Build tier budget map. If caller supplied `tiers`, use that. Otherwise
+    // fall back to legacy single-budget behaviour, represented as one synthetic
+    // tier absorbing all registered handlers.
+    this.tierBudgets = {}
+    if (tiers) {
+      for (const [tier, cfg] of Object.entries(tiers) as [QueueTier, TierConfig | undefined][]) {
+        if (cfg) this.tierBudgets[tier] = cfg.maxActiveTokens
+      }
+    }
+    this.legacyTierBudget = maxActiveTokens
 
     this.managerId = tickerId()
   }
@@ -128,6 +189,9 @@ export class QueueManager {
   /**
    * Register handler for a queue.
    * Must be called before start().
+   *
+   * Handlers can declare a `tier` (concurrency budget bucket) and `fairness`
+   * (per-workspace vs. global token leasing). See QueueTiers / QueueFairness.
    */
   registerHandler<T extends JobQueueName>(
     queueName: T,
@@ -138,8 +202,60 @@ export class QueueManager {
       throw new Error(`Cannot register handler for ${queueName}: queue already started`)
     }
     this.handlers.set(queueName, handler as JobHandler<unknown>)
+    this.handlerTiers.set(queueName, options?.tier ?? DEFAULT_TIER)
+    this.handlerFairness.set(queueName, options?.fairness ?? QueueFairness.NONE)
     if (options?.hooks) {
       this.handlerHooks.set(queueName, options.hooks as HandlerHooks<unknown>)
+    }
+  }
+
+  /**
+   * Build per-tier runtime state from registered handlers. Called once at
+   * start() so every handler registration is accounted for.
+   *
+   * Queues in the same tier share a concurrency budget but can have different
+   * fairness modes. When they do, the tier is split into sub-buckets per
+   * fairness mode so each sub-bucket can use the correct lease query.
+   */
+  private buildTierState(): void {
+    // Group queue names by (tier, fairness). Fairness groups within a tier
+    // share the tier's budget proportionally via separate runtime states —
+    // this keeps the lease query simple (one fairness mode per call).
+    const groups = new Map<string, { tier: QueueTier; fairness: QueueFairnessMode; queueNames: string[] }>()
+    for (const queueName of this.handlers.keys()) {
+      const tier = this.handlerTiers.get(queueName) ?? DEFAULT_TIER
+      const fairness = this.handlerFairness.get(queueName) ?? QueueFairness.NONE
+      const key = `${tier}::${fairness}`
+      const existing = groups.get(key)
+      if (existing) {
+        existing.queueNames.push(queueName)
+      } else {
+        groups.set(key, { tier, fairness, queueNames: [queueName] })
+      }
+    }
+
+    // If a tier has multiple fairness groups, split the tier budget evenly
+    // between them (round up, minimum 1). This is a pragmatic default — in
+    // practice the expectation is that a tier uses one fairness mode.
+    const tierGroupCount = new Map<QueueTier, number>()
+    for (const { tier } of groups.values()) {
+      tierGroupCount.set(tier, (tierGroupCount.get(tier) ?? 0) + 1)
+    }
+
+    this.tierState.clear()
+    for (const [key, group] of groups) {
+      const tierBudget = this.tierBudgets[group.tier] ?? this.legacyTierBudget
+      const splits = tierGroupCount.get(group.tier) ?? 1
+      const perGroupBudget = Math.max(1, Math.ceil(tierBudget / splits))
+      this.tierState.set(key, {
+        tier: group.tier,
+        budget: perGroupBudget,
+        fairness: group.fairness,
+        queueNames: group.queueNames,
+        activeTokens: new Map(),
+        refillTimer: null,
+        cycleExhausted: false,
+      })
     }
   }
 
@@ -223,15 +339,26 @@ export class QueueManager {
     }
 
     this.isStarted = true
+    this.buildTierState()
     this.runCycle()
 
-    logger.info("QueueManager started")
+    logger.info(
+      {
+        tiers: Array.from(this.tierState.values()).map((t) => ({
+          tier: t.tier,
+          budget: t.budget,
+          fairness: t.fairness,
+          queueNames: t.queueNames,
+        })),
+      },
+      "QueueManager started"
+    )
   }
 
   /**
    * Graceful shutdown.
    * 1. Stop polling (no new cycles)
-   * 2. Clear refill timer
+   * 2. Clear per-tier refill timers
    * 3. Wait for in-flight tokens with timeout
    * 4. Wait for cron workers
    */
@@ -249,17 +376,27 @@ export class QueueManager {
       this.pollTimer = null
     }
 
-    // Stop refill timer
-    if (this.refillTimer) {
-      clearTimeout(this.refillTimer)
-      this.refillTimer = null
+    // Stop per-tier refill timers
+    for (const state of this.tierState.values()) {
+      if (state.refillTimer) {
+        clearTimeout(state.refillTimer)
+        state.refillTimer = null
+      }
     }
 
-    // Wait for active tokens with timeout
-    const allActive = [...this.activeTokens.values(), ...this.activeCronWorkers]
+    // Wait for active tokens (across all tiers) with timeout
+    const allActiveTokens: Promise<void>[] = []
+    let activeTokenCount = 0
+    for (const state of this.tierState.values()) {
+      for (const promise of state.activeTokens.values()) {
+        allActiveTokens.push(promise)
+        activeTokenCount++
+      }
+    }
+    const allActive = [...allActiveTokens, ...this.activeCronWorkers]
     if (allActive.length > 0) {
       logger.info(
-        { activeTokens: this.activeTokens.size, activeCron: this.activeCronWorkers.size },
+        { activeTokens: activeTokenCount, activeCron: this.activeCronWorkers.size },
         "Waiting for active work to complete"
       )
 
@@ -268,7 +405,10 @@ export class QueueManager {
 
       await Promise.race([allWorkers, timeout])
 
-      const remaining = this.activeTokens.size + this.activeCronWorkers.size
+      let remaining = this.activeCronWorkers.size
+      for (const state of this.tierState.values()) {
+        remaining += state.activeTokens.size
+      }
       if (remaining > 0) {
         logger.warn({ remainingWork: remaining }, "Some work did not complete within timeout")
       }
@@ -282,10 +422,12 @@ export class QueueManager {
    *
    * Algorithm:
    * 1. Record cycle start time
-   * 2. Fetch initial tokens (up to maxActiveTokens)
-   * 3. Process tokens, refilling slots as they complete (debounced)
-   * 4. Process cron ticks
-   * 5. Sleep remaining time to reach pollIntervalMs
+   * 2. Reset per-tier exhausted flags
+   * 3. Fetch initial tokens for every tier in parallel (each capped at its budget)
+   * 4. Process tokens, refilling each tier's slots as they complete (debounced)
+   * 5. Process cron ticks
+   * 6. Wait for all tiers' active tokens to drain
+   * 7. Sleep remaining time to reach pollIntervalMs
    */
   private async runCycle(): Promise<void> {
     if (this.isStopping) {
@@ -293,22 +435,26 @@ export class QueueManager {
     }
 
     this.cycleStart = Date.now()
-    this.cycleExhausted = false
 
-    const queueNames = Array.from(this.handlers.keys())
-    if (queueNames.length === 0) {
+    if (this.tierState.size === 0) {
       logger.debug("No handlers registered yet, scheduling next cycle")
       this.scheduleNextCycle(0)
       return
     }
 
-    // Fetch initial tokens and start processing
-    await this.fillSlots()
+    // Reset per-tier exhausted flag at the start of each cycle so a tier that
+    // found nothing last cycle gets another chance.
+    for (const state of this.tierState.values()) {
+      state.cycleExhausted = false
+    }
+
+    // Fetch initial tokens and start processing for each tier in parallel.
+    await Promise.all(Array.from(this.tierState.values()).map((state) => this.fillSlots(state)))
 
     // Process cron ticks (runs in parallel with token processing)
     await this.processCronTicks()
 
-    // Wait for all active tokens to complete before sleeping
+    // Wait for all active tokens across tiers to complete before sleeping
     await this.waitForCycleComplete()
 
     // Schedule next cycle after sleeping remaining time
@@ -317,21 +463,20 @@ export class QueueManager {
   }
 
   /**
-   * Fill available token slots.
-   * Fetches tokens up to (maxActiveTokens - current active count).
-   * Sets cycleExhausted=true when no more tokens available.
+   * Fill available token slots for a single tier.
+   * Fetches tokens up to (tier.budget - tier.activeTokens.size).
+   * Sets tier.cycleExhausted=true when no more tokens available.
    */
-  private async fillSlots(): Promise<void> {
-    if (this.isStopping || this.cycleExhausted) {
+  private async fillSlots(state: TierRuntimeState): Promise<void> {
+    if (this.isStopping || state.cycleExhausted) {
       return
     }
 
-    const availableSlots = this.maxActiveTokens - this.activeTokens.size
+    const availableSlots = state.budget - state.activeTokens.size
     if (availableSlots <= 0) {
       return
     }
 
-    const queueNames = Array.from(this.handlers.keys())
     const now = new Date()
 
     const tokens = await this.tokenPoolRepo.batchLeaseTokens(this.pool, {
@@ -340,24 +485,28 @@ export class QueueManager {
       leasedUntil: new Date(now.getTime() + this.lockDurationMs),
       now,
       limit: availableSlots,
-      queueNames,
+      queueNames: state.queueNames,
+      fairnessMode: state.fairness,
     })
 
     if (tokens.length === 0) {
-      this.cycleExhausted = true
-      logger.debug("Queue exhausted for this cycle")
+      state.cycleExhausted = true
+      logger.debug({ tier: state.tier, fairness: state.fairness }, "Tier exhausted for this cycle")
       return
     }
 
-    logger.debug({ tokenCount: tokens.length, activeTokens: this.activeTokens.size }, "Leased tokens")
+    logger.debug(
+      { tier: state.tier, tokenCount: tokens.length, activeTokens: state.activeTokens.size, budget: state.budget },
+      "Leased tokens"
+    )
 
     // Start processing each token
     for (const token of tokens) {
       const promise = this.processToken(token).finally(() => {
-        this.activeTokens.delete(token.id)
-        this.debouncedFillSlots()
+        state.activeTokens.delete(token.id)
+        this.debouncedFillSlots(state)
       })
-      this.activeTokens.set(token.id, promise)
+      state.activeTokens.set(token.id, promise)
     }
   }
 
@@ -365,33 +514,40 @@ export class QueueManager {
    * Debounced fill slots - waits refillDebounceMs before fetching more tokens.
    * Prevents hammering the database when multiple tokens complete quickly.
    */
-  private debouncedFillSlots(): void {
-    if (this.isStopping || this.cycleExhausted) {
+  private debouncedFillSlots(state: TierRuntimeState): void {
+    if (this.isStopping || state.cycleExhausted) {
       return
     }
 
     // Clear existing timer
-    if (this.refillTimer) {
-      clearTimeout(this.refillTimer)
+    if (state.refillTimer) {
+      clearTimeout(state.refillTimer)
     }
 
     // Schedule refill after debounce delay
-    this.refillTimer = setTimeout(() => {
-      this.refillTimer = null
-      this.fillSlots().catch((err) => {
-        logger.error({ err }, "Error filling slots, marking cycle exhausted")
+    state.refillTimer = setTimeout(() => {
+      state.refillTimer = null
+      this.fillSlots(state).catch((err) => {
+        logger.error({ err, tier: state.tier }, "Error filling slots, marking tier exhausted")
         // Stop refilling this cycle to prevent hammering on persistent errors
-        this.cycleExhausted = true
+        state.cycleExhausted = true
       })
     }, this.refillDebounceMs)
   }
 
   /**
-   * Wait for all active tokens in current cycle to complete.
+   * Wait for all active tokens across all tiers in current cycle to complete.
    */
   private async waitForCycleComplete(): Promise<void> {
-    while (this.activeTokens.size > 0) {
-      await Promise.race(this.activeTokens.values())
+    while (true) {
+      const allActive: Promise<void>[] = []
+      for (const state of this.tierState.values()) {
+        for (const promise of state.activeTokens.values()) {
+          allActive.push(promise)
+        }
+      }
+      if (allActive.length === 0) return
+      await Promise.race(allActive)
     }
   }
 
