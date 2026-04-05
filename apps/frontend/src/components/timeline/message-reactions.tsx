@@ -1,12 +1,12 @@
-import { useMemo, useCallback } from "react"
+import { forwardRef, useMemo, useCallback } from "react"
 import { SmilePlus, X } from "lucide-react"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { useActors, useMessageReactions, stripColons } from "@/hooks"
+import { useMessageReactions, stripColons } from "@/hooks"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { cn } from "@/lib/utils"
 import { ReactionEmojiPicker } from "./reaction-emoji-picker"
 import { AllReactionsPopover } from "./all-reactions-popover"
+import { ReactionPillDetails } from "./reaction-details"
 
 const MAX_VISIBLE_REACTIONS = 5
 
@@ -52,15 +52,15 @@ export function MessageReactions({ reactions, workspaceId, messageId, currentUse
   return (
     <div className="flex flex-wrap items-center gap-1 mt-1.5">
       {visibleReactions.map(([shortcode, userIds]) => (
-        <ReactionPill
-          key={shortcode}
-          emoji={toEmoji(shortcode) ?? shortcode}
-          userIds={userIds}
-          workspaceId={workspaceId}
-          currentUserId={currentUserId}
-          isMobile={isMobile}
-          onToggle={() => handleToggleReaction(shortcode)}
-        />
+        <ReactionPillDetails key={shortcode} emoji={shortcode} reactions={reactions} workspaceId={workspaceId}>
+          <ReactionPill
+            emoji={toEmoji(shortcode) ?? shortcode}
+            userIds={userIds}
+            currentUserId={currentUserId}
+            isMobile={isMobile}
+            onToggle={() => handleToggleReaction(shortcode)}
+          />
+        </ReactionPillDetails>
       ))}
 
       {overflowCount > 0 && (
@@ -95,56 +95,41 @@ export function MessageReactions({ reactions, workspaceId, messageId, currentUse
 interface ReactionPillProps {
   emoji: string
   userIds: string[]
-  workspaceId: string
   currentUserId: string | null
   isMobile: boolean
   onToggle: () => void
 }
 
-function ReactionPill({ emoji, userIds, workspaceId, currentUserId, isMobile, onToggle }: ReactionPillProps) {
-  const { getActorName } = useActors(workspaceId)
-  const hasReacted = currentUserId ? userIds.includes(currentUserId) : false
+// Forwards ref and spreads extra props so Radix HoverCardTrigger `asChild` can inject handlers.
+const ReactionPill = forwardRef<HTMLButtonElement, ReactionPillProps & React.ButtonHTMLAttributes<HTMLButtonElement>>(
+  ({ emoji, userIds, currentUserId, isMobile, onToggle, ...rest }, ref) => {
+    const hasReacted = currentUserId ? userIds.includes(currentUserId) : false
 
-  const tooltipText = useMemo(() => {
-    const names = userIds.map((id) => (id === currentUserId ? "You" : getActorName(id, "user")))
-    if (names.length <= 3) return names.join(", ")
-    return `${names.slice(0, 3).join(", ")} and ${names.length - 3} more`
-  }, [userIds, currentUserId, getActorName])
-
-  const pill = (
-    <button
-      type="button"
-      className={cn(
-        "group/pill relative inline-flex items-center gap-1 rounded-full border pl-1.5 pr-2 py-0.5 text-xs transition-all",
-        hasReacted
-          ? "border-primary/30 bg-primary/[0.08] text-primary hover:bg-primary/[0.14] hover:border-primary/40"
-          : "border-border/60 text-muted-foreground hover:bg-muted/80 hover:border-border"
-      )}
-      onClick={onToggle}
-    >
-      {/* Emoji — on desktop, fades to X icon on hover when user has reacted */}
-      <span className="relative text-sm leading-none w-4 h-4 flex items-center justify-center">
-        <span className={cn("transition-opacity", hasReacted && !isMobile && "group-hover/pill:opacity-0")}>
-          {emoji}
-        </span>
-        {hasReacted && !isMobile && (
-          <X className="absolute inset-0 h-4 w-4 opacity-0 group-hover/pill:opacity-100 transition-opacity text-primary/70" />
+    return (
+      <button
+        ref={ref}
+        type="button"
+        className={cn(
+          "group/pill relative inline-flex items-center gap-1 rounded-full border pl-1.5 pr-2 py-0.5 text-xs transition-all",
+          hasReacted
+            ? "border-primary/30 bg-primary/[0.08] text-primary hover:bg-primary/[0.14] hover:border-primary/40"
+            : "border-border/60 text-muted-foreground hover:bg-muted/80 hover:border-border"
         )}
-      </span>
-      <span className={cn("tabular-nums", hasReacted && "font-medium")}>{userIds.length}</span>
-    </button>
-  )
-
-  if (isMobile) {
-    return pill
+        onClick={onToggle}
+        {...rest}
+      >
+        {/* Emoji — on desktop, fades to X icon on hover when user has reacted */}
+        <span className="relative text-sm leading-none w-4 h-4 flex items-center justify-center">
+          <span className={cn("transition-opacity", hasReacted && !isMobile && "group-hover/pill:opacity-0")}>
+            {emoji}
+          </span>
+          {hasReacted && !isMobile && (
+            <X className="absolute inset-0 h-4 w-4 opacity-0 group-hover/pill:opacity-100 transition-opacity text-primary/70" />
+          )}
+        </span>
+        <span className={cn("tabular-nums", hasReacted && "font-medium")}>{userIds.length}</span>
+      </button>
+    )
   }
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>{pill}</TooltipTrigger>
-      <TooltipContent side="top" className="text-xs max-w-[200px]">
-        {tooltipText}
-      </TooltipContent>
-    </Tooltip>
-  )
-}
+)
+ReactionPill.displayName = "ReactionPill"
