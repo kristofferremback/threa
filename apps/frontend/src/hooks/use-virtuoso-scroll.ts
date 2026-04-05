@@ -86,16 +86,18 @@ export function useVirtuosoScroll({
   // isLoading skeleton is replaced).
   const [scrollerEl, setScrollerEl] = useState<HTMLElement | null>(null)
 
-  // Reset all state when stream changes
+  // Reset all state when stream changes. Honor skipInitialScroll so deep-link
+  // navigation to a cached stream does not briefly scroll to bottom before
+  // the scrollToMessage retry loop kicks in.
   useLayoutEffect(() => {
     firstItemIndexRef.current = FIRST_ITEM_INDEX
     setIsScrolledFarFromBottom(false)
-    isAtBottomRef.current = true
-    setShouldFollowOutput(true)
+    isAtBottomRef.current = !skipInitialScroll
+    setShouldFollowOutput(!skipInitialScroll)
     prevItemCountRef.current = 0
     prevFirstKeyRef.current = null
     hasSettledRef.current = false
-  }, [resetKey])
+  }, [resetKey, skipInitialScroll])
 
   // Detect prepends synchronously during render. This runs in the same
   // render pass where data changes, so Virtuoso receives the updated
