@@ -702,8 +702,8 @@ function VirtuosoMessageList({
   const shouldFollowRef = useRef(shouldFollowOutput)
   shouldFollowRef.current = shouldFollowOutput
 
-  const followOutput = useCallback((isAtBottom: boolean) => {
-    if (shouldFollowRef.current && isAtBottom) return "auto"
+  const followOutput = useCallback((_isAtBottom: boolean) => {
+    if (shouldFollowRef.current) return "auto"
     return false
   }, [])
 
@@ -774,12 +774,13 @@ function VirtuosoMessageList({
         virtuosoScrollerRef.current = ref as HTMLDivElement | null
         handleScrollerRef(ref)
       }}
-      className={cn("h-full overflow-x-hidden overscroll-y-contain", isSearchOpen && "pt-11")}
-      style={{ overflowAnchor: "none" }}
+      className={cn("h-full", isSearchOpen && "pt-11")}
       data-suppress-pull-refresh="true"
       firstItemIndex={firstItemIndex}
       initialTopMostItemIndex={initialTopMostItemIndex}
       data={visibleItems}
+      defaultItemHeight={80}
+      skipAnimationFrameInResizeObserver
       itemContent={itemContent}
       followOutput={followOutput}
       atBottomStateChange={handleAtBottomChange}

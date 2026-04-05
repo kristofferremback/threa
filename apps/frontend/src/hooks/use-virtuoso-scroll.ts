@@ -125,8 +125,8 @@ export function useVirtuosoScroll({
 
   const handleAtBottomChange = useCallback((atBottom: boolean) => {
     isAtBottomRef.current = atBottom
+    setShouldFollowOutput(atBottom)
     if (atBottom) {
-      setShouldFollowOutput(true)
       setIsScrolledFarFromBottom(false)
     }
   }, [])
@@ -146,7 +146,14 @@ export function useVirtuosoScroll({
   const resizeTimerRef = useRef<number | undefined>(undefined)
 
   const handleScrollerRef = useCallback((ref: HTMLElement | Window | null) => {
-    scrollerRef.current = ref as HTMLElement | null
+    const el = ref as HTMLElement | null
+    scrollerRef.current = el
+    // Apply scroll-related CSS to Virtuoso's actual scroller element (not the outer wrapper)
+    if (el) {
+      el.style.overflowX = "hidden"
+      el.style.overscrollBehaviorY = "contain"
+      el.style.overflowAnchor = "none"
+    }
   }, [])
 
   useEffect(() => {
