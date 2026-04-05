@@ -34,6 +34,15 @@ export interface BatchLeaseTokensParams {
   now: Date
   limit: number
   queueNames: string[] // Only lease tokens for these queues
+  /**
+   * Fairness mode:
+   * - "workspace" (default) leases one token per (queue_name, workspace_id) pair,
+   *   preventing a single workspace from starving others.
+   * - "none" leases one token per queue_name, letting a single workspace use
+   *   the full tier budget. Correct when the caller filters queueNames to
+   *   queues that declare `fairness: "none"`.
+   */
+  fairnessMode?: "workspace" | "none"
 }
 
 // Renew lease params
@@ -91,77 +100,155 @@ export const TokenPoolRepository = {
    * pending_count into multiple tokens.
    */
   async batchLeaseTokens(db: Querier, params: BatchLeaseTokensParams): Promise<QueueToken[]> {
+    const fairnessMode = params.fairnessMode ?? "workspace"
+
     // Pre-generate ULIDs (INV-2: all entity IDs must be prefix_ulid)
     // Generate limit ULIDs upfront, actual usage will be limited by available pairs
     const tokenIds = Array.from({ length: params.limit }, () => tokenId())
 
-    const result = await db.query<QueueTokenRow>(
-      sql`
-        WITH available_pairs AS (
-          SELECT
-            queue_name,
-            workspace_id,
-            MIN(process_after) AS next_process_after,
-            COUNT(*) AS pending_count
-          FROM queue_messages
-          WHERE process_after <= ${params.now}
-            AND dlq_at IS NULL
-            AND completed_at IS NULL
-            AND (claimed_until IS NULL OR claimed_until < ${params.now})
-            AND queue_name = ANY(${params.queueNames})
-          GROUP BY queue_name, workspace_id
-        ),
-        pairs_without_tokens AS (
-          -- Exclude pairs that already have active tokens
-          -- Use LEFT JOIN instead of NOT EXISTS for better performance
-          SELECT
-            ap.queue_name,
-            ap.workspace_id,
-            ap.next_process_after,
-            ap.pending_count
-          FROM available_pairs ap
-          LEFT JOIN queue_tokens qt ON
-            qt.queue_name = ap.queue_name
-            AND qt.workspace_id = ap.workspace_id
-            AND qt.leased_until > ${params.now}
-          WHERE qt.id IS NULL
-        ),
-        selected_pairs AS (
-          SELECT
-            queue_name,
-            workspace_id,
-            next_process_after,
-            pending_count,
-            ROW_NUMBER() OVER (ORDER BY next_process_after ASC) AS rn
-          FROM pairs_without_tokens
-          ORDER BY next_process_after ASC
-          LIMIT ${params.limit}
-        ),
-        token_ids AS (
-          SELECT
-            id,
-            ROW_NUMBER() OVER () AS rn
-          FROM unnest(${tokenIds}::text[]) AS id
-        )
-        INSERT INTO queue_tokens (
-          id, queue_name, workspace_id,
-          leased_at, leased_by, leased_until,
-          next_process_after, created_at
-        )
-        SELECT
-          t.id,
-          sp.queue_name,
-          sp.workspace_id,
-          ${params.leasedAt},
-          ${params.leasedBy},
-          ${params.leasedUntil},
-          sp.next_process_after,
-          ${params.leasedAt}
-        FROM selected_pairs sp
-        JOIN token_ids t ON t.rn = sp.rn
-        RETURNING ${SELECT_FIELDS}
-      `
-    )
+    // Two query shapes, one per fairness mode. We keep them as separate
+    // tagged-template SQL literals because squid's `sql` tag returns a
+    // QueryConfig (not a composable fragment), so interpolating one sql block
+    // inside another would stringify the object.
+    //
+    // - "workspace": preserves the pre-existing behaviour — at most one active
+    //   token per (queue_name, workspace_id) pair. Prevents a noisy workspace
+    //   from starving others on the same instance.
+    // - "none":      expands each pair into up to `pending_count` slots so a
+    //   single workspace burst can consume the full tier budget. Concurrent
+    //   claims are made race-safe by batchClaimMessages' FOR UPDATE SKIP LOCKED.
+    const result =
+      fairnessMode === "workspace"
+        ? await db.query<QueueTokenRow>(
+            sql`
+              WITH available_pairs AS (
+                SELECT
+                  queue_name,
+                  workspace_id,
+                  MIN(process_after) AS next_process_after,
+                  COUNT(*) AS pending_count
+                FROM queue_messages
+                WHERE process_after <= ${params.now}
+                  AND dlq_at IS NULL
+                  AND completed_at IS NULL
+                  AND (claimed_until IS NULL OR claimed_until < ${params.now})
+                  AND queue_name = ANY(${params.queueNames})
+                GROUP BY queue_name, workspace_id
+              ),
+              pairs_without_tokens AS (
+                -- Exclude pairs that already have active tokens
+                SELECT
+                  ap.queue_name,
+                  ap.workspace_id,
+                  ap.next_process_after,
+                  ap.pending_count
+                FROM available_pairs ap
+                LEFT JOIN queue_tokens qt ON
+                  qt.queue_name = ap.queue_name
+                  AND qt.workspace_id = ap.workspace_id
+                  AND qt.leased_until > ${params.now}
+                WHERE qt.id IS NULL
+              ),
+              selected_pairs AS (
+                SELECT
+                  queue_name,
+                  workspace_id,
+                  next_process_after,
+                  ROW_NUMBER() OVER (ORDER BY next_process_after ASC) AS rn
+                FROM pairs_without_tokens
+                ORDER BY next_process_after ASC
+                LIMIT ${params.limit}
+              ),
+              token_ids AS (
+                SELECT
+                  id,
+                  ROW_NUMBER() OVER () AS rn
+                FROM unnest(${tokenIds}::text[]) AS id
+              )
+              INSERT INTO queue_tokens (
+                id, queue_name, workspace_id,
+                leased_at, leased_by, leased_until,
+                next_process_after, created_at
+              )
+              SELECT
+                t.id,
+                sp.queue_name,
+                sp.workspace_id,
+                ${params.leasedAt},
+                ${params.leasedBy},
+                ${params.leasedUntil},
+                sp.next_process_after,
+                ${params.leasedAt}
+              FROM selected_pairs sp
+              JOIN token_ids t ON t.rn = sp.rn
+              RETURNING ${SELECT_FIELDS}
+            `
+          )
+        : await db.query<QueueTokenRow>(
+            sql`
+              WITH available_pairs AS (
+                SELECT
+                  queue_name,
+                  workspace_id,
+                  MIN(process_after) AS next_process_after,
+                  COUNT(*) AS pending_count
+                FROM queue_messages
+                WHERE process_after <= ${params.now}
+                  AND dlq_at IS NULL
+                  AND completed_at IS NULL
+                  AND (claimed_until IS NULL OR claimed_until < ${params.now})
+                  AND queue_name = ANY(${params.queueNames})
+                GROUP BY queue_name, workspace_id
+              ),
+              expanded_slots AS (
+                -- Expand each pair into up to pending_count slots so a
+                -- single workspace can claim multiple concurrent tokens.
+                SELECT
+                  ap.queue_name,
+                  ap.workspace_id,
+                  ap.next_process_after,
+                  generate_series(1, LEAST(ap.pending_count::int, ${params.limit}::int)) AS slot_num
+                FROM available_pairs ap
+              ),
+              selected_pairs AS (
+                -- Interleave: take slot 1 of every pair (oldest first), then
+                -- slot 2 of every pair, etc. This prevents one workspace with
+                -- a lot of pending work from starving another workspace that
+                -- also has work ready under fairness=none.
+                SELECT
+                  queue_name,
+                  workspace_id,
+                  next_process_after,
+                  ROW_NUMBER() OVER (ORDER BY slot_num ASC, next_process_after ASC) AS rn
+                FROM expanded_slots
+                ORDER BY slot_num ASC, next_process_after ASC
+                LIMIT ${params.limit}
+              ),
+              token_ids AS (
+                SELECT
+                  id,
+                  ROW_NUMBER() OVER () AS rn
+                FROM unnest(${tokenIds}::text[]) AS id
+              )
+              INSERT INTO queue_tokens (
+                id, queue_name, workspace_id,
+                leased_at, leased_by, leased_until,
+                next_process_after, created_at
+              )
+              SELECT
+                t.id,
+                sp.queue_name,
+                sp.workspace_id,
+                ${params.leasedAt},
+                ${params.leasedBy},
+                ${params.leasedUntil},
+                sp.next_process_after,
+                ${params.leasedAt}
+              FROM selected_pairs sp
+              JOIN token_ids t ON t.rn = sp.rn
+              RETURNING ${SELECT_FIELDS}
+            `
+          )
 
     return result.rows.map(mapRowToToken)
   },

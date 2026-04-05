@@ -1,6 +1,10 @@
-export { QueueManager, type QueueManagerConfig } from "./manager"
+export { QueueManager, type QueueManagerConfig, type TierConfig } from "./manager"
 export {
   JobQueues,
+  QueueTiers,
+  QueueFairness,
+  type QueueTier,
+  type QueueFairnessMode,
   type Job,
   type JobQueueName,
   type JobDataMap,

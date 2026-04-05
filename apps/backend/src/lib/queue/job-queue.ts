@@ -219,8 +219,48 @@ export interface HandlerHooks<T> {
 }
 
 /**
+ * Tiers group queues by how they share a concurrency budget.
+ *
+ * - `interactive` — user-facing work that should run as soon as possible
+ *   (persona.agent responses, slash commands). Highest default parallelism.
+ * - `light` — fast background jobs that don't block on LLMs or large IO
+ *   (naming, embeddings, link previews, avatar processing). High parallelism.
+ * - `heavy` — slow, IO-bound or CPU-bound jobs (PDF/doc/image processing,
+ *   batched memo extraction). Capped low so they can't monopolize DB pool
+ *   connections or the event loop while interactive work is waiting.
+ */
+export const QueueTiers = {
+  INTERACTIVE: "interactive",
+  LIGHT: "light",
+  HEAVY: "heavy",
+} as const
+
+export type QueueTier = (typeof QueueTiers)[keyof typeof QueueTiers]
+
+/**
+ * Fairness policy for token leasing.
+ *
+ * - `none` — tokens lease one per `queue_name`, so a single workspace can
+ *   use the full tier budget for that queue. Correct default because region-
+ *   level sharding already isolates tenants.
+ * - `workspace` — tokens lease one per `(queue_name, workspace_id)` pair,
+ *   preventing one workspace from starving others on the same instance.
+ *   Use for queues that could be abused by a single workspace.
+ */
+export const QueueFairness = {
+  NONE: "none",
+  WORKSPACE: "workspace",
+} as const
+
+export type QueueFairnessMode = (typeof QueueFairness)[keyof typeof QueueFairness]
+
+/**
  * Options for registering a job handler.
  */
 export interface HandlerOptions<T> {
   hooks?: HandlerHooks<T>
+  /** Tier controlling which concurrency budget this queue draws from. */
+  tier?: QueueTier
+  /** Fairness policy for leasing tokens (default: none). */
+  fairness?: QueueFairnessMode
 }
