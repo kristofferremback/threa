@@ -393,7 +393,7 @@ function SentMessageEvent({
       to={draftPanelUrl}
       className={cn(
         "text-muted-foreground hover:text-foreground hover:underline transition-opacity",
-        !activityLabel && "opacity-0 group-hover:opacity-100 max-sm:opacity-100"
+        !activityLabel && "opacity-0 group-hover:opacity-100"
       )}
     >
       Reply in thread
