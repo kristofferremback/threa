@@ -178,6 +178,9 @@ function MessageLayout({
       {...touchHandlers}
       className={cn(
         "message-item group relative flex gap-[14px] pb-5 px-3 sm:px-6",
+        // User/regular messages need explicit top padding to look balanced;
+        // persona/bot/system variants below supply their own symmetric py-4.
+        !isPersona && !isBot && !isSystem && "pt-5",
         // AI/Persona messages get full-width gradient with gold accent
         isPersona &&
           "bg-gradient-to-r from-primary/[0.06] to-transparent py-4 shadow-[inset_3px_0_0_hsl(var(--primary))]",
