@@ -71,9 +71,9 @@ interface CoordinatedLoadingProviderProps {
 }
 
 /**
- * Delay before any loading skeleton becomes visible. Shared by the global
- * initial-load gate in this file and the per-stream skeleton in
- * VirtuosoMessageList so fast switches never flash a skeleton.
+ * Delay before the loading skeleton becomes visible in the global
+ * initial-load gate (`CoordinatedLoadingProvider`) so fast switches
+ * never flash a skeleton.
  */
 export const LOADING_DELAY_MS = 300
 
