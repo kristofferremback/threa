@@ -246,6 +246,7 @@ export function StreamContent({
     disableAutoScroll: virtualDisableAutoScroll,
     handleAtBottomChange,
     handleRangeChanged,
+    handleScrollerRef,
   } = useVirtuosoScroll({
     itemCount: useVirtualized ? visibleItems.length : 0,
     getItemKey: useVirtualized ? getItemKey : () => "0",
@@ -279,6 +280,26 @@ export function StreamContent({
   const scrollToBottom = useVirtualized ? virtualScrollToBottom : plainScrollToBottom
   const disableAutoScroll = useVirtualized ? virtualDisableAutoScroll : plainDisableAutoScroll
 
+  // Scroll to a specific message by finding its index in visibleItems and
+  // using Virtuoso's scrollToIndex. Returns true if the message was found.
+  const scrollToMessage = useCallback(
+    (messageId: string) => {
+      if (!useVirtualized) return false
+      const idx = visibleItems.findIndex((item) => {
+        if (item.type !== "event") return false
+        return (item.event.payload as { messageId?: string })?.messageId === messageId
+      })
+      if (idx < 0) return false
+      virtuosoRef.current?.scrollToIndex({ index: firstItemIndex + idx, align: "center" })
+      return true
+    },
+    [useVirtualized, visibleItems, firstItemIndex, virtuosoRef]
+  )
+
+  // After jumpToEvent loads events around a target, scroll to it once the
+  // events array updates and the target is present.
+  const pendingScrollTarget = useRef<string | null>(null)
+
   // When a search result is selected, navigate to that message.
   // If the message is already in the loaded events, just scroll to it in the DOM —
   // don't call jumpToEvent which loads a new event window and disrupts scroll position.
@@ -291,27 +312,17 @@ export function StreamContent({
       })
 
       if (isInCurrentEvents) {
-        // Message is loaded. If it's in the DOM, the useSearchHighlight hook
-        // scrolls the active range into view. If it's outside the virtualizer's
-        // rendered window, scroll it to make the item visible first.
-        const el = document.querySelector(`[data-message-id="${CSS.escape(messageId)}"]`)
-        if (!el && useVirtualized) {
-          const idx = visibleItems.findIndex((item) => {
-            if (item.type !== "event") return false
-            return (item.event.payload as { messageId?: string })?.messageId === messageId
-          })
-          if (idx >= 0) {
-            virtuosoRef.current?.scrollToIndex({ index: firstItemIndex + idx, align: "center" })
-          }
-        }
+        // Message is loaded — scroll to it (handles both in-DOM and virtualized-out items)
+        scrollToMessage(messageId)
         return
       }
 
-      // Message not in current window — load events around it
+      // Message not in current window — load events around it, then scroll after load
       disableAutoScroll()
+      pendingScrollTarget.current = messageId
       jumpToEvent(messageId)
     },
-    [events, jumpToEvent, disableAutoScroll]
+    [events, jumpToEvent, disableAutoScroll, scrollToMessage]
   )
 
   // Highlight search matches in the DOM via CSS Custom Highlight API
@@ -321,6 +332,19 @@ export function StreamContent({
     streamSearch.activeMessageId,
     streamSearch.activeOccurrence
   )
+  useEffect(() => {
+    if (!pendingScrollTarget.current || isLoading) return
+    const target = pendingScrollTarget.current
+    const found = events.some((e) => {
+      const payload = e.payload as { messageId?: string }
+      return payload?.messageId === target
+    })
+    if (found) {
+      // Allow one frame for Virtuoso to process the new data before scrolling
+      requestAnimationFrame(() => scrollToMessage(target))
+      pendingScrollTarget.current = null
+    }
+  }, [events, isLoading, scrollToMessage])
 
   // Jump to highlighted message if it's not in the current event window
   useEffect(() => {
@@ -336,19 +360,27 @@ export function StreamContent({
       return payload?.messageId === highlightMessageId
     })
 
-    if (!isVisible && events.length > 0) {
+    if (isVisible) {
+      scrollToMessage(highlightMessageId)
+      return
+    }
+
+    if (events.length > 0) {
       jumpTriggeredRef.current = highlightMessageId
-      // Use the messageId directly — the backend resolves it to the corresponding event
+      pendingScrollTarget.current = highlightMessageId
       jumpToEvent(highlightMessageId)
         .then((success) => {
-          if (!success) jumpTriggeredRef.current = null
+          if (!success) {
+            jumpTriggeredRef.current = null
+            pendingScrollTarget.current = null
+          }
         })
         .catch(() => {
-          // Reset so the user can retry (e.g. on reconnect)
           jumpTriggeredRef.current = null
+          pendingScrollTarget.current = null
         })
     }
-  }, [highlightMessageId, isLoading, isDraft, events, jumpToEvent, disableAutoScroll])
+  }, [highlightMessageId, isLoading, isDraft, events, jumpToEvent, disableAutoScroll, scrollToMessage])
 
   // Reset jump and search state when switching streams (component stays mounted)
   useEffect(() => {
@@ -452,6 +484,7 @@ export function StreamContent({
                 isLoading={isLoading}
                 virtuosoRef={virtuosoRef}
                 virtuosoScrollerRef={virtuosoScrollerRef}
+                handleScrollerRef={handleScrollerRef}
                 firstItemIndex={firstItemIndex}
                 initialTopMostItemIndex={initialTopMostItemIndex}
                 shouldFollowOutput={shouldFollowOutput}
@@ -575,6 +608,7 @@ function VirtuosoMessageList({
   isLoading,
   virtuosoRef,
   virtuosoScrollerRef,
+  handleScrollerRef,
   firstItemIndex,
   initialTopMostItemIndex,
   shouldFollowOutput,
@@ -600,6 +634,7 @@ function VirtuosoMessageList({
   isLoading: boolean
   virtuosoRef: React.RefObject<import("react-virtuoso").VirtuosoHandle | null>
   virtuosoScrollerRef: React.MutableRefObject<HTMLDivElement | null>
+  handleScrollerRef: (ref: HTMLElement | Window | null) => void
   firstItemIndex: number
   initialTopMostItemIndex: import("react-virtuoso").IndexLocationWithAlign | number | undefined
   shouldFollowOutput: boolean
@@ -668,7 +703,7 @@ function VirtuosoMessageList({
   shouldFollowRef.current = shouldFollowOutput
 
   const followOutput = useCallback((isAtBottom: boolean) => {
-    if (shouldFollowRef.current && isAtBottom) return "smooth"
+    if (shouldFollowRef.current && isAtBottom) return "auto"
     return false
   }, [])
 
@@ -737,6 +772,7 @@ function VirtuosoMessageList({
       ref={virtuosoRef}
       scrollerRef={(ref) => {
         virtuosoScrollerRef.current = ref as HTMLDivElement | null
+        handleScrollerRef(ref)
       }}
       className={cn("h-full overflow-x-hidden overscroll-y-contain", isSearchOpen && "pt-11")}
       style={{ overflowAnchor: "none" }}
@@ -750,7 +786,7 @@ function VirtuosoMessageList({
       rangeChanged={handleRangeChanged}
       startReached={handleStartReached}
       endReached={handleEndReached}
-      atBottomThreshold={100}
+      atBottomThreshold={30}
       increaseViewportBy={{ top: 600, bottom: 600 }}
       context={{ isFetchingOlder, isFetchingNewer }}
       components={VIRTUOSO_COMPONENTS}
