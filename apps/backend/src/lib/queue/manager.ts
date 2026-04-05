@@ -213,14 +213,20 @@ export class QueueManager {
    * Build per-tier runtime state from registered handlers. Called once at
    * start() so every handler registration is accounted for.
    *
-   * Queues in the same tier share a concurrency budget but can have different
-   * fairness modes. When they do, the tier is split into sub-buckets per
-   * fairness mode so each sub-bucket can use the correct lease query.
+   * Queues in the same tier can have different fairness modes. When they do,
+   * the tier is split into sub-buckets per fairness mode so each sub-bucket
+   * can use the correct lease query. Each sub-bucket gets the **full** tier
+   * budget — splitting the budget evenly would starve one sub-bucket under
+   * single-mode bursts (e.g. with heavy budget=3 and memo(workspace) +
+   * pdf/image(none), the larger group of queues would only get 1–2 slots).
+   *
+   * Consequence: a tier with mixed fairness can temporarily exceed its
+   * configured budget (at most N× where N = number of sub-buckets). In
+   * practice the sub-buckets rarely saturate simultaneously, and the
+   * alternative (strict split) has a worse failure mode. Tune per-tier
+   * budgets lower if you rely on mixed fairness.
    */
   private buildTierState(): void {
-    // Group queue names by (tier, fairness). Fairness groups within a tier
-    // share the tier's budget proportionally via separate runtime states —
-    // this keeps the lease query simple (one fairness mode per call).
     const groups = new Map<string, { tier: QueueTier; fairness: QueueFairnessMode; queueNames: string[] }>()
     for (const queueName of this.handlers.keys()) {
       const tier = this.handlerTiers.get(queueName) ?? DEFAULT_TIER
@@ -234,22 +240,12 @@ export class QueueManager {
       }
     }
 
-    // If a tier has multiple fairness groups, split the tier budget evenly
-    // between them (round up, minimum 1). This is a pragmatic default — in
-    // practice the expectation is that a tier uses one fairness mode.
-    const tierGroupCount = new Map<QueueTier, number>()
-    for (const { tier } of groups.values()) {
-      tierGroupCount.set(tier, (tierGroupCount.get(tier) ?? 0) + 1)
-    }
-
     this.tierState.clear()
     for (const [key, group] of groups) {
       const tierBudget = this.tierBudgets[group.tier] ?? this.legacyTierBudget
-      const splits = tierGroupCount.get(group.tier) ?? 1
-      const perGroupBudget = Math.max(1, Math.ceil(tierBudget / splits))
       this.tierState.set(key, {
         tier: group.tier,
-        budget: perGroupBudget,
+        budget: tierBudget,
         fairness: group.fairness,
         queueNames: group.queueNames,
         activeTokens: new Map(),
@@ -449,7 +445,17 @@ export class QueueManager {
     }
 
     // Fetch initial tokens and start processing for each tier in parallel.
-    await Promise.all(Array.from(this.tierState.values()).map((state) => this.fillSlots(state)))
+    // Use allSettled so a transient lease failure in one tier doesn't abort
+    // the cycle for other tiers — interactive work should keep draining even
+    // if the heavy tier's lease query hiccups.
+    const fillResults = await Promise.allSettled(
+      Array.from(this.tierState.values()).map((state) => this.fillSlots(state))
+    )
+    for (const result of fillResults) {
+      if (result.status === "rejected") {
+        logger.error({ err: result.reason }, "Tier fillSlots failed during cycle start")
+      }
+    }
 
     // Process cron ticks (runs in parallel with token processing)
     await this.processCronTicks()

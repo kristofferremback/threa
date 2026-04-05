@@ -541,6 +541,11 @@ describe("QueueManager", () => {
         tokenPoolRepository: TokenPoolRepository,
         pollIntervalMs: 50,
         lockDurationMs: 10_000,
+        // claimBatchSize=1 forces each token to claim exactly one message, so
+        // tier budget (tokens in flight) equals concurrent handler count —
+        // otherwise one token could claim all messages and hide the tier
+        // parallelism we're trying to exercise.
+        claimBatchSize: 1,
         processingConcurrency: 1,
         tiers: {
           interactive: { maxActiveTokens: 3 },
@@ -595,8 +600,10 @@ describe("QueueManager", () => {
 
         // Heavy tier should never exceed its budget (2).
         expect(heavyPeak).toBeLessThanOrEqual(2)
-        // Interactive tier should have used its budget (>= 1 at some point).
-        expect(interactivePeak).toBeGreaterThanOrEqual(1)
+        // Interactive tier should actually use parallelism — with 5 jobs and
+        // a budget of 3, we expect at least 2 concurrent handlers at some
+        // point, proving the tiers drain independently of blocked heavy work.
+        expect(interactivePeak).toBeGreaterThanOrEqual(2)
       } finally {
         releaseHeavy()
         await manager.stop()

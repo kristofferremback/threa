@@ -211,13 +211,17 @@ export const TokenPoolRepository = {
                 FROM available_pairs ap
               ),
               selected_pairs AS (
+                -- Interleave: take slot 1 of every pair (oldest first), then
+                -- slot 2 of every pair, etc. This prevents one workspace with
+                -- a lot of pending work from starving another workspace that
+                -- also has work ready under fairness=none.
                 SELECT
                   queue_name,
                   workspace_id,
                   next_process_after,
-                  ROW_NUMBER() OVER (ORDER BY next_process_after ASC, slot_num ASC) AS rn
+                  ROW_NUMBER() OVER (ORDER BY slot_num ASC, next_process_after ASC) AS rn
                 FROM expanded_slots
-                ORDER BY next_process_after ASC, slot_num ASC
+                ORDER BY slot_num ASC, next_process_after ASC
                 LIMIT ${params.limit}
               ),
               token_ids AS (

@@ -85,22 +85,36 @@ export class PushNotificationHandler implements OutboxHandler {
       // network I/O (webpush.sendNotification) and must not serialize across events,
       // otherwise a single slow device blocks the whole batch.
       //
-      // We mark every event processed regardless of individual delivery success —
-      // push is best-effort, and we don't want to retry the whole cursor batch just
-      // because one device's webpush call failed. Per-device failures are handled
-      // inside PushService (stale subscription eviction).
+      // Per-device webpush failures (expired endpoint, etc.) are handled inside
+      // PushService (stale subscription eviction) and never reach here as thrown
+      // errors. An error escaping deliverEvent means a DB/lookup failure — in
+      // that case we mark the successfully-delivered events as processed but
+      // return an error status so CursorLock backs off and retries the failed
+      // events on the next run. Fulfilled events stay in the sliding window
+      // and won't be re-fetched.
       const results = await Promise.allSettled(events.map((event) => this.deliverEvent(event)))
 
+      const delivered: bigint[] = []
+      let firstError: Error | null = null
       for (const [index, result] of results.entries()) {
-        if (result.status === "rejected") {
-          logger.warn(
-            { eventId: events[index].id, eventType: events[index].eventType, err: result.reason },
-            "Push delivery failed for event"
-          )
+        if (result.status === "fulfilled") {
+          delivered.push(events[index].id)
+          continue
         }
+        const reason = result.reason
+        const error = reason instanceof Error ? reason : new Error(String(reason))
+        if (!firstError) firstError = error
+        logger.warn(
+          { eventId: events[index].id, eventType: events[index].eventType, err: error },
+          "Push delivery failed for event"
+        )
       }
 
-      return { status: "processed", processedIds: events.map((e) => e.id) }
+      if (firstError) {
+        return { status: "error", error: firstError, processedIds: delivered }
+      }
+
+      return { status: "processed", processedIds: delivered }
     })
   }
 
