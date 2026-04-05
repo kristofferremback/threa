@@ -18,7 +18,6 @@ import { PersonaAvatar } from "@/components/persona-avatar"
 import { usePendingMessages, usePanel, createDraftPanelId, useTrace, useMessageService } from "@/contexts"
 import { useUserProfile } from "@/components/user-profile"
 import { useEditLastMessage } from "./edit-last-message-context"
-import { useInlineEdit } from "./inline-edit-context"
 import {
   useActors,
   useWorkspaceUserId,
@@ -319,7 +318,6 @@ function SentMessageEvent({
 
   // Mobile: long-press opens action drawer instead of dropdown
   const isMobile = useIsMobile()
-  const inlineEdit = useInlineEdit()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const openDrawer = useCallback(() => setDrawerOpen(true), [])
   const longPress = useLongPress({
@@ -329,31 +327,17 @@ function SentMessageEvent({
 
   const startEditing = useCallback(() => {
     setIsEditing(true)
-    if (isMobile) {
-      inlineEdit?.setEditingInline(true)
-    }
-  }, [isMobile, inlineEdit])
+  }, [])
 
-  // Reset inline edit context if the message unmounts while being edited
-  // (e.g., message deleted by another user mid-edit)
-  useEffect(() => {
-    return () => {
-      if (isEditing && isMobile) {
-        inlineEdit?.setEditingInline(false)
-      }
-    }
-  }, [isEditing, isMobile, inlineEdit])
-
-  // Restore focus to the zone's editor after exiting inline edit mode
+  // Restore focus to the zone's editor after exiting inline edit mode.
+  // The mobile "hide main composer" flag is owned by MessageEditForm via
+  // useInlineEditRegistration, so there is nothing to clear here.
   const stopEditing = useCallback(() => {
     const zone = containerRef.current?.closest<HTMLElement>("[data-editor-zone]") ?? null
     setIsEditing(false)
-    if (isMobile) {
-      inlineEdit?.setEditingInline(false)
-      return
-    }
+    if (isMobile) return
     requestAnimationFrame(() => focusVisibleZoneEditor(zone))
-  }, [isMobile, inlineEdit])
+  }, [isMobile])
 
   // Register this message's edit handler with the context so the composer's ArrowUp trigger
   // can imperatively open edit mode and scroll into view. Unregistered on unmount.

@@ -1,8 +1,13 @@
-import { createContext, useContext, useState, useCallback, useMemo, useEffect } from "react"
+import { createContext, useContext, useState, useCallback, useMemo, useEffect, useRef } from "react"
 
 interface InlineEditContextValue {
   isEditingInline: boolean
-  setEditingInline: (editing: boolean) => void
+  /**
+   * Register a mounted inline edit surface. Returns a disposer that must be
+   * called when the surface unmounts. Prefer `useInlineEditRegistration`,
+   * which wraps this in a `useEffect` so callers cannot leak the flag.
+   */
+  registerInlineEdit: () => () => void
 }
 
 const InlineEditContext = createContext<InlineEditContextValue | null>(null)
@@ -11,42 +16,70 @@ export function useInlineEdit() {
   return useContext(InlineEditContext)
 }
 
+/**
+ * Mark this component as a mounted inline edit surface while `active` is true.
+ * The context counts active surfaces, so the flag is automatically released on
+ * unmount or when `active` flips to false — there is no way to leak it.
+ */
+export function useInlineEditRegistration(active: boolean) {
+  const ctx = useInlineEdit()
+  const register = ctx?.registerInlineEdit
+  useEffect(() => {
+    if (!active || !register) return
+    const dispose = register()
+    return dispose
+    // Depend only on `active` and the stable registrar — NOT on the context
+    // value object, whose identity changes on every count update and would
+    // cause a cleanup/re-register feedback loop.
+  }, [active, register])
+}
+
 export function InlineEditProvider({
   children,
   resetKey,
 }: {
   children: React.ReactNode
-  /** When this key changes, inline edit state resets (e.g. stream navigation). */
+  /** When this key changes, inline edit count resets (e.g. stream navigation). */
   resetKey?: string
 }) {
-  const [isEditingInline, setIsEditingInline] = useState(false)
+  const [count, setCount] = useState(0)
+  // Mirror the state in a ref so register/dispose callbacks never capture a
+  // stale count and can remain referentially stable.
+  const countRef = useRef(0)
 
-  // Reset when switching streams so a stuck flag from one stream
-  // doesn't hide the input on the next stream.
+  const registerInlineEdit = useCallback(() => {
+    countRef.current += 1
+    setCount(countRef.current)
+    let disposed = false
+    return () => {
+      if (disposed) return
+      disposed = true
+      countRef.current = Math.max(0, countRef.current - 1)
+      setCount(countRef.current)
+    }
+  }, [])
+
+  // Safety net: on stream navigation, force the count back to zero. With
+  // ref-counting this should already be true (every MessageEditForm that
+  // was mounted on the old stream unmounts and releases its registration),
+  // but we keep the reset as defense-in-depth against future misuse.
+  //
+  // Skip the initial mount: child effects run before parent effects, so any
+  // surface that registered during the same commit would be clobbered.
+  const mountedRef = useRef(false)
   useEffect(() => {
-    setIsEditingInline(false)
+    if (!mountedRef.current) {
+      mountedRef.current = true
+      return
+    }
+    countRef.current = 0
+    setCount(0)
   }, [resetKey])
 
-  // Reset inline edit state when the page becomes visible again (e.g. after
-  // switching apps on mobile). The edit sheet/drawer may have closed while
-  // the page was hidden, leaving the flag stuck and the message input hidden.
-  // Empty deps: setIsEditingInline is a stable state setter, and calling it
-  // with false when already false is a React no-op.
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        setIsEditingInline(false)
-      }
-    }
-    document.addEventListener("visibilitychange", handleVisibilityChange)
-    return () => document.removeEventListener("visibilitychange", handleVisibilityChange)
-  }, [])
-
-  const setEditingInline = useCallback((editing: boolean) => {
-    setIsEditingInline(editing)
-  }, [])
-
-  const value = useMemo(() => ({ isEditingInline, setEditingInline }), [isEditingInline, setEditingInline])
+  const value = useMemo<InlineEditContextValue>(
+    () => ({ isEditingInline: count > 0, registerInlineEdit }),
+    [count, registerInlineEdit]
+  )
 
   return <InlineEditContext.Provider value={value}>{children}</InlineEditContext.Provider>
 }
