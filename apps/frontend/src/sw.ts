@@ -18,9 +18,25 @@ interface ExtendedNotificationOptions extends NotificationOptions {
 }
 
 // Activate new service worker immediately so users get fresh code
-// without needing to close all tabs (pairs with registerType: "autoUpdate")
+// without needing to close all tabs.
 self.addEventListener("install", () => self.skipWaiting())
-self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()))
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    (async () => {
+      // Clean stale caches from previous SW versions. Keep only the current
+      // workbox precache, push-bootstrap, and share-target caches. Without this,
+      // old precache buckets linger and can serve stale HTML/CSS after an update.
+      const currentCaches = new Set([PUSH_BOOTSTRAP_CACHE, SHARE_TARGET_CACHE])
+      const allCaches = await caches.keys()
+      await Promise.all(
+        allCaches
+          .filter((name) => !currentCaches.has(name) && !name.startsWith("workbox-precache-"))
+          .map((name) => caches.delete(name))
+      )
+      await self.clients.claim()
+    })()
+  )
+})
 
 // Precache app shell assets injected by vite-plugin-pwa
 precacheAndRoute(self.__WB_MANIFEST)

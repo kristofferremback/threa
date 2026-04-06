@@ -21,6 +21,15 @@ navigator.serviceWorker?.addEventListener("message", (event) => {
   }
 })
 
+// Register the service worker with updateViaCache: 'none' so the browser always
+// byte-checks sw.js against the network instead of using the HTTP cache. This
+// prevents stale SW scripts from keeping old precache manifests alive indefinitely.
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js", { scope: "/", updateViaCache: "none" }).catch(() => {})
+  })
+}
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <App />

@@ -7,6 +7,28 @@ const POLL_INTERVAL = 300_000 // 5 minutes
 const TOAST_ID = "app-update"
 const IS_DEV = import.meta.env.DEV
 
+/**
+ * Tell the browser to check for a new service worker. The SW's install handler
+ * calls skipWaiting() unconditionally, so it activates immediately — no need
+ * to post a message or check registration.waiting.
+ */
+async function triggerSwUpdate(): Promise<void> {
+  const registration = await navigator.serviceWorker?.getRegistration()
+  if (!registration) return
+  await registration.update()
+}
+
+/**
+ * Reload the page to pick up the new service worker's precached assets.
+ * By the time this runs, triggerSwUpdate() has already activated the new SW
+ * (which cleans stale caches on activate). A plain reload is enough — the new
+ * SW serves fresh assets from its precache. Clearing caches here would break
+ * offline refresh, so we intentionally leave them for the SW to manage.
+ */
+function reloadForUpdate(): void {
+  window.location.reload()
+}
+
 export function useAppUpdate(): void {
   const toastShownRef = useRef(false)
   const { isVisible } = usePageActivity()
@@ -16,6 +38,9 @@ export function useAppUpdate(): void {
     if (IS_DEV || toastShownRef.current) return
 
     try {
+      // Trigger SW update check in parallel with version check
+      triggerSwUpdate().catch(() => {})
+
       const res = await fetch("/version.json", { cache: "no-cache" })
       if (!res.ok) return
 
@@ -27,7 +52,7 @@ export function useAppUpdate(): void {
           duration: Infinity,
           action: {
             label: "Reload",
-            onClick: () => window.location.reload(),
+            onClick: () => reloadForUpdate(),
           },
         })
       }
