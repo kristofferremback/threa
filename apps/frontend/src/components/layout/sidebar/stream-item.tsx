@@ -185,7 +185,18 @@ export function StreamItem({
 
   const avatar = getAvatar()
   const name = getStreamName(stream) ?? streamFallbackLabel(stream.type, "sidebar")
-  const dmPeerAvatar = stream.type === StreamTypes.DM ? getActorAvatar(stream.dmPeerUserId ?? null, "user") : null
+  const dmPeerAvatar = (() => {
+    if (stream.type === StreamTypes.DM) {
+      return getActorAvatar(stream.dmPeerUserId ?? null, "user")
+    }
+    if (stream.type === StreamTypes.THREAD && stream.rootStreamId) {
+      const rootStream = allStreams.find((s) => s.id === stream.rootStreamId)
+      if (rootStream?.type === StreamTypes.DM && rootStream.dmPeerUserId) {
+        return getActorAvatar(rootStream.dmPeerUserId, "user")
+      }
+    }
+    return null
+  })()
 
   const threadRootContext = stream.type === StreamTypes.THREAD ? getThreadRootContext(stream, allStreams) : null
 
