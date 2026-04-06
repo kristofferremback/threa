@@ -36,11 +36,15 @@ export interface BatchLeaseTokensParams {
   queueNames: string[] // Only lease tokens for these queues
   /**
    * Fairness mode:
-   * - "workspace" (default) leases one token per (queue_name, workspace_id) pair,
-   *   preventing a single workspace from starving others.
-   * - "none" leases one token per queue_name, letting a single workspace use
-   *   the full tier budget. Correct when the caller filters queueNames to
-   *   queues that declare `fairness: "none"`.
+   * - "workspace" (default for this function) leases one token per
+   *   (queue_name, workspace_id) pair, preventing a single workspace from
+   *   starving others.
+   * - "none" allows multiple concurrent tokens per (queue_name, workspace_id)
+   *   pair, letting a single workspace use the full tier budget.
+   *
+   * Note: QueueManager always passes this explicitly based on handler
+   * registration (default there is `QueueFairness.NONE`). The repository
+   * default of "workspace" is a safety net for direct callers only.
    */
   fairnessMode?: "workspace" | "none"
 }

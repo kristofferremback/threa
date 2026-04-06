@@ -95,8 +95,10 @@ export interface DatabasePools {
  * - main (30): Handles concurrent HTTP requests, workers, and queue jobs
  * - listen (12): Currently 9 OutboxListeners + 3 headroom for reconnects
  * - realtime (8): Broadcast handler (fetchAfterId + cursor lock) + push handler
- *   (fetchAfterId + cursor lock + parallel webpush). ~4 conns per handler under
- *   burst + headroom.
+ *   (fetchAfterId + cursor lock + pLimit(4) parallel delivery) + socket.io
+ *   postgres adapter (1 persistent LISTEN + pg_notify publishes). Adapter
+ *   holds 1 slot permanently; push is capped at 4 concurrent; leaves headroom
+ *   for broadcast and pg_notify fan-out.
  */
 export function createDatabasePools(connectionString: string): DatabasePools {
   // Main pool for transactional work
@@ -110,9 +112,16 @@ export function createDatabasePools(connectionString: string): DatabasePools {
     idleTimeoutMillis: 60000,
   })
 
-  // Realtime pool reserved exclusively for broadcast + push outbox handlers.
-  // Sized small on purpose: these handlers only run short cursor/fetch queries,
-  // so a saturated main pool cannot delay message delivery.
+  // Realtime pool reserved for real-time delivery:
+  //   - BroadcastHandler (outbox fetch + cursor lock)
+  //   - PushNotificationHandler (outbox fetch + cursor lock + bounded delivery)
+  //   - PushService (subscription lookups, webpush delivery)
+  //   - socket.io postgres adapter (1 persistent LISTEN + pg_notify publishes)
+  //
+  // Push delivery parallelism is capped at 4 (pLimit) so it can't monopolize
+  // the pool during bursts. The adapter's persistent LISTEN holds 1 slot
+  // permanently, leaving ~7 for transactional work. A saturated main pool
+  // cannot delay message delivery because this pool is fully isolated.
   const realtime = createDatabasePool(connectionString, {
     max: Number(process.env.DATABASE_REALTIME_POOL_MAX) || 8,
   })

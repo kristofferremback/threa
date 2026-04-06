@@ -240,9 +240,9 @@ export type QueueTier = (typeof QueueTiers)[keyof typeof QueueTiers]
 /**
  * Fairness policy for token leasing.
  *
- * - `none` — tokens lease one per `queue_name`, so a single workspace can
- *   use the full tier budget for that queue. Correct default because region-
- *   level sharding already isolates tenants.
+ * - `none` — allows multiple concurrent tokens per `(queue_name, workspace_id)`
+ *   pair, so a single workspace can use the full tier budget for that queue.
+ *   Correct default because region-level sharding already isolates tenants.
  * - `workspace` — tokens lease one per `(queue_name, workspace_id)` pair,
  *   preventing one workspace from starving others on the same instance.
  *   Use for queues that could be abused by a single workspace.

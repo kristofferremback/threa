@@ -1,4 +1,5 @@
 import type { Pool } from "pg"
+import pLimit from "p-limit"
 import {
   OutboxRepository,
   type ActivityCreatedOutboxPayload,
@@ -85,6 +86,10 @@ export class PushNotificationHandler implements OutboxHandler {
       // network I/O (webpush.sendNotification) and must not serialize across events,
       // otherwise a single slow device blocks the whole batch.
       //
+      // Concurrency is capped at 4 so the push handler can't monopolize all 8
+      // realtime pool connections — BroadcastHandler and the socket.io adapter
+      // share the same pool and must not be starved during a push burst.
+      //
       // Per-device webpush failures (expired endpoint, etc.) are handled inside
       // PushService (stale subscription eviction) and never reach here as thrown
       // errors. An error escaping deliverEvent means a DB/lookup failure — in
@@ -92,7 +97,8 @@ export class PushNotificationHandler implements OutboxHandler {
       // return an error status so CursorLock backs off and retries the failed
       // events on the next run. Fulfilled events stay in the sliding window
       // and won't be re-fetched.
-      const results = await Promise.allSettled(events.map((event) => this.deliverEvent(event)))
+      const limit = pLimit(4)
+      const results = await Promise.allSettled(events.map((event) => limit(() => this.deliverEvent(event))))
 
       const delivered: bigint[] = []
       let firstError: Error | null = null
