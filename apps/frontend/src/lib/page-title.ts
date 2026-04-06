@@ -30,10 +30,10 @@ export function usePageStreamName(): string | null {
   return useSyncExternalStore(subscribe, getSnapshot)
 }
 
-export function buildPageTitle(unreadCount: number): string {
+export function buildPageTitle(unreadCount: number, name: string | null = streamName): string {
   const parts: string[] = []
   if (unreadCount > 0) parts.push(`(${unreadCount})`)
-  if (streamName) parts.push(streamName)
+  if (name) parts.push(name)
   parts.push(BASE_TITLE)
   return parts.join(" | ")
 }

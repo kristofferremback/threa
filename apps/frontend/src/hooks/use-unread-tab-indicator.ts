@@ -55,7 +55,7 @@ export function useUnreadTabIndicator(workspaceId: string) {
   }
 
   useEffect(() => {
-    document.title = buildPageTitle(totalUnread)
+    document.title = buildPageTitle(totalUnread, streamName)
   }, [totalUnread, streamName])
 
   useEffect(() => {
