@@ -133,13 +133,17 @@ describe("InlineEditProvider (safety nets)", () => {
     render(<Harness />)
     expect(screen.getByTestId("flag").textContent).toBe("on")
 
-    // Simulate the leak: unmount the Surface but force count to stay positive
-    // by directly manipulating the count via a second registration that doesn't clean up.
-    // Instead, simulate leakage more simply: the Surface is mounted (count=1), we
-    // fire visibilitychange while it's mounted but has no [data-inline-edit] DOM element.
-    // Since Surface doesn't render [data-inline-edit], the safety net should reset.
+    // Surface is mounted (count=1) but has no [data-inline-edit] DOM element,
+    // simulating a leaked registration. Exercise the full hidden → visible
+    // transition that happens when the user backgrounds and foregrounds the app.
+
+    // Simulate page going to background — count stays positive (no reset on hide)
+    Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true })
+    document.dispatchEvent(new Event("visibilitychange"))
+    expect(screen.getByTestId("flag").textContent).toBe("on")
+
+    // Simulate returning to foreground — safety net must detect the leak and reset
     act(() => {
-      document.dispatchEvent(new Event("visibilitychange"))
       Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true })
       document.dispatchEvent(new Event("visibilitychange"))
     })
