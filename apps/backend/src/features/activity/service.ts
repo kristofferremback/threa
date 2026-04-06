@@ -2,8 +2,9 @@ import type { Pool, PoolClient } from "pg"
 import { ActivityRepository, type Activity } from "./repository"
 import { UserRepository } from "../workspaces"
 import { StreamRepository, StreamMemberRepository, resolveNotificationLevelsForStream, type Stream } from "../streams"
-import { extractMentionSlugs } from "../agents"
-import { Visibilities, NotificationLevels, StreamTypes, isBroadcastSlug } from "@threa/types"
+import { extractMentionSlugs, PersonaRepository } from "../agents"
+import { BotRepository } from "../public-api"
+import { Visibilities, NotificationLevels, StreamTypes, AuthorTypes, isBroadcastSlug } from "@threa/types"
 import { withClient } from "../../db"
 import { logger } from "../../lib/logger"
 
@@ -84,6 +85,7 @@ export class ActivityService {
 
       const streamContext = resolveStreamContext(stream, rootStream)
       const contentPreview = contentMarkdown.slice(0, 200)
+      const authorName = await this.resolveAuthorName(client, workspaceId, actorId, actorType)
 
       return ActivityRepository.insertBatch(client, {
         workspaceId,
@@ -93,7 +95,7 @@ export class ActivityService {
         messageId,
         actorId,
         actorType,
-        context: { contentPreview, ...streamContext },
+        context: { contentPreview, authorName, ...streamContext },
       })
     })
   }
@@ -172,6 +174,7 @@ export class ActivityService {
 
       const streamContext = resolveStreamContext(stream, rootStream)
       const contentPreview = contentMarkdown.slice(0, 200)
+      const authorName = await this.resolveAuthorName(client, workspaceId, actorId, actorType)
 
       const resolved = await resolveNotificationLevelsForStream(client, stream, streamMembers)
       const eligibleUserIds = resolved
@@ -195,7 +198,7 @@ export class ActivityService {
         messageId,
         actorId,
         actorType,
-        context: { contentPreview, ...streamContext },
+        context: { contentPreview, authorName, ...streamContext },
       })
     })
   }
@@ -218,6 +221,32 @@ export class ActivityService {
 
     if (stream.visibility === Visibilities.PUBLIC) return new Set(userIds)
     return StreamMemberRepository.filterMemberIds(client, stream.id, userIds)
+  }
+
+  private async resolveAuthorName(
+    client: PoolClient,
+    workspaceId: string,
+    actorId: string,
+    actorType: string
+  ): Promise<string | null> {
+    switch (actorType) {
+      case AuthorTypes.USER: {
+        const user = await UserRepository.findById(client, workspaceId, actorId)
+        return user?.name ?? null
+      }
+      case AuthorTypes.BOT: {
+        const bot = await BotRepository.findById(client, actorId)
+        return bot?.name ?? null
+      }
+      case AuthorTypes.PERSONA: {
+        const persona = await PersonaRepository.findById(client, actorId)
+        return persona?.name ?? null
+      }
+      case AuthorTypes.SYSTEM:
+        return "Threa"
+      default:
+        return null
+    }
   }
 
   async listFeed(

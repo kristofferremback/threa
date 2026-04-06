@@ -1,0 +1,74 @@
+import { ActivityTypes } from "@threa/types"
+
+/** A single message entry accumulated by the service worker for grouped notifications. */
+export interface NotificationMessage {
+  authorName?: string
+  contentPreview?: string
+}
+
+/** Max messages to keep in a grouped notification's rolling history. */
+const MAX_MESSAGES = 5
+
+/** Max characters per content preview line to stay within OS notification body limits. */
+const MAX_PREVIEW_CHARS = 80
+
+/**
+ * Append a new message to the rolling history, capping at MAX_MESSAGES.
+ * Returns the new array (does not mutate the input).
+ */
+export function appendMessage(existing: NotificationMessage[], incoming: NotificationMessage): NotificationMessage[] {
+  const updated = [...existing, incoming]
+  if (updated.length > MAX_MESSAGES) {
+    return updated.slice(updated.length - MAX_MESSAGES)
+  }
+  return updated
+}
+
+/** Resolve the notification tag — mentions get a distinct tag so they stay visually separate. */
+export function resolveTag(streamId: string, activityType?: string): string {
+  if (activityType === ActivityTypes.MENTION) {
+    return `${streamId}:mention`
+  }
+  return streamId
+}
+
+/** Format the notification title based on message count, stream name, and activity type. */
+export function formatTitle(messages: NotificationMessage[], streamName?: string, activityType?: string): string {
+  const count = messages.length
+  const isMention = activityType === ActivityTypes.MENTION
+
+  if (count === 1) {
+    if (isMention) {
+      return streamName ? `Mentioned in ${streamName}` : "You were mentioned"
+    }
+    return streamName ?? "New message"
+  }
+
+  if (isMention) {
+    return streamName ? `${count} new mentions in ${streamName}` : `${count} new mentions`
+  }
+  return streamName ? `${streamName} · ${count} new messages` : `${count} new messages`
+}
+
+function truncate(text: string, maxLen: number): string {
+  if (text.length <= maxLen) return text
+  return text.slice(0, maxLen - 1) + "…"
+}
+
+/** Format a single message line: "AuthorName: preview text…" */
+function formatLine(msg: NotificationMessage): string {
+  const preview = msg.contentPreview ? truncate(msg.contentPreview, MAX_PREVIEW_CHARS) : ""
+  if (msg.authorName) {
+    return preview ? `${msg.authorName}: ${preview}` : msg.authorName
+  }
+  return preview || "New message"
+}
+
+/**
+ * Format the notification body from the accumulated message list.
+ * For a single message, returns a single line. For multiple, returns
+ * newline-joined lines that OS notification centers can expand.
+ */
+export function formatBody(messages: NotificationMessage[]): string {
+  return messages.map(formatLine).join("\n")
+}

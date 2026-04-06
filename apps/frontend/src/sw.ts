@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 import { precacheAndRoute } from "workbox-precaching"
-import { ActivityTypes, AuthorTypes, type LastMessagePreview, type StreamEvent } from "@threa/types"
+import { AuthorTypes, type LastMessagePreview, type StreamEvent } from "@threa/types"
+import { resolveTag } from "./lib/sw-notification-format"
 import {
   SW_MSG_NOTIFICATION_CLICK,
   SW_MSG_SUBSCRIPTION_CHANGED,
@@ -242,31 +243,11 @@ interface PushData {
   activityType?: string
   contentPreview?: string
   streamName?: string
-  /** Accumulated count of messages in this notification group (set by the SW, not the backend). */
-  messageCount?: number
+  authorName?: string
+  /** Rolling message history accumulated by the SW for grouped notifications. */
+  messages?: Array<{ authorName?: string; contentPreview?: string }>
   /** Backend-driven action: "clear" dismisses notifications for the stream; "session_expired" prompts re-login. */
   action?: "clear" | "session_expired"
-}
-
-function formatTitle(activityType: string | undefined): string {
-  switch (activityType) {
-    case ActivityTypes.MENTION:
-      return "You were mentioned"
-    case ActivityTypes.MESSAGE:
-      return "New message"
-    default:
-      return "New activity"
-  }
-}
-
-function formatBody(data: PushData): string {
-  if (data.contentPreview) {
-    return data.contentPreview
-  }
-  if (data.streamName) {
-    return `Activity in ${data.streamName}`
-  }
-  return "You have new activity in Threa"
 }
 
 self.addEventListener("push", (event) => {
@@ -281,13 +262,17 @@ self.addEventListener("push", (event) => {
     data = {}
   }
 
-  // Backend-driven clear: dismiss notifications for this stream across all devices
-  // (e.g. user read the stream on their laptop → phone notification disappears).
+  // Backend-driven clear: dismiss notifications for this stream across all devices.
+  // Clear both the regular stream tag and the mention tag so reading a stream
+  // dismisses all notification groups for it.
   if (data.action === "clear") {
     if (!data.streamId) return
     event.waitUntil(
-      self.registration.getNotifications({ tag: data.streamId }).then((notifications) => {
-        for (const n of notifications) n.close()
+      Promise.all([
+        self.registration.getNotifications({ tag: data.streamId }),
+        self.registration.getNotifications({ tag: `${data.streamId}:mention` }),
+      ]).then(([streamNotifs, mentionNotifs]) => {
+        for (const n of [...streamNotifs, ...mentionNotifs]) n.close()
       })
     )
     return
@@ -308,51 +293,54 @@ self.addEventListener("push", (event) => {
     return
   }
 
-  // Tag by stream so notifications from the same stream replace each other
-  // instead of stacking as separate entries (e.g. 5 messages from Pierre → one grouped notification).
-  const tag = data.streamId ?? "threa-notification"
+  // Lazy-import pure formatting helpers (keeps SW entry point lean)
+  const fmt = import("./lib/sw-notification-format")
+
+  // Tag by stream, with mentions on a separate tag so they stay visually distinct.
+  const tag = data.streamId ? resolveTag(data.streamId, data.activityType) : "threa-notification"
 
   // Suppress notification if the user has a focused app window — they can already see the message.
   // Backend always sends the push; the SW decides whether to display it.
   event.waitUntil(
-    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(async (clients) => {
-      const hasFocusedWindow = clients.some((c) => c.focused && new URL(c.url).origin === self.location.origin)
-      if (hasFocusedWindow) return
+    Promise.all([fmt, self.clients.matchAll({ type: "window", includeUncontrolled: true })]).then(
+      async ([{ appendMessage, formatTitle, formatBody }, clients]) => {
+        const hasFocusedWindow = clients.some((c) => c.focused && new URL(c.url).origin === self.location.origin)
+        if (hasFocusedWindow) return
 
-      // Check for an existing notification from the same stream to accumulate a count
-      const existing = await self.registration.getNotifications({ tag })
-      const previousCount = (existing[0]?.data as PushData | undefined)?.messageCount ?? 1
-      const messageCount = existing.length > 0 ? previousCount + 1 : 1
+        // Accumulate a rolling list of recent messages from the existing notification
+        const existing = await self.registration.getNotifications({ tag })
+        const previousMessages = (existing[0]?.data as PushData | undefined)?.messages ?? []
+        const messages = appendMessage(previousMessages, {
+          authorName: data.authorName,
+          contentPreview: data.contentPreview,
+        })
 
-      let title = formatTitle(data.activityType)
-      if (messageCount > 1) {
-        title = data.streamName ? `${messageCount} new messages in ${data.streamName}` : `${messageCount} new messages`
-      }
+        const title = formatTitle(messages, data.streamName, data.activityType)
+        const body = formatBody(messages)
 
-      const body = messageCount === 1 ? formatBody(data) : (data.contentPreview ?? formatBody(data))
+        const options: ExtendedNotificationOptions = {
+          body,
+          icon: "/threa-logo-192.png",
+          badge: "/threa-logo-192.png",
+          data: { ...data, messages },
+          tag,
+          renotify: true, // Re-alert (vibrate/sound) even when replacing an existing notification
+        }
 
-      const options: ExtendedNotificationOptions = {
-        body,
-        icon: "/threa-logo-192.png",
-        badge: "/threa-logo-192.png",
-        data: { ...data, messageCount },
-        tag,
-        renotify: true, // Re-alert (vibrate/sound) even when replacing an existing notification
-      }
+        await self.registration.showNotification(title, options)
 
-      await self.registration.showNotification(title, options)
-
-      // Pre-fetch stream bootstrap in the background so it's ready when user taps.
-      // Best-effort: swallow errors so notification display is never affected.
-      if (data.workspaceId && data.streamId) {
-        await prefetchStreamBootstrap(data.workspaceId, data.streamId).catch(() => {})
-        // If targeting a specific message, also prefetch events around it
-        // so the message is in IDB when the user taps the notification.
-        if (data.messageId) {
-          await prefetchEventsAround(data.workspaceId, data.streamId, data.messageId).catch(() => {})
+        // Pre-fetch stream bootstrap in the background so it's ready when user taps.
+        // Best-effort: swallow errors so notification display is never affected.
+        if (data.workspaceId && data.streamId) {
+          await prefetchStreamBootstrap(data.workspaceId, data.streamId).catch(() => {})
+          // If targeting a specific message, also prefetch events around it
+          // so the message is in IDB when the user taps the notification.
+          if (data.messageId) {
+            await prefetchEventsAround(data.workspaceId, data.streamId, data.messageId).catch(() => {})
+          }
         }
       }
-    })
+    )
   )
 })
 
@@ -404,8 +392,11 @@ self.addEventListener("message", (event) => {
   if (!streamId) return
 
   event.waitUntil(
-    self.registration.getNotifications({ tag: streamId }).then((notifications) => {
-      for (const n of notifications) n.close()
+    Promise.all([
+      self.registration.getNotifications({ tag: streamId }),
+      self.registration.getNotifications({ tag: `${streamId}:mention` }),
+    ]).then(([streamNotifs, mentionNotifs]) => {
+      for (const n of [...streamNotifs, ...mentionNotifs]) n.close()
     })
   )
 })
