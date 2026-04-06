@@ -67,6 +67,13 @@
       href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
+    <!-- OpenDyslexic loaded as <link> instead of CSS @import to avoid render-blocking the main stylesheet -->
+    <link
+      href="https://fonts.cdnfonts.com/css/opendyslexic"
+      rel="stylesheet"
+      media="print"
+      onload="this.media = 'all'"
+    />
     <script>
       ;(function () {
         var root = document.documentElement
@@ -108,14 +115,14 @@
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
     <script>
-      // Recovery: detect when the service worker is serving stale assets that
-      // cause an unstyled page (CSS 404s from old precache manifest). If no
-      // stylesheets have loaded after the page is interactive, unregister the
-      // SW, clear caches, and hard-reload to get a clean state.
-      // Uses a sessionStorage flag to prevent infinite reload loops.
+      // Recovery: detect when styles fail to load (stale SW cache, blocked CSS
+      // @import, network hiccup, etc.). If no same-origin stylesheets have
+      // loaded after the page is interactive, unregister SW, clear caches, and
+      // hard-reload to get a clean state. A counter prevents infinite loops:
+      // we allow up to 2 recovery attempts per session.
       ;(function () {
-        if (!navigator.serviceWorker) return
-        if (sessionStorage.getItem("sw-css-recovery")) return
+        var attempts = parseInt(sessionStorage.getItem("css-recovery-attempts") || "0", 10)
+        if (attempts >= 2) return
         setTimeout(function () {
           var hasStyles = false
           var sheets = document.styleSheets
@@ -129,24 +136,35 @@
               // Cross-origin stylesheet (e.g. Google Fonts) — skip and keep checking
             }
           }
-          if (hasStyles) return
-          sessionStorage.setItem("sw-css-recovery", "1")
-          navigator.serviceWorker.getRegistrations().then(function (regs) {
-            var tasks = regs.map(function (r) {
-              return r.unregister()
-            })
+          if (hasStyles) {
+            // Styles loaded successfully — reset counter so future breaks can recover
+            sessionStorage.removeItem("css-recovery-attempts")
+            return
+          }
+          sessionStorage.setItem("css-recovery-attempts", String(attempts + 1))
+          var tasks = []
+          if (navigator.serviceWorker) {
             tasks.push(
-              caches.keys().then(function (names) {
+              navigator.serviceWorker.getRegistrations().then(function (regs) {
                 return Promise.all(
-                  names.map(function (n) {
-                    return caches.delete(n)
+                  regs.map(function (r) {
+                    return r.unregister()
                   })
                 )
               })
             )
-            Promise.all(tasks).then(function () {
-              location.reload()
+          }
+          tasks.push(
+            caches.keys().then(function (names) {
+              return Promise.all(
+                names.map(function (n) {
+                  return caches.delete(n)
+                })
+              )
             })
+          )
+          Promise.all(tasks).then(function () {
+            location.reload()
           })
         }, 3000)
       })()
