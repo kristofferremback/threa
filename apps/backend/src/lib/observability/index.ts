@@ -10,6 +10,7 @@ export {
   queueMessagesInFlight,
   queueMessagesProcessed,
   queueMessageDuration,
+  queueTokensStuck,
   cronSchedulesTotal,
   cronTicksGenerated,
   cronTicksExecuted,
