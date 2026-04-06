@@ -142,23 +142,38 @@ export function ReactionPillDetails({ emoji, reactions, workspaceId, children }:
 
   return (
     <>
-      <span className="inline-flex" {...handlers}>
+      {/* Stop touch propagation so the parent message long-press handler doesn't also fire */}
+      <span
+        className="inline-flex"
+        onTouchStart={(e) => {
+          e.stopPropagation()
+          handlers.onTouchStart(e)
+        }}
+        onTouchEnd={handlers.onTouchEnd}
+        onTouchMove={(e) => {
+          e.stopPropagation()
+          handlers.onTouchMove(e)
+        }}
+        onContextMenu={handlers.onContextMenu}
+      >
         {children}
       </span>
       <Drawer open={drawerOpen} onOpenChange={setDrawerOpen}>
         <DrawerContent>
-          <DrawerHeader className="pb-2">
-            <DrawerTitle className="text-base">Reactions</DrawerTitle>
-            <DrawerDescription className="sr-only">People who reacted to this message</DrawerDescription>
-          </DrawerHeader>
-          <div className="pb-4">
-            {/* key forces a fresh mount per open so selectedEmoji resets to this pill's emoji */}
-            <ReactionDetailsContent
-              key={drawerOpen ? emoji : "closed"}
-              reactions={reactions}
-              workspaceId={workspaceId}
-              defaultEmoji={emoji}
-            />
+          <div className="min-h-[50dvh] flex flex-col">
+            <DrawerHeader className="pb-2">
+              <DrawerTitle className="text-base">Reactions</DrawerTitle>
+              <DrawerDescription className="sr-only">People who reacted to this message</DrawerDescription>
+            </DrawerHeader>
+            <div className="pb-4 flex-1">
+              {/* key forces a fresh mount per open so selectedEmoji resets to this pill's emoji */}
+              <ReactionDetailsContent
+                key={drawerOpen ? emoji : "closed"}
+                reactions={reactions}
+                workspaceId={workspaceId}
+                defaultEmoji={emoji}
+              />
+            </div>
           </div>
         </DrawerContent>
       </Drawer>
