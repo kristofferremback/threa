@@ -71,7 +71,11 @@ export function UnsentMessageEditForm({
 
   const handleSave = useCallback(async () => {
     const contentMarkdown = serializeToMarkdown(contentJson).trim()
-    if (!contentMarkdown) return
+    if (!contentMarkdown) {
+      await cancelEditing(messageId)
+      onDone()
+      return
+    }
     // No change — just cancel
     if (contentMarkdown === initialMarkdown) {
       await cancelEditing(messageId)

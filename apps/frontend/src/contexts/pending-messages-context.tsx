@@ -141,14 +141,16 @@ export function PendingMessagesProvider({ children }: PendingMessagesProviderPro
     // Already being edited (e.g. double-click race)
     if (existing.status === "editing") return
 
-    // Capture the current status before overwriting — used by cancelEditing to restore
-    const event = await db.events.get(id)
-    const preEditStatus: PreEditStatus = event?._status === "failed" ? "failed" : "pending"
+    // Read pre-edit status inside the transaction so the queue can't change it
+    // between the read and the write
+    const preEditStatus = await db.transaction("rw", db.pendingMessages, db.events, async () => {
+      const event = await db.events.get(id)
+      const status: PreEditStatus = event?._status === "failed" ? "failed" : "pending"
 
-    await db.transaction("rw", db.pendingMessages, db.events, async () => {
       type UpdateFn = (key: string, changes: Record<string, unknown>) => Promise<number>
       await (db.pendingMessages.update as unknown as UpdateFn)(id, { status: "editing" })
       await db.events.update(id, { _status: "editing" })
+      return status
     })
 
     setEditingIds((prev) => new Map(prev).set(id, preEditStatus))
