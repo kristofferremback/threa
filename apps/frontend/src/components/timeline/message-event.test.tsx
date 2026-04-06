@@ -7,8 +7,17 @@ import { EditLastMessageContext } from "./edit-last-message-context"
 import * as editorModule from "@/components/editor"
 import * as hooksModule from "@/hooks"
 import * as prosemirrorModule from "@threa/prosemirror"
+import userEvent from "@testing-library/user-event"
 import type { StreamEvent } from "@threa/types"
 import type { JSONContent } from "@threa/types"
+
+// Configurable mock state for usePendingMessages — tests can override per-describe
+let mockGetStatus: (id: string) => string | null = () => null
+const mockRetryMessage = vi.fn()
+const mockMarkEditing = vi.fn()
+const mockDeleteMessage = vi.fn()
+const mockSaveEditedMessage = vi.fn()
+const mockCancelEditing = vi.fn()
 
 // RichEditor is a forwardRef object — vi.spyOn can't spy on non-function values,
 // so we replace it at the module level with a vi.fn() that tests can configure.
@@ -49,8 +58,15 @@ vi.mock("@/contexts", async (importOriginal) => {
   return {
     ...actual,
     usePendingMessages: () => ({
-      getStatus: () => "sent",
-      retryMessage: vi.fn(),
+      getStatus: (id: string) => mockGetStatus(id),
+      markPending: vi.fn(),
+      markFailed: vi.fn(),
+      markSent: vi.fn(),
+      markEditing: mockMarkEditing,
+      saveEditedMessage: mockSaveEditedMessage,
+      cancelEditing: mockCancelEditing,
+      retryMessage: mockRetryMessage,
+      deleteMessage: mockDeleteMessage,
       notifyQueue: vi.fn(),
       registerQueueNotify: vi.fn(),
     }),
@@ -116,6 +132,12 @@ const createMessageEvent = (messageId: string, contentMarkdown: string): StreamE
 let queryClient: QueryClient
 beforeEach(() => {
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  mockGetStatus = () => null // default: sent/confirmed message
+  mockRetryMessage.mockReset()
+  mockMarkEditing.mockReset()
+  mockDeleteMessage.mockReset()
+  mockSaveEditedMessage.mockReset()
+  mockCancelEditing.mockReset()
 })
 
 function Wrapper({ children }: { children: React.ReactNode }) {
@@ -395,6 +417,88 @@ describe("MessageEvent", () => {
       })
 
       expect(focusAtEnd).toHaveBeenCalledWith(zoneEditor)
+    })
+  })
+
+  describe("pending message", () => {
+    it("should show Sending indicator and Edit/Delete buttons on hover", () => {
+      mockGetStatus = () => "pending"
+      const event = createMessageEvent("msg_pending", "Pending message")
+
+      render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />, { wrapper: Wrapper })
+
+      expect(screen.getByText("Sending...")).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument()
+    })
+
+    it("should call markEditing when Edit is clicked", async () => {
+      mockGetStatus = () => "pending"
+      mockMarkEditing.mockResolvedValue(undefined)
+      const event = createMessageEvent("msg_pending", "Pending message")
+
+      render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />, { wrapper: Wrapper })
+
+      await userEvent.click(screen.getByRole("button", { name: "Edit" }))
+      expect(mockMarkEditing).toHaveBeenCalledWith(event.id)
+    })
+
+    it("should call deleteMessage when Delete is clicked", async () => {
+      mockGetStatus = () => "pending"
+      mockDeleteMessage.mockResolvedValue(undefined)
+      const event = createMessageEvent("msg_pending", "Pending message")
+
+      render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />, { wrapper: Wrapper })
+
+      await userEvent.click(screen.getByRole("button", { name: "Delete" }))
+      expect(mockDeleteMessage).toHaveBeenCalledWith(event.id)
+    })
+  })
+
+  describe("failed message", () => {
+    it("should show Failed indicator and Retry/Edit/Delete buttons", () => {
+      mockGetStatus = () => "failed"
+      const event = createMessageEvent("msg_failed", "Failed message")
+
+      render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />, { wrapper: Wrapper })
+
+      expect(screen.getByText("Failed to send")).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument()
+    })
+
+    it("should call retryMessage when Retry is clicked", async () => {
+      mockGetStatus = () => "failed"
+      mockRetryMessage.mockResolvedValue(undefined)
+      const event = createMessageEvent("msg_failed", "Failed message")
+
+      render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />, { wrapper: Wrapper })
+
+      await userEvent.click(screen.getByRole("button", { name: "Retry" }))
+      expect(mockRetryMessage).toHaveBeenCalledWith(event.id)
+    })
+
+    it("should call markEditing when Edit is clicked on failed message", async () => {
+      mockGetStatus = () => "failed"
+      mockMarkEditing.mockResolvedValue(undefined)
+      const event = createMessageEvent("msg_failed", "Failed message")
+
+      render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />, { wrapper: Wrapper })
+
+      await userEvent.click(screen.getByRole("button", { name: "Edit" }))
+      expect(mockMarkEditing).toHaveBeenCalledWith(event.id)
+    })
+  })
+
+  describe("editing message", () => {
+    it("should show editing indicator when status is editing", () => {
+      mockGetStatus = () => "editing"
+      const event = createMessageEvent("msg_editing", "Editing message")
+
+      render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />, { wrapper: Wrapper })
+
+      expect(screen.getByText("Editing unsent message")).toBeInTheDocument()
     })
   })
 })

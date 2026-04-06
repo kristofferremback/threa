@@ -46,6 +46,11 @@ export function UnsentMessageEditForm({
   const [mobileToolbarEditor, setMobileToolbarEditor] = useState<Editor | null>(null)
   const instructionsId = useId()
 
+  const handleCancel = useCallback(async () => {
+    await cancelEditing(messageId)
+    onDone()
+  }, [messageId, cancelEditing, onDone])
+
   useEffect(() => {
     if (isMobile) return
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -56,7 +61,7 @@ export function UnsentMessageEditForm({
     }
     document.addEventListener("keydown", handleKeyDown)
     return () => document.removeEventListener("keydown", handleKeyDown)
-  }, [isMobile])
+  }, [isMobile, handleCancel])
 
   const setRichEditorHandle = useCallback((handle: RichEditorHandle | null) => {
     richEditorRef.current = handle
@@ -81,11 +86,6 @@ export function UnsentMessageEditForm({
       setIsSaving(false)
     }
   }, [contentJson, initialMarkdown, messageId, saveEditedMessage, cancelEditing, onDone])
-
-  const handleCancel = useCallback(async () => {
-    await cancelEditing(messageId)
-    onDone()
-  }, [messageId, cancelEditing, onDone])
 
   const handleDelete = useCallback(async () => {
     await deleteMessage(messageId)

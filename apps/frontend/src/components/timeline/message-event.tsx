@@ -709,17 +709,17 @@ function FailedMessageEvent({
       statusIndicator={<span className="text-xs text-destructive">Failed to send</span>}
       actions={
         <div className="flex gap-1 mt-1">
-          <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => retryMessage(event.id)}>
+          <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => void retryMessage(event.id)}>
             Retry
           </Button>
-          <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => markEditing(event.id)}>
+          <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => void markEditing(event.id)}>
             Edit
           </Button>
           <Button
             variant="ghost"
             size="sm"
             className="h-6 px-2 text-xs text-muted-foreground"
-            onClick={() => deleteMessage(event.id)}
+            onClick={() => void deleteMessage(event.id)}
           >
             Delete
           </Button>

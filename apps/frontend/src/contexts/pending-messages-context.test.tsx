@@ -5,16 +5,29 @@ import { PendingMessagesProvider, usePendingMessages } from "./pending-messages-
 
 const mockGet = vi.fn()
 const mockUpdate = vi.fn().mockResolvedValue(1)
+const mockDelete = vi.fn().mockResolvedValue(undefined)
+const mockEventsGet = vi.fn()
 const mockEventsUpdate = vi.fn().mockResolvedValue(1)
+const mockEventsPut = vi.fn().mockResolvedValue(undefined)
+const mockEventsDelete = vi.fn().mockResolvedValue(undefined)
 
 vi.mock("@/db", () => ({
   db: {
     pendingMessages: {
       get: (...args: unknown[]) => mockGet(...args),
       update: (...args: unknown[]) => mockUpdate(...args),
+      delete: (...args: unknown[]) => mockDelete(...args),
     },
     events: {
+      get: (...args: unknown[]) => mockEventsGet(...args),
       update: (...args: unknown[]) => mockEventsUpdate(...args),
+      put: (...args: unknown[]) => mockEventsPut(...args),
+      delete: (...args: unknown[]) => mockEventsDelete(...args),
+    },
+    // Dexie transaction — execute the callback immediately for tests
+    transaction: (_mode: string, ..._tables: unknown[]) => {
+      const cb = _tables[_tables.length - 1]
+      if (typeof cb === "function") return cb()
     },
   },
 }))
@@ -63,6 +76,171 @@ describe("PendingMessagesContext", () => {
       expect(mockUpdate).toHaveBeenCalledWith("temp_retry", { retryCount: 0, retryAfter: 0 })
       expect(mockEventsUpdate).toHaveBeenCalledWith("temp_retry", { _status: "pending" })
       expect(result.current.getStatus("temp_retry")).toBe("pending")
+    })
+  })
+
+  describe("markEditing", () => {
+    it("should transition a pending message to editing status", async () => {
+      mockGet.mockResolvedValue({ clientId: "temp_edit", retryCount: 0 })
+      mockEventsGet.mockResolvedValue({ _status: "pending" })
+
+      const { result } = renderHook(() => usePendingMessages(), { wrapper })
+
+      act(() => result.current.markPending("temp_edit"))
+      expect(result.current.getStatus("temp_edit")).toBe("pending")
+
+      await act(async () => {
+        await result.current.markEditing("temp_edit")
+      })
+
+      expect(mockUpdate).toHaveBeenCalledWith("temp_edit", { status: "editing" })
+      expect(mockEventsUpdate).toHaveBeenCalledWith("temp_edit", { _status: "editing" })
+      expect(result.current.getStatus("temp_edit")).toBe("editing")
+    })
+
+    it("should transition a failed message to editing status", async () => {
+      mockGet.mockResolvedValue({ clientId: "temp_edit_fail", retryCount: 3 })
+      mockEventsGet.mockResolvedValue({ _status: "failed" })
+
+      const { result } = renderHook(() => usePendingMessages(), { wrapper })
+
+      act(() => result.current.markFailed("temp_edit_fail"))
+
+      await act(async () => {
+        await result.current.markEditing("temp_edit_fail")
+      })
+
+      expect(result.current.getStatus("temp_edit_fail")).toBe("editing")
+    })
+
+    it("should bail out when the message no longer exists", async () => {
+      mockGet.mockResolvedValue(undefined)
+
+      const { result } = renderHook(() => usePendingMessages(), { wrapper })
+
+      act(() => result.current.markPending("temp_gone"))
+
+      await act(async () => {
+        await result.current.markEditing("temp_gone")
+      })
+
+      // Should remain pending since markEditing bailed
+      expect(result.current.getStatus("temp_gone")).toBe("pending")
+    })
+  })
+
+  describe("cancelEditing", () => {
+    it("should restore a previously-pending message to pending", async () => {
+      // Setup: mark pending, then edit
+      mockGet.mockResolvedValue({ clientId: "temp_cancel", retryCount: 0, status: undefined })
+      mockEventsGet.mockResolvedValue({ _status: "pending" })
+
+      const { result } = renderHook(() => usePendingMessages(), { wrapper })
+
+      act(() => result.current.markPending("temp_cancel"))
+
+      await act(async () => {
+        await result.current.markEditing("temp_cancel")
+      })
+      expect(result.current.getStatus("temp_cancel")).toBe("editing")
+
+      await act(async () => {
+        await result.current.cancelEditing("temp_cancel")
+      })
+
+      expect(result.current.getStatus("temp_cancel")).toBe("pending")
+    })
+
+    it("should restore a previously-failed message to failed", async () => {
+      mockGet.mockResolvedValue({ clientId: "temp_cancel_fail", retryCount: 3, status: undefined })
+      mockEventsGet.mockResolvedValue({ _status: "failed" })
+
+      const { result } = renderHook(() => usePendingMessages(), { wrapper })
+
+      act(() => result.current.markFailed("temp_cancel_fail"))
+
+      await act(async () => {
+        await result.current.markEditing("temp_cancel_fail")
+      })
+      expect(result.current.getStatus("temp_cancel_fail")).toBe("editing")
+
+      await act(async () => {
+        await result.current.cancelEditing("temp_cancel_fail")
+      })
+
+      expect(result.current.getStatus("temp_cancel_fail")).toBe("failed")
+    })
+  })
+
+  describe("saveEditedMessage", () => {
+    it("should update content and return to pending status", async () => {
+      mockGet.mockResolvedValue({ clientId: "temp_save", retryCount: 0, content: "old" })
+      mockEventsGet.mockResolvedValue({
+        id: "temp_save",
+        payload: { contentMarkdown: "old" },
+        _status: "editing",
+      })
+
+      const { result } = renderHook(() => usePendingMessages(), { wrapper })
+
+      act(() => result.current.markPending("temp_save"))
+
+      await act(async () => {
+        await result.current.markEditing("temp_save")
+      })
+      expect(result.current.getStatus("temp_save")).toBe("editing")
+
+      const newContent = { type: "doc" as const, content: [{ type: "paragraph" as const }] }
+      await act(async () => {
+        await result.current.saveEditedMessage("temp_save", newContent)
+      })
+
+      expect(result.current.getStatus("temp_save")).toBe("pending")
+      // Should have updated the pending message
+      expect(mockUpdate).toHaveBeenCalledWith(
+        "temp_save",
+        expect.objectContaining({
+          status: undefined,
+          retryCount: 0,
+          retryAfter: 0,
+        })
+      )
+    })
+  })
+
+  describe("deleteMessage", () => {
+    it("should remove from both IDB tables and clear all state sets", async () => {
+      const { result } = renderHook(() => usePendingMessages(), { wrapper })
+
+      act(() => result.current.markPending("temp_del"))
+
+      await act(async () => {
+        await result.current.deleteMessage("temp_del")
+      })
+
+      expect(mockDelete).toHaveBeenCalledWith("temp_del")
+      expect(mockEventsDelete).toHaveBeenCalledWith("temp_del")
+      expect(result.current.getStatus("temp_del")).toBeNull()
+    })
+
+    it("should clear editing state when deleting an editing message", async () => {
+      mockGet.mockResolvedValue({ clientId: "temp_del_edit", retryCount: 0, status: undefined })
+      mockEventsGet.mockResolvedValue({ _status: "pending" })
+
+      const { result } = renderHook(() => usePendingMessages(), { wrapper })
+
+      act(() => result.current.markPending("temp_del_edit"))
+
+      await act(async () => {
+        await result.current.markEditing("temp_del_edit")
+      })
+      expect(result.current.getStatus("temp_del_edit")).toBe("editing")
+
+      await act(async () => {
+        await result.current.deleteMessage("temp_del_edit")
+      })
+
+      expect(result.current.getStatus("temp_del_edit")).toBeNull()
     })
   })
 })

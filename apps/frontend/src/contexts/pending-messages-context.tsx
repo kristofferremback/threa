@@ -4,6 +4,8 @@ import { serializeToMarkdown } from "@threa/prosemirror"
 import type { JSONContent } from "@threa/types"
 
 type MessageStatus = "pending" | "failed" | "editing"
+/** Status the message had before the user entered editing mode */
+type PreEditStatus = "pending" | "failed"
 
 interface PendingMessagesContextValue {
   getStatus: (id: string) => MessageStatus | null
@@ -18,7 +20,7 @@ interface PendingMessagesContextValue {
   cancelEditing: (id: string) => Promise<void>
   /** Reset a failed message's retry count and re-enqueue it for sending */
   retryMessage: (id: string) => Promise<void>
-  /** Permanently delete a failed message from the outbox and timeline */
+  /** Permanently delete a failed/pending message from the outbox and timeline */
   deleteMessage: (id: string) => Promise<void>
   /** Kick the background message queue to process the next pending message */
   notifyQueue: () => void
@@ -35,11 +37,14 @@ interface PendingMessagesProviderProps {
 export function PendingMessagesProvider({ children }: PendingMessagesProviderProps) {
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set())
   const [failedIds, setFailedIds] = useState<Set<string>>(new Set())
-  const [editingIds, setEditingIds] = useState<Set<string>>(new Set())
+  // Maps editing message ID → status it had before entering edit mode
+  const [editingIds, setEditingIds] = useState<Map<string, PreEditStatus>>(new Map())
   const queueNotifyRef = useRef<(() => void) | null>(null)
 
   // Hydrate pending/failed/editing state from IDB on mount so it survives page reload.
   // The _status field on CachedEvent is the durable source of truth.
+  // For editing messages we can't recover the pre-edit status from IDB, so we
+  // default to "pending" — on cancel the message will be re-queued immediately.
   useEffect(() => {
     void (async () => {
       try {
@@ -48,7 +53,11 @@ export function PendingMessagesProvider({ children }: PendingMessagesProviderPro
         const editing = await db.events.where("_status").equals("editing").primaryKeys()
         if (pending.length > 0) setPendingIds(new Set(pending as string[]))
         if (failed.length > 0) setFailedIds(new Set(failed as string[]))
-        if (editing.length > 0) setEditingIds(new Set(editing as string[]))
+        if (editing.length > 0) {
+          const map = new Map<string, PreEditStatus>()
+          for (const id of editing) map.set(id as string, "pending")
+          setEditingIds(map)
+        }
       } catch {
         // Best-effort — works in browser, may fail in test environment mocks
       }
@@ -73,7 +82,8 @@ export function PendingMessagesProvider({ children }: PendingMessagesProviderPro
       return next
     })
     setEditingIds((prev) => {
-      const next = new Set(prev)
+      if (!prev.has(id)) return prev
+      const next = new Map(prev)
       next.delete(id)
       return next
     })
@@ -87,7 +97,8 @@ export function PendingMessagesProvider({ children }: PendingMessagesProviderPro
       return next
     })
     setEditingIds((prev) => {
-      const next = new Set(prev)
+      if (!prev.has(id)) return prev
+      const next = new Map(prev)
       next.delete(id)
       return next
     })
@@ -105,7 +116,8 @@ export function PendingMessagesProvider({ children }: PendingMessagesProviderPro
       return next
     })
     setEditingIds((prev) => {
-      const next = new Set(prev)
+      if (!prev.has(id)) return prev
+      const next = new Map(prev)
       next.delete(id)
       return next
     })
@@ -126,11 +138,20 @@ export function PendingMessagesProvider({ children }: PendingMessagesProviderPro
     const existing = await db.pendingMessages.get(id)
     if (!existing) return
 
-    type UpdateFn = (key: string, changes: Record<string, unknown>) => Promise<number>
-    await (db.pendingMessages.update as unknown as UpdateFn)(id, { status: "editing" })
-    await db.events.update(id, { _status: "editing" })
+    // Already being edited (e.g. double-click race)
+    if (existing.status === "editing") return
 
-    setEditingIds((prev) => new Set(prev).add(id))
+    // Capture the current status before overwriting — used by cancelEditing to restore
+    const event = await db.events.get(id)
+    const preEditStatus: PreEditStatus = event?._status === "failed" ? "failed" : "pending"
+
+    await db.transaction("rw", db.pendingMessages, db.events, async () => {
+      type UpdateFn = (key: string, changes: Record<string, unknown>) => Promise<number>
+      await (db.pendingMessages.update as unknown as UpdateFn)(id, { status: "editing" })
+      await db.events.update(id, { _status: "editing" })
+    })
+
+    setEditingIds((prev) => new Map(prev).set(id, preEditStatus))
     setPendingIds((prev) => {
       const next = new Set(prev)
       next.delete(id)
@@ -145,36 +166,37 @@ export function PendingMessagesProvider({ children }: PendingMessagesProviderPro
 
   const saveEditedMessage = useCallback(
     async (id: string, contentJson: JSONContent) => {
-      const existing = await db.pendingMessages.get(id)
-      if (!existing) return
-
       const contentMarkdown = serializeToMarkdown(contentJson).trim()
 
-      // Update the pending message content in IDB
-      type UpdateFn = (key: string, changes: Record<string, unknown>) => Promise<number>
-      await (db.pendingMessages.update as unknown as UpdateFn)(id, {
-        content: contentMarkdown,
-        contentJson,
-        status: undefined, // clear editing hold
-        retryCount: 0,
-        retryAfter: 0,
-      })
+      await db.transaction("rw", db.pendingMessages, db.events, async () => {
+        const existing = await db.pendingMessages.get(id)
+        if (!existing) return
 
-      // Update the optimistic event's payload so the timeline reflects the edit
-      const event = await db.events.get(id)
-      if (event) {
-        const payload = event.payload as Record<string, unknown>
-        await db.events.put({
-          ...event,
-          payload: { ...payload, contentMarkdown, contentJson },
-          _status: "pending",
+        type UpdateFn = (key: string, changes: Record<string, unknown>) => Promise<number>
+        await (db.pendingMessages.update as unknown as UpdateFn)(id, {
+          content: contentMarkdown,
+          contentJson,
+          status: undefined, // clear editing hold
+          retryCount: 0,
+          retryAfter: 0,
         })
-      }
+
+        // Update the optimistic event's payload so the timeline reflects the edit
+        const event = await db.events.get(id)
+        if (event) {
+          const payload = event.payload as Record<string, unknown>
+          await db.events.put({
+            ...event,
+            payload: { ...payload, contentMarkdown, contentJson },
+            _status: "pending",
+          })
+        }
+      })
 
       // Move to pending state and kick the queue
       setPendingIds((prev) => new Set(prev).add(id))
       setEditingIds((prev) => {
-        const next = new Set(prev)
+        const next = new Map(prev)
         next.delete(id)
         return next
       })
@@ -183,29 +205,33 @@ export function PendingMessagesProvider({ children }: PendingMessagesProviderPro
     [notifyQueue]
   )
 
-  const cancelEditing = useCallback(async (id: string) => {
-    const existing = await db.pendingMessages.get(id)
-    if (!existing) return
+  const cancelEditing = useCallback(
+    async (id: string) => {
+      // Restore the status the message had before editing started
+      const preEditStatus: PreEditStatus = editingIds.get(id) ?? "pending"
 
-    // Return to queued state — use pending (retry immediately) or failed based on retry count
-    const wasFailed = existing.retryCount > 0
-    type UpdateFn = (key: string, changes: Record<string, unknown>) => Promise<number>
-    await (db.pendingMessages.update as unknown as UpdateFn)(id, { status: undefined })
+      await db.transaction("rw", db.pendingMessages, db.events, async () => {
+        const existing = await db.pendingMessages.get(id)
+        if (!existing) return
 
-    const newStatus = wasFailed ? "failed" : "pending"
-    await db.events.update(id, { _status: newStatus })
+        type UpdateFn = (key: string, changes: Record<string, unknown>) => Promise<number>
+        await (db.pendingMessages.update as unknown as UpdateFn)(id, { status: undefined })
+        await db.events.update(id, { _status: preEditStatus })
+      })
 
-    setEditingIds((prev) => {
-      const next = new Set(prev)
-      next.delete(id)
-      return next
-    })
-    if (wasFailed) {
-      setFailedIds((prev) => new Set(prev).add(id))
-    } else {
-      setPendingIds((prev) => new Set(prev).add(id))
-    }
-  }, [])
+      setEditingIds((prev) => {
+        const next = new Map(prev)
+        next.delete(id)
+        return next
+      })
+      if (preEditStatus === "failed") {
+        setFailedIds((prev) => new Set(prev).add(id))
+      } else {
+        setPendingIds((prev) => new Set(prev).add(id))
+      }
+    },
+    [editingIds]
+  )
 
   const retryMessage = useCallback(
     async (id: string) => {
@@ -228,8 +254,10 @@ export function PendingMessagesProvider({ children }: PendingMessagesProviderPro
   )
 
   const deleteMessage = useCallback(async (id: string) => {
-    await db.pendingMessages.delete(id)
-    await db.events.delete(id)
+    await db.transaction("rw", db.pendingMessages, db.events, async () => {
+      await db.pendingMessages.delete(id)
+      await db.events.delete(id)
+    })
     // Clear from React state
     setPendingIds((prev) => {
       const next = new Set(prev)
@@ -242,7 +270,8 @@ export function PendingMessagesProvider({ children }: PendingMessagesProviderPro
       return next
     })
     setEditingIds((prev) => {
-      const next = new Set(prev)
+      if (!prev.has(id)) return prev
+      const next = new Map(prev)
       next.delete(id)
       return next
     })

@@ -186,6 +186,14 @@ export function useMessageQueue(): void {
       )
       if (!next) break
 
+      // Re-check status from IDB to close the TOCTOU window: the user may
+      // have clicked Edit between the snapshot read above and now.
+      const fresh = await db.pendingMessages.get(next.clientId)
+      if (!fresh || fresh.status === "editing") {
+        skippedIds.add(next.clientId)
+        continue
+      }
+
       markPending(next.clientId)
       await db.events.update(next.clientId, { _status: "pending" })
 
