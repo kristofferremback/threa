@@ -1,4 +1,4 @@
-@import url("https://fonts.cdnfonts.com/css/opendyslexic");
+/* OpenDyslexic font loaded via <link> in index.html to avoid render-blocking @import */
 
 @tailwind base;
 @tailwind components;
@@ -472,15 +472,19 @@
   font-family: "OpenDyslexic", system-ui, sans-serif;
 }
 
-/* In-stream search highlighting via CSS Custom Highlight API */
-::highlight(stream-search) {
-  background-color: rgba(250, 204, 21, 0.35);
-  color: inherit;
-}
+/* In-stream search highlighting via CSS Custom Highlight API.
+   Wrapped in @supports so browsers that don't recognize ::highlight()
+   skip these rules cleanly instead of potentially stalling the parser. */
+@supports selector(::highlight(test)) {
+  ::highlight(stream-search) {
+    background-color: rgba(250, 204, 21, 0.35);
+    color: inherit;
+  }
 
-::highlight(stream-search-active) {
-  background-color: rgba(249, 115, 22, 0.6);
-  color: inherit;
+  ::highlight(stream-search-active) {
+    background-color: rgba(249, 115, 22, 0.6);
+    color: inherit;
+  }
 }
 
 /* Message Display - Compact mode reduces spacing in the timeline */
