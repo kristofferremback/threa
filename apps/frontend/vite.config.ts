@@ -47,7 +47,6 @@ export default defineConfig({
       strategies: "injectManifest",
       srcDir: "src",
       filename: "sw.ts",
-      registerType: "autoUpdate",
       injectRegister: false, // we register manually in main.tsx with updateViaCache: 'none'
       manifest: false, // use existing public/manifest.json
       injectManifest: {

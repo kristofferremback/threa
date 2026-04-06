@@ -6,7 +6,6 @@ import {
   SW_MSG_NOTIFICATION_CLICK,
   SW_MSG_SUBSCRIPTION_CHANGED,
   SW_MSG_CLEAR_NOTIFICATIONS,
-  SW_MSG_SKIP_WAITING,
   SHARE_TARGET_CACHE,
 } from "./lib/sw-messages"
 
@@ -19,7 +18,7 @@ interface ExtendedNotificationOptions extends NotificationOptions {
 }
 
 // Activate new service worker immediately so users get fresh code
-// without needing to close all tabs (pairs with registerType: "autoUpdate")
+// without needing to close all tabs.
 self.addEventListener("install", () => self.skipWaiting())
 self.addEventListener("activate", (event) => {
   event.waitUntil(
@@ -404,11 +403,6 @@ self.addEventListener("notificationclick", (event) => {
 // ============================================================================
 
 self.addEventListener("message", (event) => {
-  if (event.data?.type === SW_MSG_SKIP_WAITING) {
-    self.skipWaiting()
-    return
-  }
-
   if (event.data?.type !== SW_MSG_CLEAR_NOTIFICATIONS) return
   const streamId = event.data.streamId as string | undefined
   if (!streamId) return
