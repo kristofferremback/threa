@@ -168,9 +168,9 @@ export function PendingMessagesProvider({ children }: PendingMessagesProviderPro
     async (id: string, contentJson: JSONContent) => {
       const contentMarkdown = serializeToMarkdown(contentJson).trim()
 
-      await db.transaction("rw", db.pendingMessages, db.events, async () => {
+      const updated = await db.transaction("rw", db.pendingMessages, db.events, async () => {
         const existing = await db.pendingMessages.get(id)
-        if (!existing) return
+        if (!existing) return false
 
         type UpdateFn = (key: string, changes: Record<string, unknown>) => Promise<number>
         await (db.pendingMessages.update as unknown as UpdateFn)(id, {
@@ -191,7 +191,10 @@ export function PendingMessagesProvider({ children }: PendingMessagesProviderPro
             _status: "pending",
           })
         }
+        return true
       })
+
+      if (!updated) return
 
       // Move to pending state and kick the queue
       setPendingIds((prev) => new Set(prev).add(id))
@@ -210,14 +213,17 @@ export function PendingMessagesProvider({ children }: PendingMessagesProviderPro
       // Restore the status the message had before editing started
       const preEditStatus: PreEditStatus = editingIds.get(id) ?? "pending"
 
-      await db.transaction("rw", db.pendingMessages, db.events, async () => {
+      const restored = await db.transaction("rw", db.pendingMessages, db.events, async () => {
         const existing = await db.pendingMessages.get(id)
-        if (!existing) return
+        if (!existing) return false
 
         type UpdateFn = (key: string, changes: Record<string, unknown>) => Promise<number>
         await (db.pendingMessages.update as unknown as UpdateFn)(id, { status: undefined })
         await db.events.update(id, { _status: preEditStatus })
+        return true
       })
+
+      if (!restored) return
 
       setEditingIds((prev) => {
         const next = new Map(prev)
@@ -228,9 +234,10 @@ export function PendingMessagesProvider({ children }: PendingMessagesProviderPro
         setFailedIds((prev) => new Set(prev).add(id))
       } else {
         setPendingIds((prev) => new Set(prev).add(id))
+        notifyQueue()
       }
     },
-    [editingIds]
+    [editingIds, notifyQueue]
   )
 
   const retryMessage = useCallback(
