@@ -187,7 +187,10 @@ export class PushService {
     }
 
     // 4. Build structured push payload — display text is formatted by the service worker (INV-46)
-    const context = activity.context as { contentPreview?: string; streamName?: string } | null | undefined
+    const context = activity.context as
+      | { contentPreview?: string; streamName?: string; authorName?: string }
+      | null
+      | undefined
     const pushPayload = JSON.stringify({
       data: {
         workspaceId,
@@ -196,6 +199,7 @@ export class PushService {
         activityType: activity.activityType,
         contentPreview: context?.contentPreview?.slice(0, 200),
         streamName: context?.streamName,
+        authorName: context?.authorName,
       },
     })
 
