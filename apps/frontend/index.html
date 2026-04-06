@@ -118,16 +118,16 @@
         if (sessionStorage.getItem("sw-css-recovery")) return
         setTimeout(function () {
           var hasStyles = false
-          try {
-            var sheets = document.styleSheets
-            for (var i = 0; i < sheets.length; i++) {
+          var sheets = document.styleSheets
+          for (var i = 0; i < sheets.length; i++) {
+            try {
               if (sheets[i].cssRules && sheets[i].cssRules.length > 0) {
                 hasStyles = true
                 break
               }
+            } catch (e) {
+              // Cross-origin stylesheet (e.g. Google Fonts) — skip and keep checking
             }
-          } catch (e) {
-            hasStyles = true
           }
           if (hasStyles) return
           sessionStorage.setItem("sw-css-recovery", "1")
