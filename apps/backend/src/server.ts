@@ -416,7 +416,7 @@ export async function startServer(): Promise<ServerInstance> {
     },
   })
 
-  io.adapter(createAdapter(pool))
+  io.adapter(createAdapter(pools.realtime))
 
   const userSocketRegistry = new UserSocketRegistry()
   registerSocketHandlers(io, { pool, authService, streamService, pushService, userSocketRegistry })
