@@ -1,7 +1,6 @@
-import { useEffect, useRef } from "react"
+import { useEffect } from "react"
 import { useWorkspaceUnreadState } from "@/stores/workspace-store"
-
-const BASE_TITLE = "Threa"
+import { buildPageTitle, usePageStreamName } from "@/lib/page-title"
 
 const DARK_FAVICON_SVG = `<svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
   <path d="M 50 24 C 64 30, 72 42, 72 50 C 72 58, 64 70, 50 76 C 36 70, 28 58, 28 50 C 28 42, 36 30, 50 24 Z"
@@ -43,7 +42,7 @@ function setFavicon(href: string) {
  */
 export function useUnreadTabIndicator(workspaceId: string) {
   const unreadState = useWorkspaceUnreadState(workspaceId)
-  const prevCountRef = useRef<number>(-1)
+  const streamName = usePageStreamName()
 
   const unreadCounts = unreadState?.unreadCounts ?? {}
   const mutedStreamIds = unreadState?.mutedStreamIds ?? []
@@ -56,14 +55,10 @@ export function useUnreadTabIndicator(workspaceId: string) {
   }
 
   useEffect(() => {
-    // Skip DOM updates if count hasn't changed
-    if (totalUnread === prevCountRef.current) return
-    prevCountRef.current = totalUnread
+    document.title = buildPageTitle(totalUnread)
+  }, [totalUnread, streamName])
 
-    // Update title
-    document.title = totalUnread > 0 ? `(${totalUnread}) ${BASE_TITLE}` : BASE_TITLE
-
-    // Update favicon
+  useEffect(() => {
     const dark = isDarkMode()
     const baseSvg = dark ? DARK_FAVICON_SVG : LIGHT_FAVICON_SVG
     const svg = totalUnread > 0 ? addNotificationDot(baseSvg) : baseSvg
@@ -77,7 +72,6 @@ export function useUnreadTabIndicator(workspaceId: string) {
       const nowDark = isDarkMode()
       if (nowDark === lastDark) return
       lastDark = nowDark
-      prevCountRef.current = -1
       // Immediately update favicon for the new theme at the current unread count
       const baseSvg = nowDark ? DARK_FAVICON_SVG : LIGHT_FAVICON_SVG
       const svg = totalUnread > 0 ? addNotificationDot(baseSvg) : baseSvg
@@ -86,7 +80,7 @@ export function useUnreadTabIndicator(workspaceId: string) {
     themeObserver.observe(document.documentElement, { attributeFilter: ["class"] })
     return () => {
       themeObserver.disconnect()
-      document.title = BASE_TITLE
+      document.title = buildPageTitle(0)
       const dark = isDarkMode()
       setFavicon(svgToDataUri(dark ? DARK_FAVICON_SVG : LIGHT_FAVICON_SVG))
     }
