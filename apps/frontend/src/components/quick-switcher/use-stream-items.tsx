@@ -5,10 +5,12 @@ import { StreamTypes, getAvatarUrl } from "@threa/types"
 import type { Stream, StreamType } from "@threa/types"
 import { getStreamName, streamFallbackLabel } from "@/lib/streams"
 import { streamsApi } from "@/api"
-import { createDmDraftId } from "@/hooks"
+import { createDmDraftId, useUnreadCounts, useActivityCounts } from "@/hooks"
+import { useWorkspaceUnreadState } from "@/stores/workspace-store"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { calculateUrgency, getActivityTime } from "@/components/layout/sidebar/utils"
 import { FilterSelect } from "./filter-select"
 import {
   parseSearchQuery,
@@ -17,7 +19,8 @@ import {
   getFilterLabel,
   type FilterType,
 } from "./search-query-parser"
-import type { ModeContext, ModeResult, QuickSwitcherItem } from "./types"
+import type { ModeContext, ModeResult, QuickSwitcherItem, WorkspaceStream } from "./types"
+import type { UrgencyLevel } from "@/components/layout/sidebar/types"
 
 const STREAM_ICONS: Record<StreamType, React.ComponentType<{ className?: string }>> = {
   [StreamTypes.SCRATCHPAD]: FileText,
@@ -42,6 +45,12 @@ const ARCHIVE_STATUS_OPTIONS: { value: "active" | "archived"; label: string }[] 
   { value: "active", label: "Active" },
   { value: "archived", label: "Archived" },
 ]
+
+/** Stream with optional sidebar preview (CachedStream has it, API Stream doesn't) */
+type StreamLike = Stream & { lastMessagePreview?: WorkspaceStream["lastMessagePreview"] }
+
+/** Urgency priority for sorting: mentions > ai > activity > quiet */
+const URGENCY_ORDER: Record<UrgencyLevel, number> = { mentions: 0, ai: 1, activity: 2, quiet: 3 }
 
 function getStreamTypeLabel(type: StreamType): string {
   switch (type) {
@@ -73,6 +82,11 @@ export function useStreamItems(context: ModeContext): ModeResult {
     navigate,
     closeDialog,
   } = context
+
+  const { getUnreadCount } = useUnreadCounts(workspaceId)
+  const { getMentionCount } = useActivityCounts(workspaceId)
+  const unreadState = useWorkspaceUnreadState(workspaceId)
+  const mutedStreamIds = useMemo(() => new Set(unreadState?.mutedStreamIds ?? []), [unreadState?.mutedStreamIds])
 
   const memberStreamIds = useMemo(() => {
     const ids = new Set<string>()
@@ -141,7 +155,8 @@ export function useStreamItems(context: ModeContext): ModeResult {
     const dmPeerByStreamId = new Map((dmPeers ?? []).map((peer) => [peer.streamId, peer.userId]))
 
     // Combine streams based on filters
-    const allStreams: Stream[] = [
+    // Active streams are CachedStream (with lastMessagePreview), archived come from API as Stream
+    const allStreams: StreamLike[] = [
       ...(showActive ? activeStreams : []),
       ...(showArchived && archivedStreams ? archivedStreams : []),
     ]
@@ -160,7 +175,7 @@ export function useStreamItems(context: ModeContext): ModeResult {
     }
 
     // Score streams by match quality (lower = better)
-    const scoreStream = (stream: Stream): number => {
+    const scoreStream = (stream: StreamLike): number => {
       if (!searchText) return 0
       const name = (getStreamName(stream) ?? streamFallbackLabel(stream.type, "generic")).toLowerCase()
       if (name === lowerQuery) return 0 // Exact match
@@ -170,16 +185,40 @@ export function useStreamItems(context: ModeContext): ModeResult {
       return Infinity // No match
     }
 
-    const streamItems = filteredStreams
-      .map((stream) => ({ stream, score: scoreStream(stream) }))
+    const isSearching = searchText.length > 0
+
+    // Pre-compute urgency and counts once per stream (used by both sort and item builder)
+    const enriched = filteredStreams
+      .map((stream) => {
+        const score = scoreStream(stream)
+        const unreadCount = getUnreadCount(stream.id)
+        const mentionCount = getMentionCount(stream.id)
+        const isMuted = mutedStreamIds.has(stream.id)
+        const urgency = calculateUrgency(stream, unreadCount, mentionCount, isMuted)
+        return { stream, score, unreadCount, mentionCount, urgency }
+      })
       .filter(({ score }) => score !== Infinity)
+
+    const streamItems = enriched
       .sort((a, b) => {
-        if (a.score !== b.score) return a.score - b.score
+        if (isSearching) {
+          if (a.score !== b.score) return a.score - b.score
+          const aName = getStreamName(a.stream) ?? streamFallbackLabel(a.stream.type, "generic")
+          const bName = getStreamName(b.stream) ?? streamFallbackLabel(b.stream.type, "generic")
+          return aName.localeCompare(bName)
+        }
+
+        // When browsing (no query): sort like the sidebar
+        // Mentions first, then AI activity, then unread, then by recency, then alphabetically
+        const urgencyDiff = URGENCY_ORDER[a.urgency] - URGENCY_ORDER[b.urgency]
+        if (urgencyDiff !== 0) return urgencyDiff
+        const timeDiff = getActivityTime(b.stream) - getActivityTime(a.stream)
+        if (timeDiff !== 0) return timeDiff
         const aName = getStreamName(a.stream) ?? streamFallbackLabel(a.stream.type, "generic")
         const bName = getStreamName(b.stream) ?? streamFallbackLabel(b.stream.type, "generic")
         return aName.localeCompare(bName)
       })
-      .map(({ stream }): QuickSwitcherItem => {
+      .map(({ stream, unreadCount, mentionCount, urgency }): QuickSwitcherItem => {
         const href = `/w/${workspaceId}/s/${stream.id}`
         const isArchived = stream.archivedAt != null
         const typeLabel = getStreamTypeLabel(stream.type)
@@ -206,6 +245,9 @@ export function useStreamItems(context: ModeContext): ModeResult {
             closeDialog()
             navigate(href)
           },
+          urgency,
+          unreadCount,
+          mentionCount,
         }
       })
 
@@ -264,6 +306,9 @@ export function useStreamItems(context: ModeContext): ModeResult {
     workspaceId,
     navigate,
     closeDialog,
+    getUnreadCount,
+    getMentionCount,
+    mutedStreamIds,
   ])
 
   const header = (

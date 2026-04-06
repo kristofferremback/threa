@@ -1,5 +1,10 @@
 import type { NavigateFunction } from "react-router-dom"
-import type { Stream, StreamMember, User } from "@threa/types"
+import type { StreamMember, User } from "@threa/types"
+import type { UrgencyLevel } from "@/components/layout/sidebar/types"
+import type { useWorkspaceStreams } from "@/stores/workspace-store"
+
+/** Stream type as returned by the workspace store (includes lastMessagePreview) */
+export type WorkspaceStream = ReturnType<typeof useWorkspaceStreams>[number]
 
 export interface QuickSwitcherItem {
   id: string
@@ -16,6 +21,12 @@ export interface QuickSwitcherItem {
   actionIcon?: React.ComponentType<{ className?: string }>
   /** Aria label for the action button */
   actionLabel?: string
+  /** Urgency level for visual indicators (color strip, bold text) */
+  urgency?: UrgencyLevel
+  /** Number of unread messages */
+  unreadCount?: number
+  /** Number of mentions */
+  mentionCount?: number
 }
 
 export interface ModeContext {
@@ -24,7 +35,7 @@ export interface ModeContext {
   onQueryChange: (query: string) => void
   navigate: NavigateFunction
   closeDialog: () => void
-  streams: Stream[]
+  streams: WorkspaceStream[]
   streamMemberships: StreamMember[]
   users?: User[]
   currentUserId?: string | null

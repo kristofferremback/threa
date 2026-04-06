@@ -3,6 +3,8 @@ import { Link } from "react-router-dom"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { MentionIndicator } from "@/components/mention-indicator"
+import { URGENCY_COLORS } from "@/components/layout/sidebar/config"
 import type { QuickSwitcherItem } from "./types"
 
 interface ItemListProps {
@@ -86,42 +88,55 @@ export function ItemList({
               item.label.slice(0, 1).toUpperCase()
             )
 
+            const hasUnread = (item.unreadCount ?? 0) > 0
+            const urgency = item.urgency ?? "quiet"
+            const showUrgencyStrip = urgency !== "quiet"
+
             const itemContent = (
               <>
-                {item.avatarUrl ? (
-                  <Avatar className="h-7 w-7 rounded-md">
-                    <AvatarImage src={item.avatarUrl} alt={item.label} />
-                    <AvatarFallback className="rounded-md">{iconFallback}</AvatarFallback>
-                  </Avatar>
-                ) : (
-                  Icon && <Icon className="h-4 w-4 opacity-50" />
+                {showUrgencyStrip && (
+                  <div
+                    className="w-1 flex-shrink-0 rounded-l-[10px] transition-colors duration-300"
+                    style={{ backgroundColor: URGENCY_COLORS[urgency] }}
+                  />
                 )}
-                <div className="flex flex-col flex-1 min-w-0">
-                  <span className="truncate">{item.label}</span>
-                  {item.description && (
-                    <span className="text-xs text-muted-foreground truncate">{item.description}</span>
+                <div className="flex items-center gap-3 flex-1 min-w-0 px-3 py-3">
+                  {item.avatarUrl ? (
+                    <Avatar className="h-7 w-7 rounded-md">
+                      <AvatarImage src={item.avatarUrl} alt={item.label} />
+                      <AvatarFallback className="rounded-md">{iconFallback}</AvatarFallback>
+                    </Avatar>
+                  ) : (
+                    Icon && <Icon className="h-4 w-4 opacity-50" />
+                  )}
+                  <div className="flex flex-col flex-1 min-w-0">
+                    <span className={cn("truncate", hasUnread ? "font-semibold" : "font-normal")}>{item.label}</span>
+                    {item.description && (
+                      <span className="text-xs text-muted-foreground truncate">{item.description}</span>
+                    )}
+                  </div>
+                  {(item.mentionCount ?? 0) > 0 && <MentionIndicator count={item.mentionCount!} className="ml-auto" />}
+                  {item.onAction && ActionIcon && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 shrink-0 opacity-0 group-hover:opacity-100 max-sm:opacity-100 transition-opacity"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        item.onAction?.()
+                      }}
+                      aria-label={item.actionLabel}
+                    >
+                      <ActionIcon className="h-4 w-4 text-muted-foreground hover:text-destructive" />
+                    </Button>
                   )}
                 </div>
-                {item.onAction && ActionIcon && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 shrink-0 opacity-0 group-hover:opacity-100 max-sm:opacity-100 transition-opacity"
-                    onClick={(e) => {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      item.onAction?.()
-                    }}
-                    aria-label={item.actionLabel}
-                  >
-                    <ActionIcon className="h-4 w-4 text-muted-foreground hover:text-destructive" />
-                  </Button>
-                )}
               </>
             )
 
             const className = cn(
-              "group relative flex cursor-default select-none items-center gap-3 rounded-[10px] px-3 py-3 text-sm outline-none transition-colors",
+              "group relative flex cursor-default select-none items-stretch rounded-[10px] text-sm outline-none transition-colors",
               isSelected ? "bg-muted" : "hover:bg-muted"
             )
 
