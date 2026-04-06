@@ -1,5 +1,12 @@
 import { test, expect } from "@playwright/test"
-import { createChannel, loginAndCreateWorkspace } from "./helpers"
+import {
+  clickReplyInThread,
+  createChannel,
+  generateTestId,
+  loginAndCreateWorkspace,
+  sendPanelReply,
+  waitForRealThreadPanel,
+} from "./helpers"
 
 /**
  * Tests for nested thread navigation and bootstrapping.
@@ -18,7 +25,7 @@ test.describe("Nested Thread Navigation", () => {
 
   test("should show nested thread reply count when navigating back via breadcrumbs", async ({ page }) => {
     test.setTimeout(60000)
-    const testId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
+    const testId = generateTestId()
 
     // Create a channel (creating navigates to it)
     const channelName = `nested-breadcrumb-${testId}`
@@ -31,51 +38,47 @@ test.describe("Nested Thread Navigation", () => {
     await page.keyboard.type(channelMessage)
     await page.keyboard.press("Meta+Enter")
 
-    await expect(page.getByRole("main").getByText(channelMessage).first()).toBeVisible({ timeout: 5000 })
+    await expect(
+      page.getByRole("main").locator(".message-item").filter({ hasText: channelMessage }).first()
+    ).toBeVisible({
+      timeout: 5000,
+    })
 
     // Start a first-level thread by replying to the channel message
-    const messageContainer = page.getByRole("main").locator(".group").filter({ hasText: channelMessage }).first()
-    await messageContainer.hover()
-    const replyLink = messageContainer.getByRole("link", { name: "Reply in thread" })
-    await expect(replyLink).toBeVisible({ timeout: 5000 })
-    await replyLink.click()
+    const messageContainer = page.getByRole("main").locator(".message-item").filter({ hasText: channelMessage }).first()
+    await clickReplyInThread(messageContainer)
 
     await expect(page.getByText(/Start a new thread/)).toBeVisible({ timeout: 3000 })
 
     // Send first-level thread reply
-    const threadEditor = page.locator("[contenteditable='true']").last()
-    await threadEditor.click()
     const firstReply = `First level reply ${testId}`
-    await page.keyboard.type(firstReply)
-    await page.keyboard.press("Meta+Enter")
+    await sendPanelReply(page, firstReply)
 
     // Scope to thread panel to avoid matching hidden sidebar/breadcrumb text
     await expect(page.getByTestId("panel").getByText(firstReply)).toBeVisible({ timeout: 5000 })
 
     // Wait for thread to be created (draft transitions to real thread)
-    await expect(page.getByText(/Start a new thread/)).not.toBeVisible({ timeout: 3000 })
+    await waitForRealThreadPanel(page)
 
     // Now reply to the first-level thread reply to create a nested (second-level) thread
-    const firstReplyContainer = page.getByRole("main").locator(".group").filter({ hasText: firstReply }).first()
-    await firstReplyContainer.hover()
-    const nestedReplyLink = firstReplyContainer.getByRole("link", { name: "Reply in thread" })
-    await expect(nestedReplyLink).toBeVisible({ timeout: 5000 })
-    await nestedReplyLink.click()
+    const firstReplyContainer = page
+      .getByTestId("panel")
+      .locator(".message-item")
+      .filter({ hasText: firstReply })
+      .first()
+    await clickReplyInThread(firstReplyContainer, 25000)
 
     // Wait for nested thread draft panel to appear
     await expect(page.getByText(/Start a new thread/)).toBeVisible({ timeout: 3000 })
 
     // Send nested thread reply
-    const nestedThreadEditor = page.locator("[contenteditable='true']").last()
-    await nestedThreadEditor.click()
     const nestedReply = `Nested thread reply ${testId}`
-    await page.keyboard.type(nestedReply)
-    await page.keyboard.press("Meta+Enter")
+    await sendPanelReply(page, nestedReply)
 
     await expect(page.getByTestId("panel").getByText(nestedReply)).toBeVisible({ timeout: 5000 })
 
     // Wait for nested thread to be created
-    await expect(page.getByText(/Start a new thread/)).not.toBeVisible({ timeout: 3000 })
+    await waitForRealThreadPanel(page)
 
     // Navigate back to the first-level thread via breadcrumbs
     // The breadcrumb should show the parent thread (which contains firstReply)
@@ -89,13 +92,13 @@ test.describe("Nested Thread Navigation", () => {
 
     // CRITICAL: The firstReply message should show as having 1 reply (the nested thread)
     // This is the bug - it doesn't show the reply count after navigating back
-    const firstReplyInPanel = page.getByTestId("panel").locator(".group").filter({ hasText: firstReply }).first()
-    await expect(firstReplyInPanel.getByText(/1 reply/i)).toBeVisible({ timeout: 10000 })
+    const firstReplyInPanel = page.getByTestId("panel").locator(".message-item").filter({ hasText: firstReply }).first()
+    await expect(firstReplyInPanel).toContainText(/1 reply/i, { timeout: 20000 })
   })
 
   test("should show nested thread indicator when reopening parent thread", async ({ page }) => {
     test.setTimeout(60000)
-    const testId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
+    const testId = generateTestId()
 
     // Create a channel (creating navigates to it)
     const channelName = `nested-reopen-${testId}`
@@ -108,56 +111,56 @@ test.describe("Nested Thread Navigation", () => {
     await page.keyboard.type(channelMessage)
     await page.keyboard.press("Meta+Enter")
 
-    await expect(page.getByRole("main").getByText(channelMessage)).toBeVisible({ timeout: 5000 })
+    await expect(
+      page.getByRole("main").locator(".message-item").filter({ hasText: channelMessage }).first()
+    ).toBeVisible({
+      timeout: 5000,
+    })
 
     // Start a thread on the channel message
     const messageContainer = page.getByRole("main").locator(".message-item").filter({ hasText: channelMessage }).first()
-    await messageContainer.hover()
-    const replyLink = messageContainer.getByRole("link", { name: "Reply in thread" })
-    await expect(replyLink).toBeVisible({ timeout: 2000 })
-    await replyLink.click()
+    await clickReplyInThread(messageContainer, 10000)
 
     await expect(page.getByText(/Start a new thread/)).toBeVisible({ timeout: 3000 })
 
     // Send thread reply
-    const threadEditor = page.locator("[contenteditable='true']").last()
-    await threadEditor.click()
     const threadReply = `Thread reply ${testId}`
-    await page.keyboard.type(threadReply)
-    await page.keyboard.press("Meta+Enter")
+    await sendPanelReply(page, threadReply)
 
     await expect(page.getByTestId("panel").getByText(threadReply)).toBeVisible({ timeout: 5000 })
+    await waitForRealThreadPanel(page)
 
     // Reply to the thread reply to create a nested thread
     const threadReplyContainer = page
-      .getByRole("main")
+      .getByTestId("panel")
       .locator(".message-item")
       .filter({ hasText: threadReply })
       .first()
-    await threadReplyContainer.hover()
-    const nestedReplyLink = threadReplyContainer.getByRole("link", { name: "Reply in thread" })
-    await expect(nestedReplyLink).toBeVisible({ timeout: 2000 })
-    await nestedReplyLink.click()
+    await clickReplyInThread(threadReplyContainer, 25000)
 
     await expect(page.getByText(/Start a new thread/)).toBeVisible({ timeout: 3000 })
 
     // Send nested reply
-    const nestedEditor = page.locator("[contenteditable='true']").last()
-    await nestedEditor.click()
     const nestedReply = `Nested reply ${testId}`
-    await page.keyboard.type(nestedReply)
-    await page.keyboard.press("Meta+Enter")
+    await sendPanelReply(page, nestedReply)
 
     await expect(page.getByTestId("panel").getByText(nestedReply)).toBeVisible({ timeout: 5000 })
-    await expect(page.getByText(/Start a new thread/)).not.toBeVisible({ timeout: 3000 })
+    await waitForRealThreadPanel(page)
 
-    // Close the thread panel via explicit close control for deterministic behavior
-    const panel = page.getByTestId("panel")
-    await panel.getByRole("button", { name: "Close" }).click()
-    await expect(panel).not.toBeVisible({ timeout: 5000 })
+    // Return to the main stream via the breadcrumb. This exercises the same
+    // navigation path as a user re-opening the thread from the parent message,
+    // without depending on the close-button click animation settling first.
+    const returnToChannel = page.getByRole("button", { name: `Return to #${channelName}` })
+    await expect(returnToChannel).toBeVisible({ timeout: 5000 })
+    await returnToChannel.click()
+    await expect(page).not.toHaveURL(/panel=/)
 
     // Reopen the first-level thread by clicking on the reply count in the main stream
-    const channelMessageInMain = page.getByRole("main").locator(".group").filter({ hasText: channelMessage }).first()
+    const channelMessageInMain = page
+      .getByRole("main")
+      .locator(".message-item")
+      .filter({ hasText: channelMessage })
+      .first()
     const threadIndicator = channelMessageInMain.getByText(/1 reply/i)
     await expect(threadIndicator).toBeVisible({ timeout: 3000 })
     await threadIndicator.click()
@@ -168,12 +171,18 @@ test.describe("Nested Thread Navigation", () => {
 
     // CRITICAL: The threadReply message should show as having a nested thread (1 reply).
     // The reply count arrives via bootstrap refetch after the stream socket re-subscribes.
-    const threadReplyInPanel = page.getByRole("main").locator(".group").filter({ hasText: threadReply }).first()
-    await expect(threadReplyInPanel.getByText(/1 reply/i)).toBeVisible({ timeout: 10000 })
+    const threadReplyInPanel = page
+      .getByTestId("panel")
+      .locator(".message-item")
+      .filter({ hasText: threadReply })
+      .first()
+    await expect
+      .poll(async () => (await threadReplyInPanel.textContent()) ?? "", { timeout: 30000 })
+      .toMatch(/1 reply/i)
   })
 
   test("should maintain reply counts across multiple navigation cycles", async ({ page }) => {
-    const testId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
+    const testId = generateTestId()
 
     test.setTimeout(60000)
 
@@ -187,37 +196,32 @@ test.describe("Nested Thread Navigation", () => {
     const rootMessage = `Root ${testId}`
     await page.keyboard.type(rootMessage)
     await page.keyboard.press("Meta+Enter")
-    await expect(page.getByRole("main").getByText(rootMessage).first()).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole("main").locator(".message-item").filter({ hasText: rootMessage }).first()).toBeVisible({
+      timeout: 5000,
+    })
 
     // Create first-level thread
-    const rootContainer = page.getByRole("main").locator(".group").filter({ hasText: rootMessage }).first()
-    await rootContainer.hover()
-    const rootReplyLink = rootContainer.getByRole("link", { name: "Reply in thread" })
-    await expect(rootReplyLink).toBeVisible({ timeout: 5000 })
-    await rootReplyLink.click()
+    const rootContainer = page.getByRole("main").locator(".message-item").filter({ hasText: rootMessage }).first()
+    await clickReplyInThread(rootContainer)
     await expect(page.getByText(/Start a new thread/)).toBeVisible({ timeout: 3000 })
 
-    const threadEditor = page.locator("[contenteditable='true']").last()
-    await threadEditor.click()
     const level1Message = `Level 1 ${testId}`
-    await page.keyboard.type(level1Message)
-    await page.keyboard.press("Meta+Enter")
+    await sendPanelReply(page, level1Message)
     await expect(page.getByTestId("panel").getByText(level1Message)).toBeVisible({ timeout: 10000 })
+    await waitForRealThreadPanel(page)
 
     // Create nested thread
-    const level1Container = page.getByRole("main").locator(".message-item").filter({ hasText: level1Message }).first()
-    await level1Container.hover()
-    const level1ReplyLink = level1Container.getByRole("link", { name: "Reply in thread" })
-    await expect(level1ReplyLink).toBeVisible({ timeout: 5000 })
-    await level1ReplyLink.click()
+    const level1Container = page
+      .getByTestId("panel")
+      .locator(".message-item")
+      .filter({ hasText: level1Message })
+      .first()
+    await clickReplyInThread(level1Container, 25000)
     await expect(page.getByText(/Start a new thread/)).toBeVisible({ timeout: 3000 })
 
-    const nestedEditor = page.locator("[contenteditable='true']").last()
-    await nestedEditor.click()
     const level2Message = `Level 2 ${testId}`
-    await page.keyboard.type(level2Message)
-    await page.keyboard.press("Meta+Enter")
-    await expect(page.getByText(/Start a new thread/)).not.toBeVisible({ timeout: 10000 })
+    await sendPanelReply(page, level2Message)
+    await waitForRealThreadPanel(page)
     await expect(page.getByTestId("panel").getByText(level2Message)).toBeVisible({ timeout: 10000 })
 
     // Navigate back via breadcrumb — bootstrap refetch delivers updated reply counts
@@ -225,8 +229,8 @@ test.describe("Nested Thread Navigation", () => {
     await breadcrumb.click()
 
     // Verify reply count shows (bootstrap refetch may take a moment in CI)
-    const level1InPanel = page.getByRole("main").locator(".message-item").filter({ hasText: level1Message }).first()
-    await expect(level1InPanel.getByText(/1 reply/i)).toBeVisible({ timeout: 10000 })
+    const level1InPanel = page.getByTestId("panel").locator(".message-item").filter({ hasText: level1Message }).first()
+    await expect(level1InPanel).toContainText(/1 reply/i, { timeout: 20000 })
 
     // Navigate forward again by clicking the reply count
     await level1InPanel.getByText(/1 reply/i).click()
@@ -236,6 +240,6 @@ test.describe("Nested Thread Navigation", () => {
     await breadcrumb.click()
 
     // Reply count should still show correctly
-    await expect(level1InPanel.getByText(/1 reply/i)).toBeVisible({ timeout: 10000 })
+    await expect(level1InPanel).toContainText(/1 reply/i, { timeout: 20000 })
   })
 })

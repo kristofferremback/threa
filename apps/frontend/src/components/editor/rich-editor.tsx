@@ -178,6 +178,7 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
 
   // Track mentionables state to detect when data loads or currentUser becomes known
   const lastParsedState = useRef({ count: mentionables.length, hasCurrentUser: false })
+  const pendingMentionReparse = useRef(false)
   // Extensions are memoized but DON'T depend on messageSendMode/onSubmit
   // because we pass refs that get updated on render
   const extensions = useMemo(
@@ -476,11 +477,20 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
     // 1. More mentionables loaded than last time, OR
     // 2. We now have current user info but didn't before
     const shouldReparse =
+      pendingMentionReparse.current ||
       current.count > lastParsedState.current.count ||
       (current.hasCurrentUser && !lastParsedState.current.hasCurrentUser)
 
     if (shouldReparse) {
       lastParsedState.current = current
+      // Replacing editor content while the user is actively typing can drop
+      // the first keystrokes after reload. Defer this cosmetic reparse until
+      // focus leaves the editor so mention colors still update without clobbering input.
+      if (isFocused || editor.isFocused) {
+        pendingMentionReparse.current = true
+        return
+      }
+      pendingMentionReparse.current = false
       // Round-trip through markdown to update mention types with new user data
       const markdown = serializeToMarkdown(editor.getJSON())
       if (markdown) {
@@ -489,7 +499,7 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
         isInternalUpdate.current = false
       }
     }
-  }, [editor, mentionables, getMentionType, toEmoji])
+  }, [editor, mentionables, getMentionType, toEmoji, isFocused])
 
   // TipTap's autofocus option handles initial focus.
   // No additional focus-on-mount effect needed — the redundant focus()

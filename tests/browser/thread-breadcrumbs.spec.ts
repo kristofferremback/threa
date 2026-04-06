@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test"
-import { createChannel, generateTestId, loginAndCreateWorkspace } from "./helpers"
+import { clickReplyInThread, createChannel, generateTestId, getPanelEditor, loginAndCreateWorkspace } from "./helpers"
 
 /**
  * Tests for thread breadcrumb display, navigation, and sidebar context.
@@ -33,11 +33,8 @@ test.describe("Thread Breadcrumbs", () => {
     })
 
     // Create a first-level thread
-    const messageContainer = page.getByRole("main").locator(".group").filter({ hasText: channelMessage }).first()
-    await messageContainer.hover()
-    const replyLink = messageContainer.getByRole("link", { name: "Reply in thread" })
-    await expect(replyLink).toBeVisible({ timeout: 2000 })
-    await replyLink.click()
+    const messageContainer = page.getByRole("main").locator(".message-item").filter({ hasText: channelMessage }).first()
+    await clickReplyInThread(messageContainer)
     await expect(page.getByText(/Start a new thread/)).toBeVisible({ timeout: 3000 })
 
     // Draft breadcrumbs should show the channel as ancestor and "New thread" as current
@@ -46,7 +43,7 @@ test.describe("Thread Breadcrumbs", () => {
     await expect(breadcrumbNav.getByText("New thread")).toBeVisible({ timeout: 3000 })
 
     // Send thread reply to create the thread
-    const threadEditor = page.locator("[contenteditable='true']").last()
+    const threadEditor = getPanelEditor(page)
     await threadEditor.click()
     const level1Reply = `Level 1 reply ${testId}`
     await page.keyboard.type(level1Reply)
@@ -58,9 +55,8 @@ test.describe("Thread Breadcrumbs", () => {
     await expect(breadcrumbNav.getByText(`#${channelName}`)).toBeVisible({ timeout: 5000 })
 
     // Create a second-level nested thread
-    const level1Container = page.getByRole("main").locator(".group").filter({ hasText: level1Reply }).first()
-    await level1Container.hover()
-    await level1Container.getByRole("link", { name: "Reply in thread" }).click()
+    const level1Container = page.getByTestId("panel").locator(".message-item").filter({ hasText: level1Reply }).first()
+    await clickReplyInThread(level1Container, 25000)
     await expect(page.getByText(/Start a new thread/)).toBeVisible({ timeout: 3000 })
 
     // Draft breadcrumbs for nested thread should show channel + parent thread as ancestors
@@ -68,7 +64,7 @@ test.describe("Thread Breadcrumbs", () => {
     await expect(breadcrumbNav.getByText("New thread")).toBeVisible({ timeout: 3000 })
 
     // Send nested thread reply
-    const nestedEditor = page.locator("[contenteditable='true']").last()
+    const nestedEditor = getPanelEditor(page)
     await nestedEditor.click()
     const level2Reply = `Level 2 reply ${testId}`
     await page.keyboard.type(level2Reply)
@@ -109,15 +105,12 @@ test.describe("Thread Breadcrumbs", () => {
     })
 
     // Create a thread
-    const messageContainer = page.getByRole("main").locator(".group").filter({ hasText: channelMessage }).first()
-    await messageContainer.hover()
-    const replyLink = messageContainer.getByRole("link", { name: "Reply in thread" })
-    await expect(replyLink).toBeVisible({ timeout: 2000 })
-    await replyLink.click()
+    const messageContainer = page.getByRole("main").locator(".message-item").filter({ hasText: channelMessage }).first()
+    await clickReplyInThread(messageContainer)
     await expect(page.getByText(/Start a new thread/)).toBeVisible({ timeout: 3000 })
 
     // Send thread reply to create the thread
-    const threadEditor = page.locator("[contenteditable='true']").last()
+    const threadEditor = getPanelEditor(page)
     await threadEditor.click()
     await page.keyboard.type(`Thread reply ${testId}`)
     await page.keyboard.press("Meta+Enter")

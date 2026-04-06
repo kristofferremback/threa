@@ -383,7 +383,7 @@ test.describe("Drafts Page", () => {
     await expect(page.getByText(/Start a new thread/)).toBeVisible({ timeout: 3000 })
 
     // Type in the thread draft
-    const threadEditor = page.locator("[contenteditable='true']").last()
+    const threadEditor = page.locator("[data-editor-zone='panel'] [contenteditable='true']")
     await threadEditor.click()
     const threadDraftContent = `Thread reply draft ${testId}`
     await page.keyboard.type(threadDraftContent)
@@ -403,10 +403,13 @@ test.describe("Drafts Page", () => {
     await draftsLink.click()
     await expect(page).toHaveURL(/\/drafts$/, { timeout: 2000 })
 
-    // Verify the thread draft is shown with "Thread in #channel" label
-    const draftItem = page.getByRole("option").first()
+    // Find the specific thread draft by its preview instead of assuming it sorts first.
+    const draftItem = page
+      .getByRole("option")
+      .filter({ hasText: threadDraftContent.slice(0, 40) })
+      .first()
     await expect(draftItem).toBeVisible({ timeout: 5000 })
-    await expect(draftItem.getByText(`Thread in #${channelName}`)).toBeVisible({ timeout: 10000 })
+    await expect(draftItem).toContainText(`Thread in #${channelName}`, { timeout: 10000 })
 
     // Click on the thread draft to navigate
     await draftItem.click()

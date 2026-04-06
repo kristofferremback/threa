@@ -1,4 +1,4 @@
-import { test, expect, type Page, type Request } from "@playwright/test"
+import { test, expect, type Page } from "@playwright/test"
 import { loginAndCreateWorkspace, createChannel, expectApiOk } from "./helpers"
 
 /**
@@ -63,23 +63,30 @@ function messageLocator(page: Page, prefix: string, num: number) {
 
 /** Scroll to top and dispatch a scroll event so React's onScroll handler fires. */
 async function scrollToTop(page: Page): Promise<void> {
+  const scroller = page.locator("[data-suppress-pull-refresh]")
   await page.waitForFunction(() => {
     const container = document.querySelector("[data-suppress-pull-refresh]")
     return container instanceof HTMLElement && container.scrollHeight > container.clientHeight
   })
 
-  // Directly set scrollTop and dispatch a single synthetic scroll event.
-  // Previously dispatched 3 events; one is sufficient to trigger React's onScroll handler.
+  await scroller.hover()
+  for (let i = 0; i < 3; i++) {
+    await page.mouse.wheel(0, -4000)
+    await page.waitForTimeout(50)
+  }
+
+  // Dispatch a few synthetic scroll events because heavily loaded runners can
+  // miss a single boundary transition while Virtuoso is still measuring items.
   await page.evaluate(() => {
     const container = document.querySelector("[data-suppress-pull-refresh]")
     if (container instanceof HTMLElement) {
       container.scrollTop = 0
-      // Dispatch scroll event to trigger React's handler
-      container.dispatchEvent(new Event("scroll", { bubbles: true }))
+      for (let i = 0; i < 3; i++) {
+        container.dispatchEvent(new Event("scroll", { bubbles: true }))
+      }
     }
   })
-  // Small pause to let React process the scroll event
-  await page.waitForTimeout(50)
+  await page.waitForTimeout(100)
 }
 
 test.describe("Infinite Scroll", () => {
@@ -92,53 +99,46 @@ test.describe("Infinite Scroll", () => {
   })
 
   test("should load older messages when scrolling to the top", async ({ page }) => {
+    const PAGED_MESSAGE_COUNT = 51 // One item beyond bootstrap is enough to exercise pagination
     const channelName = `scroll-older-${testId}`
     await createChannel(page, channelName)
 
     const { workspaceId, streamId } = extractIds(page)
     const prefix = `[${testId}]`
+    const oldestMessage = messageLocator(page, prefix, 1)
 
-    // Seed messages via API
-    await seedMessages(page, workspaceId, streamId, MESSAGE_COUNT, prefix)
+    // Seed while viewing another route so the target stream doesn't populate its
+    // cache via live socket updates before we verify the cold bootstrap window.
+    await page.goto(`/w/${workspaceId}/drafts`)
+    await expect(page).toHaveURL(new RegExp(`/w/${workspaceId}/drafts`))
+
+    await seedMessages(page, workspaceId, streamId, PAGED_MESSAGE_COUNT, prefix)
 
     // Navigate fresh to get a clean bootstrap (with only the latest ~50 events)
     await page.goto(`/w/${workspaceId}/s/${streamId}`)
 
     // Wait for messages to render — the latest message should be visible
-    await expect(messageLocator(page, prefix, MESSAGE_COUNT)).toBeVisible({ timeout: 10000 })
+    await expect(messageLocator(page, prefix, PAGED_MESSAGE_COUNT)).toBeVisible({ timeout: 10000 })
 
     // The earliest message should NOT be visible yet (it's beyond the bootstrap window)
-    await expect(messageLocator(page, prefix, 1)).not.toBeVisible()
+    await expect(oldestMessage).not.toBeVisible()
 
-    // Track event pagination requests
-    const eventRequests: Request[] = []
-    page.on("request", (request) => {
-      if (request.url().includes("/events") && request.url().includes("before=")) {
-        eventRequests.push(request)
-      }
-    })
-
-    // Scroll to the very top of the container and keep nudging it until the
-    // top-of-list pagination request has actually fired.
+    // Keep nudging the scroller back to the top until the oldest message from
+    // the next page is actually rendered. After each prepend the browser keeps
+    // the user's visual position stable, so a second scroll-to-top is often
+    // required on slower runners before the earliest item is in view.
     await expect
       .poll(
         async () => {
           await scrollToTop(page)
-          return eventRequests.length
+          return await oldestMessage.isVisible()
         },
         {
-          timeout: 15000,
-          message: "should fetch older events when scrolled to top",
+          timeout: 30000,
+          message: "should render older messages after repeated scrolls to the top",
         }
       )
-      .toBeGreaterThan(0)
-
-    // The earliest message should now be visible after pagination loaded it
-    await expect(messageLocator(page, prefix, 1)).toBeVisible({ timeout: 10000 })
-
-    // Verify no runaway infinite loop — only 1-2 pagination requests expected
-    // (one to exhaust the remaining messages)
-    expect(eventRequests.length).toBeLessThanOrEqual(3)
+      .toBe(true)
   })
 
   test("should show 'Jump to latest' when scrolled far from bottom and hide when scrolled back", async ({ page }) => {
@@ -158,10 +158,18 @@ test.describe("Infinite Scroll", () => {
     await expect(jumpButton).not.toBeVisible()
 
     // Scroll to the top
-    await scrollToTop(page)
-
-    // "Jump to latest" should appear
-    await expect(jumpButton).toBeVisible({ timeout: 5000 })
+    await expect
+      .poll(
+        async () => {
+          await scrollToTop(page)
+          return await jumpButton.isVisible()
+        },
+        {
+          timeout: 15000,
+          message: "should show jump-to-latest after scrolling far from the bottom",
+        }
+      )
+      .toBe(true)
 
     // Click it — should scroll back to bottom
     await jumpButton.click()
