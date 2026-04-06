@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Bell, FileText, Hash, MessageSquare, Plus, X, Archive } from "lucide-react"
-import { StreamTypes, AuthorTypes, getAvatarUrl } from "@threa/types"
+import { StreamTypes, getAvatarUrl } from "@threa/types"
 import type { Stream, StreamType } from "@threa/types"
 import { getStreamName, streamFallbackLabel } from "@/lib/streams"
 import { streamsApi } from "@/api"
@@ -10,6 +10,7 @@ import { useWorkspaceUnreadState } from "@/stores/workspace-store"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { calculateUrgency, getActivityTime } from "@/components/layout/sidebar/utils"
 import { FilterSelect } from "./filter-select"
 import {
   parseSearchQuery,
@@ -48,25 +49,8 @@ const ARCHIVE_STATUS_OPTIONS: { value: "active" | "archived"; label: string }[] 
 /** Stream with optional sidebar preview (CachedStream has it, API Stream doesn't) */
 type StreamLike = Stream & { lastMessagePreview?: WorkspaceStream["lastMessagePreview"] }
 
-/** Calculate urgency for a stream (mirrors sidebar logic from sidebar/utils.ts) */
-function calculateStreamUrgency(
-  stream: StreamLike,
-  unreadCount: number,
-  mentionCount: number,
-  isMuted: boolean
-): UrgencyLevel {
-  if (isMuted) return "quiet"
-  if (mentionCount > 0) return "mentions"
-  if (stream.lastMessagePreview?.authorType === AuthorTypes.PERSONA && unreadCount > 0) return "ai"
-  if (unreadCount > 0) return "activity"
-  return "quiet"
-}
-
-/** Get activity timestamp for sorting (most recent message or creation) */
-function getActivityTime(stream: StreamLike): number {
-  const timestamp = stream.lastMessagePreview?.createdAt ?? stream.createdAt
-  return new Date(timestamp).getTime()
-}
+/** Urgency priority for sorting: mentions > ai > activity > quiet */
+const URGENCY_ORDER: Record<UrgencyLevel, number> = { mentions: 0, ai: 1, activity: 2, quiet: 3 }
 
 function getStreamTypeLabel(type: StreamType): string {
   switch (type) {
@@ -203,12 +187,21 @@ export function useStreamItems(context: ModeContext): ModeResult {
 
     const isSearching = searchText.length > 0
 
-    const streamItems = filteredStreams
-      .map((stream) => ({ stream, score: scoreStream(stream) }))
+    // Pre-compute urgency and counts once per stream (used by both sort and item builder)
+    const enriched = filteredStreams
+      .map((stream) => {
+        const score = scoreStream(stream)
+        const unreadCount = getUnreadCount(stream.id)
+        const mentionCount = getMentionCount(stream.id)
+        const isMuted = mutedStreamIds.has(stream.id)
+        const urgency = calculateUrgency(stream, unreadCount, mentionCount, isMuted)
+        return { stream, score, unreadCount, mentionCount, urgency }
+      })
       .filter(({ score }) => score !== Infinity)
+
+    const streamItems = enriched
       .sort((a, b) => {
         if (isSearching) {
-          // When searching: sort by match quality, then alphabetically
           if (a.score !== b.score) return a.score - b.score
           const aName = getStreamName(a.stream) ?? streamFallbackLabel(a.stream.type, "generic")
           const bName = getStreamName(b.stream) ?? streamFallbackLabel(b.stream.type, "generic")
@@ -216,28 +209,12 @@ export function useStreamItems(context: ModeContext): ModeResult {
         }
 
         // When browsing (no query): sort like the sidebar
-        // 1. Mentions first (red)
-        // 2. AI activity with unreads (gold)
-        // 3. Unread activity (blue)
-        // 4. Then by most recent activity
-        const aUnread = getUnreadCount(a.stream.id)
-        const bUnread = getUnreadCount(b.stream.id)
-        const aMention = getMentionCount(a.stream.id)
-        const bMention = getMentionCount(b.stream.id)
-        const aIsMuted = mutedStreamIds.has(a.stream.id)
-        const bIsMuted = mutedStreamIds.has(b.stream.id)
-        const aUrgency = calculateStreamUrgency(a.stream, aUnread, aMention, aIsMuted)
-        const bUrgency = calculateStreamUrgency(b.stream, bUnread, bMention, bIsMuted)
-
-        // Urgency priority: mentions > ai > activity > quiet
-        const urgencyOrder: Record<UrgencyLevel, number> = { mentions: 0, ai: 1, activity: 2, quiet: 3 }
-        const urgencyDiff = urgencyOrder[aUrgency] - urgencyOrder[bUrgency]
+        // Mentions first, then AI activity, then unread, then by recency
+        const urgencyDiff = URGENCY_ORDER[a.urgency] - URGENCY_ORDER[b.urgency]
         if (urgencyDiff !== 0) return urgencyDiff
-
-        // Within same urgency: sort by most recent activity
         return getActivityTime(b.stream) - getActivityTime(a.stream)
       })
-      .map(({ stream }): QuickSwitcherItem => {
+      .map(({ stream, unreadCount, mentionCount, urgency }): QuickSwitcherItem => {
         const href = `/w/${workspaceId}/s/${stream.id}`
         const isArchived = stream.archivedAt != null
         const typeLabel = getStreamTypeLabel(stream.type)
@@ -252,11 +229,6 @@ export function useStreamItems(context: ModeContext): ModeResult {
           const peerUser = peerUserId ? usersById.get(peerUserId) : undefined
           avatarUrl = getAvatarUrl(workspaceId, peerUser?.avatarUrl, 64)
         }
-
-        const unreadCount = getUnreadCount(stream.id)
-        const mentionCount = getMentionCount(stream.id)
-        const isMuted = mutedStreamIds.has(stream.id)
-        const urgency = calculateStreamUrgency(stream, unreadCount, mentionCount, isMuted)
 
         return {
           id: stream.id,

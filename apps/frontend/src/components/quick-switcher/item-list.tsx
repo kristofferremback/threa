@@ -114,7 +114,7 @@ export function ItemList({
                     <span className="text-xs text-muted-foreground truncate">{item.description}</span>
                   )}
                 </div>
-                <MentionIndicator count={item.mentionCount ?? 0} className="ml-auto" />
+                {(item.mentionCount ?? 0) > 0 && <MentionIndicator count={item.mentionCount!} className="ml-auto" />}
                 {item.onAction && ActionIcon && (
                   <Button
                     variant="ghost"

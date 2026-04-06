@@ -1,12 +1,17 @@
 import { serializeToMarkdown } from "@threa/prosemirror"
-import { AuthorTypes, type JSONContent, type StreamWithPreview } from "@threa/types"
+import { AuthorTypes, type AuthorType, type JSONContent, type StreamWithPreview } from "@threa/types"
 import { stripMarkdown } from "@/lib/markdown"
 import { getStreamName } from "@/lib/streams"
 import type { SectionKey, SortType, StreamItemData, UrgencyLevel } from "./types"
 
+/** Minimal stream shape needed for urgency calculation */
+interface StreamWithOptionalPreview {
+  lastMessagePreview?: { authorType: AuthorType } | null
+}
+
 /** Calculate urgency level for a stream based on unread and mention state */
 export function calculateUrgency(
-  stream: StreamWithPreview,
+  stream: StreamWithOptionalPreview,
   unreadCount: number,
   mentionCount: number,
   isMuted: boolean
@@ -69,7 +74,10 @@ function getStreamSortName(stream: StreamWithPreview): string {
 }
 
 /** Get activity timestamp for sorting (most recent message or creation) */
-function getActivityTime(stream: StreamWithPreview): number {
+export function getActivityTime(stream: {
+  lastMessagePreview?: { createdAt: string } | null
+  createdAt: string
+}): number {
   const timestamp = stream.lastMessagePreview?.createdAt ?? stream.createdAt
   return new Date(timestamp).getTime()
 }
