@@ -26,13 +26,13 @@ async function triggerSwUpdate(): Promise<void> {
 }
 
 /**
- * Clear all service worker caches and hard-reload so the browser fetches
- * everything fresh from the network. This recovers from stale precache states
- * that cause missing CSS/JS (the page renders unstyled).
+ * Reload the page to pick up the new service worker's precached assets.
+ * By the time this runs, triggerSwUpdate() has already activated the new SW
+ * (which cleans stale caches on activate). A plain reload is enough — the new
+ * SW serves fresh assets from its precache. Clearing caches here would break
+ * offline refresh, so we intentionally leave them for the SW to manage.
  */
-async function hardRefresh(): Promise<void> {
-  const cacheNames = await caches.keys()
-  await Promise.all(cacheNames.map((name) => caches.delete(name)))
+function reloadForUpdate(): void {
   window.location.reload()
 }
 
@@ -59,7 +59,7 @@ export function useAppUpdate(): void {
           duration: Infinity,
           action: {
             label: "Reload",
-            onClick: () => hardRefresh(),
+            onClick: () => reloadForUpdate(),
           },
         })
       }
