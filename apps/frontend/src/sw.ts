@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-import { precacheAndRoute } from "workbox-precaching"
+import { cleanupOutdatedCaches, precacheAndRoute } from "workbox-precaching"
 import { AuthorTypes, type LastMessagePreview, type StreamEvent } from "@threa/types"
 import { resolveTag } from "./lib/sw-notification-format"
 import {
@@ -38,7 +38,39 @@ self.addEventListener("activate", (event) => {
   )
 })
 
-// Precache app shell assets injected by vite-plugin-pwa
+// Remove old precache entries from previous SW versions that no longer
+// match the current manifest. Without this, stale revision-keyed entries
+// linger and consume storage quota.
+cleanupOutdatedCaches()
+
+// Network-first for navigation requests. This is the critical fix for the
+// "unstyled page" bug: workbox's precacheAndRoute uses cache-first for
+// everything, including index.html. When a new build deploys with different
+// asset filenames, a stale precache serves old HTML that references old
+// CSS/JS filenames which no longer exist on the server — resulting in 404s
+// and an unstyled page. By handling navigations network-first, users always
+// get the latest HTML with correct asset references. The precache still
+// serves as an offline fallback.
+self.addEventListener("fetch", (event) => {
+  if (event.request.mode !== "navigate") return
+
+  event.respondWith(
+    fetch(event.request).catch(async () => {
+      // Offline: fall back to precached HTML
+      const cached = await caches.match(event.request)
+      if (cached) return cached
+      // Last resort: try precached index.html for SPA routing
+      const fallback = await caches.match("/index.html")
+      if (fallback) return fallback
+      return Response.error()
+    })
+  )
+})
+
+// Precache app shell assets injected by vite-plugin-pwa.
+// This still handles JS/CSS/image assets with cache-first (which is fine —
+// Vite content-hashes these filenames so they're immutable). Navigation
+// requests are intercepted by the listener above before reaching this.
 precacheAndRoute(self.__WB_MANIFEST)
 
 // ============================================================================

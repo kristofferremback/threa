@@ -107,5 +107,49 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // Recovery: detect when the service worker is serving stale assets that
+      // cause an unstyled page (CSS 404s from old precache manifest). If no
+      // stylesheets have loaded after the page is interactive, unregister the
+      // SW, clear caches, and hard-reload to get a clean state.
+      // Uses a sessionStorage flag to prevent infinite reload loops.
+      ;(function () {
+        if (!navigator.serviceWorker) return
+        if (sessionStorage.getItem("sw-css-recovery")) return
+        setTimeout(function () {
+          var hasStyles = false
+          try {
+            var sheets = document.styleSheets
+            for (var i = 0; i < sheets.length; i++) {
+              if (sheets[i].cssRules && sheets[i].cssRules.length > 0) {
+                hasStyles = true
+                break
+              }
+            }
+          } catch (e) {
+            hasStyles = true
+          }
+          if (hasStyles) return
+          sessionStorage.setItem("sw-css-recovery", "1")
+          navigator.serviceWorker.getRegistrations().then(function (regs) {
+            var tasks = regs.map(function (r) {
+              return r.unregister()
+            })
+            tasks.push(
+              caches.keys().then(function (names) {
+                return Promise.all(
+                  names.map(function (n) {
+                    return caches.delete(n)
+                  })
+                )
+              })
+            )
+            Promise.all(tasks).then(function () {
+              location.reload()
+            })
+          })
+        }, 3000)
+      })()
+    </script>
   </body>
 </html>
