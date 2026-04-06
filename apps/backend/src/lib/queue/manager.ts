@@ -22,6 +22,7 @@ import {
   queueMessagesInFlight,
   queueMessagesProcessed,
   queueMessageDuration,
+  queueTokensStuck,
 } from "../observability"
 import { isUniqueViolation } from "../errors"
 
@@ -55,6 +56,7 @@ export interface QueueManagerConfig {
   // Adaptive polling config
   pollIntervalMs?: number // Default 500 (sleep between cycles when idle)
   refillDebounceMs?: number // Default 100 (debounce before fetching more tokens)
+  stuckTokenWarnMs?: number // Default 60000 (warn once when token runs suspiciously long)
 
   /**
    * Per-tier concurrency budgets. If not provided, all handlers share a single
@@ -78,6 +80,7 @@ const DEFAULT_CONFIG = {
   processingConcurrency: 5,
   pollIntervalMs: 500,
   refillDebounceMs: 100,
+  stuckTokenWarnMs: 60000,
   maxActiveTokens: 5,
 }
 
@@ -96,6 +99,7 @@ interface TierRuntimeState {
   activeTokens: Map<string, Promise<void>>
   refillTimer: Timer | null
   cycleExhausted: boolean
+  fillInProgress: boolean
 }
 
 /**
@@ -120,6 +124,7 @@ export class QueueManager {
   private readonly processingConcurrency: number
   private readonly pollIntervalMs: number
   private readonly refillDebounceMs: number
+  private readonly stuckTokenWarnMs: number
   /** Configured tier budgets. Undefined tiers fall back to `legacyTierBudget`. */
   private readonly tierBudgets: Partial<Record<QueueTier, number>>
   /** Budget used for tiers not explicitly configured. */
@@ -155,6 +160,7 @@ export class QueueManager {
       processingConcurrency = DEFAULT_CONFIG.processingConcurrency,
       pollIntervalMs = DEFAULT_CONFIG.pollIntervalMs,
       refillDebounceMs = DEFAULT_CONFIG.refillDebounceMs,
+      stuckTokenWarnMs = DEFAULT_CONFIG.stuckTokenWarnMs,
       maxActiveTokens = DEFAULT_CONFIG.maxActiveTokens,
       tiers,
     } = config
@@ -171,6 +177,7 @@ export class QueueManager {
     this.processingConcurrency = processingConcurrency
     this.pollIntervalMs = pollIntervalMs
     this.refillDebounceMs = refillDebounceMs
+    this.stuckTokenWarnMs = stuckTokenWarnMs
 
     // Build tier budget map. If caller supplied `tiers`, use that. Otherwise
     // fall back to legacy single-budget behaviour, represented as one synthetic
@@ -251,6 +258,7 @@ export class QueueManager {
         activeTokens: new Map(),
         refillTimer: null,
         cycleExhausted: false,
+        fillInProgress: false,
       })
     }
   }
@@ -422,8 +430,12 @@ export class QueueManager {
    * 3. Fetch initial tokens for every tier in parallel (each capped at its budget)
    * 4. Process tokens, refilling each tier's slots as they complete (debounced)
    * 5. Process cron ticks
-   * 6. Wait for all tiers' active tokens to drain
-   * 7. Sleep remaining time to reach pollIntervalMs
+   * 6. Sleep remaining time to reach pollIntervalMs
+   *
+   * Important: do NOT wait for active tokens to drain before scheduling the
+   * next cycle. A single hung handler would otherwise freeze the current cycle
+   * forever, preventing later-arriving work from ever being leased even when
+   * the tier still has spare budget.
    */
   private async runCycle(): Promise<void> {
     if (this.isStopping) {
@@ -460,9 +472,6 @@ export class QueueManager {
     // Process cron ticks (runs in parallel with token processing)
     await this.processCronTicks()
 
-    // Wait for all active tokens across tiers to complete before sleeping
-    await this.waitForCycleComplete()
-
     // Schedule next cycle after sleeping remaining time
     const elapsed = Date.now() - this.cycleStart
     this.scheduleNextCycle(elapsed)
@@ -474,45 +483,51 @@ export class QueueManager {
    * Sets tier.cycleExhausted=true when no more tokens available.
    */
   private async fillSlots(state: TierRuntimeState): Promise<void> {
-    if (this.isStopping || state.cycleExhausted) {
+    if (this.isStopping || state.cycleExhausted || state.fillInProgress) {
       return
     }
 
-    const availableSlots = state.budget - state.activeTokens.size
-    if (availableSlots <= 0) {
-      return
-    }
+    state.fillInProgress = true
 
-    const now = new Date()
+    try {
+      const availableSlots = state.budget - state.activeTokens.size
+      if (availableSlots <= 0) {
+        return
+      }
 
-    const tokens = await this.tokenPoolRepo.batchLeaseTokens(this.pool, {
-      leasedBy: this.managerId,
-      leasedAt: now,
-      leasedUntil: new Date(now.getTime() + this.lockDurationMs),
-      now,
-      limit: availableSlots,
-      queueNames: state.queueNames,
-      fairnessMode: state.fairness,
-    })
+      const now = new Date()
 
-    if (tokens.length === 0) {
-      state.cycleExhausted = true
-      logger.debug({ tier: state.tier, fairness: state.fairness }, "Tier exhausted for this cycle")
-      return
-    }
-
-    logger.debug(
-      { tier: state.tier, tokenCount: tokens.length, activeTokens: state.activeTokens.size, budget: state.budget },
-      "Leased tokens"
-    )
-
-    // Start processing each token
-    for (const token of tokens) {
-      const promise = this.processToken(token).finally(() => {
-        state.activeTokens.delete(token.id)
-        this.debouncedFillSlots(state)
+      const tokens = await this.tokenPoolRepo.batchLeaseTokens(this.pool, {
+        leasedBy: this.managerId,
+        leasedAt: now,
+        leasedUntil: new Date(now.getTime() + this.lockDurationMs),
+        now,
+        limit: availableSlots,
+        queueNames: state.queueNames,
+        fairnessMode: state.fairness,
       })
-      state.activeTokens.set(token.id, promise)
+
+      if (tokens.length === 0) {
+        state.cycleExhausted = true
+        logger.debug({ tier: state.tier, fairness: state.fairness }, "Tier exhausted for this cycle")
+        return
+      }
+
+      logger.debug(
+        { tier: state.tier, tokenCount: tokens.length, activeTokens: state.activeTokens.size, budget: state.budget },
+        "Leased tokens"
+      )
+
+      // Start processing each token
+      for (const token of tokens) {
+        const promise = this.processToken(token).finally(() => {
+          state.activeTokens.delete(token.id)
+          this.debouncedFillSlots(state)
+        })
+        state.activeTokens.set(token.id, promise)
+      }
+    } finally {
+      state.fillInProgress = false
     }
   }
 
@@ -539,22 +554,6 @@ export class QueueManager {
         state.cycleExhausted = true
       })
     }, this.refillDebounceMs)
-  }
-
-  /**
-   * Wait for all active tokens across all tiers in current cycle to complete.
-   */
-  private async waitForCycleComplete(): Promise<void> {
-    while (true) {
-      const allActive: Promise<void>[] = []
-      for (const state of this.tierState.values()) {
-        for (const promise of state.activeTokens.values()) {
-          allActive.push(promise)
-        }
-      }
-      if (allActive.length === 0) return
-      await Promise.race(allActive)
-    }
   }
 
   /**
@@ -617,6 +616,7 @@ export class QueueManager {
     // Set up token renewal timer (runs for entire worker lifetime)
     let tokenRenewalInProgress = false
     let isShuttingDown = false
+    const startedAt = Date.now()
     const tokenRenewTimer = setInterval(async () => {
       if (isShuttingDown || tokenRenewalInProgress) {
         return
@@ -636,6 +636,24 @@ export class QueueManager {
         tokenRenewalInProgress = false
       }
     }, this.refreshIntervalMs)
+    const stuckWarnTimer = setTimeout(() => {
+      if (isShuttingDown) {
+        return
+      }
+
+      const runtimeMs = Date.now() - startedAt
+      queueTokensStuck.inc({ queue: token.queueName, workspace_id: token.workspaceId })
+      logger.warn(
+        {
+          tokenId: token.id,
+          queueName: token.queueName,
+          workspaceId: token.workspaceId,
+          runtimeMs,
+          thresholdMs: this.stuckTokenWarnMs,
+        },
+        "Queue token exceeded stuck warning threshold"
+      )
+    }, this.stuckTokenWarnMs)
 
     try {
       await this.processMessagesForToken(token)
@@ -643,6 +661,7 @@ export class QueueManager {
       // Signal shutdown and clear timer immediately to prevent new renewals
       isShuttingDown = true
       clearInterval(tokenRenewTimer)
+      clearTimeout(stuckWarnTimer)
 
       // Wait for any in-progress renewal to complete before releasing token
       while (tokenRenewalInProgress) {

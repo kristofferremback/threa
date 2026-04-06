@@ -498,10 +498,19 @@ describe("QueueManager", () => {
   describe("tier budgets", () => {
     const INTERACTIVE_QUEUE = "test.tier.interactive" as JobQueueName
     const HEAVY_QUEUE = "test.tier.heavy" as JobQueueName
+    const HUNG_INTERACTIVE_QUEUE = "test.tier.interactive.hung" as JobQueueName
 
     beforeEach(async () => {
-      await pool.query("DELETE FROM queue_messages WHERE queue_name IN ($1, $2)", [INTERACTIVE_QUEUE, HEAVY_QUEUE])
-      await pool.query("DELETE FROM queue_tokens WHERE queue_name IN ($1, $2)", [INTERACTIVE_QUEUE, HEAVY_QUEUE])
+      await pool.query("DELETE FROM queue_messages WHERE queue_name IN ($1, $2, $3)", [
+        INTERACTIVE_QUEUE,
+        HEAVY_QUEUE,
+        HUNG_INTERACTIVE_QUEUE,
+      ])
+      await pool.query("DELETE FROM queue_tokens WHERE queue_name IN ($1, $2, $3)", [
+        INTERACTIVE_QUEUE,
+        HEAVY_QUEUE,
+        HUNG_INTERACTIVE_QUEUE,
+      ])
     })
 
     test("heavy tier can't starve interactive tier under load", async () => {
@@ -609,6 +618,86 @@ describe("QueueManager", () => {
         await manager.stop()
         await pool.query("DELETE FROM queue_messages WHERE queue_name IN ($1, $2)", [INTERACTIVE_QUEUE, HEAVY_QUEUE])
         await pool.query("DELETE FROM queue_tokens WHERE queue_name IN ($1, $2)", [INTERACTIVE_QUEUE, HEAVY_QUEUE])
+      }
+    })
+
+    test("later interactive work still drains when one token is hung", async () => {
+      let releaseBlocked: () => void = () => {}
+      const blocked = new Promise<void>((resolve) => {
+        releaseBlocked = resolve
+      })
+
+      let blockedStarted = false
+      let fastCompleted = 0
+
+      const handler: JobHandler<TestJobData> = async (job) => {
+        if (job.data.testValue === "block") {
+          blockedStarted = true
+          await blocked
+          return
+        }
+
+        fastCompleted++
+      }
+
+      const manager = new QueueManager({
+        pool,
+        queueRepository: QueueRepository,
+        tokenPoolRepository: TokenPoolRepository,
+        pollIntervalMs: 50,
+        lockDurationMs: 10_000,
+        claimBatchSize: 1,
+        processingConcurrency: 1,
+        tiers: {
+          interactive: { maxActiveTokens: 2 },
+        },
+      })
+
+      manager.registerHandler(HUNG_INTERACTIVE_QUEUE, handler as JobHandler<unknown>, {
+        tier: "interactive",
+        fairness: "none",
+      })
+
+      const workspaceId = "ws_test_tier_hung"
+      const now = new Date()
+
+      await QueueRepository.insert(pool, {
+        id: `queue_tier_hung_block_${Date.now()}`,
+        queueName: HUNG_INTERACTIVE_QUEUE,
+        workspaceId,
+        payload: { workspaceId, testValue: "block" },
+        processAfter: now,
+        insertedAt: now,
+      })
+
+      manager.start()
+
+      try {
+        await waitForCondition(
+          async () => blockedStarted,
+          5000,
+          "Timed out waiting for the first interactive token to start"
+        )
+
+        await QueueRepository.insert(pool, {
+          id: `queue_tier_hung_fast_${Date.now()}`,
+          queueName: HUNG_INTERACTIVE_QUEUE,
+          workspaceId,
+          payload: { workspaceId, testValue: "fast" },
+          processAfter: new Date(),
+          insertedAt: new Date(),
+        })
+
+        await waitForCondition(
+          async () => fastCompleted === 1,
+          5000,
+          "Fresh interactive work starved while another token was hung"
+        )
+      } finally {
+        releaseBlocked()
+        await manager.stop()
+        await pool.query("DELETE FROM queue_messages WHERE queue_name = $1", [HUNG_INTERACTIVE_QUEUE])
+        await pool.query("DELETE FROM queue_tokens WHERE queue_name = $1", [HUNG_INTERACTIVE_QUEUE])
       }
     })
   })

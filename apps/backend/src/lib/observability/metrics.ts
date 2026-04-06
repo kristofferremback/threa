@@ -78,6 +78,13 @@ export const queueMessageDuration = new Histogram({
   registers: [registry],
 })
 
+export const queueTokensStuck = new Counter({
+  name: "queue_tokens_stuck_total",
+  help: "Total number of queue tokens that exceeded the stuck warning threshold",
+  labelNames: ["queue", "workspace_id"],
+  registers: [registry],
+})
+
 // Cron Schedule Metrics
 export const cronSchedulesTotal = new Gauge({
   name: "cron_schedules_total",
