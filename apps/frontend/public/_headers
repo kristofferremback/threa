@@ -1,0 +1,12 @@
+# Default: always revalidate. Cloudflare Pages caches aggressively by
+# default, which causes stale index.html to reference old content-hashed
+# asset filenames after a deploy — resulting in 404s for CSS/JS and a
+# blank page (the SPA _redirects rewrites all paths to index.html).
+/*
+  Cache-Control: no-cache
+  X-Content-Type-Options: nosniff
+
+# Hashed assets (Vite output): immutable because filenames change on
+# every build. Let browsers and Cloudflare cache indefinitely.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
