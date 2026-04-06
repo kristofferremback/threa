@@ -647,6 +647,13 @@ function PendingMessageEvent({
       statusIndicator={
         <span className="text-xs text-muted-foreground opacity-0 animate-fade-in-delayed">Sending...</span>
       }
+      footer={
+        // Reserve the same vertical space as SentMessageEvent's threadFooter
+        // so Virtuoso's measured height stays stable across the pending → sent transition.
+        <div className="mt-1 flex items-center gap-1.5 text-xs">
+          <span className="opacity-0">Reply in thread</span>
+        </div>
+      }
     />
   )
 }
@@ -688,6 +695,11 @@ function FailedMessageEvent({
           >
             Delete
           </Button>
+        </div>
+      }
+      footer={
+        <div className="mt-1 flex items-center gap-1.5 text-xs">
+          <span className="opacity-0">Reply in thread</span>
         </div>
       }
     />
