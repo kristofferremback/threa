@@ -42,6 +42,21 @@ interface StreamItemAvatarProps {
 }
 
 export function StreamItemAvatar({ icon, className, avatarUrl, avatarAlt, badge }: StreamItemAvatarProps) {
+  // Thread-of-DM: thread icon as main content, avatar as small badge overlay
+  if (badge && avatarUrl) {
+    return (
+      <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 relative bg-muted">
+        <MessageSquareText className="h-3.5 w-3.5 text-muted-foreground" />
+        <Avatar className="absolute -top-1 -left-1 h-3.5 w-3.5 rounded-full border border-border">
+          <AvatarImage src={avatarUrl} alt={avatarAlt ?? "User avatar"} />
+          <AvatarFallback className="rounded-full text-[6px]">
+            <badge.icon className="h-2 w-2" />
+          </AvatarFallback>
+        </Avatar>
+      </div>
+    )
+  }
+
   let content = icon
   if (avatarUrl) {
     content = (
@@ -58,7 +73,7 @@ export function StreamItemAvatar({ icon, className, avatarUrl, avatarAlt, badge 
     <div
       className={cn(
         "w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 relative",
-        badge && !avatarUrl ? "bg-muted" : className
+        badge ? "bg-muted" : className
       )}
     >
       {content}
@@ -190,15 +205,7 @@ export function StreamItem({
       ? (allStreams.find((s) => s.id === stream.rootStreamId) ?? null)
       : null
 
-  const dmPeerAvatar = (() => {
-    if (stream.type === StreamTypes.DM) {
-      return getActorAvatar(stream.dmPeerUserId ?? null, "user")
-    }
-    if (threadRootStream?.type === StreamTypes.DM && threadRootStream.dmPeerUserId) {
-      return getActorAvatar(threadRootStream.dmPeerUserId, "user")
-    }
-    return null
-  })()
+  const dmPeerAvatar = stream.dmPeerUserId ? getActorAvatar(stream.dmPeerUserId, "user") : null
 
   const threadRootContext = stream.type === StreamTypes.THREAD ? getThreadRootContext(stream, allStreams) : null
 
