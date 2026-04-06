@@ -25,6 +25,8 @@ interface MessageEditFormProps {
   initialContentJson?: JSONContent
   onSave: () => void
   onCancel: () => void
+  /** Called when the user submits with empty content, signalling intent to delete */
+  onDelete?: () => void
   /** Author display name — shown in the mobile drawer header for context */
   authorName?: string
 }
@@ -35,6 +37,7 @@ export function MessageEditForm({
   initialContentJson,
   onSave,
   onCancel,
+  onDelete,
   authorName,
 }: MessageEditFormProps) {
   const queryClient = useQueryClient()
@@ -99,7 +102,10 @@ export function MessageEditForm({
   const handleSubmit = useCallback(async () => {
     const contentMarkdown = serializeToMarkdown(contentJson)
     const trimmed = contentMarkdown.trim()
-    if (!trimmed) return
+    if (!trimmed) {
+      onDelete?.()
+      return
+    }
     if (trimmed === initialMarkdown) {
       onCancel()
       return
@@ -108,12 +114,16 @@ export function MessageEditForm({
     setMobileExpanded(false)
     setMobileLinkPopoverOpen(false)
     await saveEdit(contentJson, trimmed)
-  }, [contentJson, saveEdit, initialMarkdown, onCancel])
+  }, [contentJson, saveEdit, initialMarkdown, onCancel, onDelete])
 
   const handleDocEditorSend = useCallback(
     async (markdown: string) => {
       const trimmed = markdown.trim()
-      if (!trimmed) return
+      if (!trimmed) {
+        setDocEditorOpen(false)
+        onDelete?.()
+        return
+      }
       if (trimmed === initialMarkdown) {
         setDocEditorOpen(false)
         onCancel()
@@ -122,7 +132,7 @@ export function MessageEditForm({
       setDocEditorOpen(false)
       await saveEdit(parseMarkdown(trimmed), trimmed)
     },
-    [saveEdit, initialMarkdown, onCancel]
+    [saveEdit, initialMarkdown, onCancel, onDelete]
   )
 
   const handleDocEditorDismiss = useCallback((markdown: string) => {

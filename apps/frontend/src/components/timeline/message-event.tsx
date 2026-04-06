@@ -567,6 +567,10 @@ function SentMessageEvent({
             initialContentJson={payload.contentJson}
             onSave={stopEditing}
             onCancel={stopEditing}
+            onDelete={() => {
+              stopEditing()
+              setDeleteDialogOpen(true)
+            }}
           />
         ) : undefined}
       </MessageLayout>
@@ -578,6 +582,10 @@ function SentMessageEvent({
           initialContentJson={payload.contentJson}
           onSave={stopEditing}
           onCancel={stopEditing}
+          onDelete={() => {
+            stopEditing()
+            setDeleteDialogOpen(true)
+          }}
           authorName={actorName}
         />
       )}

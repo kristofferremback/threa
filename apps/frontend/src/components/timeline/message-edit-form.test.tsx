@@ -175,4 +175,31 @@ describe("MessageEditForm", () => {
     expect(onCancel).toHaveBeenCalledOnce()
     expect(onSave).not.toHaveBeenCalled()
   })
+
+  it("should call onDelete when submitting with empty content", async () => {
+    const user = userEvent.setup()
+    const onDelete = vi.fn()
+    const onSave = vi.fn()
+
+    const emptyContent: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
+    renderForm({ onDelete, onSave, initialContentJson: emptyContent })
+
+    await user.click(screen.getByRole("button", { name: "Save" }))
+
+    expect(onDelete).toHaveBeenCalledOnce()
+    expect(onSave).not.toHaveBeenCalled()
+  })
+
+  it("should not crash when submitting empty content without onDelete", async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn()
+
+    const emptyContent: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
+    renderForm({ onSave, initialContentJson: emptyContent })
+
+    // Should not throw — just no-ops gracefully
+    await user.click(screen.getByRole("button", { name: "Save" }))
+
+    expect(onSave).not.toHaveBeenCalled()
+  })
 })
