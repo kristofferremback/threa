@@ -1,5 +1,5 @@
-import { test, expect, type Locator } from "@playwright/test"
-import { createChannel, generateTestId, loginAndCreateWorkspace } from "./helpers"
+import { test, expect } from "@playwright/test"
+import { clickReplyInThread, createChannel, generateTestId, getPanelEditor, loginAndCreateWorkspace } from "./helpers"
 
 /**
  * Tests for thread breadcrumb display, navigation, and sidebar context.
@@ -11,37 +11,6 @@ import { createChannel, generateTestId, loginAndCreateWorkspace } from "./helper
  */
 
 test.describe("Thread Breadcrumbs", () => {
-  function getPanelEditor(page: import("@playwright/test").Page): Locator {
-    return page.locator("[data-editor-zone='panel'] [contenteditable='true']")
-  }
-
-  async function clickReplyInThread(messageContainer: Locator, timeout = 20000): Promise<void> {
-    const replyLink = messageContainer.getByRole("link", { name: "Reply in thread" })
-    const retryButton = messageContainer.getByRole("button", { name: "Retry" })
-
-    await expect
-      .poll(
-        async () => {
-          await messageContainer.scrollIntoViewIfNeeded().catch(() => {})
-          await messageContainer.hover().catch(() => {})
-
-          if (await retryButton.isVisible().catch(() => false)) {
-            await retryButton.click()
-            await messageContainer.page().waitForTimeout(250)
-          }
-
-          return await replyLink.isVisible().catch(() => false)
-        },
-        {
-          timeout,
-          message: "should expose the thread-reply action for the target message",
-        }
-      )
-      .toBe(true)
-
-    await replyLink.click()
-  }
-
   test.beforeEach(async ({ page }) => {
     await loginAndCreateWorkspace(page, "breadcrumb")
   })

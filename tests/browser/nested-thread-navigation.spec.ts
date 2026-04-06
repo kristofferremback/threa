@@ -1,5 +1,12 @@
-import { test, expect, type Locator } from "@playwright/test"
-import { createChannel, loginAndCreateWorkspace } from "./helpers"
+import { test, expect } from "@playwright/test"
+import {
+  clickReplyInThread,
+  createChannel,
+  generateTestId,
+  loginAndCreateWorkspace,
+  sendPanelReply,
+  waitForRealThreadPanel,
+} from "./helpers"
 
 /**
  * Tests for nested thread navigation and bootstrapping.
@@ -12,89 +19,13 @@ import { createChannel, loginAndCreateWorkspace } from "./helpers"
  */
 
 test.describe("Nested Thread Navigation", () => {
-  function getPanelEditor(page: import("@playwright/test").Page): Locator {
-    return page.locator("[data-editor-zone='panel'] [contenteditable='true']")
-  }
-
-  async function sendPanelReply(page: import("@playwright/test").Page, text: string) {
-    const panel = page.getByTestId("panel")
-    const editor = getPanelEditor(page)
-    const sendButton = panel.getByRole("button", { name: /^(Send|Reply)$/ })
-
-    await expect(editor).toBeVisible({ timeout: 10000 })
-    await editor.click()
-    await expect(editor).toBeFocused({ timeout: 5000 })
-    await page.keyboard.type(text)
-    await expect(editor).toContainText(text, { timeout: 5000 })
-    await expect(sendButton).toBeEnabled({ timeout: 5000 })
-    await sendButton.click()
-  }
-
-  async function waitForRealThreadPanel(page: import("@playwright/test").Page) {
-    const panel = page.getByTestId("panel")
-    const sendButton = panel.getByRole("button", { name: "Send", exact: true })
-    const retryButton = panel.getByRole("button", { name: "Retry" })
-    const deadline = Date.now() + 15000
-
-    while (Date.now() < deadline) {
-      if (await retryButton.isVisible().catch(() => false)) {
-        await retryButton.click()
-        await page.waitForTimeout(250)
-      }
-
-      const hasDraftIntro = await page
-        .getByText(/Start a new thread/)
-        .isVisible()
-        .catch(() => false)
-      const isDraftPanel = /panel=draft:/.test(page.url())
-      const hasSendButton = await sendButton.isVisible().catch(() => false)
-
-      if (!hasDraftIntro && !isDraftPanel && hasSendButton) {
-        return
-      }
-
-      await page.waitForTimeout(250)
-    }
-
-    await expect(page.getByText(/Start a new thread/)).not.toBeVisible({ timeout: 1000 })
-    await expect(page).not.toHaveURL(/panel=draft:/, { timeout: 1000 })
-    await expect(sendButton).toBeVisible({ timeout: 1000 })
-  }
-
-  async function clickReplyInThread(messageContainer: Locator, timeout = 20000): Promise<void> {
-    const replyLink = messageContainer.getByRole("link", { name: "Reply in thread" })
-    const retryButton = messageContainer.getByRole("button", { name: "Retry" })
-
-    await expect
-      .poll(
-        async () => {
-          await messageContainer.scrollIntoViewIfNeeded().catch(() => {})
-          await messageContainer.hover().catch(() => {})
-
-          if (await retryButton.isVisible().catch(() => false)) {
-            await retryButton.click()
-            await messageContainer.page().waitForTimeout(250)
-          }
-
-          return await replyLink.isVisible().catch(() => false)
-        },
-        {
-          timeout,
-          message: "should expose the thread-reply action for the target message",
-        }
-      )
-      .toBe(true)
-
-    await replyLink.click()
-  }
-
   test.beforeEach(async ({ page }) => {
     await loginAndCreateWorkspace(page, "nested-thread")
   })
 
   test("should show nested thread reply count when navigating back via breadcrumbs", async ({ page }) => {
     test.setTimeout(60000)
-    const testId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
+    const testId = generateTestId()
 
     // Create a channel (creating navigates to it)
     const channelName = `nested-breadcrumb-${testId}`
@@ -167,7 +98,7 @@ test.describe("Nested Thread Navigation", () => {
 
   test("should show nested thread indicator when reopening parent thread", async ({ page }) => {
     test.setTimeout(60000)
-    const testId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
+    const testId = generateTestId()
 
     // Create a channel (creating navigates to it)
     const channelName = `nested-reopen-${testId}`
@@ -251,7 +182,7 @@ test.describe("Nested Thread Navigation", () => {
   })
 
   test("should maintain reply counts across multiple navigation cycles", async ({ page }) => {
-    const testId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
+    const testId = generateTestId()
 
     test.setTimeout(60000)
 

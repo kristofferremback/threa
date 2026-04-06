@@ -1,5 +1,11 @@
 import { test, expect } from "@playwright/test"
-import { createChannel, loginAndCreateWorkspace } from "./helpers"
+import {
+  clickReplyInThread,
+  createChannel,
+  loginAndCreateWorkspace,
+  sendPanelReply,
+  waitForRealThreadPanel,
+} from "./helpers"
 
 /**
  * Tests for thread reply functionality.
@@ -13,55 +19,6 @@ import { createChannel, loginAndCreateWorkspace } from "./helpers"
 
 test.describe("Thread Replies", () => {
   let testId: string
-
-  function getPanelEditor(page: import("@playwright/test").Page) {
-    return page.locator("[data-editor-zone='panel'] [contenteditable='true']")
-  }
-
-  async function sendPanelReply(page: import("@playwright/test").Page, text: string) {
-    const panel = page.getByTestId("panel")
-    const editor = getPanelEditor(page)
-    const sendButton = panel.getByRole("button", { name: /^(Send|Reply)$/ })
-
-    await expect(editor).toBeVisible({ timeout: 10000 })
-    await editor.click()
-    await expect(editor).toBeFocused({ timeout: 5000 })
-    await page.keyboard.type(text)
-    await expect(editor).toContainText(text, { timeout: 5000 })
-    await expect(sendButton).toBeEnabled({ timeout: 5000 })
-    await sendButton.click()
-  }
-
-  async function waitForRealThreadPanel(page: import("@playwright/test").Page) {
-    const panel = page.getByTestId("panel")
-    const sendButton = panel.getByRole("button", { name: "Send", exact: true })
-    const retryButton = panel.getByRole("button", { name: "Retry" })
-    const deadline = Date.now() + 15000
-
-    while (Date.now() < deadline) {
-      if (await retryButton.isVisible().catch(() => false)) {
-        await retryButton.click()
-        await page.waitForTimeout(250)
-      }
-
-      const hasDraftIntro = await page
-        .getByText(/Start a new thread/)
-        .isVisible()
-        .catch(() => false)
-      const isDraftPanel = /panel=draft:/.test(page.url())
-      const hasSendButton = await sendButton.isVisible().catch(() => false)
-
-      if (!hasDraftIntro && !isDraftPanel && hasSendButton) {
-        return
-      }
-
-      await page.waitForTimeout(250)
-    }
-
-    await expect(page.getByText(/Start a new thread/)).not.toBeVisible({ timeout: 1000 })
-    await expect(page).not.toHaveURL(/panel=draft:/, { timeout: 1000 })
-    await expect(sendButton).toBeVisible({ timeout: 1000 })
-  }
 
   test.beforeEach(async ({ page }) => {
     const result = await loginAndCreateWorkspace(page, "thread-test")
@@ -84,12 +41,7 @@ test.describe("Thread Replies", () => {
     // Scope to .message-item to avoid matching sidebar preview text
     const messageContainer = page.getByRole("main").locator(".message-item").filter({ hasText: parentMessage }).first()
     await expect(messageContainer).toBeVisible({ timeout: 5000 })
-    await messageContainer.hover()
-
-    // Click "Reply in thread" to open thread panel
-    const replyLink = messageContainer.getByRole("link", { name: "Reply in thread" })
-    await expect(replyLink).toBeVisible({ timeout: 5000 })
-    await replyLink.click()
+    await clickReplyInThread(messageContainer)
 
     // Wait for thread panel to open - should see "Start a new thread" text
     await expect(page.getByText(/Start a new thread/)).toBeVisible({ timeout: 3000 })
@@ -126,10 +78,7 @@ test.describe("Thread Replies", () => {
     await expect(messageContainer).toBeVisible({ timeout: 5000 })
 
     // Open thread panel
-    await messageContainer.hover()
-    const replyLink = messageContainer.getByRole("link", { name: "Reply in thread" })
-    await expect(replyLink).toBeVisible({ timeout: 5000 })
-    await replyLink.click()
+    await clickReplyInThread(messageContainer)
 
     await expect(page.getByText(/Start a new thread/)).toBeVisible({ timeout: 3000 })
 
@@ -166,10 +115,7 @@ test.describe("Thread Replies", () => {
     await expect(messageContainer).toBeVisible({ timeout: 5000 })
 
     // Open thread
-    await messageContainer.hover()
-    const replyLink = messageContainer.getByRole("link", { name: "Reply in thread" })
-    await expect(replyLink).toBeVisible({ timeout: 5000 })
-    await replyLink.click()
+    await clickReplyInThread(messageContainer)
 
     await expect(page.getByText(/Start a new thread/)).toBeVisible({ timeout: 3000 })
 
@@ -217,10 +163,7 @@ test.describe("Thread Replies", () => {
     await expect(messageContainer).toBeVisible({ timeout: 5000 })
 
     // Open thread and send first reply
-    await messageContainer.hover()
-    let replyLink = messageContainer.getByRole("link", { name: "Reply in thread" })
-    await expect(replyLink).toBeVisible({ timeout: 5000 })
-    await replyLink.click()
+    await clickReplyInThread(messageContainer)
 
     await expect(page.getByText(/Start a new thread/)).toBeVisible({ timeout: 3000 })
 

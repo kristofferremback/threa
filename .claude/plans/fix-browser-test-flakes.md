@@ -25,9 +25,10 @@ Several flaky specs were relying on scratchpad drafts, broad text matches, or ro
 
 ### Thread Panel Retry And Promotion Hardening
 
-The thread-related flakes were concentrated around draft-thread promotion and panel remount timing. The thread suites now share explicit panel-editor targeting, send through the visible panel action, wait for draft panels to settle into real threads, and retry transient failed sends instead of assuming the first draft-thread send always sticks under load.
+The thread-related flakes were concentrated around draft-thread promotion and panel remount timing. The thread suites now share explicit panel-editor targeting, send through the visible panel action, wait for draft panels to settle into real threads, and retry transient failed sends instead of assuming the first draft-thread send always sticks under load. The retry-aware panel and reply-action helpers now live in the shared browser helper module so the flake logic has one source of truth.
 
 **Files:**
+- `tests/browser/helpers.ts` - centralizes shared thread-panel and reply-action helpers used by the flaky thread specs
 - `tests/browser/thread-replies.spec.ts` - adds panel send helpers, retry-aware draft-to-thread settling, and breadcrumb-based returns to the main stream
 - `tests/browser/nested-thread-navigation.spec.ts` - adds the same panel send/settling helpers and reply-action polling for nested thread navigation
 - `tests/browser/thread-breadcrumbs.spec.ts` - scopes reply actions to actual message items and targets the panel editor explicitly for nested breadcrumb coverage
@@ -69,6 +70,7 @@ The sidebar suite previously contained multiple tests that mostly re-verified br
 
 - **Message-send-mode flake investigation:** The initial suspicion was a pure browser-test timing bug. Reproduction work showed that reload-time mention reparsing could overwrite active typing, so the final patch combines a product fix with a narrower persistence test.
 - **Thread panel stabilization:** The first hardening pass only waited for the draft thread to promote to a real thread. Full-suite reruns exposed transient failed sends in draft panels, so the final helpers also detect and retry visible `Retry` states before continuing.
+- **Thread helper extraction:** The first stabilization pass duplicated the retry-aware panel helpers inside multiple spec files. Review feedback highlighted the drift risk, so the final version moves those helpers into `tests/browser/helpers.ts`.
 - **Infinite-scroll verification:** The original test watched pagination requests and assumed one scroll event would be enough. The final version verifies that older messages actually render and re-drives the scroller until the user-visible result appears.
 - **Sidebar cleanup:** The initial pass treated all recurring sidebar failures as candidates for stabilization. Reviewing their value showed several specs were weak regressions with poor signal, so the final suite removes them and keeps only the stronger end-to-end stories.
 

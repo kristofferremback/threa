@@ -1,4 +1,4 @@
-import { expect, type Page, type Browser, type BrowserContext, type APIResponse } from "@playwright/test"
+import { expect, type Page, type Browser, type BrowserContext, type APIResponse, type Locator } from "@playwright/test"
 
 /**
  * Shared helpers for browser E2E tests.
@@ -145,4 +145,94 @@ export async function createChannel(
     await switchToAllView(page)
     await expect(page.getByRole("link", { name: `#${channelName}` })).toBeVisible({ timeout: 5000 })
   }
+}
+
+/**
+ * Return the composer used inside the thread panel.
+ */
+export function getPanelEditor(page: Page): Locator {
+  return page.locator("[data-editor-zone='panel'] [contenteditable='true']")
+}
+
+/**
+ * Send a reply through the currently visible thread panel composer.
+ */
+export async function sendPanelReply(page: Page, text: string): Promise<void> {
+  const panel = page.getByTestId("panel")
+  const editor = getPanelEditor(page)
+  const sendButton = panel.getByRole("button", { name: /^(Send|Reply)$/ })
+
+  await expect(editor).toBeVisible({ timeout: 10000 })
+  await editor.click()
+  await expect(editor).toBeFocused({ timeout: 5000 })
+  await page.keyboard.type(text)
+  await expect(editor).toContainText(text, { timeout: 5000 })
+  await expect(sendButton).toBeEnabled({ timeout: 5000 })
+  await sendButton.click()
+}
+
+/**
+ * Wait for a draft thread panel to settle into a real thread panel, retrying a
+ * transient failed send if the UI exposes the Retry action while under load.
+ */
+export async function waitForRealThreadPanel(page: Page): Promise<void> {
+  const panel = page.getByTestId("panel")
+  const sendButton = panel.getByRole("button", { name: "Send", exact: true })
+  const retryButton = panel.getByRole("button", { name: "Retry" })
+  const deadline = Date.now() + 15000
+
+  while (Date.now() < deadline) {
+    if (await retryButton.isVisible().catch(() => false)) {
+      await retryButton.click()
+      await page.waitForTimeout(250)
+    }
+
+    const hasDraftIntro = await page
+      .getByText(/Start a new thread/)
+      .isVisible()
+      .catch(() => false)
+    const isDraftPanel = /panel=draft:/.test(page.url())
+    const hasSendButton = await sendButton.isVisible().catch(() => false)
+
+    if (!hasDraftIntro && !isDraftPanel && hasSendButton) {
+      return
+    }
+
+    await page.waitForTimeout(250)
+  }
+
+  await expect(page.getByText(/Start a new thread/)).not.toBeVisible({ timeout: 1000 })
+  await expect(page).not.toHaveURL(/panel=draft:/, { timeout: 1000 })
+  await expect(sendButton).toBeVisible({ timeout: 1000 })
+}
+
+/**
+ * Open the thread-reply action for a message, retrying if the row exposes a
+ * transient failed-send state before the reply affordance appears.
+ */
+export async function clickReplyInThread(messageContainer: Locator, timeout = 20000): Promise<void> {
+  const replyLink = messageContainer.getByRole("link", { name: "Reply in thread" })
+  const retryButton = messageContainer.getByRole("button", { name: "Retry" })
+
+  await expect
+    .poll(
+      async () => {
+        await messageContainer.scrollIntoViewIfNeeded().catch(() => {})
+        await messageContainer.hover().catch(() => {})
+
+        if (await retryButton.isVisible().catch(() => false)) {
+          await retryButton.click()
+          await messageContainer.page().waitForTimeout(250)
+        }
+
+        return await replyLink.isVisible().catch(() => false)
+      },
+      {
+        timeout,
+        message: "should expose the thread-reply action for the target message",
+      }
+    )
+    .toBe(true)
+
+  await replyLink.click()
 }
