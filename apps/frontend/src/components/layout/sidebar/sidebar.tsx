@@ -97,8 +97,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
         const isMuted = mutedStreamIdSet.has(stream.id)
         const urgency = calculateUrgency(streamWithPreview, unreadCount, mentionCount, isMuted)
         const section = categorizeStream(streamWithPreview, unreadCount, urgency)
-        const dmPeerUserId =
-          dmPeerByStreamId.get(stream.id) ?? dmPeerByStreamId.get(stream.rootStreamId ?? "") ?? undefined
+        const dmPeerUserId = dmPeerByStreamId.get(stream.id) ?? dmPeerByStreamId.get(stream.rootStreamId ?? "")
 
         // DM names are viewer-specific and can be stale/null in the cached stream
         // record when socket events overwrite IDB before a bootstrap refetch.
