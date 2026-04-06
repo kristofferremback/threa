@@ -3,6 +3,8 @@ import { Link } from "react-router-dom"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { MentionIndicator } from "@/components/mention-indicator"
+import { URGENCY_COLORS } from "@/components/layout/sidebar/config"
 import type { QuickSwitcherItem } from "./types"
 
 interface ItemListProps {
@@ -86,8 +88,18 @@ export function ItemList({
               item.label.slice(0, 1).toUpperCase()
             )
 
+            const hasUnread = (item.unreadCount ?? 0) > 0
+            const urgency = item.urgency ?? "quiet"
+            const showUrgencyStrip = urgency !== "quiet"
+
             const itemContent = (
               <>
+                {showUrgencyStrip && (
+                  <div
+                    className="w-1 flex-shrink-0 self-stretch rounded-l-[10px] transition-colors duration-300"
+                    style={{ backgroundColor: URGENCY_COLORS[urgency] }}
+                  />
+                )}
                 {item.avatarUrl ? (
                   <Avatar className="h-7 w-7 rounded-md">
                     <AvatarImage src={item.avatarUrl} alt={item.label} />
@@ -97,11 +109,12 @@ export function ItemList({
                   Icon && <Icon className="h-4 w-4 opacity-50" />
                 )}
                 <div className="flex flex-col flex-1 min-w-0">
-                  <span className="truncate">{item.label}</span>
+                  <span className={cn("truncate", hasUnread ? "font-semibold" : "font-normal")}>{item.label}</span>
                   {item.description && (
                     <span className="text-xs text-muted-foreground truncate">{item.description}</span>
                   )}
                 </div>
+                <MentionIndicator count={item.mentionCount ?? 0} className="ml-auto" />
                 {item.onAction && ActionIcon && (
                   <Button
                     variant="ghost"
