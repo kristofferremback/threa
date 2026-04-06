@@ -185,15 +185,17 @@ export function StreamItem({
 
   const avatar = getAvatar()
   const name = getStreamName(stream) ?? streamFallbackLabel(stream.type, "sidebar")
+  const threadRootStream =
+    stream.type === StreamTypes.THREAD && stream.rootStreamId
+      ? (allStreams.find((s) => s.id === stream.rootStreamId) ?? null)
+      : null
+
   const dmPeerAvatar = (() => {
     if (stream.type === StreamTypes.DM) {
       return getActorAvatar(stream.dmPeerUserId ?? null, "user")
     }
-    if (stream.type === StreamTypes.THREAD && stream.rootStreamId) {
-      const rootStream = allStreams.find((s) => s.id === stream.rootStreamId)
-      if (rootStream?.type === StreamTypes.DM && rootStream.dmPeerUserId) {
-        return getActorAvatar(rootStream.dmPeerUserId, "user")
-      }
+    if (threadRootStream?.type === StreamTypes.DM && threadRootStream.dmPeerUserId) {
+      return getActorAvatar(threadRootStream.dmPeerUserId, "user")
     }
     return null
   })()
@@ -201,10 +203,8 @@ export function StreamItem({
   const threadRootContext = stream.type === StreamTypes.THREAD ? getThreadRootContext(stream, allStreams) : null
 
   const threadBadge = (() => {
-    if (stream.type !== StreamTypes.THREAD || !stream.rootStreamId) return null
-    const rootStream = allStreams.find((s) => s.id === stream.rootStreamId)
-    if (!rootStream?.type) return null
-    const config = BADGE_CONFIG[rootStream.type]
+    if (!threadRootStream?.type) return null
+    const config = BADGE_CONFIG[threadRootStream.type]
     return config ?? null
   })()
 
