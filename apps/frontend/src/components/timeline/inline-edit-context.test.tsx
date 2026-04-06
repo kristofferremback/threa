@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { render, screen, act } from "@testing-library/react"
 import { useState } from "react"
 import { InlineEditProvider, useInlineEdit, useInlineEditRegistration } from "./inline-edit-context"
@@ -11,6 +11,12 @@ function Flag() {
 function Surface({ active }: { active: boolean }) {
   useInlineEditRegistration(active)
   return null
+}
+
+/** Surface that renders a [data-inline-edit] element like the real MessageEditForm */
+function DomSurface({ active }: { active: boolean }) {
+  useInlineEditRegistration(active)
+  return active ? <div data-inline-edit /> : null
 }
 
 describe("InlineEditProvider (refcount)", () => {
@@ -96,5 +102,102 @@ describe("InlineEditProvider (refcount)", () => {
       </InlineEditProvider>
     )
     expect(screen.getByTestId("flag").textContent).toBe("off")
+  })
+})
+
+describe("InlineEditProvider (safety nets)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it("resets leaked count on visibilitychange when no [data-inline-edit] exists", () => {
+    // Render with a Surface that registers but has NO [data-inline-edit] element,
+    // simulating a leaked registration where the DOM element is gone.
+    function Harness() {
+      const [mounted, setMounted] = useState(true)
+      return (
+        <InlineEditProvider resetKey="s1">
+          <Flag />
+          {mounted && <Surface active />}
+          <button data-testid="remove" onClick={() => setMounted(false)}>
+            remove
+          </button>
+        </InlineEditProvider>
+      )
+    }
+
+    render(<Harness />)
+    expect(screen.getByTestId("flag").textContent).toBe("on")
+
+    // Surface is mounted (count=1) but has no [data-inline-edit] DOM element,
+    // simulating a leaked registration. Exercise the full hidden → visible
+    // transition that happens when the user backgrounds and foregrounds the app.
+
+    // Simulate page going to background — count stays positive (no reset on hide)
+    Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true })
+    document.dispatchEvent(new Event("visibilitychange"))
+    expect(screen.getByTestId("flag").textContent).toBe("on")
+
+    // Simulate returning to foreground — safety net must detect the leak and reset
+    act(() => {
+      Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true })
+      document.dispatchEvent(new Event("visibilitychange"))
+    })
+    expect(screen.getByTestId("flag").textContent).toBe("off")
+  })
+
+  it("does NOT reset count when [data-inline-edit] exists in DOM", () => {
+    render(
+      <InlineEditProvider resetKey="s1">
+        <Flag />
+        <DomSurface active />
+      </InlineEditProvider>
+    )
+    expect(screen.getByTestId("flag").textContent).toBe("on")
+
+    // Fire visibilitychange — should NOT reset because the DOM element exists
+    act(() => {
+      Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true })
+      document.dispatchEvent(new Event("visibilitychange"))
+    })
+    expect(screen.getByTestId("flag").textContent).toBe("on")
+  })
+
+  it("auto-corrects leaked count after 2s delay", () => {
+    // Surface registers (count=1) but has no [data-inline-edit] DOM element
+    render(
+      <InlineEditProvider resetKey="s1">
+        <Flag />
+        <Surface active />
+      </InlineEditProvider>
+    )
+    expect(screen.getByTestId("flag").textContent).toBe("on")
+
+    // Advance past the 2s verification delay
+    act(() => {
+      vi.advanceTimersByTime(2000)
+    })
+    // No [data-inline-edit] in DOM → count auto-corrected to 0
+    expect(screen.getByTestId("flag").textContent).toBe("off")
+  })
+
+  it("does NOT auto-correct when [data-inline-edit] exists after 2s", () => {
+    render(
+      <InlineEditProvider resetKey="s1">
+        <Flag />
+        <DomSurface active />
+      </InlineEditProvider>
+    )
+    expect(screen.getByTestId("flag").textContent).toBe("on")
+
+    act(() => {
+      vi.advanceTimersByTime(2000)
+    })
+    // [data-inline-edit] exists → count stays
+    expect(screen.getByTestId("flag").textContent).toBe("on")
   })
 })

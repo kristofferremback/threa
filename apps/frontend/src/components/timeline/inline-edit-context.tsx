@@ -76,6 +76,58 @@ export function InlineEditProvider({
     setCount(0)
   }, [resetKey])
 
+  // Safety net: verify the ref-count against actual DOM state. If the count
+  // leaked (e.g. due to unmount timing during app updates, drawer animation
+  // races, or service worker activation), this auto-corrects the stale flag
+  // so the message composer reappears without requiring a full page reload.
+  //
+  // Two triggers:
+  // 1. visibilitychange — catches the case when user toggles apps
+  // 2. Delayed verification — when count > 0, schedule a DOM check after a
+  //    short delay. Normal edits complete or register within this window;
+  //    a leaked count will be caught and corrected automatically.
+  const verifyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const verifyCount = useCallback(() => {
+    if (countRef.current <= 0) return
+    // MessageEditForm renders a [data-inline-edit] wrapper — if none exist
+    // in the DOM but count > 0, the ref-count has drifted. Reset it.
+    const activeSurfaces = document.querySelectorAll("[data-inline-edit]").length
+    if (activeSurfaces === 0) {
+      countRef.current = 0
+      setCount(0)
+    }
+  }, [])
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return
+      verifyCount()
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange)
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange)
+  }, [verifyCount])
+
+  // When count rises above 0, schedule a deferred verification. This catches
+  // leaked counts proactively — the user doesn't need to toggle apps. The
+  // delay (2s) is long enough for a real edit form to mount and render its
+  // [data-inline-edit] element, so we never false-positive on legitimate edits.
+  useEffect(() => {
+    if (verifyTimerRef.current) {
+      clearTimeout(verifyTimerRef.current)
+      verifyTimerRef.current = null
+    }
+    if (count > 0) {
+      verifyTimerRef.current = setTimeout(verifyCount, 2000)
+    }
+    return () => {
+      if (verifyTimerRef.current) {
+        clearTimeout(verifyTimerRef.current)
+        verifyTimerRef.current = null
+      }
+    }
+  }, [count, verifyCount])
+
   const value = useMemo<InlineEditContextValue>(
     () => ({ isEditingInline: count > 0, registerInlineEdit }),
     [count, registerInlineEdit]
