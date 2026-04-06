@@ -50,7 +50,8 @@ test.describe("Edit last message (ArrowUp)", () => {
   test("opens the last message in edit mode when editor is empty", async ({ page }) => {
     await loginAndCreateWorkspace(page, "elm-basic")
 
-    await page.getByRole("button", { name: "+ New Scratchpad" }).click()
+    const channelName = `elm-basic-${Date.now()}`
+    await createChannel(page, channelName, { switchToAll: false })
     await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
 
     const content = `Last message to edit ${Date.now()}`
@@ -58,9 +59,12 @@ test.describe("Edit last message (ArrowUp)", () => {
     await page.keyboard.type(content)
     await page.keyboard.press("Enter")
 
-    await expect(page.getByRole("main").getByText(content)).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole("main").locator(".message-item").getByText(content).first()).toBeVisible({
+      timeout: 5000,
+    })
 
-    // Editor should be empty after sending
+    // Editor should be empty after sending before ArrowUp can trigger inline edit.
+    await expect(page.getByRole("button", { name: "Send" })).toBeDisabled({ timeout: 5000 })
     await page.locator("[contenteditable='true']").click()
     await page.keyboard.press("ArrowUp")
 
@@ -167,9 +171,11 @@ test.describe("Edit last message (ArrowUp)", () => {
     test.setTimeout(90000)
     const testId = generateTestId()
     const channelName = `elm-window-${testId}`
+    const userAEmail = `elm-win-a-${testId}@example.com`
+    const userAName = `ELM Win A ${testId}`
 
     // ── User A: create workspace + channel, send first message ──
-    const userA = await loginInNewContext(browser, `elm-win-a-${testId}@example.com`, `ELM Win A ${testId}`)
+    const userA = await loginInNewContext(browser, userAEmail, userAName)
 
     const createWsRes = await userA.page.request.post("/api/workspaces", {
       data: { name: `ELM Window ${testId}` },
@@ -214,31 +220,32 @@ test.describe("Edit last message (ArrowUp)", () => {
       })
     }
 
-    // ── User A: hard-reload to get a fresh bootstrap with only the latest 50 events ──
-    // Navigate to about:blank first to fully teardown React state (TanStack cache,
-    // hook state), then navigate to the stream. The old message (event #1 of 62+)
-    // is outside the bootstrap window.
-    await userA.page.goto("about:blank")
-    await userA.page.goto(`/w/${workspaceId}/s/${streamId}`)
-    await expect(userA.page.locator("[contenteditable='true']")).toBeVisible({ timeout: 15000 })
+    // ── User A: reopen the stream in a fresh browser context so IDB/socket state
+    // from the original session cannot leak older messages into the bootstrap test.
+    await userA.context.close()
+    const reloadedUserA = await loginInNewContext(browser, userAEmail, userAName)
+    await reloadedUserA.page.goto(`/w/${workspaceId}/s/${streamId}`)
+    await expect(reloadedUserA.page.locator("[contenteditable='true']")).toBeVisible({ timeout: 15000 })
 
     // Wait for the latest filler to be rendered — proves bootstrap has loaded.
-    await expect(userA.page.getByRole("main").locator(".message-item").getByText(`${fillerText} #60`)).toBeVisible({
+    await expect(
+      reloadedUserA.page.getByRole("main").locator(".message-item").getByText(`${fillerText} #60`)
+    ).toBeVisible({
       timeout: 15000,
     })
 
     // The old message should not be visible — it's outside the bootstrap window.
-    await expect(userA.page.getByRole("main").locator(".message-item").getByText(oldMessage)).not.toBeVisible({
+    await expect(reloadedUserA.page.getByRole("main").locator(".message-item").getByText(oldMessage)).not.toBeVisible({
       timeout: 10000,
     })
 
     // Press ArrowUp — the old message is not registered (not mounted), so nothing happens
-    await userA.page.locator("[contenteditable='true']").click()
-    await userA.page.keyboard.press("ArrowUp")
+    await reloadedUserA.page.locator("[contenteditable='true']").click()
+    await reloadedUserA.page.keyboard.press("ArrowUp")
 
-    await expect(userA.page.getByRole("button", { name: "Cancel" })).not.toBeVisible()
+    await expect(reloadedUserA.page.getByRole("button", { name: "Cancel" })).not.toBeVisible()
 
-    await userA.context.close()
+    await reloadedUserA.context.close()
     await userB.context.close()
   })
 })

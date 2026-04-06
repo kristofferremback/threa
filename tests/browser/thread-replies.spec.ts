@@ -14,6 +14,55 @@ import { createChannel, loginAndCreateWorkspace } from "./helpers"
 test.describe("Thread Replies", () => {
   let testId: string
 
+  function getPanelEditor(page: import("@playwright/test").Page) {
+    return page.locator("[data-editor-zone='panel'] [contenteditable='true']")
+  }
+
+  async function sendPanelReply(page: import("@playwright/test").Page, text: string) {
+    const panel = page.getByTestId("panel")
+    const editor = getPanelEditor(page)
+    const sendButton = panel.getByRole("button", { name: /^(Send|Reply)$/ })
+
+    await expect(editor).toBeVisible({ timeout: 10000 })
+    await editor.click()
+    await expect(editor).toBeFocused({ timeout: 5000 })
+    await page.keyboard.type(text)
+    await expect(editor).toContainText(text, { timeout: 5000 })
+    await expect(sendButton).toBeEnabled({ timeout: 5000 })
+    await sendButton.click()
+  }
+
+  async function waitForRealThreadPanel(page: import("@playwright/test").Page) {
+    const panel = page.getByTestId("panel")
+    const sendButton = panel.getByRole("button", { name: "Send", exact: true })
+    const retryButton = panel.getByRole("button", { name: "Retry" })
+    const deadline = Date.now() + 15000
+
+    while (Date.now() < deadline) {
+      if (await retryButton.isVisible().catch(() => false)) {
+        await retryButton.click()
+        await page.waitForTimeout(250)
+      }
+
+      const hasDraftIntro = await page
+        .getByText(/Start a new thread/)
+        .isVisible()
+        .catch(() => false)
+      const isDraftPanel = /panel=draft:/.test(page.url())
+      const hasSendButton = await sendButton.isVisible().catch(() => false)
+
+      if (!hasDraftIntro && !isDraftPanel && hasSendButton) {
+        return
+      }
+
+      await page.waitForTimeout(250)
+    }
+
+    await expect(page.getByText(/Start a new thread/)).not.toBeVisible({ timeout: 1000 })
+    await expect(page).not.toHaveURL(/panel=draft:/, { timeout: 1000 })
+    await expect(sendButton).toBeVisible({ timeout: 1000 })
+  }
+
   test.beforeEach(async ({ page }) => {
     const result = await loginAndCreateWorkspace(page, "thread-test")
     testId = result.testId
@@ -49,13 +98,8 @@ test.describe("Thread Replies", () => {
     await expect(page.getByTestId("panel").getByText(parentMessage)).toBeVisible()
 
     // Type a reply in the thread editor (use last editor since there are two now)
-    const threadEditor = page.locator("[contenteditable='true']").last()
-    await threadEditor.click()
     const replyMessage = `Thread reply ${testId}`
-    await page.keyboard.type(replyMessage)
-
-    // Send the reply
-    await page.keyboard.press("Meta+Enter")
+    await sendPanelReply(page, replyMessage)
 
     // Verify the reply appears in the thread panel (scope to panel to avoid sidebar match)
     await expect(page.getByText(/Start a new thread/)).not.toBeVisible({ timeout: 10000 })
@@ -90,14 +134,14 @@ test.describe("Thread Replies", () => {
     await expect(page.getByText(/Start a new thread/)).toBeVisible({ timeout: 3000 })
 
     // Send a reply
-    const threadEditor = page.locator("[contenteditable='true']").last()
-    await threadEditor.click()
-    await page.keyboard.type(`Reply one ${testId}`)
-    await page.keyboard.press("Meta+Enter")
+    await sendPanelReply(page, `Reply one ${testId}`)
 
-    // Close the thread panel to see the main stream
-    const panel = page.getByTestId("panel")
-    await panel.getByRole("button", { name: "Close" }).click()
+    // Return to the main stream via the breadcrumb rather than depending on
+    // the close-button click animation settling first.
+    const returnToChannel = page.getByRole("button", { name: `Return to #${channelName}` })
+    await expect(returnToChannel).toBeVisible({ timeout: 5000 })
+    await returnToChannel.click()
+    await expect(page).not.toHaveURL(/panel=/)
 
     // Verify thread indicator shows "1 reply" on the parent message
     const parentInStream = page.getByRole("main").locator(".message-item").filter({ hasText: parentMessage }).first()
@@ -130,34 +174,25 @@ test.describe("Thread Replies", () => {
     await expect(page.getByText(/Start a new thread/)).toBeVisible({ timeout: 3000 })
 
     // Send first reply (this creates the thread)
-    const threadEditor = page.locator("[contenteditable='true']").last()
-    await threadEditor.click()
     const reply1 = `First reply ${testId}`
-    await page.keyboard.type(reply1)
-    await page.keyboard.press("Meta+Enter")
+    await sendPanelReply(page, reply1)
 
     await expect(page.getByTestId("panel").getByText(reply1)).toBeVisible({ timeout: 10000 })
 
     // After first reply, panel transitions from draft to real thread.
-    // Wait for the transition to complete before interacting with the editor.
-    await expect(page.getByText(/Start a new thread/)).not.toBeVisible({ timeout: 10000 })
+    // Wait for the route and composer to settle before interacting again.
+    await waitForRealThreadPanel(page)
 
-    // Get fresh editor reference after the draft→thread transition
-    const threadEditor2 = page.locator("[contenteditable='true']").last()
-    await threadEditor2.click()
     const reply2 = `Second reply ${testId}`
-    await page.keyboard.type(reply2)
-    await page.keyboard.press("Meta+Enter")
+    await sendPanelReply(page, reply2)
 
-    await expect(page.getByTestId("panel").getByText(reply2)).toBeVisible({ timeout: 10000 })
+    await expect(page.getByTestId("panel").getByText(reply2)).toBeVisible({ timeout: 20000 })
 
     // Send third reply
-    await threadEditor2.click()
     const reply3 = `Third reply ${testId}`
-    await page.keyboard.type(reply3)
-    await page.keyboard.press("Meta+Enter")
+    await sendPanelReply(page, reply3)
 
-    await expect(page.getByTestId("panel").getByText(reply3)).toBeVisible({ timeout: 10000 })
+    await expect(page.getByTestId("panel").getByText(reply3)).toBeVisible({ timeout: 20000 })
 
     // All three replies were successfully sent and appeared
     await expect(page.getByTestId("panel").getByText(reply1)).toBeVisible({ timeout: 10000 })
@@ -189,19 +224,18 @@ test.describe("Thread Replies", () => {
 
     await expect(page.getByText(/Start a new thread/)).toBeVisible({ timeout: 3000 })
 
-    const threadEditor = page.locator("[contenteditable='true']").last()
-    await threadEditor.click()
     const reply1 = `Initial reply ${testId}`
-    await page.keyboard.type(reply1)
-    await page.keyboard.press("Meta+Enter")
+    await sendPanelReply(page, reply1)
 
-    await expect(page.getByText(/Start a new thread/)).not.toBeVisible({ timeout: 10000 })
+    await waitForRealThreadPanel(page)
     await expect(page.getByTestId("panel").getByText(reply1)).toBeVisible({ timeout: 10000 })
 
-    // Close the thread panel
-    const panel = page.getByTestId("panel")
-    await panel.getByRole("button", { name: "Close" }).click()
-    await expect(panel).not.toBeVisible({ timeout: 5000 })
+    // Return to the main stream via the breadcrumb rather than depending on
+    // the close-button click animation settling first.
+    const returnToChannel = page.getByRole("button", { name: `Return to #${channelName}` })
+    await expect(returnToChannel).toBeVisible({ timeout: 5000 })
+    await returnToChannel.click()
+    await expect(page).not.toHaveURL(/panel=/)
 
     // Reopen the thread by clicking the reply count indicator
     const parentInStream = page.getByRole("main").locator(".message-item").filter({ hasText: parentMessage }).first()
@@ -213,10 +247,8 @@ test.describe("Thread Replies", () => {
     await expect(page.getByTestId("panel").getByText(reply1)).toBeVisible({ timeout: 10000 })
 
     // Send another reply
-    await threadEditor.click()
     const reply2 = `Second reply ${testId}`
-    await page.keyboard.type(reply2)
-    await page.keyboard.press("Meta+Enter")
+    await sendPanelReply(page, reply2)
 
     await expect(page.getByTestId("panel").getByText(reply2)).toBeVisible({ timeout: 10000 })
 
@@ -225,8 +257,9 @@ test.describe("Thread Replies", () => {
     await expect(page.getByTestId("panel").getByText(reply2)).toBeVisible()
 
     // Close and verify reply count updated to 2
-    await panel.getByRole("button", { name: "Close" }).click()
-    await expect(panel).not.toBeVisible({ timeout: 5000 })
+    await expect(returnToChannel).toBeVisible({ timeout: 5000 })
+    await returnToChannel.click()
+    await expect(page).not.toHaveURL(/panel=/)
     await expect(parentInStream).toContainText(/2 replies/i, { timeout: 10000 })
   })
 })

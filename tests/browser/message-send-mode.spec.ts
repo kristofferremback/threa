@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test"
-import { loginAndCreateWorkspace } from "./helpers"
+import { createChannel, loginAndCreateWorkspace } from "./helpers"
 
 /**
  * Tests for configurable message send mode feature.
@@ -437,46 +437,55 @@ test.describe("Message Send Mode", () => {
 
   test.describe("preference persistence", () => {
     test("should persist send mode preference across page reload", async ({ page }) => {
+      const channelName = `sendmode-persist-${testId}`
+      await createChannel(page, channelName, { switchToAll: false })
+      await expect(page).toHaveURL(/\/s\/stream_/)
+
       // Change to cmdEnter mode (non-default)
       await setSendMode(page, "cmdEnter")
 
-      async function assertCmdEnterMode(messageContent: string) {
-        const editor = page.locator("[contenteditable='true']")
-        if (!(await editor.isVisible())) {
-          await page.getByRole("button", { name: "+ New Scratchpad" }).click()
-          await expect(editor).toBeVisible({ timeout: 5000 })
-        }
+      async function waitForCmdEnterComposerReady() {
+        await expect(page.getByText(/⌘Enter to send|Ctrl\+Enter to send/).first()).toBeVisible({ timeout: 10000 })
+      }
 
+      async function assertCmdEnterMode(messageContent: string) {
+        const editor = page.getByRole("textbox", { name: "Message input" })
+        const sendButton = page.getByRole("button", { name: "Send", exact: true })
+
+        await waitForCmdEnterComposerReady()
+        await expect(editor).toBeVisible({ timeout: 5000 })
         await editor.click()
-        await page.keyboard.type(messageContent)
+        await expect(editor).toBeFocused()
+        await page.keyboard.insertText(messageContent)
+        await expect(editor).toContainText(messageContent)
+        await expect(sendButton).toBeEnabled({ timeout: 5000 })
 
         // Enter should not send in cmdEnter mode.
         await page.keyboard.press("Enter")
         await expect(editor).toContainText(messageContent)
+        await expect(sendButton).toBeEnabled({ timeout: 5000 })
 
-        // Cmd/Ctrl+Enter should send.
-        await page.keyboard.press("Meta+Enter")
-        await expect(page.locator("p").filter({ hasText: messageContent }).first()).toBeVisible({ timeout: 5000 })
+        // Completing the send through the button keeps this test focused on
+        // preference persistence. Cmd+Enter itself is covered in the dedicated
+        // cmdEnter-mode tests above.
+        await sendButton.click()
+        await expect(
+          page.getByRole("main").locator(".message-item").filter({ hasText: messageContent }).first()
+        ).toBeVisible({
+          timeout: 10000,
+        })
       }
 
       // Verify behavior before reload.
-      await assertCmdEnterMode(`CmdEnter before reload ${testId}-${Date.now()}`)
+      await assertCmdEnterMode(`CmdEnter-before-reload-${testId}-${Date.now()}`)
 
       // Reload page
       await page.reload()
 
-      // Wait for app to load (either existing stream composer or "new scratchpad" button).
-      await expect
-        .poll(
-          async () =>
-            (await page.locator("[contenteditable='true']").isVisible()) ||
-            (await page.getByRole("button", { name: "+ New Scratchpad" }).isVisible()),
-          { timeout: 10000 }
-        )
-        .toBe(true)
+      await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 10000 })
 
       // Verify behavior after reload - preference should persist.
-      await assertCmdEnterMode(`CmdEnter after reload ${testId}-${Date.now()}`)
+      await assertCmdEnterMode(`CmdEnter-after-reload-${testId}-${Date.now()}`)
     })
   })
 })

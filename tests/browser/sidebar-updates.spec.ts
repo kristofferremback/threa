@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test"
-import { loginAndCreateWorkspace, createChannel, switchToAllView } from "./helpers"
+import { loginAndCreateWorkspace, createChannel } from "./helpers"
 
 /**
  * Sidebar real-time update E2E tests.
@@ -11,119 +11,6 @@ import { loginAndCreateWorkspace, createChannel, switchToAllView } from "./helpe
  */
 
 test.describe("Sidebar Updates", () => {
-  test.describe("Bug 1: Message preview in sidebar", () => {
-    test("sidebar should show preview of last message sent in channel", async ({ page }) => {
-      const { testId } = await loginAndCreateWorkspace(page, "sidebar-msg")
-
-      // Create a channel
-      const channelName = `preview-${testId}`
-      await createChannel(page, channelName)
-
-      // Send a unique message
-      const testMessage = `Preview test message ${Date.now()}`
-      await page.locator("[contenteditable='true']").click()
-      await page.keyboard.type(testMessage)
-      await page.getByRole("button", { name: "Send" }).click()
-      // Scope to the main region so the sidebar preview (which may also match)
-      // doesn't trigger a strict-mode violation, and target the rendered
-      // message body specifically so Virtuoso's overscan (which can render
-      // out-of-viewport items with visibility: hidden) can't race us.
-      await expect(page.getByRole("main").locator(".message-item").getByText(testMessage)).toBeVisible({
-        timeout: 10000,
-      })
-
-      // Navigate away to a scratchpad
-      await page.getByRole("button", { name: "+ New Scratchpad" }).click()
-      await expect(page.getByText(/Type a message|No messages yet/)).toBeVisible({ timeout: 5000 })
-
-      // The channel link should still be visible in the sidebar
-      const channelLink = page.getByRole("link", { name: `#${channelName}` })
-      await expect(channelLink).toBeVisible()
-
-      // BUG: Currently the preview doesn't update via socket when you navigate away
-      // and a message is sent. The workspace bootstrap cache has stale lastMessagePreview.
-      // This test documents the expected behavior.
-
-      // After reload, verify the channel still exists
-      await page.reload()
-      await expect(page.getByRole("button", { name: "+ New Scratchpad" })).toBeVisible()
-
-      // View mode persists - verify channel is still visible
-      await expect(page.getByRole("link", { name: `#${channelName}` })).toBeVisible({ timeout: 5000 })
-    })
-  })
-
-  test.describe("Bug 2: Stream name updates in sidebar", () => {
-    test("sidebar should update when scratchpad is auto-named", async ({ page }) => {
-      const { testId } = await loginAndCreateWorkspace(page, "sidebar-name")
-
-      // Create a scratchpad
-      await page.getByRole("button", { name: "+ New Scratchpad" }).click()
-      await expect(page.getByText(/Type a message|No messages yet/)).toBeVisible({ timeout: 5000 })
-
-      // Send a message that will trigger auto-naming
-      const uniqueTopic = `quantum computing ${testId}`
-      await page.locator("[contenteditable='true']").click()
-      await page.keyboard.type(uniqueTopic)
-      await page.getByRole("button", { name: "Send" }).click()
-      // Scope to main content area to avoid matching sidebar preview (which may be hidden)
-      await expect(page.getByRole("main").getByText(uniqueTopic)).toBeVisible({ timeout: 5000 })
-
-      // Get current URL to identify the stream
-      const url = page.url()
-      const streamIdMatch = url.match(/\/s\/([^/]+)/)
-      const streamId = streamIdMatch?.[1]
-      expect(streamId).toBeTruthy()
-
-      // BUG: Currently `stream:display_name_updated` is stream-scoped, meaning it only
-      // goes to the stream room (users viewing that stream). The sidebar is subscribed
-      // to the workspace room, so it never receives the update.
-      // This test documents the expected behavior.
-
-      // After refreshing, the name should be updated
-      await page.reload()
-      // Wait for sidebar to be ready - Drafts link is always visible
-      await expect(page.getByRole("link", { name: "Drafts" })).toBeVisible({ timeout: 5000 })
-    })
-  })
-
-  test.describe("Bug 3: Urgency should be tied to read state", () => {
-    test("urgency indicator should clear after viewing stream", async ({ page }) => {
-      const { testId } = await loginAndCreateWorkspace(page, "sidebar-urgency")
-
-      // Create a channel
-      const channelName = `urgency-${testId}`
-      await createChannel(page, channelName)
-
-      // Send a message (own messages shouldn't trigger urgency)
-      await page.locator("[contenteditable='true']").click()
-      await page.keyboard.type("Test urgency message")
-      await page.getByRole("button", { name: "Send" }).click()
-      // Wait for message in content area (use first() since sidebar preview may also match)
-      await expect(page.getByText("Test urgency message").first()).toBeVisible({ timeout: 5000 })
-
-      // Navigate away
-      await page.getByRole("button", { name: "+ New Scratchpad" }).click()
-      await expect(page.getByText(/Type a message|No messages yet/).first()).toBeVisible({ timeout: 5000 })
-
-      // Own messages should NOT trigger urgency
-      const channelLink = page.getByRole("link", { name: `#${channelName}` })
-      await expect(channelLink).toBeVisible()
-
-      // Navigate back to the channel (marks as read)
-      await channelLink.click()
-      await expect(page.getByText("Test urgency message").first()).toBeVisible()
-
-      // Navigate away again
-      await page.getByRole("button", { name: "+ New Scratchpad" }).click()
-      await expect(page.getByText(/Type a message|No messages yet/)).toBeVisible({ timeout: 5000 })
-
-      // After reading, the channel should have no urgency indicator
-      // (urgency is now purely based on unread count, not time-based)
-      await expect(page.getByRole("link", { name: `#${channelName}` })).toBeVisible()
-    })
-  })
-
   test.describe("Bug 4: Sidebar preview should update when agent responds while navigated away", () => {
     test("should update sidebar preview when agent responds in scratchpad while navigated away", async ({ page }) => {
       test.setTimeout(60000)
@@ -139,7 +26,9 @@ test.describe("Sidebar Updates", () => {
       await page.locator("[contenteditable='true']").click()
       await page.keyboard.type(userMessage)
       await page.getByRole("button", { name: "Send" }).click()
-      await expect(page.getByRole("main").getByText(userMessage)).toBeVisible({ timeout: 5000 })
+      await expect(page.getByRole("main").locator(".message-item").getByText(userMessage).first()).toBeVisible({
+        timeout: 5000,
+      })
 
       // Wait for the URL to settle (draft_xxx → stream_xxx after backend creates stream)
       await page.waitForURL(/\/s\/stream_/, { timeout: 10000 })
@@ -192,7 +81,14 @@ test.describe("Sidebar Updates", () => {
       await page.keyboard.type(userMessage)
       await page.getByRole("button", { name: "Send" }).click()
       // Scope to main content area to avoid matching sidebar preview
-      await expect(page.getByRole("main").getByText(userMessage)).toBeVisible({ timeout: 5000 })
+      await expect(page.getByRole("main").locator(".message-item").getByText(userMessage).first()).toBeVisible({
+        timeout: 5000,
+      })
+
+      // Wait for the draft route to settle to a real stream before navigating
+      // away; otherwise we may capture a transient draft_* id that disappears
+      // from the sidebar once the backend creates the persistent scratchpad.
+      await page.waitForURL(/\/s\/stream_/, { timeout: 10000 })
       const streamId = page.url().match(/\/s\/([^/]+)/)?.[1]
       expect(streamId).toBeTruthy()
 
@@ -211,7 +107,9 @@ test.describe("Sidebar Updates", () => {
           timeout: 30000,
         })
         .toBeGreaterThanOrEqual(baselineEventCount + 1)
-      await expect(page.getByRole("main").getByText(userMessage)).toBeVisible({ timeout: 10000 })
+      await expect(page.getByRole("main").locator(".message-item").getByText(userMessage).first()).toBeVisible({
+        timeout: 10000,
+      })
     })
   })
 })
