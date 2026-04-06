@@ -39,6 +39,7 @@ import { ThreadIndicator } from "./thread-indicator"
 import { DeleteMessageDialog } from "./delete-message-dialog"
 import { MessageEditForm } from "./message-edit-form"
 import { UnsentMessageEditForm } from "./unsent-message-edit-form"
+import { UnsentMessageActionDrawer } from "./unsent-message-action-drawer"
 import { EditedIndicator } from "./edited-indicator"
 import { MessageHistoryDialog } from "./message-history-dialog"
 import { MessageReactions } from "./message-reactions"
@@ -636,49 +637,67 @@ function PendingMessageEvent({
   deferSecondaryHydration,
 }: MessageEventInnerProps) {
   const { markEditing, deleteMessage } = usePendingMessages()
+  const isMobile = useIsMobile()
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const openDrawer = useCallback(() => setDrawerOpen(true), [])
+  const longPress = useLongPress({ onLongPress: openDrawer, enabled: isMobile })
 
   return (
-    <MessageLayout
-      event={event}
-      payload={payload}
-      workspaceId={workspaceId}
-      actorName={actorName}
-      actorInitials={actorInitials}
-      personaSlug={personaSlug}
-      actorAvatarUrl={actorAvatarUrl}
-      deferSecondaryHydration={deferSecondaryHydration}
-      containerClassName="opacity-60"
-      statusIndicator={
-        <span className="text-xs text-muted-foreground opacity-0 animate-fade-in-delayed">Sending...</span>
-      }
-      actions={
-        <div className="flex gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => void markEditing(event.id)}>
-            Edit
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 px-2 text-xs text-muted-foreground"
-            onClick={() => void deleteMessage(event.id)}
-          >
-            Delete
-          </Button>
-        </div>
-      }
-      footer={
-        // Reserve the same vertical space as SentMessageEvent's threadFooter
-        // so Virtuoso's measured height stays stable across the pending → sent transition.
-        // Skipped for thread parents (SentMessageEvent also renders null footer there).
-        !isThreadParent ? (
-          <div className="mt-1 flex items-center gap-1.5 text-xs">
-            <span className="opacity-0" aria-hidden="true">
-              Reply in thread
-            </span>
+    <>
+      <MessageLayout
+        event={event}
+        payload={payload}
+        workspaceId={workspaceId}
+        actorName={actorName}
+        actorInitials={actorInitials}
+        personaSlug={personaSlug}
+        actorAvatarUrl={actorAvatarUrl}
+        deferSecondaryHydration={deferSecondaryHydration}
+        containerClassName={cn(
+          "opacity-60",
+          isMobile && "select-none",
+          longPress.isPressed && "opacity-40 transition-opacity duration-100"
+        )}
+        touchHandlers={isMobile ? longPress.handlers : undefined}
+        statusIndicator={
+          <span className="text-xs text-muted-foreground opacity-0 animate-fade-in-delayed">Sending...</span>
+        }
+        actions={
+          <div className="flex gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity hidden sm:flex">
+            <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => void markEditing(event.id)}>
+              Edit
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-xs text-muted-foreground"
+              onClick={() => void deleteMessage(event.id)}
+            >
+              Delete
+            </Button>
           </div>
-        ) : null
-      }
-    />
+        }
+        footer={
+          !isThreadParent ? (
+            <div className="mt-1 flex items-center gap-1.5 text-xs">
+              <span className="opacity-0" aria-hidden="true">
+                Reply in thread
+              </span>
+            </div>
+          ) : null
+        }
+      />
+      {isMobile && (
+        <UnsentMessageActionDrawer
+          open={drawerOpen}
+          onOpenChange={setDrawerOpen}
+          contentMarkdown={payload.contentMarkdown}
+          authorName={actorName}
+          onEdit={() => void markEditing(event.id)}
+          onDelete={() => void deleteMessage(event.id)}
+        />
+      )}
+    </>
   )
 }
 
@@ -694,47 +713,69 @@ function FailedMessageEvent({
   deferSecondaryHydration,
 }: MessageEventInnerProps) {
   const { retryMessage, markEditing, deleteMessage } = usePendingMessages()
+  const isMobile = useIsMobile()
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const openDrawer = useCallback(() => setDrawerOpen(true), [])
+  const longPress = useLongPress({ onLongPress: openDrawer, enabled: isMobile })
 
   return (
-    <MessageLayout
-      event={event}
-      payload={payload}
-      workspaceId={workspaceId}
-      actorName={actorName}
-      actorInitials={actorInitials}
-      personaSlug={personaSlug}
-      actorAvatarUrl={actorAvatarUrl}
-      deferSecondaryHydration={deferSecondaryHydration}
-      containerClassName="border-l-2 border-destructive pl-2"
-      statusIndicator={<span className="text-xs text-destructive">Failed to send</span>}
-      actions={
-        <div className="flex gap-1 mt-1">
-          <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => void retryMessage(event.id)}>
-            Retry
-          </Button>
-          <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => void markEditing(event.id)}>
-            Edit
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 px-2 text-xs text-muted-foreground"
-            onClick={() => void deleteMessage(event.id)}
-          >
-            Delete
-          </Button>
-        </div>
-      }
-      footer={
-        !isThreadParent ? (
-          <div className="mt-1 flex items-center gap-1.5 text-xs">
-            <span className="opacity-0" aria-hidden="true">
-              Reply in thread
-            </span>
+    <>
+      <MessageLayout
+        event={event}
+        payload={payload}
+        workspaceId={workspaceId}
+        actorName={actorName}
+        actorInitials={actorInitials}
+        personaSlug={personaSlug}
+        actorAvatarUrl={actorAvatarUrl}
+        deferSecondaryHydration={deferSecondaryHydration}
+        containerClassName={cn(
+          "border-l-2 border-destructive pl-2",
+          isMobile && "select-none",
+          longPress.isPressed && "opacity-70 transition-opacity duration-100"
+        )}
+        touchHandlers={isMobile ? longPress.handlers : undefined}
+        statusIndicator={<span className="text-xs text-destructive">Failed to send</span>}
+        actions={
+          <div className="flex gap-1 mt-1 hidden sm:flex">
+            <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => void retryMessage(event.id)}>
+              Retry
+            </Button>
+            <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => void markEditing(event.id)}>
+              Edit
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-xs text-muted-foreground"
+              onClick={() => void deleteMessage(event.id)}
+            >
+              Delete
+            </Button>
           </div>
-        ) : null
-      }
-    />
+        }
+        footer={
+          !isThreadParent ? (
+            <div className="mt-1 flex items-center gap-1.5 text-xs">
+              <span className="opacity-0" aria-hidden="true">
+                Reply in thread
+              </span>
+            </div>
+          ) : null
+        }
+      />
+      {isMobile && (
+        <UnsentMessageActionDrawer
+          open={drawerOpen}
+          onOpenChange={setDrawerOpen}
+          contentMarkdown={payload.contentMarkdown}
+          authorName={actorName}
+          onRetry={() => void retryMessage(event.id)}
+          onEdit={() => void markEditing(event.id)}
+          onDelete={() => void deleteMessage(event.id)}
+        />
+      )}
+    </>
   )
 }
 
