@@ -144,7 +144,7 @@ export function ReactionPillDetails({ emoji, reactions, workspaceId, children }:
     <>
       {/* Stop touch propagation so the parent message long-press handler doesn't also fire */}
       <span
-        className="inline-flex"
+        className="contents"
         onTouchStart={(e) => {
           e.stopPropagation()
           handlers.onTouchStart(e)
