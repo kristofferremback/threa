@@ -121,7 +121,15 @@ import { logger } from "./lib/logger"
 import { createAI } from "./lib/ai/ai"
 import { createModelRegistry } from "./lib/ai/model-registry"
 import { createStaticConfigResolver } from "./lib/ai/static-config-resolver"
-import { QueueManager, ScheduleManager, CleanupWorker, QueueRepository, TokenPoolRepository } from "./lib/queue"
+import {
+  QueueManager,
+  QueueTiers,
+  QueueFairness,
+  ScheduleManager,
+  CleanupWorker,
+  QueueRepository,
+  TokenPoolRepository,
+} from "./lib/queue"
 import { UserSocketRegistry } from "./lib/user-socket-registry"
 import { PoolMonitor } from "./lib/observability"
 import { ControlPlaneClient } from "./lib/control-plane-client"
@@ -148,6 +156,7 @@ export async function startServer(): Promise<ServerInstance> {
   // Create separated connection pools:
   // - main: services, workers, queue system, HTTP handlers (30 connections)
   // - listen: OutboxListener LISTEN connections (12 connections)
+  // - realtime: broadcast + push outbox handlers (8 connections, reserved)
   const pools = createDatabasePools(config.databaseUrl)
   const pool = pools.main // Alias for backwards compatibility during transition
 
@@ -155,7 +164,7 @@ export async function startServer(): Promise<ServerInstance> {
   // Note: Logging disabled - use Grafana dashboard for monitoring
   // Will still log warnings for high utilization or waiting connections
   const poolMonitor = new PoolMonitor(
-    { main: pools.main, listen: pools.listen },
+    { main: pools.main, listen: pools.listen, realtime: pools.realtime },
     {
       logIntervalMs: 30000, // Update metrics every 30 seconds
       warnThreshold: 80, // Warn when 80% utilized
@@ -207,23 +216,37 @@ export async function startServer(): Promise<ServerInstance> {
   const embeddingService = config.useStubAI ? new StubEmbeddingService() : new EmbeddingService({ ai })
   const searchService = new SearchService({ pool, embeddingService })
 
-  // Job queue for durable background work (companion responses, etc.)
+  // Job queue for durable background work (companion responses, etc.).
+  //
+  // Tiered concurrency budgets: each tier has its own in-flight cap so slow
+  // heavy work (PDF/image/memo) cannot monopolize the pool and starve
+  // interactive work (persona agent responses, commands). Budgets roughly
+  // target: 45 worst-case concurrent handlers (15 tokens × 3 msgs/token),
+  // bounded per tier. Main pool = 30, so real-time handlers on `pools.realtime`
+  // are isolated regardless of queue load.
+  //
+  // Fairness defaults to `none` per-queue (see handler registrations below).
+  // Region-level sharding already isolates tenants, so a single workspace can
+  // use a tier's full budget — the previous per-workspace fairness was
+  // serializing bursts unnecessarily.
   const jobQueue = new QueueManager({
     pool,
     queueRepository: QueueRepository,
     tokenPoolRepository: TokenPoolRepository,
-    // Adaptive polling with bounded parallelism:
-    // - pollIntervalMs=500: sleep 500ms between cycles when idle
-    // - refillDebounceMs=100: debounce before fetching more tokens
-    // - maxActiveTokens=3: max 3 tokens in flight at once
-    // - processingConcurrency=3: max 3 messages per token
-    //
-    // Max concurrent handlers: 3 × 3 = 9 handlers
-    // Peak connections: ~9-10 (safe for 30 connection pool)
     pollIntervalMs: Number(process.env.QUEUE_POLL_INTERVAL_MS) || 500,
     refillDebounceMs: 100,
-    maxActiveTokens: Number(process.env.QUEUE_MAX_ACTIVE_TOKENS) || 3,
     processingConcurrency: 3,
+    tiers: {
+      [QueueTiers.INTERACTIVE]: {
+        maxActiveTokens: Number(process.env.QUEUE_INTERACTIVE_TOKENS) || 6,
+      },
+      [QueueTiers.LIGHT]: {
+        maxActiveTokens: Number(process.env.QUEUE_LIGHT_TOKENS) || 6,
+      },
+      [QueueTiers.HEAVY]: {
+        maxActiveTokens: Number(process.env.QUEUE_HEAVY_TOKENS) || 3,
+      },
+    },
   })
 
   const workspaceService = new WorkspaceService(pool, avatarService, jobQueue, workosOrgService, {
@@ -305,8 +328,11 @@ export async function startServer(): Promise<ServerInstance> {
   const createThread = (params: Parameters<typeof streamService.createThread>[0]) => streamService.createThread(params)
 
   const activityService = new ActivityService({ pool })
+  // PushService runs on pools.realtime so push delivery (outbox hot path) has
+  // reserved DB capacity isolated from background workers. Subscription CRUD
+  // endpoints also use this pool — low volume, plenty of headroom.
   const pushService = new PushService({
-    pool,
+    pool: pools.realtime,
     vapidConfig: config.push.enabled
       ? {
           publicKey: config.push.vapidPublicKey,
@@ -390,7 +416,7 @@ export async function startServer(): Promise<ServerInstance> {
     },
   })
 
-  io.adapter(createAdapter(pool))
+  io.adapter(createAdapter(pools.realtime))
 
   const userSocketRegistry = new UserSocketRegistry()
   registerSocketHandlers(io, { pool, authService, streamService, pushService, userSocketRegistry })
@@ -425,14 +451,33 @@ export async function startServer(): Promise<ServerInstance> {
     deleteMessage,
     createThread,
   })
+  // Tier assignments (see QueueManager `tiers` config above):
+  //  - INTERACTIVE: user-facing work that must drain quickly (agent responses,
+  //    slash commands). Highest priority, biggest per-queue share.
+  //  - LIGHT: fast background jobs without blocking LLM/IO (naming, embeddings,
+  //    link previews, avatar processing).
+  //  - HEAVY: slow IO- or CPU-bound jobs (document / image / memo processing).
+  //    Capped low so they can't monopolize pool connections.
+  //
+  // Fairness defaults to `none` — region sharding already isolates tenants,
+  // so a single workspace burst can use the full tier budget.
   const personaAgentWorker = createPersonaAgentWorker({ agent: personaAgent, serverId, pool, jobQueue })
-  jobQueue.registerHandler(JobQueues.PERSONA_AGENT, personaAgentWorker)
+  jobQueue.registerHandler(JobQueues.PERSONA_AGENT, personaAgentWorker, {
+    tier: QueueTiers.INTERACTIVE,
+    fairness: QueueFairness.NONE,
+  })
 
   const namingWorker = createNamingWorker({ streamNamingService })
-  jobQueue.registerHandler(JobQueues.NAMING_GENERATE, namingWorker)
+  jobQueue.registerHandler(JobQueues.NAMING_GENERATE, namingWorker, {
+    tier: QueueTiers.LIGHT,
+    fairness: QueueFairness.NONE,
+  })
 
   const embeddingWorker = createEmbeddingWorker({ pool, embeddingService })
-  jobQueue.registerHandler(JobQueues.EMBEDDING_GENERATE, embeddingWorker)
+  jobQueue.registerHandler(JobQueues.EMBEDDING_GENERATE, embeddingWorker, {
+    tier: QueueTiers.LIGHT,
+    fairness: QueueFairness.NONE,
+  })
 
   // Boundary extraction
   const boundaryExtractor = config.useStubBoundaryExtraction
@@ -440,9 +485,12 @@ export async function startServer(): Promise<ServerInstance> {
     : new LLMBoundaryExtractor(ai, configResolver)
   const boundaryExtractionService = new BoundaryExtractionService(pool, boundaryExtractor)
   const boundaryExtractionWorker = createBoundaryExtractionWorker({ service: boundaryExtractionService })
-  jobQueue.registerHandler(JobQueues.BOUNDARY_EXTRACT, boundaryExtractionWorker)
+  jobQueue.registerHandler(JobQueues.BOUNDARY_EXTRACT, boundaryExtractionWorker, {
+    tier: QueueTiers.LIGHT,
+    fairness: QueueFairness.NONE,
+  })
 
-  // Memo (GAM) processing
+  // Memo (GAM) processing — batched extraction, heavy LLM work
   const memoService = config.useStubAI
     ? new StubMemoService()
     : new MemoService({
@@ -454,12 +502,24 @@ export async function startServer(): Promise<ServerInstance> {
       })
   const memoBatchCheckWorker = createMemoBatchCheckWorker({ pool, memoService, jobQueue })
   const memoBatchProcessWorker = createMemoBatchProcessWorker({ pool, memoService, jobQueue })
-  jobQueue.registerHandler(JobQueues.MEMO_BATCH_CHECK, memoBatchCheckWorker)
-  jobQueue.registerHandler(JobQueues.MEMO_BATCH_PROCESS, memoBatchProcessWorker)
+  // memo.batch-check is a lightweight cron-driven dispatcher; the actual heavy
+  // work is memo.batch-process. Keep fairness=workspace on batch-process so
+  // one noisy workspace's memo backlog doesn't monopolize the heavy tier.
+  jobQueue.registerHandler(JobQueues.MEMO_BATCH_CHECK, memoBatchCheckWorker, {
+    tier: QueueTiers.LIGHT,
+    fairness: QueueFairness.NONE,
+  })
+  jobQueue.registerHandler(JobQueues.MEMO_BATCH_PROCESS, memoBatchProcessWorker, {
+    tier: QueueTiers.HEAVY,
+    fairness: QueueFairness.WORKSPACE,
+  })
 
-  // Command execution worker
+  // Command execution worker — user-triggered, must feel snappy
   const commandWorker = createCommandWorker({ pool, commandRegistry })
-  jobQueue.registerHandler(JobQueues.COMMAND_EXECUTE, commandWorker)
+  jobQueue.registerHandler(JobQueues.COMMAND_EXECUTE, commandWorker, {
+    tier: QueueTiers.INTERACTIVE,
+    fairness: QueueFairness.NONE,
+  })
 
   // Image captioning worker
   const imageCaptionService = config.useStubAI
@@ -471,6 +531,8 @@ export async function startServer(): Promise<ServerInstance> {
   }
   jobQueue.registerHandler(JobQueues.IMAGE_CAPTION, imageCaptionWorker, {
     hooks: { onDLQ: imageCaptionOnDLQ },
+    tier: QueueTiers.HEAVY,
+    fairness: QueueFairness.NONE,
   })
 
   // PDF processing workers
@@ -485,12 +547,18 @@ export async function startServer(): Promise<ServerInstance> {
   }
   jobQueue.registerHandler(JobQueues.PDF_PREPARE, pdfPrepareWorker, {
     hooks: { onDLQ: pdfOnDLQ as OnDLQHook<PdfPrepareJobData> },
+    tier: QueueTiers.HEAVY,
+    fairness: QueueFairness.NONE,
   })
   jobQueue.registerHandler(JobQueues.PDF_PROCESS_PAGE, pdfPageWorker, {
     hooks: { onDLQ: pdfOnDLQ as OnDLQHook<PdfProcessPageJobData> },
+    tier: QueueTiers.HEAVY,
+    fairness: QueueFairness.NONE,
   })
   jobQueue.registerHandler(JobQueues.PDF_ASSEMBLE, pdfAssembleWorker, {
     hooks: { onDLQ: pdfOnDLQ as OnDLQHook<PdfAssembleJobData> },
+    tier: QueueTiers.HEAVY,
+    fairness: QueueFairness.NONE,
   })
 
   // Text processing worker
@@ -503,6 +571,8 @@ export async function startServer(): Promise<ServerInstance> {
   }
   jobQueue.registerHandler(JobQueues.TEXT_PROCESS, textProcessingWorker, {
     hooks: { onDLQ: textOnDLQ },
+    tier: QueueTiers.HEAVY,
+    fairness: QueueFairness.NONE,
   })
 
   // Word processing worker
@@ -515,6 +585,8 @@ export async function startServer(): Promise<ServerInstance> {
   }
   jobQueue.registerHandler(JobQueues.WORD_PROCESS, wordProcessingWorker, {
     hooks: { onDLQ: wordOnDLQ },
+    tier: QueueTiers.HEAVY,
+    fairness: QueueFairness.NONE,
   })
 
   // Excel processing worker
@@ -527,19 +599,26 @@ export async function startServer(): Promise<ServerInstance> {
   }
   jobQueue.registerHandler(JobQueues.EXCEL_PROCESS, excelProcessingWorker, {
     hooks: { onDLQ: excelOnDLQ },
+    tier: QueueTiers.HEAVY,
+    fairness: QueueFairness.NONE,
   })
 
-  // Avatar processing worker
+  // Avatar processing worker — fast image resize, not LLM-bound
   const avatarProcessingService = new AvatarProcessingService(pool, avatarService)
   const avatarProcessWorker = createAvatarProcessWorker({ avatarProcessingService })
   const avatarProcessOnDLQ = createAvatarProcessOnDLQ()
   jobQueue.registerHandler(JobQueues.AVATAR_PROCESS, avatarProcessWorker, {
     hooks: { onDLQ: avatarProcessOnDLQ },
+    tier: QueueTiers.LIGHT,
+    fairness: QueueFairness.NONE,
   })
 
-  // Link preview worker
+  // Link preview worker — fast HTTP fetch, not LLM-bound
   const linkPreviewWorker = createLinkPreviewWorker({ linkPreviewService })
-  jobQueue.registerHandler(JobQueues.LINK_PREVIEW_EXTRACT, linkPreviewWorker)
+  jobQueue.registerHandler(JobQueues.LINK_PREVIEW_EXTRACT, linkPreviewWorker, {
+    tier: QueueTiers.LIGHT,
+    fairness: QueueFairness.NONE,
+  })
 
   // Register handlers before starting
   await jobQueue.start()
@@ -560,8 +639,13 @@ export async function startServer(): Promise<ServerInstance> {
   // Outbox dispatcher - single LISTEN connection fans out to all handlers
   const outboxDispatcher = new OutboxDispatcher({ listenPool: pools.listen })
 
-  // Create handlers - each manages its own cursor, debouncing, and processing
-  const broadcastHandler = new BroadcastHandler(pool, io)
+  // Create handlers - each manages its own cursor, debouncing, and processing.
+  //
+  // Real-time delivery handlers (broadcast, push) use a dedicated `pools.realtime`
+  // so a saturated main pool (AI workers, file processing, embeddings) can never
+  // starve socket.io broadcasts or push notifications. All other outbox handlers
+  // use the main pool — they enqueue jobs and can tolerate back-pressure.
+  const broadcastHandler = new BroadcastHandler(pools.realtime, io)
   const companionHandler = new CompanionHandler(pool, jobQueue)
   const namingHandler = new NamingHandler(pool, jobQueue)
   const emojiUsageHandler = new EmojiUsageHandler(pool)
@@ -574,7 +658,9 @@ export async function startServer(): Promise<ServerInstance> {
   const attachmentUploadedHandler = new AttachmentUploadedHandler(pool, jobQueue)
   const systemMessageOutboxHandler = new SystemMessageOutboxHandler(pool, systemMessageService)
   const activityFeedHandler = new ActivityFeedHandler(pool, activityService)
-  const pushNotificationHandler = pushService.isEnabled() ? new PushNotificationHandler({ pool, pushService }) : null
+  const pushNotificationHandler = pushService.isEnabled()
+    ? new PushNotificationHandler({ pool: pools.realtime, pushService })
+    : null
   const linkPreviewOutboxHandler = new LinkPreviewOutboxHandler(pool, jobQueue)
   const shadowSyncHandler =
     controlPlaneClient && config.region
@@ -673,6 +759,7 @@ export async function startServer(): Promise<ServerInstance> {
     }
     logger.info("Closing database pools...")
     await pools.listen.end()
+    await pools.realtime.end()
     await pools.main.end()
     logger.info("Server stopped")
   }

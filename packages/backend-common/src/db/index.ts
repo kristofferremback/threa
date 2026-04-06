@@ -72,6 +72,12 @@ export interface DatabasePools {
   main: Pool
   /** Dedicated pool for LISTEN connections held by outbox listeners (12 max) */
   listen: Pool
+  /**
+   * Dedicated pool for real-time delivery outbox handlers (broadcast + push).
+   * Reserved capacity so a saturated main pool (e.g. AI workers holding
+   * connections) can never delay socket.io broadcasts or push notifications.
+   */
+  realtime: Pool
 }
 
 /**
@@ -79,14 +85,20 @@ export interface DatabasePools {
  *
  * - main: Used by services, workers, queue system, and HTTP handlers (30 connections)
  * - listen: Dedicated to OutboxListener LISTEN connections (12 connections)
+ * - realtime: Dedicated to the broadcast + push outbox handlers (8 connections)
  *
  * This separation ensures that long-held LISTEN connections don't compete
- * with transactional work for pool slots.
+ * with transactional work for pool slots, and that real-time message delivery
+ * is never starved by background workers (AI, embeddings, file processing).
  *
  * Pool sizing rationale:
  * - main (30): Handles concurrent HTTP requests, workers, and queue jobs
  * - listen (12): Currently 9 OutboxListeners + 3 headroom for reconnects
- *   If adding more listeners, increase this accordingly.
+ * - realtime (8): Broadcast handler (fetchAfterId + cursor lock) + push handler
+ *   (fetchAfterId + cursor lock + sequential delivery) + socket.io postgres
+ *   adapter (1 persistent LISTEN + pg_notify publishes). Adapter holds 1 slot
+ *   permanently; push delivery is sequential to preserve cursor correctness;
+ *   leaves ample headroom for broadcast and pg_notify fan-out.
  */
 export function createDatabasePools(connectionString: string): DatabasePools {
   // Main pool for transactional work
@@ -100,7 +112,22 @@ export function createDatabasePools(connectionString: string): DatabasePools {
     idleTimeoutMillis: 60000,
   })
 
-  return { main, listen }
+  // Realtime pool reserved for real-time delivery:
+  //   - BroadcastHandler (outbox fetch + cursor lock)
+  //   - PushNotificationHandler (outbox fetch + cursor lock + sequential delivery)
+  //   - PushService (subscription lookups, webpush delivery)
+  //   - socket.io postgres adapter (1 persistent LISTEN + pg_notify publishes)
+  //
+  // Push delivery is sequential within a batch (parallel would risk message
+  // loss via CursorLock gap-window expiry — see outbox-handler.ts). The
+  // adapter's persistent LISTEN holds 1 slot permanently, leaving ~7 for
+  // transactional work. A saturated main pool cannot delay message delivery
+  // because this pool is fully isolated.
+  const realtime = createDatabasePool(connectionString, {
+    max: Number(process.env.DATABASE_REALTIME_POOL_MAX) || 8,
+  })
+
+  return { main, listen, realtime }
 }
 
 /**

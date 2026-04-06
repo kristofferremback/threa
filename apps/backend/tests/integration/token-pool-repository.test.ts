@@ -367,6 +367,104 @@ describe("TokenPoolRepository", () => {
       })
     })
 
+    test("fairness=none allows multiple concurrent tokens per (queue, workspace) pair", async () => {
+      await withTestTransaction(pool, async (client) => {
+        const now = new Date()
+
+        // Single workspace with 5 pending messages on the same queue.
+        for (let i = 1; i <= 5; i++) {
+          await QueueRepository.insert(client, {
+            id: `queue_test_single_${i}`,
+            queueName: "test.queue",
+            workspaceId: "ws_test_single",
+            payload: { order: i },
+            processAfter: now,
+            insertedAt: now,
+          })
+        }
+
+        const tokens = await TokenPoolRepository.batchLeaseTokens(client, {
+          leasedBy: "ticker_test",
+          leasedAt: now,
+          leasedUntil: new Date(now.getTime() + 10000),
+          now,
+          limit: 3,
+          queueNames: ["test.queue"],
+          fairnessMode: "none",
+        })
+
+        // Under fairness=none the workspace can hold up to the requested
+        // limit of concurrent tokens for the same queue (versus a single
+        // token under workspace fairness).
+        expect(tokens.length).toBe(3)
+        for (const token of tokens) {
+          expect(token.workspaceId).toBe("ws_test_single")
+          expect(token.queueName).toBe("test.queue")
+        }
+      })
+    })
+
+    test("fairness=none is capped by pending message count per pair", async () => {
+      await withTestTransaction(pool, async (client) => {
+        const now = new Date()
+
+        // Only 2 pending messages but limit=5.
+        for (let i = 1; i <= 2; i++) {
+          await QueueRepository.insert(client, {
+            id: `queue_test_small_${i}`,
+            queueName: "test.queue",
+            workspaceId: "ws_test_small",
+            payload: { order: i },
+            processAfter: now,
+            insertedAt: now,
+          })
+        }
+
+        const tokens = await TokenPoolRepository.batchLeaseTokens(client, {
+          leasedBy: "ticker_test",
+          leasedAt: now,
+          leasedUntil: new Date(now.getTime() + 10000),
+          now,
+          limit: 5,
+          queueNames: ["test.queue"],
+          fairnessMode: "none",
+        })
+
+        // Shouldn't over-allocate tokens beyond what there's work for.
+        expect(tokens.length).toBe(2)
+      })
+    })
+
+    test("fairness=workspace (default) preserves per-pair exclusion", async () => {
+      await withTestTransaction(pool, async (client) => {
+        const now = new Date()
+
+        for (let i = 1; i <= 5; i++) {
+          await QueueRepository.insert(client, {
+            id: `queue_test_default_${i}`,
+            queueName: "test.queue",
+            workspaceId: "ws_test_default",
+            payload: { order: i },
+            processAfter: now,
+            insertedAt: now,
+          })
+        }
+
+        // Default fairness mode is "workspace" — only one concurrent token
+        // per (queue, workspace) pair even when limit would allow more.
+        const tokens = await TokenPoolRepository.batchLeaseTokens(client, {
+          leasedBy: "ticker_test",
+          leasedAt: now,
+          leasedUntil: new Date(now.getTime() + 10000),
+          now,
+          limit: 5,
+          queueNames: ["test.queue"],
+        })
+
+        expect(tokens.length).toBe(1)
+      })
+    })
+
     test("should include messages with expired claims", async () => {
       await withTestTransaction(pool, async (client) => {
         const now = new Date()
