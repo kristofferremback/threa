@@ -190,15 +190,7 @@ export function StreamItem({
       ? (allStreams.find((s) => s.id === stream.rootStreamId) ?? null)
       : null
 
-  const dmPeerAvatar = (() => {
-    if (stream.type === StreamTypes.DM) {
-      return getActorAvatar(stream.dmPeerUserId ?? null, "user")
-    }
-    if (threadRootStream?.type === StreamTypes.DM && threadRootStream.dmPeerUserId) {
-      return getActorAvatar(threadRootStream.dmPeerUserId, "user")
-    }
-    return null
-  })()
+  const dmPeerAvatar = stream.dmPeerUserId ? getActorAvatar(stream.dmPeerUserId, "user") : null
 
   const threadRootContext = stream.type === StreamTypes.THREAD ? getThreadRootContext(stream, allStreams) : null
 
