@@ -181,7 +181,9 @@ export function useMessageQueue(): void {
       if (!isConnectedRef.current) break
 
       const candidates = await db.pendingMessages.orderBy("createdAt").toArray()
-      const next = candidates.find((m) => !skippedIds.has(m.clientId) && (m.retryAfter ?? 0) <= now)
+      const next = candidates.find(
+        (m) => !skippedIds.has(m.clientId) && m.status !== "editing" && (m.retryAfter ?? 0) <= now
+      )
       if (!next) break
 
       markPending(next.clientId)

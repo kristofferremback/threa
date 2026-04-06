@@ -99,7 +99,7 @@ export interface CachedEvent {
   createdAt: string
   // Optimistic sending state (for message_created events)
   _clientId?: string
-  _status?: "pending" | "sent" | "failed"
+  _status?: "pending" | "sent" | "failed" | "editing"
   _cachedAt: number
 }
 
@@ -166,6 +166,8 @@ export interface PendingMessage {
   retryCount: number
   /** Timestamp before which this message should not be retried (exponential backoff) */
   retryAfter?: number
+  /** When "editing", the queue skips this message so it isn't sent while the user edits it */
+  status?: "editing"
   /** When set, the queue creates this stream before sending the message */
   streamCreation?: PendingStreamCreation
   /** The draft ID to clean up after successful stream creation + message send */

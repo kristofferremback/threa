@@ -38,6 +38,7 @@ import { MessageActionDrawer } from "./message-action-drawer"
 import { ThreadIndicator } from "./thread-indicator"
 import { DeleteMessageDialog } from "./delete-message-dialog"
 import { MessageEditForm } from "./message-edit-form"
+import { UnsentMessageEditForm } from "./unsent-message-edit-form"
 import { EditedIndicator } from "./edited-indicator"
 import { MessageHistoryDialog } from "./message-history-dialog"
 import { MessageReactions } from "./message-reactions"
@@ -634,6 +635,8 @@ function PendingMessageEvent({
   isThreadParent,
   deferSecondaryHydration,
 }: MessageEventInnerProps) {
+  const { markEditing, deleteMessage } = usePendingMessages()
+
   return (
     <MessageLayout
       event={event}
@@ -647,6 +650,21 @@ function PendingMessageEvent({
       containerClassName="opacity-60"
       statusIndicator={
         <span className="text-xs text-muted-foreground opacity-0 animate-fade-in-delayed">Sending...</span>
+      }
+      actions={
+        <div className="flex gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => void markEditing(event.id)}>
+            Edit
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-2 text-xs text-muted-foreground"
+            onClick={() => void deleteMessage(event.id)}
+          >
+            Delete
+          </Button>
+        </div>
       }
       footer={
         // Reserve the same vertical space as SentMessageEvent's threadFooter
@@ -675,7 +693,7 @@ function FailedMessageEvent({
   isThreadParent,
   deferSecondaryHydration,
 }: MessageEventInnerProps) {
-  const { retryMessage, deleteMessage } = usePendingMessages()
+  const { retryMessage, markEditing, deleteMessage } = usePendingMessages()
 
   return (
     <MessageLayout
@@ -693,6 +711,9 @@ function FailedMessageEvent({
         <div className="flex gap-1 mt-1">
           <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => retryMessage(event.id)}>
             Retry
+          </Button>
+          <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => markEditing(event.id)}>
+            Edit
           </Button>
           <Button
             variant="ghost"
@@ -714,6 +735,56 @@ function FailedMessageEvent({
         ) : null
       }
     />
+  )
+}
+
+function EditingMessageEvent({
+  event,
+  payload,
+  workspaceId,
+  actorName,
+  actorInitials,
+  personaSlug,
+  actorAvatarUrl,
+  deferSecondaryHydration,
+}: MessageEventInnerProps) {
+  const isMobile = useIsMobile()
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  const stopEditing = useCallback(() => {
+    const zone = containerRef.current?.closest<HTMLElement>("[data-editor-zone]") ?? null
+    if (isMobile) return
+    requestAnimationFrame(() => focusVisibleZoneEditor(zone))
+  }, [isMobile])
+
+  return (
+    <>
+      <MessageLayout
+        event={event}
+        payload={payload}
+        workspaceId={workspaceId}
+        actorName={actorName}
+        actorInitials={actorInitials}
+        personaSlug={personaSlug}
+        actorAvatarUrl={actorAvatarUrl}
+        deferSecondaryHydration={deferSecondaryHydration}
+        isEditing={!isMobile}
+        containerRef={containerRef}
+        statusIndicator={<span className="text-xs text-muted-foreground">Editing unsent message</span>}
+      >
+        {!isMobile ? (
+          <UnsentMessageEditForm messageId={event.id} initialContentJson={payload.contentJson} onDone={stopEditing} />
+        ) : undefined}
+      </MessageLayout>
+      {isMobile && (
+        <UnsentMessageEditForm
+          messageId={event.id}
+          initialContentJson={payload.contentJson}
+          onDone={stopEditing}
+          authorName={actorName}
+        />
+      )}
+    </>
   )
 }
 
@@ -767,6 +838,20 @@ export function MessageEvent({
           personaSlug={personaSlug}
           actorAvatarUrl={actorAvatarUrl}
           isThreadParent={isThreadParent}
+          deferSecondaryHydration={deferSecondaryHydration}
+        />
+      )
+    case "editing":
+      return (
+        <EditingMessageEvent
+          event={event}
+          payload={payload}
+          workspaceId={workspaceId}
+          streamId={streamId}
+          actorName={actorName}
+          actorInitials={actorInitials}
+          personaSlug={personaSlug}
+          actorAvatarUrl={actorAvatarUrl}
           deferSecondaryHydration={deferSecondaryHydration}
         />
       )
