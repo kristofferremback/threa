@@ -145,6 +145,7 @@ vi.mock("@/stores/workspace-store", () => ({
   useWorkspacePersonas: () => mockWorkspaceBootstrap.data.personas ?? [],
   useWorkspaceDmPeers: () => mockWorkspaceBootstrap.data.dmPeers ?? [],
   useWorkspaceStreamMemberships: () => mockWorkspaceBootstrap.data.streamMemberships ?? [],
+  useWorkspaceUnreadState: () => null,
 }))
 
 // Mock streams API - called by useQuery in useStreamItems for archived streams
@@ -154,10 +155,16 @@ vi.mock("@/api/streams", () => ({
   },
 }))
 
-// Mock contexts - useSettings is called by QuickSwitcher for openSettings command
+// Mock contexts - useSettings is called by QuickSwitcher, useStreamService/useWorkspaceService by useUnreadCounts
 vi.mock("@/contexts", () => ({
   useSettings: () => ({
     openSettings: vi.fn(),
+  }),
+  useStreamService: () => ({
+    markAsRead: vi.fn(),
+  }),
+  useWorkspaceService: () => ({
+    markAllAsRead: vi.fn(),
   }),
 }))
 
@@ -256,7 +263,7 @@ describe("QuickSwitcher Integration Tests", () => {
     }
 
     describe("when popover is closed", () => {
-      // Items are sorted alphabetically: #general, #random, Martin, My Notes
+      // Items are sorted by urgency, then activity time, then alphabetically: #general, #random, Martin, My Notes
       it("should navigate down through results with ArrowDown", async () => {
         const user = userEvent.setup()
         renderWithProviders(<QuickSwitcher {...defaultProps} />)

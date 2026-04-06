@@ -209,10 +209,14 @@ export function useStreamItems(context: ModeContext): ModeResult {
         }
 
         // When browsing (no query): sort like the sidebar
-        // Mentions first, then AI activity, then unread, then by recency
+        // Mentions first, then AI activity, then unread, then by recency, then alphabetically
         const urgencyDiff = URGENCY_ORDER[a.urgency] - URGENCY_ORDER[b.urgency]
         if (urgencyDiff !== 0) return urgencyDiff
-        return getActivityTime(b.stream) - getActivityTime(a.stream)
+        const timeDiff = getActivityTime(b.stream) - getActivityTime(a.stream)
+        if (timeDiff !== 0) return timeDiff
+        const aName = getStreamName(a.stream) ?? streamFallbackLabel(a.stream.type, "generic")
+        const bName = getStreamName(b.stream) ?? streamFallbackLabel(b.stream.type, "generic")
+        return aName.localeCompare(bName)
       })
       .map(({ stream, unreadCount, mentionCount, urgency }): QuickSwitcherItem => {
         const href = `/w/${workspaceId}/s/${stream.id}`
