@@ -631,6 +631,7 @@ function PendingMessageEvent({
   actorInitials,
   personaSlug,
   actorAvatarUrl,
+  isThreadParent,
   deferSecondaryHydration,
 }: MessageEventInnerProps) {
   return (
@@ -650,9 +651,14 @@ function PendingMessageEvent({
       footer={
         // Reserve the same vertical space as SentMessageEvent's threadFooter
         // so Virtuoso's measured height stays stable across the pending → sent transition.
-        <div className="mt-1 flex items-center gap-1.5 text-xs">
-          <span className="opacity-0">Reply in thread</span>
-        </div>
+        // Skipped for thread parents (SentMessageEvent also renders null footer there).
+        !isThreadParent ? (
+          <div className="mt-1 flex items-center gap-1.5 text-xs">
+            <span className="opacity-0" aria-hidden="true">
+              Reply in thread
+            </span>
+          </div>
+        ) : null
       }
     />
   )
@@ -666,6 +672,7 @@ function FailedMessageEvent({
   actorInitials,
   personaSlug,
   actorAvatarUrl,
+  isThreadParent,
   deferSecondaryHydration,
 }: MessageEventInnerProps) {
   const { retryMessage, deleteMessage } = usePendingMessages()
@@ -698,9 +705,13 @@ function FailedMessageEvent({
         </div>
       }
       footer={
-        <div className="mt-1 flex items-center gap-1.5 text-xs">
-          <span className="opacity-0">Reply in thread</span>
-        </div>
+        !isThreadParent ? (
+          <div className="mt-1 flex items-center gap-1.5 text-xs">
+            <span className="opacity-0" aria-hidden="true">
+              Reply in thread
+            </span>
+          </div>
+        ) : null
       }
     />
   )
@@ -740,6 +751,7 @@ export function MessageEvent({
           actorInitials={actorInitials}
           personaSlug={personaSlug}
           actorAvatarUrl={actorAvatarUrl}
+          isThreadParent={isThreadParent}
           deferSecondaryHydration={deferSecondaryHydration}
         />
       )
@@ -754,6 +766,7 @@ export function MessageEvent({
           actorInitials={actorInitials}
           personaSlug={personaSlug}
           actorAvatarUrl={actorAvatarUrl}
+          isThreadParent={isThreadParent}
           deferSecondaryHydration={deferSecondaryHydration}
         />
       )
