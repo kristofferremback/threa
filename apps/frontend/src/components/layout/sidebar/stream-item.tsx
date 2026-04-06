@@ -43,22 +43,22 @@ interface StreamItemAvatarProps {
 
 export function StreamItemAvatar({ icon, className, avatarUrl, avatarAlt, badge }: StreamItemAvatarProps) {
   let content = icon
-  if (badge) {
-    content = <MessageSquareText className="h-3.5 w-3.5 text-muted-foreground" />
-  } else if (avatarUrl) {
+  if (avatarUrl) {
     content = (
       <Avatar className="h-8 w-8 rounded-lg">
         <AvatarImage src={avatarUrl} alt={avatarAlt ?? "User avatar"} />
         <AvatarFallback className="rounded-lg">{icon}</AvatarFallback>
       </Avatar>
     )
+  } else if (badge) {
+    content = <MessageSquareText className="h-3.5 w-3.5 text-muted-foreground" />
   }
 
   return (
     <div
       className={cn(
         "w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 relative",
-        badge ? "bg-muted" : className
+        badge && !avatarUrl ? "bg-muted" : className
       )}
     >
       {content}
@@ -185,15 +185,26 @@ export function StreamItem({
 
   const avatar = getAvatar()
   const name = getStreamName(stream) ?? streamFallbackLabel(stream.type, "sidebar")
-  const dmPeerAvatar = stream.type === StreamTypes.DM ? getActorAvatar(stream.dmPeerUserId ?? null, "user") : null
+  const threadRootStream =
+    stream.type === StreamTypes.THREAD && stream.rootStreamId
+      ? (allStreams.find((s) => s.id === stream.rootStreamId) ?? null)
+      : null
+
+  const dmPeerAvatar = (() => {
+    if (stream.type === StreamTypes.DM) {
+      return getActorAvatar(stream.dmPeerUserId ?? null, "user")
+    }
+    if (threadRootStream?.type === StreamTypes.DM && threadRootStream.dmPeerUserId) {
+      return getActorAvatar(threadRootStream.dmPeerUserId, "user")
+    }
+    return null
+  })()
 
   const threadRootContext = stream.type === StreamTypes.THREAD ? getThreadRootContext(stream, allStreams) : null
 
   const threadBadge = (() => {
-    if (stream.type !== StreamTypes.THREAD || !stream.rootStreamId) return null
-    const rootStream = allStreams.find((s) => s.id === stream.rootStreamId)
-    if (!rootStream?.type) return null
-    const config = BADGE_CONFIG[rootStream.type]
+    if (!threadRootStream?.type) return null
+    const config = BADGE_CONFIG[threadRootStream.type]
     return config ?? null
   })()
 
