@@ -1,4 +1,4 @@
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import { useParams, useSearchParams } from "react-router-dom"
 import { MoreHorizontal, Pencil, Archive, MessageCircle, X, ArchiveX, Search } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -22,7 +22,9 @@ import { ThreadPanelSlot } from "@/components/layout"
 import { ConversationList } from "@/components/conversations"
 import { StreamErrorView } from "@/components/stream-error-view"
 import { StreamTypes, type StreamType } from "@threa/types"
-import { getStreamName, streamFallbackLabel } from "@/lib/streams"
+import { getStreamName, resolveDmDisplayName, streamFallbackLabel } from "@/lib/streams"
+import { setPageStreamName } from "@/lib/page-title"
+import { useWorkspaceUsers } from "@/stores/workspace-store"
 
 function getStreamTypeLabel(type: StreamType): string {
   switch (type) {
@@ -80,6 +82,7 @@ export function StreamPage() {
 
   const { openUserProfile } = useUserProfile()
   const dmPeers = useWorkspaceDmPeers(workspaceId ?? "")
+  const workspaceUsers = useWorkspaceUsers(workspaceId)
 
   const isThread = stream?.type === StreamTypes.THREAD
   const isChannel = stream?.type === StreamTypes.CHANNEL
@@ -89,6 +92,21 @@ export function StreamPage() {
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState("")
   const inputRef = useRef<HTMLInputElement>(null)
+
+  // Set document title to include stream name (matching sidebar DM resolution logic)
+  useEffect(() => {
+    if (!stream) {
+      setPageStreamName(null)
+      return () => setPageStreamName(null)
+    }
+    const resolvedName =
+      stream.type === StreamTypes.DM
+        ? (resolveDmDisplayName(stream.id, workspaceUsers, dmPeers) ?? stream.displayName)
+        : null
+    const name = resolvedName ?? getStreamName(stream)
+    setPageStreamName(name)
+    return () => setPageStreamName(null)
+  }, [stream, workspaceUsers, dmPeers])
 
   if (!workspaceId || !streamId) {
     return null
