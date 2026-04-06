@@ -140,13 +140,19 @@ export function MessageEditForm({
     setContentJson(json)
   }, [])
 
+  const isEmpty = useMemo(() => !serializeToMarkdown(contentJson).trim(), [contentJson])
+
   const screenReaderInstructions = useMemo(() => {
     if (isMobile) {
-      return `Press ${MOD_KEY_NAME}+Enter to save. Tab and Shift+Tab indent content. Press Escape to leave the editor.`
+      return isEmpty
+        ? `Press ${MOD_KEY_NAME}+Enter to delete. Tab and Shift+Tab indent content. Press Escape to leave the editor.`
+        : `Press ${MOD_KEY_NAME}+Enter to save. Tab and Shift+Tab indent content. Press Escape to leave the editor.`
     }
 
-    return "Press Enter to save. Tab and Shift+Tab indent content. Press Escape to cancel editing."
-  }, [isMobile])
+    return isEmpty
+      ? "Press Enter to delete. Tab and Shift+Tab indent content. Press Escape to cancel editing."
+      : "Press Enter to save. Tab and Shift+Tab indent content. Press Escape to cancel editing."
+  }, [isMobile, isEmpty])
 
   const focusMobileActionBar = useCallback(() => {
     mobileActionBarRef.current?.focus()
@@ -279,7 +285,7 @@ export function MessageEditForm({
         <span className="text-[11px] text-muted-foreground/70 hidden sm:flex items-center gap-1.5 mr-auto">
           <kbd className="kbd-hint">Esc</kbd> cancel
           <span className="text-muted-foreground/30">·</span>
-          <kbd className="kbd-hint">↵</kbd> save
+          <kbd className="kbd-hint">↵</kbd> {isEmpty ? "delete" : "save"}
         </span>
         <Tooltip>
           <TooltipTrigger asChild>
