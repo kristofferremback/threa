@@ -1,5 +1,4 @@
 import type { Pool } from "pg"
-import pLimit from "p-limit"
 import {
   OutboxRepository,
   type ActivityCreatedOutboxPayload,
@@ -82,45 +81,37 @@ export class PushNotificationHandler implements OutboxHandler {
         return { status: "no_events" }
       }
 
-      // Process events in parallel within a batch: each push delivery is independent
-      // network I/O (webpush.sendNotification) and must not serialize across events,
-      // otherwise a single slow device blocks the whole batch.
+      // Sequential delivery within the batch. Parallel delivery is tempting but
+      // unsafe with CursorLock's sliding-window compaction: if event 8 fails but
+      // events 9-10 succeed and are added to processedIds, the gap window can
+      // expire during retry backoff, causing the cursor to jump past event 8 and
+      // permanently lose it. Sequential stops at the first failure, ensuring the
+      // cursor never advances past un-delivered events.
       //
-      // Concurrency is capped at 4 so the push handler can't monopolize all 8
-      // realtime pool connections — BroadcastHandler and the socket.io adapter
-      // share the same pool and must not be starved during a push burst.
+      // Push events are low-volume (activity:created, stream:read) so sequential
+      // within a batch of 10 has negligible latency impact — the real throughput
+      // win is the dedicated realtime pool isolating push from background workers.
       //
-      // Per-device webpush failures (expired endpoint, etc.) are handled inside
-      // PushService (stale subscription eviction) and never reach here as thrown
-      // errors. An error escaping deliverEvent means a DB/lookup failure — in
-      // that case we mark the successfully-delivered events as processed but
-      // return an error status so CursorLock backs off and retries the failed
-      // events on the next run. Fulfilled events stay in the sliding window
-      // and won't be re-fetched.
-      const limit = pLimit(4)
-      const results = await Promise.allSettled(events.map((event) => limit(() => this.deliverEvent(event))))
+      // Per-device webpush failures are handled inside PushService (stale
+      // subscription eviction) and don't escape as thrown errors here.
+      const seen: bigint[] = []
 
-      const delivered: bigint[] = []
-      let firstError: Error | null = null
-      for (const [index, result] of results.entries()) {
-        if (result.status === "fulfilled") {
-          delivered.push(events[index].id)
-          continue
+      try {
+        for (const event of events) {
+          await this.deliverEvent(event)
+          seen.push(event.id)
         }
-        const reason = result.reason
-        const error = reason instanceof Error ? reason : new Error(String(reason))
-        if (!firstError) firstError = error
-        logger.warn(
-          { eventId: events[index].id, eventType: events[index].eventType, err: error },
-          "Push delivery failed for event"
-        )
-      }
 
-      if (firstError) {
-        return { status: "error", error: firstError, processedIds: delivered }
-      }
+        return { status: "processed", processedIds: seen }
+      } catch (err) {
+        const error = err instanceof Error ? err : new Error(String(err))
 
-      return { status: "processed", processedIds: delivered }
+        if (seen.length > 0) {
+          return { status: "error", error, processedIds: seen }
+        }
+
+        return { status: "error", error }
+      }
     })
   }
 
