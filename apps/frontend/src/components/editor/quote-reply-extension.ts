@@ -4,6 +4,21 @@ import { Selection } from "@tiptap/pm/state"
 import { ReactNodeViewRenderer } from "@tiptap/react"
 import { QuoteReplyView } from "./quote-reply-view"
 
+function insertParagraphAtGapCursor(editor: {
+  state: import("@tiptap/pm/state").EditorState
+  view: import("@tiptap/pm/view").EditorView
+}): boolean {
+  const { state } = editor
+  if (!(state.selection instanceof GapCursor)) return false
+
+  const pos = state.selection.$from.pos
+  const paragraph = state.schema.nodes.paragraph.create()
+  const tr = state.tr.insert(pos, paragraph)
+  tr.setSelection(Selection.near(tr.doc.resolve(pos + 1)))
+  editor.view.dispatch(tr)
+  return true
+}
+
 export interface QuoteReplyAttrs {
   /** The ID of the quoted message */
   messageId: string
@@ -80,20 +95,8 @@ export const QuoteReplyExtension = Node.create({
 
   addKeyboardShortcuts() {
     return {
-      // Prevent double-newline when pressing Enter in a gap cursor position.
-      // Without this, ProseMirror creates a paragraph (from the gap cursor)
-      // and then the default Enter handler splits it, producing two paragraphs.
-      Enter: ({ editor }) => {
-        const { state } = editor
-        if (!(state.selection instanceof GapCursor)) return false
-
-        const pos = state.selection.$from.pos
-        const paragraph = state.schema.nodes.paragraph.create()
-        const tr = state.tr.insert(pos, paragraph)
-        tr.setSelection(Selection.near(tr.doc.resolve(pos + 1)))
-        editor.view.dispatch(tr)
-        return true
-      },
+      Enter: () => insertParagraphAtGapCursor(this.editor),
+      "Shift-Enter": () => insertParagraphAtGapCursor(this.editor),
     }
   },
 })
