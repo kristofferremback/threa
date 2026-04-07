@@ -337,7 +337,7 @@ function EmojiGridContent({
         )}
 
         {/* Emoji grid — stable container keeps ResizeObserver alive across empty/non-empty transitions */}
-        <div ref={mobileContainerRef} className="flex-1" style={{ height: "min(55dvh, 360px)" }}>
+        <div ref={mobileContainerRef} style={{ height: "min(55dvh, 360px)" }}>
           {filtered.length === 0 ? (
             <div className="flex items-center justify-center h-full text-sm text-muted-foreground px-4">
               No emojis found
