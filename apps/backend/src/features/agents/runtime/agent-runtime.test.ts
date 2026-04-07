@@ -4,6 +4,56 @@ import type { AgentEvent } from "./agent-events"
 import { AgentRuntime } from "./agent-runtime"
 
 describe("AgentRuntime message counting", () => {
+  it("bridges supersede reruns with a trailing user prompt when history ends with assistant", async () => {
+    const generateTextWithTools = mock(async ({ messages }: { messages: Array<{ role: string; content: string }> }) => {
+      expect(messages).toHaveLength(3)
+      expect(messages.at(-2)).toEqual({
+        role: "assistant",
+        content: "Hey! :wave: Great to see you. I'm Ariadne, your thinking companion here in Threa.",
+      })
+      expect(messages.at(-1)?.role).toBe("user")
+      expect(messages.at(-1)?.content).toContain("keep_response or send_message")
+
+      return {
+        text: "",
+        toolCalls: [
+          {
+            toolCallId: "tool_1",
+            toolName: "keep_response",
+            input: {
+              reason: "The greeting edit does not change what the previous response should say.",
+            },
+          },
+        ],
+        response: {
+          messages: [{ role: "assistant", content: "No update needed." } as any],
+        },
+      }
+    })
+
+    const runtime = new AgentRuntime({
+      ai: { generateTextWithTools } as any,
+      model: {} as any,
+      systemPrompt: "You are helpful.",
+      messages: [
+        { role: "user", content: "(14:54) Hi there :wave: My friend!" },
+        {
+          role: "assistant",
+          content: "Hey! :wave: Great to see you. I'm Ariadne, your thinking companion here in Threa.",
+        },
+      ],
+      tools: [],
+      allowNoMessageOutput: true,
+      sendMessage: async () => ({ messageId: "msg_unused", operation: "created" }),
+    })
+
+    const result = await runtime.run()
+
+    expect(generateTextWithTools).toHaveBeenCalledTimes(1)
+    expect(result.messagesSent).toBe(0)
+    expect(result.noMessageReason).toBe("The greeting edit does not change what the previous response should say.")
+  })
+
   it("counts edited responses as sent output", async () => {
     const events: AgentEvent[] = []
 
