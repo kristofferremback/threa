@@ -202,6 +202,9 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   const composerRef = useRef(composer)
   composerRef.current = composer
 
+  // Imperative handle for programmatic focus from outside (e.g. quote reply insertion)
+  const composerFocusRef = useRef<{ focus: () => void } | null>(null)
+
   // Register with QuoteReplyContext to insert quote reply nodes into the composer.
   // Stable deps: quoteReplyCtx is from context, composerRef is a ref.
   useEffect(() => {
@@ -230,6 +233,9 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
         type: "doc",
         content: [quoteNode, ...blocks],
       })
+
+      // Focus the composer so the user can start typing immediately
+      composerFocusRef.current?.focus()
     })
   }, [quoteReplyCtx])
 
@@ -424,6 +430,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
         }
       : undefined,
     streamContext,
+    composerRef: composerFocusRef,
   } as const
 
   return (

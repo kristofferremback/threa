@@ -65,7 +65,9 @@ function serializeNode(node: JSONContent, listDepth = 0, listIndex?: number): st
         .join("\n")
       // Escape ] and \ in author name to prevent breaking the markdown link syntax
       const escapedAuthor = authorName.replace(/\\/g, "\\\\").replace(/\]/g, "\\]")
-      return `${quotedLines}\n> — [${escapedAuthor}](quote:${streamId}/${messageId})`
+      // Blank `>` line forces a paragraph break so react-markdown creates separate
+      // <p> elements for the snippet and attribution (needed for display extraction).
+      return `${quotedLines}\n>\n> — [${escapedAuthor}](quote:${streamId}/${messageId})`
     }
 
     case "bulletList":
@@ -343,10 +345,10 @@ export function parseMarkdown(
     }
 
     // Blockquote (or quoteReply if last line has quote: attribution)
-    if (line.startsWith("> ")) {
+    if (line.startsWith("> ") || line === ">") {
       const quoteLines: string[] = []
-      while (i < lines.length && lines[i].startsWith("> ")) {
-        quoteLines.push(lines[i].slice(2))
+      while (i < lines.length && (lines[i].startsWith("> ") || lines[i] === ">")) {
+        quoteLines.push(lines[i] === ">" ? "" : lines[i].slice(2))
         i++
       }
 
@@ -360,7 +362,12 @@ export function parseMarkdown(
         const authorName = quoteReplyMatch[1].replace(/\\([\]\\])/g, "$1")
         const streamId = quoteReplyMatch[2]
         const messageId = quoteReplyMatch[3]
-        const snippet = quoteLines.slice(0, -1).join("\n")
+        // Strip the attribution line and any blank separator line before it
+        const snippetLines = quoteLines.slice(0, -1)
+        while (snippetLines.length > 0 && snippetLines[snippetLines.length - 1] === "") {
+          snippetLines.pop()
+        }
+        const snippet = snippetLines.join("\n")
         content.push({
           type: "quoteReply",
           attrs: { messageId, streamId, authorName, snippet },

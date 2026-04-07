@@ -152,11 +152,11 @@ describe("@threa/prosemirror quote reply round-trip", () => {
     }
 
     const markdown = serializeToMarkdown(doc)
-    expect(markdown).toBe("> Hello world\n> — [Kristoffer](quote:stream_01XYZ/msg_01ABC)\n\nMy reply")
+    expect(markdown).toBe("> Hello world\n>\n> — [Kristoffer](quote:stream_01XYZ/msg_01ABC)\n\nMy reply")
   })
 
   it("parses blockquote with quote: attribution into quoteReply node", () => {
-    const markdown = "> Hello world\n> — [Kristoffer](quote:stream_01XYZ/msg_01ABC)\n\nMy reply"
+    const markdown = "> Hello world\n>\n> — [Kristoffer](quote:stream_01XYZ/msg_01ABC)\n\nMy reply"
     const parsed = parseMarkdown(markdown)
 
     expect(parsed.content?.[0]).toEqual({
@@ -169,6 +169,21 @@ describe("@threa/prosemirror quote reply round-trip", () => {
       },
     })
     expect(parsed.content?.[1]?.type).toBe("paragraph")
+  })
+
+  it("parses old format (no blank separator line) for backward compatibility", () => {
+    const markdown = "> Hello world\n> — [Kristoffer](quote:stream_01XYZ/msg_01ABC)"
+    const parsed = parseMarkdown(markdown)
+
+    expect(parsed.content?.[0]).toEqual({
+      type: "quoteReply",
+      attrs: {
+        messageId: "msg_01ABC",
+        streamId: "stream_01XYZ",
+        authorName: "Kristoffer",
+        snippet: "Hello world",
+      },
+    })
   })
 
   it("round-trips quoteReply through markdown", () => {
@@ -222,7 +237,7 @@ describe("@threa/prosemirror quote reply round-trip", () => {
     }
 
     const markdown = serializeToMarkdown(doc)
-    expect(markdown).toBe("> Line one\n> Line two\n> Line three\n> — [Bob](quote:stream_01XYZ/msg_01ABC)")
+    expect(markdown).toBe("> Line one\n> Line two\n> Line three\n>\n> — [Bob](quote:stream_01XYZ/msg_01ABC)")
 
     const parsed = parseMarkdown(markdown)
     expect(parsed.content?.[0]).toEqual({
@@ -259,7 +274,7 @@ describe("@threa/prosemirror quote reply round-trip", () => {
     }
 
     const markdown = serializeToMarkdown(doc)
-    expect(markdown).toBe("> Hello\n> — [John [Dev\\] Smith\\\\Sr](quote:stream_01XYZ/msg_01ABC)")
+    expect(markdown).toBe("> Hello\n>\n> — [John [Dev\\] Smith\\\\Sr](quote:stream_01XYZ/msg_01ABC)")
 
     const parsed = parseMarkdown(markdown)
     expect(parsed.content?.[0]).toEqual({

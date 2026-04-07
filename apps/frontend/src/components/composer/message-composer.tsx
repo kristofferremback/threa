@@ -53,6 +53,11 @@ function getPreviewText(doc: JSONContent): string {
     if (node.type === "emoji") return String(node.attrs?.emoji ?? node.attrs?.shortcode ?? "")
     if (node.type === "hardBreak") return null
 
+    if (node.type === "quoteReply") {
+      const author = typeof node.attrs?.authorName === "string" ? node.attrs.authorName : ""
+      return `Replying to ${author}`
+    }
+
     if (node.type === "codeBlock") {
       const text = (node.content ?? []).map((c) => c.text ?? "").join("")
       return text.split("\n")[0] ?? ""
@@ -137,6 +142,8 @@ export interface MessageComposerProps {
   onCollapse?: () => void
   /** Stream context for filtering which broadcast mentions (@channel, @here) are available */
   streamContext?: MentionStreamContext
+  /** Imperative handle ref for programmatic focus from parent */
+  composerRef?: React.MutableRefObject<{ focus: () => void } | null>
 }
 
 export function MessageComposer({
@@ -165,6 +172,7 @@ export function MessageComposer({
   expanded = false,
   onCollapse,
   streamContext,
+  composerRef,
 }: MessageComposerProps) {
   // Controls (buttons, file input) are disabled during both external disable and sending.
   // The editor itself stays editable during sending so mobile keyboards don't close/reopen.
@@ -282,6 +290,21 @@ export function MessageComposer({
     const nextEditor = handle?.getEditor() ?? null
     setMobileToolbarEditor((currentEditor) => (currentEditor === nextEditor ? currentEditor : nextEditor))
   }, [])
+
+  // Expose focus() to parent via composerRef so external triggers (e.g. quote reply)
+  // can open the mobile editor and focus it programmatically.
+  useEffect(() => {
+    if (!composerRef) return
+    composerRef.current = {
+      focus: () => {
+        setMobileFocused(true)
+        requestAnimationFrame(() => richEditorRef.current?.focus())
+      },
+    }
+    return () => {
+      composerRef.current = null
+    }
+  }, [composerRef])
 
   const focusExpandedShell = useCallback(() => {
     expandedShellRef.current?.focus()
