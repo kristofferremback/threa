@@ -212,7 +212,8 @@ function EmojiGridInner({ items, clientRect, command }: EmojiGridProps, ref: Rea
           rangeRef.current = range
         }}
         style={{ height: CONTAINER_HEIGHT }}
-        className="p-2"
+        className="px-2"
+        components={{ Header: () => <div className="h-2" />, Footer: () => <div className="h-2" /> }}
         itemContent={(index) => {
           const rowItems = rows[index]
           const rowStartIndex = index * GRID_COLUMNS
