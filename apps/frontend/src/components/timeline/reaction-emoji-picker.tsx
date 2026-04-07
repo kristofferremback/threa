@@ -12,6 +12,8 @@ import type { EmojiEntry } from "@threa/types"
 const DESKTOP_COLUMNS = 8
 const MOBILE_EMOJI_SIZE = 44
 const MOBILE_ROW_HEIGHT = 46
+const MobileVirtuosoPadding = () => <div className="h-1" />
+const DesktopVirtuosoPadding = () => <div className="h-2" />
 const DESKTOP_ROW_HEIGHT = 34
 const CONTAINER_HEIGHT = 256
 const MAX_MOBILE_COLUMNS = 8
@@ -349,7 +351,7 @@ function EmojiGridContent({
               fixedItemHeight={MOBILE_ROW_HEIGHT}
               increaseViewportBy={MOBILE_ROW_HEIGHT * 3}
               style={{ height: "100%" }}
-              components={{ Header: () => <div className="h-1" />, Footer: () => <div className="h-1" /> }}
+              components={{ Header: MobileVirtuosoPadding, Footer: MobileVirtuosoPadding }}
               role="listbox"
               aria-label="Emoji picker"
               itemContent={(index) => {
@@ -443,7 +445,7 @@ function EmojiGridContent({
             rangeRef.current = range
           }}
           style={{ height: CONTAINER_HEIGHT }}
-          components={{ Header: () => <div className="h-2" />, Footer: () => <div className="h-2" /> }}
+          components={{ Header: DesktopVirtuosoPadding, Footer: DesktopVirtuosoPadding }}
           role="listbox"
           aria-label="Emoji picker"
           itemContent={(index) => {

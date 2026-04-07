@@ -8,6 +8,7 @@ import type { SuggestionListRef } from "./suggestion-list"
 const GRID_COLUMNS = 8
 const ROW_HEIGHT = 34 // w-8 (32px) + 2px vertical gap
 const CONTAINER_HEIGHT = 256 // max-h-64 = 256px
+const VirtuosoPadding = () => <div className="h-2" />
 
 export interface EmojiGridProps {
   items: EmojiEntry[]
@@ -212,7 +213,7 @@ function EmojiGridInner({ items, clientRect, command }: EmojiGridProps, ref: Rea
           rangeRef.current = range
         }}
         style={{ height: CONTAINER_HEIGHT }}
-        components={{ Header: () => <div className="h-2" />, Footer: () => <div className="h-2" /> }}
+        components={{ Header: VirtuosoPadding, Footer: VirtuosoPadding }}
         itemContent={(index) => {
           const rowItems = rows[index]
           const rowStartIndex = index * GRID_COLUMNS
