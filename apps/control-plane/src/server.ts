@@ -128,6 +128,7 @@ export async function startServer(): Promise<ControlPlaneInstance> {
     allowDevAuthRoutes: config.useStubAuth && !isProduction,
     frontendUrl: config.frontendUrl,
     allowedRedirectDomain: config.allowedRedirectDomain,
+    regions: config.regions,
     rateLimits: config.rateLimits,
   })
 

@@ -413,6 +413,24 @@ export const InjectionStrategies = {
   SUMMARY: "summary",
 } as const satisfies Record<string, InjectionStrategy>
 
+// Workspace integration providers
+export const WORKSPACE_INTEGRATION_PROVIDERS = ["github"] as const
+export type WorkspaceIntegrationProvider = (typeof WORKSPACE_INTEGRATION_PROVIDERS)[number]
+
+export const WorkspaceIntegrationProviders = {
+  GITHUB: "github",
+} as const satisfies Record<string, WorkspaceIntegrationProvider>
+
+// Workspace integration lifecycle statuses
+export const WORKSPACE_INTEGRATION_STATUSES = ["active", "inactive", "error"] as const
+export type WorkspaceIntegrationStatus = (typeof WORKSPACE_INTEGRATION_STATUSES)[number]
+
+export const WorkspaceIntegrationStatuses = {
+  ACTIVE: "active",
+  INACTIVE: "inactive",
+  ERROR: "error",
+} as const satisfies Record<string, WorkspaceIntegrationStatus>
+
 // Link preview content types
 export const LINK_PREVIEW_CONTENT_TYPES = ["website", "pdf", "image", "message_link"] as const
 export type LinkPreviewContentType = (typeof LINK_PREVIEW_CONTENT_TYPES)[number]
@@ -433,6 +451,24 @@ export const LinkPreviewStatuses = {
   COMPLETED: "completed",
   FAILED: "failed",
 } as const satisfies Record<string, LinkPreviewStatus>
+
+// Rich GitHub preview variants returned through the link preview pipeline
+export const GITHUB_PREVIEW_TYPES = [
+  "github_pr",
+  "github_issue",
+  "github_commit",
+  "github_file",
+  "github_comment",
+] as const
+export type GitHubPreviewType = (typeof GITHUB_PREVIEW_TYPES)[number]
+
+export const GitHubPreviewTypes = {
+  PR: "github_pr",
+  ISSUE: "github_issue",
+  COMMIT: "github_commit",
+  FILE: "github_file",
+  COMMENT: "github_comment",
+} as const satisfies Record<string, GitHubPreviewType>
 
 // Inter-service authentication header (control-plane ↔ regional backend ↔ workspace-router)
 export const INTERNAL_API_KEY_HEADER = "X-Internal-Api-Key"

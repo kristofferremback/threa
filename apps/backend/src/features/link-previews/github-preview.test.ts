@@ -1,0 +1,154 @@
+import { describe, expect, test } from "bun:test"
+import { fetchGitHubPreview } from "./github-preview"
+import type { WorkspaceIntegrationService } from "../workspace-integrations"
+
+describe("fetchGitHubPreview", () => {
+  test("builds a rich pull request preview", async () => {
+    const preview = await fetchGitHubPreview("ws_123", "https://github.com/octocat/hello-world/pull/42", {
+      async getGithubPreviewClient() {
+        return {
+          async request(route: string) {
+            switch (route) {
+              case "GET /repos/{owner}/{repo}":
+                return {
+                  owner: { login: "octocat" },
+                  name: "hello-world",
+                  full_name: "octocat/hello-world",
+                  private: true,
+                }
+              case "GET /repos/{owner}/{repo}/pulls/{pull_number}":
+                return {
+                  number: 42,
+                  title: "Ship the thing",
+                  state: "open",
+                  merged_at: null,
+                  user: { login: "kris", avatar_url: "https://avatars.example/kris.png" },
+                  base: { ref: "main" },
+                  head: { ref: "feature/github-preview" },
+                  additions: 12,
+                  deletions: 4,
+                  requested_reviewers: [{ login: "reviewer-a" }],
+                  requested_teams: [],
+                  created_at: "2026-04-07T10:00:00.000Z",
+                  updated_at: "2026-04-07T11:00:00.000Z",
+                }
+              case "GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews":
+                return [
+                  { user: { login: "alice" }, state: "COMMENTED" },
+                  { user: { login: "alice" }, state: "APPROVED" },
+                  { user: { login: "bob" }, state: "CHANGES_REQUESTED" },
+                ]
+              default:
+                throw new Error(`Unexpected route: ${route}`)
+            }
+          },
+        }
+      },
+    } as unknown as WorkspaceIntegrationService)
+
+    expect(preview).not.toBeNull()
+    expect(preview).toMatchObject({
+      previewType: "github_pr",
+      previewData: {
+        repository: {
+          owner: "octocat",
+          name: "hello-world",
+          fullName: "octocat/hello-world",
+          private: true,
+        },
+        data: {
+          title: "Ship the thing",
+          number: 42,
+          state: "open",
+          baseBranch: "main",
+          headBranch: "feature/github-preview",
+          additions: 12,
+          deletions: 4,
+          reviewStatusSummary: {
+            approvals: 1,
+            changesRequested: 1,
+            comments: 0,
+            pendingReviewers: 1,
+          },
+        },
+      },
+      status: "completed",
+      siteName: "GitHub",
+    })
+  })
+
+  test("resolves GitHub blob refs that contain slashes", async () => {
+    const requests: Array<{ route: string; params: Record<string, unknown> | undefined }> = []
+
+    const preview = await fetchGitHubPreview(
+      "ws_123",
+      "https://github.com/octocat/hello-world/blob/feature/foo/src/app.ts#L2-L3",
+      {
+        async getGithubPreviewClient() {
+          return {
+            async request(route: string, params?: Record<string, unknown>) {
+              requests.push({ route, params })
+
+              if (route === "GET /repos/{owner}/{repo}") {
+                return {
+                  owner: { login: "octocat" },
+                  name: "hello-world",
+                  full_name: "octocat/hello-world",
+                  private: false,
+                }
+              }
+
+              if (route === "GET /repos/{owner}/{repo}/contents/{path}") {
+                if (params?.ref === "feature" && params?.path === "foo/src/app.ts") {
+                  throw new Error("not found")
+                }
+
+                if (params?.ref === "feature/foo" && params?.path === "src/app.ts") {
+                  return {
+                    type: "file",
+                    content: Buffer.from("line1\nline2\nline3\nline4").toString("base64"),
+                  }
+                }
+              }
+
+              throw new Error(`Unexpected route: ${route}`)
+            },
+          }
+        },
+      } as unknown as WorkspaceIntegrationService
+    )
+
+    expect(preview).not.toBeNull()
+    expect(preview).toMatchObject({
+      previewType: "github_file",
+      previewData: {
+        data: {
+          ref: "feature/foo",
+          path: "src/app.ts",
+          startLine: 2,
+          endLine: 3,
+          lines: [
+            { number: 2, text: "line2" },
+            { number: 3, text: "line3" },
+          ],
+        },
+      },
+    })
+
+    expect(requests).toEqual([
+      { route: "GET /repos/{owner}/{repo}", params: { owner: "octocat", repo: "hello-world" } },
+      {
+        route: "GET /repos/{owner}/{repo}/contents/{path}",
+        params: { owner: "octocat", repo: "hello-world", path: "foo/src/app.ts", ref: "feature" },
+      },
+      {
+        route: "GET /repos/{owner}/{repo}/contents/{path}",
+        params: { owner: "octocat", repo: "hello-world", path: "src/app.ts", ref: "feature/foo" },
+      },
+      {
+        route: "GET /repos/{owner}/{repo}/contents/{path}",
+        params: { owner: "octocat", repo: "hello-world", path: "src/app.ts", ref: "feature/foo" },
+      },
+    ])
+  })
+})

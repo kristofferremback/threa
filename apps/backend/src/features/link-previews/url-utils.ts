@@ -7,6 +7,27 @@ export interface MessagePermalink {
   messageId: string
 }
 
+export type GitHubUrlMatch =
+  | { type: "github_pr"; owner: string; repo: string; number: number }
+  | { type: "github_issue"; owner: string; repo: string; number: number }
+  | { type: "github_commit"; owner: string; repo: string; sha: string }
+  | {
+      type: "github_file"
+      owner: string
+      repo: string
+      blobPath: string
+      lineStart: number | null
+      lineEnd: number | null
+    }
+  | {
+      type: "github_comment"
+      owner: string
+      repo: string
+      commentId: number
+      parentType: "pull_request" | "issue"
+      number: number
+    }
+
 /**
  * Parse an internal message permalink from a URL.
  * Expected format: {origin}/w/{workspaceId}/s/{streamId}?m={messageId}
@@ -119,8 +140,17 @@ export function normalizeUrl(raw: string): string {
       url.port = ""
     }
 
-    // Remove fragment
-    url.hash = ""
+    const githubMatch = parseGitHubUrl(raw)
+    if (githubMatch?.type === "github_comment") {
+      url.hash = `issuecomment-${githubMatch.commentId}`
+    } else if (githubMatch?.type === "github_file" && githubMatch.lineStart) {
+      url.hash =
+        githubMatch.lineEnd && githubMatch.lineEnd !== githubMatch.lineStart
+          ? `L${githubMatch.lineStart}-L${githubMatch.lineEnd}`
+          : `L${githubMatch.lineStart}`
+    } else {
+      url.hash = ""
+    }
 
     return url.toString()
   } catch {
@@ -227,4 +257,86 @@ export function detectContentType(url: string): LinkPreviewContentType {
   } catch {
     return "website"
   }
+}
+
+export function parseGitHubUrl(raw: string): GitHubUrlMatch | null {
+  try {
+    const url = new URL(raw)
+    const hostname = url.hostname.toLowerCase()
+    if (hostname !== "github.com" && hostname !== "www.github.com") {
+      return null
+    }
+
+    const match = url.pathname.match(/^\/([^/]+)\/([^/]+)\/(pull|issues|commit|blob)\/(.+)$/)
+    if (!match) return null
+
+    const [, owner, repo, kind, rest] = match
+
+    if (kind === "pull" || kind === "issues") {
+      const number = Number.parseInt(rest.split("/")[0] ?? "", 10)
+      if (!Number.isFinite(number)) return null
+
+      const commentId = parseIssueCommentId(url.hash)
+      if (commentId) {
+        return {
+          type: "github_comment",
+          owner,
+          repo,
+          commentId,
+          parentType: kind === "pull" ? "pull_request" : "issue",
+          number,
+        }
+      }
+
+      return {
+        type: kind === "pull" ? "github_pr" : "github_issue",
+        owner,
+        repo,
+        number,
+      }
+    }
+
+    if (kind === "commit") {
+      return {
+        type: "github_commit",
+        owner,
+        repo,
+        sha: rest,
+      }
+    }
+
+    const { lineStart, lineEnd } = parseLineRange(url.hash)
+    return {
+      type: "github_file",
+      owner,
+      repo,
+      blobPath: rest,
+      lineStart,
+      lineEnd,
+    }
+  } catch {
+    return null
+  }
+}
+
+function parseIssueCommentId(hash: string): number | null {
+  const match = hash.match(/^#issuecomment-(\d+)$/)
+  if (!match) return null
+  const parsed = Number.parseInt(match[1], 10)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function parseLineRange(hash: string): { lineStart: number | null; lineEnd: number | null } {
+  const match = hash.match(/^#L(\d+)(?:-L(\d+))?$/)
+  if (!match) {
+    return { lineStart: null, lineEnd: null }
+  }
+
+  const lineStart = Number.parseInt(match[1], 10)
+  const lineEnd = match[2] ? Number.parseInt(match[2], 10) : lineStart
+  if (!Number.isFinite(lineStart) || !Number.isFinite(lineEnd)) {
+    return { lineStart: null, lineEnd: null }
+  }
+
+  return { lineStart, lineEnd }
 }

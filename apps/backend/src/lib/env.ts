@@ -37,6 +37,14 @@ export interface PushConfig {
   enabled: boolean
 }
 
+export interface GitHubAppConfig {
+  enabled: boolean
+  appId: string
+  appSlug: string
+  privateKey: string
+  integrationSecret: string
+}
+
 export interface Config {
   port: number
   databaseUrl: string
@@ -59,6 +67,7 @@ export interface Config {
   s3: S3Config
   attachments: AttachmentSafetyConfig
   push: PushConfig
+  github: GitHubAppConfig
   /** Control-plane URL for inter-service communication (optional — only needed in multi-region) */
   controlPlaneUrl: string | null
   /** Shared secret for authenticating internal API calls from the control-plane */
@@ -143,6 +152,18 @@ export function loadConfig(): Config {
       vapidSubject: process.env.VAPID_SUBJECT || "",
       enabled: !!(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY && process.env.VAPID_SUBJECT),
     },
+    github: {
+      enabled: !!(
+        process.env.GITHUB_APP_ID &&
+        process.env.GITHUB_APP_SLUG &&
+        process.env.GITHUB_APP_PRIVATE_KEY &&
+        process.env.WORKSPACE_INTEGRATIONS_SECRET
+      ),
+      appId: process.env.GITHUB_APP_ID || "",
+      appSlug: process.env.GITHUB_APP_SLUG || "",
+      privateKey: (process.env.GITHUB_APP_PRIVATE_KEY || "").replace(/\\n/g, "\n"),
+      integrationSecret: process.env.WORKSPACE_INTEGRATIONS_SECRET || "",
+    },
     controlPlaneUrl: process.env.CONTROL_PLANE_URL || null,
     internalApiKey: process.env.INTERNAL_API_KEY || null,
     region: process.env.REGION || null,
@@ -154,6 +175,19 @@ export function loadConfig(): Config {
   if (vapidSetCount > 0 && vapidSetCount < 3) {
     throw new Error(
       "VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, and VAPID_SUBJECT must all be set together — push notifications require all three"
+    )
+  }
+
+  const githubVars = [
+    process.env.GITHUB_APP_ID,
+    process.env.GITHUB_APP_SLUG,
+    process.env.GITHUB_APP_PRIVATE_KEY,
+    process.env.WORKSPACE_INTEGRATIONS_SECRET,
+  ]
+  const githubSetCount = githubVars.filter(Boolean).length
+  if (githubSetCount > 0 && githubSetCount < githubVars.length) {
+    throw new Error(
+      "GITHUB_APP_ID, GITHUB_APP_SLUG, GITHUB_APP_PRIVATE_KEY, and WORKSPACE_INTEGRATIONS_SECRET must all be set together"
     )
   }
 

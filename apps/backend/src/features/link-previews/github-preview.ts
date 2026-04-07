@@ -1,0 +1,471 @@
+import { logger } from "../../lib/logger"
+import type { GitHubPreview, GitHubPreviewRepository, GitHubPreviewType } from "@threa/types"
+import { GitHubPreviewTypes } from "@threa/types"
+import type { UpdateLinkPreviewParams } from "./repository"
+import { parseGitHubUrl, type GitHubUrlMatch } from "./url-utils"
+import type { WorkspaceIntegrationService } from "../workspace-integrations"
+
+const log = logger.child({ module: "github-link-preview" })
+
+const GITHUB_FAVICON_URL = "https://github.com/favicon.ico"
+const DEFAULT_FILE_LINE_COUNT = 30
+const COMMENT_PREVIEW_MAX_LENGTH = 320
+
+export async function fetchGitHubPreview(
+  workspaceId: string,
+  url: string,
+  workspaceIntegrationService: WorkspaceIntegrationService
+): Promise<UpdateLinkPreviewParams | null> {
+  const parsed = parseGitHubUrl(url)
+  if (!parsed) return null
+
+  const client = await workspaceIntegrationService.getGithubPreviewClient(workspaceId)
+  if (!client) return null
+
+  try {
+    const repository = await loadRepository(client, parsed.owner, parsed.repo)
+    if (!repository) return null
+
+    const fetchedAt = new Date().toISOString()
+
+    switch (parsed.type) {
+      case "github_pr":
+        return fetchPullRequestPreview(client, url, repository, parsed, fetchedAt)
+      case "github_issue":
+        return fetchIssuePreview(client, url, repository, parsed, fetchedAt)
+      case "github_commit":
+        return fetchCommitPreview(client, url, repository, parsed, fetchedAt)
+      case "github_file":
+        return fetchFilePreview(client, url, repository, parsed, fetchedAt)
+      case "github_comment":
+        return fetchCommentPreview(client, url, repository, parsed, fetchedAt)
+    }
+  } catch (error) {
+    log.debug({ err: error, workspaceId, url }, "Falling back from GitHub preview to generic preview")
+    return null
+  }
+}
+
+async function fetchPullRequestPreview(
+  client: { request<T>(route: string, parameters?: Record<string, unknown>): Promise<T> },
+  url: string,
+  repository: GitHubPreviewRepository,
+  parsed: Extract<GitHubUrlMatch, { type: "github_pr" }>,
+  fetchedAt: string
+): Promise<UpdateLinkPreviewParams | null> {
+  const pull = await client.request<any>("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
+    owner: parsed.owner,
+    repo: parsed.repo,
+    pull_number: parsed.number,
+  })
+  const reviews = await client.request<any[]>("GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews", {
+    owner: parsed.owner,
+    repo: parsed.repo,
+    pull_number: parsed.number,
+    per_page: 100,
+  })
+
+  let state: "open" | "closed" | "merged" = "open"
+  if (pull.merged_at) {
+    state = "merged"
+  } else if (pull.state === "closed") {
+    state = "closed"
+  }
+  const reviewStatusSummary = summarizePullReviews(reviews, pull)
+
+  const preview: GitHubPreview = {
+    type: GitHubPreviewTypes.PR,
+    url,
+    repository,
+    fetchedAt,
+    data: {
+      title: pull.title,
+      number: pull.number,
+      state,
+      author: toActor(pull.user),
+      baseBranch: pull.base.ref,
+      headBranch: pull.head.ref,
+      additions: pull.additions ?? 0,
+      deletions: pull.deletions ?? 0,
+      reviewStatusSummary,
+      createdAt: pull.created_at,
+      updatedAt: pull.updated_at,
+    },
+  }
+
+  return {
+    title: `PR #${pull.number}: ${pull.title}`,
+    description: `${capitalize(state)} · ${pull.base.ref} ← ${pull.head.ref} · +${pull.additions ?? 0} -${pull.deletions ?? 0}`,
+    imageUrl: pull.user?.avatar_url ?? null,
+    faviconUrl: GITHUB_FAVICON_URL,
+    siteName: "GitHub",
+    contentType: "website",
+    previewType: GitHubPreviewTypes.PR,
+    previewData: preview,
+    status: "completed",
+    expiresAt: state === "open" ? minutesFromNow(5) : hoursFromNow(1),
+  }
+}
+
+async function fetchIssuePreview(
+  client: { request<T>(route: string, parameters?: Record<string, unknown>): Promise<T> },
+  url: string,
+  repository: GitHubPreviewRepository,
+  parsed: Extract<GitHubUrlMatch, { type: "github_issue" }>,
+  fetchedAt: string
+): Promise<UpdateLinkPreviewParams | null> {
+  const issue = await client.request<any>("GET /repos/{owner}/{repo}/issues/{issue_number}", {
+    owner: parsed.owner,
+    repo: parsed.repo,
+    issue_number: parsed.number,
+  })
+  if (issue.pull_request) {
+    return null
+  }
+
+  const preview: GitHubPreview = {
+    type: GitHubPreviewTypes.ISSUE,
+    url,
+    repository,
+    fetchedAt,
+    data: {
+      title: issue.title,
+      number: issue.number,
+      state: issue.state === "closed" ? "closed" : "open",
+      author: toActor(issue.user),
+      labels: Array.isArray(issue.labels)
+        ? issue.labels.flatMap((label: any) =>
+            typeof label?.name === "string"
+              ? [
+                  {
+                    name: label.name,
+                    color: typeof label.color === "string" ? label.color : "999999",
+                    description: typeof label.description === "string" ? label.description : null,
+                  },
+                ]
+              : []
+          )
+        : [],
+      assignees: Array.isArray(issue.assignees) ? issue.assignees.map(toActor).filter(Boolean) : [],
+      commentCount: issue.comments ?? 0,
+      createdAt: issue.created_at,
+      updatedAt: issue.updated_at,
+    },
+  }
+
+  return {
+    title: `Issue #${issue.number}: ${issue.title}`,
+    description: `${capitalize(issue.state)} · ${issue.comments ?? 0} comments`,
+    imageUrl: issue.user?.avatar_url ?? null,
+    faviconUrl: GITHUB_FAVICON_URL,
+    siteName: "GitHub",
+    contentType: "website",
+    previewType: GitHubPreviewTypes.ISSUE,
+    previewData: preview,
+    status: "completed",
+    expiresAt: issue.state === "open" ? minutesFromNow(5) : hoursFromNow(1),
+  }
+}
+
+async function fetchCommitPreview(
+  client: { request<T>(route: string, parameters?: Record<string, unknown>): Promise<T> },
+  url: string,
+  repository: GitHubPreviewRepository,
+  parsed: Extract<GitHubUrlMatch, { type: "github_commit" }>,
+  fetchedAt: string
+): Promise<UpdateLinkPreviewParams | null> {
+  const commit = await client.request<any>("GET /repos/{owner}/{repo}/commits/{ref}", {
+    owner: parsed.owner,
+    repo: parsed.repo,
+    ref: parsed.sha,
+  })
+
+  const message = String(commit.commit?.message ?? "").split("\n")[0] ?? parsed.sha
+  const preview: GitHubPreview = {
+    type: GitHubPreviewTypes.COMMIT,
+    url,
+    repository,
+    fetchedAt,
+    data: {
+      message,
+      shortSha: String(commit.sha).slice(0, 7),
+      author: toActor(commit.author),
+      committedAt: commit.commit?.author?.date ?? null,
+      filesChanged: Array.isArray(commit.files) ? commit.files.length : 0,
+      additions: commit.stats?.additions ?? 0,
+      deletions: commit.stats?.deletions ?? 0,
+    },
+  }
+
+  return {
+    title: message,
+    description: `${String(commit.sha).slice(0, 7)} · ${(commit.stats?.total ?? 0) > 0 ? `${commit.stats?.total} changes` : "Commit"}`,
+    imageUrl: commit.author?.avatar_url ?? null,
+    faviconUrl: GITHUB_FAVICON_URL,
+    siteName: "GitHub",
+    contentType: "website",
+    previewType: GitHubPreviewTypes.COMMIT,
+    previewData: preview,
+    status: "completed",
+    expiresAt: hoursFromNow(24),
+  }
+}
+
+async function fetchFilePreview(
+  client: { request<T>(route: string, parameters?: Record<string, unknown>): Promise<T> },
+  url: string,
+  repository: GitHubPreviewRepository,
+  parsed: Extract<GitHubUrlMatch, { type: "github_file" }>,
+  fetchedAt: string
+): Promise<UpdateLinkPreviewParams | null> {
+  const resolved = await resolveBlobPath(client, parsed.owner, parsed.repo, parsed.blobPath)
+  if (!resolved) return null
+
+  const contentResponse = await client.request<any>("GET /repos/{owner}/{repo}/contents/{path}", {
+    owner: parsed.owner,
+    repo: parsed.repo,
+    path: resolved.path,
+    ref: resolved.ref,
+  })
+
+  if (
+    !contentResponse ||
+    Array.isArray(contentResponse) ||
+    contentResponse.type !== "file" ||
+    typeof contentResponse.content !== "string"
+  ) {
+    return null
+  }
+
+  const decoded = Buffer.from(contentResponse.content.replace(/\n/g, ""), "base64").toString("utf8")
+  if (decoded.includes("\u0000")) {
+    return null
+  }
+
+  const allLines = decoded.replace(/\r\n/g, "\n").split("\n")
+  const startLine = parsed.lineStart ?? 1
+  const endLine = Math.min(parsed.lineEnd ?? DEFAULT_FILE_LINE_COUNT, allLines.length)
+  const lines = allLines.slice(startLine - 1, endLine).map((text, index) => ({
+    number: startLine + index,
+    text,
+  }))
+  const truncated = parsed.lineStart == null ? allLines.length > endLine : false
+  const language = detectProgrammingLanguage(resolved.path)
+
+  const preview: GitHubPreview = {
+    type: GitHubPreviewTypes.FILE,
+    url,
+    repository,
+    fetchedAt,
+    data: {
+      path: resolved.path,
+      language,
+      ref: resolved.ref,
+      lines,
+      startLine,
+      endLine,
+      truncated,
+    },
+  }
+
+  return {
+    title: resolved.path,
+    description: `${resolved.ref}${language ? ` · ${language}` : ""}`,
+    faviconUrl: GITHUB_FAVICON_URL,
+    siteName: "GitHub",
+    contentType: "website",
+    previewType: GitHubPreviewTypes.FILE,
+    previewData: preview,
+    status: "completed",
+    expiresAt: minutesFromNow(15),
+  }
+}
+
+async function fetchCommentPreview(
+  client: { request<T>(route: string, parameters?: Record<string, unknown>): Promise<T> },
+  url: string,
+  repository: GitHubPreviewRepository,
+  parsed: Extract<GitHubUrlMatch, { type: "github_comment" }>,
+  fetchedAt: string
+): Promise<UpdateLinkPreviewParams | null> {
+  const comment = await client.request<any>("GET /repos/{owner}/{repo}/issues/comments/{comment_id}", {
+    owner: parsed.owner,
+    repo: parsed.repo,
+    comment_id: parsed.commentId,
+  })
+
+  const parent =
+    parsed.parentType === "pull_request"
+      ? await client.request<any>("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
+          owner: parsed.owner,
+          repo: parsed.repo,
+          pull_number: parsed.number,
+        })
+      : await client.request<any>("GET /repos/{owner}/{repo}/issues/{issue_number}", {
+          owner: parsed.owner,
+          repo: parsed.repo,
+          issue_number: parsed.number,
+        })
+
+  const body = typeof comment.body === "string" ? comment.body : ""
+  const truncated = body.length > COMMENT_PREVIEW_MAX_LENGTH
+  const preview: GitHubPreview = {
+    type: GitHubPreviewTypes.COMMENT,
+    url,
+    repository,
+    fetchedAt,
+    data: {
+      body: truncated ? `${body.slice(0, COMMENT_PREVIEW_MAX_LENGTH)}…` : body,
+      truncated,
+      author: toActor(comment.user),
+      createdAt: comment.created_at,
+      parent: {
+        kind: parsed.parentType,
+        title: parent.title,
+        number: parent.number,
+      },
+    },
+  }
+
+  return {
+    title: `${parsed.parentType === "pull_request" ? "PR" : "Issue"} #${parent.number} comment`,
+    description: truncated ? `${body.slice(0, COMMENT_PREVIEW_MAX_LENGTH)}…` : body,
+    imageUrl: comment.user?.avatar_url ?? null,
+    faviconUrl: GITHUB_FAVICON_URL,
+    siteName: "GitHub",
+    contentType: "website",
+    previewType: GitHubPreviewTypes.COMMENT,
+    previewData: preview,
+    status: "completed",
+    expiresAt: minutesFromNow(15),
+  }
+}
+
+async function loadRepository(
+  client: { request<T>(route: string, parameters?: Record<string, unknown>): Promise<T> },
+  owner: string,
+  repo: string
+): Promise<GitHubPreviewRepository | null> {
+  const response = await client.request<any>("GET /repos/{owner}/{repo}", { owner, repo })
+  return {
+    owner: response.owner?.login ?? owner,
+    name: response.name ?? repo,
+    fullName: response.full_name ?? `${owner}/${repo}`,
+    private: Boolean(response.private),
+  }
+}
+
+async function resolveBlobPath(
+  client: { request<T>(route: string, parameters?: Record<string, unknown>): Promise<T> },
+  owner: string,
+  repo: string,
+  blobPath: string
+): Promise<{ ref: string; path: string } | null> {
+  const segments = blobPath.split("/").filter(Boolean)
+  for (let splitIndex = 1; splitIndex < segments.length; splitIndex++) {
+    const ref = segments.slice(0, splitIndex).join("/")
+    const path = segments.slice(splitIndex).join("/")
+    try {
+      const response = await client.request<any>("GET /repos/{owner}/{repo}/contents/{path}", {
+        owner,
+        repo,
+        path,
+        ref,
+      })
+      if (response && !Array.isArray(response) && response.type === "file") {
+        return { ref, path }
+      }
+    } catch {
+      continue
+    }
+  }
+
+  return null
+}
+
+function summarizePullReviews(reviews: any[], pull: any) {
+  const latestByUser = new Map<string, string>()
+  for (const review of reviews) {
+    const login = review.user?.login
+    const state = review.state
+    if (typeof login !== "string" || typeof state !== "string") continue
+    latestByUser.set(login, state)
+  }
+
+  let approvals = 0
+  let changesRequested = 0
+  let comments = 0
+  for (const state of latestByUser.values()) {
+    if (state === "APPROVED") approvals += 1
+    else if (state === "CHANGES_REQUESTED") changesRequested += 1
+    else if (state === "COMMENTED") comments += 1
+  }
+
+  return {
+    approvals,
+    changesRequested,
+    comments,
+    pendingReviewers:
+      (Array.isArray(pull.requested_reviewers) ? pull.requested_reviewers.length : 0) +
+      (Array.isArray(pull.requested_teams) ? pull.requested_teams.length : 0),
+  }
+}
+
+function toActor(user: any) {
+  if (!user || typeof user.login !== "string") return null
+  return {
+    login: user.login,
+    avatarUrl: typeof user.avatar_url === "string" ? user.avatar_url : null,
+  }
+}
+
+function detectProgrammingLanguage(path: string): string | null {
+  const extension = path.split(".").pop()?.toLowerCase() ?? ""
+  switch (extension) {
+    case "ts":
+      return "TypeScript"
+    case "tsx":
+      return "TSX"
+    case "js":
+      return "JavaScript"
+    case "jsx":
+      return "JSX"
+    case "py":
+      return "Python"
+    case "rb":
+      return "Ruby"
+    case "go":
+      return "Go"
+    case "java":
+      return "Java"
+    case "json":
+      return "JSON"
+    case "sql":
+      return "SQL"
+    case "md":
+      return "Markdown"
+    case "yml":
+    case "yaml":
+      return "YAML"
+    case "sh":
+      return "Shell"
+    case "css":
+      return "CSS"
+    case "html":
+      return "HTML"
+    default:
+      return null
+  }
+}
+
+function capitalize(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1)
+}
+
+function minutesFromNow(minutes: number): Date {
+  return new Date(Date.now() + minutes * 60 * 1000)
+}
+
+function hoursFromNow(hours: number): Date {
+  return new Date(Date.now() + hours * 60 * 60 * 1000)
+}

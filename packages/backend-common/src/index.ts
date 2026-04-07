@@ -72,6 +72,7 @@ export {
   apiKeyChannelAccessId,
   botId,
   linkPreviewId,
+  workspaceIntegrationId,
   userApiKeyId,
   botApiKeyId,
   botChannelAccessId,

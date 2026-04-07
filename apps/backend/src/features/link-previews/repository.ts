@@ -1,5 +1,5 @@
 import { sql, type Querier } from "@threa/backend-common"
-import type { LinkPreviewContentType, LinkPreviewStatus } from "@threa/types"
+import type { GitHubPreview, GitHubPreviewType, LinkPreviewContentType, LinkPreviewStatus } from "@threa/types"
 
 // =============================================================================
 // Row types
@@ -17,10 +17,13 @@ export interface LinkPreview {
   siteName: string | null
   contentType: LinkPreviewContentType
   status: LinkPreviewStatus
+  previewType: GitHubPreviewType | null
+  previewData: GitHubPreview | null
   targetWorkspaceId: string | null
   targetStreamId: string | null
   targetMessageId: string | null
   fetchedAt: Date | null
+  expiresAt: Date | null
   createdAt: Date
 }
 
@@ -42,7 +45,10 @@ export interface UpdateLinkPreviewParams {
   faviconUrl?: string | null
   siteName?: string | null
   contentType?: LinkPreviewContentType
+  previewType?: GitHubPreviewType | null
+  previewData?: GitHubPreview | null
   status: LinkPreviewStatus
+  expiresAt?: Date | null
 }
 
 export interface MessageLinkPreview {
@@ -68,10 +74,13 @@ function mapRow(row: Record<string, unknown>): LinkPreview {
     siteName: row.site_name as string | null,
     contentType: row.content_type as LinkPreviewContentType,
     status: row.status as LinkPreviewStatus,
+    previewType: (row.preview_type as GitHubPreviewType | null) ?? null,
+    previewData: (row.preview_data as GitHubPreview | null) ?? null,
     targetWorkspaceId: (row.target_workspace_id as string | null) ?? null,
     targetStreamId: (row.target_stream_id as string | null) ?? null,
     targetMessageId: (row.target_message_id as string | null) ?? null,
     fetchedAt: row.fetched_at ? new Date(row.fetched_at as string) : null,
+    expiresAt: row.expires_at ? new Date(row.expires_at as string) : null,
     createdAt: new Date(row.created_at as string),
   }
 }
@@ -143,7 +152,8 @@ export const LinkPreviewRepository = {
     const result = await querier.query(
       sql`UPDATE link_previews
           SET title = $3, description = $4, image_url = $5, favicon_url = $6,
-              site_name = $7, content_type = $8, status = $9, fetched_at = NOW()
+              site_name = $7, content_type = $8, preview_type = $9, preview_data = $10::jsonb,
+              status = $11, fetched_at = NOW(), expires_at = $12
           WHERE workspace_id = $1 AND id = $2 AND status = 'pending'
           RETURNING *`,
       [
@@ -155,7 +165,41 @@ export const LinkPreviewRepository = {
         params.faviconUrl ?? null,
         params.siteName ?? null,
         params.contentType ?? "website",
+        params.previewType ?? null,
+        params.previewData ? JSON.stringify(params.previewData) : null,
         params.status,
+        params.expiresAt ?? null,
+      ]
+    )
+    return result.rows.length > 0 ? mapRow(result.rows[0]) : null
+  },
+
+  async overwriteMetadata(
+    querier: Querier,
+    workspaceId: string,
+    id: string,
+    params: UpdateLinkPreviewParams
+  ): Promise<LinkPreview | null> {
+    const result = await querier.query(
+      sql`UPDATE link_previews
+          SET title = $3, description = $4, image_url = $5, favicon_url = $6,
+              site_name = $7, content_type = $8, preview_type = $9, preview_data = $10::jsonb,
+              status = $11, fetched_at = NOW(), expires_at = $12
+          WHERE workspace_id = $1 AND id = $2
+          RETURNING *`,
+      [
+        workspaceId,
+        id,
+        params.title ?? null,
+        params.description ?? null,
+        params.imageUrl ?? null,
+        params.faviconUrl ?? null,
+        params.siteName ?? null,
+        params.contentType ?? "website",
+        params.previewType ?? null,
+        params.previewData ? JSON.stringify(params.previewData) : null,
+        params.status,
+        params.expiresAt ?? null,
       ]
     )
     return result.rows.length > 0 ? mapRow(result.rows[0]) : null

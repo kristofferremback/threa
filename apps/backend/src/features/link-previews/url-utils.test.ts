@@ -1,5 +1,12 @@
 import { describe, test, expect } from "bun:test"
-import { normalizeUrl, extractUrls, detectContentType, isBlockedUrl, parseMessagePermalink } from "./url-utils"
+import {
+  normalizeUrl,
+  extractUrls,
+  detectContentType,
+  isBlockedUrl,
+  parseMessagePermalink,
+  parseGitHubUrl,
+} from "./url-utils"
 
 describe("normalizeUrl", () => {
   test("lowercases hostname", () => {
@@ -38,6 +45,18 @@ describe("normalizeUrl", () => {
 
   test("removes fragment", () => {
     expect(normalizeUrl("https://example.com/page#section")).toBe("https://example.com/page")
+  })
+
+  test("preserves GitHub issue comment fragments", () => {
+    expect(normalizeUrl("https://github.com/octocat/hello-world/issues/1#issuecomment-42")).toBe(
+      "https://github.com/octocat/hello-world/issues/1#issuecomment-42"
+    )
+  })
+
+  test("preserves GitHub file line ranges", () => {
+    expect(normalizeUrl("https://github.com/octocat/hello-world/blob/main/src/app.ts#L14-L17")).toBe(
+      "https://github.com/octocat/hello-world/blob/main/src/app.ts#L14-L17"
+    )
   })
 
   test("sorts remaining query params", () => {
@@ -252,5 +271,42 @@ describe("parseMessagePermalink", () => {
 
   test("returns null for invalid URL", () => {
     expect(parseMessagePermalink("not-a-url", origins)).toBeNull()
+  })
+})
+
+describe("parseGitHubUrl", () => {
+  test("parses pull request URLs", () => {
+    expect(parseGitHubUrl("https://github.com/octocat/hello-world/pull/12")).toEqual({
+      type: "github_pr",
+      owner: "octocat",
+      repo: "hello-world",
+      number: 12,
+    })
+  })
+
+  test("parses issue comment URLs", () => {
+    expect(parseGitHubUrl("https://github.com/octocat/hello-world/issues/34#issuecomment-5678")).toEqual({
+      type: "github_comment",
+      owner: "octocat",
+      repo: "hello-world",
+      commentId: 5678,
+      parentType: "issue",
+      number: 34,
+    })
+  })
+
+  test("parses blob URLs with line ranges", () => {
+    expect(parseGitHubUrl("https://github.com/octocat/hello-world/blob/main/src/app.ts#L10-L12")).toEqual({
+      type: "github_file",
+      owner: "octocat",
+      repo: "hello-world",
+      blobPath: "main/src/app.ts",
+      lineStart: 10,
+      lineEnd: 12,
+    })
+  })
+
+  test("returns null for non-GitHub URLs", () => {
+    expect(parseGitHubUrl("https://example.com/octocat/hello-world/pull/12")).toBeNull()
   })
 })
