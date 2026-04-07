@@ -27,6 +27,7 @@ import {
   focusAtEnd,
   type MessageAgentActivity,
 } from "@/hooks"
+import { Quote } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useLongPress } from "@/hooks/use-long-press"
@@ -44,6 +45,8 @@ import { EditedIndicator } from "./edited-indicator"
 import { MessageHistoryDialog } from "./message-history-dialog"
 import { MessageReactions } from "./message-reactions"
 import { ReactionEmojiPicker } from "./reaction-emoji-picker"
+import { useQuoteReply } from "./quote-reply-context"
+import { useSwipeAction } from "@/hooks/use-swipe-action"
 
 interface MessagePayload {
   messageId: string
@@ -102,6 +105,10 @@ interface MessageLayoutProps {
     onTouchMove: (e: React.TouchEvent) => void
     onContextMenu: (e: React.MouseEvent) => void
   }
+  /** Horizontal swipe offset for mobile swipe-to-quote (px, negative = left) */
+  swipeOffset?: number
+  /** Whether swipe has passed the threshold */
+  swipeLocked?: boolean
 }
 
 function focusVisibleZoneEditor(zone: HTMLElement | null, attempt = 0) {
@@ -166,6 +173,8 @@ function MessageLayout({
   containerRef,
   deferSecondaryHydration,
   touchHandlers,
+  swipeOffset,
+  swipeLocked,
 }: MessageLayoutProps) {
   const isPersona = event.actorType === "persona"
   const isSystem = event.actorType === "system"
@@ -173,101 +182,110 @@ function MessageLayout({
   const isUser = event.actorType === "user"
   const { openUserProfile } = useUserProfile()
 
+  const hasSwipe = swipeOffset !== undefined && swipeOffset !== 0
+
   return (
-    <div
-      ref={containerRef}
-      {...touchHandlers}
-      className={cn(
-        "message-item group relative flex gap-[14px] py-4 px-3 sm:px-6",
-        // AI/Persona messages get full-width gradient with gold accent
-        isPersona && "bg-gradient-to-r from-primary/[0.06] to-transparent shadow-[inset_3px_0_0_hsl(var(--primary))]",
-        // Bot messages get emerald accent
-        isBot && "bg-gradient-to-r from-emerald-500/[0.06] to-transparent shadow-[inset_3px_0_0_hsl(152_69%_41%)]",
-        // System messages get a subtle info-toned accent
-        isSystem && "bg-gradient-to-r from-blue-500/[0.04] to-transparent shadow-[inset_3px_0_0_hsl(210_100%_55%)]",
-        // Edit mode: pseudo-element background so no layout shift — zero padding/margin changes
-        isEditing &&
-          !isPersona &&
-          !isBot &&
-          !isSystem &&
-          "before:content-[''] before:absolute before:-top-4 before:-bottom-4 before:left-0 before:right-0 before:bg-primary/[0.04] before:-z-10",
-        isHighlighted && "animate-highlight-flash",
-        isNew && !isHighlighted && "animate-new-message-fade",
-        containerClassName
-      )}
-    >
-      {isPersona ? (
-        <PersonaAvatar slug={personaSlug} fallback={actorInitials} size="md" className="message-avatar" />
-      ) : (
-        <Avatar className="message-avatar h-9 w-9 rounded-[10px] shrink-0">
-          {actorAvatarUrl && <AvatarImage src={actorAvatarUrl} alt={actorName} />}
-          <AvatarFallback
-            className={cn(
-              "text-foreground",
-              isSystem && "bg-blue-500/10 text-blue-500",
-              isBot && "bg-emerald-500/10 text-emerald-600",
-              !isSystem && !isBot && "bg-muted"
-            )}
-          >
-            {actorInitials}
-          </AvatarFallback>
-        </Avatar>
-      )}
-      <div className="message-content flex-1 min-w-0">
-        <div className="flex items-baseline gap-2 mb-1">
-          {isUser && event.actorId ? (
-            <button
-              type="button"
-              onClick={() => openUserProfile(event.actorId!)}
-              className={cn("font-semibold text-sm hover:underline text-left")}
-            >
-              {actorName}
-            </button>
-          ) : (
-            <span
-              className={cn(
-                "font-semibold text-sm",
-                isPersona && "text-primary",
-                isBot && "text-emerald-600",
-                isSystem && "text-blue-500"
-              )}
-            >
-              {actorName}
-            </span>
-          )}
-          {isBot && <span className="text-[10px] text-emerald-600/70 font-medium cursor-default">BOT</span>}
-          {payload.sentVia && isSentViaApi(payload.sentVia) && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="text-[10px] text-muted-foreground/70 font-medium cursor-default">via API</span>
-              </TooltipTrigger>
-              <TooltipContent>Sent on behalf of this user by an API key</TooltipContent>
-            </Tooltip>
-          )}
-          {statusIndicator}
-          {actions}
+    <div ref={containerRef} className={cn("relative overflow-hidden", containerClassName)} {...touchHandlers}>
+      {/* Swipe-to-quote reveal icon (behind the message) */}
+      {hasSwipe && (
+        <div className="absolute inset-y-0 right-0 flex items-center pr-4">
+          <Quote className={cn("h-5 w-5 transition-colors", swipeLocked ? "text-primary" : "text-muted-foreground")} />
         </div>
-        {children ?? (
-          <LinkPreviewProvider>
-            <AttachmentProvider workspaceId={workspaceId} attachments={payload.attachments ?? []}>
-              <MarkdownContent content={payload.contentMarkdown} className="text-sm leading-relaxed" />
-              {payload.attachments && payload.attachments.length > 0 && (
-                <AttachmentList
-                  attachments={payload.attachments}
-                  workspaceId={workspaceId}
-                  deferHydration={deferSecondaryHydration}
-                />
-              )}
-              <MessageLinkPreviews
-                messageId={payload.messageId}
-                workspaceId={workspaceId}
-                previews={payload.linkPreviews}
-                hydrateFromApi={!deferSecondaryHydration}
-              />
-            </AttachmentProvider>
-          </LinkPreviewProvider>
+      )}
+      <div
+        className={cn(
+          "message-item group relative flex gap-[14px] py-4 px-3 sm:px-6",
+          // AI/Persona messages get full-width gradient with gold accent
+          isPersona && "bg-gradient-to-r from-primary/[0.06] to-transparent shadow-[inset_3px_0_0_hsl(var(--primary))]",
+          // Bot messages get emerald accent
+          isBot && "bg-gradient-to-r from-emerald-500/[0.06] to-transparent shadow-[inset_3px_0_0_hsl(152_69%_41%)]",
+          // System messages get a subtle info-toned accent
+          isSystem && "bg-gradient-to-r from-blue-500/[0.04] to-transparent shadow-[inset_3px_0_0_hsl(210_100%_55%)]",
+          // Edit mode: pseudo-element background so no layout shift — zero padding/margin changes
+          isEditing &&
+            !isPersona &&
+            !isBot &&
+            !isSystem &&
+            "before:content-[''] before:absolute before:-top-4 before:-bottom-4 before:left-0 before:right-0 before:bg-primary/[0.04] before:-z-10",
+          isHighlighted && "animate-highlight-flash",
+          isNew && !isHighlighted && "animate-new-message-fade",
+          "bg-background"
         )}
-        {footer}
+        style={hasSwipe ? { transform: `translateX(${swipeOffset}px)` } : undefined}
+      >
+        {isPersona ? (
+          <PersonaAvatar slug={personaSlug} fallback={actorInitials} size="md" className="message-avatar" />
+        ) : (
+          <Avatar className="message-avatar h-9 w-9 rounded-[10px] shrink-0">
+            {actorAvatarUrl && <AvatarImage src={actorAvatarUrl} alt={actorName} />}
+            <AvatarFallback
+              className={cn(
+                "text-foreground",
+                isSystem && "bg-blue-500/10 text-blue-500",
+                isBot && "bg-emerald-500/10 text-emerald-600",
+                !isSystem && !isBot && "bg-muted"
+              )}
+            >
+              {actorInitials}
+            </AvatarFallback>
+          </Avatar>
+        )}
+        <div className="message-content flex-1 min-w-0">
+          <div className="flex items-baseline gap-2 mb-1">
+            {isUser && event.actorId ? (
+              <button
+                type="button"
+                onClick={() => openUserProfile(event.actorId!)}
+                className={cn("font-semibold text-sm hover:underline text-left")}
+              >
+                {actorName}
+              </button>
+            ) : (
+              <span
+                className={cn(
+                  "font-semibold text-sm",
+                  isPersona && "text-primary",
+                  isBot && "text-emerald-600",
+                  isSystem && "text-blue-500"
+                )}
+              >
+                {actorName}
+              </span>
+            )}
+            {isBot && <span className="text-[10px] text-emerald-600/70 font-medium cursor-default">BOT</span>}
+            {payload.sentVia && isSentViaApi(payload.sentVia) && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="text-[10px] text-muted-foreground/70 font-medium cursor-default">via API</span>
+                </TooltipTrigger>
+                <TooltipContent>Sent on behalf of this user by an API key</TooltipContent>
+              </Tooltip>
+            )}
+            {statusIndicator}
+            {actions}
+          </div>
+          {children ?? (
+            <LinkPreviewProvider>
+              <AttachmentProvider workspaceId={workspaceId} attachments={payload.attachments ?? []}>
+                <MarkdownContent content={payload.contentMarkdown} className="text-sm leading-relaxed" />
+                {payload.attachments && payload.attachments.length > 0 && (
+                  <AttachmentList
+                    attachments={payload.attachments}
+                    workspaceId={workspaceId}
+                    deferHydration={deferSecondaryHydration}
+                  />
+                )}
+                <MessageLinkPreviews
+                  messageId={payload.messageId}
+                  workspaceId={workspaceId}
+                  previews={payload.linkPreviews}
+                  hydrateFromApi={!deferSecondaryHydration}
+                />
+              </AttachmentProvider>
+            </LinkPreviewProvider>
+          )}
+          {footer}
+        </div>
       </div>
     </div>
   )
@@ -308,6 +326,7 @@ function SentMessageEvent({
   const messageService = useMessageService()
   const currentUserId = useWorkspaceUserId(workspaceId)
   const { getTraceUrl } = useTrace()
+  const quoteReplyCtx = useQuoteReply()
   const replyCount = payload.replyCount ?? 0
   const threadId = payload.threadId
   const containerRef = useRef<HTMLDivElement>(null)
@@ -325,6 +344,20 @@ function SentMessageEvent({
   const longPress = useLongPress({
     onLongPress: openDrawer,
     enabled: isMobile && !isEditing,
+  })
+
+  // Mobile: swipe left to quote reply
+  const handleSwipeQuote = useCallback(() => {
+    quoteReplyCtx?.triggerQuoteReply({
+      messageId: payload.messageId,
+      streamId,
+      authorName: actorName,
+      snippet: payload.contentMarkdown,
+    })
+  }, [quoteReplyCtx, payload.messageId, payload.contentMarkdown, streamId, actorName])
+  const swipe = useSwipeAction({
+    onSwipe: handleSwipeQuote,
+    enabled: isMobile && !isEditing && !!quoteReplyCtx,
   })
 
   const startEditing = useCallback(() => {
@@ -476,6 +509,15 @@ function SentMessageEvent({
       onReact: handleAddReaction,
       onOpenFullPicker: () => setMobilePickerOpen(true),
       reactions: payload.reactions,
+      onQuoteReply: quoteReplyCtx
+        ? () =>
+            quoteReplyCtx.triggerQuoteReply({
+              messageId: payload.messageId,
+              streamId,
+              authorName: actorName,
+              snippet: payload.contentMarkdown,
+            })
+        : undefined,
     }),
     [
       payload.contentMarkdown,
@@ -497,6 +539,8 @@ function SentMessageEvent({
       streamId,
       startEditing,
       handleAddReaction,
+      quoteReplyCtx,
+      actorName,
     ]
   )
 
@@ -532,6 +576,22 @@ function SentMessageEvent({
               onSelect={handleAddReaction}
               activeShortcodes={activeReactionShortcodes}
             />
+            {actionContext.onQuoteReply && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-6 w-6 shadow-sm hover:border-primary/30 text-muted-foreground shrink-0"
+                    aria-label="Quote reply"
+                    onClick={actionContext.onQuoteReply}
+                  >
+                    <Quote className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Quote reply</TooltipContent>
+              </Tooltip>
+            )}
             <MessageContextMenu context={actionContext} />
           </div>
         }
@@ -559,7 +619,27 @@ function SentMessageEvent({
           isMobile && !isEditing && "select-none",
           longPress.isPressed && "opacity-70 transition-opacity duration-100"
         )}
-        touchHandlers={isMobile ? longPress.handlers : undefined}
+        swipeOffset={isMobile ? swipe.offset : undefined}
+        swipeLocked={isMobile ? swipe.isLocked : undefined}
+        touchHandlers={
+          isMobile
+            ? {
+                onTouchStart: (e: React.TouchEvent) => {
+                  longPress.handlers.onTouchStart(e)
+                  swipe.handlers.onTouchStart(e)
+                },
+                onTouchEnd: () => {
+                  longPress.handlers.onTouchEnd()
+                  swipe.handlers.onTouchEnd()
+                },
+                onTouchMove: (e: React.TouchEvent) => {
+                  longPress.handlers.onTouchMove(e)
+                  swipe.handlers.onTouchMove(e)
+                },
+                onContextMenu: longPress.handlers.onContextMenu,
+              }
+            : undefined
+        }
       >
         {/* Desktop: inline edit replaces message content. Mobile: drawer handles editing. */}
         {isEditing && !isMobile ? (

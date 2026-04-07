@@ -12,6 +12,7 @@ import { isCommand } from "@/lib/commands"
 import { serializeToMarkdown } from "@threa/prosemirror"
 import { useEditLastMessage } from "./edit-last-message-context"
 import { useInlineEdit } from "./inline-edit-context"
+import { useQuoteReply, type QuoteReplyData } from "./quote-reply-context"
 import { StreamTypes, type JSONContent } from "@threa/types"
 import type { MentionStreamContext } from "@/hooks/use-mentionables"
 import type { PendingAttachment } from "@/hooks/use-attachments"
@@ -194,6 +195,38 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   }, [stream, idbStreams])
 
   const composer = useDraftComposer({ workspaceId, draftKey, scopeId: streamId })
+  const quoteReplyCtx = useQuoteReply()
+
+  // Register with QuoteReplyContext to insert quote reply nodes into the composer
+  useEffect(() => {
+    if (!quoteReplyCtx) return
+    return quoteReplyCtx.registerHandler((data: QuoteReplyData) => {
+      const quoteNode: JSONContent = {
+        type: "quoteReply",
+        attrs: {
+          messageId: data.messageId,
+          streamId: data.streamId,
+          authorName: data.authorName,
+          snippet: data.snippet,
+        },
+      }
+
+      const currentContent = composer.content
+      const existingBlocks = currentContent.content ?? []
+
+      // Replace any existing quoteReply at the start, or prepend
+      const filteredBlocks = existingBlocks.filter((b) => b.type !== "quoteReply")
+      // Ensure there's at least an empty paragraph after the quote for typing
+      const hasContent = filteredBlocks.some((b) => b.type !== "paragraph" || (b.content?.length ?? 0) > 0)
+      const blocks = hasContent ? filteredBlocks : [...filteredBlocks, { type: "paragraph" }]
+
+      composer.setContent({
+        type: "doc",
+        content: [quoteNode, ...blocks],
+      })
+    })
+  }, [quoteReplyCtx, composer])
+
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
   const messageSendMode = preferences?.messageSendMode ?? "enter"

@@ -129,3 +129,116 @@ describe("@threa/prosemirror markdown attachment metadata", () => {
     })
   })
 })
+
+describe("@threa/prosemirror quote reply round-trip", () => {
+  it("serializes quoteReply to blockquote with attribution link", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "quoteReply",
+          attrs: {
+            messageId: "msg_01ABC",
+            streamId: "stream_01XYZ",
+            authorName: "Kristoffer",
+            snippet: "Hello world",
+          },
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "My reply" }],
+        },
+      ],
+    }
+
+    const markdown = serializeToMarkdown(doc)
+    expect(markdown).toBe("> Hello world\n> — [Kristoffer](quote:stream_01XYZ/msg_01ABC)\n\nMy reply")
+  })
+
+  it("parses blockquote with quote: attribution into quoteReply node", () => {
+    const markdown = "> Hello world\n> — [Kristoffer](quote:stream_01XYZ/msg_01ABC)\n\nMy reply"
+    const parsed = parseMarkdown(markdown)
+
+    expect(parsed.content?.[0]).toEqual({
+      type: "quoteReply",
+      attrs: {
+        messageId: "msg_01ABC",
+        streamId: "stream_01XYZ",
+        authorName: "Kristoffer",
+        snippet: "Hello world",
+      },
+    })
+    expect(parsed.content?.[1]?.type).toBe("paragraph")
+  })
+
+  it("round-trips quoteReply through markdown", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "quoteReply",
+          attrs: {
+            messageId: "msg_01KNGTTZJYCBZ8X4FEVX8YFBB3",
+            streamId: "stream_01KJMS776MNP2Q382MJ639Y2JD",
+            authorName: "Alice",
+            snippet: "Gärna! Har du automatiskt mirroring?",
+          },
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Ja, det har jag!" }],
+        },
+      ],
+    }
+
+    const markdown = serializeToMarkdown(doc)
+    const parsed = parseMarkdown(markdown)
+
+    expect(parsed.content?.[0]).toEqual({
+      type: "quoteReply",
+      attrs: {
+        messageId: "msg_01KNGTTZJYCBZ8X4FEVX8YFBB3",
+        streamId: "stream_01KJMS776MNP2Q382MJ639Y2JD",
+        authorName: "Alice",
+        snippet: "Gärna! Har du automatiskt mirroring?",
+      },
+    })
+  })
+
+  it("preserves multi-line snippets through round-trip", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "quoteReply",
+          attrs: {
+            messageId: "msg_01ABC",
+            streamId: "stream_01XYZ",
+            authorName: "Bob",
+            snippet: "Line one\nLine two\nLine three",
+          },
+        },
+      ],
+    }
+
+    const markdown = serializeToMarkdown(doc)
+    expect(markdown).toBe("> Line one\n> Line two\n> Line three\n> — [Bob](quote:stream_01XYZ/msg_01ABC)")
+
+    const parsed = parseMarkdown(markdown)
+    expect(parsed.content?.[0]).toEqual({
+      type: "quoteReply",
+      attrs: {
+        messageId: "msg_01ABC",
+        streamId: "stream_01XYZ",
+        authorName: "Bob",
+        snippet: "Line one\nLine two\nLine three",
+      },
+    })
+  })
+
+  it("treats blockquote without quote: protocol as regular blockquote", () => {
+    const markdown = "> Just a regular quote"
+    const parsed = parseMarkdown(markdown)
+    expect(parsed.content?.[0]?.type).toBe("blockquote")
+  })
+})

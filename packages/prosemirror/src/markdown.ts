@@ -52,6 +52,20 @@ function serializeNode(node: JSONContent, listDepth = 0, listIndex?: number): st
         .join("\n")
     }
 
+    case "quoteReply": {
+      const { messageId, streamId, authorName, snippet } = node.attrs as {
+        messageId: string
+        streamId: string
+        authorName: string
+        snippet: string
+      }
+      const quotedLines = snippet
+        .split("\n")
+        .map((line) => "> " + line)
+        .join("\n")
+      return `${quotedLines}\n> — [${authorName}](quote:${streamId}/${messageId})`
+    }
+
     case "bulletList":
       return (
         node.content
@@ -326,22 +340,38 @@ export function parseMarkdown(
       continue
     }
 
-    // Blockquote
+    // Blockquote (or quoteReply if last line has quote: attribution)
     if (line.startsWith("> ")) {
       const quoteLines: string[] = []
       while (i < lines.length && lines[i].startsWith("> ")) {
         quoteLines.push(lines[i].slice(2))
         i++
       }
-      content.push({
-        type: "blockquote",
-        content: [
-          {
-            type: "paragraph",
-            content: parseInlineMarkdown(quoteLines.join("\n"), options),
-          },
-        ],
-      })
+
+      // Check if last line is a quote-reply attribution: — [Author](quote:streamId/messageId)
+      const lastLine = quoteLines[quoteLines.length - 1]
+      const quoteReplyMatch = lastLine?.match(/^—\s*\[([^\]]+)\]\(quote:([\w-]+)\/([\w-]+)\)$/)
+
+      if (quoteReplyMatch) {
+        const authorName = quoteReplyMatch[1]
+        const streamId = quoteReplyMatch[2]
+        const messageId = quoteReplyMatch[3]
+        const snippet = quoteLines.slice(0, -1).join("\n")
+        content.push({
+          type: "quoteReply",
+          attrs: { messageId, streamId, authorName, snippet },
+        })
+      } else {
+        content.push({
+          type: "blockquote",
+          content: [
+            {
+              type: "paragraph",
+              content: parseInlineMarkdown(quoteLines.join("\n"), options),
+            },
+          ],
+        })
+      }
       continue
     }
 

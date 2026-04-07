@@ -23,6 +23,10 @@ function urlTransform(url: string): string {
   if (url.startsWith("attachment:")) {
     return url
   }
+  // Allow quote: protocol for quote-reply attribution links
+  if (url.startsWith("quote:")) {
+    return url
+  }
   // For other URLs, use default behavior (returns url as-is for http/https/mailto)
   const protocols = ["http:", "https:", "mailto:", "tel:"]
   const parsed = url.includes(":") ? url.split(":")[0] + ":" : ""
