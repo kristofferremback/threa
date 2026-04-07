@@ -1,23 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { render, screen } from "@testing-library/react"
-import { StreamTypes } from "@threa/types"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { StreamTypes, type Stream, type StreamBootstrap } from "@threa/types"
+import { streamKeys } from "@/hooks"
 import { StreamSettingsDialog } from "./stream-settings-dialog"
 
 const mocks = vi.hoisted(() => ({
-  useQuery: vi.fn(),
-  queryClient: {
-    getQueryData: vi.fn(),
-  },
   useStreamSettings: vi.fn(),
   useWorkspaceStreams: vi.fn(),
   useWorkspaceStreamMemberships: vi.fn(),
   closeStreamSettings: vi.fn(),
   setTab: vi.fn(),
-}))
-
-vi.mock("@tanstack/react-query", () => ({
-  useQuery: (...args: unknown[]) => mocks.useQuery(...args),
-  useQueryClient: () => mocks.queryClient,
 }))
 
 vi.mock("./use-stream-settings", () => ({
@@ -42,11 +35,39 @@ vi.mock("./members-tab", () => ({
   MembersTab: () => <div>Members panel</div>,
 }))
 
+function makeStream(overrides: Partial<Stream> = {}): Stream {
+  return {
+    id: "stream_dm",
+    workspaceId: "ws_1",
+    type: StreamTypes.DM,
+    displayName: "Direct chat",
+    slug: null,
+    description: null,
+    visibility: "private",
+    parentStreamId: null,
+    parentMessageId: null,
+    rootStreamId: null,
+    companionMode: "off",
+    companionPersonaId: null,
+    createdBy: "user_1",
+    createdAt: "2026-04-07T00:00:00.000Z",
+    updatedAt: "2026-04-07T00:00:00.000Z",
+    archivedAt: null,
+    ...overrides,
+  }
+}
+
 describe("StreamSettingsDialog", () => {
+  let queryClient: QueryClient
+
   beforeEach(() => {
     vi.clearAllMocks()
+    queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+      },
+    })
 
-    mocks.useQuery.mockReturnValue({ data: null })
     mocks.useStreamSettings.mockReturnValue({
       isOpen: true,
       activeTab: "general",
@@ -54,13 +75,20 @@ describe("StreamSettingsDialog", () => {
       closeStreamSettings: mocks.closeStreamSettings,
       setTab: mocks.setTab,
     })
-    mocks.useWorkspaceStreams.mockReturnValue([
-      {
-        id: "stream_dm",
-        type: StreamTypes.DM,
-        displayName: "Direct chat",
-      },
-    ])
+
+    const stream = makeStream()
+    const bootstrap: StreamBootstrap = {
+      stream,
+      events: [],
+      members: [],
+      membership: null,
+      latestSequence: "0",
+      hasOlderEvents: false,
+    }
+
+    queryClient.setQueryData(streamKeys.bootstrap("ws_1", "stream_dm"), bootstrap)
+
+    mocks.useWorkspaceStreams.mockReturnValue([])
     mocks.useWorkspaceStreamMemberships.mockReturnValue([
       {
         streamId: "stream_dm",
@@ -71,7 +99,11 @@ describe("StreamSettingsDialog", () => {
   })
 
   it("shows only the available sidebar items for the resolved stream type", async () => {
-    render(<StreamSettingsDialog workspaceId="ws_1" />)
+    render(
+      <QueryClientProvider client={queryClient}>
+        <StreamSettingsDialog workspaceId="ws_1" />
+      </QueryClientProvider>
+    )
 
     expect(await screen.findByText("Direct chat Settings")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /Members/i })).toBeInTheDocument()
