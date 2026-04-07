@@ -63,7 +63,9 @@ function serializeNode(node: JSONContent, listDepth = 0, listIndex?: number): st
         .split("\n")
         .map((line) => "> " + line)
         .join("\n")
-      return `${quotedLines}\n> — [${authorName}](quote:${streamId}/${messageId})`
+      // Escape ] and \ in author name to prevent breaking the markdown link syntax
+      const escapedAuthor = authorName.replace(/\\/g, "\\\\").replace(/\]/g, "\\]")
+      return `${quotedLines}\n> — [${escapedAuthor}](quote:${streamId}/${messageId})`
     }
 
     case "bulletList":
@@ -349,11 +351,13 @@ export function parseMarkdown(
       }
 
       // Check if last line is a quote-reply attribution: — [Author](quote:streamId/messageId)
+      // Author name may contain escaped brackets: \] and \\
       const lastLine = quoteLines[quoteLines.length - 1]
-      const quoteReplyMatch = lastLine?.match(/^—\s*\[([^\]]+)\]\(quote:([\w-]+)\/([\w-]+)\)$/)
+      const quoteReplyMatch = lastLine?.match(/^—\s*\[((?:\\.|[^\]])+)\]\(quote:([\w-]+)\/([\w-]+)\)$/)
 
       if (quoteReplyMatch) {
-        const authorName = quoteReplyMatch[1]
+        // Unescape \] and \\ in author name
+        const authorName = quoteReplyMatch[1].replace(/\\([\]\\])/g, "$1")
         const streamId = quoteReplyMatch[2]
         const messageId = quoteReplyMatch[3]
         const snippet = quoteLines.slice(0, -1).join("\n")

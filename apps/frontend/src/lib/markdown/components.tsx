@@ -32,27 +32,18 @@ function extractQuoteReplyFromChildren(
 ): { authorName: string; streamId: string; messageId: string; quotedContent: ReactNode[] } | null {
   const childArray: ReactNode[] = Children.toArray(children)
 
-  // Look through paragraph children for the attribution pattern
   // The markdown renders as: <p>quoted text</p>\n<p>— <a href="quote:...">Author</a></p>
-  // or all in one <p>: quoted text\n— <a href="quote:...">Author</a>
   for (let i = childArray.length - 1; i >= 0; i--) {
     const child = childArray[i]
     if (!isValidElement(child)) continue
 
-    // Check if this element (likely a <p>) contains the attribution link
     const quoteLink = findQuoteLinkInElement(child)
     if (quoteLink) {
-      // Everything before this element is the quoted content
-      const quotedContent = childArray.slice(0, i)
-      // If the attribution is part of a larger paragraph, include content before "—"
-      if (quoteLink.precedingContent) {
-        quotedContent.push(quoteLink.precedingContent)
-      }
       return {
         authorName: quoteLink.authorName,
         streamId: quoteLink.streamId,
         messageId: quoteLink.messageId,
-        quotedContent,
+        quotedContent: childArray.slice(0, i),
       }
     }
   }
@@ -64,7 +55,6 @@ interface QuoteLinkInfo {
   authorName: string
   streamId: string
   messageId: string
-  precedingContent: ReactNode | null
 }
 
 /**
@@ -78,9 +68,8 @@ function findQuoteLinkInElement(element: ReactNode): QuoteLinkInfo | null {
   if (props.href && typeof props.href === "string") {
     const parsed = parseQuoteHref(props.href)
     if (parsed) {
-      // The link text is the author name
       const authorName = extractTextFromChildren(props.children as ReactNode)
-      return { ...parsed, authorName, precedingContent: null }
+      return { ...parsed, authorName }
     }
   }
 

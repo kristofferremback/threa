@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { createPortal } from "react-dom"
 import { Quote } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -27,15 +27,13 @@ function getMessageContext(node: Node): { messageId: string; element: HTMLElemen
 }
 
 /**
- * Extract the author name from a message DOM element.
- * Looks for the first text in the message header row.
+ * Extract the author name from a message DOM element via data attribute.
  */
 function getAuthorNameFromDom(messageEl: HTMLElement): string {
-  // The author name is in .message-content > div (first child row) > first button/span
-  const nameEl = messageEl.querySelector<HTMLElement>(
-    ".message-content > div:first-child > button, .message-content > div:first-child > span"
-  )
-  return nameEl?.textContent?.trim() ?? "Unknown"
+  // Walk up to find the element with data-author-name (set on MessageLayout root)
+  const authorEl =
+    messageEl.closest<HTMLElement>("[data-author-name]") ?? messageEl.querySelector<HTMLElement>("[data-author-name]")
+  return authorEl?.getAttribute("data-author-name")?.trim() ?? "Unknown"
 }
 
 interface TextSelectionQuoteProps {
@@ -50,7 +48,6 @@ export function TextSelectionQuote({ streamId }: TextSelectionQuoteProps) {
   const isMobile = useIsMobile()
   const quoteReplyCtx = useQuoteReply()
   const [selection, setSelection] = useState<SelectionInfo | null>(null)
-  const popoverRef = useRef<HTMLDivElement>(null)
 
   const handleSelectionChange = useCallback(() => {
     const sel = window.getSelection()
@@ -101,17 +98,6 @@ export function TextSelectionQuote({ streamId }: TextSelectionQuoteProps) {
     return () => document.removeEventListener("selectionchange", handleSelectionChange)
   }, [isMobile, handleSelectionChange])
 
-  // Dismiss on mousedown outside the popover
-  useEffect(() => {
-    if (!selection) return
-    const handleMouseDown = (e: MouseEvent) => {
-      if (popoverRef.current?.contains(e.target as Node)) return
-      // Let the selectionchange handler handle clearing
-    }
-    document.addEventListener("mousedown", handleMouseDown)
-    return () => document.removeEventListener("mousedown", handleMouseDown)
-  }, [selection])
-
   const handleQuote = useCallback(() => {
     if (!selection || !quoteReplyCtx) return
     quoteReplyCtx.triggerQuoteReply({
@@ -129,7 +115,6 @@ export function TextSelectionQuote({ streamId }: TextSelectionQuoteProps) {
 
   return createPortal(
     <div
-      ref={popoverRef}
       className="fixed z-50 -translate-x-1/2 animate-in fade-in-0 zoom-in-95"
       style={{ top: selection.rect.top - 36, left: selection.rect.left + selection.rect.width / 2 }}
     >

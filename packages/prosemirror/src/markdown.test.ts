@@ -241,4 +241,35 @@ describe("@threa/prosemirror quote reply round-trip", () => {
     const parsed = parseMarkdown(markdown)
     expect(parsed.content?.[0]?.type).toBe("blockquote")
   })
+
+  it("round-trips author names containing brackets and backslashes", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "quoteReply",
+          attrs: {
+            messageId: "msg_01ABC",
+            streamId: "stream_01XYZ",
+            authorName: "John [Dev] Smith\\Sr",
+            snippet: "Hello",
+          },
+        },
+      ],
+    }
+
+    const markdown = serializeToMarkdown(doc)
+    expect(markdown).toBe("> Hello\n> — [John [Dev\\] Smith\\\\Sr](quote:stream_01XYZ/msg_01ABC)")
+
+    const parsed = parseMarkdown(markdown)
+    expect(parsed.content?.[0]).toEqual({
+      type: "quoteReply",
+      attrs: {
+        messageId: "msg_01ABC",
+        streamId: "stream_01XYZ",
+        authorName: "John [Dev] Smith\\Sr",
+        snippet: "Hello",
+      },
+    })
+  })
 })

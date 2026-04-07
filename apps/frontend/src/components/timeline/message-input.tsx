@@ -197,7 +197,13 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   const composer = useDraftComposer({ workspaceId, draftKey, scopeId: streamId })
   const quoteReplyCtx = useQuoteReply()
 
-  // Register with QuoteReplyContext to insert quote reply nodes into the composer
+  // Use a ref so the handler always reads fresh composer state without
+  // re-registering on every render (composer object is not memoized).
+  const composerRef = useRef(composer)
+  composerRef.current = composer
+
+  // Register with QuoteReplyContext to insert quote reply nodes into the composer.
+  // Stable deps: quoteReplyCtx is from context, composerRef is a ref.
   useEffect(() => {
     if (!quoteReplyCtx) return
     return quoteReplyCtx.registerHandler((data: QuoteReplyData) => {
@@ -211,7 +217,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
         },
       }
 
-      const currentContent = composer.content
+      const currentContent = composerRef.current.content
       const existingBlocks = currentContent.content ?? []
 
       // Replace any existing quoteReply at the start, or prepend
@@ -220,12 +226,12 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
       const hasContent = filteredBlocks.some((b) => b.type !== "paragraph" || (b.content?.length ?? 0) > 0)
       const blocks = hasContent ? filteredBlocks : [...filteredBlocks, { type: "paragraph" }]
 
-      composer.setContent({
+      composerRef.current.setContent({
         type: "doc",
         content: [quoteNode, ...blocks],
       })
     })
-  }, [quoteReplyCtx, composer])
+  }, [quoteReplyCtx])
 
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)

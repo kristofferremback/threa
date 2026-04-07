@@ -1,4 +1,4 @@
-import { createContext, useContext, useCallback, useRef } from "react"
+import { createContext, useContext, useCallback, useMemo, useRef } from "react"
 import type { ReactNode } from "react"
 
 export interface QuoteReplyData {
@@ -32,7 +32,9 @@ export function QuoteReplyProvider({ children }: { children: ReactNode }) {
     handlerRef.current?.(data)
   }, [])
 
-  return <QuoteReplyCtx.Provider value={{ triggerQuoteReply, registerHandler }}>{children}</QuoteReplyCtx.Provider>
+  const value = useMemo(() => ({ triggerQuoteReply, registerHandler }), [triggerQuoteReply, registerHandler])
+
+  return <QuoteReplyCtx.Provider value={value}>{children}</QuoteReplyCtx.Provider>
 }
 
 export function useQuoteReply(): QuoteReplyContextValue | null {

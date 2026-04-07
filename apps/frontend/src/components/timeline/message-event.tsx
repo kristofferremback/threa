@@ -185,7 +185,12 @@ function MessageLayout({
   const hasSwipe = swipeOffset !== undefined && swipeOffset !== 0
 
   return (
-    <div ref={containerRef} className={cn("relative overflow-hidden", containerClassName)} {...touchHandlers}>
+    <div
+      ref={containerRef}
+      data-author-name={actorName}
+      className={cn("relative overflow-hidden", containerClassName)}
+      {...touchHandlers}
+    >
       {/* Swipe-to-quote reveal icon (behind the message) */}
       {hasSwipe && (
         <div className="absolute inset-y-0 right-0 flex items-center pr-4">
@@ -348,11 +353,13 @@ function SentMessageEvent({
 
   // Mobile: swipe left to quote reply
   const handleSwipeQuote = useCallback(() => {
+    const snippet = payload.contentMarkdown.trim()
+    if (!snippet) return
     quoteReplyCtx?.triggerQuoteReply({
       messageId: payload.messageId,
       streamId,
       authorName: actorName,
-      snippet: payload.contentMarkdown,
+      snippet,
     })
   }, [quoteReplyCtx, payload.messageId, payload.contentMarkdown, streamId, actorName])
   const swipe = useSwipeAction({
