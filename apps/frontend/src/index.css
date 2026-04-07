@@ -304,7 +304,7 @@
  * Tiptap Editor Styles
  */
 .ProseMirror {
-  @apply outline-none;
+  @apply outline-none relative;
 }
 
 .ProseMirror p.is-editor-empty:first-child::before {
@@ -312,7 +312,7 @@
   content: attr(data-placeholder);
 }
 
-.ProseMirror > * + * {
+.ProseMirror > *:not(.ProseMirror-gapcursor) + *:not(.ProseMirror-gapcursor) {
   @apply mt-2;
 }
 
@@ -392,19 +392,22 @@
   @apply my-4 border-border;
 }
 
+/* Gapcursor base: collapse to zero space in the document flow */
 .ProseMirror .ProseMirror-gapcursor {
   pointer-events: none;
   position: relative;
   height: 0 !important;
   margin: 0 !important;
   padding: 0 !important;
+  line-height: 0 !important;
+  font-size: 0 !important;
 }
 
 .ProseMirror .ProseMirror-gapcursor::after {
   content: "";
   display: block;
   position: absolute;
-  /* Override prosemirror-gapcursor defaults (border-top, width, top) */
+  /* Override prosemirror-gapcursor defaults */
   border-top: none !important;
   width: 1px !important;
   left: 0;
@@ -414,16 +417,19 @@
   animation: ProseMirror-cursor-blink 1.1s steps(2, start) infinite;
 }
 
-/* Before a quote reply: cursor on the left edge, vertically inside the quote */
-.ProseMirror .ProseMirror-gapcursor:has(+ [data-type="quote-reply"])::after {
-  top: 0.625rem;
+/* Before a quote: position cursor on the left, vertically centered in the quote */
+.ProseMirror .ProseMirror-gapcursor.before-quote::after {
+  top: var(--quote-top);
+  left: 0;
+  height: var(--quote-height);
 }
 
-/* After a quote reply: cursor on the right edge, vertically inside the quote */
-.ProseMirror [data-type="quote-reply"] + .ProseMirror-gapcursor::after {
+/* After a quote: position cursor on the right, vertically centered in the quote */
+.ProseMirror .ProseMirror-gapcursor.after-quote::after {
+  top: var(--quote-top);
   left: auto;
-  right: 0;
-  top: -2.125rem;
+  right: var(--quote-right, 0);
+  height: var(--quote-height);
 }
 
 @keyframes ProseMirror-cursor-blink {

@@ -1,6 +1,6 @@
 import { Node, mergeAttributes } from "@tiptap/core"
 import { GapCursor } from "@tiptap/pm/gapcursor"
-import { Selection } from "@tiptap/pm/state"
+import { Plugin, PluginKey, Selection } from "@tiptap/pm/state"
 import { ReactNodeViewRenderer } from "@tiptap/react"
 import { QuoteReplyView } from "./quote-reply-view"
 
@@ -98,5 +98,42 @@ export const QuoteReplyExtension = Node.create({
       Enter: () => insertParagraphAtGapCursor(this.editor),
       "Shift-Enter": () => insertParagraphAtGapCursor(this.editor),
     }
+  },
+
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: new PluginKey("quoteReplyGapCursorPosition"),
+        view() {
+          return {
+            update(view) {
+              const el = view.dom.querySelector(".ProseMirror-gapcursor") as HTMLElement | null
+              if (!el) return
+
+              el.classList.remove("before-quote", "after-quote")
+
+              const next = el.nextElementSibling
+              const prev = el.previousElementSibling
+
+              if (next?.getAttribute("data-type") === "quote-reply") {
+                el.classList.add("before-quote")
+                // Position vertically to overlap with the quote below
+                const quoteRect = next.getBoundingClientRect()
+                const editorRect = view.dom.getBoundingClientRect()
+                el.style.setProperty("--quote-top", `${quoteRect.top - editorRect.top}px`)
+                el.style.setProperty("--quote-height", `${quoteRect.height}px`)
+              } else if (prev?.getAttribute("data-type") === "quote-reply") {
+                el.classList.add("after-quote")
+                const quoteRect = prev.getBoundingClientRect()
+                const editorRect = view.dom.getBoundingClientRect()
+                el.style.setProperty("--quote-top", `${quoteRect.top - editorRect.top}px`)
+                el.style.setProperty("--quote-height", `${quoteRect.height}px`)
+                el.style.setProperty("--quote-right", `${editorRect.right - quoteRect.right}px`)
+              }
+            },
+          }
+        },
+      }),
+    ]
   },
 })
