@@ -393,31 +393,37 @@
 }
 
 .ProseMirror .ProseMirror-gapcursor {
-  @apply pointer-events-none relative;
+  pointer-events: none;
+  position: relative;
   height: 0 !important;
   margin: 0 !important;
   padding: 0 !important;
 }
 
 .ProseMirror .ProseMirror-gapcursor::after {
-  @apply absolute block w-px border-l border-foreground;
   content: "";
+  display: block;
+  position: absolute;
+  /* Override prosemirror-gapcursor defaults (border-top, width, top) */
+  border-top: none !important;
+  width: 1px !important;
   left: 0;
   top: 0;
   height: 1.5rem;
+  background: hsl(var(--foreground));
   animation: ProseMirror-cursor-blink 1.1s steps(2, start) infinite;
 }
 
 /* Before a quote reply: cursor on the left edge, vertically inside the quote */
 .ProseMirror .ProseMirror-gapcursor:has(+ [data-type="quote-reply"])::after {
-  top: 0.625rem; /* my-1 (0.25rem) + py-2 (0.5rem) to reach content area */
+  top: 0.625rem;
 }
 
 /* After a quote reply: cursor on the right edge, vertically inside the quote */
 .ProseMirror [data-type="quote-reply"] + .ProseMirror-gapcursor::after {
   left: auto;
   right: 0;
-  top: -2.125rem; /* Pull up into the quote's content area */
+  top: -2.125rem;
 }
 
 @keyframes ProseMirror-cursor-blink {
