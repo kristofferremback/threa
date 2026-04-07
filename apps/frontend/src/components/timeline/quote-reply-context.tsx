@@ -5,6 +5,8 @@ export interface QuoteReplyData {
   messageId: string
   streamId: string
   authorName: string
+  authorId: string
+  actorType: string
   /** Markdown content to quote (preserves formatting) */
   snippet: string
 }

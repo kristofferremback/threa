@@ -10,6 +10,10 @@ export interface QuoteReplyAttrs {
   streamId: string
   /** Display name of the quoted message author (denormalized) */
   authorName: string
+  /** The ID of the quoted message author */
+  authorId: string
+  /** The actor type of the quoted message author */
+  actorType: string
   /** The quoted text snippet */
   snippet: string
 }
@@ -46,6 +50,16 @@ export const QuoteReplyExtension = Node.create({
         default: "",
         parseHTML: (element) => element.getAttribute("data-author-name"),
         renderHTML: (attrs) => ({ "data-author-name": attrs.authorName }),
+      },
+      authorId: {
+        default: "",
+        parseHTML: (element) => element.getAttribute("data-author-id"),
+        renderHTML: (attrs) => ({ "data-author-id": attrs.authorId }),
+      },
+      actorType: {
+        default: "user",
+        parseHTML: (element) => element.getAttribute("data-actor-type"),
+        renderHTML: (attrs) => ({ "data-actor-type": attrs.actorType }),
       },
       snippet: {
         default: "",

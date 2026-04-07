@@ -1,13 +1,21 @@
 import { NodeViewWrapper, type NodeViewProps } from "@tiptap/react"
 import { X, Quote } from "lucide-react"
+import { useParams } from "react-router-dom"
 import { cn } from "@/lib/utils"
+import { useActors } from "@/hooks"
+import { useUserProfile } from "@/components/user-profile"
+import { PersonaAvatar } from "@/components/persona-avatar"
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import type { QuoteReplyAttrs } from "./quote-reply-extension"
+import type { AuthorType } from "@threa/types"
 
 export function QuoteReplyView({ node, deleteNode, selected }: NodeViewProps) {
   const attrs = node.attrs as QuoteReplyAttrs
   const snippetLines = attrs.snippet.split("\n")
   const isLong = snippetLines.length > 3 || attrs.snippet.length > 200
   const displaySnippet = isLong ? snippetLines.slice(0, 3).join("\n").slice(0, 200) + "..." : attrs.snippet
+
+  const { workspaceId } = useParams<{ workspaceId: string }>()
 
   return (
     <NodeViewWrapper
@@ -20,7 +28,16 @@ export function QuoteReplyView({ node, deleteNode, selected }: NodeViewProps) {
     >
       <Quote className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
       <div className="min-w-0 flex-1">
-        <span className="text-xs font-medium text-muted-foreground">{attrs.authorName}</span>
+        {workspaceId && attrs.authorId ? (
+          <QuoteAuthor
+            workspaceId={workspaceId}
+            authorName={attrs.authorName}
+            authorId={attrs.authorId}
+            actorType={attrs.actorType as AuthorType}
+          />
+        ) : (
+          <span className="text-xs font-medium text-muted-foreground">{attrs.authorName}</span>
+        )}
         <p className="mt-0.5 whitespace-pre-wrap text-muted-foreground">{displaySnippet}</p>
       </div>
       <button
@@ -32,5 +49,66 @@ export function QuoteReplyView({ node, deleteNode, selected }: NodeViewProps) {
         <X className="h-3.5 w-3.5" />
       </button>
     </NodeViewWrapper>
+  )
+}
+
+function QuoteAuthor({
+  workspaceId,
+  authorName,
+  authorId,
+  actorType,
+}: {
+  workspaceId: string
+  authorName: string
+  authorId: string
+  actorType: AuthorType
+}) {
+  const { getActorAvatar } = useActors(workspaceId)
+  const { openUserProfile } = useUserProfile()
+  const { fallback, slug, avatarUrl } = getActorAvatar(authorId, actorType)
+  const isPersona = actorType === "persona"
+  const isBot = actorType === "bot"
+  const isSystem = actorType === "system"
+  const isUser = actorType === "user"
+
+  const handleAuthorClick = () => {
+    if (isUser && authorId) {
+      openUserProfile(authorId)
+    }
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      {isPersona ? (
+        <PersonaAvatar slug={slug} fallback={fallback} size="sm" className="h-4 w-4 text-[8px]" />
+      ) : (
+        <Avatar className="h-4 w-4 rounded-[4px] shrink-0">
+          {avatarUrl && <AvatarImage src={avatarUrl} alt={authorName} />}
+          <AvatarFallback
+            className={cn(
+              "text-[8px]",
+              isSystem && "bg-blue-500/10 text-blue-500",
+              isBot && "bg-emerald-500/10 text-emerald-600",
+              !isSystem && !isBot && "bg-muted text-foreground"
+            )}
+          >
+            {fallback}
+          </AvatarFallback>
+        </Avatar>
+      )}
+      <button
+        type="button"
+        onClick={handleAuthorClick}
+        className={cn(
+          "text-xs font-medium",
+          isUser && authorId ? "text-muted-foreground hover:underline" : "text-muted-foreground cursor-default",
+          isPersona && "text-primary",
+          isBot && "text-emerald-600",
+          isSystem && "text-blue-500"
+        )}
+      >
+        {authorName}
+      </button>
+    </span>
   )
 }

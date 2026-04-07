@@ -188,6 +188,8 @@ function MessageLayout({
     <div
       ref={containerRef}
       data-author-name={actorName}
+      data-author-id={event.actorId ?? ""}
+      data-actor-type={event.actorType ?? "user"}
       className={cn("relative overflow-hidden", containerClassName)}
       {...touchHandlers}
     >
@@ -359,9 +361,11 @@ function SentMessageEvent({
       messageId: payload.messageId,
       streamId,
       authorName: actorName,
+      authorId: event.actorId ?? "",
+      actorType: event.actorType ?? "user",
       snippet,
     })
-  }, [quoteReplyCtx, payload.messageId, payload.contentMarkdown, streamId, actorName])
+  }, [quoteReplyCtx, payload.messageId, payload.contentMarkdown, streamId, actorName, event.actorId, event.actorType])
   const swipe = useSwipeAction({
     onSwipe: handleSwipeQuote,
     enabled: isMobile && !isEditing && !!quoteReplyCtx,
@@ -522,6 +526,8 @@ function SentMessageEvent({
               messageId: payload.messageId,
               streamId,
               authorName: actorName,
+              authorId: event.actorId ?? "",
+              actorType: event.actorType ?? "user",
               snippet: payload.contentMarkdown,
             })
         : undefined,

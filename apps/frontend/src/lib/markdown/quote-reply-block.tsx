@@ -1,9 +1,17 @@
 import type { ReactNode } from "react"
 import { Quote } from "lucide-react"
 import { Link, useParams } from "react-router-dom"
+import { useActors } from "@/hooks"
+import { useUserProfile } from "@/components/user-profile"
+import { PersonaAvatar } from "@/components/persona-avatar"
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
+import { cn } from "@/lib/utils"
+import type { AuthorType } from "@threa/types"
 
 interface QuoteReplyBlockProps {
   authorName: string
+  authorId: string
+  actorType: string
   streamId: string
   messageId: string
   children: ReactNode
@@ -12,8 +20,16 @@ interface QuoteReplyBlockProps {
 /**
  * Renders a quote-reply block in message display.
  * Clicking the block navigates to the quoted message (INV-40: navigation uses links).
+ * Clicking the author name opens the user profile modal.
  */
-export function QuoteReplyBlock({ authorName, streamId, messageId, children }: QuoteReplyBlockProps) {
+export function QuoteReplyBlock({
+  authorName,
+  authorId,
+  actorType,
+  streamId,
+  messageId,
+  children,
+}: QuoteReplyBlockProps) {
   const { workspaceId } = useParams<{ workspaceId: string }>()
 
   if (!workspaceId) return null
@@ -27,9 +43,82 @@ export function QuoteReplyBlock({ authorName, streamId, messageId, children }: Q
     >
       <Quote className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
       <div className="min-w-0 flex-1">
-        <span className="text-xs font-medium text-muted-foreground">{authorName}</span>
+        <QuoteAuthor
+          workspaceId={workspaceId}
+          authorName={authorName}
+          authorId={authorId}
+          actorType={actorType as AuthorType}
+        />
         <div className="mt-0.5 text-muted-foreground [&_p]:mb-0">{children}</div>
       </div>
     </Link>
+  )
+}
+
+function QuoteAuthor({
+  workspaceId,
+  authorName,
+  authorId,
+  actorType,
+}: {
+  workspaceId: string
+  authorName: string
+  authorId: string
+  actorType: AuthorType
+}) {
+  const { getActorAvatar } = useActors(workspaceId)
+  const { openUserProfile } = useUserProfile()
+  const { fallback, slug, avatarUrl } = getActorAvatar(authorId || null, actorType)
+  const isPersona = actorType === "persona"
+  const isBot = actorType === "bot"
+  const isSystem = actorType === "system"
+  const isUser = actorType === "user"
+
+  const handleAuthorClick = (e: React.MouseEvent) => {
+    if (isUser && authorId) {
+      e.preventDefault()
+      e.stopPropagation()
+      openUserProfile(authorId)
+    }
+  }
+
+  let avatar = null
+  if (authorId && isPersona) {
+    avatar = <PersonaAvatar slug={slug} fallback={fallback} size="sm" className="h-4 w-4 text-[8px]" />
+  } else if (authorId) {
+    avatar = (
+      <Avatar className="h-4 w-4 rounded-[4px] shrink-0">
+        {avatarUrl && <AvatarImage src={avatarUrl} alt={authorName} />}
+        <AvatarFallback
+          className={cn(
+            "text-[8px]",
+            isSystem && "bg-blue-500/10 text-blue-500",
+            isBot && "bg-emerald-500/10 text-emerald-600",
+            !isSystem && !isBot && "bg-muted text-foreground"
+          )}
+        >
+          {fallback}
+        </AvatarFallback>
+      </Avatar>
+    )
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      {avatar}
+      <button
+        type="button"
+        onClick={handleAuthorClick}
+        className={cn(
+          "text-xs font-medium",
+          isUser && authorId ? "text-muted-foreground hover:underline" : "text-muted-foreground cursor-default",
+          isPersona && "text-primary",
+          isBot && "text-emerald-600",
+          isSystem && "text-blue-500"
+        )}
+      >
+        {authorName}
+      </button>
+    </span>
   )
 }

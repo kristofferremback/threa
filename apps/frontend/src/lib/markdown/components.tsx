@@ -14,12 +14,18 @@ const CodeBlock = lazy(() => import("./code-block"))
  * Parse quote: protocol href into streamId and messageId.
  * Format: quote:streamId/messageId
  */
-function parseQuoteHref(href: string): { streamId: string; messageId: string } | null {
+function parseQuoteHref(
+  href: string
+): { streamId: string; messageId: string; authorId: string; actorType: string } | null {
   if (!href.startsWith("quote:")) return null
-  const path = href.slice("quote:".length)
-  const slashIdx = path.indexOf("/")
-  if (slashIdx === -1) return null
-  return { streamId: path.slice(0, slashIdx), messageId: path.slice(slashIdx + 1) }
+  const parts = href.slice("quote:".length).split("/")
+  if (parts.length < 2) return null
+  return {
+    streamId: parts[0],
+    messageId: parts[1],
+    authorId: parts[2] ?? "",
+    actorType: parts[3] ?? "user",
+  }
 }
 
 /**
@@ -27,9 +33,14 @@ function parseQuoteHref(href: string): { streamId: string; messageId: string } |
  * indicating this blockquote is a quote-reply.
  * Returns extracted metadata or null if not a quote-reply.
  */
-function extractQuoteReplyFromChildren(
-  children: ReactNode
-): { authorName: string; streamId: string; messageId: string; quotedContent: ReactNode[] } | null {
+function extractQuoteReplyFromChildren(children: ReactNode): {
+  authorName: string
+  streamId: string
+  messageId: string
+  authorId: string
+  actorType: string
+  quotedContent: ReactNode[]
+} | null {
   const childArray: ReactNode[] = Children.toArray(children)
 
   // The markdown renders as: <p>quoted text</p>\n<p>— <a href="quote:...">Author</a></p>
@@ -43,6 +54,8 @@ function extractQuoteReplyFromChildren(
         authorName: quoteLink.authorName,
         streamId: quoteLink.streamId,
         messageId: quoteLink.messageId,
+        authorId: quoteLink.authorId,
+        actorType: quoteLink.actorType,
         quotedContent: childArray.slice(0, i),
       }
     }
@@ -55,6 +68,8 @@ interface QuoteLinkInfo {
   authorName: string
   streamId: string
   messageId: string
+  authorId: string
+  actorType: string
 }
 
 /**
@@ -280,6 +295,8 @@ export const markdownComponents: Components = {
       return (
         <QuoteReplyBlock
           authorName={quoteReply.authorName}
+          authorId={quoteReply.authorId}
+          actorType={quoteReply.actorType}
           streamId={quoteReply.streamId}
           messageId={quoteReply.messageId}
         >

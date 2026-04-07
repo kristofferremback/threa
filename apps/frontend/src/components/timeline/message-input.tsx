@@ -216,6 +216,8 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
           messageId: data.messageId,
           streamId: data.streamId,
           authorName: data.authorName,
+          authorId: data.authorId,
+          actorType: data.actorType,
           snippet: data.snippet,
         },
       }

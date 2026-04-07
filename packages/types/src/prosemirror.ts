@@ -112,6 +112,10 @@ export interface ThreaQuoteReply {
     streamId: string
     /** Display name of the quoted message author (denormalized) */
     authorName: string
+    /** The ID of the quoted message author */
+    authorId: string
+    /** The actor type of the quoted message author */
+    actorType: string
     /** The quoted text snippet */
     snippet: string
   }
@@ -431,6 +435,8 @@ const quoteReplyNodeSchema = z.object({
     messageId: z.string(),
     streamId: z.string(),
     authorName: z.string(),
+    authorId: z.string(),
+    actorType: z.string(),
     snippet: z.string(),
   }),
 })

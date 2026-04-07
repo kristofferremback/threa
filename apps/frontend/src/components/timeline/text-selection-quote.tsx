@@ -10,6 +10,8 @@ interface SelectionInfo {
   messageId: string
   streamId: string
   authorName: string
+  authorId: string
+  actorType: string
   rect: DOMRect
 }
 
@@ -27,13 +29,17 @@ function getMessageContext(node: Node): { messageId: string; element: HTMLElemen
 }
 
 /**
- * Extract the author name from a message DOM element via data attribute.
+ * Extract author metadata from a message DOM element via data attributes.
  */
-function getAuthorNameFromDom(messageEl: HTMLElement): string {
+function getAuthorFromDom(messageEl: HTMLElement): { authorName: string; authorId: string; actorType: string } {
   // Walk up to find the element with data-author-name (set on MessageLayout root)
   const authorEl =
     messageEl.closest<HTMLElement>("[data-author-name]") ?? messageEl.querySelector<HTMLElement>("[data-author-name]")
-  return authorEl?.getAttribute("data-author-name")?.trim() ?? "Unknown"
+  return {
+    authorName: authorEl?.getAttribute("data-author-name")?.trim() ?? "Unknown",
+    authorId: authorEl?.getAttribute("data-author-id")?.trim() ?? "",
+    actorType: authorEl?.getAttribute("data-actor-type")?.trim() ?? "user",
+  }
 }
 
 interface TextSelectionQuoteProps {
@@ -80,13 +86,15 @@ export function TextSelectionQuote({ streamId }: TextSelectionQuoteProps) {
     }
 
     const rect = range.getBoundingClientRect()
-    const authorName = getAuthorNameFromDom(startCtx.element)
+    const { authorName, authorId, actorType } = getAuthorFromDom(startCtx.element)
 
     setSelection({
       text,
       messageId: startCtx.messageId,
       streamId,
       authorName,
+      authorId,
+      actorType,
       rect,
     })
   }, [streamId])
@@ -104,6 +112,8 @@ export function TextSelectionQuote({ streamId }: TextSelectionQuoteProps) {
       messageId: selection.messageId,
       streamId: selection.streamId,
       authorName: selection.authorName,
+      authorId: selection.authorId,
+      actorType: selection.actorType,
       snippet: selection.text,
     })
     // Clear selection

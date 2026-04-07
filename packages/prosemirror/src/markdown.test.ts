@@ -141,6 +141,8 @@ describe("@threa/prosemirror quote reply round-trip", () => {
             messageId: "msg_01ABC",
             streamId: "stream_01XYZ",
             authorName: "Kristoffer",
+            authorId: "usr_01KR",
+            actorType: "user",
             snippet: "Hello world",
           },
         },
@@ -152,11 +154,11 @@ describe("@threa/prosemirror quote reply round-trip", () => {
     }
 
     const markdown = serializeToMarkdown(doc)
-    expect(markdown).toBe("> Hello world\n>\n> — [Kristoffer](quote:stream_01XYZ/msg_01ABC)\n\nMy reply")
+    expect(markdown).toBe("> Hello world\n>\n> — [Kristoffer](quote:stream_01XYZ/msg_01ABC/usr_01KR/user)\n\nMy reply")
   })
 
   it("parses blockquote with quote: attribution into quoteReply node", () => {
-    const markdown = "> Hello world\n>\n> — [Kristoffer](quote:stream_01XYZ/msg_01ABC)\n\nMy reply"
+    const markdown = "> Hello world\n>\n> — [Kristoffer](quote:stream_01XYZ/msg_01ABC/usr_01KR/user)\n\nMy reply"
     const parsed = parseMarkdown(markdown)
 
     expect(parsed.content?.[0]).toEqual({
@@ -165,13 +167,15 @@ describe("@threa/prosemirror quote reply round-trip", () => {
         messageId: "msg_01ABC",
         streamId: "stream_01XYZ",
         authorName: "Kristoffer",
+        authorId: "usr_01KR",
+        actorType: "user",
         snippet: "Hello world",
       },
     })
     expect(parsed.content?.[1]?.type).toBe("paragraph")
   })
 
-  it("parses old format (no blank separator line) for backward compatibility", () => {
+  it("parses old format (no authorId/actorType) for backward compatibility", () => {
     const markdown = "> Hello world\n> — [Kristoffer](quote:stream_01XYZ/msg_01ABC)"
     const parsed = parseMarkdown(markdown)
 
@@ -181,6 +185,8 @@ describe("@threa/prosemirror quote reply round-trip", () => {
         messageId: "msg_01ABC",
         streamId: "stream_01XYZ",
         authorName: "Kristoffer",
+        authorId: "",
+        actorType: "user",
         snippet: "Hello world",
       },
     })
@@ -196,6 +202,8 @@ describe("@threa/prosemirror quote reply round-trip", () => {
             messageId: "msg_01KNGTTZJYCBZ8X4FEVX8YFBB3",
             streamId: "stream_01KJMS776MNP2Q382MJ639Y2JD",
             authorName: "Alice",
+            authorId: "usr_01AL",
+            actorType: "user",
             snippet: "Gärna! Har du automatiskt mirroring?",
           },
         },
@@ -215,6 +223,8 @@ describe("@threa/prosemirror quote reply round-trip", () => {
         messageId: "msg_01KNGTTZJYCBZ8X4FEVX8YFBB3",
         streamId: "stream_01KJMS776MNP2Q382MJ639Y2JD",
         authorName: "Alice",
+        authorId: "usr_01AL",
+        actorType: "user",
         snippet: "Gärna! Har du automatiskt mirroring?",
       },
     })
@@ -230,6 +240,8 @@ describe("@threa/prosemirror quote reply round-trip", () => {
             messageId: "msg_01ABC",
             streamId: "stream_01XYZ",
             authorName: "Bob",
+            authorId: "usr_01BOB",
+            actorType: "user",
             snippet: "Line one\nLine two\nLine three",
           },
         },
@@ -237,7 +249,9 @@ describe("@threa/prosemirror quote reply round-trip", () => {
     }
 
     const markdown = serializeToMarkdown(doc)
-    expect(markdown).toBe("> Line one\n> Line two\n> Line three\n>\n> — [Bob](quote:stream_01XYZ/msg_01ABC)")
+    expect(markdown).toBe(
+      "> Line one\n> Line two\n> Line three\n>\n> — [Bob](quote:stream_01XYZ/msg_01ABC/usr_01BOB/user)"
+    )
 
     const parsed = parseMarkdown(markdown)
     expect(parsed.content?.[0]).toEqual({
@@ -246,6 +260,8 @@ describe("@threa/prosemirror quote reply round-trip", () => {
         messageId: "msg_01ABC",
         streamId: "stream_01XYZ",
         authorName: "Bob",
+        authorId: "usr_01BOB",
+        actorType: "user",
         snippet: "Line one\nLine two\nLine three",
       },
     })
@@ -267,6 +283,8 @@ describe("@threa/prosemirror quote reply round-trip", () => {
             messageId: "msg_01ABC",
             streamId: "stream_01XYZ",
             authorName: "John [Dev] Smith\\Sr",
+            authorId: "usr_01JOHN",
+            actorType: "user",
             snippet: "Hello",
           },
         },
@@ -274,7 +292,7 @@ describe("@threa/prosemirror quote reply round-trip", () => {
     }
 
     const markdown = serializeToMarkdown(doc)
-    expect(markdown).toBe("> Hello\n>\n> — [John [Dev\\] Smith\\\\Sr](quote:stream_01XYZ/msg_01ABC)")
+    expect(markdown).toBe("> Hello\n>\n> — [John [Dev\\] Smith\\\\Sr](quote:stream_01XYZ/msg_01ABC/usr_01JOHN/user)")
 
     const parsed = parseMarkdown(markdown)
     expect(parsed.content?.[0]).toEqual({
@@ -283,8 +301,33 @@ describe("@threa/prosemirror quote reply round-trip", () => {
         messageId: "msg_01ABC",
         streamId: "stream_01XYZ",
         authorName: "John [Dev] Smith\\Sr",
+        authorId: "usr_01JOHN",
+        actorType: "user",
         snippet: "Hello",
       },
     })
+  })
+
+  it("round-trips persona actorType", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "quoteReply",
+          attrs: {
+            messageId: "msg_01ABC",
+            streamId: "stream_01XYZ",
+            authorName: "Ariadne",
+            authorId: "persona_01AR",
+            actorType: "persona",
+            snippet: "Hello!",
+          },
+        },
+      ],
+    }
+
+    const markdown = serializeToMarkdown(doc)
+    const parsed = parseMarkdown(markdown)
+    expect(parsed.content?.[0]).toEqual(doc.content![0])
   })
 })
