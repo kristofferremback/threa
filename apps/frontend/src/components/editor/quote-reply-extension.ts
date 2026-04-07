@@ -117,18 +117,17 @@ export const QuoteReplyExtension = Node.create({
 
               if (next?.getAttribute("data-type") === "quote-reply") {
                 el.classList.add("before-quote")
-                // Position vertically to overlap with the quote below
                 const quoteRect = next.getBoundingClientRect()
-                const editorRect = view.dom.getBoundingClientRect()
-                el.style.setProperty("--quote-top", `${quoteRect.top - editorRect.top}px`)
+                const gcRect = el.getBoundingClientRect()
+                el.style.setProperty("--quote-top", `${quoteRect.top - gcRect.top}px`)
                 el.style.setProperty("--quote-height", `${quoteRect.height}px`)
               } else if (prev?.getAttribute("data-type") === "quote-reply") {
                 el.classList.add("after-quote")
                 const quoteRect = prev.getBoundingClientRect()
-                const editorRect = view.dom.getBoundingClientRect()
-                el.style.setProperty("--quote-top", `${quoteRect.top - editorRect.top}px`)
+                const gcRect = el.getBoundingClientRect()
+                el.style.setProperty("--quote-top", `${quoteRect.top - gcRect.top}px`)
                 el.style.setProperty("--quote-height", `${quoteRect.height}px`)
-                el.style.setProperty("--quote-right", `${editorRect.right - quoteRect.right}px`)
+                el.style.setProperty("--quote-right", `${view.dom.getBoundingClientRect().right - quoteRect.right}px`)
               }
             },
           }
