@@ -49,6 +49,16 @@ describe("WorkspaceSettingsDialog", () => {
     expect(await screen.findByText("Workspace identity and region")).toBeInTheDocument()
     expect(screen.getByText("General panel")).toBeVisible()
 
+    const tabs = document.body.querySelector('[data-slot="settings-tabs"]')
+    const panels = document.body.querySelector('[data-slot="settings-panels"]')
+    const nav = document.body.querySelector('[data-slot="settings-nav"]')
+    const content = document.body.querySelector('[data-slot="settings-content"]')
+
+    expect(tabs).toHaveClass("flex", "flex-1", "min-h-0", "flex-col")
+    expect(panels).toHaveClass("flex", "flex-1", "min-h-0", "overflow-hidden")
+    expect(nav).toHaveClass("min-h-0", "overflow-y-auto")
+    expect(content).toHaveClass("flex-1", "min-h-0", "overflow-y-auto")
+
     await user.click(screen.getByRole("button", { name: /Bots/i }))
 
     await waitFor(() => {

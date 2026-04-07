@@ -6,7 +6,7 @@ import {
   ResponsiveDialogHeader,
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog"
-import { ResponsiveSettingsNav } from "@/components/ui/responsive-settings-nav"
+import { ResponsiveSettingsNav, SETTINGS_DIALOG_LAYOUT_CLASSNAMES } from "@/components/ui/responsive-settings-nav"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
 import { useSettings } from "@/contexts"
 import { SETTINGS_TABS, type SettingsTab } from "@threa/types"
@@ -54,11 +54,12 @@ export function SettingsDialog() {
         </ResponsiveDialogHeader>
 
         <Tabs
+          data-slot="settings-tabs"
           value={activeTab}
           onValueChange={(value) => setActiveTab(value as SettingsTab)}
-          className="flex-1 min-h-0"
+          className={SETTINGS_DIALOG_LAYOUT_CLASSNAMES.tabs}
         >
-          <div className="flex-1 min-h-0 sm:grid sm:grid-cols-[220px,minmax(0,1fr)]">
+          <div data-slot="settings-panels" className={SETTINGS_DIALOG_LAYOUT_CLASSNAMES.panels}>
             <ResponsiveSettingsNav
               tabs={SETTINGS_TABS}
               items={TAB_CONFIG}
@@ -66,7 +67,7 @@ export function SettingsDialog() {
               onValueChange={(value) => setActiveTab(value as SettingsTab)}
             />
 
-            <div className="min-h-0 overflow-y-auto px-4 pb-4 pt-4 sm:px-6 sm:py-6">
+            <div data-slot="settings-content" className={SETTINGS_DIALOG_LAYOUT_CLASSNAMES.content}>
               <TabsContent value="profile" className="mt-0">
                 <ProfileSettings />
               </TabsContent>

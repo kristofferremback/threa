@@ -7,7 +7,7 @@ import {
   ResponsiveDialogHeader,
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog"
-import { ResponsiveSettingsNav } from "@/components/ui/responsive-settings-nav"
+import { ResponsiveSettingsNav, SETTINGS_DIALOG_LAYOUT_CLASSNAMES } from "@/components/ui/responsive-settings-nav"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
 import { useStreamSettings, STREAM_SETTINGS_TABS, type StreamSettingsTab } from "./use-stream-settings"
 import { GeneralTab } from "./general-tab"
@@ -93,8 +93,13 @@ export function StreamSettingsDialog({ workspaceId }: StreamSettingsDialogProps)
         </ResponsiveDialogHeader>
 
         {resolvedStream && streamId && currentUserId ? (
-          <Tabs value={effectiveTab} onValueChange={setTab} className="flex-1 min-h-0">
-            <div className="flex-1 min-h-0 sm:grid sm:grid-cols-[220px,minmax(0,1fr)]">
+          <Tabs
+            data-slot="settings-tabs"
+            value={effectiveTab}
+            onValueChange={setTab}
+            className={SETTINGS_DIALOG_LAYOUT_CLASSNAMES.tabs}
+          >
+            <div data-slot="settings-panels" className={SETTINGS_DIALOG_LAYOUT_CLASSNAMES.panels}>
               <ResponsiveSettingsNav
                 tabs={availableTabs}
                 items={TAB_CONFIG}
@@ -102,7 +107,7 @@ export function StreamSettingsDialog({ workspaceId }: StreamSettingsDialogProps)
                 onValueChange={setTab}
               />
 
-              <div className="min-h-0 overflow-y-auto px-4 pb-4 pt-4 sm:px-6 sm:py-6 scrollbar-thin">
+              <div data-slot="settings-content" className={SETTINGS_DIALOG_LAYOUT_CLASSNAMES.content}>
                 <TabsContent value="general" className="mt-0">
                   <GeneralTab
                     workspaceId={workspaceId}

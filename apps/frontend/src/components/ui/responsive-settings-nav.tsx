@@ -13,6 +13,12 @@ interface ResponsiveSettingsNavProps<T extends string> {
   onValueChange: (value: T) => void
 }
 
+export const SETTINGS_DIALOG_LAYOUT_CLASSNAMES = {
+  tabs: "flex min-h-0 flex-1 flex-col",
+  panels: "flex min-h-0 flex-1 flex-col overflow-hidden sm:grid sm:grid-cols-[220px,minmax(0,1fr)]",
+  content: "flex-1 min-h-0 overflow-y-auto px-4 pb-4 pt-4 scrollbar-thin sm:px-6 sm:py-6",
+} as const
+
 export function ResponsiveSettingsNav<T extends string>({
   tabs,
   items,
@@ -23,7 +29,10 @@ export function ResponsiveSettingsNav<T extends string>({
 
   return (
     <ResponsiveTabs tabs={tabs} labels={labels} value={value} onValueChange={onValueChange}>
-      <div className="hidden sm:flex h-full flex-col border-r bg-muted/20 p-3">
+      <div
+        data-slot="settings-nav"
+        className="hidden h-full min-h-0 flex-col overflow-y-auto border-r bg-muted/20 p-3 scrollbar-thin sm:flex"
+      >
         {tabs.map((tab) => {
           const item = items[tab]
           const isActive = tab === value

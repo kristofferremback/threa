@@ -7,7 +7,7 @@ import {
   ResponsiveDialogHeader,
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog"
-import { ResponsiveSettingsNav } from "@/components/ui/responsive-settings-nav"
+import { ResponsiveSettingsNav, SETTINGS_DIALOG_LAYOUT_CLASSNAMES } from "@/components/ui/responsive-settings-nav"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
 import { GeneralTab } from "./general-tab"
 import { UsersTab } from "./users-tab"
@@ -72,11 +72,16 @@ export function WorkspaceSettingsDialog({ workspaceId }: WorkspaceSettingsDialog
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
 
-        <Tabs value={activeTab} onValueChange={setTab} className="flex-1 min-h-0">
-          <div className="flex-1 min-h-0 sm:grid sm:grid-cols-[220px,minmax(0,1fr)]">
+        <Tabs
+          data-slot="settings-tabs"
+          value={activeTab}
+          onValueChange={setTab}
+          className={SETTINGS_DIALOG_LAYOUT_CLASSNAMES.tabs}
+        >
+          <div data-slot="settings-panels" className={SETTINGS_DIALOG_LAYOUT_CLASSNAMES.panels}>
             <ResponsiveSettingsNav tabs={ALL_TABS} items={TAB_CONFIG} value={activeTab} onValueChange={setTab} />
 
-            <div className="min-h-0 overflow-y-auto px-4 pb-4 pt-4 sm:px-6 sm:py-6">
+            <div data-slot="settings-content" className={SETTINGS_DIALOG_LAYOUT_CLASSNAMES.content}>
               <TabsContent value="general" className="mt-0">
                 <GeneralTab workspaceId={workspaceId} />
               </TabsContent>

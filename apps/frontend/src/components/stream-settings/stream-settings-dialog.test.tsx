@@ -111,5 +111,15 @@ describe("StreamSettingsDialog", () => {
     expect(screen.queryByRole("button", { name: /Companion/i })).not.toBeInTheDocument()
     expect(screen.getByText("People and bot access")).toBeInTheDocument()
     expect(screen.getByText("Members panel")).toBeVisible()
+
+    const tabs = document.body.querySelector('[data-slot="settings-tabs"]')
+    const panels = document.body.querySelector('[data-slot="settings-panels"]')
+    const nav = document.body.querySelector('[data-slot="settings-nav"]')
+    const content = document.body.querySelector('[data-slot="settings-content"]')
+
+    expect(tabs).toHaveClass("flex", "flex-1", "min-h-0", "flex-col")
+    expect(panels).toHaveClass("flex", "flex-1", "min-h-0", "overflow-hidden")
+    expect(nav).toHaveClass("min-h-0", "overflow-y-auto")
+    expect(content).toHaveClass("flex-1", "min-h-0", "overflow-y-auto")
   })
 })
