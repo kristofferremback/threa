@@ -24,6 +24,7 @@ const updatePreferencesSchema = z.object({
   sidebarCollapsed: z.boolean().optional(),
   messageSendMode: z.enum(MESSAGE_SEND_MODE_OPTIONS).optional(),
   linkPreviewDefault: z.enum(LINK_PREVIEW_DEFAULT_OPTIONS).optional(),
+  scratchpadCustomPrompt: z.string().max(8000).nullable().optional(),
   keyboardShortcuts: z.record(z.string(), z.string()).optional(),
   accessibility: z
     .object({

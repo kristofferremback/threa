@@ -92,6 +92,7 @@ export const MessageSendModes = {
 // Settings tab options (for URL-driven settings dialog)
 export const SETTINGS_TAB_OPTIONS = [
   "profile",
+  "ai",
   "appearance",
   "datetime",
   "notifications",
@@ -151,6 +152,7 @@ export interface UserPreferences {
   sidebarCollapsed: boolean
   messageSendMode: MessageSendMode
   linkPreviewDefault: LinkPreviewDefault
+  scratchpadCustomPrompt: string | null
   keyboardShortcuts: KeyboardShortcuts
   accessibility: AccessibilityPreferences
   createdAt: string
@@ -171,6 +173,7 @@ export const DEFAULT_USER_PREFERENCES: Omit<UserPreferences, "workspaceId" | "us
   sidebarCollapsed: false,
   messageSendMode: "enter",
   linkPreviewDefault: "open",
+  scratchpadCustomPrompt: null,
   keyboardShortcuts: {},
   accessibility: DEFAULT_ACCESSIBILITY,
 }
@@ -193,6 +196,7 @@ export interface UpdateUserPreferencesInput {
   sidebarCollapsed?: boolean
   messageSendMode?: MessageSendMode
   linkPreviewDefault?: LinkPreviewDefault
+  scratchpadCustomPrompt?: string | null
   keyboardShortcuts?: KeyboardShortcuts
   accessibility?: Partial<AccessibilityPreferences>
 }

@@ -12,6 +12,7 @@ import { buildPromptSectionForStreamType } from "./stream-context-sections"
 export function buildSystemPrompt(
   persona: Persona,
   context: StreamContext,
+  scratchpadCustomPrompt?: string | null,
   trigger?: typeof AgentTriggers.MENTION,
   mentionerName?: string,
   rollingConversationSummary?: string | null,
@@ -22,6 +23,17 @@ export function buildSystemPrompt(
   }
 
   let prompt = persona.systemPrompt
+
+  if (scratchpadCustomPrompt?.trim()) {
+    prompt += `
+
+## Scratchpad Custom Instructions
+
+The user configured the following standing instructions for their personal scratchpads.
+Apply them in scratchpads and scratchpad-root threads unless they conflict with higher-priority system rules.
+
+${scratchpadCustomPrompt.trim()}`
+  }
 
   // Add mention invocation context if applicable
   if (trigger === AgentTriggers.MENTION) {

@@ -396,16 +396,28 @@ export function toggleMultilineBlock(editor: Editor, nodeName: "codeBlock" | "bl
 function getParsedContent(
   text: string,
   getMentionType?: MentionTypeLookup,
-  getEmoji?: EmojiLookup
+  getEmoji?: EmojiLookup,
+  parseOptions?: {
+    enableMentions?: boolean
+    enableChannels?: boolean
+    enableSlashCommands?: boolean
+    enableEmoji?: boolean
+  }
 ): JSONContent[] | undefined {
-  return parseMarkdown(text, getMentionType, getEmoji).content
+  return parseMarkdown(text, getMentionType, getEmoji, parseOptions).content
 }
 
 export function insertPastedText(
   editor: Editor,
   text: string,
   getMentionType?: MentionTypeLookup,
-  getEmoji?: EmojiLookup
+  getEmoji?: EmojiLookup,
+  parseOptions?: {
+    enableMentions?: boolean
+    enableChannels?: boolean
+    enableSlashCommands?: boolean
+    enableEmoji?: boolean
+  }
 ): boolean {
   const normalizedText = text.replace(/\r\n?/g, "\n")
 
@@ -414,7 +426,7 @@ export function insertPastedText(
   }
 
   if (editor.isActive("blockquote") && normalizedText.includes("\n")) {
-    const content = getParsedContent(normalizedText, getMentionType, getEmoji)
+    const content = getParsedContent(normalizedText, getMentionType, getEmoji, parseOptions)
     if (!content || content.length === 0) {
       return false
     }
@@ -422,7 +434,7 @@ export function insertPastedText(
     return editor.chain().focus().insertContent(content).run()
   }
 
-  const parsed = parseMarkdown(normalizedText, getMentionType, getEmoji)
+  const parsed = parseMarkdown(normalizedText, getMentionType, getEmoji, parseOptions)
   return editor.commands.insertContent(parsed)
 }
 

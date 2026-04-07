@@ -1,14 +1,14 @@
 import type { Pool } from "pg"
 import type { ModelMessage } from "ai"
 import type { UserPreferences } from "@threa/types"
-import { AgentTriggers, AuthorTypes } from "@threa/types"
+import { AgentTriggers, AuthorTypes, StreamTypes } from "@threa/types"
 import type { UserPreferencesService } from "../../user-preferences"
 import { MessageRepository, type Message } from "../../messaging"
 import { UserRepository } from "../../workspaces"
 import { PersonaRepository } from "../persona-repository"
 import type { Persona } from "../persona-repository"
 import { AttachmentRepository } from "../../attachments"
-import type { Stream } from "../../streams"
+import { StreamRepository, type Stream } from "../../streams"
 import { awaitAttachmentProcessing } from "../../attachments"
 import { buildStreamContext, type StreamContext } from "../context-builder"
 import type { ConversationSummaryService } from "../conversation-summary-service"
@@ -39,6 +39,28 @@ export interface AgentContext {
   preferences: UserPreferences | undefined
   authorNames: Map<string, string>
   streamContext: StreamContext
+}
+
+async function resolveScratchpadCustomPrompt(
+  db: Pool,
+  stream: Stream,
+  preferences: UserPreferences | undefined
+): Promise<string | null> {
+  const customPrompt = preferences?.scratchpadCustomPrompt?.trim()
+  if (!customPrompt) {
+    return null
+  }
+
+  if (stream.type === StreamTypes.SCRATCHPAD) {
+    return customPrompt
+  }
+
+  if (stream.type !== StreamTypes.THREAD || !stream.rootStreamId) {
+    return null
+  }
+
+  const rootStream = await StreamRepository.findById(db, stream.rootStreamId)
+  return rootStream?.type === StreamTypes.SCRATCHPAD ? customPrompt : null
 }
 
 /**
@@ -130,9 +152,12 @@ export async function buildAgentContext(deps: ContextDeps, params: ContextParams
     mentionerName = mentioner?.name ?? undefined
   }
 
+  const scratchpadCustomPrompt = await resolveScratchpadCustomPrompt(db, stream, preferences)
+
   const systemPrompt = buildSystemPrompt(
     persona,
     streamContext,
+    scratchpadCustomPrompt,
     trigger,
     mentionerName,
     rollingConversationSummary,

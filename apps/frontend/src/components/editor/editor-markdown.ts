@@ -264,6 +264,10 @@ export type EmojiLookup = (shortcode: string) => string | null
 interface ParseOptions {
   getMentionType?: MentionTypeLookup
   getEmoji?: EmojiLookup
+  enableMentions?: boolean
+  enableChannels?: boolean
+  enableSlashCommands?: boolean
+  enableEmoji?: boolean
 }
 
 /**
@@ -273,9 +277,10 @@ interface ParseOptions {
 export function parseMarkdown(
   markdown: string,
   getMentionType?: MentionTypeLookup,
-  getEmoji?: EmojiLookup
+  getEmoji?: EmojiLookup,
+  parseOptions: Omit<ParseOptions, "getMentionType" | "getEmoji"> = {}
 ): JSONContent {
-  const options: ParseOptions = { getMentionType, getEmoji }
+  const options: ParseOptions = { getMentionType, getEmoji, ...parseOptions }
   if (!markdown.trim()) {
     return { type: "doc", content: [{ type: "paragraph" }] }
   }
@@ -403,6 +408,10 @@ function parseInlineMarkdown(text: string, options: ParseOptions = {}): JSONCont
 
   const result: JSONContent[] = []
   const { getMentionType, getEmoji } = options
+  const allowMentions = options.enableMentions ?? true
+  const allowChannels = options.enableChannels ?? true
+  const allowSlashCommands = options.enableSlashCommands ?? true
+  const allowEmoji = options.enableEmoji ?? true
 
   // Default lookup for mention types (without context, can't determine "me")
   const lookupMentionType: MentionTypeLookup =
@@ -413,7 +422,7 @@ function parseInlineMarkdown(text: string, options: ParseOptions = {}): JSONCont
     })
 
   // Check for slash command at start of text
-  const commandMatch = text.match(/^(\s*)(\/)([\w-]+)/)
+  const commandMatch = allowSlashCommands ? text.match(/^(\s*)(\/)([\w-]+)/) : null
   let processText = text
   if (commandMatch) {
     // Preserve leading whitespace
@@ -539,22 +548,30 @@ function parseInlineMarkdown(text: string, options: ParseOptions = {}): JSONCont
     } else if (match[18]) {
       // Mention: @slug
       const slug = match[19]
-      result.push({
-        type: "mention",
-        attrs: { id: slug, slug, name: slug, mentionType: lookupMentionType(slug) },
-      })
+      if (allowMentions) {
+        result.push({
+          type: "mention",
+          attrs: { id: slug, slug, name: slug, mentionType: lookupMentionType(slug) },
+        })
+      } else {
+        result.push({ type: "text", text: match[0] })
+      }
     } else if (match[20]) {
       // Channel: #slug
       const slug = match[21]
-      result.push({
-        type: "channelLink",
-        attrs: { id: slug, slug, name: slug },
-      })
+      if (allowChannels) {
+        result.push({
+          type: "channelLink",
+          attrs: { id: slug, slug, name: slug },
+        })
+      } else {
+        result.push({ type: "text", text: match[0] })
+      }
     } else if (match[22]) {
       // Emoji: :shortcode:
       const shortcode = match[23]
-      const emoji = getEmoji?.(shortcode)
-      if (emoji) {
+      const emoji = allowEmoji ? getEmoji?.(shortcode) : null
+      if (allowEmoji && emoji) {
         result.push({
           type: "emoji",
           attrs: { shortcode, emoji },
