@@ -199,7 +199,8 @@ function MessageLayout({
       )}
       <div
         className={cn(
-          "message-item group relative flex gap-[14px] py-4 px-3 sm:px-6",
+          // Opaque background so swipe-to-quote icon shows behind the message
+          "message-item group relative flex gap-[14px] py-4 px-3 sm:px-6 bg-background",
           // AI/Persona messages get full-width gradient with gold accent
           isPersona && "bg-gradient-to-r from-primary/[0.06] to-transparent shadow-[inset_3px_0_0_hsl(var(--primary))]",
           // Bot messages get emerald accent
@@ -213,8 +214,7 @@ function MessageLayout({
             !isSystem &&
             "before:content-[''] before:absolute before:-top-4 before:-bottom-4 before:left-0 before:right-0 before:bg-primary/[0.04] before:-z-10",
           isHighlighted && "animate-highlight-flash",
-          isNew && !isHighlighted && "animate-new-message-fade",
-          "bg-background"
+          isNew && !isHighlighted && "animate-new-message-fade"
         )}
         style={hasSwipe ? { transform: `translateX(${swipeOffset}px)` } : undefined}
       >
