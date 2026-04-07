@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useRef, useEffect, memo } from "react"
 import { Search, SmilePlus } from "lucide-react"
-import { useVirtualizer } from "@tanstack/react-virtual"
+import { Virtuoso, type VirtuosoHandle } from "react-virtuoso"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Drawer, DrawerContent, DrawerTitle, DrawerTrigger } from "@/components/ui/drawer"
@@ -86,7 +86,6 @@ function EmojiGridContent({
   onSelect,
   onClose,
   searchInputRef,
-  scrollContainerRef,
   open,
   isMobile,
 }: {
@@ -100,18 +99,21 @@ function EmojiGridContent({
   onSelect: (item: EmojiEntry) => void
   onClose: () => void
   searchInputRef: React.RefObject<HTMLInputElement | null>
-  scrollContainerRef: React.RefObject<HTMLDivElement | null>
   open: boolean
   isMobile: boolean
 }) {
   // Compute column count based on container width on mobile
   const [columns, setColumns] = useState(isMobile ? MAX_MOBILE_COLUMNS : DESKTOP_COLUMNS)
   const rowHeight = isMobile ? MOBILE_ROW_HEIGHT : DESKTOP_ROW_HEIGHT
+  const virtuosoRef = useRef<VirtuosoHandle>(null)
+  const rangeRef = useRef<{ startIndex: number; endIndex: number } | null>(null)
+  const scrollerElRef = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
-    if (!isMobile || !scrollContainerRef.current) return
+    if (!isMobile || !scrollerElRef.current) return
+    const el = scrollerElRef.current
     const measure = () => {
-      const width = scrollContainerRef.current?.clientWidth ?? 0
+      const width = el?.clientWidth ?? 0
       if (width > 0) {
         const cols = Math.min(MAX_MOBILE_COLUMNS, Math.max(5, Math.floor(width / MOBILE_EMOJI_SIZE)))
         setColumns(cols)
@@ -119,7 +121,7 @@ function EmojiGridContent({
     }
     requestAnimationFrame(measure)
     const observer = new ResizeObserver(measure)
-    observer.observe(scrollContainerRef.current)
+    observer.observe(el)
     return () => observer.disconnect()
   }, [isMobile, open])
 
@@ -161,45 +163,29 @@ function EmojiGridContent({
     return result
   }, [filtered, columns])
 
-  const virtualizer = useVirtualizer({
-    count: rows.length,
-    getScrollElement: () => scrollContainerRef.current,
-    estimateSize: () => rowHeight,
-    overscan: 3,
-  })
-
-  // Force re-measure when the container mounts (portals delay ref attachment)
-  useEffect(() => {
-    if (open) {
-      requestAnimationFrame(() => {
-        virtualizer.measure()
-      })
-    }
-  }, [open, virtualizer])
-
   // Reset selection when filtered items change
   useEffect(() => {
     setSelectedIndex(0)
-    if (open) virtualizer.scrollToIndex(0)
-  }, [filtered.length, open, virtualizer, setSelectedIndex])
+    if (open) virtuosoRef.current?.scrollToIndex({ index: 0 })
+  }, [filtered.length, open, setSelectedIndex])
 
   const scrollToRowIfNeeded = useCallback(
     (index: number) => {
       const row = Math.floor(index / columns)
-      const range = virtualizer.range
+      const range = rangeRef.current
       if (range && (row < range.startIndex || row > range.endIndex)) {
-        virtualizer.scrollToIndex(row, { align: "auto" })
+        virtuosoRef.current?.scrollToIndex({ index: row, align: row < range.startIndex ? "start" : "end" })
       }
     },
-    [virtualizer, columns]
+    [columns]
   )
 
   const scrollToRow = useCallback(
     (index: number) => {
       const row = Math.floor(index / columns)
-      virtualizer.scrollToIndex(row, { align: "start" })
+      virtuosoRef.current?.scrollToIndex({ index: row, align: "start" })
     },
-    [virtualizer, columns]
+    [columns]
   )
 
   const visibleRowCount = Math.floor(CONTAINER_HEIGHT / rowHeight)
@@ -351,57 +337,52 @@ function EmojiGridContent({
         )}
 
         {/* Emoji grid — full-bleed CSS grid */}
-        <div
-          ref={scrollContainerRef}
-          className="overflow-y-auto flex-1 px-4"
-          style={{ height: "min(55dvh, 360px)" }}
-          role="listbox"
-          aria-label="Emoji picker"
-        >
-          {filtered.length === 0 ? (
-            <div className="flex items-center justify-center h-full text-sm text-muted-foreground">No emojis found</div>
-          ) : (
-            <div
-              style={{
-                height: virtualizer.getTotalSize(),
-                width: "100%",
-                position: "relative",
-              }}
-            >
-              {virtualizer.getVirtualItems().map((virtualRow) => {
-                const rowItems = rows[virtualRow.index]
-                return (
-                  <div
-                    key={virtualRow.key}
-                    style={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      width: "100%",
-                      height: MOBILE_ROW_HEIGHT,
-                      transform: `translateY(${virtualRow.start}px)`,
-                      display: "grid",
-                      gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
-                      gap: "2px",
-                    }}
-                  >
-                    {rowItems.map((item) => (
-                      <EmojiButton
-                        key={item.shortcode}
-                        item={item}
-                        isSelected={false}
-                        isActive={activeShortcodes.has(item.shortcode)}
-                        isMobile={true}
-                        onClick={() => onSelect(item)}
-                        onMouseEnter={() => {}}
-                      />
-                    ))}
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
+        {filtered.length === 0 ? (
+          <div
+            className="flex items-center justify-center text-sm text-muted-foreground px-4"
+            style={{ height: "min(55dvh, 360px)" }}
+          >
+            No emojis found
+          </div>
+        ) : (
+          <Virtuoso
+            ref={virtuosoRef}
+            scrollerRef={(el) => {
+              scrollerElRef.current = el as HTMLElement
+            }}
+            totalCount={rows.length}
+            fixedItemHeight={MOBILE_ROW_HEIGHT}
+            increaseViewportBy={MOBILE_ROW_HEIGHT * 3}
+            style={{ height: "min(55dvh, 360px)" }}
+            className="px-4"
+            role="listbox"
+            aria-label="Emoji picker"
+            itemContent={(index) => {
+              const rowItems = rows[index]
+              return (
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+                    gap: "2px",
+                  }}
+                >
+                  {rowItems.map((item) => (
+                    <EmojiButton
+                      key={item.shortcode}
+                      item={item}
+                      isSelected={false}
+                      isActive={activeShortcodes.has(item.shortcode)}
+                      isMobile={true}
+                      onClick={() => onSelect(item)}
+                      onMouseEnter={() => {}}
+                    />
+                  ))}
+                </div>
+              )
+            }}
+          />
+        )}
       </>
     )
   }
@@ -448,59 +429,50 @@ function EmojiGridContent({
       )}
 
       {/* Emoji grid */}
-      <div
-        ref={scrollContainerRef}
-        className="overflow-y-auto p-2"
-        style={{ height: CONTAINER_HEIGHT }}
-        role="listbox"
-        aria-label="Emoji picker"
-      >
-        {filtered.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-sm text-muted-foreground">No emojis found</div>
-        ) : (
-          <div
-            style={{
-              height: virtualizer.getTotalSize(),
-              width: "100%",
-              position: "relative",
-            }}
-          >
-            {virtualizer.getVirtualItems().map((virtualRow) => {
-              const rowItems = rows[virtualRow.index]
-              const rowStartIndex = virtualRow.index * columns
-              return (
-                <div
-                  key={virtualRow.key}
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    width: "100%",
-                    height: DESKTOP_ROW_HEIGHT,
-                    transform: `translateY(${virtualRow.start}px)`,
-                  }}
-                  className="flex gap-0.5"
-                >
-                  {rowItems.map((item, colIndex) => {
-                    const itemIndex = rowStartIndex + colIndex
-                    return (
-                      <EmojiButton
-                        key={item.shortcode}
-                        item={item}
-                        isSelected={itemIndex === selectedIndex}
-                        isActive={activeShortcodes.has(item.shortcode)}
-                        isMobile={false}
-                        onClick={() => onSelect(item)}
-                        onMouseEnter={() => setSelectedIndex(itemIndex)}
-                      />
-                    )
-                  })}
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
+      {filtered.length === 0 ? (
+        <div
+          className="flex items-center justify-center text-sm text-muted-foreground p-2"
+          style={{ height: CONTAINER_HEIGHT }}
+        >
+          No emojis found
+        </div>
+      ) : (
+        <Virtuoso
+          ref={virtuosoRef}
+          totalCount={rows.length}
+          fixedItemHeight={DESKTOP_ROW_HEIGHT}
+          increaseViewportBy={DESKTOP_ROW_HEIGHT * 3}
+          rangeChanged={(range) => {
+            rangeRef.current = range
+          }}
+          style={{ height: CONTAINER_HEIGHT }}
+          className="p-2"
+          role="listbox"
+          aria-label="Emoji picker"
+          itemContent={(index) => {
+            const rowItems = rows[index]
+            const rowStartIndex = index * columns
+            return (
+              <div className="flex gap-0.5">
+                {rowItems.map((item, colIndex) => {
+                  const itemIndex = rowStartIndex + colIndex
+                  return (
+                    <EmojiButton
+                      key={item.shortcode}
+                      item={item}
+                      isSelected={itemIndex === selectedIndex}
+                      isActive={activeShortcodes.has(item.shortcode)}
+                      isMobile={false}
+                      onClick={() => onSelect(item)}
+                      onMouseEnter={() => setSelectedIndex(itemIndex)}
+                    />
+                  )
+                })}
+              </div>
+            )
+          }}
+        />
+      )}
 
       {/* Footer — desktop only */}
       {selectedEmoji && (
@@ -530,7 +502,6 @@ export function ReactionEmojiPicker({
   const setOpen = isControlled ? (v: boolean) => controlledOnOpenChange?.(v) : setUncontrolledOpen
   const [search, setSearch] = useState("")
   const [selectedIndex, setSelectedIndex] = useState(0)
-  const scrollContainerRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { emojis, emojiWeights } = useWorkspaceEmoji(workspaceId)
   const isNarrow = useIsMobile()
@@ -594,7 +565,6 @@ export function ReactionEmojiPicker({
       onSelect={handleSelect}
       onClose={handleClose}
       searchInputRef={searchInputRef}
-      scrollContainerRef={scrollContainerRef}
       open={open}
       isMobile={useDrawer}
     />

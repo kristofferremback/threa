@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState, memo } from "react"
 import { useFloating, offset, flip, shift, autoUpdate } from "@floating-ui/react"
-import { useVirtualizer } from "@tanstack/react-virtual"
+import { Virtuoso, type VirtuosoHandle } from "react-virtuoso"
 import { cn } from "@/lib/utils"
 import type { EmojiEntry } from "@threa/types"
 import type { SuggestionListRef } from "./suggestion-list"
@@ -50,7 +50,8 @@ const EmojiButton = memo(function EmojiButton({ item, isSelected, onClick, onMou
  */
 function EmojiGridInner({ items, clientRect, command }: EmojiGridProps, ref: React.ForwardedRef<SuggestionListRef>) {
   const [selectedIndex, setSelectedIndex] = useState(0)
-  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const virtuosoRef = useRef<VirtuosoHandle>(null)
+  const rangeRef = useRef<{ startIndex: number; endIndex: number } | null>(null)
 
   // Group items into rows for virtualization
   const rows: EmojiEntry[][] = []
@@ -58,32 +59,25 @@ function EmojiGridInner({ items, clientRect, command }: EmojiGridProps, ref: Rea
     rows.push(items.slice(i, i + GRID_COLUMNS))
   }
 
-  const virtualizer = useVirtualizer({
-    count: rows.length,
-    getScrollElement: () => scrollContainerRef.current,
-    estimateSize: () => ROW_HEIGHT,
-    overscan: 3,
-  })
-
   // Reset selection when items change
   useEffect(() => {
     setSelectedIndex(0)
-    virtualizer.scrollToIndex(0)
-  }, [items, virtualizer])
+    virtuosoRef.current?.scrollToIndex({ index: 0 })
+  }, [items])
 
   // Scroll to row only if it's outside the visible range
   const scrollToRowIfNeeded = (index: number) => {
     const row = Math.floor(index / GRID_COLUMNS)
-    const range = virtualizer.range
+    const range = rangeRef.current
     if (range && (row < range.startIndex || row > range.endIndex)) {
-      virtualizer.scrollToIndex(row, { align: "auto" })
+      virtuosoRef.current?.scrollToIndex({ index: row, align: row < range.startIndex ? "start" : "end" })
     }
   }
 
   // Force scroll to row (for Home/End/PageUp/PageDown)
   const scrollToRow = (index: number) => {
     const row = Math.floor(index / GRID_COLUMNS)
-    virtualizer.scrollToIndex(row, { align: "start" })
+    virtuosoRef.current?.scrollToIndex({ index: row, align: "start" })
   }
 
   // Calculate visible rows for page navigation
@@ -209,48 +203,37 @@ function EmojiGridInner({ items, clientRect, command }: EmojiGridProps, ref: Rea
       aria-label="Emoji picker"
       data-emoji-grid
     >
-      <div ref={scrollContainerRef} className="overflow-y-auto p-2" style={{ height: CONTAINER_HEIGHT }}>
-        <div
-          style={{
-            height: virtualizer.getTotalSize(),
-            width: "100%",
-            position: "relative",
-          }}
-        >
-          {virtualizer.getVirtualItems().map((virtualRow) => {
-            const rowItems = rows[virtualRow.index]
-            const rowStartIndex = virtualRow.index * GRID_COLUMNS
-
-            return (
-              <div
-                key={virtualRow.key}
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  width: "100%",
-                  height: ROW_HEIGHT,
-                  transform: `translateY(${virtualRow.start}px)`,
-                }}
-                className="flex gap-0.5"
-              >
-                {rowItems.map((item, colIndex) => {
-                  const itemIndex = rowStartIndex + colIndex
-                  return (
-                    <EmojiButton
-                      key={item.shortcode}
-                      item={item}
-                      isSelected={itemIndex === selectedIndex}
-                      onClick={() => command(item)}
-                      onMouseEnter={() => setSelectedIndex(itemIndex)}
-                    />
-                  )
-                })}
-              </div>
-            )
-          })}
-        </div>
-      </div>
+      <Virtuoso
+        ref={virtuosoRef}
+        totalCount={rows.length}
+        fixedItemHeight={ROW_HEIGHT}
+        increaseViewportBy={ROW_HEIGHT * 3}
+        rangeChanged={(range) => {
+          rangeRef.current = range
+        }}
+        style={{ height: CONTAINER_HEIGHT }}
+        className="p-2"
+        itemContent={(index) => {
+          const rowItems = rows[index]
+          const rowStartIndex = index * GRID_COLUMNS
+          return (
+            <div className="flex gap-0.5">
+              {rowItems.map((item, colIndex) => {
+                const itemIndex = rowStartIndex + colIndex
+                return (
+                  <EmojiButton
+                    key={item.shortcode}
+                    item={item}
+                    isSelected={itemIndex === selectedIndex}
+                    onClick={() => command(item)}
+                    onMouseEnter={() => setSelectedIndex(itemIndex)}
+                  />
+                )
+              })}
+            </div>
+          )
+        }}
+      />
       {/* Footer showing selected emoji shortcode */}
       {selectedEmoji && (
         <div className="border-t px-2 py-1.5 text-xs text-muted-foreground truncate">
