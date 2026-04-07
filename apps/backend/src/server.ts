@@ -644,14 +644,21 @@ export async function startServer(): Promise<ServerInstance> {
   const videoCheckWorker = createVideoTranscodeCheckWorker({ videoTranscodingService, jobQueue })
   const videoOnDLQ: OnDLQHook<VideoTranscodeSubmitJobData> = async (querier, job) => {
     await AttachmentRepository.updateProcessingStatus(querier, job.data.attachmentId, ProcessingStatuses.FAILED)
-    await VideoTranscodeJobRepository.updateFailed(
-      querier,
-      job.data.attachmentId,
-      "Moved to DLQ after exhausting retries"
-    )
+    const videoJob = await VideoTranscodeJobRepository.findByAttachmentId(querier, job.data.attachmentId)
+    if (videoJob) {
+      await VideoTranscodeJobRepository.updateFailed(querier, videoJob.id, "Moved to DLQ after exhausting retries")
+    }
   }
   const videoCheckOnDLQ: OnDLQHook<VideoTranscodeCheckJobData> = async (querier, job) => {
     await AttachmentRepository.updateProcessingStatus(querier, job.data.attachmentId, ProcessingStatuses.FAILED)
+    const videoJob = await VideoTranscodeJobRepository.findByAttachmentId(querier, job.data.attachmentId)
+    if (videoJob) {
+      await VideoTranscodeJobRepository.updateFailed(
+        querier,
+        videoJob.id,
+        "Check job moved to DLQ after exhausting retries"
+      )
+    }
   }
   jobQueue.registerHandler(JobQueues.VIDEO_TRANSCODE_SUBMIT, videoSubmitWorker, {
     hooks: { onDLQ: videoOnDLQ },

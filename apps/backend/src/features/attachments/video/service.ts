@@ -80,10 +80,17 @@ export class VideoTranscodingService implements VideoTranscodingServiceLike {
 
     // Phase 2: Submit to MediaConvert (no DB connection held — INV-41)
     const s3OutputPrefix = `${attachment.workspaceId}/${attachmentId}/`
-    const mediaconvertJobId = await this.mediaConvertClient.submitTranscodeJob({
-      s3InputKey: attachment.storagePath,
-      s3OutputPrefix,
-    })
+    let mediaconvertJobId: string
+    try {
+      mediaconvertJobId = await this.mediaConvertClient.submitTranscodeJob({
+        s3InputKey: attachment.storagePath,
+        s3OutputPrefix,
+      })
+    } catch (error) {
+      log.error({ error }, "Failed to submit MediaConvert job")
+      await this.markFailed(job.id, attachmentId, `MediaConvert submission failed: ${error}`)
+      return
+    }
 
     // Phase 3: Update tracking job with MediaConvert job ID
     await VideoTranscodeJobRepository.updateSubmitted(this.pool, job.id, mediaconvertJobId)
@@ -163,15 +170,12 @@ export class VideoTranscodingService implements VideoTranscodingServiceLike {
   }
 
   private async markFailed(jobId: string, attachmentId: string, errorMessage: string): Promise<void> {
-    const job = await withClient(this.pool, (client) =>
-      VideoTranscodeJobRepository.findByAttachmentId(client, attachmentId)
-    )
-
     await withTransaction(this.pool, async (client) => {
       await VideoTranscodeJobRepository.updateFailed(client, jobId, errorMessage)
       await AttachmentRepository.updateProcessingStatus(client, attachmentId, ProcessingStatuses.FAILED)
 
       const att = await AttachmentRepository.findById(client, attachmentId)
+      const job = await VideoTranscodeJobRepository.findByAttachmentId(client, attachmentId)
       await OutboxRepository.insert(client, "attachment:transcoded", {
         workspaceId: job?.workspaceId ?? att?.workspaceId ?? "",
         ...(att?.streamId && { streamId: att.streamId }),
