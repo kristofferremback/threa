@@ -208,7 +208,8 @@ export class AgentRuntime {
       }
 
       const fullSystemPrompt = retrievedContext ? `${systemPrompt}\n\n${retrievedContext}` : systemPrompt
-      const truncatedMessages = truncateMessages(conversation, MAX_MESSAGE_CHARS)
+      const preparedConversation = this.prepareConversationForModel(conversation)
+      const truncatedMessages = truncateMessages(preparedConversation, MAX_MESSAGE_CHARS)
 
       const startTime = Date.now()
       const result = await this.wrapWithObserverContext(() =>
@@ -250,13 +251,12 @@ export class AgentRuntime {
 
             if (!hasTextReconsidered && lastAssistantText) {
               hasTextReconsidered = true
-              conversation.push({
-                role: "system",
-                content:
-                  `[New context arrived while you were responding]\n\n` +
+              this.pushRuntimePrompt(
+                conversation,
+                `[New context arrived while you were responding]\n\n` +
                   `Your draft response was:\n"${lastAssistantText}"\n\n` +
-                  `Please incorporate the new messages and respond.`,
-              })
+                  `Please incorporate the new messages and respond.`
+              )
               continue
             }
           }
@@ -280,14 +280,13 @@ export class AgentRuntime {
               break
             }
 
-            conversation.push({
-              role: "system",
-              content:
-                `[Final response needs revision]\n\n` +
+            this.pushRuntimePrompt(
+              conversation,
+              `[Final response needs revision]\n\n` +
                 `${validationError}\n\n` +
                 `Your proposed response was:\n"${lastAssistantText}"\n\n` +
-                `Please provide a revised final response now.`,
-            })
+                `Please provide a revised final response now.`
+            )
             continue
           }
 
@@ -304,15 +303,14 @@ export class AgentRuntime {
             break
           }
 
-          conversation.push({
-            role: "system",
-            content:
-              `[Final decision required]\n\n` +
+          this.pushRuntimePrompt(
+            conversation,
+            `[Final decision required]\n\n` +
               `You must choose one final action now.\n` +
               `- If previous responses remain correct, call keep_response with a specific reason tied to the edited message.\n` +
               `- If changes are needed, call send_message with the revised response.\n` +
-              `Do not return an empty response.`,
-          })
+              `Do not return an empty response.`
+          )
           continue
         }
         break
@@ -344,14 +342,13 @@ export class AgentRuntime {
           if (newMessages.length === 0) {
             const invalidPending = await this.findInvalidPendingMessage(execResult.pendingMessages)
             if (invalidPending) {
-              conversation.push({
-                role: "system",
-                content:
-                  `[Final response needs revision]\n\n` +
+              this.pushRuntimePrompt(
+                conversation,
+                `[Final response needs revision]\n\n` +
                   `${invalidPending.reason}\n\n` +
                   `Your proposed response was:\n"${invalidPending.content}"\n\n` +
-                  `Please provide a revised final response and call send_message again.`,
-              })
+                  `Please provide a revised final response and call send_message again.`
+              )
               continue
             }
 
@@ -374,14 +371,13 @@ export class AgentRuntime {
               newMessages,
             })
 
-            conversation.push({
-              role: "system",
-              content:
-                `[New context arrived while you were responding]\n\n` +
+            this.pushRuntimePrompt(
+              conversation,
+              `[New context arrived while you were responding]\n\n` +
                 `Your draft response${execResult.pendingMessages.length > 1 ? "s were" : " was"}:\n"${pendingContents}"\n\n` +
                 `Please respond to all messages, incorporating the new context. ` +
-                `You may send the same response${execResult.pendingMessages.length > 1 ? "s" : ""} if still appropriate, or revise based on the new information.`,
-            })
+                `You may send the same response${execResult.pendingMessages.length > 1 ? "s" : ""} if still appropriate, or revise based on the new information.`
+            )
           }
         } else if (execResult.keepResponseReason) {
           if (newMessages.length === 0) {
@@ -403,14 +399,13 @@ export class AgentRuntime {
             newMessages,
           })
 
-          conversation.push({
-            role: "system",
-            content:
-              `[New context arrived after you decided to keep the existing response]\n\n` +
+          this.pushRuntimePrompt(
+            conversation,
+            `[New context arrived after you decided to keep the existing response]\n\n` +
               `Your keep-response reason was:\n"${execResult.keepResponseReason}"\n\n` +
               `Please reconsider. If the previous response is still correct, call keep_response again with an updated reason. ` +
-              `If changes are needed, call send_message with the updated response.`,
-          })
+              `If changes are needed, call send_message with the updated response.`
+          )
         } else if (newMessages.length > 0) {
           const maxSeq = await this.injectNewMessages(newMessages, lastProcessedSequence, nm, conversation)
           lastProcessedSequence = maxSeq
@@ -420,14 +415,13 @@ export class AgentRuntime {
         if (execResult.pendingMessages.length > 0) {
           const invalidPending = await this.findInvalidPendingMessage(execResult.pendingMessages)
           if (invalidPending) {
-            conversation.push({
-              role: "system",
-              content:
-                `[Final response needs revision]\n\n` +
+            this.pushRuntimePrompt(
+              conversation,
+              `[Final response needs revision]\n\n` +
                 `${invalidPending.reason}\n\n` +
                 `Your proposed response was:\n"${invalidPending.content}"\n\n` +
-                `Please provide a revised final response and call send_message again.`,
-            })
+                `Please provide a revised final response and call send_message again.`
+            )
             continue
           }
 
@@ -680,6 +674,23 @@ export class AgentRuntime {
     }
 
     return null
+  }
+
+  private prepareConversationForModel(conversation: ModelMessage[]): ModelMessage[] {
+    const lastMessage = conversation.at(-1)
+    if (!lastMessage || (lastMessage.role !== "assistant" && lastMessage.role !== "system")) {
+      return conversation
+    }
+
+    const continuationPrompt = this.config.allowNoMessageOutput
+      ? "Review the conversation above and follow the system instructions. Compare the latest assistant response against the updated context, then call keep_response or send_message."
+      : "Continue from the conversation above and follow the system instructions."
+
+    return [...conversation, { role: "user", content: continuationPrompt }]
+  }
+
+  private pushRuntimePrompt(conversation: ModelMessage[], content: string): void {
+    conversation.push({ role: "user", content })
   }
 
   // ---------------------------------------------------------------------------
