@@ -393,11 +393,19 @@
 }
 
 .ProseMirror .ProseMirror-gapcursor {
-  @apply relative;
+  @apply pointer-events-none relative;
+  /* Collapse to zero height so the gap cursor doesn't create visible space between blocks */
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
 }
 
 .ProseMirror .ProseMirror-gapcursor::after {
-  @apply absolute top-0 block h-5 w-px border-t-0 border-l border-foreground;
+  @apply absolute left-0 block w-px border-l border-foreground;
+  content: "";
+  height: 1.2em;
+  /* Vertically center the cursor line at the boundary */
+  top: -0.6em;
   animation: ProseMirror-cursor-blink 1.1s steps(2, start) infinite;
 }
 

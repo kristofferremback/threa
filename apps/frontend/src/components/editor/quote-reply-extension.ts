@@ -1,5 +1,6 @@
 import { Node, mergeAttributes } from "@tiptap/core"
-import { Plugin, PluginKey } from "@tiptap/pm/state"
+import { GapCursor } from "@tiptap/pm/gapcursor"
+import { Selection } from "@tiptap/pm/state"
 import { ReactNodeViewRenderer } from "@tiptap/react"
 import { QuoteReplyView } from "./quote-reply-view"
 
@@ -77,39 +78,22 @@ export const QuoteReplyExtension = Node.create({
     return ReactNodeViewRenderer(QuoteReplyView)
   },
 
-  addProseMirrorPlugins() {
-    return [
-      new Plugin({
-        key: new PluginKey("quoteReplyParagraphGuard"),
-        appendTransaction: (_transactions, _oldState, newState) => {
-          const { doc, schema, tr } = newState
-          const insertions: number[] = []
+  addKeyboardShortcuts() {
+    return {
+      // Prevent double-newline when pressing Enter in a gap cursor position.
+      // Without this, ProseMirror creates a paragraph (from the gap cursor)
+      // and then the default Enter handler splits it, producing two paragraphs.
+      Enter: ({ editor }) => {
+        const { state } = editor
+        if (!(state.selection instanceof GapCursor)) return false
 
-          doc.forEach((node, pos, index) => {
-            if (node.type.name !== "quoteReply") return
-
-            // Need a paragraph before if this is the first node or preceded by another quoteReply
-            const prev = index > 0 ? doc.child(index - 1) : null
-            if (!prev || prev.type.name === "quoteReply") {
-              insertions.push(pos)
-            }
-
-            // Need a paragraph after if this is the last node
-            if (index === doc.childCount - 1) {
-              insertions.push(pos + node.nodeSize)
-            }
-          })
-
-          if (insertions.length === 0) return null
-
-          // Insert in reverse order so positions stay valid
-          for (let i = insertions.length - 1; i >= 0; i--) {
-            tr.insert(insertions[i], schema.nodes.paragraph.create())
-          }
-
-          return tr
-        },
-      }),
-    ]
+        const pos = state.selection.$from.pos
+        const paragraph = state.schema.nodes.paragraph.create()
+        const tr = state.tr.insert(pos, paragraph)
+        tr.setSelection(Selection.near(tr.doc.resolve(pos + 1)))
+        editor.view.dispatch(tr)
+        return true
+      },
+    }
   },
 })
