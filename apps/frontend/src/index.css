@@ -392,6 +392,21 @@
   @apply my-4 border-border;
 }
 
+.ProseMirror .ProseMirror-gapcursor {
+  @apply relative;
+}
+
+.ProseMirror .ProseMirror-gapcursor::after {
+  @apply absolute top-0 block h-5 w-px border-t-0 border-l border-foreground;
+  animation: ProseMirror-cursor-blink 1.1s steps(2, start) infinite;
+}
+
+@keyframes ProseMirror-cursor-blink {
+  to {
+    visibility: hidden;
+  }
+}
+
 /*
  * Shiki syntax highlighting - dual theme support
  *

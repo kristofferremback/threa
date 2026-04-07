@@ -506,11 +506,11 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
   // dispatch caused a view update that raced with toolbar rendering,
   // briefly dropping focus in autoFocus editors (e.g. inline edit).
 
-  // Copy handler: serialize selection to markdown
+  // Copy/cut handler: serialize selection to markdown
   useEffect(() => {
     if (!editor || !containerRef.current) return
 
-    const handleCopy = (event: ClipboardEvent) => {
+    const serializeSelection = (event: ClipboardEvent) => {
       const { from, to } = editor.state.selection
       if (from === to) return // No selection, use default behavior
 
@@ -522,9 +522,23 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
       event.preventDefault()
     }
 
+    const handleCopy = (event: ClipboardEvent) => {
+      serializeSelection(event)
+    }
+
+    const handleCut = (event: ClipboardEvent) => {
+      serializeSelection(event)
+      // Delete the selected content after serializing to clipboard
+      editor.commands.deleteSelection()
+    }
+
     const container = containerRef.current
     container.addEventListener("copy", handleCopy)
-    return () => container.removeEventListener("copy", handleCopy)
+    container.addEventListener("cut", handleCut)
+    return () => {
+      container.removeEventListener("copy", handleCopy)
+      container.removeEventListener("cut", handleCut)
+    }
   }, [editor])
 
   // Expose focus method
