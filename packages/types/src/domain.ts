@@ -272,6 +272,8 @@ export interface AttachmentSummary {
   filename: string
   mimeType: string
   sizeBytes: number
+  /** Present for video attachments so the frontend knows transcoding state */
+  processingStatus?: ProcessingStatus
 }
 
 /**

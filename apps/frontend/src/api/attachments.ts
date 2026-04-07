@@ -43,8 +43,12 @@ export const attachmentsApi = {
    * Get a presigned download URL for an attachment.
    * URL is valid for 15 minutes.
    */
-  async getDownloadUrl(workspaceId: string, attachmentId: string, options?: { download?: boolean }): Promise<string> {
-    const key = `${workspaceId}:${attachmentId}:${options?.download ? "download" : "inline"}`
+  async getDownloadUrl(
+    workspaceId: string,
+    attachmentId: string,
+    options?: { download?: boolean; variant?: "raw" | "processed" | "thumbnail" }
+  ): Promise<string> {
+    const key = `${workspaceId}:${attachmentId}:${options?.download ? "download" : "inline"}:${options?.variant ?? "raw"}`
     const cached = resolvedDownloadUrlCache.get(key)
     if (cached) {
       if (cached.expiresAt > Date.now()) {
@@ -56,7 +60,10 @@ export const attachmentsApi = {
     const existing = inFlightDownloadUrlRequests.get(key)
     if (existing) return existing
 
-    const params = options?.download ? "?download=true" : ""
+    const searchParams = new URLSearchParams()
+    if (options?.download) searchParams.set("download", "true")
+    if (options?.variant) searchParams.set("variant", options.variant)
+    const params = searchParams.toString() ? `?${searchParams.toString()}` : ""
     const request = api
       .get<{ url: string; expiresIn: number }>(
         `/api/workspaces/${workspaceId}/attachments/${attachmentId}/url${params}`

@@ -1,14 +1,19 @@
 import type { Request, Response } from "express"
 import { z } from "zod"
+import type { Pool } from "pg"
 import type { AttachmentService } from "./service"
 import type { StreamService } from "../streams"
+import { VideoTranscodeJobRepository } from "./video"
+import type { StorageProvider } from "../../lib/storage/s3-client"
 
 interface Dependencies {
   attachmentService: AttachmentService
   streamService: StreamService
+  storage: StorageProvider
+  pool: Pool
 }
 
-export function createAttachmentHandlers({ attachmentService, streamService }: Dependencies) {
+export function createAttachmentHandlers({ attachmentService, streamService, storage, pool }: Dependencies) {
   return {
     /**
      * Upload a file to the workspace.
@@ -81,9 +86,26 @@ export function createAttachmentHandlers({ attachmentService, streamService }: D
         }
       }
 
-      const parsed = z.object({ download: z.enum(["true", "false"]).optional() }).safeParse(req.query)
+      const parsed = z
+        .object({
+          download: z.enum(["true", "false"]).optional(),
+          variant: z.enum(["raw", "processed", "thumbnail"]).optional(),
+        })
+        .safeParse(req.query)
       if (!parsed.success) return res.status(400).json({ error: "Invalid query parameters" })
-      const { download } = parsed.data
+      const { download, variant } = parsed.data
+
+      // For video variants (processed/thumbnail), look up the transcode job
+      if (variant === "processed" || variant === "thumbnail") {
+        const job = await VideoTranscodeJobRepository.findByAttachmentId(pool, attachmentId)
+        const path = variant === "processed" ? job?.processedStoragePath : job?.thumbnailStoragePath
+        if (job?.status === "completed" && path) {
+          const url = await storage.getSignedDownloadUrl(path, {})
+          return res.json({ url, expiresIn: 900 })
+        }
+        // Fall through to raw file if variant not available
+      }
+
       const url = await attachmentService.getDownloadUrl(attachment, { download: download === "true" })
       res.json({ url, expiresIn: 900 })
     },

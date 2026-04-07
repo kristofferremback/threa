@@ -33,6 +33,8 @@ export const JobQueues = {
   EXCEL_PROCESS: "excel.process",
   AVATAR_PROCESS: "avatar.process",
   LINK_PREVIEW_EXTRACT: "link_preview.extract",
+  VIDEO_TRANSCODE_SUBMIT: "video.transcode_submit",
+  VIDEO_TRANSCODE_CHECK: "video.transcode_check",
 } as const
 
 export type JobQueueName = (typeof JobQueues)[keyof typeof JobQueues]
@@ -156,6 +158,20 @@ export interface LinkPreviewExtractJobData {
   isEdit?: boolean
 }
 
+/** Video transcode submit job - submits video to AWS MediaConvert */
+export interface VideoTranscodeSubmitJobData {
+  attachmentId: string
+  workspaceId: string
+  filename: string
+  storagePath: string
+}
+
+/** Video transcode check job - polls MediaConvert for completion */
+export interface VideoTranscodeCheckJobData {
+  attachmentId: string
+  workspaceId: string
+}
+
 // Map queue names to their data types
 export interface JobDataMap {
   [JobQueues.PERSONA_AGENT]: PersonaAgentJobData
@@ -174,6 +190,8 @@ export interface JobDataMap {
   [JobQueues.EXCEL_PROCESS]: ExcelProcessJobData
   [JobQueues.AVATAR_PROCESS]: AvatarProcessJobData
   [JobQueues.LINK_PREVIEW_EXTRACT]: LinkPreviewExtractJobData
+  [JobQueues.VIDEO_TRANSCODE_SUBMIT]: VideoTranscodeSubmitJobData
+  [JobQueues.VIDEO_TRANSCODE_CHECK]: VideoTranscodeCheckJobData
 }
 
 /**

@@ -49,6 +49,7 @@ import type { InvitationService } from "./features/invitations"
 import type { ActivityService } from "./features/activity"
 import type { PushService } from "./features/push"
 import type { S3Config } from "./lib/env"
+import type { StorageProvider } from "./lib/storage/s3-client"
 import type { CommandRegistry } from "./features/commands"
 import type { UserPreferencesService } from "./features/user-preferences"
 import type { AvatarService } from "./features/workspaces"
@@ -89,6 +90,7 @@ interface Dependencies {
   workosOrgService: WorkosOrgService
   userApiKeyService: UserApiKeyService
   botApiKeyService: BotApiKeyService
+  storage: StorageProvider
 }
 
 export function registerRoutes(app: Express, deps: Dependencies) {
@@ -121,6 +123,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     workosOrgService,
     userApiKeyService,
     botApiKeyService,
+    storage,
   } = deps
 
   const auth = createAuthMiddleware({ authService })
@@ -147,7 +150,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   })
   const stream = createStreamHandlers({ streamService, eventService, activityService, linkPreviewService })
   const message = createMessageHandlers({ pool, eventService, streamService, commandRegistry })
-  const attachment = createAttachmentHandlers({ attachmentService, streamService })
+  const attachment = createAttachmentHandlers({ attachmentService, streamService, storage, pool })
   const search = createSearchHandlers({ pool, searchService })
   const memo = createMemoHandlers({ pool, memoExplorerService })
   const emoji = createEmojiHandlers()

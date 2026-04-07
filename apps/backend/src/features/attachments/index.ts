@@ -65,6 +65,15 @@ export {
 } from "./excel"
 export type { ExcelProcessingServiceDeps, ExcelProcessingServiceLike } from "./excel"
 
+export {
+  VideoTranscodingService,
+  StubVideoTranscodingService,
+  ThreaMediaConvertClient,
+  VideoTranscodeJobRepository,
+  isVideoAttachment,
+} from "./video"
+export type { VideoTranscodingServiceDeps, VideoTranscodingServiceLike } from "./video"
+
 // Workers
 export { createImageCaptionWorker } from "./image-caption/worker"
 export { createPdfPrepareWorker } from "./pdf/prepare-worker"
@@ -73,3 +82,5 @@ export { createPdfAssembleWorker } from "./pdf/assemble-worker"
 export { createTextProcessingWorker } from "./text/worker"
 export { createWordProcessingWorker } from "./word/worker"
 export { createExcelProcessingWorker } from "./excel/worker"
+export { createVideoTranscodeSubmitWorker } from "./video/submit-worker"
+export { createVideoTranscodeCheckWorker } from "./video/check-worker"

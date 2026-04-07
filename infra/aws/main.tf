@@ -87,6 +87,71 @@ resource "aws_iam_user_policy" "backend_s3" {
   })
 }
 
+# --- MediaConvert ---
+# IAM role that MediaConvert assumes to read source files and write transcoded output to S3.
+
+resource "aws_iam_role" "mediaconvert" {
+  name = "threa-mediaconvert-${var.environment}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "mediaconvert.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+
+  tags = {
+    Environment = var.environment
+    Project     = "threa"
+  }
+}
+
+resource "aws_iam_role_policy" "mediaconvert_s3" {
+  name = "threa-mediaconvert-s3"
+  role = aws_iam_role.mediaconvert.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "s3:GetObject",
+        "s3:PutObject",
+      ]
+      Resource = "arn:aws:s3:::threa-uploads-*-${var.account_suffix}/*"
+    }]
+  })
+}
+
+# Backend user permissions for MediaConvert API calls.
+
+resource "aws_iam_user_policy" "backend_mediaconvert" {
+  name = "threa-mediaconvert-access"
+  user = aws_iam_user.backend.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "mediaconvert:CreateJob",
+          "mediaconvert:GetJob",
+          "mediaconvert:DescribeEndpoints",
+        ]
+        Resource = "*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = "iam:PassRole"
+        Resource = aws_iam_role.mediaconvert.arn
+      },
+    ]
+  })
+}
+
 resource "aws_iam_access_key" "backend" {
   user = aws_iam_user.backend.name
 }

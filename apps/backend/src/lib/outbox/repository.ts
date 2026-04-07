@@ -52,6 +52,7 @@ export type OutboxEventType =
   | "bot:updated"
   | "link_preview:ready"
   | "link_preview:dismissed"
+  | "attachment:transcoded"
 
 /** Events that are scoped to a stream (have streamId) */
 export type StreamScopedEventType =
@@ -86,6 +87,7 @@ export type WorkspaceScopedEventType =
   | "workspace_user:updated"
   | "bot:created"
   | "bot:updated"
+  | "attachment:transcoded"
 
 /**
  * Base fields for stream-scoped events.
@@ -179,6 +181,13 @@ export interface AttachmentUploadedOutboxPayload extends WorkspaceScopedPayload 
   mimeType: string
   sizeBytes: number
   storagePath: string
+}
+
+export interface AttachmentTranscodedOutboxPayload extends WorkspaceScopedPayload {
+  attachmentId: string
+  processingStatus: string
+  streamId?: string
+  messageId?: string
 }
 
 export interface WorkspaceUserAddedOutboxPayload extends WorkspaceScopedPayload {
@@ -389,6 +398,7 @@ export interface OutboxEventPayloadMap {
   "bot:updated": BotUpdatedOutboxPayload
   "link_preview:ready": LinkPreviewReadyOutboxPayload
   "link_preview:dismissed": LinkPreviewDismissedOutboxPayload
+  "attachment:transcoded": AttachmentTranscodedOutboxPayload
 }
 
 export type OutboxEventPayload<T extends OutboxEventType> = OutboxEventPayloadMap[T]

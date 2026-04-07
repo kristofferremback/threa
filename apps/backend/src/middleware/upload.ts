@@ -5,7 +5,7 @@ import type { Request, RequestHandler } from "express"
 import type { S3Config } from "../lib/env"
 import { attachmentId } from "../lib/id"
 
-const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB
+const MAX_FILE_SIZE = 100 * 1024 * 1024 // 100MB
 
 // Extend Express.Multer.File to include multer-s3 properties
 declare global {

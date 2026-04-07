@@ -26,6 +26,7 @@ export interface AttachmentSummary {
   filename: string
   mimeType: string
   sizeBytes: number
+  processingStatus?: string
 }
 
 export interface MessageCreatedPayload {
@@ -198,6 +199,7 @@ export class EventService {
           filename: a.filename,
           mimeType: a.mimeType,
           sizeBytes: a.sizeBytes,
+          ...(a.mimeType.startsWith("video/") && { processingStatus: a.processingStatus }),
         }))
       }
 
