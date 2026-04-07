@@ -225,14 +225,20 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
       const currentContent = composerRef.current.content
       const existingBlocks = currentContent.content ?? []
 
-      // Replace any existing quoteReply at the start, or prepend
-      const filteredBlocks = existingBlocks.filter((b) => b.type !== "quoteReply")
-      // Ensure there's at least one paragraph after the quote for typing
-      const blocks = filteredBlocks.length > 0 ? filteredBlocks : [{ type: "paragraph" }]
+      // Strip trailing empty paragraphs so the quote appends cleanly,
+      // then re-add one after the quote for the cursor to land in.
+      const trimmedBlocks = [...existingBlocks]
+      while (
+        trimmedBlocks.length > 0 &&
+        trimmedBlocks[trimmedBlocks.length - 1].type === "paragraph" &&
+        (trimmedBlocks[trimmedBlocks.length - 1].content?.length ?? 0) === 0
+      ) {
+        trimmedBlocks.pop()
+      }
 
       composerRef.current.setContent({
         type: "doc",
-        content: [quoteNode, ...blocks],
+        content: [...trimmedBlocks, quoteNode, { type: "paragraph" }],
       })
 
       // Focus the composer so the user can start typing immediately
