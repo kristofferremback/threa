@@ -227,9 +227,8 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
 
       // Replace any existing quoteReply at the start, or prepend
       const filteredBlocks = existingBlocks.filter((b) => b.type !== "quoteReply")
-      // Ensure there's at least an empty paragraph after the quote for typing
-      const hasContent = filteredBlocks.some((b) => b.type !== "paragraph" || (b.content?.length ?? 0) > 0)
-      const blocks = hasContent ? filteredBlocks : [...filteredBlocks, { type: "paragraph" }]
+      // Ensure there's at least one paragraph after the quote for typing
+      const blocks = filteredBlocks.length > 0 ? filteredBlocks : [{ type: "paragraph" }]
 
       composerRef.current.setContent({
         type: "doc",
