@@ -29,6 +29,8 @@ export interface EditorActionBarProps {
   // Optional buttons
   showExpand?: boolean
   showAttach?: boolean
+  showMention?: boolean
+  showEmoji?: boolean
   showSlashCommand?: boolean
   onAttachClick?: () => void
   // Desktop expand (opens fullscreen modal)
@@ -47,6 +49,8 @@ export function EditorActionBar({
   onMobileExpandedChange,
   showExpand = true,
   showAttach = true,
+  showMention = true,
+  showEmoji = true,
   showSlashCommand = false,
   onAttachClick,
   showDesktopExpand = false,
@@ -130,46 +134,50 @@ export function EditorActionBar({
       </Tooltip>
 
       {/* Insert emoji */}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            aria-label="Insert emoji"
-            className="h-7 w-7 shrink-0"
-            onPointerDown={handlePointerAction(() => editorHandle?.insertEmoji())}
-            onClick={handleKeyboardClick(() => editorHandle?.insertEmoji())}
-            disabled={disabled}
-          >
-            <span className="text-sm leading-none">😊</span>
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="top" className="text-xs">
-          Emoji
-        </TooltipContent>
-      </Tooltip>
+      {showEmoji && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label="Insert emoji"
+              className="h-7 w-7 shrink-0"
+              onPointerDown={handlePointerAction(() => editorHandle?.insertEmoji())}
+              onClick={handleKeyboardClick(() => editorHandle?.insertEmoji())}
+              disabled={disabled}
+            >
+              <span className="text-sm leading-none">😊</span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="text-xs">
+            Emoji
+          </TooltipContent>
+        </Tooltip>
+      )}
 
       {/* Insert mention */}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            aria-label="Insert mention"
-            className="h-7 w-7 shrink-0"
-            onPointerDown={handlePointerAction(() => editorHandle?.insertMention())}
-            onClick={handleKeyboardClick(() => editorHandle?.insertMention())}
-            disabled={disabled}
-          >
-            <AtSign className="h-4 w-4" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="top" className="text-xs">
-          Mention
-        </TooltipContent>
-      </Tooltip>
+      {showMention && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label="Insert mention"
+              className="h-7 w-7 shrink-0"
+              onPointerDown={handlePointerAction(() => editorHandle?.insertMention())}
+              onClick={handleKeyboardClick(() => editorHandle?.insertMention())}
+              disabled={disabled}
+            >
+              <AtSign className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="text-xs">
+            Mention
+          </TooltipContent>
+        </Tooltip>
+      )}
 
       {/* Insert slash command */}
       {showSlashCommand && (

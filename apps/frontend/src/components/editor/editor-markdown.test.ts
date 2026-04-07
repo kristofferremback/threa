@@ -882,6 +882,19 @@ const x = 1
         expect(content?.[2]).toEqual({ type: "text", text: " for details" })
       })
 
+      it("keeps mentions, channels, slash commands, and emoji as plain text when token parsing is disabled", () => {
+        const source = "See #general and @alice\n\n/todo\n\n:wave:"
+        const result = parseMarkdown(source, undefined, undefined, {
+          enableMentions: false,
+          enableChannels: false,
+          enableSlashCommands: false,
+          enableEmoji: false,
+        })
+
+        expect(serializeToMarkdown(result)).toBe(source)
+        expect(result.content?.flatMap((block) => block.content ?? []).every((node) => node.type === "text")).toBe(true)
+      })
+
       it("should parse multiple mentions", () => {
         const result = parseMarkdown("@alice and @bob")
         const content = result.content?.[0]?.content

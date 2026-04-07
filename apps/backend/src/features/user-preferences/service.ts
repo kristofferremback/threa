@@ -82,6 +82,7 @@ function flattenUpdates(updates: UpdateUserPreferencesInput): Array<{ key: strin
     "notificationLevel",
     "sidebarCollapsed",
     "messageSendMode",
+    "scratchpadCustomPrompt",
   ] as const
 
   for (const key of simpleKeys) {

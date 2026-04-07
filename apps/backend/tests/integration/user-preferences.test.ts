@@ -149,6 +149,16 @@ describe("User Preferences - Sparse Override Pattern", () => {
       expect(prefs.accessibility.reducedMotion).toBe(false)
       expect(prefs.accessibility.highContrast).toBe(false)
     })
+
+    test("should store scratchpad custom prompt overrides", async () => {
+      await service.updatePreferences(testWorkspaceId, testUserId, {
+        scratchpadCustomPrompt: "Be terse in scratchpads.",
+      })
+
+      const overrides = await UserPreferencesRepository.findOverrides(pool, testUserId)
+
+      expect(overrides).toEqual([{ key: "scratchpadCustomPrompt", value: "Be terse in scratchpads." }])
+    })
   })
 
   describe("keyboard shortcuts", () => {

@@ -66,6 +66,14 @@ interface RichEditorProps {
   onEscapeBlur?: () => void
   /** Stream context for filtering which broadcast mentions (@channel, @here) are available */
   streamContext?: MentionStreamContext
+  /** Whether @mentions should be parsed and autocompleted. */
+  enableMentions?: boolean
+  /** Whether #channel references should be parsed and autocompleted. */
+  enableChannels?: boolean
+  /** Whether slash commands should be parsed and autocompleted. */
+  enableCommands?: boolean
+  /** Whether emoji shortcodes should be parsed and autocompleted. */
+  enableEmoji?: boolean
 }
 
 function isEditorCompletelyEmpty(editor: import("@tiptap/react").Editor | null | undefined): boolean {
@@ -105,6 +113,10 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
     blurOnEscape = false,
     onEscapeBlur,
     streamContext,
+    enableMentions = true,
+    enableChannels = true,
+    enableCommands = true,
+    enableEmoji = true,
   },
   ref
 ) {
@@ -146,6 +158,15 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
   getMentionTypeRef.current = getMentionType
   const toEmojiRef = useRef(toEmoji)
   toEmojiRef.current = toEmoji
+  const markdownParseOptions = useMemo(
+    () => ({
+      enableMentions,
+      enableChannels,
+      enableSlashCommands: enableCommands,
+      enableEmoji,
+    }),
+    [enableMentions, enableChannels, enableCommands, enableEmoji]
+  )
 
   // Ref to avoid stale closure for file upload callback
   const onFileUploadRef = useRef(onFileUpload)
@@ -185,18 +206,29 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
     () => [
       ...createEditorExtensions({
         placeholder,
-        mentionSuggestion: mentionConfig,
-        channelSuggestion: channelConfig,
-        commandSuggestion: commandConfig,
-        emojiSuggestion: emojiConfig,
-        toEmoji,
+        mentionSuggestion: enableMentions ? mentionConfig : undefined,
+        channelSuggestion: enableChannels ? channelConfig : undefined,
+        commandSuggestion: enableCommands ? commandConfig : undefined,
+        emojiSuggestion: enableEmoji ? emojiConfig : undefined,
+        toEmoji: enableEmoji ? toEmoji : undefined,
       }),
       EditorBehaviors.configure({
         sendModeRef: messageSendModeRef,
         onSubmitRef: onSubmitRef,
       }),
     ],
-    [placeholder, mentionConfig, channelConfig, commandConfig, emojiConfig, toEmoji]
+    [
+      placeholder,
+      mentionConfig,
+      channelConfig,
+      commandConfig,
+      emojiConfig,
+      toEmoji,
+      enableMentions,
+      enableChannels,
+      enableCommands,
+      enableEmoji,
+    ]
   )
 
   // Debounced toolbar visibility — show only when focused with selection, or
@@ -340,7 +372,13 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
           return false
         }
 
-        const handled = insertPastedText(editorRef.current, text, getMentionTypeRef.current, toEmojiRef.current)
+        const handled = insertPastedText(
+          editorRef.current,
+          text,
+          enableMentions ? getMentionTypeRef.current : undefined,
+          enableEmoji ? toEmojiRef.current : undefined,
+          markdownParseOptions
+        )
         if (handled) {
           event.preventDefault()
         }
@@ -476,10 +514,13 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
     // Re-parse if:
     // 1. More mentionables loaded than last time, OR
     // 2. We now have current user info but didn't before
+    const shouldReparseForStructuredTokens = enableMentions || enableChannels || enableCommands || enableEmoji
+
     const shouldReparse =
-      pendingMentionReparse.current ||
-      current.count > lastParsedState.current.count ||
-      (current.hasCurrentUser && !lastParsedState.current.hasCurrentUser)
+      shouldReparseForStructuredTokens &&
+      (pendingMentionReparse.current ||
+        current.count > lastParsedState.current.count ||
+        (current.hasCurrentUser && !lastParsedState.current.hasCurrentUser))
 
     if (shouldReparse) {
       lastParsedState.current = current
@@ -495,11 +536,29 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
       const markdown = serializeToMarkdown(editor.getJSON())
       if (markdown) {
         isInternalUpdate.current = true
-        editor.commands.setContent(parseMarkdown(markdown, getMentionType, toEmoji))
+        editor.commands.setContent(
+          parseMarkdown(
+            markdown,
+            enableMentions ? getMentionType : undefined,
+            enableEmoji ? toEmoji : undefined,
+            markdownParseOptions
+          )
+        )
         isInternalUpdate.current = false
       }
     }
-  }, [editor, mentionables, getMentionType, toEmoji, isFocused])
+  }, [
+    editor,
+    mentionables,
+    getMentionType,
+    toEmoji,
+    isFocused,
+    enableMentions,
+    enableChannels,
+    enableCommands,
+    enableEmoji,
+    markdownParseOptions,
+  ])
 
   // TipTap's autofocus option handles initial focus.
   // No additional focus-on-mount effect needed — the redundant focus()
@@ -627,10 +686,10 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
       />
       {belowToolbarContent}
       <EditorContent editor={editor} />
-      {renderMentionList()}
-      {renderChannelList()}
-      {renderCommandList()}
-      {renderEmojiGrid()}
+      {enableMentions ? renderMentionList() : null}
+      {enableChannels ? renderChannelList() : null}
+      {enableCommands ? renderCommandList() : null}
+      {enableEmoji ? renderEmojiGrid() : null}
     </div>
   )
 })

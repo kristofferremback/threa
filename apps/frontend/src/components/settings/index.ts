@@ -1,4 +1,5 @@
 export { SettingsDialog } from "./settings-dialog"
+export { AISettings } from "./ai-settings"
 export { AppearanceSettings } from "./appearance-settings"
 export { DateTimeSettings } from "./datetime-settings"
 export { NotificationsSettings } from "./notifications-settings"
