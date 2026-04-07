@@ -349,7 +349,6 @@ function EmojiGridContent({
               fixedItemHeight={MOBILE_ROW_HEIGHT}
               increaseViewportBy={MOBILE_ROW_HEIGHT * 3}
               style={{ height: "100%" }}
-              className="px-4"
               components={{ Header: () => <div className="h-1" />, Footer: () => <div className="h-1" /> }}
               role="listbox"
               aria-label="Emoji picker"
@@ -357,7 +356,7 @@ function EmojiGridContent({
                 const rowItems = rows[index]
                 return (
                   <div
-                    className="pb-0.5"
+                    className="px-4 pb-0.5"
                     style={{
                       display: "grid",
                       gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
