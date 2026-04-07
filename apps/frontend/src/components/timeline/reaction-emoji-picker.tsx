@@ -11,8 +11,8 @@ import type { EmojiEntry } from "@threa/types"
 
 const DESKTOP_COLUMNS = 8
 const MOBILE_EMOJI_SIZE = 44
-const MOBILE_ROW_HEIGHT = 44
-const DESKTOP_ROW_HEIGHT = 32
+const MOBILE_ROW_HEIGHT = 46
+const DESKTOP_ROW_HEIGHT = 34
 const CONTAINER_HEIGHT = 256
 const MAX_MOBILE_COLUMNS = 8
 
@@ -107,13 +107,13 @@ function EmojiGridContent({
   const rowHeight = isMobile ? MOBILE_ROW_HEIGHT : DESKTOP_ROW_HEIGHT
   const virtuosoRef = useRef<VirtuosoHandle>(null)
   const rangeRef = useRef<{ startIndex: number; endIndex: number } | null>(null)
-  const scrollerElRef = useRef<HTMLElement | null>(null)
+  const mobileContainerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (!isMobile || !scrollerElRef.current) return
-    const el = scrollerElRef.current
+    if (!isMobile || !mobileContainerRef.current) return
+    const el = mobileContainerRef.current
     const measure = () => {
-      const width = el?.clientWidth ?? 0
+      const width = el.clientWidth ?? 0
       if (width > 0) {
         const cols = Math.min(MAX_MOBILE_COLUMNS, Math.max(5, Math.floor(width / MOBILE_EMOJI_SIZE)))
         setColumns(cols)
@@ -336,53 +336,50 @@ function EmojiGridContent({
           </div>
         )}
 
-        {/* Emoji grid — full-bleed CSS grid */}
-        {filtered.length === 0 ? (
-          <div
-            className="flex items-center justify-center text-sm text-muted-foreground px-4"
-            style={{ height: "min(55dvh, 360px)" }}
-          >
-            No emojis found
-          </div>
-        ) : (
-          <Virtuoso
-            ref={virtuosoRef}
-            scrollerRef={(el) => {
-              scrollerElRef.current = el as HTMLElement
-            }}
-            totalCount={rows.length}
-            fixedItemHeight={MOBILE_ROW_HEIGHT}
-            increaseViewportBy={MOBILE_ROW_HEIGHT * 3}
-            style={{ height: "min(55dvh, 360px)" }}
-            className="px-4"
-            role="listbox"
-            aria-label="Emoji picker"
-            itemContent={(index) => {
-              const rowItems = rows[index]
-              return (
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
-                    gap: "2px",
-                  }}
-                >
-                  {rowItems.map((item) => (
-                    <EmojiButton
-                      key={item.shortcode}
-                      item={item}
-                      isSelected={false}
-                      isActive={activeShortcodes.has(item.shortcode)}
-                      isMobile={true}
-                      onClick={() => onSelect(item)}
-                      onMouseEnter={() => {}}
-                    />
-                  ))}
-                </div>
-              )
-            }}
-          />
-        )}
+        {/* Emoji grid — stable container keeps ResizeObserver alive across empty/non-empty transitions */}
+        <div ref={mobileContainerRef} className="flex-1" style={{ height: "min(55dvh, 360px)" }}>
+          {filtered.length === 0 ? (
+            <div className="flex items-center justify-center h-full text-sm text-muted-foreground px-4">
+              No emojis found
+            </div>
+          ) : (
+            <Virtuoso
+              ref={virtuosoRef}
+              totalCount={rows.length}
+              fixedItemHeight={MOBILE_ROW_HEIGHT}
+              increaseViewportBy={MOBILE_ROW_HEIGHT * 3}
+              style={{ height: "100%" }}
+              className="px-4"
+              role="listbox"
+              aria-label="Emoji picker"
+              itemContent={(index) => {
+                const rowItems = rows[index]
+                return (
+                  <div
+                    className="pb-0.5"
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+                      gap: "2px",
+                    }}
+                  >
+                    {rowItems.map((item) => (
+                      <EmojiButton
+                        key={item.shortcode}
+                        item={item}
+                        isSelected={false}
+                        isActive={activeShortcodes.has(item.shortcode)}
+                        isMobile={true}
+                        onClick={() => onSelect(item)}
+                        onMouseEnter={() => {}}
+                      />
+                    ))}
+                  </div>
+                )
+              }}
+            />
+          )}
+        </div>
       </>
     )
   }
@@ -453,7 +450,7 @@ function EmojiGridContent({
             const rowItems = rows[index]
             const rowStartIndex = index * columns
             return (
-              <div className="flex gap-0.5">
+              <div className="flex gap-0.5 pb-0.5">
                 {rowItems.map((item, colIndex) => {
                   const itemIndex = rowStartIndex + colIndex
                   return (

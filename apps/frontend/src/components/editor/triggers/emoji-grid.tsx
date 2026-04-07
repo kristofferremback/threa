@@ -6,7 +6,7 @@ import type { EmojiEntry } from "@threa/types"
 import type { SuggestionListRef } from "./suggestion-list"
 
 const GRID_COLUMNS = 8
-const ROW_HEIGHT = 32 // 8 (w-8) = 32px
+const ROW_HEIGHT = 34 // w-8 (32px) + 2px vertical gap
 const CONTAINER_HEIGHT = 256 // max-h-64 = 256px
 
 export interface EmojiGridProps {
@@ -217,7 +217,7 @@ function EmojiGridInner({ items, clientRect, command }: EmojiGridProps, ref: Rea
           const rowItems = rows[index]
           const rowStartIndex = index * GRID_COLUMNS
           return (
-            <div className="flex gap-0.5">
+            <div className="flex gap-0.5 pb-0.5">
               {rowItems.map((item, colIndex) => {
                 const itemIndex = rowStartIndex + colIndex
                 return (
