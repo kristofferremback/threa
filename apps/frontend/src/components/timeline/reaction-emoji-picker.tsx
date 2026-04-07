@@ -443,7 +443,6 @@ function EmojiGridContent({
             rangeRef.current = range
           }}
           style={{ height: CONTAINER_HEIGHT }}
-          className="px-2"
           components={{ Header: () => <div className="h-2" />, Footer: () => <div className="h-2" /> }}
           role="listbox"
           aria-label="Emoji picker"
@@ -451,7 +450,7 @@ function EmojiGridContent({
             const rowItems = rows[index]
             const rowStartIndex = index * columns
             return (
-              <div className="flex gap-0.5 pb-0.5">
+              <div className="flex gap-0.5 px-2 pb-0.5">
                 {rowItems.map((item, colIndex) => {
                   const itemIndex = rowStartIndex + colIndex
                   return (
