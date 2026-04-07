@@ -540,6 +540,7 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
         payload: {
           messageId: clientId,
           contentMarkdown,
+          contentJson: input.contentJson,
           ...(input.attachments && input.attachments.length > 0 ? { attachments: input.attachments } : {}),
         },
         actorId: currentUserId,

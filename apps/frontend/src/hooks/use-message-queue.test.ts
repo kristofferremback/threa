@@ -72,6 +72,7 @@ vi.mock("@/db", () => ({
       orderBy: () => ({
         toArray: () => Promise.resolve([...mockPendingMessages]),
       }),
+      get: (id: string) => Promise.resolve(mockPendingMessages.find((m) => m.clientId === id)),
       delete: (...args: unknown[]) => mockDelete(...args),
       update: (...args: unknown[]) => mockUpdate(...args),
     },

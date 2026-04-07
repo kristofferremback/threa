@@ -174,6 +174,8 @@ Avoid hardcoded display text in backend responses; return structured data and fo
 
 Avoid magic strings by centralizing constants at the source of truth (INV-33).
 
+`contentJson` (ProseMirror JSONContent) is the canonical internal representation for message content. Markdown is a serialization format for external callers (API wire format). Internal code (components, stores, optimistic events, IDB) should always pass and store `contentJson`; only serialize to markdown at the system boundary when sending to the API (INV-58).
+
 ### 4) AI Integration and Language Behavior
 
 Use only current-generation models listed in `docs/model-reference.md` (INV-16). All AI usage goes through the project AI wrapper (`createAI`), not raw SDK imports (INV-28).
@@ -238,7 +240,7 @@ When handling variants, colocate variant config and keep shared behavior on one 
 
 - **Persistence and data integrity:** INV-1, INV-2, INV-3, INV-8, INV-17, INV-20, INV-30, INV-41, INV-50, INV-56, INV-57
 - **Architecture and dependencies:** INV-4, INV-5, INV-6, INV-7, INV-9, INV-10, INV-11, INV-12, INV-13, INV-27, INV-34, INV-35, INV-37, INV-51, INV-52
-- **API and backend contracts:** INV-31, INV-32, INV-33, INV-46, INV-55
+- **API and backend contracts:** INV-31, INV-32, INV-33, INV-46, INV-55, INV-58
 - **AI and eval discipline:** INV-16, INV-19, INV-28, INV-44, INV-45, INV-54
 - **Frontend and UX behavior:** INV-14, INV-15, INV-18, INV-21, INV-40, INV-42, INV-53
 - **Testing:** INV-22, INV-23, INV-24, INV-26, INV-39, INV-48
