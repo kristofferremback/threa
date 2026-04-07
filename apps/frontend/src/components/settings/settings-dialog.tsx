@@ -2,10 +2,11 @@ import { useEffect, useState } from "react"
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
+  ResponsiveDialogDescription,
   ResponsiveDialogHeader,
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog"
-import { ResponsiveTabs } from "@/components/ui/responsive-tabs"
+import { ResponsiveSettingsNav } from "@/components/ui/responsive-settings-nav"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
 import { useSettings } from "@/contexts"
 import { SETTINGS_TABS, type SettingsTab } from "@threa/types"
@@ -47,6 +48,9 @@ export function SettingsDialog() {
       >
         <ResponsiveDialogHeader className="border-b px-4 py-4 sm:px-6 sm:py-5">
           <ResponsiveDialogTitle>Settings</ResponsiveDialogTitle>
+          <ResponsiveDialogDescription className="sr-only">
+            Manage your profile, AI preferences, notifications, and accessibility settings.
+          </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
 
         <Tabs
@@ -55,38 +59,12 @@ export function SettingsDialog() {
           className="flex-1 min-h-0"
         >
           <div className="flex-1 min-h-0 sm:grid sm:grid-cols-[220px,minmax(0,1fr)]">
-            <ResponsiveTabs
+            <ResponsiveSettingsNav
               tabs={SETTINGS_TABS}
-              labels={
-                Object.fromEntries(SETTINGS_TABS.map((tab) => [tab, TAB_CONFIG[tab].label])) as Record<
-                  SettingsTab,
-                  string
-                >
-              }
+              items={TAB_CONFIG}
               value={activeTab}
               onValueChange={(value) => setActiveTab(value as SettingsTab)}
-            >
-              <div className="hidden sm:flex h-full flex-col border-r bg-muted/20 p-3">
-                {SETTINGS_TABS.map((tab) => {
-                  const isActive = tab === activeTab
-                  return (
-                    <button
-                      key={tab}
-                      type="button"
-                      onClick={() => setActiveTab(tab)}
-                      className={`rounded-xl px-3 py-2.5 text-left transition-colors ${
-                        isActive
-                          ? "bg-background text-foreground shadow-sm"
-                          : "text-muted-foreground hover:bg-background/70"
-                      }`}
-                    >
-                      <div className="text-sm font-medium">{TAB_CONFIG[tab].label}</div>
-                      <div className="mt-0.5 text-xs">{TAB_CONFIG[tab].description}</div>
-                    </button>
-                  )
-                })}
-              </div>
-            </ResponsiveTabs>
+            />
 
             <div className="min-h-0 overflow-y-auto px-4 pb-4 pt-4 sm:px-6 sm:py-6">
               <TabsContent value="profile" className="mt-0">

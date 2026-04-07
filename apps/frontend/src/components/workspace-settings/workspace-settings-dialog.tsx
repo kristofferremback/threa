@@ -3,10 +3,11 @@ import { useSearchParams } from "react-router-dom"
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
+  ResponsiveDialogDescription,
   ResponsiveDialogHeader,
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog"
-import { ResponsiveTabs } from "@/components/ui/responsive-tabs"
+import { ResponsiveSettingsNav } from "@/components/ui/responsive-settings-nav"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
 import { GeneralTab } from "./general-tab"
 import { UsersTab } from "./users-tab"
@@ -16,11 +17,11 @@ import { BotsTab } from "./bots-tab"
 const ALL_TABS = ["general", "users", "bots", "api-keys"] as const
 type WorkspaceSettingsTab = (typeof ALL_TABS)[number]
 
-const TAB_LABELS: Record<WorkspaceSettingsTab, string> = {
-  general: "General",
-  users: "Users",
-  bots: "Bots",
-  "api-keys": "API Keys",
+const TAB_CONFIG: Record<WorkspaceSettingsTab, { label: string; description: string }> = {
+  general: { label: "General", description: "Workspace identity and region" },
+  users: { label: "Users", description: "Members and pending invites" },
+  bots: { label: "Bots", description: "Workspace automation accounts" },
+  "api-keys": { label: "API Keys", description: "Create and revoke access keys" },
 }
 
 interface WorkspaceSettingsDialogProps {
@@ -60,30 +61,35 @@ export function WorkspaceSettingsDialog({ workspaceId }: WorkspaceSettingsDialog
   return (
     <ResponsiveDialog open={isOpen} onOpenChange={(open) => !open && close()}>
       <ResponsiveDialogContent
-        desktopClassName="max-w-2xl max-h-[85vh] sm:flex flex-col overflow-hidden"
-        drawerClassName="flex flex-col"
+        desktopClassName="w-[min(96vw,980px)] max-w-none h-[min(720px,calc(100vh-2rem))] sm:flex flex-col overflow-hidden p-0 gap-0"
+        drawerClassName="flex flex-col gap-0"
         hideCloseButton
       >
-        <ResponsiveDialogHeader className="px-4 sm:px-6 pt-4 sm:pt-6">
+        <ResponsiveDialogHeader className="border-b px-4 py-4 sm:px-6 sm:py-5">
           <ResponsiveDialogTitle>Workspace Settings</ResponsiveDialogTitle>
+          <ResponsiveDialogDescription className="sr-only">
+            Manage workspace details, members, bots, and API keys.
+          </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
 
-        <Tabs value={activeTab} onValueChange={setTab} className="flex-1 flex flex-col min-h-0 px-4 sm:px-6">
-          <ResponsiveTabs tabs={ALL_TABS} labels={TAB_LABELS} value={activeTab} onValueChange={setTab} />
+        <Tabs value={activeTab} onValueChange={setTab} className="flex-1 min-h-0">
+          <div className="flex-1 min-h-0 sm:grid sm:grid-cols-[220px,minmax(0,1fr)]">
+            <ResponsiveSettingsNav tabs={ALL_TABS} items={TAB_CONFIG} value={activeTab} onValueChange={setTab} />
 
-          <div className="flex-1 overflow-y-auto mt-4 pb-4 sm:pb-6">
-            <TabsContent value="general" className="mt-0">
-              <GeneralTab workspaceId={workspaceId} />
-            </TabsContent>
-            <TabsContent value="users" className="mt-0">
-              <UsersTab workspaceId={workspaceId} />
-            </TabsContent>
-            <TabsContent value="bots" className="mt-0">
-              <BotsTab workspaceId={workspaceId} />
-            </TabsContent>
-            <TabsContent value="api-keys" className="mt-0">
-              <ApiKeysTab workspaceId={workspaceId} />
-            </TabsContent>
+            <div className="min-h-0 overflow-y-auto px-4 pb-4 pt-4 sm:px-6 sm:py-6">
+              <TabsContent value="general" className="mt-0">
+                <GeneralTab workspaceId={workspaceId} />
+              </TabsContent>
+              <TabsContent value="users" className="mt-0">
+                <UsersTab workspaceId={workspaceId} />
+              </TabsContent>
+              <TabsContent value="bots" className="mt-0">
+                <BotsTab workspaceId={workspaceId} />
+              </TabsContent>
+              <TabsContent value="api-keys" className="mt-0">
+                <ApiKeysTab workspaceId={workspaceId} />
+              </TabsContent>
+            </div>
           </div>
         </Tabs>
       </ResponsiveDialogContent>

@@ -3,10 +3,11 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
+  ResponsiveDialogDescription,
   ResponsiveDialogHeader,
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog"
-import { ResponsiveTabs } from "@/components/ui/responsive-tabs"
+import { ResponsiveSettingsNav } from "@/components/ui/responsive-settings-nav"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
 import { useStreamSettings, STREAM_SETTINGS_TABS, type StreamSettingsTab } from "./use-stream-settings"
 import { GeneralTab } from "./general-tab"
@@ -16,10 +17,10 @@ import { streamKeys } from "@/hooks"
 import { useWorkspaceStreams, useWorkspaceStreamMemberships } from "@/stores/workspace-store"
 import { StreamTypes, type Stream, type StreamBootstrap, type NotificationLevel } from "@threa/types"
 
-const TAB_LABELS: Record<StreamSettingsTab, string> = {
-  general: "General",
-  companion: "Companion",
-  members: "Members",
+const TAB_CONFIG: Record<StreamSettingsTab, { label: string; description: string }> = {
+  general: { label: "General", description: "Notifications and stream details" },
+  companion: { label: "Companion", description: "AI instructions and behavior" },
+  members: { label: "Members", description: "People and bot access" },
 }
 
 interface StreamSettingsDialogProps {
@@ -80,39 +81,43 @@ export function StreamSettingsDialog({ workspaceId }: StreamSettingsDialogProps)
   return (
     <ResponsiveDialog open={isOpen} onOpenChange={(open) => !open && closeStreamSettings()}>
       <ResponsiveDialogContent
-        desktopClassName="max-w-2xl max-h-[85vh] sm:flex flex-col overflow-hidden"
-        drawerClassName="flex flex-col"
+        desktopClassName="w-[min(96vw,980px)] max-w-none h-[min(720px,calc(100vh-2rem))] sm:flex flex-col overflow-hidden p-0 gap-0"
+        drawerClassName="flex flex-col gap-0"
         hideCloseButton
       >
-        <ResponsiveDialogHeader className="px-4 sm:px-6 pt-4 sm:pt-6">
+        <ResponsiveDialogHeader className="border-b px-4 py-4 sm:px-6 sm:py-5">
           <ResponsiveDialogTitle>{streamName} Settings</ResponsiveDialogTitle>
+          <ResponsiveDialogDescription className="sr-only">
+            Manage notifications, members, and companion settings for this stream.
+          </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
 
         {resolvedStream && streamId && currentUserId ? (
-          <Tabs value={effectiveTab} onValueChange={setTab} className="flex-1 flex flex-col min-h-0 px-4 sm:px-6">
-            <ResponsiveTabs
-              tabs={availableTabs}
-              labels={TAB_LABELS}
-              value={effectiveTab}
-              onValueChange={setTab}
-              columns={availableTabs.length}
-            />
+          <Tabs value={effectiveTab} onValueChange={setTab} className="flex-1 min-h-0">
+            <div className="flex-1 min-h-0 sm:grid sm:grid-cols-[220px,minmax(0,1fr)]">
+              <ResponsiveSettingsNav
+                tabs={availableTabs}
+                items={TAB_CONFIG}
+                value={effectiveTab}
+                onValueChange={setTab}
+              />
 
-            <div className="flex-1 overflow-y-auto mt-4 pr-2 pb-4 sm:pb-6 scrollbar-thin">
-              <TabsContent value="general" className="mt-0">
-                <GeneralTab
-                  workspaceId={workspaceId}
-                  stream={resolvedStream}
-                  currentUserId={currentUserId}
-                  notificationLevel={currentNotificationLevel}
-                />
-              </TabsContent>
-              <TabsContent value="companion" className="mt-0">
-                <CompanionTab stream={resolvedStream} />
-              </TabsContent>
-              <TabsContent value="members" className="mt-0">
-                <MembersTab workspaceId={workspaceId} streamId={streamId} currentUserId={currentUserId} />
-              </TabsContent>
+              <div className="min-h-0 overflow-y-auto px-4 pb-4 pt-4 sm:px-6 sm:py-6 scrollbar-thin">
+                <TabsContent value="general" className="mt-0">
+                  <GeneralTab
+                    workspaceId={workspaceId}
+                    stream={resolvedStream}
+                    currentUserId={currentUserId}
+                    notificationLevel={currentNotificationLevel}
+                  />
+                </TabsContent>
+                <TabsContent value="companion" className="mt-0">
+                  <CompanionTab stream={resolvedStream} />
+                </TabsContent>
+                <TabsContent value="members" className="mt-0">
+                  <MembersTab workspaceId={workspaceId} streamId={streamId} currentUserId={currentUserId} />
+                </TabsContent>
+              </div>
             </div>
           </Tabs>
         ) : (
