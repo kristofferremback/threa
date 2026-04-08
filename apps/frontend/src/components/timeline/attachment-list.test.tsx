@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen, fireEvent, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
+import { MemoryRouter } from "react-router-dom"
+import { MediaGalleryProvider } from "@/contexts"
 import { AttachmentList } from "./attachment-list"
 import type { AttachmentSummary } from "@threa/types"
 
@@ -12,16 +14,15 @@ vi.mock("@/api", () => ({
   },
 }))
 
-// Mock the media gallery context
-const mockOpenMedia = vi.fn()
-const mockCloseMedia = vi.fn()
-vi.mock("@/contexts", () => ({
-  useMediaGallery: () => ({
-    mediaAttachmentId: null,
-    openMedia: mockOpenMedia,
-    closeMedia: mockCloseMedia,
-  }),
-}))
+function Wrapper({ children }: { children: React.ReactNode }) {
+  return (
+    <MemoryRouter>
+      <MediaGalleryProvider>{children}</MediaGalleryProvider>
+    </MemoryRouter>
+  )
+}
+
+const renderOpts = { wrapper: Wrapper }
 
 describe("AttachmentList", () => {
   const workspaceId = "ws_123"
@@ -41,20 +42,21 @@ describe("AttachmentList", () => {
 
   describe("rendering", () => {
     it("should render nothing when attachments is empty", () => {
-      const { container } = render(<AttachmentList attachments={[]} workspaceId={workspaceId} />)
+      const { container } = render(<AttachmentList attachments={[]} workspaceId={workspaceId} />, renderOpts)
       expect(container.firstChild).toBeNull()
     })
 
     it("should render nothing when attachments is undefined", () => {
       const { container } = render(
-        <AttachmentList attachments={undefined as unknown as AttachmentSummary[]} workspaceId={workspaceId} />
+        <AttachmentList attachments={undefined as unknown as AttachmentSummary[]} workspaceId={workspaceId} />,
+        renderOpts
       )
       expect(container.firstChild).toBeNull()
     })
 
     it("should render file attachment with filename", () => {
       const attachment = createAttachment({ filename: "report.pdf" })
-      render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />)
+      render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />, renderOpts)
 
       expect(screen.getByText("report.pdf")).toBeInTheDocument()
     })
@@ -64,7 +66,7 @@ describe("AttachmentList", () => {
         createAttachment({ id: "1", filename: "file1.pdf" }),
         createAttachment({ id: "2", filename: "file2.txt", mimeType: "text/plain" }),
       ]
-      render(<AttachmentList attachments={attachments} workspaceId={workspaceId} />)
+      render(<AttachmentList attachments={attachments} workspaceId={workspaceId} />, renderOpts)
 
       expect(screen.getByText("file1.pdf")).toBeInTheDocument()
       expect(screen.getByText("file2.txt")).toBeInTheDocument()
@@ -76,7 +78,7 @@ describe("AttachmentList", () => {
         filename: "photo.png",
         mimeType: "image/png",
       })
-      render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />)
+      render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />, renderOpts)
 
       // Image thumbnail should load
       await waitFor(() => {
@@ -94,14 +96,19 @@ describe("AttachmentList", () => {
         mimeType: "image/png",
       })
       const { rerender } = render(
-        <AttachmentList attachments={[attachment]} workspaceId={workspaceId} deferHydration={true} />
+        <AttachmentList attachments={[attachment]} workspaceId={workspaceId} deferHydration={true} />,
+        renderOpts
       )
 
       await waitFor(() => {
         expect(mockGetDownloadUrl).not.toHaveBeenCalled()
       })
 
-      rerender(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} deferHydration={false} />)
+      rerender(
+        <Wrapper>
+          <AttachmentList attachments={[attachment]} workspaceId={workspaceId} deferHydration={false} />
+        </Wrapper>
+      )
 
       await waitFor(() => {
         expect(mockGetDownloadUrl).toHaveBeenCalledWith(workspaceId, "img_1")
@@ -113,7 +120,7 @@ describe("AttachmentList", () => {
         createAttachment({ id: "1", filename: "photo.jpg", mimeType: "image/jpeg" }),
         createAttachment({ id: "2", filename: "doc.pdf", mimeType: "application/pdf" }),
       ]
-      render(<AttachmentList attachments={attachments} workspaceId={workspaceId} />)
+      render(<AttachmentList attachments={attachments} workspaceId={workspaceId} />, renderOpts)
 
       // Both should be rendered
       await waitFor(() => {
@@ -126,28 +133,28 @@ describe("AttachmentList", () => {
   describe("file size formatting", () => {
     it("should display bytes for small files", () => {
       const attachment = createAttachment({ sizeBytes: 500 })
-      render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />)
+      render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />, renderOpts)
 
       expect(screen.getByText("500 B")).toBeInTheDocument()
     })
 
     it("should display KB for files over 1KB", () => {
       const attachment = createAttachment({ sizeBytes: 2048 })
-      render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />)
+      render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />, renderOpts)
 
       expect(screen.getByText("2.0 KB")).toBeInTheDocument()
     })
 
     it("should display MB for files over 1MB", () => {
       const attachment = createAttachment({ sizeBytes: 5 * 1024 * 1024 })
-      render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />)
+      render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />, renderOpts)
 
       expect(screen.getByText("5.0 MB")).toBeInTheDocument()
     })
 
     it("should display fractional KB", () => {
       const attachment = createAttachment({ sizeBytes: 1536 }) // 1.5 KB
-      render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />)
+      render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />, renderOpts)
 
       expect(screen.getByText("1.5 KB")).toBeInTheDocument()
     })
@@ -156,7 +163,7 @@ describe("AttachmentList", () => {
   describe("file download", () => {
     it("should trigger download when file attachment clicked", async () => {
       const attachment = createAttachment({ mimeType: "text/plain", filename: "notes.txt" })
-      render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />)
+      render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />, renderOpts)
 
       // Set up download mocks after render to avoid interfering with React
       const originalCreateElement = document.createElement.bind(document)
@@ -181,7 +188,7 @@ describe("AttachmentList", () => {
 
     it("should open PDF in new tab", async () => {
       const attachment = createAttachment({ mimeType: "application/pdf" })
-      render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />)
+      render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />, renderOpts)
 
       const windowOpen = vi.spyOn(window, "open").mockImplementation(() => null)
 
@@ -204,7 +211,7 @@ describe("AttachmentList", () => {
         filename: "photo.png",
         mimeType: "image/png",
       })
-      render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />)
+      render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />, renderOpts)
 
       // Wait for image to load
       const imageButton = await screen.findByRole("button", { name: /photo\.png/i })
@@ -224,7 +231,7 @@ describe("AttachmentList", () => {
         filename: "photo.png",
         mimeType: "image/png",
       })
-      render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />)
+      render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />, renderOpts)
 
       // Wait for image to load
       const imageButton = await screen.findByRole("button", { name: /photo\.png/i })
@@ -256,7 +263,7 @@ describe("AttachmentList", () => {
         filename: "broken.png",
         mimeType: "image/png",
       })
-      render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />)
+      render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />, renderOpts)
 
       // Wait for error state to appear
       expect(await screen.findByText("Failed to load image")).toBeInTheDocument()

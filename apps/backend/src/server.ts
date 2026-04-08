@@ -58,7 +58,13 @@ import {
 } from "./features/conversations"
 import { UserPreferencesService } from "./features/user-preferences"
 import { createS3Storage } from "./lib/storage/s3-client"
-import { OutboxDispatcher, BroadcastHandler, OutboxRetentionWorker, type OutboxHandler } from "./lib/outbox"
+import {
+  OutboxDispatcher,
+  BroadcastHandler,
+  OutboxRetentionWorker,
+  OutboxRepository,
+  type OutboxHandler,
+} from "./lib/outbox"
 import {
   CompanionHandler,
   MentionInvokeHandler,
@@ -648,6 +654,14 @@ export async function startServer(): Promise<ServerInstance> {
     if (videoJob) {
       await VideoTranscodeJobRepository.updateFailed(querier, videoJob.id, "Moved to DLQ after exhausting retries")
     }
+    const att = await AttachmentRepository.findById(querier, job.data.attachmentId)
+    await OutboxRepository.insert(querier, "attachment:transcoded", {
+      workspaceId: job.data.workspaceId,
+      ...(att?.streamId && { streamId: att.streamId }),
+      ...(att?.messageId && { messageId: att.messageId }),
+      attachmentId: job.data.attachmentId,
+      processingStatus: ProcessingStatuses.FAILED,
+    })
   }
   const videoCheckOnDLQ: OnDLQHook<VideoTranscodeCheckJobData> = async (querier, job) => {
     await AttachmentRepository.updateProcessingStatus(querier, job.data.attachmentId, ProcessingStatuses.FAILED)
@@ -659,6 +673,14 @@ export async function startServer(): Promise<ServerInstance> {
         "Check job moved to DLQ after exhausting retries"
       )
     }
+    const att = await AttachmentRepository.findById(querier, job.data.attachmentId)
+    await OutboxRepository.insert(querier, "attachment:transcoded", {
+      workspaceId: job.data.workspaceId,
+      ...(att?.streamId && { streamId: att.streamId }),
+      ...(att?.messageId && { messageId: att.messageId }),
+      attachmentId: job.data.attachmentId,
+      processingStatus: ProcessingStatuses.FAILED,
+    })
   }
   jobQueue.registerHandler(JobQueues.VIDEO_TRANSCODE_SUBMIT, videoSubmitWorker, {
     hooks: { onDLQ: videoOnDLQ },
