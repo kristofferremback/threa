@@ -516,7 +516,7 @@ export function MediaGallery({ isOpen, onClose, items, initialIndex, workspaceId
                         }}
                         type="button"
                         className={cn(
-                          "relative rounded overflow-hidden border-2 transition-all",
+                          "relative w-full rounded overflow-hidden border-2 transition-all",
                           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
                           i === currentIndex
                             ? "border-white opacity-100"
