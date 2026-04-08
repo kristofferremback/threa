@@ -29,21 +29,29 @@ test.describe("Message Send Mode", () => {
    */
   async function setSendMode(page: import("@playwright/test").Page, mode: "enter" | "cmdEnter") {
     await openSettings(page)
-    // The Send Messages section might be on Appearance or Keyboard tab
-    // Try to click Keyboard tab if visible
-    const keyboardTab = page.getByRole("tab", { name: /keyboard/i })
-    if (await keyboardTab.isVisible()) {
-      await keyboardTab.click()
+    const dialog = page.getByRole("dialog")
+
+    // Settings now use sidebar buttons on desktop but older flows used tabs.
+    const keyboardSidebarButton = dialog.getByRole("button", { name: /keyboard/i })
+    if (await keyboardSidebarButton.isVisible().catch(() => false)) {
+      await keyboardSidebarButton.click()
+    } else {
+      const keyboardTab = dialog.getByRole("tab", { name: /keyboard/i })
+      if (await keyboardTab.isVisible().catch(() => false)) {
+        await keyboardTab.click()
+      }
     }
+
+    await expect(dialog.getByRole("radio", { name: "Enter to send", exact: true })).toBeVisible({ timeout: 5000 })
 
     // Use exact name match for radio buttons
     if (mode === "enter") {
-      await page.getByRole("radio", { name: "Enter to send", exact: true }).click()
+      await dialog.getByRole("radio", { name: "Enter to send", exact: true }).click()
     } else {
-      await page.getByRole("radio", { name: /Ctrl.*Enter to send/ }).click()
+      await dialog.getByRole("radio", { name: "⌘/Ctrl + Enter to send", exact: true }).click()
     }
     await page.keyboard.press("Escape")
-    await expect(page.getByRole("dialog")).not.toBeVisible()
+    await expect(dialog).not.toBeVisible()
   }
 
   test.beforeEach(async ({ page }) => {

@@ -176,7 +176,9 @@ test.describe("New Channel Socket Subscription", () => {
     await userB.page.locator("[contenteditable='true']").click()
     await userB.page.keyboard.type(previewMessage)
     await userB.page.getByRole("button", { name: "Send" }).click()
-    await expect(userB.page.getByRole("main").getByText(previewMessage)).toBeVisible({ timeout: 10000 })
+    await expect(
+      userB.page.getByRole("main").locator(".message-item").filter({ hasText: previewMessage }).first()
+    ).toBeVisible({ timeout: 10000 })
 
     // ──── User A: Channel should be reachable from sidebar without refresh ────
 
@@ -197,7 +199,9 @@ test.describe("New Channel Socket Subscription", () => {
     await userA.page.locator("[contenteditable='true']").click()
     await userA.page.keyboard.type(followUpMessage)
     await userA.page.getByRole("button", { name: "Send" }).click()
-    await expect(userA.page.getByRole("main").getByText(followUpMessage)).toBeVisible({ timeout: 10000 })
+    await expect(
+      userA.page.getByRole("main").locator(".message-item").filter({ hasText: followUpMessage }).first()
+    ).toBeVisible({ timeout: 10000 })
 
     await userA.context.close()
     await userB.context.close()
