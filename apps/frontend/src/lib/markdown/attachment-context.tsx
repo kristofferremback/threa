@@ -40,10 +40,12 @@ export function AttachmentProvider({ workspaceId, attachments, children }: Attac
     () =>
       attachments.filter(
         (a) =>
-          a.mimeType.startsWith("video/") && (a.processingStatus === "completed" || a.processingStatus === "skipped")
+          !a.mimeType.startsWith("image/") && (a.processingStatus === "completed" || a.processingStatus === "skipped")
       ),
     [attachments]
   )
+
+  const videoAttachmentIds = useMemo(() => new Set(videoAttachments.map((a) => a.id)), [videoAttachments])
 
   const openAttachment = useCallback(
     async (attachmentId: string, metaKey: boolean) => {
@@ -51,7 +53,7 @@ export function AttachmentProvider({ workspaceId, attachments, children }: Attac
       if (!attachment) return
 
       const isImage = attachment.mimeType.startsWith("image/")
-      const isVideo = attachment.mimeType.startsWith("video/")
+      const isVideo = !isImage && !!attachment.processingStatus
       const isPlayableVideo =
         isVideo && (attachment.processingStatus === "completed" || attachment.processingStatus === "skipped")
 
@@ -66,7 +68,7 @@ export function AttachmentProvider({ workspaceId, attachments, children }: Attac
           const clickedIdx = allMedia.findIndex((a) => a.id === attachmentId)
 
           const initial: GalleryItem[] = allMedia.map((a) => {
-            if (a.mimeType.startsWith("video/")) {
+            if (videoAttachmentIds.has(a.id)) {
               return {
                 type: "video" as const,
                 url: "",
@@ -89,7 +91,7 @@ export function AttachmentProvider({ workspaceId, attachments, children }: Attac
           if (others.length > 0) {
             const settled = await Promise.allSettled(
               others.map(async (a) => {
-                if (a.mimeType.startsWith("video/")) {
+                if (videoAttachmentIds.has(a.id)) {
                   const [videoUrl, thumbUrl] = await Promise.all([
                     attachmentsApi.getDownloadUrl(workspaceId, a.id, { variant: "processed" }).catch(() => ""),
                     attachmentsApi.getDownloadUrl(workspaceId, a.id, { variant: "thumbnail" }).catch(() => ""),
@@ -153,7 +155,7 @@ export function AttachmentProvider({ workspaceId, attachments, children }: Attac
                 attachmentId: a.id,
               }
             }
-            if (a.mimeType.startsWith("video/")) {
+            if (videoAttachmentIds.has(a.id)) {
               return { type: "video" as const, url: "", thumbnailUrl: "", filename: a.filename, attachmentId: a.id }
             }
             return { type: "image" as const, url: "", filename: a.filename, attachmentId: a.id }
@@ -165,7 +167,7 @@ export function AttachmentProvider({ workspaceId, attachments, children }: Attac
           if (others.length > 0) {
             const settled = await Promise.allSettled(
               others.map(async (a) => {
-                if (a.mimeType.startsWith("video/")) {
+                if (videoAttachmentIds.has(a.id)) {
                   const [vUrl, tUrl] = await Promise.all([
                     attachmentsApi.getDownloadUrl(workspaceId, a.id, { variant: "processed" }).catch(() => ""),
                     attachmentsApi.getDownloadUrl(workspaceId, a.id, { variant: "thumbnail" }).catch(() => ""),
@@ -215,7 +217,7 @@ export function AttachmentProvider({ workspaceId, attachments, children }: Attac
         console.error("Failed to get attachment URL:", error)
       }
     },
-    [workspaceId, attachments, imageAttachments, videoAttachments]
+    [workspaceId, attachments, imageAttachments, videoAttachments, videoAttachmentIds]
   )
 
   return (

@@ -465,16 +465,22 @@ export function AttachmentList({ attachments, workspaceId, className, deferHydra
     () => (attachments ?? []).filter((a) => a.mimeType.startsWith("image/")),
     [attachments]
   )
+  // Use processingStatus as the video discriminator — the backend sets it for
+  // all video attachments, including application/octet-stream files with video
+  // extensions that wouldn't match a pure mimeType.startsWith("video/") check.
   const videoAttachments = useMemo(
-    () => (attachments ?? []).filter((a) => a.mimeType.startsWith("video/") && a.processingStatus !== "failed"),
+    () =>
+      (attachments ?? []).filter(
+        (a) => !a.mimeType.startsWith("image/") && a.processingStatus && a.processingStatus !== "failed"
+      ),
     [attachments]
   )
   const failedVideoAttachments = useMemo(
-    () => (attachments ?? []).filter((a) => a.mimeType.startsWith("video/") && a.processingStatus === "failed"),
+    () => (attachments ?? []).filter((a) => !a.mimeType.startsWith("image/") && a.processingStatus === "failed"),
     [attachments]
   )
   const fileAttachments = useMemo(
-    () => (attachments ?? []).filter((a) => !a.mimeType.startsWith("image/") && !a.mimeType.startsWith("video/")),
+    () => (attachments ?? []).filter((a) => !a.mimeType.startsWith("image/") && !a.processingStatus),
     [attachments]
   )
 

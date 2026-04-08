@@ -1,5 +1,5 @@
 import type { Pool } from "pg"
-import { withClient, withTransaction } from "../../../db"
+import { withTransaction } from "../../../db"
 import { videoTranscodeJobId } from "../../../lib/id"
 import { logger } from "../../../lib/logger"
 import { AttachmentRepository } from "../repository"
@@ -88,7 +88,7 @@ export class VideoTranscodingService implements VideoTranscodingServiceLike {
       })
     } catch (error) {
       log.error({ error }, "Failed to submit MediaConvert job")
-      await this.markFailed(job.id, attachmentId, `MediaConvert submission failed: ${error}`)
+      await this.markFailed(job.id, attachmentId, `MediaConvert submission failed: ${error}`, attachment.workspaceId)
       return
     }
 
@@ -104,10 +104,8 @@ export class VideoTranscodingService implements VideoTranscodingServiceLike {
   async checkStatus(attachmentId: string): Promise<boolean> {
     const log = logger.child({ attachmentId })
 
-    // Phase 1: Fetch tracking job
-    const job = await withClient(this.pool, (client) =>
-      VideoTranscodeJobRepository.findByAttachmentId(client, attachmentId)
-    )
+    // Phase 1: Fetch tracking job (single query — pass pool directly per INV-30)
+    const job = await VideoTranscodeJobRepository.findByAttachmentId(this.pool, attachmentId)
 
     if (!job) {
       log.warn("Video transcode job not found, treating as done")
@@ -120,7 +118,7 @@ export class VideoTranscodingService implements VideoTranscodingServiceLike {
 
     if (!job.mediaconvertJobId) {
       log.warn("Transcode job has no MediaConvert job ID, marking as failed")
-      await this.markFailed(job.id, attachmentId, "No MediaConvert job ID")
+      await this.markFailed(job.id, attachmentId, "No MediaConvert job ID", job.workspaceId)
       return true
     }
 
@@ -128,7 +126,7 @@ export class VideoTranscodingService implements VideoTranscodingServiceLike {
     const ageMs = Date.now() - job.createdAt.getTime()
     if (ageMs > VIDEO_TRANSCODE_MAX_AGE_MS) {
       log.warn({ ageMs }, "Transcode job exceeded max age, marking as failed")
-      await this.markFailed(job.id, attachmentId, "Transcoding timed out")
+      await this.markFailed(job.id, attachmentId, "Transcoding timed out", job.workspaceId)
       return true
     }
 
@@ -160,7 +158,7 @@ export class VideoTranscodingService implements VideoTranscodingServiceLike {
     }
 
     if (status.status === "ERROR" || status.status === "CANCELED") {
-      await this.markFailed(job.id, attachmentId, status.errorMessage ?? "Unknown error")
+      await this.markFailed(job.id, attachmentId, status.errorMessage ?? "Unknown error", job.workspaceId)
       return true
     }
 
@@ -169,15 +167,20 @@ export class VideoTranscodingService implements VideoTranscodingServiceLike {
     return false
   }
 
-  private async markFailed(jobId: string, attachmentId: string, errorMessage: string): Promise<void> {
+  private async markFailed(
+    jobId: string,
+    attachmentId: string,
+    errorMessage: string,
+    workspaceId?: string
+  ): Promise<void> {
     await withTransaction(this.pool, async (client) => {
       await VideoTranscodeJobRepository.updateFailed(client, jobId, errorMessage)
       await AttachmentRepository.updateProcessingStatus(client, attachmentId, ProcessingStatuses.FAILED)
 
       const att = await AttachmentRepository.findById(client, attachmentId)
-      const job = await VideoTranscodeJobRepository.findByAttachmentId(client, attachmentId)
+      const resolvedWorkspaceId = workspaceId ?? att?.workspaceId ?? ""
       await OutboxRepository.insert(client, "attachment:transcoded", {
-        workspaceId: job?.workspaceId ?? att?.workspaceId ?? "",
+        workspaceId: resolvedWorkspaceId,
         ...(att?.streamId && { streamId: att.streamId }),
         ...(att?.messageId && { messageId: att.messageId }),
         attachmentId,
