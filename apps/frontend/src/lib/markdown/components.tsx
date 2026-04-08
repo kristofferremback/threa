@@ -1,13 +1,119 @@
 import type { Components } from "react-markdown"
-import { Suspense, lazy, Component, type ReactNode, type MouseEvent } from "react"
+import { Suspense, lazy, Component, Children, isValidElement, type ReactNode, type MouseEvent } from "react"
 import { cn } from "@/lib/utils"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ProcessedChildren } from "./mention-renderer"
 import { useAttachmentContext } from "./attachment-context"
 import { useLinkPreviewContext } from "./link-preview-context"
+import { QuoteReplyBlock } from "./quote-reply-block"
 
 const CodeBlock = lazy(() => import("./code-block"))
+
+/**
+ * Parse quote: protocol href into streamId and messageId.
+ * Format: quote:streamId/messageId
+ */
+function parseQuoteHref(
+  href: string
+): { streamId: string; messageId: string; authorId: string; actorType: string } | null {
+  if (!href.startsWith("quote:")) return null
+  const parts = href.slice("quote:".length).split("/")
+  if (parts.length < 2) return null
+  return {
+    streamId: parts[0],
+    messageId: parts[1],
+    authorId: parts[2] ?? "",
+    actorType: parts[3] ?? "user",
+  }
+}
+
+/**
+ * Walk React children tree to find a link with quote: protocol,
+ * indicating this blockquote is a quote-reply.
+ * Returns extracted metadata or null if not a quote-reply.
+ */
+function extractQuoteReplyFromChildren(children: ReactNode): {
+  authorName: string
+  streamId: string
+  messageId: string
+  authorId: string
+  actorType: string
+  quotedContent: ReactNode[]
+} | null {
+  const childArray: ReactNode[] = Children.toArray(children)
+
+  // The markdown renders as: <p>quoted text</p>\n<p>— <a href="quote:...">Author</a></p>
+  for (let i = childArray.length - 1; i >= 0; i--) {
+    const child = childArray[i]
+    if (!isValidElement(child)) continue
+
+    const quoteLink = findQuoteLinkInElement(child)
+    if (quoteLink) {
+      return {
+        authorName: quoteLink.authorName,
+        streamId: quoteLink.streamId,
+        messageId: quoteLink.messageId,
+        authorId: quoteLink.authorId,
+        actorType: quoteLink.actorType,
+        quotedContent: childArray.slice(0, i),
+      }
+    }
+  }
+
+  return null
+}
+
+interface QuoteLinkInfo {
+  authorName: string
+  streamId: string
+  messageId: string
+  authorId: string
+  actorType: string
+}
+
+/**
+ * Recursively search a React element for a link with quote: protocol.
+ */
+function findQuoteLinkInElement(element: ReactNode): QuoteLinkInfo | null {
+  if (!isValidElement(element)) return null
+
+  // Check if this is directly a link with quote: href
+  const props = element.props as Record<string, unknown>
+  if (props.href && typeof props.href === "string") {
+    const parsed = parseQuoteHref(props.href)
+    if (parsed) {
+      const authorName = extractTextFromChildren(props.children as ReactNode)
+      return { ...parsed, authorName }
+    }
+  }
+
+  // Search through children
+  if (props.children) {
+    const childArray = Children.toArray(props.children as ReactNode)
+    for (let i = childArray.length - 1; i >= 0; i--) {
+      const result = findQuoteLinkInElement(childArray[i])
+      if (result) return result
+    }
+  }
+
+  return null
+}
+
+/**
+ * Extract plain text from React children tree.
+ */
+function extractTextFromChildren(children: ReactNode): string {
+  if (typeof children === "string") return children
+  if (typeof children === "number") return String(children)
+  if (!children) return ""
+  if (Array.isArray(children)) return children.map(extractTextFromChildren).join("")
+  if (isValidElement(children)) {
+    const props = children.props as Record<string, unknown>
+    return extractTextFromChildren(props.children as ReactNode)
+  }
+  return ""
+}
 
 /**
  * Link component that handles attachment:// URLs specially
@@ -182,10 +288,28 @@ export const markdownComponents: Components = {
     </del>
   ),
 
-  // Blockquote
-  blockquote: ({ children }) => (
-    <blockquote className="border-l-2 border-primary/50 pl-4 my-2 text-muted-foreground italic">{children}</blockquote>
-  ),
+  // Blockquote — detect quote-reply attribution pattern (quote: protocol link)
+  blockquote: ({ children }) => {
+    const quoteReply = extractQuoteReplyFromChildren(children)
+    if (quoteReply) {
+      return (
+        <QuoteReplyBlock
+          authorName={quoteReply.authorName}
+          authorId={quoteReply.authorId}
+          actorType={quoteReply.actorType}
+          streamId={quoteReply.streamId}
+          messageId={quoteReply.messageId}
+        >
+          {quoteReply.quotedContent}
+        </QuoteReplyBlock>
+      )
+    }
+    return (
+      <blockquote className="border-l-2 border-primary/50 pl-4 my-2 text-muted-foreground italic">
+        {children}
+      </blockquote>
+    )
+  },
 
   // Lists
   ul: ({ children }) => <ul className="list-disc pl-6 my-2">{children}</ul>,

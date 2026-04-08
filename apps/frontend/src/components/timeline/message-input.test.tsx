@@ -60,7 +60,19 @@ const mockSetIsSending = vi.fn()
 const mockHandleContentChange = vi.fn()
 const mockHandleRemoveAttachment = vi.fn()
 const mockHandleFileSelect = vi.fn()
+const mockComposerFocus = vi.fn()
+const mockComposerFocusAfterQuoteReply = vi.fn()
 let mockSubmitContentOverride: JSONContent | undefined
+let registeredQuoteReplyHandler:
+  | ((data: {
+      messageId: string
+      streamId: string
+      authorName: string
+      authorId: string
+      actorType: string
+      snippet: string
+    }) => void)
+  | null = null
 
 // Composer state that tests can modify
 let mockComposerState = {
@@ -83,6 +95,29 @@ let mockComposerState = {
 
 vi.mock("@/stores/workspace-store", () => ({
   useWorkspaceStreams: () => [],
+}))
+
+vi.mock("./quote-reply-context", () => ({
+  useQuoteReply: () => ({
+    triggerQuoteReply: vi.fn(),
+    registerHandler: (
+      handler: (data: {
+        messageId: string
+        streamId: string
+        authorName: string
+        authorId: string
+        actorType: string
+        snippet: string
+      }) => void
+    ) => {
+      registeredQuoteReplyHandler = handler
+      return () => {
+        if (registeredQuoteReplyHandler === handler) {
+          registeredQuoteReplyHandler = null
+        }
+      }
+    },
+  }),
 }))
 
 vi.mock("@/hooks", () => ({
@@ -117,6 +152,7 @@ vi.mock("@/components/composer", () => ({
     isSubmitting,
     hasFailed,
     pendingAttachments,
+    composerRef,
   }: {
     content: JSONContent
     onContentChange: (v: JSONContent) => void
@@ -125,21 +161,32 @@ vi.mock("@/components/composer", () => ({
     isSubmitting: boolean
     hasFailed: boolean
     pendingAttachments: Array<{ id: string; filename: string; sizeBytes: number; status: string }>
-  }) => (
-    <div data-testid="message-composer">
-      <textarea data-testid="rich-editor" />
-      {pendingAttachments.map((a) => (
-        <div key={a.id}>
-          <span>{a.filename}</span>
-          <span>{a.sizeBytes >= 1024 ? `${(a.sizeBytes / 1024).toFixed(1)} KB` : `${a.sizeBytes} B`}</span>
-          {a.status === "error" && <span>Failed</span>}
+    composerRef?: { current: { focus: () => void; focusAfterQuoteReply: () => void } | null }
+  }) =>
+    (() => {
+      if (composerRef) {
+        composerRef.current = {
+          focus: mockComposerFocus,
+          focusAfterQuoteReply: mockComposerFocusAfterQuoteReply,
+        }
+      }
+
+      return (
+        <div data-testid="message-composer">
+          <textarea data-testid="rich-editor" />
+          {pendingAttachments.map((a) => (
+            <div key={a.id}>
+              <span>{a.filename}</span>
+              <span>{a.sizeBytes >= 1024 ? `${(a.sizeBytes / 1024).toFixed(1)} KB` : `${a.sizeBytes} B`}</span>
+              {a.status === "error" && <span>Failed</span>}
+            </div>
+          ))}
+          <button onClick={() => onSubmit(mockSubmitContentOverride)} disabled={!canSubmit || hasFailed}>
+            {isSubmitting ? "Sending..." : "Send"}
+          </button>
         </div>
-      ))}
-      <button onClick={() => onSubmit(mockSubmitContentOverride)} disabled={!canSubmit || hasFailed}>
-        {isSubmitting ? "Sending..." : "Send"}
-      </button>
-    </div>
-  ),
+      )
+    })(),
 }))
 
 describe("MessageInput", () => {
@@ -161,6 +208,9 @@ describe("MessageInput", () => {
       isLoaded: true,
     }
     mockSubmitContentOverride = undefined
+    registeredQuoteReplyHandler = null
+    mockComposerFocus.mockReset()
+    mockComposerFocusAfterQuoteReply.mockReset()
   })
 
   describe("rendering", () => {
@@ -305,6 +355,48 @@ describe("MessageInput", () => {
       await userEvent.click(sendButton)
 
       expect(mockNavigate).toHaveBeenCalledWith("/w/ws_123/s/new_stream", { replace: true })
+    })
+  })
+
+  describe("quote replies", () => {
+    it("inserts a quote block without appending a synthetic trailing paragraph", () => {
+      mockComposerState.content = {
+        type: "doc",
+        content: [{ type: "paragraph", content: [{ type: "text", text: "Before" }] }, { type: "paragraph" }],
+      }
+
+      render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
+
+      expect(registeredQuoteReplyHandler).not.toBeNull()
+
+      registeredQuoteReplyHandler?.({
+        messageId: "msg_123",
+        streamId: "stream_456",
+        authorName: "Ariadne",
+        authorId: "user_123",
+        actorType: "user",
+        snippet: "The vibes are immaculate",
+      })
+
+      expect(mockSetContent).toHaveBeenCalledWith({
+        type: "doc",
+        content: [
+          { type: "paragraph", content: [{ type: "text", text: "Before" }] },
+          {
+            type: "quoteReply",
+            attrs: {
+              messageId: "msg_123",
+              streamId: "stream_456",
+              authorName: "Ariadne",
+              authorId: "user_123",
+              actorType: "user",
+              snippet: "The vibes are immaculate",
+            },
+          },
+        ],
+      })
+      expect(mockComposerFocusAfterQuoteReply).toHaveBeenCalledTimes(1)
+      expect(mockComposerFocus).not.toHaveBeenCalled()
     })
   })
 

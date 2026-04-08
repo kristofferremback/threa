@@ -1,5 +1,5 @@
 import type { ComponentType } from "react"
-import { Sparkles, MessageSquareReply, Copy, FileText, Type, Pencil, Trash2, History, Link2 } from "lucide-react"
+import { Sparkles, MessageSquareReply, Quote, Copy, FileText, Type, Pencil, Trash2, History, Link2 } from "lucide-react"
 import { toast } from "sonner"
 import { stripMarkdown } from "@/lib/markdown"
 
@@ -41,6 +41,8 @@ export interface MessageActionContext {
   onOpenFullPicker?: () => void
   /** Current reactions on this message (shortcode → userIds) for toggle logic */
   reactions?: Record<string, string[]>
+  /** Callback to insert a quote reply into the composer */
+  onQuoteReply?: () => void
 }
 
 /** A variant within a sub-menu (e.g. "Copy as Markdown" vs "Copy as Plain text"). */
@@ -92,6 +94,13 @@ export const messageActions: MessageAction[] = [
     icon: MessageSquareReply,
     when: (ctx) => !ctx.isThreadParent,
     getHref: (ctx) => ctx.replyUrl,
+  },
+  {
+    id: "quote-reply",
+    label: "Quote reply",
+    icon: Quote,
+    when: (ctx) => !!ctx.onQuoteReply,
+    action: (ctx) => ctx.onQuoteReply?.(),
   },
   {
     id: "edit-message",

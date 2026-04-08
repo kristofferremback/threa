@@ -1,5 +1,7 @@
 import { useRef, useState, useEffect, useCallback, useMemo, forwardRef, useImperativeHandle } from "react"
 import { useEditor, EditorContent } from "@tiptap/react"
+import { GapCursor } from "@tiptap/pm/gapcursor"
+import type { ResolvedPos } from "@tiptap/pm/model"
 import type { PluginKey } from "@tiptap/pm/state"
 import { useParams } from "react-router-dom"
 import { createEditorExtensions } from "./editor-extensions"
@@ -22,11 +24,20 @@ import type { MentionStreamContext } from "@/hooks/use-mentionables"
 
 export interface RichEditorHandle {
   focus(): void
+  focusAfterQuoteReply(): void
   insertMention(): void
   insertSlash(): void
   insertEmoji(): void
   /** Access the TipTap editor instance for external toolbar rendering */
   getEditor(): import("@tiptap/react").Editor | null
+}
+
+function isValidGapCursorPosition($pos: ResolvedPos): boolean {
+  const gapCursor = GapCursor as typeof GapCursor & {
+    valid?: (position: ResolvedPos) => boolean
+  }
+
+  return gapCursor.valid?.($pos) ?? false
 }
 
 interface RichEditorProps {
@@ -565,11 +576,11 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
   // dispatch caused a view update that raced with toolbar rendering,
   // briefly dropping focus in autoFocus editors (e.g. inline edit).
 
-  // Copy handler: serialize selection to markdown
+  // Copy/cut handler: serialize selection to markdown
   useEffect(() => {
     if (!editor || !containerRef.current) return
 
-    const handleCopy = (event: ClipboardEvent) => {
+    const serializeSelection = (event: ClipboardEvent) => {
       const { from, to } = editor.state.selection
       if (from === to) return // No selection, use default behavior
 
@@ -581,9 +592,23 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
       event.preventDefault()
     }
 
+    const handleCopy = (event: ClipboardEvent) => {
+      serializeSelection(event)
+    }
+
+    const handleCut = (event: ClipboardEvent) => {
+      serializeSelection(event)
+      // Delete the selected content after serializing to clipboard
+      editor.commands.deleteSelection()
+    }
+
     const container = containerRef.current
     container.addEventListener("copy", handleCopy)
-    return () => container.removeEventListener("copy", handleCopy)
+    container.addEventListener("cut", handleCut)
+    return () => {
+      container.removeEventListener("copy", handleCopy)
+      container.removeEventListener("cut", handleCut)
+    }
   }, [editor])
 
   // Expose focus method
@@ -591,6 +616,23 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
     if (editor && !editor.isDestroyed) {
       editor.commands.focus("end")
     }
+  }, [editor])
+
+  const focusAfterQuoteReply = useCallback(() => {
+    if (!editor || editor.isDestroyed) {
+      return
+    }
+
+    const pos = editor.state.doc.content.size
+    const $pos = editor.state.doc.resolve(pos)
+
+    if (isValidGapCursorPosition($pos)) {
+      editor.view.focus()
+      editor.view.dispatch(editor.state.tr.setSelection(new GapCursor($pos)).scrollIntoView())
+      return
+    }
+
+    editor.commands.focus("end")
   }, [editor])
 
   // Re-focus when scope changes (e.g., navigating between streams) on desktop.
@@ -665,12 +707,13 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
     ref,
     () => ({
       focus,
+      focusAfterQuoteReply,
       insertMention: handleMentionClick,
       insertSlash: handleSlashClick,
       insertEmoji: handleEmojiClick,
       getEditor: () => editor,
     }),
-    [focus, handleMentionClick, handleSlashClick, handleEmojiClick, editor]
+    [focus, focusAfterQuoteReply, handleMentionClick, handleSlashClick, handleEmojiClick, editor]
   )
 
   return (

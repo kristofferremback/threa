@@ -4,6 +4,7 @@ import Paragraph from "@tiptap/extension-paragraph"
 import Text from "@tiptap/extension-text"
 import HardBreak from "@tiptap/extension-hard-break"
 import History from "@tiptap/extension-history"
+import Gapcursor from "@tiptap/extension-gapcursor"
 import Placeholder from "@tiptap/extension-placeholder"
 
 // Inline marks with atom-aware input rules
@@ -23,6 +24,7 @@ import { ChannelExtension, type ChannelOptions } from "./triggers/channel-extens
 import { CommandExtension, type CommandOptions } from "./triggers/command-extension"
 import { EmojiExtension, type EmojiExtensionOptions } from "./triggers/emoji-extension"
 import { AttachmentReferenceExtension } from "./attachment-reference-extension"
+import { QuoteReplyExtension } from "./quote-reply-extension"
 
 // Create lowlight instance with common languages
 const lowlight = createLowlight(common)
@@ -58,6 +60,7 @@ export function createEditorExtensions(options: CreateEditorExtensionsOptions | 
     Text,
     HardBreak,
     History,
+    Gapcursor,
 
     // Placeholder text when empty
     Placeholder.configure({
@@ -94,6 +97,9 @@ export function createEditorExtensions(options: CreateEditorExtensionsOptions | 
 
     // Inline attachments (images, files)
     AttachmentReferenceExtension,
+
+    // Quote reply blocks
+    QuoteReplyExtension,
   ]
 
   // Add mention extension if suggestion config provided

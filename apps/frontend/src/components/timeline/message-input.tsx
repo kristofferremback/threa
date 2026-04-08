@@ -12,6 +12,7 @@ import { isCommand } from "@/lib/commands"
 import { serializeToMarkdown } from "@threa/prosemirror"
 import { useEditLastMessage } from "./edit-last-message-context"
 import { useInlineEdit } from "./inline-edit-context"
+import { useQuoteReply, type QuoteReplyData } from "./quote-reply-context"
 import { StreamTypes, type JSONContent } from "@threa/types"
 import type { MentionStreamContext } from "@/hooks/use-mentionables"
 import type { PendingAttachment } from "@/hooks/use-attachments"
@@ -194,6 +195,58 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   }, [stream, idbStreams])
 
   const composer = useDraftComposer({ workspaceId, draftKey, scopeId: streamId })
+  const quoteReplyCtx = useQuoteReply()
+
+  // Use a ref so the handler always reads fresh composer state without
+  // re-registering on every render (composer object is not memoized).
+  const composerRef = useRef(composer)
+  composerRef.current = composer
+
+  // Imperative handle for programmatic focus from outside (e.g. quote reply insertion)
+  const composerFocusRef = useRef<{ focus: () => void; focusAfterQuoteReply: () => void } | null>(null)
+
+  // Register with QuoteReplyContext to insert quote reply nodes into the composer.
+  // Stable deps: quoteReplyCtx is from context, composerRef is a ref.
+  useEffect(() => {
+    if (!quoteReplyCtx) return
+    return quoteReplyCtx.registerHandler((data: QuoteReplyData) => {
+      const quoteNode: JSONContent = {
+        type: "quoteReply",
+        attrs: {
+          messageId: data.messageId,
+          streamId: data.streamId,
+          authorName: data.authorName,
+          authorId: data.authorId,
+          actorType: data.actorType,
+          snippet: data.snippet,
+        },
+      }
+
+      const currentContent = composerRef.current.content
+      const existingBlocks = currentContent.content ?? []
+
+      // Strip trailing empty paragraphs so the quote appends cleanly.
+      // The cursor should land on the quote-side gapcursor, not in a synthetic
+      // empty paragraph rendered on the next line.
+      const trimmedBlocks = [...existingBlocks]
+      while (
+        trimmedBlocks.length > 0 &&
+        trimmedBlocks[trimmedBlocks.length - 1].type === "paragraph" &&
+        (trimmedBlocks[trimmedBlocks.length - 1].content?.length ?? 0) === 0
+      ) {
+        trimmedBlocks.pop()
+      }
+
+      composerRef.current.setContent({
+        type: "doc",
+        content: [...trimmedBlocks, quoteNode],
+      })
+
+      // Focus the composer so the user can start typing immediately
+      composerFocusRef.current?.focusAfterQuoteReply()
+    })
+  }, [quoteReplyCtx])
+
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
   const messageSendMode = preferences?.messageSendMode ?? "enter"
@@ -385,6 +438,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
         }
       : undefined,
     streamContext,
+    composerRef: composerFocusRef,
   } as const
 
   return (

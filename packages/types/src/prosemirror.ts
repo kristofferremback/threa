@@ -56,6 +56,7 @@ export type ThreaBlockNode =
   | ThreaHeading
   | ThreaCodeBlock
   | ThreaBlockquote
+  | ThreaQuoteReply
   | ThreaBulletList
   | ThreaOrderedList
   | ThreaHorizontalRule
@@ -96,6 +97,28 @@ export interface ThreaCodeBlock {
 export interface ThreaBlockquote {
   type: "blockquote"
   content: ThreaBlockNode[]
+}
+
+/**
+ * Quote reply - quotes a specific message (or part of it) with attribution.
+ * Serializes to markdown as a blockquote with a `quote:` attribution link.
+ */
+export interface ThreaQuoteReply {
+  type: "quoteReply"
+  attrs: {
+    /** The ID of the quoted message */
+    messageId: string
+    /** The stream containing the quoted message */
+    streamId: string
+    /** Display name of the quoted message author (denormalized) */
+    authorName: string
+    /** The ID of the quoted message author */
+    authorId: string
+    /** The actor type of the quoted message author */
+    actorType: string
+    /** The quoted text snippet */
+    snippet: string
+  }
 }
 
 /**
@@ -389,6 +412,7 @@ const blockNodeSchema = z.lazy(() =>
     headingNodeSchema,
     codeBlockNodeSchema,
     blockquoteNodeSchema,
+    quoteReplyNodeSchema,
     bulletListNodeSchema,
     orderedListNodeSchema,
     horizontalRuleNodeSchema,
@@ -403,6 +427,18 @@ const listItemNodeSchema = z.object({
 const blockquoteNodeSchema = z.object({
   type: z.literal("blockquote"),
   content: z.array(blockNodeSchema),
+})
+
+const quoteReplyNodeSchema = z.object({
+  type: z.literal("quoteReply"),
+  attrs: z.object({
+    messageId: z.string(),
+    streamId: z.string(),
+    authorName: z.string(),
+    authorId: z.string(),
+    actorType: z.string(),
+    snippet: z.string(),
+  }),
 })
 
 const bulletListNodeSchema = z.object({
