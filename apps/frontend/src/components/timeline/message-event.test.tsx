@@ -77,6 +77,11 @@ vi.mock("@/contexts", async (importOriginal) => {
     useTrace: () => ({
       getTraceUrl: (sessionId: string) => `/trace/${sessionId}`,
     }),
+    useMediaGallery: () => ({
+      mediaAttachmentId: null,
+      openMedia: vi.fn(),
+      closeMedia: vi.fn(),
+    }),
     usePreferences: () => ({
       preferences: { timezone: "UTC", locale: "en-US" },
     }),
