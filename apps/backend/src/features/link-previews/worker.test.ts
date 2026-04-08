@@ -1,5 +1,6 @@
-import { describe, test, expect } from "bun:test"
-import { parseHtmlMeta } from "./worker"
+import { afterEach, describe, expect, mock, test } from "bun:test"
+import { createLinkPreviewWorker, parseHtmlMeta } from "./worker"
+import { GitHubPreviewTypes } from "@threa/types"
 
 describe("parseHtmlMeta", () => {
   const baseUrl = "https://example.com/page"
@@ -172,5 +173,105 @@ describe("parseHtmlMeta", () => {
     const result = await parseHtmlMeta(html, baseUrl)
     expect(result.title).toBe("OG Title")
     expect(result.description).toBe("OG Description")
+  })
+})
+
+describe("createLinkPreviewWorker", () => {
+  const originalFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+    mock.restore()
+  })
+
+  test("keeps existing rich GitHub previews when refresh falls back from GitHub", async () => {
+    const fetchMock = mock(async () => {
+      throw new Error("generic fetch should not run when rich preview data already exists")
+    })
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    const completePreviewsAndPublish = mock(async () => {})
+    const worker = createLinkPreviewWorker({
+      linkPreviewService: {
+        extractAndCreatePending: mock(async () => [
+          { id: "lp_123", url: "https://github.com/octocat/hello-world/pull/42" },
+        ]),
+        getPreviewById: mock(async () => ({
+          id: "lp_123",
+          workspaceId: "ws_123",
+          url: "https://github.com/octocat/hello-world/pull/42",
+          normalizedUrl: "https://github.com/octocat/hello-world/pull/42",
+          title: "PR #42: Ship the thing",
+          description: "Open",
+          imageUrl: null,
+          faviconUrl: "https://github.com/favicon.ico",
+          siteName: "GitHub",
+          contentType: "website",
+          status: "completed",
+          previewType: GitHubPreviewTypes.PR,
+          previewData: {
+            type: GitHubPreviewTypes.PR,
+            url: "https://github.com/octocat/hello-world/pull/42",
+            repository: {
+              owner: "octocat",
+              name: "hello-world",
+              fullName: "octocat/hello-world",
+              private: true,
+            },
+            data: {
+              title: "Ship the thing",
+              number: 42,
+              state: "open",
+              author: { login: "kris", avatarUrl: null },
+              baseBranch: "main",
+              headBranch: "feature",
+              additions: 1,
+              deletions: 1,
+              reviewStatusSummary: {
+                approvals: 0,
+                changesRequested: 0,
+                comments: 0,
+                pendingReviewers: 0,
+              },
+              createdAt: "2026-04-07T10:00:00.000Z",
+              updatedAt: "2026-04-07T10:00:00.000Z",
+            },
+            fetchedAt: "2026-04-07T10:00:00.000Z",
+          },
+          targetWorkspaceId: null,
+          targetStreamId: null,
+          targetMessageId: null,
+          fetchedAt: new Date("2026-04-07T10:00:00.000Z"),
+          expiresAt: new Date("2026-04-07T10:05:00.000Z"),
+          createdAt: new Date("2026-04-07T10:00:00.000Z"),
+        })),
+        completePreviewsAndPublish,
+        replacePreviewsForMessage: mock(async () => []),
+        publishEmptyPreviews: mock(async () => {}),
+      } as any,
+      workspaceIntegrationService: {
+        getGithubPreviewClient: mock(async () => null),
+      } as any,
+    })
+
+    await worker({
+      id: "job_123",
+      name: "link_preview.extract",
+      data: {
+        workspaceId: "ws_123",
+        streamId: "stream_123",
+        messageId: "msg_123",
+        contentMarkdown: "https://github.com/octocat/hello-world/pull/42",
+      },
+    })
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(completePreviewsAndPublish).toHaveBeenCalledWith(
+      "ws_123",
+      "stream_123",
+      "msg_123",
+      [{ id: "lp_123", skipped: true }],
+      { forcePublish: undefined }
+    )
   })
 })

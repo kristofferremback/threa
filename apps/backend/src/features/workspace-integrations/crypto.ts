@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, createHmac, randomBytes, timingSafeEqual } from "crypto"
+export { extractWorkspaceIdFromGithubInstallState } from "@threa/backend-common"
 
 const ENCRYPTION_VERSION = 1
 const GCM_ALGORITHM = "aes-256-gcm"
@@ -64,11 +65,6 @@ function signStatePayload(secret: string, payload: string): string {
 export function createGithubInstallState(secret: string, workspaceId: string, nowMs = Date.now()): string {
   const payload = `${workspaceId}.${nowMs}`
   return `${payload}.${signStatePayload(secret, payload)}`
-}
-
-export function extractWorkspaceIdFromGithubInstallState(state: string): string | null {
-  const [workspaceId] = state.split(".")
-  return workspaceId || null
 }
 
 export function verifyGithubInstallState(secret: string, state: string, nowMs = Date.now()): { workspaceId: string } {

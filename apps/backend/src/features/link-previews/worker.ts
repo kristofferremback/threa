@@ -333,9 +333,12 @@ export function createLinkPreviewWorker(deps: WorkerDeps): JobHandler<LinkPrevie
           return { id: p.id, skipped: true }
         }
 
-        const metadata =
-          (await fetchGitHubPreview(workspaceId, p.url, deps.workspaceIntegrationService)) ??
-          (await fetchGenericMetadata(p.url))
+        const githubMetadata = await fetchGitHubPreview(workspaceId, p.url, deps.workspaceIntegrationService)
+        if (existing.previewType && githubMetadata === null) {
+          return { id: p.id, skipped: true }
+        }
+
+        const metadata = githubMetadata ?? (await fetchGenericMetadata(p.url))
 
         return { id: p.id, metadata, skipped: false, overwrite: existing.status !== "pending" }
       })

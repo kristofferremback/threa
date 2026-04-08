@@ -31,6 +31,7 @@ export type { RateLimitOptions } from "./middleware/rate-limit"
 
 // Utilities
 export { logger } from "./logger"
+export { extractWorkspaceIdFromGithubInstallState } from "./github-install-state"
 export {
   userId,
   workspaceId,

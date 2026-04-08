@@ -1,4 +1,5 @@
 import type { Request, Response } from "express"
+import { extractWorkspaceIdFromGithubInstallState } from "@threa/backend-common"
 import type { RegionConfig } from "../../config"
 import type { ControlPlaneWorkspaceService } from "../workspaces"
 
@@ -25,7 +26,7 @@ export function createIntegrationHandlers({ workspaceService, regions }: Depende
     async githubCallback(req: Request, res: Response) {
       const rawState = req.query.state
       const state = typeof rawState === "string" ? rawState : null
-      const workspaceId = state ? extractWorkspaceIdFromState(state) : null
+      const workspaceId = state ? extractWorkspaceIdFromGithubInstallState(state) : null
       if (!workspaceId) {
         return res.status(400).json({ error: "Missing or invalid state parameter" })
       }
@@ -56,11 +57,6 @@ export function createIntegrationHandlers({ workspaceService, regions }: Depende
       res.send(body)
     },
   }
-}
-
-function extractWorkspaceIdFromState(state: string): string | null {
-  const [workspaceId] = state.split(".")
-  return workspaceId || null
 }
 
 function forwardHeaders(req: Request): Headers {
