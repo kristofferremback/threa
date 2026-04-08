@@ -7,6 +7,7 @@ import { attachmentsApi } from "@/api"
 import { cn } from "@/lib/utils"
 import { downloadImage, copyImage, triggerDownload } from "@/lib/image-utils"
 import { useAttachmentContext } from "@/lib/markdown/attachment-context"
+import { useMediaGallery } from "@/contexts"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useLongPress } from "@/hooks/use-long-press"
 import type { AttachmentSummary } from "@threa/types"
@@ -454,12 +455,16 @@ function FileAttachment({ attachment, workspaceId, isHighlighted }: AttachmentIt
 }
 
 export function AttachmentList({ attachments, workspaceId, className, deferHydration = false }: AttachmentListProps) {
-  const [selectedAttachmentId, setSelectedAttachmentId] = useState<string | null>(null)
   const [loadedUrls, setLoadedUrls] = useState<Map<string, string>>(new Map())
   const [loadedThumbnails, setLoadedThumbnails] = useState<Map<string, string>>(new Map())
   const [loadedVideoUrls, setLoadedVideoUrls] = useState<Map<string, string>>(new Map())
   const attachmentContext = useAttachmentContext()
   const hoveredAttachmentId = attachmentContext?.hoveredAttachmentId ?? null
+  const { mediaAttachmentId, openMedia, closeMedia } = useMediaGallery()
+
+  // Only claim ownership when the URL param references one of our attachments
+  const attachmentIds = useMemo(() => new Set((attachments ?? []).map((a) => a.id)), [attachments])
+  const selectedAttachmentId = mediaAttachmentId && attachmentIds.has(mediaAttachmentId) ? mediaAttachmentId : null
 
   const imageAttachments = useMemo(
     () => (attachments ?? []).filter((a) => a.mimeType.startsWith("image/")),
@@ -536,40 +541,59 @@ export function AttachmentList({ attachments, workspaceId, className, deferHydra
     ? galleryItems.findIndex((g) => g.attachmentId === selectedAttachmentId)
     : -1
 
-  const handleImageClick = useCallback((_url: string, _filename: string, attachmentId: string) => {
-    setSelectedAttachmentId(attachmentId)
-  }, [])
+  const handleImageClick = useCallback(
+    (_url: string, _filename: string, attachmentId: string) => {
+      openMedia(attachmentId)
+    },
+    [openMedia]
+  )
 
   const handleVideoClick = useCallback(
-    async (attachmentId: string) => {
-      // Fetch processed video URL on demand for gallery viewing
+    (attachmentId: string) => {
+      openMedia(attachmentId)
+    },
+    [openMedia]
+  )
+
+  // Eagerly fetch video URL when a video is selected (via click or URL param)
+  useEffect(() => {
+    if (!selectedAttachmentId) return
+    const isVideo = videoAttachments.some((a) => a.id === selectedAttachmentId)
+    if (!isVideo || loadedVideoUrls.has(selectedAttachmentId)) return
+
+    let mounted = true
+    async function fetchVideoUrl() {
       try {
-        const url = await attachmentsApi.getDownloadUrl(workspaceId, attachmentId, { variant: "processed" })
-        setLoadedVideoUrls((prev) => {
-          const next = new Map(prev)
-          next.set(attachmentId, url)
-          return next
+        const url = await attachmentsApi.getDownloadUrl(workspaceId, selectedAttachmentId!, {
+          variant: "processed",
         })
-        setSelectedAttachmentId(attachmentId)
-      } catch {
-        // Fall back to raw URL
-        try {
-          const url = await attachmentsApi.getDownloadUrl(workspaceId, attachmentId)
+        if (mounted) {
           setLoadedVideoUrls((prev) => {
             const next = new Map(prev)
-            next.set(attachmentId, url)
+            next.set(selectedAttachmentId!, url)
             return next
           })
-          setSelectedAttachmentId(attachmentId)
+        }
+      } catch {
+        try {
+          const url = await attachmentsApi.getDownloadUrl(workspaceId, selectedAttachmentId!)
+          if (mounted) {
+            setLoadedVideoUrls((prev) => {
+              const next = new Map(prev)
+              next.set(selectedAttachmentId!, url)
+              return next
+            })
+          }
         } catch {
           console.error("Failed to get video URL")
         }
       }
-    },
-    [workspaceId]
-  )
-
-  const handleGalleryClose = useCallback(() => setSelectedAttachmentId(null), [])
+    }
+    fetchVideoUrl()
+    return () => {
+      mounted = false
+    }
+  }, [selectedAttachmentId, videoAttachments, loadedVideoUrls, workspaceId])
 
   if (!attachments || attachments.length === 0) {
     return null
@@ -622,7 +646,7 @@ export function AttachmentList({ attachments, workspaceId, className, deferHydra
 
       <MediaGallery
         isOpen={selectedAttachmentId !== null && galleryIndex !== -1}
-        onClose={handleGalleryClose}
+        onClose={closeMedia}
         items={galleryItems.length > 0 ? galleryItems : []}
         initialIndex={Math.max(0, galleryIndex)}
         workspaceId={workspaceId}

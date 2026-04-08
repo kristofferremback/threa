@@ -12,6 +12,17 @@ vi.mock("@/api", () => ({
   },
 }))
 
+// Mock the media gallery context
+const mockOpenMedia = vi.fn()
+const mockCloseMedia = vi.fn()
+vi.mock("@/contexts", () => ({
+  useMediaGallery: () => ({
+    mediaAttachmentId: null,
+    openMedia: mockOpenMedia,
+    closeMedia: mockCloseMedia,
+  }),
+}))
+
 describe("AttachmentList", () => {
   const workspaceId = "ws_123"
 

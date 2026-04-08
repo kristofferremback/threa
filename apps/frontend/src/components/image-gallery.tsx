@@ -144,17 +144,25 @@ export function MediaGallery({ isOpen, onClose, items, initialIndex, workspaceId
   // Only sync currentIndex when the gallery opens — not on every initialIndex
   // change, which can shift due to late-loading images growing galleryImages.
   const prevOpen = useRef(false)
+  const justOpened = useRef(false)
   useEffect(() => {
     if (isOpen && !prevOpen.current) {
       setCurrentIndex(initialIndex)
+      justOpened.current = true
     }
     prevOpen.current = isOpen
   }, [isOpen, initialIndex])
 
-  // Re-anchor currentIndex when the items array shifts underneath it
+  // Re-anchor currentIndex when the items array shifts underneath it.
+  // Skip the first run after open — the sync-on-open effect already set the
+  // correct index and viewedIdRef still holds the stale pre-open value.
   const viewedIdRef = useRef<string | null>(null)
   viewedIdRef.current = items[currentIndex]?.attachmentId ?? null
   useEffect(() => {
+    if (justOpened.current) {
+      justOpened.current = false
+      return
+    }
     if (!isOpen || !viewedIdRef.current) return
     setCurrentIndex((prev) => {
       const corrected = items.findIndex((i) => i.attachmentId === viewedIdRef.current)
