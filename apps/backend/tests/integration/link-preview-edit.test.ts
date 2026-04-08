@@ -172,7 +172,7 @@ describe("Link preview edit flow", () => {
     expect(payload.previews).toEqual([])
   })
 
-  test("completePreviewsAndPublish without forcePublish skips event when all previews were cached", async () => {
+  test("completePreviewsAndPublish emits event when all previews were cached", async () => {
     const wsId = workspaceId()
     const stId = streamId()
     const msgId = messageId()
@@ -184,10 +184,16 @@ describe("Link preview edit flow", () => {
       status: "completed",
     })
 
-    // Without forcePublish, skipped-only results should NOT emit an outbox event
+    // Cached previews still need a ready event so the new message renders live.
     await service.completePreviewsAndPublish(wsId, stId, msgId, [{ id: pending[0].id, skipped: true }])
 
-    const result = await pool.query("SELECT * FROM outbox WHERE event_type = 'link_preview:ready'")
-    expect(result.rows).toHaveLength(0)
+    const result = await pool.query(
+      "SELECT * FROM outbox WHERE event_type = 'link_preview:ready' ORDER BY id DESC LIMIT 1"
+    )
+    expect(result.rows).toHaveLength(1)
+
+    const payload = result.rows[0].payload as { previews: Array<{ id: string }> }
+    expect(payload.previews).toHaveLength(1)
+    expect(payload.previews[0].id).toBe(pending[0].id)
   })
 })

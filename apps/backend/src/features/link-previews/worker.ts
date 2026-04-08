@@ -3,7 +3,7 @@ import type { Job, JobHandler } from "../../lib/queue"
 import type { LinkPreviewExtractJobData } from "../../lib/queue/job-queue"
 import type { LinkPreviewService } from "./service"
 import type { LinkPreview, UpdateLinkPreviewParams } from "./repository"
-import { detectContentType, isBlockedUrl } from "./url-utils"
+import { detectContentType, isBlockedUrl, parseGitHubUrl } from "./url-utils"
 import { fetchGitHubPreview } from "./github-preview"
 import {
   FETCH_TIMEOUT_MS,
@@ -329,12 +329,18 @@ export function createLinkPreviewWorker(deps: WorkerDeps): JobHandler<LinkPrevie
         if (existing.contentType === "message_link") {
           return { id: p.id, skipped: true }
         }
-        if (isPreviewCacheFresh(existing)) {
+        const isGitHubUrl = parseGitHubUrl(p.url) !== null
+        const shouldAttemptGitHubUpgrade = isGitHubUrl && existing.previewType === null
+
+        if (isPreviewCacheFresh(existing) && !shouldAttemptGitHubUpgrade) {
           return { id: p.id, skipped: true }
         }
 
         const githubMetadata = await fetchGitHubPreview(workspaceId, p.url, deps.workspaceIntegrationService)
         if (existing.previewType && githubMetadata === null) {
+          return { id: p.id, skipped: true }
+        }
+        if (shouldAttemptGitHubUpgrade && githubMetadata === null && isPreviewCacheFresh(existing)) {
           return { id: p.id, skipped: true }
         }
 

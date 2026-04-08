@@ -15,6 +15,7 @@ export type GitHubUrlMatch =
       type: "github_file"
       owner: string
       repo: string
+      source: "blob" | "tree" | "repo"
       blobPath: string
       lineStart: number | null
       lineEnd: number | null
@@ -267,7 +268,21 @@ export function parseGitHubUrl(raw: string): GitHubUrlMatch | null {
       return null
     }
 
-    const match = url.pathname.match(/^\/([^/]+)\/([^/]+)\/(pull|issues|commit|blob)\/(.+)$/)
+    const repoMatch = url.pathname.match(/^\/([^/]+)\/([^/]+)\/?$/)
+    if (repoMatch) {
+      const [, owner, repo] = repoMatch
+      return {
+        type: "github_file",
+        owner,
+        repo,
+        source: "repo",
+        blobPath: "README.md",
+        lineStart: null,
+        lineEnd: null,
+      }
+    }
+
+    const match = url.pathname.match(/^\/([^/]+)\/([^/]+)\/(pull|issues|commit|blob|tree)\/(.+)$/)
     if (!match) return null
 
     const [, owner, repo, kind, rest] = match
@@ -310,7 +325,8 @@ export function parseGitHubUrl(raw: string): GitHubUrlMatch | null {
       type: "github_file",
       owner,
       repo,
-      blobPath: rest,
+      source: kind === "tree" ? "tree" : "blob",
+      blobPath: kind === "tree" ? `${rest}/README.md` : rest,
       lineStart,
       lineEnd,
     }
@@ -327,7 +343,7 @@ function parseIssueCommentId(hash: string): number | null {
 }
 
 function parseLineRange(hash: string): { lineStart: number | null; lineEnd: number | null } {
-  const match = hash.match(/^#L(\d+)(?:-L(\d+))?$/)
+  const match = hash.match(/^#L(\d+)(?:C\d+)?(?:-L?(\d+)(?:C\d+)?)?$/)
   if (!match) {
     return { lineStart: null, lineEnd: null }
   }

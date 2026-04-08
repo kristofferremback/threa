@@ -10,6 +10,12 @@ const log = logger.child({ module: "github-link-preview" })
 const GITHUB_FAVICON_URL = "https://github.com/favicon.ico"
 const DEFAULT_FILE_LINE_COUNT = 30
 const COMMENT_PREVIEW_MAX_LENGTH = 320
+const README_MARKDOWN_MAX_CHARS = 3000
+
+interface LoadedGitHubRepository {
+  preview: GitHubPreviewRepository
+  defaultBranch: string | null
+}
 
 export async function fetchGitHubPreview(
   workspaceId: string,
@@ -30,15 +36,15 @@ export async function fetchGitHubPreview(
 
     switch (parsed.type) {
       case "github_pr":
-        return fetchPullRequestPreview(client, url, repository, parsed, fetchedAt)
+        return fetchPullRequestPreview(client, url, repository.preview, parsed, fetchedAt)
       case "github_issue":
-        return fetchIssuePreview(client, url, repository, parsed, fetchedAt)
+        return fetchIssuePreview(client, url, repository.preview, parsed, fetchedAt)
       case "github_commit":
-        return fetchCommitPreview(client, url, repository, parsed, fetchedAt)
+        return fetchCommitPreview(client, url, repository.preview, parsed, fetchedAt)
       case "github_file":
         return fetchFilePreview(client, url, repository, parsed, fetchedAt)
       case "github_comment":
-        return fetchCommentPreview(client, url, repository, parsed, fetchedAt)
+        return fetchCommentPreview(client, url, repository.preview, parsed, fetchedAt)
     }
   } catch (error) {
     log.debug({ err: error, workspaceId, url }, "Falling back from GitHub preview to generic preview")
@@ -214,19 +220,14 @@ async function fetchCommitPreview(
 async function fetchFilePreview(
   client: { request<T>(route: string, parameters?: Record<string, unknown>): Promise<T> },
   url: string,
-  repository: GitHubPreviewRepository,
+  repository: LoadedGitHubRepository,
   parsed: Extract<GitHubUrlMatch, { type: "github_file" }>,
   fetchedAt: string
 ): Promise<UpdateLinkPreviewParams | null> {
-  const resolved = await resolveBlobPath(client, parsed.owner, parsed.repo, parsed.blobPath)
+  const resolved = await resolveFileTarget(client, repository, parsed)
   if (!resolved) return null
 
-  const contentResponse = await client.request<any>("GET /repos/{owner}/{repo}/contents/{path}", {
-    owner: parsed.owner,
-    repo: parsed.repo,
-    path: resolved.path,
-    ref: resolved.ref,
-  })
+  const { ref, path, contentResponse } = resolved
 
   if (
     !contentResponse ||
@@ -242,7 +243,8 @@ async function fetchFilePreview(
     return null
   }
 
-  const allLines = decoded.replace(/\r\n/g, "\n").split("\n")
+  const normalized = decoded.replace(/\r\n/g, "\n")
+  const allLines = normalized.endsWith("\n") ? normalized.slice(0, -1).split("\n") : normalized.split("\n")
   const startLine = parsed.lineStart ?? 1
   const endLine = Math.min(parsed.lineEnd ?? DEFAULT_FILE_LINE_COUNT, allLines.length)
   const lines = allLines.slice(startLine - 1, endLine).map((text, index) => ({
@@ -251,16 +253,20 @@ async function fetchFilePreview(
   }))
   const truncated = parsed.lineStart == null ? allLines.length > endLine : false
   const language = detectProgrammingLanguage(resolved.path)
+  const renderMode = parsed.source === "blob" ? "snippet" : "markdown"
+  const markdownContent = renderMode === "markdown" ? buildMarkdownPreview(lines, truncated) : null
 
   const preview: GitHubPreview = {
     type: GitHubPreviewTypes.FILE,
     url,
-    repository,
+    repository: repository.preview,
     fetchedAt,
     data: {
       path: resolved.path,
       language,
       ref: resolved.ref,
+      renderMode,
+      markdownContent,
       lines,
       startLine,
       endLine,
@@ -279,6 +285,20 @@ async function fetchFilePreview(
     status: "completed",
     expiresAt: minutesFromNow(15),
   }
+}
+
+function buildMarkdownPreview(lines: Array<{ number: number; text: string }>, truncated: boolean): string | null {
+  const content = lines
+    .map((line) => line.text)
+    .join("\n")
+    .trim()
+  if (!content) return null
+
+  if (!truncated || content.length <= README_MARKDOWN_MAX_CHARS) {
+    return content
+  }
+
+  return `${content.slice(0, README_MARKDOWN_MAX_CHARS).trimEnd()}\n\n...`
 }
 
 async function fetchCommentPreview(
@@ -345,14 +365,42 @@ async function loadRepository(
   client: { request<T>(route: string, parameters?: Record<string, unknown>): Promise<T> },
   owner: string,
   repo: string
-): Promise<GitHubPreviewRepository | null> {
+): Promise<LoadedGitHubRepository | null> {
   const response = await client.request<any>("GET /repos/{owner}/{repo}", { owner, repo })
   return {
-    owner: response.owner?.login ?? owner,
-    name: response.name ?? repo,
-    fullName: response.full_name ?? `${owner}/${repo}`,
-    private: Boolean(response.private),
+    preview: {
+      owner: response.owner?.login ?? owner,
+      name: response.name ?? repo,
+      fullName: response.full_name ?? `${owner}/${repo}`,
+      private: Boolean(response.private),
+    },
+    defaultBranch: typeof response.default_branch === "string" ? response.default_branch : null,
   }
+}
+
+async function resolveFileTarget(
+  client: { request<T>(route: string, parameters?: Record<string, unknown>): Promise<T> },
+  repository: LoadedGitHubRepository,
+  parsed: Extract<GitHubUrlMatch, { type: "github_file" }>
+): Promise<{ ref: string; path: string; contentResponse: any } | null> {
+  if (parsed.source === "repo") {
+    const readme = await client.request<any>("GET /repos/{owner}/{repo}/readme", {
+      owner: parsed.owner,
+      repo: parsed.repo,
+    })
+
+    if (!readme || typeof readme.content !== "string") {
+      return null
+    }
+
+    return {
+      ref: repository.defaultBranch ?? "default",
+      path: typeof readme.path === "string" ? readme.path : "README.md",
+      contentResponse: readme,
+    }
+  }
+
+  return resolveBlobPath(client, parsed.owner, parsed.repo, parsed.blobPath)
 }
 
 async function resolveBlobPath(
@@ -360,7 +408,7 @@ async function resolveBlobPath(
   owner: string,
   repo: string,
   blobPath: string
-): Promise<{ ref: string; path: string } | null> {
+): Promise<{ ref: string; path: string; contentResponse: any } | null> {
   const segments = blobPath.split("/").filter(Boolean)
   for (let splitIndex = 1; splitIndex < segments.length; splitIndex++) {
     const ref = segments.slice(0, splitIndex).join("/")
@@ -373,7 +421,7 @@ async function resolveBlobPath(
         ref,
       })
       if (response && !Array.isArray(response) && response.type === "file") {
-        return { ref, path }
+        return { ref, path, contentResponse: response }
       }
     } catch {
       continue

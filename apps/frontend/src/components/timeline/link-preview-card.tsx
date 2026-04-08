@@ -1,8 +1,10 @@
 import { useState, useCallback } from "react"
 import { ExternalLink, X, FileText, Image as ImageIcon, ChevronDown, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { MarkdownContent } from "@/components/ui/markdown-content"
+import CodeBlock from "@/lib/markdown/code-block"
 import { cn } from "@/lib/utils"
-import type { LinkPreviewSummary } from "@threa/types"
+import type { GitHubFilePreviewData, GitHubPreview, LinkPreviewSummary } from "@threa/types"
 
 interface LinkPreviewCardProps {
   preview: LinkPreviewSummary
@@ -40,6 +42,7 @@ export function LinkPreviewCard({
 }: LinkPreviewCardProps) {
   const [imageError, setImageError] = useState(false)
   const domain = getDomain(preview.url)
+  const githubFilePreview = getGitHubFilePreview(preview.previewData)
 
   const handleDismiss = useCallback(
     (e: React.MouseEvent) => {
@@ -160,25 +163,125 @@ export function LinkPreviewCard({
           href={preview.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex gap-3 p-3 hover:bg-muted/20 transition-colors"
+          className="block hover:bg-muted/20 transition-colors"
         >
-          <div className="flex-1 min-w-0">
-            {preview.title && (
-              <h4 className="text-sm font-medium text-foreground line-clamp-2 mb-0.5">{preview.title}</h4>
-            )}
-            {preview.description && <p className="text-xs text-muted-foreground line-clamp-2">{preview.description}</p>}
-          </div>
-          {preview.imageUrl && !imageError && (
-            <img
-              src={preview.imageUrl}
-              alt=""
-              className="h-16 w-24 rounded object-cover shrink-0"
-              loading="lazy"
-              onError={() => setImageError(true)}
-            />
+          {githubFilePreview ? (
+            <GitHubFilePreviewContent preview={preview} data={githubFilePreview} />
+          ) : (
+            <div className="flex gap-3 p-3">
+              <div className="flex-1 min-w-0">
+                {preview.title && (
+                  <h4 className="text-sm font-medium text-foreground line-clamp-2 mb-0.5">{preview.title}</h4>
+                )}
+                {preview.description && (
+                  <p className="text-xs text-muted-foreground line-clamp-2">{preview.description}</p>
+                )}
+              </div>
+              {preview.imageUrl && !imageError && (
+                <img
+                  src={preview.imageUrl}
+                  alt=""
+                  className="h-16 w-24 rounded object-cover shrink-0"
+                  loading="lazy"
+                  onError={() => setImageError(true)}
+                />
+              )}
+            </div>
           )}
         </a>
       )}
     </div>
   )
+}
+
+function GitHubFilePreviewContent({ preview, data }: { preview: LinkPreviewSummary; data: GitHubFilePreviewData }) {
+  let content = null
+
+  if (data.renderMode === "markdown" && data.markdownContent) {
+    content = (
+      <div className="mt-3 overflow-hidden rounded-md border bg-muted/20 px-3 py-2">
+        <MarkdownContent
+          content={data.markdownContent}
+          className="text-sm leading-relaxed text-foreground [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+        />
+      </div>
+    )
+  } else if (data.lines.length > 0) {
+    content = (
+      <div className="mt-3 [&>*]:my-0">
+        <CodeBlock language={toCodeLanguage(data.language)}>{data.lines.map((line) => line.text).join("\n")}</CodeBlock>
+      </div>
+    )
+  }
+
+  return (
+    <div className="p-3">
+      <div className="min-w-0">
+        {preview.title && <h4 className="text-sm font-medium text-foreground line-clamp-1">{preview.title}</h4>}
+        <p className="mt-0.5 text-xs text-muted-foreground line-clamp-1">
+          {preview.previewData?.repository.fullName}
+          {" · "}
+          {data.ref}
+          {data.language ? ` · ${data.language}` : ""}
+          {data.renderMode !== "markdown" ? ` · ${formatLineRange(data)}` : ""}
+        </p>
+      </div>
+
+      {content}
+
+      {data.truncated && (
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          {data.renderMode === "markdown"
+            ? "Showing the beginning of the README only."
+            : "Showing the first snippet lines only."}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function getGitHubFilePreview(previewData: GitHubPreview | null | undefined): GitHubFilePreviewData | null {
+  if (!previewData || previewData.type !== "github_file") return null
+  return previewData.data as GitHubFilePreviewData
+}
+
+function formatLineRange(data: GitHubFilePreviewData): string {
+  return data.startLine === data.endLine ? `L${data.startLine}` : `L${data.startLine}-L${data.endLine}`
+}
+
+function toCodeLanguage(language: string | null): string {
+  switch (language) {
+    case "TypeScript":
+      return "typescript"
+    case "TSX":
+      return "tsx"
+    case "JavaScript":
+      return "javascript"
+    case "JSX":
+      return "jsx"
+    case "Python":
+      return "python"
+    case "Ruby":
+      return "ruby"
+    case "Go":
+      return "go"
+    case "Java":
+      return "java"
+    case "JSON":
+      return "json"
+    case "SQL":
+      return "sql"
+    case "Markdown":
+      return "markdown"
+    case "YAML":
+      return "yaml"
+    case "Shell":
+      return "shell"
+    case "CSS":
+      return "css"
+    case "HTML":
+      return "html"
+    default:
+      return "plaintext"
+  }
 }

@@ -748,6 +748,8 @@ export interface GitHubFilePreviewData {
   path: string
   language: string | null
   ref: string
+  renderMode?: "snippet" | "markdown"
+  markdownContent?: string | null
   lines: GitHubSnippetLine[]
   startLine: number
   endLine: number

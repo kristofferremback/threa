@@ -44,6 +44,7 @@ export function createIntegrationHandlers({ workspaceService, regions }: Depende
       const proxyResponse = await fetch(new URL(req.originalUrl, target.internalUrl), {
         method: req.method,
         headers: forwardHeaders(req),
+        redirect: "manual",
       })
 
       res.status(proxyResponse.status)

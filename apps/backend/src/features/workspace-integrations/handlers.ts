@@ -11,6 +11,22 @@ interface Dependencies {
   workspaceIntegrationService: WorkspaceIntegrationService
 }
 
+export function buildGithubCallbackRedirectUrl(
+  req: Pick<Request, "headers" | "protocol">,
+  workspaceId: string
+): string {
+  const path = `/w/${workspaceId}?ws-settings=integrations&provider=github`
+  const forwardedHost = getFirstHeaderValue(req.headers["x-forwarded-host"])
+  if (!forwardedHost) {
+    return path
+  }
+
+  const forwardedProto = getFirstHeaderValue(req.headers["x-forwarded-proto"]) ?? req.protocol
+  const forwardedPort = getFirstHeaderValue(req.headers["x-forwarded-port"])
+  const origin = buildForwardedOrigin(forwardedProto, forwardedHost, forwardedPort)
+  return `${origin}${path}`
+}
+
 export function createWorkspaceIntegrationHandlers({ workspaceIntegrationService }: Dependencies) {
   return {
     async getGithub(req: Request, res: Response) {
@@ -50,7 +66,31 @@ export function createWorkspaceIntegrationHandlers({ workspaceIntegrationService
         workosUserId,
       })
 
-      res.redirect(`/w/${workspaceId}?ws-settings=integrations&provider=github`)
+      res.redirect(buildGithubCallbackRedirectUrl(req, workspaceId))
     },
   }
+}
+
+function getFirstHeaderValue(value: string | string[] | undefined): string | null {
+  const raw = Array.isArray(value) ? value[0] : value
+  if (typeof raw !== "string") return null
+
+  const first = raw
+    .split(",")
+    .map((part) => part.trim())
+    .find(Boolean)
+
+  return first ?? null
+}
+
+function buildForwardedOrigin(proto: string, host: string, port: string | null): string {
+  const url = new URL(`${proto}://${host}`)
+  if (port) {
+    url.port = isDefaultPort(proto, port) ? "" : port
+  }
+  return url.origin
+}
+
+function isDefaultPort(proto: string, port: string): boolean {
+  return (proto === "http" && port === "80") || (proto === "https" && port === "443")
 }

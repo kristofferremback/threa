@@ -274,4 +274,93 @@ describe("createLinkPreviewWorker", () => {
       { forcePublish: undefined }
     )
   })
+
+  test("upgrades cached generic GitHub previews to rich previews when integration is available", async () => {
+    const completePreviewsAndPublish = mock(async () => {})
+    const worker = createLinkPreviewWorker({
+      linkPreviewService: {
+        extractAndCreatePending: mock(async () => [
+          { id: "lp_123", url: "https://github.com/octocat/hello-world/tree/main" },
+        ]),
+        getPreviewById: mock(async () => ({
+          id: "lp_123",
+          workspaceId: "ws_123",
+          url: "https://github.com/octocat/hello-world/tree/main",
+          normalizedUrl: "https://github.com/octocat/hello-world/tree/main",
+          title: "Build software better, together",
+          description: "Generic GitHub OGP",
+          imageUrl: "https://github.com/image.png",
+          faviconUrl: "https://github.com/favicon.ico",
+          siteName: "GitHub",
+          contentType: "website",
+          status: "completed",
+          previewType: null,
+          previewData: null,
+          targetWorkspaceId: null,
+          targetStreamId: null,
+          targetMessageId: null,
+          fetchedAt: new Date("2026-04-07T10:00:00.000Z"),
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+          createdAt: new Date("2026-04-07T10:00:00.000Z"),
+        })),
+        completePreviewsAndPublish,
+        replacePreviewsForMessage: mock(async () => []),
+        publishEmptyPreviews: mock(async () => {}),
+      } as any,
+      workspaceIntegrationService: {
+        getGithubPreviewClient: mock(async () => ({
+          async request(route: string, params?: Record<string, unknown>) {
+            if (route === "GET /repos/{owner}/{repo}") {
+              return {
+                owner: { login: "octocat" },
+                name: "hello-world",
+                full_name: "octocat/hello-world",
+                private: true,
+              }
+            }
+
+            if (route === "GET /repos/{owner}/{repo}/contents/{path}") {
+              if (params?.path === "README.md" && params?.ref === "main") {
+                return {
+                  type: "file",
+                  content: Buffer.from("# Hello\nworld").toString("base64"),
+                }
+              }
+            }
+
+            throw new Error(`Unexpected route: ${route}`)
+          },
+        })),
+      } as any,
+    })
+
+    await worker({
+      id: "job_123",
+      name: "link_preview.extract",
+      data: {
+        workspaceId: "ws_123",
+        streamId: "stream_123",
+        messageId: "msg_123",
+        contentMarkdown: "https://github.com/octocat/hello-world/tree/main",
+      },
+    })
+
+    expect(completePreviewsAndPublish).toHaveBeenCalledWith(
+      "ws_123",
+      "stream_123",
+      "msg_123",
+      [
+        expect.objectContaining({
+          id: "lp_123",
+          skipped: false,
+          overwrite: true,
+          metadata: expect.objectContaining({
+            previewType: GitHubPreviewTypes.FILE,
+            title: "README.md",
+          }),
+        }),
+      ],
+      { forcePublish: undefined }
+    )
+  })
 })

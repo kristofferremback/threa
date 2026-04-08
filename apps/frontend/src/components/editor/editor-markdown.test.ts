@@ -244,6 +244,33 @@ describe("editor-markdown", () => {
         expect(serializeToMarkdown(doc)).toBe("[click here](https://example.com)")
       })
 
+      it("should preserve URL fragments when autolink text contains the full URL", () => {
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                {
+                  type: "text",
+                  text: "https://github.com/threahq/priv-test/blob/main/README.md?plain=1#L4",
+                  marks: [
+                    {
+                      type: "link",
+                      attrs: { href: "https://github.com/threahq/priv-test/blob/main/README.md?plain=1" },
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe(
+          "[https://github.com/threahq/priv-test/blob/main/README.md?plain=1#L4](https://github.com/threahq/priv-test/blob/main/README.md?plain=1#L4)"
+        )
+      })
+
       it("should serialize mixed inline content", () => {
         const doc: JSONContent = {
           type: "doc",

@@ -234,11 +234,34 @@ function wrapWithMarks(text: string, marks: Array<{ type: string; attrs?: Record
         result = "`" + result + "`"
         break
       case "link":
-        result = `[${result}](${(mark.attrs?.href as string) ?? ""})`
+        result = `[${result}](${resolveSerializedLinkHref(result, (mark.attrs?.href as string) ?? "")})`
         break
     }
   }
   return leading + result + trailing
+}
+
+function resolveSerializedLinkHref(displayText: string, href: string): string {
+  if (!href) return href
+
+  try {
+    const displayUrl = new URL(displayText)
+    const hrefUrl = new URL(href)
+
+    if (
+      !hrefUrl.hash &&
+      displayUrl.hash &&
+      displayUrl.origin === hrefUrl.origin &&
+      displayUrl.pathname === hrefUrl.pathname &&
+      displayUrl.search === hrefUrl.search
+    ) {
+      return displayText
+    }
+  } catch {
+    return href
+  }
+
+  return href
 }
 
 function serializeInline(nodes: JSONContent[] | undefined): string {

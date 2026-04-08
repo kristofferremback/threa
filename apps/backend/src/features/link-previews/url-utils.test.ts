@@ -59,6 +59,15 @@ describe("normalizeUrl", () => {
     )
   })
 
+  test("normalizes GitHub file column anchors down to line ranges", () => {
+    expect(normalizeUrl("https://github.com/octocat/hello-world/blob/main/src/app.ts#L14C2-L17C9")).toBe(
+      "https://github.com/octocat/hello-world/blob/main/src/app.ts#L14-L17"
+    )
+    expect(normalizeUrl("https://github.com/octocat/hello-world/blob/main/src/app.ts#L14C2")).toBe(
+      "https://github.com/octocat/hello-world/blob/main/src/app.ts#L14"
+    )
+  })
+
   test("sorts remaining query params", () => {
     expect(normalizeUrl("https://example.com/page?z=1&a=2")).toBe("https://example.com/page?a=2&z=1")
   })
@@ -300,9 +309,78 @@ describe("parseGitHubUrl", () => {
       type: "github_file",
       owner: "octocat",
       repo: "hello-world",
+      source: "blob",
       blobPath: "main/src/app.ts",
       lineStart: 10,
       lineEnd: 12,
+    })
+  })
+
+  test("parses blob URLs with query params and line ranges", () => {
+    expect(parseGitHubUrl("https://github.com/octocat/hello-world/blob/main/README.md?plain=1#L1-L2")).toEqual({
+      type: "github_file",
+      owner: "octocat",
+      repo: "hello-world",
+      source: "blob",
+      blobPath: "main/README.md",
+      lineStart: 1,
+      lineEnd: 2,
+    })
+  })
+
+  test("parses blob URLs with column anchors as line ranges", () => {
+    expect(parseGitHubUrl("https://github.com/octocat/hello-world/blob/main/README.md?plain=1#L2-L4C1")).toEqual({
+      type: "github_file",
+      owner: "octocat",
+      repo: "hello-world",
+      source: "blob",
+      blobPath: "main/README.md",
+      lineStart: 2,
+      lineEnd: 4,
+    })
+
+    expect(parseGitHubUrl("https://github.com/octocat/hello-world/blob/main/README.md?plain=1#L2C1-L4C7")).toEqual({
+      type: "github_file",
+      owner: "octocat",
+      repo: "hello-world",
+      source: "blob",
+      blobPath: "main/README.md",
+      lineStart: 2,
+      lineEnd: 4,
+    })
+
+    expect(parseGitHubUrl("https://github.com/octocat/hello-world/blob/main/README.md?plain=1#L4C1")).toEqual({
+      type: "github_file",
+      owner: "octocat",
+      repo: "hello-world",
+      source: "blob",
+      blobPath: "main/README.md",
+      lineStart: 4,
+      lineEnd: 4,
+    })
+  })
+
+  test("parses tree URLs as README file previews", () => {
+    expect(parseGitHubUrl("https://github.com/octocat/hello-world/tree/main")).toEqual({
+      type: "github_file",
+      owner: "octocat",
+      repo: "hello-world",
+      source: "tree",
+      blobPath: "main/README.md",
+      lineStart: null,
+      lineEnd: null,
+    })
+  })
+
+  test("parses repository root URLs as README previews", () => {
+    expect(parseGitHubUrl("https://github.com/octocat/hello-world")).toEqual({
+      type: "github_file",
+      owner: "octocat",
+      repo: "hello-world",
+      source: "repo",
+      blobPath: "README.md",
+      lineStart: null,
+      lineEnd: null,
     })
   })
 

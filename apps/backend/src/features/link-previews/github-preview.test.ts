@@ -123,6 +123,7 @@ describe("fetchGitHubPreview", () => {
       previewType: "github_file",
       previewData: {
         data: {
+          renderMode: "snippet",
           ref: "feature/foo",
           path: "src/app.ts",
           startLine: 2,
@@ -145,10 +146,109 @@ describe("fetchGitHubPreview", () => {
         route: "GET /repos/{owner}/{repo}/contents/{path}",
         params: { owner: "octocat", repo: "hello-world", path: "src/app.ts", ref: "feature/foo" },
       },
-      {
-        route: "GET /repos/{owner}/{repo}/contents/{path}",
-        params: { owner: "octocat", repo: "hello-world", path: "src/app.ts", ref: "feature/foo" },
+    ])
+  })
+
+  test("builds a README-backed file preview for tree URLs", async () => {
+    const preview = await fetchGitHubPreview("ws_123", "https://github.com/octocat/hello-world/tree/main", {
+      async getGithubPreviewClient() {
+        return {
+          async request(route: string, params?: Record<string, unknown>) {
+            if (route === "GET /repos/{owner}/{repo}") {
+              return {
+                owner: { login: "octocat" },
+                name: "hello-world",
+                full_name: "octocat/hello-world",
+                private: true,
+              }
+            }
+
+            if (route === "GET /repos/{owner}/{repo}/contents/{path}") {
+              if (params?.path === "README.md" && params?.ref === "main") {
+                return {
+                  type: "file",
+                  content: Buffer.from("# Hello\nworld\n").toString("base64"),
+                }
+              }
+            }
+
+            throw new Error(`Unexpected route: ${route}`)
+          },
+        }
       },
+    } as unknown as WorkspaceIntegrationService)
+
+    expect(preview).toMatchObject({
+      previewType: "github_file",
+      title: "README.md",
+      description: "main · Markdown",
+      previewData: {
+        type: "github_file",
+        data: {
+          renderMode: "markdown",
+          markdownContent: "# Hello\nworld",
+          ref: "main",
+          path: "README.md",
+          lines: [
+            { number: 1, text: "# Hello" },
+            { number: 2, text: "world" },
+          ],
+        },
+      },
+    })
+  })
+
+  test("builds a README-backed file preview for repository URLs", async () => {
+    const requests: Array<{ route: string; params: Record<string, unknown> | undefined }> = []
+
+    const preview = await fetchGitHubPreview("ws_123", "https://github.com/octocat/hello-world", {
+      async getGithubPreviewClient() {
+        return {
+          async request(route: string, params?: Record<string, unknown>) {
+            requests.push({ route, params })
+
+            if (route === "GET /repos/{owner}/{repo}") {
+              return {
+                owner: { login: "octocat" },
+                name: "hello-world",
+                full_name: "octocat/hello-world",
+                private: true,
+                default_branch: "main",
+              }
+            }
+
+            if (route === "GET /repos/{owner}/{repo}/readme") {
+              return {
+                type: "file",
+                path: "README.md",
+                content: Buffer.from("# Hello\n\nworld\n").toString("base64"),
+              }
+            }
+
+            throw new Error(`Unexpected route: ${route}`)
+          },
+        }
+      },
+    } as unknown as WorkspaceIntegrationService)
+
+    expect(preview).toMatchObject({
+      previewType: "github_file",
+      title: "README.md",
+      description: "main · Markdown",
+      previewData: {
+        type: "github_file",
+        data: {
+          renderMode: "markdown",
+          markdownContent: "# Hello\n\nworld",
+          ref: "main",
+          path: "README.md",
+        },
+      },
+    })
+
+    expect(requests).toEqual([
+      { route: "GET /repos/{owner}/{repo}", params: { owner: "octocat", repo: "hello-world" } },
+      { route: "GET /repos/{owner}/{repo}/readme", params: { owner: "octocat", repo: "hello-world" } },
     ])
   })
 })
