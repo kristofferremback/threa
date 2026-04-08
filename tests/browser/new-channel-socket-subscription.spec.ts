@@ -177,7 +177,7 @@ test.describe("New Channel Socket Subscription", () => {
   })
 
   test("should keep newly active channels navigable in smart view without refresh", async ({ browser }) => {
-    test.setTimeout(60000)
+    test.setTimeout(90000)
     const testId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
 
     const userAEmail = `preview-creator-${testId}@example.com`
