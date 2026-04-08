@@ -61,7 +61,15 @@ export function ImageGallery({ images, ...rest }: ImageGalleryProps) {
 
 function GalleryMediaContent({ current }: { current: GalleryItem }) {
   if (current.type === "video") {
-    if (!current.url) return <Loader2 className="h-8 w-8 animate-spin text-white/50" />
+    if (!current.url)
+      return (
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-16 w-16 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center">
+            <Play className="h-7 w-7 text-white/60 ml-0.5" fill="currentColor" />
+          </div>
+          <Loader2 className="h-4 w-4 animate-spin text-white/40" />
+        </div>
+      )
     return (
       <video
         key={current.attachmentId}
@@ -88,8 +96,10 @@ function GalleryThumbnailContent({ item }: { item: GalleryItem }) {
   if (item.type === "video") {
     if (!item.thumbnailUrl) {
       return (
-        <div className="w-full h-20 flex items-center justify-center bg-white/5">
-          <Play className="h-5 w-5 text-white/40" />
+        <div className="w-full h-20 flex items-center justify-center bg-gradient-to-br from-white/10 to-white/5">
+          <div className="h-7 w-7 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center">
+            <Play className="h-3.5 w-3.5 text-white/60 ml-px" fill="currentColor" />
+          </div>
         </div>
       )
     }

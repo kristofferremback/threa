@@ -300,9 +300,11 @@ function VideoThumbnailContent({
   }
   if (isLoading || error) {
     return (
-      <div className="flex h-32 w-48 items-center justify-center">
+      <div className="flex h-32 w-48 items-center justify-center bg-gradient-to-br from-muted/60 to-muted">
         {error ? (
-          <Play className="h-8 w-8 text-muted-foreground/50" />
+          <div className="h-10 w-10 rounded-full bg-foreground/10 backdrop-blur-sm flex items-center justify-center">
+            <Play className="h-5 w-5 text-muted-foreground ml-0.5" fill="currentColor" />
+          </div>
         ) : (
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         )}
