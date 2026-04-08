@@ -1,10 +1,33 @@
 import { useState, useCallback } from "react"
-import { ExternalLink, X, FileText, Image as ImageIcon, ChevronDown, ChevronRight } from "lucide-react"
+import {
+  ExternalLink,
+  X,
+  FileText,
+  Image as ImageIcon,
+  ChevronDown,
+  ChevronRight,
+  GitPullRequest,
+  GitMerge,
+  CircleDot,
+  CircleCheck,
+  GitCommitHorizontal,
+  MessageSquare,
+  FileCode,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { MarkdownContent } from "@/components/ui/markdown-content"
-import CodeBlock from "@/lib/markdown/code-block"
 import { cn } from "@/lib/utils"
-import type { GitHubFilePreviewData, GitHubPreview, LinkPreviewSummary } from "@threa/types"
+import type {
+  GitHubFilePreviewData,
+  GitHubPrPreviewData,
+  GitHubIssuePreviewData,
+  GitHubCommitPreviewData,
+  GitHubCommentPreviewData,
+  GitHubPreview,
+  GitHubPreviewActor,
+  LinkPreviewSummary,
+} from "@threa/types"
 
 interface LinkPreviewCardProps {
   preview: LinkPreviewSummary
@@ -42,7 +65,7 @@ export function LinkPreviewCard({
 }: LinkPreviewCardProps) {
   const [imageError, setImageError] = useState(false)
   const domain = getDomain(preview.url)
-  const githubFilePreview = getGitHubFilePreview(preview.previewData)
+  const githubPreview = preview.previewData
 
   const handleDismiss = useCallback(
     (e: React.MouseEvent) => {
@@ -109,7 +132,16 @@ export function LinkPreviewCard({
     )
   }
 
-  // Website and PDF previews render as a card
+  // Resolve the header icon and label for GitHub previews
+  const headerIcon = githubPreview ? (
+    <GitHubTypeIcon type={githubPreview.type} data={githubPreview.data} />
+  ) : (
+    <ContentTypeIcon contentType={preview.contentType} />
+  )
+
+  const headerLabel = githubPreview ? githubPreview.repository.fullName : (preview.siteName ?? domain)
+
+  // Website, PDF, and GitHub previews render as a card
   return (
     <div
       className={cn(
@@ -128,8 +160,8 @@ export function LinkPreviewCard({
         >
           {isCollapsedProp ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
         </button>
-        <ContentTypeIcon contentType={preview.contentType} />
-        {preview.faviconUrl && (
+        {headerIcon}
+        {!githubPreview && preview.faviconUrl && (
           <img
             src={preview.faviconUrl}
             alt=""
@@ -140,7 +172,7 @@ export function LinkPreviewCard({
             }}
           />
         )}
-        <span className="text-xs text-muted-foreground truncate">{preview.siteName ?? domain}</span>
+        <span className="text-xs text-muted-foreground truncate">{headerLabel}</span>
         <ExternalLink className="h-3 w-3 text-muted-foreground/50 shrink-0 ml-auto" />
         <div className="flex gap-1 opacity-0 group-hover/preview:opacity-100 transition-opacity">
           {onDismiss && (
@@ -165,52 +197,272 @@ export function LinkPreviewCard({
           rel="noopener noreferrer"
           className="block hover:bg-muted/20 transition-colors"
         >
-          {githubFilePreview ? (
-            <GitHubFilePreviewContent preview={preview} data={githubFilePreview} />
-          ) : (
-            <div className="flex gap-3 p-3">
-              <div className="flex-1 min-w-0">
-                {preview.title && (
-                  <h4 className="text-sm font-medium text-foreground line-clamp-2 mb-0.5">{preview.title}</h4>
-                )}
-                {preview.description && (
-                  <p className="text-xs text-muted-foreground line-clamp-2">{preview.description}</p>
-                )}
-              </div>
-              {preview.imageUrl && !imageError && (
-                <img
-                  src={preview.imageUrl}
-                  alt=""
-                  className="h-16 w-24 rounded object-cover shrink-0"
-                  loading="lazy"
-                  onError={() => setImageError(true)}
-                />
-              )}
-            </div>
-          )}
+          <GitHubContent preview={preview} imageError={imageError} onImageError={() => setImageError(true)} />
         </a>
       )}
     </div>
   )
 }
 
-function GitHubFilePreviewContent({ preview, data }: { preview: LinkPreviewSummary; data: GitHubFilePreviewData }) {
+// ---------------------------------------------------------------------------
+// GitHub type icon (state-aware)
+// ---------------------------------------------------------------------------
+
+function GitHubTypeIcon({ type, data }: { type: string; data: GitHubPreview["data"] }) {
+  switch (type) {
+    case "github_pr": {
+      const pr = data as GitHubPrPreviewData
+      if (pr.state === "merged") return <GitMerge className="h-3.5 w-3.5 text-purple-500 shrink-0" />
+      if (pr.state === "closed") return <GitPullRequest className="h-3.5 w-3.5 text-red-500 shrink-0" />
+      return <GitPullRequest className="h-3.5 w-3.5 text-green-500 shrink-0" />
+    }
+    case "github_issue": {
+      const issue = data as GitHubIssuePreviewData
+      if (issue.state === "closed") return <CircleCheck className="h-3.5 w-3.5 text-purple-500 shrink-0" />
+      return <CircleDot className="h-3.5 w-3.5 text-green-500 shrink-0" />
+    }
+    case "github_commit":
+      return <GitCommitHorizontal className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+    case "github_file":
+      return <FileCode className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+    case "github_comment":
+      return <MessageSquare className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+    default:
+      return <ExternalLink className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Content router
+// ---------------------------------------------------------------------------
+
+function GitHubContent({
+  preview,
+  imageError,
+  onImageError,
+}: {
+  preview: LinkPreviewSummary
+  imageError: boolean
+  onImageError: () => void
+}) {
+  const ghPreview = preview.previewData
+  if (!ghPreview) {
+    return <GenericPreviewContent preview={preview} imageError={imageError} onImageError={onImageError} />
+  }
+
+  switch (ghPreview.type) {
+    case "github_pr":
+      return <GitHubPrContent data={ghPreview.data as GitHubPrPreviewData} />
+    case "github_issue":
+      return <GitHubIssueContent data={ghPreview.data as GitHubIssuePreviewData} />
+    case "github_commit":
+      return <GitHubCommitContent data={ghPreview.data as GitHubCommitPreviewData} />
+    case "github_file":
+      return <GitHubFileContent preview={preview} data={ghPreview.data as GitHubFilePreviewData} />
+    case "github_comment":
+      return <GitHubCommentContent data={ghPreview.data as GitHubCommentPreviewData} />
+    default:
+      return <GenericPreviewContent preview={preview} imageError={imageError} onImageError={onImageError} />
+  }
+}
+
+function GenericPreviewContent({
+  preview,
+  imageError,
+  onImageError,
+}: {
+  preview: LinkPreviewSummary
+  imageError: boolean
+  onImageError: () => void
+}) {
+  return (
+    <div className="flex gap-3 p-3">
+      <div className="flex-1 min-w-0">
+        {preview.title && <h4 className="text-sm font-medium text-foreground line-clamp-2 mb-0.5">{preview.title}</h4>}
+        {preview.description && <p className="text-xs text-muted-foreground line-clamp-2">{preview.description}</p>}
+      </div>
+      {preview.imageUrl && !imageError && (
+        <img
+          src={preview.imageUrl}
+          alt=""
+          className="h-16 w-24 rounded object-cover shrink-0"
+          loading="lazy"
+          onError={onImageError}
+        />
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Pull Request
+// ---------------------------------------------------------------------------
+
+function GitHubPrContent({ data }: { data: GitHubPrPreviewData }) {
+  const stateLabels = { merged: "Merged", closed: "Closed", open: "Open" } as const
+  const stateLabel = stateLabels[data.state]
+
+  return (
+    <div className="p-3">
+      <div className="flex items-start gap-2">
+        <ActorAvatar actor={data.author} className="mt-0.5" />
+        <div className="min-w-0 flex-1">
+          <h4 className="text-sm font-medium text-foreground line-clamp-2">
+            {data.title}
+            <span className="ml-1.5 font-normal text-muted-foreground">#{data.number}</span>
+          </h4>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+            <PrStateBadge state={data.state} label={stateLabel} />
+            <span className="truncate max-w-[10rem]" title={`${data.headBranch} → ${data.baseBranch}`}>
+              {data.headBranch}
+              <span className="mx-0.5">{"\u2192"}</span>
+              {data.baseBranch}
+            </span>
+            <DiffStats additions={data.additions} deletions={data.deletions} />
+          </div>
+          <ReviewSummary summary={data.reviewStatusSummary} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PrStateBadge({ state, label }: { state: "open" | "closed" | "merged"; label: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full px-1.5 py-px text-[11px] font-medium leading-tight",
+        state === "open" && "bg-green-500/15 text-green-600 dark:text-green-400",
+        state === "merged" && "bg-purple-500/15 text-purple-600 dark:text-purple-400",
+        state === "closed" && "bg-red-500/15 text-red-600 dark:text-red-400"
+      )}
+    >
+      {label}
+    </span>
+  )
+}
+
+function ReviewSummary({ summary }: { summary: GitHubPrPreviewData["reviewStatusSummary"] }) {
+  const parts: string[] = []
+  if (summary.approvals > 0) parts.push(`${summary.approvals} approved`)
+  if (summary.changesRequested > 0) parts.push(`${summary.changesRequested} changes requested`)
+  if (summary.pendingReviewers > 0) parts.push(`${summary.pendingReviewers} pending`)
+  if (parts.length === 0) return null
+
+  return <p className="mt-1 text-[11px] text-muted-foreground">{parts.join(" \u00b7 ")}</p>
+}
+
+// ---------------------------------------------------------------------------
+// Issue
+// ---------------------------------------------------------------------------
+
+function GitHubIssueContent({ data }: { data: GitHubIssuePreviewData }) {
+  return (
+    <div className="p-3">
+      <div className="flex items-start gap-2">
+        <ActorAvatar actor={data.author} className="mt-0.5" />
+        <div className="min-w-0 flex-1">
+          <h4 className="text-sm font-medium text-foreground line-clamp-2">
+            {data.title}
+            <span className="ml-1.5 font-normal text-muted-foreground">#{data.number}</span>
+          </h4>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+            <span
+              className={cn(
+                "inline-flex items-center rounded-full px-1.5 py-px text-[11px] font-medium leading-tight",
+                data.state === "open"
+                  ? "bg-green-500/15 text-green-600 dark:text-green-400"
+                  : "bg-purple-500/15 text-purple-600 dark:text-purple-400"
+              )}
+            >
+              {data.state === "open" ? "Open" : "Closed"}
+            </span>
+            {data.commentCount > 0 && (
+              <span className="inline-flex items-center gap-0.5">
+                <MessageSquare className="h-3 w-3" />
+                {data.commentCount}
+              </span>
+            )}
+          </div>
+          {data.labels.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {data.labels.slice(0, 4).map((label) => (
+                <IssueLabel key={label.name} name={label.name} color={label.color} />
+              ))}
+              {data.labels.length > 4 && (
+                <span className="text-[11px] text-muted-foreground">+{data.labels.length - 4}</span>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function IssueLabel({ name, color }: { name: string; color: string }) {
+  const hex = color.startsWith("#") ? color : `#${color}`
+  return (
+    <span
+      className="inline-flex items-center rounded-full px-1.5 py-px text-[11px] font-medium leading-tight border"
+      style={{
+        backgroundColor: `${hex}20`,
+        borderColor: `${hex}40`,
+        color: hex,
+      }}
+    >
+      {name}
+    </span>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Commit
+// ---------------------------------------------------------------------------
+
+function GitHubCommitContent({ data }: { data: GitHubCommitPreviewData }) {
+  const firstLine = data.message.split("\n")[0]
+
+  return (
+    <div className="p-3">
+      <div className="flex items-start gap-2">
+        <ActorAvatar actor={data.author} className="mt-0.5" />
+        <div className="min-w-0 flex-1">
+          <h4 className="text-sm font-medium text-foreground line-clamp-2">{firstLine}</h4>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+            <code className="rounded bg-muted px-1 py-px font-mono text-[11px]">{data.shortSha}</code>
+            <span>
+              {data.filesChanged} file{data.filesChanged !== 1 ? "s" : ""}
+            </span>
+            <DiffStats additions={data.additions} deletions={data.deletions} />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// File
+// ---------------------------------------------------------------------------
+
+function GitHubFileContent({ preview, data }: { preview: LinkPreviewSummary; data: GitHubFilePreviewData }) {
   let content = null
 
   if (data.renderMode === "markdown" && data.markdownContent) {
     content = (
-      <div className="mt-3 overflow-hidden rounded-md border bg-muted/20 px-3 py-2">
+      <div className="mt-2 overflow-hidden rounded-md border bg-muted/20 px-2.5 py-1.5">
         <MarkdownContent
           content={data.markdownContent}
-          className="text-sm leading-relaxed text-foreground [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+          className="text-xs leading-relaxed text-foreground [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
         />
       </div>
     )
   } else if (data.lines.length > 0) {
     content = (
-      <div className="mt-3 [&>*]:my-0">
-        <CodeBlock language={toCodeLanguage(data.language)}>{data.lines.map((line) => line.text).join("\n")}</CodeBlock>
-      </div>
+      <pre className="mt-2 overflow-x-auto rounded-md border bg-muted/20 px-2.5 py-1.5 text-xs leading-snug font-mono text-foreground">
+        {data.lines.map((line) => line.text).join("\n")}
+      </pre>
     )
   }
 
@@ -220,10 +472,10 @@ function GitHubFilePreviewContent({ preview, data }: { preview: LinkPreviewSumma
         {preview.title && <h4 className="text-sm font-medium text-foreground line-clamp-1">{preview.title}</h4>}
         <p className="mt-0.5 text-xs text-muted-foreground line-clamp-1">
           {preview.previewData?.repository.fullName}
-          {" · "}
+          {" \u00b7 "}
           {data.ref}
-          {data.language ? ` · ${data.language}` : ""}
-          {data.renderMode !== "markdown" ? ` · ${formatLineRange(data)}` : ""}
+          {data.language ? ` \u00b7 ${data.language}` : ""}
+          {data.renderMode !== "markdown" ? ` \u00b7 ${formatLineRange(data)}` : ""}
         </p>
       </div>
 
@@ -240,48 +492,61 @@ function GitHubFilePreviewContent({ preview, data }: { preview: LinkPreviewSumma
   )
 }
 
-function getGitHubFilePreview(previewData: GitHubPreview | null | undefined): GitHubFilePreviewData | null {
-  if (!previewData || previewData.type !== "github_file") return null
-  return previewData.data as GitHubFilePreviewData
+// ---------------------------------------------------------------------------
+// Comment
+// ---------------------------------------------------------------------------
+
+function GitHubCommentContent({ data }: { data: GitHubCommentPreviewData }) {
+  const parentLabel = data.parent.kind === "pull_request" ? "PR" : "Issue"
+
+  return (
+    <div className="p-3">
+      <div className="flex items-start gap-2">
+        <ActorAvatar actor={data.author} className="mt-0.5" />
+        <div className="min-w-0 flex-1">
+          <p className="text-xs text-muted-foreground line-clamp-1">
+            <span className="font-medium text-foreground">{data.author?.login ?? "Unknown"}</span>
+            {" commented on "}
+            {parentLabel} #{data.parent.number}
+          </p>
+          {data.body && (
+            <div className="mt-1.5 overflow-hidden rounded-md border bg-muted/20 px-2.5 py-1.5">
+              <MarkdownContent
+                content={data.body}
+                className="text-xs leading-relaxed text-foreground line-clamp-4 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+              />
+            </div>
+          )}
+          {data.truncated && <p className="mt-1 text-[11px] text-muted-foreground">Comment truncated</p>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Shared primitives
+// ---------------------------------------------------------------------------
+
+function ActorAvatar({ actor, className }: { actor: GitHubPreviewActor | null; className?: string }) {
+  if (!actor) return null
+  return (
+    <Avatar className={cn("h-5 w-5 shrink-0", className)}>
+      {actor.avatarUrl ? <AvatarImage src={actor.avatarUrl} alt={actor.login} /> : null}
+      <AvatarFallback className="text-[10px]">{actor.login.charAt(0).toUpperCase()}</AvatarFallback>
+    </Avatar>
+  )
+}
+
+function DiffStats({ additions, deletions }: { additions: number; deletions: number }) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      {additions > 0 && <span className="text-green-600 dark:text-green-400">+{additions}</span>}
+      {deletions > 0 && <span className="text-red-600 dark:text-red-400">-{deletions}</span>}
+    </span>
+  )
 }
 
 function formatLineRange(data: GitHubFilePreviewData): string {
   return data.startLine === data.endLine ? `L${data.startLine}` : `L${data.startLine}-L${data.endLine}`
-}
-
-function toCodeLanguage(language: string | null): string {
-  switch (language) {
-    case "TypeScript":
-      return "typescript"
-    case "TSX":
-      return "tsx"
-    case "JavaScript":
-      return "javascript"
-    case "JSX":
-      return "jsx"
-    case "Python":
-      return "python"
-    case "Ruby":
-      return "ruby"
-    case "Go":
-      return "go"
-    case "Java":
-      return "java"
-    case "JSON":
-      return "json"
-    case "SQL":
-      return "sql"
-    case "Markdown":
-      return "markdown"
-    case "YAML":
-      return "yaml"
-    case "Shell":
-      return "shell"
-    case "CSS":
-      return "css"
-    case "HTML":
-      return "html"
-    default:
-      return "plaintext"
-  }
 }

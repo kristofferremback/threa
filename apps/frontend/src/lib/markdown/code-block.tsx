@@ -83,41 +83,41 @@ export default function CodeBlock({ language, children }: CodeBlockProps) {
   }, [children, language])
 
   const header = (
-    <div className="flex items-center justify-between px-3 py-2 bg-muted/50 border-b border-border min-h-9">
-      <span className="text-xs font-medium text-muted-foreground font-mono">{formatLanguage(language)}</span>
+    <div className="flex items-center justify-between px-2.5 py-1 bg-muted/50 border-b border-border">
+      <span className="text-[11px] font-medium text-muted-foreground font-mono">{formatLanguage(language)}</span>
       <button
         type="button"
         onClick={handleCopy}
         className={cn(
-          "flex h-7 w-7 items-center justify-center rounded-md transition-all duration-150",
+          "flex h-5 w-5 items-center justify-center rounded transition-all duration-150",
           "opacity-0 group-hover:opacity-100",
           copied
             ? "bg-green-500/15 text-green-600 dark:text-green-400"
-            : "bg-muted text-muted-foreground hover:bg-primary/15 hover:text-primary"
+            : "text-muted-foreground hover:bg-primary/15 hover:text-primary"
         )}
         title={copied ? "Copied!" : "Copy code"}
       >
-        {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+        {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
       </button>
     </div>
   )
 
   if (!html) {
     return (
-      <div className="group my-3 rounded-[10px] overflow-hidden border border-border bg-muted/50">
+      <div className="group my-2 rounded-md overflow-hidden border border-border bg-muted/50">
         {header}
-        <pre className="p-3.5 overflow-x-auto">
-          <code className="text-sm font-mono">{children}</code>
+        <pre className="px-2.5 py-2 overflow-x-auto">
+          <code className="text-xs font-mono leading-snug">{children}</code>
         </pre>
       </div>
     )
   }
 
   return (
-    <div className="group my-3 rounded-[10px] overflow-hidden border border-border bg-muted/50">
+    <div className="group my-2 rounded-md overflow-hidden border border-border bg-muted/50">
       {header}
       <div
-        className="[&>pre]:p-3.5 [&>pre]:text-sm [&>pre]:overflow-x-auto [&>pre]:bg-transparent [&>pre]:m-0"
+        className="[&>pre]:px-2.5 [&>pre]:py-2 [&>pre]:text-xs [&>pre]:leading-snug [&>pre]:overflow-x-auto [&>pre]:bg-transparent [&>pre]:m-0"
         // Safe: Shiki generates this HTML internally from the code string - no user HTML passthrough
         dangerouslySetInnerHTML={{ __html: html }}
       />
