@@ -4,7 +4,7 @@ import { StreamEventRepository, StreamEvent } from "../streams"
 import { StreamRepository } from "../streams"
 import { StreamMemberRepository } from "../streams"
 import { MessageRepository, Message } from "./repository"
-import { AttachmentRepository } from "../attachments"
+import { AttachmentRepository, isVideoAttachment } from "../attachments"
 import { OutboxRepository } from "../../lib/outbox"
 import { StreamPersonaParticipantRepository } from "../agents"
 import { eventId, messageId, messageVersionId } from "../../lib/id"
@@ -199,7 +199,7 @@ export class EventService {
           filename: a.filename,
           mimeType: a.mimeType,
           sizeBytes: a.sizeBytes,
-          ...(a.mimeType.startsWith("video/") && { processingStatus: a.processingStatus }),
+          ...(isVideoAttachment(a.mimeType, a.filename) && { processingStatus: a.processingStatus }),
         }))
       }
 
