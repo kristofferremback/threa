@@ -7,6 +7,7 @@ import { EditorActionBar } from "./editor-action-bar"
 function renderBar(props: Partial<React.ComponentProps<typeof EditorActionBar>> = {}) {
   const editorHandle = {
     focus: vi.fn(),
+    focusAfterQuoteReply: vi.fn(),
     insertMention: vi.fn(),
     insertSlash: vi.fn(),
     insertEmoji: vi.fn(),

@@ -203,7 +203,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   composerRef.current = composer
 
   // Imperative handle for programmatic focus from outside (e.g. quote reply insertion)
-  const composerFocusRef = useRef<{ focus: () => void } | null>(null)
+  const composerFocusRef = useRef<{ focus: () => void; focusAfterQuoteReply: () => void } | null>(null)
 
   // Register with QuoteReplyContext to insert quote reply nodes into the composer.
   // Stable deps: quoteReplyCtx is from context, composerRef is a ref.
@@ -225,8 +225,9 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
       const currentContent = composerRef.current.content
       const existingBlocks = currentContent.content ?? []
 
-      // Strip trailing empty paragraphs so the quote appends cleanly,
-      // then re-add one after the quote for the cursor to land in.
+      // Strip trailing empty paragraphs so the quote appends cleanly.
+      // The cursor should land on the quote-side gapcursor, not in a synthetic
+      // empty paragraph rendered on the next line.
       const trimmedBlocks = [...existingBlocks]
       while (
         trimmedBlocks.length > 0 &&
@@ -238,11 +239,11 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
 
       composerRef.current.setContent({
         type: "doc",
-        content: [...trimmedBlocks, quoteNode, { type: "paragraph" }],
+        content: [...trimmedBlocks, quoteNode],
       })
 
       // Focus the composer so the user can start typing immediately
-      composerFocusRef.current?.focus()
+      composerFocusRef.current?.focusAfterQuoteReply()
     })
   }, [quoteReplyCtx])
 

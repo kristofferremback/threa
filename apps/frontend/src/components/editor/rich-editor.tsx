@@ -1,5 +1,7 @@
 import { useRef, useState, useEffect, useCallback, useMemo, forwardRef, useImperativeHandle } from "react"
 import { useEditor, EditorContent } from "@tiptap/react"
+import { GapCursor } from "@tiptap/pm/gapcursor"
+import type { ResolvedPos } from "@tiptap/pm/model"
 import type { PluginKey } from "@tiptap/pm/state"
 import { useParams } from "react-router-dom"
 import { createEditorExtensions } from "./editor-extensions"
@@ -22,11 +24,20 @@ import type { MentionStreamContext } from "@/hooks/use-mentionables"
 
 export interface RichEditorHandle {
   focus(): void
+  focusAfterQuoteReply(): void
   insertMention(): void
   insertSlash(): void
   insertEmoji(): void
   /** Access the TipTap editor instance for external toolbar rendering */
   getEditor(): import("@tiptap/react").Editor | null
+}
+
+function isValidGapCursorPosition($pos: ResolvedPos): boolean {
+  const gapCursor = GapCursor as typeof GapCursor & {
+    valid?: (position: ResolvedPos) => boolean
+  }
+
+  return gapCursor.valid?.($pos) ?? false
 }
 
 interface RichEditorProps {
@@ -548,6 +559,23 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
     }
   }, [editor])
 
+  const focusAfterQuoteReply = useCallback(() => {
+    if (!editor || editor.isDestroyed) {
+      return
+    }
+
+    const pos = editor.state.doc.content.size
+    const $pos = editor.state.doc.resolve(pos)
+
+    if (isValidGapCursorPosition($pos)) {
+      editor.view.focus()
+      editor.view.dispatch(editor.state.tr.setSelection(new GapCursor($pos)).scrollIntoView())
+      return
+    }
+
+    editor.commands.focus("end")
+  }, [editor])
+
   // Re-focus when scope changes (e.g., navigating between streams) on desktop.
   // TipTap's autofocus only fires on mount; without key={scopeId} remounting,
   // we need to manually re-focus when the scope changes.
@@ -620,12 +648,13 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
     ref,
     () => ({
       focus,
+      focusAfterQuoteReply,
       insertMention: handleMentionClick,
       insertSlash: handleSlashClick,
       insertEmoji: handleEmojiClick,
       getEditor: () => editor,
     }),
-    [focus, handleMentionClick, handleSlashClick, handleEmojiClick, editor]
+    [focus, focusAfterQuoteReply, handleMentionClick, handleSlashClick, handleEmojiClick, editor]
   )
 
   return (

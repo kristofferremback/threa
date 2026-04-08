@@ -1,22 +1,138 @@
 import { Node, mergeAttributes } from "@tiptap/core"
 import { GapCursor } from "@tiptap/pm/gapcursor"
-import { Plugin, PluginKey, Selection } from "@tiptap/pm/state"
+import type { ResolvedPos } from "@tiptap/pm/model"
+import { NodeSelection, Plugin, PluginKey, Selection } from "@tiptap/pm/state"
 import { ReactNodeViewRenderer } from "@tiptap/react"
 import { QuoteReplyView } from "./quote-reply-view"
 
-function insertParagraphAtGapCursor(editor: {
-  state: import("@tiptap/pm/state").EditorState
-  view: import("@tiptap/pm/view").EditorView
-}): boolean {
+function isValidGapCursorPosition($pos: ResolvedPos): boolean {
+  const gapCursor = GapCursor as typeof GapCursor & {
+    valid?: (position: ResolvedPos) => boolean
+  }
+
+  return gapCursor.valid?.($pos) ?? false
+}
+
+function insertParagraphAtGapCursor(
+  editor: {
+    state: import("@tiptap/pm/state").EditorState
+    view: import("@tiptap/pm/view").EditorView
+  },
+  text = ""
+): boolean {
   const { state } = editor
   if (!(state.selection instanceof GapCursor)) return false
 
   const pos = state.selection.$from.pos
   const paragraph = state.schema.nodes.paragraph.create()
-  const tr = state.tr.insert(pos, paragraph)
-  tr.setSelection(Selection.near(tr.doc.resolve(pos + 1)))
-  editor.view.dispatch(tr)
+  let tr = state.tr.insert(pos, paragraph)
+  const selectionPos = pos + 1
+
+  if (text.length > 0) {
+    tr = tr.insertText(text, selectionPos)
+  }
+
+  tr.setSelection(Selection.near(tr.doc.resolve(selectionPos + text.length)))
+  editor.view.dispatch(tr.scrollIntoView())
   return true
+}
+
+function syncGapCursorStyles(view: import("@tiptap/pm/view").EditorView) {
+  const root = view.dom as HTMLElement
+  const el = root.querySelector(".ProseMirror-gapcursor") as HTMLElement | null
+
+  root.classList.remove("has-after-quote-gapcursor")
+
+  if (!el) {
+    return
+  }
+
+  el.classList.remove("before-quote", "after-quote")
+  el.style.removeProperty("--quote-top")
+  el.style.removeProperty("--quote-height")
+  el.style.removeProperty("--quote-right")
+
+  const next = getAdjacentQuoteReplyElement(el.nextElementSibling)
+  const prev = getAdjacentQuoteReplyElement(el.previousElementSibling)
+
+  if (next) {
+    el.classList.add("before-quote")
+    const quoteRect = next.getBoundingClientRect()
+    const gcRect = el.getBoundingClientRect()
+    el.style.setProperty("--quote-top", `${quoteRect.top - gcRect.top}px`)
+    el.style.setProperty("--quote-height", `${quoteRect.height}px`)
+    return
+  }
+
+  if (prev) {
+    el.classList.add("after-quote")
+    const quoteRect = prev.getBoundingClientRect()
+    const gcRect = el.getBoundingClientRect()
+    el.style.setProperty("--quote-top", `${quoteRect.top - gcRect.top}px`)
+    el.style.setProperty("--quote-height", `${quoteRect.height}px`)
+    el.style.setProperty("--quote-right", `${root.getBoundingClientRect().right - quoteRect.right}px`)
+
+    if (!el.nextElementSibling) {
+      root.classList.add("has-after-quote-gapcursor")
+    }
+  }
+}
+
+function getAdjacentQuoteReplyElement(element: Element | null): HTMLElement | null {
+  if (!(element instanceof HTMLElement)) {
+    return null
+  }
+
+  if (element.getAttribute("data-type") === "quote-reply") {
+    return element
+  }
+
+  const nested = element.querySelector<HTMLElement>('[data-type="quote-reply"]')
+  return nested ?? null
+}
+
+function setGapCursorSelection(
+  editor: {
+    state: import("@tiptap/pm/state").EditorState
+    view: import("@tiptap/pm/view").EditorView
+  },
+  pos: number
+): boolean {
+  const $pos = editor.state.doc.resolve(pos)
+  if (!isValidGapCursorPosition($pos)) {
+    return false
+  }
+
+  editor.view.dispatch(editor.state.tr.setSelection(new GapCursor($pos)).scrollIntoView())
+  return true
+}
+
+function moveAcrossQuoteReply(
+  editor: {
+    state: import("@tiptap/pm/state").EditorState
+    view: import("@tiptap/pm/view").EditorView
+  },
+  direction: "left" | "right"
+): boolean {
+  const { selection } = editor.state
+
+  if (selection instanceof GapCursor) {
+    if (direction === "left" && selection.$from.nodeBefore?.type.name === "quoteReply") {
+      return setGapCursorSelection(editor, selection.from - selection.$from.nodeBefore.nodeSize)
+    }
+
+    if (direction === "right" && selection.$from.nodeAfter?.type.name === "quoteReply") {
+      return setGapCursorSelection(editor, selection.from + selection.$from.nodeAfter.nodeSize)
+    }
+
+    return false
+  }
+
+  if (selection instanceof NodeSelection && selection.node.type.name === "quoteReply") {
+    return setGapCursorSelection(editor, direction === "left" ? selection.from : selection.to)
+  }
+
+  return false
 }
 
 export interface QuoteReplyAttrs {
@@ -104,31 +220,29 @@ export const QuoteReplyExtension = Node.create({
     return [
       new Plugin({
         key: new PluginKey("quoteReplyGapCursorPosition"),
-        view() {
+        props: {
+          handleTextInput: (_view, _from, _to, text) => insertParagraphAtGapCursor(this.editor, text),
+          handleKeyDown: (_view, event) => {
+            if (event.key === "ArrowLeft") {
+              return moveAcrossQuoteReply(this.editor, "left")
+            }
+
+            if (event.key === "ArrowRight") {
+              return moveAcrossQuoteReply(this.editor, "right")
+            }
+
+            return false
+          },
+        },
+        view(view) {
+          syncGapCursorStyles(view)
+
           return {
-            update(view) {
-              const el = view.dom.querySelector(".ProseMirror-gapcursor") as HTMLElement | null
-              if (!el) return
-
-              el.classList.remove("before-quote", "after-quote")
-
-              const next = el.nextElementSibling
-              const prev = el.previousElementSibling
-
-              if (next?.getAttribute("data-type") === "quote-reply") {
-                el.classList.add("before-quote")
-                const quoteRect = next.getBoundingClientRect()
-                const gcRect = el.getBoundingClientRect()
-                el.style.setProperty("--quote-top", `${quoteRect.top - gcRect.top}px`)
-                el.style.setProperty("--quote-height", `${quoteRect.height}px`)
-              } else if (prev?.getAttribute("data-type") === "quote-reply") {
-                el.classList.add("after-quote")
-                const quoteRect = prev.getBoundingClientRect()
-                const gcRect = el.getBoundingClientRect()
-                el.style.setProperty("--quote-top", `${quoteRect.top - gcRect.top}px`)
-                el.style.setProperty("--quote-height", `${quoteRect.height}px`)
-                el.style.setProperty("--quote-right", `${view.dom.getBoundingClientRect().right - quoteRect.right}px`)
-              }
+            update(updatedView) {
+              syncGapCursorStyles(updatedView)
+            },
+            destroy() {
+              ;(view.dom as HTMLElement).classList.remove("has-after-quote-gapcursor")
             },
           }
         },

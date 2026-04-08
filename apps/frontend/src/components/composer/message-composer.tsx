@@ -143,7 +143,7 @@ export interface MessageComposerProps {
   /** Stream context for filtering which broadcast mentions (@channel, @here) are available */
   streamContext?: MentionStreamContext
   /** Imperative handle ref for programmatic focus from parent */
-  composerRef?: React.MutableRefObject<{ focus: () => void } | null>
+  composerRef?: React.MutableRefObject<{ focus: () => void; focusAfterQuoteReply: () => void } | null>
 }
 
 export function MessageComposer({
@@ -299,6 +299,10 @@ export function MessageComposer({
       focus: () => {
         setMobileFocused(true)
         requestAnimationFrame(() => richEditorRef.current?.focus())
+      },
+      focusAfterQuoteReply: () => {
+        setMobileFocused(true)
+        requestAnimationFrame(() => richEditorRef.current?.focusAfterQuoteReply())
       },
     }
     return () => {
