@@ -20,11 +20,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      TOTAL_SHARDS: 2
+      TOTAL_SHARDS: 3
     strategy:
       fail-fast: false
       matrix:
-        shard_index: [1, 2]
+        shard_index: [1, 2, 3]
 
     services:
       postgres:

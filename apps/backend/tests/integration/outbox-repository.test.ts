@@ -7,6 +7,18 @@ import { setupTestDatabase } from "./setup"
 describe("OutboxRepository", () => {
   let pool: Pool
 
+  async function listTrackedOutboxIds(
+    client: Parameters<typeof withTestTransaction>[1] extends (client: infer T) => Promise<unknown> ? T : never,
+    ids: bigint[]
+  ) {
+    const result = await client.query<{ id: string }>(
+      "SELECT id FROM outbox WHERE id = ANY($1::bigint[]) ORDER BY id",
+      [ids.map((id) => id.toString())]
+    )
+
+    return result.rows.map((row) => BigInt(row.id))
+  }
+
   beforeAll(async () => {
     pool = await setupTestDatabase()
   })
@@ -139,6 +151,7 @@ describe("OutboxRepository", () => {
         const first = await OutboxRepository.insert(client, "message:created", testEventPayload("stream_1"))
         const second = await OutboxRepository.insert(client, "message:created", testEventPayload("stream_2"))
         const third = await OutboxRepository.insert(client, "message:created", testEventPayload("stream_3"))
+        const inserted = [first.id, second.id, third.id]
 
         const oldDate = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000)
         await client.query("UPDATE outbox SET created_at = $1 WHERE id IN ($2, $3, $4)", [
@@ -154,17 +167,15 @@ describe("OutboxRepository", () => {
           limit: 100,
         })
 
-        const remaining = await OutboxRepository.fetchAfterId(client, 0n, 10)
+        const remainingInsertedIds = await listTrackedOutboxIds(client, inserted)
         const want = {
           deleted: 2,
           remainingEventIds: [third.id],
-          remainingEventTypes: ["message:created"],
         }
 
         expect({
           deleted,
-          remainingEventIds: remaining.map((event) => event.id),
-          remainingEventTypes: remaining.map((event) => event.eventType),
+          remainingEventIds: remainingInsertedIds,
         }).toEqual(want)
       })
     })
@@ -193,13 +204,13 @@ describe("OutboxRepository", () => {
           limit: 2,
         })
 
-        const remaining = await OutboxRepository.fetchAfterId(client, 0n, 10)
+        const remainingInsertedIds = await listTrackedOutboxIds(client, inserted)
         expect({
           deleted,
-          remainingCount: remaining.length,
+          remainingInsertedIds,
         }).toEqual({
           deleted: 2,
-          remainingCount: 3,
+          remainingInsertedIds: inserted.slice(2),
         })
       })
     })
