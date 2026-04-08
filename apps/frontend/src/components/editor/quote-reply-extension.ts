@@ -135,6 +135,43 @@ function moveAcrossQuoteReply(
   return false
 }
 
+function handleQuoteReplyClick(
+  editor: {
+    state: import("@tiptap/pm/state").EditorState
+    view: import("@tiptap/pm/view").EditorView
+  },
+  node: import("@tiptap/pm/model").Node,
+  nodePos: number,
+  event: MouseEvent,
+  direct: boolean
+): boolean {
+  if (!direct || node.type.name !== "quoteReply" || event.button !== 0) {
+    return false
+  }
+
+  const target = event.target
+  if (target instanceof HTMLElement && target.closest("button,a")) {
+    return false
+  }
+
+  const nodeDom = editor.view.nodeDOM(nodePos)
+  const quoteElement = getAdjacentQuoteReplyElement(nodeDom instanceof Element ? nodeDom : null)
+  if (!quoteElement) {
+    return false
+  }
+
+  const quoteRect = quoteElement.getBoundingClientRect()
+  const targetPos = event.clientX <= quoteRect.left + quoteRect.width / 2 ? nodePos : nodePos + node.nodeSize
+
+  if (!setGapCursorSelection(editor, targetPos)) {
+    return false
+  }
+
+  event.preventDefault()
+  editor.view.focus()
+  return true
+}
+
 export interface QuoteReplyAttrs {
   /** The ID of the quoted message */
   messageId: string
@@ -222,6 +259,8 @@ export const QuoteReplyExtension = Node.create({
         key: new PluginKey("quoteReplyGapCursorPosition"),
         props: {
           handleTextInput: (_view, _from, _to, text) => insertParagraphAtGapCursor(this.editor, text),
+          handleClickOn: (_view, _pos, node, nodePos, event, direct) =>
+            handleQuoteReplyClick(this.editor, node, nodePos, event, direct),
           handleKeyDown: (_view, event) => {
             if (event.key === "ArrowLeft") {
               return moveAcrossQuoteReply(this.editor, "left")

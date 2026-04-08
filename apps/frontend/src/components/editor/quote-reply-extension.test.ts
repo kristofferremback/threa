@@ -90,6 +90,55 @@ function insertText(editor: Editor, text: string) {
   return handled
 }
 
+function clickQuote(editor: Editor, clientX: number) {
+  const quoteNode = editor.state.doc.firstChild
+  const quoteElement = editor.view.dom.querySelector('[data-type="quote-reply"]') as HTMLElement | null
+
+  expect(quoteNode).not.toBeNull()
+  expect(quoteElement).not.toBeNull()
+
+  Object.defineProperty(quoteElement!, "getBoundingClientRect", {
+    configurable: true,
+    value: () =>
+      ({
+        left: 0,
+        right: 100,
+        width: 100,
+        top: 0,
+        bottom: 40,
+        height: 40,
+        x: 0,
+        y: 0,
+        toJSON() {
+          return this
+        },
+      }) satisfies DOMRect,
+  })
+
+  const event = new MouseEvent("click", {
+    clientX,
+    bubbles: true,
+    cancelable: true,
+    button: 0,
+  })
+  Object.defineProperty(event, "target", {
+    configurable: true,
+    value: quoteElement,
+  })
+
+  let handled = false
+
+  editor.view.someProp("handleClickOn", (handleClickOn) => {
+    if (handleClickOn(editor.view, 0, quoteNode!, 0, event, true)) {
+      handled = true
+      return true
+    }
+    return false
+  })
+
+  return handled
+}
+
 describe("quote reply gap cursor", () => {
   const quoteMarkdown = serializeToMarkdown({ type: "doc", content: [createQuoteReplyNode()] })
 
@@ -164,6 +213,32 @@ describe("quote reply gap cursor", () => {
     setGapCursor(editor, 0)
 
     expect(pressKey(editor, "ArrowRight")).toBe(true)
+    expect(editor.state.selection instanceof GapCursor).toBe(true)
+    expect(editor.state.selection.from).toBe(editor.state.doc.content.size)
+
+    expect(insertText(editor, "After")).toBe(true)
+    expect(serializeToMarkdown(editor.getJSON())).toBe(`${quoteMarkdown}\n\nAfter`)
+
+    editor.destroy()
+  })
+
+  it("tapping the left half of a quote reply moves the cursor before the quote", () => {
+    const editor = createQuoteReplyEditor()
+
+    expect(clickQuote(editor, 10)).toBe(true)
+    expect(editor.state.selection instanceof GapCursor).toBe(true)
+    expect(editor.state.selection.from).toBe(0)
+
+    expect(insertText(editor, "Before")).toBe(true)
+    expect(serializeToMarkdown(editor.getJSON())).toBe(`Before\n\n${quoteMarkdown}`)
+
+    editor.destroy()
+  })
+
+  it("tapping the right half of a quote reply moves the cursor after the quote", () => {
+    const editor = createQuoteReplyEditor()
+
+    expect(clickQuote(editor, 90)).toBe(true)
     expect(editor.state.selection instanceof GapCursor).toBe(true)
     expect(editor.state.selection.from).toBe(editor.state.doc.content.size)
 
