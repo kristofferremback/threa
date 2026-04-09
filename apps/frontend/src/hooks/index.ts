@@ -57,6 +57,7 @@ export { useScrollBehavior } from "./use-scroll-behavior"
 export { useVirtuosoScroll } from "./use-virtuoso-scroll"
 
 export { useStreamSearch } from "./use-stream-search"
+export { useMemoSearch, useMemoDetail, memoKeys } from "./use-memos"
 
 export {
   createOptimisticBootstrap,

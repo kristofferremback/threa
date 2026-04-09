@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from "react"
 import { toast } from "sonner"
 import { RefreshCw } from "lucide-react"
-import { useNavigate, useParams } from "react-router-dom"
+import { useLocation, useNavigate, useParams } from "react-router-dom"
 import { useAuth } from "@/auth"
 import { useActivityCounts, useAllDrafts, createDmDraftId, useDraftScratchpads, useUnreadCounts } from "@/hooks"
 import { useSyncStatus } from "@/sync/sync-status"
@@ -45,6 +45,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
     collapseOnMobile,
   } = useSidebar()
   const { streamId: activeStreamId, "*": splat } = useParams<{ streamId: string; "*": string }>()
+  const location = useLocation()
   const syncStatus = useSyncStatus(`workspace:${workspaceId}`)
   const syncEngine = useSyncEngine()
   const isLoading = syncStatus === "syncing" || syncStatus === "idle"
@@ -67,6 +68,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   const draftCount = allDrafts.length
   const isDraftsPage = splat === "drafts" || window.location.pathname.endsWith("/drafts")
   const isActivityPage = splat === "activity" || window.location.pathname.endsWith("/activity")
+  const isMemoryPage = splat === "memory" || location.pathname.endsWith("/memory")
 
   // Build set of streams the user is a member of (for filtering public channels)
   const memberStreamIds = useMemo(() => {
@@ -352,6 +354,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
           isDraftsPage={isDraftsPage}
           draftCount={draftCount}
           isActivityPage={isActivityPage}
+          isMemoryPage={isMemoryPage}
           unreadActivityCount={unreadActivityCount}
         />
       }

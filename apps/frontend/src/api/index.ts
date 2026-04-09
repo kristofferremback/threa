@@ -19,6 +19,18 @@ export {
   type SearchResponse,
   type ArchiveStatus,
 } from "./search"
+export {
+  searchMemos,
+  getMemo,
+  type MemoExplorerStreamRef,
+  type MemoExplorerResult,
+  type MemoExplorerDetail,
+  type MemoExplorerSourceMessage,
+  type MemoSearchFilters,
+  type MemoSearchRequest,
+  type MemoSearchResponse,
+  type MemoDetailResponse,
+} from "./memos"
 export { conversationsApi, type ListConversationsParams } from "./conversations"
 export { preferencesApi } from "./preferences"
 export { aiUsageApi } from "./ai-usage"

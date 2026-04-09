@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen } from "@testing-library/react"
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom"
-import { WorkspaceHome } from "./index"
+import { LegacyMemoRedirect, WorkspaceHome } from "./index"
 
 const mockUseLastStream = vi.fn()
 const mockTogglePinned = vi.fn()
@@ -42,5 +42,18 @@ describe("WorkspaceHome", () => {
     )
 
     expect(await screen.findByTestId("search")).toHaveTextContent("?ws-settings=bots")
+  })
+
+  it("redirects legacy memo routes into the memory explorer", async () => {
+    render(
+      <MemoryRouter initialEntries={["/w/ws_123/memos/memo_456?q=launch"]}>
+        <Routes>
+          <Route path="/w/:workspaceId/memos/:memoId" element={<LegacyMemoRedirect />} />
+          <Route path="/w/:workspaceId/memory" element={<SearchEcho />} />
+        </Routes>
+      </MemoryRouter>
+    )
+
+    expect(await screen.findByTestId("search")).toHaveTextContent("?q=launch&memo=memo_456")
   })
 })

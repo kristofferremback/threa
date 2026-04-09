@@ -62,5 +62,12 @@ describe("commands", () => {
       expect(cmd).toBeDefined()
       expect(cmd?.label).toBe("Search messages")
     })
+
+    it("should include memory command", () => {
+      const cmd = commands.find((c) => c.id === "open-memory")
+      expect(cmd).toBeDefined()
+      expect(cmd?.label).toBe("Open Memory")
+      expect(cmd?.keywords).toEqual(expect.arrayContaining(["memo", "memos", "knowledge"]))
+    })
   })
 })

@@ -431,11 +431,14 @@ function SourceItem({ source, workspaceId, isLast }: { source: TraceSource; work
 }
 
 function buildSourceLink(source: TraceSource, workspaceId: string): string | null {
+  if (source.type === "workspace_memo" && source.memoId) {
+    return `/w/${workspaceId}/memory?memo=${source.memoId}`
+  }
   if (source.type === "workspace_message" && source.streamId && source.messageId) {
     return `/w/${workspaceId}/s/${source.streamId}?m=${source.messageId}`
   }
-  if (source.type === "workspace_memo" && source.streamId) {
-    return `/w/${workspaceId}/s/${source.streamId}`
+  if (source.url?.startsWith("/w/")) {
+    return source.url
   }
   return null
 }

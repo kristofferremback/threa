@@ -35,6 +35,7 @@ import { MessageFormatter } from "./lib/ai/message-formatter"
 import { SearchService } from "./features/search"
 import {
   MemoService,
+  MemoExplorerService,
   StubMemoService,
   MemoClassifier,
   Memorizer,
@@ -215,6 +216,7 @@ export async function startServer(): Promise<ServerInstance> {
   // Search and embedding services
   const embeddingService = config.useStubAI ? new StubEmbeddingService() : new EmbeddingService({ ai })
   const searchService = new SearchService({ pool, embeddingService })
+  const memoExplorerService = new MemoExplorerService({ pool, embeddingService })
 
   // Job queue for durable background work (companion responses, etc.).
   //
@@ -385,6 +387,7 @@ export async function startServer(): Promise<ServerInstance> {
     eventService,
     attachmentService,
     searchService,
+    memoExplorerService,
     conversationService,
     userPreferencesService,
     invitationService,

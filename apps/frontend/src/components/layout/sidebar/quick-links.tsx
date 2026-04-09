@@ -1,4 +1,4 @@
-import { Bell, FileEdit, MessageSquareText } from "lucide-react"
+import { Bell, Brain, FileEdit, MessageSquareText } from "lucide-react"
 import { Link } from "react-router-dom"
 import { UnreadBadge } from "@/components/unread-badge"
 import { useSidebar } from "@/contexts"
@@ -9,6 +9,7 @@ interface SidebarQuickLinksProps {
   isDraftsPage: boolean
   draftCount: number
   isActivityPage: boolean
+  isMemoryPage: boolean
   unreadActivityCount: number
 }
 
@@ -17,6 +18,7 @@ export function SidebarQuickLinks({
   isDraftsPage,
   draftCount,
   isActivityPage,
+  isMemoryPage,
   unreadActivityCount,
 }: SidebarQuickLinksProps) {
   const { collapseOnMobile } = useSidebar()
@@ -46,6 +48,18 @@ export function SidebarQuickLinks({
       >
         <MessageSquareText className="h-4 w-4" />
         Threads
+      </Link>
+      <Link
+        to={`/w/${workspaceId}/memory`}
+        onClick={collapseOnMobile}
+        className={cn(
+          "flex items-center gap-2.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
+          isMemoryPage ? "bg-primary/10" : "hover:bg-muted/50",
+          !isMemoryPage && "text-muted-foreground"
+        )}
+      >
+        <Brain className="h-4 w-4" />
+        Memory
       </Link>
       <Link
         to={`/w/${workspaceId}/activity`}
