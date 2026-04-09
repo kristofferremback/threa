@@ -11,10 +11,13 @@ import {
   Hash,
   MessageSquareQuote,
   ExternalLink,
+  Check,
+  ChevronsUpDown,
 } from "lucide-react"
 import { KNOWLEDGE_TYPES, MEMO_TYPES, type KnowledgeType, type MemoType, type StreamType } from "@threa/types"
 import { Link, useParams, useSearchParams } from "react-router-dom"
 import { useMemoDetail, useMemoSearch } from "@/hooks"
+import { useIsMobile } from "@/hooks/use-mobile"
 import { useWorkspaceStreams } from "@/stores/workspace-store"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -23,12 +26,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { MarkdownContent } from "@/components/ui/markdown-content"
+import { Drawer, DrawerContent } from "@/components/ui/drawer"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { RelativeTime } from "@/components/relative-time"
 import { cn } from "@/lib/utils"
 import { getStreamName, streamFallbackLabel } from "@/lib/streams"
-import type { MemoExplorerResult, MemoExplorerStreamRef } from "@/api"
+import type { MemoExplorerDetail, MemoExplorerResult, MemoExplorerStreamRef } from "@/api"
 
-const ALL_STREAMS = "all-streams"
 const ALL_MEMO_TYPES = "all-memo-types"
 const ALL_KNOWLEDGE_TYPES = "all-knowledge-types"
 
@@ -200,52 +205,327 @@ function DetailSection({
   )
 }
 
+function MemoDetailContent({
+  data,
+  workspaceId,
+  isLoading,
+}: {
+  data: MemoExplorerDetail | null
+  workspaceId: string
+  isLoading: boolean
+}) {
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="space-y-3">
+          <Skeleton className="h-5 w-24" />
+          <Skeleton className="h-8 w-3/4" />
+          <Skeleton className="h-16 w-full" />
+        </div>
+        <Skeleton className="h-32 w-full rounded-lg" />
+      </div>
+    )
+  }
+
+  if (!data) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 text-center">
+        <div className="rounded-full bg-muted/50 p-4 mb-4">
+          <BookOpen className="h-6 w-6 text-muted-foreground/30" />
+        </div>
+        <p className="text-sm text-muted-foreground/60">Select a memo to view its details and provenance</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-8">
+      {/* Title section */}
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <KnowledgeTypeBadge type={data.memo.knowledgeType} size="sm" />
+          <Badge variant="secondary" className="text-[10px] font-medium">
+            {memoLabel(data.memo.memoType)}
+          </Badge>
+          <span className="text-[11px] tabular-nums text-muted-foreground/50">v{data.memo.version}</span>
+          <span className="text-muted-foreground/30">&middot;</span>
+          <RelativeTime date={data.memo.updatedAt} className="text-[11px] text-muted-foreground/50" />
+        </div>
+
+        <h2 className="text-xl font-semibold tracking-tight leading-tight">{data.memo.title}</h2>
+        <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{data.memo.abstract}</p>
+
+        {data.memo.tags.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {data.memo.tags.map((tag) => (
+              <span
+                key={tag}
+                className="inline-flex items-center gap-0.5 rounded-md bg-muted/50 px-2 py-0.5 text-[11px] text-muted-foreground"
+              >
+                <Hash className="h-2.5 w-2.5" />
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Key points */}
+      {data.memo.keyPoints.length > 0 && (
+        <DetailSection title="Key points">
+          <ul className="space-y-2">
+            {data.memo.keyPoints.map((keyPoint) => (
+              <li
+                key={keyPoint}
+                className="relative pl-4 text-sm leading-relaxed before:absolute before:left-0 before:top-[0.6em] before:h-1.5 before:w-1.5 before:rounded-full before:bg-primary/40"
+              >
+                {keyPoint}
+              </li>
+            ))}
+          </ul>
+        </DetailSection>
+      )}
+
+      {/* Provenance */}
+      <DetailSection title="Provenance">
+        <div className="flex flex-wrap gap-2">
+          {data.sourceStream && (
+            <Link
+              to={buildSourceLink(workspaceId, data.sourceStream.id)}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border/50 bg-card px-3 py-2 text-sm transition-colors hover:border-primary/30 hover:bg-primary/5"
+            >
+              <MessageSquareQuote className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="font-medium">{formatStreamRef(data.sourceStream)}</span>
+              <ExternalLink className="h-3 w-3 text-muted-foreground/40" />
+            </Link>
+          )}
+
+          {data.rootStream && data.rootStream.id !== data.sourceStream?.id && (
+            <Link
+              to={buildSourceLink(workspaceId, data.rootStream.id)}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border/50 bg-card px-3 py-2 text-sm transition-colors hover:border-primary/30 hover:bg-primary/5"
+            >
+              <span className="text-xs text-muted-foreground/60">in</span>
+              <span className="font-medium">{formatStreamRef(data.rootStream)}</span>
+              <ExternalLink className="h-3 w-3 text-muted-foreground/40" />
+            </Link>
+          )}
+
+          {!data.sourceStream && !data.rootStream && (
+            <span className="text-sm text-muted-foreground/50">Source unavailable</span>
+          )}
+        </div>
+      </DetailSection>
+
+      {/* Source messages */}
+      <DetailSection title="Source messages">
+        {data.sourceMessages.length === 0 ? (
+          <p className="text-sm text-muted-foreground/50">No accessible source messages were retained for this memo.</p>
+        ) : (
+          <div className="space-y-3">
+            {data.sourceMessages.map((message) => (
+              <div key={message.id} className="rounded-lg border border-border/50 bg-card">
+                <div className="flex items-center gap-2 border-b border-border/30 px-4 py-2">
+                  <span className="text-xs font-semibold">{message.authorName}</span>
+                  <span className="text-[10px] text-muted-foreground/40">in</span>
+                  <Link
+                    to={buildSourceLink(workspaceId, message.streamId, message.id)}
+                    className="text-xs text-primary/80 hover:text-primary hover:underline"
+                  >
+                    {message.streamName}
+                  </Link>
+                  <span className="ml-auto">
+                    <RelativeTime
+                      date={message.createdAt}
+                      className="text-[10px] tabular-nums text-muted-foreground/40"
+                    />
+                  </span>
+                </div>
+                <div className="px-4 py-3 text-sm leading-relaxed">
+                  <MarkdownContent content={message.content} className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </DetailSection>
+    </div>
+  )
+}
+
+function LoadingBar({ visible }: { visible: boolean }) {
+  const [show, setShow] = useState(false)
+
+  useEffect(() => {
+    if (!visible) {
+      setShow(false)
+      return
+    }
+
+    const timer = setTimeout(() => setShow(true), 200)
+    return () => clearTimeout(timer)
+  }, [visible])
+
+  return (
+    <div
+      className={cn(
+        "absolute top-0 left-0 right-0 z-10 h-[2px] overflow-hidden",
+        "transition-opacity duration-200",
+        show ? "opacity-100" : "opacity-0"
+      )}
+      role="progressbar"
+      aria-label="Loading"
+      aria-hidden={!show}
+    >
+      <div className="absolute inset-0 bg-border/30" />
+      <div
+        className="absolute inset-y-0 w-1/3 animate-indeterminate-progress"
+        style={{
+          background: `linear-gradient(90deg, transparent 0%, hsl(var(--primary) / 0.6) 50%, transparent 100%)`,
+        }}
+      />
+    </div>
+  )
+}
+
+function StreamCombobox({
+  options,
+  value,
+  onSelect,
+  isActive,
+}: {
+  options: { id: string; label: string }[]
+  value: string | null
+  onSelect: (streamId: string | null) => void
+  isActive: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const selectedLabel = value ? options.find((o) => o.id === value)?.label : null
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          role="combobox"
+          aria-expanded={open}
+          className={cn(
+            "inline-flex h-7 items-center gap-1 rounded-md border px-2.5 text-xs transition-colors",
+            "border-border/50 bg-background/60 hover:bg-accent/50",
+            isActive && "border-primary/40 bg-primary/5"
+          )}
+        >
+          <span className="truncate max-w-[10rem]">{selectedLabel ?? "All streams"}</span>
+          <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-50" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[14rem] p-0" align="start">
+        <Command>
+          <CommandInput placeholder="Search streams..." className="h-8 text-xs" />
+          <CommandList>
+            <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No streams found</CommandEmpty>
+            <CommandGroup>
+              <CommandItem
+                onSelect={() => {
+                  onSelect(null)
+                  setOpen(false)
+                }}
+              >
+                <Check className={cn("mr-2 h-3 w-3", !value ? "opacity-100" : "opacity-0")} />
+                All streams
+              </CommandItem>
+              {options.map((option) => (
+                <CommandItem
+                  key={option.id}
+                  value={option.label}
+                  onSelect={() => {
+                    onSelect(option.id)
+                    setOpen(false)
+                  }}
+                >
+                  <Check className={cn("mr-2 h-3 w-3", value === option.id ? "opacity-100" : "opacity-0")} />
+                  {option.label}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 export function MemoryPage() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
   const streams = useWorkspaceStreams(workspaceId ?? "")
+  const isMobile = useIsMobile()
 
   if (!workspaceId) {
     return null
   }
 
-  const urlQuery = searchParams.get("q") ?? ""
-  const selectedStreamId = searchParams.get("stream")
-  const selectedMemoType = searchParams.get("memoType") as MemoType | null
-  const selectedKnowledgeType = searchParams.get("knowledgeType") as KnowledgeType | null
+  // Local filter state — initialized from URL params once, then app-owned.
+  // URL params are written as a debounced side effect for bookmarkability.
+  const [localQuery, setLocalQuery] = useState(() => searchParams.get("q") ?? "")
+  const [selectedStreamId, setSelectedStreamId] = useState(() => searchParams.get("stream"))
+  const [selectedMemoType, setSelectedMemoType] = useState(() => searchParams.get("memoType") as MemoType | null)
+  const [selectedKnowledgeType, setSelectedKnowledgeType] = useState(
+    () => searchParams.get("knowledgeType") as KnowledgeType | null
+  )
 
-  function replaceSearch(updates: Record<string, string | null | undefined>) {
-    startTransition(() => {
-      setSearchParams(updateParams(searchParams, updates), { replace: true })
-    })
-  }
-
-  const [localQuery, setLocalQuery] = useState(urlQuery)
+  // Debounced query for the API — updates 300ms after the user stops typing
+  const [debouncedQuery, setDebouncedQuery] = useState(localQuery)
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null)
-
-  // Sync URL → local when URL changes externally (e.g. "Clear" button, back/forward)
-  useEffect(() => {
-    setLocalQuery(urlQuery)
-  }, [urlQuery])
 
   function handleQueryChange(value: string) {
     setLocalQuery(value)
 
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
-      replaceSearch({ q: value || null, memo: null })
+      setDebouncedQuery(value)
+      syncToUrl({ q: value || null })
     }, 300)
   }
 
-  // Clean up on unmount
   useEffect(() => {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
     }
   }, [])
 
+  // Write local filter state to URL params (debounced for query, immediate for filters).
+  // replace: true avoids polluting history.
+  function syncToUrl(updates: Record<string, string | null | undefined>) {
+    startTransition(() => {
+      setSearchParams((prev) => updateParams(prev, updates), { replace: true })
+    })
+  }
+
+  function setFilter(updates: {
+    stream?: string | null
+    memoType?: MemoType | null
+    knowledgeType?: KnowledgeType | null
+  }) {
+    if ("stream" in updates) setSelectedStreamId(updates.stream ?? null)
+    if ("memoType" in updates) setSelectedMemoType(updates.memoType ?? null)
+    if ("knowledgeType" in updates) setSelectedKnowledgeType(updates.knowledgeType ?? null)
+    syncToUrl({
+      ...("stream" in updates && { stream: updates.stream }),
+      ...("memoType" in updates && { memoType: updates.memoType }),
+      ...("knowledgeType" in updates && { knowledgeType: updates.knowledgeType }),
+      memo: null,
+    })
+  }
+
+  function clearFilters() {
+    setSelectedStreamId(null)
+    setSelectedMemoType(null)
+    setSelectedKnowledgeType(null)
+    syncToUrl({ stream: null, memoType: null, knowledgeType: null, memo: null })
+  }
+
   const searchResponse = useMemoSearch(workspaceId, {
-    query: urlQuery,
+    query: debouncedQuery,
     limit: 50,
     filters: {
       in: selectedStreamId ? [selectedStreamId] : undefined,
@@ -255,7 +535,11 @@ export function MemoryPage() {
   })
 
   const results = searchResponse.data?.results ?? []
-  const selectedMemoId = searchParams.get("memo") ?? results[0]?.memo.id ?? null
+  const memoParam = searchParams.get("memo")
+
+  // On desktop, fall back to the first result so the detail pane isn't empty.
+  // On mobile, only show the drawer when the user explicitly taps a memo.
+  const selectedMemoId = memoParam ?? (isMobile ? null : (results[0]?.memo.id ?? null))
   const selectedMemo = useMemoDetail(workspaceId, selectedMemoId)
   const isRefreshing = searchResponse.isFetching || selectedMemo.isFetching
 
@@ -268,11 +552,24 @@ export function MemoryPage() {
     .sort((a, b) => a.label.localeCompare(b.label))
 
   function refresh() {
+    manualRefresh.current = true
     void Promise.allSettled([searchResponse.refetch(), selectedMemoId ? selectedMemo.refetch() : Promise.resolve()])
   }
 
   const selectedMemoData = selectedMemo.data?.memo ?? null
   const hasActiveFilters = selectedStreamId || selectedMemoType || selectedKnowledgeType
+
+  // Brief confirmation flash when a manual refresh completes
+  const [refreshConfirmed, setRefreshConfirmed] = useState(false)
+  const manualRefresh = useRef(false)
+  useEffect(() => {
+    if (!isRefreshing && manualRefresh.current) {
+      manualRefresh.current = false
+      setRefreshConfirmed(true)
+      const timer = setTimeout(() => setRefreshConfirmed(false), 800)
+      return () => clearTimeout(timer)
+    }
+  }, [isRefreshing])
 
   return (
     <div className="flex h-full flex-col bg-background">
@@ -297,47 +594,43 @@ export function MemoryPage() {
             </div>
           </div>
 
+          <span className="hidden sm:inline shrink-0 text-[11px] tabular-nums text-muted-foreground/50">
+            {searchResponse.isLoading ? "\u2026" : `${results.length} memo${results.length !== 1 ? "s" : ""}`}
+          </span>
+
           <Button
             variant="ghost"
             size="icon"
             onClick={refresh}
             disabled={isRefreshing}
-            className="h-8 w-8 shrink-0 text-muted-foreground"
+            className={cn(
+              "h-8 w-8 shrink-0 transition-colors",
+              refreshConfirmed ? "text-emerald-500" : "text-muted-foreground"
+            )}
           >
-            <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
+            {refreshConfirmed ? <Check className="h-4 w-4" /> : <RefreshCw className="h-4 w-4" />}
             <span className="sr-only">Refresh</span>
           </Button>
         </div>
 
         {/* Filter bar */}
-        <div className="flex items-center gap-2 border-t border-border/40 px-4 py-2">
-          <span className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wide mr-1">Filters</span>
+        <div className="flex items-center gap-2 overflow-x-auto border-t border-border/40 px-4 py-2 scrollbar-none">
+          <span className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wide mr-1 shrink-0">
+            Filters
+          </span>
 
-          <Select
-            value={selectedStreamId ?? ALL_STREAMS}
-            onValueChange={(value) => replaceSearch({ stream: value === ALL_STREAMS ? null : value, memo: null })}
-          >
-            <SelectTrigger
-              className={cn(
-                "h-7 w-auto gap-1.5 rounded-md border-border/50 bg-background/60 px-2.5 text-xs",
-                selectedStreamId && "border-primary/40 bg-primary/5"
-              )}
-            >
-              <SelectValue placeholder="All streams" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL_STREAMS}>All streams</SelectItem>
-              {streamOptions.map((stream) => (
-                <SelectItem key={stream.id} value={stream.id}>
-                  {stream.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <StreamCombobox
+            options={streamOptions}
+            value={selectedStreamId}
+            onSelect={(id) => setFilter({ stream: id })}
+            isActive={!!selectedStreamId}
+          />
 
           <Select
             value={selectedMemoType ?? ALL_MEMO_TYPES}
-            onValueChange={(value) => replaceSearch({ memoType: value === ALL_MEMO_TYPES ? null : value, memo: null })}
+            onValueChange={(value) =>
+              setFilter({ memoType: (value === ALL_MEMO_TYPES ? null : value) as MemoType | null })
+            }
           >
             <SelectTrigger
               className={cn(
@@ -360,7 +653,7 @@ export function MemoryPage() {
           <Select
             value={selectedKnowledgeType ?? ALL_KNOWLEDGE_TYPES}
             onValueChange={(value) =>
-              replaceSearch({ knowledgeType: value === ALL_KNOWLEDGE_TYPES ? null : value, memo: null })
+              setFilter({ knowledgeType: (value === ALL_KNOWLEDGE_TYPES ? null : value) as KnowledgeType | null })
             }
           >
             <SelectTrigger
@@ -382,24 +675,24 @@ export function MemoryPage() {
           </Select>
 
           {hasActiveFilters && (
-            <button
-              onClick={() => replaceSearch({ stream: null, memoType: null, knowledgeType: null, memo: null })}
-              className="text-[11px] text-muted-foreground/60 hover:text-foreground transition-colors ml-1"
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={clearFilters}
+              className="h-7 shrink-0 px-2 text-[11px] text-muted-foreground"
             >
-              Clear
-            </button>
+              Clear filters
+            </Button>
           )}
-
-          <span className="ml-auto text-[11px] tabular-nums text-muted-foreground/50">
-            {searchResponse.isLoading ? "\u2026" : `${results.length} memo${results.length !== 1 ? "s" : ""}`}
-          </span>
         </div>
       </header>
 
-      {/* Content */}
-      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-        {/* Results list */}
-        <ScrollArea className="border-b lg:w-[22rem] lg:shrink-0 lg:border-b-0 lg:border-r border-border/50">
+      {/* Content — relative wrapper for the loading bar overlay */}
+      <div className="relative flex min-h-0 flex-1 flex-col lg:flex-row">
+        {/* Delayed loading bar — covers the header/content divider */}
+        <LoadingBar visible={isRefreshing} />
+        {/* Results list — full width on mobile, fixed sidebar on desktop */}
+        <ScrollArea className="flex-1 lg:w-[22rem] lg:flex-none lg:border-r border-border/50">
           <div className="space-y-1.5 p-2">
             {searchResponse.isLoading && (
               <>
@@ -438,156 +731,31 @@ export function MemoryPage() {
           </div>
         </ScrollArea>
 
-        {/* Detail pane */}
-        <ScrollArea className="flex-1">
-          <main className="mx-auto max-w-3xl p-5 sm:p-8">
-            {selectedMemo.isLoading && (
-              <div className="space-y-6">
-                <div className="space-y-3">
-                  <Skeleton className="h-5 w-24" />
-                  <Skeleton className="h-8 w-3/4" />
-                  <Skeleton className="h-16 w-full" />
-                </div>
-                <Skeleton className="h-32 w-full rounded-lg" />
-              </div>
-            )}
-
-            {!selectedMemo.isLoading && !selectedMemoData && (
-              <div className="flex flex-col items-center justify-center py-24 text-center">
-                <div className="rounded-full bg-muted/50 p-4 mb-4">
-                  <BookOpen className="h-6 w-6 text-muted-foreground/30" />
-                </div>
-                <p className="text-sm text-muted-foreground/60">Select a memo to view its details and provenance</p>
-              </div>
-            )}
-
-            {selectedMemoData && (
-              <div className="space-y-8">
-                {/* Title section */}
-                <div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <KnowledgeTypeBadge type={selectedMemoData.memo.knowledgeType} size="sm" />
-                    <Badge variant="secondary" className="text-[10px] font-medium">
-                      {memoLabel(selectedMemoData.memo.memoType)}
-                    </Badge>
-                    <span className="text-[11px] tabular-nums text-muted-foreground/50">
-                      v{selectedMemoData.memo.version}
-                    </span>
-                    <span className="text-muted-foreground/30">&middot;</span>
-                    <RelativeTime
-                      date={selectedMemoData.memo.updatedAt}
-                      className="text-[11px] text-muted-foreground/50"
-                    />
-                  </div>
-
-                  <h2 className="text-xl font-semibold tracking-tight leading-tight">{selectedMemoData.memo.title}</h2>
-                  <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{selectedMemoData.memo.abstract}</p>
-
-                  {selectedMemoData.memo.tags.length > 0 && (
-                    <div className="mt-3 flex flex-wrap gap-1.5">
-                      {selectedMemoData.memo.tags.map((tag) => (
-                        <span
-                          key={tag}
-                          className="inline-flex items-center gap-0.5 rounded-md bg-muted/50 px-2 py-0.5 text-[11px] text-muted-foreground"
-                        >
-                          <Hash className="h-2.5 w-2.5" />
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Key points */}
-                {selectedMemoData.memo.keyPoints.length > 0 && (
-                  <DetailSection title="Key points">
-                    <ul className="space-y-2">
-                      {selectedMemoData.memo.keyPoints.map((keyPoint) => (
-                        <li
-                          key={keyPoint}
-                          className="relative pl-4 text-sm leading-relaxed before:absolute before:left-0 before:top-[0.6em] before:h-1.5 before:w-1.5 before:rounded-full before:bg-primary/40"
-                        >
-                          {keyPoint}
-                        </li>
-                      ))}
-                    </ul>
-                  </DetailSection>
-                )}
-
-                {/* Provenance */}
-                <DetailSection title="Provenance">
-                  <div className="flex flex-wrap gap-2">
-                    {selectedMemoData.sourceStream && (
-                      <Link
-                        to={buildSourceLink(workspaceId, selectedMemoData.sourceStream.id)}
-                        className="inline-flex items-center gap-1.5 rounded-md border border-border/50 bg-card px-3 py-2 text-sm transition-colors hover:border-primary/30 hover:bg-primary/5"
-                      >
-                        <MessageSquareQuote className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="font-medium">{formatStreamRef(selectedMemoData.sourceStream)}</span>
-                        <ExternalLink className="h-3 w-3 text-muted-foreground/40" />
-                      </Link>
-                    )}
-
-                    {selectedMemoData.rootStream &&
-                      selectedMemoData.rootStream.id !== selectedMemoData.sourceStream?.id && (
-                        <Link
-                          to={buildSourceLink(workspaceId, selectedMemoData.rootStream.id)}
-                          className="inline-flex items-center gap-1.5 rounded-md border border-border/50 bg-card px-3 py-2 text-sm transition-colors hover:border-primary/30 hover:bg-primary/5"
-                        >
-                          <span className="text-xs text-muted-foreground/60">in</span>
-                          <span className="font-medium">{formatStreamRef(selectedMemoData.rootStream)}</span>
-                          <ExternalLink className="h-3 w-3 text-muted-foreground/40" />
-                        </Link>
-                      )}
-
-                    {!selectedMemoData.sourceStream && !selectedMemoData.rootStream && (
-                      <span className="text-sm text-muted-foreground/50">Source unavailable</span>
-                    )}
-                  </div>
-                </DetailSection>
-
-                {/* Source messages */}
-                <DetailSection title="Source messages">
-                  {selectedMemoData.sourceMessages.length === 0 ? (
-                    <p className="text-sm text-muted-foreground/50">
-                      No accessible source messages were retained for this memo.
-                    </p>
-                  ) : (
-                    <div className="space-y-3">
-                      {selectedMemoData.sourceMessages.map((message) => (
-                        <div key={message.id} className="rounded-lg border border-border/50 bg-card">
-                          <div className="flex items-center gap-2 border-b border-border/30 px-4 py-2">
-                            <span className="text-xs font-semibold">{message.authorName}</span>
-                            <span className="text-[10px] text-muted-foreground/40">in</span>
-                            <Link
-                              to={buildSourceLink(workspaceId, message.streamId, message.id)}
-                              className="text-xs text-primary/80 hover:text-primary hover:underline"
-                            >
-                              {message.streamName}
-                            </Link>
-                            <span className="ml-auto">
-                              <RelativeTime
-                                date={message.createdAt}
-                                className="text-[10px] tabular-nums text-muted-foreground/40"
-                              />
-                            </span>
-                          </div>
-                          <div className="px-4 py-3 text-sm leading-relaxed">
-                            <MarkdownContent
-                              content={message.content}
-                              className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </DetailSection>
-              </div>
-            )}
-          </main>
-        </ScrollArea>
+        {/* Desktop detail pane */}
+        {!isMobile && (
+          <ScrollArea className="flex-1">
+            <main className="mx-auto max-w-3xl p-5 sm:p-8">
+              <MemoDetailContent data={selectedMemoData} workspaceId={workspaceId} isLoading={selectedMemo.isLoading} />
+            </main>
+          </ScrollArea>
+        )}
       </div>
+
+      {/* Mobile detail drawer */}
+      {isMobile && (
+        <Drawer
+          open={!!selectedMemoId}
+          onOpenChange={(open) => {
+            if (!open) syncToUrl({ memo: null })
+          }}
+        >
+          <DrawerContent className="max-h-[85dvh]">
+            <ScrollArea className="overflow-auto p-4 pb-8">
+              <MemoDetailContent data={selectedMemoData} workspaceId={workspaceId} isLoading={selectedMemo.isLoading} />
+            </ScrollArea>
+          </DrawerContent>
+        </Drawer>
+      )}
     </div>
   )
 }
