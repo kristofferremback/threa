@@ -756,6 +756,33 @@ export interface GitHubFilePreviewData {
   truncated: boolean
 }
 
+export interface GitHubDiffLine {
+  type: "context" | "add" | "delete"
+  oldNumber: number | null
+  newNumber: number | null
+  text: string
+  selected: boolean
+}
+
+export interface GitHubDiffPreviewData {
+  path: string
+  previousPath: string | null
+  language: string | null
+  changeType: "added" | "removed" | "modified" | "renamed"
+  pullRequest: {
+    title: string
+    number: number
+    state: "open" | "closed" | "merged"
+  }
+  anchorSide: "left" | "right" | null
+  anchorStartLine: number | null
+  anchorEndLine: number | null
+  additions: number
+  deletions: number
+  lines: GitHubDiffLine[]
+  truncated: boolean
+}
+
 export interface GitHubCommentParent {
   kind: "pull_request" | "issue"
   title: string
@@ -779,6 +806,7 @@ export interface GitHubPreview {
     | GitHubIssuePreviewData
     | GitHubCommitPreviewData
     | GitHubFilePreviewData
+    | GitHubDiffPreviewData
     | GitHubCommentPreviewData
   fetchedAt: string
 }

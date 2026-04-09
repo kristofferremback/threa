@@ -68,6 +68,16 @@ describe("normalizeUrl", () => {
     )
   })
 
+  test("preserves GitHub pull request diff anchors", () => {
+    expect(
+      normalizeUrl(
+        "https://github.com/octocat/hello-world/pull/12/changes#diff-b335630551682c19a781afebcf4d07bf978fb1f8ac04c6bf87428ed5106870f5R8-R10"
+      )
+    ).toBe(
+      "https://github.com/octocat/hello-world/pull/12/changes#diff-b335630551682c19a781afebcf4d07bf978fb1f8ac04c6bf87428ed5106870f5R8-R10"
+    )
+  })
+
   test("sorts remaining query params", () => {
     expect(normalizeUrl("https://example.com/page?z=1&a=2")).toBe("https://example.com/page?a=2&z=1")
   })
@@ -301,6 +311,23 @@ describe("parseGitHubUrl", () => {
       commentId: 5678,
       parentType: "issue",
       number: 34,
+    })
+  })
+
+  test("parses pull request diff URLs with highlighted right-side ranges", () => {
+    expect(
+      parseGitHubUrl(
+        "https://github.com/octocat/hello-world/pull/12/changes#diff-b335630551682c19a781afebcf4d07bf978fb1f8ac04c6bf87428ed5106870f5R8-R10"
+      )
+    ).toEqual({
+      type: "github_diff",
+      owner: "octocat",
+      repo: "hello-world",
+      number: 12,
+      diffPathHash: "b335630551682c19a781afebcf4d07bf978fb1f8ac04c6bf87428ed5106870f5",
+      anchorSide: "right",
+      anchorStartLine: 8,
+      anchorEndLine: 10,
     })
   })
 

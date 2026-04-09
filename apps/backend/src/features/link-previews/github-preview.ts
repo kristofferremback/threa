@@ -1,3 +1,4 @@
+import { createHash } from "crypto"
 import { logger } from "../../lib/logger"
 import type { GitHubPreview, GitHubPreviewRepository, GitHubPreviewType } from "@threa/types"
 import { GitHubPreviewTypes } from "@threa/types"
@@ -15,6 +16,13 @@ const README_MARKDOWN_MAX_CHARS = 3000
 interface LoadedGitHubRepository {
   preview: GitHubPreviewRepository
   defaultBranch: string | null
+}
+
+interface PullRequestDiffLine {
+  type: "context" | "add" | "delete"
+  oldNumber: number | null
+  newNumber: number | null
+  text: string
 }
 
 export async function fetchGitHubPreview(
@@ -43,6 +51,8 @@ export async function fetchGitHubPreview(
         return fetchCommitPreview(client, url, repository.preview, parsed, fetchedAt)
       case "github_file":
         return fetchFilePreview(client, url, repository, parsed, fetchedAt)
+      case "github_diff":
+        return fetchDiffPreview(client, url, repository.preview, parsed, fetchedAt)
       case "github_comment":
         return fetchCommentPreview(client, url, repository.preview, parsed, fetchedAt)
     }
@@ -71,12 +81,7 @@ async function fetchPullRequestPreview(
     per_page: 100,
   })
 
-  let state: "open" | "closed" | "merged" = "open"
-  if (pull.merged_at) {
-    state = "merged"
-  } else if (pull.state === "closed") {
-    state = "closed"
-  }
+  const state = getPullRequestState(pull)
   const reviewStatusSummary = summarizePullReviews(reviews, pull)
 
   const preview: GitHubPreview = {
@@ -107,6 +112,82 @@ async function fetchPullRequestPreview(
     siteName: "GitHub",
     contentType: "website",
     previewType: GitHubPreviewTypes.PR,
+    previewData: preview,
+    status: "completed",
+    expiresAt: state === "open" ? minutesFromNow(5) : hoursFromNow(1),
+  }
+}
+
+async function fetchDiffPreview(
+  client: { request<T>(route: string, parameters?: Record<string, unknown>): Promise<T> },
+  url: string,
+  repository: GitHubPreviewRepository,
+  parsed: Extract<GitHubUrlMatch, { type: "github_diff" }>,
+  fetchedAt: string
+): Promise<UpdateLinkPreviewParams | null> {
+  const pull = await client.request<any>("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
+    owner: parsed.owner,
+    repo: parsed.repo,
+    pull_number: parsed.number,
+  })
+  const files = await listPullFiles(client, parsed.owner, parsed.repo, parsed.number)
+  const file = files.find((entry) => matchesDiffPathHash(entry, parsed.diffPathHash))
+  const pullRequestMatch = {
+    type: "github_pr" as const,
+    owner: parsed.owner,
+    repo: parsed.repo,
+    number: parsed.number,
+  }
+
+  if (!file || typeof file.patch !== "string") {
+    return fetchPullRequestPreview(client, url, repository, pullRequestMatch, fetchedAt)
+  }
+
+  const selected = selectDiffPreviewLines(
+    parsePullRequestPatch(file.patch),
+    parsed.anchorSide,
+    parsed.anchorStartLine,
+    parsed.anchorEndLine
+  )
+  if (selected.lines.length === 0) {
+    return fetchPullRequestPreview(client, url, repository, pullRequestMatch, fetchedAt)
+  }
+
+  const state = getPullRequestState(pull)
+  const changeType = normalizePullFileStatus(file.status)
+  const preview: GitHubPreview = {
+    type: GitHubPreviewTypes.DIFF,
+    url,
+    repository,
+    fetchedAt,
+    data: {
+      path: file.filename,
+      previousPath: typeof file.previous_filename === "string" ? file.previous_filename : null,
+      language: detectProgrammingLanguage(file.filename),
+      changeType,
+      pullRequest: {
+        title: pull.title,
+        number: pull.number,
+        state,
+      },
+      anchorSide: parsed.anchorSide,
+      anchorStartLine: parsed.anchorStartLine,
+      anchorEndLine: parsed.anchorEndLine,
+      additions: file.additions ?? 0,
+      deletions: file.deletions ?? 0,
+      lines: selected.lines,
+      truncated: selected.truncated,
+    },
+  }
+
+  return {
+    title: file.filename,
+    description: `PR #${pull.number} · ${capitalize(state)} · ${changeType} · +${file.additions ?? 0} -${file.deletions ?? 0}`,
+    imageUrl: pull.user?.avatar_url ?? null,
+    faviconUrl: GITHUB_FAVICON_URL,
+    siteName: "GitHub",
+    contentType: "website",
+    previewType: GitHubPreviewTypes.DIFF,
     previewData: preview,
     status: "completed",
     expiresAt: state === "open" ? minutesFromNow(5) : hoursFromNow(1),
@@ -378,6 +459,32 @@ async function loadRepository(
   }
 }
 
+async function listPullFiles(
+  client: { request<T>(route: string, parameters?: Record<string, unknown>): Promise<T> },
+  owner: string,
+  repo: string,
+  pullNumber: number
+): Promise<any[]> {
+  const files: any[] = []
+  let page = 1
+
+  for (;;) {
+    const response = await client.request<any[]>("GET /repos/{owner}/{repo}/pulls/{pull_number}/files", {
+      owner,
+      repo,
+      pull_number: pullNumber,
+      per_page: 100,
+      page,
+    })
+
+    files.push(...response)
+    if (response.length < 100) break
+    page += 1
+  }
+
+  return files
+}
+
 async function resolveFileTarget(
   client: { request<T>(route: string, parameters?: Record<string, unknown>): Promise<T> },
   repository: LoadedGitHubRepository,
@@ -456,6 +563,121 @@ function summarizePullReviews(reviews: any[], pull: any) {
     pendingReviewers:
       (Array.isArray(pull.requested_reviewers) ? pull.requested_reviewers.length : 0) +
       (Array.isArray(pull.requested_teams) ? pull.requested_teams.length : 0),
+  }
+}
+
+function getPullRequestState(pull: any): "open" | "closed" | "merged" {
+  if (pull.merged_at) return "merged"
+  if (pull.state === "closed") return "closed"
+  return "open"
+}
+
+function matchesDiffPathHash(file: any, diffPathHash: string): boolean {
+  if (typeof file?.filename === "string" && hashGithubDiffPath(file.filename) === diffPathHash) {
+    return true
+  }
+
+  return typeof file?.previous_filename === "string" && hashGithubDiffPath(file.previous_filename) === diffPathHash
+}
+
+function hashGithubDiffPath(path: string): string {
+  return createHash("sha256").update(path).digest("hex")
+}
+
+function normalizePullFileStatus(status: unknown): "added" | "removed" | "modified" | "renamed" {
+  if (status === "added" || status === "removed" || status === "modified" || status === "renamed") {
+    return status
+  }
+  return "modified"
+}
+
+function parsePullRequestPatch(patch: string): PullRequestDiffLine[] {
+  const lines: PullRequestDiffLine[] = []
+  let oldNumber = 0
+  let newNumber = 0
+
+  for (const line of patch.split("\n")) {
+    const hunkMatch = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/)
+    if (hunkMatch) {
+      oldNumber = Number.parseInt(hunkMatch[1], 10)
+      newNumber = Number.parseInt(hunkMatch[2], 10)
+      continue
+    }
+
+    if (line.startsWith("+")) {
+      lines.push({ type: "add", oldNumber: null, newNumber, text: line.slice(1) })
+      newNumber += 1
+      continue
+    }
+
+    if (line.startsWith("-")) {
+      lines.push({ type: "delete", oldNumber, newNumber: null, text: line.slice(1) })
+      oldNumber += 1
+      continue
+    }
+
+    if (line.startsWith(" ")) {
+      lines.push({ type: "context", oldNumber, newNumber, text: line.slice(1) })
+      oldNumber += 1
+      newNumber += 1
+    }
+  }
+
+  return lines
+}
+
+function selectDiffPreviewLines(
+  lines: PullRequestDiffLine[],
+  anchorSide: "left" | "right" | null,
+  anchorStartLine: number | null,
+  anchorEndLine: number | null
+): {
+  lines: Array<PullRequestDiffLine & { selected: boolean }>
+  truncated: boolean
+} {
+  if (lines.length === 0) {
+    return { lines: [], truncated: false }
+  }
+
+  const contextLines = 1
+  const defaultPreviewLines = 30
+  const maxPreviewLines = 12
+  const rangeEnd = anchorEndLine ?? anchorStartLine
+
+  if (anchorSide && anchorStartLine && rangeEnd) {
+    const matchingIndexes = lines.flatMap((line, index) => {
+      const sideNumber = anchorSide === "left" ? line.oldNumber : line.newNumber
+      return sideNumber !== null && sideNumber >= anchorStartLine && sideNumber <= rangeEnd ? [index] : []
+    })
+
+    if (matchingIndexes.length > 0) {
+      const firstMatch = matchingIndexes[0]
+      const lastMatch = matchingIndexes[matchingIndexes.length - 1]
+      let start = Math.max(0, firstMatch - contextLines)
+      let end = Math.min(lines.length, lastMatch + contextLines + 1)
+
+      if (end - start > maxPreviewLines) {
+        start = Math.max(0, firstMatch - contextLines)
+        end = Math.min(lines.length, start + maxPreviewLines)
+      }
+
+      return {
+        lines: lines.slice(start, end).map((line, offset) => {
+          const absoluteIndex = start + offset
+          return {
+            ...line,
+            selected: matchingIndexes.includes(absoluteIndex),
+          }
+        }),
+        truncated: start > 0 || end < lines.length,
+      }
+    }
+  }
+
+  const end = Math.min(lines.length, defaultPreviewLines)
+  return {
+    lines: lines.slice(0, end).map((line) => ({ ...line, selected: false })),
+    truncated: end < lines.length,
   }
 }
 

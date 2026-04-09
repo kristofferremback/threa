@@ -12,6 +12,16 @@ export type GitHubUrlMatch =
   | { type: "github_issue"; owner: string; repo: string; number: number }
   | { type: "github_commit"; owner: string; repo: string; sha: string }
   | {
+      type: "github_diff"
+      owner: string
+      repo: string
+      number: number
+      diffPathHash: string
+      anchorSide: "left" | "right" | null
+      anchorStartLine: number | null
+      anchorEndLine: number | null
+    }
+  | {
       type: "github_file"
       owner: string
       repo: string
@@ -144,6 +154,8 @@ export function normalizeUrl(raw: string): string {
     const githubMatch = parseGitHubUrl(raw)
     if (githubMatch?.type === "github_comment") {
       url.hash = `issuecomment-${githubMatch.commentId}`
+    } else if (githubMatch?.type === "github_diff") {
+      url.hash = formatGitHubDiffHash(githubMatch)
     } else if (githubMatch?.type === "github_file" && githubMatch.lineStart) {
       url.hash =
         githubMatch.lineEnd && githubMatch.lineEnd !== githubMatch.lineStart
@@ -291,6 +303,24 @@ export function parseGitHubUrl(raw: string): GitHubUrlMatch | null {
       const number = Number.parseInt(rest.split("/")[0] ?? "", 10)
       if (!Number.isFinite(number)) return null
 
+      const diffAnchor = kind === "pull" ? parsePullDiffHash(url.hash) : null
+      if (diffAnchor) {
+        const afterNumber = rest.split("/").slice(1)
+        const changesView = afterNumber.length === 0 || afterNumber[0] === "files" || afterNumber[0] === "changes"
+        if (changesView) {
+          return {
+            type: "github_diff",
+            owner,
+            repo,
+            number,
+            diffPathHash: diffAnchor.diffPathHash,
+            anchorSide: diffAnchor.anchorSide,
+            anchorStartLine: diffAnchor.anchorStartLine,
+            anchorEndLine: diffAnchor.anchorEndLine,
+          }
+        }
+      }
+
       const commentId = parseIssueCommentId(url.hash)
       if (commentId) {
         return {
@@ -355,4 +385,56 @@ function parseLineRange(hash: string): { lineStart: number | null; lineEnd: numb
   }
 
   return { lineStart, lineEnd }
+}
+
+function parsePullDiffHash(hash: string): {
+  diffPathHash: string
+  anchorSide: "left" | "right" | null
+  anchorStartLine: number | null
+  anchorEndLine: number | null
+} | null {
+  const match = hash.match(/^#diff-([a-f0-9]+)(?:([LR])(\d+)(?:-([LR])?(\d+))?)?$/i)
+  if (!match) return null
+
+  let anchorSide: "left" | "right" | null = null
+  if (match[2] === "L") {
+    anchorSide = "left"
+  } else if (match[2] === "R") {
+    anchorSide = "right"
+  }
+  const anchorStartLine = match[3] ? Number.parseInt(match[3], 10) : null
+  let rangeSide: "left" | "right" | null = null
+  if (match[4] === "L") {
+    rangeSide = "left"
+  } else if (match[4] === "R") {
+    rangeSide = "right"
+  }
+  const anchorEndLine = match[5] ? Number.parseInt(match[5], 10) : anchorStartLine
+  if (
+    (anchorStartLine !== null && !Number.isFinite(anchorStartLine)) ||
+    (anchorEndLine !== null && !Number.isFinite(anchorEndLine))
+  ) {
+    return null
+  }
+
+  return {
+    diffPathHash: match[1].toLowerCase(),
+    anchorSide: anchorSide ?? rangeSide ?? null,
+    anchorStartLine,
+    anchorEndLine,
+  }
+}
+
+function formatGitHubDiffHash(match: Extract<GitHubUrlMatch, { type: "github_diff" }>): string {
+  const base = `diff-${match.diffPathHash}`
+  if (!match.anchorSide || !match.anchorStartLine) {
+    return base
+  }
+
+  const sidePrefix = match.anchorSide === "left" ? "L" : "R"
+  if (!match.anchorEndLine || match.anchorEndLine === match.anchorStartLine) {
+    return `${base}${sidePrefix}${match.anchorStartLine}`
+  }
+
+  return `${base}${sidePrefix}${match.anchorStartLine}-${sidePrefix}${match.anchorEndLine}`
 }

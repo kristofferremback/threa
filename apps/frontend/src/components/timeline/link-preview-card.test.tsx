@@ -191,6 +191,52 @@ describe("LinkPreviewCard", () => {
     expect(screen.getByText("-1")).toBeInTheDocument()
   })
 
+  it("renders GitHub diff previews with selected diff lines", () => {
+    const preview = makeGitHubPreview({
+      url: "https://github.com/octocat/hello-world/pull/42/changes#diff-b335630551682c19a781afebcf4d07bf978fb1f8ac04c6bf87428ed5106870f5R8-R10",
+      title: "README.md",
+      previewType: "github_diff",
+      previewData: {
+        type: "github_diff",
+        url: "https://github.com/octocat/hello-world/pull/42/changes#diff-b335630551682c19a781afebcf4d07bf978fb1f8ac04c6bf87428ed5106870f5R8-R10",
+        fetchedAt: "2026-04-08T10:00:00.000Z",
+        repository: { owner: "octocat", name: "hello-world", fullName: "octocat/hello-world", private: false },
+        data: {
+          path: "README.md",
+          previousPath: null,
+          language: "Markdown",
+          changeType: "modified",
+          pullRequest: {
+            title: "Add more context",
+            number: 42,
+            state: "open",
+          },
+          anchorSide: "right",
+          anchorStartLine: 8,
+          anchorEndLine: 10,
+          additions: 3,
+          deletions: 0,
+          truncated: true,
+          lines: [
+            { type: "context", oldNumber: 1, newNumber: 1, text: "# Hello", selected: false },
+            { type: "add", oldNumber: null, newNumber: 8, text: "new line 1", selected: true },
+            { type: "add", oldNumber: null, newNumber: 9, text: "new line 2", selected: true },
+            { type: "add", oldNumber: null, newNumber: 10, text: "new line 3", selected: true },
+          ],
+        },
+      },
+    })
+
+    render(<LinkPreviewCard preview={preview} />)
+
+    expect(screen.getByText("README.md")).toBeInTheDocument()
+    expect(screen.getByText(/PR #42/)).toBeInTheDocument()
+    expect(screen.getByText(/Modified/)).toBeInTheDocument()
+    expect(screen.getByText(/R8-10/)).toBeInTheDocument()
+    expect(screen.getByText("new line 2")).toBeInTheDocument()
+    expect(screen.getByText("Showing the linked diff hunk only.")).toBeInTheDocument()
+  })
+
   it("renders GitHub comment preview with parent context", () => {
     const preview = makeGitHubPreview({
       url: "https://github.com/octocat/hello-world/issues/7#issuecomment-123",

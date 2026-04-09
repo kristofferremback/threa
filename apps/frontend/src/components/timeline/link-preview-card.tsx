@@ -24,6 +24,7 @@ import type {
   GitHubIssuePreviewData,
   GitHubCommitPreviewData,
   GitHubCommentPreviewData,
+  GitHubDiffPreviewData,
   GitHubPreview,
   GitHubPreviewActor,
   LinkPreviewSummary,
@@ -225,6 +226,8 @@ function GitHubTypeIcon({ type, data }: { type: string; data: GitHubPreview["dat
       return <GitCommitHorizontal className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
     case "github_file":
       return <FileCode className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+    case "github_diff":
+      return <GitPullRequest className="h-3.5 w-3.5 text-green-500 shrink-0" />
     case "github_comment":
       return <MessageSquare className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
     default:
@@ -259,6 +262,8 @@ function GitHubContent({
       return <GitHubCommitContent data={ghPreview.data as GitHubCommitPreviewData} />
     case "github_file":
       return <GitHubFileContent preview={preview} data={ghPreview.data as GitHubFilePreviewData} />
+    case "github_diff":
+      return <GitHubDiffContent data={ghPreview.data as GitHubDiffPreviewData} />
     case "github_comment":
       return <GitHubCommentContent data={ghPreview.data as GitHubCommentPreviewData} />
     default:
@@ -492,6 +497,65 @@ function GitHubFileContent({ preview, data }: { preview: LinkPreviewSummary; dat
   )
 }
 
+function GitHubDiffContent({ data }: { data: GitHubDiffPreviewData }) {
+  return (
+    <div className="p-3">
+      <div className="min-w-0">
+        <h4 className="text-sm font-medium text-foreground line-clamp-1">{data.path}</h4>
+        <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">
+          PR #{data.pullRequest.number} · {data.pullRequest.title} · {capitalizeChangeType(data.changeType)}
+          {data.language ? ` · ${data.language}` : ""}
+          {formatDiffAnchor(data)}
+        </p>
+        {data.previousPath && data.previousPath !== data.path && (
+          <p className="mt-1 text-[11px] text-muted-foreground">Renamed from {data.previousPath}</p>
+        )}
+      </div>
+
+      <div className="mt-2 overflow-hidden rounded-md border bg-muted/20">
+        <div className="overflow-x-auto font-mono text-xs leading-snug text-foreground">
+          {data.lines.map((line, index) => (
+            <div
+              key={`${line.oldNumber ?? "x"}-${line.newNumber ?? "x"}-${index}`}
+              className={cn(
+                "grid grid-cols-[2.75rem_2.75rem_1fr] items-start",
+                line.type === "add" && "bg-green-500/10",
+                line.type === "delete" && "bg-red-500/10",
+                line.selected && "bg-primary/10 ring-1 ring-inset ring-primary/20"
+              )}
+            >
+              <span className="px-2 py-1 text-right text-muted-foreground">{line.oldNumber ?? ""}</span>
+              <span className="px-2 py-1 text-right text-muted-foreground">{line.newNumber ?? ""}</span>
+              <span className="px-2 py-1 whitespace-pre">
+                <span
+                  className={cn(
+                    "mr-2 inline-block w-3 text-center",
+                    line.type === "add" && "text-green-700 dark:text-green-300",
+                    line.type === "delete" && "text-red-700 dark:text-red-300",
+                    line.type === "context" && "text-muted-foreground"
+                  )}
+                >
+                  {getDiffLinePrefix(line.type)}
+                </span>
+                {line.text}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+        <DiffStats additions={data.additions} deletions={data.deletions} />
+        {data.truncated && (
+          <span>
+            {data.anchorStartLine ? "Showing the linked diff hunk only." : "Showing the beginning of the diff only."}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Comment
 // ---------------------------------------------------------------------------
@@ -549,4 +613,23 @@ function DiffStats({ additions, deletions }: { additions: number; deletions: num
 
 function formatLineRange(data: GitHubFilePreviewData): string {
   return data.startLine === data.endLine ? `L${data.startLine}` : `L${data.startLine}-L${data.endLine}`
+}
+
+function formatDiffAnchor(data: GitHubDiffPreviewData): string {
+  if (!data.anchorSide || !data.anchorStartLine) return ""
+  const prefix = data.anchorSide === "left" ? " L" : " R"
+  if (!data.anchorEndLine || data.anchorEndLine === data.anchorStartLine) {
+    return `${prefix}${data.anchorStartLine}`
+  }
+  return `${prefix}${data.anchorStartLine}-${data.anchorEndLine}`
+}
+
+function capitalizeChangeType(changeType: GitHubDiffPreviewData["changeType"]): string {
+  return changeType.charAt(0).toUpperCase() + changeType.slice(1)
+}
+
+function getDiffLinePrefix(type: GitHubDiffPreviewData["lines"][number]["type"]): string {
+  if (type === "add") return "+"
+  if (type === "delete") return "-"
+  return " "
 }

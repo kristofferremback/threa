@@ -458,6 +458,7 @@ export const GITHUB_PREVIEW_TYPES = [
   "github_issue",
   "github_commit",
   "github_file",
+  "github_diff",
   "github_comment",
 ] as const
 export type GitHubPreviewType = (typeof GITHUB_PREVIEW_TYPES)[number]
@@ -467,6 +468,7 @@ export const GitHubPreviewTypes = {
   ISSUE: "github_issue",
   COMMIT: "github_commit",
   FILE: "github_file",
+  DIFF: "github_diff",
   COMMENT: "github_comment",
 } as const satisfies Record<string, GitHubPreviewType>
 

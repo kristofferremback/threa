@@ -205,6 +205,8 @@ export type {
   GitHubCommitPreviewData,
   GitHubSnippetLine,
   GitHubFilePreviewData,
+  GitHubDiffLine,
+  GitHubDiffPreviewData,
   GitHubCommentParent,
   GitHubCommentPreviewData,
   GitHubPreview,

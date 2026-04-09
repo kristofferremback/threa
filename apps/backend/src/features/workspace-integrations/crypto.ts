@@ -1,7 +1,8 @@
 import { createCipheriv, createDecipheriv, createHmac, randomBytes, timingSafeEqual } from "crypto"
+import type { WorkspaceIntegrationProvider } from "@threa/types"
 export { extractWorkspaceIdFromGithubInstallState } from "@threa/backend-common"
 
-const ENCRYPTION_VERSION = 1
+const ENCRYPTION_VERSION = 2
 const GCM_ALGORITHM = "aes-256-gcm"
 const IV_LENGTH_BYTES = 12
 const MAX_STATE_AGE_MS = 60 * 60 * 1000
@@ -13,14 +14,24 @@ export interface EncryptedJsonPayload extends Record<string, unknown> {
   ciphertext: string
 }
 
-function deriveKey(secret: string, label: string): Buffer {
-  return createHmac("sha256", secret).update(label).digest()
+export interface EncryptionContext {
+  workspaceId: string
+  provider: WorkspaceIntegrationProvider
 }
 
-export function encryptJson(secret: string, value: unknown): EncryptedJsonPayload {
+function deriveKey(secret: string, version: number): Buffer {
+  return createHmac("sha256", secret).update(`workspace-integration-credentials:v${version}`).digest()
+}
+
+function buildEncryptionContextAAD(context: EncryptionContext): Buffer {
+  return Buffer.from(JSON.stringify([context.workspaceId, context.provider]), "utf8")
+}
+
+export function encryptJson(secret: string, value: unknown, context: EncryptionContext): EncryptedJsonPayload {
   const iv = randomBytes(IV_LENGTH_BYTES)
-  const key = deriveKey(secret, "workspace-integration-credentials:v1")
+  const key = deriveKey(secret, ENCRYPTION_VERSION)
   const cipher = createCipheriv(GCM_ALGORITHM, key, iv)
+  cipher.setAAD(buildEncryptionContextAAD(context))
   const plaintext = Buffer.from(JSON.stringify(value), "utf8")
   const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()])
   const tag = cipher.getAuthTag()
@@ -33,7 +44,7 @@ export function encryptJson(secret: string, value: unknown): EncryptedJsonPayloa
   }
 }
 
-export function decryptJson<T>(secret: string, payload: Record<string, unknown>): T {
+export function decryptJson<T>(secret: string, payload: Record<string, unknown>, context: EncryptionContext): T {
   const iv = payload.iv
   const tag = payload.tag
   const ciphertext = payload.ciphertext
@@ -48,8 +59,9 @@ export function decryptJson<T>(secret: string, payload: Record<string, unknown>)
     throw new Error("Invalid encrypted workspace integration payload")
   }
 
-  const key = deriveKey(secret, "workspace-integration-credentials:v1")
+  const key = deriveKey(secret, version)
   const decipher = createDecipheriv(GCM_ALGORITHM, key, Buffer.from(iv, "base64url"))
+  decipher.setAAD(buildEncryptionContextAAD(context))
   decipher.setAuthTag(Buffer.from(tag, "base64url"))
   const plaintext = Buffer.concat([decipher.update(Buffer.from(ciphertext, "base64url")), decipher.final()]).toString(
     "utf8"

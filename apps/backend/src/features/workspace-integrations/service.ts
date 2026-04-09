@@ -215,7 +215,7 @@ export class WorkspaceIntegrationService {
 
     let credentials: GitHubIntegrationCredentials
     try {
-      credentials = this.parseCredentials(record.credentials)
+      credentials = this.parseCredentials(workspaceId, record.credentials)
     } catch (error) {
       log.warn({ err: error, workspaceId }, "GitHub integration credentials could not be decrypted")
       return null
@@ -257,7 +257,7 @@ export class WorkspaceIntegrationService {
 
     let credentials: GitHubIntegrationCredentials
     try {
-      credentials = this.parseCredentials(record.credentials)
+      credentials = this.parseCredentials(workspaceId, record.credentials)
     } catch (error) {
       log.warn({ err: error, workspaceId }, "Failed to parse GitHub credentials during refresh")
       return null
@@ -360,11 +360,15 @@ export class WorkspaceIntegrationService {
         workspaceId,
         provider: WorkspaceIntegrationProviders.GITHUB,
         status: WorkspaceIntegrationStatuses.ACTIVE,
-        credentials: encryptJson(this.deps.github.integrationSecret, {
-          installationId,
-          accessToken,
-          tokenExpiresAt,
-        }),
+        credentials: encryptJson(
+          this.deps.github.integrationSecret,
+          {
+            installationId,
+            accessToken,
+            tokenExpiresAt,
+          },
+          { workspaceId, provider: WorkspaceIntegrationProviders.GITHUB }
+        ),
         metadata: nextMetadata,
         installedBy: installedByOverride ?? record.installedBy,
       })
@@ -384,8 +388,11 @@ export class WorkspaceIntegrationService {
     }
   }
 
-  private parseCredentials(payload: Record<string, unknown>): GitHubIntegrationCredentials {
-    const decrypted = decryptJson<Partial<GitHubIntegrationCredentials>>(this.deps.github.integrationSecret, payload)
+  private parseCredentials(workspaceId: string, payload: Record<string, unknown>): GitHubIntegrationCredentials {
+    const decrypted = decryptJson<Partial<GitHubIntegrationCredentials>>(this.deps.github.integrationSecret, payload, {
+      workspaceId,
+      provider: WorkspaceIntegrationProviders.GITHUB,
+    })
     if (
       !decrypted ||
       typeof decrypted.installationId !== "number" ||
