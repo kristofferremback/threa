@@ -950,6 +950,29 @@ const x = 1
         expect(content?.[0]).toEqual({ type: "text", text: "Check out " })
         expect(content?.[1]?.type).toBe("channelLink")
       })
+      it("should not parse @ as mention when not preceded by whitespace (email address)", () => {
+        const result = parseMarkdown("test@gmail.com")
+        const content = result.content?.[0]?.content
+
+        expect(content).toHaveLength(1)
+        expect(content?.[0]).toEqual({ type: "text", text: "test@gmail.com" })
+      })
+
+      it("should not parse # as channel when not preceded by whitespace", () => {
+        const result = parseMarkdown("issue#123")
+        const content = result.content?.[0]?.content
+
+        expect(content).toHaveLength(1)
+        expect(content?.[0]).toEqual({ type: "text", text: "issue#123" })
+      })
+
+      it("should not parse @ in parentheses without preceding whitespace", () => {
+        const result = parseMarkdown("email(user@example.com)")
+        const content = result.content?.[0]?.content
+
+        expect(content).toHaveLength(1)
+        expect(content?.[0]).toEqual({ type: "text", text: "email(user@example.com)" })
+      })
     })
 
     describe("round-trip", () => {

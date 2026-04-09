@@ -331,3 +331,39 @@ describe("@threa/prosemirror quote reply round-trip", () => {
     expect(parsed.content?.[0]).toEqual(doc.content![0])
   })
 })
+
+describe("mention/channel whitespace boundary", () => {
+  it("should not parse @ as mention in email addresses", () => {
+    const result = parseMarkdown("test@gmail.com")
+    const content = result.content?.[0]?.content
+
+    expect(content).toHaveLength(1)
+    expect(content?.[0]).toEqual({ type: "text", text: "test@gmail.com" })
+  })
+
+  it("should not parse # as channel without preceding whitespace", () => {
+    const result = parseMarkdown("issue#123")
+    const content = result.content?.[0]?.content
+
+    expect(content).toHaveLength(1)
+    expect(content?.[0]).toEqual({ type: "text", text: "issue#123" })
+  })
+
+  it("should parse @ as mention when preceded by whitespace", () => {
+    const result = parseMarkdown("Hey @kristoffer")
+    const content = result.content?.[0]?.content
+
+    expect(content).toHaveLength(2)
+    expect(content?.[0]).toEqual({ type: "text", text: "Hey " })
+    expect(content?.[1]?.type).toBe("mention")
+    expect(content?.[1]?.attrs?.slug).toBe("kristoffer")
+  })
+
+  it("should parse @ as mention at start of text", () => {
+    const result = parseMarkdown("@kristoffer")
+    const content = result.content?.[0]?.content
+
+    expect(content).toHaveLength(1)
+    expect(content?.[0]?.type).toBe("mention")
+  })
+})
