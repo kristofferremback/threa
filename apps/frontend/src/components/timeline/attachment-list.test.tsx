@@ -104,11 +104,7 @@ describe("AttachmentList", () => {
         expect(mockGetDownloadUrl).not.toHaveBeenCalled()
       })
 
-      rerender(
-        <Wrapper>
-          <AttachmentList attachments={[attachment]} workspaceId={workspaceId} deferHydration={false} />
-        </Wrapper>
-      )
+      rerender(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} deferHydration={false} />)
 
       await waitFor(() => {
         expect(mockGetDownloadUrl).toHaveBeenCalledWith(workspaceId, "img_1")
