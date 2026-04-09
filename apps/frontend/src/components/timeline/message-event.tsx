@@ -531,6 +531,17 @@ function SentMessageEvent({
               snippet: payload.contentMarkdown,
             })
         : undefined,
+      onQuoteReplyWithSnippet: quoteReplyCtx
+        ? (snippet: string) =>
+            quoteReplyCtx.triggerQuoteReply({
+              messageId: payload.messageId,
+              streamId,
+              authorName: actorName,
+              authorId: event.actorId ?? "",
+              actorType: event.actorType ?? "user",
+              snippet,
+            })
+        : undefined,
     }),
     [
       payload.contentMarkdown,
