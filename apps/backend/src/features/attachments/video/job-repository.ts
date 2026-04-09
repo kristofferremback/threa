@@ -70,6 +70,28 @@ export const VideoTranscodeJobRepository = {
     return mapRowToJob(result.rows[0])
   },
 
+  /**
+   * Insert or reset a tracking job for crash recovery (at-least-once delivery).
+   * If a row already exists for this attachment, resets it to pending state so
+   * the submit can retry cleanly.
+   */
+  async upsert(client: Querier, params: InsertVideoTranscodeJobParams): Promise<VideoTranscodeJob> {
+    const result = await client.query<VideoTranscodeJobRow>(sql`
+      INSERT INTO video_transcode_jobs (id, attachment_id, workspace_id)
+      VALUES (${params.id}, ${params.attachmentId}, ${params.workspaceId})
+      ON CONFLICT (attachment_id) DO UPDATE SET
+        status = 'pending',
+        mediaconvert_job_id = NULL,
+        processed_storage_path = NULL,
+        thumbnail_storage_path = NULL,
+        error_message = NULL,
+        submitted_at = NULL,
+        completed_at = NULL
+      RETURNING ${sql.raw(SELECT_FIELDS)}
+    `)
+    return mapRowToJob(result.rows[0])
+  },
+
   async findByAttachmentId(client: Querier, attachmentId: string): Promise<VideoTranscodeJob | null> {
     const result = await client.query<VideoTranscodeJobRow>(
       sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM video_transcode_jobs WHERE attachment_id = ${attachmentId}`

@@ -281,12 +281,14 @@ function VideoThumbnailContent({
   error,
   thumbnailUrl,
   filename,
+  onThumbnailError,
 }: {
   isProcessing: boolean
   isLoading: boolean
   error: boolean
   thumbnailUrl: string | null
   filename: string
+  onThumbnailError?: () => void
 }) {
   if (isProcessing) {
     return (
@@ -313,7 +315,13 @@ function VideoThumbnailContent({
   }
   return (
     <div className="relative">
-      <img src={thumbnailUrl!} alt={filename} className="h-32 w-auto max-w-xs object-cover" loading="lazy" />
+      <img
+        src={thumbnailUrl!}
+        alt={filename}
+        className="h-32 w-auto max-w-xs object-cover"
+        loading="lazy"
+        onError={onThumbnailError}
+      />
       <div className="absolute inset-0 flex items-center justify-center">
         <div className="h-10 w-10 rounded-full bg-black/60 flex items-center justify-center">
           <Play className="h-5 w-5 text-white ml-0.5" fill="white" />
@@ -411,6 +419,7 @@ function VideoAttachment({
         error={error}
         thumbnailUrl={thumbnailUrl}
         filename={attachment.filename}
+        onThumbnailError={() => setError(true)}
       />
       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-1.5">
         <span className="block truncate text-xs text-white">{attachment.filename}</span>

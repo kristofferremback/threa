@@ -59,7 +59,9 @@ export class VideoTranscodingService implements VideoTranscodingServiceLike {
         client,
         attachmentId,
         ProcessingStatuses.PROCESSING,
-        { onlyIfStatusIn: [ProcessingStatuses.PENDING, ProcessingStatuses.FAILED] }
+        // PROCESSING included for crash recovery: if the worker crashed after claiming
+        // but before completing, the queue retries and we re-claim safely.
+        { onlyIfStatusIn: [ProcessingStatuses.PENDING, ProcessingStatuses.FAILED, ProcessingStatuses.PROCESSING] }
       )
 
       if (!claimed) {
@@ -67,7 +69,8 @@ export class VideoTranscodingService implements VideoTranscodingServiceLike {
         return { attachment: null, job: null }
       }
 
-      const trackingJob = await VideoTranscodeJobRepository.insert(client, {
+      // Upsert: on retry after crash the previous tracking row still exists.
+      const trackingJob = await VideoTranscodeJobRepository.upsert(client, {
         id: videoTranscodeJobId(),
         attachmentId,
         workspaceId: att.workspaceId,
@@ -136,7 +139,7 @@ export class VideoTranscodingService implements VideoTranscodingServiceLike {
     // Phase 3: Update based on result
     if (status.status === "COMPLETE") {
       const processedPath = `${job.workspaceId}/${attachmentId}/processed.mp4`
-      const thumbnailPath = `${job.workspaceId}/${attachmentId}/thumbnail.0000001.jpg`
+      const thumbnailPath = `${job.workspaceId}/${attachmentId}/thumbnail.0000000.jpg`
 
       await withTransaction(this.pool, async (client) => {
         await VideoTranscodeJobRepository.updateCompleted(client, job.id, processedPath, thumbnailPath)
