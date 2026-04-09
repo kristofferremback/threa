@@ -20,13 +20,6 @@ import { cn } from "@/lib/utils"
 import { attachmentsApi } from "@/api"
 import { triggerDownload } from "@/lib/image-utils"
 
-// Legacy export for backward compatibility (INV-49: clean up after migration)
-export type GalleryImage = {
-  url: string
-  filename: string
-  attachmentId: string
-}
-
 export type GalleryItem =
   | { type: "image"; url: string; filename: string; attachmentId: string }
   | { type: "video"; url: string; thumbnailUrl: string; filename: string; attachmentId: string }
@@ -37,26 +30,6 @@ interface MediaGalleryProps {
   items: GalleryItem[]
   initialIndex: number
   workspaceId: string
-}
-
-// Legacy props type for backward compatibility
-interface ImageGalleryProps {
-  isOpen: boolean
-  onClose: () => void
-  images: GalleryImage[]
-  initialIndex: number
-  workspaceId: string
-}
-
-/** Backward-compatible wrapper — converts GalleryImage[] to GalleryItem[] */
-export function ImageGallery({ images, ...rest }: ImageGalleryProps) {
-  const items: GalleryItem[] = images.map((img) => ({
-    type: "image",
-    url: img.url,
-    filename: img.filename,
-    attachmentId: img.attachmentId,
-  }))
-  return <MediaGallery items={items} {...rest} />
 }
 
 function GalleryMediaContent({ current }: { current: GalleryItem }) {

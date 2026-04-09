@@ -12,8 +12,6 @@ interface Attachment {
 }
 
 interface AttachmentContextValue {
-  workspaceId: string
-  attachments: Attachment[]
   openAttachment: (attachmentId: string, metaKey: boolean) => void
   hoveredAttachmentId: string | null
   setHoveredAttachmentId: (id: string | null) => void
@@ -66,9 +64,7 @@ export function AttachmentProvider({ workspaceId, attachments, children }: Attac
   )
 
   return (
-    <AttachmentContext.Provider
-      value={{ workspaceId, attachments, openAttachment, hoveredAttachmentId, setHoveredAttachmentId }}
-    >
+    <AttachmentContext.Provider value={{ openAttachment, hoveredAttachmentId, setHoveredAttachmentId }}>
       {children}
     </AttachmentContext.Provider>
   )
