@@ -4,6 +4,7 @@ import { withClient } from "../../../db"
 import type { AI } from "../../../lib/ai/ai"
 import type { ConfigResolver, ResearcherConfig } from "../../../lib/ai/config-resolver"
 import { COMPONENT_PATHS } from "../../../lib/ai/config-resolver"
+import type { TraceSource } from "@threa/types"
 import type { EmbeddingServiceLike } from "../../memos"
 import { MessageRepository, type Message } from "../../messaging"
 import { MemoRepository } from "../../memos"
@@ -32,9 +33,15 @@ import { appendBaselineQueries, buildBaselineQueries } from "./query/baseline-qu
  */
 export interface WorkspaceSourceItem {
   type: "web" | "workspace"
+  traceType?: TraceSource["type"]
   title: string
   url: string
   snippet?: string
+  memoId?: string
+  streamId?: string
+  streamName?: string
+  messageId?: string
+  authorName?: string
 }
 
 /**
@@ -605,7 +612,7 @@ Each query must have:
         const semanticResults = await MemoRepository.semanticSearch(pool, {
           workspaceId,
           embedding,
-          streamIds: accessibleStreamIds,
+          filters: { streamIds: accessibleStreamIds },
           limit: WORKSPACE_AGENT_MAX_RESULTS_PER_SEARCH,
           semanticDistanceThreshold: SEMANTIC_DISTANCE_THRESHOLD,
         })
@@ -615,7 +622,7 @@ Each query must have:
             : await MemoRepository.fullTextSearch(pool, {
                 workspaceId,
                 query: query.query,
-                streamIds: accessibleStreamIds,
+                filters: { streamIds: accessibleStreamIds },
                 limit: WORKSPACE_AGENT_MAX_RESULTS_PER_SEARCH,
               })
 
@@ -632,10 +639,10 @@ Each query must have:
 
     // For exact search, use full-text search (single query, INV-30)
     try {
-      const results = await MemoRepository.fullTextSearch(pool, {
+      const results = await MemoRepository.exactSearch(pool, {
         workspaceId,
         query: query.query,
-        streamIds: accessibleStreamIds,
+        filters: { streamIds: accessibleStreamIds },
         limit: WORKSPACE_AGENT_MAX_RESULTS_PER_SEARCH,
       })
 
@@ -833,29 +840,38 @@ Each query must have:
     for (const { memo, sourceStream } of memos) {
       sources.push({
         type: "workspace",
+        traceType: "workspace_memo",
         title: memo.title,
-        url: `/w/${workspaceId}/memos/${memo.id}`,
+        url: `/w/${workspaceId}/memory?memo=${memo.id}`,
         snippet: memo.abstract.slice(0, 200),
+        memoId: memo.id,
+        streamId: sourceStream?.id,
+        streamName: sourceStream?.name ?? sourceStream?.type,
       })
     }
 
     for (const msg of messages) {
       sources.push({
         type: "workspace",
+        traceType: "workspace_message",
         title: `${msg.authorName} in ${msg.streamName}`,
-        url: `/w/${workspaceId}/streams/${msg.streamId}?message=${msg.id}`,
+        url: `/w/${workspaceId}/s/${msg.streamId}?m=${msg.id}`,
         snippet: msg.content.slice(0, 200),
+        streamId: msg.streamId,
+        streamName: msg.streamName,
+        messageId: msg.id,
+        authorName: msg.authorName,
       })
     }
 
     for (const att of attachments) {
       sources.push({
         type: "workspace",
+        traceType: "workspace",
         title: att.filename,
-        url: att.streamId
-          ? `/w/${workspaceId}/streams/${att.streamId}?attachment=${att.id}`
-          : `/w/${workspaceId}/attachments/${att.id}`,
+        url: att.streamId ? `/w/${workspaceId}/s/${att.streamId}` : `/w/${workspaceId}`,
         snippet: att.summary?.slice(0, 200),
+        streamId: att.streamId ?? undefined,
       })
     }
 

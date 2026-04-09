@@ -88,12 +88,26 @@ export interface MemoSearchResult {
     type: string
     name: string | null
   } | null
+  rootStream: {
+    id: string
+    type: string
+    name: string | null
+  } | null
+}
+
+export interface MemoSearchFilters {
+  streamIds?: string[]
+  memoTypes?: MemoType[]
+  knowledgeTypes?: KnowledgeType[]
+  tags?: string[]
+  before?: Date
+  after?: Date
 }
 
 export interface SemanticSearchParams {
   workspaceId: string
   embedding: number[]
-  streamIds?: string[]
+  filters?: MemoSearchFilters
   limit?: number
   semanticDistanceThreshold?: number
 }
@@ -101,7 +115,7 @@ export interface SemanticSearchParams {
 export interface FullTextSearchParams {
   workspaceId: string
   query: string
-  streamIds?: string[]
+  filters?: MemoSearchFilters
   limit?: number
 }
 
@@ -142,6 +156,36 @@ const SELECT_FIELDS_PREFIXED = `
   m.knowledge_type, m.tags, m.parent_memo_id, m.status, m.version, m.revision_reason,
   m.created_at, m.updated_at, m.archived_at
 `
+
+interface MemoSearchRow extends MemoRow {
+  stream_id: string | null
+  stream_type: string | null
+  stream_name: string | null
+  root_stream_id: string | null
+  root_stream_type: string | null
+  root_stream_name: string | null
+}
+
+function mapMemoSearchResult(row: MemoSearchRow, distance: number): MemoSearchResult {
+  return {
+    memo: mapRowToMemo(row),
+    distance,
+    sourceStream: row.stream_id
+      ? {
+          id: row.stream_id,
+          type: row.stream_type!,
+          name: row.stream_name,
+        }
+      : null,
+    rootStream: row.root_stream_id
+      ? {
+          id: row.root_stream_id,
+          type: row.root_stream_type!,
+          name: row.root_stream_name,
+        }
+      : null,
+  }
+}
 
 export const MemoRepository = {
   async findById(db: Querier, id: string): Promise<Memo | null> {
@@ -403,54 +447,50 @@ export const MemoRepository = {
    * Returns memos with their source stream info for navigation.
    */
   async semanticSearch(db: Querier, params: SemanticSearchParams): Promise<MemoSearchResult[]> {
-    const { workspaceId, embedding, streamIds, limit = 10, semanticDistanceThreshold = 0.8 } = params
+    const { workspaceId, embedding, filters, limit = 10, semanticDistanceThreshold = 0.8 } = params
+    const streamIds = filters?.streamIds
     const hasStreamFilter = streamIds && streamIds.length > 0
+    const hasMemoTypeFilter = Boolean(filters?.memoTypes?.length)
+    const hasKnowledgeTypeFilter = Boolean(filters?.knowledgeTypes?.length)
+    const hasTagFilter = Boolean(filters?.tags?.length)
 
     const embeddingLiteral = `[${embedding.join(",")}]`
 
-    interface SearchResultRow extends MemoRow {
-      distance: number
-      stream_id: string | null
-      stream_type: string | null
-      stream_name: string | null
-    }
-
     // Join through either source_message_id or source_conversation_id to get stream info
-    const result = await db.query<SearchResultRow>(sql`
+    const result = await db.query<MemoSearchRow & { distance: number }>(sql`
       WITH memo_with_stream AS (
         SELECT
           ${sql.raw(SELECT_FIELDS_PREFIXED)},
           m.embedding <=> ${embeddingLiteral}::vector as distance,
           COALESCE(msg_stream.id, conv_stream.id) as stream_id,
           COALESCE(msg_stream.type, conv_stream.type) as stream_type,
-          COALESCE(msg_stream.display_name, conv_stream.display_name) as stream_name
+          COALESCE(msg_stream.display_name, msg_stream.slug, conv_stream.display_name, conv_stream.slug) as stream_name,
+          root_stream.id as root_stream_id,
+          root_stream.type as root_stream_type,
+          COALESCE(root_stream.display_name, root_stream.slug) as root_stream_name
         FROM memos m
         LEFT JOIN messages msg ON m.source_message_id = msg.id
         LEFT JOIN streams msg_stream ON msg.stream_id = msg_stream.id
         LEFT JOIN conversations conv ON m.source_conversation_id = conv.id
         LEFT JOIN streams conv_stream ON conv.stream_id = conv_stream.id
+        LEFT JOIN streams root_stream ON root_stream.id = COALESCE(msg_stream.root_stream_id, conv_stream.root_stream_id)
         WHERE m.workspace_id = ${workspaceId}
           AND m.status = 'active'
           AND m.embedding IS NOT NULL
           AND m.embedding <=> ${embeddingLiteral}::vector < ${semanticDistanceThreshold}
+          AND (${!hasMemoTypeFilter} OR m.memo_type = ANY(${filters?.memoTypes ?? []}))
+          AND (${!hasKnowledgeTypeFilter} OR m.knowledge_type = ANY(${filters?.knowledgeTypes ?? []}))
+          AND (${!hasTagFilter} OR m.tags && ${filters?.tags ?? []})
+          AND (${filters?.before === undefined} OR m.created_at < ${filters?.before ?? new Date()})
+          AND (${filters?.after === undefined} OR m.created_at >= ${filters?.after ?? new Date(0)})
       )
       SELECT * FROM memo_with_stream
-      WHERE (${!hasStreamFilter} OR stream_id = ANY(${streamIds ?? []}))
+      WHERE (${!hasStreamFilter} OR stream_id = ANY(${streamIds ?? []}) OR root_stream_id = ANY(${streamIds ?? []}))
       ORDER BY distance ASC
       LIMIT ${limit}
     `)
 
-    return result.rows.map((row) => ({
-      memo: mapRowToMemo(row),
-      distance: row.distance,
-      sourceStream: row.stream_id
-        ? {
-            id: row.stream_id,
-            type: row.stream_type!,
-            name: row.stream_name,
-          }
-        : null,
-    }))
+    return result.rows.map((row) => mapMemoSearchResult(row, row.distance))
   },
 
   /**
@@ -461,19 +501,50 @@ export const MemoRepository = {
    * Returns memos with their source stream info for navigation.
    */
   async fullTextSearch(db: Querier, params: FullTextSearchParams): Promise<MemoSearchResult[]> {
-    const { workspaceId, query, streamIds, limit = 10 } = params
+    const { workspaceId, query, filters, limit = 10 } = params
+    const streamIds = filters?.streamIds
     const hasStreamFilter = streamIds && streamIds.length > 0
+    const hasMemoTypeFilter = Boolean(filters?.memoTypes?.length)
+    const hasKnowledgeTypeFilter = Boolean(filters?.knowledgeTypes?.length)
+    const hasTagFilter = Boolean(filters?.tags?.length)
 
-    interface SearchResultRow extends MemoRow {
-      rank: number
-      stream_id: string | null
-      stream_type: string | null
-      stream_name: string | null
+    if (!query.trim()) {
+      const result = await db.query<MemoSearchRow>(sql`
+        WITH memo_with_stream AS (
+          SELECT
+            ${sql.raw(SELECT_FIELDS_PREFIXED)},
+            COALESCE(msg_stream.id, conv_stream.id) as stream_id,
+            COALESCE(msg_stream.type, conv_stream.type) as stream_type,
+            COALESCE(msg_stream.display_name, msg_stream.slug, conv_stream.display_name, conv_stream.slug) as stream_name,
+            root_stream.id as root_stream_id,
+            root_stream.type as root_stream_type,
+            COALESCE(root_stream.display_name, root_stream.slug) as root_stream_name
+          FROM memos m
+          LEFT JOIN messages msg ON m.source_message_id = msg.id
+          LEFT JOIN streams msg_stream ON msg.stream_id = msg_stream.id
+          LEFT JOIN conversations conv ON m.source_conversation_id = conv.id
+          LEFT JOIN streams conv_stream ON conv.stream_id = conv_stream.id
+          LEFT JOIN streams root_stream ON root_stream.id = COALESCE(msg_stream.root_stream_id, conv_stream.root_stream_id)
+          WHERE m.workspace_id = ${workspaceId}
+            AND m.status = 'active'
+            AND (${!hasMemoTypeFilter} OR m.memo_type = ANY(${filters?.memoTypes ?? []}))
+            AND (${!hasKnowledgeTypeFilter} OR m.knowledge_type = ANY(${filters?.knowledgeTypes ?? []}))
+            AND (${!hasTagFilter} OR m.tags && ${filters?.tags ?? []})
+            AND (${filters?.before === undefined} OR m.created_at < ${filters?.before ?? new Date()})
+            AND (${filters?.after === undefined} OR m.created_at >= ${filters?.after ?? new Date(0)})
+        )
+        SELECT * FROM memo_with_stream
+        WHERE (${!hasStreamFilter} OR stream_id = ANY(${streamIds ?? []}) OR root_stream_id = ANY(${streamIds ?? []}))
+        ORDER BY updated_at DESC
+        LIMIT ${limit}
+      `)
+
+      return result.rows.map((row) => mapMemoSearchResult(row, 0))
     }
 
     // Convert query to tsquery - plainto_tsquery handles most cases,
     // but we use websearch_to_tsquery for phrase support
-    const result = await db.query<SearchResultRow>(sql`
+    const result = await db.query<MemoSearchRow & { rank: number }>(sql`
       WITH memo_with_stream AS (
         SELECT
           ${sql.raw(SELECT_FIELDS_PREFIXED)},
@@ -483,33 +554,88 @@ export const MemoRepository = {
           ) as rank,
           COALESCE(msg_stream.id, conv_stream.id) as stream_id,
           COALESCE(msg_stream.type, conv_stream.type) as stream_type,
-          COALESCE(msg_stream.display_name, conv_stream.display_name) as stream_name
+          COALESCE(msg_stream.display_name, msg_stream.slug, conv_stream.display_name, conv_stream.slug) as stream_name,
+          root_stream.id as root_stream_id,
+          root_stream.type as root_stream_type,
+          COALESCE(root_stream.display_name, root_stream.slug) as root_stream_name
         FROM memos m
         LEFT JOIN messages msg ON m.source_message_id = msg.id
         LEFT JOIN streams msg_stream ON msg.stream_id = msg_stream.id
         LEFT JOIN conversations conv ON m.source_conversation_id = conv.id
         LEFT JOIN streams conv_stream ON conv.stream_id = conv_stream.id
+        LEFT JOIN streams root_stream ON root_stream.id = COALESCE(msg_stream.root_stream_id, conv_stream.root_stream_id)
         WHERE m.workspace_id = ${workspaceId}
           AND m.status = 'active'
+          AND (${!hasMemoTypeFilter} OR m.memo_type = ANY(${filters?.memoTypes ?? []}))
+          AND (${!hasKnowledgeTypeFilter} OR m.knowledge_type = ANY(${filters?.knowledgeTypes ?? []}))
+          AND (${!hasTagFilter} OR m.tags && ${filters?.tags ?? []})
+          AND (${filters?.before === undefined} OR m.created_at < ${filters?.before ?? new Date()})
+          AND (${filters?.after === undefined} OR m.created_at >= ${filters?.after ?? new Date(0)})
           AND to_tsvector('english', m.title || ' ' || m.abstract || ' ' || array_to_string(m.key_points, ' '))
               @@ websearch_to_tsquery('english', ${query})
       )
       SELECT * FROM memo_with_stream
-      WHERE (${!hasStreamFilter} OR stream_id = ANY(${streamIds ?? []}))
+      WHERE (${!hasStreamFilter} OR stream_id = ANY(${streamIds ?? []}) OR root_stream_id = ANY(${streamIds ?? []}))
       ORDER BY rank DESC
       LIMIT ${limit}
     `)
 
-    return result.rows.map((row) => ({
-      memo: mapRowToMemo(row),
-      distance: 1 - row.rank, // Convert rank to distance (lower = better match)
-      sourceStream: row.stream_id
-        ? {
-            id: row.stream_id,
-            type: row.stream_type!,
-            name: row.stream_name,
-          }
-        : null,
-    }))
+    return result.rows.map((row) => mapMemoSearchResult(row, 1 - row.rank))
+  },
+
+  async exactSearch(db: Querier, params: FullTextSearchParams): Promise<MemoSearchResult[]> {
+    const { workspaceId, query, filters, limit = 10 } = params
+    const streamIds = filters?.streamIds
+    const hasStreamFilter = streamIds && streamIds.length > 0
+    const hasMemoTypeFilter = Boolean(filters?.memoTypes?.length)
+    const hasKnowledgeTypeFilter = Boolean(filters?.knowledgeTypes?.length)
+    const hasTagFilter = Boolean(filters?.tags?.length)
+
+    if (!query.trim()) {
+      return this.fullTextSearch(db, { workspaceId, query, filters, limit })
+    }
+
+    const escapedQuery = query.replace(/[%_\\]/g, "\\$&")
+
+    const result = await db.query<MemoSearchRow>(sql`
+      WITH memo_with_stream AS (
+        SELECT
+          ${sql.raw(SELECT_FIELDS_PREFIXED)},
+          COALESCE(msg_stream.id, conv_stream.id) as stream_id,
+          COALESCE(msg_stream.type, conv_stream.type) as stream_type,
+          COALESCE(msg_stream.display_name, msg_stream.slug, conv_stream.display_name, conv_stream.slug) as stream_name,
+          root_stream.id as root_stream_id,
+          root_stream.type as root_stream_type,
+          COALESCE(root_stream.display_name, root_stream.slug) as root_stream_name
+        FROM memos m
+        LEFT JOIN messages msg ON m.source_message_id = msg.id
+        LEFT JOIN streams msg_stream ON msg.stream_id = msg_stream.id
+        LEFT JOIN conversations conv ON m.source_conversation_id = conv.id
+        LEFT JOIN streams conv_stream ON conv.stream_id = conv_stream.id
+        LEFT JOIN streams root_stream ON root_stream.id = COALESCE(msg_stream.root_stream_id, conv_stream.root_stream_id)
+        WHERE m.workspace_id = ${workspaceId}
+          AND m.status = 'active'
+          AND (${!hasMemoTypeFilter} OR m.memo_type = ANY(${filters?.memoTypes ?? []}))
+          AND (${!hasKnowledgeTypeFilter} OR m.knowledge_type = ANY(${filters?.knowledgeTypes ?? []}))
+          AND (${!hasTagFilter} OR m.tags && ${filters?.tags ?? []})
+          AND (${filters?.before === undefined} OR m.created_at < ${filters?.before ?? new Date()})
+          AND (${filters?.after === undefined} OR m.created_at >= ${filters?.after ?? new Date(0)})
+          AND (
+            m.title ILIKE '%' || ${escapedQuery} || '%'
+            OR m.abstract ILIKE '%' || ${escapedQuery} || '%'
+            OR EXISTS (
+              SELECT 1
+              FROM unnest(m.key_points) AS key_point
+              WHERE key_point ILIKE '%' || ${escapedQuery} || '%'
+            )
+          )
+      )
+      SELECT * FROM memo_with_stream
+      WHERE (${!hasStreamFilter} OR stream_id = ANY(${streamIds ?? []}) OR root_stream_id = ANY(${streamIds ?? []}))
+      ORDER BY updated_at DESC
+      LIMIT ${limit}
+    `)
+
+    return result.rows.map((row) => mapMemoSearchResult(row, 0))
   },
 }

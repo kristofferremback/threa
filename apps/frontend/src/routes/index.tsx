@@ -7,6 +7,7 @@ import { StreamPage } from "@/pages/stream"
 import { DraftsPage } from "@/pages/drafts"
 import { ThreadsPage } from "@/pages/threads"
 import { ActivityPage } from "@/pages/activity"
+import { MemoryPage } from "@/pages/memory"
 import { AIUsageAdminPage } from "@/pages/ai-usage-admin"
 import { UserSetupPage } from "@/pages/user-setup"
 import { ShareTargetPage } from "@/pages/share-target"
@@ -65,6 +66,14 @@ export const router = createBrowserRouter([
         element: <ActivityPage />,
       },
       {
+        path: "memory",
+        element: <MemoryPage />,
+      },
+      {
+        path: "memos/:memoId",
+        element: <LegacyMemoRedirect />,
+      },
+      {
         path: "s/:streamId",
         element: <StreamPage />,
       },
@@ -111,5 +120,27 @@ export function WorkspaceHome() {
     <div className="flex h-full items-center justify-center text-muted-foreground">
       <p>Select a stream from the sidebar</p>
     </div>
+  )
+}
+
+export function LegacyMemoRedirect() {
+  const { workspaceId, memoId } = useParams<{ workspaceId: string; memoId: string }>()
+  const location = useLocation()
+
+  if (!workspaceId || !memoId) {
+    return <Navigate to="/workspaces" replace />
+  }
+
+  const params = new URLSearchParams(location.search)
+  params.set("memo", memoId)
+
+  return (
+    <Navigate
+      to={{
+        pathname: `/w/${workspaceId}/memory`,
+        search: `?${params.toString()}`,
+      }}
+      replace
+    />
   )
 }

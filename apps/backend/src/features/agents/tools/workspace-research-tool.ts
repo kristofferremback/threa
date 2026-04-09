@@ -45,6 +45,7 @@ export function createWorkspaceResearchTool(callbacks: WorkspaceResearchCallback
       const sourceItems = result.sources
         .filter((s) => s.title && s.url)
         .map((s) => ({
+          ...s,
           title: s.title,
           url: s.url,
           type: s.type as "web" | "workspace",
@@ -78,12 +79,21 @@ export function createWorkspaceResearchTool(callbacks: WorkspaceResearchCallback
         }
       },
       extractSources: (_input, result) =>
-        (result.sources ?? []).map((s) => ({
-          type: "workspace" as const,
-          title: s.title,
-          url: s.url,
-          snippet: s.snippet,
-        })),
+        (result.sources ?? []).map((source) => {
+          const s = source as WorkspaceAgentResult["sources"][number]
+
+          return {
+            type: s.traceType ?? (s.type === "web" ? "web" : "workspace"),
+            title: s.title,
+            url: s.url,
+            snippet: s.snippet,
+            memoId: s.memoId,
+            streamId: s.streamId,
+            streamName: s.streamName,
+            messageId: s.messageId,
+            authorName: s.authorName,
+          }
+        }),
     },
   })
 }

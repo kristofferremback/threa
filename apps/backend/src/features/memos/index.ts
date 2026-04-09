@@ -4,6 +4,7 @@ export type {
   Memo,
   InsertMemoParams,
   UpdateMemoParams,
+  MemoSearchFilters,
   MemoSearchResult,
   SemanticSearchParams,
   FullTextSearchParams,
@@ -37,6 +38,18 @@ export type { MemoServiceLike, MemoServiceConfig, ProcessResult } from "./servic
 
 export { StubMemoService } from "./service.stub"
 
+export { MemoExplorerService } from "./explorer-service"
+export type {
+  MemoExplorerServiceDeps,
+  MemoExplorerFilters,
+  MemoExplorerPermissions,
+  MemoExplorerSearchParams,
+  MemoExplorerResult,
+  MemoExplorerDetail,
+  MemoExplorerSourceMessage,
+  MemoStreamRef,
+} from "./explorer-service"
+
 export { EmbeddingService } from "./embedding-service"
 export type { EmbeddingServiceLike, EmbeddingServiceConfig, EmbeddingContext } from "./embedding-service"
 
@@ -55,3 +68,6 @@ export type { MemoBatchWorkerDeps } from "./batch-worker"
 
 export { createEmbeddingWorker } from "./embedding-worker"
 export type { EmbeddingWorkerDeps } from "./embedding-worker"
+
+// Handlers
+export { createMemoHandlers } from "./handlers"

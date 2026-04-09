@@ -10,6 +10,7 @@ export interface TraceSource {
   url?: string
   domain?: string
   snippet?: string
+  memoId?: string
   streamId?: string
   streamName?: string
   messageId?: string

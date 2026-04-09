@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 import { render, screen } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import { MemoryRouter } from "react-router-dom"
 import { AgentReconsiderationDecisions, type AgentSessionStep } from "@threa/types"
 import { TraceStep } from "./trace-step"
@@ -111,5 +112,41 @@ describe("TraceStep", () => {
 
     expect(screen.getByText("Updated previous message:")).toBeInTheDocument()
     expect(screen.getByText(/Updated response body/)).toBeInTheDocument()
+  })
+
+  it("links workspace memo sources to the memory explorer", async () => {
+    const user = userEvent.setup()
+
+    render(
+      <MemoryRouter>
+        <TraceStep
+          step={createStep({
+            stepType: "workspace_search",
+            content: JSON.stringify({
+              memoCount: 1,
+              messageCount: 0,
+            }),
+            sources: [
+              {
+                type: "workspace_memo",
+                title: "Launch decision memo",
+                memoId: "memo_1",
+                streamId: "stream_2",
+                streamName: "#launch",
+              },
+            ],
+          })}
+          workspaceId="ws_1"
+          streamId="stream_1"
+        />
+      </MemoryRouter>
+    )
+
+    await user.click(screen.getByRole("button", { name: /sources/i }))
+
+    expect(screen.getByRole("link", { name: "Launch decision memo" })).toHaveAttribute(
+      "href",
+      "/w/ws_1/memory?memo=memo_1"
+    )
   })
 })

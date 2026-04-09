@@ -1,5 +1,5 @@
 import type { NavigateFunction } from "react-router-dom"
-import { FileText, Hash, Search, FileEdit, Settings } from "lucide-react"
+import { Brain, FileText, Hash, Search, FileEdit, Settings } from "lucide-react"
 import { toast } from "sonner"
 import type { SettingsTab } from "@threa/types"
 
@@ -77,6 +77,16 @@ export const commands: Command[] = [
     action: ({ workspaceId, navigate, closeDialog }) => {
       closeDialog()
       navigate(`/w/${workspaceId}/drafts`)
+    },
+  },
+  {
+    id: "open-memory",
+    label: "Open Memory",
+    icon: Brain,
+    keywords: ["knowledge", "memo", "memos", "workspace memory"],
+    action: ({ workspaceId, navigate, closeDialog }) => {
+      closeDialog()
+      navigate(`/w/${workspaceId}/memory`)
     },
   },
   {

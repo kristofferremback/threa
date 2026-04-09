@@ -12,6 +12,7 @@ import { createStreamHandlers } from "./features/streams"
 import { createMessageHandlers } from "./features/messaging"
 import { createAttachmentHandlers } from "./features/attachments"
 import { createSearchHandlers } from "./features/search"
+import { createMemoHandlers } from "./features/memos"
 import { createEmojiHandlers } from "./features/emoji"
 import { createConversationHandlers } from "./features/conversations"
 import { createCommandHandlers } from "./features/commands"
@@ -41,6 +42,7 @@ import type { StreamService } from "./features/streams"
 import type { EventService } from "./features/messaging"
 import type { AttachmentService } from "./features/attachments"
 import type { SearchService } from "./features/search"
+import type { MemoExplorerService } from "./features/memos"
 import type { ConversationService } from "./features/conversations"
 import type { InvitationService } from "./features/invitations"
 import type { ActivityService } from "./features/activity"
@@ -65,6 +67,7 @@ interface Dependencies {
   eventService: EventService
   attachmentService: AttachmentService
   searchService: SearchService
+  memoExplorerService: MemoExplorerService
   conversationService: ConversationService
   userPreferencesService: UserPreferencesService
   invitationService: InvitationService
@@ -94,6 +97,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     eventService,
     attachmentService,
     searchService,
+    memoExplorerService,
     conversationService,
     userPreferencesService,
     invitationService,
@@ -139,6 +143,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const message = createMessageHandlers({ pool, eventService, streamService, commandRegistry })
   const attachment = createAttachmentHandlers({ attachmentService, streamService })
   const search = createSearchHandlers({ pool, searchService })
+  const memo = createMemoHandlers({ pool, memoExplorerService })
   const emoji = createEmojiHandlers()
   const conversation = createConversationHandlers({ conversationService, streamService })
   const command = createCommandHandlers({ pool, commandRegistry, streamService })
@@ -226,6 +231,8 @@ export function registerRoutes(app: Express, deps: Dependencies) {
 
   // Search
   app.post("/api/workspaces/:workspaceId/search", ...authed, rateLimits.search, search.search)
+  app.post("/api/workspaces/:workspaceId/memos/search", ...authed, rateLimits.search, memo.search)
+  app.get("/api/workspaces/:workspaceId/memos/:memoId", ...authed, memo.getById)
 
   app.post("/api/workspaces/:workspaceId/messages", ...authed, rateLimits.messageCreate, message.create)
   app.patch("/api/workspaces/:workspaceId/messages/:messageId", ...authed, message.update)
