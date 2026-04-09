@@ -2,6 +2,7 @@ import { z } from "zod"
 import type { Request, Response } from "express"
 import type { Pool } from "pg"
 import { KNOWLEDGE_TYPES, MEMO_TYPES } from "@threa/types"
+import { HttpError } from "../../lib/errors"
 import { resolveUserAccessibleStreamIds } from "../search"
 import type { MemoExplorerDetail, MemoExplorerResult, MemoExplorerService } from "./explorer-service"
 import type { Memo } from "./repository"
@@ -74,10 +75,7 @@ export function createMemoHandlers({ pool, memoExplorerService }: Dependencies) 
 
       const result = memoSearchSchema.safeParse(req.body)
       if (!result.success) {
-        return res.status(400).json({
-          error: "Validation failed",
-          details: z.flattenError(result.error).fieldErrors,
-        })
+        throw new HttpError("Invalid search request", { status: 400, code: "VALIDATION_ERROR" })
       }
 
       const { query, exact, in: inStreams, memoType, knowledgeType, tags, before, after, limit } = result.data
@@ -109,7 +107,7 @@ export function createMemoHandlers({ pool, memoExplorerService }: Dependencies) 
     async getById(req: Request, res: Response) {
       const userId = req.user!.id
       const workspaceId = req.workspaceId!
-      const { memoId } = req.params
+      const memoId = z.string().min(1).parse(req.params.memoId)
 
       const accessibleStreamIds = await resolveUserAccessibleStreamIds(pool, workspaceId, userId, {
         archiveStatus: ["active", "archived"],
@@ -120,7 +118,7 @@ export function createMemoHandlers({ pool, memoExplorerService }: Dependencies) 
       })
 
       if (!memo) {
-        return res.status(404).json({ error: "Memo not found" })
+        throw new HttpError("Memo not found", { status: 404, code: "NOT_FOUND" })
       }
 
       res.json({ memo: serializeMemoDetail(memo) })

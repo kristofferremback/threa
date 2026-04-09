@@ -38,11 +38,11 @@ export const MEMO_TEMPERATURES = {
  * reasoning uses `.nullish()` because some models omit it when isGem is false.
  */
 export const messageClassificationSchema = z.object({
-  isGem: z.boolean().describe("Whether this message should be memorized. Message memos should set this true."),
+  isGem: z.boolean().describe("Whether this message is a standalone gem worth memorizing"),
   knowledgeType: z
     .enum(KNOWLEDGE_TYPES)
     .nullable()
-    .describe(`Best knowledge type for this message: ${KNOWLEDGE_TYPES.map((t) => `"${t}"`).join(" | ")}`),
+    .describe(`Type of knowledge if isGem is true: ${KNOWLEDGE_TYPES.map((t) => `"${t}"`).join(" | ")}`),
   confidence: z.number().min(0).max(1).nullable().describe("Confidence in this classification (0.0 to 1.0)"),
   reasoning: z.string().nullish().describe("Brief explanation of the classification decision"),
 })
@@ -85,20 +85,26 @@ export type MemoContentOutput = z.infer<typeof memoContentSchema>
 // Classifier Prompts
 // ============================================================================
 
-export const CLASSIFIER_MESSAGE_SYSTEM_PROMPT = `You are a knowledge classifier for a team chat application. Every message should be preserved as a memo. Your job is to classify what kind of knowledge the message contains.
+export const CLASSIFIER_MESSAGE_SYSTEM_PROMPT = `You are a knowledge classifier for a team chat application. You identify standalone messages that contain valuable knowledge worth preserving ("gems").
 
-Classify messages as one of these knowledge types:
+Gems are messages that:
 - Contain decisions with rationale
 - Document procedures or how-to instructions
 - Share learnings or insights from experience
 - Provide context that helps understand the team/project
 - Include reference information (links, resources, definitions)
 
-Use "context" for acknowledgments, social chatter, status updates, questions without answers, incomplete thoughts, or anything that does not fit a more specific category.
+NOT gems:
+- Simple acknowledgments (ok, thanks, got it)
+- Social chatter without information value
+- Questions without answers
+- Status updates without context ("done", "working on it")
+- Incomplete thoughts that need conversation context
+- Messages from AI/personas (when "From: persona") - we preserve human knowledge, not AI-generated content
 
 IMPORTANT:
-- Set isGem to true.
-- Always set knowledgeType. Use "context" as the fallback.
+- If isGem is false, knowledgeType MUST be null
+- Only set knowledgeType when isGem is true
 
 Output ONLY valid JSON matching the schema. Keep reasoning to ONE brief sentence.`
 
@@ -125,7 +131,7 @@ When comparing to an existing memo, recommend revision if:
 
 Output ONLY valid JSON matching the schema. Keep reasoning to ONE brief sentence.`
 
-export const CLASSIFIER_MESSAGE_PROMPT = `Classify this message for memo preservation.
+export const CLASSIFIER_MESSAGE_PROMPT = `Classify this message. Is it a standalone gem worth preserving?
 
 ## Message
 From: {{AUTHOR_TYPE}} ({{AUTHOR_ID}})

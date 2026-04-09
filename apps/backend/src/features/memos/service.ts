@@ -13,11 +13,10 @@ import { MessageFormatter } from "../../lib/ai/message-formatter"
 import type { EmbeddingServiceLike } from "./embedding-service"
 import { memoId } from "../../lib/id"
 import { logger } from "../../lib/logger"
-import { MemoTypes, MemoStatuses, KnowledgeTypes } from "@threa/types"
+import { MemoTypes, MemoStatuses } from "@threa/types"
 
 const MEMORY_CONTEXT_LIMIT = 20
 const MIN_CONVERSATION_MESSAGES = 2
-const DEFAULT_MESSAGE_KNOWLEDGE_TYPE = KnowledgeTypes.CONTEXT
 
 export interface ProcessResult {
   processed: number
@@ -209,19 +208,19 @@ export class MemoService implements MemoServiceLike {
           continue
         }
 
+        if (message.authorType !== "user") {
+          continue
+        }
+
         // AI calls (no connection held)
         const classification = await this.classifier.classifyMessage(message, { workspaceId })
-        const knowledgeType = classification.knowledgeType ?? DEFAULT_MESSAGE_KNOWLEDGE_TYPE
+        if (!classification.isGem || !classification.knowledgeType) {
+          continue
+        }
 
         logger.debug(
-          {
-            messageId: message.id,
-            authorType: message.authorType,
-            knowledgeType,
-            confidence: classification.confidence,
-            classifierMarkedGem: classification.isGem,
-          },
-          "Message selected for memo"
+          { messageId: message.id, knowledgeType: classification.knowledgeType, confidence: classification.confidence },
+          "Message classified as gem"
         )
 
         const content = await this.memorizer.memorizeMessage({
@@ -247,7 +246,7 @@ export class MemoService implements MemoServiceLike {
           keyPoints: content.keyPoints,
           sourceMessageIds: content.sourceMessageIds,
           participantIds: [message.authorId],
-          knowledgeType,
+          knowledgeType: classification.knowledgeType,
           tags: content.tags,
           status: MemoStatuses.ACTIVE,
           embedding,

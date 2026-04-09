@@ -460,10 +460,6 @@ export function MemoryPage() {
   const streams = useWorkspaceStreams(workspaceId ?? "")
   const isMobile = useIsMobile()
 
-  if (!workspaceId) {
-    return null
-  }
-
   // Local filter state — initialized from URL params once, then app-owned.
   // URL params are written as a debounced side effect for bookmarkability.
   const [localQuery, setLocalQuery] = useState(() => searchParams.get("q") ?? "")
@@ -524,7 +520,7 @@ export function MemoryPage() {
     syncToUrl({ stream: null, memoType: null, knowledgeType: null, memo: null })
   }
 
-  const searchResponse = useMemoSearch(workspaceId, {
+  const searchResponse = useMemoSearch(workspaceId ?? "", {
     query: debouncedQuery,
     limit: 50,
     filters: {
@@ -540,7 +536,7 @@ export function MemoryPage() {
   // On desktop, fall back to the first result so the detail pane isn't empty.
   // On mobile, only show the drawer when the user explicitly taps a memo.
   const selectedMemoId = memoParam ?? (isMobile ? null : (results[0]?.memo.id ?? null))
-  const selectedMemo = useMemoDetail(workspaceId, selectedMemoId)
+  const selectedMemo = useMemoDetail(workspaceId ?? "", selectedMemoId)
   const isRefreshing = searchResponse.isFetching || selectedMemo.isFetching
 
   const streamOptions = streams
@@ -570,6 +566,10 @@ export function MemoryPage() {
       return () => clearTimeout(timer)
     }
   }, [isRefreshing])
+
+  if (!workspaceId) {
+    return null
+  }
 
   return (
     <div className="flex h-full flex-col bg-background">
