@@ -3,6 +3,7 @@ import {
   parseAttachmentMetadata,
   serializeAttachmentMetadata,
   unescapeMarkdownLinkText,
+  INLINE_MARKDOWN_PATTERN,
 } from "@threa/prosemirror"
 import type { JSONContent } from "@tiptap/react"
 
@@ -477,20 +478,7 @@ function parseInlineMarkdown(text: string, options: ParseOptions = {}): JSONCont
     processText = text.slice(commandMatch[0].length)
   }
 
-  // Inline markdown pattern - captures each format type in separate groups
-  // Group layout (order matters for matching priority):
-  //   1-4:   Attachment  [text](attachment:id "meta") → groups: full, text, id, optional title
-  //   5-7:   Link        [text](url)     → groups: full, text, url
-  //   8-9:   BoldItalic  ***text***      → groups: full, text (must come before ** and *)
-  //   10-11: Bold        **text**        → groups: full, text
-  //   12-13: Italic      *text*          → groups: full, text (with negative lookahead/behind for **)
-  //   14-15: Strike      ~~text~~        → groups: full, text
-  //   16-17: Code        `text`          → groups: full, text
-  //   18-19: Mention     @slug           → groups: full, slug
-  //   20-21: Channel     #slug           → groups: full, slug
-  //   22-23: Emoji       :shortcode:     → groups: full, shortcode
-  const inlinePattern =
-    /(\[((?:\\.|[^\\\]])+)\]\(attachment:([^)\s"]+)(?:\s+"((?:\\"|\\\\|[^"])*)")?\))|(\[([^\]]+)\]\(([^)]+)\))|(\*\*\*(.+?)\*\*\*)|(\*\*(.+?)\*\*)|(?<!\*)(\*([^*]+?)\*)(?!\*)|(\~\~(.+?)\~\~)|(`([^`]+)`)|((?<=\s|^)@([\w-]+))|((?<=\s|^)#([\w-]+))|(:([\w+-]+):)/g
+  const inlinePattern = new RegExp(INLINE_MARKDOWN_PATTERN, "g")
 
   let lastIndex = 0
   let match

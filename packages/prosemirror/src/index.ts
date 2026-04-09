@@ -6,7 +6,13 @@
  * frontend (TipTap editor) and backend (AI agents, external integrators).
  */
 
-export { serializeToMarkdown, parseMarkdown, type MentionTypeLookup, type EmojiLookup } from "./markdown"
+export {
+  serializeToMarkdown,
+  parseMarkdown,
+  INLINE_MARKDOWN_PATTERN,
+  type MentionTypeLookup,
+  type EmojiLookup,
+} from "./markdown"
 export {
   escapeMarkdownLinkText,
   unescapeMarkdownLinkText,
