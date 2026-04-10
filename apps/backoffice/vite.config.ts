@@ -5,14 +5,17 @@ import path from "path"
 /**
  * Backoffice dev server.
  *
- * Proxies `/api/*` directly to the control-plane (3003). No workspace-router
- * hop — the backoffice talks only to the control-plane. Same-origin proxy
- * means the WorkOS session cookie lands on the backoffice origin and the
- * login/callback flow works without any cookie-domain gymnastics.
+ * Proxies `/api/*` to the backoffice-router worker (port 3005), which then
+ * forwards to the control-plane (3003). This mirrors the prod topology —
+ * browser → backoffice-router → control-plane — so the same request-shaping
+ * (X-Forwarded-Host, CF-Connecting-IP handling) is exercised in dev.
+ *
+ * If you want to bypass the router in dev (e.g. when the router isn't
+ * running), point VITE_API_PROXY_PORT at the control-plane (3003) instead.
  */
-const controlPlanePort = process.env.VITE_CONTROL_PLANE_PORT || "3003"
+const proxyPort = process.env.VITE_API_PROXY_PORT || "3005"
 const backofficePort = parseInt(process.env.VITE_PORT || "3004", 10)
-const controlPlaneTarget = `http://localhost:${controlPlanePort}`
+const proxyTarget = `http://localhost:${proxyPort}`
 
 export default defineConfig({
   plugins: [react()],
@@ -26,11 +29,11 @@ export default defineConfig({
     port: backofficePort,
     proxy: {
       "/api": {
-        target: controlPlaneTarget,
+        target: proxyTarget,
         changeOrigin: true,
       },
       "/test-auth-login": {
-        target: controlPlaneTarget,
+        target: proxyTarget,
         changeOrigin: true,
       },
     },

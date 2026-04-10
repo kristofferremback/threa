@@ -393,6 +393,13 @@ async function main() {
     stderr: "inherit",
   })
 
+  const backofficeRouterDir = path.join(process.cwd(), "apps/backoffice-router")
+  const backofficeRouter = Bun.spawn(["bunx", "wrangler", "dev", "--port", "3005"], {
+    cwd: backofficeRouterDir,
+    stdout: "inherit",
+    stderr: "inherit",
+  })
+
   const frontend = Bun.spawn(["bun", "run", "--cwd", "apps/frontend", "dev"], {
     stdout: "inherit",
     stderr: "inherit",
@@ -416,18 +423,33 @@ async function main() {
     controlPlane.kill("SIGKILL")
     backend.kill("SIGKILL")
     router.kill("SIGKILL")
+    backofficeRouter.kill("SIGKILL")
     frontend.kill("SIGKILL")
     backoffice.kill("SIGKILL")
 
     // Wait for processes to fully terminate
-    await Promise.all([controlPlane.exited, backend.exited, router.exited, frontend.exited, backoffice.exited])
+    await Promise.all([
+      controlPlane.exited,
+      backend.exited,
+      router.exited,
+      backofficeRouter.exited,
+      frontend.exited,
+      backoffice.exited,
+    ])
     process.exit(0)
   }
 
   process.on("SIGINT", shutdown)
   process.on("SIGTERM", shutdown)
 
-  await Promise.all([controlPlane.exited, backend.exited, router.exited, frontend.exited, backoffice.exited])
+  await Promise.all([
+    controlPlane.exited,
+    backend.exited,
+    router.exited,
+    backofficeRouter.exited,
+    frontend.exited,
+    backoffice.exited,
+  ])
 }
 
 main()

@@ -24,7 +24,7 @@
     "monitoring:logs": "docker compose -f docker-compose.monitoring.yml logs -f",
     "setup:worktree": "bun scripts/setup-worktree.ts",
     "lint": "bun run --cwd apps/backend lint && bun run --cwd apps/control-plane lint && bun run --cwd apps/frontend lint && bun run --cwd apps/backoffice lint",
-    "typecheck": "bun run --cwd packages/types typecheck && bun run --cwd packages/prosemirror typecheck && bun run --cwd packages/backend-common typecheck && bun run --cwd apps/backend typecheck && bun run --cwd apps/control-plane typecheck && bun run --cwd apps/workspace-router typecheck && bun run --cwd apps/frontend typecheck && bun run --cwd apps/backoffice typecheck",
+    "typecheck": "bun run --cwd packages/types typecheck && bun run --cwd packages/prosemirror typecheck && bun run --cwd packages/backend-common typecheck && bun run --cwd apps/backend typecheck && bun run --cwd apps/control-plane typecheck && bun run --cwd apps/workspace-router typecheck && bun run --cwd apps/backoffice-router typecheck && bun run --cwd apps/frontend typecheck && bun run --cwd apps/backoffice typecheck",
     "eval": "bun run --cwd apps/backend eval --",
     "test": "bun run --cwd apps/backend test",
     "test:unit": "bun run --cwd apps/backend test:unit",

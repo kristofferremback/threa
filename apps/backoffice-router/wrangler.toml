@@ -1,0 +1,10 @@
+name = "backoffice-router"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+[vars]
+CONTROL_PLANE_URL = "http://localhost:3003"
+
+[dev]
+port = 3005
+ip = "0.0.0.0"
