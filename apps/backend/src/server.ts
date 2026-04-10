@@ -399,6 +399,7 @@ export async function startServer(): Promise<ServerInstance> {
     commandRegistry,
     avatarService,
     rateLimiterConfig: config.rateLimits,
+    corsAllowedOrigins: config.corsAllowedOrigins,
     allowDevAuthRoutes: config.useStubAuth && !isProduction,
     internalApiKey: config.internalApiKey,
     apiKeyService,

@@ -292,6 +292,100 @@ describe("fetchGitHubPreview", () => {
     ])
   })
 
+  test("caps blob path resolution at the configured ref-depth instead of grinding through every segment", async () => {
+    const requests: Array<{ route: string; params: Record<string, unknown> | undefined }> = []
+
+    const preview = await fetchGitHubPreview(
+      "ws_123",
+      // 9 segments after `blob/` — none of the candidate splits resolve, so the
+      // loop must bail out at the cap rather than issuing one request per segment.
+      "https://github.com/octocat/hello-world/blob/a/b/c/d/e/f/g/h/i.ts",
+      {
+        async getGithubPreviewClient() {
+          return {
+            async request(route: string, params?: Record<string, unknown>) {
+              requests.push({ route, params })
+
+              if (route === "GET /repos/{owner}/{repo}") {
+                return {
+                  owner: { login: "octocat" },
+                  name: "hello-world",
+                  full_name: "octocat/hello-world",
+                  private: false,
+                }
+              }
+
+              if (route === "GET /repos/{owner}/{repo}/contents/{path}") {
+                throw new Error("not found")
+              }
+
+              throw new Error(`Unexpected route: ${route}`)
+            },
+          }
+        },
+      } as unknown as WorkspaceIntegrationService
+    )
+
+    expect(preview).toBeNull()
+    const contentsCalls = requests.filter((r) => r.route === "GET /repos/{owner}/{repo}/contents/{path}")
+    // Cap is 5 attempts; without the cap this URL would issue 8.
+    expect(contentsCalls).toHaveLength(5)
+    expect(contentsCalls.map((r) => r.params?.ref)).toEqual(["a", "a/b", "a/b/c", "a/b/c/d", "a/b/c/d/e"])
+  })
+
+  test("normalizes issue label colors and rejects non-hex values", async () => {
+    const preview = await fetchGitHubPreview("ws_123", "https://github.com/octocat/hello-world/issues/7", {
+      async getGithubPreviewClient() {
+        return {
+          async request(route: string) {
+            if (route === "GET /repos/{owner}/{repo}") {
+              return {
+                owner: { login: "octocat" },
+                name: "hello-world",
+                full_name: "octocat/hello-world",
+                private: false,
+              }
+            }
+            if (route === "GET /repos/{owner}/{repo}/issues/{issue_number}") {
+              return {
+                number: 7,
+                title: "Something broke",
+                state: "open",
+                user: { login: "kris", avatar_url: "https://avatars.example/kris.png" },
+                labels: [
+                  { name: "ok-hex", color: "ff8800" },
+                  { name: "ok-hash-prefix", color: "#ABCDEF" },
+                  { name: "bad-css", color: "red; background: url(x)" },
+                  { name: "bad-too-short", color: "fff" },
+                  { name: "bad-non-string", color: 123 },
+                ],
+                assignees: [],
+                comments: 0,
+                created_at: "2026-04-07T10:00:00.000Z",
+                updated_at: "2026-04-07T11:00:00.000Z",
+              }
+            }
+            throw new Error(`Unexpected route: ${route}`)
+          },
+        }
+      },
+    } as unknown as WorkspaceIntegrationService)
+
+    expect(preview).not.toBeNull()
+    expect(preview?.previewData).toMatchObject({
+      type: "github_issue",
+      data: {
+        labels: [
+          { name: "ok-hex", color: "ff8800" },
+          { name: "ok-hash-prefix", color: "abcdef" },
+          { name: "bad-css", color: "999999" },
+          { name: "bad-too-short", color: "999999" },
+          { name: "bad-non-string", color: "999999" },
+        ],
+      },
+    })
+  })
+
   test("builds a README-backed file preview for tree URLs", async () => {
     const preview = await fetchGitHubPreview("ws_123", "https://github.com/octocat/hello-world/tree/main", {
       async getGithubPreviewClient() {

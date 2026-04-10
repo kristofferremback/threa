@@ -9,11 +9,21 @@ const githubCallbackSchema = z.object({
 
 interface Dependencies {
   workspaceIntegrationService: WorkspaceIntegrationService
+  /**
+   * Allowlist of frontend origins (e.g. CORS allowed origins) the GitHub install
+   * callback is permitted to redirect to. Forwarded host headers that resolve to
+   * an origin outside this list fall back to a relative redirect, which prevents
+   * an attacker-controlled `x-forwarded-host` from turning the callback into an
+   * open redirect if the backend is ever reached without going through the
+   * trusted Cloudflare → control-plane proxy chain.
+   */
+  allowedFrontendOrigins: string[]
 }
 
 export function buildGithubCallbackRedirectUrl(
   req: Pick<Request, "headers" | "protocol">,
-  workspaceId: string
+  workspaceId: string,
+  allowedFrontendOrigins: string[]
 ): string {
   const path = `/w/${workspaceId}?ws-settings=integrations&provider=github`
   const forwardedHost = getFirstHeaderValue(req.headers["x-forwarded-host"])
@@ -24,10 +34,16 @@ export function buildGithubCallbackRedirectUrl(
   const forwardedProto = getFirstHeaderValue(req.headers["x-forwarded-proto"]) ?? req.protocol
   const forwardedPort = getFirstHeaderValue(req.headers["x-forwarded-port"])
   const origin = buildForwardedOrigin(forwardedProto, forwardedHost, forwardedPort)
+  if (!origin || !allowedFrontendOrigins.includes(origin)) {
+    return path
+  }
   return `${origin}${path}`
 }
 
-export function createWorkspaceIntegrationHandlers({ workspaceIntegrationService }: Dependencies) {
+export function createWorkspaceIntegrationHandlers({
+  workspaceIntegrationService,
+  allowedFrontendOrigins,
+}: Dependencies) {
   return {
     async getGithub(req: Request, res: Response) {
       const workspaceId = req.workspaceId!
@@ -66,7 +82,7 @@ export function createWorkspaceIntegrationHandlers({ workspaceIntegrationService
         workosUserId,
       })
 
-      res.redirect(buildGithubCallbackRedirectUrl(req, workspaceId))
+      res.redirect(buildGithubCallbackRedirectUrl(req, workspaceId, allowedFrontendOrigins))
     },
   }
 }
@@ -83,12 +99,16 @@ function getFirstHeaderValue(value: string | string[] | undefined): string | nul
   return first ?? null
 }
 
-function buildForwardedOrigin(proto: string, host: string, port: string | null): string {
-  const url = new URL(`${proto}://${host}`)
-  if (port) {
-    url.port = isDefaultPort(proto, port) ? "" : port
+function buildForwardedOrigin(proto: string, host: string, port: string | null): string | null {
+  try {
+    const url = new URL(`${proto}://${host}`)
+    if (port) {
+      url.port = isDefaultPort(proto, port) ? "" : port
+    }
+    return url.origin
+  } catch {
+    return null
   }
-  return url.origin
 }
 
 function isDefaultPort(proto: string, port: string): boolean {

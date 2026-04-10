@@ -78,9 +78,17 @@ describe("workspace integration crypto helpers", () => {
     const now = Date.UTC(2026, 3, 7, 12, 0, 0)
     const state = createGithubInstallState(secret, "ws_123", now)
 
-    expect(() => verifyGithubInstallState(secret, state, now + 60 * 60 * 1000 + 1)).toThrow(
+    expect(() => verifyGithubInstallState(secret, state, now + 10 * 60 * 1000 + 1)).toThrow(
       "GitHub install state has expired"
     )
+  })
+
+  test("accepts GitHub installation state just under the 10-minute window", () => {
+    const secret = "workspace-integration-secret"
+    const now = Date.UTC(2026, 3, 7, 12, 0, 0)
+    const state = createGithubInstallState(secret, "ws_123", now)
+
+    expect(verifyGithubInstallState(secret, state, now + 10 * 60 * 1000 - 1)).toEqual({ workspaceId: "ws_123" })
   })
 })
 
