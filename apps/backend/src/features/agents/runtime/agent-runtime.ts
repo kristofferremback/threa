@@ -541,11 +541,17 @@ export class AgentRuntime {
         continue
       }
 
-      await this.emit({ type: "tool:start", toolCallId: tc.toolCallId, toolName: tc.toolName, input: tc.input })
+      const stepType = agentTool.config.trace.stepType
+      await this.emit({
+        type: "tool:start",
+        toolCallId: tc.toolCallId,
+        toolName: tc.toolName,
+        stepType,
+        input: tc.input,
+      })
       const startTime = Date.now()
 
       try {
-        const stepType = agentTool.config.trace.stepType
         const onProgress = (substep: string) => {
           // Fire-and-forget: don't back-pressure the tool with observer latency.
           void this.emit({

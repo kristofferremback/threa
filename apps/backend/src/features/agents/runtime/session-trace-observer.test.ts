@@ -1,17 +1,31 @@
 import { describe, expect, it, mock } from "bun:test"
 import { AgentStepTypes } from "@threa/types"
 import { SessionTraceObserver } from "./session-trace-observer"
-import type { SessionTrace } from "../trace-emitter"
+import type { ActiveStep, SessionTrace } from "../trace-emitter"
 
 /**
- * Lightweight stub for SessionTrace — just enough for the observer's tool:progress
- * branch. Other branches are exercised by existing trace-emitter tests.
+ * Lightweight stub for SessionTrace. Tracks calls to startStep, emitSubstep,
+ * and the per-step complete/updateSubsteps methods so tests can assert on the
+ * new tool:start → tool:progress → tool:complete caching flow.
  */
 function createTraceStub() {
   const emitSubstep = mock((_params: { stepType: string; substep: string }) => {})
-  const startStep = mock(async () => ({
-    complete: mock(async () => {}),
-  }))
+  const activeStepRegistry: Array<{
+    stepId: string
+    complete: ReturnType<typeof mock>
+    updateSubsteps: ReturnType<typeof mock>
+  }> = []
+
+  let nextStepId = 0
+  const startStep = mock(async (_params: { stepType: string; content?: string }) => {
+    const stepId = `step_${++nextStepId}`
+    const complete = mock(async (_args?: unknown) => {})
+    const updateSubsteps = mock(async (_substeps: Array<{ text: string; at: string }>) => {})
+    const activeStep = { complete, updateSubsteps } as unknown as ActiveStep
+    activeStepRegistry.push({ stepId, complete, updateSubsteps })
+    return activeStep
+  })
+
   return {
     trace: {
       emitSubstep,
@@ -19,6 +33,7 @@ function createTraceStub() {
     } as unknown as SessionTrace,
     emitSubstep,
     startStep,
+    activeStepRegistry,
   }
 }
 
@@ -42,7 +57,7 @@ describe("SessionTraceObserver tool:progress handling", () => {
     })
   })
 
-  it("does NOT call startStep on tool:progress (substeps are ephemeral)", async () => {
+  it("does NOT call startStep on tool:progress (step is created at tool:start)", async () => {
     const { trace, startStep } = createTraceStub()
     const observer = new SessionTraceObserver(trace)
 
@@ -76,5 +91,134 @@ describe("SessionTraceObserver tool:progress handling", () => {
     expect(emitSubstep.mock.calls[0]?.[0].substep).toBe("Planning queries…")
     expect(emitSubstep.mock.calls[1]?.[0].substep).toBe("Searching memos…")
     expect(emitSubstep.mock.calls[2]?.[0].substep).toBe("Evaluating results…")
+  })
+})
+
+describe("SessionTraceObserver tool:start → progress → complete caching", () => {
+  it("creates the step row on tool:start and finalises it on tool:complete", async () => {
+    const { trace, startStep, activeStepRegistry } = createTraceStub()
+    const observer = new SessionTraceObserver(trace)
+
+    await observer.handle({
+      type: "tool:start",
+      toolCallId: "tc_1",
+      toolName: "workspace_research",
+      stepType: AgentStepTypes.WORKSPACE_SEARCH,
+      input: { query: "what did we decide" },
+    })
+
+    expect(startStep).toHaveBeenCalledTimes(1)
+    expect(startStep).toHaveBeenCalledWith({ stepType: AgentStepTypes.WORKSPACE_SEARCH })
+
+    // tool:complete should finalise the cached step (not create a second one)
+    await observer.handle({
+      type: "tool:complete",
+      toolCallId: "tc_1",
+      toolName: "workspace_research",
+      input: {},
+      output: JSON.stringify({ substeps: [{ text: "Planning…", at: "2026-04-10T12:00:00Z" }] }),
+      durationMs: 1500,
+      trace: {
+        stepType: AgentStepTypes.WORKSPACE_SEARCH,
+        content: JSON.stringify({ memoCount: 2, substeps: [{ text: "Planning…", at: "2026-04-10T12:00:00Z" }] }),
+      },
+    })
+
+    // Still only one startStep call — the cached one was finalised
+    expect(startStep).toHaveBeenCalledTimes(1)
+    expect(activeStepRegistry).toHaveLength(1)
+    expect(activeStepRegistry[0]!.complete).toHaveBeenCalledTimes(1)
+  })
+
+  it("persists the running substep log on every tool:progress event", async () => {
+    const { trace, activeStepRegistry } = createTraceStub()
+    const observer = new SessionTraceObserver(trace)
+
+    await observer.handle({
+      type: "tool:start",
+      toolCallId: "tc_1",
+      toolName: "workspace_research",
+      stepType: AgentStepTypes.WORKSPACE_SEARCH,
+      input: {},
+    })
+
+    await observer.handle({
+      type: "tool:progress",
+      toolCallId: "tc_1",
+      toolName: "workspace_research",
+      stepType: AgentStepTypes.WORKSPACE_SEARCH,
+      substep: "Planning queries…",
+    })
+    await observer.handle({
+      type: "tool:progress",
+      toolCallId: "tc_1",
+      toolName: "workspace_research",
+      stepType: AgentStepTypes.WORKSPACE_SEARCH,
+      substep: "Searching…",
+    })
+
+    // updateSubsteps is async/fire-and-forget — wait a macrotask so the
+    // pending void promises settle before asserting.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const { updateSubsteps } = activeStepRegistry[0]!
+    expect(updateSubsteps).toHaveBeenCalledTimes(2)
+    // Each call should carry the cumulative list
+    const firstCall = updateSubsteps.mock.calls[0]?.[0] as Array<{ text: string; at: string }>
+    const secondCall = updateSubsteps.mock.calls[1]?.[0] as Array<{ text: string; at: string }>
+    expect(firstCall.map((s) => s.text)).toEqual(["Planning queries…"])
+    expect(secondCall.map((s) => s.text)).toEqual(["Planning queries…", "Searching…"])
+  })
+
+  it("falls back to create-and-complete for tool:complete without a preceding tool:start", async () => {
+    const { trace, startStep, activeStepRegistry } = createTraceStub()
+    const observer = new SessionTraceObserver(trace)
+
+    // Skip tool:start entirely — simulates an edge case where the start
+    // event was lost or the tool doesn't emit one
+    await observer.handle({
+      type: "tool:complete",
+      toolCallId: "tc_orphan",
+      toolName: "workspace_research",
+      input: {},
+      output: "{}",
+      durationMs: 100,
+      trace: {
+        stepType: AgentStepTypes.WORKSPACE_SEARCH,
+        content: "{}",
+      },
+    })
+
+    // Fallback path: create-and-complete in one shot
+    expect(startStep).toHaveBeenCalledTimes(1)
+    expect(activeStepRegistry).toHaveLength(1)
+    expect(activeStepRegistry[0]!.complete).toHaveBeenCalledTimes(1)
+  })
+
+  it("finalises the cached step with error content on tool:error", async () => {
+    const { trace, startStep, activeStepRegistry } = createTraceStub()
+    const observer = new SessionTraceObserver(trace)
+
+    await observer.handle({
+      type: "tool:start",
+      toolCallId: "tc_1",
+      toolName: "workspace_research",
+      stepType: AgentStepTypes.WORKSPACE_SEARCH,
+      input: {},
+    })
+
+    await observer.handle({
+      type: "tool:error",
+      toolCallId: "tc_1",
+      toolName: "workspace_research",
+      error: "boom",
+      durationMs: 50,
+    })
+
+    // Cached step was finalised — no second startStep
+    expect(startStep).toHaveBeenCalledTimes(1)
+    expect(activeStepRegistry[0]!.complete).toHaveBeenCalledTimes(1)
+    const args = activeStepRegistry[0]!.complete.mock.calls[0]?.[0] as { content?: string }
+    expect(args.content).toContain("boom")
   })
 })

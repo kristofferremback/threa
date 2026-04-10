@@ -21,19 +21,41 @@ interface TraceStepProps {
   streamId: string
   /**
    * Optional live substeps for an in-flight step (cleared on step completion).
-   * Used by the trace dialog to render a phase timeline before the persisted
-   * version baked into step.content takes over.
+   * Merged with any persisted substeps in `step.content` so the dialog can
+   * show phases both from the pre-refresh history (persisted) and the live
+   * socket stream (fresh). Dedupe is by `text`, which is unique per step.
    */
   liveSubsteps?: Array<{ text: string; at: string }>
+  /**
+   * When the step is in-flight and this tool supports graceful abort, this
+   * callback is rendered as a Stop research button in the step header. The
+   * trace dialog only passes this when `status === "running"` and for tool
+   * types that opt in (workspace_search in V1).
+   */
+  onAbortResearch?: () => void
 }
 
-export function TraceStep({ step, workspaceId, streamId, liveSubsteps }: TraceStepProps) {
+export function TraceStep({ step, workspaceId, streamId, liveSubsteps, onAbortResearch }: TraceStepProps) {
   const config = STEP_DISPLAY_CONFIG[step.stepType]
   const Icon = config.icon
 
+  const isInProgress = !step.completedAt
   const duration = step.duration ? formatDuration(step.duration) : null
   const hasSources = step.sources && step.sources.length > 0
   const messageLink = step.messageId ? `/w/${workspaceId}/s/${streamId}?m=${step.messageId}` : null
+  const hueColor = `hsl(${config.hue} ${config.saturation}% ${config.lightness}%)`
+
+  // In-progress steps replace the default timestamp + duration right-slot with
+  // a spinning loader + "Running…" label + optional Stop research button. The
+  // stopPropagation prop is false here because TraceStep is not wrapped in a
+  // clickable Link (the trace dialog body is scrollable content, not a link).
+  const rightSlot = isInProgress ? (
+    <>
+      <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: hueColor }} />
+      <span className="text-muted-foreground">Running…</span>
+      {step.stepType === "workspace_search" && onAbortResearch && <StopResearchButton onClick={onAbortResearch} />}
+    </>
+  ) : undefined
 
   return (
     <div
@@ -42,14 +64,22 @@ export function TraceStep({ step, workspaceId, streamId, liveSubsteps }: TraceSt
         background: `hsl(${config.hue} ${config.saturation}% ${config.lightness}% / 0.03)`,
       }}
     >
-      <StepHeader config={config} Icon={Icon} startedAt={step.startedAt} duration={duration} />
+      <StepHeader config={config} Icon={Icon} startedAt={step.startedAt} duration={duration} rightSlot={rightSlot} />
 
-      {step.content && (
+      {/*
+        Render the body when there's persisted content OR when the step is
+        in-progress (so live substeps can render even before the first
+        persisted substep lands). Passing an empty string when there's no
+        content lets the workspace_search case fall through to the "substeps
+        only" branch via liveSubsteps.
+      */}
+      {(step.content || isInProgress) && (
         <StepContent
           stepType={step.stepType}
-          content={step.content}
+          content={step.content ?? ""}
           messageLink={messageLink}
           liveSubsteps={liveSubsteps}
+          isInProgress={isInProgress}
         />
       )}
 
@@ -118,17 +148,19 @@ function StepContent({
   content,
   messageLink,
   liveSubsteps,
+  isInProgress,
 }: {
   stepType: AgentStepType
   content: string
   messageLink: string | null
   liveSubsteps?: Array<{ text: string; at: string }>
+  isInProgress: boolean
 }) {
   const structured = parseStructuredContent(content)
 
   return (
     <div className="text-sm leading-relaxed">
-      {renderStepContent(stepType, content, structured, messageLink, liveSubsteps)}
+      {renderStepContent(stepType, content, structured, messageLink, liveSubsteps, isInProgress)}
     </div>
   )
 }
@@ -156,7 +188,8 @@ function renderStepContent(
   content: string,
   structured: Record<string, unknown> | null,
   messageLink: string | null,
-  liveSubsteps?: Array<{ text: string; at: string }>
+  liveSubsteps?: Array<{ text: string; at: string }>,
+  isInProgress: boolean = false
 ): React.ReactNode {
   switch (stepType) {
     case "context_received": {
@@ -268,19 +301,27 @@ function renderStepContent(
       )
 
     case "workspace_search": {
-      // Persisted substeps (from step.content JSON, baked in by workspace-research-tool's
-      // formatContent) take precedence — they're refresh-stable. Live substeps are only
-      // used when the step is in-flight and content hasn't been persisted yet.
+      // Merge persisted substeps (from step.content JSON, written by the
+      // session-trace-observer on each tool:progress event and baked in at
+      // tool:complete by workspace-research-tool's formatContent) with live
+      // substeps from the socket stream. Persisted wins the base order (it's
+      // the authoritative history); live entries that aren't yet in persisted
+      // are appended. Dedupe is by `text`, which is unique per step. This
+      // handles every refresh/timing variant:
+      //  - Pre-refresh only (completed step): persisted has everything, live is empty
+      //  - Live-only (no bootstrap yet): persisted is empty, live drives
+      //  - Mid-refresh (backend has written, frontend hasn't refetched): both
+      //    have overlapping prefixes; merge preserves full ordering with no dupes
       const persistedSubsteps = Array.isArray(structured?.substeps)
         ? (structured!.substeps as Array<{ text?: unknown; at?: unknown }>)
             .filter((s) => typeof s.text === "string" && typeof s.at === "string")
             .map((s) => ({ text: s.text as string, at: s.at as string }))
-        : null
-      const hasPersisted = persistedSubsteps !== null && persistedSubsteps.length > 0
-      const substepsToShow = hasPersisted ? persistedSubsteps! : (liveSubsteps ?? [])
+        : []
+      const substepsToShow = mergeSubstepsByText(persistedSubsteps, liveSubsteps ?? [])
       const isPartial = structured?.partial === true
       const partialReason = typeof structured?.partialReason === "string" ? structured.partialReason : null
 
+      // Full completed result: content has memoCount etc. Render counts + badges + timeline.
       if (structured && "memoCount" in structured) {
         const memoCount = structured.memoCount as number
         const messageCount = structured.messageCount as number
@@ -294,15 +335,16 @@ function renderStepContent(
             </div>
             {isPartial && <PartialResultBadge stepType={stepType} reason={partialReason} />}
             {substepsToShow.length > 0 && (
-              <SubstepTimeline substeps={substepsToShow} stepType={stepType} isLive={!hasPersisted} />
+              <SubstepTimeline substeps={substepsToShow} stepType={stepType} isLive={isInProgress} />
             )}
           </div>
         )
       }
-      // Fallback for in-flight steps without persisted content yet — show only the
-      // live substeps if any are available.
+      // In-flight / substep-only content: the observer has persisted a running
+      // { substeps } JSON but tool:complete hasn't fired yet. Render just the
+      // timeline. Fall back to the raw content string if nothing is available.
       if (substepsToShow.length > 0) {
-        return <SubstepTimeline substeps={substepsToShow} stepType={stepType} isLive />
+        return <SubstepTimeline substeps={substepsToShow} stepType={stepType} isLive={isInProgress} />
       }
       return <span className="text-muted-foreground">{content}</span>
     }
@@ -561,55 +603,33 @@ function PartialResultBadge({ stepType, reason }: { stepType: AgentStepType; rea
 }
 
 /**
- * In-flight trace step card for a currently-running tool.
+ * Merge two substep lists by `text` (which is unique per step).
  *
- * Rendered by `TraceStepList` when the live socket stream has substeps for a
- * step type that has not yet produced a persisted step row. The persisted step
- * row is only created at `tool:complete`, so without this card the trace dialog
- * would be silent during execution — even though the timeline card is showing
- * live phase text. This closes that gap.
- *
- * When the real step row arrives (on completion), `useAgentTrace` clears the
- * streaming substeps for this step type, unmounting this card and leaving the
- * real `TraceStep` in its place. The two share the same header pattern and
- * `SubstepTimeline` so the handoff is visually seamless.
+ * Order is preserved: `base` first (persisted history from the bootstrap fetch),
+ * then `incoming` entries that aren't already present (live socket updates that
+ * arrived after the fetch). This gives the trace dialog a complete, stable view
+ * whether the step was loaded from the DB, streamed live, or a mix of both
+ * (the common mid-refresh case).
  */
-export function InFlightStepCard({
-  stepType,
-  substeps,
-  onAbort,
-}: {
-  stepType: AgentStepType
-  substeps: Array<{ text: string; at: string }>
-  onAbort?: () => void
-}) {
-  const config = STEP_DISPLAY_CONFIG[stepType]
-  const Icon = config.icon
-  const hueColor = `hsl(${config.hue} ${config.saturation}% ${config.lightness}%)`
-
-  return (
-    <div
-      className="px-6 py-5 border-b border-border"
-      style={{
-        background: `hsl(${config.hue} ${config.saturation}% ${config.lightness}% / 0.03)`,
-      }}
-    >
-      <StepHeader
-        config={config}
-        Icon={Icon}
-        rightSlot={
-          <>
-            <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: hueColor }} />
-            <span className="text-muted-foreground">Running…</span>
-            {onAbort && <StopResearchButton onClick={onAbort} />}
-          </>
-        }
-      />
-      <div className="text-sm leading-relaxed">
-        <SubstepTimeline substeps={substeps} stepType={stepType} isLive />
-      </div>
-    </div>
-  )
+function mergeSubstepsByText(
+  base: Array<{ text: string; at: string }>,
+  incoming: Array<{ text: string; at: string }>
+): Array<{ text: string; at: string }> {
+  if (incoming.length === 0) return base
+  if (base.length === 0) return incoming
+  const seen = new Set<string>()
+  const merged: Array<{ text: string; at: string }> = []
+  for (const substep of base) {
+    if (seen.has(substep.text)) continue
+    seen.add(substep.text)
+    merged.push(substep)
+  }
+  for (const substep of incoming) {
+    if (seen.has(substep.text)) continue
+    seen.add(substep.text)
+    merged.push(substep)
+  }
+  return merged
 }
 
 function RerunContextSummary({ rerunContext }: { rerunContext: RerunContextInfo }) {

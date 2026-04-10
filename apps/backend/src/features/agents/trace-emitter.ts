@@ -221,6 +221,24 @@ export class ActiveStep {
     })
   }
 
+  /**
+   * Persist a running substep log to the step's content field.
+   *
+   * Called by `SessionTraceObserver` on every `tool:progress` event so that a
+   * browser refresh mid-execution sees the phases collected so far rather than
+   * a gap. Writes a minimal `{ substeps: [...] }` JSON; `complete()` later
+   * overwrites with the tool's full content (which includes the same substeps
+   * plus counts, partial flag, etc.).
+   *
+   * Not emitted to the socket — the live substep stream is already handled by
+   * `SessionTrace.emitSubstep`.
+   */
+  async updateSubsteps(substeps: Array<{ text: string; at: string }>): Promise<void> {
+    await AgentSessionRepository.updateStep(this.deps.pool, this.params.stepId, {
+      content: { substeps },
+    })
+  }
+
   /** Complete the step. Persists to DB + emits to socket. */
   async complete(params?: {
     content?: string
