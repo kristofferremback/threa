@@ -116,6 +116,58 @@ describe("WorkspaceAgent abort/deadline checkpoints", () => {
     expect(result.substeps[0]?.text).toBe(onSubstep.mock.calls[0]?.[0])
   })
 
+  test("makePerCallSignal clamps per-call timeout to remaining deadline (Greptile regression)", async () => {
+    // Regression for PR #333 Greptile finding: planRetrieval/evaluateResults were
+    // casting { signal } as WorkspaceAgentInput, dropping deadlineAt and letting the
+    // full per-call cap apply even when the total budget was nearly exhausted.
+    const agent = buildAgent()
+
+    // Reach the now-internal-API helper. This is a deliberate white-box test of the
+    // deadline-clamping contract — the public path (planRetrieval/evaluateResults)
+    // requires a full pool+AI stub to exercise.
+    const makePerCallSignal = (
+      agent as unknown as {
+        makePerCallSignal: (
+          p: { signal: AbortSignal | undefined; deadlineAt: number | undefined },
+          perCallMs: number
+        ) => { signal: AbortSignal; cleanup: () => void }
+      }
+    ).makePerCallSignal.bind(agent)
+
+    // deadlineAt is 50ms from now; perCallMs is 30_000. Effective timeout should
+    // clamp to ~50ms, not 30_000ms.
+    const deadlineAt = Date.now() + 50
+    const { signal, cleanup } = makePerCallSignal({ signal: undefined, deadlineAt }, 30_000)
+
+    try {
+      expect(signal.aborted).toBe(false)
+      // Wait past the deadline — the composed signal should fire.
+      await new Promise((resolve) => setTimeout(resolve, 120))
+      expect(signal.aborted).toBe(true)
+    } finally {
+      cleanup()
+    }
+  })
+
+  test("makePerCallSignal fires synchronously when deadline is already past", () => {
+    const agent = buildAgent()
+    const makePerCallSignal = (
+      agent as unknown as {
+        makePerCallSignal: (
+          p: { signal: AbortSignal | undefined; deadlineAt: number | undefined },
+          perCallMs: number
+        ) => { signal: AbortSignal; cleanup: () => void }
+      }
+    ).makePerCallSignal.bind(agent)
+
+    const { signal, cleanup } = makePerCallSignal({ signal: undefined, deadlineAt: Date.now() - 100 }, 30_000)
+    try {
+      expect(signal.aborted).toBe(true)
+    } finally {
+      cleanup()
+    }
+  })
+
   test("non-aborted, non-timed-out call proceeds past the early checkpoint", async () => {
     // Use a pool stub that throws a recognizable error AFTER the abort check —
     // this proves the abort gate is permissive when no abort/deadline is set.

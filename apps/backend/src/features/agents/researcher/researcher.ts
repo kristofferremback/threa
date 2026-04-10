@@ -366,6 +366,7 @@ export class WorkspaceAgent {
       workspaceId,
       query,
       signal: input.signal,
+      deadlineAt: input.deadlineAt,
     })
 
     const [baselineResults, plan] = await Promise.all([baselinePromise, planPromise])
@@ -449,7 +450,8 @@ export class WorkspaceAgent {
         config,
         workspaceId,
         query,
-        input.signal
+        input.signal,
+        input.deadlineAt
       )
 
       const additional = (evaluation.additionalQueries ?? []).slice(0, WORKSPACE_AGENT_MAX_ADDITIONAL_QUERIES)
@@ -549,14 +551,19 @@ export class WorkspaceAgent {
    * Build a composed per-call AbortSignal: fires when any of (user abort signal,
    * total deadline, per-call timeout) fires. Returns a cleanup function that must
    * be called in a `finally` to release timers / listeners.
+   *
+   * Takes explicit `signal` + `deadlineAt` rather than a `WorkspaceAgentInput` so
+   * callers can't accidentally drop the deadline by casting a partial object
+   * (Greptile caught exactly this bug — see PR #333).
    */
   private makePerCallSignal(
-    input: WorkspaceAgentInput,
+    params: { signal: AbortSignal | undefined; deadlineAt: number | undefined },
     perCallMs: number
   ): { signal: AbortSignal; cleanup: () => void } {
     const controller = new AbortController()
+    const { signal: parentSignal, deadlineAt } = params
 
-    const remainingBudget = input.deadlineAt !== undefined ? Math.max(0, input.deadlineAt - Date.now()) : Infinity
+    const remainingBudget = deadlineAt !== undefined ? Math.max(0, deadlineAt - Date.now()) : Infinity
     const effectiveMs = Math.min(perCallMs, remainingBudget)
 
     const abortWithTimeout = () => {
@@ -578,19 +585,19 @@ export class WorkspaceAgent {
     }
 
     let parentListener: (() => void) | null = null
-    if (input.signal) {
-      if (input.signal.aborted) {
-        controller.abort(input.signal.reason)
+    if (parentSignal) {
+      if (parentSignal.aborted) {
+        controller.abort(parentSignal.reason)
       } else {
-        parentListener = () => controller.abort(input.signal?.reason)
-        input.signal.addEventListener("abort", parentListener, { once: true })
+        parentListener = () => controller.abort(parentSignal.reason)
+        parentSignal.addEventListener("abort", parentListener, { once: true })
       }
     }
 
     const cleanup = () => {
       if (timer !== null) clearTimeout(timer)
-      if (parentListener && input.signal) {
-        input.signal.removeEventListener("abort", parentListener)
+      if (parentListener && parentSignal) {
+        parentSignal.removeEventListener("abort", parentListener)
       }
     }
 
@@ -678,11 +685,12 @@ export class WorkspaceAgent {
     workspaceId: string
     query: string
     signal: AbortSignal | undefined
+    deadlineAt: number | undefined
   }): Promise<z.infer<typeof retrievalPlanSchema>> {
     const { ai } = this.deps
-    const { contextSummary, config, workspaceId, query, signal } = params
+    const { contextSummary, config, workspaceId, query, signal, deadlineAt } = params
 
-    const perCall = this.makePerCallSignal({ signal } as WorkspaceAgentInput, WORKSPACE_AGENT_PLANNER_TIMEOUT_MS)
+    const perCall = this.makePerCallSignal({ signal, deadlineAt }, WORKSPACE_AGENT_PLANNER_TIMEOUT_MS)
     try {
       const { value } = await ai.generateObject({
         model: config.modelId,
@@ -749,12 +757,13 @@ Guidelines for search:
     config: ResearcherConfig,
     workspaceId: string,
     query: string,
-    signal: AbortSignal | undefined
+    signal: AbortSignal | undefined,
+    deadlineAt: number | undefined
   ): Promise<z.infer<typeof evaluationSchema>> {
     const { ai } = this.deps
     const resultsText = this.formatResultsForEvaluation(memos, messages, attachments)
 
-    const perCall = this.makePerCallSignal({ signal } as WorkspaceAgentInput, WORKSPACE_AGENT_EVALUATOR_TIMEOUT_MS)
+    const perCall = this.makePerCallSignal({ signal, deadlineAt }, WORKSPACE_AGENT_EVALUATOR_TIMEOUT_MS)
     try {
       const { value } = await ai.generateObject({
         model: config.modelId,
