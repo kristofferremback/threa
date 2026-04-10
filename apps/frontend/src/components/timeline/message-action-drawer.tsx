@@ -324,6 +324,24 @@ function ExpandedQuoteView({
   const isBot = actorType === "bot"
   const isSystem = actorType === "system"
 
+  // Match timeline message-event.tsx accent styling exactly: persona=gold,
+  // bot=emerald, system=blue, user=no accent. Inset shadow forms the left
+  // "thread" stripe; gradient adds a faint actor-typed wash.
+  const accentClass = cn(
+    isPersona && "bg-gradient-to-r from-primary/[0.06] to-transparent shadow-[inset_3px_0_0_hsl(var(--primary))]",
+    isBot && "bg-gradient-to-r from-emerald-500/[0.06] to-transparent shadow-[inset_3px_0_0_hsl(152_69%_41%)]",
+    isSystem && "bg-gradient-to-r from-blue-500/[0.04] to-transparent shadow-[inset_3px_0_0_hsl(210_100%_55%)]"
+  )
+
+  // Decorative watermark color follows the same actor-typed logic, neutral for users
+  const watermarkClass = cn(
+    "absolute top-[-12px] right-3 text-[140px] leading-none font-serif select-none pointer-events-none",
+    isPersona && "text-primary/[0.05]",
+    isBot && "text-emerald-500/[0.05]",
+    isSystem && "text-blue-500/[0.05]",
+    !isPersona && !isBot && !isSystem && "text-muted-foreground/[0.08]"
+  )
+
   return (
     <div className="flex flex-col min-h-0 h-full">
       {/* Header — soft app-bar with gradient divider */}
@@ -336,28 +354,33 @@ function ExpandedQuoteView({
         >
           <ChevronLeft className="h-5 w-5" />
         </button>
-        <h2 className="text-[15px] font-semibold tracking-tight">Quote a passage</h2>
+        <h2 className="text-[15px] font-semibold tracking-tight text-muted-foreground">Full message</h2>
         <div className="absolute left-0 right-0 bottom-0 h-px bg-gradient-to-r from-transparent via-border/70 to-transparent" />
       </div>
 
-      {/* Scrollable byline + content */}
+      {/* Scrollable byline + content as a single actor-typed block */}
       <div data-vaul-no-drag className="flex-1 min-h-0 overflow-y-auto">
-        {/* Byline — avatar anchored, matches timeline message style */}
-        <div className="flex items-center gap-3 px-4 pt-4 pb-3">
-          <Avatar className="h-9 w-9 rounded-[10px] shrink-0">
-            <AvatarFallback
-              className={cn(
-                "rounded-[10px] text-[13px] font-semibold",
-                isSystem && "bg-blue-500/10 text-blue-500",
-                isBot && "bg-emerald-500/10 text-emerald-600",
-                isPersona && "bg-primary/10 text-primary",
-                !isSystem && !isBot && !isPersona && "bg-muted text-foreground"
-              )}
-            >
-              {initials}
-            </AvatarFallback>
-          </Avatar>
-          <div className="min-w-0">
+        <div className={cn("relative", accentClass)}>
+          {/* Decorative quote watermark */}
+          <div aria-hidden="true" className={watermarkClass}>
+            &ldquo;
+          </div>
+
+          {/* Byline — avatar anchored, matches timeline message style */}
+          <div className="relative flex items-center gap-3 px-4 pt-4 pb-3">
+            <Avatar className="h-9 w-9 rounded-[10px] shrink-0">
+              <AvatarFallback
+                className={cn(
+                  "rounded-[10px] text-[13px] font-semibold",
+                  isSystem && "bg-blue-500/10 text-blue-500",
+                  isBot && "bg-emerald-500/10 text-emerald-600",
+                  isPersona && "bg-primary/10 text-primary",
+                  !isSystem && !isBot && !isPersona && "bg-muted text-foreground"
+                )}
+              >
+                {initials}
+              </AvatarFallback>
+            </Avatar>
             <p
               className={cn(
                 "text-sm font-semibold truncate",
@@ -369,53 +392,35 @@ function ExpandedQuoteView({
               {authorName}
             </p>
           </div>
-        </div>
 
-        {/* Message content with left gold accent stripe + decorative quote watermark */}
-        <div className="relative px-4 pb-6">
-          {/* Left accent stripe — gold thread fading downward */}
-          <div
-            aria-hidden="true"
-            className="absolute left-4 top-0 bottom-6 w-[3px] rounded-full bg-gradient-to-b from-primary/60 via-primary/25 to-primary/[0.04]"
-          />
-
-          {/* Decorative quote watermark */}
-          <div
-            aria-hidden="true"
-            className="absolute top-[-12px] right-3 text-[140px] leading-none font-serif text-primary/[0.05] select-none pointer-events-none"
-          >
-            &ldquo;
-          </div>
-
-          {/* Actual message content — selectable, message-grade typography */}
-          <div ref={contentRef} className="relative pl-5 select-text">
+          {/* Selectable message content */}
+          <div ref={contentRef} className="relative px-4 pb-6 select-text">
             <MarkdownContent content={contentMarkdown} className="text-sm leading-relaxed text-foreground" />
           </div>
         </div>
       </div>
 
-      {/* Footer: idle hint card vs active quote button */}
-      <div className="border-t px-4 pt-3 pb-[max(12px,env(safe-area-inset-bottom))]">
+      {/* Footer toolbar — compact, two-state */}
+      <div className="relative px-4 pt-2.5 pb-[max(10px,env(safe-area-inset-bottom))]">
+        <div
+          aria-hidden="true"
+          className="absolute left-0 right-0 top-0 h-px bg-gradient-to-r from-transparent via-border/70 to-transparent"
+        />
         {selectedText ? (
-          <div key="active" className="space-y-2 animate-in fade-in slide-in-from-bottom-2 duration-200">
-            <p className="text-[11px] font-medium text-muted-foreground/80 text-center tabular-nums tracking-wide uppercase">
-              {charCount} {charCount === 1 ? "character" : "characters"} selected
+          <div className="flex items-center justify-between gap-3 animate-in fade-in slide-in-from-bottom-1 duration-150">
+            <p className="text-[12px] text-muted-foreground tabular-nums">
+              <span className="font-semibold text-foreground/85">{charCount}</span>{" "}
+              {charCount === 1 ? "character" : "characters"} selected
             </p>
-            <Button className="w-full h-11 gap-2 thread-glow shadow-sm font-semibold" onClick={onQuote}>
-              <Quote className="h-4 w-4" />
-              Quote selection
+            <Button size="sm" className="h-9 gap-1.5 px-3.5 font-medium" onClick={onQuote}>
+              <Quote className="h-3.5 w-3.5" />
+              Quote
             </Button>
           </div>
         ) : (
-          <div
-            key="idle"
-            className="flex items-center gap-3 rounded-xl border border-dashed border-border/70 bg-muted/30 px-3.5 py-3 text-muted-foreground"
-          >
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-background shrink-0 ring-1 ring-border/60">
-              <Quote className="h-3.5 w-3.5 text-muted-foreground/70" />
-            </div>
-            <p className="text-[12px] leading-snug">Long-press the message to highlight a passage you want to quote.</p>
-          </div>
+          <p className="text-[12px] text-muted-foreground/70 text-center py-1">
+            Long-press the message to highlight a passage
+          </p>
         )}
       </div>
     </div>
