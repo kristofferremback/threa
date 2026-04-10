@@ -5,7 +5,10 @@ export { extractWorkspaceIdFromGithubInstallState } from "@threa/backend-common"
 const ENCRYPTION_VERSION = 2
 const GCM_ALGORITHM = "aes-256-gcm"
 const IV_LENGTH_BYTES = 12
-const MAX_STATE_AGE_MS = 60 * 60 * 1000
+// Tight enough to bound replay if a state value leaks (referer, browser history, log
+// line) but still long enough to cover the realistic GitHub install completion flow,
+// including a quick org admin approval step.
+const MAX_STATE_AGE_MS = 10 * 60 * 1000
 
 export interface EncryptedJsonPayload extends Record<string, unknown> {
   v: number

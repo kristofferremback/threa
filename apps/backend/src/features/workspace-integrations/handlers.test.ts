@@ -2,7 +2,9 @@ import { describe, expect, test } from "bun:test"
 import { buildGithubCallbackRedirectUrl } from "./handlers"
 
 describe("buildGithubCallbackRedirectUrl", () => {
-  test("returns an absolute frontend URL when forwarded headers are present", () => {
+  const allowedOrigins = ["http://localhost:3000", "https://app.threa.io"]
+
+  test("returns an absolute frontend URL when the forwarded origin is allowlisted", () => {
     const url = buildGithubCallbackRedirectUrl(
       {
         headers: {
@@ -11,7 +13,8 @@ describe("buildGithubCallbackRedirectUrl", () => {
         },
         protocol: "http",
       } as any,
-      "ws_123"
+      "ws_123",
+      allowedOrigins
     )
 
     expect(url).toBe("http://localhost:3000/w/ws_123?ws-settings=integrations&provider=github")
@@ -27,7 +30,8 @@ describe("buildGithubCallbackRedirectUrl", () => {
         },
         protocol: "http",
       } as any,
-      "ws_123"
+      "ws_123",
+      allowedOrigins
     )
 
     expect(url).toBe("http://localhost:3000/w/ws_123?ws-settings=integrations&provider=github")
@@ -39,7 +43,40 @@ describe("buildGithubCallbackRedirectUrl", () => {
         headers: {},
         protocol: "https",
       } as any,
-      "ws_123"
+      "ws_123",
+      allowedOrigins
+    )
+
+    expect(url).toBe("/w/ws_123?ws-settings=integrations&provider=github")
+  })
+
+  test("falls back to a relative path when the forwarded origin is not in the allowlist", () => {
+    const url = buildGithubCallbackRedirectUrl(
+      {
+        headers: {
+          "x-forwarded-host": "evil.example",
+          "x-forwarded-proto": "https",
+        },
+        protocol: "https",
+      } as any,
+      "ws_123",
+      allowedOrigins
+    )
+
+    expect(url).toBe("/w/ws_123?ws-settings=integrations&provider=github")
+  })
+
+  test("falls back to a relative path when the forwarded host is malformed", () => {
+    const url = buildGithubCallbackRedirectUrl(
+      {
+        headers: {
+          "x-forwarded-host": "not a valid host",
+          "x-forwarded-proto": "https",
+        },
+        protocol: "https",
+      } as any,
+      "ws_123",
+      allowedOrigins
     )
 
     expect(url).toBe("/w/ws_123?ws-settings=integrations&provider=github")

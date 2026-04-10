@@ -79,6 +79,7 @@ interface Dependencies {
   commandRegistry: CommandRegistry
   avatarService: AvatarService
   rateLimiterConfig: RateLimiterConfig
+  corsAllowedOrigins: string[]
   allowDevAuthRoutes: boolean
   internalApiKey: string | null
   apiKeyService: ApiKeyService
@@ -110,6 +111,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     commandRegistry,
     avatarService,
     rateLimiterConfig,
+    corsAllowedOrigins,
     allowDevAuthRoutes,
     internalApiKey,
     apiKeyService,
@@ -158,7 +160,10 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const activity = createActivityHandlers({ activityService })
   const agentSession = createAgentSessionHandlers({ pool })
   const linkPreview = createLinkPreviewHandlers({ linkPreviewService })
-  const workspaceIntegration = createWorkspaceIntegrationHandlers({ workspaceIntegrationService })
+  const workspaceIntegration = createWorkspaceIntegrationHandlers({
+    workspaceIntegrationService,
+    allowedFrontendOrigins: corsAllowedOrigins,
+  })
 
   // Ops endpoints - registered before rate limiter so probes aren't throttled
   app.get("/readyz", opsAccess, debug.readiness)

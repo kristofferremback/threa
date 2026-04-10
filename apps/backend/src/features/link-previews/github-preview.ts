@@ -12,6 +12,15 @@ const GITHUB_FAVICON_URL = "https://github.com/favicon.ico"
 const DEFAULT_FILE_LINE_COUNT = 30
 const COMMENT_PREVIEW_MAX_LENGTH = 320
 const README_MARKDOWN_MAX_CHARS = 3000
+// Maximum number of (ref, path) split candidates to try when resolving a GitHub
+// blob URL. The cost of resolveBlobPath is bounded by the number of slashes in
+// the *branch name*, not the file path — nested file paths still resolve in a
+// single GitHub call. A cap of 5 covers branches up to 4 slashes deep
+// (e.g. `feature/team/sprint-42/foo`) and prevents an adversarial URL with
+// many segments from burning installation API quota.
+const MAX_BLOB_PATH_SPLIT_ATTEMPTS = 5
+const LABEL_COLOR_HEX_PATTERN = /^[0-9a-f]{6}$/i
+const DEFAULT_LABEL_COLOR = "999999"
 
 interface LoadedGitHubRepository {
   preview: GitHubPreviewRepository
@@ -226,7 +235,7 @@ async function fetchIssuePreview(
               ? [
                   {
                     name: label.name,
-                    color: typeof label.color === "string" ? label.color : "999999",
+                    color: normalizeLabelColor(label.color),
                     description: typeof label.description === "string" ? label.description : null,
                   },
                 ]
@@ -517,7 +526,8 @@ async function resolveBlobPath(
   blobPath: string
 ): Promise<{ ref: string; path: string; contentResponse: any } | null> {
   const segments = blobPath.split("/").filter(Boolean)
-  for (let splitIndex = 1; splitIndex < segments.length; splitIndex++) {
+  const maxSplits = Math.min(segments.length - 1, MAX_BLOB_PATH_SPLIT_ATTEMPTS)
+  for (let splitIndex = 1; splitIndex <= maxSplits; splitIndex++) {
     const ref = segments.slice(0, splitIndex).join("/")
     const path = segments.slice(splitIndex).join("/")
     try {
@@ -536,6 +546,12 @@ async function resolveBlobPath(
   }
 
   return null
+}
+
+function normalizeLabelColor(value: unknown): string {
+  if (typeof value !== "string") return DEFAULT_LABEL_COLOR
+  const trimmed = value.startsWith("#") ? value.slice(1) : value
+  return LABEL_COLOR_HEX_PATTERN.test(trimmed) ? trimmed.toLowerCase() : DEFAULT_LABEL_COLOR
 }
 
 function summarizePullReviews(reviews: any[], pull: any) {
