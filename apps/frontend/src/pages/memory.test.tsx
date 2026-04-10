@@ -380,9 +380,10 @@ describe("MemoryPage", () => {
 
       renderPage("/w/ws_1/memory?memo=memo_1")
 
-      // The drawer renders MemoDetailContent — walk up to find the scroll
-      // container and assert it has the canonical drawer-scroll classes.
-      const detailTitle = screen.getByRole("heading", { name: "Launch decision" })
+      // The drawer renders MemoDetailContent with the title as an <h2>; the
+      // sidebar list renders each result's title as an <h3>. Scope to level=2
+      // so we're unambiguously inside the drawer body.
+      const detailTitle = screen.getByRole("heading", { level: 2, name: "Launch decision" })
       let scrollContainer: HTMLElement | null = detailTitle.parentElement
       while (scrollContainer && !scrollContainer.hasAttribute("data-vaul-no-drag")) {
         scrollContainer = scrollContainer.parentElement
