@@ -140,15 +140,17 @@ function MemoResultItem({ result, isActive, href }: { result: MemoExplorerResult
     <Link
       to={href}
       className={cn(
-        "group block rounded-lg border-l-[3px] border border-l-transparent bg-card transition-all",
+        "group block overflow-hidden rounded-lg border-l-[3px] border border-l-transparent bg-card transition-all",
         isActive
           ? cn("border-primary/30 shadow-sm", config.accent)
           : "border-border/50 hover:border-border hover:shadow-sm"
       )}
     >
       <div className="px-3.5 py-3">
-        <div className="flex items-start justify-between gap-2">
-          <h3 className="text-[13px] font-semibold leading-snug text-foreground line-clamp-2">{result.memo.title}</h3>
+        <div className="flex items-start justify-between gap-2 min-w-0">
+          <h3 className="min-w-0 text-[13px] font-semibold leading-snug text-foreground line-clamp-2">
+            {result.memo.title}
+          </h3>
           <RelativeTime
             date={result.memo.updatedAt}
             className="mt-0.5 shrink-0 text-[10px] tabular-nums text-muted-foreground/70"
@@ -239,10 +241,10 @@ function MemoDetailContent({
   }
 
   return (
-    <div className="space-y-8">
+    <div className="min-w-0 space-y-8">
       {/* Title section */}
       <div>
-        <div className="flex items-center gap-2 mb-3">
+        <div className="flex flex-wrap items-center gap-2 mb-3">
           <KnowledgeTypeBadge type={data.memo.knowledgeType} size="sm" />
           <Badge variant="secondary" className="text-[10px] font-medium">
             {memoLabel(data.memo.memoType)}
@@ -324,13 +326,13 @@ function MemoDetailContent({
         ) : (
           <div className="space-y-3">
             {data.sourceMessages.map((message) => (
-              <div key={message.id} className="rounded-lg border border-border/50 bg-card">
-                <div className="flex items-center gap-2 border-b border-border/30 px-4 py-2">
-                  <span className="text-xs font-semibold">{message.authorName}</span>
+              <div key={message.id} className="overflow-hidden rounded-lg border border-border/50 bg-card">
+                <div className="flex items-center gap-2 border-b border-border/30 px-4 py-2 min-w-0">
+                  <span className="shrink-0 text-xs font-semibold">{message.authorName}</span>
                   <span className="text-[10px] text-muted-foreground/40">in</span>
                   <Link
                     to={buildSourceLink(workspaceId, message.streamId, message.id)}
-                    className="text-xs text-primary/80 hover:text-primary hover:underline"
+                    className="truncate text-xs text-primary/80 hover:text-primary hover:underline"
                   >
                     {message.streamName}
                   </Link>
@@ -341,7 +343,7 @@ function MemoDetailContent({
                     />
                   </span>
                 </div>
-                <div className="px-4 py-3 text-sm leading-relaxed">
+                <div className="overflow-hidden px-4 py-3 text-sm leading-relaxed">
                   <MarkdownContent content={message.content} className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
                 </div>
               </div>
@@ -692,7 +694,7 @@ export function MemoryPage() {
         {/* Delayed loading bar — covers the header/content divider */}
         <LoadingBar visible={isRefreshing} />
         {/* Results list — full width on mobile, fixed sidebar on desktop */}
-        <ScrollArea className="flex-1 lg:w-[22rem] lg:flex-none lg:border-r border-border/50">
+        <ScrollArea className="min-w-0 flex-1 lg:w-[22rem] lg:flex-none lg:border-r border-border/50">
           <div className="space-y-1.5 p-2">
             {searchResponse.isLoading && (
               <>
@@ -750,7 +752,7 @@ export function MemoryPage() {
           }}
         >
           <DrawerContent className="max-h-[85dvh]">
-            <ScrollArea className="overflow-auto p-4 pb-8">
+            <ScrollArea className="min-w-0 overflow-auto p-4 pb-8">
               <MemoDetailContent data={selectedMemoData} workspaceId={workspaceId} isLoading={selectedMemo.isLoading} />
             </ScrollArea>
           </DrawerContent>
