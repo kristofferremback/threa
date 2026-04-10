@@ -95,13 +95,13 @@ export class BackofficeService {
 /**
  * Seed platform admins from configuration. Intended to be called once after
  * migrations on control-plane startup. Idempotent — re-running leaves existing
- * rows unchanged except for `updated_at`.
+ * rows unchanged except for `updated_at`. Single batch round-trip (INV-56).
  */
 export async function seedPlatformAdmins(pool: Pool, workosUserIds: string[]): Promise<void> {
-  for (const id of workosUserIds) {
-    await PlatformRoleRepository.upsert(pool, id, "admin")
-  }
-  if (workosUserIds.length > 0) {
-    logger.info({ count: workosUserIds.length }, "Seeded platform admins from env")
-  }
+  if (workosUserIds.length === 0) return
+  await PlatformRoleRepository.upsertMany(
+    pool,
+    workosUserIds.map((id) => ({ workosUserId: id, role: "admin" }))
+  )
+  logger.info({ count: workosUserIds.length }, "Seeded platform admins from env")
 }

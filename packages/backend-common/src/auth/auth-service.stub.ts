@@ -126,7 +126,12 @@ export class StubAuthService implements AuthService {
     return `/test-auth-login?${params.toString()}`
   }
 
-  async getLogoutUrl(_sealedSession: string): Promise<string | null> {
+  async getLogoutUrl(_sealedSession: string, returnTo?: string): Promise<string | null> {
+    // Encode returnTo as a query param so tests can assert on it.
+    if (returnTo) {
+      const params = new URLSearchParams({ return_to: returnTo })
+      return `/test-logged-out?${params.toString()}`
+    }
     return "/test-logged-out"
   }
 }

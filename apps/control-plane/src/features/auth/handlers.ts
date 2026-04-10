@@ -129,15 +129,23 @@ export function createControlPlaneAuthHandlers({
       const { maxAge: _, ...clearOpts } = SESSION_COOKIE_CONFIG
       res.clearCookie(SESSION_COOKIE_NAME, clearOpts)
 
+      const forwardedHost = req.headers["x-forwarded-host"] as string | undefined
+
       if (session) {
-        const logoutUrl = await authService.getLogoutUrl(session)
+        // For dedicated-redirect-host sessions, tell WorkOS to single-logout
+        // back to the same origin the user started on. Without this override,
+        // WorkOS would redirect to the default `WORKOS_REDIRECT_URI`'s origin
+        // and the user would land on the wrong frontend (e.g. the main app
+        // when they started on the backoffice).
+        const returnTo =
+          forwardedHost && dedicatedRedirectHosts.includes(forwardedHost) ? `https://${forwardedHost}` : undefined
+        const logoutUrl = await authService.getLogoutUrl(session, returnTo)
         if (logoutUrl) {
           return res.redirect(logoutUrl)
         }
       }
 
-      // Redirect to the forwarded host if trusted, otherwise frontendUrl or "/"
-      const forwardedHost = req.headers["x-forwarded-host"] as string | undefined
+      // Fallback when there's no session or getLogoutUrl returned null.
       if (forwardedHost && isTrustedHost(forwardedHost, allowedRedirectDomain, dedicatedRedirectHosts)) {
         return res.redirect(`https://${forwardedHost}`)
       }
