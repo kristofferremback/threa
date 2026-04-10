@@ -27,7 +27,6 @@ export function useAbortResearch(socket: Socket | null) {
         { sessionId: params.sessionId, workspaceId: params.workspaceId },
         (ack: AbortAck | undefined) => {
           if (!ack?.ok) {
-            // eslint-disable-next-line no-console
             console.warn("[useAbortResearch] abort ack:", ack?.error ?? "no ack")
           }
         }
