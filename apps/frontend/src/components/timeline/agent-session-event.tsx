@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom"
-import { Check, X, Loader2, Square } from "lucide-react"
+import { Check, X, Loader2, StopCircle } from "lucide-react"
 import type {
   StreamEvent,
   AgentSessionRerunContext,
@@ -11,6 +11,15 @@ import type {
 import { useTrace } from "@/contexts"
 import { RelativeTime } from "@/components/relative-time"
 import { formatDuration } from "@/lib/dates"
+
+// Workspace-research step hue — matches STEP_DISPLAY_CONFIG.workspace_search (hue 270).
+// Used inline on the Stop research button so its hover state tints toward the same
+// purple as the step it stops, tying the interrupt action to what's being interrupted.
+// Kept as inline styles rather than Tailwind arbitrary variants because Tailwind JIT
+// can't pick up template-interpolated class names, and this colour is only used here.
+const ABORT_HUE_BORDER = "hsl(270 60% 50% / 0.45)"
+const ABORT_HUE_BG = "hsl(270 60% 50% / 0.08)"
+const ABORT_HUE_FG = "hsl(270 60% 50%)"
 
 interface AgentSessionEventProps {
   events: StreamEvent[]
@@ -101,8 +110,7 @@ function buildStatusConfig(
   completedPayload: AgentSessionCompletedPayload | null,
   failedPayload: AgentSessionFailedPayload | null,
   deletedPayload: AgentSessionDeletedPayload | null,
-  liveCounts: { stepCount: number; messageCount: number } | undefined,
-  liveSubstep: string | null | undefined
+  liveCounts: { stepCount: number; messageCount: number } | undefined
 ): StatusConfig {
   const rerunReasonLabel = formatRerunReasonLabel(startedPayload?.rerunContext)
   const rerunReasonDetail = formatRerunReasonDetail(startedPayload?.rerunContext)
@@ -183,12 +191,11 @@ function buildStatusConfig(
       const personaName = startedPayload?.personaName ?? "Agent"
       const stepCount = liveCounts?.stepCount ?? 0
       const messageCount = liveCounts?.messageCount ?? 0
+      // Note: liveSubstep is intentionally NOT joined into the meta string — the
+      // render function promotes it into its own row with a live-pulse dot and
+      // italic foreground weight, so it stands out as "what is happening right now"
+      // instead of being buried among static counts.
       const parts: string[] = []
-      // Live substep takes pole position when present — it's the most informative
-      // bit during a long-running tool call ("Evaluating results…" beats "1 step").
-      if (liveSubstep) {
-        parts.push(liveSubstep)
-      }
       if (rerunReasonLabel) {
         parts.push(rerunReasonLabel)
       }
@@ -198,7 +205,7 @@ function buildStatusConfig(
       parts.push(`${stepCount} ${stepCount === 1 ? "step" : "steps"}`)
       parts.push(`${messageCount} ${messageCount === 1 ? "message" : "messages"} sent`)
       return {
-        title: `${personaName} is working...`,
+        title: `${personaName} is working…`,
         subtitle: parts.join(" • "),
         icon: (
           <div className="w-5 h-5 rounded-full flex items-center justify-center bg-[hsl(var(--primary)/0.15)]">
@@ -245,19 +252,12 @@ export function AgentSessionEvent({
   const { getTraceUrl } = useTrace()
   const { status, sessionId, startedPayload, completedPayload, failedPayload, deletedPayload } = deriveStatus(events)
 
-  const config = buildStatusConfig(
-    status,
-    startedPayload,
-    completedPayload,
-    failedPayload,
-    deletedPayload,
-    liveCounts,
-    liveSubstep
-  )
+  const config = buildStatusConfig(status, startedPayload, completedPayload, failedPayload, deletedPayload, liveCounts)
 
   if (!sessionId) return null
 
   const showAbortButton = status === "running" && canAbortResearch && onAbortResearch
+  const showLiveSubstep = status === "running" && !!liveSubstep
 
   return (
     <div className="py-3">
@@ -291,7 +291,33 @@ export function AgentSessionEvent({
               </span>
             )}
           </div>
-          <div className="text-[11px] text-muted-foreground mt-0.5">{config.subtitle || "\u00a0"}</div>
+          {showLiveSubstep ? (
+            <>
+              {/*
+                Live substep gets pole position: italic foreground text with a leading
+                radar-style pulse dot signals "what is actually happening right now".
+                Static counts drop to a de-emphasized line below so they don't compete
+                with the live signal. The `key` on the substep span re-triggers the
+                fade-in whenever the phase text changes, so the user sees a visible
+                "tick" as research advances.
+              */}
+              <div className="mt-1 flex items-center gap-1.5 text-[12px] leading-tight">
+                <span aria-hidden className="relative inline-flex h-1.5 w-1.5 shrink-0">
+                  <span className="absolute inset-0 rounded-full bg-primary opacity-60 animate-activity-pulse" />
+                  <span className="relative inline-block h-1.5 w-1.5 rounded-full bg-primary" />
+                </span>
+                <span
+                  key={liveSubstep}
+                  className="min-w-0 flex-1 truncate italic text-foreground/90 animate-in fade-in-50 duration-200"
+                >
+                  {liveSubstep}
+                </span>
+              </div>
+              <div className="text-[11px] text-muted-foreground/80 mt-0.5">{config.subtitle || "\u00a0"}</div>
+            </>
+          ) : (
+            <div className="text-[11px] text-muted-foreground mt-0.5">{config.subtitle || "\u00a0"}</div>
+          )}
         </div>
         {showAbortButton && (
           <button
@@ -302,10 +328,20 @@ export function AgentSessionEvent({
               e.stopPropagation()
               onAbortResearch?.(sessionId)
             }}
-            className="shrink-0 inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-background hover:border-foreground/30 transition-colors"
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = ABORT_HUE_BORDER
+              e.currentTarget.style.backgroundColor = ABORT_HUE_BG
+              e.currentTarget.style.color = ABORT_HUE_FG
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = ""
+              e.currentTarget.style.backgroundColor = ""
+              e.currentTarget.style.color = ""
+            }}
+            className="shrink-0 inline-flex items-center gap-1.5 rounded-md border border-border/80 px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-all duration-150"
             title="Stop the in-flight workspace research and continue with whatever was found so far"
           >
-            <Square className="h-3 w-3" />
+            <StopCircle className="h-3.5 w-3.5" />
             Stop research
           </button>
         )}

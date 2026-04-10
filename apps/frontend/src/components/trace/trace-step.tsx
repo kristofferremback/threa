@@ -10,7 +10,7 @@ import { MarkdownContent } from "@/components/ui/markdown-content"
 import { RelativeTime } from "@/components/relative-time"
 import { formatDuration } from "@/lib/dates"
 import { STEP_DISPLAY_CONFIG } from "@/lib/step-config"
-import { ChevronRight, ExternalLink, type LucideIcon } from "lucide-react"
+import { ChevronRight, CircleSlash, Clock, ExternalLink, type LucideIcon } from "lucide-react"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { FileText } from "lucide-react"
 
@@ -264,8 +264,8 @@ function renderStepContent(
             .filter((s) => typeof s.text === "string" && typeof s.at === "string")
             .map((s) => ({ text: s.text as string, at: s.at as string }))
         : null
-      const substepsToShow =
-        persistedSubsteps && persistedSubsteps.length > 0 ? persistedSubsteps : (liveSubsteps ?? [])
+      const hasPersisted = persistedSubsteps !== null && persistedSubsteps.length > 0
+      const substepsToShow = hasPersisted ? persistedSubsteps! : (liveSubsteps ?? [])
       const isPartial = structured?.partial === true
       const partialReason = typeof structured?.partialReason === "string" ? structured.partialReason : null
 
@@ -274,25 +274,23 @@ function renderStepContent(
         const messageCount = structured.messageCount as number
         const attachmentCount = (structured.attachmentCount as number | undefined) ?? 0
         return (
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             <div className="text-muted-foreground">
               Found {memoCount} {memoCount === 1 ? "memo" : "memos"}, {messageCount}{" "}
               {messageCount === 1 ? "message" : "messages"}, and {attachmentCount}{" "}
               {attachmentCount === 1 ? "attachment" : "attachments"}.
             </div>
-            {isPartial && (
-              <div className="rounded border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5 text-[11px] text-amber-700 dark:text-amber-300">
-                Partial result — {partialReason === "user_abort" ? "stopped on user request" : "deadline reached"}.
-              </div>
+            {isPartial && <PartialResultBadge stepType={stepType} reason={partialReason} />}
+            {substepsToShow.length > 0 && (
+              <SubstepTimeline substeps={substepsToShow} stepType={stepType} isLive={!hasPersisted} />
             )}
-            {substepsToShow.length > 0 && <SubstepTimeline substeps={substepsToShow} />}
           </div>
         )
       }
       // Fallback for in-flight steps without persisted content yet — show only the
       // live substeps if any are available.
       if (substepsToShow.length > 0) {
-        return <SubstepTimeline substeps={substepsToShow} />
+        return <SubstepTimeline substeps={substepsToShow} stepType={stepType} isLive />
       }
       return <span className="text-muted-foreground">{content}</span>
     }
@@ -386,23 +384,166 @@ function renderStepContent(
 }
 
 /**
- * Compact phase-by-phase timeline for a long-running tool's substep log.
- * Shows each phase the tool moved through during execution. Pulled from either the
- * persisted step.content (refresh-stable for completed steps) or the live socket
- * stream (for in-flight steps before completion).
+ * Format the elapsed time between two ISO timestamps in a compact form suitable
+ * for inline timeline annotations (e.g. "+0.2s", "+1.4s", "+1m 12s"). Returns
+ * null for sub-100ms deltas so fast paths don't produce noise like "+0.0s".
  */
-function SubstepTimeline({ substeps }: { substeps: Array<{ text: string; at: string }> }) {
+function formatPhaseOffset(fromIso: string, toIso: string): string | null {
+  const fromMs = Date.parse(fromIso)
+  const toMs = Date.parse(toIso)
+  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) return null
+  const deltaMs = toMs - fromMs
+  if (deltaMs < 100) return null
+  if (deltaMs < 60_000) return `+${(deltaMs / 1000).toFixed(1)}s`
+  const totalSec = Math.round(deltaMs / 1000)
+  const minutes = Math.floor(totalSec / 60)
+  const seconds = totalSec % 60
+  return `+${minutes}m ${seconds}s`
+}
+
+/**
+ * Hue-aware phase timeline for a long-running tool's substep log.
+ *
+ * Design intent: every trace step wraps itself in a subtle hue-tinted container
+ * driven by `STEP_DISPLAY_CONFIG` (workspace_search = purple, hue 270). The
+ * SubstepTimeline pulls the same hue so it reads as part of the step's family,
+ * not a foreign grey element grafted on.
+ *
+ * Visual vocabulary:
+ * - Left-hand vertical rail in the step's hue at 25% opacity — anchors the
+ *   phases as an ordered sequence.
+ * - Hued dots at each phase: completed phases get a filled disc, the current
+ *   in-flight phase (when `isLive`) gets a radar-style pulse ring.
+ * - Relative timing offsets ("+0.2s", "+1.4s") on the right — turns the phase
+ *   list into a crude performance profile, answering "where did the 4s go?".
+ * - Staggered entry animation on first mount (tailwindcss-animate) so live
+ *   substeps flow in rather than popping in at once.
+ *
+ * Substeps pulled from either the persisted step.content (refresh-stable for
+ * completed steps) or the live socket stream (for in-flight steps). The caller
+ * passes `isLive` so we can pulse only when the last phase is still running.
+ */
+function SubstepTimeline({
+  substeps,
+  stepType,
+  isLive,
+}: {
+  substeps: Array<{ text: string; at: string }>
+  stepType: AgentStepType
+  isLive: boolean
+}) {
+  const config = STEP_DISPLAY_CONFIG[stepType]
+  const hueColor = `hsl(${config.hue} ${config.saturation}% ${config.lightness}%)`
+  const hueRail = `hsl(${config.hue} ${config.saturation}% ${config.lightness}% / 0.25)`
+  const hueBg = `hsl(${config.hue} ${config.saturation}% ${config.lightness}% / 0.04)`
+  const hueBorder = `hsl(${config.hue} ${config.saturation}% ${config.lightness}% / 0.18)`
+
+  const firstAt = substeps[0]?.at
+
   return (
-    <div className="rounded border border-border/60 bg-background/40 px-3 py-2">
-      <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">Phases</div>
-      <ol className="space-y-1">
-        {substeps.map((substep, i) => (
-          <li key={`${substep.at}-${i}`} className="flex items-start gap-2 text-[12px]">
-            <span className="mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/60" />
-            <span className="text-foreground/90">{substep.text}</span>
-          </li>
-        ))}
+    <div
+      className="rounded-item px-3 py-2.5"
+      style={{
+        background: hueBg,
+        border: `1px solid ${hueBorder}`,
+      }}
+    >
+      <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: hueColor }}>
+        Phases
+      </div>
+      <ol className="relative space-y-1.5 pl-[18px]">
+        {/* Vertical rail anchored to the dot centerline (9px dot column + 9px dot center = 9px from left of padding) */}
+        <span
+          aria-hidden
+          className="absolute left-[4px] top-[5px] bottom-[5px] w-px rounded-full"
+          style={{ background: hueRail }}
+        />
+        {substeps.map((substep, i) => {
+          const isLast = i === substeps.length - 1
+          const showPulse = isLast && isLive
+          const offset = firstAt && !isLast ? formatPhaseOffset(firstAt, substep.at) : null
+          return (
+            <li
+              key={`${substep.at}-${i}`}
+              className="relative flex items-start gap-2 text-[12px] leading-tight animate-in fade-in-0 slide-in-from-left-1 fill-mode-both"
+              style={{
+                animationDelay: `${Math.min(i, 8) * 40}ms`,
+                animationDuration: "260ms",
+              }}
+            >
+              {/* Phase dot sitting on the rail */}
+              <span
+                aria-hidden
+                className="absolute -left-[18px] top-[5px] inline-flex h-[9px] w-[9px] items-center justify-center"
+              >
+                {showPulse && (
+                  <span
+                    className="absolute inset-0 rounded-full animate-activity-pulse"
+                    style={{ background: hueColor, opacity: 0.35 }}
+                  />
+                )}
+                <span
+                  className="relative h-[7px] w-[7px] rounded-full"
+                  style={{
+                    background: isLast
+                      ? hueColor
+                      : `hsl(${config.hue} ${config.saturation}% ${config.lightness}% / 0.7)`,
+                    boxShadow: isLast
+                      ? `0 0 0 2px hsl(${config.hue} ${config.saturation}% ${config.lightness}% / 0.15)`
+                      : undefined,
+                  }}
+                />
+              </span>
+              <span className={cn("flex-1 min-w-0 text-foreground/90", isLast && isLive && "font-medium")}>
+                {substep.text}
+              </span>
+              {offset && (
+                <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/70">{offset}</span>
+              )}
+            </li>
+          )
+        })}
       </ol>
+    </div>
+  )
+}
+
+/**
+ * Context-aware partial-result badge.
+ *
+ * `user_abort` uses the step's own hue (gentle "you intentionally stopped this").
+ * `timeout` uses amber (warning "we ran out of budget"). An icon reinforces the
+ * cause so a scanning eye gets the meaning without reading the text.
+ */
+function PartialResultBadge({ stepType, reason }: { stepType: AgentStepType; reason: string | null }) {
+  const config = STEP_DISPLAY_CONFIG[stepType]
+  const isAbort = reason === "user_abort"
+
+  const accentColor = isAbort ? `hsl(${config.hue} ${config.saturation}% ${config.lightness}%)` : "hsl(32 95% 44%)"
+  const bgColor = isAbort
+    ? `hsl(${config.hue} ${config.saturation}% ${config.lightness}% / 0.06)`
+    : "hsl(32 95% 44% / 0.06)"
+  const borderColor = isAbort
+    ? `hsl(${config.hue} ${config.saturation}% ${config.lightness}% / 0.25)`
+    : "hsl(32 95% 44% / 0.3)"
+  const Icon = isAbort ? CircleSlash : Clock
+  const label = isAbort ? "Stopped on user request" : "Deadline reached"
+  const description = isAbort
+    ? "Returned the context found so far."
+    : "Research hit the wall-clock budget and returned partial context."
+
+  return (
+    <div
+      className="flex items-start gap-2 rounded-item px-2.5 py-1.5"
+      style={{ background: bgColor, border: `1px solid ${borderColor}` }}
+    >
+      <Icon className="mt-[1px] h-3.5 w-3.5 shrink-0" style={{ color: accentColor }} />
+      <div className="min-w-0 text-[11px] leading-snug">
+        <span className="font-medium" style={{ color: accentColor }}>
+          {label}
+        </span>
+        <span className="text-muted-foreground"> — {description}</span>
+      </div>
     </div>
   )
 }
