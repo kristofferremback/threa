@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom"
-import { Check, X, Loader2, StopCircle } from "lucide-react"
+import { Check, X, Loader2 } from "lucide-react"
 import type {
   StreamEvent,
   AgentSessionRerunContext,
@@ -11,15 +11,7 @@ import type {
 import { useTrace } from "@/contexts"
 import { RelativeTime } from "@/components/relative-time"
 import { formatDuration } from "@/lib/dates"
-
-// Workspace-research step hue — matches STEP_DISPLAY_CONFIG.workspace_search (hue 270).
-// Used inline on the Stop research button so its hover state tints toward the same
-// purple as the step it stops, tying the interrupt action to what's being interrupted.
-// Kept as inline styles rather than Tailwind arbitrary variants because Tailwind JIT
-// can't pick up template-interpolated class names, and this colour is only used here.
-const ABORT_HUE_BORDER = "hsl(270 60% 50% / 0.45)"
-const ABORT_HUE_BG = "hsl(270 60% 50% / 0.08)"
-const ABORT_HUE_FG = "hsl(270 60% 50%)"
+import { StopResearchButton } from "@/components/trace/stop-research-button"
 
 interface AgentSessionEventProps {
   events: StreamEvent[]
@@ -256,7 +248,7 @@ export function AgentSessionEvent({
 
   if (!sessionId) return null
 
-  const showAbortButton = status === "running" && canAbortResearch && onAbortResearch
+  const showAbortButton = status === "running" && canAbortResearch && !!onAbortResearch
   const showLiveSubstep = status === "running" && !!liveSubstep
 
   return (
@@ -291,66 +283,58 @@ export function AgentSessionEvent({
               </span>
             )}
           </div>
+          {/*
+            INV-21: subtitle is always a single line so the card height never shifts
+            when a live substep arrives or disappears. When a substep is present we
+            show it as the primary (italic foreground) with a leading radar-pulse dot
+            signalling "what is actually happening right now"; the static counts drop
+            to a secondary `shrink-0` chip on the right of the same line, truncating
+            the substep first if the container runs out of space. The `key` on the
+            substep span re-triggers the fade-in whenever the phase text changes, so
+            the user sees a visible "tick" as research advances.
+          */}
           {showLiveSubstep ? (
-            <>
-              {/*
-                Live substep gets pole position: italic foreground text with a leading
-                radar-style pulse dot signals "what is actually happening right now".
-                Static counts drop to a de-emphasized line below so they don't compete
-                with the live signal. The `key` on the substep span re-triggers the
-                fade-in whenever the phase text changes, so the user sees a visible
-                "tick" as research advances.
-              */}
-              <div className="mt-1 flex items-center gap-1.5 text-[12px] leading-tight">
-                <span aria-hidden className="relative inline-flex h-1.5 w-1.5 shrink-0">
-                  <span className="absolute inset-0 rounded-full bg-primary opacity-60 animate-activity-pulse" />
-                  <span className="relative inline-block h-1.5 w-1.5 rounded-full bg-primary" />
-                </span>
-                <span
-                  key={liveSubstep}
-                  className="min-w-0 flex-1 truncate italic text-foreground/90 animate-in fade-in-50 duration-200"
-                >
-                  {liveSubstep}
-                </span>
-              </div>
-              <div className="text-[11px] text-muted-foreground/80 mt-0.5">{config.subtitle || "\u00a0"}</div>
-            </>
+            <div className="mt-0.5 flex items-center gap-1.5 min-w-0 text-[11px]">
+              <span aria-hidden className="relative inline-flex h-1.5 w-1.5 shrink-0">
+                <span className="absolute inset-0 rounded-full bg-primary opacity-60 animate-activity-pulse" />
+                <span className="relative inline-block h-1.5 w-1.5 rounded-full bg-primary" />
+              </span>
+              <span
+                key={liveSubstep}
+                className="min-w-0 flex-1 truncate italic text-foreground/90 animate-in fade-in-50 duration-200"
+              >
+                {liveSubstep}
+              </span>
+              {config.subtitle && (
+                <>
+                  <span aria-hidden className="shrink-0 text-muted-foreground/40">
+                    ·
+                  </span>
+                  <span className="shrink-0 text-muted-foreground/70">{config.subtitle}</span>
+                </>
+              )}
+            </div>
           ) : (
             <div className="text-[11px] text-muted-foreground mt-0.5">{config.subtitle || "\u00a0"}</div>
           )}
         </div>
-        {showAbortButton && (
-          <button
-            type="button"
-            onClick={(e) => {
-              // Prevent the parent <Link> navigation when clicking the abort button.
-              e.preventDefault()
-              e.stopPropagation()
-              onAbortResearch?.(sessionId)
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = ABORT_HUE_BORDER
-              e.currentTarget.style.backgroundColor = ABORT_HUE_BG
-              e.currentTarget.style.color = ABORT_HUE_FG
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = ""
-              e.currentTarget.style.backgroundColor = ""
-              e.currentTarget.style.color = ""
-            }}
-            className="shrink-0 inline-flex items-center gap-1.5 rounded-md border border-border/80 px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-all duration-150"
-            title="Stop the in-flight workspace research and continue with whatever was found so far"
-          >
-            <StopCircle className="h-3.5 w-3.5" />
-            Stop research
-          </button>
+        {/*
+          Right-slot arbitration: only one thing at a time to avoid crowding and to
+          give the Stop research button an unobstructed target. When the session is
+          running and abort is available, the button owns the right edge (always
+          visible, not a hover-reveal). Otherwise the existing timestamp / "Show
+          trace and sources →" hover hint lives there.
+        */}
+        {showAbortButton ? (
+          <StopResearchButton onClick={() => onAbortResearch?.(sessionId)} stopPropagation />
+        ) : (
+          <div className="shrink-0 text-[11px]">
+            {config.timestamp && (
+              <RelativeTime date={config.timestamp} className="text-muted-foreground group-hover:hidden" />
+            )}
+            <span className="text-primary hidden group-hover:inline">Show trace and sources →</span>
+          </div>
         )}
-        <div className="shrink-0 text-[11px]">
-          {config.timestamp && (
-            <RelativeTime date={config.timestamp} className="text-muted-foreground group-hover:hidden" />
-          )}
-          <span className="text-primary hidden group-hover:inline">Show trace and sources →</span>
-        </div>
       </Link>
     </div>
   )

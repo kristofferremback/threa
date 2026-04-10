@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useCallback, useMemo } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import {
   ResponsiveDialog,
@@ -9,7 +9,8 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { RelativeTime } from "@/components/relative-time"
-import { useTrace } from "@/contexts"
+import { useTrace, useSocket } from "@/contexts"
+import { useAbortResearch } from "@/hooks"
 import { useAgentTrace } from "@/hooks/use-agent-trace"
 import { TraceStepList } from "./trace-step-list"
 import { X } from "lucide-react"
@@ -29,11 +30,22 @@ export function TraceDialog() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const navigate = useNavigate()
   const { sessionId, highlightMessageId, getTraceUrl, closeTraceModal } = useTrace()
+  const socket = useSocket()
+  const abortResearch = useAbortResearch(socket)
 
   const { steps, streamingSubsteps, session, relatedSessions, persona, status, isLoading, error } = useAgentTrace(
     workspaceId!,
     sessionId!
   )
+
+  // Bind workspace + session once here so the in-flight step card can invoke it
+  // without needing either identifier in its own scope. Only wired when the
+  // session is actively running — abort on a completed session is a no-op at
+  // the server so it's cheap, but there's no reason to show the button then.
+  const handleAbortResearch = useCallback(() => {
+    if (!sessionId || !workspaceId) return
+    abortResearch({ sessionId, workspaceId })
+  }, [abortResearch, sessionId, workspaceId])
 
   if (!sessionId) return null
 
@@ -97,6 +109,7 @@ export function TraceDialog() {
           highlightMessageId={highlightMessageId}
           workspaceId={workspaceId!}
           streamId={session?.streamId ?? ""}
+          onAbortResearch={status === "running" ? handleAbortResearch : undefined}
         />
 
         {status && <TraceFooter status={status} stepCount={steps.length} messageCount={messageCount} />}
@@ -231,6 +244,7 @@ function TraceBody({
   highlightMessageId,
   workspaceId,
   streamId,
+  onAbortResearch,
 }: {
   isLoading: boolean
   error: Error | null
@@ -239,6 +253,7 @@ function TraceBody({
   highlightMessageId: string | null
   workspaceId: string
   streamId: string
+  onAbortResearch?: () => void
 }) {
   let content = (
     <TraceStepList
@@ -247,6 +262,7 @@ function TraceBody({
       workspaceId={workspaceId}
       streamId={streamId}
       streamingSubsteps={streamingSubsteps}
+      onAbortResearch={onAbortResearch}
     />
   )
   if (isLoading) {

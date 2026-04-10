@@ -10,9 +10,10 @@ import { MarkdownContent } from "@/components/ui/markdown-content"
 import { RelativeTime } from "@/components/relative-time"
 import { formatDuration } from "@/lib/dates"
 import { STEP_DISPLAY_CONFIG } from "@/lib/step-config"
-import { ChevronRight, CircleSlash, Clock, ExternalLink, type LucideIcon } from "lucide-react"
+import { ChevronRight, CircleSlash, Clock, ExternalLink, Loader2, type LucideIcon } from "lucide-react"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { FileText } from "lucide-react"
+import { StopResearchButton } from "./stop-research-button"
 
 interface TraceStepProps {
   step: AgentSessionStep
@@ -60,11 +61,17 @@ export function TraceStep({ step, workspaceId, streamId, liveSubsteps }: TraceSt
 interface StepHeaderProps {
   config: { label: string; hue: number; saturation: number; lightness: number }
   Icon: LucideIcon
-  startedAt: string
-  duration: string | null
+  startedAt?: string
+  duration?: string | null
+  /**
+   * Override for the right-hand slot. When provided, replaces the default
+   * timestamp + duration display. Used by `InFlightStepCard` to show a
+   * "Running…" indicator + Stop research button instead of a completion time.
+   */
+  rightSlot?: React.ReactNode
 }
 
-function StepHeader({ config, Icon, startedAt, duration }: StepHeaderProps) {
+function StepHeader({ config, Icon, startedAt, duration, rightSlot }: StepHeaderProps) {
   return (
     <div className="flex items-center gap-2.5 mb-3">
       <div
@@ -78,13 +85,18 @@ function StepHeader({ config, Icon, startedAt, duration }: StepHeaderProps) {
         {config.label}
       </div>
       <div className="flex items-center gap-2 ml-auto text-[11px] text-muted-foreground">
-        <RelativeTime date={startedAt} className="text-[11px] text-muted-foreground" />
-        {duration && (
-          <>
-            <span>•</span>
-            <span>{duration}</span>
-          </>
-        )}
+        {rightSlot ??
+          (startedAt && (
+            <>
+              <RelativeTime date={startedAt} className="text-[11px] text-muted-foreground" />
+              {duration && (
+                <>
+                  <span>•</span>
+                  <span>{duration}</span>
+                </>
+              )}
+            </>
+          ))}
       </div>
     </div>
   )
@@ -543,6 +555,58 @@ function PartialResultBadge({ stepType, reason }: { stepType: AgentStepType; rea
           {label}
         </span>
         <span className="text-muted-foreground"> — {description}</span>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * In-flight trace step card for a currently-running tool.
+ *
+ * Rendered by `TraceStepList` when the live socket stream has substeps for a
+ * step type that has not yet produced a persisted step row. The persisted step
+ * row is only created at `tool:complete`, so without this card the trace dialog
+ * would be silent during execution — even though the timeline card is showing
+ * live phase text. This closes that gap.
+ *
+ * When the real step row arrives (on completion), `useAgentTrace` clears the
+ * streaming substeps for this step type, unmounting this card and leaving the
+ * real `TraceStep` in its place. The two share the same header pattern and
+ * `SubstepTimeline` so the handoff is visually seamless.
+ */
+export function InFlightStepCard({
+  stepType,
+  substeps,
+  onAbort,
+}: {
+  stepType: AgentStepType
+  substeps: Array<{ text: string; at: string }>
+  onAbort?: () => void
+}) {
+  const config = STEP_DISPLAY_CONFIG[stepType]
+  const Icon = config.icon
+  const hueColor = `hsl(${config.hue} ${config.saturation}% ${config.lightness}%)`
+
+  return (
+    <div
+      className="px-6 py-5 border-b border-border"
+      style={{
+        background: `hsl(${config.hue} ${config.saturation}% ${config.lightness}% / 0.03)`,
+      }}
+    >
+      <StepHeader
+        config={config}
+        Icon={Icon}
+        rightSlot={
+          <>
+            <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: hueColor }} />
+            <span className="text-muted-foreground">Running…</span>
+            {onAbort && <StopResearchButton onClick={onAbort} />}
+          </>
+        }
+      />
+      <div className="text-sm leading-relaxed">
+        <SubstepTimeline substeps={substeps} stepType={stepType} isLive />
       </div>
     </div>
   )

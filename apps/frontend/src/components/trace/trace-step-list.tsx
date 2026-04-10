@@ -1,8 +1,18 @@
 import { useRef, useEffect } from "react"
-import type { AgentSessionStep, AgentStepType } from "@threa/types"
+import { AgentStepTypes, type AgentSessionStep, type AgentStepType } from "@threa/types"
 import type { StreamingSubstep } from "@/hooks/use-agent-trace"
-import { TraceStep } from "./trace-step"
+import { TraceStep, InFlightStepCard } from "./trace-step"
 import { cn } from "@/lib/utils"
+
+/**
+ * Step types that can produce live substeps in the trace dialog. When live
+ * substeps arrive for one of these types AND there's no persisted step row yet,
+ * `TraceStepList` renders an `InFlightStepCard` for it so the dialog mirrors
+ * the streaming feedback the timeline card already shows.
+ *
+ * V1: only `workspace_search`. Extend when other tools start emitting substeps.
+ */
+const IN_FLIGHT_STEP_TYPES: AgentStepType[] = [AgentStepTypes.WORKSPACE_SEARCH]
 
 interface TraceStepListProps {
   steps: AgentSessionStep[]
@@ -15,6 +25,13 @@ interface TraceStepListProps {
    * by `useAgentTrace` on `agent_session:step:completed`.
    */
   streamingSubsteps?: Partial<Record<AgentStepType, StreamingSubstep[]>>
+  /**
+   * Callback to gracefully abort an in-flight tool call (e.g. workspace research).
+   * When provided, the in-flight step card renders a Stop research button in its
+   * header so the user can interrupt from inside the trace dialog, not just the
+   * timeline card.
+   */
+  onAbortResearch?: () => void
 }
 
 export function TraceStepList({
@@ -23,6 +40,7 @@ export function TraceStepList({
   workspaceId,
   streamId,
   streamingSubsteps,
+  onAbortResearch,
 }: TraceStepListProps) {
   const highlightRef = useRef<HTMLDivElement>(null)
 
@@ -34,7 +52,21 @@ export function TraceStepList({
     }
   }, [highlightMessageId, steps])
 
-  if (steps.length === 0) {
+  // Compute which step types currently have streaming substeps that should be
+  // rendered as an in-flight pseudo-step at the end of the list. We only render
+  // an in-flight card for a step type when there are actual substep entries —
+  // empty arrays (a freshly initialised key) don't produce a card.
+  const inFlightEntries: Array<{ stepType: AgentStepType; substeps: StreamingSubstep[] }> = []
+  if (streamingSubsteps) {
+    for (const stepType of IN_FLIGHT_STEP_TYPES) {
+      const substeps = streamingSubsteps[stepType]
+      if (substeps && substeps.length > 0) {
+        inFlightEntries.push({ stepType, substeps })
+      }
+    }
+  }
+
+  if (steps.length === 0 && inFlightEntries.length === 0) {
     return <div className="p-6 text-center text-muted-foreground">No steps recorded yet.</div>
   }
 
@@ -53,6 +85,14 @@ export function TraceStepList({
           </div>
         )
       })}
+      {inFlightEntries.map(({ stepType, substeps }) => (
+        <InFlightStepCard
+          key={`in-flight-${stepType}`}
+          stepType={stepType}
+          substeps={substeps}
+          onAbort={onAbortResearch}
+        />
+      ))}
     </div>
   )
 }
