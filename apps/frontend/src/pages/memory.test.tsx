@@ -6,6 +6,7 @@ import { MemoryPage } from "./memory"
 const mockUseMemoSearch = vi.fn()
 const mockUseMemoDetail = vi.fn()
 const mockUseWorkspaceStreams = vi.fn()
+const mockUseIsMobile = vi.fn()
 
 vi.mock("@/hooks", () => ({
   useMemoSearch: (...args: unknown[]) => mockUseMemoSearch(...args),
@@ -14,6 +15,10 @@ vi.mock("@/hooks", () => ({
 
 vi.mock("@/stores/workspace-store", () => ({
   useWorkspaceStreams: (...args: unknown[]) => mockUseWorkspaceStreams(...args),
+}))
+
+vi.mock("@/hooks/use-mobile", () => ({
+  useIsMobile: () => mockUseIsMobile(),
 }))
 
 vi.mock("@/components/relative-time", () => ({
@@ -69,8 +74,11 @@ describe("MemoryPage", () => {
     mockUseWorkspaceStreams.mockReset()
     mockUseMemoSearch.mockReset()
     mockUseMemoDetail.mockReset()
+    mockUseIsMobile.mockReset()
 
     mockUseWorkspaceStreams.mockReturnValue([])
+    // Default to desktop layout; individual tests opt into mobile.
+    mockUseIsMobile.mockReturnValue(false)
   })
 
   it("manually refreshes the memo list and selected memo", async () => {
@@ -326,6 +334,121 @@ describe("MemoryPage", () => {
       const streamLink = screen.getAllByText(LONG_UNBREAKABLE_TITLE)[0]
       expect(streamLink.className).toContain("min-w-0")
       expect(streamLink.className).toContain("truncate")
+    })
+  })
+
+  // Regression guard for desktop detail pane scroll. Between the mobile
+  // breakpoint (640px) and lg (1024px) the content wrapper is a flex-col
+  // with two flex-1 siblings (list + detail), and Radix ScrollArea's
+  // `h-full` viewport height chain is brittle in that layout. The desktop
+  // detail pane uses a plain div with `flex-1 min-h-0 overflow-y-auto` for
+  // unambiguous native scrolling.
+  describe("desktop detail pane scroll", () => {
+    it("renders the desktop detail pane as a scrollable flex-1 div", () => {
+      mockUseIsMobile.mockReturnValue(false)
+
+      mockUseMemoSearch.mockReturnValue({
+        data: {
+          results: [
+            {
+              memo: buildMemo({ id: "memo_1", title: "Launch decision" }),
+              distance: 0,
+              sourceStream: null,
+              rootStream: null,
+            },
+          ],
+        },
+        isLoading: false,
+        isFetching: false,
+        refetch: vi.fn(),
+      })
+
+      mockUseMemoDetail.mockReturnValue({
+        data: {
+          memo: {
+            memo: buildMemo({ id: "memo_1", title: "Launch decision" }),
+            distance: 0,
+            sourceStream: null,
+            rootStream: null,
+            sourceMessages: [],
+          },
+        },
+        isLoading: false,
+        isFetching: false,
+        refetch: vi.fn(),
+      })
+
+      renderPage("/w/ws_1/memory?memo=memo_1")
+
+      // Walk up from the h2 title to find the scroll container. The detail
+      // pane wraps the title in a <main> which is the direct child of the
+      // scroll div.
+      const detailTitle = screen.getByRole("heading", { level: 2, name: "Launch decision" })
+      const mainEl = detailTitle.closest("main")
+      expect(mainEl).not.toBeNull()
+      const scrollContainer = mainEl?.parentElement
+      expect(scrollContainer).not.toBeNull()
+      expect(scrollContainer?.className).toContain("flex-1")
+      expect(scrollContainer?.className).toContain("min-h-0")
+      expect(scrollContainer?.className).toContain("overflow-y-auto")
+    })
+  })
+
+  // Regression guard for mobile memo drawer scroll. The drawer uses Vaul
+  // inside a flex-col DrawerContent with max-h-[85dvh], so the content body
+  // must use `flex-1 min-h-0 overflow-y-auto` to actually claim space and
+  // scroll — otherwise tall memos get clipped and the user can't see
+  // Context/Provenance/Source sections. Also needs `data-vaul-no-drag` so
+  // Vaul doesn't intercept touch scrolls as drawer-close gestures.
+  describe("mobile drawer scroll", () => {
+    it("renders the mobile detail drawer with a scrollable flex-1 body", () => {
+      mockUseIsMobile.mockReturnValue(true)
+
+      mockUseMemoSearch.mockReturnValue({
+        data: {
+          results: [
+            {
+              memo: buildMemo({ id: "memo_1", title: "Launch decision" }),
+              distance: 0,
+              sourceStream: null,
+              rootStream: null,
+            },
+          ],
+        },
+        isLoading: false,
+        isFetching: false,
+        refetch: vi.fn(),
+      })
+
+      mockUseMemoDetail.mockReturnValue({
+        data: {
+          memo: {
+            memo: buildMemo({ id: "memo_1", title: "Launch decision" }),
+            distance: 0,
+            sourceStream: null,
+            rootStream: null,
+            sourceMessages: [],
+          },
+        },
+        isLoading: false,
+        isFetching: false,
+        refetch: vi.fn(),
+      })
+
+      renderPage("/w/ws_1/memory?memo=memo_1")
+
+      // The drawer renders MemoDetailContent with the title as an <h2>; the
+      // sidebar list renders each result's title as an <h3>. Scope to level=2
+      // so we're unambiguously inside the drawer body.
+      const detailTitle = screen.getByRole("heading", { level: 2, name: "Launch decision" })
+      let scrollContainer: HTMLElement | null = detailTitle.parentElement
+      while (scrollContainer && !scrollContainer.hasAttribute("data-vaul-no-drag")) {
+        scrollContainer = scrollContainer.parentElement
+      }
+      expect(scrollContainer).not.toBeNull()
+      expect(scrollContainer?.className).toContain("flex-1")
+      expect(scrollContainer?.className).toContain("min-h-0")
+      expect(scrollContainer?.className).toContain("overflow-y-auto")
     })
   })
 })
