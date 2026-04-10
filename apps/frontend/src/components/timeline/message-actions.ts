@@ -43,6 +43,8 @@ export interface MessageActionContext {
   reactions?: Record<string, string[]>
   /** Callback to insert a quote reply into the composer */
   onQuoteReply?: () => void
+  /** Callback to insert a partial quote reply with a user-selected snippet */
+  onQuoteReplyWithSnippet?: (snippet: string) => void
 }
 
 /** A variant within a sub-menu (e.g. "Copy as Markdown" vs "Copy as Plain text"). */
