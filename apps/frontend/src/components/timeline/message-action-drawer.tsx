@@ -149,7 +149,7 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
 
   return (
     <Drawer open={open} onOpenChange={handleOpenChange}>
-      <DrawerContent className={cn("max-h-[85dvh]", expanded && "max-h-[95dvh]")}>
+      <DrawerContent className={cn(expanded ? "h-[95dvh]" : "max-h-[85dvh]")}>
         {/* Accessible title (visually hidden) */}
         <DrawerTitle className="sr-only">{expanded ? "Select text to quote" : "Message actions"}</DrawerTitle>
 
@@ -305,7 +305,7 @@ function ExpandedQuoteView({
   onQuote,
 }: ExpandedQuoteViewProps) {
   return (
-    <div className="flex flex-col min-h-0">
+    <div className="flex flex-col min-h-0 h-full">
       {/* Header */}
       <div className="flex items-center gap-2 px-2 py-2 border-b">
         <button
