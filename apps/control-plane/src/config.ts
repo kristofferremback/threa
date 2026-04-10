@@ -31,6 +31,19 @@ export interface ControlPlaneConfig {
   frontendUrl: string
   /** Allowed domain for forwarded-host redirects (e.g. "staging.threa.io"). Empty disables the feature. */
   allowedRedirectDomain: string
+  /**
+   * Forwarded hosts that should receive a dedicated WorkOS redirect URI
+   * (`https://${host}/api/auth/callback`) instead of the default
+   * `WORKOS_REDIRECT_URI`. Use this when an origin can't share cookies with
+   * the default redirect host (e.g. the backoffice at admin.threa.io when the
+   * main app is on a different TLD). Comma-separated env var
+   * `WORKOS_DEDICATED_REDIRECT_HOSTS`.
+   *
+   * Every host listed here must be registered as an allowed redirect URI in
+   * the WorkOS dashboard for the active client, otherwise WorkOS will reject
+   * the authorize call with "invalid_redirect_uri".
+   */
+  workosDedicatedRedirectHosts: string[]
   rateLimits: {
     globalMax: number
     authMax: number
@@ -120,6 +133,10 @@ export function loadControlPlaneConfig(): ControlPlaneConfig {
       .filter((s) => s.length > 0),
     frontendUrl: (process.env.FRONTEND_URL ?? "").replace(/\/+$/, ""),
     allowedRedirectDomain: process.env.ALLOWED_REDIRECT_DOMAIN ?? "",
+    workosDedicatedRedirectHosts: (process.env.WORKOS_DEDICATED_REDIRECT_HOSTS ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0),
     rateLimits: {
       globalMax: Number(process.env.GLOBAL_RATE_LIMIT_MAX) || 300,
       authMax: Number(process.env.AUTH_RATE_LIMIT_MAX) || 20,

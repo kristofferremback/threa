@@ -30,6 +30,7 @@ interface Dependencies {
   frontendUrl: string
   allowedRedirectDomain: string
   regions: Record<string, RegionConfig>
+  workosDedicatedRedirectHosts: string[]
   rateLimits: RateLimitConfig
 }
 
@@ -53,6 +54,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     authService,
     frontendUrl: deps.frontendUrl,
     allowedRedirectDomain: deps.allowedRedirectDomain,
+    dedicatedRedirectHosts: deps.workosDedicatedRedirectHosts,
   })
   const workspace = createWorkspaceHandlers({ workspaceService, shadowService })
   const shadow = createInvitationShadowHandlers({ shadowService })

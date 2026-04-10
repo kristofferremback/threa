@@ -68,4 +68,47 @@ describe("Auth", () => {
     expect(meRes.status).toBe(200)
     expect(meRes.data.email).toBe("stub-login@example.com")
   })
+
+  describe("per-host redirect URI override", () => {
+    test("GET /api/auth/login uses dedicated redirect URI when forwarded host matches", async () => {
+      const client = new TestClient()
+      const res = await client.request("GET", "/api/auth/login?redirect_to=%2F", undefined, {
+        "X-Forwarded-Host": "admin.threa.io",
+      })
+      expect(res.status).toBe(302)
+      const location = res.headers.get("location")
+      expect(location).toBeTruthy()
+
+      // Stub builds `/test-auth-login?state=<b64>&redirect_uri=<uri>`.
+      // We only need a URL-lax parse for the query string.
+      const url = new URL(location!, "http://localhost")
+      expect(url.pathname).toBe("/test-auth-login")
+      expect(url.searchParams.get("redirect_uri")).toBe("https://admin.threa.io/api/auth/callback")
+
+      const state = url.searchParams.get("state")
+      expect(state).toBeTruthy()
+      const decoded = Buffer.from(state!, "base64").toString("utf-8")
+      expect(decoded).toBe("admin.threa.io|/")
+    })
+
+    test("GET /api/auth/login does NOT override redirect URI for unrelated forwarded hosts", async () => {
+      const client = new TestClient()
+      const res = await client.request("GET", "/api/auth/login", undefined, {
+        "X-Forwarded-Host": "unrelated.example.com",
+      })
+      expect(res.status).toBe(302)
+      const location = res.headers.get("location")
+      const url = new URL(location!, "http://localhost")
+      expect(url.searchParams.get("redirect_uri")).toBeNull()
+    })
+
+    test("GET /api/auth/login with no forwarded host does not set redirect URI", async () => {
+      const client = new TestClient()
+      const res = await client.get("/api/auth/login")
+      expect(res.status).toBe(302)
+      const location = res.headers.get("location")
+      const url = new URL(location!, "http://localhost")
+      expect(url.searchParams.get("redirect_uri")).toBeNull()
+    })
+  })
 })

@@ -133,6 +133,7 @@ export async function startServer(): Promise<ControlPlaneInstance> {
     frontendUrl: config.frontendUrl,
     allowedRedirectDomain: config.allowedRedirectDomain,
     regions: config.regions,
+    workosDedicatedRedirectHosts: config.workosDedicatedRedirectHosts,
     rateLimits: config.rateLimits,
   })
 

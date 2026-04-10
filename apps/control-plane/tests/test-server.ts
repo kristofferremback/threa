@@ -96,6 +96,8 @@ export async function startTestServer(): Promise<TestServer> {
   process.env.GLOBAL_RATE_LIMIT_MAX = "10000"
   process.env.AUTH_RATE_LIMIT_MAX = "10000"
   process.env.WORKSPACE_CREATION_SKIP_INVITE = "true"
+  // Exercise the per-host redirectUri override code path in e2e tests.
+  process.env.WORKOS_DEDICATED_REDIRECT_HOSTS = "admin.threa.io"
 
   // Import and start the server (must be after env vars are set)
   const { startServer } = await import("../src/server")
