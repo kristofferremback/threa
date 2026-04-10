@@ -26,6 +26,7 @@ import { createInternalHandlers } from "./handlers/internal-handlers"
 import { createAuthStubHandlers } from "./auth/auth-stub-handlers"
 import { createAgentSessionHandlers } from "./features/agents"
 import { createLinkPreviewHandlers } from "./features/link-previews"
+import { createWorkspaceIntegrationHandlers } from "./features/workspace-integrations"
 import { createPublicApiHandlers, createBotHandlers } from "./features/public-api"
 import { createUserApiKeyHandlers, type UserApiKeyService } from "./features/user-api-keys"
 import {
@@ -53,6 +54,7 @@ import type { UserPreferencesService } from "./features/user-preferences"
 import type { AvatarService } from "./features/workspaces"
 import type { BotChannelService } from "./features/api-keys"
 import type { LinkPreviewService } from "./features/link-previews"
+import type { WorkspaceIntegrationService } from "./features/workspace-integrations"
 import type { WorkosOrgService } from "@threa/backend-common"
 import type { BotApiKeyService } from "./features/public-api"
 import type { Pool } from "pg"
@@ -82,6 +84,7 @@ interface Dependencies {
   apiKeyService: ApiKeyService
   botChannelService: BotChannelService
   linkPreviewService: LinkPreviewService
+  workspaceIntegrationService: WorkspaceIntegrationService
   workosOrgService: WorkosOrgService
   userApiKeyService: UserApiKeyService
   botApiKeyService: BotApiKeyService
@@ -112,6 +115,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     apiKeyService,
     botChannelService,
     linkPreviewService,
+    workspaceIntegrationService,
     workosOrgService,
     userApiKeyService,
     botApiKeyService,
@@ -154,6 +158,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const activity = createActivityHandlers({ activityService })
   const agentSession = createAgentSessionHandlers({ pool })
   const linkPreview = createLinkPreviewHandlers({ linkPreviewService })
+  const workspaceIntegration = createWorkspaceIntegrationHandlers({ workspaceIntegrationService })
 
   // Ops endpoints - registered before rate limiter so probes aren't throttled
   app.get("/readyz", opsAccess, debug.readiness)
@@ -317,6 +322,29 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     ...authed,
     linkPreview.resolveMessageLink
   )
+
+  // Workspace integrations (admin-only)
+  app.get(
+    "/api/workspaces/:workspaceId/integrations/github",
+    ...authed,
+    requireRole("admin"),
+    workspaceIntegration.getGithub
+  )
+  app.get(
+    "/api/workspaces/:workspaceId/integrations/github/connect",
+    ...authed,
+    requireRole("admin"),
+    workspaceIntegration.connectGithub
+  )
+  app.delete(
+    "/api/workspaces/:workspaceId/integrations/github",
+    ...authed,
+    requireRole("admin"),
+    workspaceIntegration.disconnectGithub
+  )
+
+  // Fixed callback target for provider installation flows (workspace resolved from signed state)
+  app.get("/api/integrations/github/callback", auth, workspaceIntegration.githubCallback)
 
   // User API key management (any authenticated user)
   const userApiKeys = createUserApiKeyHandlers({ userApiKeyService })

@@ -1,5 +1,12 @@
 import { describe, test, expect } from "bun:test"
-import { normalizeUrl, extractUrls, detectContentType, isBlockedUrl, parseMessagePermalink } from "./url-utils"
+import {
+  normalizeUrl,
+  extractUrls,
+  detectContentType,
+  isBlockedUrl,
+  parseMessagePermalink,
+  parseGitHubUrl,
+} from "./url-utils"
 
 describe("normalizeUrl", () => {
   test("lowercases hostname", () => {
@@ -38,6 +45,37 @@ describe("normalizeUrl", () => {
 
   test("removes fragment", () => {
     expect(normalizeUrl("https://example.com/page#section")).toBe("https://example.com/page")
+  })
+
+  test("preserves GitHub issue comment fragments", () => {
+    expect(normalizeUrl("https://github.com/octocat/hello-world/issues/1#issuecomment-42")).toBe(
+      "https://github.com/octocat/hello-world/issues/1#issuecomment-42"
+    )
+  })
+
+  test("preserves GitHub file line ranges", () => {
+    expect(normalizeUrl("https://github.com/octocat/hello-world/blob/main/src/app.ts#L14-L17")).toBe(
+      "https://github.com/octocat/hello-world/blob/main/src/app.ts#L14-L17"
+    )
+  })
+
+  test("normalizes GitHub file column anchors down to line ranges", () => {
+    expect(normalizeUrl("https://github.com/octocat/hello-world/blob/main/src/app.ts#L14C2-L17C9")).toBe(
+      "https://github.com/octocat/hello-world/blob/main/src/app.ts#L14-L17"
+    )
+    expect(normalizeUrl("https://github.com/octocat/hello-world/blob/main/src/app.ts#L14C2")).toBe(
+      "https://github.com/octocat/hello-world/blob/main/src/app.ts#L14"
+    )
+  })
+
+  test("preserves GitHub pull request diff anchors", () => {
+    expect(
+      normalizeUrl(
+        "https://github.com/octocat/hello-world/pull/12/changes#diff-b335630551682c19a781afebcf4d07bf978fb1f8ac04c6bf87428ed5106870f5R8-R10"
+      )
+    ).toBe(
+      "https://github.com/octocat/hello-world/pull/12/changes#diff-b335630551682c19a781afebcf4d07bf978fb1f8ac04c6bf87428ed5106870f5R8-R10"
+    )
   })
 
   test("sorts remaining query params", () => {
@@ -252,5 +290,128 @@ describe("parseMessagePermalink", () => {
 
   test("returns null for invalid URL", () => {
     expect(parseMessagePermalink("not-a-url", origins)).toBeNull()
+  })
+})
+
+describe("parseGitHubUrl", () => {
+  test("parses pull request URLs", () => {
+    expect(parseGitHubUrl("https://github.com/octocat/hello-world/pull/12")).toEqual({
+      type: "github_pr",
+      owner: "octocat",
+      repo: "hello-world",
+      number: 12,
+    })
+  })
+
+  test("parses issue comment URLs", () => {
+    expect(parseGitHubUrl("https://github.com/octocat/hello-world/issues/34#issuecomment-5678")).toEqual({
+      type: "github_comment",
+      owner: "octocat",
+      repo: "hello-world",
+      commentId: 5678,
+      parentType: "issue",
+      number: 34,
+    })
+  })
+
+  test("parses pull request diff URLs with highlighted right-side ranges", () => {
+    expect(
+      parseGitHubUrl(
+        "https://github.com/octocat/hello-world/pull/12/changes#diff-b335630551682c19a781afebcf4d07bf978fb1f8ac04c6bf87428ed5106870f5R8-R10"
+      )
+    ).toEqual({
+      type: "github_diff",
+      owner: "octocat",
+      repo: "hello-world",
+      number: 12,
+      diffPathHash: "b335630551682c19a781afebcf4d07bf978fb1f8ac04c6bf87428ed5106870f5",
+      anchorSide: "right",
+      anchorStartLine: 8,
+      anchorEndLine: 10,
+    })
+  })
+
+  test("parses blob URLs with line ranges", () => {
+    expect(parseGitHubUrl("https://github.com/octocat/hello-world/blob/main/src/app.ts#L10-L12")).toEqual({
+      type: "github_file",
+      owner: "octocat",
+      repo: "hello-world",
+      source: "blob",
+      blobPath: "main/src/app.ts",
+      lineStart: 10,
+      lineEnd: 12,
+    })
+  })
+
+  test("parses blob URLs with query params and line ranges", () => {
+    expect(parseGitHubUrl("https://github.com/octocat/hello-world/blob/main/README.md?plain=1#L1-L2")).toEqual({
+      type: "github_file",
+      owner: "octocat",
+      repo: "hello-world",
+      source: "blob",
+      blobPath: "main/README.md",
+      lineStart: 1,
+      lineEnd: 2,
+    })
+  })
+
+  test("parses blob URLs with column anchors as line ranges", () => {
+    expect(parseGitHubUrl("https://github.com/octocat/hello-world/blob/main/README.md?plain=1#L2-L4C1")).toEqual({
+      type: "github_file",
+      owner: "octocat",
+      repo: "hello-world",
+      source: "blob",
+      blobPath: "main/README.md",
+      lineStart: 2,
+      lineEnd: 4,
+    })
+
+    expect(parseGitHubUrl("https://github.com/octocat/hello-world/blob/main/README.md?plain=1#L2C1-L4C7")).toEqual({
+      type: "github_file",
+      owner: "octocat",
+      repo: "hello-world",
+      source: "blob",
+      blobPath: "main/README.md",
+      lineStart: 2,
+      lineEnd: 4,
+    })
+
+    expect(parseGitHubUrl("https://github.com/octocat/hello-world/blob/main/README.md?plain=1#L4C1")).toEqual({
+      type: "github_file",
+      owner: "octocat",
+      repo: "hello-world",
+      source: "blob",
+      blobPath: "main/README.md",
+      lineStart: 4,
+      lineEnd: 4,
+    })
+  })
+
+  test("parses tree URLs as README file previews", () => {
+    expect(parseGitHubUrl("https://github.com/octocat/hello-world/tree/main")).toEqual({
+      type: "github_file",
+      owner: "octocat",
+      repo: "hello-world",
+      source: "tree",
+      blobPath: "main/README.md",
+      lineStart: null,
+      lineEnd: null,
+    })
+  })
+
+  test("parses repository root URLs as README previews", () => {
+    expect(parseGitHubUrl("https://github.com/octocat/hello-world")).toEqual({
+      type: "github_file",
+      owner: "octocat",
+      repo: "hello-world",
+      source: "repo",
+      blobPath: "README.md",
+      lineStart: null,
+      lineEnd: null,
+    })
+  })
+
+  test("returns null for non-GitHub URLs", () => {
+    expect(parseGitHubUrl("https://example.com/octocat/hello-world/pull/12")).toBeNull()
   })
 })

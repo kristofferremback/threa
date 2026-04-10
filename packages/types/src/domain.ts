@@ -37,6 +37,9 @@ import type {
   InjectionStrategy,
   LinkPreviewContentType,
   LinkPreviewStatus,
+  WorkspaceIntegrationProvider,
+  WorkspaceIntegrationStatus,
+  GitHubPreviewType,
 } from "./constants"
 import type { ThreaDocument } from "./prosemirror"
 
@@ -613,7 +616,10 @@ export interface LinkPreview {
   siteName: string | null
   contentType: LinkPreviewContentType
   status: LinkPreviewStatus
+  previewType?: GitHubPreviewType | null
+  previewData?: GitHubPreview | null
   fetchedAt: string | null
+  expiresAt?: string | null
   createdAt: string
 }
 
@@ -630,7 +636,179 @@ export interface LinkPreviewSummary {
   faviconUrl: string | null
   siteName: string | null
   contentType: LinkPreviewContentType
+  previewType?: GitHubPreviewType | null
+  previewData?: GitHubPreview | null
   position: number
+}
+
+// =============================================================================
+// Workspace Integrations
+// =============================================================================
+
+export interface WorkspaceIntegration {
+  id: string
+  workspaceId: string
+  provider: WorkspaceIntegrationProvider
+  status: WorkspaceIntegrationStatus
+  installedBy: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface WorkspaceIntegrationRateLimit {
+  remaining: number | null
+  resetAt: string | null
+}
+
+export interface GitHubInstalledRepository {
+  fullName: string
+  private: boolean
+}
+
+export interface GitHubWorkspaceIntegration extends WorkspaceIntegration {
+  provider: "github"
+  organizationName: string | null
+  repositorySelection: "all" | "selected" | null
+  permissions: Record<string, string>
+  repositories: GitHubInstalledRepository[]
+  rateLimit: WorkspaceIntegrationRateLimit
+}
+
+// =============================================================================
+// Rich GitHub Link Previews
+// =============================================================================
+
+export interface GitHubPreviewActor {
+  login: string
+  avatarUrl: string | null
+}
+
+export interface GitHubPreviewRepository {
+  owner: string
+  name: string
+  fullName: string
+  private: boolean
+}
+
+export interface GitHubReviewStatusSummary {
+  approvals: number
+  changesRequested: number
+  comments: number
+  pendingReviewers: number
+}
+
+export interface GitHubPrPreviewData {
+  title: string
+  number: number
+  state: "open" | "closed" | "merged"
+  author: GitHubPreviewActor | null
+  baseBranch: string
+  headBranch: string
+  additions: number
+  deletions: number
+  reviewStatusSummary: GitHubReviewStatusSummary
+  createdAt: string
+  updatedAt: string
+}
+
+export interface GitHubIssueLabel {
+  name: string
+  color: string
+  description: string | null
+}
+
+export interface GitHubIssuePreviewData {
+  title: string
+  number: number
+  state: "open" | "closed"
+  author: GitHubPreviewActor | null
+  labels: GitHubIssueLabel[]
+  assignees: GitHubPreviewActor[]
+  commentCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface GitHubCommitPreviewData {
+  message: string
+  shortSha: string
+  author: GitHubPreviewActor | null
+  committedAt: string | null
+  filesChanged: number
+  additions: number
+  deletions: number
+}
+
+export interface GitHubSnippetLine {
+  number: number
+  text: string
+}
+
+export interface GitHubFilePreviewData {
+  path: string
+  language: string | null
+  ref: string
+  renderMode?: "snippet" | "markdown"
+  markdownContent?: string | null
+  lines: GitHubSnippetLine[]
+  startLine: number
+  endLine: number
+  truncated: boolean
+}
+
+export interface GitHubDiffLine {
+  type: "context" | "add" | "delete"
+  oldNumber: number | null
+  newNumber: number | null
+  text: string
+  selected: boolean
+}
+
+export interface GitHubDiffPreviewData {
+  path: string
+  previousPath: string | null
+  language: string | null
+  changeType: "added" | "removed" | "modified" | "renamed"
+  pullRequest: {
+    title: string
+    number: number
+    state: "open" | "closed" | "merged"
+  }
+  anchorSide: "left" | "right" | null
+  anchorStartLine: number | null
+  anchorEndLine: number | null
+  additions: number
+  deletions: number
+  lines: GitHubDiffLine[]
+  truncated: boolean
+}
+
+export interface GitHubCommentParent {
+  kind: "pull_request" | "issue"
+  title: string
+  number: number
+}
+
+export interface GitHubCommentPreviewData {
+  body: string
+  truncated: boolean
+  author: GitHubPreviewActor | null
+  createdAt: string
+  parent: GitHubCommentParent
+}
+
+export interface GitHubPreview {
+  type: GitHubPreviewType
+  url: string
+  repository: GitHubPreviewRepository
+  data:
+    | GitHubPrPreviewData
+    | GitHubIssuePreviewData
+    | GitHubCommitPreviewData
+    | GitHubFilePreviewData
+    | GitHubDiffPreviewData
+    | GitHubCommentPreviewData
+  fetchedAt: string
 }
 
 // =============================================================================

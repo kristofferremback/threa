@@ -2,8 +2,9 @@ import { logger } from "@threa/backend-common"
 import type { Job, JobHandler } from "../../lib/queue"
 import type { LinkPreviewExtractJobData } from "../../lib/queue/job-queue"
 import type { LinkPreviewService } from "./service"
-import type { UpdateLinkPreviewParams } from "./repository"
-import { detectContentType, isBlockedUrl } from "./url-utils"
+import type { LinkPreview, UpdateLinkPreviewParams } from "./repository"
+import { detectContentType, isBlockedUrl, parseGitHubUrl } from "./url-utils"
+import { fetchGitHubPreview } from "./github-preview"
 import {
   FETCH_TIMEOUT_MS,
   FETCH_USER_AGENT,
@@ -12,11 +13,13 @@ import {
   MAX_TITLE_LENGTH,
   OEMBED_PROVIDERS,
 } from "./config"
+import type { WorkspaceIntegrationService } from "../workspace-integrations"
 
 const log = logger.child({ module: "link-preview-worker" })
 
 interface WorkerDeps {
   linkPreviewService: LinkPreviewService
+  workspaceIntegrationService: WorkspaceIntegrationService
 }
 
 // ── oEmbed ──────────────────────────────────────────────────────────
@@ -69,6 +72,7 @@ async function tryOEmbed(url: string): Promise<UpdateLinkPreviewParams | null> {
       siteName: data.provider_name ?? null,
       contentType: "website",
       status: "completed",
+      expiresAt: hoursFromNow(24),
     }
   } catch (err) {
     log.debug({ err, url }, "oEmbed fetch failed, falling back to HTML")
@@ -85,11 +89,11 @@ async function tryOEmbed(url: string): Promise<UpdateLinkPreviewParams | null> {
  * Tries oEmbed first for known providers, then falls back to HTML parsing.
  * Runs outside of any DB transaction (INV-41).
  */
-async function fetchMetadata(url: string): Promise<UpdateLinkPreviewParams> {
+async function fetchGenericMetadata(url: string): Promise<UpdateLinkPreviewParams> {
   // Defense-in-depth SSRF check (primary filter is in extractUrls)
   if (isBlockedUrl(url)) {
     log.warn({ url }, "Blocked SSRF attempt in fetchMetadata")
-    return { status: "failed" }
+    return { status: "failed", expiresAt: minutesFromNow(1) }
   }
 
   // Fast path: try oEmbed for known providers
@@ -114,7 +118,7 @@ async function fetchMetadata(url: string): Promise<UpdateLinkPreviewParams> {
     if (response.url && isBlockedUrl(response.url)) {
       log.warn({ url, finalUrl: response.url }, "Redirect led to blocked internal URL")
       response.body?.cancel()
-      return { status: "failed" }
+      return { status: "failed", expiresAt: minutesFromNow(1) }
     }
 
     const contentTypeHeader = response.headers.get("content-type") ?? ""
@@ -125,6 +129,7 @@ async function fetchMetadata(url: string): Promise<UpdateLinkPreviewParams> {
       return {
         contentType: "image",
         status: "completed",
+        expiresAt: hoursFromNow(24),
       }
     }
 
@@ -139,18 +144,19 @@ async function fetchMetadata(url: string): Promise<UpdateLinkPreviewParams> {
         title: decodeURIComponent(filename).replace(/\.pdf$/i, ""),
         contentType: "pdf",
         status: "completed",
+        expiresAt: hoursFromNow(24),
       }
     }
 
     // For non-HTML content types, detect from URL extension
     if (!contentTypeHeader.includes("text/html") && !contentTypeHeader.includes("application/xhtml")) {
       response.body?.cancel()
-      return { status: "completed", contentType: detectContentType(url) }
+      return { status: "completed", contentType: detectContentType(url), expiresAt: hoursFromNow(24) }
     }
 
     // Read HTML up to MAX_HTML_BYTES (some sites like YouTube put meta tags far into the response)
     const reader = response.body?.getReader()
-    if (!reader) return { status: "failed" }
+    if (!reader) return { status: "failed", expiresAt: minutesFromNow(1) }
 
     let html = ""
     const decoder = new TextDecoder()
@@ -173,7 +179,7 @@ async function fetchMetadata(url: string): Promise<UpdateLinkPreviewParams> {
     return await parseHtmlMeta(html, url)
   } catch (err) {
     log.warn({ err, url }, "Failed to fetch link preview metadata")
-    return { status: "failed" }
+    return { status: "failed", expiresAt: minutesFromNow(1) }
   } finally {
     clearTimeout(timeout)
   }
@@ -251,6 +257,7 @@ export async function parseHtmlMeta(html: string, url: string): Promise<UpdateLi
     siteName,
     contentType: "website",
     status: "completed",
+    expiresAt: hoursFromNow(24),
   }
 }
 
@@ -274,6 +281,14 @@ function resolveUrl(relative: string, base: string): string {
   } catch {
     return relative
   }
+}
+
+function minutesFromNow(minutes: number): Date {
+  return new Date(Date.now() + minutes * 60 * 1000)
+}
+
+function hoursFromNow(hours: number): Date {
+  return new Date(Date.now() + hours * 60 * 60 * 1000)
 }
 
 /**
@@ -307,21 +322,36 @@ export function createLinkPreviewWorker(deps: WorkerDeps): JobHandler<LinkPrevie
     //    Message link previews are already completed at insert time — skip fetch entirely.
     const fetchResults = await Promise.allSettled(
       pendingPreviews.map(async (p) => {
-        const alreadyCompleted = await deps.linkPreviewService.isCompleted(workspaceId, p.id)
-        if (alreadyCompleted) return { id: p.id, skipped: true }
+        const existing = await deps.linkPreviewService.getPreviewById(workspaceId, p.id)
+        if (!existing) {
+          return { id: p.id, skipped: true }
+        }
+        if (existing.contentType === "message_link") {
+          return { id: p.id, skipped: true }
+        }
+        const isGitHubUrl = parseGitHubUrl(p.url) !== null
+        const shouldAttemptGitHubUpgrade = isGitHubUrl && existing.previewType === null
 
-        const metadata = await fetchMetadata(p.url)
-        return { id: p.id, metadata, skipped: false }
+        if (isPreviewCacheFresh(existing) && !shouldAttemptGitHubUpgrade) {
+          return { id: p.id, skipped: true }
+        }
+
+        const githubMetadata = await fetchGitHubPreview(workspaceId, p.url, deps.workspaceIntegrationService)
+        if (existing.previewType && githubMetadata === null) {
+          return { id: p.id, skipped: true }
+        }
+        if (shouldAttemptGitHubUpgrade && githubMetadata === null && isPreviewCacheFresh(existing)) {
+          return { id: p.id, skipped: true }
+        }
+
+        const metadata = githubMetadata ?? (await fetchGenericMetadata(p.url))
+
+        return { id: p.id, metadata, skipped: false, overwrite: existing.status !== "pending" }
       })
     )
 
     // 3. Collect settled results, delegate persistence + outbox to service (INV-6)
-    const settled = fetchResults
-      .filter(
-        (r): r is PromiseFulfilledResult<{ id: string; metadata?: UpdateLinkPreviewParams; skipped: boolean }> =>
-          r.status === "fulfilled"
-      )
-      .map((r) => r.value)
+    const settled = fetchResults.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []))
 
     await deps.linkPreviewService.completePreviewsAndPublish(workspaceId, streamId, messageId, settled, {
       forcePublish: isEdit,
@@ -329,4 +359,11 @@ export function createLinkPreviewWorker(deps: WorkerDeps): JobHandler<LinkPrevie
 
     log.info({ messageId, count: pendingPreviews.length }, "Link preview extraction complete")
   }
+}
+
+function isPreviewCacheFresh(preview: LinkPreview): boolean {
+  if (!preview.expiresAt) {
+    return preview.status === "completed"
+  }
+  return preview.expiresAt.getTime() > Date.now()
 }

@@ -104,3 +104,39 @@ describe("loadConfig workspace creation invite policy", () => {
     warnSpy.mockRestore()
   })
 })
+
+describe("loadConfig github app configuration", () => {
+  test("disables GitHub integration config when no GitHub env vars are set", () => {
+    setBaseEnv()
+    process.env.NODE_ENV = "development"
+    process.env.USE_STUB_AUTH = "true"
+
+    const config = loadConfig()
+    expect(config.github.enabled).toBe(false)
+  })
+
+  test("throws on partial GitHub integration configuration", () => {
+    setBaseEnv()
+    process.env.NODE_ENV = "development"
+    process.env.USE_STUB_AUTH = "true"
+    process.env.GITHUB_APP_ID = "12345"
+
+    expect(() => loadConfig()).toThrow(
+      "GITHUB_APP_ID, GITHUB_APP_SLUG, GITHUB_APP_PRIVATE_KEY, and WORKSPACE_INTEGRATIONS_SECRET must all be set together"
+    )
+  })
+
+  test("normalizes escaped newlines in the GitHub App private key", () => {
+    setBaseEnv()
+    process.env.NODE_ENV = "development"
+    process.env.USE_STUB_AUTH = "true"
+    process.env.GITHUB_APP_ID = "12345"
+    process.env.GITHUB_APP_SLUG = "threa-dev"
+    process.env.GITHUB_APP_PRIVATE_KEY = "line1\\nline2"
+    process.env.WORKSPACE_INTEGRATIONS_SECRET = "test-secret"
+
+    const config = loadConfig()
+    expect(config.github.enabled).toBe(true)
+    expect(config.github.privateKey).toBe("line1\nline2")
+  })
+})

@@ -36,6 +36,38 @@ function versionJsonPlugin(): Plugin {
   }
 }
 
+function withForwardedHostHeaders() {
+  return {
+    configure(proxy: {
+      on(
+        event: "proxyReq",
+        listener: (
+          proxyReq: { setHeader(name: string, value: string): void },
+          req: {
+            headers: Record<string, string | string[] | undefined>
+          }
+        ) => void
+      ): void
+    }) {
+      proxy.on("proxyReq", (proxyReq, req) => {
+        const rawHost = req.headers.host
+        const host = Array.isArray(rawHost) ? rawHost[0] : rawHost
+        if (!host) return
+
+        const forwardedProtoHeader = req.headers["x-forwarded-proto"]
+        const forwardedProto = Array.isArray(forwardedProtoHeader) ? forwardedProtoHeader[0] : forwardedProtoHeader
+        const port = host.includes(":") ? (host.split(":").at(-1) ?? "") : ""
+
+        proxyReq.setHeader("x-forwarded-host", host)
+        proxyReq.setHeader("x-forwarded-proto", forwardedProto ?? "http")
+        if (port) {
+          proxyReq.setHeader("x-forwarded-port", port)
+        }
+      })
+    },
+  }
+}
+
 export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(buildVersion),
@@ -78,10 +110,14 @@ export default defineConfig({
       "/api": {
         target: backendTarget,
         changeOrigin: true,
+        xfwd: true,
+        ...withForwardedHostHeaders(),
       },
       "/test-auth-login": {
         target: backendTarget,
         changeOrigin: true,
+        xfwd: true,
+        ...withForwardedHostHeaders(),
       },
     },
     watch: {

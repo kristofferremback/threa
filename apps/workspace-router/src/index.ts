@@ -27,6 +27,7 @@ type RegionsMap = Record<string, RegionConfig>
 
 /** Routes that should go to the control-plane (auth, workspace collection, regions) */
 const AUTH_ROUTE_RE = /^\/api\/auth\//
+const INTEGRATION_CALLBACK_RE = /^\/api\/integrations\/[^/]+\/callback\/?$/
 const WORKSPACES_COLLECTION_RE = /^\/api\/workspaces\/?$/
 const REGIONS_ROUTE_RE = /^\/api\/regions\/?$/
 /** Dev auth routes that the control-plane handles in stub mode */
@@ -102,6 +103,7 @@ export default {
         const method = request.method
         if (
           AUTH_ROUTE_RE.test(path) ||
+          INTEGRATION_CALLBACK_RE.test(path) ||
           (WORKSPACES_COLLECTION_RE.test(path) && (method === "GET" || method === "POST")) ||
           REGIONS_ROUTE_RE.test(path) ||
           DEV_AUTH_ROUTE_RE.test(path) ||
@@ -135,6 +137,7 @@ export default {
       const method = request.method
       if (
         AUTH_ROUTE_RE.test(path) ||
+        INTEGRATION_CALLBACK_RE.test(path) ||
         (WORKSPACES_COLLECTION_RE.test(path) && (method === "GET" || method === "POST")) ||
         REGIONS_ROUTE_RE.test(path) ||
         DEV_AUTH_ROUTE_RE.test(path) ||

@@ -136,24 +136,26 @@ export class LinkPreviewService {
     workspaceId: string,
     streamId: string,
     messageId: string,
-    fetchResults: Array<{ id: string; metadata?: UpdateLinkPreviewParams; skipped: boolean }>,
+    fetchResults: Array<{ id: string; metadata?: UpdateLinkPreviewParams; skipped: boolean; overwrite?: boolean }>,
     options?: { forcePublish?: boolean }
   ): Promise<void> {
     await withTransaction(this.deps.pool, async (client) => {
       const completedPreviews: LinkPreviewSummary[] = []
       let hasNewWrites = false
 
-      for (const { id, metadata, skipped } of fetchResults) {
+      for (const { id, metadata, skipped, overwrite } of fetchResults) {
         if (skipped) {
           const existing = await LinkPreviewRepository.findById(client, workspaceId, id)
-          if (existing) {
+          if (existing?.status === "completed") {
             completedPreviews.push(toLinkPreviewSummary(existing, completedPreviews.length))
           }
           continue
         }
 
         if (!metadata) continue
-        const updated = await LinkPreviewRepository.updateMetadata(client, workspaceId, id, metadata)
+        const updated = overwrite
+          ? await LinkPreviewRepository.overwriteMetadata(client, workspaceId, id, metadata)
+          : await LinkPreviewRepository.updateMetadata(client, workspaceId, id, metadata)
         if (updated && updated.status === "completed") {
           hasNewWrites = true
           completedPreviews.push(toLinkPreviewSummary(updated, completedPreviews.length))
@@ -166,11 +168,10 @@ export class LinkPreviewService {
         }
       }
 
-      // Publish if this worker wrote at least one row, if there are message_link previews
-      // (pre-completed at insert time, so they never trigger hasNewWrites), or if forced
-      // (edit flow where the set changed even though individual metadata was already cached).
-      const hasMessageLinks = completedPreviews.some((p) => p.contentType === "message_link")
-      if (completedPreviews.length > 0 && (hasNewWrites || hasMessageLinks || options?.forcePublish)) {
+      // Always publish when this message has completed previews.
+      // Cached previews still need a ready event so the live UI can attach them
+      // to newly-created messages without waiting for a bootstrap refresh.
+      if (completedPreviews.length > 0) {
         await OutboxRepository.insert(client, "link_preview:ready", {
           workspaceId,
           streamId,
@@ -300,6 +301,10 @@ export class LinkPreviewService {
       streamName: stream.displayName ?? stream.slug ?? undefined,
     }
   }
+
+  async getPreviewById(workspaceId: string, linkPreviewId: string): Promise<LinkPreview | null> {
+    return LinkPreviewRepository.findById(this.deps.pool, workspaceId, linkPreviewId)
+  }
 }
 
 function toLinkPreviewSummary(preview: LinkPreview, position: number): LinkPreviewSummary {
@@ -312,6 +317,8 @@ function toLinkPreviewSummary(preview: LinkPreview, position: number): LinkPrevi
     faviconUrl: preview.faviconUrl,
     siteName: preview.siteName,
     contentType: preview.contentType,
+    previewType: preview.previewType,
+    previewData: preview.previewData,
     position,
   }
 }

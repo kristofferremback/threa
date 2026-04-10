@@ -259,6 +259,22 @@ describe("workspace-router", () => {
       }
     })
 
+    test("proxies integration callbacks to control-plane", async () => {
+      const originalFetch = globalThis.fetch
+      const fn = mockFetchFn()
+      try {
+        await worker.fetch(
+          makeRequest("/api/integrations/github/callback?installation_id=1&state=ws_123.1.sig"),
+          makeEnv({ CONTROL_PLANE_URL: CP_URL })
+        )
+        expect(getProxiedUrl(fn)).toBe(
+          "http://localhost:3003/api/integrations/github/callback?installation_id=1&state=ws_123.1.sig"
+        )
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+
     test("proxies /api/auth/logout to control-plane", async () => {
       const originalFetch = globalThis.fetch
       const fn = mockFetchFn()

@@ -8,9 +8,11 @@ import {
   StubAuthService,
 } from "@threa/backend-common"
 import { createControlPlaneAuthHandlers, createAuthStubHandlers } from "./features/auth"
+import { createIntegrationHandlers } from "./features/integrations"
 import { createWorkspaceHandlers, type ControlPlaneWorkspaceService } from "./features/workspaces"
 import { createInvitationShadowHandlers, type InvitationShadowService } from "./features/invitation-shadows"
 import { createInternalAuthMiddleware } from "./lib/internal-auth"
+import type { RegionConfig } from "./config"
 
 interface RateLimitConfig {
   globalMax: number
@@ -25,6 +27,7 @@ interface Dependencies {
   allowDevAuthRoutes: boolean
   frontendUrl: string
   allowedRedirectDomain: string
+  regions: Record<string, RegionConfig>
   rateLimits: RateLimitConfig
 }
 
@@ -50,6 +53,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   })
   const workspace = createWorkspaceHandlers({ workspaceService, shadowService })
   const shadow = createInvitationShadowHandlers({ shadowService })
+  const integrations = createIntegrationHandlers({ workspaceService, regions: deps.regions })
 
   // Readiness probe
   app.get("/readyz", (_, res) => res.json({ status: "ok" }))
@@ -77,6 +81,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   }
 
   app.get("/api/auth/me", auth, authHandlers.me)
+  app.get("/api/integrations/github/callback", auth, integrations.githubCallback)
 
   // Workspace routes
   app.get("/api/workspaces", auth, workspace.list)

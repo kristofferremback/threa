@@ -330,6 +330,33 @@ describe("@threa/prosemirror quote reply round-trip", () => {
     const parsed = parseMarkdown(markdown)
     expect(parsed.content?.[0]).toEqual(doc.content![0])
   })
+
+  it("preserves URL fragments when autolink text contains the full URL", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "https://github.com/threahq/priv-test/blob/main/README.md?plain=1#L4",
+              marks: [
+                {
+                  type: "link",
+                  attrs: { href: "https://github.com/threahq/priv-test/blob/main/README.md?plain=1" },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    }
+
+    expect(serializeToMarkdown(doc)).toBe(
+      "[https://github.com/threahq/priv-test/blob/main/README.md?plain=1#L4](https://github.com/threahq/priv-test/blob/main/README.md?plain=1#L4)"
+    )
+  })
 })
 
 describe("mention/channel whitespace boundary", () => {

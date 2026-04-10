@@ -13,6 +13,7 @@ import { BotChannelService } from "./features/api-keys"
 import { UserApiKeyService as UserApiKeyServiceImpl } from "./features/user-api-keys"
 import { BotApiKeyService } from "./features/public-api"
 import { LinkPreviewService, LinkPreviewOutboxHandler, createLinkPreviewWorker } from "./features/link-previews"
+import { WorkspaceIntegrationService } from "./features/workspace-integrations"
 import {
   WorkspaceService,
   AvatarService,
@@ -373,6 +374,7 @@ export async function startServer(): Promise<ServerInstance> {
   const botApiKeyService = new BotApiKeyService(pool)
 
   // Link preview service — created early for route registration
+  const workspaceIntegrationService = new WorkspaceIntegrationService({ pool, github: config.github })
   const linkPreviewService = new LinkPreviewService({ pool, streamService })
 
   const isProduction = process.env.NODE_ENV === "production"
@@ -402,6 +404,7 @@ export async function startServer(): Promise<ServerInstance> {
     apiKeyService,
     botChannelService,
     linkPreviewService,
+    workspaceIntegrationService,
     workosOrgService,
     userApiKeyService,
     botApiKeyService,
@@ -617,7 +620,7 @@ export async function startServer(): Promise<ServerInstance> {
   })
 
   // Link preview worker — fast HTTP fetch, not LLM-bound
-  const linkPreviewWorker = createLinkPreviewWorker({ linkPreviewService })
+  const linkPreviewWorker = createLinkPreviewWorker({ linkPreviewService, workspaceIntegrationService })
   jobQueue.registerHandler(JobQueues.LINK_PREVIEW_EXTRACT, linkPreviewWorker, {
     tier: QueueTiers.LIGHT,
     fairness: QueueFairness.NONE,
