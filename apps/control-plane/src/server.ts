@@ -30,6 +30,7 @@ import {
   type RegionalCreatePayload,
 } from "./features/workspaces"
 import { InvitationShadowService } from "./features/invitation-shadows"
+import { BackofficeService, seedPlatformAdmins } from "./features/backoffice"
 
 const MIGRATIONS_GLOB = path.join(import.meta.dirname, "db/migrations/*.sql")
 const LISTENER_ID = "control-plane"
@@ -66,6 +67,8 @@ export async function startServer(): Promise<ControlPlaneInstance> {
     requireWorkspaceCreationInvite: config.workspaceCreationRequiresInvite,
   })
   const shadowService = new InvitationShadowService({ pool, regionalClient, workosOrgService })
+  const backofficeService = new BackofficeService({ pool, workosOrgService })
+  await seedPlatformAdmins(pool, config.platformAdminWorkosUserIds)
 
   // Outbox — single handler for all control-plane events (no sharding needed)
   const cursorLock = new CursorLock({
@@ -124,6 +127,7 @@ export async function startServer(): Promise<ControlPlaneInstance> {
     authService,
     workspaceService,
     shadowService,
+    backofficeService,
     internalApiKey: config.internalApiKey,
     allowDevAuthRoutes: config.useStubAuth && !isProduction,
     frontendUrl: config.frontendUrl,

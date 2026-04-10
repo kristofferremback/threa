@@ -21,6 +21,12 @@ export interface ControlPlaneConfig {
   cloudflareKv: CloudflareKvConfig | null
   workspaceCreationRequiresInvite: boolean
   fastShutdown: boolean
+  /**
+   * WorkOS user IDs to auto-seed into `platform_roles` with role='admin' on
+   * startup. Comma-separated `PLATFORM_ADMIN_WORKOS_USER_IDS` env var.
+   * Idempotent: re-running the server with the same value is a no-op.
+   */
+  platformAdminWorkosUserIds: string[]
   /** Base URL of the frontend app. Used for post-auth redirects when the frontend is on a different origin. */
   frontendUrl: string
   /** Allowed domain for forwarded-host redirects (e.g. "staging.threa.io"). Empty disables the feature. */
@@ -108,6 +114,10 @@ export function loadControlPlaneConfig(): ControlPlaneConfig {
     cloudflareKv,
     workspaceCreationRequiresInvite: process.env.WORKSPACE_CREATION_SKIP_INVITE !== "true",
     fastShutdown: process.env.FAST_SHUTDOWN === "true",
+    platformAdminWorkosUserIds: (process.env.PLATFORM_ADMIN_WORKOS_USER_IDS ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0),
     frontendUrl: (process.env.FRONTEND_URL ?? "").replace(/\/+$/, ""),
     allowedRedirectDomain: process.env.ALLOWED_REDIRECT_DOMAIN ?? "",
     rateLimits: {

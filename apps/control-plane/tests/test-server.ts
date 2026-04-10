@@ -47,7 +47,8 @@ async function cleanupStaleData(): Promise<void> {
       TRUNCATE
         workspace_registry,
         workspace_memberships,
-        invitation_shadows
+        invitation_shadows,
+        platform_roles
       CASCADE
     `)
   } catch {
