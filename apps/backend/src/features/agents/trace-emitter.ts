@@ -230,12 +230,21 @@ export class ActiveStep {
    * overwrites with the tool's full content (which includes the same substeps
    * plus counts, partial flag, etc.).
    *
+   * IMPORTANT: the content is pre-stringified before being passed to
+   * `updateStep`. This matches the convention used by every other observer
+   * site (e.g. `context_received`, `reconsidering` both call `JSON.stringify`
+   * explicitly). `updateStep` applies a second `JSON.stringify` on top, which
+   * makes the column round-trip as a JS string (JSONB string type) rather
+   * than an auto-parsed object — the frontend's wire type expects
+   * `content?: string`, not an object, and will crash trying to render a raw
+   * object as a JSX child.
+   *
    * Not emitted to the socket — the live substep stream is already handled by
    * `SessionTrace.emitSubstep`.
    */
   async updateSubsteps(substeps: Array<{ text: string; at: string }>): Promise<void> {
     await AgentSessionRepository.updateStep(this.deps.pool, this.params.stepId, {
-      content: { substeps },
+      content: JSON.stringify({ substeps }),
     })
   }
 

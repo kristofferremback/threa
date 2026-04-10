@@ -132,8 +132,21 @@ function StepHeader({ config, Icon, startedAt, duration, rightSlot }: StepHeader
   )
 }
 
-/** Parse structured JSON content, returning null if not valid JSON */
-function parseStructuredContent(content: string): Record<string, unknown> | null {
+/**
+ * Parse structured JSON content, returning null if not valid JSON.
+ *
+ * Accepts both string content (the normal convention — JSONB string type
+ * round-trips as a JS string via node-postgres) and object content (a
+ * defensive path for any step rows whose content was written as a JSONB
+ * object directly; node-postgres auto-parses these to JS objects). The
+ * object path protects against crashes if any intermediate persistence
+ * code-path forgets the pre-stringify convention.
+ */
+function parseStructuredContent(content: unknown): Record<string, unknown> | null {
+  if (content && typeof content === "object") {
+    return content as Record<string, unknown>
+  }
+  if (typeof content !== "string") return null
   try {
     const parsed = JSON.parse(content)
     if (typeof parsed === "object" && parsed !== null) return parsed
@@ -141,6 +154,24 @@ function parseStructuredContent(content: string): Record<string, unknown> | null
     // Not JSON — plain text content (e.g., LLM thinking output)
   }
   return null
+}
+
+/**
+ * Coerce the step.content wire value into a string suitable for rendering as
+ * a JSX child. The wire type says `string` but any historical row whose
+ * content was persisted as a raw object (bypassing the pre-stringify
+ * convention) would come back from the API as an object. Rendering that as a
+ * JSX child throws "Objects are not valid as a React child" — this helper
+ * normalises both cases to a safe string so the render path can't crash.
+ */
+function coerceContentToString(content: unknown): string {
+  if (typeof content === "string") return content
+  if (content == null) return ""
+  try {
+    return JSON.stringify(content)
+  } catch {
+    return ""
+  }
 }
 
 function StepContent({
@@ -151,16 +182,17 @@ function StepContent({
   isInProgress,
 }: {
   stepType: AgentStepType
-  content: string
+  content: unknown
   messageLink: string | null
   liveSubsteps?: Array<{ text: string; at: string }>
   isInProgress: boolean
 }) {
   const structured = parseStructuredContent(content)
+  const contentString = coerceContentToString(content)
 
   return (
     <div className="text-sm leading-relaxed">
-      {renderStepContent(stepType, content, structured, messageLink, liveSubsteps, isInProgress)}
+      {renderStepContent(stepType, contentString, structured, messageLink, liveSubsteps, isInProgress)}
     </div>
   )
 }
