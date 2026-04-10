@@ -744,13 +744,21 @@ export function MemoryPage() {
           </div>
         </ScrollArea>
 
-        {/* Desktop detail pane */}
+        {/* Desktop detail pane. Uses `flex-1 min-h-0 overflow-y-auto` on a
+            plain div rather than Radix ScrollArea: between the mobile
+            breakpoint (640px) and `lg:flex-row` (1024px) the parent is a
+            flex-col with TWO flex-1 siblings (list + detail), and Radix
+            ScrollArea's `h-full` Viewport height chain is brittle when
+            sharing vertical space — the Root relies on `overflow-hidden`
+            implying min-height:0 on flex items, which some flex-col +
+            sibling-ScrollArea combinations don't resolve reliably. Native
+            `overflow-y-auto` + explicit `min-h-0` is unambiguous. */}
         {!isMobile && (
-          <ScrollArea className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1 min-h-0 overflow-y-auto">
             <main className="mx-auto min-w-0 max-w-3xl p-5 sm:p-8">
               <MemoDetailContent data={selectedMemoData} workspaceId={workspaceId} isLoading={selectedMemo.isLoading} />
             </main>
-          </ScrollArea>
+          </div>
         )}
       </div>
 
