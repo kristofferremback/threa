@@ -109,6 +109,8 @@ export { useThreadAncestors } from "./use-thread-ancestors"
 
 export { useAgentActivity, getStepLabel, type MessageAgentActivity } from "./use-agent-activity"
 
+export { useAbortResearch } from "./use-abort-research"
+
 export { usePreloadImages } from "./use-preload-images"
 
 export { usePanelLayout } from "./use-panel-layout"

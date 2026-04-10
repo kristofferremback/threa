@@ -21,6 +21,14 @@ export class SessionTraceObserver implements AgentObserver {
         break
       }
 
+      case "tool:progress": {
+        // Ephemeral substep update — purely socket-level, no DB write, no step row.
+        // Persistence of the substep log happens at tool:complete via the tool's
+        // trace.formatContent baking substeps into step.content.
+        this.trace.emitSubstep({ stepType: event.stepType, substep: event.substep })
+        break
+      }
+
       case "tool:complete": {
         const step = await this.trace.startStep({
           stepType: event.trace.stepType,

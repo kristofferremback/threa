@@ -30,7 +30,10 @@ export function TraceDialog() {
   const navigate = useNavigate()
   const { sessionId, highlightMessageId, getTraceUrl, closeTraceModal } = useTrace()
 
-  const { steps, session, relatedSessions, persona, status, isLoading, error } = useAgentTrace(workspaceId!, sessionId!)
+  const { steps, streamingSubsteps, session, relatedSessions, persona, status, isLoading, error } = useAgentTrace(
+    workspaceId!,
+    sessionId!
+  )
 
   if (!sessionId) return null
 
@@ -90,6 +93,7 @@ export function TraceDialog() {
           isLoading={isLoading}
           error={error}
           steps={steps}
+          streamingSubsteps={streamingSubsteps}
           highlightMessageId={highlightMessageId}
           workspaceId={workspaceId!}
           streamId={session?.streamId ?? ""}
@@ -223,6 +227,7 @@ function TraceBody({
   isLoading,
   error,
   steps,
+  streamingSubsteps,
   highlightMessageId,
   workspaceId,
   streamId,
@@ -230,6 +235,7 @@ function TraceBody({
   isLoading: boolean
   error: Error | null
   steps: ReturnType<typeof useAgentTrace>["steps"]
+  streamingSubsteps: ReturnType<typeof useAgentTrace>["streamingSubsteps"]
   highlightMessageId: string | null
   workspaceId: string
   streamId: string
@@ -240,6 +246,7 @@ function TraceBody({
       highlightMessageId={highlightMessageId}
       workspaceId={workspaceId}
       streamId={streamId}
+      streamingSubsteps={streamingSubsteps}
     />
   )
   if (isLoading) {

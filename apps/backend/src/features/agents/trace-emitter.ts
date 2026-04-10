@@ -128,6 +128,38 @@ export class SessionTrace {
     })
   }
 
+  /**
+   * Emit an ephemeral substep update for a running step.
+   *
+   * Used by long-running tools (e.g. workspace_research) to stream phase text to
+   * the UI without creating a new persisted step row. The persisted step's `content`
+   * (baked in by the tool's `trace.formatContent`) retains the full substep history
+   * on completion — see `WorkspaceAgentResult.substeps` and
+   * `workspace-research-tool.ts trace.formatContent`.
+   *
+   * Emits to BOTH the stream room (timeline inline card) and the session room
+   * (trace dialog). No DB write, no step number increment.
+   */
+  emitSubstep(params: { stepType: AgentStepType; substep: string }): void {
+    const payload = {
+      workspaceId: this.params.workspaceId,
+      streamId: this.params.streamId,
+      sessionId: this.params.sessionId,
+      triggerMessageId: this.params.triggerMessageId,
+      stepType: params.stepType,
+      substep: params.substep,
+      updatedAt: new Date().toISOString(),
+    }
+    // Stream room (timeline inline) — include channel room for channel-mention threads
+    let target = this.deps.io.to(this.streamRoom)
+    if (this.channelRoom) {
+      target = target.to(this.channelRoom)
+    }
+    target.emit("agent_session:substep", payload)
+    // Session room (trace dialog live streaming)
+    this.deps.io.to(this.sessionRoom).emit("agent_session:substep", payload)
+  }
+
   /** Notify session room that session completed. Socket only. */
   notifyCompleted(): void {
     this.deps.io.to(this.sessionRoom).emit("agent_session:completed", {

@@ -8,6 +8,7 @@ import type {
   AgentSessionFailedPayload,
   AgentSessionDeletedPayload,
   AgentSessionProgressPayload,
+  AgentSessionSubstepPayload,
   AgentActivityStartedPayload,
   AgentActivityEndedPayload,
 } from "@threa/types"
@@ -19,6 +20,13 @@ export interface MessageAgentActivity {
   currentStepType: AgentStepType | null
   stepCount: number
   messageCount: number
+  /**
+   * Latest live substep text emitted by a long-running tool (e.g. workspace_research).
+   * Cleared automatically when the step type changes or the session ends.
+   * Null when no substep has been received for the current step yet — callers should
+   * fall back to the step type's inline label in that case.
+   */
+  substep: string | null
   /** Thread stream ID for channel mentions - allows linking directly to thread */
   threadStreamId?: string
 }
@@ -32,6 +40,7 @@ interface ProgressEntry {
   currentStepType: AgentStepType | null
   stepCount: number
   messageCount: number
+  substep: string | null
   threadStreamId?: string
 }
 
@@ -118,15 +127,21 @@ export function useAgentActivity(events: StreamEvent[], socket: Socket | null): 
         currentStepType: null,
         stepCount: 0,
         messageCount: 0,
+        substep: null,
         threadStreamId: payload.threadStreamId,
       })
       return next
     })
   }, [])
 
-  // Progress: step type update during active session
+  // Progress: step type update during active session.
+  // When the stepCount changes, the previous step's live substep is stale — clear it
+  // so we don't show e.g. "Evaluating results…" left over from workspace_search after
+  // we've moved on to "thinking" or "message_sent".
   const handleProgress = useCallback((payload: AgentSessionProgressPayload) => {
     setProgressBySession((prev) => {
+      const prior = prev.get(payload.sessionId)
+      const sameStep = prior?.stepCount === payload.stepCount
       const next = new Map(prev)
       next.set(payload.sessionId, {
         triggerMessageId: payload.triggerMessageId,
@@ -134,7 +149,23 @@ export function useAgentActivity(events: StreamEvent[], socket: Socket | null): 
         currentStepType: payload.currentStepType,
         stepCount: payload.stepCount,
         messageCount: payload.messageCount,
+        substep: sameStep ? (prior?.substep ?? null) : null,
         threadStreamId: payload.threadStreamId,
+      })
+      return next
+    })
+  }, [])
+
+  // Substep: ephemeral phase text from a long-running tool. Only updates the entry
+  // for the matching session — does NOT touch step counts or step type.
+  const handleSubstep = useCallback((payload: AgentSessionSubstepPayload) => {
+    setProgressBySession((prev) => {
+      const existing = prev.get(payload.sessionId)
+      if (!existing) return prev
+      const next = new Map(prev)
+      next.set(payload.sessionId, {
+        ...existing,
+        substep: payload.substep,
       })
       return next
     })
@@ -155,13 +186,15 @@ export function useAgentActivity(events: StreamEvent[], socket: Socket | null): 
 
     socket.on("agent_session:activity_started", handleActivityStarted)
     socket.on("agent_session:progress", handleProgress)
+    socket.on("agent_session:substep", handleSubstep)
     socket.on("agent_session:activity_ended", handleActivityEnded)
     return () => {
       socket.off("agent_session:activity_started", handleActivityStarted)
       socket.off("agent_session:progress", handleProgress)
+      socket.off("agent_session:substep", handleSubstep)
       socket.off("agent_session:activity_ended", handleActivityEnded)
     }
-  }, [socket, handleActivityStarted, handleProgress, handleActivityEnded])
+  }, [socket, handleActivityStarted, handleProgress, handleSubstep, handleActivityEnded])
 
   // Build final map: triggerMessageId → activity
   // Includes sessions from events (runningSessions) AND socket-only sessions (channel view)
@@ -177,6 +210,7 @@ export function useAgentActivity(events: StreamEvent[], socket: Socket | null): 
         currentStepType: progress?.currentStepType ?? null,
         stepCount: progress?.stepCount ?? 0,
         messageCount: progress?.messageCount ?? 0,
+        substep: progress?.substep ?? null,
         threadStreamId: progress?.threadStreamId,
       })
     }
@@ -190,6 +224,7 @@ export function useAgentActivity(events: StreamEvent[], socket: Socket | null): 
         currentStepType: progress.currentStepType,
         stepCount: progress.stepCount,
         messageCount: progress.messageCount,
+        substep: progress.substep,
         threadStreamId: progress.threadStreamId,
       })
     }

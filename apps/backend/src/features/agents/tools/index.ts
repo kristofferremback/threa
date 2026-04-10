@@ -43,7 +43,7 @@ export {
   createWorkspaceResearchTool,
   type WorkspaceResearchInput,
   type WorkspaceResearchCallbacks,
-  type WorkspaceResearchToolResult,
+  type RunWorkspaceAgentOptions,
 } from "./workspace-research-tool"
 
 /**

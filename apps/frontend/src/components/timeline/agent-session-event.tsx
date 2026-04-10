@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom"
-import { Check, X, Loader2 } from "lucide-react"
+import { Check, X, Loader2, Square } from "lucide-react"
 import type {
   StreamEvent,
   AgentSessionRerunContext,
@@ -17,6 +17,19 @@ interface AgentSessionEventProps {
   sessionVersion?: number
   /** Live progress counts from parent (via useAgentActivity hook) */
   liveCounts?: { stepCount: number; messageCount: number }
+  /**
+   * Latest live substep text (e.g. "Planning queries…") emitted by a long-running
+   * tool. Shown in place of the generic step label when present.
+   */
+  liveSubstep?: string | null
+  /**
+   * When true, the abort-research button is rendered. Wired by the parent only
+   * when the current step is a workspace_search step (or another future tool that
+   * supports graceful abort).
+   */
+  canAbortResearch?: boolean
+  /** Click handler for the Stop research button. */
+  onAbortResearch?: (sessionId: string) => void
 }
 
 type SessionStatus = "running" | "completed" | "failed" | "deleted"
@@ -88,7 +101,8 @@ function buildStatusConfig(
   completedPayload: AgentSessionCompletedPayload | null,
   failedPayload: AgentSessionFailedPayload | null,
   deletedPayload: AgentSessionDeletedPayload | null,
-  liveCounts: { stepCount: number; messageCount: number } | undefined
+  liveCounts: { stepCount: number; messageCount: number } | undefined,
+  liveSubstep: string | null | undefined
 ): StatusConfig {
   const rerunReasonLabel = formatRerunReasonLabel(startedPayload?.rerunContext)
   const rerunReasonDetail = formatRerunReasonDetail(startedPayload?.rerunContext)
@@ -170,6 +184,11 @@ function buildStatusConfig(
       const stepCount = liveCounts?.stepCount ?? 0
       const messageCount = liveCounts?.messageCount ?? 0
       const parts: string[] = []
+      // Live substep takes pole position when present — it's the most informative
+      // bit during a long-running tool call ("Evaluating results…" beats "1 step").
+      if (liveSubstep) {
+        parts.push(liveSubstep)
+      }
       if (rerunReasonLabel) {
         parts.push(rerunReasonLabel)
       }
@@ -215,13 +234,30 @@ function formatRerunReasonDetail(rerunContext?: AgentSessionRerunContext | null)
   return `Edited: "${compact}"`
 }
 
-export function AgentSessionEvent({ events, sessionVersion, liveCounts }: AgentSessionEventProps) {
+export function AgentSessionEvent({
+  events,
+  sessionVersion,
+  liveCounts,
+  liveSubstep,
+  canAbortResearch,
+  onAbortResearch,
+}: AgentSessionEventProps) {
   const { getTraceUrl } = useTrace()
   const { status, sessionId, startedPayload, completedPayload, failedPayload, deletedPayload } = deriveStatus(events)
 
-  const config = buildStatusConfig(status, startedPayload, completedPayload, failedPayload, deletedPayload, liveCounts)
+  const config = buildStatusConfig(
+    status,
+    startedPayload,
+    completedPayload,
+    failedPayload,
+    deletedPayload,
+    liveCounts,
+    liveSubstep
+  )
 
   if (!sessionId) return null
+
+  const showAbortButton = status === "running" && canAbortResearch && onAbortResearch
 
   return (
     <div className="py-3">
@@ -257,6 +293,22 @@ export function AgentSessionEvent({ events, sessionVersion, liveCounts }: AgentS
           </div>
           <div className="text-[11px] text-muted-foreground mt-0.5">{config.subtitle || "\u00a0"}</div>
         </div>
+        {showAbortButton && (
+          <button
+            type="button"
+            onClick={(e) => {
+              // Prevent the parent <Link> navigation when clicking the abort button.
+              e.preventDefault()
+              e.stopPropagation()
+              onAbortResearch?.(sessionId)
+            }}
+            className="shrink-0 inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-background hover:border-foreground/30 transition-colors"
+            title="Stop the in-flight workspace research and continue with whatever was found so far"
+          >
+            <Square className="h-3 w-3" />
+            Stop research
+          </button>
+        )}
         <div className="shrink-0 text-[11px]">
           {config.timestamp && (
             <RelativeTime date={config.timestamp} className="text-muted-foreground group-hover:hidden" />

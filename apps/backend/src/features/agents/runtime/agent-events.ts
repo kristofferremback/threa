@@ -24,6 +24,13 @@ export type AgentEvent =
   | { type: "thinking"; content: string; durationMs: number }
   | { type: "tool:start"; toolCallId: string; toolName: string; input: unknown }
   | {
+      type: "tool:progress"
+      toolCallId: string
+      toolName: string
+      stepType: AgentStepType
+      substep: string
+    }
+  | {
       type: "tool:complete"
       toolCallId: string
       toolName: string

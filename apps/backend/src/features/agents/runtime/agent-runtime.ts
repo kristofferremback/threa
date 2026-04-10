@@ -54,6 +54,14 @@ export interface AgentRuntimeConfig {
   shouldAbort?: () => Promise<string | null>
 
   /**
+   * Optional per-tool-call AbortSignal provider. Returned signals are passed into
+   * the tool's `execute` via `opts.signal`. Unlike `shouldAbort` (which throws and
+   * kills the session), this is a cooperative cancellation channel for tools that
+   * can return partial results gracefully.
+   */
+  toolSignalProvider?: (toolCallId: string, toolName: string) => AbortSignal | undefined
+
+  /**
    * Allow sessions to complete without sending a new message.
    * Used for supersede reruns where retaining prior responses is a valid outcome.
    */
@@ -537,7 +545,24 @@ export class AgentRuntime {
       const startTime = Date.now()
 
       try {
-        const toolResult = await agentTool.config.execute(tc.input as any, { toolCallId: tc.toolCallId })
+        const stepType = agentTool.config.trace.stepType
+        const onProgress = (substep: string) => {
+          // Fire-and-forget: don't back-pressure the tool with observer latency.
+          void this.emit({
+            type: "tool:progress",
+            toolCallId: tc.toolCallId,
+            toolName: tc.toolName,
+            stepType,
+            substep,
+          })
+        }
+        const signal = this.config.toolSignalProvider?.(tc.toolCallId, tc.toolName)
+
+        const toolResult = await agentTool.config.execute(tc.input as any, {
+          toolCallId: tc.toolCallId,
+          onProgress,
+          signal,
+        })
         const durationMs = Date.now() - startTime
 
         // Accumulate sources

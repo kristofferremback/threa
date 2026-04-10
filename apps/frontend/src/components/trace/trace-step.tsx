@@ -18,9 +18,15 @@ interface TraceStepProps {
   step: AgentSessionStep
   workspaceId: string
   streamId: string
+  /**
+   * Optional live substeps for an in-flight step (cleared on step completion).
+   * Used by the trace dialog to render a phase timeline before the persisted
+   * version baked into step.content takes over.
+   */
+  liveSubsteps?: Array<{ text: string; at: string }>
 }
 
-export function TraceStep({ step, workspaceId, streamId }: TraceStepProps) {
+export function TraceStep({ step, workspaceId, streamId, liveSubsteps }: TraceStepProps) {
   const config = STEP_DISPLAY_CONFIG[step.stepType]
   const Icon = config.icon
 
@@ -37,7 +43,14 @@ export function TraceStep({ step, workspaceId, streamId }: TraceStepProps) {
     >
       <StepHeader config={config} Icon={Icon} startedAt={step.startedAt} duration={duration} />
 
-      {step.content && <StepContent stepType={step.stepType} content={step.content} messageLink={messageLink} />}
+      {step.content && (
+        <StepContent
+          stepType={step.stepType}
+          content={step.content}
+          messageLink={messageLink}
+          liveSubsteps={liveSubsteps}
+        />
+      )}
 
       {hasSources && <SourceList sources={step.sources!} config={config} workspaceId={workspaceId} />}
     </div>
@@ -92,14 +105,20 @@ function StepContent({
   stepType,
   content,
   messageLink,
+  liveSubsteps,
 }: {
   stepType: AgentStepType
   content: string
   messageLink: string | null
+  liveSubsteps?: Array<{ text: string; at: string }>
 }) {
   const structured = parseStructuredContent(content)
 
-  return <div className="text-sm leading-relaxed">{renderStepContent(stepType, content, structured, messageLink)}</div>
+  return (
+    <div className="text-sm leading-relaxed">
+      {renderStepContent(stepType, content, structured, messageLink, liveSubsteps)}
+    </div>
+  )
 }
 
 /** Message info as stored in context_received and reconsidering steps */
@@ -124,7 +143,8 @@ function renderStepContent(
   stepType: AgentStepType,
   content: string,
   structured: Record<string, unknown> | null,
-  messageLink: string | null
+  messageLink: string | null,
+  liveSubsteps?: Array<{ text: string; at: string }>
 ): React.ReactNode {
   switch (stepType) {
     case "context_received": {
@@ -236,15 +256,43 @@ function renderStepContent(
       )
 
     case "workspace_search": {
+      // Persisted substeps (from step.content JSON, baked in by workspace-research-tool's
+      // formatContent) take precedence — they're refresh-stable. Live substeps are only
+      // used when the step is in-flight and content hasn't been persisted yet.
+      const persistedSubsteps = Array.isArray(structured?.substeps)
+        ? (structured!.substeps as Array<{ text?: unknown; at?: unknown }>)
+            .filter((s) => typeof s.text === "string" && typeof s.at === "string")
+            .map((s) => ({ text: s.text as string, at: s.at as string }))
+        : null
+      const substepsToShow =
+        persistedSubsteps && persistedSubsteps.length > 0 ? persistedSubsteps : (liveSubsteps ?? [])
+      const isPartial = structured?.partial === true
+      const partialReason = typeof structured?.partialReason === "string" ? structured.partialReason : null
+
       if (structured && "memoCount" in structured) {
         const memoCount = structured.memoCount as number
         const messageCount = structured.messageCount as number
+        const attachmentCount = (structured.attachmentCount as number | undefined) ?? 0
         return (
-          <span className="text-muted-foreground">
-            Found {memoCount} {memoCount === 1 ? "memo" : "memos"} and {messageCount} related{" "}
-            {messageCount === 1 ? "message" : "messages"}
-          </span>
+          <div className="space-y-2">
+            <div className="text-muted-foreground">
+              Found {memoCount} {memoCount === 1 ? "memo" : "memos"}, {messageCount}{" "}
+              {messageCount === 1 ? "message" : "messages"}, and {attachmentCount}{" "}
+              {attachmentCount === 1 ? "attachment" : "attachments"}.
+            </div>
+            {isPartial && (
+              <div className="rounded border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5 text-[11px] text-amber-700 dark:text-amber-300">
+                Partial result — {partialReason === "user_abort" ? "stopped on user request" : "deadline reached"}.
+              </div>
+            )}
+            {substepsToShow.length > 0 && <SubstepTimeline substeps={substepsToShow} />}
+          </div>
         )
+      }
+      // Fallback for in-flight steps without persisted content yet — show only the
+      // live substeps if any are available.
+      if (substepsToShow.length > 0) {
+        return <SubstepTimeline substeps={substepsToShow} />
       }
       return <span className="text-muted-foreground">{content}</span>
     }
@@ -335,6 +383,28 @@ function renderStepContent(
     default:
       return <span>{content}</span>
   }
+}
+
+/**
+ * Compact phase-by-phase timeline for a long-running tool's substep log.
+ * Shows each phase the tool moved through during execution. Pulled from either the
+ * persisted step.content (refresh-stable for completed steps) or the live socket
+ * stream (for in-flight steps before completion).
+ */
+function SubstepTimeline({ substeps }: { substeps: Array<{ text: string; at: string }> }) {
+  return (
+    <div className="rounded border border-border/60 bg-background/40 px-3 py-2">
+      <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">Phases</div>
+      <ol className="space-y-1">
+        {substeps.map((substep, i) => (
+          <li key={`${substep.at}-${i}`} className="flex items-start gap-2 text-[12px]">
+            <span className="mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/60" />
+            <span className="text-foreground/90">{substep.text}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  )
 }
 
 function RerunContextSummary({ rerunContext }: { rerunContext: RerunContextInfo }) {

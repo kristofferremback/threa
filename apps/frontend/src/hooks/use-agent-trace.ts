@@ -9,15 +9,35 @@ import type {
   AgentSession,
   AgentSessionStatus,
   AgentSessionWithSteps,
+  AgentSessionSubstepPayload,
   StepStartedPayload,
   StepProgressPayload,
   StepCompletedPayload,
   SessionTerminalPayload,
+  AgentStepType,
 } from "@threa/types"
+
+/**
+ * In-memory snapshot of substep history for an in-flight tool step.
+ * Cleared on `agent_session:step:completed` once the persisted version (baked into
+ * step.content for tools that opt in) takes over.
+ */
+export interface StreamingSubstep {
+  text: string
+  at: string
+}
 
 interface UseAgentTraceResult {
   steps: AgentSessionStep[]
   streamingContent: Record<string, string>
+  /**
+   * Live substep timeline keyed by step type. Substep events arrive without a
+   * stepId (the step row may not exist yet at emission time), so we key by step
+   * type — there's only one in-flight step of each type at a time within a single
+   * iteration of the agent loop. On step completion, the persisted step.content
+   * provides the canonical history and these entries are cleared.
+   */
+  streamingSubsteps: Partial<Record<AgentStepType, StreamingSubstep[]>>
   session: AgentSession | null
   relatedSessions: AgentSession[]
   persona: AgentSessionWithSteps["persona"] | null
@@ -44,6 +64,7 @@ export function useAgentTrace(workspaceId: string, sessionId: string): UseAgentT
   // Real-time state accumulated from socket events
   const [realtimeSteps, setRealtimeSteps] = useState<Map<string, AgentSessionStep>>(new Map())
   const [streamingContent, setStreamingContent] = useState<Record<string, string>>({})
+  const [streamingSubsteps, setStreamingSubsteps] = useState<Partial<Record<AgentStepType, StreamingSubstep[]>>>({})
   const [terminalStatus, setTerminalStatus] = useState<"completed" | "failed" | null>(null)
   // Track if socket is subscribed (enables query after subscription)
   const [isSubscribed, setIsSubscribed] = useState(false)
@@ -109,6 +130,36 @@ export function useAgentTrace(workspaceId: string, sessionId: string): UseAgentT
         const { [payload.step.id]: _, ...rest } = prev
         return rest
       })
+      // Clear streaming substeps for the step type — the persisted step.content now
+      // carries the canonical history, so refresh-stable rendering takes over.
+      const completedType = payload.step.stepType
+      if (completedType) {
+        setStreamingSubsteps((prev) => {
+          if (!(completedType in prev)) return prev
+          const next = { ...prev }
+          delete next[completedType]
+          return next
+        })
+      }
+    },
+    [sessionId]
+  )
+
+  // Substep: ephemeral phase text from a long-running tool. We accumulate per
+  // step type so the trace dialog can render an inline timeline of phases for the
+  // currently in-flight step. Cleared on step completion (handleStepCompleted).
+  const handleSubstep = useCallback(
+    (payload: AgentSessionSubstepPayload) => {
+      if (payload?.sessionId !== sessionId || !payload.stepType || !payload.substep) return
+      setStreamingSubsteps((prev) => {
+        const list = prev[payload.stepType] ?? []
+        // Dedupe consecutive identical substeps (the backend may emit the same phase twice on retry)
+        if (list.length > 0 && list[list.length - 1]?.text === payload.substep) return prev
+        return {
+          ...prev,
+          [payload.stepType]: [...list, { text: payload.substep, at: payload.updatedAt }],
+        }
+      })
     },
     [sessionId]
   )
@@ -140,6 +191,7 @@ export function useAgentTrace(workspaceId: string, sessionId: string): UseAgentT
     // Reset state for new session
     setRealtimeSteps(new Map())
     setStreamingContent({})
+    setStreamingSubsteps({})
     setTerminalStatus(null)
     setIsSubscribed(false)
     setIsSubscribing(true)
@@ -149,6 +201,7 @@ export function useAgentTrace(workspaceId: string, sessionId: string): UseAgentT
     socket.on("agent_session:step:started", handleStepStarted)
     socket.on("agent_session:step:progress", handleStepProgress)
     socket.on("agent_session:step:completed", handleStepCompleted)
+    socket.on("agent_session:substep", handleSubstep)
     socket.on("agent_session:completed", handleCompleted)
     socket.on("agent_session:failed", handleFailed)
 
@@ -180,6 +233,7 @@ export function useAgentTrace(workspaceId: string, sessionId: string): UseAgentT
       socket.off("agent_session:step:started", handleStepStarted)
       socket.off("agent_session:step:progress", handleStepProgress)
       socket.off("agent_session:step:completed", handleStepCompleted)
+      socket.off("agent_session:substep", handleSubstep)
       socket.off("agent_session:completed", handleCompleted)
       socket.off("agent_session:failed", handleFailed)
     }
@@ -190,6 +244,7 @@ export function useAgentTrace(workspaceId: string, sessionId: string): UseAgentT
     handleStepStarted,
     handleStepProgress,
     handleStepCompleted,
+    handleSubstep,
     handleCompleted,
     handleFailed,
   ])
@@ -203,6 +258,7 @@ export function useAgentTrace(workspaceId: string, sessionId: string): UseAgentT
   return {
     steps: mergedSteps,
     streamingContent,
+    streamingSubsteps,
     session: data?.session ?? null,
     relatedSessions: data?.relatedSessions ?? [],
     persona: data?.persona ?? null,

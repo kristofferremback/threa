@@ -7,6 +7,7 @@ import type { StreamService } from "./features/streams"
 import type { PushService } from "./features/push"
 import type { UserSocketRegistry } from "./lib/user-socket-registry"
 import { AgentSessionRepository } from "./features/agents"
+import type { SessionAbortRegistry } from "./features/agents"
 import { UserRepository } from "./features/workspaces"
 import { HttpError } from "./lib/errors"
 import { logger } from "./lib/logger"
@@ -56,6 +57,8 @@ interface Dependencies {
   streamService: StreamService
   pushService: PushService
   userSocketRegistry: UserSocketRegistry
+  /** Registry for graceful tool cancellation (e.g. workspace_research). */
+  sessionAbortRegistry: SessionAbortRegistry
 }
 
 /**
@@ -69,7 +72,7 @@ function deriveDeviceKey(userAgent: string | undefined): string {
 }
 
 export function registerSocketHandlers(io: Server, deps: Dependencies) {
-  const { pool, authService, streamService, pushService, userSocketRegistry } = deps
+  const { pool, authService, streamService, pushService, userSocketRegistry, sessionAbortRegistry } = deps
 
   // ===========================================================================
   // Authentication middleware
@@ -278,6 +281,67 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
 
       logger.debug({ workosUserId, room }, "Left room")
     })
+
+    // =========================================================================
+    // Graceful research abort: tells the workspace_research tool to stop at the
+    // next safe checkpoint and return whatever partial results were collected.
+    // The session continues running normally with the partial context — this is
+    // NOT the same as deleting/superseding the session, which uses shouldAbort.
+    // =========================================================================
+    socket.on(
+      "agent_session:research:abort",
+      async (
+        payload: { sessionId?: string; workspaceId?: string },
+        callback?: (result: { ok: boolean; error?: string }) => void
+      ) => {
+        const sessionId = payload?.sessionId
+        const workspaceIdFromPayload = payload?.workspaceId
+        if (!sessionId || !workspaceIdFromPayload) {
+          callback?.({ ok: false, error: "sessionId and workspaceId required" })
+          return
+        }
+        try {
+          const session = await AgentSessionRepository.findById(pool, sessionId)
+          if (!session) {
+            callback?.({ ok: false, error: "Session not found" })
+            return
+          }
+          const workspaceUser = await UserRepository.findByWorkosUserIdInWorkspace(
+            pool,
+            workspaceIdFromPayload,
+            workosUserId
+          )
+          if (!workspaceUser) {
+            callback?.({ ok: false, error: "Not authorized" })
+            return
+          }
+          try {
+            await streamService.validateStreamAccess(session.streamId, workspaceIdFromPayload, workspaceUser.id)
+          } catch (error) {
+            if (!isJoinAccessError(error)) {
+              logger.error(
+                { error, workosUserId, sessionId, streamId: session.streamId },
+                "Unexpected error during research abort auth check"
+              )
+            }
+            callback?.({ ok: false, error: "Not authorized" })
+            return
+          }
+          const aborted = sessionAbortRegistry.abort(sessionId, "user_abort")
+          wsMessagesTotal.inc({
+            workspace_id: workspaceIdFromPayload,
+            direction: "received",
+            event_type: "agent_session:research:abort",
+            room_pattern: "ws:{workspaceId}:agent_session:{sessionId}",
+          })
+          logger.info({ sessionId, workosUserId, aborted }, "Research abort dispatched")
+          callback?.({ ok: aborted, error: aborted ? undefined : "No active research to abort" })
+        } catch (err) {
+          logger.warn({ err, sessionId }, "Research abort handler failed")
+          callback?.({ ok: false, error: "Abort failed" })
+        }
+      }
+    )
 
     // =========================================================================
     // Heartbeat for push notification session tracking

@@ -24,6 +24,9 @@ export type { ContextDeps, ContextParams, AgentContext, ToolSetConfig } from "./
 
 export { TraceEmitter, SessionTrace, ActiveStep } from "./trace-emitter"
 
+export { SessionAbortRegistry } from "./session-abort-registry"
+export type { SessionAbortContext } from "./session-abort-registry"
+
 export { AgentSessionMetricsCollector } from "./session-metrics"
 
 export {

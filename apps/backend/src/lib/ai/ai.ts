@@ -174,6 +174,8 @@ export interface GenerateTextOptions {
   telemetry?: TelemetryConfig
   /** When provided, usage will be recorded to the database */
   context?: CostContext
+  /** Abort signal for graceful cancellation / per-call timeouts */
+  abortSignal?: AbortSignal
 }
 
 /**
@@ -187,6 +189,8 @@ export interface GenerateTextWithToolsOptions {
   messages: ModelMessage[]
   tools?: Record<string, Tool<any, any>>
   telemetry?: TelemetryConfig
+  /** Abort signal for graceful cancellation / per-call timeouts */
+  abortSignal?: AbortSignal
 }
 
 export interface GenerateTextWithToolsResult {
@@ -206,6 +210,8 @@ export interface GenerateObjectOptions<T extends z.ZodType> {
   telemetry?: TelemetryConfig
   /** When provided, usage will be recorded to the database */
   context?: CostContext
+  /** Abort signal for graceful cancellation / per-call timeouts */
+  abortSignal?: AbortSignal
 }
 
 export interface EmbedOptions {
@@ -214,6 +220,8 @@ export interface EmbedOptions {
   telemetry?: TelemetryConfig
   /** When provided, usage will be recorded to the database */
   context?: CostContext
+  /** Abort signal for graceful cancellation / per-call timeouts */
+  abortSignal?: AbortSignal
 }
 
 export interface EmbedManyOptions {
@@ -222,6 +230,8 @@ export interface EmbedManyOptions {
   telemetry?: TelemetryConfig
   /** When provided, usage will be recorded to the database */
   context?: CostContext
+  /** Abort signal for graceful cancellation / per-call timeouts */
+  abortSignal?: AbortSignal
 }
 
 // Response types from AI SDK
@@ -734,6 +744,7 @@ export function createAI(config: AIConfig): AI {
         messages: options.messages as ModelMessage[],
         maxOutputTokens: options.maxTokens,
         temperature: options.temperature,
+        abortSignal: options.abortSignal,
         // @ts-expect-error AI SDK telemetry types are stricter than needed; our buildTelemetry output is compatible at runtime
         experimental_telemetry: buildTelemetry(options.telemetry, effectiveModel, budgetDecision),
       })
@@ -765,6 +776,7 @@ export function createAI(config: AIConfig): AI {
         system: options.system,
         messages: options.messages,
         tools: options.tools,
+        abortSignal: options.abortSignal,
         // @ts-expect-error AI SDK telemetry types are stricter than needed; our TelemetryConfig output is compatible at runtime
         experimental_telemetry: options.telemetry
           ? { isEnabled: true, functionId: options.telemetry.functionId, metadata: options.telemetry.metadata }
@@ -800,6 +812,7 @@ export function createAI(config: AIConfig): AI {
         messages: options.messages as ModelMessage[],
         maxOutputTokens: options.maxTokens,
         temperature: options.temperature,
+        abortSignal: options.abortSignal,
         experimental_repairText: repair,
         experimental_telemetry: buildTelemetry(options.telemetry, effectiveModel, budgetDecision),
       })
@@ -838,6 +851,7 @@ export function createAI(config: AIConfig): AI {
       const response = await aiEmbed({
         model,
         value: options.value,
+        abortSignal: options.abortSignal,
         // @ts-expect-error AI SDK telemetry types are stricter than needed; our buildTelemetry output is compatible at runtime
         experimental_telemetry: buildTelemetry(options.telemetry, effectiveModel, budgetDecision),
       })
@@ -871,6 +885,7 @@ export function createAI(config: AIConfig): AI {
       const response = await aiEmbedMany({
         model,
         values: options.values,
+        abortSignal: options.abortSignal,
         // @ts-expect-error AI SDK telemetry types are stricter than needed; our buildTelemetry output is compatible at runtime
         experimental_telemetry: buildTelemetry(options.telemetry, effectiveModel, budgetDecision),
       })
@@ -898,4 +913,17 @@ export function createAI(config: AIConfig): AI {
       }
     },
   }
+}
+
+/**
+ * Returns true if the given error represents an abort or per-call timeout.
+ *
+ * Covers native AbortError/TimeoutError names from both `Error` and `DOMException`
+ * so callers can treat aborted AI calls as soft "no result" rather than scary warnings.
+ */
+export function isAbortError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false
+  const name = (err as { name?: unknown }).name
+  if (typeof name !== "string") return false
+  return name === "AbortError" || name === "TimeoutError"
 }

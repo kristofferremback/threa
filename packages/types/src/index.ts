@@ -413,6 +413,7 @@ export {
   type AgentSessionFailedPayload,
   type AgentSessionDeletedPayload,
   type AgentSessionProgressPayload,
+  type AgentSessionSubstepPayload,
   type StepStartedPayload,
   type StepProgressPayload,
   type StepCompletedPayload,

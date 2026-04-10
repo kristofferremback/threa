@@ -146,6 +146,32 @@ export interface SessionTerminalPayload {
   sessionId: string
 }
 
+/**
+ * Real-time substep payload emitted during a running step (ephemeral — not persisted).
+ *
+ * Used by long-running tools (e.g. workspace_research) to stream human-readable phase
+ * text to the user during a single step's execution, without creating a new persisted
+ * step row. On step completion the persisted `step.content` carries the full substep
+ * history (baked in by the tool's `trace.formatContent`) so browser refresh gives
+ * stable state for completed steps.
+ *
+ * Emitted to BOTH the stream room (timeline inline card) and the session room (trace
+ * dialog) so both surfaces receive updates. Frontend clears ephemeral state on
+ * `agent_session:step:completed` and reads from persisted `step.content` thereafter.
+ */
+export interface AgentSessionSubstepPayload {
+  workspaceId: string
+  streamId: string
+  sessionId: string
+  triggerMessageId: string
+  /** The step type this substep belongs to (e.g. "workspace_search"). */
+  stepType: AgentStepType
+  /** Human-readable phase text — e.g. "Planning queries…", "Evaluating results…". */
+  substep: string
+  /** ISO timestamp for ordering when multiple substeps arrive rapidly. */
+  updatedAt: string
+}
+
 // Emitted to channel room when agent session starts (for immediate inline indicator)
 export interface AgentActivityStartedPayload {
   sessionId: string

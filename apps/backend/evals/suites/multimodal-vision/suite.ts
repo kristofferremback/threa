@@ -46,6 +46,7 @@ import {
   WorkspaceAgent,
   PersonaRepository,
   TraceEmitter,
+  SessionAbortRegistry,
   ConversationSummaryService,
 } from "../../../src/features/agents"
 import { SearchService } from "../../../src/features/search"
@@ -362,6 +363,7 @@ async function runVisionTask(input: MultimodalVisionInput, ctx: EvalContext): Pr
       pool: ctx.pool,
       ai: ctx.ai,
       traceEmitter,
+      sessionAbortRegistry: new SessionAbortRegistry(),
       userPreferencesService,
       workspaceAgent,
       searchService,

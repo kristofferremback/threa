@@ -1,6 +1,7 @@
 import { z } from "zod"
 import { AgentStepTypes } from "@threa/types"
 import type { WorkspaceAgentResult } from "../researcher"
+import { WORKSPACE_AGENT_TOTAL_BUDGET_MS } from "../researcher/config"
 import { defineAgentTool, type AgentToolResult } from "../runtime"
 
 const WorkspaceResearchSchema = z.object({
@@ -9,17 +10,27 @@ const WorkspaceResearchSchema = z.object({
 
 export type WorkspaceResearchInput = z.infer<typeof WorkspaceResearchSchema>
 
-export interface WorkspaceResearchToolResult {
-  retrievedContext: string | null
-  sources: WorkspaceAgentResult["sources"]
-  memoCount: number
-  messageCount: number
-  attachmentCount: number
+/**
+ * Options passed from the tool layer into the workspace-agent callback. Carries
+ * the abort signal (sourced from SessionAbortRegistry via AgentRuntime.toolSignalProvider),
+ * the substep emission callback (sourced from AgentToolConfig.execute.onProgress),
+ * and an absolute wall-clock deadline so the researcher knows when to return partial.
+ */
+export interface RunWorkspaceAgentOptions {
+  signal: AbortSignal
+  onSubstep: (text: string) => void
+  deadlineAt: number
 }
 
 export interface WorkspaceResearchCallbacks {
-  runWorkspaceAgent: (query: string) => Promise<WorkspaceAgentResult>
+  runWorkspaceAgent: (query: string, opts: RunWorkspaceAgentOptions) => Promise<WorkspaceAgentResult>
 }
+
+/**
+ * Fallback AbortSignal for contexts where the runtime did not provide one
+ * (tests, callers that haven't wired toolSignalProvider). Never fires.
+ */
+const NEVER_SIGNAL = new AbortController().signal
 
 export function createWorkspaceResearchTool(callbacks: WorkspaceResearchCallbacks) {
   const { runWorkspaceAgent } = callbacks
@@ -30,18 +41,16 @@ export function createWorkspaceResearchTool(callbacks: WorkspaceResearchCallback
       "Retrieve relevant workspace memory (messages, memos, attachments) for the current conversation when you need additional context.",
     inputSchema: WorkspaceResearchSchema,
 
-    execute: async (input): Promise<AgentToolResult> => {
-      const result = await runWorkspaceAgent(input.query)
+    execute: async (input, { signal, onProgress }): Promise<AgentToolResult> => {
+      const deadlineAt = Date.now() + WORKSPACE_AGENT_TOTAL_BUDGET_MS
+      const result = await runWorkspaceAgent(input.query, {
+        signal: signal ?? NEVER_SIGNAL,
+        onSubstep: (text) => onProgress?.(text),
+        deadlineAt,
+      })
 
-      const payload: WorkspaceResearchToolResult = {
-        retrievedContext: result.retrievedContext,
-        sources: result.sources,
-        memoCount: result.memos.length,
-        messageCount: result.messages.length,
-        attachmentCount: result.attachments?.length ?? 0,
-      }
+      const partial = result.partial === true
 
-      // Source items for message citations
       const sourceItems = result.sources
         .filter((s) => s.title && s.url)
         .map((s) => ({
@@ -52,25 +61,34 @@ export function createWorkspaceResearchTool(callbacks: WorkspaceResearchCallback
           snippet: s.snippet,
         }))
 
-      // The LLM gets a compact status summary; the actual context goes into systemContext
+      // The LLM gets a compact status summary; the actual context goes into systemContext.
+      // When partial, we tell the model so it can incorporate "we have some context, not all"
+      // into its response. The substep log is included so the trace dialog can reconstruct
+      // the phase timeline from persisted step.content after a browser refresh.
       const output = JSON.stringify({
-        status: "ok",
-        contextAdded: Boolean(payload.retrievedContext?.trim()),
+        status: partial ? "partial" : "ok",
+        partial,
+        partialReason: partial ? (result.partialReason ?? null) : null,
+        contextAdded: Boolean(result.retrievedContext?.trim()),
         sourceCount: sourceItems.length,
-        memoCount: payload.memoCount,
-        messageCount: payload.messageCount,
-        attachmentCount: payload.attachmentCount,
+        memoCount: result.memos.length,
+        messageCount: result.messages.length,
+        attachmentCount: result.attachments?.length ?? 0,
+        substeps: result.substeps,
       })
 
       return {
         output,
         sources: sourceItems,
-        systemContext: payload.retrievedContext?.trim() || undefined,
+        systemContext: result.retrievedContext?.trim() || undefined,
       }
     },
 
     trace: {
       stepType: AgentStepTypes.WORKSPACE_SEARCH,
+      // formatContent returns the tool output verbatim. Because execute above serializes
+      // the full substep log into output, the persisted step.content will contain it too,
+      // giving browser-refresh stability for the trace dialog's phase timeline.
       formatContent: (_input, result) => {
         try {
           return result.output
