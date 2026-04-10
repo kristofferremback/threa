@@ -30,6 +30,40 @@ function renderPage(initialEntry = "/w/ws_1/memory?memo=memo_1") {
   )
 }
 
+// Long, unbreakable strings that would otherwise push Radix ScrollArea's
+// display:table wrapper past the viewport. These shouldn't cause horizontal
+// overflow because the memory page relies on [overflow-wrap:anywhere] to
+// collapse min-content for long URLs and hashes.
+const LONG_UNBREAKABLE_TITLE =
+  "https://example.com/a/very/long/unbreakable/path/that/absolutely/will/not/fit/in/a/narrow/sidebar/viewport/without/wrapping/characters"
+const LONG_UNBREAKABLE_ABSTRACT =
+  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+function buildMemo(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: "memo_1",
+    workspaceId: "ws_1",
+    memoType: "message",
+    sourceMessageId: "msg_1",
+    sourceConversationId: null,
+    title: "Launch decision",
+    abstract: "Approved launch plan",
+    keyPoints: [],
+    sourceMessageIds: ["msg_1"],
+    participantIds: ["user_1"],
+    knowledgeType: "decision",
+    tags: [],
+    parentMemoId: null,
+    status: "active",
+    version: 1,
+    revisionReason: null,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    archivedAt: null,
+    ...overrides,
+  }
+}
+
 describe("MemoryPage", () => {
   beforeEach(() => {
     mockUseWorkspaceStreams.mockReset()
@@ -120,5 +154,178 @@ describe("MemoryPage", () => {
 
     expect(refetchSearch).toHaveBeenCalledTimes(1)
     expect(refetchDetail).toHaveBeenCalledTimes(1)
+  })
+
+  // Regression guard for memory view overflow: long unbreakable strings (URLs,
+  // hashes) must not be able to push the Radix ScrollArea's display:table
+  // wrapper past the viewport width. This is achieved via inherited
+  // [overflow-wrap:anywhere] which collapses min-content calculations, plus
+  // min-w-0 on every flex path that holds user content.
+  describe("overflow safety", () => {
+    it("renders memo list cards inside an overflow-wrap:anywhere container so long titles can't blow out the sidebar", () => {
+      mockUseMemoSearch.mockReturnValue({
+        data: {
+          results: [
+            {
+              memo: buildMemo({
+                id: "memo_long",
+                title: LONG_UNBREAKABLE_TITLE,
+                abstract: LONG_UNBREAKABLE_ABSTRACT,
+              }),
+              distance: 0,
+              sourceStream: null,
+              rootStream: null,
+            },
+          ],
+        },
+        isLoading: false,
+        isFetching: false,
+        refetch: vi.fn(),
+      })
+
+      mockUseMemoDetail.mockReturnValue({
+        data: null,
+        isLoading: false,
+        isFetching: false,
+        refetch: vi.fn(),
+      })
+
+      renderPage("/w/ws_1/memory")
+
+      const title = screen.getByText(LONG_UNBREAKABLE_TITLE)
+      const card = title.closest("a")
+      expect(card).not.toBeNull()
+      expect(card?.className).toContain("[overflow-wrap:anywhere]")
+      expect(card?.className).toContain("overflow-hidden")
+
+      // The title itself must be shrinkable in its flex parent so line-clamp
+      // can actually clip rather than forcing the card wider.
+      expect(title.className).toContain("min-w-0")
+      expect(title.className).toContain("line-clamp-2")
+    })
+
+    it("renders memo detail with overflow-wrap:anywhere so long content wraps inside the viewport", () => {
+      mockUseMemoSearch.mockReturnValue({
+        data: {
+          results: [
+            {
+              memo: buildMemo({ id: "memo_1", title: "Pick me" }),
+              distance: 0,
+              sourceStream: null,
+              rootStream: null,
+            },
+          ],
+        },
+        isLoading: false,
+        isFetching: false,
+        refetch: vi.fn(),
+      })
+
+      mockUseMemoDetail.mockReturnValue({
+        data: {
+          memo: {
+            memo: buildMemo({
+              id: "memo_1",
+              title: LONG_UNBREAKABLE_TITLE,
+              abstract: LONG_UNBREAKABLE_ABSTRACT,
+              keyPoints: [LONG_UNBREAKABLE_ABSTRACT],
+              tags: [LONG_UNBREAKABLE_ABSTRACT],
+            }),
+            distance: 0,
+            sourceStream: { id: "stream_1", name: LONG_UNBREAKABLE_TITLE, type: "channel" },
+            rootStream: null,
+            sourceMessages: [
+              {
+                id: "msg_1",
+                streamId: "stream_1",
+                streamName: LONG_UNBREAKABLE_TITLE,
+                authorId: "user_1",
+                authorType: "user" as const,
+                authorName: "Alice",
+                content: `Look at this URL: ${LONG_UNBREAKABLE_TITLE}`,
+                createdAt: "2026-01-01T00:00:00.000Z",
+              },
+            ],
+          },
+        },
+        isLoading: false,
+        isFetching: false,
+        refetch: vi.fn(),
+      })
+
+      renderPage("/w/ws_1/memory?memo=memo_1")
+
+      // The detail root should have overflow-wrap:anywhere so all nested text
+      // (title, abstract, key points, source messages, markdown) inherits it.
+      const detailTitle = screen.getAllByText(LONG_UNBREAKABLE_TITLE)[0]
+      // Walk up to the memo detail root wrapper
+      let current: HTMLElement | null = detailTitle
+      let foundOverflowWrap = false
+      while (current) {
+        if (current.className?.includes?.("[overflow-wrap:anywhere]")) {
+          foundOverflowWrap = true
+          break
+        }
+        current = current.parentElement
+      }
+      expect(foundOverflowWrap).toBe(true)
+    })
+
+    it("keeps source message headers from overflowing when stream names and author names are long", () => {
+      mockUseMemoSearch.mockReturnValue({
+        data: {
+          results: [
+            {
+              memo: buildMemo({ id: "memo_1", title: "Pick me" }),
+              distance: 0,
+              sourceStream: null,
+              rootStream: null,
+            },
+          ],
+        },
+        isLoading: false,
+        isFetching: false,
+        refetch: vi.fn(),
+      })
+
+      mockUseMemoDetail.mockReturnValue({
+        data: {
+          memo: {
+            memo: buildMemo({ id: "memo_1" }),
+            distance: 0,
+            sourceStream: null,
+            rootStream: null,
+            sourceMessages: [
+              {
+                id: "msg_1",
+                streamId: "stream_1",
+                streamName: LONG_UNBREAKABLE_TITLE,
+                authorId: "user_1",
+                authorType: "user" as const,
+                authorName: LONG_UNBREAKABLE_ABSTRACT,
+                content: "Short content",
+                createdAt: "2026-01-01T00:00:00.000Z",
+              },
+            ],
+          },
+        },
+        isLoading: false,
+        isFetching: false,
+        refetch: vi.fn(),
+      })
+
+      renderPage("/w/ws_1/memory?memo=memo_1")
+
+      // Author name must be truncatable in the flex header (not shrink-0)
+      const authorSpan = screen.getByText(LONG_UNBREAKABLE_ABSTRACT)
+      expect(authorSpan.className).toContain("min-w-0")
+      expect(authorSpan.className).toContain("truncate")
+      expect(authorSpan.className).not.toContain("shrink-0")
+
+      // Stream name link must be truncatable
+      const streamLink = screen.getAllByText(LONG_UNBREAKABLE_TITLE)[0]
+      expect(streamLink.className).toContain("min-w-0")
+      expect(streamLink.className).toContain("truncate")
+    })
   })
 })

@@ -140,15 +140,20 @@ function MemoResultItem({ result, isActive, href }: { result: MemoExplorerResult
     <Link
       to={href}
       className={cn(
-        "group block overflow-hidden rounded-lg border-l-[3px] border border-l-transparent bg-card transition-all",
+        // [overflow-wrap:anywhere] is inherited by descendants and collapses the
+        // intrinsic min-content of long unbreakable strings (URLs, hashes) so the
+        // Radix ScrollArea's display:table wrapper can't be forced wider than the
+        // viewport. `break-words` alone is insufficient — per spec it doesn't
+        // affect min-content calculation.
+        "group block overflow-hidden rounded-lg border-l-[3px] border border-l-transparent bg-card transition-all [overflow-wrap:anywhere]",
         isActive
           ? cn("border-primary/30 shadow-sm", config.accent)
           : "border-border/50 hover:border-border hover:shadow-sm"
       )}
     >
-      <div className="px-3.5 py-3">
-        <div className="flex items-start justify-between gap-2 min-w-0">
-          <h3 className="min-w-0 text-[13px] font-semibold leading-snug text-foreground line-clamp-2">
+      <div className="min-w-0 px-3.5 py-3">
+        <div className="flex min-w-0 items-start justify-between gap-2">
+          <h3 className="min-w-0 flex-1 text-[13px] font-semibold leading-snug text-foreground line-clamp-2">
             {result.memo.title}
           </h3>
           <RelativeTime
@@ -159,15 +164,18 @@ function MemoResultItem({ result, isActive, href }: { result: MemoExplorerResult
 
         <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground line-clamp-2">{result.memo.abstract}</p>
 
-        <div className="mt-2.5 flex items-center gap-2">
+        <div className="mt-2.5 flex min-w-0 items-center gap-2">
           <KnowledgeTypeBadge type={result.memo.knowledgeType} size="xs" />
 
           {result.memo.tags.length > 0 && (
-            <div className="flex items-center gap-1 overflow-hidden">
+            <div className="flex min-w-0 items-center gap-1 overflow-hidden">
               {result.memo.tags.slice(0, 2).map((tag) => (
-                <span key={tag} className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground/70">
-                  <Hash className="h-2.5 w-2.5" />
-                  {tag}
+                <span
+                  key={tag}
+                  className="inline-flex min-w-0 items-center gap-0.5 text-[10px] text-muted-foreground/70"
+                >
+                  <Hash className="h-2.5 w-2.5 shrink-0" />
+                  <span className="truncate">{tag}</span>
                 </span>
               ))}
             </div>
@@ -175,9 +183,9 @@ function MemoResultItem({ result, isActive, href }: { result: MemoExplorerResult
         </div>
 
         {(sourceLabel || rootLabel) && (
-          <div className="mt-2 flex items-center gap-1 text-[10px] text-muted-foreground/60">
+          <div className="mt-2 flex min-w-0 items-center gap-1 text-[10px] text-muted-foreground/60">
             <MessageSquareQuote className="h-2.5 w-2.5 shrink-0" />
-            <span className="truncate">
+            <span className="min-w-0 truncate">
               {sourceLabel}
               {sourceLabel && rootLabel && result.rootStream?.id !== result.sourceStream?.id && (
                 <span className="text-muted-foreground/40"> in {rootLabel}</span>
@@ -241,9 +249,12 @@ function MemoDetailContent({
   }
 
   return (
-    <div className="min-w-0 space-y-8">
+    // [overflow-wrap:anywhere] is inherited by descendants so long unbreakable
+    // strings collapse in min-content calculations. Without this, the Radix
+    // ScrollArea / Drawer viewport can be forced wider than the screen on mobile.
+    <div className="min-w-0 space-y-8 [overflow-wrap:anywhere]">
       {/* Title section */}
-      <div>
+      <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2 mb-3">
           <KnowledgeTypeBadge type={data.memo.knowledgeType} size="sm" />
           <Badge variant="secondary" className="text-[10px] font-medium">
@@ -262,10 +273,10 @@ function MemoDetailContent({
             {data.memo.tags.map((tag) => (
               <span
                 key={tag}
-                className="inline-flex items-center gap-0.5 rounded-md bg-muted/50 px-2 py-0.5 text-[11px] text-muted-foreground"
+                className="inline-flex max-w-full items-center gap-0.5 rounded-md bg-muted/50 px-2 py-0.5 text-[11px] text-muted-foreground"
               >
-                <Hash className="h-2.5 w-2.5" />
-                {tag}
+                <Hash className="h-2.5 w-2.5 shrink-0" />
+                <span className="min-w-0 truncate">{tag}</span>
               </span>
             ))}
           </div>
@@ -279,7 +290,7 @@ function MemoDetailContent({
             {data.memo.keyPoints.map((keyPoint) => (
               <li
                 key={keyPoint}
-                className="relative pl-4 text-sm leading-relaxed before:absolute before:left-0 before:top-[0.6em] before:h-1.5 before:w-1.5 before:rounded-full before:bg-primary/40"
+                className="relative min-w-0 pl-4 text-sm leading-relaxed before:absolute before:left-0 before:top-[0.6em] before:h-1.5 before:w-1.5 before:rounded-full before:bg-primary/40"
               >
                 {keyPoint}
               </li>
@@ -290,26 +301,26 @@ function MemoDetailContent({
 
       {/* Provenance */}
       <DetailSection title="Provenance">
-        <div className="flex flex-wrap gap-2">
+        <div className="flex min-w-0 flex-wrap gap-2">
           {data.sourceStream && (
             <Link
               to={buildSourceLink(workspaceId, data.sourceStream.id)}
-              className="inline-flex items-center gap-1.5 rounded-md border border-border/50 bg-card px-3 py-2 text-sm transition-colors hover:border-primary/30 hover:bg-primary/5"
+              className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md border border-border/50 bg-card px-3 py-2 text-sm transition-colors hover:border-primary/30 hover:bg-primary/5"
             >
-              <MessageSquareQuote className="h-3.5 w-3.5 text-muted-foreground" />
-              <span className="font-medium">{formatStreamRef(data.sourceStream)}</span>
-              <ExternalLink className="h-3 w-3 text-muted-foreground/40" />
+              <MessageSquareQuote className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 truncate font-medium">{formatStreamRef(data.sourceStream)}</span>
+              <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground/40" />
             </Link>
           )}
 
           {data.rootStream && data.rootStream.id !== data.sourceStream?.id && (
             <Link
               to={buildSourceLink(workspaceId, data.rootStream.id)}
-              className="inline-flex items-center gap-1.5 rounded-md border border-border/50 bg-card px-3 py-2 text-sm transition-colors hover:border-primary/30 hover:bg-primary/5"
+              className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md border border-border/50 bg-card px-3 py-2 text-sm transition-colors hover:border-primary/30 hover:bg-primary/5"
             >
-              <span className="text-xs text-muted-foreground/60">in</span>
-              <span className="font-medium">{formatStreamRef(data.rootStream)}</span>
-              <ExternalLink className="h-3 w-3 text-muted-foreground/40" />
+              <span className="shrink-0 text-xs text-muted-foreground/60">in</span>
+              <span className="min-w-0 truncate font-medium">{formatStreamRef(data.rootStream)}</span>
+              <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground/40" />
             </Link>
           )}
 
@@ -326,24 +337,24 @@ function MemoDetailContent({
         ) : (
           <div className="space-y-3">
             {data.sourceMessages.map((message) => (
-              <div key={message.id} className="overflow-hidden rounded-lg border border-border/50 bg-card">
-                <div className="flex items-center gap-2 border-b border-border/30 px-4 py-2 min-w-0">
-                  <span className="shrink-0 text-xs font-semibold">{message.authorName}</span>
-                  <span className="text-[10px] text-muted-foreground/40">in</span>
+              <div key={message.id} className="min-w-0 overflow-hidden rounded-lg border border-border/50 bg-card">
+                <div className="flex min-w-0 items-center gap-2 border-b border-border/30 px-4 py-2">
+                  <span className="min-w-0 truncate text-xs font-semibold">{message.authorName}</span>
+                  <span className="shrink-0 text-[10px] text-muted-foreground/40">in</span>
                   <Link
                     to={buildSourceLink(workspaceId, message.streamId, message.id)}
-                    className="truncate text-xs text-primary/80 hover:text-primary hover:underline"
+                    className="min-w-0 truncate text-xs text-primary/80 hover:text-primary hover:underline"
                   >
                     {message.streamName}
                   </Link>
-                  <span className="ml-auto">
+                  <span className="ml-auto shrink-0">
                     <RelativeTime
                       date={message.createdAt}
                       className="text-[10px] tabular-nums text-muted-foreground/40"
                     />
                   </span>
                 </div>
-                <div className="overflow-hidden px-4 py-3 text-sm leading-relaxed">
+                <div className="min-w-0 overflow-hidden px-4 py-3 text-sm leading-relaxed">
                   <MarkdownContent content={message.content} className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
                 </div>
               </div>
@@ -695,7 +706,7 @@ export function MemoryPage() {
         <LoadingBar visible={isRefreshing} />
         {/* Results list — full width on mobile, fixed sidebar on desktop */}
         <ScrollArea className="min-w-0 flex-1 lg:w-[22rem] lg:flex-none lg:border-r border-border/50">
-          <div className="space-y-1.5 p-2">
+          <div className="min-w-0 space-y-1.5 p-2 [overflow-wrap:anywhere]">
             {searchResponse.isLoading && (
               <>
                 <Skeleton className="h-24 rounded-lg" />
@@ -735,8 +746,8 @@ export function MemoryPage() {
 
         {/* Desktop detail pane */}
         {!isMobile && (
-          <ScrollArea className="flex-1">
-            <main className="mx-auto max-w-3xl p-5 sm:p-8">
+          <ScrollArea className="min-w-0 flex-1">
+            <main className="mx-auto min-w-0 max-w-3xl p-5 sm:p-8">
               <MemoDetailContent data={selectedMemoData} workspaceId={workspaceId} isLoading={selectedMemo.isLoading} />
             </main>
           </ScrollArea>
@@ -752,8 +763,14 @@ export function MemoryPage() {
           }}
         >
           <DrawerContent className="max-h-[85dvh]">
-            <ScrollArea className="min-w-0 overflow-auto p-4 pb-8">
-              <MemoDetailContent data={selectedMemoData} workspaceId={workspaceId} isLoading={selectedMemo.isLoading} />
+            <ScrollArea className="min-w-0">
+              <div className="min-w-0 p-4 pb-8">
+                <MemoDetailContent
+                  data={selectedMemoData}
+                  workspaceId={workspaceId}
+                  isLoading={selectedMemo.isLoading}
+                />
+              </div>
             </ScrollArea>
           </DrawerContent>
         </Drawer>
