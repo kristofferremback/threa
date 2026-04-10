@@ -19,6 +19,12 @@ import {
   type EnrichedMessageResult,
   type EnrichedAttachmentResult,
 } from "./context-formatter"
+import {
+  resolveQuoteReplies,
+  renderMessageWithQuoteContext,
+  extractAppendedQuoteContext,
+  DEFAULT_MAX_QUOTE_DEPTH,
+} from "../quote-resolver"
 import { logger } from "../../../lib/logger"
 import { SEMANTIC_DISTANCE_THRESHOLD } from "../../search"
 import {
@@ -785,7 +791,38 @@ Each query must have:
         }
 
         // Enrich results with author names and stream names
-        return enrichMessageSearchResults(client, workspaceId, [...dedupedResultsById.values()])
+        const enriched = await enrichMessageSearchResults(client, workspaceId, [...dedupedResultsById.values()])
+
+        // Resolve quote-reply precursors for each retrieved message so Ariadne
+        // sees the full source of anything that was quoted, not just the
+        // snippet. Requires a batch fetch because `EnrichedMessageResult` does
+        // not carry `contentJson`.
+        if (enriched.length > 0) {
+          const seedMessageMap = await MessageRepository.findByIdsInStreams(
+            client,
+            enriched.map((e) => e.id),
+            accessibleStreamIds
+          )
+          if (seedMessageMap.size > 0) {
+            const { resolved, authorNames } = await resolveQuoteReplies(client, workspaceId, {
+              seedMessages: [...seedMessageMap.values()],
+              accessibleStreamIds: new Set(accessibleStreamIds),
+            })
+            if (resolved.size > 0) {
+              for (const e of enriched) {
+                const seed = seedMessageMap.get(e.id)
+                if (!seed) continue
+                const rendered = renderMessageWithQuoteContext(seed, resolved, authorNames, 0, DEFAULT_MAX_QUOTE_DEPTH)
+                const appended = extractAppendedQuoteContext(rendered, seed.contentMarkdown)
+                if (appended.length > 0) {
+                  e.quoteContext = appended
+                }
+              }
+            }
+          }
+        }
+
+        return enriched
       })
     } catch (error) {
       logger.warn({ error, query: query.query }, "Message search failed")

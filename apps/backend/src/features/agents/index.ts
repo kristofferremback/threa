@@ -71,6 +71,16 @@ export { ConversationSummaryRepository } from "./conversation-summary-repository
 export type { AgentConversationSummary, UpsertConversationSummaryParams } from "./conversation-summary-repository"
 export { ConversationSummaryService } from "./conversation-summary-service"
 
+// Quote-reply resolution (used by both companion/ and researcher/)
+export {
+  resolveQuoteReplies,
+  renderMessageWithQuoteContext,
+  extractAppendedQuoteContext,
+  DEFAULT_MAX_QUOTE_DEPTH,
+  DEFAULT_MAX_TOTAL_RESOLVED,
+} from "./quote-resolver"
+export type { ResolveQuoteRepliesInput, ResolveQuoteRepliesResult } from "./quote-resolver"
+
 // Context builder
 export { buildStreamContext, enrichMessagesWithAttachments } from "./context-builder"
 export type {
