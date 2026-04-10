@@ -4,9 +4,11 @@ import { ChevronLeft, Quote, SmilePlus } from "lucide-react"
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
 import { Separator } from "@/components/ui/separator"
 import { Button } from "@/components/ui/button"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { MarkdownContent } from "@/components/ui/markdown-content"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { useMessageReactions, stripColons } from "@/hooks/use-message-reactions"
+import { getInitials } from "@/lib/initials"
 import { cn } from "@/lib/utils"
 import { type MessageActionContext, type MessageAction, getVisibleActions } from "./message-actions"
 
@@ -157,6 +159,7 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
           <ExpandedQuoteView
             contentMarkdown={context.contentMarkdown}
             authorName={authorName}
+            actorType={context.actorType}
             selectedText={selectedText}
             contentRef={contentRef}
             onBack={handleBack}
@@ -168,19 +171,28 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
             <div className="px-4 pt-1 pb-3">
               <div
                 className={cn(
-                  "rounded-xl bg-muted/60 px-3.5 py-2.5",
-                  context.onQuoteReplyWithSnippet && "active:bg-muted/80 transition-colors"
+                  "group/preview relative rounded-xl bg-muted/60 px-3.5 py-2.5",
+                  context.onQuoteReplyWithSnippet && "active:bg-muted/80 transition-colors cursor-pointer"
                 )}
                 role={context.onQuoteReplyWithSnippet ? "button" : undefined}
                 onClick={context.onQuoteReplyWithSnippet ? () => setExpanded(true) : undefined}
               >
                 <p className="text-[13px] font-medium text-muted-foreground mb-0.5">{authorName}</p>
-                <div className="text-sm text-foreground/80 line-clamp-2 leading-snug">
+                <div className="text-sm text-foreground/80 line-clamp-2 leading-snug pr-6">
                   <MarkdownContent content={context.contentMarkdown} />
                 </div>
+                {context.onQuoteReplyWithSnippet && (
+                  <Quote
+                    aria-hidden="true"
+                    className="absolute top-2.5 right-2.5 h-3.5 w-3.5 text-muted-foreground/40 group-active/preview:text-primary transition-colors"
+                  />
+                )}
               </div>
               {context.onQuoteReplyWithSnippet && (
-                <p className="text-[11px] text-muted-foreground/60 mt-1 px-1">Tap to select quote</p>
+                <p className="text-[11px] text-muted-foreground/60 mt-1.5 px-1 flex items-center gap-1">
+                  <span className="inline-block h-1 w-1 rounded-full bg-primary/60" />
+                  Tap to highlight a passage
+                </p>
               )}
             </div>
 
@@ -290,6 +302,7 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
 interface ExpandedQuoteViewProps {
   contentMarkdown: string
   authorName: string
+  actorType: string | null
   selectedText: string
   contentRef: React.RefObject<HTMLDivElement | null>
   onBack: () => void
@@ -299,46 +312,111 @@ interface ExpandedQuoteViewProps {
 function ExpandedQuoteView({
   contentMarkdown,
   authorName,
+  actorType,
   selectedText,
   contentRef,
   onBack,
   onQuote,
 }: ExpandedQuoteViewProps) {
+  const initials = getInitials(authorName)
+  const charCount = selectedText.length
+  const isPersona = actorType === "persona"
+  const isBot = actorType === "bot"
+  const isSystem = actorType === "system"
+
   return (
     <div className="flex flex-col min-h-0 h-full">
-      {/* Header */}
-      <div className="flex items-center gap-2 px-2 py-2 border-b">
+      {/* Header — soft app-bar with gradient divider */}
+      <div className="relative flex items-center gap-1 px-2 pt-2 pb-3">
         <button
           type="button"
-          className="flex items-center justify-center h-8 w-8 rounded-full active:bg-muted/80 transition-colors"
+          className="flex items-center justify-center h-9 w-9 rounded-full text-muted-foreground active:bg-muted/80 transition-colors"
           aria-label="Back to actions"
           onClick={onBack}
         >
           <ChevronLeft className="h-5 w-5" />
         </button>
-        <span className="text-sm font-medium">Select text to quote</span>
+        <h2 className="text-[15px] font-semibold tracking-tight">Quote a passage</h2>
+        <div className="absolute left-0 right-0 bottom-0 h-px bg-gradient-to-r from-transparent via-border/70 to-transparent" />
       </div>
 
-      {/* Author name */}
-      <div className="px-4 pt-3 pb-1">
-        <p className="text-[13px] font-medium text-muted-foreground">{authorName}</p>
+      {/* Scrollable byline + content */}
+      <div data-vaul-no-drag className="flex-1 min-h-0 overflow-y-auto">
+        {/* Byline — avatar anchored, matches timeline message style */}
+        <div className="flex items-center gap-3 px-4 pt-4 pb-3">
+          <Avatar className="h-9 w-9 rounded-[10px] shrink-0">
+            <AvatarFallback
+              className={cn(
+                "rounded-[10px] text-[13px] font-semibold",
+                isSystem && "bg-blue-500/10 text-blue-500",
+                isBot && "bg-emerald-500/10 text-emerald-600",
+                isPersona && "bg-primary/10 text-primary",
+                !isSystem && !isBot && !isPersona && "bg-muted text-foreground"
+              )}
+            >
+              {initials}
+            </AvatarFallback>
+          </Avatar>
+          <div className="min-w-0">
+            <p
+              className={cn(
+                "text-sm font-semibold truncate",
+                isPersona && "text-primary",
+                isBot && "text-emerald-600",
+                isSystem && "text-blue-500"
+              )}
+            >
+              {authorName}
+            </p>
+          </div>
+        </div>
+
+        {/* Message content with left gold accent stripe + decorative quote watermark */}
+        <div className="relative px-4 pb-6">
+          {/* Left accent stripe — gold thread fading downward */}
+          <div
+            aria-hidden="true"
+            className="absolute left-4 top-0 bottom-6 w-[3px] rounded-full bg-gradient-to-b from-primary/60 via-primary/25 to-primary/[0.04]"
+          />
+
+          {/* Decorative quote watermark */}
+          <div
+            aria-hidden="true"
+            className="absolute top-[-12px] right-3 text-[140px] leading-none font-serif text-primary/[0.05] select-none pointer-events-none"
+          >
+            &ldquo;
+          </div>
+
+          {/* Actual message content — selectable, message-grade typography */}
+          <div ref={contentRef} className="relative pl-5 select-text">
+            <MarkdownContent content={contentMarkdown} className="text-sm leading-relaxed text-foreground" />
+          </div>
+        </div>
       </div>
 
-      {/* Scrollable message content with text selection enabled */}
-      <div
-        ref={contentRef}
-        data-vaul-no-drag
-        className="flex-1 overflow-y-auto px-4 pb-3 select-text text-sm text-foreground/80 leading-snug"
-      >
-        <MarkdownContent content={contentMarkdown} />
-      </div>
-
-      {/* Quote button footer */}
-      <div className="px-4 py-3 border-t pb-[max(12px,env(safe-area-inset-bottom))]">
-        <Button className="w-full gap-2" disabled={!selectedText} onClick={onQuote}>
-          <Quote className="h-4 w-4" />
-          {selectedText ? "Quote selected text" : "Select text to quote"}
-        </Button>
+      {/* Footer: idle hint card vs active quote button */}
+      <div className="border-t px-4 pt-3 pb-[max(12px,env(safe-area-inset-bottom))]">
+        {selectedText ? (
+          <div key="active" className="space-y-2 animate-in fade-in slide-in-from-bottom-2 duration-200">
+            <p className="text-[11px] font-medium text-muted-foreground/80 text-center tabular-nums tracking-wide uppercase">
+              {charCount} {charCount === 1 ? "character" : "characters"} selected
+            </p>
+            <Button className="w-full h-11 gap-2 thread-glow shadow-sm font-semibold" onClick={onQuote}>
+              <Quote className="h-4 w-4" />
+              Quote selection
+            </Button>
+          </div>
+        ) : (
+          <div
+            key="idle"
+            className="flex items-center gap-3 rounded-xl border border-dashed border-border/70 bg-muted/30 px-3.5 py-3 text-muted-foreground"
+          >
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-background shrink-0 ring-1 ring-border/60">
+              <Quote className="h-3.5 w-3.5 text-muted-foreground/70" />
+            </div>
+            <p className="text-[12px] leading-snug">Long-press the message to highlight a passage you want to quote.</p>
+          </div>
+        )}
       </div>
     </div>
   )
