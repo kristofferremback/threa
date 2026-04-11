@@ -14,6 +14,9 @@ import { buildStreamContext, type StreamContext } from "../context-builder"
 import type { ConversationSummaryService } from "../conversation-summary-service"
 import { buildSystemPrompt } from "./prompt/system-prompt"
 import { formatMessagesWithTemporal } from "./prompt/message-format"
+import { resolveQuoteReplies, renderMessageWithQuoteContext, DEFAULT_MAX_QUOTE_DEPTH } from "../quote-resolver"
+import { computeAgentAccessSpec } from "../researcher/access-spec"
+import { SearchRepository } from "../../search"
 import { logger } from "../../../lib/logger"
 
 export interface ContextDeps {
@@ -39,6 +42,14 @@ export interface AgentContext {
   preferences: UserPreferences | undefined
   authorNames: Map<string, string>
   streamContext: StreamContext
+  /**
+   * Streams the invoking user can read. Used for access-scoped quote-reply
+   * resolution and downstream workspace tools. `null` when there is no
+   * invoking user (bot-initiated turn) — downstream consumers should treat
+   * that as "no workspace access" or "current stream only" per their own
+   * semantics.
+   */
+  accessibleStreamIds: Set<string> | null
 }
 
 async function resolveScratchpadCustomPrompt(
@@ -101,6 +112,16 @@ export async function buildAgentContext(deps: ContextDeps, params: ContextParams
     }
   }
 
+  // Compute accessible streams once, here — used by both quote-reply resolution
+  // below and by the workspace-tool deps wiring in persona-agent.ts. Bot turns
+  // (no invoking user) get `null`; downstream consumers decide how to treat it.
+  let accessibleStreamIds: Set<string> | null = null
+  if (invokingUserId) {
+    const accessSpec = await computeAgentAccessSpec(db, { stream, invokingUserId })
+    const ids = await SearchRepository.getAccessibleStreamsForAgent(db, accessSpec, workspaceId)
+    accessibleStreamIds = new Set(ids)
+  }
+
   const streamContext = await buildStreamContext(db, stream, {
     preferences,
     triggerMessageId: messageId,
@@ -152,6 +173,27 @@ export async function buildAgentContext(deps: ContextDeps, params: ContextParams
     mentionerName = mentioner?.name ?? undefined
   }
 
+  // Resolve quote-reply precursors referenced from the conversation history and
+  // expand each message's contentMarkdown inline with `<quoted-source>` blocks
+  // so the model sees the full source of anything that was quoted, not just
+  // the snippet. Bot turns fall back to "current stream only" to avoid leaking
+  // cross-stream content when there is no invoking user to gate access.
+  const quoteAccessibleStreamIds = accessibleStreamIds ?? new Set([stream.id])
+  const { resolved: resolvedQuotes, authorNames: quotedAuthorNames } = await resolveQuoteReplies(db, workspaceId, {
+    seedMessages: streamContext.conversationHistory,
+    accessibleStreamIds: quoteAccessibleStreamIds,
+  })
+  for (const [id, name] of quotedAuthorNames) {
+    if (!authorNames.has(id)) authorNames.set(id, name)
+  }
+  if (resolvedQuotes.size > 0) {
+    streamContext.conversationHistory = streamContext.conversationHistory.map((m) => {
+      const expanded = renderMessageWithQuoteContext(m, resolvedQuotes, authorNames, 0, DEFAULT_MAX_QUOTE_DEPTH)
+      if (expanded === m.contentMarkdown) return m
+      return { ...m, contentMarkdown: expanded }
+    })
+  }
+
   const scratchpadCustomPrompt = await resolveScratchpadCustomPrompt(db, stream, preferences)
 
   const systemPrompt = buildSystemPrompt(
@@ -174,5 +216,6 @@ export async function buildAgentContext(deps: ContextDeps, params: ContextParams
     preferences,
     authorNames,
     streamContext,
+    accessibleStreamIds,
   }
 }

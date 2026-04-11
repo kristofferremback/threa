@@ -32,6 +32,13 @@ export interface EnrichedMessageResult {
   streamName: string
   streamType: string
   createdAt: Date
+  /**
+   * Pre-rendered `<quoted-source>` block(s) expanding any quote-reply
+   * precursors referenced from this message. Populated by the researcher when
+   * the message contains `quoteReply` nodes and their source messages are
+   * accessible. Undefined when there is no quoted-source context to add.
+   */
+  quoteContext?: string
 }
 
 /**
@@ -99,9 +106,10 @@ function formatMessagesSection(messages: EnrichedMessageResult[]): string {
       const relativeDate = formatRelativeDate(msg.createdAt)
       const author = msg.authorType === "user" ? `@${msg.authorName}` : msg.authorName
       const content = msg.content.replace(/\s+/g, " ").trim()
+      const quoteBlock = msg.quoteContext ? `\n${msg.quoteContext}` : ""
 
       return `> **${author}** in _${msg.streamName}_ (${relativeDate}):
-> ${content}`
+> ${content}${quoteBlock}`
     })
     .join("\n\n")
 

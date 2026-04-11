@@ -22,11 +22,10 @@ import { awaitAttachmentProcessing } from "../attachments"
 import type { TraceEmitter } from "./trace-emitter"
 import type { AI } from "../../lib/ai/ai"
 import type { SearchService } from "../search"
-import { SearchRepository } from "../search"
 import type { ConversationSummaryService } from "./conversation-summary-service"
 import type { StorageProvider } from "../../lib/storage/s3-client"
 import type { ModelRegistry } from "../../lib/ai/model-registry"
-import { WorkspaceAgent, type WorkspaceAgentResult, computeAgentAccessSpec } from "./researcher"
+import { WorkspaceAgent, type WorkspaceAgentResult } from "./researcher"
 import { logger } from "../../lib/logger"
 import { buildAgentContext, buildToolSet, withCompanionSession, type WithSessionResult } from "./companion"
 import { AgentRuntime, SessionTraceObserver, OtelObserver, type NewMessageInfo } from "./runtime"
@@ -306,18 +305,16 @@ export class PersonaAgent {
           return { messageId: message.id, operation: "created" as const }
         }
 
-        // Build workspace tool deps (requires invoking member for access control)
+        // Build workspace tool deps (requires invoking member for access control).
+        // `accessibleStreamIds` was computed once by buildAgentContext; reuse it
+        // here instead of recomputing (avoids drift between quote-resolution and
+        // workspace-tool access scopes).
         let workspaceDeps: import("./tools/tool-deps").WorkspaceToolDeps | undefined
-        if (agentContext.invokingUserId) {
-          const accessSpec = await computeAgentAccessSpec(db, {
-            stream,
-            invokingUserId: agentContext.invokingUserId,
-          })
-          const accessibleStreamIds = await SearchRepository.getAccessibleStreamsForAgent(db, accessSpec, workspaceId)
+        if (agentContext.invokingUserId && agentContext.accessibleStreamIds) {
           workspaceDeps = {
             db,
             workspaceId,
-            accessibleStreamIds,
+            accessibleStreamIds: [...agentContext.accessibleStreamIds],
             invokingUserId: agentContext.invokingUserId,
             searchService,
             storage,

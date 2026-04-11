@@ -171,6 +171,38 @@ export const MessageRepository = {
     return map
   },
 
+  /**
+   * Fetch messages by ID, restricted to a set of accessible streams and excluding
+   * soft-deleted rows. Used by quote-reply resolution where the quoted message ID
+   * comes from untrusted client content (`content_json.attrs.messageId`) and must
+   * be filtered against the caller's access scope.
+   */
+  async findByIdsInStreams(db: Querier, ids: string[], streamIds: string[]): Promise<Map<string, Message>> {
+    if (ids.length === 0 || streamIds.length === 0) return new Map()
+
+    const result = await db.query<MessageRow>(sql`
+      SELECT ${sql.raw(SELECT_FIELDS)} FROM messages
+      WHERE id = ANY(${ids})
+        AND stream_id = ANY(${streamIds})
+        AND deleted_at IS NULL
+    `)
+
+    if (result.rows.length === 0) return new Map()
+
+    const foundIds = result.rows.map((r) => r.id)
+    const reactionsResult = await db.query<ReactionRow>(sql`
+      SELECT message_id, user_id, emoji FROM reactions
+      WHERE message_id = ANY(${foundIds})
+    `)
+    const reactionsByMessage = aggregateReactionsByMessage(reactionsResult.rows)
+
+    const map = new Map<string, Message>()
+    for (const row of result.rows) {
+      map.set(row.id, mapRowToMessage(row, reactionsByMessage.get(row.id) ?? {}))
+    }
+    return map
+  },
+
   async list(
     db: Querier,
     streamId: string,
