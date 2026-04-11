@@ -209,7 +209,10 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
     }, HIDE_DELAY_MS)
   }, [clearHideTimeout])
 
-  // Toggle between collapsed and pinned (or preview on mobile)
+  // Toggle between collapsed and pinned (or preview on mobile).
+  // On desktop, toggling while in preview (hover) locks it to pinned instead
+  // of collapsing — otherwise the active hover would immediately re-open
+  // preview and the sidebar would appear to flicker.
   const togglePinned = useCallback(() => {
     clearHideTimeout()
     // Dismiss mobile keyboard when opening sidebar
@@ -218,8 +221,12 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
     }
     setState((current) => {
       let next: SidebarState
-      if (current === "pinned" || current === "preview") {
+      if (current === "pinned") {
         next = "collapsed"
+      } else if (current === "preview") {
+        // Desktop: lock hover-preview as pinned. Mobile: preview acts as
+        // "open", so toggling closes it.
+        next = isMobile ? "collapsed" : "pinned"
       } else if (isMobile) {
         next = "preview"
       } else {

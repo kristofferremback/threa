@@ -24,6 +24,7 @@ import {
   CoordinatedLoadingGate,
   MainContentGate,
   SidebarProvider,
+  useSidebar,
   TraceProvider,
   useTrace,
 } from "@/contexts"
@@ -80,6 +81,20 @@ function WorkspaceKeyboardHandler({
   })
 
   return <>{children}</>
+}
+
+/**
+ * Registers sidebar-related keyboard shortcuts. Must be rendered inside
+ * SidebarProvider so it can access the sidebar context.
+ */
+function SidebarKeyboardHandler() {
+  const { togglePinned } = useSidebar()
+
+  useKeyboardShortcuts({
+    toggleSidebar: togglePinned,
+  })
+
+  return null
 }
 
 /**
@@ -276,6 +291,7 @@ export function WorkspaceLayout() {
                             <PanelProvider>
                               <TraceProvider>
                                 <SidebarProvider>
+                                  <SidebarKeyboardHandler />
                                   <CoordinatedLoadingGate>
                                     <AppShell sidebar={<Sidebar workspaceId={workspaceId} />}>
                                       <MainContentGate>

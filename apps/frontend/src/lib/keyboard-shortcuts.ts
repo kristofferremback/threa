@@ -60,6 +60,14 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
     category: "navigation",
     global: true,
   },
+  {
+    id: "toggleSidebar",
+    label: "Toggle Sidebar",
+    description: "Show or hide the sidebar",
+    defaultKey: "mod+§",
+    category: "view",
+    global: true,
+  },
 ]
 
 /**
