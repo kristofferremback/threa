@@ -1,0 +1,12 @@
+<svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Threa Backoffice favicon — dark mode.
+       Vesica piscis + thread, same as the main app, plus a small filled
+       destructive-red dot inside the eye to mark this as the admin surface.
+       The shape stays brand-consistent so users still recognise Threa; the
+       dot is the differentiator at favicon resolution. -->
+  <path d="M 50 24 C 64 30, 72 42, 72 50 C 72 58, 64 70, 50 76 C 36 70, 28 58, 28 50 C 28 42, 36 30, 50 24 Z"
+        stroke="#C8A055" stroke-width="5" fill="none"/>
+  <path d="M 50 14 C 47 26, 46 38, 50 50 C 54 62, 53 74, 50 86"
+        stroke="#C8A055" stroke-width="6" stroke-linecap="round" fill="none"/>
+  <circle cx="50" cy="50" r="9" fill="#dc2626"/>
+</svg>
