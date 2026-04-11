@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest"
-import { render, screen, waitFor } from "@testing-library/react"
+import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { DeleteMessageDialog } from "./delete-message-dialog"
 
@@ -22,12 +22,16 @@ describe("DeleteMessageDialog", () => {
     expect(onConfirm).toHaveBeenCalledOnce()
   })
 
-  it("should focus the Delete button by default so Enter confirms immediately", async () => {
-    render(<DeleteMessageDialog open={true} onOpenChange={vi.fn()} onConfirm={vi.fn()} isDeleting={false} />)
+  it("should confirm deletion when Enter is pressed without tabbing", async () => {
+    const user = userEvent.setup()
+    const onConfirm = vi.fn()
 
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Delete" })).toHaveFocus()
-    })
+    render(<DeleteMessageDialog open={true} onOpenChange={vi.fn()} onConfirm={onConfirm} isDeleting={false} />)
+
+    expect(screen.getByRole("button", { name: "Delete" })).toHaveFocus()
+    await user.keyboard("{Enter}")
+
+    expect(onConfirm).toHaveBeenCalledOnce()
   })
 
   it("should show loading state while deleting", () => {
