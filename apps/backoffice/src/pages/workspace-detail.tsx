@@ -25,7 +25,8 @@ function formatDateTime(iso: string): string {
 }
 
 function buildWorkspaceUrl(appBaseUrl: string, workspaceId: string): string {
-  return `${appBaseUrl}/ws/${workspaceId}`
+  // The user-facing app routes workspaces under `/w/<id>`, not `/ws/<id>`.
+  return `${appBaseUrl}/w/${workspaceId}`
 }
 
 function buildWorkosOrgUrl(envId: string, orgId: string): string {
