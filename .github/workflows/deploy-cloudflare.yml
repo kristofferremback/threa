@@ -132,3 +132,66 @@ jobs:
           command: deploy --config wrangler.production.toml
           workingDirectory: apps/backoffice-router
           packageManager: bun
+
+  deploy-backoffice-staging:
+    name: Deploy Backoffice (Staging)
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success'
+    concurrency:
+      group: deploy-backoffice-staging
+      cancel-in-progress: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build backoffice
+        run: bun run --cwd apps/backoffice build
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name threa-backoffice-staging --branch main
+          workingDirectory: apps/backoffice
+          packageManager: bun
+
+  deploy-backoffice-router-staging:
+    name: Deploy Backoffice Router (Staging)
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success'
+    concurrency:
+      group: deploy-backoffice-router-staging
+      cancel-in-progress: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy --config wrangler.staging.toml
+          workingDirectory: apps/backoffice-router
+          packageManager: bun
