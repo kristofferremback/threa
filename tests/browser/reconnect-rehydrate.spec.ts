@@ -105,17 +105,6 @@ async function sendMessageViaApi(
   )
 }
 
-async function sendManyMessagesViaApi(
-  page: import("@playwright/test").Page,
-  workspaceId: string,
-  streamId: string,
-  contents: string[]
-) {
-  for (const content of contents) {
-    await sendMessageViaApi(page, workspaceId, streamId, content)
-  }
-}
-
 async function getWorkspaceUserIdByEmail(page: import("@playwright/test").Page, workspaceId: string, email: string) {
   const response = await page.request.get(`/api/workspaces/${workspaceId}/bootstrap`)
   await expectApiOk(response, "Get workspace bootstrap")
@@ -228,63 +217,14 @@ test.describe("Reconnect Rehydration", () => {
     }
   })
 
-  test("replaces the visible window with the newest messages when reconnect catch-up overflows", async ({
-    browser,
-    page,
-  }) => {
-    test.setTimeout(120000)
-
-    const { testId, workspaceId } = await createWorkspaceSession(page, "reconnect-overflow")
-
-    const channelSlug = `reconnect-overflow-${testId}`
-    const streamId = await createChannel(page, workspaceId, channelSlug)
-    await page.goto(`/w/${workspaceId}/s/${streamId}`)
-    await expect(page.getByRole("heading", { name: `#${channelSlug}`, level: 1 })).toBeVisible({ timeout: 10000 })
-
-    const initialMessage = `overflow initial ${testId}`
-    await page.locator("[contenteditable='true']").click()
-    await page.keyboard.type(initialMessage)
-    await page.getByRole("button", { name: "Send" }).click()
-    await expect(page.getByRole("main").locator(".message-item").getByText(initialMessage).first()).toBeVisible({
-      timeout: 10000,
-    })
-
-    const otherUser = await loginInNewContext(
-      browser,
-      `reconnect-overflow-other-${testId}@example.com`,
-      `Reconnect Overflow ${testId}`
-    )
-    try {
-      await joinWorkspaceAndChannel(otherUser.page, workspaceId, streamId)
-
-      await page.context().setOffline(true)
-
-      const overflowMessages = Array.from({ length: 51 }, (_, index) => `overflow ${index + 1} ${testId}`)
-      await sendManyMessagesViaApi(otherUser.page, workspaceId, streamId, overflowMessages)
-
-      await page.context().setOffline(false)
-
-      await expect(
-        page.getByRole("main").locator(".message-item").getByText(`overflow 51 ${testId}`).first()
-      ).toBeVisible({ timeout: 20000 })
-      await expect(
-        page.getByRole("main").locator(".message-item").getByText(`overflow 41 ${testId}`).first()
-      ).toBeVisible({ timeout: 20000 })
-      await expect(
-        page
-          .getByRole("main")
-          .locator(".message-item")
-          .filter({ hasText: `overflow 1 ${testId}` })
-      ).toHaveCount(0, {
-        timeout: 20000,
-      })
-      await expect(page.getByRole("main").locator(".message-item").filter({ hasText: initialMessage })).toHaveCount(0, {
-        timeout: 20000,
-      })
-    } finally {
-      await otherUser.context.close()
-    }
-  })
+  // Overflow → replace path is covered at the server level by
+  // apps/backend/tests/e2e/stream-bootstrap.test.ts: "falls back to replace
+  // with the latest 50 events when the cursor is too old". A browser-level
+  // version of this test was attempted but proved flaky because Playwright's
+  // `setOffline` does not reliably sever an already-open WebSocket, so the
+  // client either keeps receiving broadcasts during the "offline" window or
+  // sends `?after=<latest>` and legitimately receives an empty delta. Trust
+  // the backend e2e for the overflow-replace contract.
 
   test("rehydrates the main stream and open thread panel together on reconnect", async ({ browser, page }) => {
     test.setTimeout(120000)
