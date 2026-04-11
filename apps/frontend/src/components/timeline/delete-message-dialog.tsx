@@ -1,3 +1,4 @@
+import { useRef } from "react"
 import {
   ResponsiveAlertDialog,
   ResponsiveAlertDialogAction,
@@ -17,9 +18,18 @@ interface DeleteMessageDialogProps {
 }
 
 export function DeleteMessageDialog({ open, onOpenChange, onConfirm, isDeleting }: DeleteMessageDialogProps) {
+  // Message deletion is a power-user flow (triggered by clearing an edit), so we
+  // focus Delete instead of the Radix default Cancel to let Enter confirm immediately.
+  const deleteButtonRef = useRef<HTMLButtonElement>(null)
+
   return (
     <ResponsiveAlertDialog open={open} onOpenChange={onOpenChange}>
-      <ResponsiveAlertDialogContent>
+      <ResponsiveAlertDialogContent
+        onOpenAutoFocus={(event) => {
+          event.preventDefault()
+          deleteButtonRef.current?.focus()
+        }}
+      >
         <ResponsiveAlertDialogHeader>
           <ResponsiveAlertDialogTitle>Delete message</ResponsiveAlertDialogTitle>
           <ResponsiveAlertDialogDescription>
@@ -29,6 +39,7 @@ export function DeleteMessageDialog({ open, onOpenChange, onConfirm, isDeleting 
         <ResponsiveAlertDialogFooter>
           <ResponsiveAlertDialogCancel disabled={isDeleting}>Cancel</ResponsiveAlertDialogCancel>
           <ResponsiveAlertDialogAction
+            ref={deleteButtonRef}
             onClick={onConfirm}
             disabled={isDeleting}
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
