@@ -2,10 +2,20 @@ import { useMemo, useState, type FormEvent } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
 import { AlertTriangle, CheckCircle2 } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
+import {
+  ResponsiveAlertDialog,
+  ResponsiveAlertDialogAction,
+  ResponsiveAlertDialogCancel,
+  ResponsiveAlertDialogContent,
+  ResponsiveAlertDialogDescription,
+  ResponsiveAlertDialogFooter,
+  ResponsiveAlertDialogHeader,
+  ResponsiveAlertDialogTitle,
+} from "@/components/ui/responsive-alert-dialog"
 import { PageHeader } from "@/components/layout/page-header"
 import { Section } from "@/components/layout/section"
 import { ApiError } from "@/api/client"
@@ -59,6 +69,9 @@ function readApiError(error: unknown): string | null {
 export function InviteWorkspaceOwnerPage() {
   const queryClient = useQueryClient()
   const [email, setEmail] = useState("")
+  // Controlled-by-target pattern: opening the dialog = setting a target.
+  // Closing it (cancel, overlay click, confirm) = clearing the target.
+  const [revokeTarget, setRevokeTarget] = useState<WorkspaceOwnerInvitation | null>(null)
 
   const invitationsQ = useQuery({
     queryKey: backofficeKeys.invitations,
@@ -89,6 +102,12 @@ export function InviteWorkspaceOwnerPage() {
     e.preventDefault()
     if (!email) return
     createMutation.mutate(email)
+  }
+
+  const handleConfirmRevoke = () => {
+    if (!revokeTarget) return
+    revokeMutation.mutate(revokeTarget.id)
+    setRevokeTarget(null)
   }
 
   const { pending, history } = useMemo(() => {
@@ -169,11 +188,7 @@ export function InviteWorkspaceOwnerPage() {
               invitation={inv}
               busy={busyId === inv.id}
               onResend={() => resendMutation.mutate(inv.id)}
-              onRevoke={() => {
-                if (window.confirm(`Revoke the invitation for ${inv.email}?`)) {
-                  revokeMutation.mutate(inv.id)
-                }
-              }}
+              onRevoke={() => setRevokeTarget(inv)}
             />
           )}
         />
@@ -187,6 +202,36 @@ export function InviteWorkspaceOwnerPage() {
           renderRow={(inv) => <InvitationRow key={inv.id} invitation={inv} />}
         />
       </Section>
+
+      <ResponsiveAlertDialog
+        open={revokeTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setRevokeTarget(null)
+        }}
+      >
+        <ResponsiveAlertDialogContent>
+          <ResponsiveAlertDialogHeader>
+            <ResponsiveAlertDialogTitle>Revoke this invitation?</ResponsiveAlertDialogTitle>
+            <ResponsiveAlertDialogDescription>
+              {revokeTarget ? (
+                <>
+                  The invitation for <span className="font-medium text-foreground">{revokeTarget.email}</span> will be
+                  revoked immediately. They won't be able to accept it after this.
+                </>
+              ) : null}
+            </ResponsiveAlertDialogDescription>
+          </ResponsiveAlertDialogHeader>
+          <ResponsiveAlertDialogFooter>
+            <ResponsiveAlertDialogCancel>Keep invitation</ResponsiveAlertDialogCancel>
+            <ResponsiveAlertDialogAction
+              className={buttonVariants({ variant: "destructive" })}
+              onClick={handleConfirmRevoke}
+            >
+              Revoke
+            </ResponsiveAlertDialogAction>
+          </ResponsiveAlertDialogFooter>
+        </ResponsiveAlertDialogContent>
+      </ResponsiveAlertDialog>
     </div>
   )
 }
