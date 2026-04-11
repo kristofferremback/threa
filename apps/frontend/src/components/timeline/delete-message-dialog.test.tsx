@@ -22,6 +22,18 @@ describe("DeleteMessageDialog", () => {
     expect(onConfirm).toHaveBeenCalledOnce()
   })
 
+  it("should confirm deletion when Enter is pressed without tabbing", async () => {
+    const user = userEvent.setup()
+    const onConfirm = vi.fn()
+
+    render(<DeleteMessageDialog open={true} onOpenChange={vi.fn()} onConfirm={onConfirm} isDeleting={false} />)
+
+    expect(screen.getByRole("button", { name: "Delete" })).toHaveFocus()
+    await user.keyboard("{Enter}")
+
+    expect(onConfirm).toHaveBeenCalledOnce()
+  })
+
   it("should show loading state while deleting", () => {
     render(<DeleteMessageDialog open={true} onOpenChange={vi.fn()} onConfirm={vi.fn()} isDeleting={true} />)
 
