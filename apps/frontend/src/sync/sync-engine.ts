@@ -60,6 +60,7 @@ export class SyncEngine {
   private streamHandlerCleanups = new Map<string, () => void>()
   private workspaceHandlerCleanup: (() => void) | null = null
   private activeBootstrap: Promise<void> | null = null
+  private queuedReconnectBootstrap: Promise<void> | null = null
   private hasEverConnected = false
   /** Whether the engine has been destroyed. Public for ref-check re-creation. */
   isDestroyed = false
@@ -261,10 +262,16 @@ export class SyncEngine {
         for (const streamId of visibleStreamIds) {
           if (successfulStreamBootstraps.has(streamId) || workspaceStreamIds.has(streamId)) continue
           terminalStreamIds.add(streamId)
-          this.deps.syncStatus.setError(`stream:${streamId}`, {
-            status: 404,
-            error: new ApiError(404, "STREAM_NOT_FOUND", "Stream not found"),
-          })
+          // Only synthesize a 404 if no precise error was recorded in the first
+          // pass — otherwise a 403 from a stream the server omitted from the
+          // fresh workspace bootstrap would get overwritten to "not found" and
+          // surface the wrong error message to the user.
+          if (!this.deps.syncStatus.getError(`stream:${streamId}`)) {
+            this.deps.syncStatus.setError(`stream:${streamId}`, {
+              status: 404,
+              error: new ApiError(404, "STREAM_NOT_FOUND", "Stream not found"),
+            })
+          }
         }
 
         bootstrap = await applyReconnectBootstrapBatch(
@@ -335,7 +342,25 @@ export class SyncEngine {
 
   private runBootstrap(isReconnect: boolean): Promise<void> {
     if (this.activeBootstrap) {
-      return this.activeBootstrap
+      // If a reconnect arrives while a non-reconnect bootstrap (e.g.
+      // retryWorkspace) is in flight, we can't mutate the in-flight request
+      // to upgrade its semantics — it already chose visibleStreamIds=[] and
+      // won't do the per-stream delta fetch. Chain a follow-up reconnect
+      // bootstrap so the visible streams get their delta fetch once the
+      // current bootstrap finishes. Repeat reconnect triggers collapse onto
+      // the same queued promise.
+      if (isReconnect && !this.queuedReconnectBootstrap) {
+        const chained = this.activeBootstrap
+          .catch(() => {
+            // Swallow — the follow-up reconnect will retry whatever failed.
+          })
+          .then(() => {
+            this.queuedReconnectBootstrap = null
+            return this.runBootstrap(true)
+          })
+        this.queuedReconnectBootstrap = chained
+      }
+      return this.queuedReconnectBootstrap ?? this.activeBootstrap
     }
 
     const bootstrapPromise = this.bootstrapWorkspace(isReconnect).finally(() => {
