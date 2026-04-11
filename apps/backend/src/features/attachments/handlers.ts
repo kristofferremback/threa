@@ -1,7 +1,7 @@
 import type { Request, Response } from "express"
 import { z } from "zod"
 import type { Pool } from "pg"
-import type { AttachmentService } from "./service"
+import { buildContentDisposition, type AttachmentService } from "./service"
 import type { StreamService } from "../streams"
 import { VideoTranscodeJobRepository } from "./video"
 import type { StorageProvider } from "../../lib/storage/s3-client"
@@ -100,7 +100,10 @@ export function createAttachmentHandlers({ attachmentService, streamService, sto
         const job = await VideoTranscodeJobRepository.findByAttachmentId(pool, attachmentId)
         const path = variant === "processed" ? job?.processedStoragePath : job?.thumbnailStoragePath
         if (job?.status === "completed" && path) {
-          const url = await storage.getSignedDownloadUrl(path, {})
+          const filename =
+            variant === "processed" ? attachment.filename.replace(/\.[^.]+$/, ".mp4") : attachment.filename
+          const responseContentDisposition = download === "true" ? buildContentDisposition(filename) : undefined
+          const url = await storage.getSignedDownloadUrl(path, { responseContentDisposition })
           return res.json({ url, expiresIn: 900 })
         }
         // Fall through to raw file if variant not available

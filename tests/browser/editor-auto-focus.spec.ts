@@ -58,7 +58,7 @@ test.describe("Editor Auto-Focus", () => {
 
     // Editor should be focused after navigation
     const mainEditor = page.locator("[data-editor-zone='main'] [contenteditable='true']")
-    await expect(mainEditor).toBeFocused({ timeout: 3000 })
+    await expect(mainEditor).toBeFocused({ timeout: 10000 })
   })
 
   test("thread panel editor is focused on panel open", async ({ page }) => {

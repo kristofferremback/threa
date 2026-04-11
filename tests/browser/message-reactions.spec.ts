@@ -90,11 +90,17 @@ async function waitForEmojiGrid(page: Page) {
 }
 
 async function openReactionPickerGrid(page: Page, messageContainer: ReturnType<typeof getTimelineMessage>) {
+  const searchInput = getReactionSearchInput(page)
+
   for (let attempt = 0; attempt < 3; attempt++) {
-    await openReactionPicker(page, messageContainer)
+    const pickerIsOpen = await searchInput.isVisible().catch(() => false)
+    if (!pickerIsOpen) {
+      await openReactionPicker(page, messageContainer)
+    }
 
     try {
-      return await waitForEmojiGrid(page)
+      const { listbox, emojiButtons } = await waitForEmojiGrid(page)
+      return { searchInput, listbox, emojiButtons }
     } catch (error) {
       await page.keyboard.press("Escape").catch(() => {})
       if (attempt === 2) {
@@ -368,14 +374,10 @@ test.describe("Message Reactions", () => {
     const messageText = `Grid test ${testId}`
     const { messageContainer } = await setupSingleUserReactionMessage(page, "grid", messageText)
 
-    // Open reaction picker
-    const searchInput = await openReactionPicker(page, messageContainer)
+    // Open reaction picker and wait for the grid to stabilize.
+    const { searchInput, emojiButtons } = await openReactionPickerGrid(page, messageContainer)
 
-    // Search input should be visible and focused
     await expect(searchInput).toBeFocused()
-
-    // Emoji buttons should be visible in the grid (not empty)
-    const { emojiButtons } = await openReactionPickerGrid(page, messageContainer)
 
     // First emoji should be selected by default
     await expect(emojiButtons.first()).toHaveAttribute("data-selected", "true")
@@ -440,9 +442,11 @@ test.describe("Message Reactions", () => {
     const { messageContainer } = await setupSingleUserReactionMessage(page, "inline", messageText)
 
     // Add first reaction via toolbar
-    const searchInput = await fillReactionSearch(page, messageContainer, "fire")
+    await fillReactionSearch(page, messageContainer, "fire")
     await waitForEmojiGrid(page)
-    await page.locator("[role='listbox'] button[aria-label=':fire:']").last().click()
+    const fireButton = page.locator("[role='listbox'] button[aria-label=':fire:']").last()
+    await expect(fireButton).toBeVisible({ timeout: 5000 })
+    await fireButton.click()
 
     // Wait for reaction pill
     await expect(messageContainer.getByText("🔥")).toBeVisible({ timeout: 5000 })

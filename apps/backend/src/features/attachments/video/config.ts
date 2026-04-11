@@ -26,7 +26,8 @@ export const VIDEO_EXTENSIONS = [
  * Check if an attachment is a video based on MIME type and filename.
  *
  * - If mimeType starts with "video/", return true
- * - If mimeType is "application/octet-stream", check file extension
+ * - Otherwise, check known video file extensions because browser/upload
+ *   MIME detection is inconsistent across formats.
  * - Otherwise return false
  */
 export function isVideoAttachment(mimeType: string, filename: string): boolean {
@@ -34,12 +35,8 @@ export function isVideoAttachment(mimeType: string, filename: string): boolean {
     return true
   }
 
-  if (mimeType === "application/octet-stream") {
-    const lowerFilename = filename.toLowerCase()
-    return VIDEO_EXTENSIONS.some((ext) => lowerFilename.endsWith(ext))
-  }
-
-  return false
+  const lowerFilename = filename.toLowerCase()
+  return VIDEO_EXTENSIONS.some((ext) => lowerFilename.endsWith(ext))
 }
 
 /** Maximum age for a transcode job before it's considered stuck and failed (30 minutes) */

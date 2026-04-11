@@ -947,6 +947,15 @@ export function registerWorkspaceSocketHandlers(
 
     // Update the message event in IDB if we have stream + message context
     if (payload.streamId && payload.messageId) {
+      const updatePayload = (p: Record<string, unknown>) => {
+        if (!Array.isArray(p.attachments)) return p
+        const attachments = p.attachments as Array<Record<string, unknown>>
+        const updatedAttachments = attachments.map((a) =>
+          a.id === payload.attachmentId ? { ...a, processingStatus: payload.processingStatus } : a
+        )
+        return { ...p, attachments: updatedAttachments }
+      }
+
       const events = await db.events
         .where("[streamId+eventType]")
         .equals([payload.streamId, "message_created"])
@@ -955,16 +964,30 @@ export function registerWorkspaceSocketHandlers(
 
       if (events.length > 0) {
         const event = events[0]
-        const p = event.payload as Record<string, unknown>
-        const attachments = (p.attachments as Array<Record<string, unknown>>) ?? []
-        const updatedAttachments = attachments.map((a) =>
-          a.id === payload.attachmentId ? { ...a, processingStatus: payload.processingStatus } : a
-        )
         await db.events.update(event.id, {
-          payload: { ...p, attachments: updatedAttachments },
+          payload: updatePayload(event.payload as Record<string, unknown>),
           _cachedAt: Date.now(),
         })
+      } else {
+        queryClient.invalidateQueries({
+          queryKey: streamKeys.bootstrap(workspaceId, payload.streamId),
+          type: "active",
+        })
       }
+
+      queryClient.setQueryData<StreamBootstrap>(streamKeys.bootstrap(workspaceId, payload.streamId), (old) => {
+        if (!old) return old
+        return {
+          ...old,
+          events: old.events.map((event) => {
+            const eventPayload = event.payload as { messageId?: string } & Record<string, unknown>
+            if (event.eventType !== "message_created" || eventPayload.messageId !== payload.messageId) {
+              return event
+            }
+            return { ...event, payload: updatePayload(eventPayload) }
+          }),
+        }
+      })
     }
   }
 

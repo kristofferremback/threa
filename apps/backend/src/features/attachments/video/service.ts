@@ -55,12 +55,22 @@ export class VideoTranscodingService implements VideoTranscodingServiceLike {
         return { attachment: null, job: null }
       }
 
+      const existingJob = await VideoTranscodeJobRepository.findByAttachmentId(client, attachmentId)
+      if (att.processingStatus === ProcessingStatuses.PROCESSING && existingJob?.mediaconvertJobId) {
+        log.info(
+          { existingJobId: existingJob.id, mediaconvertJobId: existingJob.mediaconvertJobId },
+          "Video transcode already submitted, skipping duplicate submit"
+        )
+        return { attachment: null, job: null }
+      }
+
       const claimed = await AttachmentRepository.updateProcessingStatus(
         client,
         attachmentId,
         ProcessingStatuses.PROCESSING,
         // PROCESSING included for crash recovery: if the worker crashed after claiming
-        // but before completing, the queue retries and we re-claim safely.
+        // but before completing, the queue retries can resume. Existing submitted
+        // jobs are filtered above to avoid duplicate MediaConvert submissions.
         { onlyIfStatusIn: [ProcessingStatuses.PENDING, ProcessingStatuses.FAILED, ProcessingStatuses.PROCESSING] }
       )
 
@@ -86,6 +96,7 @@ export class VideoTranscodingService implements VideoTranscodingServiceLike {
     let mediaconvertJobId: string
     try {
       mediaconvertJobId = await this.mediaConvertClient.submitTranscodeJob({
+        clientRequestToken: attachmentId,
         s3InputKey: attachment.storagePath,
         s3OutputPrefix,
       })

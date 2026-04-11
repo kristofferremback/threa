@@ -345,14 +345,24 @@ function VideoAttachment({
 
   const isProcessing = attachment.processingStatus === "pending" || attachment.processingStatus === "processing"
   const isFailed = attachment.processingStatus === "failed"
+  const isSkipped = attachment.processingStatus === "skipped"
 
   useEffect(() => {
-    if (deferHydration || isFailed) return
+    if (deferHydration || isFailed || isProcessing) return
+
+    if (isSkipped) {
+      setThumbnailUrl(null)
+      setIsLoading(false)
+      setError(false)
+      return
+    }
 
     let mounted = true
 
     async function loadThumbnail() {
       try {
+        setIsLoading(true)
+        setError(false)
         const url = await attachmentsApi.getDownloadUrl(workspaceId, attachment.id, { variant: "thumbnail" })
         if (mounted) {
           setThumbnailUrl(url)
@@ -374,7 +384,7 @@ function VideoAttachment({
     return () => {
       mounted = false
     }
-  }, [workspaceId, attachment.id, onThumbnailLoaded, deferHydration, isFailed])
+  }, [workspaceId, attachment.id, onThumbnailLoaded, deferHydration, isFailed, isProcessing, isSkipped])
 
   const handleClick = useCallback(() => {
     if (!isProcessing && !isFailed) {

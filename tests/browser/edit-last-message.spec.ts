@@ -193,12 +193,17 @@ test.describe("Edit last message (ArrowUp)", () => {
     const streamId = streamMatch![1]
 
     const oldMessage = `Old message outside window ${testId}`
-    await userA.page.locator("[contenteditable='true']").click()
-    await userA.page.keyboard.type(oldMessage)
-    await userA.page.keyboard.press("Enter")
-    await expect(userA.page.getByRole("main").locator(".message-item").getByText(oldMessage)).toBeVisible({
-      timeout: 5000,
+    const oldMessageResponse = await userA.page.request.post(`/api/workspaces/${workspaceId}/messages`, {
+      data: {
+        streamId,
+        contentJson: {
+          type: "doc",
+          content: [{ type: "paragraph", content: [{ type: "text", text: oldMessage }] }],
+        },
+        contentMarkdown: oldMessage,
+      },
     })
+    await expectApiOk(oldMessageResponse, "Create old message outside bootstrap window")
 
     // ── User B: join workspace + channel, flood with 60 filler messages ──
     // Fillers must come from a different user so User A's only message remains the old one.
@@ -208,7 +213,7 @@ test.describe("Edit last message (ArrowUp)", () => {
 
     const fillerText = `Filler Win ${testId}`
     for (let i = 1; i <= 60; i++) {
-      await userB.page.request.post(`/api/workspaces/${workspaceId}/messages`, {
+      const fillerResponse = await userB.page.request.post(`/api/workspaces/${workspaceId}/messages`, {
         data: {
           streamId,
           contentJson: {
@@ -218,6 +223,7 @@ test.describe("Edit last message (ArrowUp)", () => {
           contentMarkdown: `${fillerText} #${i}`,
         },
       })
+      await expectApiOk(fillerResponse, `Create filler message #${i}`)
     }
 
     // ── User A: reopen the stream in a fresh browser context so IDB/socket state
@@ -235,12 +241,15 @@ test.describe("Edit last message (ArrowUp)", () => {
     })
 
     // The old message should not be visible — it's outside the bootstrap window.
-    await expect(reloadedUserA.page.getByRole("main").locator(".message-item").getByText(oldMessage)).not.toBeVisible({
-      timeout: 10000,
-    })
+    const oldMessageInTimeline = reloadedUserA.page.getByRole("main").locator(".message-item").getByText(oldMessage)
+    await expect(oldMessageInTimeline).not.toBeVisible({ timeout: 10000 })
+    await reloadedUserA.page.waitForTimeout(500)
+    await expect(oldMessageInTimeline).not.toBeVisible({ timeout: 1000 })
 
     // Press ArrowUp — the old message is not registered (not mounted), so nothing happens
-    await reloadedUserA.page.locator("[contenteditable='true']").click()
+    const reloadedEditor = reloadedUserA.page.locator("[contenteditable='true']")
+    await reloadedEditor.click()
+    await expect(reloadedEditor).toBeFocused({ timeout: 5000 })
     await reloadedUserA.page.keyboard.press("ArrowUp")
 
     await expect(reloadedUserA.page.getByRole("button", { name: "Cancel" })).not.toBeVisible()

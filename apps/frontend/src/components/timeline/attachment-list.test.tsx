@@ -124,6 +124,50 @@ describe("AttachmentList", () => {
       })
       expect(screen.getByText("doc.pdf")).toBeInTheDocument()
     })
+
+    it("should not fetch thumbnails while videos are processing", async () => {
+      const attachment = createAttachment({
+        id: "video_1",
+        filename: "clip.mov",
+        mimeType: "video/quicktime",
+        processingStatus: "processing",
+      })
+      render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />, renderOpts)
+
+      expect(screen.getByText("Processing...")).toBeInTheDocument()
+      await waitFor(() => {
+        expect(mockGetDownloadUrl).not.toHaveBeenCalled()
+      })
+    })
+
+    it("should render skipped videos without requesting a missing thumbnail", async () => {
+      const attachment = createAttachment({
+        id: "video_1",
+        filename: "clip.mov",
+        mimeType: "video/quicktime",
+        processingStatus: "skipped",
+      })
+      render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />, renderOpts)
+
+      expect(screen.getByText("clip.mov")).toBeInTheDocument()
+      await waitFor(() => {
+        expect(mockGetDownloadUrl).not.toHaveBeenCalled()
+      })
+    })
+
+    it("should fetch thumbnail URL for completed videos", async () => {
+      const attachment = createAttachment({
+        id: "video_1",
+        filename: "clip.mov",
+        mimeType: "video/quicktime",
+        processingStatus: "completed",
+      })
+      render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />, renderOpts)
+
+      await waitFor(() => {
+        expect(mockGetDownloadUrl).toHaveBeenCalledWith(workspaceId, "video_1", { variant: "thumbnail" })
+      })
+    })
   })
 
   describe("file size formatting", () => {

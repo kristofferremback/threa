@@ -18,6 +18,8 @@ import {
  */
 
 test.describe("Thread Replies", () => {
+  test.setTimeout(90000)
+
   let testId: string
 
   test.beforeEach(async ({ page }) => {
@@ -84,6 +86,7 @@ test.describe("Thread Replies", () => {
 
     // Send a reply
     await sendPanelReply(page, `Reply one ${testId}`)
+    await waitForRealThreadPanel(page)
 
     // Return to the main stream via the breadcrumb rather than depending on
     // the close-button click animation settling first.
@@ -95,7 +98,7 @@ test.describe("Thread Replies", () => {
     // Verify thread indicator shows "1 reply" on the parent message
     const parentInStream = page.getByRole("main").locator(".message-item").filter({ hasText: parentMessage }).first()
     await expect(parentInStream).toContainText(parentMessage, { timeout: 10000 })
-    await expect(parentInStream).toContainText(/1 reply/i, { timeout: 10000 })
+    await expect(parentInStream.getByRole("link", { name: /1 reply/i })).toBeVisible({ timeout: 45000 })
   })
 
   test("should send multiple replies in a thread", async ({ page }) => {

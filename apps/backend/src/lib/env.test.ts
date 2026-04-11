@@ -10,6 +10,13 @@ function resetEnv() {
 
 function setBaseEnv() {
   process.env.DATABASE_URL = "postgres://localhost:5432/threa_test"
+  delete process.env.GITHUB_APP_ID
+  delete process.env.GITHUB_APP_SLUG
+  delete process.env.GITHUB_APP_PRIVATE_KEY
+  delete process.env.WORKSPACE_INTEGRATIONS_SECRET
+  delete process.env.MEDIACONVERT_ENABLED
+  delete process.env.MEDIACONVERT_ROLE_ARN
+  delete process.env.MEDIACONVERT_ENDPOINT
 }
 
 afterEach(() => {
@@ -138,5 +145,48 @@ describe("loadConfig github app configuration", () => {
     const config = loadConfig()
     expect(config.github.enabled).toBe(true)
     expect(config.github.privateKey).toBe("line1\nline2")
+  })
+})
+
+describe("loadConfig MediaConvert configuration", () => {
+  test("disables MediaConvert when no MediaConvert env vars are set", () => {
+    setBaseEnv()
+    process.env.NODE_ENV = "development"
+    process.env.USE_STUB_AUTH = "true"
+
+    const config = loadConfig()
+    expect(config.mediaConvert.enabled).toBe(false)
+  })
+
+  test("throws when MediaConvert is enabled without a role ARN", () => {
+    setBaseEnv()
+    process.env.NODE_ENV = "development"
+    process.env.USE_STUB_AUTH = "true"
+    process.env.MEDIACONVERT_ENABLED = "true"
+
+    expect(() => loadConfig()).toThrow("MEDIACONVERT_ROLE_ARN is required when MEDIACONVERT_ENABLED=true")
+  })
+
+  test("throws when MediaConvert role ARN is set but transcoding is disabled", () => {
+    setBaseEnv()
+    process.env.NODE_ENV = "development"
+    process.env.USE_STUB_AUTH = "true"
+    process.env.MEDIACONVERT_ROLE_ARN = "arn:aws:iam::123456789012:role/threa-mediaconvert-dev"
+
+    expect(() => loadConfig()).toThrow(
+      "MEDIACONVERT_ENABLED=true is required when MediaConvert role ARN or endpoint is configured"
+    )
+  })
+
+  test("loads MediaConvert config when enabled with a role ARN", () => {
+    setBaseEnv()
+    process.env.NODE_ENV = "development"
+    process.env.USE_STUB_AUTH = "true"
+    process.env.MEDIACONVERT_ENABLED = "true"
+    process.env.MEDIACONVERT_ROLE_ARN = "arn:aws:iam::123456789012:role/threa-mediaconvert-dev"
+
+    const config = loadConfig()
+    expect(config.mediaConvert.enabled).toBe(true)
+    expect(config.mediaConvert.roleArn).toBe("arn:aws:iam::123456789012:role/threa-mediaconvert-dev")
   })
 })

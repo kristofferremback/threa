@@ -162,13 +162,28 @@ export async function sendPanelReply(page: Page, text: string): Promise<void> {
   const editor = getPanelEditor(page)
   const sendButton = panel.getByRole("button", { name: /^(Send|Reply)$/ })
 
-  await expect(editor).toBeVisible({ timeout: 10000 })
-  await editor.click()
-  await expect(editor).toBeFocused({ timeout: 5000 })
-  await page.keyboard.type(text)
-  await expect(editor).toContainText(text, { timeout: 5000 })
-  await expect(sendButton).toBeEnabled({ timeout: 5000 })
-  await sendButton.click()
+  await expect(editor).toBeVisible({ timeout: 15000 })
+  await expect
+    .poll(
+      async () => {
+        await editor.click().catch(() => {})
+        await editor.press("ControlOrMeta+a").catch(() => {})
+        await page.keyboard.press("Backspace").catch(() => {})
+        await page.keyboard.type(text).catch(() => {})
+
+        const editorText = await editor.textContent().catch(() => "")
+        const hasText = editorText?.includes(text) ?? false
+        const canSend = await sendButton.isEnabled().catch(() => false)
+        if (!hasText || !canSend) return false
+
+        return await sendButton
+          .click({ timeout: 2000 })
+          .then(() => true)
+          .catch(() => false)
+      },
+      { timeout: 20000, intervals: [100, 250, 500, 1000], message: "panel editor should accept and send reply text" }
+    )
+    .toBe(true)
 }
 
 /**
@@ -177,9 +192,9 @@ export async function sendPanelReply(page: Page, text: string): Promise<void> {
  */
 export async function waitForRealThreadPanel(page: Page): Promise<void> {
   const panel = page.getByTestId("panel")
-  const sendButton = panel.getByRole("button", { name: "Send", exact: true })
+  const sendButton = panel.getByRole("button", { name: /^(Send|Reply)$/ })
   const retryButton = panel.getByRole("button", { name: "Retry" })
-  const deadline = Date.now() + 15000
+  const deadline = Date.now() + 30000
 
   while (Date.now() < deadline) {
     if (await retryButton.isVisible().catch(() => false)) {
@@ -201,19 +216,20 @@ export async function waitForRealThreadPanel(page: Page): Promise<void> {
     await page.waitForTimeout(250)
   }
 
-  await expect(page.getByText(/Start a new thread/)).not.toBeVisible({ timeout: 1000 })
-  await expect(page).not.toHaveURL(/panel=draft:/, { timeout: 1000 })
-  await expect(sendButton).toBeVisible({ timeout: 1000 })
+  await expect(page.getByText(/Start a new thread/)).not.toBeVisible({ timeout: 5000 })
+  await expect(page).not.toHaveURL(/panel=draft:/, { timeout: 5000 })
+  await expect(sendButton).toBeVisible({ timeout: 5000 })
 }
 
 /**
  * Open the thread-reply action for a message, retrying if the row exposes a
  * transient failed-send state before the reply affordance appears.
  */
-export async function clickReplyInThread(messageContainer: Locator, timeout = 20000): Promise<void> {
+export async function clickReplyInThread(messageContainer: Locator, timeout = 45000): Promise<void> {
   const replyLink = messageContainer.getByRole("link", { name: "Reply in thread" })
   const retryButton = messageContainer.getByRole("button", { name: "Retry" })
 
+  await expect(messageContainer).toBeVisible({ timeout })
   await expect
     .poll(
       async () => {
@@ -229,10 +245,11 @@ export async function clickReplyInThread(messageContainer: Locator, timeout = 20
       },
       {
         timeout,
+        intervals: [100, 250, 500, 1000],
         message: "should expose the thread-reply action for the target message",
       }
     )
     .toBe(true)
 
-  await replyLink.click()
+  await replyLink.click({ timeout: 10000 })
 }

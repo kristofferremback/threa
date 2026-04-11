@@ -643,7 +643,8 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
     const prev = prevScopeRef.current
     prevScopeRef.current = scopeId
     if (autoFocus && prev !== undefined && prev !== scopeId) {
-      focus()
+      const timer = setTimeout(() => focus(), 0)
+      return () => clearTimeout(timer)
     }
   }, [scopeId, autoFocus, focus])
 

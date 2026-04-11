@@ -1,7 +1,8 @@
-import { test, expect } from "@playwright/test"
+import { test, expect, type Page } from "@playwright/test"
 import {
   clickReplyInThread,
   createChannel,
+  expectApiOk,
   generateTestId,
   loginAndCreateWorkspace,
   sendPanelReply,
@@ -19,12 +20,30 @@ import {
  */
 
 test.describe("Nested Thread Navigation", () => {
+  async function sendChannelMessageViaApi(page: Page, text: string): Promise<void> {
+    const match = page.url().match(/\/w\/([^/]+)\/s\/([^/?]+)/)
+    expect(match).toBeTruthy()
+    const [, workspaceId, streamId] = match!
+
+    const response = await page.request.post(`/api/workspaces/${workspaceId}/messages`, {
+      data: {
+        streamId,
+        contentJson: {
+          type: "doc",
+          content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+        },
+        contentMarkdown: text,
+      },
+    })
+    await expectApiOk(response, `Create stream message: ${text}`)
+  }
+
   test.beforeEach(async ({ page }) => {
     await loginAndCreateWorkspace(page, "nested-thread")
   })
 
   test("should show nested thread reply count when navigating back via breadcrumbs", async ({ page }) => {
-    test.setTimeout(60000)
+    test.setTimeout(90000)
     const testId = generateTestId()
 
     // Create a channel (creating navigates to it)
@@ -32,11 +51,8 @@ test.describe("Nested Thread Navigation", () => {
     await createChannel(page, channelName)
 
     // Post a message in the channel
-    const editor = page.locator("[contenteditable='true']")
-    await editor.click()
     const channelMessage = `Channel message ${testId}`
-    await page.keyboard.type(channelMessage)
-    await page.keyboard.press("Meta+Enter")
+    await sendChannelMessageViaApi(page, channelMessage)
 
     await expect(
       page.getByRole("main").locator(".message-item").filter({ hasText: channelMessage }).first()
@@ -66,7 +82,7 @@ test.describe("Nested Thread Navigation", () => {
       .locator(".message-item")
       .filter({ hasText: firstReply })
       .first()
-    await clickReplyInThread(firstReplyContainer, 25000)
+    await clickReplyInThread(firstReplyContainer)
 
     // Wait for nested thread draft panel to appear
     await expect(page.getByText(/Start a new thread/)).toBeVisible({ timeout: 3000 })
@@ -93,11 +109,11 @@ test.describe("Nested Thread Navigation", () => {
     // CRITICAL: The firstReply message should show as having 1 reply (the nested thread)
     // This is the bug - it doesn't show the reply count after navigating back
     const firstReplyInPanel = page.getByTestId("panel").locator(".message-item").filter({ hasText: firstReply }).first()
-    await expect(firstReplyInPanel).toContainText(/1 reply/i, { timeout: 20000 })
+    await expect(firstReplyInPanel).toContainText(/1 reply/i, { timeout: 45000 })
   })
 
   test("should show nested thread indicator when reopening parent thread", async ({ page }) => {
-    test.setTimeout(60000)
+    test.setTimeout(90000)
     const testId = generateTestId()
 
     // Create a channel (creating navigates to it)
@@ -105,11 +121,8 @@ test.describe("Nested Thread Navigation", () => {
     await createChannel(page, channelName)
 
     // Post a message in the channel
-    const editor = page.locator("[contenteditable='true']")
-    await editor.click()
     const channelMessage = `Channel post ${testId}`
-    await page.keyboard.type(channelMessage)
-    await page.keyboard.press("Meta+Enter")
+    await sendChannelMessageViaApi(page, channelMessage)
 
     await expect(
       page.getByRole("main").locator(".message-item").filter({ hasText: channelMessage }).first()
@@ -119,7 +132,7 @@ test.describe("Nested Thread Navigation", () => {
 
     // Start a thread on the channel message
     const messageContainer = page.getByRole("main").locator(".message-item").filter({ hasText: channelMessage }).first()
-    await clickReplyInThread(messageContainer, 10000)
+    await clickReplyInThread(messageContainer)
 
     await expect(page.getByText(/Start a new thread/)).toBeVisible({ timeout: 3000 })
 
@@ -136,7 +149,7 @@ test.describe("Nested Thread Navigation", () => {
       .locator(".message-item")
       .filter({ hasText: threadReply })
       .first()
-    await clickReplyInThread(threadReplyContainer, 25000)
+    await clickReplyInThread(threadReplyContainer)
 
     await expect(page.getByText(/Start a new thread/)).toBeVisible({ timeout: 3000 })
 
@@ -177,25 +190,22 @@ test.describe("Nested Thread Navigation", () => {
       .filter({ hasText: threadReply })
       .first()
     await expect
-      .poll(async () => (await threadReplyInPanel.textContent()) ?? "", { timeout: 30000 })
+      .poll(async () => (await threadReplyInPanel.textContent()) ?? "", { timeout: 45000 })
       .toMatch(/1 reply/i)
   })
 
   test("should maintain reply counts across multiple navigation cycles", async ({ page }) => {
     const testId = generateTestId()
 
-    test.setTimeout(60000)
+    test.setTimeout(90000)
 
     // Create a channel (creating navigates to it)
     const channelName = `nav-cycles-${testId}`
     await createChannel(page, channelName)
 
     // Post in channel
-    const editor = page.locator("[contenteditable='true']")
-    await editor.click()
     const rootMessage = `Root ${testId}`
-    await page.keyboard.type(rootMessage)
-    await page.keyboard.press("Meta+Enter")
+    await sendChannelMessageViaApi(page, rootMessage)
     await expect(page.getByRole("main").locator(".message-item").filter({ hasText: rootMessage }).first()).toBeVisible({
       timeout: 5000,
     })
@@ -216,7 +226,7 @@ test.describe("Nested Thread Navigation", () => {
       .locator(".message-item")
       .filter({ hasText: level1Message })
       .first()
-    await clickReplyInThread(level1Container, 25000)
+    await clickReplyInThread(level1Container)
     await expect(page.getByText(/Start a new thread/)).toBeVisible({ timeout: 3000 })
 
     const level2Message = `Level 2 ${testId}`

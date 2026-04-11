@@ -15,6 +15,7 @@ export interface MediaConvertClientConfig {
 }
 
 export interface SubmitTranscodeJobInput {
+  clientRequestToken: string
   s3InputKey: string
   s3OutputPrefix: string
 }
@@ -40,6 +41,10 @@ export class ThreaMediaConvertClient {
     this.s3Config = config.s3Config
     this.mediaConvertConfig = config.mediaConvertConfig
 
+    if (!config.mediaConvertConfig.roleArn) {
+      throw new Error("MediaConvert role ARN is required when video transcoding is enabled")
+    }
+
     this.client = new MediaConvertClient({
       region: config.s3Config.region,
       credentials: {
@@ -58,6 +63,14 @@ export class ThreaMediaConvertClient {
 
     if (this.mediaConvertConfig.endpoint) {
       this.cachedEndpoint = this.mediaConvertConfig.endpoint
+      this.client = new MediaConvertClient({
+        region: this.s3Config.region,
+        endpoint: this.cachedEndpoint,
+        credentials: {
+          accessKeyId: this.s3Config.accessKeyId,
+          secretAccessKey: this.s3Config.secretAccessKey,
+        },
+      })
       return this.cachedEndpoint
     }
 
@@ -94,6 +107,7 @@ export class ThreaMediaConvertClient {
     const s3OutputUri = `s3://${this.s3Config.bucket}/${input.s3OutputPrefix}`
 
     const jobParams: CreateJobCommandInput = {
+      ClientRequestToken: input.clientRequestToken,
       Role: this.mediaConvertConfig.roleArn,
       Settings: {
         Inputs: [

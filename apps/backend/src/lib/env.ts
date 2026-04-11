@@ -206,6 +206,13 @@ export function loadConfig(): Config {
     )
   }
 
+  if (config.mediaConvert.enabled && !config.mediaConvert.roleArn) {
+    throw new Error("MEDIACONVERT_ROLE_ARN is required when MEDIACONVERT_ENABLED=true")
+  }
+  if (!config.mediaConvert.enabled && (config.mediaConvert.roleArn || config.mediaConvert.endpoint)) {
+    throw new Error("MEDIACONVERT_ENABLED=true is required when MediaConvert role ARN or endpoint is configured")
+  }
+
   // Validate co-presence: REGION and INTERNAL_API_KEY are required when CONTROL_PLANE_URL is set (INV-11)
   if (config.controlPlaneUrl && !config.region) {
     throw new Error(
