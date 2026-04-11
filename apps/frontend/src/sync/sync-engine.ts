@@ -3,10 +3,21 @@ import type { Socket } from "socket.io-client"
 import type { QueryClient } from "@tanstack/react-query"
 import { db } from "@/db"
 import { joinRoomFireAndForget, joinRoomBestEffort } from "@/lib/socket-room"
-import { applyWorkspaceBootstrap, registerWorkspaceSocketHandlers } from "./workspace-sync"
-import { registerStreamSocketHandlers } from "./stream-sync"
+import { ApiError } from "@/api/client"
+import {
+  applyReconnectBootstrapBatch,
+  applyWorkspaceBootstrap,
+  registerWorkspaceSocketHandlers,
+} from "./workspace-sync"
+import {
+  registerStreamSocketHandlers,
+  getLatestPersistedSequence,
+  toCachedStreamBootstrap,
+  type CachedStreamBootstrap,
+} from "./stream-sync"
 import { processOperationQueue } from "./operation-queue"
 import { SyncStatusStore } from "./sync-status"
+import { streamKeys } from "@/hooks/use-streams"
 import { workspaceKeys } from "@/hooks/use-workspaces"
 import type { WorkspaceBootstrap } from "@threa/types"
 
@@ -16,7 +27,11 @@ interface SyncEngineDeps {
   queryClient: QueryClient
   workspaceService: { bootstrap: (workspaceId: string) => Promise<WorkspaceBootstrap> }
   streamService: {
-    bootstrap: (workspaceId: string, streamId: string) => Promise<import("@threa/types").StreamBootstrap>
+    bootstrap: (
+      workspaceId: string,
+      streamId: string,
+      params?: { after?: string }
+    ) => Promise<import("@threa/types").StreamBootstrap>
   }
   messageService?: {
     update: (workspaceId: string, messageId: string, data: any) => Promise<any>
@@ -44,12 +59,14 @@ export class SyncEngine {
   private subscribedStreams = new Set<string>()
   private streamHandlerCleanups = new Map<string, () => void>()
   private workspaceHandlerCleanup: (() => void) | null = null
+  private activeBootstrap: Promise<void> | null = null
   private hasEverConnected = false
   /** Whether the engine has been destroyed. Public for ref-check re-creation. */
   isDestroyed = false
 
   // Ref-like state updated by the React layer
   private currentStreamId: string | undefined = undefined
+  private visibleStreamIds: string[] = []
   private currentUser: { id: string } | null = null
   /** Last workspace bootstrap error, if any. Consumers can check this for 404/403 handling. */
   lastWorkspaceError: unknown = null
@@ -63,6 +80,10 @@ export class SyncEngine {
   /** Update the current stream ID (called from React when route changes). */
   setCurrentStreamId(id: string | undefined): void {
     this.currentStreamId = id
+  }
+
+  setVisibleStreamIds(ids: string[]): void {
+    this.visibleStreamIds = ids
   }
 
   /** Update the current auth user (called from React when auth state settles). */
@@ -99,10 +120,20 @@ export class SyncEngine {
       }
     )
 
-    await this.bootstrapWorkspace(isReconnect)
+    await this.runBootstrap(isReconnect)
 
     // Process pending offline operations (edits, deletes, reactions)
     this.kickOperationQueue()
+  }
+
+  /**
+   * Rehydrate visible streams after a connectivity gap even if Socket.IO did
+   * not emit a full reconnect cycle (for example, brief offline gaps where the
+   * transport survives but the client missed stream updates).
+   */
+  async refreshAfterConnectivityResume(): Promise<void> {
+    if (this.isDestroyed || !this.socket || !this.hasEverConnected) return
+    await this.runBootstrap(true)
   }
 
   /**
@@ -119,15 +150,7 @@ export class SyncEngine {
    */
   async subscribeStream(streamId: string): Promise<void> {
     if (this.isDestroyed || !this.socket) return
-    if (this.subscribedStreams.has(streamId)) return
-    this.subscribedStreams.add(streamId)
-
-    const room = `ws:${this.deps.workspaceId}:stream:${streamId}`
-    joinRoomFireAndForget(this.socket, room, new AbortController().signal, "SyncEngine")
-
-    // Register stream-level socket handlers (IDB-only writes)
-    const cleanup = registerStreamSocketHandlers(this.socket, this.deps.workspaceId, streamId, this.deps.queryClient)
-    this.streamHandlerCleanups.set(streamId, cleanup)
+    await this.ensureStreamSubscription(streamId)
   }
 
   /**
@@ -161,7 +184,7 @@ export class SyncEngine {
    */
   retryWorkspace(): void {
     if (!this.socket) return
-    void this.bootstrapWorkspace(false)
+    void this.runBootstrap(false)
   }
 
   /**
@@ -181,24 +204,104 @@ export class SyncEngine {
 
   private async bootstrapWorkspace(_isReconnect: boolean): Promise<void> {
     if (!this.socket) return
-    const { workspaceId, syncStatus, queryClient, workspaceService } = this.deps
+    const { workspaceId, syncStatus, queryClient, workspaceService, streamService } = this.deps
 
     syncStatus.set(`workspace:${workspaceId}`, "syncing")
 
+    const visibleStreamIds = _isReconnect ? this.getVisibleServerStreamIds() : []
+    for (const streamId of visibleStreamIds) {
+      syncStatus.set(`stream:${streamId}`, "syncing")
+      syncStatus.setError(`stream:${streamId}`, null)
+    }
+
     try {
       // Subscribe-then-fetch (INV-53)
-      console.log("[SyncEngine] joining workspace room")
       await joinRoomBestEffort(this.socket, `ws:${workspaceId}`, "SyncEngine")
-      console.log("[SyncEngine] fetching bootstrap")
 
       const fetchStartedAt = Date.now()
-      const bootstrap = await workspaceService.bootstrap(workspaceId)
+      let bootstrap: WorkspaceBootstrap
 
-      // Write to IDB (source of truth)
-      await applyWorkspaceBootstrap(workspaceId, bootstrap, fetchStartedAt)
+      if (_isReconnect && visibleStreamIds.length > 0) {
+        await Promise.all(
+          visibleStreamIds.map((streamId) => this.ensureStreamSubscription(streamId, { awaitJoin: true }))
+        )
 
-      // Write to TanStack cache (bridge for coordinated-loading, sidebar loading/error)
-      queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
+        const [workspaceBootstrap, streamResults] = await Promise.all([
+          workspaceService.bootstrap(workspaceId),
+          Promise.all(
+            visibleStreamIds.map(async (streamId) => {
+              try {
+                const after = await getLatestPersistedSequence(streamId)
+                const bootstrap = await streamService.bootstrap(workspaceId, streamId, after ? { after } : undefined)
+                return { streamId, bootstrap }
+              } catch (error) {
+                return { streamId, error }
+              }
+            })
+          ),
+        ])
+
+        const successfulStreamBootstraps = new Map<string, import("@threa/types").StreamBootstrap>()
+        const staleStreamIds = new Set<string>()
+        const terminalStreamIds = new Set<string>()
+        for (const result of streamResults) {
+          if ("bootstrap" in result && result.bootstrap) {
+            successfulStreamBootstraps.set(result.streamId, result.bootstrap)
+          } else {
+            if (ApiError.isApiError(result.error) && (result.error.status === 403 || result.error.status === 404)) {
+              terminalStreamIds.add(result.streamId)
+            } else {
+              staleStreamIds.add(result.streamId)
+            }
+            this.applyReconnectStreamError(result.streamId, result.error)
+          }
+        }
+
+        const workspaceStreamIds = new Set(workspaceBootstrap.streams.map((stream) => stream.id))
+        for (const streamId of visibleStreamIds) {
+          if (successfulStreamBootstraps.has(streamId) || workspaceStreamIds.has(streamId)) continue
+          terminalStreamIds.add(streamId)
+          this.deps.syncStatus.setError(`stream:${streamId}`, {
+            status: 404,
+            error: new ApiError(404, "STREAM_NOT_FOUND", "Stream not found"),
+          })
+        }
+
+        bootstrap = await applyReconnectBootstrapBatch(
+          workspaceId,
+          workspaceBootstrap,
+          successfulStreamBootstraps,
+          staleStreamIds,
+          terminalStreamIds,
+          fetchStartedAt
+        )
+
+        queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
+        for (const [streamId, streamBootstrap] of successfulStreamBootstraps) {
+          queryClient.setQueryData(
+            streamKeys.bootstrap(workspaceId, streamId),
+            toCachedStreamBootstrap(
+              streamBootstrap,
+              queryClient.getQueryData<CachedStreamBootstrap>(streamKeys.bootstrap(workspaceId, streamId)),
+              { incrementWindowVersionOnReplace: streamBootstrap.syncMode === "replace" }
+            )
+          )
+          syncStatus.setError(`stream:${streamId}`, null)
+          syncStatus.set(`stream:${streamId}`, "synced")
+        }
+        for (const streamId of [...staleStreamIds, ...terminalStreamIds]) {
+          const status = syncStatus.getError(`stream:${streamId}`) ? "error" : "stale"
+          syncStatus.set(`stream:${streamId}`, status)
+        }
+      } else {
+        bootstrap = await workspaceService.bootstrap(workspaceId)
+
+        // Write to IDB (source of truth)
+        await applyWorkspaceBootstrap(workspaceId, bootstrap, fetchStartedAt)
+
+        // Write to TanStack cache (bridge for coordinated-loading, sidebar loading/error)
+        queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
+      }
 
       this.lastWorkspaceError = null
       syncStatus.set(`workspace:${workspaceId}`, "synced")
@@ -210,27 +313,74 @@ export class SyncEngine {
       // so these are fresh registrations.
       for (const streamId of memberStreamIds) {
         if (!this.subscribedStreams.has(streamId)) {
-          this.subscribedStreams.add(streamId)
-          joinRoomFireAndForget(
-            this.socket!,
-            `ws:${workspaceId}:stream:${streamId}`,
-            new AbortController().signal,
-            "SyncEngine"
-          )
-          const cleanup = registerStreamSocketHandlers(this.socket!, workspaceId, streamId, this.deps.queryClient)
-          this.streamHandlerCleanups.set(streamId, cleanup)
+          await this.ensureStreamSubscription(streamId)
         }
       }
     } catch (error) {
       this.lastWorkspaceError = error
       const hasCachedData = (await db.workspaces.get(workspaceId)) !== undefined
       syncStatus.set(`workspace:${workspaceId}`, hasCachedData ? "stale" : "error")
+      for (const streamId of visibleStreamIds) {
+        if (syncStatus.get(`stream:${streamId}`) === "syncing") {
+          syncStatus.set(`stream:${streamId}`, "stale")
+        }
+      }
 
       if (!hasCachedData) {
         // Propagate to TanStack so coordinated-loading shows the error
         queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), undefined)
       }
     }
+  }
+
+  private runBootstrap(isReconnect: boolean): Promise<void> {
+    if (this.activeBootstrap) {
+      return this.activeBootstrap
+    }
+
+    const bootstrapPromise = this.bootstrapWorkspace(isReconnect).finally(() => {
+      if (this.activeBootstrap === bootstrapPromise) {
+        this.activeBootstrap = null
+      }
+    })
+
+    this.activeBootstrap = bootstrapPromise
+    return bootstrapPromise
+  }
+
+  private getVisibleServerStreamIds(): string[] {
+    const streamIds = this.currentStreamId ? [this.currentStreamId, ...this.visibleStreamIds] : this.visibleStreamIds
+    return Array.from(
+      new Set(streamIds.filter((streamId) => !streamId.startsWith("draft_") && !streamId.startsWith("draft:")))
+    )
+  }
+
+  private async ensureStreamSubscription(streamId: string, options?: { awaitJoin?: boolean }): Promise<void> {
+    if (!this.socket || this.isDestroyed) return
+
+    if (!this.subscribedStreams.has(streamId)) {
+      this.subscribedStreams.add(streamId)
+      const cleanup = registerStreamSocketHandlers(this.socket, this.deps.workspaceId, streamId, this.deps.queryClient)
+      this.streamHandlerCleanups.set(streamId, cleanup)
+    }
+
+    const room = `ws:${this.deps.workspaceId}:stream:${streamId}`
+    if (options?.awaitJoin) {
+      await joinRoomBestEffort(this.socket, room, "SyncEngine")
+      return
+    }
+
+    joinRoomFireAndForget(this.socket, room, new AbortController().signal, "SyncEngine")
+  }
+
+  private applyReconnectStreamError(streamId: string, error: unknown): void {
+    const key = `stream:${streamId}`
+    if (ApiError.isApiError(error) && (error.status === 403 || error.status === 404)) {
+      this.deps.syncStatus.setError(key, { status: error.status, error })
+      return
+    }
+
+    this.deps.syncStatus.setError(key, null)
   }
 
   private cleanupWorkspaceHandlers(): void {

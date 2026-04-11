@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { db } from "@/db"
-import { applyStreamBootstrap } from "./stream-sync"
+import { applyStreamBootstrap, getLatestPersistedSequence, toCachedStreamBootstrap } from "./stream-sync"
 import type { StreamBootstrap, StreamEvent } from "@threa/types"
 
 // With fake-indexeddb loaded in test setup, Dexie works against a real
@@ -42,6 +42,10 @@ function makeBootstrap(events: StreamEvent[], streamId: string): StreamBootstrap
     membership: null as unknown as StreamBootstrap["membership"],
     latestSequence: events.length > 0 ? events[events.length - 1].sequence : "0",
     hasOlderEvents: false,
+    syncMode: "replace",
+    unreadCount: 0,
+    mentionCount: 0,
+    activityCount: 0,
   }
 }
 
@@ -203,6 +207,72 @@ describe("applyStreamBootstrap (real IndexedDB)", () => {
     expect(stream).toBeDefined()
     expect(stream?.workspaceId).toBe("ws_1")
     expect(stream?.displayName).toBe("test")
+  })
+
+  it("appends reconnect catch-up events without pruning the existing visible window", async () => {
+    const streamId = "stream_append"
+    const initialBootstrap = makeBootstrap(
+      [makeEvent({ id: "evt_A", streamId, sequence: "100" }), makeEvent({ id: "evt_B", streamId, sequence: "150" })],
+      streamId
+    )
+    await applyStreamBootstrap("ws_1", streamId, initialBootstrap)
+
+    const appendBootstrap = {
+      ...makeBootstrap([makeEvent({ id: "evt_C", streamId, sequence: "200" })], streamId),
+      syncMode: "append" as const,
+      latestSequence: "200",
+    }
+
+    await applyStreamBootstrap("ws_1", streamId, appendBootstrap)
+
+    const allEvents = await db.events.where("streamId").equals(streamId).sortBy("_sequenceNum")
+    expect(allEvents.map((event) => event.id)).toEqual(["evt_A", "evt_B", "evt_C"])
+  })
+
+  it("increments windowVersion only for reconnect replace responses", () => {
+    const streamId = "stream_window"
+    const initial = toCachedStreamBootstrap(
+      makeBootstrap([makeEvent({ id: "evt_A", streamId, sequence: "10" })], streamId)
+    )
+    const append = toCachedStreamBootstrap(
+      {
+        ...makeBootstrap([makeEvent({ id: "evt_B", streamId, sequence: "20" })], streamId),
+        syncMode: "append",
+        latestSequence: "20",
+      },
+      initial,
+      { incrementWindowVersionOnReplace: false }
+    )
+    const replace = toCachedStreamBootstrap(
+      makeBootstrap([makeEvent({ id: "evt_C", streamId, sequence: "30" })], streamId),
+      append,
+      { incrementWindowVersionOnReplace: true }
+    )
+
+    expect(initial.windowVersion).toBe(0)
+    expect(append.windowVersion).toBe(0)
+    expect(replace.windowVersion).toBe(1)
+  })
+
+  it("derives the reconnect cursor from the latest persisted non-optimistic event", async () => {
+    const streamId = "stream_cursor"
+    await db.events.bulkPut([
+      {
+        ...makeEvent({ id: "evt_real", streamId, sequence: "200" }),
+        workspaceId: "ws_1",
+        _sequenceNum: 200,
+        _cachedAt: Date.now(),
+      },
+      {
+        ...makeEvent({ id: "temp_pending", streamId, sequence: `${Date.now()}` }),
+        workspaceId: "ws_1",
+        _sequenceNum: Date.now(),
+        _status: "pending",
+        _cachedAt: Date.now(),
+      },
+    ])
+
+    expect(await getLatestPersistedSequence(streamId)).toBe("200")
   })
 })
 

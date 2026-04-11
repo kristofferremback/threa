@@ -33,6 +33,8 @@ let mockBots: Array<{ id: string }> = []
 let mockUnreadState: { id: string } | undefined
 let mockMetadata: { id: string } | undefined
 let mockHasSeededDraftCache = false
+let mockSyncStatuses = new Map<string, string>()
+let mockSyncErrors = new Map<string, { status: number | null; error: Error }>()
 
 vi.mock("@/sync/sync-status", () => ({
   useSyncStatus: () => {
@@ -41,6 +43,10 @@ vi.mock("@/sync/sync-status", () => ({
     if (mockWorkspaceLoadState === QUERY_LOAD_STATE.ERROR) return "error"
     return "synced"
   },
+  useSyncSnapshot: () => ({
+    statuses: mockSyncStatuses,
+    errors: mockSyncErrors,
+  }),
 }))
 
 vi.mock("@/hooks/use-coordinated-stream-queries", () => ({
@@ -83,12 +89,13 @@ vi.mock("@/components/loading", () => ({
 }))
 
 function TestConsumer() {
-  const { phase, getStreamState, hasErrors } = useCoordinatedLoading()
+  const { phase, getStreamState, hasErrors, showLoadingIndicator } = useCoordinatedLoading()
   return (
     <div>
       <span data-testid="phase">{phase}</span>
       <span data-testid="stream-state">{getStreamState("stream_1")}</span>
       <span data-testid="has-errors">{String(hasErrors)}</span>
+      <span data-testid="show-loading-indicator">{String(showLoadingIndicator)}</span>
     </div>
   )
 }
@@ -130,6 +137,8 @@ describe("CoordinatedLoadingProvider", () => {
     mockUnreadState = undefined
     mockMetadata = undefined
     mockHasSeededDraftCache = false
+    mockSyncStatuses = new Map()
+    mockSyncErrors = new Map()
   })
 
   afterEach(() => {
@@ -321,6 +330,57 @@ describe("CoordinatedLoadingProvider", () => {
 
     expect(screen.getByTestId("phase").textContent).toBe("ready")
     expect(screen.getByTestId("stream-state").textContent).toBe("loading")
+  })
+
+  it("shows the delayed topbar indicator while reconnect sync is in progress after initial load", async () => {
+    makeReadyWorkspaceState()
+
+    const { rerender } = render(
+      <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
+        <TestConsumer />
+      </CoordinatedLoadingProvider>
+    )
+
+    await flushEffects()
+    expect(screen.getByTestId("show-loading-indicator").textContent).toBe("false")
+
+    mockSyncStatuses = new Map([["workspace:workspace_1", "syncing"]])
+    rerender(
+      <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
+        <TestConsumer />
+      </CoordinatedLoadingProvider>
+    )
+
+    await act(async () => {
+      vi.advanceTimersByTime(300)
+      await Promise.resolve()
+    })
+
+    expect(screen.getByTestId("show-loading-indicator").textContent).toBe("true")
+  })
+
+  it("surfaces reconnect stream errors from sync status even when the query cache is still populated", async () => {
+    makeReadyWorkspaceState()
+    mockSyncErrors = new Map([
+      [
+        "stream:stream_1",
+        {
+          status: 404,
+          error: new ApiError(404, "NOT_FOUND", "Not found"),
+        },
+      ],
+    ])
+
+    render(
+      <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
+        <TestConsumer />
+      </CoordinatedLoadingProvider>
+    )
+
+    await flushEffects()
+
+    expect(screen.getByTestId("stream-state").textContent).toBe("error")
+    expect(screen.getByTestId("has-errors").textContent).toBe("true")
   })
 
   it("suppresses recoverable stream bootstrap errors when the cached stream is usable", async () => {

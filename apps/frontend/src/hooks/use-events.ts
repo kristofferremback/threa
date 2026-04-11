@@ -26,6 +26,11 @@ interface JumpState {
 
 type SequencedEvent = Pick<StreamEvent, "sequence">
 type DisplayableEvent = SequencedEvent & { _status?: string | null }
+export interface BootstrapFloorState {
+  streamId: string
+  floor: bigint
+  windowVersion: number
+}
 
 export function getMinimumSequence(events: Array<Pick<StreamEvent, "sequence">> | null | undefined): bigint | null {
   if (!events || events.length === 0) return null
@@ -75,6 +80,30 @@ export function getOldestSequence(events: SequencedEvent[] | null | undefined): 
   }
 
   return oldest.sequence
+}
+
+export function getNextBootstrapFloorState(
+  current: BootstrapFloorState | null,
+  streamId: string,
+  newFloor: bigint | null,
+  windowVersion: number
+): { state: BootstrapFloorState | null; floor: bigint | null } {
+  let nextCurrent = current
+
+  if (nextCurrent && (nextCurrent.streamId !== streamId || nextCurrent.windowVersion !== windowVersion)) {
+    nextCurrent = null
+  }
+
+  if (newFloor === null) {
+    return { state: nextCurrent, floor: nextCurrent?.floor ?? null }
+  }
+
+  if (nextCurrent !== null && nextCurrent.floor < newFloor) {
+    return { state: nextCurrent, floor: nextCurrent.floor }
+  }
+
+  const nextState = { streamId, floor: newFloor, windowVersion }
+  return { state: nextState, floor: newFloor }
 }
 
 function sortBySequence(events: StreamEvent[]): StreamEvent[] {
@@ -198,20 +227,17 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
   // would introduce a one-render lag where the higher floor is applied before the
   // ratchet corrects it, causing a visible flash of hidden messages. The mutation
   // is idempotent for identical inputs so strict-mode double-invocation is safe.
-  const bootstrapFloorRef = useRef<{ streamId: string; floor: bigint } | null>(null)
+  const bootstrapFloorRef = useRef<BootstrapFloorState | null>(null)
   const bootstrapFloor = useMemo(() => {
-    const newFloor = getMinimumSequence(bootstrap?.events)
-    // Reset when switching streams (component stays mounted across routes)
-    if (bootstrapFloorRef.current && bootstrapFloorRef.current.streamId !== streamId) {
-      bootstrapFloorRef.current = null
-    }
-    if (newFloor === null) return bootstrapFloorRef.current?.floor ?? null
-    if (bootstrapFloorRef.current !== null && bootstrapFloorRef.current.floor < newFloor) {
-      return bootstrapFloorRef.current.floor
-    }
-    bootstrapFloorRef.current = { streamId, floor: newFloor }
-    return newFloor
-  }, [bootstrap?.events, streamId])
+    const next = getNextBootstrapFloorState(
+      bootstrapFloorRef.current,
+      streamId,
+      getMinimumSequence(bootstrap?.events),
+      bootstrap?.windowVersion ?? 0
+    )
+    bootstrapFloorRef.current = next.state
+    return next.floor
+  }, [bootstrap?.events, bootstrap?.windowVersion, streamId])
 
   const olderFloor = useMemo(() => {
     const olderEvents = olderData?.pages.flatMap((page) => page.events).filter(Boolean) ?? []

@@ -1,6 +1,7 @@
 import { useMemo } from "react"
 import { useCoordinatedLoading } from "@/contexts"
 import { ApiError } from "@/api/client"
+import { useSyncError } from "@/sync/sync-status"
 
 export type StreamErrorType = "not-found" | "forbidden" | "error"
 
@@ -27,8 +28,16 @@ function getErrorType(status: number): StreamErrorType {
  */
 export function useStreamError(streamId: string | undefined, queryError?: Error | null): StreamError | null {
   const { getStreamError } = useCoordinatedLoading()
+  const syncError = useSyncError(streamId ? `stream:${streamId}` : "__no_stream__")
 
   return useMemo(() => {
+    if (syncError) {
+      return {
+        type: getErrorType(syncError.status ?? 500),
+        status: syncError.status,
+      }
+    }
+
     // Check coordinated loading errors first (faster path, already fetched)
     if (streamId) {
       const coordinatedError = getStreamError(streamId)
@@ -53,5 +62,5 @@ export function useStreamError(streamId: string | undefined, queryError?: Error 
     }
 
     return null
-  }, [streamId, getStreamError, queryError])
+  }, [streamId, syncError, getStreamError, queryError])
 }

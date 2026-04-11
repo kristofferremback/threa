@@ -1,6 +1,6 @@
 import { useMemo } from "react"
 import { useQueries, useQueryClient } from "@tanstack/react-query"
-import { useSocket, useStreamService, type StreamService } from "@/contexts"
+import { useSocket, useStreamService } from "@/contexts"
 import { debugBootstrap } from "@/lib/bootstrap-debug"
 import {
   QUERY_LOAD_STATE,
@@ -10,9 +10,8 @@ import {
   type QueryLoadState,
 } from "@/lib/query-load-state"
 import { joinRoomBestEffort } from "@/lib/socket-room"
-import { applyStreamBootstrap } from "@/sync/stream-sync"
+import { applyStreamBootstrap, toCachedStreamBootstrap, type CachedStreamBootstrap } from "@/sync/stream-sync"
 import { streamKeys } from "./use-streams"
-import type { Socket } from "socket.io-client"
 
 function isDraftId(id: string): boolean {
   // Draft scratchpads use "draft_xxx" format, draft thread panels use "draft:xxx:xxx" format
@@ -31,26 +30,6 @@ function aggregateQueryLoadState(states: QueryLoadState[]): QueryLoadState {
   if (nonErrorStates.some((state) => state === QUERY_LOAD_STATE.PENDING)) return QUERY_LOAD_STATE.PENDING
   if (nonErrorStates.length === 0) return QUERY_LOAD_STATE.ERROR
   return QUERY_LOAD_STATE.READY
-}
-
-// Create a stable query function factory
-function createBootstrapQueryFn(streamService: StreamService, socket: Socket, workspaceId: string, streamId: string) {
-  return async () => {
-    debugBootstrap("Coordinated stream bootstrap queryFn start", { workspaceId, streamId })
-    await joinRoomBestEffort(socket, `ws:${workspaceId}:stream:${streamId}`, "CoordinatedStreamBootstrap")
-
-    const bootstrap = await streamService.bootstrap(workspaceId, streamId)
-    debugBootstrap("Coordinated stream bootstrap fetch success", {
-      workspaceId,
-      streamId,
-      eventCount: bootstrap.events.length,
-    })
-
-    // Write events and stream metadata to IndexedDB via shared sync module
-    await applyStreamBootstrap(workspaceId, streamId, bootstrap)
-
-    return bootstrap
-  }
 }
 
 /**
@@ -86,7 +65,26 @@ export function useCoordinatedStreamQueries(workspaceId: string, streamIds: stri
     () =>
       serverStreamIds.map((streamId) => ({
         queryKey: streamKeys.bootstrap(workspaceId, streamId),
-        queryFn: socket ? createBootstrapQueryFn(streamService, socket, workspaceId, streamId) : queryFnWithoutSocket,
+        queryFn: socket
+          ? async () => {
+              debugBootstrap("Coordinated stream bootstrap queryFn start", { workspaceId, streamId })
+              await joinRoomBestEffort(socket, `ws:${workspaceId}:stream:${streamId}`, "CoordinatedStreamBootstrap")
+
+              const bootstrap = await streamService.bootstrap(workspaceId, streamId)
+              debugBootstrap("Coordinated stream bootstrap fetch success", {
+                workspaceId,
+                streamId,
+                eventCount: bootstrap.events.length,
+              })
+
+              await applyStreamBootstrap(workspaceId, streamId, bootstrap)
+
+              return toCachedStreamBootstrap(
+                bootstrap,
+                queryClient.getQueryData<CachedStreamBootstrap>(streamKeys.bootstrap(workspaceId, streamId))
+              )
+            }
+          : queryFnWithoutSocket,
         // Don't enable queries that have already errored to prevent continuous refetch loops
         enabled: !!workspaceId && !!socket && !erroredStreamIds.has(streamId),
         staleTime: Infinity, // Never consider data stale
@@ -101,7 +99,7 @@ export function useCoordinatedStreamQueries(workspaceId: string, streamIds: stri
         // sharing can cause stale references. Worth the extra re-renders for correctness.
         structuralSharing: false,
       })),
-    [serverStreamIds, workspaceId, streamService, socket, erroredStreamIds]
+    [serverStreamIds, workspaceId, streamService, socket, erroredStreamIds, queryClient]
   )
 
   const results = useQueries({ queries })

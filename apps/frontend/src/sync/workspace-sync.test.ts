@@ -2,8 +2,12 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 import { db } from "@/db"
 import { QueryClient } from "@tanstack/react-query"
 import { workspaceKeys } from "@/hooks/use-workspaces"
-import { applyWorkspaceBootstrap, registerWorkspaceSocketHandlers } from "./workspace-sync"
-import type { WorkspaceBootstrap } from "@threa/types"
+import {
+  applyWorkspaceBootstrap,
+  mergeReconnectWorkspaceBootstrap,
+  registerWorkspaceSocketHandlers,
+} from "./workspace-sync"
+import type { StreamBootstrap, WorkspaceBootstrap } from "@threa/types"
 import type { Socket } from "socket.io-client"
 
 function makeBootstrap(overrides: Partial<WorkspaceBootstrap> = {}): WorkspaceBootstrap {
@@ -48,6 +52,39 @@ function makeBootstrap(overrides: Partial<WorkspaceBootstrap> = {}): WorkspaceBo
     },
     ...overrides,
   } as WorkspaceBootstrap
+}
+
+function makeStreamBootstrap(streamId: string, overrides: Partial<StreamBootstrap> = {}): StreamBootstrap {
+  return {
+    stream: {
+      id: streamId,
+      workspaceId: "ws_1",
+      type: "channel",
+      displayName: `Stream ${streamId}`,
+      slug: streamId,
+      description: null,
+      visibility: "public",
+      parentStreamId: null,
+      parentMessageId: null,
+      rootStreamId: null,
+      companionMode: "off",
+      companionPersonaId: null,
+      createdBy: "user_1",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      archivedAt: null,
+    },
+    events: [],
+    members: [],
+    membership: null,
+    latestSequence: "0",
+    hasOlderEvents: false,
+    syncMode: "replace",
+    unreadCount: 0,
+    mentionCount: 0,
+    activityCount: 0,
+    ...overrides,
+  }
 }
 
 describe("applyWorkspaceBootstrap (real IndexedDB)", () => {
@@ -207,6 +244,159 @@ describe("applyWorkspaceBootstrap (real IndexedDB)", () => {
     await applyWorkspaceBootstrap("ws_1", makeBootstrap())
 
     expect(await db.streams.get("stream_keep")).toBeDefined()
+  })
+})
+
+describe("mergeReconnectWorkspaceBootstrap", () => {
+  it("overlays authoritative visible stream counts and membership onto the workspace snapshot", () => {
+    const workspaceBootstrap = makeBootstrap({
+      streams: [
+        {
+          id: "stream_visible",
+          workspaceId: "ws_1",
+          type: "channel",
+          displayName: "Visible",
+          slug: "visible",
+          description: null,
+          visibility: "public",
+          parentStreamId: null,
+          parentMessageId: null,
+          rootStreamId: null,
+          companionMode: "off",
+          companionPersonaId: null,
+          createdBy: "user_1",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          archivedAt: null,
+          lastMessagePreview: null,
+        },
+      ],
+      streamMemberships: [
+        {
+          streamId: "stream_visible",
+          memberId: "user_1",
+          pinned: false,
+          pinnedAt: null,
+          notificationLevel: null,
+          lastReadEventId: "evt_old",
+          lastReadAt: null,
+          joinedAt: new Date().toISOString(),
+        },
+      ],
+      unreadCounts: { stream_visible: 5 },
+      mentionCounts: { stream_visible: 2 },
+      activityCounts: { stream_visible: 5 },
+      unreadActivityCount: 5,
+    })
+
+    const merged = mergeReconnectWorkspaceBootstrap({
+      workspaceBootstrap,
+      successfulStreamBootstraps: new Map([
+        [
+          "stream_visible",
+          makeStreamBootstrap("stream_visible", {
+            membership: {
+              streamId: "stream_visible",
+              memberId: "user_1",
+              pinned: true,
+              pinnedAt: new Date().toISOString(),
+              notificationLevel: "activity",
+              lastReadEventId: "evt_new",
+              lastReadAt: null,
+              joinedAt: new Date().toISOString(),
+            },
+            unreadCount: 1,
+            mentionCount: 1,
+            activityCount: 1,
+          }),
+        ],
+      ]),
+      staleStreamIds: new Set(),
+      localStreams: [],
+      localMemberships: [],
+    })
+
+    expect(merged.unreadCounts.stream_visible).toBe(1)
+    expect(merged.mentionCounts.stream_visible).toBe(1)
+    expect(merged.activityCounts.stream_visible).toBe(1)
+    expect(merged.unreadActivityCount).toBe(1)
+    expect(
+      merged.streamMemberships.find((membership) => membership.streamId === "stream_visible")?.lastReadEventId
+    ).toBe("evt_new")
+  })
+
+  it("preserves prior local state for visible streams that fail reconnect bootstrap", () => {
+    const workspaceBootstrap = makeBootstrap({
+      streams: [],
+      streamMemberships: [],
+      unreadCounts: {},
+      mentionCounts: {},
+      activityCounts: {},
+      unreadActivityCount: 0,
+      mutedStreamIds: [],
+    })
+
+    const merged = mergeReconnectWorkspaceBootstrap({
+      workspaceBootstrap,
+      successfulStreamBootstraps: new Map(),
+      staleStreamIds: new Set(["stream_failed"]),
+      localStreams: [
+        {
+          id: "stream_failed",
+          workspaceId: "ws_1",
+          type: "channel",
+          displayName: "Cached failed stream",
+          slug: "failed",
+          description: null,
+          visibility: "public",
+          parentStreamId: null,
+          parentMessageId: null,
+          rootStreamId: null,
+          companionMode: "off",
+          companionPersonaId: null,
+          createdBy: "user_1",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          archivedAt: null,
+          lastMessagePreview: null,
+          _cachedAt: Date.now(),
+        },
+      ],
+      localMemberships: [
+        {
+          id: "ws_1:stream_failed",
+          workspaceId: "ws_1",
+          streamId: "stream_failed",
+          memberId: "user_1",
+          pinned: false,
+          pinnedAt: null,
+          notificationLevel: null,
+          lastReadEventId: "evt_cached",
+          lastReadAt: null,
+          joinedAt: new Date().toISOString(),
+          _cachedAt: Date.now(),
+        },
+      ],
+      localUnreadState: {
+        id: "ws_1",
+        workspaceId: "ws_1",
+        unreadCounts: { stream_failed: 3 },
+        mentionCounts: { stream_failed: 1 },
+        activityCounts: { stream_failed: 2 },
+        unreadActivityCount: 2,
+        mutedStreamIds: ["stream_failed"],
+        _cachedAt: Date.now(),
+      },
+    })
+
+    expect(merged.streams.map((stream) => stream.id)).toContain("stream_failed")
+    expect(
+      merged.streamMemberships.find((membership) => membership.streamId === "stream_failed")?.lastReadEventId
+    ).toBe("evt_cached")
+    expect(merged.unreadCounts.stream_failed).toBe(3)
+    expect(merged.mentionCounts.stream_failed).toBe(1)
+    expect(merged.activityCounts.stream_failed).toBe(2)
+    expect(merged.mutedStreamIds).toContain("stream_failed")
   })
 })
 

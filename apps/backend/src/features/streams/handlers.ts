@@ -108,6 +108,10 @@ const listEventsAroundQuerySchema = z
     path: ["eventId"],
   })
 
+const streamBootstrapQuerySchema = z.object({
+  after: numericString.optional(),
+})
+
 // Exhaustive: adding a StreamType forces a decision here
 const addMemberAllowed: Record<StreamType, boolean> = {
   [StreamTypes.CHANNEL]: true,
@@ -550,16 +554,42 @@ export function createStreamHandlers({
       const userId = req.user!.id
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
+      const parsed = streamBootstrapQuerySchema.safeParse(req.query)
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: z.flattenError(parsed.error).fieldErrors,
+        })
+      }
+      const afterSequence = parsed.data.after ? BigInt(parsed.data.after) : undefined
 
       const stream = await streamService.validateStreamAccess(streamId, workspaceId, userId)
 
-      // Fetch all data in parallel - threads with counts is a single optimized query
-      const [events, members, membership, threadDataMap] = await Promise.all([
-        eventService.listEvents(streamId, { limit: EVENTS_DEFAULT_LIMIT, viewerId: userId }),
+      const [members, membership, threadDataMap, latestSequence, activityCounts] = await Promise.all([
         streamService.getMembers(streamId),
         streamService.getMembership(streamId, userId),
         streamService.getThreadsWithReplyCounts(streamId),
+        eventService.getLatestSequence(streamId),
+        activityService?.getUnreadCountsForStream(userId, workspaceId, streamId),
       ])
+
+      const unreadCount = membership ? await streamService.getUnreadCount(streamId, membership.lastReadEventId) : 0
+
+      let events = await eventService.listEvents(streamId, {
+        limit: afterSequence !== undefined ? EVENTS_DEFAULT_LIMIT + 1 : EVENTS_DEFAULT_LIMIT,
+        afterSequence,
+        viewerId: userId,
+      })
+      let syncMode: "append" | "replace" = afterSequence !== undefined ? "append" : "replace"
+      let hasOlderEvents = false
+
+      if (afterSequence !== undefined && events.length > EVENTS_DEFAULT_LIMIT) {
+        syncMode = "replace"
+        events = await eventService.listEvents(streamId, { limit: EVENTS_DEFAULT_LIMIT, viewerId: userId })
+        hasOlderEvents = true
+      } else if (afterSequence === undefined) {
+        hasOlderEvents = events.length === EVENTS_DEFAULT_LIMIT
+      }
 
       const enrichedEvents = await eventService.enrichBootstrapEvents(events, threadDataMap)
       const eventsWithLinkPreviews = await enrichEventsWithLinkPreviews(
@@ -569,20 +599,18 @@ export function createStreamHandlers({
         enrichedEvents
       )
 
-      // Get the latest sequence number from the most recent event
-      const latestSequence = events.length > 0 ? events[events.length - 1].sequence : "0"
-
-      // Signal whether older events exist beyond this bootstrap window
-      const hasOlderEvents = events.length === EVENTS_DEFAULT_LIMIT
-
       res.json({
         data: {
           stream,
           events: eventsWithLinkPreviews.map(serializeEvent),
           members,
           membership,
-          latestSequence: latestSequence.toString(),
+          latestSequence: (latestSequence ?? 0n).toString(),
           hasOlderEvents,
+          syncMode,
+          unreadCount,
+          mentionCount: activityCounts?.mentionCount ?? 0,
+          activityCount: activityCounts?.totalCount ?? 0,
         },
       })
     },
