@@ -295,14 +295,24 @@ export class WorkspaceAgent {
   }
 
   /**
-   * Main search loop: plan retrieval → search → evaluate → maybe search more.
+   * Main search loop: bootstrap retrieval → refinement loop.
    *
-   * This is the GAM "deep research" loop, bounded by:
+   * This is the GAM "deep research" loop, structured as:
+   *
+   *   Iteration 1 (bootstrap):  parallel speculative baseline + planner LLM
+   *   Iterations 2..N (refine): evaluate accumulated results → run any
+   *                             additional queries the evaluator requests
+   *
+   * Bounded by:
    * - A hard wall-clock deadline via `input.deadlineAt`
    * - Per-AI-call abort signals composed from the user-abort signal + deadline
-   * - `WORKSPACE_AGENT_MAX_ITERATIONS` (default 2) on the plan→execute→evaluate cycle
-   * - Parallel speculative baseline retrieval on iteration 1 so we don't block on
-   *   planner latency when the baseline set already covers the query
+   * - `config.maxIterations` (defaults to `WORKSPACE_AGENT_MAX_ITERATIONS`)
+   *   controls the total iteration count, so the refinement loop runs
+   *   `maxIterations - 1` times. Setting it to 1 disables refinement entirely.
+   *
+   * `seenQueryKeys` accumulates across every iteration so each refinement pass
+   * deduplicates against the union of all earlier queries — not just the
+   * previous one.
    *
    * Uses pool.query for individual DB operations instead of holding a connection
    * through the entire loop (which includes AI calls).
@@ -323,6 +333,7 @@ export class WorkspaceAgent {
     const contextSummary = this.buildContextSummary(query, conversationHistory)
     const maxIterations = config.maxIterations ?? WORKSPACE_AGENT_MAX_ITERATIONS
     const excludedMessageIds = new Set<string>()
+    const seenQueryKeys = new Set<string>()
 
     let allMemos: EnrichedMemoResult[] = []
     let allMessages: EnrichedMessageResult[] = []
@@ -376,6 +387,7 @@ export class WorkspaceAgent {
     allMemos = mergeMemoResults(allMemos, baselineResults.memos)
     allMessages = mergeMessageResults(allMessages, baselineResults.messages)
     allAttachments = mergeAttachmentResults(allAttachments, baselineResults.attachments)
+    for (const q of baselineQueries) seenQueryKeys.add(queryKey(q))
 
     // Abort may have fired during planner/baseline
     const postPlan = this.checkAbortOrDeadline(input)
@@ -384,9 +396,7 @@ export class WorkspaceAgent {
     }
 
     // Compute planner-only queries: any planner queries not already in the baseline set.
-    const baselineKeys = new Set(baselineQueries.map(queryKey))
-    const plannerOnlyQueries = plan.queries.filter((q) => !baselineKeys.has(queryKey(q)))
-    const plannerOnlyDeduped = dedupeQueries(plannerOnlyQueries)
+    const plannerOnlyDeduped = dedupeQueries(plan.queries.filter((q) => !seenQueryKeys.has(queryKey(q))))
 
     if (plannerOnlyDeduped.length > 0) {
       this.emitSubstep(
@@ -409,21 +419,17 @@ export class WorkspaceAgent {
       allMemos = mergeMemoResults(allMemos, plannerResults.memos)
       allMessages = mergeMessageResults(allMessages, plannerResults.messages)
       allAttachments = mergeAttachmentResults(allAttachments, plannerResults.attachments)
+      for (const q of plannerOnlyDeduped) seenQueryKeys.add(queryKey(q))
     } else if (baselineQueries.length === 0 && plan.queries.length === 0) {
       // No baseline, no planner queries — nothing to search.
       logger.debug({ query, reasoning: plan.reasoning }, "Workspace agent could not generate any queries")
       return this.emptyResult(substeps)
     }
 
-    // Track the full iteration-1 query set for iteration-2 dedup
-    const iteration1Queries = dedupeQueries([...baselineQueries, ...plan.queries])
-
-    const iteration1Count = allMemos.length + allMessages.length + allAttachments.length
-
-    // Short-circuit: nothing found in iteration 1. Evaluator and iteration 2 cannot
-    // salvage an empty workspace — return non-partial empty (this is a successful
+    // Short-circuit: nothing found in iteration 1. The evaluator cannot salvage
+    // an empty workspace — return non-partial empty (this is a successful
     // "nothing relevant here" result, not a truncated partial).
-    if (iteration1Count === 0) {
+    if (allMemos.length + allMessages.length + allAttachments.length === 0) {
       logger.info(
         { query, accessSpecType: accessSpec.type },
         "Workspace agent iteration 1 returned no results; short-circuiting"
@@ -431,15 +437,18 @@ export class WorkspaceAgent {
       return this.buildFinalResult(allMemos, allMessages, allAttachments, workspaceId, substeps, false)
     }
 
-    // Abort check before evaluator
-    const preEval = this.checkAbortOrDeadline(input)
-    if (preEval) {
-      return this.buildPartialResult(allMemos, allMessages, allAttachments, workspaceId, substeps, preEval)
-    }
+    // ── Refinement loop (iterations 2..maxIterations): evaluator-driven ──
+    //
+    // Each pass: evaluate accumulated results → if sufficient, exit; else dedupe
+    // additional queries against everything seen so far → execute → merge.
+    // Setting maxIterations=1 skips this loop entirely.
+    for (let iteration = 2; iteration <= maxIterations; iteration++) {
+      // Abort check before evaluator (each iteration is a checkpoint)
+      const preEval = this.checkAbortOrDeadline(input)
+      if (preEval) {
+        return this.buildPartialResult(allMemos, allMessages, allAttachments, workspaceId, substeps, preEval)
+      }
 
-    // ── Iteration 2: only when the evaluator asks for it ──
-
-    if (maxIterations >= 2) {
       this.emitSubstep(substeps, "Evaluating results…", input.onSubstep)
 
       const evaluation = await this.evaluateResults(
@@ -454,52 +463,51 @@ export class WorkspaceAgent {
         input.deadlineAt
       )
 
-      const additional = (evaluation.additionalQueries ?? []).slice(0, WORKSPACE_AGENT_MAX_ADDITIONAL_QUERIES)
-
-      if (evaluation.sufficient || additional.length === 0) {
+      if (evaluation.sufficient) {
         logger.debug({ query, reasoning: evaluation.reasoning }, "Workspace agent found sufficient results")
-        return this.buildFinalResult(allMemos, allMessages, allAttachments, workspaceId, substeps, false)
+        break
       }
 
-      // Abort check before second execute
-      const preIter2 = this.checkAbortOrDeadline(input)
-      if (preIter2) {
-        return this.buildPartialResult(allMemos, allMessages, allAttachments, workspaceId, substeps, preIter2)
+      const additional = (evaluation.additionalQueries ?? []).slice(0, WORKSPACE_AGENT_MAX_ADDITIONAL_QUERIES)
+      const iterationQueries = dedupeQueries(additional).filter((q) => !seenQueryKeys.has(queryKey(q)))
+      if (iterationQueries.length === 0) {
+        logger.debug({ query }, "Workspace agent has no new queries to run; stopping refinement")
+        break
+      }
+
+      // Abort check before execute
+      const preExecIter = this.checkAbortOrDeadline(input)
+      if (preExecIter) {
+        return this.buildPartialResult(allMemos, allMessages, allAttachments, workspaceId, substeps, preExecIter)
       }
 
       this.emitSubstep(
         substeps,
-        `Iteration 2/${maxIterations}: refining with ${additional.length} ${additional.length === 1 ? "query" : "queries"}…`,
+        `Iteration ${iteration}/${maxIterations}: refining with ${iterationQueries.length} ${iterationQueries.length === 1 ? "query" : "queries"}…`,
         input.onSubstep
       )
 
-      // Dedupe iteration 2 queries against the iteration 1 set so we don't re-run
-      // the same work.
-      const iteration1Keys = new Set(iteration1Queries.map(queryKey))
-      const iteration2Queries = dedupeQueries(additional).filter((q) => !iteration1Keys.has(queryKey(q)))
+      const iterationResults = await this.executeQueries(
+        pool,
+        iterationQueries,
+        workspaceId,
+        accessibleStreamIds,
+        embeddingService,
+        invokingUserId,
+        true,
+        excludedMessageIds
+      )
 
-      if (iteration2Queries.length > 0) {
-        const iteration2 = await this.executeQueries(
-          pool,
-          iteration2Queries,
-          workspaceId,
-          accessibleStreamIds,
-          embeddingService,
-          invokingUserId,
-          true,
-          excludedMessageIds
-        )
+      allMemos = mergeMemoResults(allMemos, iterationResults.memos)
+      allMessages = mergeMessageResults(allMessages, iterationResults.messages)
+      allAttachments = mergeAttachmentResults(allAttachments, iterationResults.attachments)
+      for (const q of iterationQueries) seenQueryKeys.add(queryKey(q))
+    }
 
-        allMemos = mergeMemoResults(allMemos, iteration2.memos)
-        allMessages = mergeMessageResults(allMessages, iteration2.messages)
-        allAttachments = mergeAttachmentResults(allAttachments, iteration2.attachments)
-      }
-
-      // Final abort check before building result
-      const postIter2 = this.checkAbortOrDeadline(input)
-      if (postIter2) {
-        return this.buildPartialResult(allMemos, allMessages, allAttachments, workspaceId, substeps, postIter2)
-      }
+    // Final abort check before building result
+    const postLoop = this.checkAbortOrDeadline(input)
+    if (postLoop) {
+      return this.buildPartialResult(allMemos, allMessages, allAttachments, workspaceId, substeps, postLoop)
     }
 
     logger.info(

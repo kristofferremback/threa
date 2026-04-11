@@ -1,5 +1,5 @@
 import { describe, expect, test, mock } from "bun:test"
-import { WorkspaceAgent, type WorkspaceAgentDeps } from "./researcher"
+import { WorkspaceAgent, type WorkspaceAgentDeps, type WorkspaceAgentInput } from "./researcher"
 import type { Pool } from "pg"
 import type { AI } from "../../../lib/ai/ai"
 import type { ConfigResolver } from "../../../lib/ai/config-resolver"
@@ -167,7 +167,166 @@ describe("WorkspaceAgent abort/deadline checkpoints", () => {
       cleanup()
     }
   })
+})
 
+/**
+ * White-box tests for the configurable iteration loop.
+ *
+ * The loop is hard to drive end-to-end because the entry point goes through
+ * `withClient` + repository calls + real AI. Instead we monkey-patch the
+ * private seams (`planRetrieval`, `evaluateResults`, `executeQueries`) on a
+ * concrete agent instance and call `runSearchLoop` directly. This proves the
+ * structural property the refactor was meant to enable: `maxIterations` linearly
+ * controls how many refinement passes the loop runs.
+ */
+describe("WorkspaceAgent runSearchLoop iteration count", () => {
+  type Plan = { reasoning: string; queries: Array<{ target: "memos"; type: "semantic"; query: string }> }
+  type Eval = {
+    sufficient: boolean
+    additionalQueries: Array<{ target: "memos"; type: "semantic"; query: string }> | null
+    reasoning: string
+  }
+
+  function buildAgentWithMaxIterations(maxIterations: number) {
+    const ai = {} as AI
+    const configResolver = {
+      resolve: mock(async () => ({
+        modelId: "openrouter:anthropic/claude-haiku-4.5",
+        temperature: 0.1,
+        maxIterations,
+      })),
+    } as unknown as ConfigResolver
+    const embeddingService = {} as unknown as EmbeddingServiceLike
+    const pool = {} as unknown as Pool
+    return new WorkspaceAgent({ pool, ai, configResolver, embeddingService })
+  }
+
+  /**
+   * Drive `runSearchLoop` directly with stubbed seams.
+   *
+   * - planRetrieval returns one fake query so iteration 1 has work.
+   * - executeQueries always returns one fake memo, so iteration 1 finds results
+   *   and the short-circuit doesn't fire.
+   * - evaluateResults returns sufficient=false with one *new* query each call,
+   *   forcing the loop to keep going up to `maxIterations`.
+   */
+  function stubAgent(agent: WorkspaceAgent, opts: { sufficientAfter?: number } = {}) {
+    let evalCalls = 0
+    let planCalls = 0
+    let executeCalls = 0
+    let queryCounter = 0
+
+    const planRetrieval = mock(async (): Promise<Plan> => {
+      planCalls++
+      return { reasoning: "plan", queries: [{ target: "memos", type: "semantic", query: `plan-${queryCounter++}` }] }
+    })
+
+    const evaluateResults = mock(async (): Promise<Eval> => {
+      evalCalls++
+      const sufficient = opts.sufficientAfter !== undefined && evalCalls >= opts.sufficientAfter
+      return {
+        sufficient,
+        additionalQueries: sufficient ? null : [{ target: "memos", type: "semantic", query: `eval-${queryCounter++}` }],
+        reasoning: "eval",
+      }
+    })
+
+    const executeQueries = mock(async () => {
+      executeCalls++
+      return {
+        memos: [
+          {
+            memo: {
+              id: `memo_${executeCalls}`,
+              title: "t",
+              abstract: "a",
+              keyPoints: [],
+            },
+            distance: 0,
+            sourceStream: null,
+          } as unknown as never,
+        ],
+        messages: [],
+        attachments: [],
+      }
+    })
+
+    // Patch instance methods (white-box). The cast mirrors the existing
+    // makePerCallSignal pattern in this file.
+    const writableAgent = agent as unknown as {
+      planRetrieval: typeof planRetrieval
+      evaluateResults: typeof evaluateResults
+      executeQueries: typeof executeQueries
+    }
+    writableAgent.planRetrieval = planRetrieval
+    writableAgent.evaluateResults = evaluateResults
+    writableAgent.executeQueries = executeQueries
+
+    return { planRetrieval, evaluateResults, executeQueries, getCounts: () => ({ evalCalls, executeCalls, planCalls }) }
+  }
+
+  function runLoop(agent: WorkspaceAgent, input: Partial<WorkspaceAgentInput> = {}) {
+    const runSearchLoop = (
+      agent as unknown as {
+        runSearchLoop: (
+          pool: Pool,
+          input: WorkspaceAgentInput,
+          accessSpec: { type: "all_streams" },
+          accessibleStreamIds: string[],
+          substeps: Array<{ text: string; at: string }>
+        ) => Promise<unknown>
+      }
+    ).runSearchLoop.bind(agent)
+
+    const fullInput: WorkspaceAgentInput = {
+      workspaceId: "ws_1",
+      streamId: "stream_1",
+      query: "what did we decide",
+      conversationHistory: [],
+      invokingUserId: "user_1",
+      ...input,
+    }
+
+    return runSearchLoop({} as Pool, fullInput, { type: "all_streams" }, ["stream_1"], [])
+  }
+
+  test("maxIterations=1 runs the bootstrap pass and skips the refinement loop entirely", async () => {
+    const agent = buildAgentWithMaxIterations(1)
+    const stubs = stubAgent(agent)
+
+    await runLoop(agent)
+
+    expect(stubs.planRetrieval).toHaveBeenCalledTimes(1)
+    expect(stubs.evaluateResults).not.toHaveBeenCalled()
+    // Bootstrap calls executeQueries once for planner-only queries (baseline path
+    // is empty when buildBaselineQueries returns nothing for our test query).
+    expect(stubs.getCounts().executeCalls).toBeGreaterThanOrEqual(1)
+  })
+
+  test("maxIterations=3 runs evaluator twice when each pass keeps requesting more", async () => {
+    const agent = buildAgentWithMaxIterations(3)
+    const stubs = stubAgent(agent)
+
+    await runLoop(agent)
+
+    // Refinement passes = maxIterations - 1 = 2; each pass invokes the evaluator
+    // once and (when not sufficient) executeQueries once.
+    expect(stubs.evaluateResults).toHaveBeenCalledTimes(2)
+  })
+
+  test("loop exits early when the evaluator returns sufficient=true", async () => {
+    const agent = buildAgentWithMaxIterations(5)
+    const stubs = stubAgent(agent, { sufficientAfter: 2 })
+
+    await runLoop(agent)
+
+    // Despite maxIterations=5 (4 refinement passes available), the loop should
+    // stop after the second evaluator call returns sufficient.
+    expect(stubs.evaluateResults).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe("WorkspaceAgent abort/deadline checkpoints (continued)", () => {
   test("non-aborted, non-timed-out call proceeds past the early checkpoint", async () => {
     // Use a pool stub that throws a recognizable error AFTER the abort check —
     // this proves the abort gate is permissive when no abort/deadline is set.
