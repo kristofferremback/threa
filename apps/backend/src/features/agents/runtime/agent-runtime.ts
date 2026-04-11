@@ -1,7 +1,7 @@
 import type { LanguageModel, ModelMessage, Tool, ToolResultPart } from "ai"
 import type { SourceItem, TraceSource } from "@threa/types"
 import { AgentToolNames } from "@threa/types"
-import type { AI } from "../../../lib/ai/ai"
+import type { AI, CostContext } from "../../../lib/ai/ai"
 import { logger } from "../../../lib/logger"
 import { protectToolOutputText } from "../tool-trust-boundary"
 import { MAX_MESSAGE_CHARS, truncateMessages } from "../companion/truncation"
@@ -34,12 +34,20 @@ export interface NewMessageAwareness {
 export interface AgentRuntimeConfig {
   ai: AI
   model: LanguageModel
+  /**
+   * Original provider:model string for `model`. Required alongside `costContext`
+   * for AI usage tracking — the resolved LanguageModel does not expose the
+   * prefix the cost recorder needs.
+   */
+  modelString?: string
   systemPrompt: string
   messages: ModelMessage[]
   tools: AgentTool[]
   maxIterations?: number
   observers?: AgentObserver[]
   telemetry?: { functionId: string; metadata?: Record<string, string | number | boolean> }
+  /** Cost context forwarded to every AI call the runtime makes (enables usage recording). */
+  costContext?: CostContext
 
   /** Terminal action — sends a message to the conversation */
   sendMessage: (input: {
@@ -223,10 +231,12 @@ export class AgentRuntime {
       const result = await this.wrapWithObserverContext(() =>
         ai.generateTextWithTools({
           model,
+          modelString: this.config.modelString,
           system: fullSystemPrompt,
           messages: truncatedMessages,
           tools: this.toolDefs,
           telemetry: this.config.telemetry,
+          context: this.config.costContext,
         })
       )
       const durationMs = Date.now() - startTime

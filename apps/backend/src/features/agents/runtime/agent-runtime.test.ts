@@ -135,6 +135,50 @@ describe("AgentRuntime message counting", () => {
     expect(events.some((event) => event.type === "response:kept")).toBe(true)
   })
 
+  it("forwards modelString and costContext to generateTextWithTools so usage is recorded", async () => {
+    const captured: Array<{ modelString?: string; context?: Record<string, unknown> }> = []
+    const generateTextWithTools = mock(async (opts: { modelString?: string; context?: Record<string, unknown> }) => {
+      captured.push({ modelString: opts.modelString, context: opts.context })
+      return {
+        text: "All done.",
+        toolCalls: [],
+        response: {
+          messages: [{ role: "assistant", content: "All done." } as any],
+        },
+      }
+    })
+
+    const runtime = new AgentRuntime({
+      ai: { generateTextWithTools } as any,
+      model: {} as any,
+      modelString: "openrouter:anthropic/claude-haiku-4.5",
+      costContext: {
+        workspaceId: "ws_abc",
+        userId: "user_xyz",
+        sessionId: "session_123",
+        origin: "user",
+      },
+      systemPrompt: "You are helpful.",
+      messages: [{ role: "user", content: "Say hi." }],
+      tools: [],
+      sendMessage: async () => ({ messageId: "msg_1", operation: "created" }),
+    })
+
+    const result = await runtime.run()
+
+    expect(result.messagesSent).toBe(1)
+    expect(captured).toHaveLength(1)
+    expect(captured[0]).toEqual({
+      modelString: "openrouter:anthropic/claude-haiku-4.5",
+      context: {
+        workspaceId: "ws_abc",
+        userId: "user_xyz",
+        sessionId: "session_123",
+        origin: "user",
+      },
+    })
+  })
+
   it("stops early when rerun keeps returning empty final decisions", async () => {
     const generateTextWithTools = mock(async () => ({
       text: " ",
