@@ -320,12 +320,12 @@ export class BackofficeService {
     const allWorkspaceIds = Array.from(new Set([...idsByUser.values()].flat()))
     if (allWorkspaceIds.length === 0) return new Map()
 
-    // Load the referenced workspaces in a single query. Small volume — this
-    // only runs for invitations that have been accepted.
-    const rows = await Promise.all(allWorkspaceIds.map((id) => WorkspaceRegistryRepository.findById(this.pool, id)))
+    // Load the referenced workspaces in a single batched query (INV-56) —
+    // `findByIds` returns rows for all ids in one round-trip via
+    // `WHERE id = ANY($1::text[])`, instead of N parallel `findById` calls.
+    const rows = await WorkspaceRegistryRepository.findByIds(this.pool, allWorkspaceIds)
     const workspaceById = new Map<string, WorkspaceRef>()
     for (const row of rows) {
-      if (!row) continue
       workspaceById.set(row.id, { id: row.id, name: row.name, slug: row.slug })
     }
 

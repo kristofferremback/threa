@@ -27,6 +27,20 @@ export const WorkspaceRegistryRepository = {
     return result.rows[0] ?? null
   },
 
+  /**
+   * Batch counterpart to `findById` (INV-56). Returns rows in unspecified
+   * order; callers should index by id if order matters.
+   */
+  async findByIds(db: Querier, ids: string[]): Promise<WorkspaceRegistryRow[]> {
+    if (ids.length === 0) return []
+    const result = await db.query<WorkspaceRegistryRow>(
+      `SELECT id, name, slug, region, created_by_workos_user_id, workos_organization_id, created_at, updated_at
+       FROM workspace_registry WHERE id = ANY($1::text[])`,
+      [ids]
+    )
+    return result.rows
+  },
+
   /** Backoffice: same as findById but also returns the member count in one round-trip. */
   async findByIdWithMemberCount(
     db: Querier,
