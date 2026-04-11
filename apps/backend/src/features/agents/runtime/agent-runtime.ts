@@ -564,11 +564,16 @@ export class AgentRuntime {
         }
         const signal = this.config.toolSignalProvider?.(tc.toolCallId, tc.toolName)
 
-        const toolResult = await agentTool.config.execute(tc.input as any, {
-          toolCallId: tc.toolCallId,
-          onProgress,
-          signal,
-        })
+        // Wrap the tool execute in the observer-provided tool span context
+        // (OTEL) so that nested AI SDK calls inside the tool nest under the
+        // tool span instead of orphaning under the root.
+        const toolResult = await this.wrapToolWithObserverContext(tc.toolCallId, () =>
+          agentTool.config.execute(tc.input as any, {
+            toolCallId: tc.toolCallId,
+            onProgress,
+            signal,
+          })
+        )
         const durationMs = Date.now() - startTime
 
         // Accumulate sources
@@ -773,6 +778,28 @@ export class AgentRuntime {
         const prev = wrapped
         const obs = observer
         wrapped = () => obs.wrapExecution!(prev)
+      }
+    }
+    return wrapped()
+  }
+
+  /**
+   * Compose all observers' wrapToolExecution hooks around a tool's execute().
+   * The OTEL observer uses this to make the tool span the active context so
+   * nested AI SDK calls (e.g. workspace researcher's planner/evaluator
+   * `generateObject` calls) appear as children of the tool span in Langfuse,
+   * rather than orphaning.
+   *
+   * Must be called AFTER `tool:start` has been emitted so observers have a
+   * chance to register the tool's context.
+   */
+  private async wrapToolWithObserverContext<T>(toolCallId: string, fn: () => Promise<T>): Promise<T> {
+    let wrapped = fn
+    for (const observer of this.observers) {
+      if (observer.wrapToolExecution) {
+        const prev = wrapped
+        const obs = observer
+        wrapped = () => obs.wrapToolExecution!(toolCallId, prev)
       }
     }
     return wrapped()
