@@ -53,7 +53,10 @@ export class OtelObserver implements AgentObserver {
       case "tool:start": {
         const parentContext = this.rootContext ?? context.active()
         const toolSpan = tracer.startSpan(`tool:${event.toolName}`, {}, parentContext)
-        toolSpan.setAttribute("input.value", JSON.stringify(event.input))
+        // Langfuse reads `langfuse.observation.input/output` for the UI's
+        // input/output panels. The previous `input.value`/`output.value`
+        // attributes were never picked up, so tool spans showed as empty.
+        toolSpan.setAttribute("langfuse.observation.input", JSON.stringify(event.input))
         this.toolSpans.set(event.toolCallId, toolSpan)
         // Build a Context with the tool span set as active so child spans
         // created inside the tool's execute() nest under it (rather than
@@ -65,7 +68,7 @@ export class OtelObserver implements AgentObserver {
       case "tool:complete": {
         const toolSpan = this.toolSpans.get(event.toolCallId)
         if (toolSpan) {
-          toolSpan.setAttribute("output.value", event.output)
+          toolSpan.setAttribute("langfuse.observation.output", event.output)
           toolSpan.setStatus({ code: SpanStatusCode.OK })
           toolSpan.end()
           this.toolSpans.delete(event.toolCallId)
@@ -77,7 +80,7 @@ export class OtelObserver implements AgentObserver {
       case "tool:error": {
         const toolSpan = this.toolSpans.get(event.toolCallId)
         if (toolSpan) {
-          toolSpan.setAttribute("output.value", JSON.stringify({ error: event.error }))
+          toolSpan.setAttribute("langfuse.observation.output", JSON.stringify({ error: event.error }))
           toolSpan.setStatus({ code: SpanStatusCode.ERROR, message: event.error })
           toolSpan.end()
           this.toolSpans.delete(event.toolCallId)

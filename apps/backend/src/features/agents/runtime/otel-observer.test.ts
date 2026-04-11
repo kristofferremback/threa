@@ -1,31 +1,17 @@
-import { describe, expect, test, beforeAll } from "bun:test"
-import { trace, context } from "@opentelemetry/api"
-import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks"
-import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-base"
+import { describe, expect, test } from "bun:test"
+import { trace } from "@opentelemetry/api"
 import { AgentStepTypes } from "@threa/types"
+import { inMemoryExporter as exporter } from "../test-otel-setup"
 import { OtelObserver } from "./otel-observer"
 
 /**
- * Set up an in-memory tracer provider AND a context manager once for the
- * whole module. The context manager is required for `context.with(...)` to
- * actually propagate the context across `await` boundaries — without one,
- * the default no-op manager makes `context.active()` always return ROOT,
- * which would mean every span has no parent.
+ * Tracer provider, context manager, and exporter are all installed once via
+ * `../test-otel-setup`. We import the shared exporter so multiple test files
+ * (this one + `researcher-trace.test.ts`) don't race on `setGlobalTracerProvider`.
  *
  * This mirrors what `NodeSDK.start()` does in production (`apps/backend/src/
  * lib/langfuse/langfuse.ts`).
  */
-const exporter = new InMemorySpanExporter()
-beforeAll(() => {
-  const contextManager = new AsyncLocalStorageContextManager()
-  contextManager.enable()
-  context.setGlobalContextManager(contextManager)
-
-  const provider = new BasicTracerProvider({
-    spanProcessors: [new SimpleSpanProcessor(exporter)],
-  })
-  trace.setGlobalTracerProvider(provider)
-})
 
 function makeObserver(): OtelObserver {
   return new OtelObserver({

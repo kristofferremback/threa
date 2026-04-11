@@ -36,6 +36,7 @@ import {
   WORKSPACE_AGENT_SYSTEM_PROMPT,
 } from "./config"
 import { buildBaselineQueries } from "./query/baseline-queries"
+import { withResearcherSpan } from "./researcher-trace"
 
 /**
  * Source item for citation - extended to support workspace sources.
@@ -356,29 +357,48 @@ export class WorkspaceAgent {
 
     const baselineQueries = buildBaselineQueries(query)
 
-    // Fire both in parallel.
+    // Fire both in parallel. Each phase is wrapped in its own OTEL span so the
+    // Langfuse trace shows intent ("baseline" / "plan-llm") instead of a flat
+    // bag of embeds — and the per-phase input/output payloads carry the actual
+    // queries and result counts.
     const baselinePromise =
       baselineQueries.length > 0
-        ? this.executeQueries(
-            pool,
-            baselineQueries,
-            workspaceId,
-            accessibleStreamIds,
-            embeddingService,
-            invokingUserId,
-            true,
-            excludedMessageIds
+        ? withResearcherSpan(
+            "ws-research:baseline",
+            {
+              input: { count: baselineQueries.length, queries: baselineQueries },
+              extractOutput: summarizeQueryBatch,
+            },
+            () =>
+              this.executeQueries(
+                pool,
+                baselineQueries,
+                workspaceId,
+                accessibleStreamIds,
+                embeddingService,
+                invokingUserId,
+                true,
+                excludedMessageIds
+              )
           )
         : Promise.resolve({ memos: [], messages: [], attachments: [] })
 
-    const planPromise = this.planRetrieval({
-      contextSummary,
-      config,
-      workspaceId,
-      query,
-      signal: input.signal,
-      deadlineAt: input.deadlineAt,
-    })
+    const planPromise = withResearcherSpan(
+      "ws-research:plan-llm",
+      {
+        input: { query, contextSummary },
+        extractOutput: (plan) => ({ reasoning: plan.reasoning, queries: plan.queries }),
+      },
+      () =>
+        this.planRetrieval({
+          contextSummary,
+          config,
+          workspaceId,
+          query,
+          signal: input.signal,
+          deadlineAt: input.deadlineAt,
+        })
+    )
 
     const [baselineResults, plan] = await Promise.all([baselinePromise, planPromise])
 
@@ -405,15 +425,23 @@ export class WorkspaceAgent {
         input.onSubstep
       )
 
-      const plannerResults = await this.executeQueries(
-        pool,
-        plannerOnlyDeduped,
-        workspaceId,
-        accessibleStreamIds,
-        embeddingService,
-        invokingUserId,
-        true,
-        excludedMessageIds
+      const plannerResults = await withResearcherSpan(
+        "ws-research:plan-execute",
+        {
+          input: { count: plannerOnlyDeduped.length, queries: plannerOnlyDeduped },
+          extractOutput: summarizeQueryBatch,
+        },
+        () =>
+          this.executeQueries(
+            pool,
+            plannerOnlyDeduped,
+            workspaceId,
+            accessibleStreamIds,
+            embeddingService,
+            invokingUserId,
+            true,
+            excludedMessageIds
+          )
       )
 
       allMemos = mergeMemoResults(allMemos, plannerResults.memos)
@@ -442,66 +470,137 @@ export class WorkspaceAgent {
     // Each pass: evaluate accumulated results → if sufficient, exit; else dedupe
     // additional queries against everything seen so far → execute → merge.
     // Setting maxIterations=1 skips this loop entirely.
-    for (let iteration = 2; iteration <= maxIterations; iteration++) {
-      // Abort check before evaluator (each iteration is a checkpoint)
-      const preEval = this.checkAbortOrDeadline(input)
-      if (preEval) {
-        return this.buildPartialResult(allMemos, allMessages, allAttachments, workspaceId, substeps, preEval)
-      }
+    //
+    // Each iteration is wrapped in its own OTEL span (`ws-research:refine N/M`)
+    // with `evaluate` and `execute` as nested children, so the trace shows
+    // exactly which iteration ran what. The body returns a tagged outcome so
+    // partial-result and stop conditions can short-circuit the outer loop
+    // without losing the span boundary.
+    let stopRefining = false
+    for (let iteration = 2; iteration <= maxIterations && !stopRefining; iteration++) {
+      const outcome = await withResearcherSpan(
+        `ws-research:refine ${iteration}/${maxIterations}`,
+        {
+          input: {
+            iteration,
+            maxIterations,
+            accumulated: {
+              memos: allMemos.length,
+              messages: allMessages.length,
+              attachments: allAttachments.length,
+            },
+          },
+          extractOutput: (o: RefineIterationOutcome) => o.summary,
+        },
+        async (): Promise<RefineIterationOutcome> => {
+          // Abort check before evaluator (each iteration is a checkpoint)
+          const preEval = this.checkAbortOrDeadline(input)
+          if (preEval) {
+            return { kind: "partial", reason: preEval, summary: { aborted: preEval } }
+          }
 
-      this.emitSubstep(substeps, "Evaluating results…", input.onSubstep)
+          this.emitSubstep(substeps, "Evaluating results…", input.onSubstep)
 
-      const evaluation = await this.evaluateResults(
-        contextSummary,
-        allMemos,
-        allMessages,
-        allAttachments,
-        config,
-        workspaceId,
-        query,
-        input.signal,
-        input.deadlineAt
+          const evaluation = await withResearcherSpan(
+            "ws-research:evaluate",
+            {
+              input: {
+                query,
+                contextSummary,
+                accumulated: {
+                  memos: allMemos.length,
+                  messages: allMessages.length,
+                  attachments: allAttachments.length,
+                },
+              },
+              extractOutput: (e) => ({
+                sufficient: e.sufficient,
+                reasoning: e.reasoning,
+                additionalQueries: e.additionalQueries ?? [],
+              }),
+            },
+            () =>
+              this.evaluateResults(
+                contextSummary,
+                allMemos,
+                allMessages,
+                allAttachments,
+                config,
+                workspaceId,
+                query,
+                input.signal,
+                input.deadlineAt
+              )
+          )
+
+          if (evaluation.sufficient) {
+            logger.debug({ query, reasoning: evaluation.reasoning }, "Workspace agent found sufficient results")
+            return { kind: "stop", summary: { stopped: "sufficient", reasoning: evaluation.reasoning } }
+          }
+
+          const additional = (evaluation.additionalQueries ?? []).slice(0, WORKSPACE_AGENT_MAX_ADDITIONAL_QUERIES)
+          const iterationQueries = dedupeQueries(additional).filter((q) => !seenQueryKeys.has(queryKey(q)))
+          if (iterationQueries.length === 0) {
+            logger.debug({ query }, "Workspace agent has no new queries to run; stopping refinement")
+            return { kind: "stop", summary: { stopped: "no_new_queries", reasoning: evaluation.reasoning } }
+          }
+
+          // Abort check before execute
+          const preExecIter = this.checkAbortOrDeadline(input)
+          if (preExecIter) {
+            return { kind: "partial", reason: preExecIter, summary: { aborted: preExecIter } }
+          }
+
+          this.emitSubstep(
+            substeps,
+            `Iteration ${iteration}/${maxIterations}: refining with ${iterationQueries.length} ${iterationQueries.length === 1 ? "query" : "queries"}…`,
+            input.onSubstep
+          )
+
+          const iterationResults = await withResearcherSpan(
+            "ws-research:execute",
+            {
+              input: { count: iterationQueries.length, queries: iterationQueries },
+              extractOutput: summarizeQueryBatch,
+            },
+            () =>
+              this.executeQueries(
+                pool,
+                iterationQueries,
+                workspaceId,
+                accessibleStreamIds,
+                embeddingService,
+                invokingUserId,
+                true,
+                excludedMessageIds
+              )
+          )
+
+          allMemos = mergeMemoResults(allMemos, iterationResults.memos)
+          allMessages = mergeMessageResults(allMessages, iterationResults.messages)
+          allAttachments = mergeAttachmentResults(allAttachments, iterationResults.attachments)
+          for (const q of iterationQueries) seenQueryKeys.add(queryKey(q))
+
+          return {
+            kind: "continue",
+            summary: {
+              ranQueries: iterationQueries.length,
+              total: {
+                memos: allMemos.length,
+                messages: allMessages.length,
+                attachments: allAttachments.length,
+              },
+            },
+          }
+        }
       )
 
-      if (evaluation.sufficient) {
-        logger.debug({ query, reasoning: evaluation.reasoning }, "Workspace agent found sufficient results")
-        break
+      if (outcome.kind === "partial") {
+        return this.buildPartialResult(allMemos, allMessages, allAttachments, workspaceId, substeps, outcome.reason)
       }
-
-      const additional = (evaluation.additionalQueries ?? []).slice(0, WORKSPACE_AGENT_MAX_ADDITIONAL_QUERIES)
-      const iterationQueries = dedupeQueries(additional).filter((q) => !seenQueryKeys.has(queryKey(q)))
-      if (iterationQueries.length === 0) {
-        logger.debug({ query }, "Workspace agent has no new queries to run; stopping refinement")
-        break
+      if (outcome.kind === "stop") {
+        stopRefining = true
       }
-
-      // Abort check before execute
-      const preExecIter = this.checkAbortOrDeadline(input)
-      if (preExecIter) {
-        return this.buildPartialResult(allMemos, allMessages, allAttachments, workspaceId, substeps, preExecIter)
-      }
-
-      this.emitSubstep(
-        substeps,
-        `Iteration ${iteration}/${maxIterations}: refining with ${iterationQueries.length} ${iterationQueries.length === 1 ? "query" : "queries"}…`,
-        input.onSubstep
-      )
-
-      const iterationResults = await this.executeQueries(
-        pool,
-        iterationQueries,
-        workspaceId,
-        accessibleStreamIds,
-        embeddingService,
-        invokingUserId,
-        true,
-        excludedMessageIds
-      )
-
-      allMemos = mergeMemoResults(allMemos, iterationResults.memos)
-      allMessages = mergeMessageResults(allMessages, iterationResults.messages)
-      allAttachments = mergeAttachmentResults(allAttachments, iterationResults.attachments)
-      for (const q of iterationQueries) seenQueryKeys.add(queryKey(q))
     }
 
     // Final abort check before building result
@@ -844,60 +943,83 @@ Each query must have:
     messages: EnrichedMessageResult[]
     attachments: EnrichedAttachmentResult[]
   }> {
-    // Execute all queries in parallel
+    // Execute all queries in parallel. Each query gets its own OTEL span so the
+    // trace shows what each underlying ai.embed was *for*: target, type, and
+    // the query text in the span input, plus result counts/snippets in the
+    // output. The embed/search work runs inside the span context so the AI
+    // SDK's `ai.embed` span nests under the per-query span automatically.
     const results = await Promise.all(
-      queries.map(async (query) => {
-        if (query.target === "memos") {
-          const memoResults = await this.searchMemos(pool, query, workspaceId, accessibleStreamIds, embeddingService)
-          return {
-            type: "memos" as const,
-            memos: memoResults,
-            messages: [] as EnrichedMessageResult[],
-            attachments: [] as EnrichedAttachmentResult[],
-            search: {
-              target: "memos" as const,
-              type: query.type,
-              query: query.query,
-              resultCount: memoResults.length,
+      queries.map((query) =>
+        withResearcherSpan(
+          `ws-research:query (${query.target}|${query.type})`,
+          {
+            input: { target: query.target, type: query.type, query: query.query },
+            attributes: {
+              "ws.query.target": query.target,
+              "ws.query.type": query.type,
             },
+            extractOutput: describeQueryResult,
+          },
+          async () => {
+            if (query.target === "memos") {
+              const memoResults = await this.searchMemos(
+                pool,
+                query,
+                workspaceId,
+                accessibleStreamIds,
+                embeddingService
+              )
+              return {
+                type: "memos" as const,
+                memos: memoResults,
+                messages: [] as EnrichedMessageResult[],
+                attachments: [] as EnrichedAttachmentResult[],
+                search: {
+                  target: "memos" as const,
+                  type: query.type,
+                  query: query.query,
+                  resultCount: memoResults.length,
+                },
+              }
+            } else if (query.target === "messages") {
+              const messageResults = await this.searchMessages(
+                pool,
+                query,
+                workspaceId,
+                accessibleStreamIds,
+                includeSurroundingContext,
+                excludedMessageIds
+              )
+              return {
+                type: "messages" as const,
+                memos: [] as EnrichedMemoResult[],
+                messages: messageResults,
+                attachments: [] as EnrichedAttachmentResult[],
+                search: {
+                  target: "messages" as const,
+                  type: query.type,
+                  query: query.query,
+                  resultCount: messageResults.length,
+                },
+              }
+            } else {
+              const attachmentResults = await this.searchAttachments(pool, query, workspaceId, accessibleStreamIds)
+              return {
+                type: "attachments" as const,
+                memos: [] as EnrichedMemoResult[],
+                messages: [] as EnrichedMessageResult[],
+                attachments: attachmentResults,
+                search: {
+                  target: "attachments" as const,
+                  type: query.type,
+                  query: query.query,
+                  resultCount: attachmentResults.length,
+                },
+              }
+            }
           }
-        } else if (query.target === "messages") {
-          const messageResults = await this.searchMessages(
-            pool,
-            query,
-            workspaceId,
-            accessibleStreamIds,
-            includeSurroundingContext,
-            excludedMessageIds
-          )
-          return {
-            type: "messages" as const,
-            memos: [] as EnrichedMemoResult[],
-            messages: messageResults,
-            attachments: [] as EnrichedAttachmentResult[],
-            search: {
-              target: "messages" as const,
-              type: query.type,
-              query: query.query,
-              resultCount: messageResults.length,
-            },
-          }
-        } else {
-          const attachmentResults = await this.searchAttachments(pool, query, workspaceId, accessibleStreamIds)
-          return {
-            type: "attachments" as const,
-            memos: [] as EnrichedMemoResult[],
-            messages: [] as EnrichedMessageResult[],
-            attachments: attachmentResults,
-            search: {
-              target: "attachments" as const,
-              type: query.type,
-              query: query.query,
-              resultCount: attachmentResults.length,
-            },
-          }
-        }
-      })
+        )
+      )
     )
 
     // Aggregate results
@@ -1317,6 +1439,83 @@ ${historyText || "No recent messages."}`
 // ──────────────────────────────────────────────────────────────────────
 // Module-level helpers
 // ──────────────────────────────────────────────────────────────────────
+
+/**
+ * Tagged outcome of a single refinement iteration. The iteration body returns
+ * one of these so the surrounding `withResearcherSpan` can record output
+ * before the outer loop short-circuits on partial/stop.
+ */
+type RefineIterationOutcome =
+  | { kind: "partial"; reason: WorkspaceAgentPartialReason; summary: Record<string, unknown> }
+  | { kind: "stop"; summary: Record<string, unknown> }
+  | { kind: "continue"; summary: Record<string, unknown> }
+
+/**
+ * Compact summary of an `executeQueries` result for the Langfuse span output.
+ * Includes counts plus a small preview of titles/snippets/filenames so the
+ * trace shows what each phase actually returned, without bloating the export.
+ */
+function summarizeQueryBatch(r: {
+  memos: EnrichedMemoResult[]
+  messages: EnrichedMessageResult[]
+  attachments: EnrichedAttachmentResult[]
+}): Record<string, unknown> {
+  return {
+    memoCount: r.memos.length,
+    messageCount: r.messages.length,
+    attachmentCount: r.attachments.length,
+    memos: r.memos.slice(0, 5).map((m) => ({ id: m.memo.id, title: m.memo.title })),
+    messages: r.messages.slice(0, 5).map((m) => ({
+      id: m.id,
+      author: m.authorName,
+      stream: m.streamName,
+      snippet: truncateSnippet(m.content, 120),
+    })),
+    attachments: r.attachments.slice(0, 5).map((a) => ({ id: a.id, filename: a.filename })),
+  }
+}
+
+/**
+ * Per-query span output: count + small preview keyed by the query's target.
+ * Mirrors the discriminated shape returned by the per-query branch in
+ * `executeQueries` so the Langfuse span shows the actual hits.
+ */
+function describeQueryResult(
+  result:
+    | { type: "memos"; memos: EnrichedMemoResult[] }
+    | { type: "messages"; messages: EnrichedMessageResult[] }
+    | { type: "attachments"; attachments: EnrichedAttachmentResult[] }
+): Record<string, unknown> {
+  if (result.type === "memos") {
+    return {
+      count: result.memos.length,
+      results: result.memos.slice(0, 5).map((r) => ({
+        id: r.memo.id,
+        title: r.memo.title,
+        snippet: truncateSnippet(r.memo.abstract, 120),
+      })),
+    }
+  }
+  if (result.type === "messages") {
+    return {
+      count: result.messages.length,
+      results: result.messages.slice(0, 5).map((m) => ({
+        id: m.id,
+        author: m.authorName,
+        stream: m.streamName,
+        snippet: truncateSnippet(m.content, 120),
+      })),
+    }
+  }
+  return {
+    count: result.attachments.length,
+    results: result.attachments.slice(0, 5).map((a) => ({
+      id: a.id,
+      filename: a.filename,
+      contentType: a.contentType,
+    })),
+  }
+}
 
 /** Normalized key for query-level deduplication across baseline + planner sets. */
 function queryKey(q: SearchQuery): string {
