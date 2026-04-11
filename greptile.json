@@ -6,7 +6,7 @@
   "statusCheck": true,
   "excludeAuthors": ["dependabot[bot]", "renovate[bot]"],
   "ignorePatterns": "*.generated.*\n**/node_modules/**\npackage-lock.json\nbun.lockb\ndist/**\ndev-dist/**\n.env*\ntest-results/**\nplaywright-report/**\n*.log\ngreptile.json",
-  "instructions": "Bun monorepo with four apps: backend (Express + Socket.io), frontend (React 19 + Vite + Shadcn), control-plane (global auth), and workspace-router (Cloudflare Worker).\n\nRefer to CLAUDE.md at the repository root for the full invariant playbook (57 invariants) and architecture rules. The structured rules below cover the most critical invariants; CLAUDE.md is the complete reference.\n\nWhat NOT to flag:\n- Pre-existing issues not introduced by this PR\n- Issues that TypeScript compilation or ESLint would catch (types, imports, lint)\n- Stylistic preferences without a concrete rule violation in CLAUDE.md\n- Theoretical risks or hypothetical edge cases without evidence of exploitability\n- General best practice suggestions that don't map to a specific project rule\n\nSecurity calibration:\n- React JSX is safe from XSS unless dangerouslySetInnerHTML is used\n- ULIDs/UUIDs are cryptographically unguessable — do not flag as enumeration risks\n- Environment variables are trusted — do not flag as hardcoded secrets\n- DoS, rate limiting, log spoofing, regex complexity, missing audit logs, and outdated dependency warnings are out of scope\n\nArchitecture rules:\n- Backend uses a three-layer model: Handlers (thin, validate + delegate) -> Services (business logic, own transactions) -> Repositories (data access, first arg is Querier)\n- Data access goes through repositories, not inline SQL in handlers or services\n- No hidden singletons except approved logger, Langfuse/OTEL, and web-push bootstrap\n- Dependencies must be constructed once and injected, not assembled per-call from raw config\n- Frontend components should stay UI-focused; business logic belongs in hooks or services\n\nPlan adherence:\nIf plan files exist in .claude/plans/, check that PR changes align with the plan. Flag missing corresponding changes: API change without frontend update, type change without usage update, schema change without migration.",
+  "instructions": "Architecture, invariants, and the full app inventory live in CLAUDE.md and docs/system-overview.md (both already loaded as customContext.files below). Treat those as the source of truth — do not rely on a frozen description in this file. The structured rules under customContext.rules below cover the most frequently-violated invariants with file-glob scopes; CLAUDE.md is the complete reference.\n\nWhat NOT to flag:\n- Pre-existing issues not introduced by this PR\n- Issues that TypeScript compilation or ESLint would catch (types, imports, lint)\n- Stylistic preferences without a concrete rule violation in CLAUDE.md\n- Theoretical risks or hypothetical edge cases without evidence of exploitability\n- General best practice suggestions that don't map to a specific project rule\n\nSecurity calibration:\n- React JSX is safe from XSS unless dangerouslySetInnerHTML is used\n- ULIDs/UUIDs are cryptographically unguessable — do not flag as enumeration risks\n- Environment variables are trusted — do not flag as hardcoded secrets\n- DoS, rate limiting, log spoofing, regex complexity, missing audit logs, and outdated dependency warnings are out of scope\n\nPlan adherence:\nIf plan files exist in .claude/plans/, check that PR changes align with the plan. Flag missing corresponding changes: API change without frontend/backoffice update, type change without usage update, schema change without migration.",
   "summarySection": {
     "included": true,
     "collapsible": true,
@@ -44,11 +44,11 @@
         "rule": "Migrations are append-only. Never edit or delete existing migration files. Only add new ones. (INV-17)"
       },
       {
-        "scope": ["apps/frontend/src/**/*.tsx"],
+        "scope": ["apps/frontend/src/**/*.tsx", "apps/backoffice/src/**/*.tsx"],
         "rule": "Do not define React components inside other React components. Extract to separate functions or files. (INV-18)"
       },
       {
-        "scope": ["apps/backend/src/**", "packages/backend-common/src/**"],
+        "scope": ["apps/backend/src/**", "apps/control-plane/src/**", "packages/backend-common/src/**"],
         "rule": "Never do select-then-update without locking or concurrency control. Use ON CONFLICT, advisory locks, or transactions with row locks for write paths. (INV-20)"
       },
       {
@@ -56,7 +56,7 @@
         "rule": "All AI/LLM usage must go through the project AI wrapper (createAI), not raw SDK imports from @anthropic-ai/sdk or openai. (INV-28)"
       },
       {
-        "scope": ["apps/backend/src/**", "packages/backend-common/src/**"],
+        "scope": ["apps/backend/src/**", "apps/control-plane/src/**", "packages/backend-common/src/**"],
         "rule": "Avoid withClient for single-query paths. Pass pool directly instead of acquiring a dedicated client. (INV-30)"
       },
       {
@@ -72,12 +72,17 @@
       {
         "scope": [],
         "path": "CLAUDE.md",
-        "description": "Project invariants (INV-1 through INV-57), architecture rules, coding standards, and testing expectations. This is the primary review specification."
+        "description": "Authoritative project invariants, architecture rules, coding standards, and testing expectations. Primary review specification — read this first."
       },
       {
         "scope": [],
         "path": "docs/system-overview.md",
-        "description": "How the four services (backend, frontend, control-plane, workspace-router) interact, their responsibilities, infrastructure dependencies, and deployment targets."
+        "description": "How the apps in this monorepo interact: their responsibilities, infrastructure dependencies, and deployment targets."
+      },
+      {
+        "scope": [],
+        "path": "docs/deployment.md",
+        "description": "Production and staging deploy topology, env vars per service, the workspace COPY discipline that the Dockerfile lint enforces, and rollback steps."
       },
       {
         "scope": [],
