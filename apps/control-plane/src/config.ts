@@ -21,10 +21,40 @@ export interface ControlPlaneConfig {
   cloudflareKv: CloudflareKvConfig | null
   workspaceCreationRequiresInvite: boolean
   fastShutdown: boolean
+  /**
+   * WorkOS user IDs to auto-seed into `platform_roles` with role='admin' on
+   * startup. Comma-separated `PLATFORM_ADMIN_WORKOS_USER_IDS` env var.
+   * Idempotent: re-running the server with the same value is a no-op.
+   */
+  platformAdminWorkosUserIds: string[]
   /** Base URL of the frontend app. Used for post-auth redirects when the frontend is on a different origin. */
   frontendUrl: string
+  /**
+   * WorkOS dashboard environment id (e.g. `environment_01KA3BVADMEYB99HGDHBJM1SE7`).
+   * Optional. Surfaced through the backoffice config endpoint so the
+   * platform-admin UI can render direct links into the WorkOS dashboard.
+   *
+   * The WorkOS Node SDK has no introspection API for this — it lives only in
+   * the dashboard URL — so we set it explicitly per environment via
+   * `WORKOS_ENVIRONMENT_ID`. Null when unset; the backoffice falls back to
+   * plain text instead of a link.
+   */
+  workosEnvironmentId: string | null
   /** Allowed domain for forwarded-host redirects (e.g. "staging.threa.io"). Empty disables the feature. */
   allowedRedirectDomain: string
+  /**
+   * Forwarded hosts that should receive a dedicated WorkOS redirect URI
+   * (`https://${host}/api/auth/callback`) instead of the default
+   * `WORKOS_REDIRECT_URI`. Use this when an origin can't share cookies with
+   * the default redirect host (e.g. the backoffice at admin.threa.io when the
+   * main app is on a different TLD). Comma-separated env var
+   * `WORKOS_DEDICATED_REDIRECT_HOSTS`.
+   *
+   * Every host listed here must be registered as an allowed redirect URI in
+   * the WorkOS dashboard for the active client, otherwise WorkOS will reject
+   * the authorize call with "invalid_redirect_uri".
+   */
+  workosDedicatedRedirectHosts: string[]
   rateLimits: {
     globalMax: number
     authMax: number
@@ -108,8 +138,17 @@ export function loadControlPlaneConfig(): ControlPlaneConfig {
     cloudflareKv,
     workspaceCreationRequiresInvite: process.env.WORKSPACE_CREATION_SKIP_INVITE !== "true",
     fastShutdown: process.env.FAST_SHUTDOWN === "true",
+    platformAdminWorkosUserIds: (process.env.PLATFORM_ADMIN_WORKOS_USER_IDS ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0),
     frontendUrl: (process.env.FRONTEND_URL ?? "").replace(/\/+$/, ""),
+    workosEnvironmentId: process.env.WORKOS_ENVIRONMENT_ID?.trim() || null,
     allowedRedirectDomain: process.env.ALLOWED_REDIRECT_DOMAIN ?? "",
+    workosDedicatedRedirectHosts: (process.env.WORKOS_DEDICATED_REDIRECT_HOSTS ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0),
     rateLimits: {
       globalMax: Number(process.env.GLOBAL_RATE_LIMIT_MAX) || 300,
       authMax: Number(process.env.AUTH_RATE_LIMIT_MAX) || 20,

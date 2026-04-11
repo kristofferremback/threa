@@ -5,6 +5,7 @@ dev-dist/
 .env.*
 !.env.claude-code-web
 *.log
+*.tsbuildinfo
 .DS_Store
 .claude/settings.local.json
 

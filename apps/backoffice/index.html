@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Threa Backoffice</title>
+    <meta name="description" content="Threa platform administration" />
+    <meta name="robots" content="noindex, nofollow" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <script>
+      ;(function () {
+        var root = document.documentElement
+        var prefs
+        try {
+          prefs = JSON.parse(localStorage.getItem("threa-backoffice-appearance")) || {}
+        } catch (e) {
+          prefs = {}
+        }
+        var theme = prefs.theme
+        var prefersDark =
+          theme === "dark" || (theme !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches)
+        if (prefersDark) root.classList.add("dark")
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

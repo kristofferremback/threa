@@ -1,0 +1,17 @@
+name = "backoffice-router-staging"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+# Route binding for the staging backoffice. The DNS record `admin-staging.threa.io`
+# must exist as a Cloudflare-proxied record in the `threa.io` zone for traffic
+# to actually hit the edge; the route just tells Cloudflare "when a request
+# matching this pattern arrives, hand it to this worker".
+[[routes]]
+pattern = "admin-staging.threa.io/*"
+zone_name = "threa.io"
+
+[vars]
+# Staging control-plane (separate Railway project from prod).
+CONTROL_PLANE_URL = "https://control-plane-production-abf8.up.railway.app"
+# CF Pages project that serves the staging backoffice static assets.
+PAGES_PROJECT = "threa-backoffice-staging"

@@ -11,6 +11,7 @@ import { createControlPlaneAuthHandlers, createAuthStubHandlers } from "./featur
 import { createIntegrationHandlers } from "./features/integrations"
 import { createWorkspaceHandlers, type ControlPlaneWorkspaceService } from "./features/workspaces"
 import { createInvitationShadowHandlers, type InvitationShadowService } from "./features/invitation-shadows"
+import { createBackofficeHandlers, createPlatformAdminMiddleware, type BackofficeService } from "./features/backoffice"
 import { createInternalAuthMiddleware } from "./lib/internal-auth"
 import type { RegionConfig } from "./config"
 
@@ -23,19 +24,22 @@ interface Dependencies {
   authService: AuthService
   workspaceService: ControlPlaneWorkspaceService
   shadowService: InvitationShadowService
+  backofficeService: BackofficeService
   internalApiKey: string
   allowDevAuthRoutes: boolean
   frontendUrl: string
   allowedRedirectDomain: string
   regions: Record<string, RegionConfig>
+  workosDedicatedRedirectHosts: string[]
   rateLimits: RateLimitConfig
 }
 
 export function registerRoutes(app: Express, deps: Dependencies) {
-  const { authService, workspaceService, shadowService, internalApiKey, allowDevAuthRoutes } = deps
+  const { authService, workspaceService, shadowService, backofficeService, internalApiKey, allowDevAuthRoutes } = deps
 
   const auth = createAuthMiddleware({ authService })
   const internalAuth = createInternalAuthMiddleware(internalApiKey)
+  const requirePlatformAdmin = createPlatformAdminMiddleware({ backofficeService })
 
   const ipKey = (req: Request) => getClientIp(req, "unknown")
   const globalLimit = createRateLimit({
@@ -50,10 +54,12 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     authService,
     frontendUrl: deps.frontendUrl,
     allowedRedirectDomain: deps.allowedRedirectDomain,
+    dedicatedRedirectHosts: deps.workosDedicatedRedirectHosts,
   })
   const workspace = createWorkspaceHandlers({ workspaceService, shadowService })
   const shadow = createInvitationShadowHandlers({ shadowService })
   const integrations = createIntegrationHandlers({ workspaceService, regions: deps.regions })
+  const backoffice = createBackofficeHandlers({ backofficeService })
 
   // Readiness probe
   app.get("/readyz", (_, res) => res.json({ status: "ok" }))
@@ -90,6 +96,38 @@ export function registerRoutes(app: Express, deps: Dependencies) {
 
   // User-facing invitation acceptance
   app.post("/api/invitations/:id/accept", auth, shadow.accept)
+
+  // Backoffice app surface. `/me` returns both identity and admin status so
+  // the frontend can render a friendly "not authorised" screen; every other
+  // backoffice route is gated by requirePlatformAdmin.
+  app.get("/api/backoffice/me", auth, backoffice.me)
+  app.get("/api/backoffice/config", auth, requirePlatformAdmin, backoffice.getConfig)
+  app.get("/api/backoffice/workspaces", auth, requirePlatformAdmin, backoffice.listWorkspaces)
+  app.get("/api/backoffice/workspaces/:id", auth, requirePlatformAdmin, backoffice.getWorkspace)
+  app.get(
+    "/api/backoffice/workspace-owner-invitations",
+    auth,
+    requirePlatformAdmin,
+    backoffice.listWorkspaceOwnerInvitations
+  )
+  app.post(
+    "/api/backoffice/workspace-owner-invitations",
+    auth,
+    requirePlatformAdmin,
+    backoffice.createWorkspaceOwnerInvitation
+  )
+  app.post(
+    "/api/backoffice/workspace-owner-invitations/:id/resend",
+    auth,
+    requirePlatformAdmin,
+    backoffice.resendWorkspaceOwnerInvitation
+  )
+  app.post(
+    "/api/backoffice/workspace-owner-invitations/:id/revoke",
+    auth,
+    requirePlatformAdmin,
+    backoffice.revokeWorkspaceOwnerInvitation
+  )
 
   // Internal API (inter-service)
   app.get("/internal/workspaces/:workspaceId/region", internalAuth, workspace.getRegion)

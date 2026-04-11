@@ -329,13 +329,26 @@ async function main() {
     console.log(`LAN mode: http://${lanIp}:3000`)
   }
 
-  const corsOrigins = ["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:5173"]
+  const corsOrigins = [
+    "http://localhost:3000",
+    "http://localhost:3004",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+  ]
   if (lanIp) corsOrigins.push(`http://${lanIp}:3000`)
 
   const cpEnvOverrides: Record<string, string> = {}
   if (lanIp && cpEnv.WORKOS_REDIRECT_URI) {
     cpEnvOverrides.WORKOS_REDIRECT_URI = cpEnv.WORKOS_REDIRECT_URI.replace("localhost", lanIp)
   }
+
+  // Dev convenience: auto-seed a platform admin for the default stub email so
+  // the backoffice works out of the box after logging in as "admin@threa.io".
+  // Stub user IDs are deterministic: `workos_test_${base64url(email)}`.
+  const DEV_PLATFORM_ADMIN_EMAIL = "admin@threa.io"
+  const devPlatformAdminId = `workos_test_${Buffer.from(DEV_PLATFORM_ADMIN_EMAIL).toString("base64url")}`
+  const platformAdminIds =
+    cpEnv.PLATFORM_ADMIN_WORKOS_USER_IDS ?? process.env.PLATFORM_ADMIN_WORKOS_USER_IDS ?? devPlatformAdminId
 
   const controlPlane = Bun.spawn(["bun", "--hot", "apps/control-plane/src/index.ts"], {
     stdout: "inherit",
@@ -352,6 +365,7 @@ async function main() {
       REGIONS: JSON.stringify({ local: { internalUrl: "http://localhost:3002" } }),
       CORS_ALLOWED_ORIGINS: corsOrigins.join(","),
       WORKSPACE_CREATION_SKIP_INVITE: "true",
+      PLATFORM_ADMIN_WORKOS_USER_IDS: platformAdminIds,
     },
   })
 
@@ -379,7 +393,19 @@ async function main() {
     stderr: "inherit",
   })
 
+  const backofficeRouterDir = path.join(process.cwd(), "apps/backoffice-router")
+  const backofficeRouter = Bun.spawn(["bunx", "wrangler", "dev", "--port", "3005"], {
+    cwd: backofficeRouterDir,
+    stdout: "inherit",
+    stderr: "inherit",
+  })
+
   const frontend = Bun.spawn(["bun", "run", "--cwd", "apps/frontend", "dev"], {
+    stdout: "inherit",
+    stderr: "inherit",
+  })
+
+  const backoffice = Bun.spawn(["bun", "run", "--cwd", "apps/backoffice", "dev"], {
     stdout: "inherit",
     stderr: "inherit",
   })
@@ -397,17 +423,33 @@ async function main() {
     controlPlane.kill("SIGKILL")
     backend.kill("SIGKILL")
     router.kill("SIGKILL")
+    backofficeRouter.kill("SIGKILL")
     frontend.kill("SIGKILL")
+    backoffice.kill("SIGKILL")
 
     // Wait for processes to fully terminate
-    await Promise.all([controlPlane.exited, backend.exited, router.exited, frontend.exited])
+    await Promise.all([
+      controlPlane.exited,
+      backend.exited,
+      router.exited,
+      backofficeRouter.exited,
+      frontend.exited,
+      backoffice.exited,
+    ])
     process.exit(0)
   }
 
   process.on("SIGINT", shutdown)
   process.on("SIGTERM", shutdown)
 
-  await Promise.all([controlPlane.exited, backend.exited, router.exited, frontend.exited])
+  await Promise.all([
+    controlPlane.exited,
+    backend.exited,
+    router.exited,
+    backofficeRouter.exited,
+    frontend.exited,
+    backoffice.exited,
+  ])
 }
 
 main()

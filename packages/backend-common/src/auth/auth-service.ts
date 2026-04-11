@@ -18,8 +18,30 @@ export interface AuthResult {
 export interface AuthService {
   authenticateSession(sealedSession: string): Promise<AuthResult>
   authenticateWithCode(code: string): Promise<AuthResult>
-  getAuthorizationUrl(redirectTo?: string): string
-  getLogoutUrl(sealedSession: string): Promise<string | null>
+  /**
+   * Build the WorkOS authorization URL.
+   *
+   * @param redirectTo  Optional path/state passed through to the callback.
+   * @param redirectUri Optional per-request redirect URI override. When set,
+   *                    WorkOS will redirect back to this URI instead of the
+   *                    service's default `WORKOS_REDIRECT_URI`. Used by the
+   *                    control-plane to support multiple origins (e.g. the
+   *                    backoffice on a different TLD) without cookie-domain
+   *                    gymnastics.
+   */
+  getAuthorizationUrl(redirectTo?: string, redirectUri?: string): string
+  /**
+   * Build a WorkOS single-logout URL.
+   *
+   * @param sealedSession The encrypted session cookie value.
+   * @param returnTo      Optional origin to redirect to after WorkOS clears
+   *                      the session. Defaults to the configured
+   *                      `WORKOS_REDIRECT_URI`'s origin. Pass a dedicated
+   *                      origin (e.g. `https://admin.threa.io`) to send the
+   *                      user back to the same origin they started on when
+   *                      it can't share cookies with the default.
+   */
+  getLogoutUrl(sealedSession: string, returnTo?: string): Promise<string | null>
 }
 
 export class WorkosAuthService implements AuthService {
@@ -126,24 +148,24 @@ export class WorkosAuthService implements AuthService {
     }
   }
 
-  getAuthorizationUrl(redirectTo?: string): string {
+  getAuthorizationUrl(redirectTo?: string, redirectUri?: string): string {
     return this.workos.userManagement.getAuthorizationUrl({
       provider: "authkit",
-      redirectUri: this.redirectUri,
+      redirectUri: redirectUri ?? this.redirectUri,
       clientId: this.clientId,
       state: redirectTo ? Buffer.from(redirectTo).toString("base64") : undefined,
     })
   }
 
-  async getLogoutUrl(sealedSession: string): Promise<string | null> {
+  async getLogoutUrl(sealedSession: string, returnTo?: string): Promise<string | null> {
     try {
       const session = this.workos.userManagement.loadSealedSession({
         sessionData: sealedSession,
         cookiePassword: this.cookiePassword,
       })
 
-      const returnTo = new URL(this.redirectUri).origin
-      return await session.getLogoutUrl({ returnTo })
+      const resolvedReturnTo = returnTo ?? new URL(this.redirectUri).origin
+      return await session.getLogoutUrl({ returnTo: resolvedReturnTo })
     } catch (error) {
       logger.error({ err: error }, "Failed to get logout URL")
       return null

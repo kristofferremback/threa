@@ -115,12 +115,23 @@ export class StubAuthService implements AuthService {
     }
   }
 
-  getAuthorizationUrl(redirectTo?: string): string {
+  getAuthorizationUrl(redirectTo?: string, redirectUri?: string): string {
+    // Encode both state and (optional) redirect_uri into the stub login URL so
+    // tests can assert on either. The stub login page ignores redirect_uri.
     const state = redirectTo ? Buffer.from(redirectTo).toString("base64") : ""
-    return `/test-auth-login?state=${state}`
+    const params = new URLSearchParams({ state })
+    if (redirectUri) {
+      params.set("redirect_uri", redirectUri)
+    }
+    return `/test-auth-login?${params.toString()}`
   }
 
-  async getLogoutUrl(_sealedSession: string): Promise<string | null> {
+  async getLogoutUrl(_sealedSession: string, returnTo?: string): Promise<string | null> {
+    // Encode returnTo as a query param so tests can assert on it.
+    if (returnTo) {
+      const params = new URLSearchParams({ return_to: returnTo })
+      return `/test-logged-out?${params.toString()}`
+    }
     return "/test-logged-out"
   }
 }

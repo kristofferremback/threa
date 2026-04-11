@@ -1,0 +1,20 @@
+name = "backoffice-router"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+# Route binding — declaratively attached on every `wrangler deploy`. The DNS
+# record `admin.threa.io` must exist as a Cloudflare-proxied record in the
+# `threa.io` zone for traffic to actually hit the edge; the route just tells
+# Cloudflare "when a request matching this pattern does arrive, hand it to
+# this worker".
+[[routes]]
+pattern = "admin.threa.io/*"
+zone_name = "threa.io"
+
+[vars]
+# Production control-plane (shared with workspace-router).
+CONTROL_PLANE_URL = "https://control-plane-production-7495.up.railway.app"
+# CF Pages project that serves the backoffice static assets. Leave unset to
+# serve only the API and 404 everything else (useful if the Cloudflare Route
+# pattern is scoped to `/api/*` rather than `/*`).
+PAGES_PROJECT = "threa-backoffice"
