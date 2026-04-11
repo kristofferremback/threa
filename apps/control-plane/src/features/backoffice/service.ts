@@ -1,6 +1,14 @@
 import type { Pool } from "pg"
-import { HttpError, logger, getWorkosErrorCode, type WorkosOrgService } from "@threa/backend-common"
+import {
+  HttpError,
+  logger,
+  getWorkosErrorCode,
+  displayNameFromWorkos,
+  type WorkosOrgService,
+  type WorkosUserSummary,
+} from "@threa/backend-common"
 import { PlatformRoleRepository } from "./repository"
+import { WorkspaceRegistryRepository } from "../workspaces"
 
 /** Platform roles recognised by the backoffice gate. */
 export const PLATFORM_ROLES = ["admin"] as const
@@ -14,12 +22,66 @@ export function isValidPlatformRole(value: string): value is PlatformRole {
 const WORKOS_ERROR_CODES = {
   EMAIL_ALREADY_INVITED: "email_already_invited_to_organization",
   USER_ALREADY_MEMBER: "user_already_organization_member",
+  USER_ALREADY_EXISTS: "user_already_exists",
 } as const
+
+/**
+ * WorkOS' SDK surfaces an unstructured `GenericServerException: User already
+ * exists.` when you try to send an app-level invitation to an email that
+ * already has a WorkOS user. There is no stable error code for this case, so
+ * fall back to a message substring check — narrow, unambiguous, and unlikely
+ * to collide with other error messages.
+ */
+const USER_ALREADY_EXISTS_MESSAGE = "User already exists"
+
+function isUserAlreadyExistsError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false
+  if ("message" in error && typeof error.message === "string") {
+    return error.message.includes(USER_ALREADY_EXISTS_MESSAGE)
+  }
+  return false
+}
+
+/** Reference to a workspace an accepted invitation ended up creating/joining. */
+export interface WorkspaceRef {
+  id: string
+  name: string
+  slug: string
+}
 
 export interface WorkspaceOwnerInvitation {
   id: string
   email: string
+  state: "pending" | "accepted" | "revoked" | "expired"
+  acceptedAt: string | null
+  revokedAt: string | null
   expiresAt: string
+  createdAt: string
+  updatedAt: string
+  /** Populated for accepted invitations whose invitee already belongs to one or more workspaces. */
+  workspaces: WorkspaceRef[]
+}
+
+export interface WorkspaceSummary {
+  id: string
+  name: string
+  slug: string
+  region: string
+  createdByWorkosUserId: string
+  workosOrganizationId: string | null
+  memberCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface WorkspaceOwnerSummary {
+  workosUserId: string
+  email: string | null
+  name: string | null
+}
+
+export interface WorkspaceDetail extends WorkspaceSummary {
+  owner: WorkspaceOwnerSummary
 }
 
 interface Dependencies {
@@ -68,27 +130,187 @@ export class BackofficeService {
         { email: params.email, invitationId: invitation.id, inviter: params.inviterWorkosUserId },
         "Backoffice: workspace owner invitation sent"
       )
+      const now = new Date().toISOString()
       return {
         id: invitation.id,
         email: params.email,
+        state: "pending",
+        acceptedAt: null,
+        revokedAt: null,
         expiresAt: invitation.expiresAt.toISOString(),
+        createdAt: now,
+        updatedAt: now,
+        workspaces: [],
       }
     } catch (error) {
-      const code = getWorkosErrorCode(error)
-      if (code === WORKOS_ERROR_CODES.EMAIL_ALREADY_INVITED) {
-        throw new HttpError("An invitation for this email already exists", {
-          status: 409,
-          code: "ALREADY_INVITED",
-        })
-      }
-      if (code === WORKOS_ERROR_CODES.USER_ALREADY_MEMBER) {
-        throw new HttpError("This user already has a Threa account", {
-          status: 409,
-          code: "ALREADY_MEMBER",
-        })
-      }
-      throw error
+      this.rethrowWorkosInvitationError(error)
     }
+  }
+
+  async revokeWorkspaceOwnerInvitation(invitationId: string): Promise<void> {
+    await this.workosOrgService.revokeInvitation(invitationId)
+    logger.info({ invitationId }, "Backoffice: workspace owner invitation revoked")
+  }
+
+  async resendWorkspaceOwnerInvitation(invitationId: string): Promise<WorkspaceOwnerInvitation> {
+    try {
+      const fresh = await this.workosOrgService.resendInvitation(invitationId)
+      logger.info({ oldInvitationId: invitationId, newInvitationId: fresh.id }, "Backoffice: invitation resent")
+      // The new invitation inherits the email from the old one — look it up
+      // via a full list to avoid needing a dedicated `getInvitation` method on
+      // the service interface. Small price to pay, called rarely.
+      const all = await this.workosOrgService.listAppInvitations()
+      const match = all.find((i) => i.id === fresh.id)
+      if (!match) {
+        throw new HttpError("Resent invitation not found", { status: 500, code: "RESEND_FAILED" })
+      }
+      return {
+        id: match.id,
+        email: match.email,
+        state: match.state,
+        acceptedAt: match.acceptedAt,
+        revokedAt: match.revokedAt,
+        expiresAt: match.expiresAt,
+        createdAt: match.createdAt,
+        updatedAt: match.updatedAt,
+        workspaces: [],
+      }
+    } catch (error) {
+      this.rethrowWorkosInvitationError(error)
+    }
+  }
+
+  /**
+   * List all workspace-owner invitations — app-level WorkOS invitations with
+   * no organization attached. Resolves `acceptedUserId` → workspaces so the
+   * UI can link each accepted invite to the workspaces the invitee belongs to.
+   */
+  async listWorkspaceOwnerInvitations(): Promise<WorkspaceOwnerInvitation[]> {
+    const raw = await this.workosOrgService.listAppInvitations()
+    const acceptedUserIds = raw.map((i) => i.acceptedUserId).filter((id): id is string => id != null)
+
+    const workspacesByUser =
+      acceptedUserIds.length > 0
+        ? await this.buildWorkspaceRefsByUser(acceptedUserIds)
+        : new Map<string, WorkspaceRef[]>()
+
+    return raw.map((invite) => ({
+      id: invite.id,
+      email: invite.email,
+      state: invite.state,
+      acceptedAt: invite.acceptedAt,
+      revokedAt: invite.revokedAt,
+      expiresAt: invite.expiresAt,
+      createdAt: invite.createdAt,
+      updatedAt: invite.updatedAt,
+      workspaces: invite.acceptedUserId ? (workspacesByUser.get(invite.acceptedUserId) ?? []) : [],
+    }))
+  }
+
+  /** List every workspace in the registry. Backoffice-only — no workspace scoping. */
+  async listAllWorkspaces(): Promise<WorkspaceSummary[]> {
+    const rows = await WorkspaceRegistryRepository.listAllWithMemberCounts(this.pool)
+    return rows.map((row) => this.toWorkspaceSummary(row))
+  }
+
+  async getWorkspaceDetail(id: string): Promise<WorkspaceDetail> {
+    const row = await WorkspaceRegistryRepository.findByIdWithMemberCount(this.pool, id)
+    if (!row) {
+      throw new HttpError("Workspace not found", { status: 404, code: "NOT_FOUND" })
+    }
+    const ownerUser = await this.workosOrgService.getUser(row.created_by_workos_user_id)
+    return {
+      ...this.toWorkspaceSummary(row),
+      owner: summarizeOwner(row.created_by_workos_user_id, ownerUser),
+    }
+  }
+
+  // --- private helpers -----------------------------------------------------
+
+  private rethrowWorkosInvitationError(error: unknown): never {
+    const code = getWorkosErrorCode(error)
+    if (code === WORKOS_ERROR_CODES.EMAIL_ALREADY_INVITED) {
+      throw new HttpError("An invitation for this email already exists", {
+        status: 409,
+        code: "ALREADY_INVITED",
+      })
+    }
+    if (code === WORKOS_ERROR_CODES.USER_ALREADY_MEMBER) {
+      throw new HttpError("This user already has a Threa account", {
+        status: 409,
+        code: "ALREADY_MEMBER",
+      })
+    }
+    if (code === WORKOS_ERROR_CODES.USER_ALREADY_EXISTS || isUserAlreadyExistsError(error)) {
+      throw new HttpError("A Threa user with this email already exists", {
+        status: 409,
+        code: "USER_ALREADY_EXISTS",
+      })
+    }
+    throw error
+  }
+
+  private toWorkspaceSummary(row: {
+    id: string
+    name: string
+    slug: string
+    region: string
+    created_by_workos_user_id: string
+    workos_organization_id: string | null
+    member_count: number
+    created_at: Date
+    updated_at: Date
+  }): WorkspaceSummary {
+    return {
+      id: row.id,
+      name: row.name,
+      slug: row.slug,
+      region: row.region,
+      createdByWorkosUserId: row.created_by_workos_user_id,
+      workosOrganizationId: row.workos_organization_id,
+      memberCount: row.member_count,
+      createdAt: row.created_at.toISOString(),
+      updatedAt: row.updated_at.toISOString(),
+    }
+  }
+
+  /**
+   * Build a map of `workosUserId -> WorkspaceRef[]` by batch-querying the
+   * membership table and then loading the referenced workspaces in one go.
+   * Used to link accepted invitations to the workspaces the invitee joined
+   * (in practice: the one they created on signup).
+   */
+  private async buildWorkspaceRefsByUser(workosUserIds: string[]): Promise<Map<string, WorkspaceRef[]>> {
+    const idsByUser = await WorkspaceRegistryRepository.listIdsByUser(this.pool, workosUserIds)
+    const allWorkspaceIds = Array.from(new Set([...idsByUser.values()].flat()))
+    if (allWorkspaceIds.length === 0) return new Map()
+
+    // Load the referenced workspaces in a single query. Small volume — this
+    // only runs for invitations that have been accepted.
+    const rows = await Promise.all(allWorkspaceIds.map((id) => WorkspaceRegistryRepository.findById(this.pool, id)))
+    const workspaceById = new Map<string, WorkspaceRef>()
+    for (const row of rows) {
+      if (!row) continue
+      workspaceById.set(row.id, { id: row.id, name: row.name, slug: row.slug })
+    }
+
+    const result = new Map<string, WorkspaceRef[]>()
+    for (const [userId, workspaceIds] of idsByUser.entries()) {
+      const refs = workspaceIds.map((wsId) => workspaceById.get(wsId)).filter((ref): ref is WorkspaceRef => ref != null)
+      if (refs.length > 0) result.set(userId, refs)
+    }
+    return result
+  }
+}
+
+function summarizeOwner(workosUserId: string, user: WorkosUserSummary | null): WorkspaceOwnerSummary {
+  if (!user) {
+    return { workosUserId, email: null, name: null }
+  }
+  return {
+    workosUserId,
+    email: user.email,
+    name: displayNameFromWorkos({ email: user.email, firstName: user.firstName, lastName: user.lastName }),
   }
 }
 

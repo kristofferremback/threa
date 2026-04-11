@@ -3,9 +3,10 @@
 @tailwind utilities;
 
 /*
- * Threa Backoffice — uses the same golden-thread theme tokens as the main app
- * so the two feel of the same family. Slimmed of the main app's chat-specific
- * bits (sidebar tokens, chart palette, ProseMirror styles).
+ * Threa Backoffice — same golden-thread theme as the main app, slimmed of the
+ * chat-specific tokens (sidebar strip, chart palette, ProseMirror). Treat this
+ * file as a subset of apps/frontend/src/index.css: if you want to add a token
+ * here, add it to the main app first so the two stay in sync.
  */
 
 @layer base {

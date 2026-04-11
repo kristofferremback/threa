@@ -101,11 +101,31 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   // the frontend can render a friendly "not authorised" screen; every other
   // backoffice route is gated by requirePlatformAdmin.
   app.get("/api/backoffice/me", auth, backoffice.me)
+  app.get("/api/backoffice/workspaces", auth, requirePlatformAdmin, backoffice.listWorkspaces)
+  app.get("/api/backoffice/workspaces/:id", auth, requirePlatformAdmin, backoffice.getWorkspace)
+  app.get(
+    "/api/backoffice/workspace-owner-invitations",
+    auth,
+    requirePlatformAdmin,
+    backoffice.listWorkspaceOwnerInvitations
+  )
   app.post(
     "/api/backoffice/workspace-owner-invitations",
     auth,
     requirePlatformAdmin,
     backoffice.createWorkspaceOwnerInvitation
+  )
+  app.post(
+    "/api/backoffice/workspace-owner-invitations/:id/resend",
+    auth,
+    requirePlatformAdmin,
+    backoffice.resendWorkspaceOwnerInvitation
+  )
+  app.post(
+    "/api/backoffice/workspace-owner-invitations/:id/revoke",
+    auth,
+    requirePlatformAdmin,
+    backoffice.revokeWorkspaceOwnerInvitation
   )
 
   // Internal API (inter-service)

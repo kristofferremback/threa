@@ -76,11 +76,22 @@ async function main() {
       }
     }
 
-    // Get random available ports
-    const backendPort = await findAvailablePort()
-    const controlPlanePort = await findAvailablePort()
-    const routerPort = await findAvailablePort()
-    const frontendPort = await findAvailablePort()
+    // Ports default to OS-assigned (random). Each can be pinned via an env
+    // override so a test harness can spin the stack up at a known URL without
+    // having to parse stdout.
+    const envPort = (name: string): number | undefined => {
+      const raw = process.env[name]
+      if (!raw) return undefined
+      const parsed = parseInt(raw, 10)
+      if (Number.isNaN(parsed)) return undefined
+      return parsed
+    }
+    const backendPort = envPort("DEV_TEST_BACKEND_PORT") ?? (await findAvailablePort())
+    const controlPlanePort = envPort("DEV_TEST_CONTROL_PLANE_PORT") ?? (await findAvailablePort())
+    const routerPort = envPort("DEV_TEST_ROUTER_PORT") ?? (await findAvailablePort())
+    const frontendPort = envPort("DEV_TEST_FRONTEND_PORT") ?? (await findAvailablePort())
+    const backofficeRouterPort = envPort("DEV_TEST_BACKOFFICE_ROUTER_PORT") ?? (await findAvailablePort())
+    const backofficePort = envPort("DEV_TEST_BACKOFFICE_PORT") ?? (await findAvailablePort())
 
     // Load backend .env file explicitly (Bun only auto-loads from CWD)
     const backendEnvPath = path.join(process.cwd(), "apps/backend/.env")
@@ -98,6 +109,17 @@ async function main() {
       }
     }
 
+    // Shared CORS list — the frontend, the backoffice, and both routers all need
+    // to be allowed to hit the control-plane (and the backend).
+    const corsOrigins = [
+      `http://localhost:${frontendPort}`,
+      `http://127.0.0.1:${frontendPort}`,
+      `http://localhost:${backofficePort}`,
+      `http://127.0.0.1:${backofficePort}`,
+      `http://localhost:${backofficeRouterPort}`,
+      `http://localhost:${routerPort}`,
+    ].join(",")
+
     // Set environment variables for test mode (backend)
     const backendEnvVars = {
       ...backendEnv, // Load from apps/backend/.env
@@ -107,11 +129,17 @@ async function main() {
       WORKSPACE_CREATION_SKIP_INVITE: "true",
       FAST_SHUTDOWN: "true",
       PORT: String(backendPort),
-      CORS_ALLOWED_ORIGINS: `http://localhost:${frontendPort},http://127.0.0.1:${frontendPort}`,
+      CORS_ALLOWED_ORIGINS: corsOrigins,
       CONTROL_PLANE_URL: `http://localhost:${controlPlanePort}`,
       INTERNAL_API_KEY: backendEnv.INTERNAL_API_KEY ?? "dev-internal-key",
       REGION: "local",
     }
+
+    // Dev convenience: auto-seed a platform admin for the stub "admin@threa.io"
+    // user so the backoffice works immediately after signing in. Stub user IDs
+    // are deterministic: `workos_test_${base64url(email)}`.
+    const devPlatformAdminEmail = "admin@threa.io"
+    const devPlatformAdminId = `workos_test_${Buffer.from(devPlatformAdminEmail).toString("base64url")}`
 
     // Set environment variables for control-plane
     const controlPlaneEnvVars = {
@@ -122,8 +150,12 @@ async function main() {
       USE_STUB_AUTH: "true",
       INTERNAL_API_KEY: backendEnv.INTERNAL_API_KEY ?? "dev-internal-key",
       REGIONS: JSON.stringify({ local: { internalUrl: `http://localhost:${backendPort}` } }),
-      CORS_ALLOWED_ORIGINS: `http://localhost:${frontendPort},http://127.0.0.1:${frontendPort}`,
+      CORS_ALLOWED_ORIGINS: corsOrigins,
       WORKSPACE_CREATION_SKIP_INVITE: "true",
+      PLATFORM_ADMIN_WORKOS_USER_IDS: devPlatformAdminId,
+      // Send the frontend-bound redirect back to the backoffice app after login
+      // when the request came in via X-Forwarded-Host from the backoffice-router.
+      FRONTEND_URL: `http://localhost:${frontendPort}`,
     }
 
     // Set environment variables for frontend (proxies API calls through the router)
@@ -131,6 +163,14 @@ async function main() {
       ...process.env,
       VITE_PORT: String(frontendPort),
       VITE_BACKEND_PORT: String(routerPort),
+    }
+
+    // Backoffice proxies /api through the backoffice-router (same topology as
+    // prod: browser → backoffice-router → control-plane).
+    const backofficeEnvVars = {
+      ...process.env,
+      VITE_PORT: String(backofficePort),
+      VITE_API_PROXY_PORT: String(backofficeRouterPort),
     }
 
     // Build the REGIONS config pointing to the dynamic backend port
@@ -146,8 +186,11 @@ async function main() {
     console.log(`  - Control Plane DB: ${TEST_CP_DB_NAME}`)
     console.log(`  - Stub Auth: enabled`)
     console.log(`  - Workspace Invite Check: skipped`)
+    console.log(`  - Platform admin seed: ${devPlatformAdminEmail}`)
     console.log(`  - Frontend: http://localhost:${frontendPort}`)
     console.log(`  - Router: http://localhost:${routerPort}`)
+    console.log(`  - Backoffice: http://localhost:${backofficePort}`)
+    console.log(`  - Backoffice router: http://localhost:${backofficeRouterPort}`)
     console.log(`  - Control Plane: http://localhost:${controlPlanePort}`)
     console.log(`  - Backend: http://localhost:${backendPort}\n`)
 
@@ -166,6 +209,11 @@ async function main() {
     })
 
     const routerDir = path.join(process.cwd(), "apps/workspace-router")
+    // Wrangler's devtools inspector defaults to 9229/9230. Running two
+    // wrangler processes on the same box (workspace-router + backoffice-
+    // router) means the second one would fail with "Address already in
+    // use" — so each dev-test router gets its own inspector port derived
+    // from its dev port.
     const router = Bun.spawn(
       [
         "bunx",
@@ -173,6 +221,8 @@ async function main() {
         "dev",
         "--port",
         String(routerPort),
+        "--inspector-port",
+        String(routerPort + 1000),
         "--var",
         "DEFAULT_REGION:local",
         "--var",
@@ -193,6 +243,32 @@ async function main() {
       env: frontendEnvVars,
     })
 
+    const backofficeRouterDir = path.join(process.cwd(), "apps/backoffice-router")
+    const backofficeRouter = Bun.spawn(
+      [
+        "bunx",
+        "wrangler",
+        "dev",
+        "--port",
+        String(backofficeRouterPort),
+        "--inspector-port",
+        String(backofficeRouterPort + 1000),
+        "--var",
+        `CONTROL_PLANE_URL:http://localhost:${controlPlanePort}`,
+      ],
+      {
+        cwd: backofficeRouterDir,
+        stdout: "inherit",
+        stderr: "inherit",
+      }
+    )
+
+    const backoffice = Bun.spawn(["bun", "run", "--cwd", "apps/backoffice", "dev"], {
+      stdout: "inherit",
+      stderr: "inherit",
+      env: backofficeEnvVars,
+    })
+
     // Handle shutdown
     let isShuttingDown = false
     const shutdown = async () => {
@@ -202,15 +278,31 @@ async function main() {
       controlPlane.kill("SIGKILL")
       backend.kill("SIGKILL")
       router.kill("SIGKILL")
+      backofficeRouter.kill("SIGKILL")
       frontend.kill("SIGKILL")
-      await Promise.all([controlPlane.exited, backend.exited, router.exited, frontend.exited])
+      backoffice.kill("SIGKILL")
+      await Promise.all([
+        controlPlane.exited,
+        backend.exited,
+        router.exited,
+        backofficeRouter.exited,
+        frontend.exited,
+        backoffice.exited,
+      ])
       process.exit(0)
     }
 
     process.on("SIGINT", shutdown)
     process.on("SIGTERM", shutdown)
 
-    await Promise.all([controlPlane.exited, backend.exited, router.exited, frontend.exited])
+    await Promise.all([
+      controlPlane.exited,
+      backend.exited,
+      router.exited,
+      backofficeRouter.exited,
+      frontend.exited,
+      backoffice.exited,
+    ])
   } catch (err) {
     console.error("Failed to start test server:", err)
     process.exit(1)

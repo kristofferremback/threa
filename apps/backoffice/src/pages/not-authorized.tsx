@@ -17,8 +17,8 @@ export function NotAuthorizedPage() {
         <CardContent className="text-sm text-muted-foreground">
           {user ? (
             <p>
-              Signed in as <span className="font-medium text-foreground">{user.email}</span>. If you think this is a
-              mistake, ask a platform admin to grant you access.
+              Signed in as <span className="font-medium text-foreground">{user.email}</span>. Ask a platform admin to
+              grant you access if you think this is a mistake.
             </p>
           ) : null}
         </CardContent>

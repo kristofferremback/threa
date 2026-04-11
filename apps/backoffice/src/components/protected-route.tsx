@@ -6,7 +6,7 @@ import { BackofficeShell } from "@/components/layout/backoffice-shell"
 /**
  * Gate for all signed-in backoffice routes.
  *
- * Three outcomes:
+ * Four outcomes:
  * 1. loading          → placeholder while `/api/backoffice/me` is in flight
  * 2. unauthenticated  → kick to WorkOS login with a return path
  * 3. not authorised   → redirect to `/not-authorized` so the user sees a
@@ -32,7 +32,6 @@ export function ProtectedRoute() {
   }
 
   if (!user) {
-    // The useEffect above is redirecting to WorkOS; render a placeholder.
     return (
       <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
         Redirecting to sign in…

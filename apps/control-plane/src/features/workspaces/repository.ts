@@ -27,6 +27,49 @@ export const WorkspaceRegistryRepository = {
     return result.rows[0] ?? null
   },
 
+  /** Backoffice: same as findById but also returns the member count in one round-trip. */
+  async findByIdWithMemberCount(
+    db: Querier,
+    id: string
+  ): Promise<(WorkspaceRegistryRow & { member_count: number }) | null> {
+    const result = await db.query<WorkspaceRegistryRow & { member_count: string }>(
+      `SELECT wr.id, wr.name, wr.slug, wr.region, wr.created_by_workos_user_id, wr.workos_organization_id,
+              wr.created_at, wr.updated_at,
+              COALESCE(COUNT(wm.workspace_id), 0)::text AS member_count
+       FROM workspace_registry wr
+       LEFT JOIN workspace_memberships wm ON wm.workspace_id = wr.id
+       WHERE wr.id = $1
+       GROUP BY wr.id`,
+      [id]
+    )
+    const row = result.rows[0]
+    if (!row) return null
+    return { ...row, member_count: Number(row.member_count) }
+  },
+
+  /**
+   * Backoffice: list every workspace a given WorkOS user is a member of. Used
+   * when resolving "which workspace did this accepted invitation create?" —
+   * the invitee signs in, creates a workspace, and ends up here via their
+   * membership row.
+   */
+  async listIdsByUser(db: Querier, workosUserIds: string[]): Promise<Map<string, string[]>> {
+    if (workosUserIds.length === 0) return new Map()
+    const result = await db.query<{ workos_user_id: string; workspace_id: string }>(
+      `SELECT workos_user_id, workspace_id
+       FROM workspace_memberships
+       WHERE workos_user_id = ANY($1::text[])`,
+      [workosUserIds]
+    )
+    const map = new Map<string, string[]>()
+    for (const row of result.rows) {
+      const existing = map.get(row.workos_user_id) ?? []
+      existing.push(row.workspace_id)
+      map.set(row.workos_user_id, existing)
+    }
+    return map
+  },
+
   async getWorkosOrganizationId(db: Querier, workspaceId: string): Promise<string | null> {
     const result = await db.query<{ workos_organization_id: string | null }>(
       "SELECT workos_organization_id FROM workspace_registry WHERE id = $1",
@@ -40,6 +83,23 @@ export const WorkspaceRegistryRepository = {
       "UPDATE workspace_registry SET workos_organization_id = $1 WHERE id = $2 AND workos_organization_id IS NULL",
       [orgId, workspaceId]
     )
+  },
+
+  /**
+   * List every workspace with its member count. Backoffice-only — there is no
+   * workspace filter here, so callers must be in an admin-gated code path.
+   */
+  async listAllWithMemberCounts(db: Querier): Promise<Array<WorkspaceRegistryRow & { member_count: number }>> {
+    const result = await db.query<WorkspaceRegistryRow & { member_count: string }>(
+      `SELECT wr.id, wr.name, wr.slug, wr.region, wr.created_by_workos_user_id, wr.workos_organization_id,
+              wr.created_at, wr.updated_at,
+              COALESCE(COUNT(wm.workspace_id), 0)::text AS member_count
+       FROM workspace_registry wr
+       LEFT JOIN workspace_memberships wm ON wm.workspace_id = wr.id
+       GROUP BY wr.id
+       ORDER BY wr.created_at DESC`
+    )
+    return result.rows.map((row) => ({ ...row, member_count: Number(row.member_count) }))
   },
 
   async listByUser(db: Querier, workosUserId: string): Promise<WorkspaceRegistryRow[]> {

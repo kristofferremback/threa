@@ -21,6 +21,28 @@ export function getWorkosErrorCode(error: unknown): string | null {
   return null
 }
 
+/** Shape of an app-level WorkOS invitation as the backoffice needs it. */
+export interface WorkosAppInvitation {
+  id: string
+  email: string
+  state: "pending" | "accepted" | "revoked" | "expired"
+  acceptedAt: string | null
+  revokedAt: string | null
+  expiresAt: string
+  createdAt: string
+  updatedAt: string
+  /** Populated after the invitee signs up; null until accepted. */
+  acceptedUserId: string | null
+}
+
+/** Minimal WorkOS user shape the backoffice needs for resolving owners. */
+export interface WorkosUserSummary {
+  id: string
+  email: string
+  firstName: string | null
+  lastName: string | null
+}
+
 export interface WorkosOrgService {
   createOrganization(params: { name: string; externalId: string }): Promise<{ id: string }>
   getOrganizationByExternalId(externalId: string): Promise<{ id: string } | null>
@@ -31,6 +53,16 @@ export interface WorkosOrgService {
     inviterUserId: string
   }): Promise<{ id: string; expiresAt: Date }>
   revokeInvitation(invitationId: string): Promise<void>
+  /** Resend an existing invitation. WorkOS issues a fresh token + expiry. */
+  resendInvitation(invitationId: string): Promise<{ id: string; expiresAt: Date }>
+  /**
+   * List every app-level WorkOS invitation (no organizationId). Paginates
+   * through the full WorkOS result set — backoffice-only surface, not meant
+   * for large tenants.
+   */
+  listAppInvitations(): Promise<WorkosAppInvitation[]>
+  /** Look up a user by WorkOS id. Returns null if the user no longer exists. */
+  getUser(workosUserId: string): Promise<WorkosUserSummary | null>
   getOrganization(organizationId: string): Promise<{ id: string; domains: string[] } | null>
   ensureOrganizationMembership(params: { organizationId: string; userId: string; roleSlug: string }): Promise<void>
   getWidgetToken(params: { organizationId: string; userId: string; scopes: string[] }): Promise<string>
@@ -111,6 +143,59 @@ export class WorkosOrgServiceImpl implements WorkosOrgService {
   async revokeInvitation(invitationId: string): Promise<void> {
     await this.workos.userManagement.revokeInvitation(invitationId)
     logger.info({ invitationId }, "Revoked WorkOS invitation")
+  }
+
+  async resendInvitation(invitationId: string): Promise<{ id: string; expiresAt: Date }> {
+    const fresh = await this.workos.userManagement.resendInvitation(invitationId)
+    logger.info({ invitationId, newInvitationId: fresh.id }, "Resent WorkOS invitation")
+    return { id: fresh.id, expiresAt: new Date(fresh.expiresAt) }
+  }
+
+  async getUser(workosUserId: string): Promise<WorkosUserSummary | null> {
+    try {
+      const user = await this.workos.userManagement.getUser(workosUserId)
+      return {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+      }
+    } catch (error) {
+      logger.warn({ err: error, workosUserId }, "Failed to load WorkOS user")
+      return null
+    }
+  }
+
+  async listAppInvitations(): Promise<WorkosAppInvitation[]> {
+    const results: WorkosAppInvitation[] = []
+    let after: string | undefined
+
+    for (;;) {
+      const page = await this.workos.userManagement.listInvitations({
+        limit: 100,
+        ...(after ? { after } : {}),
+      })
+
+      for (const invite of page.data) {
+        // App-level invitations only — scoped invites are handled inside
+        // their owning workspace, not the global backoffice.
+        if (invite.organizationId != null) continue
+        results.push({
+          id: invite.id,
+          email: invite.email,
+          state: invite.state,
+          acceptedAt: invite.acceptedAt ?? null,
+          revokedAt: invite.revokedAt ?? null,
+          expiresAt: invite.expiresAt,
+          createdAt: invite.createdAt,
+          updatedAt: invite.updatedAt,
+          acceptedUserId: invite.acceptedUserId ?? null,
+        })
+      }
+
+      after = page.listMetadata.after ?? undefined
+      if (!after) return results
+    }
   }
 
   async getOrganization(organizationId: string): Promise<{ id: string; domains: string[] } | null> {

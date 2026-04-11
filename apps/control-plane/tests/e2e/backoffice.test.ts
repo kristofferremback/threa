@@ -107,6 +107,64 @@ describe("Backoffice", () => {
     })
   })
 
+  describe("GET /api/backoffice/workspace-owner-invitations", () => {
+    test("returns 403 when authenticated but not a platform admin", async () => {
+      const client = new TestClient()
+      await loginAs(client, "invites-list-nonadmin@example.com", "List Non Admin")
+
+      const res = await client.get<{ code: string }>("/api/backoffice/workspace-owner-invitations")
+      expect(res.status).toBe(403)
+      expect(res.data.code).toBe("NOT_PLATFORM_ADMIN")
+    })
+
+    test("lists previously sent invitations for a platform admin", async () => {
+      const client = new TestClient()
+      const user = await loginAs(client, "invites-list-admin@example.com", "List Admin")
+      await grantAdmin(user.id)
+
+      const postRes = await client.post<{
+        invitation: { id: string; email: string }
+      }>("/api/backoffice/workspace-owner-invitations", {
+        email: "list-seed@example.com",
+      })
+      expect(postRes.status).toBe(201)
+
+      const listRes = await client.get<{
+        invitations: Array<{ id: string; email: string; state: string }>
+      }>("/api/backoffice/workspace-owner-invitations")
+
+      expect(listRes.status).toBe(200)
+      const found = listRes.data.invitations.find((i) => i.id === postRes.data.invitation.id)
+      expect(found).toBeTruthy()
+      expect(found?.email).toBe("list-seed@example.com")
+      expect(found?.state).toBe("pending")
+    })
+  })
+
+  describe("GET /api/backoffice/workspaces", () => {
+    test("returns 403 when authenticated but not a platform admin", async () => {
+      const client = new TestClient()
+      await loginAs(client, "workspaces-list-nonadmin@example.com", "Workspaces Non Admin")
+
+      const res = await client.get<{ code: string }>("/api/backoffice/workspaces")
+      expect(res.status).toBe(403)
+      expect(res.data.code).toBe("NOT_PLATFORM_ADMIN")
+    })
+
+    test("returns an array for a platform admin", async () => {
+      const client = new TestClient()
+      const user = await loginAs(client, "workspaces-list-admin@example.com", "Workspaces Admin")
+      await grantAdmin(user.id)
+
+      const res = await client.get<{
+        workspaces: Array<{ id: string; name: string; slug: string; region: string; memberCount: number }>
+      }>("/api/backoffice/workspaces")
+
+      expect(res.status).toBe(200)
+      expect(Array.isArray(res.data.workspaces)).toBe(true)
+    })
+  })
+
   describe("Idempotency", () => {
     test("granting admin twice leaves the user as admin", async () => {
       const client = new TestClient()

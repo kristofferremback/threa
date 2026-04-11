@@ -34,7 +34,6 @@ export function createBackofficeHandlers({ backofficeService }: Dependencies) {
       })
     },
 
-    /** Invite someone to become a new workspace owner (WorkOS app-level invitation). */
     async createWorkspaceOwnerInvitation(req: Request, res: Response) {
       if (!req.authUser) {
         throw new HttpError("Not authenticated", { status: 401, code: "NOT_AUTHENTICATED" })
@@ -51,6 +50,43 @@ export function createBackofficeHandlers({ backofficeService }: Dependencies) {
       })
 
       res.status(201).json({ invitation })
+    },
+
+    async listWorkspaceOwnerInvitations(_req: Request, res: Response) {
+      const invitations = await backofficeService.listWorkspaceOwnerInvitations()
+      res.json({ invitations })
+    },
+
+    async revokeWorkspaceOwnerInvitation(req: Request, res: Response) {
+      const id = req.params.id
+      if (!id) {
+        throw new HttpError("Missing invitation id", { status: 400, code: "VALIDATION_ERROR" })
+      }
+      await backofficeService.revokeWorkspaceOwnerInvitation(id)
+      res.status(204).end()
+    },
+
+    async resendWorkspaceOwnerInvitation(req: Request, res: Response) {
+      const id = req.params.id
+      if (!id) {
+        throw new HttpError("Missing invitation id", { status: 400, code: "VALIDATION_ERROR" })
+      }
+      const invitation = await backofficeService.resendWorkspaceOwnerInvitation(id)
+      res.status(201).json({ invitation })
+    },
+
+    async listWorkspaces(_req: Request, res: Response) {
+      const workspaces = await backofficeService.listAllWorkspaces()
+      res.json({ workspaces })
+    },
+
+    async getWorkspace(req: Request, res: Response) {
+      const id = req.params.id
+      if (!id) {
+        throw new HttpError("Missing workspace id", { status: 400, code: "VALIDATION_ERROR" })
+      }
+      const workspace = await backofficeService.getWorkspaceDetail(id)
+      res.json({ workspace })
     },
   }
 }
