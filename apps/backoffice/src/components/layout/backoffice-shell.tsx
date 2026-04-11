@@ -1,10 +1,10 @@
 import { type ReactNode } from "react"
 import { Link, NavLink, Outlet } from "react-router-dom"
-import { LogOut, LayoutDashboard, Users, MailPlus } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { LayoutDashboard, Users, MailPlus } from "lucide-react"
 import { ThreaLogo } from "@/components/threa-logo"
 import { useAuth } from "@/auth"
 import { cn } from "@/lib/utils"
+import { MobileUserMenu, SidebarUserMenu } from "./user-menu"
 
 /**
  * Persistent shell for the backoffice. Mirrors the main app's pattern:
@@ -53,12 +53,12 @@ export function BackofficeShell() {
         </nav>
 
         <div className="border-t px-3 py-3">
-          <UserBlock email={user?.email} name={user?.name} onSignOut={logout} />
+          <SidebarUserMenu email={user?.email} name={user?.name} onSignOut={logout} />
         </div>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* Mobile top bar — slim brand line with sign-out at the right. */}
+        {/* Mobile top bar — slim brand line with the account avatar at the right. */}
         <header className="flex items-center justify-between border-b px-4 py-3 md:hidden">
           <Link to="/" className="flex min-w-0 items-center gap-2">
             <ThreaLogo size={22} />
@@ -69,9 +69,7 @@ export function BackofficeShell() {
               </span>
             </div>
           </Link>
-          <Button variant="ghost" size="sm" onClick={logout} aria-label="Sign out">
-            <LogOut className="size-4" />
-          </Button>
+          <MobileUserMenu email={user?.email} name={user?.name} onSignOut={logout} />
         </header>
 
         {/* Mobile nav strip — collapses on md+ when the sidebar takes over. */}
@@ -92,49 +90,6 @@ export function BackofficeShell() {
           <Outlet />
         </main>
       </div>
-    </div>
-  )
-}
-
-function UserBlock({
-  email,
-  name,
-  onSignOut,
-}: {
-  email: string | undefined
-  name: string | undefined
-  onSignOut: () => void
-}) {
-  // Backoffice gates on isPlatformAdmin, so anyone in here is by definition
-  // a platform admin — that's the role label we surface.
-  const initial = (name?.[0] || email?.[0] || "?").toUpperCase()
-  const display = name || email || "Signed in"
-  const showEmailLine = !!email && email !== display
-
-  return (
-    <div className="flex items-center gap-2.5 rounded-md px-2 py-1.5">
-      <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/15 text-sm font-semibold text-primary">
-        {initial}
-      </div>
-      <div className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate text-xs font-medium text-foreground">{display}</span>
-        {showEmailLine ? (
-          <span className="truncate text-[10px] text-muted-foreground">{email}</span>
-        ) : (
-          <span className="text-[9px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-            Platform admin
-          </span>
-        )}
-      </div>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="size-7 shrink-0 text-muted-foreground hover:text-foreground"
-        onClick={onSignOut}
-        aria-label="Sign out"
-      >
-        <LogOut className="size-4" />
-      </Button>
     </div>
   )
 }
