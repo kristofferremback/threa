@@ -1,7 +1,7 @@
 import { useMemo, useState, type FormEvent } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
-import { AlertTriangle, CheckCircle2 } from "lucide-react"
+import { AlertTriangle, Ban, CheckCircle2 } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -209,14 +209,19 @@ export function InviteWorkspaceOwnerPage() {
           if (!open) setRevokeTarget(null)
         }}
       >
-        <ResponsiveAlertDialogContent>
+        <ResponsiveAlertDialogContent className="gap-5 border-t-4 border-t-destructive/70">
           <ResponsiveAlertDialogHeader>
-            <ResponsiveAlertDialogTitle>Revoke this invitation?</ResponsiveAlertDialogTitle>
+            <div className="mb-1 flex justify-center sm:justify-start">
+              <span className="inline-flex size-12 items-center justify-center rounded-full bg-destructive/10 text-destructive ring-4 ring-destructive/5">
+                <Ban className="size-6" strokeWidth={2.25} />
+              </span>
+            </div>
+            <ResponsiveAlertDialogTitle className="text-xl">Revoke this invitation?</ResponsiveAlertDialogTitle>
             <ResponsiveAlertDialogDescription>
               {revokeTarget ? (
                 <>
-                  The invitation for <span className="font-medium text-foreground">{revokeTarget.email}</span> will be
-                  revoked immediately. They won't be able to accept it after this.
+                  The invitation for <span className="font-medium text-foreground">{revokeTarget.email}</span> will stop
+                  working the moment you confirm. You can always send a fresh one later.
                 </>
               ) : null}
             </ResponsiveAlertDialogDescription>
@@ -227,7 +232,7 @@ export function InviteWorkspaceOwnerPage() {
               className={buttonVariants({ variant: "destructive" })}
               onClick={handleConfirmRevoke}
             >
-              Revoke
+              Yes, revoke it
             </ResponsiveAlertDialogAction>
           </ResponsiveAlertDialogFooter>
         </ResponsiveAlertDialogContent>

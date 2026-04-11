@@ -2,14 +2,16 @@ import { type ReactNode } from "react"
 import { Link, NavLink, Outlet } from "react-router-dom"
 import { LogOut, LayoutDashboard, Users, MailPlus } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { ThreaLogo } from "@/components/threa-logo"
 import { useAuth } from "@/auth"
 import { cn } from "@/lib/utils"
 
 /**
- * Persistent chrome for the backoffice. On desktop (md+) it's a standard
- * top-bar + left-rail layout. On mobile the left rail becomes a horizontal
- * scroll strip directly under the header — just three nav items, so a
- * drawer/sheet would be overkill.
+ * Persistent shell for the backoffice. Mirrors the main app's pattern:
+ * desktop puts the brand at the top of a left sidebar, nav in the middle,
+ * and the signed-in user / sign-out at the bottom — freeing the top of
+ * the content column for the page header. Mobile gets a slim header strip
+ * with the brand and a sign-out icon, then a horizontal nav strip below.
  */
 const NAV_ITEMS: Array<{ to: string; label: string; icon: ReactNode; end?: boolean }> = [
   { to: "/", label: "Overview", icon: <LayoutDashboard className="size-4" />, end: true },
@@ -22,42 +24,22 @@ export function BackofficeShell() {
   const { user, logout } = useAuth()
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
-      <header className="flex items-center justify-between gap-3 border-b px-4 py-3 md:px-6">
-        <Link to="/" className="flex min-w-0 items-center gap-2 md:gap-3">
-          <span className="text-sm font-semibold uppercase tracking-[0.18em] text-primary">Threa</span>
-          <span className="hidden truncate text-sm text-muted-foreground sm:inline">Backoffice</span>
-        </Link>
-        <div className="flex min-w-0 items-center gap-2 md:gap-3">
-          {user ? (
-            <span className="hidden min-w-0 max-w-[40vw] truncate text-sm text-muted-foreground md:inline">
-              {user.email}
-            </span>
-          ) : null}
-          <Button variant="ghost" size="sm" onClick={logout} aria-label="Sign out">
-            <LogOut className="size-4" />
-            <span className="hidden sm:inline">Sign out</span>
-          </Button>
+    <div className="flex min-h-screen bg-background">
+      {/* Desktop sidebar — brand top, nav middle, user info bottom-left. */}
+      <aside className="hidden w-60 shrink-0 flex-col border-r bg-card/60 md:flex">
+        <div className="border-b px-5 py-5">
+          <Link to="/" className="flex items-center gap-3">
+            <ThreaLogo size={30} />
+            <div className="flex min-w-0 flex-col leading-tight">
+              <span className="text-sm font-semibold uppercase tracking-[0.18em] text-primary">Threa</span>
+              <span className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
+                Backoffice
+              </span>
+            </div>
+          </Link>
         </div>
-      </header>
 
-      {/* Mobile nav — horizontal strip under the header, collapses on md+. */}
-      <nav aria-label="Backoffice sections" className="border-b px-2 py-2 md:hidden">
-        <ul className="flex items-center gap-1 overflow-x-auto">
-          {NAV_ITEMS.map((item) => (
-            <li key={item.to}>
-              <NavLink to={item.to} end={item.end} className={({ isActive }) => mobileNavLinkClass(isActive)}>
-                {item.icon}
-                {item.label}
-              </NavLink>
-            </li>
-          ))}
-        </ul>
-      </nav>
-
-      <div className="flex flex-1 flex-col md:flex-row">
-        {/* Desktop rail — left side, only md+. */}
-        <nav aria-label="Backoffice sections" className="hidden w-60 shrink-0 border-r px-3 py-6 md:block">
+        <nav aria-label="Backoffice sections" className="flex-1 px-3 py-4">
           <ul className="flex flex-col gap-1">
             {NAV_ITEMS.map((item) => (
               <li key={item.to}>
@@ -70,7 +52,43 @@ export function BackofficeShell() {
           </ul>
         </nav>
 
-        <main className="flex-1 px-4 py-6 md:px-8 md:py-8">
+        <div className="border-t px-3 py-3">
+          <UserBlock email={user?.email} name={user?.name} onSignOut={logout} />
+        </div>
+      </aside>
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* Mobile top bar — slim brand line with sign-out at the right. */}
+        <header className="flex items-center justify-between border-b px-4 py-3 md:hidden">
+          <Link to="/" className="flex min-w-0 items-center gap-2">
+            <ThreaLogo size={22} />
+            <div className="flex min-w-0 flex-col leading-tight">
+              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Threa</span>
+              <span className="text-[9px] font-medium uppercase tracking-[0.2em] text-muted-foreground">
+                Backoffice
+              </span>
+            </div>
+          </Link>
+          <Button variant="ghost" size="sm" onClick={logout} aria-label="Sign out">
+            <LogOut className="size-4" />
+          </Button>
+        </header>
+
+        {/* Mobile nav strip — collapses on md+ when the sidebar takes over. */}
+        <nav aria-label="Backoffice sections" className="border-b px-2 py-2 md:hidden">
+          <ul className="flex items-center gap-1 overflow-x-auto">
+            {NAV_ITEMS.map((item) => (
+              <li key={item.to}>
+                <NavLink to={item.to} end={item.end} className={({ isActive }) => mobileNavLinkClass(isActive)}>
+                  {item.icon}
+                  {item.label}
+                </NavLink>
+              </li>
+            ))}
+          </ul>
+        </nav>
+
+        <main className="flex-1 px-4 py-6 md:px-10 md:py-10">
           <Outlet />
         </main>
       </div>
@@ -78,9 +96,52 @@ export function BackofficeShell() {
   )
 }
 
+function UserBlock({
+  email,
+  name,
+  onSignOut,
+}: {
+  email: string | undefined
+  name: string | undefined
+  onSignOut: () => void
+}) {
+  // Backoffice gates on isPlatformAdmin, so anyone in here is by definition
+  // a platform admin — that's the role label we surface.
+  const initial = (name?.[0] || email?.[0] || "?").toUpperCase()
+  const display = name || email || "Signed in"
+  const showEmailLine = !!email && email !== display
+
+  return (
+    <div className="flex items-center gap-2.5 rounded-md px-2 py-1.5">
+      <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/15 text-sm font-semibold text-primary">
+        {initial}
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-xs font-medium text-foreground">{display}</span>
+        {showEmailLine ? (
+          <span className="truncate text-[10px] text-muted-foreground">{email}</span>
+        ) : (
+          <span className="text-[9px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            Platform admin
+          </span>
+        )}
+      </div>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="size-7 shrink-0 text-muted-foreground hover:text-foreground"
+        onClick={onSignOut}
+        aria-label="Sign out"
+      >
+        <LogOut className="size-4" />
+      </Button>
+    </div>
+  )
+}
+
 function railNavLinkClass(isActive: boolean): string {
   return cn(
-    "flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors",
+    "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors",
     isActive ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
   )
 }
