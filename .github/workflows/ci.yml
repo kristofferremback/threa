@@ -33,6 +33,9 @@ jobs:
       - name: Lint frontend
         run: bun run --cwd apps/frontend lint
 
+      - name: Check Dockerfile workspace COPY lines
+        run: bun run check:dockerfiles
+
   test:
     name: Tests
     runs-on: ubuntu-latest
