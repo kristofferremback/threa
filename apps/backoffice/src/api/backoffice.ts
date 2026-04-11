@@ -46,10 +46,18 @@ export interface WorkspaceOwnerInvitation {
   workspaces: WorkspaceRef[]
 }
 
+export interface BackofficeConfig {
+  /** Base URL of the user-facing app, e.g. `https://app.threa.io`. Empty when unset. */
+  workspaceAppBaseUrl: string
+  /** WorkOS dashboard environment id, e.g. `environment_01KA3BVA…`. Null when unset. */
+  workosEnvironmentId: string | null
+}
+
 export const backofficeKeys = {
   workspaces: ["backoffice", "workspaces"] as const,
   workspace: (id: string) => ["backoffice", "workspaces", id] as const,
   invitations: ["backoffice", "invitations"] as const,
+  config: ["backoffice", "config"] as const,
 }
 
 export function listWorkspaces(): Promise<WorkspaceSummary[]> {
@@ -86,4 +94,8 @@ export function resendWorkspaceOwnerInvitation(id: string): Promise<WorkspaceOwn
 
 export function revokeWorkspaceOwnerInvitation(id: string): Promise<void> {
   return api.post<void>(`/api/backoffice/workspace-owner-invitations/${encodeURIComponent(id)}/revoke`)
+}
+
+export function getBackofficeConfig(): Promise<BackofficeConfig> {
+  return api.get<{ config: BackofficeConfig }>("/api/backoffice/config").then((r) => r.config)
 }

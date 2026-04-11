@@ -84,9 +84,32 @@ export interface WorkspaceDetail extends WorkspaceSummary {
   owner: WorkspaceOwnerSummary
 }
 
+/**
+ * Static config the backoffice frontend needs to render external links to
+ * the user-facing app and to the WorkOS dashboard. Both values are optional
+ * — when missing, the frontend falls back to plain text instead of a link.
+ */
+export interface BackofficeConfig {
+  /**
+   * Base URL where the user-facing app lives, e.g. `https://app.threa.io`
+   * (prod) or `http://localhost:4813` (dev). Used to build per-workspace
+   * deep links like `${appBaseUrl}/ws/${workspaceId}`. Empty string when
+   * `FRONTEND_URL` is unset on the control plane.
+   */
+  workspaceAppBaseUrl: string
+  /**
+   * WorkOS dashboard environment id (e.g. `environment_01KA3BVADMEYB99HGDHBJM1SE7`).
+   * Used to deep-link to the WorkOS dashboard for an organization. Null when
+   * `WORKOS_ENVIRONMENT_ID` is unset on the control plane (typical in dev).
+   */
+  workosEnvironmentId: string | null
+}
+
 interface Dependencies {
   pool: Pool
   workosOrgService: WorkosOrgService
+  workspaceAppBaseUrl: string
+  workosEnvironmentId: string | null
 }
 
 /**
@@ -100,10 +123,22 @@ interface Dependencies {
 export class BackofficeService {
   private pool: Pool
   private workosOrgService: WorkosOrgService
+  private workspaceAppBaseUrl: string
+  private workosEnvironmentId: string | null
 
-  constructor({ pool, workosOrgService }: Dependencies) {
+  constructor({ pool, workosOrgService, workspaceAppBaseUrl, workosEnvironmentId }: Dependencies) {
     this.pool = pool
     this.workosOrgService = workosOrgService
+    this.workspaceAppBaseUrl = workspaceAppBaseUrl
+    this.workosEnvironmentId = workosEnvironmentId
+  }
+
+  /** Static config the backoffice frontend needs for external linking. */
+  getConfig(): BackofficeConfig {
+    return {
+      workspaceAppBaseUrl: this.workspaceAppBaseUrl,
+      workosEnvironmentId: this.workosEnvironmentId,
+    }
   }
 
   async isPlatformAdmin(workosUserId: string): Promise<boolean> {

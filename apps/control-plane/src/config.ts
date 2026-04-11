@@ -29,6 +29,17 @@ export interface ControlPlaneConfig {
   platformAdminWorkosUserIds: string[]
   /** Base URL of the frontend app. Used for post-auth redirects when the frontend is on a different origin. */
   frontendUrl: string
+  /**
+   * WorkOS dashboard environment id (e.g. `environment_01KA3BVADMEYB99HGDHBJM1SE7`).
+   * Optional. Surfaced through the backoffice config endpoint so the
+   * platform-admin UI can render direct links into the WorkOS dashboard.
+   *
+   * The WorkOS Node SDK has no introspection API for this — it lives only in
+   * the dashboard URL — so we set it explicitly per environment via
+   * `WORKOS_ENVIRONMENT_ID`. Null when unset; the backoffice falls back to
+   * plain text instead of a link.
+   */
+  workosEnvironmentId: string | null
   /** Allowed domain for forwarded-host redirects (e.g. "staging.threa.io"). Empty disables the feature. */
   allowedRedirectDomain: string
   /**
@@ -132,6 +143,7 @@ export function loadControlPlaneConfig(): ControlPlaneConfig {
       .map((s) => s.trim())
       .filter((s) => s.length > 0),
     frontendUrl: (process.env.FRONTEND_URL ?? "").replace(/\/+$/, ""),
+    workosEnvironmentId: process.env.WORKOS_ENVIRONMENT_ID?.trim() || null,
     allowedRedirectDomain: process.env.ALLOWED_REDIRECT_DOMAIN ?? "",
     workosDedicatedRedirectHosts: (process.env.WORKOS_DEDICATED_REDIRECT_HOSTS ?? "")
       .split(",")

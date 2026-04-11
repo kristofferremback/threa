@@ -67,7 +67,12 @@ export async function startServer(): Promise<ControlPlaneInstance> {
     requireWorkspaceCreationInvite: config.workspaceCreationRequiresInvite,
   })
   const shadowService = new InvitationShadowService({ pool, regionalClient, workosOrgService })
-  const backofficeService = new BackofficeService({ pool, workosOrgService })
+  const backofficeService = new BackofficeService({
+    pool,
+    workosOrgService,
+    workspaceAppBaseUrl: config.frontendUrl,
+    workosEnvironmentId: config.workosEnvironmentId,
+  })
   await seedPlatformAdmins(pool, config.platformAdminWorkosUserIds)
 
   // Outbox — single handler for all control-plane events (no sharding needed)

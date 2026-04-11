@@ -88,5 +88,9 @@ export function createBackofficeHandlers({ backofficeService }: Dependencies) {
       const workspace = await backofficeService.getWorkspaceDetail(id)
       res.json({ workspace })
     },
+
+    async getConfig(_req: Request, res: Response) {
+      res.json({ config: backofficeService.getConfig() })
+    },
   }
 }

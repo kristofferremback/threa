@@ -6,6 +6,7 @@ export type {
   WorkspaceDetail,
   WorkspaceOwnerSummary,
   WorkspaceRef,
+  BackofficeConfig,
 } from "./service"
 export { createBackofficeHandlers } from "./handlers"
 export { createPlatformAdminMiddleware } from "./middleware"
