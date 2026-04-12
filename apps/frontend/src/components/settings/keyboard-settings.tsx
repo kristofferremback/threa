@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { RotateCcw } from "lucide-react"
 import { usePreferences } from "@/contexts"
 import {
@@ -66,6 +67,22 @@ function ShortcutRow({
   const binding = getEffectiveKeyBinding(action.id, customBindings)
   const isCustom = action.id in customBindings && customBindings[action.id] !== action.defaultKey
 
+  const handleCapturedBinding = useCallback(
+    (captured: string) => {
+      const testBindings = { ...customBindings, [action.id]: captured }
+      const conflicts = detectConflicts(testBindings)
+      const conflicting = conflicts.get(captured)?.filter((id) => id !== action.id) ?? []
+
+      if (conflicting.length > 0) {
+        setPendingBinding(captured)
+        setConflictInfo({ binding: captured, conflictIds: conflicting })
+      } else {
+        onSaveBinding(action.id, captured)
+      }
+    },
+    [action.id, customBindings, onSaveBinding]
+  )
+
   // Handle keydown during capture mode
   useEffect(() => {
     if (!isCapturing) {
@@ -88,22 +105,12 @@ function ShortcutRow({
       const captured = keyEventToBinding(e)
       if (!captured) return
 
-      // Check for conflicts
-      const testBindings = { ...customBindings, [action.id]: captured }
-      const conflicts = detectConflicts(testBindings)
-      const conflicting = conflicts.get(captured)?.filter((id) => id !== action.id) ?? []
-
-      if (conflicting.length > 0) {
-        setPendingBinding(captured)
-        setConflictInfo({ binding: captured, conflictIds: conflicting })
-      } else {
-        onSaveBinding(action.id, captured)
-      }
+      handleCapturedBinding(captured)
     }
 
     window.addEventListener("keydown", handleKeyDown, { capture: true })
     return () => window.removeEventListener("keydown", handleKeyDown, { capture: true })
-  }, [isCapturing, action.id, customBindings, onCancelCapture, onSaveBinding])
+  }, [isCapturing, onCancelCapture, handleCapturedBinding])
 
   // Focus badge when entering capture mode
   useEffect(() => {
@@ -117,6 +124,10 @@ function ShortcutRow({
     onSaveBinding(action.id, pendingBinding)
   }, [action.id, pendingBinding, conflictInfo, onSaveBinding])
 
+  const handleUseEscape = useCallback(() => {
+    handleCapturedBinding("escape")
+  }, [handleCapturedBinding])
+
   return (
     <div className="space-y-2" data-shortcut-row>
       <div className="flex items-center justify-between gap-2">
@@ -126,15 +137,24 @@ function ShortcutRow({
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
           {isCustom && !isCapturing && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0"
-              onClick={() => onResetBinding(action.id)}
-              title="Reset to default"
-            >
-              <RotateCcw className="h-3 w-3" />
-            </Button>
+            <TooltipProvider delayDuration={300}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 w-6 p-0"
+                    onClick={() => onResetBinding(action.id)}
+                    aria-label="Reset to default"
+                  >
+                    <RotateCcw className="h-3 w-3" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  Reset to default
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           )}
           <button
             ref={badgeRef}
@@ -163,6 +183,18 @@ function ShortcutRow({
           </span>
           <Button variant="outline" size="sm" className="h-5 px-2 text-xs" onClick={handleConfirmConflict}>
             Override
+          </Button>
+          <Button variant="ghost" size="sm" className="h-5 px-2 text-xs" onClick={onCancelCapture}>
+            Cancel
+          </Button>
+        </div>
+      )}
+
+      {isCapturing && !conflictInfo && (
+        <div className="flex items-center gap-2 ml-1 text-xs">
+          <span className="text-muted-foreground">Press shortcut keys, or use the button below to bind Escape.</span>
+          <Button variant="outline" size="sm" className="h-5 px-2 text-xs" onClick={handleUseEscape}>
+            Use Escape
           </Button>
           <Button variant="ghost" size="sm" className="h-5 px-2 text-xs" onClick={onCancelCapture}>
             Cancel

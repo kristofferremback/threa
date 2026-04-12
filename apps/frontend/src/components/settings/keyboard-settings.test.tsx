@@ -64,6 +64,39 @@ describe("KeyboardSettings", () => {
     expect(screen.queryByText(/Conflicts with/i)).not.toBeInTheDocument()
   })
 
+  it("shows a tooltip for the reset icon button", async () => {
+    const user = userEvent.setup()
+    mockPreferences.keyboardShortcuts = { toggleSidebar: "mod+b" }
+    render(<KeyboardSettings />)
+
+    const resetButton = screen.getByRole("button", { name: "Reset to default" })
+    await user.hover(resetButton)
+
+    expect((await screen.findAllByText("Reset to default")).length).toBeGreaterThan(0)
+  })
+
+  it("lets the user bind Escape explicitly", async () => {
+    const user = userEvent.setup()
+    render(<KeyboardSettings />)
+
+    const row = screen.getByText("Toggle Sidebar").closest("[data-shortcut-row]")
+    expect(row).not.toBeNull()
+
+    const badge = within(row! as HTMLElement).getByRole("button")
+    await user.click(badge)
+    await user.click(screen.getByRole("button", { name: "Use Escape" }))
+
+    expect(screen.getByText(/Conflicts with Close/i)).toBeInTheDocument()
+
+    await user.click(screen.getByRole("button", { name: "Override" }))
+
+    expect(updatePreference).toHaveBeenCalledTimes(1)
+    expect(updatePreference).toHaveBeenCalledWith("keyboardShortcuts", {
+      closeModal: "none",
+      toggleSidebar: "escape",
+    })
+  })
+
   it("reports capture state changes and cancels capture on Escape", async () => {
     const user = userEvent.setup()
     const onCaptureStateChange = vi.fn()
