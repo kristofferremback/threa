@@ -30,6 +30,7 @@ vi.mock("@/lib/socket-room", () => ({
 
 vi.mock("@/sync/stream-sync", () => ({
   applyStreamBootstrap: vi.fn(),
+  toCachedStreamBootstrap: (bootstrap: unknown) => bootstrap,
 }))
 
 function createTestQueryClient() {

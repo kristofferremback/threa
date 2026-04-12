@@ -84,6 +84,10 @@ describe("StreamSettingsDialog", () => {
       membership: null,
       latestSequence: "0",
       hasOlderEvents: false,
+      syncMode: "replace",
+      unreadCount: 0,
+      mentionCount: 0,
+      activityCount: 0,
     }
 
     queryClient.setQueryData(streamKeys.bootstrap("ws_1", "stream_dm"), bootstrap)

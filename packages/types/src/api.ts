@@ -57,6 +57,10 @@ export interface StreamBootstrap {
   membership: StreamMember | null
   latestSequence: string
   hasOlderEvents: boolean
+  syncMode: "append" | "replace"
+  unreadCount: number
+  mentionCount: number
+  activityCount: number
 }
 
 export interface EventsAroundResponse {

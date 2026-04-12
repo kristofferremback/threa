@@ -558,6 +558,7 @@ export class AgentRuntime {
         toolName: tc.toolName,
         stepType,
         input: tc.input,
+        hidden: agentTool.config.trace.hidden,
       })
       const startTime = Date.now()
 

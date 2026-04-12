@@ -573,6 +573,10 @@ export class EventService {
     return withClient(this.pool, (client) => MessageRepository.findByIds(client, messageIds))
   }
 
+  async getLatestSequence(streamId: string): Promise<bigint | null> {
+    return StreamEventRepository.getLatestSequence(this.pool, streamId)
+  }
+
   /**
    * Enrich bootstrap events with projection state for display.
    *

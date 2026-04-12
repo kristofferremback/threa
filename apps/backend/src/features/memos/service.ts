@@ -14,9 +14,10 @@ import type { EmbeddingServiceLike } from "./embedding-service"
 import { memoId } from "../../lib/id"
 import { logger } from "../../lib/logger"
 import { MemoTypes, MemoStatuses } from "@threa/types"
+import { MEMO_GEM_CONFIDENCE_FLOOR, MEMO_SINGLE_MESSAGE_AGE_GATE_MS } from "./config"
 
 const MEMORY_CONTEXT_LIMIT = 20
-const MIN_CONVERSATION_MESSAGES = 2
+const MIN_CONVERSATION_MESSAGES = 1
 
 export interface ProcessResult {
   processed: number
@@ -90,14 +91,19 @@ export class MemoService implements MemoServiceLike {
   }
 
   /**
-   * Process accumulated messages to extract knowledge-worthy memos.
+   * Process accumulated conversations to extract knowledge-worthy memos.
    *
    * IMPORTANT: This method uses the three-phase pattern (INV-41) to avoid holding
    * database connections during AI calls (which can take 1-5+ seconds):
    *
-   * Phase 1: Fetch messages with withClient (~100-200ms)
+   * Phase 1: Fetch data with withClient (~100-200ms)
    * Phase 2: AI classification and memorization with no database connection held (1-5+ seconds)
    * Phase 3: Save memos with withTransaction (~100ms)
+   *
+   * Single-message conversations are deferred (not marked processed) until they are
+   * at least MEMO_SINGLE_MESSAGE_AGE_GATE_MS old, giving time for replies to arrive.
+   * Deferred streams are retried every ~30s (quiet-interval cycle) until the age gate
+   * passes — these are cheap no-op runs (no AI calls).
    */
   async processBatch(workspaceId: string, streamId: string): Promise<ProcessResult> {
     // Phase 1: Fetch all data with withClient (no transaction, fast reads)
@@ -117,10 +123,6 @@ export class MemoService implements MemoServiceLike {
       })
 
       const existingTags = await MemoRepository.getAllTags(client, workspaceId)
-
-      // Fetch all messages for message items
-      const messageItemIds = pending.filter((p) => p.itemType === "message").map((p) => p.itemId)
-      const messages = messageItemIds.length > 0 ? await MessageRepository.findByIds(client, messageItemIds) : new Map()
 
       // Fetch all conversations and their messages for conversation items
       const conversationItemIds = pending.filter((p) => p.itemType === "conversation").map((p) => p.itemId)
@@ -151,13 +153,7 @@ export class MemoService implements MemoServiceLike {
       }
 
       // Fetch author timezones for date anchoring in memos
-      // Collect all unique member IDs from messages and conversation participants
       const authorIds = new Set<string>()
-      for (const msg of messages.values()) {
-        if (msg && msg.authorType === "user") {
-          authorIds.add(msg.authorId)
-        }
-      }
       for (const conv of conversations.values()) {
         for (const participantId of conv.participantIds) {
           authorIds.add(participantId)
@@ -176,7 +172,6 @@ export class MemoService implements MemoServiceLike {
         pending,
         existingMemos,
         existingTags,
-        messages,
         conversations,
         conversationMessages,
         existingConversationMemos,
@@ -194,79 +189,10 @@ export class MemoService implements MemoServiceLike {
     const memosToCreate: MemoToCreate[] = []
     const outboxEvents: OutboxEvent[] = []
     const supersessions: MemoSupersession[] = []
+    const deferredItemIds = new Set<string>()
     let memosCreated = 0
     let memosRevised = 0
     let itemsFailed = 0
-
-    // Process message items
-    const messageItems = fetchedData.pending.filter((p) => p.itemType === "message")
-    for (const item of messageItems) {
-      try {
-        const message = fetchedData.messages.get(item.itemId)
-        if (!message) {
-          logger.warn({ messageId: item.itemId }, "Message not found for memo processing")
-          continue
-        }
-
-        if (message.authorType !== "user") {
-          continue
-        }
-
-        // AI calls (no connection held)
-        const classification = await this.classifier.classifyMessage(message, { workspaceId })
-        if (!classification.isGem || !classification.knowledgeType) {
-          continue
-        }
-
-        logger.debug(
-          { messageId: message.id, knowledgeType: classification.knowledgeType, confidence: classification.confidence },
-          "Message classified as gem"
-        )
-
-        const content = await this.memorizer.memorizeMessage({
-          memoryContext,
-          content: message,
-          existingTags: fetchedData.existingTags,
-          workspaceId,
-          authorTimezone: fetchedData.authorTimezones.get(message.authorId) ?? undefined,
-        })
-
-        const embedding = await this.embeddingService.embed(content.abstract, {
-          workspaceId,
-          functionId: "memo-embedding",
-        })
-
-        const memo: MemoToCreate = {
-          id: memoId(),
-          workspaceId,
-          memoType: MemoTypes.MESSAGE,
-          sourceMessageId: message.id,
-          title: content.title,
-          abstract: content.abstract,
-          keyPoints: content.keyPoints,
-          sourceMessageIds: content.sourceMessageIds,
-          participantIds: [message.authorId],
-          knowledgeType: classification.knowledgeType,
-          tags: content.tags,
-          status: MemoStatuses.ACTIVE,
-          embedding,
-        }
-
-        memosToCreate.push(memo)
-        outboxEvents.push({
-          eventType: "memo:created",
-          payload: {
-            workspaceId,
-            memoId: memo.id,
-            memo: this.toWireMemoFromData(memo),
-          },
-        })
-        memosCreated++
-      } catch (error) {
-        itemsFailed++
-        logger.error({ error, messageId: item.itemId, workspaceId, streamId }, "Failed to process message for memo")
-      }
-    }
 
     // Process conversation items
     const convItems = fetchedData.pending.filter((p) => p.itemType === "conversation")
@@ -280,6 +206,19 @@ export class MemoService implements MemoServiceLike {
 
         if (conversation.messageIds.length < MIN_CONVERSATION_MESSAGES) {
           continue
+        }
+
+        // Defer young single-message conversations — give time for replies to arrive
+        if (conversation.messageIds.length === 1) {
+          const ageMs = Date.now() - new Date(conversation.lastActivityAt).getTime()
+          if (ageMs < MEMO_SINGLE_MESSAGE_AGE_GATE_MS) {
+            deferredItemIds.add(item.id)
+            logger.debug(
+              { conversationId: conversation.id, ageMs, threshold: MEMO_SINGLE_MESSAGE_AGE_GATE_MS },
+              "Deferring young single-message conversation"
+            )
+            continue
+          }
         }
 
         const messages = fetchedData.conversationMessages.get(item.itemId)
@@ -312,6 +251,18 @@ export class MemoService implements MemoServiceLike {
         )
 
         if (!classification.isKnowledgeWorthy || !classification.knowledgeType) {
+          continue
+        }
+
+        if (classification.confidence != null && classification.confidence < MEMO_GEM_CONFIDENCE_FLOOR) {
+          logger.info(
+            {
+              conversationId: conversation.id,
+              confidence: classification.confidence,
+              threshold: MEMO_GEM_CONFIDENCE_FLOOR,
+            },
+            "Conversation skipped due to low classifier confidence"
+          )
           continue
         }
 
@@ -465,21 +416,28 @@ export class MemoService implements MemoServiceLike {
         await OutboxRepository.insert(client, event.eventType, event.payload)
       }
 
-      // Mark all items processed
-      await PendingItemRepository.markProcessed(
-        client,
-        fetchedData.pending.map((p) => p.id)
-      )
+      // Mark processed items (excluding deferred ones that need retry).
+      // Deferred items stay unprocessed and are retried on the next batch check
+      // cycle (~30s quiet interval, not 5-min cap) since last_activity_at is
+      // already older than the quiet threshold.
+      const itemsToMark = fetchedData.pending.filter((p) => !deferredItemIds.has(p.id))
+      if (itemsToMark.length > 0) {
+        await PendingItemRepository.markProcessed(
+          client,
+          itemsToMark.map((p) => p.id)
+        )
+      }
 
       await StreamStateRepository.markProcessed(client, workspaceId, streamId)
     })
 
+    const processed = fetchedData.pending.length - deferredItemIds.size
     logger.info(
-      { workspaceId, streamId, processed: fetchedData.pending.length, memosCreated, memosRevised },
+      { workspaceId, streamId, processed, deferred: deferredItemIds.size, memosCreated, memosRevised },
       "Memo batch processed"
     )
 
-    return { processed: fetchedData.pending.length, memosCreated, memosRevised }
+    return { processed, memosCreated, memosRevised }
   }
 
   private toWireMemo(memo: Memo): import("@threa/types").Memo {

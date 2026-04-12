@@ -2,9 +2,8 @@ import type { Pool } from "pg"
 import { OutboxRepository } from "../../lib/outbox"
 import { StreamStateRepository, StreamRepository } from "../streams"
 import { PendingItemRepository } from "./pending-item-repository"
-import { parseMessagePayload } from "../../lib/outbox"
 import { pendingItemId } from "../../lib/id"
-import { AuthorTypes, StreamTypes } from "@threa/types"
+import { StreamTypes } from "@threa/types"
 import { logger } from "../../lib/logger"
 import { CursorLock, ensureListenerFromLatest, DebounceWithMaxWait, type ProcessResult } from "@threa/backend-common"
 import type { OutboxHandler } from "../../lib/outbox"
@@ -31,16 +30,20 @@ const DEFAULT_CONFIG = {
 }
 
 /**
- * Handler that queues messages and conversations for batch memo processing.
+ * Handler that queues conversations for batch memo processing.
  *
  * Flow:
- * 1. Event arrives (message:created, conversation:created, conversation:updated)
+ * 1. Conversation event arrives (conversation:created, conversation:updated)
  * 2. Queue item to memo_pending_items table
  * 3. Update stream state activity for debounce tracking
  *
  * The batch worker will process queued items based on per-stream debouncing:
  * - Cap: process at most every 5 minutes per stream
  * - Quick: process after 30s quiet per stream
+ *
+ * Note: message:created events are NOT handled here. Boundary extraction
+ * creates/updates conversations on every message, and the conversation events
+ * trigger memo processing via the conversation path only.
  */
 export class MemoAccumulatorHandler implements OutboxHandler {
   readonly listenerId = "memo-accumulator"
@@ -93,9 +96,6 @@ export class MemoAccumulatorHandler implements OutboxHandler {
       try {
         for (const event of events) {
           switch (event.eventType) {
-            case "message:created":
-              await this.handleMessageCreated(event)
-              break
             case "conversation:created":
             case "conversation:updated":
               await this.handleConversationEvent(event)
@@ -115,48 +115,6 @@ export class MemoAccumulatorHandler implements OutboxHandler {
 
         return { status: "error", error }
       }
-    })
-  }
-
-  private async handleMessageCreated(outboxEvent: { id: bigint; payload: unknown }): Promise<void> {
-    const payload = parseMessagePayload(outboxEvent.payload)
-    if (!payload) {
-      logger.debug({ eventId: outboxEvent.id.toString() }, "MemoAccumulatorHandler: malformed event, skipping")
-      return
-    }
-
-    const { streamId, workspaceId, event } = payload
-
-    if (event.actorType !== AuthorTypes.USER) {
-      return
-    }
-
-    const messageId = event.payload.messageId
-
-    await withClient(this.db, async (client) => {
-      const stream = await StreamRepository.findById(client, streamId)
-      if (!stream) {
-        logger.warn({ streamId }, "Stream not found for memo accumulator")
-        return
-      }
-
-      if (stream.type === StreamTypes.SYSTEM) return
-
-      const topLevelStreamId = stream.type === StreamTypes.THREAD ? (stream.rootStreamId ?? streamId) : streamId
-
-      await PendingItemRepository.queue(client, [
-        {
-          id: pendingItemId(),
-          workspaceId,
-          streamId: topLevelStreamId,
-          itemType: "message",
-          itemId: messageId,
-        },
-      ])
-
-      await StreamStateRepository.upsertActivity(client, workspaceId, topLevelStreamId)
-
-      logger.debug({ workspaceId, streamId: topLevelStreamId, messageId }, "Message queued for memo processing")
     })
   }
 

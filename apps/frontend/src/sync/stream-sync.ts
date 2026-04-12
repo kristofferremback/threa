@@ -16,6 +16,167 @@ import type { QueryClient } from "@tanstack/react-query"
 // Bootstrap application — writes stream bootstrap data to IndexedDB
 // ============================================================================
 
+export interface CachedStreamBootstrap extends StreamBootstrap {
+  windowVersion: number
+}
+
+function preserveDmDisplayName(nextStream: Stream, previousStream?: Stream): Stream {
+  const isDmWithNullName = nextStream.type === StreamTypes.DM && nextStream.displayName == null
+  if (isDmWithNullName && previousStream?.displayName) {
+    return { ...nextStream, displayName: previousStream.displayName }
+  }
+  return nextStream
+}
+
+function dedupeAndSortEvents(events: StreamEvent[]): StreamEvent[] {
+  const byId = new Map<string, StreamEvent>()
+  for (const event of events) {
+    byId.set(event.id, event)
+  }
+  return Array.from(byId.values()).sort((a, b) => {
+    const seqA = BigInt(a.sequence)
+    const seqB = BigInt(b.sequence)
+    if (seqA < seqB) return -1
+    if (seqA > seqB) return 1
+    return 0
+  })
+}
+
+export function toCachedStreamBootstrap(
+  bootstrap: StreamBootstrap,
+  previous?: CachedStreamBootstrap,
+  options?: { incrementWindowVersionOnReplace?: boolean }
+): CachedStreamBootstrap {
+  const nextStream = preserveDmDisplayName(bootstrap.stream, previous?.stream)
+  const shouldIncrementWindowVersion = bootstrap.syncMode === "replace" && options?.incrementWindowVersionOnReplace
+  return {
+    ...bootstrap,
+    stream: nextStream,
+    events:
+      bootstrap.syncMode === "append" && previous
+        ? dedupeAndSortEvents([...previous.events, ...bootstrap.events])
+        : bootstrap.events,
+    hasOlderEvents: bootstrap.syncMode === "append" && previous ? previous.hasOlderEvents : bootstrap.hasOlderEvents,
+    windowVersion: shouldIncrementWindowVersion ? (previous?.windowVersion ?? 0) + 1 : (previous?.windowVersion ?? 0),
+  }
+}
+
+export async function getLatestPersistedSequence(streamId: string): Promise<string | null> {
+  const latestEvent = await db.events
+    .where("[streamId+_sequenceNum]")
+    .between([streamId, 0], [streamId, Number.MAX_SAFE_INTEGER], true, true)
+    .reverse()
+    .filter((event) => event._status !== "pending" && event._status !== "failed")
+    .first()
+
+  return latestEvent?.sequence ?? null
+}
+
+function getBootstrapWindowFloor(events: StreamEvent[]): bigint | null {
+  if (events.length === 0) return null
+  return events.reduce((min, event) => {
+    const sequence = BigInt(event.sequence)
+    return sequence < min ? sequence : min
+  }, BigInt(events[0].sequence))
+}
+
+function getBootstrapWindowCeiling(events: StreamEvent[], latestSequence: string): bigint {
+  if (events.length === 0) return BigInt(latestSequence)
+  return events.reduce((max, event) => {
+    const sequence = BigInt(event.sequence)
+    return sequence > max ? sequence : max
+  }, BigInt(events[0].sequence))
+}
+
+async function cleanupStaleOptimisticEvents(streamId: string): Promise<void> {
+  const tempEvents = await db.events
+    .where("streamId")
+    .equals(streamId)
+    .filter((e) => e.id.startsWith("temp_"))
+    .toArray()
+
+  for (const temp of tempEvents) {
+    const stillPending = await db.pendingMessages.get(temp.id)
+    if (!stillPending) {
+      await db.events.delete(temp.id)
+    }
+  }
+}
+
+async function pruneBootstrapReplaceWindow(streamId: string, bootstrap: StreamBootstrap): Promise<void> {
+  const bootstrapEventIds = new Set(bootstrap.events.map((event) => event.id))
+  const bootstrapWindowFloor = getBootstrapWindowFloor(bootstrap.events)
+  if (bootstrapWindowFloor === null) return
+
+  // Use the actual max event sequence as the ceiling, NOT latestSequence.
+  // latestSequence can be higher than the max returned event when new events
+  // are created between the server's event query and sequence query. Using
+  // latestSequence as the ceiling would delete valid socket events that
+  // arrived in that gap (subscribe-then-fetch race, INV-53).
+  const bootstrapWindowCeiling = getBootstrapWindowCeiling(bootstrap.events, bootstrap.latestSequence)
+
+  const staleWindowEvents = await db.events
+    .where("streamId")
+    .equals(streamId)
+    .filter((event) => {
+      if (bootstrapEventIds.has(event.id)) return false
+      if (event._status === "pending" || event._status === "failed") return false
+      const sequence = BigInt(event.sequence)
+      return sequence >= bootstrapWindowFloor && sequence <= bootstrapWindowCeiling
+    })
+    .toArray()
+
+  for (const staleEvent of staleWindowEvents) {
+    await db.events.delete(staleEvent.id)
+  }
+}
+
+async function writeBootstrapEventsAndStream(
+  workspaceId: string,
+  streamId: string,
+  bootstrap: StreamBootstrap,
+  now: number
+): Promise<void> {
+  await cleanupStaleOptimisticEvents(streamId)
+
+  if (bootstrap.syncMode !== "append") {
+    await pruneBootstrapReplaceWindow(streamId, bootstrap)
+  }
+
+  if (bootstrap.events.length > 0) {
+    await db.events.bulkPut(
+      bootstrap.events.map((e) => ({ ...e, workspaceId, _sequenceNum: sequenceToNum(e.sequence), _cachedAt: now }))
+    )
+  }
+
+  // Merge stream metadata without destroying fields that only exist on the
+  // workspace bootstrap's StreamWithPreview (e.g. lastMessagePreview, which
+  // is the sidebar's activity sort key). Use update() for existing records
+  // and fall back to put() if the stream doesn't exist in IDB yet.
+  const stream = preserveDmDisplayName(bootstrap.stream)
+  const fullStreamData = {
+    ...stream,
+    pinned: bootstrap.membership?.pinned,
+    notificationLevel: bootstrap.membership?.notificationLevel,
+    lastReadEventId: bootstrap.membership?.lastReadEventId,
+    _cachedAt: now,
+  }
+  const isDmWithNullName = stream.type === StreamTypes.DM && stream.displayName == null
+  if (isDmWithNullName) {
+    const { displayName: _, ...withoutDisplayName } = fullStreamData
+    const updated = await db.streams.update(stream.id, withoutDisplayName)
+    if (updated === 0) {
+      await db.streams.put(fullStreamData)
+    }
+    return
+  }
+
+  const updated = await db.streams.update(stream.id, fullStreamData)
+  if (updated === 0) {
+    await db.streams.put(fullStreamData)
+  }
+}
+
 /**
  * Write stream bootstrap data to IndexedDB (merge, not replace).
  *
@@ -36,94 +197,18 @@ export async function applyStreamBootstrap(
   bootstrap: StreamBootstrap
 ): Promise<void> {
   const now = Date.now()
-  const bootstrapEventIds = new Set(bootstrap.events.map((event) => event.id))
-  const bootstrapWindowFloor =
-    bootstrap.events.length > 0
-      ? bootstrap.events.reduce((min, event) => {
-          const sequence = BigInt(event.sequence)
-          return sequence < min ? sequence : min
-        }, BigInt(bootstrap.events[0].sequence))
-      : null
-  // Use the actual max event sequence as the ceiling, NOT latestSequence.
-  // latestSequence can be higher than the max returned event when new events
-  // are created between the server's event query and sequence query. Using
-  // latestSequence as the ceiling would delete valid socket events that
-  // arrived in that gap (subscribe-then-fetch race, INV-53).
-  const bootstrapWindowCeiling =
-    bootstrap.events.length > 0
-      ? bootstrap.events.reduce((max, event) => {
-          const sequence = BigInt(event.sequence)
-          return sequence > max ? sequence : max
-        }, BigInt(bootstrap.events[0].sequence))
-      : BigInt(bootstrap.latestSequence)
-
   await db.transaction("rw", [db.events, db.streams, db.pendingMessages], async () => {
-    // Clean stale optimistic events — temp_* that are no longer pending
-    const tempEvents = await db.events
-      .where("streamId")
-      .equals(streamId)
-      .filter((e) => e.id.startsWith("temp_"))
-      .toArray()
-
-    for (const temp of tempEvents) {
-      const stillPending = await db.pendingMessages.get(temp.id)
-      if (!stillPending) {
-        await db.events.delete(temp.id)
-      }
-    }
-
-    // Prune stale cached events inside the fetched bootstrap window.
-    // This keeps older paged history (< floor) and newer socket races
-    // (> max bootstrap event sequence) while removing ghost events that
-    // no longer exist in the server snapshot.
-    if (bootstrapWindowFloor !== null) {
-      const staleWindowEvents = await db.events
-        .where("streamId")
-        .equals(streamId)
-        .filter((event) => {
-          if (bootstrapEventIds.has(event.id)) return false
-          if (event._status === "pending" || event._status === "failed") return false
-          const sequence = BigInt(event.sequence)
-          return sequence >= bootstrapWindowFloor && sequence <= bootstrapWindowCeiling
-        })
-        .toArray()
-
-      for (const staleEvent of staleWindowEvents) {
-        await db.events.delete(staleEvent.id)
-      }
-    }
-
-    await db.events.bulkPut(
-      bootstrap.events.map((e) => ({ ...e, workspaceId, _sequenceNum: sequenceToNum(e.sequence), _cachedAt: now }))
-    )
-    // Merge stream metadata without destroying fields that only exist on the
-    // workspace bootstrap's StreamWithPreview (e.g. lastMessagePreview, which
-    // is the sidebar's activity sort key). Use update() for existing records
-    // and fall back to put() if the stream doesn't exist in IDB yet.
-    const fullStreamData = {
-      ...bootstrap.stream,
-      pinned: bootstrap.membership?.pinned,
-      notificationLevel: bootstrap.membership?.notificationLevel,
-      lastReadEventId: bootstrap.membership?.lastReadEventId,
-      _cachedAt: now,
-    }
-    // For DMs, the stream bootstrap endpoint does not resolve viewer-specific
-    // display names (that's done at workspace level by resolveDmDisplayNames).
-    // Exclude displayName from the update so the resolved name in IDB survives.
-    const isDmWithNullName = bootstrap.stream.type === StreamTypes.DM && bootstrap.stream.displayName == null
-    if (isDmWithNullName) {
-      const { displayName: _, ...withoutDisplayName } = fullStreamData
-      const updated = await db.streams.update(bootstrap.stream.id, withoutDisplayName)
-      if (updated === 0) {
-        await db.streams.put(fullStreamData)
-      }
-    } else {
-      const updated = await db.streams.update(bootstrap.stream.id, fullStreamData)
-      if (updated === 0) {
-        await db.streams.put(fullStreamData)
-      }
-    }
+    await writeBootstrapEventsAndStream(workspaceId, streamId, bootstrap, now)
   })
+}
+
+export async function applyStreamBootstrapInCurrentTransaction(
+  workspaceId: string,
+  streamId: string,
+  bootstrap: StreamBootstrap,
+  now = Date.now()
+): Promise<void> {
+  await writeBootstrapEventsAndStream(workspaceId, streamId, bootstrap, now)
 }
 
 // ============================================================================

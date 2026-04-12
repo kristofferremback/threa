@@ -135,7 +135,10 @@ test.describe("New Channel Socket Subscription", () => {
       const channelLink = userA.page.locator(`a[href="/w/${workspaceId}/s/${streamId}"]`).first()
       await waitForSidebarPreview(channelLink, testMessage)
 
-      // Click the channel to verify the new message is available
+      // Click the channel and verify the new message is rendered.
+      // The SyncEngine subscribed to the room on stream:created, so User B's
+      // message is already in IDB via the socket handlers — no bootstrap
+      // refetch is required on navigation.
       await channelLink.click()
       await expect(userA.page).toHaveURL(new RegExp(`/w/${workspaceId}/s/${streamId}`), { timeout: 10000 })
       await expect(userA.page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({

@@ -14,10 +14,24 @@ import { formatDate } from "../../lib/temporal"
 // ============================================================================
 
 /**
- * Default model for memo classification and generation.
- * Can be overridden via AI_MEMO_MODEL environment variable.
+ * Model for memo classification (gem detection).
+ *
+ * GPT-5.4 Nano is OpenAI's cheapest 5.4-generation model ($0.20/$1.25 per 1M tokens),
+ * explicitly designed for classification, data extraction, and ranking.
+ * Outperforms GPT-5 Mini on benchmarks despite lower cost.
+ * Previously used gpt-oss-120b whose patchwork OpenRouter provider backing
+ * caused 60-120s tail latency and low-quality gem decisions.
  */
-export const MEMO_MODEL_ID = "openrouter:openai/gpt-oss-120b"
+export const MEMO_CLASSIFIER_MODEL_ID = "openrouter:openai/gpt-5.4-nano"
+
+/**
+ * Model for memo content generation (abstractive extraction).
+ *
+ * GPT-5.4 Nano provides strong structured output and extraction quality
+ * at a fraction of the cost of larger models. If memo abstract quality
+ * proves insufficient, upgrade to gpt-5.4-mini ($0.75/$4.50 per 1M tokens).
+ */
+export const MEMO_MEMORIZER_MODEL_ID = "openrouter:openai/gpt-5.4-nano"
 
 /**
  * Temperature settings for different operations.
@@ -27,27 +41,22 @@ export const MEMO_TEMPERATURES = {
   memorization: 0.3, // Slightly higher for creative summarization
 } as const
 
+/**
+ * Minimum classifier confidence required to create a memo.
+ * Conversations classified with confidence below this threshold are skipped.
+ */
+export const MEMO_GEM_CONFIDENCE_FLOOR = 0.7
+
+/**
+ * Minimum age (ms) for a single-message conversation before it can be memoed.
+ * Gives time for replies to arrive before treating the message as standalone knowledge.
+ * Deferred items are retried on the next batch cycle (5-minute cap interval).
+ */
+export const MEMO_SINGLE_MESSAGE_AGE_GATE_MS = 10 * 60 * 1000
+
 // ============================================================================
 // Schemas
 // ============================================================================
-
-/**
- * Schema for message classification output.
- * OpenAI's strict mode requires ALL properties in `required`,
- * so we use `.nullable()` instead of `.optional()` for fields the model must emit.
- * reasoning uses `.nullish()` because some models omit it when isGem is false.
- */
-export const messageClassificationSchema = z.object({
-  isGem: z.boolean().describe("Whether this message is a standalone gem worth memorizing"),
-  knowledgeType: z
-    .enum(KNOWLEDGE_TYPES)
-    .nullable()
-    .describe(`Type of knowledge if isGem is true: ${KNOWLEDGE_TYPES.map((t) => `"${t}"`).join(" | ")}`),
-  confidence: z.number().min(0).max(1).nullable().describe("Confidence in this classification (0.0 to 1.0)"),
-  reasoning: z.string().nullish().describe("Brief explanation of the classification decision"),
-})
-
-export type MessageClassificationOutput = z.infer<typeof messageClassificationSchema>
 
 /**
  * Schema for conversation classification output.
@@ -85,29 +94,6 @@ export type MemoContentOutput = z.infer<typeof memoContentSchema>
 // Classifier Prompts
 // ============================================================================
 
-export const CLASSIFIER_MESSAGE_SYSTEM_PROMPT = `You are a knowledge classifier for a team chat application. You identify standalone messages that contain valuable knowledge worth preserving ("gems").
-
-Gems are messages that:
-- Contain decisions with rationale
-- Document procedures or how-to instructions
-- Share learnings or insights from experience
-- Provide context that helps understand the team/project
-- Include reference information (links, resources, definitions)
-
-NOT gems:
-- Simple acknowledgments (ok, thanks, got it)
-- Social chatter without information value
-- Questions without answers
-- Status updates without context ("done", "working on it")
-- Incomplete thoughts that need conversation context
-- Messages from AI/personas (when "From: persona") - we preserve human knowledge, not AI-generated content
-
-IMPORTANT:
-- If isGem is false, knowledgeType MUST be null
-- Only set knowledgeType when isGem is true
-
-Output ONLY valid JSON matching the schema. Keep reasoning to ONE brief sentence.`
-
 export const CLASSIFIER_CONVERSATION_SYSTEM_PROMPT = `You are a knowledge classifier for a team chat application. You identify conversations that contain valuable knowledge worth preserving in organizational memory.
 
 Knowledge-worthy conversations:
@@ -130,13 +116,6 @@ When comparing to an existing memo, recommend revision if:
 - The topic evolved substantially
 
 Output ONLY valid JSON matching the schema. Keep reasoning to ONE brief sentence.`
-
-export const CLASSIFIER_MESSAGE_PROMPT = `Classify this message. Is it a standalone gem worth preserving?
-
-## Message
-From: {{AUTHOR_TYPE}} ({{AUTHOR_ID}})
-Content:
-{{CONTENT}}`
 
 export const CLASSIFIER_CONVERSATION_PROMPT = `Classify this conversation. Is it worth preserving in organizational memory?
 
@@ -185,21 +164,6 @@ export function getMemorizerSystemPrompt(timezone?: string): string {
   const today = formatDate(now, tz, "YYYY-MM-DD")
   return MEMORIZER_SYSTEM_PROMPT_TEMPLATE.replace("{{CURRENT_DATE}}", today)
 }
-
-export const MEMORIZER_MESSAGE_PROMPT = `Create a memo for this standalone message.
-
-## Memory Context (prior memos for vocabulary consistency)
-{{MEMORY_CONTEXT}}
-
-## Message to Memorize
-ID: {{MESSAGE_ID}}
-From: {{AUTHOR_TYPE}}
-Content:
-{{CONTENT}}
-
-{{EXISTING_TAGS_SECTION}}
-
-Create a self-contained memo that preserves this knowledge.`
 
 export const MEMORIZER_CONVERSATION_PROMPT = `Create a memo for this conversation.
 

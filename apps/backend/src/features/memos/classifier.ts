@@ -2,35 +2,20 @@ import type { AI } from "../../lib/ai/ai"
 import type { ConfigResolver } from "../../lib/ai/config-resolver"
 import { COMPONENT_PATHS } from "../../lib/ai/config-resolver"
 import { MessageFormatter } from "../../lib/ai/message-formatter"
-import type { Message } from "../messaging"
 import type { Conversation } from "../conversations"
 import type { Memo } from "./repository"
 import type { KnowledgeType } from "@threa/types"
 import {
-  messageClassificationSchema,
   conversationClassificationSchema,
-  CLASSIFIER_MESSAGE_SYSTEM_PROMPT,
   CLASSIFIER_CONVERSATION_SYSTEM_PROMPT,
-  CLASSIFIER_MESSAGE_PROMPT,
   CLASSIFIER_CONVERSATION_PROMPT,
   CLASSIFIER_EXISTING_MEMO_TEMPLATE,
 } from "./config"
 import { memoRepair } from "./repair"
 
-/** Optional context for cost tracking */
+/** Context for cost tracking */
 export interface ClassifierContext {
   workspaceId: string
-}
-
-/**
- * Classification result for individual messages.
- * Determines if a message is a standalone "gem" worth memorizing.
- */
-export interface MessageClassification {
-  isGem: boolean
-  knowledgeType: KnowledgeType | null
-  confidence: number
-  reasoning: string
 }
 
 /**
@@ -51,37 +36,6 @@ export class MemoClassifier {
     private configResolver: ConfigResolver,
     private messageFormatter: MessageFormatter
   ) {}
-
-  async classifyMessage(message: Message, context: ClassifierContext): Promise<MessageClassification> {
-    const config = await this.configResolver.resolve(COMPONENT_PATHS.MEMO_CLASSIFIER)
-
-    const prompt = CLASSIFIER_MESSAGE_PROMPT.replace("{{AUTHOR_TYPE}}", message.authorType)
-      .replace("{{AUTHOR_ID}}", message.authorId.slice(-8))
-      .replace("{{CONTENT}}", message.contentMarkdown)
-
-    const { value } = await this.ai.generateObject({
-      model: config.modelId,
-      schema: messageClassificationSchema,
-      messages: [
-        { role: "system", content: CLASSIFIER_MESSAGE_SYSTEM_PROMPT },
-        { role: "user", content: prompt },
-      ],
-      temperature: config.temperature,
-      repair: memoRepair,
-      telemetry: {
-        functionId: "memo-classify-message",
-        metadata: { messageId: message.id },
-      },
-      context: { workspaceId: context.workspaceId, origin: "system" },
-    })
-
-    return {
-      isGem: value.isGem,
-      knowledgeType: value.knowledgeType ?? null,
-      confidence: value.confidence ?? 0.5,
-      reasoning: value.reasoning ?? "",
-    }
-  }
 
   async classifyConversation(
     conversation: Conversation,

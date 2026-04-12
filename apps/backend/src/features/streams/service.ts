@@ -959,6 +959,11 @@ export class StreamService {
     return StreamEventRepository.countUnreadByStreamBatch(this.pool, memberships)
   }
 
+  async getUnreadCount(streamId: string, lastReadEventId: string | null): Promise<number> {
+    const unreadCounts = await this.getUnreadCounts([{ streamId, lastReadEventId }])
+    return unreadCounts.get(streamId) ?? 0
+  }
+
   /**
    * Get a map of messageId -> threadStreamId for all messages in a stream that have threads
    */

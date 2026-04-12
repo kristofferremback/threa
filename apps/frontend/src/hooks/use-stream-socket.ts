@@ -1,9 +1,8 @@
 import { useEffect } from "react"
 import { useQueryClient } from "@tanstack/react-query"
-import { useSocket, useSocketReconnectCount } from "@/contexts"
+import { useSocket } from "@/contexts"
 import { joinRoomFireAndForget } from "@/lib/socket-room"
 import { registerStreamSocketHandlers } from "@/sync/stream-sync"
-import { streamKeys } from "./use-streams"
 
 /**
  * Hook to handle real-time message/reaction events for a specific stream.
@@ -17,7 +16,6 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
   const shouldSubscribe = options?.enabled ?? true
   const queryClient = useQueryClient()
   const socket = useSocket()
-  const reconnectCount = useSocketReconnectCount()
 
   useEffect(() => {
     if (!socket || !workspaceId || !streamId || !shouldSubscribe) return
@@ -27,15 +25,6 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
 
     // Subscribe FIRST (before any fetches happen)
     joinRoomFireAndForget(socket, room, abortController.signal, "StreamSocket")
-
-    // Ensure bootstrap data is fresh after (re-)subscribing to the room.
-    // Skips first mount (no cached data yet — bootstrap queryFn handles that).
-    const existingState = queryClient.getQueryState(streamKeys.bootstrap(workspaceId, streamId))
-    if (existingState?.status === "success") {
-      queryClient.invalidateQueries({
-        queryKey: streamKeys.bootstrap(workspaceId, streamId),
-      })
-    }
 
     // Register all stream-level socket handlers — they write to IDB only.
     // queryClient is passed for transitional workspace bootstrap preview updates
@@ -49,5 +38,5 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
       // a single leave undoes ALL joins. The SyncEngine also joins this room
       // for stream:activity delivery — leaving here would break sidebar updates.
     }
-  }, [socket, workspaceId, streamId, shouldSubscribe, queryClient, reconnectCount])
+  }, [socket, workspaceId, streamId, shouldSubscribe, queryClient])
 }

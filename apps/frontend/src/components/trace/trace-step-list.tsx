@@ -50,7 +50,12 @@ export function TraceStepList({
     <div>
       {steps.map((step) => {
         const isHighlighted = step.messageId === highlightMessageId
-        const liveSubsteps = streamingSubsteps?.[step.stepType]
+        // Only pass live substeps to the in-progress step. Substeps are keyed by
+        // step type, so without this guard a completed workspace_search step
+        // (e.g. search_users) would incorrectly show the phases from an
+        // in-flight workspace_research tool that shares the same step type.
+        const isInProgress = !step.completedAt
+        const liveSubsteps = isInProgress ? streamingSubsteps?.[step.stepType] : undefined
         return (
           <div
             key={step.id}

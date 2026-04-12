@@ -4,8 +4,8 @@
  *
  * Usage:
  *   bun run evals/run.ts                         # Run all suites
- *   bun run evals/run.ts -s memo-classifier      # Run specific suite
- *   bun run evals/run.ts -s memorizer -c date-norm-001  # Run specific case
+ *   bun run evals/run.ts -s companion             # Run specific suite
+ *   bun run evals/run.ts -s companion -c case-001  # Run specific case
  *   bun run evals/run.ts -m openrouter:openai/gpt-4.1-mini  # Override model
  *   bun run evals/run.ts --no-langfuse           # Skip Langfuse recording
  */
@@ -13,8 +13,6 @@
 import { parseArgs } from "util"
 import { runSuites, runFromConfigFile } from "./framework/runner"
 import type { RunnerOptions } from "./framework/types"
-import { memoClassifierSuite } from "./suites/memo-classifier/suite"
-import { memorizerSuite } from "./suites/memorizer/suite"
 import { companionSuite } from "./suites/companion/suite"
 import { streamNamingSuite } from "./suites/stream-naming/suite"
 import { boundaryExtractionSuite } from "./suites/boundary-extraction/suite"
@@ -22,14 +20,7 @@ import { multimodalVisionSuite } from "./suites/multimodal-vision/suite"
 import { isConfigFilePath } from "./framework/config-loader"
 
 // All available suites
-const allSuites = [
-  memoClassifierSuite,
-  memorizerSuite,
-  companionSuite,
-  streamNamingSuite,
-  boundaryExtractionSuite,
-  multimodalVisionSuite,
-]
+const allSuites = [companionSuite, streamNamingSuite, boundaryExtractionSuite, multimodalVisionSuite]
 
 function printHelp(): void {
   const suiteNames = allSuites.map((s) => s.name).join(", ")

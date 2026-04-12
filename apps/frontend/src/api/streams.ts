@@ -34,8 +34,13 @@ export const streamsApi = {
     return res.stream
   },
 
-  async bootstrap(workspaceId: string, streamId: string): Promise<StreamBootstrap> {
-    const res = await api.get<{ data: StreamBootstrap }>(`/api/workspaces/${workspaceId}/streams/${streamId}/bootstrap`)
+  async bootstrap(workspaceId: string, streamId: string, params?: { after?: string }): Promise<StreamBootstrap> {
+    const searchParams = new URLSearchParams()
+    if (params?.after) searchParams.set("after", params.after)
+    const query = searchParams.toString()
+    const res = await api.get<{ data: StreamBootstrap }>(
+      `/api/workspaces/${workspaceId}/streams/${streamId}/bootstrap${query ? `?${query}` : ""}`
+    )
     return res.data
   },
 
