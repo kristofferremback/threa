@@ -38,9 +38,18 @@ function createTraceStub() {
 }
 
 describe("SessionTraceObserver tool:progress handling", () => {
-  it("forwards tool:progress events to trace.emitSubstep", async () => {
+  it("forwards tool:progress events to trace.emitSubstep when step exists", async () => {
     const { trace, emitSubstep } = createTraceStub()
     const observer = new SessionTraceObserver(trace)
+
+    // Must create the step first via tool:start
+    await observer.handle({
+      type: "tool:start",
+      toolCallId: "tc_1",
+      toolName: "workspace_research",
+      stepType: AgentStepTypes.WORKSPACE_SEARCH,
+      input: {},
+    })
 
     await observer.handle({
       type: "tool:progress",
@@ -57,9 +66,37 @@ describe("SessionTraceObserver tool:progress handling", () => {
     })
   })
 
+  it("skips tool:progress when no step exists (hidden tool)", async () => {
+    const { trace, emitSubstep } = createTraceStub()
+    const observer = new SessionTraceObserver(trace)
+
+    // No preceding tool:start — simulates a hidden tool
+    await observer.handle({
+      type: "tool:progress",
+      toolCallId: "tc_1",
+      toolName: "search_messages",
+      stepType: AgentStepTypes.WORKSPACE_SEARCH,
+      substep: "Searching…",
+    })
+
+    expect(emitSubstep).not.toHaveBeenCalled()
+  })
+
   it("does NOT call startStep on tool:progress (step is created at tool:start)", async () => {
     const { trace, startStep } = createTraceStub()
     const observer = new SessionTraceObserver(trace)
+
+    // Create the step first
+    await observer.handle({
+      type: "tool:start",
+      toolCallId: "tc_1",
+      toolName: "workspace_research",
+      stepType: AgentStepTypes.WORKSPACE_SEARCH,
+      input: {},
+    })
+
+    // Reset call count after tool:start
+    const callsAfterStart = startStep.mock.calls.length
 
     await observer.handle({
       type: "tool:progress",
@@ -69,12 +106,21 @@ describe("SessionTraceObserver tool:progress handling", () => {
       substep: "Searching memos and messages…",
     })
 
-    expect(startStep).not.toHaveBeenCalled()
+    expect(startStep.mock.calls.length).toBe(callsAfterStart)
   })
 
   it("emits multiple substeps in order", async () => {
     const { trace, emitSubstep } = createTraceStub()
     const observer = new SessionTraceObserver(trace)
+
+    // Create the step first
+    await observer.handle({
+      type: "tool:start",
+      toolCallId: "tc_1",
+      toolName: "workspace_research",
+      stepType: AgentStepTypes.WORKSPACE_SEARCH,
+      input: {},
+    })
 
     const substeps = ["Planning queries…", "Searching memos…", "Evaluating results…"]
     for (const substep of substeps) {
@@ -170,16 +216,15 @@ describe("SessionTraceObserver tool:start → progress → complete caching", ()
     expect(secondCall.map((s) => s.text)).toEqual(["Planning queries…", "Searching…"])
   })
 
-  it("falls back to create-and-complete for tool:complete without a preceding tool:start", async () => {
+  it("skips tool:complete when no cached step exists (hidden tool)", async () => {
     const { trace, startStep, activeStepRegistry } = createTraceStub()
     const observer = new SessionTraceObserver(trace)
 
-    // Skip tool:start entirely — simulates an edge case where the start
-    // event was lost or the tool doesn't emit one
+    // No preceding tool:start — the tool was hidden so no step was created
     await observer.handle({
       type: "tool:complete",
-      toolCallId: "tc_orphan",
-      toolName: "workspace_research",
+      toolCallId: "tc_hidden",
+      toolName: "search_messages",
       input: {},
       output: "{}",
       durationMs: 100,
@@ -189,10 +234,9 @@ describe("SessionTraceObserver tool:start → progress → complete caching", ()
       },
     })
 
-    // Fallback path: create-and-complete in one shot
-    expect(startStep).toHaveBeenCalledTimes(1)
-    expect(activeStepRegistry).toHaveLength(1)
-    expect(activeStepRegistry[0]!.complete).toHaveBeenCalledTimes(1)
+    // No step created, no complete called
+    expect(startStep).not.toHaveBeenCalled()
+    expect(activeStepRegistry).toHaveLength(0)
   })
 
   it("finalises the cached step with error content on tool:error", async () => {
@@ -220,5 +264,101 @@ describe("SessionTraceObserver tool:start → progress → complete caching", ()
     expect(activeStepRegistry[0]!.complete).toHaveBeenCalledTimes(1)
     const args = activeStepRegistry[0]!.complete.mock.calls[0]?.[0] as { content?: string }
     expect(args.content).toContain("boom")
+  })
+
+  it("skips tool:error when no cached step exists (hidden tool)", async () => {
+    const { trace, startStep, activeStepRegistry } = createTraceStub()
+    const observer = new SessionTraceObserver(trace)
+
+    await observer.handle({
+      type: "tool:error",
+      toolCallId: "tc_hidden",
+      toolName: "search_users",
+      error: "boom",
+      durationMs: 50,
+    })
+
+    expect(startStep).not.toHaveBeenCalled()
+    expect(activeStepRegistry).toHaveLength(0)
+  })
+})
+
+describe("SessionTraceObserver hidden tool support", () => {
+  it("skips step creation for tool:start with hidden flag", async () => {
+    const { trace, startStep } = createTraceStub()
+    const observer = new SessionTraceObserver(trace)
+
+    await observer.handle({
+      type: "tool:start",
+      toolCallId: "tc_1",
+      toolName: "search_messages",
+      stepType: AgentStepTypes.WORKSPACE_SEARCH,
+      input: { query: "test" },
+      hidden: true,
+    })
+
+    expect(startStep).not.toHaveBeenCalled()
+  })
+
+  it("full lifecycle of a hidden tool creates no user-facing steps", async () => {
+    const { trace, startStep, emitSubstep, activeStepRegistry } = createTraceStub()
+    const observer = new SessionTraceObserver(trace)
+
+    await observer.handle({
+      type: "tool:start",
+      toolCallId: "tc_1",
+      toolName: "search_messages",
+      stepType: AgentStepTypes.WORKSPACE_SEARCH,
+      input: { query: "test" },
+      hidden: true,
+    })
+
+    await observer.handle({
+      type: "tool:complete",
+      toolCallId: "tc_1",
+      toolName: "search_messages",
+      input: { query: "test" },
+      output: JSON.stringify({ results: [] }),
+      durationMs: 200,
+      trace: {
+        stepType: AgentStepTypes.WORKSPACE_SEARCH,
+        content: JSON.stringify({ tool: "search_messages", query: "test" }),
+      },
+    })
+
+    expect(startStep).not.toHaveBeenCalled()
+    expect(emitSubstep).not.toHaveBeenCalled()
+    expect(activeStepRegistry).toHaveLength(0)
+  })
+
+  it("non-hidden tools still create steps normally", async () => {
+    const { trace, startStep, activeStepRegistry } = createTraceStub()
+    const observer = new SessionTraceObserver(trace)
+
+    await observer.handle({
+      type: "tool:start",
+      toolCallId: "tc_1",
+      toolName: "workspace_research",
+      stepType: AgentStepTypes.WORKSPACE_SEARCH,
+      input: { query: "test" },
+      // hidden not set — defaults to visible
+    })
+
+    expect(startStep).toHaveBeenCalledTimes(1)
+
+    await observer.handle({
+      type: "tool:complete",
+      toolCallId: "tc_1",
+      toolName: "workspace_research",
+      input: { query: "test" },
+      output: "{}",
+      durationMs: 1000,
+      trace: {
+        stepType: AgentStepTypes.WORKSPACE_SEARCH,
+        content: JSON.stringify({ memoCount: 2, messageCount: 5 }),
+      },
+    })
+
+    expect(activeStepRegistry[0]!.complete).toHaveBeenCalledTimes(1)
   })
 })

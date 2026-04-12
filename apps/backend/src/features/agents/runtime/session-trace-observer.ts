@@ -45,6 +45,11 @@ export class SessionTraceObserver implements AgentObserver {
       }
 
       case "tool:start": {
+        // Hidden tools (e.g. individual workspace search helpers) are recorded in
+        // Langfuse but not in the user-facing trace. Skip step creation so they
+        // don't clutter the trace dialog.
+        if (event.hidden) break
+
         // Create the persisted step row at tool start so mid-execution refresh
         // recovers the in-progress step. Cached by toolCallId so later progress
         // and completion events can reference the same row.
@@ -55,6 +60,9 @@ export class SessionTraceObserver implements AgentObserver {
       }
 
       case "tool:progress": {
+        // Skip if no step was created (hidden tool).
+        if (!this.stepsByToolCallId.has(event.toolCallId)) break
+
         // Ephemeral substep update for live clients (no DB write on its own).
         this.trace.emitSubstep({ stepType: event.stepType, substep: event.substep })
 
@@ -81,8 +89,8 @@ export class SessionTraceObserver implements AgentObserver {
       case "tool:complete": {
         // Prefer finalising the cached step (created at tool:start) so the
         // step row keeps its original started_at and the content is updated
-        // in place. Falls back to create-and-complete for edge cases where
-        // the cache is missing (shouldn't happen in normal flow).
+        // in place. If no cached step exists, the tool was hidden — skip
+        // creating a user-facing step entirely (OTEL still records it).
         const cached = this.stepsByToolCallId.get(event.toolCallId)
         if (cached) {
           await cached.complete({
@@ -92,24 +100,13 @@ export class SessionTraceObserver implements AgentObserver {
           })
           this.stepsByToolCallId.delete(event.toolCallId)
           this.substepsByToolCallId.delete(event.toolCallId)
-        } else {
-          const step = await this.trace.startStep({
-            stepType: event.trace.stepType,
-            content: event.trace.content,
-          })
-          await step.complete({
-            content: event.trace.content,
-            sources: event.trace.sources,
-            durationMs: event.durationMs,
-          })
         }
         break
       }
 
       case "tool:error": {
-        // Same cache-first pattern as tool:complete, but finalise with an
-        // error message as content. Falls back to a synthetic TOOL_ERROR step
-        // for edge cases where no cache entry exists.
+        // If cached step exists, finalise with error content. If no cached
+        // step exists, the tool was hidden — skip (OTEL still records it).
         const cached = this.stepsByToolCallId.get(event.toolCallId)
         if (cached) {
           await cached.complete({
@@ -118,12 +115,6 @@ export class SessionTraceObserver implements AgentObserver {
           })
           this.stepsByToolCallId.delete(event.toolCallId)
           this.substepsByToolCallId.delete(event.toolCallId)
-        } else {
-          const step = await this.trace.startStep({
-            stepType: AgentStepTypes.TOOL_ERROR,
-            content: `${event.toolName} failed: ${event.error}`,
-          })
-          await step.complete({ durationMs: event.durationMs })
         }
         break
       }

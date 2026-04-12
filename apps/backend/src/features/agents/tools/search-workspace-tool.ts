@@ -191,6 +191,7 @@ Optionally filter by stream using ID (stream_xxx), slug (general), or prefixed s
 
     trace: {
       stepType: AgentStepTypes.WORKSPACE_SEARCH,
+      hidden: true,
       formatContent: (input) =>
         JSON.stringify({
           tool: "search_messages",
@@ -342,6 +343,7 @@ export function createSearchStreamsTool(deps: WorkspaceToolDeps) {
 
     trace: {
       stepType: AgentStepTypes.WORKSPACE_SEARCH,
+      hidden: true,
       formatContent: (input) => JSON.stringify({ tool: "search_streams", query: input.query ?? "" }),
     },
   })
@@ -398,6 +400,7 @@ export function createSearchUsersTool(deps: WorkspaceToolDeps) {
 
     trace: {
       stepType: AgentStepTypes.WORKSPACE_SEARCH,
+      hidden: true,
       formatContent: (input) => JSON.stringify({ tool: "search_users", query: input.query ?? "" }),
     },
   })
@@ -492,6 +495,7 @@ You can reference streams by their ID (stream_xxx), slug (general), or prefixed 
 
     trace: {
       stepType: AgentStepTypes.WORKSPACE_SEARCH,
+      hidden: true,
       formatContent: (input) => JSON.stringify({ tool: "get_stream_messages", stream: input.stream ?? null }),
     },
   })
