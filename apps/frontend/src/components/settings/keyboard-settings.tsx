@@ -132,10 +132,6 @@ function ShortcutRow({
     onSaveBinding(action.id, pendingBinding)
   }, [action.id, pendingBinding, conflictInfo, onSaveBinding])
 
-  const handleUseEscape = useCallback(() => {
-    handleCapturedBinding("escape")
-  }, [handleCapturedBinding])
-
   return (
     <div className="space-y-2" data-shortcut-row>
       <div className="flex items-center justify-between gap-2">
@@ -223,23 +219,8 @@ function ShortcutRow({
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    <div className="space-y-1">
-                      <p className="font-medium text-sm">Press shortcut keys</p>
-                      <p className="text-xs text-muted-foreground">
-                        Click <span className="font-mono text-foreground">Esc</span> if you want to assign Escape.
-                      </p>
-                    </div>
-
-                    <div className="flex items-center justify-between gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 min-w-10 px-3 font-mono"
-                        onClick={handleUseEscape}
-                        aria-label="Bind Escape"
-                      >
-                        Esc
-                      </Button>
+                    <p className="font-medium text-sm">Press shortcut keys</p>
+                    <div className="flex items-center justify-end">
                       <Button variant="ghost" size="sm" onClick={onCancelCapture}>
                         Cancel
                       </Button>

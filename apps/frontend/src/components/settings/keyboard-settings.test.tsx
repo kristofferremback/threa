@@ -63,7 +63,7 @@ describe("KeyboardSettings", () => {
     await user.click(badge)
 
     expect(screen.getByText("Press shortcut keys")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Bind Escape" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument()
   })
 
   it("ignores unsafe bare keys during capture", async () => {
@@ -102,7 +102,7 @@ describe("KeyboardSettings", () => {
     expect(badge).toHaveAttribute("title", formatKeyBindingText("mod+k"))
   })
 
-  it("lets the user bind Escape explicitly", async () => {
+  it("does not expose a way to bind Escape — it is reserved for close/cancel flows", async () => {
     const user = userEvent.setup()
     render(<KeyboardSettings />)
 
@@ -111,18 +111,8 @@ describe("KeyboardSettings", () => {
 
     const badge = within(row! as HTMLElement).getByRole("button")
     await user.click(badge)
-    await user.click(screen.getByRole("button", { name: "Bind Escape" }))
 
-    expect(screen.getByText("Move shortcut?")).toBeInTheDocument()
-    expect(screen.getByText(/is currently used by Close/i)).toBeInTheDocument()
-
-    await user.click(screen.getByRole("button", { name: "Move to Toggle Sidebar" }))
-
-    expect(updatePreference).toHaveBeenCalledTimes(1)
-    expect(updatePreference).toHaveBeenCalledWith("keyboardShortcuts", {
-      closeModal: "none",
-      toggleSidebar: "escape",
-    })
+    expect(screen.queryByRole("button", { name: "Bind Escape" })).toBeNull()
   })
 
   it("reports capture state changes and cancels capture on Escape", async () => {

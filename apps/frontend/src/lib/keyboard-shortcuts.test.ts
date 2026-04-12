@@ -148,9 +148,9 @@ describe("keyEventToBinding", () => {
     expect(keyEventToBinding(event)).toBe("alt+k")
   })
 
-  it("returns bare key for safe unmodified keys", () => {
+  it("refuses to capture Escape — it is reserved for close/cancel flows", () => {
     const event = new KeyboardEvent("keydown", { key: "Escape" })
-    expect(keyEventToBinding(event)).toBe("escape")
+    expect(keyEventToBinding(event)).toBeNull()
   })
 
   it("returns null for lone modifier presses", () => {
@@ -172,10 +172,9 @@ describe("keyEventToBinding", () => {
 })
 
 describe("isSafeShortcutBinding", () => {
-  it("allows modified shortcuts and safe bare keys", () => {
+  it("allows modified shortcuts and function keys", () => {
     expect(isSafeShortcutBinding("mod+b")).toBe(true)
     expect(isSafeShortcutBinding("alt+k")).toBe(true)
-    expect(isSafeShortcutBinding("escape")).toBe(true)
     expect(isSafeShortcutBinding("f6")).toBe(true)
   })
 
@@ -183,6 +182,12 @@ describe("isSafeShortcutBinding", () => {
     expect(isSafeShortcutBinding("b")).toBe(false)
     expect(isSafeShortcutBinding("shift+b")).toBe(false)
     expect(isSafeShortcutBinding("shift++")).toBe(false)
+  })
+
+  it("rejects Escape in any form — reserved for close/cancel flows", () => {
+    expect(isSafeShortcutBinding("escape")).toBe(false)
+    expect(isSafeShortcutBinding("mod+escape")).toBe(false)
+    expect(isSafeShortcutBinding("shift+escape")).toBe(false)
   })
 })
 

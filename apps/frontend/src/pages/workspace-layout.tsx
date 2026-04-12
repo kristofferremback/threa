@@ -62,32 +62,18 @@ import { ApiError } from "@/api/client"
 import { SyncStatusStore, SyncStatusContext } from "@/sync/sync-status"
 
 interface WorkspaceKeyboardHandlerProps {
-  switcherOpen: boolean
   onOpenSwitcher: (mode: QuickSwitcherMode) => void
-  onCloseSwitcher: () => void
   children: ReactNode
 }
 
-function WorkspaceKeyboardHandler({
-  switcherOpen,
-  onOpenSwitcher,
-  onCloseSwitcher,
-  children,
-}: WorkspaceKeyboardHandlerProps) {
-  const { isOpen: settingsOpen, openSettings, closeSettings } = useSettings()
+function WorkspaceKeyboardHandler({ onOpenSwitcher, children }: WorkspaceKeyboardHandlerProps) {
+  const { openSettings } = useSettings()
 
   useKeyboardShortcuts({
     openQuickSwitcher: () => onOpenSwitcher("stream"),
     openSearch: () => onOpenSwitcher("search"),
     openCommands: () => onOpenSwitcher("command"),
     openSettings: () => openSettings(),
-    closeModal: () => {
-      if (settingsOpen) {
-        closeSettings()
-      } else if (switcherOpen) {
-        onCloseSwitcher()
-      }
-    },
   })
 
   return <>{children}</>
@@ -307,10 +293,6 @@ export function WorkspaceLayout() {
     setSwitcherOpen(true)
   }, [])
 
-  const closeSwitcher = useCallback(() => {
-    setSwitcherOpen(false)
-  }, [])
-
   // Single SyncStatusStore instance per workspace — tracks sync state for all resources.
   const syncStatusStore = useMemo(() => new SyncStatusStore(), [workspaceId])
 
@@ -340,11 +322,7 @@ export function WorkspaceLayout() {
                   <WorkspaceEmojiProvider workspaceId={workspaceId}>
                     <PreferencesProvider workspaceId={workspaceId}>
                       <SettingsProvider>
-                        <WorkspaceKeyboardHandler
-                          switcherOpen={switcherOpen}
-                          onOpenSwitcher={openSwitcher}
-                          onCloseSwitcher={closeSwitcher}
-                        >
+                        <WorkspaceKeyboardHandler onOpenSwitcher={openSwitcher}>
                           <QuickSwitcherProvider openSwitcher={openSwitcher}>
                             <PanelProvider>
                               <TraceProvider>

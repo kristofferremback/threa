@@ -61,14 +61,6 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
     global: true,
   },
   {
-    id: "closeModal",
-    label: "Close",
-    description: "Close current modal or popover",
-    defaultKey: "escape",
-    category: "navigation",
-    global: true,
-  },
-  {
     id: "toggleSidebar",
     label: "Toggle Sidebar",
     description: "Show or hide the sidebar",
@@ -324,7 +316,12 @@ export function formatKeyBindingText(binding: string): string {
 
 /** Keys that are only modifiers and should not be captured as standalone bindings. */
 const MODIFIER_KEYS = new Set(["Control", "Shift", "Alt", "Meta"])
-const SAFE_UNMODIFIED_KEYS = new Set(["escape"])
+/**
+ * Keys reserved by the app and never bindable as custom shortcuts.
+ * Escape is hardcoded to cancel/close flows across the app (Radix Dialog, capture UI,
+ * local popovers), so we refuse to capture it as a binding for any action.
+ */
+const RESERVED_KEYS = new Set(["escape"])
 
 function isFunctionKey(key: string): boolean {
   return /^f([1-9]|1[0-2])$/i.test(key)
@@ -336,12 +333,15 @@ export function isSafeShortcutBinding(binding: string): boolean {
     return false
   }
 
+  if (RESERVED_KEYS.has(parsed.key.toLowerCase())) {
+    return false
+  }
+
   if (parsed.mod || parsed.alt) {
     return true
   }
 
-  const normalizedKey = parsed.key.toLowerCase()
-  return SAFE_UNMODIFIED_KEYS.has(normalizedKey) || isFunctionKey(normalizedKey)
+  return isFunctionKey(parsed.key.toLowerCase())
 }
 
 /**
