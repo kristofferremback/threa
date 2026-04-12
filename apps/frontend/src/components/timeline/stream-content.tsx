@@ -17,6 +17,7 @@ import {
   useAgentActivity,
   useAbortResearch,
   useEditLastMessageTrigger,
+  useKeyboardShortcuts,
   streamKeys,
   workspaceKeys,
 } from "@/hooks"
@@ -187,37 +188,48 @@ export function StreamContent({
   // --- In-stream search ---
   const streamSearch = useStreamSearch({ workspaceId, streamId })
   const clearSearch = streamSearch.clear
-
-  // Cmd+F / Ctrl+F opens in-stream search or re-focuses if already open.
-  // Also listens for the custom event from the header search button.
-  // Escape closes search when focus is outside the input.
-  // Skip in thread views to avoid double search bar.
-  useEffect(() => {
-    if (isThread) return
-    const openOrFocus = () => {
-      if (isSearchOpen) {
-        streamSearch.focus()
-      } else {
-        setIsSearchOpen(true)
-      }
+  const openOrFocusSearch = useCallback(() => {
+    if (isSearchOpen) {
+      streamSearch.focus()
+    } else {
+      setIsSearchOpen(true)
     }
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "f") {
-        e.preventDefault()
-        openOrFocus()
-      }
-      if (e.key === "Escape" && isSearchOpen) {
+  }, [isSearchOpen, streamSearch])
+
+  useKeyboardShortcuts(
+    {
+      searchInStream: openOrFocusSearch,
+    },
+    !isThread && !isDraft
+  )
+
+  // Header search button dispatches a custom event so it can share the same open/focus path.
+  useEffect(() => {
+    if (isThread || isDraft) return
+
+    document.addEventListener("threa:open-stream-search", openOrFocusSearch)
+    return () => {
+      document.removeEventListener("threa:open-stream-search", openOrFocusSearch)
+    }
+  }, [isDraft, isThread, openOrFocusSearch])
+
+  // Escape closes search when focus is outside the search input.
+  useEffect(() => {
+    if (!isSearchOpen) return
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      const isInput = target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable
+
+      if (event.key === "Escape" && !isInput) {
         setIsSearchOpen(false)
         clearSearch()
       }
     }
+
     document.addEventListener("keydown", handleKeyDown)
-    document.addEventListener("threa:open-stream-search", openOrFocus)
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown)
-      document.removeEventListener("threa:open-stream-search", openOrFocus)
-    }
-  }, [isThread, isSearchOpen, streamSearch, clearSearch])
+    return () => document.removeEventListener("keydown", handleKeyDown)
+  }, [isSearchOpen, clearSearch])
 
   const handleSearchClose = useCallback(() => {
     setIsSearchOpen(false)

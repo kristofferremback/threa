@@ -55,6 +55,21 @@ describe("toggleSidebar shortcut", () => {
   })
 })
 
+describe("searchInStream shortcut", () => {
+  it("is registered as a navigation action with mod+f default", () => {
+    const action = getShortcutAction("searchInStream")
+    expect(action).toBeDefined()
+    expect(action?.defaultKey).toBe("mod+f")
+    expect(action?.category).toBe("navigation")
+    expect(action?.global).toBe(true)
+  })
+
+  it("does not conflict with any other default binding", () => {
+    const conflicts = detectConflicts()
+    expect(conflicts.get("mod+f")).toBeUndefined()
+  })
+})
+
 describe("editor formatting shortcuts", () => {
   it("registers all 5 editor formatting actions in the editing category", () => {
     for (const id of EDITOR_SHORTCUT_IDS) {

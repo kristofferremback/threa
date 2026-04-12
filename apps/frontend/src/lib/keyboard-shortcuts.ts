@@ -29,6 +29,14 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
     global: true,
   },
   {
+    id: "searchInStream",
+    label: "Search in Stream",
+    description: "Search messages in the current stream",
+    defaultKey: "mod+f",
+    category: "navigation",
+    global: true,
+  },
+  {
     id: "openSearch",
     label: "Search",
     description: "Open search",
