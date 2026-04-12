@@ -16,7 +16,7 @@ import type {
   LastMessagePreview,
   ActivityCreatedPayload,
 } from "@threa/types"
-import { StreamTypes, Visibilities } from "@threa/types"
+import { NOTIFICATION_CONFIG, NotificationLevels, StreamTypes, Visibilities } from "@threa/types"
 import { applyStreamBootstrapInCurrentTransaction } from "./stream-sync"
 
 // ============================================================================
@@ -199,10 +199,25 @@ function sumActivityCounts(activityCounts: Record<string, number>): number {
   return Object.values(activityCounts).reduce((sum, count) => sum + count, 0)
 }
 
+function setMutedState(
+  mutedStreamIds: Set<string>,
+  streamId: string,
+  streamType: Stream["type"],
+  notificationLevel: StreamMember["notificationLevel"] | null | undefined
+): void {
+  const effectiveLevel = notificationLevel ?? NOTIFICATION_CONFIG[streamType].defaultLevel
+  if (effectiveLevel === NotificationLevels.MUTED) {
+    mutedStreamIds.add(streamId)
+    return
+  }
+  mutedStreamIds.delete(streamId)
+}
+
 interface ReconnectWorkspaceMergeParams {
   workspaceBootstrap: WorkspaceBootstrap
   successfulStreamBootstraps: Map<string, StreamBootstrap>
   staleStreamIds: Set<string>
+  terminalStreamIds: Set<string>
   localStreams: CachedStream[]
   localMemberships: CachedStreamMembership[]
   localUnreadState?: CachedUnreadState
@@ -213,6 +228,7 @@ export function mergeReconnectWorkspaceBootstrap({
   workspaceBootstrap,
   successfulStreamBootstraps,
   staleStreamIds,
+  terminalStreamIds,
   localStreams,
   localMemberships,
   localUnreadState,
@@ -306,6 +322,16 @@ export function mergeReconnectWorkspaceBootstrap({
     unreadCounts[streamId] = bootstrap.unreadCount
     mentionCounts[streamId] = bootstrap.mentionCount
     activityCounts[streamId] = bootstrap.activityCount
+    setMutedState(mutedStreamIds, streamId, bootstrap.stream.type, bootstrap.membership?.notificationLevel)
+  }
+
+  for (const streamId of terminalStreamIds) {
+    streamsById.delete(streamId)
+    membershipsByStreamId.delete(streamId)
+    delete unreadCounts[streamId]
+    delete mentionCounts[streamId]
+    delete activityCounts[streamId]
+    mutedStreamIds.delete(streamId)
   }
 
   return {
@@ -1340,6 +1366,7 @@ export async function applyReconnectBootstrapBatch(
     workspaceBootstrap,
     successfulStreamBootstraps: streamBootstraps,
     staleStreamIds,
+    terminalStreamIds,
     localStreams,
     localMemberships,
     localUnreadState: localUnreadState ?? undefined,

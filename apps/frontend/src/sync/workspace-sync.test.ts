@@ -312,6 +312,7 @@ describe("mergeReconnectWorkspaceBootstrap", () => {
         ],
       ]),
       staleStreamIds: new Set(),
+      terminalStreamIds: new Set(),
       localStreams: [],
       localMemberships: [],
     })
@@ -340,6 +341,7 @@ describe("mergeReconnectWorkspaceBootstrap", () => {
       workspaceBootstrap,
       successfulStreamBootstraps: new Map(),
       staleStreamIds: new Set(["stream_failed"]),
+      terminalStreamIds: new Set(),
       localStreams: [
         {
           id: "stream_failed",
@@ -397,6 +399,177 @@ describe("mergeReconnectWorkspaceBootstrap", () => {
     expect(merged.mentionCounts.stream_failed).toBe(1)
     expect(merged.activityCounts.stream_failed).toBe(2)
     expect(merged.mutedStreamIds).toContain("stream_failed")
+  })
+
+  it("removes terminal visible streams from the merged snapshot and sidebar state", () => {
+    const workspaceBootstrap = makeBootstrap({
+      streams: [
+        {
+          id: "stream_terminal",
+          workspaceId: "ws_1",
+          type: "channel",
+          displayName: "Terminal",
+          slug: "terminal",
+          description: null,
+          visibility: "private",
+          parentStreamId: null,
+          parentMessageId: null,
+          rootStreamId: null,
+          companionMode: "off",
+          companionPersonaId: null,
+          createdBy: "user_1",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          archivedAt: null,
+          lastMessagePreview: null,
+        },
+      ],
+      streamMemberships: [
+        {
+          streamId: "stream_terminal",
+          memberId: "user_1",
+          pinned: false,
+          pinnedAt: null,
+          notificationLevel: "muted",
+          lastReadEventId: "evt_terminal",
+          lastReadAt: null,
+          joinedAt: new Date().toISOString(),
+        },
+      ],
+      unreadCounts: { stream_terminal: 3 },
+      mentionCounts: { stream_terminal: 1 },
+      activityCounts: { stream_terminal: 2 },
+      unreadActivityCount: 2,
+      mutedStreamIds: ["stream_terminal"],
+    })
+
+    const merged = mergeReconnectWorkspaceBootstrap({
+      workspaceBootstrap,
+      successfulStreamBootstraps: new Map(),
+      staleStreamIds: new Set(),
+      terminalStreamIds: new Set(["stream_terminal"]),
+      localStreams: [],
+      localMemberships: [],
+    })
+
+    expect(merged.streams.map((stream) => stream.id)).not.toContain("stream_terminal")
+    expect(merged.streamMemberships.map((membership) => membership.streamId)).not.toContain("stream_terminal")
+    expect(merged.unreadCounts).not.toHaveProperty("stream_terminal")
+    expect(merged.mentionCounts).not.toHaveProperty("stream_terminal")
+    expect(merged.activityCounts).not.toHaveProperty("stream_terminal")
+    expect(merged.unreadActivityCount).toBe(0)
+    expect(merged.mutedStreamIds).not.toContain("stream_terminal")
+  })
+
+  it("recomputes mutedStreamIds from successful visible stream memberships", () => {
+    const workspaceBootstrap = makeBootstrap({
+      streams: [
+        {
+          id: "stream_unmuted",
+          workspaceId: "ws_1",
+          type: "channel",
+          displayName: "Unmuted",
+          slug: "unmuted",
+          description: null,
+          visibility: "public",
+          parentStreamId: null,
+          parentMessageId: null,
+          rootStreamId: null,
+          companionMode: "off",
+          companionPersonaId: null,
+          createdBy: "user_1",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          archivedAt: null,
+          lastMessagePreview: null,
+        },
+        {
+          id: "stream_muted",
+          workspaceId: "ws_1",
+          type: "channel",
+          displayName: "Muted",
+          slug: "muted",
+          description: null,
+          visibility: "public",
+          parentStreamId: null,
+          parentMessageId: null,
+          rootStreamId: null,
+          companionMode: "off",
+          companionPersonaId: null,
+          createdBy: "user_1",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          archivedAt: null,
+          lastMessagePreview: null,
+        },
+      ],
+      streamMemberships: [
+        {
+          streamId: "stream_unmuted",
+          memberId: "user_1",
+          pinned: false,
+          pinnedAt: null,
+          notificationLevel: "muted",
+          lastReadEventId: null,
+          lastReadAt: null,
+          joinedAt: new Date().toISOString(),
+        },
+        {
+          streamId: "stream_muted",
+          memberId: "user_1",
+          pinned: false,
+          pinnedAt: null,
+          notificationLevel: null,
+          lastReadEventId: null,
+          lastReadAt: null,
+          joinedAt: new Date().toISOString(),
+        },
+      ],
+      mutedStreamIds: ["stream_unmuted"],
+    })
+
+    const merged = mergeReconnectWorkspaceBootstrap({
+      workspaceBootstrap,
+      successfulStreamBootstraps: new Map([
+        [
+          "stream_unmuted",
+          makeStreamBootstrap("stream_unmuted", {
+            membership: {
+              streamId: "stream_unmuted",
+              memberId: "user_1",
+              pinned: false,
+              pinnedAt: null,
+              notificationLevel: null,
+              lastReadEventId: null,
+              lastReadAt: null,
+              joinedAt: new Date().toISOString(),
+            },
+          }),
+        ],
+        [
+          "stream_muted",
+          makeStreamBootstrap("stream_muted", {
+            membership: {
+              streamId: "stream_muted",
+              memberId: "user_1",
+              pinned: false,
+              pinnedAt: null,
+              notificationLevel: "muted",
+              lastReadEventId: null,
+              lastReadAt: null,
+              joinedAt: new Date().toISOString(),
+            },
+          }),
+        ],
+      ]),
+      staleStreamIds: new Set(),
+      terminalStreamIds: new Set(),
+      localStreams: [],
+      localMemberships: [],
+    })
+
+    expect(merged.mutedStreamIds).not.toContain("stream_unmuted")
+    expect(merged.mutedStreamIds).toContain("stream_muted")
   })
 })
 
