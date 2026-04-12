@@ -51,6 +51,7 @@ import {
   WorkspaceAgent,
   PersonaRepository,
   TraceEmitter,
+  SessionAbortRegistry,
   ConversationSummaryService,
   AgentSessionRepository,
 } from "../../../src/features/agents"
@@ -355,6 +356,7 @@ async function runCompanionTask(input: CompanionInput, ctx: EvalContext): Promis
       pool: ctx.pool,
       ai: ctx.ai,
       traceEmitter,
+      sessionAbortRegistry: new SessionAbortRegistry(),
       userPreferencesService,
       workspaceAgent,
       searchService,

@@ -32,7 +32,26 @@ export interface AgentToolConfig<TSchema extends z.ZodTypeAny = z.ZodTypeAny> {
   name: string
   description: string
   inputSchema: TSchema
-  execute: (input: z.infer<TSchema>, opts: { toolCallId: string }) => Promise<AgentToolResult>
+  execute: (
+    input: z.infer<TSchema>,
+    opts: {
+      toolCallId: string
+      /**
+       * Emit an ephemeral substep text update. Tools that want to show live progress
+       * during execution call this with human-readable phase text. The runtime forwards
+       * each call as a `tool:progress` AgentEvent which the SessionTraceObserver translates
+       * to a socket emission (no DB write). Persistence happens at tool completion via the
+       * trace.formatContent path if the tool's result embeds the substep log.
+       */
+      onProgress?: (substep: string) => void
+      /**
+       * Optional AbortSignal sourced from the runtime's toolSignalProvider. Tools should
+       * check this at safe checkpoints and return partial results gracefully when aborted.
+       * NEVER repurposed from shouldAbort — that mechanism is fatal to the session.
+       */
+      signal?: AbortSignal
+    }
+  ) => Promise<AgentToolResult>
   /** Controls execution ordering within a single LLM turn. Defaults to "normal". */
   executionPhase?: ExecutionPhase
   trace: {

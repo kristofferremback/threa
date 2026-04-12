@@ -68,6 +68,7 @@ import {
   WorkspaceAgent,
   PersonaAgent,
   TraceEmitter,
+  SessionAbortRegistry,
   AgentSessionMetricsCollector,
   ConversationSummaryService,
   COMPANION_SUMMARY_MODEL_ID,
@@ -426,7 +427,15 @@ export async function startServer(): Promise<ServerInstance> {
   io.adapter(createAdapter(pools.realtime))
 
   const userSocketRegistry = new UserSocketRegistry()
-  registerSocketHandlers(io, { pool, authService, streamService, pushService, userSocketRegistry })
+  const sessionAbortRegistry = new SessionAbortRegistry()
+  registerSocketHandlers(io, {
+    pool,
+    authService,
+    streamService,
+    pushService,
+    userSocketRegistry,
+    sessionAbortRegistry,
+  })
 
   const serverId = `server_${ulid()}`
 
@@ -443,6 +452,7 @@ export async function startServer(): Promise<ServerInstance> {
     pool,
     ai,
     traceEmitter,
+    sessionAbortRegistry,
     userPreferencesService,
     workspaceAgent,
     searchService,

@@ -22,7 +22,26 @@ export interface NewMessageInfo {
 export type AgentEvent =
   | { type: "session:start"; sessionId: string; inputSummary?: string }
   | { type: "thinking"; content: string; durationMs: number }
-  | { type: "tool:start"; toolCallId: string; toolName: string; input: unknown }
+  | {
+      type: "tool:start"
+      toolCallId: string
+      toolName: string
+      /**
+       * Trace step type the tool produces. Carried here so the observer can
+       * create the persisted step row at tool:start rather than deferring to
+       * tool:complete — a refresh mid-execution then sees the in-progress step
+       * instead of a gap.
+       */
+      stepType: AgentStepType
+      input: unknown
+    }
+  | {
+      type: "tool:progress"
+      toolCallId: string
+      toolName: string
+      stepType: AgentStepType
+      substep: string
+    }
   | {
       type: "tool:complete"
       toolCallId: string

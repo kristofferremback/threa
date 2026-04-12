@@ -20,6 +20,7 @@ import { StreamEventRepository } from "../streams"
 import { AttachmentRepository } from "../attachments"
 import { awaitAttachmentProcessing } from "../attachments"
 import type { TraceEmitter } from "./trace-emitter"
+import type { SessionAbortRegistry } from "./session-abort-registry"
 import type { AI } from "../../lib/ai/ai"
 import type { SearchService } from "../search"
 import type { ConversationSummaryService } from "./conversation-summary-service"
@@ -41,6 +42,12 @@ export interface PersonaAgentDeps {
   pool: Pool
   ai: AI
   traceEmitter: TraceEmitter
+  /**
+   * Registry of per-session AbortControllers for cooperative, graceful tool cancellation.
+   * Used by long-running tools (e.g. workspace_research) via AgentRuntime.toolSignalProvider
+   * and by the socket handler for `agent_session:research:abort`.
+   */
+  sessionAbortRegistry: SessionAbortRegistry
   userPreferencesService: UserPreferencesService
   workspaceAgent: WorkspaceAgent
   searchService: SearchService
@@ -114,6 +121,7 @@ export class PersonaAgent {
       pool,
       ai,
       traceEmitter,
+      sessionAbortRegistry,
       userPreferencesService,
       workspaceAgent,
       searchService,
@@ -241,17 +249,29 @@ export class PersonaAgent {
           await step.complete({})
         }
 
-        // Build workspace agent callback for on-demand workspace research
-        let runWorkspaceAgent: ((query: string) => Promise<WorkspaceAgentResult>) | undefined
+        // Build workspace agent callback for on-demand workspace research.
+        // The callback now accepts a signal, substep callback, and deadline sourced from
+        // the tool layer via AgentRuntime.toolSignalProvider + AgentToolConfig.execute.onProgress.
+        // Signal comes from SessionAbortRegistry — cancelling aborts gracefully (partial results)
+        // rather than failing the whole session.
+        let runWorkspaceAgent:
+          | ((
+              query: string,
+              opts: { signal: AbortSignal; onSubstep: (text: string) => void; deadlineAt: number }
+            ) => Promise<WorkspaceAgentResult>)
+          | undefined
         if (agentContext.triggerMessage && agentContext.invokingUserId) {
           const capturedInvokingUserId = agentContext.invokingUserId
-          runWorkspaceAgent = (query: string) =>
+          runWorkspaceAgent = (query, { signal, onSubstep, deadlineAt }) =>
             workspaceAgent.search({
               workspaceId,
               streamId,
               query,
               conversationHistory: agentContext.streamContext.conversationHistory,
               invokingUserId: capturedInvokingUserId,
+              signal,
+              onSubstep,
+              deadlineAt,
             })
         }
 
@@ -391,6 +411,17 @@ export class PersonaAgent {
             if (latestSession.status === SessionStatuses.SUPERSEDED) return "session superseded"
             return null
           },
+          toolSignalProvider: (_toolCallId, toolName) => {
+            // Only wire graceful-abort for workspace_research in V1. Future long-running
+            // tools can opt in here. The registry is lazily populated so sessions that
+            // never invoke research don't allocate a controller.
+            if (toolName !== "workspace_research") return undefined
+            const controller = sessionAbortRegistry.register(session.id, {
+              workspaceId,
+              streamId: sessionStreamId,
+            })
+            return controller.signal
+          },
           newMessages: {
             check: async (checkStreamId, sinceSequence, excludeAuthorId) => {
               const events = await StreamEventRepository.list(db, checkStreamId, {
@@ -509,41 +540,48 @@ export class PersonaAgent {
           },
         })
 
-        const loopResult = await runtime.run()
-        const retainedMessageIds =
-          isSupersedeRerun && loopResult.sentMessageIds.length === 0
-            ? [...supersededMessagePlan.messageIds]
-            : loopResult.sentMessageIds
+        try {
+          const loopResult = await runtime.run()
+          const retainedMessageIds =
+            isSupersedeRerun && loopResult.sentMessageIds.length === 0
+              ? [...supersededMessagePlan.messageIds]
+              : loopResult.sentMessageIds
 
-        if (isSupersedeRerun && loopResult.sentMessageIds.length === 0) {
-          logger.info(
-            {
+          if (isSupersedeRerun && loopResult.sentMessageIds.length === 0) {
+            logger.info(
+              {
+                sessionId: session.id,
+                supersedesSessionId,
+                retainedMessageCount: retainedMessageIds.length,
+                reason: loopResult.noMessageReason,
+              },
+              "Supersede rerun kept previous session messages unchanged"
+            )
+          }
+
+          if (supersededMessagePlan) {
+            await this.reconcileSupersededMessages({
+              workspaceId,
+              streamId: targetStreamId,
+              personaId: persona.id,
               sessionId: session.id,
               supersedesSessionId,
-              retainedMessageCount: retainedMessageIds.length,
-              reason: loopResult.noMessageReason,
-            },
-            "Supersede rerun kept previous session messages unchanged"
-          )
-        }
+              supersededMessageIds: supersededMessagePlan.messageIds,
+              retainedMessageIds,
+              deleteMessage,
+            })
+          }
 
-        if (supersededMessagePlan) {
-          await this.reconcileSupersededMessages({
-            workspaceId,
-            streamId: targetStreamId,
-            personaId: persona.id,
-            sessionId: session.id,
-            supersedesSessionId,
-            supersededMessageIds: supersededMessagePlan.messageIds,
-            retainedMessageIds,
-            deleteMessage,
-          })
-        }
-
-        return {
-          messagesSent: loopResult.messagesSent,
-          sentMessageIds: retainedMessageIds,
-          lastSeenSequence: loopResult.lastProcessedSequence,
+          return {
+            messagesSent: loopResult.messagesSent,
+            sentMessageIds: retainedMessageIds,
+            lastSeenSequence: loopResult.lastProcessedSequence,
+          }
+        } finally {
+          // Release the graceful-abort controller (if any was registered by the
+          // toolSignalProvider during workspace_research tool invocation). Safe to
+          // call when nothing is registered.
+          sessionAbortRegistry.unregister(session.id)
         }
       }
     )

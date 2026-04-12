@@ -10,23 +10,52 @@ import { MarkdownContent } from "@/components/ui/markdown-content"
 import { RelativeTime } from "@/components/relative-time"
 import { formatDuration } from "@/lib/dates"
 import { STEP_DISPLAY_CONFIG } from "@/lib/step-config"
-import { ChevronRight, ExternalLink, type LucideIcon } from "lucide-react"
+import { ChevronRight, CircleSlash, Clock, ExternalLink, Loader2, type LucideIcon } from "lucide-react"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { FileText } from "lucide-react"
+import { StopResearchButton } from "./stop-research-button"
 
 interface TraceStepProps {
   step: AgentSessionStep
   workspaceId: string
   streamId: string
+  /**
+   * Optional live substeps for an in-flight step (cleared on step completion).
+   * Merged with any persisted substeps in `step.content` so the dialog can
+   * show phases both from the pre-refresh history (persisted) and the live
+   * socket stream (fresh). Dedupe is by `text`, which is unique per step.
+   */
+  liveSubsteps?: Array<{ text: string; at: string }>
+  /**
+   * When the step is in-flight and this tool supports graceful abort, this
+   * callback is rendered as a Stop research button in the step header. The
+   * trace dialog only passes this when `status === "running"` and for tool
+   * types that opt in (workspace_search in V1).
+   */
+  onAbortResearch?: () => void
 }
 
-export function TraceStep({ step, workspaceId, streamId }: TraceStepProps) {
+export function TraceStep({ step, workspaceId, streamId, liveSubsteps, onAbortResearch }: TraceStepProps) {
   const config = STEP_DISPLAY_CONFIG[step.stepType]
   const Icon = config.icon
 
+  const isInProgress = !step.completedAt
   const duration = step.duration ? formatDuration(step.duration) : null
   const hasSources = step.sources && step.sources.length > 0
   const messageLink = step.messageId ? `/w/${workspaceId}/s/${streamId}?m=${step.messageId}` : null
+  const hueColor = `hsl(${config.hue} ${config.saturation}% ${config.lightness}%)`
+
+  // In-progress steps replace the default timestamp + duration right-slot with
+  // a spinning loader + "Running…" label + optional Stop research button. The
+  // stopPropagation prop is false here because TraceStep is not wrapped in a
+  // clickable Link (the trace dialog body is scrollable content, not a link).
+  const rightSlot = isInProgress ? (
+    <>
+      <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: hueColor }} />
+      <span className="text-muted-foreground">Running…</span>
+      {step.stepType === "workspace_search" && onAbortResearch && <StopResearchButton onClick={onAbortResearch} />}
+    </>
+  ) : undefined
 
   return (
     <div
@@ -35,9 +64,24 @@ export function TraceStep({ step, workspaceId, streamId }: TraceStepProps) {
         background: `hsl(${config.hue} ${config.saturation}% ${config.lightness}% / 0.03)`,
       }}
     >
-      <StepHeader config={config} Icon={Icon} startedAt={step.startedAt} duration={duration} />
+      <StepHeader config={config} Icon={Icon} startedAt={step.startedAt} duration={duration} rightSlot={rightSlot} />
 
-      {step.content && <StepContent stepType={step.stepType} content={step.content} messageLink={messageLink} />}
+      {/*
+        Render the body when there's persisted content OR when the step is
+        in-progress (so live substeps can render even before the first
+        persisted substep lands). Passing an empty string when there's no
+        content lets the workspace_search case fall through to the "substeps
+        only" branch via liveSubsteps.
+      */}
+      {(step.content || isInProgress) && (
+        <StepContent
+          stepType={step.stepType}
+          content={step.content ?? ""}
+          messageLink={messageLink}
+          liveSubsteps={liveSubsteps}
+          isInProgress={isInProgress}
+        />
+      )}
 
       {hasSources && <SourceList sources={step.sources!} config={config} workspaceId={workspaceId} />}
     </div>
@@ -47,11 +91,17 @@ export function TraceStep({ step, workspaceId, streamId }: TraceStepProps) {
 interface StepHeaderProps {
   config: { label: string; hue: number; saturation: number; lightness: number }
   Icon: LucideIcon
-  startedAt: string
-  duration: string | null
+  startedAt?: string
+  duration?: string | null
+  /**
+   * Override for the right-hand slot. When provided, replaces the default
+   * timestamp + duration display. Used by `InFlightStepCard` to show a
+   * "Running…" indicator + Stop research button instead of a completion time.
+   */
+  rightSlot?: React.ReactNode
 }
 
-function StepHeader({ config, Icon, startedAt, duration }: StepHeaderProps) {
+function StepHeader({ config, Icon, startedAt, duration, rightSlot }: StepHeaderProps) {
   return (
     <div className="flex items-center gap-2.5 mb-3">
       <div
@@ -65,20 +115,38 @@ function StepHeader({ config, Icon, startedAt, duration }: StepHeaderProps) {
         {config.label}
       </div>
       <div className="flex items-center gap-2 ml-auto text-[11px] text-muted-foreground">
-        <RelativeTime date={startedAt} className="text-[11px] text-muted-foreground" />
-        {duration && (
-          <>
-            <span>•</span>
-            <span>{duration}</span>
-          </>
-        )}
+        {rightSlot ??
+          (startedAt && (
+            <>
+              <RelativeTime date={startedAt} className="text-[11px] text-muted-foreground" />
+              {duration && (
+                <>
+                  <span>•</span>
+                  <span>{duration}</span>
+                </>
+              )}
+            </>
+          ))}
       </div>
     </div>
   )
 }
 
-/** Parse structured JSON content, returning null if not valid JSON */
-function parseStructuredContent(content: string): Record<string, unknown> | null {
+/**
+ * Parse structured JSON content, returning null if not valid JSON.
+ *
+ * Accepts both string content (the normal convention — JSONB string type
+ * round-trips as a JS string via node-postgres) and object content (a
+ * defensive path for any step rows whose content was written as a JSONB
+ * object directly; node-postgres auto-parses these to JS objects). The
+ * object path protects against crashes if any intermediate persistence
+ * code-path forgets the pre-stringify convention.
+ */
+function parseStructuredContent(content: unknown): Record<string, unknown> | null {
+  if (content && typeof content === "object") {
+    return content as Record<string, unknown>
+  }
+  if (typeof content !== "string") return null
   try {
     const parsed = JSON.parse(content)
     if (typeof parsed === "object" && parsed !== null) return parsed
@@ -88,18 +156,45 @@ function parseStructuredContent(content: string): Record<string, unknown> | null
   return null
 }
 
+/**
+ * Coerce the step.content wire value into a string suitable for rendering as
+ * a JSX child. The wire type says `string` but any historical row whose
+ * content was persisted as a raw object (bypassing the pre-stringify
+ * convention) would come back from the API as an object. Rendering that as a
+ * JSX child throws "Objects are not valid as a React child" — this helper
+ * normalises both cases to a safe string so the render path can't crash.
+ */
+function coerceContentToString(content: unknown): string {
+  if (typeof content === "string") return content
+  if (content == null) return ""
+  try {
+    return JSON.stringify(content)
+  } catch {
+    return ""
+  }
+}
+
 function StepContent({
   stepType,
   content,
   messageLink,
+  liveSubsteps,
+  isInProgress,
 }: {
   stepType: AgentStepType
-  content: string
+  content: unknown
   messageLink: string | null
+  liveSubsteps?: Array<{ text: string; at: string }>
+  isInProgress: boolean
 }) {
   const structured = parseStructuredContent(content)
+  const contentString = coerceContentToString(content)
 
-  return <div className="text-sm leading-relaxed">{renderStepContent(stepType, content, structured, messageLink)}</div>
+  return (
+    <div className="text-sm leading-relaxed">
+      {renderStepContent(stepType, contentString, structured, messageLink, liveSubsteps, isInProgress)}
+    </div>
+  )
 }
 
 /** Message info as stored in context_received and reconsidering steps */
@@ -124,7 +219,9 @@ function renderStepContent(
   stepType: AgentStepType,
   content: string,
   structured: Record<string, unknown> | null,
-  messageLink: string | null
+  messageLink: string | null,
+  liveSubsteps?: Array<{ text: string; at: string }>,
+  isInProgress: boolean = false
 ): React.ReactNode {
   switch (stepType) {
     case "context_received": {
@@ -236,15 +333,50 @@ function renderStepContent(
       )
 
     case "workspace_search": {
+      // Merge persisted substeps (from step.content JSON, written by the
+      // session-trace-observer on each tool:progress event and baked in at
+      // tool:complete by workspace-research-tool's formatContent) with live
+      // substeps from the socket stream. Persisted wins the base order (it's
+      // the authoritative history); live entries that aren't yet in persisted
+      // are appended. Dedupe is by `text`, which is unique per step. This
+      // handles every refresh/timing variant:
+      //  - Pre-refresh only (completed step): persisted has everything, live is empty
+      //  - Live-only (no bootstrap yet): persisted is empty, live drives
+      //  - Mid-refresh (backend has written, frontend hasn't refetched): both
+      //    have overlapping prefixes; merge preserves full ordering with no dupes
+      const persistedSubsteps = Array.isArray(structured?.substeps)
+        ? (structured!.substeps as Array<{ text?: unknown; at?: unknown }>)
+            .filter((s) => typeof s.text === "string" && typeof s.at === "string")
+            .map((s) => ({ text: s.text as string, at: s.at as string }))
+        : []
+      const substepsToShow = mergeSubstepsByText(persistedSubsteps, liveSubsteps ?? [])
+      const isPartial = structured?.partial === true
+      const partialReason = typeof structured?.partialReason === "string" ? structured.partialReason : null
+
+      // Full completed result: content has memoCount etc. Render counts + badges + timeline.
       if (structured && "memoCount" in structured) {
         const memoCount = structured.memoCount as number
         const messageCount = structured.messageCount as number
+        const attachmentCount = (structured.attachmentCount as number | undefined) ?? 0
         return (
-          <span className="text-muted-foreground">
-            Found {memoCount} {memoCount === 1 ? "memo" : "memos"} and {messageCount} related{" "}
-            {messageCount === 1 ? "message" : "messages"}
-          </span>
+          <div className="space-y-2.5">
+            <div className="text-muted-foreground">
+              Found {memoCount} {memoCount === 1 ? "memo" : "memos"}, {messageCount}{" "}
+              {messageCount === 1 ? "message" : "messages"}, and {attachmentCount}{" "}
+              {attachmentCount === 1 ? "attachment" : "attachments"}.
+            </div>
+            {isPartial && <PartialResultBadge stepType={stepType} reason={partialReason} />}
+            {substepsToShow.length > 0 && (
+              <SubstepTimeline substeps={substepsToShow} stepType={stepType} isLive={isInProgress} />
+            )}
+          </div>
         )
+      }
+      // In-flight / substep-only content: the observer has persisted a running
+      // { substeps } JSON but tool:complete hasn't fired yet. Render just the
+      // timeline. Fall back to the raw content string if nothing is available.
+      if (substepsToShow.length > 0) {
+        return <SubstepTimeline substeps={substepsToShow} stepType={stepType} isLive={isInProgress} />
       }
       return <span className="text-muted-foreground">{content}</span>
     }
@@ -335,6 +467,201 @@ function renderStepContent(
     default:
       return <span>{content}</span>
   }
+}
+
+/**
+ * Format the elapsed time between two ISO timestamps in a compact form suitable
+ * for inline timeline annotations (e.g. "+0.2s", "+1.4s", "+1m 12s"). Returns
+ * null for sub-100ms deltas so fast paths don't produce noise like "+0.0s".
+ */
+function formatPhaseOffset(fromIso: string, toIso: string): string | null {
+  const fromMs = Date.parse(fromIso)
+  const toMs = Date.parse(toIso)
+  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) return null
+  const deltaMs = toMs - fromMs
+  if (deltaMs < 100) return null
+  if (deltaMs < 60_000) return `+${(deltaMs / 1000).toFixed(1)}s`
+  const totalSec = Math.round(deltaMs / 1000)
+  const minutes = Math.floor(totalSec / 60)
+  const seconds = totalSec % 60
+  return `+${minutes}m ${seconds}s`
+}
+
+/**
+ * Hue-aware phase timeline for a long-running tool's substep log.
+ *
+ * Design intent: every trace step wraps itself in a subtle hue-tinted container
+ * driven by `STEP_DISPLAY_CONFIG` (workspace_search = purple, hue 270). The
+ * SubstepTimeline pulls the same hue so it reads as part of the step's family,
+ * not a foreign grey element grafted on.
+ *
+ * Visual vocabulary:
+ * - Left-hand vertical rail in the step's hue at 25% opacity — anchors the
+ *   phases as an ordered sequence.
+ * - Hued dots at each phase: completed phases get a filled disc, the current
+ *   in-flight phase (when `isLive`) gets a radar-style pulse ring.
+ * - Relative timing offsets ("+0.2s", "+1.4s") on the right — turns the phase
+ *   list into a crude performance profile, answering "where did the 4s go?".
+ * - Staggered entry animation on first mount (tailwindcss-animate) so live
+ *   substeps flow in rather than popping in at once.
+ *
+ * Substeps pulled from either the persisted step.content (refresh-stable for
+ * completed steps) or the live socket stream (for in-flight steps). The caller
+ * passes `isLive` so we can pulse only when the last phase is still running.
+ */
+function SubstepTimeline({
+  substeps,
+  stepType,
+  isLive,
+}: {
+  substeps: Array<{ text: string; at: string }>
+  stepType: AgentStepType
+  isLive: boolean
+}) {
+  const config = STEP_DISPLAY_CONFIG[stepType]
+  const hueColor = `hsl(${config.hue} ${config.saturation}% ${config.lightness}%)`
+  const hueRail = `hsl(${config.hue} ${config.saturation}% ${config.lightness}% / 0.25)`
+  const hueBg = `hsl(${config.hue} ${config.saturation}% ${config.lightness}% / 0.04)`
+  const hueBorder = `hsl(${config.hue} ${config.saturation}% ${config.lightness}% / 0.18)`
+
+  const firstAt = substeps[0]?.at
+
+  return (
+    <div
+      className="rounded-item px-3 py-2.5"
+      style={{
+        background: hueBg,
+        border: `1px solid ${hueBorder}`,
+      }}
+    >
+      <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: hueColor }}>
+        Phases
+      </div>
+      <ol className="relative space-y-1.5 pl-[18px]">
+        {/* Vertical rail anchored to the dot centerline (9px dot column + 9px dot center = 9px from left of padding) */}
+        <span
+          aria-hidden
+          className="absolute left-[4px] top-[5px] bottom-[5px] w-px rounded-full"
+          style={{ background: hueRail }}
+        />
+        {substeps.map((substep, i) => {
+          const isLast = i === substeps.length - 1
+          const showPulse = isLast && isLive
+          const offset = firstAt && !isLast ? formatPhaseOffset(firstAt, substep.at) : null
+          return (
+            <li
+              key={`${substep.at}-${i}`}
+              className="relative flex items-start gap-2 text-[12px] leading-tight animate-in fade-in-0 slide-in-from-left-1 fill-mode-both"
+              style={{
+                animationDelay: `${Math.min(i, 8) * 40}ms`,
+                animationDuration: "260ms",
+              }}
+            >
+              {/* Phase dot sitting on the rail */}
+              <span
+                aria-hidden
+                className="absolute -left-[18px] top-[5px] inline-flex h-[9px] w-[9px] items-center justify-center"
+              >
+                {showPulse && (
+                  <span
+                    className="absolute inset-0 rounded-full animate-activity-pulse"
+                    style={{ background: hueColor, opacity: 0.35 }}
+                  />
+                )}
+                <span
+                  className="relative h-[7px] w-[7px] rounded-full"
+                  style={{
+                    background: isLast
+                      ? hueColor
+                      : `hsl(${config.hue} ${config.saturation}% ${config.lightness}% / 0.7)`,
+                    boxShadow: isLast
+                      ? `0 0 0 2px hsl(${config.hue} ${config.saturation}% ${config.lightness}% / 0.15)`
+                      : undefined,
+                  }}
+                />
+              </span>
+              <span className={cn("flex-1 min-w-0 text-foreground/90", isLast && isLive && "font-medium")}>
+                {substep.text}
+              </span>
+              {offset && (
+                <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/70">{offset}</span>
+              )}
+            </li>
+          )
+        })}
+      </ol>
+    </div>
+  )
+}
+
+/**
+ * Context-aware partial-result badge.
+ *
+ * `user_abort` uses the step's own hue (gentle "you intentionally stopped this").
+ * `timeout` uses amber (warning "we ran out of budget"). An icon reinforces the
+ * cause so a scanning eye gets the meaning without reading the text.
+ */
+function PartialResultBadge({ stepType, reason }: { stepType: AgentStepType; reason: string | null }) {
+  const config = STEP_DISPLAY_CONFIG[stepType]
+  const isAbort = reason === "user_abort"
+
+  const accentColor = isAbort ? `hsl(${config.hue} ${config.saturation}% ${config.lightness}%)` : "hsl(32 95% 44%)"
+  const bgColor = isAbort
+    ? `hsl(${config.hue} ${config.saturation}% ${config.lightness}% / 0.06)`
+    : "hsl(32 95% 44% / 0.06)"
+  const borderColor = isAbort
+    ? `hsl(${config.hue} ${config.saturation}% ${config.lightness}% / 0.25)`
+    : "hsl(32 95% 44% / 0.3)"
+  const Icon = isAbort ? CircleSlash : Clock
+  const label = isAbort ? "Stopped on user request" : "Deadline reached"
+  const description = isAbort
+    ? "Returned the context found so far."
+    : "Research hit the wall-clock budget and returned partial context."
+
+  return (
+    <div
+      className="flex items-start gap-2 rounded-item px-2.5 py-1.5"
+      style={{ background: bgColor, border: `1px solid ${borderColor}` }}
+    >
+      <Icon className="mt-[1px] h-3.5 w-3.5 shrink-0" style={{ color: accentColor }} />
+      <div className="min-w-0 text-[11px] leading-snug">
+        <span className="font-medium" style={{ color: accentColor }}>
+          {label}
+        </span>
+        <span className="text-muted-foreground"> — {description}</span>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Merge two substep lists by `text` (which is unique per step).
+ *
+ * Order is preserved: `base` first (persisted history from the bootstrap fetch),
+ * then `incoming` entries that aren't already present (live socket updates that
+ * arrived after the fetch). This gives the trace dialog a complete, stable view
+ * whether the step was loaded from the DB, streamed live, or a mix of both
+ * (the common mid-refresh case).
+ */
+function mergeSubstepsByText(
+  base: Array<{ text: string; at: string }>,
+  incoming: Array<{ text: string; at: string }>
+): Array<{ text: string; at: string }> {
+  if (incoming.length === 0) return base
+  if (base.length === 0) return incoming
+  const seen = new Set<string>()
+  const merged: Array<{ text: string; at: string }> = []
+  for (const substep of base) {
+    if (seen.has(substep.text)) continue
+    seen.add(substep.text)
+    merged.push(substep)
+  }
+  for (const substep of incoming) {
+    if (seen.has(substep.text)) continue
+    seen.add(substep.text)
+    merged.push(substep)
+  }
+  return merged
 }
 
 function RerunContextSummary({ rerunContext }: { rerunContext: RerunContextInfo }) {

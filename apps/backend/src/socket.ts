@@ -6,7 +6,8 @@ import { DEVICE_KEY_LENGTH } from "@threa/types"
 import type { StreamService } from "./features/streams"
 import type { PushService } from "./features/push"
 import type { UserSocketRegistry } from "./lib/user-socket-registry"
-import { AgentSessionRepository } from "./features/agents"
+import { AgentSessionRepository, PersonaRepository } from "./features/agents"
+import type { SessionAbortRegistry } from "./features/agents"
 import { UserRepository } from "./features/workspaces"
 import { HttpError } from "./lib/errors"
 import { logger } from "./lib/logger"
@@ -56,6 +57,8 @@ interface Dependencies {
   streamService: StreamService
   pushService: PushService
   userSocketRegistry: UserSocketRegistry
+  /** Registry for graceful tool cancellation (e.g. workspace_research). */
+  sessionAbortRegistry: SessionAbortRegistry
 }
 
 /**
@@ -69,7 +72,7 @@ function deriveDeviceKey(userAgent: string | undefined): string {
 }
 
 export function registerSocketHandlers(io: Server, deps: Dependencies) {
-  const { pool, authService, streamService, pushService, userSocketRegistry } = deps
+  const { pool, authService, streamService, pushService, userSocketRegistry, sessionAbortRegistry } = deps
 
   // ===========================================================================
   // Authentication middleware
@@ -190,6 +193,21 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
 
         logger.debug({ workosUserId, room }, "Joined stream room")
         callback?.({ ok: true })
+
+        // Bootstrap running-session progress state for this socket. Without
+        // this, a refresh mid-research loses everything the timeline card
+        // tracked: stepCount drops to 0, currentStepType drops to null, and
+        // the card shows "0 steps" until the next live progress event fires.
+        //
+        // We emit `agent_session:progress` directly to the joining socket
+        // (not broadcast) with the current DB-derived state so the
+        // useAgentActivity hook populates its entry immediately.
+        //
+        // Fire-and-forget: a failure here only affects the bootstrap UX, so
+        // we log and move on rather than blocking the join ack.
+        void emitRunningSessionBootstrap(socket, { pool, wsId, streamId }).catch((err) => {
+          logger.warn({ err, wsId, streamId }, "Failed to bootstrap running session progress on stream join")
+        })
         return
       }
 
@@ -280,6 +298,67 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
     })
 
     // =========================================================================
+    // Graceful research abort: tells the workspace_research tool to stop at the
+    // next safe checkpoint and return whatever partial results were collected.
+    // The session continues running normally with the partial context — this is
+    // NOT the same as deleting/superseding the session, which uses shouldAbort.
+    // =========================================================================
+    socket.on(
+      "agent_session:research:abort",
+      async (
+        payload: { sessionId?: string; workspaceId?: string },
+        callback?: (result: { ok: boolean; error?: string }) => void
+      ) => {
+        const sessionId = payload?.sessionId
+        const workspaceIdFromPayload = payload?.workspaceId
+        if (!sessionId || !workspaceIdFromPayload) {
+          callback?.({ ok: false, error: "sessionId and workspaceId required" })
+          return
+        }
+        try {
+          const session = await AgentSessionRepository.findById(pool, sessionId)
+          if (!session) {
+            callback?.({ ok: false, error: "Session not found" })
+            return
+          }
+          const workspaceUser = await UserRepository.findByWorkosUserIdInWorkspace(
+            pool,
+            workspaceIdFromPayload,
+            workosUserId
+          )
+          if (!workspaceUser) {
+            callback?.({ ok: false, error: "Not authorized" })
+            return
+          }
+          try {
+            await streamService.validateStreamAccess(session.streamId, workspaceIdFromPayload, workspaceUser.id)
+          } catch (error) {
+            if (!isJoinAccessError(error)) {
+              logger.error(
+                { error, workosUserId, sessionId, streamId: session.streamId },
+                "Unexpected error during research abort auth check"
+              )
+            }
+            callback?.({ ok: false, error: "Not authorized" })
+            return
+          }
+          const aborted = sessionAbortRegistry.abort(sessionId, "user_abort")
+          wsMessagesTotal.inc({
+            workspace_id: workspaceIdFromPayload,
+            direction: "received",
+            event_type: "agent_session:research:abort",
+            room_pattern: "ws:{workspaceId}:agent_session:{sessionId}",
+          })
+          logger.info({ sessionId, workosUserId, aborted }, "Research abort dispatched")
+          callback?.({ ok: aborted, error: aborted ? undefined : "No active research to abort" })
+        } catch (err) {
+          logger.warn({ err, sessionId }, "Research abort handler failed")
+          callback?.({ ok: false, error: "Abort failed" })
+        }
+      }
+    )
+
+    // =========================================================================
     // Heartbeat for push notification session tracking
     // =========================================================================
     let lastHeartbeatAt = 0
@@ -322,5 +401,61 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
       metricsState.joinedRooms.clear()
       logger.debug({ workosUserId, socketId: socket.id }, "Socket disconnected")
     })
+  })
+}
+
+/**
+ * Bootstrap a running-session progress snapshot to a freshly-joined socket.
+ *
+ * Called after a socket joins a stream room. Looks up any currently-running
+ * agent session whose streamId matches the joined room (scratchpad/thread/DM)
+ * and emits a synthetic `agent_session:progress` event directly to this
+ * single socket with DB-derived counts. The frontend's useAgentActivity hook
+ * treats this just like a live progress event and populates its entry.
+ *
+ * Exactly one running session per stream is enforced by the partial unique
+ * index on agent_sessions (stream_id) WHERE status='running', so a single
+ * findRunningByStream lookup is sufficient.
+ *
+ * NOTE: channel-mention sessions live in a thread stream, not the channel
+ * itself. Bootstrapping a channel room join would require a root-stream
+ * lookup; not handled here in V1. The user sees the live updates once they
+ * open the thread.
+ */
+async function emitRunningSessionBootstrap(
+  socket: Socket,
+  params: { pool: import("pg").Pool; wsId: string; streamId: string }
+): Promise<void> {
+  const { pool, wsId, streamId } = params
+  const session = await AgentSessionRepository.findRunningByStream(pool, streamId)
+  if (!session) return
+
+  const [steps, persona] = await Promise.all([
+    AgentSessionRepository.findStepsBySession(pool, session.id),
+    PersonaRepository.findById(pool, session.personaId),
+  ])
+
+  const stepCount = steps.length
+  const messageCount = steps.filter(
+    (step) => step.stepType === "message_sent" || step.stepType === "message_edited"
+  ).length
+
+  // currentStepType is nullable on the session row (null before the first
+  // step fires). Skip the emit in that edge case — nothing meaningful to
+  // show yet, and the next live progress event will populate the entry.
+  if (!session.currentStepType) return
+
+  socket.emit("agent_session:progress", {
+    workspaceId: wsId,
+    streamId,
+    sessionId: session.id,
+    triggerMessageId: session.triggerMessageId,
+    personaName: persona?.name ?? "Agent",
+    stepCount,
+    messageCount,
+    currentStepType: session.currentStepType,
+    // threadStreamId is only meaningful for channel-mention sessions. Direct
+    // stream-room joins (scratchpad/thread/DM) don't need it.
+    threadStreamId: undefined,
   })
 }

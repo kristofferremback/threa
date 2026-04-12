@@ -22,6 +22,12 @@ export class OtelObserver implements AgentObserver {
   private rootSpan: Span | null = null
   private rootContext: Context | null = null
   private toolSpans = new Map<string, Span>()
+  /**
+   * Per-tool OTEL contexts with the tool span set as active. Stored on
+   * `tool:start` and consumed by `wrapToolExecution` so AI SDK calls inside
+   * the tool execute correctly nest under the tool span.
+   */
+  private toolContexts = new Map<string, Context>()
 
   constructor(private readonly config: OtelObserverConfig) {}
 
@@ -45,19 +51,28 @@ export class OtelObserver implements AgentObserver {
       }
 
       case "tool:start": {
-        const toolSpan = tracer.startSpan(`tool:${event.toolName}`, {}, this.rootContext ?? undefined)
-        toolSpan.setAttribute("input.value", JSON.stringify(event.input))
+        const parentContext = this.rootContext ?? context.active()
+        const toolSpan = tracer.startSpan(`tool:${event.toolName}`, {}, parentContext)
+        // Langfuse reads `langfuse.observation.input/output` for the UI's
+        // input/output panels. The previous `input.value`/`output.value`
+        // attributes were never picked up, so tool spans showed as empty.
+        toolSpan.setAttribute("langfuse.observation.input", JSON.stringify(event.input))
         this.toolSpans.set(event.toolCallId, toolSpan)
+        // Build a Context with the tool span set as active so child spans
+        // created inside the tool's execute() nest under it (rather than
+        // orphaning under the root or losing their parent entirely).
+        this.toolContexts.set(event.toolCallId, trace.setSpan(parentContext, toolSpan))
         break
       }
 
       case "tool:complete": {
         const toolSpan = this.toolSpans.get(event.toolCallId)
         if (toolSpan) {
-          toolSpan.setAttribute("output.value", event.output)
+          toolSpan.setAttribute("langfuse.observation.output", event.output)
           toolSpan.setStatus({ code: SpanStatusCode.OK })
           toolSpan.end()
           this.toolSpans.delete(event.toolCallId)
+          this.toolContexts.delete(event.toolCallId)
         }
         break
       }
@@ -65,10 +80,11 @@ export class OtelObserver implements AgentObserver {
       case "tool:error": {
         const toolSpan = this.toolSpans.get(event.toolCallId)
         if (toolSpan) {
-          toolSpan.setAttribute("output.value", JSON.stringify({ error: event.error }))
+          toolSpan.setAttribute("langfuse.observation.output", JSON.stringify({ error: event.error }))
           toolSpan.setStatus({ code: SpanStatusCode.ERROR, message: event.error })
           toolSpan.end()
           this.toolSpans.delete(event.toolCallId)
+          this.toolContexts.delete(event.toolCallId)
         }
         break
       }
@@ -108,6 +124,17 @@ export class OtelObserver implements AgentObserver {
     return context.with(this.rootContext, fn)
   }
 
+  /**
+   * Wrap a tool's execute() in the tool span's context. Falls back to the
+   * root context if `tool:start` hasn't fired yet (defensive — should not
+   * happen in normal flow), and to the current context if neither exists.
+   */
+  async wrapToolExecution<T>(toolCallId: string, fn: () => Promise<T>): Promise<T> {
+    const toolContext = this.toolContexts.get(toolCallId) ?? this.rootContext
+    if (!toolContext) return fn()
+    return context.with(toolContext, fn)
+  }
+
   async cleanup(): Promise<void> {
     // End any orphaned tool spans
     for (const [, span] of this.toolSpans) {
@@ -115,6 +142,7 @@ export class OtelObserver implements AgentObserver {
       span.end()
     }
     this.toolSpans.clear()
+    this.toolContexts.clear()
 
     if (this.rootSpan) {
       this.rootSpan.setStatus({ code: SpanStatusCode.ERROR, message: "Orphaned root span" })

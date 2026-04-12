@@ -15,6 +15,7 @@ import {
   useUnreadDivider,
   useNewMessageIndicator,
   useAgentActivity,
+  useAbortResearch,
   useEditLastMessageTrigger,
   streamKeys,
   workspaceKeys,
@@ -30,6 +31,7 @@ import { ErrorView } from "@/components/error-view"
 import {
   StreamTypes,
   Visibilities,
+  AgentStepTypes,
   type Stream,
   type StreamEvent,
   type StreamMember,
@@ -809,19 +811,30 @@ function VirtuosoMessageList({
   isSearchOpen: boolean
 }) {
   const { phase } = useCoordinatedLoading()
+  const socket = useSocket()
+  const abortResearch = useAbortResearch(socket)
 
-  const sessionLiveCounts = useMemo(() => {
+  const { sessionLiveCounts, sessionLiveSubsteps, sessionCanAbort } = useMemo(() => {
     const counts = new Map<string, { stepCount: number; messageCount: number }>()
+    const substeps = new Map<string, string | null>()
+    const canAbort = new Map<string, boolean>()
     if (agentActivity) {
       for (const activity of agentActivity.values()) {
         counts.set(activity.sessionId, {
           stepCount: activity.stepCount,
           messageCount: activity.messageCount,
         })
+        substeps.set(activity.sessionId, activity.substep)
+        canAbort.set(activity.sessionId, activity.currentStepType === AgentStepTypes.WORKSPACE_SEARCH)
       }
     }
-    return counts
+    return { sessionLiveCounts: counts, sessionLiveSubsteps: substeps, sessionCanAbort: canAbort }
   }, [agentActivity])
+
+  const handleAbortResearch = useCallback(
+    (sessionId: string) => abortResearch({ sessionId, workspaceId }),
+    [abortResearch, workspaceId]
+  )
 
   const renderCtx = useMemo<TimelineItemRenderContext>(
     () => ({
@@ -834,6 +847,9 @@ function VirtuosoMessageList({
       hideSessionCards,
       newMessageIds,
       sessionLiveCounts,
+      sessionLiveSubsteps,
+      sessionCanAbort,
+      onAbortResearch: handleAbortResearch,
       phase,
     }),
     [
@@ -846,6 +862,9 @@ function VirtuosoMessageList({
       hideSessionCards,
       newMessageIds,
       sessionLiveCounts,
+      sessionLiveSubsteps,
+      sessionCanAbort,
+      handleAbortResearch,
       phase,
     ]
   )

@@ -1,6 +1,7 @@
 import { AgentToolNames } from "@threa/types"
 import type { AgentTool } from "../runtime"
 import type { WorkspaceAgentResult } from "../researcher"
+import type { RunWorkspaceAgentOptions } from "../tools"
 import type { WorkspaceToolDeps } from "../tools/tool-deps"
 import {
   createWebSearchTool,
@@ -22,7 +23,7 @@ import {
 export interface ToolSetConfig {
   enabledTools: string[] | null
   tavilyApiKey?: string
-  runWorkspaceAgent?: (query: string) => Promise<WorkspaceAgentResult>
+  runWorkspaceAgent?: (query: string, opts: RunWorkspaceAgentOptions) => Promise<WorkspaceAgentResult>
   workspace?: WorkspaceToolDeps
   supportsVision?: boolean
 }

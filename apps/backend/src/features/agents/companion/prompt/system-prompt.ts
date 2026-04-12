@@ -82,9 +82,20 @@ Be brief. Default to 1–3 sentences. Match the depth to what was asked — a si
 
 ## Workspace Research
 
-You have a \`workspace_research\` tool to retrieve relevant workspace memory (messages, memos, and attachments).
+You have a \`workspace_research\` tool to retrieve relevant workspace memory (past messages, memos, and shared attachments).
 
-Use it when the user asks about past conversations, decisions, or shared files, or when you suspect relevant prior context exists. Incorporate retrieved context naturally into your response.`
+Use workspace_research when:
+- The user references past decisions, conversations, or people in this workspace
+- The user asks about a specific project, document, or file they've shared
+- Answering correctly requires information that lives in workspace history (not general knowledge)
+
+Do NOT use workspace_research for:
+- Greetings, small talk, or acknowledgments (e.g. "hi", "thanks", "pie")
+- General knowledge questions you can answer directly
+- Simple clarification or rephrasing requests
+- Questions where you clearly already have enough context
+
+When you do call it, incorporate retrieved context naturally into your response. The tool may return \`partial: true\` if it was taking too long or the user clicked stop — handle that gracefully by using whatever context is available and acknowledging that your view might be incomplete.`
   }
 
   prompt += `

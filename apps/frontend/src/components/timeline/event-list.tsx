@@ -2,6 +2,7 @@ import { useMemo } from "react"
 import {
   COMMAND_EVENT_TYPES,
   AGENT_SESSION_EVENT_TYPES,
+  AgentStepTypes,
   type CommandEventType,
   type AgentSessionEventType,
   type AgentSessionStartedPayload,
@@ -11,7 +12,8 @@ import {
   type CommandFailedPayload,
 } from "@threa/types"
 import type { MessageAgentActivity } from "@/hooks"
-import { useCoordinatedLoading } from "@/contexts"
+import { useSocket, useCoordinatedLoading } from "@/contexts"
+import { useAbortResearch } from "@/hooks"
 import { EventItem } from "./event-item"
 import { AgentSessionEvent } from "./agent-session-event"
 import { CommandEvent } from "./command-event"
@@ -203,6 +205,12 @@ export interface TimelineItemRenderContext {
   hideSessionCards?: boolean
   newMessageIds?: Set<string>
   sessionLiveCounts: Map<string, { stepCount: number; messageCount: number }>
+  /** Live substep text per session (e.g. "Evaluating results…"). */
+  sessionLiveSubsteps: Map<string, string | null>
+  /** Whether the session's current step is one we can graceful-abort. */
+  sessionCanAbort: Map<string, boolean>
+  /** Click handler for the Stop research button. */
+  onAbortResearch?: (sessionId: string) => void
   phase: string
 }
 
@@ -231,6 +239,9 @@ export function TimelineItemContent({ item, ctx }: { item: TimelineItem; ctx: Ti
             events={item.events}
             sessionVersion={item.sessionVersion}
             liveCounts={ctx.sessionLiveCounts.get(item.sessionId)}
+            liveSubstep={ctx.sessionLiveSubsteps.get(item.sessionId)}
+            canAbortResearch={ctx.sessionCanAbort.get(item.sessionId) ?? false}
+            onAbortResearch={ctx.onAbortResearch}
           />
         </div>
       )}
@@ -266,19 +277,32 @@ export function EventList({
   newMessageIds,
 }: EventListProps) {
   const { phase } = useCoordinatedLoading()
+  const socket = useSocket()
+  const abortResearch = useAbortResearch(socket)
 
-  const sessionLiveCounts = useMemo(() => {
+  const { sessionLiveCounts, sessionLiveSubsteps, sessionCanAbort } = useMemo(() => {
     const counts = new Map<string, { stepCount: number; messageCount: number }>()
+    const substeps = new Map<string, string | null>()
+    const canAbort = new Map<string, boolean>()
     if (agentActivity) {
       for (const activity of agentActivity.values()) {
         counts.set(activity.sessionId, {
           stepCount: activity.stepCount,
           messageCount: activity.messageCount,
         })
+        substeps.set(activity.sessionId, activity.substep)
+        // V1: only workspace_search supports graceful abort. The registry is generic
+        // so other tools can opt in by adding their step type here.
+        canAbort.set(activity.sessionId, activity.currentStepType === AgentStepTypes.WORKSPACE_SEARCH)
       }
     }
-    return counts
+    return { sessionLiveCounts: counts, sessionLiveSubsteps: substeps, sessionCanAbort: canAbort }
   }, [agentActivity])
+
+  const handleAbortResearch = useMemo(
+    () => (sessionId: string) => abortResearch({ sessionId, workspaceId }),
+    [abortResearch, workspaceId]
+  )
 
   if (isLoading) {
     return (
@@ -323,6 +347,9 @@ export function EventList({
     hideSessionCards,
     newMessageIds,
     sessionLiveCounts,
+    sessionLiveSubsteps,
+    sessionCanAbort,
+    onAbortResearch: handleAbortResearch,
     phase,
   }
 

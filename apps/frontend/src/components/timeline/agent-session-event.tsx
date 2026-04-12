@@ -11,12 +11,26 @@ import type {
 import { useTrace } from "@/contexts"
 import { RelativeTime } from "@/components/relative-time"
 import { formatDuration } from "@/lib/dates"
+import { StopResearchButton } from "@/components/trace/stop-research-button"
 
 interface AgentSessionEventProps {
   events: StreamEvent[]
   sessionVersion?: number
   /** Live progress counts from parent (via useAgentActivity hook) */
   liveCounts?: { stepCount: number; messageCount: number }
+  /**
+   * Latest live substep text (e.g. "Planning queries…") emitted by a long-running
+   * tool. Shown in place of the generic step label when present.
+   */
+  liveSubstep?: string | null
+  /**
+   * When true, the abort-research button is rendered. Wired by the parent only
+   * when the current step is a workspace_search step (or another future tool that
+   * supports graceful abort).
+   */
+  canAbortResearch?: boolean
+  /** Click handler for the Stop research button. */
+  onAbortResearch?: (sessionId: string) => void
 }
 
 type SessionStatus = "running" | "completed" | "failed" | "deleted"
@@ -169,6 +183,10 @@ function buildStatusConfig(
       const personaName = startedPayload?.personaName ?? "Agent"
       const stepCount = liveCounts?.stepCount ?? 0
       const messageCount = liveCounts?.messageCount ?? 0
+      // Note: liveSubstep is intentionally NOT joined into the meta string — the
+      // render function promotes it into its own row with a live-pulse dot and
+      // italic foreground weight, so it stands out as "what is happening right now"
+      // instead of being buried among static counts.
       const parts: string[] = []
       if (rerunReasonLabel) {
         parts.push(rerunReasonLabel)
@@ -179,7 +197,7 @@ function buildStatusConfig(
       parts.push(`${stepCount} ${stepCount === 1 ? "step" : "steps"}`)
       parts.push(`${messageCount} ${messageCount === 1 ? "message" : "messages"} sent`)
       return {
-        title: `${personaName} is working...`,
+        title: `${personaName} is working…`,
         subtitle: parts.join(" • "),
         icon: (
           <div className="w-5 h-5 rounded-full flex items-center justify-center bg-[hsl(var(--primary)/0.15)]">
@@ -215,13 +233,23 @@ function formatRerunReasonDetail(rerunContext?: AgentSessionRerunContext | null)
   return `Edited: "${compact}"`
 }
 
-export function AgentSessionEvent({ events, sessionVersion, liveCounts }: AgentSessionEventProps) {
+export function AgentSessionEvent({
+  events,
+  sessionVersion,
+  liveCounts,
+  liveSubstep,
+  canAbortResearch,
+  onAbortResearch,
+}: AgentSessionEventProps) {
   const { getTraceUrl } = useTrace()
   const { status, sessionId, startedPayload, completedPayload, failedPayload, deletedPayload } = deriveStatus(events)
 
   const config = buildStatusConfig(status, startedPayload, completedPayload, failedPayload, deletedPayload, liveCounts)
 
   if (!sessionId) return null
+
+  const showAbortButton = status === "running" && canAbortResearch && !!onAbortResearch
+  const showLiveSubstep = status === "running" && !!liveSubstep
 
   return (
     <div className="py-3">
@@ -255,14 +283,58 @@ export function AgentSessionEvent({ events, sessionVersion, liveCounts }: AgentS
               </span>
             )}
           </div>
-          <div className="text-[11px] text-muted-foreground mt-0.5">{config.subtitle || "\u00a0"}</div>
-        </div>
-        <div className="shrink-0 text-[11px]">
-          {config.timestamp && (
-            <RelativeTime date={config.timestamp} className="text-muted-foreground group-hover:hidden" />
+          {/*
+            INV-21: subtitle is always a single line so the card height never shifts
+            when a live substep arrives or disappears. When a substep is present we
+            show it as the primary (italic foreground) with a leading radar-pulse dot
+            signalling "what is actually happening right now"; the static counts drop
+            to a secondary `shrink-0` chip on the right of the same line, truncating
+            the substep first if the container runs out of space. The `key` on the
+            substep span re-triggers the fade-in whenever the phase text changes, so
+            the user sees a visible "tick" as research advances.
+          */}
+          {showLiveSubstep ? (
+            <div className="mt-0.5 flex items-center gap-1.5 min-w-0 text-[11px]">
+              <span aria-hidden className="relative inline-flex h-1.5 w-1.5 shrink-0">
+                <span className="absolute inset-0 rounded-full bg-primary opacity-60 animate-activity-pulse" />
+                <span className="relative inline-block h-1.5 w-1.5 rounded-full bg-primary" />
+              </span>
+              <span
+                key={liveSubstep}
+                className="min-w-0 flex-1 truncate italic text-foreground/90 animate-in fade-in-50 duration-200"
+              >
+                {liveSubstep}
+              </span>
+              {config.subtitle && (
+                <>
+                  <span aria-hidden className="shrink-0 text-muted-foreground/40">
+                    ·
+                  </span>
+                  <span className="shrink-0 text-muted-foreground/70">{config.subtitle}</span>
+                </>
+              )}
+            </div>
+          ) : (
+            <div className="text-[11px] text-muted-foreground mt-0.5">{config.subtitle || "\u00a0"}</div>
           )}
-          <span className="text-primary hidden group-hover:inline">Show trace and sources →</span>
         </div>
+        {/*
+          Right-slot arbitration: only one thing at a time to avoid crowding and to
+          give the Stop research button an unobstructed target. When the session is
+          running and abort is available, the button owns the right edge (always
+          visible, not a hover-reveal). Otherwise the existing timestamp / "Show
+          trace and sources →" hover hint lives there.
+        */}
+        {showAbortButton ? (
+          <StopResearchButton onClick={() => onAbortResearch?.(sessionId)} stopPropagation />
+        ) : (
+          <div className="shrink-0 text-[11px]">
+            {config.timestamp && (
+              <RelativeTime date={config.timestamp} className="text-muted-foreground group-hover:hidden" />
+            )}
+            <span className="text-primary hidden group-hover:inline">Show trace and sources →</span>
+          </div>
+        )}
       </Link>
     </div>
   )

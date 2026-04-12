@@ -128,6 +128,38 @@ export class SessionTrace {
     })
   }
 
+  /**
+   * Emit an ephemeral substep update for a running step.
+   *
+   * Used by long-running tools (e.g. workspace_research) to stream phase text to
+   * the UI without creating a new persisted step row. The persisted step's `content`
+   * (baked in by the tool's `trace.formatContent`) retains the full substep history
+   * on completion — see `WorkspaceAgentResult.substeps` and
+   * `workspace-research-tool.ts trace.formatContent`.
+   *
+   * Emits to BOTH the stream room (timeline inline card) and the session room
+   * (trace dialog). No DB write, no step number increment.
+   */
+  emitSubstep(params: { stepType: AgentStepType; substep: string }): void {
+    const payload = {
+      workspaceId: this.params.workspaceId,
+      streamId: this.params.streamId,
+      sessionId: this.params.sessionId,
+      triggerMessageId: this.params.triggerMessageId,
+      stepType: params.stepType,
+      substep: params.substep,
+      updatedAt: new Date().toISOString(),
+    }
+    // Stream room (timeline inline) — include channel room for channel-mention threads
+    let target = this.deps.io.to(this.streamRoom)
+    if (this.channelRoom) {
+      target = target.to(this.channelRoom)
+    }
+    target.emit("agent_session:substep", payload)
+    // Session room (trace dialog live streaming)
+    this.deps.io.to(this.sessionRoom).emit("agent_session:substep", payload)
+  }
+
   /** Notify session room that session completed. Socket only. */
   notifyCompleted(): void {
     this.deps.io.to(this.sessionRoom).emit("agent_session:completed", {
@@ -186,6 +218,33 @@ export class ActiveStep {
       sessionId: this.params.sessionId,
       stepId: this.params.stepId,
       content: data.content,
+    })
+  }
+
+  /**
+   * Persist a running substep log to the step's content field.
+   *
+   * Called by `SessionTraceObserver` on every `tool:progress` event so that a
+   * browser refresh mid-execution sees the phases collected so far rather than
+   * a gap. Writes a minimal `{ substeps: [...] }` JSON; `complete()` later
+   * overwrites with the tool's full content (which includes the same substeps
+   * plus counts, partial flag, etc.).
+   *
+   * IMPORTANT: the content is pre-stringified before being passed to
+   * `updateStep`. This matches the convention used by every other observer
+   * site (e.g. `context_received`, `reconsidering` both call `JSON.stringify`
+   * explicitly). `updateStep` applies a second `JSON.stringify` on top, which
+   * makes the column round-trip as a JS string (JSONB string type) rather
+   * than an auto-parsed object — the frontend's wire type expects
+   * `content?: string`, not an object, and will crash trying to render a raw
+   * object as a JSX child.
+   *
+   * Not emitted to the socket — the live substep stream is already handled by
+   * `SessionTrace.emitSubstep`.
+   */
+  async updateSubsteps(substeps: Array<{ text: string; at: string }>): Promise<void> {
+    await AgentSessionRepository.updateStep(this.deps.pool, this.params.stepId, {
+      content: JSON.stringify({ substeps }),
     })
   }
 

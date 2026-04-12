@@ -1,7 +1,9 @@
 import { describe, expect, it, mock } from "bun:test"
-import { AgentToolNames } from "@threa/types"
+import { z } from "zod"
+import { AgentToolNames, AgentStepTypes } from "@threa/types"
 import type { AgentEvent } from "./agent-events"
 import { AgentRuntime } from "./agent-runtime"
+import { defineAgentTool } from "./agent-tool"
 
 describe("AgentRuntime message counting", () => {
   it("bridges supersede reruns with a trailing user prompt when history ends with assistant", async () => {
@@ -159,5 +161,170 @@ describe("AgentRuntime message counting", () => {
     expect(result.noMessageReason).toBe(
       "Kept the previous response because the rerun produced no actionable output after repeated attempts."
     )
+  })
+})
+
+describe("AgentRuntime tool progress + signal plumbing", () => {
+  it("provides toolSignalProvider's signal to the tool's execute opts", async () => {
+    const controller = new AbortController()
+    let receivedSignal: AbortSignal | undefined
+    const echoTool = defineAgentTool({
+      name: "echo_tool",
+      description: "test",
+      inputSchema: z.object({}),
+      execute: async (_input, opts) => {
+        receivedSignal = opts.signal
+        return { output: "{}" }
+      },
+      trace: {
+        stepType: AgentStepTypes.WORKSPACE_SEARCH,
+        formatContent: () => "{}",
+      },
+    })
+
+    let firstCall = true
+    const generateTextWithTools = async () => {
+      if (firstCall) {
+        firstCall = false
+        return {
+          text: "",
+          toolCalls: [{ toolCallId: "tc_1", toolName: "echo_tool", input: {} }],
+          response: { messages: [{ role: "assistant" as const, content: "calling tool" } as any] },
+        }
+      }
+      return {
+        text: "Done.",
+        toolCalls: [],
+        response: { messages: [{ role: "assistant" as const, content: "Done." } as any] },
+      }
+    }
+
+    const runtime = new AgentRuntime({
+      ai: { generateTextWithTools } as any,
+      model: {} as any,
+      systemPrompt: "You are helpful.",
+      messages: [{ role: "user", content: "do it" }],
+      tools: [echoTool],
+      sendMessage: async () => ({ messageId: "msg_1", operation: "created" }),
+      toolSignalProvider: (toolCallId, toolName) => {
+        expect(toolCallId).toBe("tc_1")
+        expect(toolName).toBe("echo_tool")
+        return controller.signal
+      },
+    })
+
+    await runtime.run()
+    expect(receivedSignal).toBe(controller.signal)
+  })
+
+  it("emits tool:progress events when the tool calls onProgress", async () => {
+    const events: AgentEvent[] = []
+    const progressTool = defineAgentTool({
+      name: "progress_tool",
+      description: "test",
+      inputSchema: z.object({}),
+      execute: async (_input, { onProgress }) => {
+        onProgress?.("Planning queries…")
+        onProgress?.("Searching memos and messages…")
+        onProgress?.("Evaluating results…")
+        return { output: "{}" }
+      },
+      trace: {
+        stepType: AgentStepTypes.WORKSPACE_SEARCH,
+        formatContent: () => "{}",
+      },
+    })
+
+    let firstCall = true
+    const generateTextWithTools = async () => {
+      if (firstCall) {
+        firstCall = false
+        return {
+          text: "",
+          toolCalls: [{ toolCallId: "tc_1", toolName: "progress_tool", input: {} }],
+          response: { messages: [{ role: "assistant" as const, content: "calling tool" } as any] },
+        }
+      }
+      return {
+        text: "Done.",
+        toolCalls: [],
+        response: { messages: [{ role: "assistant" as const, content: "Done." } as any] },
+      }
+    }
+
+    const runtime = new AgentRuntime({
+      ai: { generateTextWithTools } as any,
+      model: {} as any,
+      systemPrompt: "You are helpful.",
+      messages: [{ role: "user", content: "do it" }],
+      tools: [progressTool],
+      sendMessage: async () => ({ messageId: "msg_1", operation: "created" }),
+      observers: [
+        {
+          handle: async (event: AgentEvent) => {
+            events.push(event)
+          },
+        },
+      ],
+    })
+
+    await runtime.run()
+
+    const progressEvents = events.filter(
+      (e): e is Extract<AgentEvent, { type: "tool:progress" }> => e.type === "tool:progress"
+    )
+    expect(progressEvents).toHaveLength(3)
+    expect(progressEvents[0]?.substep).toBe("Planning queries…")
+    expect(progressEvents[0]?.toolCallId).toBe("tc_1")
+    expect(progressEvents[0]?.stepType).toBe(AgentStepTypes.WORKSPACE_SEARCH)
+    expect(progressEvents[1]?.substep).toBe("Searching memos and messages…")
+    expect(progressEvents[2]?.substep).toBe("Evaluating results…")
+  })
+
+  it("does not provide a signal when toolSignalProvider returns undefined", async () => {
+    let receivedSignal: AbortSignal | undefined = new AbortController().signal // sentinel
+    const echoTool = defineAgentTool({
+      name: "echo_tool",
+      description: "test",
+      inputSchema: z.object({}),
+      execute: async (_input, opts) => {
+        receivedSignal = opts.signal
+        return { output: "{}" }
+      },
+      trace: {
+        stepType: AgentStepTypes.WORKSPACE_SEARCH,
+        formatContent: () => "{}",
+      },
+    })
+
+    let firstCall = true
+    const generateTextWithTools = async () => {
+      if (firstCall) {
+        firstCall = false
+        return {
+          text: "",
+          toolCalls: [{ toolCallId: "tc_1", toolName: "echo_tool", input: {} }],
+          response: { messages: [{ role: "assistant" as const, content: "calling tool" } as any] },
+        }
+      }
+      return {
+        text: "Done.",
+        toolCalls: [],
+        response: { messages: [{ role: "assistant" as const, content: "Done." } as any] },
+      }
+    }
+
+    const runtime = new AgentRuntime({
+      ai: { generateTextWithTools } as any,
+      model: {} as any,
+      systemPrompt: "You are helpful.",
+      messages: [{ role: "user", content: "do it" }],
+      tools: [echoTool],
+      sendMessage: async () => ({ messageId: "msg_1", operation: "created" }),
+      toolSignalProvider: () => undefined,
+    })
+
+    await runtime.run()
+    expect(receivedSignal).toBeUndefined()
   })
 })

@@ -149,4 +149,35 @@ describe("TraceStep", () => {
       "/w/ws_1/memory?memo=memo_1"
     )
   })
+
+  it("renders workspace_search content that arrives as a raw object without crashing", () => {
+    // Regression for the crash where a step row's content was persisted as a
+    // JSONB object (bypassing the pre-stringify convention), node-postgres
+    // auto-parsed it back to a JS object, and React threw "Objects are not
+    // valid as a React child" when the fallback span tried to render it.
+    //
+    // The wire type says `content?: string` so TypeScript can't warn us, but
+    // the runtime value can be either. The defensive path in
+    // `parseStructuredContent` + `coerceContentToString` should handle both.
+    render(
+      <MemoryRouter>
+        <TraceStep
+          step={createStep({
+            stepType: "workspace_search",
+            // Raw object content — matches the buggy state produced by an
+            // intermediate persistence code-path that forgot to pre-stringify.
+            content: { substeps: [{ text: "Planning queries…", at: "2026-04-10T12:00:00Z" }] } as unknown as string,
+            completedAt: undefined, // in-progress
+          })}
+          workspaceId="ws_1"
+          streamId="stream_1"
+        />
+      </MemoryRouter>
+    )
+
+    // No throw means the defensive path worked. As a bonus, confirm the
+    // substep text is visible — parseStructuredContent should have treated
+    // the object as already-parsed and pulled out the substeps.
+    expect(screen.getByText("Planning queries…")).toBeInTheDocument()
+  })
 })
