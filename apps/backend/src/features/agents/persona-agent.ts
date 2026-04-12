@@ -21,7 +21,7 @@ import { AttachmentRepository } from "../attachments"
 import { awaitAttachmentProcessing } from "../attachments"
 import type { TraceEmitter } from "./trace-emitter"
 import type { SessionAbortRegistry } from "./session-abort-registry"
-import type { AI } from "../../lib/ai/ai"
+import type { AI, CostContext } from "../../lib/ai/ai"
 import type { SearchService } from "../search"
 import type { ConversationSummaryService } from "./conversation-summary-service"
 import type { StorageProvider } from "../../lib/storage/s3-client"
@@ -368,6 +368,15 @@ export class PersonaAgent {
         const runtime = new AgentRuntime({
           ai,
           model,
+          modelString: persona.model,
+          // Origin is "user" for mention-triggered runs where we can attribute
+          // cost to the invoking user; otherwise fall back to "system".
+          costContext: {
+            workspaceId,
+            userId: agentContext.invokingUserId,
+            sessionId: session.id,
+            origin: agentContext.invokingUserId ? "user" : "system",
+          },
           systemPrompt: isSupersedeRerun
             ? buildSupersedeRerunSystemPrompt(agentContext.systemPrompt, rerunContext)
             : agentContext.systemPrompt,
@@ -380,6 +389,12 @@ export class PersonaAgent {
                 ai,
                 sessionId: session.id,
                 rerunContext,
+                costContext: {
+                  workspaceId,
+                  userId: agentContext.invokingUserId,
+                  sessionId: session.id,
+                  origin: agentContext.invokingUserId ? "user" : "system",
+                },
               })
             : undefined,
           telemetry: {
@@ -805,8 +820,9 @@ function buildSupersedeResponseValidator(params: {
   ai: AI
   sessionId: string
   rerunContext?: AgentSessionRerunContext
+  costContext: CostContext
 }): (content: string) => Promise<string | null> {
-  const { ai, sessionId, rerunContext } = params
+  const { ai, sessionId, rerunContext, costContext } = params
   const editedBefore = rerunContext?.editedMessageBefore ?? null
   const editedAfter = rerunContext?.editedMessageAfter ?? null
 
@@ -827,6 +843,7 @@ function buildSupersedeResponseValidator(params: {
             rerun_cause: rerunContext?.cause ?? "unknown",
           },
         },
+        context: costContext,
         maxTokens: SUPERSEDE_RESPONSE_VALIDATOR_MAX_TOKENS,
         temperature: SUPERSEDE_RESPONSE_VALIDATOR_TEMPERATURE,
         messages: [

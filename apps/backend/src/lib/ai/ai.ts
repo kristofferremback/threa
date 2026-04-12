@@ -185,10 +185,19 @@ export interface GenerateTextOptions {
  */
 export interface GenerateTextWithToolsOptions {
   model: LanguageModel
+  /**
+   * The original provider:model string for the resolved `model`.
+   * Required alongside `context` so usage can be recorded with a parseable
+   * model identifier (the resolved LanguageModel does not expose the
+   * original provider prefix needed by the cost recorder).
+   */
+  modelString?: string
   system?: string
   messages: ModelMessage[]
   tools?: Record<string, Tool<any, any>>
   telemetry?: TelemetryConfig
+  /** When provided with `modelString`, usage will be recorded to the database */
+  context?: CostContext
   /** Abort signal for graceful cancellation / per-call timeouts */
   abortSignal?: AbortSignal
 }
@@ -782,6 +791,26 @@ export function createAI(config: AIConfig): AI {
           ? { isEnabled: true, functionId: options.telemetry.functionId, metadata: options.telemetry.metadata }
           : undefined,
       })
+
+      // Usage recording requires the original model string because the resolved
+      // LanguageModel instance does not carry the provider:model prefix the cost
+      // recorder expects. Callers that want tracked usage must pass `modelString`
+      // alongside `context` (agent loops do this via AgentRuntime).
+      if (options.modelString) {
+        const usage = extractUsageWithCost(response)
+        logger.debug(
+          { usage, model: options.modelString, functionId: options.telemetry?.functionId },
+          "AI generateTextWithTools completed with usage"
+        )
+
+        await maybeRecordUsage({
+          context: options.context,
+          functionId: options.telemetry?.functionId ?? "generateTextWithTools",
+          modelString: options.modelString,
+          usage,
+          metadata: options.telemetry?.metadata as Record<string, unknown> | undefined,
+        })
+      }
 
       return {
         text: response.text,
