@@ -164,7 +164,6 @@ export class ThreaMediaConvertClient {
                     },
                   },
                 ],
-                NameModifier: "",
               },
             ],
           },
