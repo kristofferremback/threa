@@ -1,6 +1,11 @@
 import { useEffect, useCallback, useRef } from "react"
 import { usePreferences } from "@/contexts"
-import { SHORTCUT_ACTIONS, matchesKeyBinding, getEffectiveKeyBinding } from "@/lib/keyboard-shortcuts"
+import {
+  SHORTCUT_ACTIONS,
+  matchesKeyBinding,
+  getEffectiveKeyBinding,
+  isSafeShortcutBinding,
+} from "@/lib/keyboard-shortcuts"
 
 type ShortcutHandlers = Partial<Record<string, () => void>>
 
@@ -38,7 +43,7 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers, enabled = true)
         if (!handler) continue
 
         const binding = getEffectiveKeyBinding(action.id, customBindings)
-        if (!binding) continue
+        if (!binding || !isSafeShortcutBinding(binding)) continue
 
         // Skip non-global shortcuts when focus is in an input
         if (isInput && !action.global) continue

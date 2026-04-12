@@ -8,6 +8,9 @@ import {
   keyEventToBinding,
   getEffectiveEditorBindings,
   EDITOR_SHORTCUT_IDS,
+  isSafeShortcutBinding,
+  resolveShortcutBindingUpdate,
+  formatKeyBinding,
 } from "./keyboard-shortcuts"
 
 describe("toggleSidebar shortcut", () => {
@@ -129,7 +132,7 @@ describe("keyEventToBinding", () => {
     expect(keyEventToBinding(event)).toBe("alt+k")
   })
 
-  it("returns bare key for unmodified key", () => {
+  it("returns bare key for safe unmodified keys", () => {
     const event = new KeyboardEvent("keydown", { key: "Escape" })
     expect(keyEventToBinding(event)).toBe("escape")
   })
@@ -139,6 +142,42 @@ describe("keyEventToBinding", () => {
     expect(keyEventToBinding(new KeyboardEvent("keydown", { key: "Shift" }))).toBeNull()
     expect(keyEventToBinding(new KeyboardEvent("keydown", { key: "Alt" }))).toBeNull()
     expect(keyEventToBinding(new KeyboardEvent("keydown", { key: "Meta" }))).toBeNull()
+  })
+
+  it("rejects unsafe bare printable keys", () => {
+    expect(keyEventToBinding(new KeyboardEvent("keydown", { key: "b" }))).toBeNull()
+    expect(keyEventToBinding(new KeyboardEvent("keydown", { key: "B", shiftKey: true }))).toBeNull()
+  })
+
+  it("captures keys whose names contain + when the shortcut is otherwise safe", () => {
+    const event = new KeyboardEvent("keydown", { key: "+", metaKey: true, shiftKey: true })
+    expect(keyEventToBinding(event)).toBe("mod+shift++")
+  })
+})
+
+describe("isSafeShortcutBinding", () => {
+  it("allows modified shortcuts and safe bare keys", () => {
+    expect(isSafeShortcutBinding("mod+b")).toBe(true)
+    expect(isSafeShortcutBinding("alt+k")).toBe(true)
+    expect(isSafeShortcutBinding("escape")).toBe(true)
+    expect(isSafeShortcutBinding("f6")).toBe(true)
+  })
+
+  it("rejects unsafe bare printable bindings", () => {
+    expect(isSafeShortcutBinding("b")).toBe(false)
+    expect(isSafeShortcutBinding("shift+b")).toBe(false)
+    expect(isSafeShortcutBinding("shift++")).toBe(false)
+  })
+})
+
+describe("parse and format bindings", () => {
+  it("matches bindings whose key contains +", () => {
+    const event = new KeyboardEvent("keydown", { key: "+", metaKey: true, shiftKey: true })
+    expect(matchesKeyBinding(event, "mod+shift++")).toBe(true)
+  })
+
+  it("formats bindings whose key contains +", () => {
+    expect(formatKeyBinding("mod+shift++")).toMatch(/^\u2318\u21e7\+$|^Ctrl\+Shift\+\+$/)
   })
 })
 
@@ -170,5 +209,19 @@ describe("getEffectiveEditorBindings", () => {
   it("excludes disabled editor shortcuts", () => {
     const bindings = getEffectiveEditorBindings({ formatBold: "none" })
     expect(bindings.formatBold).toBeUndefined()
+  })
+
+  it("excludes unsafe editor bindings that would hijack typing", () => {
+    const bindings = getEffectiveEditorBindings({ formatBold: "b" })
+    expect(bindings.formatBold).toBeUndefined()
+  })
+})
+
+describe("resolveShortcutBindingUpdate", () => {
+  it("builds a single update that clears conflicting bindings", () => {
+    expect(resolveShortcutBindingUpdate({}, "toggleSidebar", "mod+b")).toEqual({
+      formatBold: "none",
+      toggleSidebar: "mod+b",
+    })
   })
 })

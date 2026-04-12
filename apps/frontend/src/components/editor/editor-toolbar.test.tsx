@@ -6,6 +6,10 @@ import type { Editor } from "@tiptap/react"
 import { EditorToolbar } from "./editor-toolbar"
 import { indentSelection, dedentSelection, handleLinkToolbarAction, isSuggestionActive } from "./editor-behaviors"
 
+const mockPreferences = {
+  keyboardShortcuts: {} as Record<string, string>,
+}
+
 vi.mock("./editor-behaviors", () => ({
   indentSelection: vi.fn(),
   dedentSelection: vi.fn(),
@@ -15,7 +19,7 @@ vi.mock("./editor-behaviors", () => ({
 
 vi.mock("@/contexts", () => ({
   usePreferences: () => ({
-    preferences: { keyboardShortcuts: {} },
+    preferences: mockPreferences,
     isLoading: false,
   }),
 }))
@@ -72,6 +76,7 @@ function ToolbarHarness({ editor }: { editor: Editor }) {
 describe("EditorToolbar", () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockPreferences.keyboardShortcuts = {}
   })
 
   it("keeps inline formatting buttons in the tab order", async () => {
@@ -121,6 +126,19 @@ describe("EditorToolbar", () => {
     expect(editor.__chainState.focus).toHaveBeenCalled()
     expect(editor.__chainState.toggleBold).toHaveBeenCalled()
     expect(editor.__run).toHaveBeenCalled()
+  })
+
+  it("omits dead shortcut hints when a global shortcut claims the editor binding", async () => {
+    const user = userEvent.setup()
+    mockPreferences.keyboardShortcuts = { toggleSidebar: "mod+b" }
+    const editor = createEditorStub()
+
+    render(<EditorToolbar editor={editor} isVisible />)
+
+    await user.hover(screen.getByRole("button", { name: "Bold" }))
+
+    expect((await screen.findAllByText("Bold")).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/^Ctrl\+B$|^⌘B$/)).not.toBeInTheDocument()
   })
 
   it("routes the link button through the shared link toolbar action", async () => {

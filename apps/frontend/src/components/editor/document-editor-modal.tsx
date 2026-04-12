@@ -35,7 +35,7 @@ import { LinkEditor } from "./link-editor"
 import { handleBeforeInputNewline, insertPastedText, toggleMultilineBlock } from "./multiline-blocks"
 import { cn } from "@/lib/utils"
 import { usePreferences } from "@/contexts"
-import { getEffectiveKeyBinding, getEffectiveEditorBindings, formatKeyBinding } from "@/lib/keyboard-shortcuts"
+import { getEffectiveEditorBindings, formatKeyBinding } from "@/lib/keyboard-shortcuts"
 
 interface DocumentEditorModalProps {
   open: boolean
@@ -93,14 +93,15 @@ export function DocumentEditorModal({
   // Effective editor formatting bindings (updated reactively via ref)
   const { preferences } = usePreferences()
   const docCustomBindings = preferences?.keyboardShortcuts ?? {}
+  const effectiveDocBindings = useMemo(() => getEffectiveEditorBindings(docCustomBindings), [docCustomBindings])
   const keyBindingsRef = useRef<Record<string, string>>({})
-  keyBindingsRef.current = useMemo(() => getEffectiveEditorBindings(docCustomBindings), [docCustomBindings])
+  keyBindingsRef.current = effectiveDocBindings
   const docShortcutHint = useCallback(
     (actionId: string): string | undefined => {
-      const binding = getEffectiveKeyBinding(actionId, docCustomBindings)
+      const binding = effectiveDocBindings[actionId]
       return binding ? formatKeyBinding(binding) : undefined
     },
-    [docCustomBindings]
+    [effectiveDocBindings]
   )
 
   // Create extensions (no cmdEnter handling - explicit Send button only)

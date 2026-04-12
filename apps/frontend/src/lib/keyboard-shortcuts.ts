@@ -187,13 +187,41 @@ export function parseKeyBinding(key: string): {
   alt: boolean
 } {
   const parts = key.toLowerCase().split("+")
-  const actualKey = parts[parts.length - 1]
+  let mod = false
+  let shift = false
+  let alt = false
+  let keyStartIndex = 0
+
+  while (keyStartIndex < parts.length) {
+    const part = parts[keyStartIndex]
+    if (part === "mod") {
+      mod = true
+      keyStartIndex += 1
+      continue
+    }
+
+    if (part === "shift") {
+      shift = true
+      keyStartIndex += 1
+      continue
+    }
+
+    if (part === "alt") {
+      alt = true
+      keyStartIndex += 1
+      continue
+    }
+
+    break
+  }
+
+  const actualKey = parts.slice(keyStartIndex).join("+")
 
   return {
     key: actualKey,
-    mod: parts.includes("mod"),
-    shift: parts.includes("shift"),
-    alt: parts.includes("alt"),
+    mod,
+    shift,
+    alt,
   }
 }
 
@@ -224,34 +252,59 @@ export function matchesKeyBinding(event: KeyboardEvent, binding: string): boolea
  */
 export function formatKeyBinding(binding: string): string {
   const mac = isMac()
-  const parts = binding.split("+")
+  const parsed = parseKeyBinding(binding)
+  if (!parsed.key) {
+    return binding
+  }
 
-  const formatted = parts.map((part) => {
-    switch (part.toLowerCase()) {
-      case "mod":
-        return mac ? "⌘" : "Ctrl"
-      case "shift":
-        return mac ? "⇧" : "Shift"
-      case "alt":
-        return mac ? "⌥" : "Alt"
-      case "escape":
-        return mac ? "⎋" : "Esc"
-      case ",":
-        return ","
-      default:
-        return part.toUpperCase()
-    }
-  })
+  const formatted: string[] = []
+  if (parsed.mod) formatted.push(mac ? "⌘" : "Ctrl")
+  if (parsed.shift) formatted.push(mac ? "⇧" : "Shift")
+  if (parsed.alt) formatted.push(mac ? "⌥" : "Alt")
+
+  switch (parsed.key.toLowerCase()) {
+    case "escape":
+      formatted.push(mac ? "⎋" : "Esc")
+      break
+    case ",":
+      formatted.push(",")
+      break
+    case "+":
+      formatted.push("+")
+      break
+    default:
+      formatted.push(parsed.key.toUpperCase())
+      break
+  }
 
   return mac ? formatted.join("") : formatted.join("+")
 }
 
 /** Keys that are only modifiers and should not be captured as standalone bindings. */
 const MODIFIER_KEYS = new Set(["Control", "Shift", "Alt", "Meta"])
+const SAFE_UNMODIFIED_KEYS = new Set(["escape"])
+
+function isFunctionKey(key: string): boolean {
+  return /^f([1-9]|1[0-2])$/i.test(key)
+}
+
+export function isSafeShortcutBinding(binding: string): boolean {
+  const parsed = parseKeyBinding(binding)
+  if (!parsed.key) {
+    return false
+  }
+
+  if (parsed.mod || parsed.alt) {
+    return true
+  }
+
+  const normalizedKey = parsed.key.toLowerCase()
+  return SAFE_UNMODIFIED_KEYS.has(normalizedKey) || isFunctionKey(normalizedKey)
+}
 
 /**
  * Convert a KeyboardEvent to a normalized binding string (e.g. "mod+shift+f").
- * Returns null for lone modifier presses.
+ * Returns null for lone modifier presses or unsafe bare keys that would hijack normal typing.
  */
 export function keyEventToBinding(event: KeyboardEvent): string | null {
   if (MODIFIER_KEYS.has(event.key)) return null
@@ -262,7 +315,8 @@ export function keyEventToBinding(event: KeyboardEvent): string | null {
   if (event.altKey) parts.push("alt")
   parts.push(event.key.toLowerCase())
 
-  return parts.join("+")
+  const binding = parts.join("+")
+  return isSafeShortcutBinding(binding) ? binding : null
 }
 
 /**
@@ -293,9 +347,27 @@ export function getEffectiveEditorBindings(customBindings: Record<string, string
   const result: Record<string, string> = {}
   for (const id of EDITOR_SHORTCUT_IDS) {
     const binding = getEffectiveKeyBinding(id, customBindings)
-    if (binding && !globalBindings.has(binding)) {
+    if (binding && isSafeShortcutBinding(binding) && !globalBindings.has(binding)) {
       result[id] = binding
     }
   }
   return result
+}
+
+export function resolveShortcutBindingUpdate(
+  customBindings: Record<string, string> = {},
+  actionId: string,
+  binding: string
+): Record<string, string> {
+  const nextBindings = { ...customBindings }
+  const testBindings = { ...customBindings, [actionId]: binding }
+  const conflicts = detectConflicts(testBindings)
+  const conflicting = conflicts.get(binding)?.filter((id) => id !== actionId) ?? []
+
+  for (const conflictId of conflicting) {
+    nextBindings[conflictId] = "none"
+  }
+
+  nextBindings[actionId] = binding
+  return nextBindings
 }

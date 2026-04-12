@@ -1,4 +1,4 @@
-import { useLayoutEffect, useEffect, useState, useCallback, useReducer, useRef } from "react"
+import { useLayoutEffect, useEffect, useState, useCallback, useReducer, useRef, useMemo } from "react"
 import type { Editor } from "@tiptap/react"
 import { useFloating, offset, flip, shift, autoUpdate } from "@floating-ui/react"
 import {
@@ -25,7 +25,7 @@ import { indentSelection, dedentSelection, handleLinkToolbarAction, isSuggestion
 import { toggleMultilineBlock } from "./multiline-blocks"
 import { cn } from "@/lib/utils"
 import { usePreferences } from "@/contexts"
-import { getEffectiveKeyBinding, formatKeyBinding } from "@/lib/keyboard-shortcuts"
+import { getEffectiveEditorBindings, formatKeyBinding } from "@/lib/keyboard-shortcuts"
 
 interface EditorToolbarProps {
   editor: Editor | null
@@ -79,12 +79,13 @@ export function EditorToolbar({
   // Dynamic shortcut hints from user preferences
   const { preferences } = usePreferences()
   const kb = preferences?.keyboardShortcuts ?? {}
+  const effectiveEditorBindings = useMemo(() => getEffectiveEditorBindings(kb), [kb])
   const shortcutHint = useCallback(
     (actionId: string): string | undefined => {
-      const binding = getEffectiveKeyBinding(actionId, kb)
+      const binding = effectiveEditorBindings[actionId]
       return binding ? formatKeyBinding(binding) : undefined
     },
-    [kb]
+    [effectiveEditorBindings]
   )
 
   // Virtual reference: position the toolbar above the current text selection

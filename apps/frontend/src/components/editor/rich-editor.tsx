@@ -210,8 +210,9 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
   // Effective editor formatting bindings (updated reactively, read by ref to avoid editor re-creation)
   const { preferences } = usePreferences()
   const customBindings = preferences?.keyboardShortcuts ?? {}
+  const effectiveEditorBindings = useMemo(() => getEffectiveEditorBindings(customBindings), [customBindings])
   const keyBindingsRef = useRef<Record<string, string>>({})
-  keyBindingsRef.current = useMemo(() => getEffectiveEditorBindings(customBindings), [customBindings])
+  keyBindingsRef.current = effectiveEditorBindings
 
   // Ref to access editor instance from callbacks defined before useEditor returns
   const editorRef = useRef<ReturnType<typeof useEditor>>(null)

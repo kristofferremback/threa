@@ -13,6 +13,7 @@ import {
   formatKeyBinding,
   detectConflicts,
   keyEventToBinding,
+  resolveShortcutBindingUpdate,
   type ShortcutAction,
 } from "@/lib/keyboard-shortcuts"
 import { MESSAGE_SEND_MODE_OPTIONS, type MessageSendMode } from "@threa/types"
@@ -221,8 +222,7 @@ function ShortcutCategory({
 }
 
 export function KeyboardSettings() {
-  const { preferences, updatePreference, updateKeyboardShortcut, resetKeyboardShortcut, resetAllKeyboardShortcuts } =
-    usePreferences()
+  const { preferences, updatePreference, resetKeyboardShortcut, resetAllKeyboardShortcuts } = usePreferences()
 
   const customBindings = preferences?.keyboardShortcuts ?? {}
   const shortcuts = useMemo(() => getShortcutsByCategory(), [])
@@ -254,20 +254,11 @@ export function KeyboardSettings() {
 
   const handleSaveBinding = useCallback(
     (actionId: string, binding: string) => {
-      // If the new binding conflicts with other actions, clear those conflicting bindings
-      const testBindings = { ...customBindings, [actionId]: binding }
-      const newConflicts = detectConflicts(testBindings)
-      const conflicting = newConflicts.get(binding)?.filter((id) => id !== actionId) ?? []
-
-      // Clear conflicting bindings by setting them to "none"
-      for (const conflictId of conflicting) {
-        updateKeyboardShortcut(conflictId, "none")
-      }
-
-      updateKeyboardShortcut(actionId, binding)
+      const nextBindings = resolveShortcutBindingUpdate(customBindings, actionId, binding)
+      void updatePreference("keyboardShortcuts", nextBindings)
       setCapturingId(null)
     },
-    [customBindings, updateKeyboardShortcut]
+    [customBindings, updatePreference]
   )
 
   const handleResetBinding = useCallback(

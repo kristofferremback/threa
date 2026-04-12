@@ -3,6 +3,10 @@ import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { DocumentEditorModal } from "./document-editor-modal"
 
+const mockPreferences = {
+  keyboardShortcuts: {} as Record<string, string>,
+}
+
 // Mock react-router-dom
 vi.mock("react-router-dom", () => ({
   useParams: () => ({ workspaceId: "ws_123" }),
@@ -24,7 +28,7 @@ vi.mock("@/hooks/use-workspace-emoji", () => ({
 // Mock preferences context
 vi.mock("@/contexts", () => ({
   usePreferences: () => ({
-    preferences: { keyboardShortcuts: {} },
+    preferences: mockPreferences,
     isLoading: false,
   }),
 }))
@@ -55,6 +59,7 @@ describe("DocumentEditorModal", () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    mockPreferences.keyboardShortcuts = {}
   })
 
   describe("rendering", () => {
@@ -105,6 +110,18 @@ describe("DocumentEditorModal", () => {
       render(<DocumentEditorModal {...defaultProps} />)
 
       expect(screen.getByText(/to send/)).toBeInTheDocument()
+    })
+
+    it("should omit formatting hints that are disabled by a conflicting global shortcut", async () => {
+      const user = userEvent.setup()
+      mockPreferences.keyboardShortcuts = { toggleSidebar: "mod+b" }
+
+      render(<DocumentEditorModal {...defaultProps} />)
+
+      await user.hover(screen.getByRole("button", { name: "Bold" }))
+
+      expect((await screen.findAllByText("Bold")).length).toBeGreaterThan(0)
+      expect(screen.queryByText(/^Ctrl\+B$|^⌘B$/)).not.toBeInTheDocument()
     })
   })
 
