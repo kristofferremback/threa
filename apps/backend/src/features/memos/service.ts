@@ -102,6 +102,8 @@ export class MemoService implements MemoServiceLike {
    *
    * Single-message conversations are deferred (not marked processed) until they are
    * at least MEMO_SINGLE_MESSAGE_AGE_GATE_MS old, giving time for replies to arrive.
+   * Deferred streams are retried every ~30s (quiet-interval cycle) until the age gate
+   * passes — these are cheap no-op runs (no AI calls).
    */
   async processBatch(workspaceId: string, streamId: string): Promise<ProcessResult> {
     // Phase 1: Fetch all data with withClient (no transaction, fast reads)
@@ -414,7 +416,10 @@ export class MemoService implements MemoServiceLike {
         await OutboxRepository.insert(client, event.eventType, event.payload)
       }
 
-      // Mark processed items (excluding deferred ones that need retry)
+      // Mark processed items (excluding deferred ones that need retry).
+      // Deferred items stay unprocessed and are retried on the next batch check
+      // cycle (~30s quiet interval, not 5-min cap) since last_activity_at is
+      // already older than the quiet threshold.
       const itemsToMark = fetchedData.pending.filter((p) => !deferredItemIds.has(p.id))
       if (itemsToMark.length > 0) {
         await PendingItemRepository.markProcessed(
