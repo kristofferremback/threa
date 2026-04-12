@@ -1,129 +1,162 @@
-# Improve Memo Generation Quality (Phase 1)
+# Kill Single-Message Memo Path
 
 ## Context
 
-Threa's GAM (General Agentic Memory) extracts knowledge from conversations into memos. The memo pipeline currently uses `openrouter:openai/gpt-oss-120b` -- a cheap, low-quality model that produces garbage memos in production. PR #333 (now merged) already migrated the *researcher* pathway from the same model to `claude-haiku-4.5` with documented quality + latency wins. That PR's plan file explicitly deferred memorizer quality as "Option H -- separate PR; user wants to focus on it properly." This is that PR.
+PR #342 (merged) upgraded memo models to GPT-5.4 Nano, added a confidence floor, and resolved author names. This is the next-highest-leverage improvement: removing the single-message memo path entirely.
 
-Three improvements, shipped together:
+**Problem:** The current pipeline has two parallel paths. When a user sends a message, the accumulator queues BOTH a `message` item AND a `conversation` item (after boundary extraction). The message path processes the message in isolation — no surrounding context — producing "question without answer" garbage memos. The conversation path naturally groups Q+A but has a `MIN_CONVERSATION_MESSAGES = 2` guard that skips 1-message conversations, so the message path picks up the slack with zero-context memos.
 
-1. **Model split** -- Haiku 4.5 for classifier, GPT-5 Mini for memorizer
-2. **Confidence floor** -- skip memos when classifier confidence < 0.7
-3. **Author name resolution** -- message memos currently see "user (3fa8b2c1)" instead of "user (Alice)"
+**Solution:** Stop queuing message items. Lower `MIN_CONVERSATION_MESSAGES` to 1 with a 10-minute age gate so standalone knowledge drops still get memoed, but young conversations (waiting for replies) are deferred. Delete all dead code per INV-38.
 
 ## Changes
 
-### 1. Model split
+### 1. Stop queuing message items in the accumulator
 
-**`apps/backend/src/features/memos/config.ts`** (line 20)
-- Replace `MEMO_MODEL_ID` with two constants:
+**`apps/backend/src/features/memos/accumulator-outbox-handler.ts`**
+
+- Remove `handleMessageCreated()` method entirely (lines 121-161)
+- Remove the `case "message:created"` from the switch (lines 96-98)
+- Remove now-unused imports: `parseMessagePayload`, `AuthorTypes`
+- Keep `pendingItemId` (still used by `handleConversationEvent`)
+
+Conversations are queued via `conversation:created` / `conversation:updated` events emitted by boundary extraction, which runs on every `message:created`. No messages are lost.
+
+### 2. Remove message processing from service.ts
+
+**`apps/backend/src/features/memos/service.ts`**
+
+**Phase 1 (data fetch):**
+- Remove `messageItemIds` computation and `messages` fetch (lines 122-124)
+- Remove message-specific author ID collection (lines 156-161, the loop over `messages.values()`)
+- Remove `authorNames` map (line 169, 174) — only used by the message path; conversation path resolves names via `MessageFormatter`
+- Remove `messages` and `authorNames` from the returned `fetchedData` object
+
+**Phase 2 (AI processing):**
+- Remove entire "Process message items" block (lines 205-289)
+- Add age gate to conversation loop: change `MIN_CONVERSATION_MESSAGES` to `MIN_CONVERSATION_MESSAGES = 1` (line 20, now that conversations with 1 message are allowed)
+- Add new constant: `MEMO_SINGLE_MESSAGE_AGE_GATE_MS = 10 * 60 * 1000` (10 minutes)
+- In the conversation loop (around line 301), replace the existing guard:
+  ```typescript
+  // Old:
+  if (conversation.messageIds.length < MIN_CONVERSATION_MESSAGES) {
+    continue
+  }
+
+  // New:
+  if (conversation.messageIds.length < MIN_CONVERSATION_MESSAGES) {
+    continue
+  }
+  // Defer young single-message conversations — give time for replies to arrive
+  if (conversation.messageIds.length === 1) {
+    const ageMs = Date.now() - new Date(conversation.lastActivityAt).getTime()
+    if (ageMs < MEMO_SINGLE_MESSAGE_AGE_GATE_MS) {
+      deferredItemIds.add(item.id)
+      logger.debug(
+        { conversationId: conversation.id, ageMs, threshold: MEMO_SINGLE_MESSAGE_AGE_GATE_MS },
+        "Deferring young single-message conversation"
+      )
+      continue
+    }
+  }
   ```
-  MEMO_CLASSIFIER_MODEL_ID = "openrouter:anthropic/claude-haiku-4.5"
-  MEMO_MEMORIZER_MODEL_ID  = "openrouter:openai/gpt-5-mini"
+- Add `const deferredItemIds = new Set<string>()` before the conversation loop
+
+**Phase 3 (atomic save):**
+- Change `markProcessed` to exclude deferred items:
+  ```typescript
+  const itemsToMark = fetchedData.pending.filter((p) => !deferredItemIds.has(p.id))
+  if (itemsToMark.length > 0) {
+    await PendingItemRepository.markProcessed(client, itemsToMark.map((p) => p.id))
+  }
   ```
-- Remove stale comment about `AI_MEMO_MODEL` env var override
+- Keep `StreamStateRepository.markProcessed` call — deferred items get retried on next 5-minute cap cycle
+- Update `processed` count in return value to reflect actual processed (not deferred) items
 
-**`apps/backend/src/features/memos/index.ts`** (line 25)
-- Replace `MEMO_MODEL_ID` export with `MEMO_CLASSIFIER_MODEL_ID` and `MEMO_MEMORIZER_MODEL_ID`
+**Deferral lifecycle:** Deferred items stay `processed_at IS NULL`. The batch worker's 5-minute cap interval re-processes the stream. After ~10 minutes, the conversation is old enough and gets processed. Worst case: 2-3 batch cycles before a standalone knowledge drop is memoed.
 
-**`apps/backend/src/lib/ai/static-config-resolver.ts`** (lines 19, 52-59)
-- Update import: `MEMO_CLASSIFIER_MODEL_ID, MEMO_MEMORIZER_MODEL_ID, MEMO_TEMPERATURES`
-- Use `MEMO_CLASSIFIER_MODEL_ID` for `COMPONENT_PATHS.MEMO_CLASSIFIER`
-- Use `MEMO_MEMORIZER_MODEL_ID` for `COMPONENT_PATHS.MEMO_MEMORIZER`
+### 3. Delete dead code from classifier (INV-38)
 
-**`apps/backend/evals/suites/memo-classifier/suite.ts`** (lines 11, ~137)
-- Import `MEMO_CLASSIFIER_MODEL_ID` instead of `MEMO_MODEL_ID`
-- Use in `defaultPermutations`
+**`apps/backend/src/features/memos/classifier.ts`**
 
-**`apps/backend/evals/suites/memorizer/suite.ts`** (lines 19, ~224)
-- Import `MEMO_MEMORIZER_MODEL_ID` instead of `MEMO_MODEL_ID`
-- Use in `defaultPermutations`
+- Remove `classifyMessage()` method (lines 57-87) — only callsite was service.ts message loop
+- Remove `MessageClassification` interface (lines 31-37) — only used by `classifyMessage`
+- Remove `authorName` from `ClassifierContext` (line 23) — only used by `classifyMessage`; `classifyConversation` never uses it
+- Remove unused imports: `Message` type (not used by `classifyConversation`), `CLASSIFIER_MESSAGE_SYSTEM_PROMPT`, `CLASSIFIER_MESSAGE_PROMPT`, `messageClassificationSchema`
 
-**`apps/backend/src/lib/env.ts`** (lines 14-15, 137)
-- Remove dead `memoModel` property from `AIConfig` interface and `createEnv()` -- confirmed zero consumers via grep
+### 4. Delete dead code from memorizer (INV-38)
 
-### 2. Confidence floor
+**`apps/backend/src/features/memos/memorizer.ts`**
+
+- Remove `memorizeMessage()` method (lines 52-95) — only callsite was service.ts message loop
+- Remove `authorName` from `MemorizerContext` (line 42) — only used by `memorizeMessage`
+- Remove unused imports: `MEMORIZER_MESSAGE_PROMPT`
+
+### 5. Delete dead prompts and schemas from config (INV-38)
 
 **`apps/backend/src/features/memos/config.ts`**
-- Add `MEMO_GEM_CONFIDENCE_FLOOR = 0.7`
 
-**`apps/backend/src/features/memos/service.ts`** (after line 217, after line 314)
-- After classifier returns `isGem: true`, check `confidence < MEMO_GEM_CONFIDENCE_FLOOR`
-- If below threshold: `logger.info(...)` with messageId/confidence/threshold, then `continue`
-- Apply same check for conversation classification path
+Remove:
+- `messageClassificationSchema` and `MessageClassificationOutput` (lines 60-70)
+- `CLASSIFIER_MESSAGE_SYSTEM_PROMPT` (lines 108-129)
+- `CLASSIFIER_MESSAGE_PROMPT` (lines 154-159)
+- `MEMORIZER_MESSAGE_PROMPT` (lines 209-222)
+
+Keep: all conversation-related prompts, schemas, `memoContentSchema`, `getMemorizerSystemPrompt`, `MEMO_GEM_CONFIDENCE_FLOOR`, model constants.
+
+### 6. Update barrel exports
 
 **`apps/backend/src/features/memos/index.ts`**
-- Export `MEMO_GEM_CONFIDENCE_FLOOR`
 
-### 3. Author name resolution for message memos
+- Remove `MessageClassification` from type exports (line 18)
+- Remove `messageClassificationSchema` from config exports (line 29)
 
-**Problem**: `memorizeMessage()` receives a raw `Message` and shows `From: user` with no name. `classifyMessage()` shows `From: user (3fa8b2c1)` -- last 8 chars of a ULID. Conversation memos already get proper names via `MessageFormatter.formatMessages()`.
+### 7. Delete message-level eval suites (INV-38)
 
-**`apps/backend/src/features/memos/service.ts`** -- Phase 1 data fetch (lines 155-173)
-- The code already calls `UserRepository.findByIds(client, workspaceId, ...)` to get timezones
-- Also extract `member.name` into a new `authorNames: Map<string, string>` alongside `authorTimezones`
-- Zero additional DB queries -- reuse the existing result set
-- Add `authorNames` to `fetchedData` return object
+Both eval suites test removed functionality:
 
-**`apps/backend/src/features/memos/service.ts`** -- Phase 2 message processing (lines 203-268)
-- Resolve: `const authorName = fetchedData.authorNames.get(message.authorId) ?? undefined`
-- Pass to classifier: `this.classifier.classifyMessage(message, { workspaceId, authorName })`
-- Pass to memorizer: `this.memorizer.memorizeMessage({ ..., authorName })`
+- **Delete** `apps/backend/evals/suites/memo-classifier/` directory (suite.ts + cases.ts) — tests `classifyMessage()`
+- **Delete** `apps/backend/evals/suites/memorizer/` directory (suite.ts + cases.ts) — tests `memorizeMessage()`
+- **Update** `apps/backend/evals/run.ts` — remove imports (lines 16-17) and suite registrations (lines 26-27) for `memoClassifierSuite` and `memorizerSuite`
 
-**`apps/backend/src/features/memos/classifier.ts`** (lines 22-24, 55-83)
-- Add `authorName?: string` to `ClassifierContext` interface
-- In `classifyMessage()`: use `context.authorName ?? message.authorId.slice(-8)` as the author label in the prompt. No template change needed -- `{{AUTHOR_ID}}` placeholder now receives a name instead of a ULID suffix.
+Conversation-level eval suites are a follow-up concern (INV-36: no speculative features).
 
-**`apps/backend/src/features/memos/memorizer.ts`** (lines 32-41, 50-91)
-- Add `authorName?: string` to `MemorizerContext` interface
-- In `memorizeMessage()`: use `context.authorName ?? "Unknown"` as author label
+### 8. Update config-resolver test
 
-**`apps/backend/src/features/memos/config.ts`** -- prompt template (line 195)
-- Change `MEMORIZER_MESSAGE_PROMPT` line from:
-  `From: {{AUTHOR_TYPE}}`
-  to:
-  `From: {{AUTHOR_TYPE}} ({{AUTHOR_NAME}})`
-- Add `{{AUTHOR_NAME}}` replacement in `memorizer.ts` line 65
+**`apps/backend/src/lib/ai/config-resolver.test.ts`**
+
+- The test references `MEMO_CLASSIFIER` and `MEMO_MEMORIZER` configs — these still exist. No changes expected unless the config resolver itself changes. Verify tests still pass.
+
+## What stays unchanged
+
+| File | Reason |
+|------|--------|
+| `packages/types/src/constants.ts` | `MEMO_TYPES` and `PENDING_ITEM_TYPES` keep `"message"` for DB compatibility |
+| `pending-item-repository.ts` | Type-agnostic; no changes needed |
+| `batch-worker.ts` | Dispatches to service which handles filtering |
+| `repository.ts` | Keeps `memoType` column for existing memos |
+| `explorer-service.ts` | Keeps memo type filter for existing message memos |
+| `tests/e2e/memos.test.ts` | Tests read path with inserted memos; `MemoTypes.MESSAGE` still valid |
 
 ## Implementation order
 
-1. `config.ts` -- model constants, confidence floor constant, prompt template update
-2. `index.ts` -- update exports
-3. `static-config-resolver.ts` -- use split model constants
-4. `classifier.ts` -- accept `authorName` in context
-5. `memorizer.ts` -- accept `authorName` in context, use in prompt
-6. `service.ts` -- collect author names in Phase 1, pass to classifier/memorizer in Phase 2, add confidence floor checks
-7. `env.ts` -- remove dead `memoModel`
-8. Eval suites -- update imports to per-component model IDs
+1. `config.ts` — remove message schemas and prompts, add `MEMO_SINGLE_MESSAGE_AGE_GATE_MS`
+2. `classifier.ts` — remove `classifyMessage`, `MessageClassification`, clean `ClassifierContext`
+3. `memorizer.ts` — remove `memorizeMessage`, clean `MemorizerContext`
+4. `index.ts` — remove dead exports
+5. `accumulator-outbox-handler.ts` — remove `handleMessageCreated`, remove `message:created` case
+6. `service.ts` — remove message fetch/processing, lower min to 1, add age gate + deferral
+7. Delete eval suites + update registry
+8. Run typecheck + tests
 
 ## Verification
 
-**Typecheck**: `bun run typecheck` must pass
+- `bun run typecheck` must pass
+- `bun run --cwd apps/backend test` (unit tests) must pass
+- Grep for `classifyMessage`, `memorizeMessage`, `CLASSIFIER_MESSAGE`, `MEMORIZER_MESSAGE_PROMPT` — should only appear in test fixtures or DB data, not production code
+- Verify no runtime imports of deleted eval suites
 
-**Unit tests**: `bun run --cwd apps/backend test` -- existing tests must pass
+## Risks
 
-**Eval comparison** (before merging, to validate model picks):
-```bash
-cd apps/backend
-
-# Classifier: compare old vs new
-bun run evals/run.ts -s memo-classifier \
-  -m "openrouter:openai/gpt-oss-120b,openrouter:anthropic/claude-haiku-4.5" -p 2
-
-# Memorizer: compare old vs new
-bun run evals/run.ts -s memorizer \
-  -m "openrouter:openai/gpt-oss-120b,openrouter:openai/gpt-5-mini" -p 2
-
-# Run with new defaults (after code change)
-bun run evals/run.ts -s memo-classifier
-bun run evals/run.ts -s memorizer
-```
-
-**Eval suite updates**: update eval task functions to pass a synthetic `authorName: "Alex"` so prompts contain realistic data instead of exercising the fallback path.
-
-## Not in this PR
-
-- Kill the single-message memo path (Approach 2) -- architectural, separate PR
-- Completeness gating / context windowing (Approach 3) -- depends on boundary extraction changes
-- Self-verification / critic pass (Approach 5) -- deferred until we measure quality after model upgrade
-- Provenance tracking migration (`generated_with_model`, `generated_with_prompt_version`) -- separate PR, enables backfill
-- Backfill script for historical memos -- depends on provenance tracking
+1. **Boundary extraction fails** → message never gets a conversation → never gets memoed. Strictly better than garbage single-message memo. Boundary extraction has its own retry infrastructure.
+2. **Standalone knowledge drops deferred** → gets memoed after ~10-15 minutes (2-3 batch cycles). Acceptable delay.
+3. **Eval coverage gap** → classifier and memorizer evals deleted. Conversation-level evals are a follow-up.
