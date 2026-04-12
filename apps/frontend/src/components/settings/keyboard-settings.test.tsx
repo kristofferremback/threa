@@ -38,9 +38,11 @@ describe("KeyboardSettings", () => {
     await user.click(badge)
     fireEvent.keyDown(document, { key: "b", ctrlKey: true })
 
-    expect(screen.getByText(/Already used by Bold/i)).toBeInTheDocument()
+    expect(screen.getByText("Move shortcut?")).toBeInTheDocument()
+    expect(screen.getByText(/is currently used by Bold/i)).toBeInTheDocument()
+    expect(screen.getByText("New owner")).toBeInTheDocument()
 
-    await user.click(screen.getByRole("button", { name: "Override existing shortcut" }))
+    await user.click(screen.getByRole("button", { name: "Move to Toggle Sidebar" }))
 
     expect(updatePreference).toHaveBeenCalledTimes(1)
     expect(updatePreference).toHaveBeenCalledWith("keyboardShortcuts", {
@@ -49,7 +51,7 @@ describe("KeyboardSettings", () => {
     })
   })
 
-  it("explains that conflicting shortcuts can be overridden", async () => {
+  it("shows the capture popover before a shortcut is chosen", async () => {
     const user = userEvent.setup()
     render(<KeyboardSettings />)
 
@@ -59,13 +61,8 @@ describe("KeyboardSettings", () => {
     const badge = within(row! as HTMLElement).getByRole("button")
     await user.click(badge)
 
-    expect(screen.getByText(/you can override them here/i)).toBeInTheDocument()
-
-    fireEvent.keyDown(document, { key: "b", ctrlKey: true })
-
-    expect(screen.getByText(/override to move/i)).toBeInTheDocument()
-    expect(screen.getByText(/clear it there/i)).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Override existing shortcut" })).toBeInTheDocument()
+    expect(screen.getByText("Press shortcut keys")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Bind Escape" })).toBeInTheDocument()
   })
 
   it("ignores unsafe bare keys during capture", async () => {
@@ -103,11 +100,12 @@ describe("KeyboardSettings", () => {
 
     const badge = within(row! as HTMLElement).getByRole("button")
     await user.click(badge)
-    await user.click(screen.getByRole("button", { name: "Use Escape" }))
+    await user.click(screen.getByRole("button", { name: "Bind Escape" }))
 
-    expect(screen.getByText(/Already used by Close/i)).toBeInTheDocument()
+    expect(screen.getByText("Move shortcut?")).toBeInTheDocument()
+    expect(screen.getByText(/is currently used by Close/i)).toBeInTheDocument()
 
-    await user.click(screen.getByRole("button", { name: "Override existing shortcut" }))
+    await user.click(screen.getByRole("button", { name: "Move to Toggle Sidebar" }))
 
     expect(updatePreference).toHaveBeenCalledTimes(1)
     expect(updatePreference).toHaveBeenCalledWith("keyboardShortcuts", {

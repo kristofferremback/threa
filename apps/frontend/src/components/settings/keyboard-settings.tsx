@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
@@ -66,6 +67,12 @@ function ShortcutRow({
   const badgeRef = useRef<HTMLButtonElement>(null)
   const binding = getEffectiveKeyBinding(action.id, customBindings)
   const isCustom = action.id in customBindings && customBindings[action.id] !== action.defaultKey
+  const conflictLabels =
+    conflictInfo?.conflictIds
+      .map((id) => SHORTCUT_ACTIONS.find((shortcutAction) => shortcutAction.id === id)?.label)
+      .filter((label): label is string => Boolean(label)) ?? []
+  const conflictOwnersLabel = conflictLabels.join(", ")
+  const keepLabel = conflictLabels.length === 1 ? `Keep ${conflictOwnersLabel}` : "Keep current owners"
 
   const handleCapturedBinding = useCallback(
     (captured: string) => {
@@ -156,55 +163,88 @@ function ShortcutRow({
               </Tooltip>
             </TooltipProvider>
           )}
-          <button
-            ref={badgeRef}
-            type="button"
-            onClick={() => (isCapturing ? onCancelCapture() : onStartCapture(action.id))}
-            className={
-              isCapturing
-                ? "inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-mono font-semibold border-primary bg-primary/10 text-primary animate-pulse cursor-pointer focus:outline-none"
-                : "inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-mono font-semibold border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80 cursor-pointer focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-            }
-          >
-            {getBadgeLabel(isCapturing, conflictInfo, binding)}
-          </button>
+          <Popover open={isCapturing} onOpenChange={(open) => !open && onCancelCapture()}>
+            <PopoverAnchor asChild>
+              <button
+                ref={badgeRef}
+                type="button"
+                onClick={() => (isCapturing ? onCancelCapture() : onStartCapture(action.id))}
+                className={
+                  isCapturing
+                    ? "inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-mono font-semibold border-primary bg-primary/10 text-primary animate-pulse cursor-pointer focus:outline-none"
+                    : "inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-mono font-semibold border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80 cursor-pointer focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                }
+              >
+                {getBadgeLabel(isCapturing, conflictInfo, binding)}
+              </button>
+            </PopoverAnchor>
+
+            {isCapturing && (
+              <PopoverContent align="end" className="w-80 p-3" onOpenAutoFocus={(event) => event.preventDefault()}>
+                {conflictInfo ? (
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <p className="font-medium text-sm">Move shortcut?</p>
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Badge variant="outline" className="mr-1 font-mono">
+                          {formatKeyBinding(conflictInfo.binding)}
+                        </Badge>
+                        is currently used by {conflictOwnersLabel}.
+                      </div>
+                    </div>
+
+                    <div className="rounded-md border bg-muted/40 px-3 py-2 text-xs">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-muted-foreground">
+                          {conflictLabels.length === 1 ? "Current owner" : "Current owners"}
+                        </span>
+                        <span className="font-medium text-right">{conflictOwnersLabel}</span>
+                      </div>
+                      <div className="mt-2 flex items-center justify-between gap-3">
+                        <span className="text-muted-foreground">New owner</span>
+                        <span className="font-medium text-right">{action.label}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end gap-2">
+                      <Button variant="ghost" size="sm" onClick={onCancelCapture}>
+                        {keepLabel}
+                      </Button>
+                      <Button size="sm" onClick={handleConfirmConflict}>
+                        Move to {action.label}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <p className="font-medium text-sm">Press shortcut keys</p>
+                      <p className="text-xs text-muted-foreground">
+                        Click <span className="font-mono text-foreground">Esc</span> if you want to assign Escape.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 min-w-10 px-3 font-mono"
+                        onClick={handleUseEscape}
+                        aria-label="Bind Escape"
+                      >
+                        Esc
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={onCancelCapture}>
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </PopoverContent>
+            )}
+          </Popover>
         </div>
       </div>
-
-      {/* Conflict resolution inline */}
-      {isCapturing && conflictInfo && (
-        <div className="flex items-center gap-2 ml-1 text-xs">
-          <span className="text-destructive">
-            Already used by{" "}
-            {conflictInfo.conflictIds
-              .map((id) => SHORTCUT_ACTIONS.find((a) => a.id === id)?.label)
-              .filter(Boolean)
-              .join(", ")}
-            . Override to move {formatKeyBinding(conflictInfo.binding)} here and clear it there.
-          </span>
-          <Button variant="outline" size="sm" className="h-5 px-2 text-xs" onClick={handleConfirmConflict}>
-            Override existing shortcut
-          </Button>
-          <Button variant="ghost" size="sm" className="h-5 px-2 text-xs" onClick={onCancelCapture}>
-            Cancel
-          </Button>
-        </div>
-      )}
-
-      {isCapturing && !conflictInfo && (
-        <div className="flex items-center gap-2 ml-1 text-xs">
-          <span className="text-muted-foreground">
-            Press shortcut keys. If they&apos;re already in use, you can override them here. Use the button below to
-            bind Escape.
-          </span>
-          <Button variant="outline" size="sm" className="h-5 px-2 text-xs" onClick={handleUseEscape}>
-            Use Escape
-          </Button>
-          <Button variant="ghost" size="sm" className="h-5 px-2 text-xs" onClick={onCancelCapture}>
-            Cancel
-          </Button>
-        </div>
-      )}
     </div>
   )
 }
@@ -281,25 +321,6 @@ export function KeyboardSettings({ onCaptureStateChange }: KeyboardSettingsProps
   useEffect(() => {
     return () => onCaptureStateChange?.(false)
   }, [onCaptureStateChange])
-
-  // Click outside to cancel capture
-  useEffect(() => {
-    if (!capturingId) return
-    function handleClick(e: MouseEvent) {
-      const target = e.target as HTMLElement
-      // Don't cancel if clicking inside a shortcut row
-      if (target.closest("[data-shortcut-row]")) return
-      setCapturingId(null)
-    }
-    // Use timeout to avoid immediately cancelling from the click that started capture
-    const id = setTimeout(() => {
-      document.addEventListener("click", handleClick)
-    }, 0)
-    return () => {
-      clearTimeout(id)
-      document.removeEventListener("click", handleClick)
-    }
-  }, [capturingId])
 
   const handleSaveBinding = useCallback(
     (actionId: string, binding: string) => {
