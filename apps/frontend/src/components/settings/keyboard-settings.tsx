@@ -116,7 +116,7 @@ function ShortcutRow({
   }, [action.id, pendingBinding, conflictInfo, onSaveBinding])
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2" data-shortcut-row>
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
           <p className="font-medium text-sm">{action.label}</p>
