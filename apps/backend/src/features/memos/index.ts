@@ -15,7 +15,7 @@ export type { PendingMemoItem, QueuePendingItemParams } from "./pending-item-rep
 
 // AI pipeline
 export { MemoClassifier } from "./classifier"
-export type { MessageClassification, ConversationClassification, ClassifierContext } from "./classifier"
+export type { ConversationClassification, ClassifierContext } from "./classifier"
 
 export { Memorizer } from "./memorizer"
 export type { MemoContent, MemorizerContext } from "./memorizer"
@@ -26,7 +26,7 @@ export {
   MEMO_MEMORIZER_MODEL_ID,
   MEMO_TEMPERATURES,
   MEMO_GEM_CONFIDENCE_FLOOR,
-  messageClassificationSchema,
+  MEMO_SINGLE_MESSAGE_AGE_GATE_MS,
   conversationClassificationSchema,
   memoContentSchema,
   getMemorizerSystemPrompt,
