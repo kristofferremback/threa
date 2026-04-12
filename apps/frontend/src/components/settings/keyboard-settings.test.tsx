@@ -63,4 +63,22 @@ describe("KeyboardSettings", () => {
     expect(updatePreference).not.toHaveBeenCalled()
     expect(screen.queryByText(/Conflicts with/i)).not.toBeInTheDocument()
   })
+
+  it("reports capture state changes and cancels capture on Escape", async () => {
+    const user = userEvent.setup()
+    const onCaptureStateChange = vi.fn()
+    render(<KeyboardSettings onCaptureStateChange={onCaptureStateChange} />)
+
+    const row = screen.getByText("Toggle Sidebar").closest("[data-shortcut-row]")
+    expect(row).not.toBeNull()
+
+    const badge = within(row! as HTMLElement).getByRole("button")
+    await user.click(badge)
+    fireEvent.keyDown(document, { key: "Escape" })
+    fireEvent.keyDown(document, { key: "b", ctrlKey: true })
+
+    expect(onCaptureStateChange).toHaveBeenCalledWith(true)
+    expect(onCaptureStateChange).toHaveBeenCalledWith(false)
+    expect(updatePreference).not.toHaveBeenCalled()
+  })
 })

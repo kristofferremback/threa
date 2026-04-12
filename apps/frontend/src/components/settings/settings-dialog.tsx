@@ -31,6 +31,7 @@ const TAB_CONFIG: Record<SettingsTab, { label: string; description: string }> = 
 export function SettingsDialog() {
   const { isOpen, activeTab, closeSettings, setActiveTab } = useSettings()
   const [mounted, setMounted] = useState(false)
+  const [isShortcutCaptureActive, setIsShortcutCaptureActive] = useState(false)
 
   // Delay dialog render until after hydration to avoid scroll lock measurement issues
   useEffect(() => {
@@ -45,6 +46,11 @@ export function SettingsDialog() {
         desktopClassName="w-[min(96vw,980px)] max-w-none h-[min(720px,calc(100vh-2rem))] sm:flex flex-col overflow-hidden p-0 gap-0"
         drawerClassName="flex flex-col gap-0"
         hideCloseButton
+        onEscapeKeyDown={(event) => {
+          if (isShortcutCaptureActive) {
+            event.preventDefault()
+          }
+        }}
       >
         <ResponsiveDialogHeader className="border-b px-4 py-4 sm:px-6 sm:py-5">
           <ResponsiveDialogTitle>Settings</ResponsiveDialogTitle>
@@ -84,7 +90,7 @@ export function SettingsDialog() {
                 <NotificationsSettings />
               </TabsContent>
               <TabsContent value="keyboard" className="mt-0">
-                <KeyboardSettings />
+                <KeyboardSettings onCaptureStateChange={setIsShortcutCaptureActive} />
               </TabsContent>
               <TabsContent value="accessibility" className="mt-0">
                 <AccessibilitySettings />

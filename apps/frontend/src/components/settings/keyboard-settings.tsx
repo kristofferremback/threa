@@ -77,6 +77,7 @@ function ShortcutRow({
     function handleKeyDown(e: KeyboardEvent) {
       e.preventDefault()
       e.stopPropagation()
+      e.stopImmediatePropagation()
 
       // Escape cancels capture
       if (e.key === "Escape") {
@@ -100,8 +101,8 @@ function ShortcutRow({
       }
     }
 
-    document.addEventListener("keydown", handleKeyDown, { capture: true })
-    return () => document.removeEventListener("keydown", handleKeyDown, { capture: true })
+    window.addEventListener("keydown", handleKeyDown, { capture: true })
+    return () => window.removeEventListener("keydown", handleKeyDown, { capture: true })
   }, [isCapturing, action.id, customBindings, onCancelCapture, onSaveBinding])
 
   // Focus badge when entering capture mode
@@ -221,7 +222,11 @@ function ShortcutCategory({
   )
 }
 
-export function KeyboardSettings() {
+interface KeyboardSettingsProps {
+  onCaptureStateChange?: (isCapturing: boolean) => void
+}
+
+export function KeyboardSettings({ onCaptureStateChange }: KeyboardSettingsProps = {}) {
   const { preferences, updatePreference, resetKeyboardShortcut, resetAllKeyboardShortcuts } = usePreferences()
 
   const customBindings = preferences?.keyboardShortcuts ?? {}
@@ -232,6 +237,14 @@ export function KeyboardSettings() {
   const messageSendMode = preferences?.messageSendMode ?? "enter"
 
   const [capturingId, setCapturingId] = useState<string | null>(null)
+
+  useEffect(() => {
+    onCaptureStateChange?.(capturingId !== null)
+  }, [capturingId, onCaptureStateChange])
+
+  useEffect(() => {
+    return () => onCaptureStateChange?.(false)
+  }, [onCaptureStateChange])
 
   // Click outside to cancel capture
   useEffect(() => {

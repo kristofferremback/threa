@@ -177,6 +177,48 @@ describe("User Preferences - Sparse Override Pattern", () => {
         value: "mod+p",
       })
     })
+
+    test("should delete omitted keyboard shortcut overrides when updating the map", async () => {
+      await service.updatePreferences(testWorkspaceId, testUserId, {
+        keyboardShortcuts: {
+          openQuickSwitcher: "mod+p",
+          openSearch: "mod+shift+f",
+        },
+      })
+
+      await service.updatePreferences(testWorkspaceId, testUserId, {
+        keyboardShortcuts: {
+          openSearch: "mod+shift+s",
+        },
+      })
+
+      const overrides = await UserPreferencesRepository.findOverrides(pool, testUserId)
+
+      expect(overrides).toEqual([{ key: "keyboardShortcuts.openSearch", value: "mod+shift+s" }])
+
+      const prefs = await service.getPreferences(testWorkspaceId, testUserId)
+      expect(prefs.keyboardShortcuts).toEqual({
+        openSearch: "mod+shift+s",
+      })
+    })
+
+    test("should clear all keyboard shortcut overrides when resetting to an empty map", async () => {
+      await service.updatePreferences(testWorkspaceId, testUserId, {
+        keyboardShortcuts: {
+          openQuickSwitcher: "mod+p",
+        },
+      })
+
+      await service.updatePreferences(testWorkspaceId, testUserId, {
+        keyboardShortcuts: {},
+      })
+
+      const overrides = await UserPreferencesRepository.findOverrides(pool, testUserId)
+      expect(overrides).toHaveLength(0)
+
+      const prefs = await service.getPreferences(testWorkspaceId, testUserId)
+      expect(prefs.keyboardShortcuts).toEqual({})
+    })
   })
 
   describe("outbox events", () => {
