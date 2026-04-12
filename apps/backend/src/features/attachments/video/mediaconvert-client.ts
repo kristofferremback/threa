@@ -139,14 +139,14 @@ export class ThreaMediaConvertClient {
                 },
                 VideoDescription: {
                   CodecSettings: {
-                    Codec: "H_264",
-                    H264Settings: {
+                    Codec: "H_265",
+                    H265Settings: {
                       RateControlMode: "QVBR",
                       QvbrSettings: {
                         QvbrQualityLevel: 7,
                       },
-                      MaxBitrate: 5_000_000,
-                      CodecProfile: "HIGH",
+                      MaxBitrate: 3_000_000,
+                      CodecProfile: "MAIN_MAIN",
                       CodecLevel: "AUTO",
                     },
                   },
