@@ -22,8 +22,10 @@ export type { MemoContent, MemorizerContext } from "./memorizer"
 
 // Config (INV-44)
 export {
-  MEMO_MODEL_ID,
+  MEMO_CLASSIFIER_MODEL_ID,
+  MEMO_MEMORIZER_MODEL_ID,
   MEMO_TEMPERATURES,
+  MEMO_GEM_CONFIDENCE_FLOOR,
   messageClassificationSchema,
   conversationClassificationSchema,
   memoContentSchema,

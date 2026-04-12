@@ -14,10 +14,22 @@ import { formatDate } from "../../lib/temporal"
 // ============================================================================
 
 /**
- * Default model for memo classification and generation.
- * Can be overridden via AI_MEMO_MODEL environment variable.
+ * Model for memo classification (gem detection).
+ *
+ * Haiku 4.5 is the Anthropic cost-effective tier for structured output.
+ * Chosen for fast, predictable latency and solid binary+enum classification.
+ * Previously used gpt-oss-120b whose patchwork OpenRouter provider backing
+ * caused 60-120s tail latency and low-quality gem decisions.
  */
-export const MEMO_MODEL_ID = "openrouter:openai/gpt-oss-120b"
+export const MEMO_CLASSIFIER_MODEL_ID = "openrouter:anthropic/claude-haiku-4.5"
+
+/**
+ * Model for memo content generation (abstractive extraction).
+ *
+ * GPT-5 Mini balances quality and cost for the nuanced summarization,
+ * pronoun resolution, and date anchoring the memorizer prompt requires.
+ */
+export const MEMO_MEMORIZER_MODEL_ID = "openrouter:openai/gpt-5-mini"
 
 /**
  * Temperature settings for different operations.
@@ -26,6 +38,12 @@ export const MEMO_TEMPERATURES = {
   classification: 0.1, // Low temperature for consistent classification
   memorization: 0.3, // Slightly higher for creative summarization
 } as const
+
+/**
+ * Minimum classifier confidence required to create a memo.
+ * Messages classified as gems with confidence below this threshold are skipped.
+ */
+export const MEMO_GEM_CONFIDENCE_FLOOR = 0.7
 
 // ============================================================================
 // Schemas
@@ -193,7 +211,7 @@ export const MEMORIZER_MESSAGE_PROMPT = `Create a memo for this standalone messa
 
 ## Message to Memorize
 ID: {{MESSAGE_ID}}
-From: {{AUTHOR_TYPE}}
+From: {{AUTHOR_TYPE}} ({{AUTHOR_NAME}})
 Content:
 {{CONTENT}}
 

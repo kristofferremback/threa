@@ -8,7 +8,7 @@
 import type { EvalSuite, EvalContext, RunEvaluator, CaseResult } from "../../framework/types"
 import { binaryClassificationEvaluator, categoricalEvaluator } from "../../framework/evaluators/classification"
 import { MemoClassifier, type MessageClassification } from "../../../src/features/memos"
-import { MEMO_MODEL_ID, MEMO_TEMPERATURES } from "../../../src/features/memos"
+import { MEMO_CLASSIFIER_MODEL_ID, MEMO_TEMPERATURES } from "../../../src/features/memos"
 import { MessageFormatter } from "../../../src/lib/ai/message-formatter"
 import { classifierCases, createTestMessage, type ClassifierInput, type ClassifierExpected } from "./cases"
 import { messageId } from "../../../src/lib/id"
@@ -23,8 +23,8 @@ async function classifyMessage(input: ClassifierInput, ctx: EvalContext): Promis
   // Create a test message from the input
   const message = createTestMessage(input, messageId(), ctx.userId)
 
-  // Classify the message
-  return classifier.classifyMessage(message, { workspaceId: ctx.workspaceId })
+  // Classify the message (pass synthetic author name for realistic prompt content)
+  return classifier.classifyMessage(message, { workspaceId: ctx.workspaceId, authorName: "Alex" })
 }
 
 /**
@@ -135,7 +135,7 @@ export const memoClassifierSuite: EvalSuite<ClassifierInput, MessageClassificati
 
   defaultPermutations: [
     {
-      model: MEMO_MODEL_ID,
+      model: MEMO_CLASSIFIER_MODEL_ID,
       temperature: MEMO_TEMPERATURES.classification,
     },
   ],

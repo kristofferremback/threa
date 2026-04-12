@@ -16,7 +16,7 @@ import type {
   CaseResult,
 } from "../../framework/types"
 import { Memorizer, type MemoContent } from "../../../src/features/memos"
-import { MEMO_MODEL_ID, MEMO_TEMPERATURES } from "../../../src/features/memos"
+import { MEMO_MEMORIZER_MODEL_ID, MEMO_TEMPERATURES } from "../../../src/features/memos"
 import { MessageFormatter } from "../../../src/lib/ai/message-formatter"
 import { memorizerCases, createTestMessage, type MemorizerInput, type MemorizerExpected } from "./cases"
 import { messageId } from "../../../src/lib/id"
@@ -31,13 +31,14 @@ async function memorizeMessage(input: MemorizerInput, ctx: EvalContext): Promise
   // Create a test message from the input
   const message = createTestMessage(input.content, messageId(), ctx.userId)
 
-  // Memorize the message
+  // Memorize the message (pass synthetic author name for realistic prompt content)
   return memorizer.memorizeMessage({
     memoryContext: input.memoryContext ?? [],
     content: message,
     existingTags: input.existingTags ?? [],
     workspaceId: ctx.workspaceId,
     authorTimezone: input.authorTimezone,
+    authorName: "Alex",
   })
 }
 
@@ -223,7 +224,7 @@ export const memorizerSuite: EvalSuite<MemorizerInput, MemoContent, MemorizerExp
 
   defaultPermutations: [
     {
-      model: MEMO_MODEL_ID,
+      model: MEMO_MEMORIZER_MODEL_ID,
       temperature: MEMO_TEMPERATURES.memorization,
     },
   ],

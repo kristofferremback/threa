@@ -14,6 +14,7 @@ import type { EmbeddingServiceLike } from "./embedding-service"
 import { memoId } from "../../lib/id"
 import { logger } from "../../lib/logger"
 import { MemoTypes, MemoStatuses } from "@threa/types"
+import { MEMO_GEM_CONFIDENCE_FLOOR } from "./config"
 
 const MEMORY_CONTEXT_LIMIT = 20
 const MIN_CONVERSATION_MESSAGES = 2
@@ -165,10 +166,12 @@ export class MemoService implements MemoServiceLike {
       }
 
       const authorTimezones = new Map<string, string | null>()
+      const authorNames = new Map<string, string>()
       if (authorIds.size > 0) {
         const members = await UserRepository.findByIds(client, workspaceId, Array.from(authorIds))
         for (const member of members) {
           authorTimezones.set(member.id, member.timezone)
+          authorNames.set(member.id, member.name)
         }
       }
 
@@ -182,6 +185,7 @@ export class MemoService implements MemoServiceLike {
         existingConversationMemos,
         formattedConversations,
         authorTimezones,
+        authorNames,
       }
     })
 
@@ -212,9 +216,24 @@ export class MemoService implements MemoServiceLike {
           continue
         }
 
+        const authorName = fetchedData.authorNames.get(message.authorId) ?? undefined
+
         // AI calls (no connection held)
-        const classification = await this.classifier.classifyMessage(message, { workspaceId })
+        const classification = await this.classifier.classifyMessage(message, { workspaceId, authorName })
         if (!classification.isGem || !classification.knowledgeType) {
+          continue
+        }
+
+        if (classification.confidence != null && classification.confidence < MEMO_GEM_CONFIDENCE_FLOOR) {
+          logger.info(
+            {
+              messageId: message.id,
+              confidence: classification.confidence,
+              threshold: MEMO_GEM_CONFIDENCE_FLOOR,
+              knowledgeType: classification.knowledgeType,
+            },
+            "Message gem skipped due to low confidence"
+          )
           continue
         }
 
@@ -229,6 +248,7 @@ export class MemoService implements MemoServiceLike {
           existingTags: fetchedData.existingTags,
           workspaceId,
           authorTimezone: fetchedData.authorTimezones.get(message.authorId) ?? undefined,
+          authorName,
         })
 
         const embedding = await this.embeddingService.embed(content.abstract, {
@@ -312,6 +332,18 @@ export class MemoService implements MemoServiceLike {
         )
 
         if (!classification.isKnowledgeWorthy || !classification.knowledgeType) {
+          continue
+        }
+
+        if (classification.confidence != null && classification.confidence < MEMO_GEM_CONFIDENCE_FLOOR) {
+          logger.info(
+            {
+              conversationId: conversation.id,
+              confidence: classification.confidence,
+              threshold: MEMO_GEM_CONFIDENCE_FLOOR,
+            },
+            "Conversation skipped due to low classifier confidence"
+          )
           continue
         }
 
