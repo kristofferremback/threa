@@ -620,7 +620,7 @@ function makeWorkspaceUser() {
 
 describe("registerWorkspaceSocketHandlers", () => {
   beforeEach(async () => {
-    await Promise.all([db.streams.clear(), db.streamMemberships.clear(), db.unreadState.clear()])
+    await Promise.all([db.streams.clear(), db.streamMemberships.clear(), db.dmPeers.clear(), db.unreadState.clear()])
   })
 
   it("subscribes the creator when a new stream is created at runtime", async () => {
@@ -669,6 +669,95 @@ describe("registerWorkspaceSocketHandlers", () => {
 
     expect(subscribeStream).toHaveBeenCalledWith("stream_new")
     expect(await db.streamMemberships.get("ws_1:stream_new")).toBeDefined()
+
+    cleanup()
+  })
+
+  it("promotes newly created DMs for recipients without waiting for a workspace refetch", async () => {
+    const queryClient = new QueryClient()
+    queryClient.setQueryData(
+      workspaceKeys.bootstrap("ws_1"),
+      makeBootstrap({
+        users: [
+          makeWorkspaceUser(),
+          {
+            id: "member_2",
+            workspaceId: "ws_1",
+            workosUserId: "workos_2",
+            email: "invitee@example.com",
+            role: "user",
+            slug: "invitee",
+            name: "Invitee",
+            description: null,
+            avatarUrl: null,
+            timezone: "Europe/Stockholm",
+            locale: "en",
+            pronouns: null,
+            phone: null,
+            githubUsername: null,
+            setupCompleted: true,
+            joinedAt: new Date().toISOString(),
+          },
+        ],
+        streams: [],
+        streamMemberships: [],
+        dmPeers: [],
+      })
+    )
+
+    const subscribeStream = vi.fn()
+    const { socket, emit } = createTestSocket()
+    const cleanup = registerWorkspaceSocketHandlers(socket, "ws_1", queryClient, {
+      getCurrentStreamId: () => undefined,
+      getCurrentUser: () => ({ id: "workos_1" }),
+      subscribeStream,
+    })
+
+    emit("stream:created", {
+      workspaceId: "ws_1",
+      streamId: "stream_dm_1",
+      dmUserIds: ["member_1", "member_2"],
+      stream: {
+        id: "stream_dm_1",
+        workspaceId: "ws_1",
+        type: "dm",
+        displayName: null,
+        slug: null,
+        description: null,
+        visibility: "private",
+        parentStreamId: null,
+        parentMessageId: null,
+        rootStreamId: null,
+        companionMode: "off",
+        companionPersonaId: null,
+        createdBy: "member_2",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        archivedAt: null,
+      },
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(subscribeStream).toHaveBeenCalledWith("stream_dm_1")
+    expect(await db.streams.get("stream_dm_1")).toMatchObject({
+      id: "stream_dm_1",
+      type: "dm",
+      displayName: "Invitee",
+    })
+    expect(await db.streamMemberships.get("ws_1:stream_dm_1")).toMatchObject({
+      streamId: "stream_dm_1",
+      memberId: "member_1",
+    })
+    expect(await db.dmPeers.get("ws_1:stream_dm_1")).toMatchObject({
+      streamId: "stream_dm_1",
+      userId: "member_2",
+    })
+
+    const bootstrap = queryClient.getQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap("ws_1"))
+    expect(bootstrap?.streams).toContainEqual(expect.objectContaining({ id: "stream_dm_1", displayName: "Invitee" }))
+    expect(bootstrap?.streamMemberships).toContainEqual(expect.objectContaining({ streamId: "stream_dm_1" }))
+    expect(bootstrap?.dmPeers).toContainEqual(expect.objectContaining({ streamId: "stream_dm_1", userId: "member_2" }))
 
     cleanup()
   })
