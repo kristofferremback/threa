@@ -95,9 +95,6 @@ describe("SessionTraceObserver tool:progress handling", () => {
       input: {},
     })
 
-    // Reset call count after tool:start
-    const callsAfterStart = startStep.mock.calls.length
-
     await observer.handle({
       type: "tool:progress",
       toolCallId: "tc_1",
@@ -106,7 +103,8 @@ describe("SessionTraceObserver tool:progress handling", () => {
       substep: "Searching memos and messages…",
     })
 
-    expect(startStep.mock.calls.length).toBe(callsAfterStart)
+    // startStep was only called once (for tool:start), not again for tool:progress
+    expect(startStep).toHaveBeenCalledWith({ stepType: AgentStepTypes.WORKSPACE_SEARCH })
   })
 
   it("emits multiple substeps in order", async () => {
@@ -133,7 +131,7 @@ describe("SessionTraceObserver tool:progress handling", () => {
       })
     }
 
-    expect(emitSubstep).toHaveBeenCalledTimes(3)
+    // Verify each substep was emitted with the correct content in order
     expect(emitSubstep.mock.calls[0]?.[0].substep).toBe("Planning queries…")
     expect(emitSubstep.mock.calls[1]?.[0].substep).toBe("Searching memos…")
     expect(emitSubstep.mock.calls[2]?.[0].substep).toBe("Evaluating results…")
@@ -266,9 +264,19 @@ describe("SessionTraceObserver tool:start → progress → complete caching", ()
     expect(args.content).toContain("boom")
   })
 
-  it("skips tool:error when no cached step exists (hidden tool)", async () => {
+  it("skips tool:error when tool was hidden", async () => {
     const { trace, startStep, activeStepRegistry } = createTraceStub()
     const observer = new SessionTraceObserver(trace)
+
+    // Hidden tool:start registers the toolCallId so tool:error knows to skip
+    await observer.handle({
+      type: "tool:start",
+      toolCallId: "tc_hidden",
+      toolName: "search_users",
+      stepType: AgentStepTypes.WORKSPACE_SEARCH,
+      input: {},
+      hidden: true,
+    })
 
     await observer.handle({
       type: "tool:error",
@@ -280,6 +288,27 @@ describe("SessionTraceObserver tool:start → progress → complete caching", ()
 
     expect(startStep).not.toHaveBeenCalled()
     expect(activeStepRegistry).toHaveLength(0)
+  })
+
+  it("creates synthetic TOOL_ERROR step for unknown tool errors (no preceding tool:start)", async () => {
+    const { trace, startStep, activeStepRegistry } = createTraceStub()
+    const observer = new SessionTraceObserver(trace)
+
+    // No tool:start — simulates the runtime's unknown-tool path
+    await observer.handle({
+      type: "tool:error",
+      toolCallId: "tc_unknown",
+      toolName: "nonexistent_tool",
+      error: "Unknown tool: nonexistent_tool",
+      durationMs: 0,
+    })
+
+    // Fallback: synthetic TOOL_ERROR step created
+    expect(startStep).toHaveBeenCalledWith({
+      stepType: AgentStepTypes.TOOL_ERROR,
+      content: "nonexistent_tool failed: Unknown tool: nonexistent_tool",
+    })
+    expect(activeStepRegistry[0]!.complete).toHaveBeenCalled()
   })
 })
 

@@ -11,15 +11,18 @@ import type { AgentObserver } from "./agent-observer"
  * Tool lifecycle vs. persistence:
  * - `tool:start` creates the persisted step row immediately so a refresh
  *   mid-execution sees the in-progress step instead of a gap. The ActiveStep
- *   handle is cached by toolCallId.
+ *   handle is cached by toolCallId. Hidden tools (trace.hidden) skip this
+ *   entirely — they appear in Langfuse but not in the user-facing trace.
  * - `tool:progress` persists a running `{ substeps }` JSON to the step's
  *   content field (so a refresh recovers the phases collected so far) AND
  *   emits the ephemeral substep socket event for clients already watching.
+ *   Skipped when no cached step exists (hidden tool).
  * - `tool:complete` finalises the cached step with the tool's full result
  *   content (which overwrites the intermediate substep-only content).
- * - `tool:error` finalises the cached step with the error message. A
- *   synthetic TOOL_ERROR step is still created as a fallback when no cache
- *   entry exists, preserving the old behaviour for edge cases.
+ * - `tool:error` finalises the cached step with the error message. When no
+ *   cached step exists (e.g. unknown tool name — the runtime emits
+ *   tool:error without a preceding tool:start), a synthetic TOOL_ERROR
+ *   step is created so the error is visible in the trace.
  */
 export class SessionTraceObserver implements AgentObserver {
   private readonly stepsByToolCallId = new Map<string, ActiveStep>()
@@ -30,6 +33,9 @@ export class SessionTraceObserver implements AgentObserver {
    * history.
    */
   private readonly substepsByToolCallId = new Map<string, Array<{ text: string; at: string }>>()
+  /** Tool calls that were hidden at tool:start. Used by tool:error to distinguish
+   *  "hidden tool, skip" from "unknown tool, show synthetic error step". */
+  private readonly hiddenToolCallIds = new Set<string>()
 
   constructor(private readonly trace: SessionTrace) {}
 
@@ -48,7 +54,10 @@ export class SessionTraceObserver implements AgentObserver {
         // Hidden tools (e.g. individual workspace search helpers) are recorded in
         // Langfuse but not in the user-facing trace. Skip step creation so they
         // don't clutter the trace dialog.
-        if (event.hidden) break
+        if (event.hidden) {
+          this.hiddenToolCallIds.add(event.toolCallId)
+          break
+        }
 
         // Create the persisted step row at tool start so mid-execution refresh
         // recovers the in-progress step. Cached by toolCallId so later progress
@@ -101,12 +110,16 @@ export class SessionTraceObserver implements AgentObserver {
           this.stepsByToolCallId.delete(event.toolCallId)
           this.substepsByToolCallId.delete(event.toolCallId)
         }
+        this.hiddenToolCallIds.delete(event.toolCallId)
         break
       }
 
       case "tool:error": {
-        // If cached step exists, finalise with error content. If no cached
-        // step exists, the tool was hidden — skip (OTEL still records it).
+        // Finalise the cached step with error content when it exists.
+        // When no cached step exists AND the tool wasn't hidden, this is
+        // the unknown-tool path (the runtime emits tool:error without a
+        // preceding tool:start). Create a synthetic TOOL_ERROR step so the
+        // error is visible in the trace.
         const cached = this.stepsByToolCallId.get(event.toolCallId)
         if (cached) {
           await cached.complete({
@@ -115,7 +128,14 @@ export class SessionTraceObserver implements AgentObserver {
           })
           this.stepsByToolCallId.delete(event.toolCallId)
           this.substepsByToolCallId.delete(event.toolCallId)
+        } else if (!this.hiddenToolCallIds.has(event.toolCallId)) {
+          const step = await this.trace.startStep({
+            stepType: AgentStepTypes.TOOL_ERROR,
+            content: `${event.toolName} failed: ${event.error}`,
+          })
+          await step.complete({ durationMs: event.durationMs })
         }
+        this.hiddenToolCallIds.delete(event.toolCallId)
         break
       }
 
