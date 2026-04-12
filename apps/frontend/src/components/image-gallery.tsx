@@ -30,6 +30,34 @@ interface MediaGalleryProps {
   items: GalleryItem[]
   initialIndex: number
   workspaceId: string
+  /** Called when the user navigates to a different item. Used to sync the URL
+   *  permalink and trigger lazy URL fetching for the newly-current item. */
+  onItemChange?: (attachmentId: string) => void
+}
+
+function GalleryVideo({ current }: { current: Extract<GalleryItem, { type: "video" }> }) {
+  const videoRef = useRef<HTMLVideoElement>(null)
+
+  // Focus the video on mount/URL-ready so keyboard controls (space to play,
+  // arrow keys for seek) work immediately. Without this the Dialog places
+  // initial focus on the first focusable child (download button), which
+  // steals space-bar toggling from the video.
+  useEffect(() => {
+    if (current.url) videoRef.current?.focus({ preventScroll: true })
+  }, [current.url, current.attachmentId])
+
+  return (
+    <video
+      ref={videoRef}
+      key={current.attachmentId}
+      src={current.url}
+      poster={current.thumbnailUrl || undefined}
+      controls
+      controlsList="nodownload"
+      tabIndex={-1}
+      className="max-w-full max-h-full object-contain select-none outline-none"
+    />
+  )
 }
 
 function GalleryMediaContent({ current }: { current: GalleryItem }) {
@@ -43,16 +71,7 @@ function GalleryMediaContent({ current }: { current: GalleryItem }) {
           <Loader2 className="h-4 w-4 animate-spin text-white/40" />
         </div>
       )
-    return (
-      <video
-        key={current.attachmentId}
-        src={current.url}
-        poster={current.thumbnailUrl || undefined}
-        controls
-        controlsList="nodownload"
-        className="max-w-full max-h-full object-contain select-none"
-      />
-    )
+    return <GalleryVideo current={current} />
   }
   if (!current.url) return <Loader2 className="h-8 w-8 animate-spin text-white/50" />
   return (
@@ -103,7 +122,7 @@ function GalleryThumbnailContent({ item }: { item: GalleryItem }) {
   )
 }
 
-export function MediaGallery({ isOpen, onClose, items, initialIndex, workspaceId }: MediaGalleryProps) {
+export function MediaGallery({ isOpen, onClose, items, initialIndex, workspaceId, onItemChange }: MediaGalleryProps) {
   const [currentIndex, setCurrentIndex] = useState(initialIndex)
   const isMobile = useIsMobile()
   const [panelOpen, setPanelOpen] = useState(true)
@@ -166,9 +185,12 @@ export function MediaGallery({ isOpen, onClose, items, initialIndex, workspaceId
 
   const goTo = useCallback(
     (index: number) => {
-      if (index >= 0 && index < items.length) setCurrentIndex(index)
+      if (index < 0 || index >= items.length) return
+      setCurrentIndex(index)
+      const next = items[index]
+      if (next) onItemChange?.(next.attachmentId)
     },
-    [items.length]
+    [items, onItemChange]
   )
 
   const goPrev = useCallback(() => goTo(currentIndex - 1), [goTo, currentIndex])

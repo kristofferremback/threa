@@ -671,6 +671,7 @@ export function AttachmentList({ attachments, workspaceId, className, deferHydra
         items={galleryItems.length > 0 ? galleryItems : []}
         initialIndex={Math.max(0, galleryIndex)}
         workspaceId={workspaceId}
+        onItemChange={openMedia}
       />
     </>
   )
