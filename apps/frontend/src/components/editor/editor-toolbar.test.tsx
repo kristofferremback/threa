@@ -13,6 +13,13 @@ vi.mock("./editor-behaviors", () => ({
   isSuggestionActive: vi.fn(() => false),
 }))
 
+vi.mock("@/contexts", () => ({
+  usePreferences: () => ({
+    preferences: { keyboardShortcuts: {} },
+    isLoading: false,
+  }),
+}))
+
 function createEditorStub() {
   const chain = {
     focus: vi.fn(() => chain),

@@ -68,6 +68,42 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
     category: "view",
     global: true,
   },
+  // Editor formatting shortcuts (not global — only active when editor is focused)
+  {
+    id: "formatBold",
+    label: "Bold",
+    description: "Toggle bold formatting",
+    defaultKey: "mod+b",
+    category: "editing",
+  },
+  {
+    id: "formatItalic",
+    label: "Italic",
+    description: "Toggle italic formatting",
+    defaultKey: "mod+i",
+    category: "editing",
+  },
+  {
+    id: "formatStrike",
+    label: "Strikethrough",
+    description: "Toggle strikethrough formatting",
+    defaultKey: "mod+shift+s",
+    category: "editing",
+  },
+  {
+    id: "formatCode",
+    label: "Inline Code",
+    description: "Toggle inline code formatting",
+    defaultKey: "mod+e",
+    category: "editing",
+  },
+  {
+    id: "formatCodeBlock",
+    label: "Code Block",
+    description: "Toggle code block",
+    defaultKey: "mod+shift+c",
+    category: "editing",
+  },
 ]
 
 /**
@@ -96,14 +132,15 @@ export function getShortcutsByCategory(): Record<ShortcutAction["category"], Sho
 
 /**
  * Get the effective key binding for an action, considering user customizations.
+ * Returns undefined if the shortcut is explicitly disabled ("none") or unregistered.
  */
 export function getEffectiveKeyBinding(
   actionId: string,
   customBindings: Record<string, string> = {}
 ): string | undefined {
-  if (customBindings[actionId]) {
-    return customBindings[actionId]
-  }
+  const custom = customBindings[actionId]
+  if (custom === "none") return undefined
+  if (custom) return custom
   return getShortcutAction(actionId)?.defaultKey
 }
 
@@ -115,7 +152,8 @@ export function detectConflicts(customBindings: Record<string, string> = {}): Ma
   const keyToActions = new Map<string, string[]>()
 
   for (const action of SHORTCUT_ACTIONS) {
-    const key = customBindings[action.id] || action.defaultKey
+    const key = getEffectiveKeyBinding(action.id, customBindings)
+    if (!key) continue
     const existing = keyToActions.get(key) || []
     keyToActions.set(key, [...existing, action.id])
   }
@@ -206,4 +244,58 @@ export function formatKeyBinding(binding: string): string {
   })
 
   return mac ? formatted.join("") : formatted.join("+")
+}
+
+/** Keys that are only modifiers and should not be captured as standalone bindings. */
+const MODIFIER_KEYS = new Set(["Control", "Shift", "Alt", "Meta"])
+
+/**
+ * Convert a KeyboardEvent to a normalized binding string (e.g. "mod+shift+f").
+ * Returns null for lone modifier presses.
+ */
+export function keyEventToBinding(event: KeyboardEvent): string | null {
+  if (MODIFIER_KEYS.has(event.key)) return null
+
+  const parts: string[] = []
+  if (event.metaKey || event.ctrlKey) parts.push("mod")
+  if (event.shiftKey) parts.push("shift")
+  if (event.altKey) parts.push("alt")
+  parts.push(event.key.toLowerCase())
+
+  return parts.join("+")
+}
+
+/**
+ * IDs of all editor formatting shortcut actions.
+ */
+export const EDITOR_SHORTCUT_IDS = [
+  "formatBold",
+  "formatItalic",
+  "formatStrike",
+  "formatCode",
+  "formatCodeBlock",
+] as const
+
+/**
+ * Compute effective editor formatting bindings, excluding any that conflict
+ * with a global app-level shortcut (app shortcuts always win).
+ */
+export function getEffectiveEditorBindings(customBindings: Record<string, string> = {}): Record<string, string> {
+  // Collect all global app-level binding values
+  const globalBindings = new Set<string>()
+  for (const action of SHORTCUT_ACTIONS) {
+    if (!action.global) continue
+    const binding = getEffectiveKeyBinding(action.id, customBindings)
+    if (binding) globalBindings.add(binding)
+  }
+
+  // Build editor bindings, excluding any claimed by a global shortcut
+  const result: Record<string, string> = {}
+  for (const id of EDITOR_SHORTCUT_IDS) {
+    const binding = getEffectiveKeyBinding(id, customBindings)
+    if (binding && !globalBindings.has(binding)) {
+      result[id] = binding
+    }
+  }
+  return result
 }

@@ -17,6 +17,8 @@ import { handleBeforeInputNewline, insertPastedText } from "./multiline-blocks"
 import { useMentionables } from "@/hooks/use-mentionables"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { cn } from "@/lib/utils"
+import { usePreferences } from "@/contexts"
+import { getEffectiveEditorBindings } from "@/lib/keyboard-shortcuts"
 import type { UploadResult } from "@/hooks/use-attachments"
 import type { AttachmentReferenceAttrs } from "./attachment-reference-extension"
 import type { MessageSendMode, JSONContent } from "@threa/types"
@@ -205,6 +207,12 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
   const onEscapeBlurRef = useRef(onEscapeBlur)
   onEscapeBlurRef.current = onEscapeBlur
 
+  // Effective editor formatting bindings (updated reactively, read by ref to avoid editor re-creation)
+  const { preferences } = usePreferences()
+  const customBindings = preferences?.keyboardShortcuts ?? {}
+  const keyBindingsRef = useRef<Record<string, string>>({})
+  keyBindingsRef.current = useMemo(() => getEffectiveEditorBindings(customBindings), [customBindings])
+
   // Ref to access editor instance from callbacks defined before useEditor returns
   const editorRef = useRef<ReturnType<typeof useEditor>>(null)
 
@@ -226,6 +234,7 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
       EditorBehaviors.configure({
         sendModeRef: messageSendModeRef,
         onSubmitRef: onSubmitRef,
+        keyBindingsRef: keyBindingsRef,
       }),
     ],
     [

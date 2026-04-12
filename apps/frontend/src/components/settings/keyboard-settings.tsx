@@ -1,8 +1,10 @@
-import { useMemo } from "react"
+import { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
+import { RotateCcw } from "lucide-react"
 import { usePreferences } from "@/contexts"
 import {
   SHORTCUT_ACTIONS,
@@ -10,6 +12,8 @@ import {
   getEffectiveKeyBinding,
   formatKeyBinding,
   detectConflicts,
+  keyEventToBinding,
+  type ShortcutAction,
 } from "@/lib/keyboard-shortcuts"
 import { MESSAGE_SEND_MODE_OPTIONS, type MessageSendMode } from "@threa/types"
 
@@ -24,15 +28,271 @@ const SEND_MODE_CONFIG: Record<MessageSendMode, { label: string; description: st
   },
 }
 
+function getBadgeLabel(
+  isCapturing: boolean,
+  conflictInfo: { binding: string } | null,
+  binding: string | undefined
+): string {
+  if (isCapturing) {
+    return conflictInfo ? formatKeyBinding(conflictInfo.binding) : "Press keys..."
+  }
+  return binding ? formatKeyBinding(binding) : "—"
+}
+
+interface ShortcutRowProps {
+  action: ShortcutAction
+  customBindings: Record<string, string>
+  capturingId: string | null
+  onStartCapture: (id: string) => void
+  onCancelCapture: () => void
+  onSaveBinding: (actionId: string, binding: string) => void
+  onResetBinding: (actionId: string) => void
+}
+
+function ShortcutRow({
+  action,
+  customBindings,
+  capturingId,
+  onStartCapture,
+  onCancelCapture,
+  onSaveBinding,
+  onResetBinding,
+}: ShortcutRowProps) {
+  const isCapturing = capturingId === action.id
+  const [pendingBinding, setPendingBinding] = useState<string | null>(null)
+  const [conflictInfo, setConflictInfo] = useState<{ binding: string; conflictIds: string[] } | null>(null)
+  const badgeRef = useRef<HTMLButtonElement>(null)
+  const binding = getEffectiveKeyBinding(action.id, customBindings)
+  const isCustom = action.id in customBindings && customBindings[action.id] !== action.defaultKey
+
+  // Handle keydown during capture mode
+  useEffect(() => {
+    if (!isCapturing) {
+      setPendingBinding(null)
+      setConflictInfo(null)
+      return
+    }
+
+    function handleKeyDown(e: KeyboardEvent) {
+      e.preventDefault()
+      e.stopPropagation()
+
+      // Escape cancels capture
+      if (e.key === "Escape") {
+        onCancelCapture()
+        return
+      }
+
+      const captured = keyEventToBinding(e)
+      if (!captured) return
+
+      // Check for conflicts
+      const testBindings = { ...customBindings, [action.id]: captured }
+      const conflicts = detectConflicts(testBindings)
+      const conflicting = conflicts.get(captured)?.filter((id) => id !== action.id) ?? []
+
+      if (conflicting.length > 0) {
+        setPendingBinding(captured)
+        setConflictInfo({ binding: captured, conflictIds: conflicting })
+      } else {
+        onSaveBinding(action.id, captured)
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown, { capture: true })
+    return () => document.removeEventListener("keydown", handleKeyDown, { capture: true })
+  }, [isCapturing, action.id, customBindings, onCancelCapture, onSaveBinding])
+
+  // Focus badge when entering capture mode
+  useEffect(() => {
+    if (isCapturing) {
+      badgeRef.current?.focus()
+    }
+  }, [isCapturing])
+
+  const handleConfirmConflict = useCallback(() => {
+    if (!pendingBinding || !conflictInfo) return
+    onSaveBinding(action.id, pendingBinding)
+  }, [action.id, pendingBinding, conflictInfo, onSaveBinding])
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <p className="font-medium text-sm">{action.label}</p>
+          <p className="text-xs text-muted-foreground">{action.description}</p>
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {isCustom && !isCapturing && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0"
+              onClick={() => onResetBinding(action.id)}
+              title="Reset to default"
+            >
+              <RotateCcw className="h-3 w-3" />
+            </Button>
+          )}
+          <button
+            ref={badgeRef}
+            type="button"
+            onClick={() => (isCapturing ? onCancelCapture() : onStartCapture(action.id))}
+            className={
+              isCapturing
+                ? "inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-mono font-semibold border-primary bg-primary/10 text-primary animate-pulse cursor-pointer focus:outline-none"
+                : "inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-mono font-semibold border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80 cursor-pointer focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+            }
+          >
+            {getBadgeLabel(isCapturing, conflictInfo, binding)}
+          </button>
+        </div>
+      </div>
+
+      {/* Conflict resolution inline */}
+      {isCapturing && conflictInfo && (
+        <div className="flex items-center gap-2 ml-1 text-xs">
+          <span className="text-destructive">
+            Conflicts with{" "}
+            {conflictInfo.conflictIds
+              .map((id) => SHORTCUT_ACTIONS.find((a) => a.id === id)?.label)
+              .filter(Boolean)
+              .join(", ")}
+          </span>
+          <Button variant="outline" size="sm" className="h-5 px-2 text-xs" onClick={handleConfirmConflict}>
+            Override
+          </Button>
+          <Button variant="ghost" size="sm" className="h-5 px-2 text-xs" onClick={onCancelCapture}>
+            Cancel
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ShortcutCategory({
+  title,
+  description,
+  actions,
+  customBindings,
+  capturingId,
+  onStartCapture,
+  onCancelCapture,
+  onSaveBinding,
+  onResetBinding,
+}: {
+  title: string
+  description: string
+  actions: ShortcutAction[]
+  customBindings: Record<string, string>
+  capturingId: string | null
+  onStartCapture: (id: string) => void
+  onCancelCapture: () => void
+  onSaveBinding: (actionId: string, binding: string) => void
+  onResetBinding: (actionId: string) => void
+}) {
+  if (actions.length === 0) return null
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-3">
+          {actions.map((action) => (
+            <ShortcutRow
+              key={action.id}
+              action={action}
+              customBindings={customBindings}
+              capturingId={capturingId}
+              onStartCapture={onStartCapture}
+              onCancelCapture={onCancelCapture}
+              onSaveBinding={onSaveBinding}
+              onResetBinding={onResetBinding}
+            />
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 export function KeyboardSettings() {
-  const { preferences, updatePreference } = usePreferences()
+  const { preferences, updatePreference, updateKeyboardShortcut, resetKeyboardShortcut, resetAllKeyboardShortcuts } =
+    usePreferences()
 
   const customBindings = preferences?.keyboardShortcuts ?? {}
   const shortcuts = useMemo(() => getShortcutsByCategory(), [])
   const conflicts = useMemo(() => detectConflicts(customBindings), [customBindings])
-
   const hasConflicts = conflicts.size > 0
+  const hasCustomBindings = Object.keys(customBindings).length > 0
   const messageSendMode = preferences?.messageSendMode ?? "enter"
+
+  const [capturingId, setCapturingId] = useState<string | null>(null)
+
+  // Click outside to cancel capture
+  useEffect(() => {
+    if (!capturingId) return
+    function handleClick(e: MouseEvent) {
+      const target = e.target as HTMLElement
+      // Don't cancel if clicking inside a shortcut row
+      if (target.closest("[data-shortcut-row]")) return
+      setCapturingId(null)
+    }
+    // Use timeout to avoid immediately cancelling from the click that started capture
+    const id = setTimeout(() => {
+      document.addEventListener("click", handleClick)
+    }, 0)
+    return () => {
+      clearTimeout(id)
+      document.removeEventListener("click", handleClick)
+    }
+  }, [capturingId])
+
+  const handleSaveBinding = useCallback(
+    (actionId: string, binding: string) => {
+      // If the new binding conflicts with other actions, clear those conflicting bindings
+      const testBindings = { ...customBindings, [actionId]: binding }
+      const newConflicts = detectConflicts(testBindings)
+      const conflicting = newConflicts.get(binding)?.filter((id) => id !== actionId) ?? []
+
+      // Clear conflicting bindings by setting them to "none"
+      for (const conflictId of conflicting) {
+        updateKeyboardShortcut(conflictId, "none")
+      }
+
+      updateKeyboardShortcut(actionId, binding)
+      setCapturingId(null)
+    },
+    [customBindings, updateKeyboardShortcut]
+  )
+
+  const handleResetBinding = useCallback(
+    (actionId: string) => {
+      resetKeyboardShortcut(actionId)
+    },
+    [resetKeyboardShortcut]
+  )
+
+  const handleCancelCapture = useCallback(() => {
+    setCapturingId(null)
+  }, [])
+
+  const handleStartCapture = useCallback((id: string) => {
+    setCapturingId(id)
+  }, [])
+
+  const sharedProps = {
+    customBindings,
+    capturingId,
+    onStartCapture: handleStartCapture,
+    onCancelCapture: handleCancelCapture,
+    onSaveBinding: handleSaveBinding,
+    onResetBinding: handleResetBinding,
+  }
 
   return (
     <div className="space-y-6">
@@ -88,97 +348,35 @@ export function KeyboardSettings() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Navigation</CardTitle>
-          <CardDescription>Keyboard shortcuts for navigating Threa</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {shortcuts.navigation.map((action) => {
-              const binding = getEffectiveKeyBinding(action.id, customBindings)
-              return (
-                <div key={action.id} className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">{action.label}</p>
-                    <p className="text-sm text-muted-foreground">{action.description}</p>
-                  </div>
-                  <Badge variant="secondary" className="font-mono">
-                    {binding ? formatKeyBinding(binding) : "—"}
-                  </Badge>
-                </div>
-              )
-            })}
-          </div>
-        </CardContent>
-      </Card>
+      <ShortcutCategory
+        title="Navigation"
+        description="Keyboard shortcuts for navigating Threa"
+        actions={shortcuts.navigation}
+        {...sharedProps}
+      />
 
-      {shortcuts.view.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>View</CardTitle>
-            <CardDescription>Keyboard shortcuts for view controls</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {shortcuts.view.map((action) => {
-                const binding = getEffectiveKeyBinding(action.id, customBindings)
-                return (
-                  <div key={action.id} className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium">{action.label}</p>
-                      <p className="text-sm text-muted-foreground">{action.description}</p>
-                    </div>
-                    <Badge variant="secondary" className="font-mono">
-                      {binding ? formatKeyBinding(binding) : "—"}
-                    </Badge>
-                  </div>
-                )
-              })}
-            </div>
-          </CardContent>
-        </Card>
+      <ShortcutCategory
+        title="View"
+        description="Keyboard shortcuts for view controls"
+        actions={shortcuts.view}
+        {...sharedProps}
+      />
+
+      <ShortcutCategory
+        title="Editing"
+        description="Keyboard shortcuts for formatting in the editor"
+        actions={shortcuts.editing}
+        {...sharedProps}
+      />
+
+      {hasCustomBindings && (
+        <div className="flex justify-end">
+          <Button variant="outline" size="sm" onClick={resetAllKeyboardShortcuts}>
+            <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
+            Reset all shortcuts
+          </Button>
+        </div>
       )}
-
-      {shortcuts.editing.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Editing</CardTitle>
-            <CardDescription>Keyboard shortcuts for editing</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {shortcuts.editing.map((action) => {
-                const binding = getEffectiveKeyBinding(action.id, customBindings)
-                return (
-                  <div key={action.id} className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium">{action.label}</p>
-                      <p className="text-sm text-muted-foreground">{action.description}</p>
-                    </div>
-                    <Badge variant="secondary" className="font-mono">
-                      {binding ? formatKeyBinding(binding) : "—"}
-                    </Badge>
-                  </div>
-                )
-              })}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Customization</CardTitle>
-          <CardDescription>Shortcut customization coming soon</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">
-            The ability to rebind keyboard shortcuts will be available in a future update. For now, you can view the
-            available shortcuts above.
-          </p>
-        </CardContent>
-      </Card>
     </div>
   )
 }

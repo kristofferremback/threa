@@ -21,6 +21,14 @@ vi.mock("@/hooks/use-workspace-emoji", () => ({
   }),
 }))
 
+// Mock preferences context
+vi.mock("@/contexts", () => ({
+  usePreferences: () => ({
+    preferences: { keyboardShortcuts: {} },
+    isLoading: false,
+  }),
+}))
+
 // Mock trigger hooks used by the editor
 vi.mock("./triggers", () => ({
   useMentionSuggestion: () => ({

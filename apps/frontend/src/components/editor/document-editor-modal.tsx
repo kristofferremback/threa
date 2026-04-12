@@ -34,6 +34,8 @@ import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { LinkEditor } from "./link-editor"
 import { handleBeforeInputNewline, insertPastedText, toggleMultilineBlock } from "./multiline-blocks"
 import { cn } from "@/lib/utils"
+import { usePreferences } from "@/contexts"
+import { getEffectiveKeyBinding, getEffectiveEditorBindings, formatKeyBinding } from "@/lib/keyboard-shortcuts"
 
 interface DocumentEditorModalProps {
   open: boolean
@@ -88,6 +90,19 @@ export function DocumentEditorModal({
   const handleSubmitRef = useRef(() => {})
   const editorRef = useRef<ReturnType<typeof useEditor>>(null)
 
+  // Effective editor formatting bindings (updated reactively via ref)
+  const { preferences } = usePreferences()
+  const docCustomBindings = preferences?.keyboardShortcuts ?? {}
+  const keyBindingsRef = useRef<Record<string, string>>({})
+  keyBindingsRef.current = useMemo(() => getEffectiveEditorBindings(docCustomBindings), [docCustomBindings])
+  const docShortcutHint = useCallback(
+    (actionId: string): string | undefined => {
+      const binding = getEffectiveKeyBinding(actionId, docCustomBindings)
+      return binding ? formatKeyBinding(binding) : undefined
+    },
+    [docCustomBindings]
+  )
+
   // Create extensions (no cmdEnter handling - explicit Send button only)
   const extensions = useMemo(
     () => [
@@ -101,6 +116,7 @@ export function DocumentEditorModal({
       EditorBehaviors.configure({
         sendModeRef: { current: "cmdEnter" }, // Use cmdEnter mode in modal
         onSubmitRef: handleSubmitRef,
+        keyBindingsRef: keyBindingsRef,
       }),
     ],
     [mentionConfig, channelConfig, emojiConfig, toEmoji]
@@ -267,28 +283,28 @@ export function DocumentEditorModal({
               onAction={() => editor?.chain().focus().toggleBold().run()}
               icon={Bold}
               label="Bold"
-              shortcut="⌘B"
+              shortcut={docShortcutHint("formatBold")}
               isActive={editor?.isActive("bold")}
             />
             <ToolbarButton
               onAction={() => editor?.chain().focus().toggleItalic().run()}
               icon={Italic}
               label="Italic"
-              shortcut="⌘I"
+              shortcut={docShortcutHint("formatItalic")}
               isActive={editor?.isActive("italic")}
             />
             <ToolbarButton
               onAction={() => editor?.chain().focus().toggleStrike().run()}
               icon={Strikethrough}
               label="Strikethrough"
-              shortcut="⌘⇧S"
+              shortcut={docShortcutHint("formatStrike")}
               isActive={editor?.isActive("strike")}
             />
             <ToolbarButton
               onAction={() => editor?.chain().focus().toggleCode().run()}
               icon={Code}
               label="Inline code"
-              shortcut="⌘E"
+              shortcut={docShortcutHint("formatCode")}
               isActive={editor?.isActive("code")}
             />
             <ToolbarButton
@@ -323,7 +339,7 @@ export function DocumentEditorModal({
               onAction={() => editor && toggleMultilineBlock(editor, "codeBlock")}
               icon={Braces}
               label="Code block"
-              shortcut="⌘⇧C"
+              shortcut={docShortcutHint("formatCodeBlock")}
               isActive={editor?.isActive("codeBlock")}
             />
           </div>

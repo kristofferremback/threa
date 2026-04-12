@@ -41,6 +41,8 @@ interface PreferencesContextValue {
   ) => Promise<void>
   updateAccessibility: (updates: Partial<AccessibilityPreferences>) => Promise<void>
   updateKeyboardShortcut: (actionId: string, keyBinding: string) => Promise<void>
+  resetKeyboardShortcut: (actionId: string) => Promise<void>
+  resetAllKeyboardShortcuts: () => Promise<void>
 }
 
 const PreferencesContext = createContext<PreferencesContextValue | null>(null)
@@ -102,10 +104,10 @@ export function PreferencesProvider({ workspaceId, children }: PreferencesProvid
             input.accessibility !== undefined
               ? { ...previousBootstrap.userPreferences.accessibility, ...input.accessibility }
               : previousBootstrap.userPreferences.accessibility,
-          // Handle keyboard shortcut updates
+          // Keyboard shortcuts: callers provide the complete desired state, so replace entirely
           keyboardShortcuts:
             input.keyboardShortcuts !== undefined
-              ? { ...previousBootstrap.userPreferences.keyboardShortcuts, ...input.keyboardShortcuts }
+              ? input.keyboardShortcuts
               : previousBootstrap.userPreferences.keyboardShortcuts,
           updatedAt: new Date().toISOString(),
         }
@@ -168,13 +170,25 @@ export function PreferencesProvider({ workspaceId, children }: PreferencesProvid
 
   const updateKeyboardShortcut = useCallback(
     async (actionId: string, keyBinding: string) => {
-      const currentShortcuts = preferences?.keyboardShortcuts ?? {}
-      await mutation.mutateAsync({
-        keyboardShortcuts: { ...currentShortcuts, [actionId]: keyBinding },
-      })
+      const currentShortcuts = { ...(preferences?.keyboardShortcuts ?? {}) }
+      currentShortcuts[actionId] = keyBinding
+      await mutation.mutateAsync({ keyboardShortcuts: currentShortcuts })
     },
     [mutation, preferences?.keyboardShortcuts]
   )
+
+  const resetKeyboardShortcut = useCallback(
+    async (actionId: string) => {
+      const currentShortcuts = { ...(preferences?.keyboardShortcuts ?? {}) }
+      delete currentShortcuts[actionId]
+      await mutation.mutateAsync({ keyboardShortcuts: currentShortcuts })
+    },
+    [mutation, preferences?.keyboardShortcuts]
+  )
+
+  const resetAllKeyboardShortcuts = useCallback(async () => {
+    await mutation.mutateAsync({ keyboardShortcuts: {} })
+  }, [mutation])
 
   const value = useMemo<PreferencesContextValue>(
     () => ({
@@ -184,8 +198,19 @@ export function PreferencesProvider({ workspaceId, children }: PreferencesProvid
       updatePreference,
       updateAccessibility,
       updateKeyboardShortcut,
+      resetKeyboardShortcut,
+      resetAllKeyboardShortcuts,
     }),
-    [preferences, resolvedTheme, mutation.isPending, updatePreference, updateAccessibility, updateKeyboardShortcut]
+    [
+      preferences,
+      resolvedTheme,
+      mutation.isPending,
+      updatePreference,
+      updateAccessibility,
+      updateKeyboardShortcut,
+      resetKeyboardShortcut,
+      resetAllKeyboardShortcuts,
+    ]
   )
 
   return <PreferencesContext.Provider value={value}>{children}</PreferencesContext.Provider>

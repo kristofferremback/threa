@@ -21,6 +21,9 @@ import { atomAwareMarkInputRule } from "./atom-aware-input-rules"
  * Typing **text** or __text__ converts to bold, even with mentions inside.
  */
 export const AtomAwareBold = Bold.extend({
+  addKeyboardShortcuts() {
+    return {} // Formatting shortcuts handled by EditorBehaviors
+  },
   addInputRules() {
     return [
       atomAwareMarkInputRule({
@@ -42,6 +45,9 @@ export const AtomAwareBold = Bold.extend({
  * Typing *text* or _text_ converts to italic, even with mentions inside.
  */
 export const AtomAwareItalic = Italic.extend({
+  addKeyboardShortcuts() {
+    return {} // Formatting shortcuts handled by EditorBehaviors
+  },
   addInputRules() {
     return [
       atomAwareMarkInputRule({
@@ -63,6 +69,9 @@ export const AtomAwareItalic = Italic.extend({
  * Typing ~~text~~ converts to strikethrough, even with mentions inside.
  */
 export const AtomAwareStrike = Strike.extend({
+  addKeyboardShortcuts() {
+    return {} // Formatting shortcuts handled by EditorBehaviors
+  },
   addInputRules() {
     return [
       atomAwareMarkInputRule({
@@ -82,6 +91,9 @@ export const AtomAwareStrike = Strike.extend({
 export const AtomAwareCode = Code.extend({
   exitable: false,
 
+  addKeyboardShortcuts() {
+    return {} // Formatting shortcuts handled by EditorBehaviors
+  },
   addInputRules() {
     return [
       atomAwareMarkInputRule({
