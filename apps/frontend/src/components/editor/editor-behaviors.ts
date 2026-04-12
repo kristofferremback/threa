@@ -16,6 +16,18 @@ export interface EditorBehaviorsOptions {
   keyBindingsRef: { current: Record<string, string> }
 }
 
+// Tiptap's `.configure()` runs options through `mergeDeep`, which recursively
+// clones plain `{ current: ... }` objects. That would detach the caller's
+// React ref from the ref the extension reads inside its ProseMirror plugin,
+// so later mutations to `ref.current` would never propagate. Wrapping the
+// default in a prototype-less object makes `isPlainObject` return false for
+// the target, causing `mergeDeep` to use the caller's ref by reference.
+function createOptionRef<T>(initial: T): { current: T } {
+  const ref = Object.create(null) as { current: T }
+  ref.current = initial
+  return ref
+}
+
 export function indentSelection(editor: Editor): boolean {
   if (editor.isActive("codeBlock")) {
     return handleCodeBlockTab(editor, false)
@@ -685,9 +697,9 @@ export const EditorBehaviors = Extension.create<EditorBehaviorsOptions>({
 
   addOptions() {
     return {
-      sendModeRef: { current: "enter" as MessageSendMode },
-      onSubmitRef: { current: () => {} },
-      keyBindingsRef: { current: {} as Record<string, string> },
+      sendModeRef: createOptionRef<MessageSendMode>("enter"),
+      onSubmitRef: createOptionRef<() => void>(() => {}),
+      keyBindingsRef: createOptionRef<Record<string, string>>({}),
     }
   },
 
