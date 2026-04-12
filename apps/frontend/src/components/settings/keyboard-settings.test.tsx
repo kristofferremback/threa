@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen, fireEvent, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
+import { formatKeyBindingText } from "@/lib/keyboard-shortcuts"
 import { KeyboardSettings } from "./keyboard-settings"
 
 const mockPreferences = {
@@ -89,6 +90,16 @@ describe("KeyboardSettings", () => {
     await user.hover(resetButton)
 
     expect((await screen.findAllByText("Reset to default")).length).toBeGreaterThan(0)
+  })
+
+  it("shows the text version of a shortcut on hover", () => {
+    render(<KeyboardSettings />)
+
+    const row = screen.getByText("Quick Switcher").closest("[data-shortcut-row]")
+    expect(row).not.toBeNull()
+
+    const badge = within(row! as HTMLElement).getByRole("button")
+    expect(badge).toHaveAttribute("title", formatKeyBindingText("mod+k"))
   })
 
   it("lets the user bind Escape explicitly", async () => {

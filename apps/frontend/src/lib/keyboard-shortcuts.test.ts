@@ -11,6 +11,7 @@ import {
   isSafeShortcutBinding,
   resolveShortcutBindingUpdate,
   formatKeyBinding,
+  formatKeyBindingText,
 } from "./keyboard-shortcuts"
 
 describe("toggleSidebar shortcut", () => {
@@ -178,6 +179,11 @@ describe("parse and format bindings", () => {
 
   it("formats bindings whose key contains +", () => {
     expect(formatKeyBinding("mod+shift++")).toMatch(/^\u2318\u21e7\+$|^Ctrl\+Shift\+\+$/)
+  })
+
+  it("formats bindings as plain text", () => {
+    expect(formatKeyBindingText("mod+shift++")).toMatch(/^cmd\+shift\+\+$|^ctrl\+shift\+\+$/)
+    expect(formatKeyBindingText("escape")).toBe("escape")
   })
 })
 

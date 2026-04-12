@@ -13,6 +13,7 @@ import {
   getShortcutsByCategory,
   getEffectiveKeyBinding,
   formatKeyBinding,
+  formatKeyBindingText,
   detectConflicts,
   keyEventToBinding,
   resolveShortcutBindingUpdate,
@@ -169,6 +170,7 @@ function ShortcutRow({
                 ref={badgeRef}
                 type="button"
                 onClick={() => (isCapturing ? onCancelCapture() : onStartCapture(action.id))}
+                title={!isCapturing && binding ? formatKeyBindingText(binding) : undefined}
                 className={
                   isCapturing
                     ? "inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-mono font-semibold border-primary bg-primary/10 text-primary animate-pulse cursor-pointer focus:outline-none"
@@ -186,7 +188,11 @@ function ShortcutRow({
                     <div className="space-y-1">
                       <p className="font-medium text-sm">Move shortcut?</p>
                       <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <Badge variant="outline" className="mr-1 font-mono">
+                        <Badge
+                          variant="outline"
+                          className="mr-1 font-mono"
+                          title={formatKeyBindingText(conflictInfo.binding)}
+                        >
                           {formatKeyBinding(conflictInfo.binding)}
                         </Badge>
                         is currently used by {conflictOwnersLabel}.
@@ -367,7 +373,7 @@ export function KeyboardSettings({ onCaptureStateChange }: KeyboardSettingsProps
             <ul className="space-y-2 text-sm">
               {Array.from(conflicts.entries()).map(([key, actionIds]) => (
                 <li key={key}>
-                  <Badge variant="outline" className="font-mono mr-2">
+                  <Badge variant="outline" className="font-mono mr-2" title={formatKeyBindingText(key)}>
                     {formatKeyBinding(key)}
                   </Badge>
                   <span className="text-muted-foreground">

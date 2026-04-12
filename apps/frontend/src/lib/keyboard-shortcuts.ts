@@ -280,6 +280,40 @@ export function formatKeyBinding(binding: string): string {
   return mac ? formatted.join("") : formatted.join("+")
 }
 
+/**
+ * Format a key binding as plain text for hover text and accessibility.
+ * Converts "mod+k" to "cmd+k" on Mac or "ctrl+k" elsewhere.
+ */
+export function formatKeyBindingText(binding: string): string {
+  const mac = isMac()
+  const parsed = parseKeyBinding(binding)
+  if (!parsed.key) {
+    return binding
+  }
+
+  const formatted: string[] = []
+  if (parsed.mod) formatted.push(mac ? "cmd" : "ctrl")
+  if (parsed.shift) formatted.push("shift")
+  if (parsed.alt) formatted.push(mac ? "opt" : "alt")
+
+  switch (parsed.key.toLowerCase()) {
+    case "escape":
+      formatted.push("escape")
+      break
+    case ",":
+      formatted.push(",")
+      break
+    case "+":
+      formatted.push("+")
+      break
+    default:
+      formatted.push(parsed.key.toLowerCase())
+      break
+  }
+
+  return formatted.join("+")
+}
+
 /** Keys that are only modifiers and should not be captured as standalone bindings. */
 const MODIFIER_KEYS = new Set(["Control", "Shift", "Alt", "Meta"])
 const SAFE_UNMODIFIED_KEYS = new Set(["escape"])
