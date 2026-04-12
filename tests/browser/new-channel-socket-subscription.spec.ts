@@ -85,7 +85,7 @@ test.describe("New Channel Socket Subscription", () => {
       })
 
       // Verify the channel link is visible in sidebar (Recent or expanded Everything Else)
-      const initialChannelLink = userA.page.getByRole("link", { name: `#${channelName}` })
+      const initialChannelLink = userA.page.locator(`a[href="/w/${workspaceId}/s/${streamId}"]`).first()
       const everythingElseToggle = userA.page.getByRole("button", { name: /everything else/i })
       if (!(await initialChannelLink.isVisible()) && (await everythingElseToggle.isVisible())) {
         await everythingElseToggle.click()
@@ -132,7 +132,7 @@ test.describe("New Channel Socket Subscription", () => {
 
       // ──── User A: Channel should remain accessible without refresh ────
 
-      const channelLink = userA.page.getByRole("link", { name: `#${channelName}` })
+      const channelLink = userA.page.locator(`a[href="/w/${workspaceId}/s/${streamId}"]`).first()
       await waitForSidebarPreview(channelLink, testMessage)
 
       // Click the channel to verify the new message is available
@@ -226,7 +226,7 @@ test.describe("New Channel Socket Subscription", () => {
 
       // ──── User A: Channel should be reachable from sidebar without refresh ────
 
-      const channelLink = userA.page.getByRole("link", { name: `#${channelName}` })
+      const channelLink = userA.page.locator(`a[href="/w/${workspaceId}/s/${streamId}"]`).first()
 
       const everythingElseToggle = userA.page.getByRole("button", { name: /everything else/i })
       if (await everythingElseToggle.isVisible()) {

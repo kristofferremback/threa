@@ -253,3 +253,73 @@ export async function clickReplyInThread(messageContainer: Locator, timeout = 45
 
   await replyLink.click({ timeout: 10000 })
 }
+
+interface EditorShortcutOptions {
+  shift?: boolean
+  alt?: boolean
+}
+
+/**
+ * Dispatch a formatting shortcut directly on the contenteditable surface.
+ *
+ * Headless Chromium can consume browser-reserved Cmd/Ctrl accelerators before they
+ * reach the app, so editor shortcut tests should target the editor DOM node itself.
+ */
+export async function pressEditorShortcut(
+  editor: Locator,
+  key: string,
+  options: EditorShortcutOptions = {}
+): Promise<void> {
+  await editor.evaluate(
+    (element, { key, options }) => {
+      const target = element as HTMLElement
+      target.focus()
+
+      const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform)
+      const normalizedKey = key.length === 1 ? key.toLowerCase() : key
+      const shiftedKey = options.shift && key.length === 1 ? normalizedKey.toUpperCase() : normalizedKey
+      const code =
+        normalizedKey.length === 1 && /^[a-z]$/i.test(normalizedKey) ? `Key${normalizedKey.toUpperCase()}` : undefined
+      const keyCode =
+        normalizedKey.length === 1 && /^[a-z]$/i.test(normalizedKey) ? normalizedKey.toUpperCase().charCodeAt(0) : 0
+
+      for (const type of ["keydown", "keyup"] as const) {
+        const event = new KeyboardEvent(type, {
+          key: shiftedKey,
+          code,
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          metaKey: isMac,
+          ctrlKey: !isMac,
+          shiftKey: !!options.shift,
+          altKey: !!options.alt,
+        })
+        Object.defineProperty(event, "keyCode", { get: () => keyCode })
+        Object.defineProperty(event, "which", { get: () => keyCode })
+        Object.defineProperty(event, "charCode", { get: () => keyCode })
+        target.dispatchEvent(event)
+      }
+    },
+    { key, options }
+  )
+}
+
+/**
+ * Select all editor contents directly in the DOM selection.
+ */
+export async function selectAllEditorContent(editor: Locator): Promise<void> {
+  await editor.evaluate((element) => {
+    const target = element as HTMLElement
+    const selection = target.ownerDocument.getSelection()
+    if (!selection) {
+      throw new Error("Editor selection is unavailable")
+    }
+
+    target.focus()
+    const range = target.ownerDocument.createRange()
+    range.selectNodeContents(target)
+    selection.removeAllRanges()
+    selection.addRange(range)
+  })
+}
