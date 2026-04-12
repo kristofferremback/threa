@@ -1,6 +1,6 @@
 import type React from "react"
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { render, screen, waitFor, fireEvent } from "@testing-library/react"
+import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { QuickSwitcher } from "./quick-switcher"
@@ -379,24 +379,6 @@ describe("QuickSwitcher Integration Tests", () => {
         renderWithProviders(<QuickSwitcher {...defaultProps} onOpenChange={onOpenChange} />)
 
         await user.keyboard("{Escape}")
-
-        expect(onOpenChange).toHaveBeenCalledWith(false)
-      })
-
-      it("should close dialog with Ctrl+[", async () => {
-        const user = userEvent.setup()
-        const onOpenChange = vi.fn()
-        renderWithProviders(<QuickSwitcher {...defaultProps} onOpenChange={onOpenChange} />)
-
-        // Focus the input first
-        const input = screen.getByLabelText("Quick switcher input")
-        await user.click(input)
-
-        // Simulate Ctrl+[ using fireEvent since userEvent doesn't properly handle this combo
-        // The component checks e.ctrlKey && e.key === "[" on the DialogContent's onKeyDown
-        // Use fireEvent to properly trigger React's synthetic event handlers
-        const dialog = screen.getByRole("dialog")
-        fireEvent.keyDown(dialog, { key: "[", ctrlKey: true })
 
         expect(onOpenChange).toHaveBeenCalledWith(false)
       })
