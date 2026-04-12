@@ -34,6 +34,8 @@ export type AgentEvent =
        */
       stepType: AgentStepType
       input: unknown
+      /** When true, SessionTraceObserver skips the user-facing step row (OTEL still records it). */
+      hidden?: boolean
     }
   | {
       type: "tool:progress"
