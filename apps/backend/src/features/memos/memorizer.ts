@@ -7,7 +7,6 @@ import type { Memo } from "./repository"
 import {
   memoContentSchema,
   getMemorizerSystemPrompt,
-  MEMORIZER_MESSAGE_PROMPT,
   MEMORIZER_CONVERSATION_PROMPT,
   MEMORIZER_REVISION_PROMPT,
   MEMORIZER_EXISTING_TAGS_TEMPLATE,
@@ -38,8 +37,6 @@ export interface MemorizerContext {
   workspaceId: string
   /** Author's timezone for date anchoring (IANA identifier, e.g., "America/New_York") */
   authorTimezone?: string
-  /** Resolved author name for message memos (e.g., "Alice") */
-  authorName?: string
 }
 
 export class Memorizer {
@@ -48,51 +45,6 @@ export class Memorizer {
     private configResolver: ConfigResolver,
     private messageFormatter: MessageFormatter
   ) {}
-
-  async memorizeMessage(context: MemorizerContext): Promise<MemoContent> {
-    const config = await this.configResolver.resolve(COMPONENT_PATHS.MEMO_MEMORIZER)
-    const message = context.content as Message
-
-    const memoryContextText =
-      context.memoryContext.length > 0
-        ? context.memoryContext.map((a, i) => `${i + 1}. ${a}`).join("\n")
-        : "No prior memos in this stream yet."
-
-    const existingTagsSection = context.existingTags?.length
-      ? MEMORIZER_EXISTING_TAGS_TEMPLATE.replace("{{TAGS}}", context.existingTags.join(", "))
-      : ""
-
-    const authorName = context.authorName ?? "Unknown"
-    const prompt = MEMORIZER_MESSAGE_PROMPT.replace("{{MEMORY_CONTEXT}}", memoryContextText)
-      .replace("{{MESSAGE_ID}}", message.id)
-      .replace("{{AUTHOR_TYPE}}", message.authorType)
-      .replace("{{AUTHOR_NAME}}", authorName)
-      .replace("{{CONTENT}}", message.contentMarkdown)
-      .replace("{{EXISTING_TAGS_SECTION}}", existingTagsSection)
-
-    const { value } = await this.ai.generateObject({
-      model: config.modelId,
-      schema: memoContentSchema,
-      messages: [
-        { role: "system", content: getMemorizerSystemPrompt(context.authorTimezone) },
-        { role: "user", content: prompt },
-      ],
-      temperature: config.temperature,
-      telemetry: {
-        functionId: "memorize-message",
-        metadata: { messageId: message.id },
-      },
-      context: { workspaceId: context.workspaceId, origin: "system" },
-    })
-
-    return {
-      title: value.title,
-      abstract: value.abstract,
-      keyPoints: value.keyPoints,
-      tags: value.tags,
-      sourceMessageIds: [message.id],
-    }
-  }
 
   async memorizeConversation(formattedMessages: string, context: MemorizerContext): Promise<MemoContent> {
     const config = await this.configResolver.resolve(COMPONENT_PATHS.MEMO_MEMORIZER)
