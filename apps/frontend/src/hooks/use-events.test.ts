@@ -4,6 +4,7 @@ import {
   getCachedWindowFloor,
   getDisplayFloor,
   getMinimumSequence,
+  getNextBootstrapFloorState,
   getOldestSequence,
 } from "./use-events"
 
@@ -64,5 +65,15 @@ describe("useEvents helpers", () => {
 
   it("anchors older-page fetches from the visible window, not hidden stale cache", () => {
     expect(getOldestSequence([{ sequence: "100" }, { sequence: "120" }, { sequence: "150" }])).toBe("100")
+  })
+
+  it("resets the bootstrap floor when reconnect replace increments windowVersion", () => {
+    const initial = getNextBootstrapFloorState(null, "stream_1", 100n, 0)
+    const appendRefetch = getNextBootstrapFloorState(initial.state, "stream_1", 140n, 0)
+    const replaceRefetch = getNextBootstrapFloorState(appendRefetch.state, "stream_1", 200n, 1)
+
+    expect(initial.floor).toBe(100n)
+    expect(appendRefetch.floor).toBe(100n)
+    expect(replaceRefetch.floor).toBe(200n)
   })
 })

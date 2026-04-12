@@ -4,7 +4,7 @@ import { debugBootstrap } from "@/lib/bootstrap-debug"
 import { getQueryLoadState, isTerminalBootstrapError } from "@/lib/query-load-state"
 import { db } from "@/db"
 import { joinRoomBestEffort } from "@/lib/socket-room"
-import { applyStreamBootstrap } from "@/sync/stream-sync"
+import { applyStreamBootstrap, toCachedStreamBootstrap, type CachedStreamBootstrap } from "@/sync/stream-sync"
 import type {
   Stream,
   StreamMember,
@@ -96,7 +96,10 @@ export function useStreamBootstrap(workspaceId: string, streamId: string, option
       // The sync module handles optimistic event cleanup.
       await applyStreamBootstrap(workspaceId, streamId, bootstrap)
 
-      return bootstrap
+      return toCachedStreamBootstrap(
+        bootstrap,
+        queryClient.getQueryData<CachedStreamBootstrap>(streamKeys.bootstrap(workspaceId, streamId))
+      )
     },
     // Keep terminal auth/not-found errors disabled to avoid loops.
     // Non-terminal errors can recover automatically on future attempts.

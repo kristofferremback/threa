@@ -264,6 +264,14 @@ export class ActivityService {
     return ActivityRepository.countUnreadGrouped(this.pool, userId, workspaceId)
   }
 
+  async getUnreadCountsForStream(
+    userId: string,
+    workspaceId: string,
+    streamId: string
+  ): Promise<{ mentionCount: number; totalCount: number }> {
+    return ActivityRepository.countUnreadForStream(this.pool, userId, workspaceId, streamId)
+  }
+
   async markAsRead(activityId: string, userId: string): Promise<void> {
     await ActivityRepository.markAsRead(this.pool, activityId, userId)
   }

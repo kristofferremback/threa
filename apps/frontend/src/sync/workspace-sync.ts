@@ -1,4 +1,4 @@
-import { db } from "@/db"
+import { db, type CachedStream, type CachedStreamMembership, type CachedUnreadState } from "@/db"
 import { seedWorkspaceCache } from "@/stores/workspace-store"
 import type { Socket } from "socket.io-client"
 import type { QueryClient } from "@tanstack/react-query"
@@ -16,7 +16,8 @@ import type {
   LastMessagePreview,
   ActivityCreatedPayload,
 } from "@threa/types"
-import { StreamTypes, Visibilities } from "@threa/types"
+import { NOTIFICATION_CONFIG, NotificationLevels, StreamTypes, Visibilities } from "@threa/types"
+import { applyStreamBootstrapInCurrentTransaction } from "./stream-sync"
 
 // ============================================================================
 // Workspace socket handler payload types
@@ -140,6 +141,209 @@ function withWorkspaceUsers(bootstrap: WorkspaceBootstrap, users: User[]): Works
 
 function toWorkspaceUser(user: WorkspaceUserPayload): User {
   return { ...user }
+}
+
+function toWorkspaceBootstrapStream(stream: CachedStream): WorkspaceBootstrap["streams"][number] {
+  return {
+    id: stream.id,
+    workspaceId: stream.workspaceId,
+    type: stream.type,
+    displayName: stream.displayName,
+    slug: stream.slug,
+    description: stream.description,
+    visibility: stream.visibility,
+    parentStreamId: stream.parentStreamId,
+    parentMessageId: stream.parentMessageId,
+    rootStreamId: stream.rootStreamId,
+    companionMode: stream.companionMode,
+    companionPersonaId: stream.companionPersonaId,
+    createdBy: stream.createdBy,
+    createdAt: stream.createdAt,
+    updatedAt: stream.updatedAt,
+    archivedAt: stream.archivedAt,
+    lastMessagePreview: stream.lastMessagePreview ?? null,
+  }
+}
+
+function toWorkspaceBootstrapMembership(membership: CachedStreamMembership): StreamMember {
+  return {
+    streamId: membership.streamId,
+    memberId: membership.memberId,
+    pinned: membership.pinned,
+    pinnedAt: membership.pinnedAt,
+    notificationLevel: membership.notificationLevel,
+    lastReadEventId: membership.lastReadEventId,
+    lastReadAt: membership.lastReadAt,
+    joinedAt: membership.joinedAt,
+  }
+}
+
+function mergeSidebarStream(
+  current: WorkspaceBootstrap["streams"][number] | undefined,
+  nextStream: Stream
+): WorkspaceBootstrap["streams"][number] {
+  const displayName =
+    nextStream.type === StreamTypes.DM && nextStream.displayName == null
+      ? (current?.displayName ?? null)
+      : nextStream.displayName
+
+  return {
+    ...(current ?? { lastMessagePreview: null }),
+    ...nextStream,
+    displayName,
+    lastMessagePreview: current?.lastMessagePreview ?? null,
+  }
+}
+
+function sumActivityCounts(activityCounts: Record<string, number>): number {
+  return Object.values(activityCounts).reduce((sum, count) => sum + count, 0)
+}
+
+function setMutedState(
+  mutedStreamIds: Set<string>,
+  streamId: string,
+  streamType: Stream["type"],
+  notificationLevel: StreamMember["notificationLevel"] | null | undefined
+): void {
+  const effectiveLevel = notificationLevel ?? NOTIFICATION_CONFIG[streamType].defaultLevel
+  if (effectiveLevel === NotificationLevels.MUTED) {
+    mutedStreamIds.add(streamId)
+    return
+  }
+  mutedStreamIds.delete(streamId)
+}
+
+interface ReconnectWorkspaceMergeParams {
+  workspaceBootstrap: WorkspaceBootstrap
+  successfulStreamBootstraps: Map<string, StreamBootstrap>
+  staleStreamIds: Set<string>
+  terminalStreamIds: Set<string>
+  localStreams: CachedStream[]
+  localMemberships: CachedStreamMembership[]
+  localUnreadState?: CachedUnreadState
+  fetchStartedAt?: number
+}
+
+export function mergeReconnectWorkspaceBootstrap({
+  workspaceBootstrap,
+  successfulStreamBootstraps,
+  staleStreamIds,
+  terminalStreamIds,
+  localStreams,
+  localMemberships,
+  localUnreadState,
+  fetchStartedAt,
+}: ReconnectWorkspaceMergeParams): WorkspaceBootstrap {
+  const successfulStreamIds = new Set(successfulStreamBootstraps.keys())
+  const streamsById = new Map(workspaceBootstrap.streams.map((stream) => [stream.id, stream]))
+  const membershipsByStreamId = new Map(
+    workspaceBootstrap.streamMemberships.map((membership) => [membership.streamId, membership])
+  )
+  const unreadCounts = { ...workspaceBootstrap.unreadCounts }
+  const mentionCounts = { ...workspaceBootstrap.mentionCounts }
+  const activityCounts = { ...workspaceBootstrap.activityCounts }
+  const mutedStreamIds = new Set(workspaceBootstrap.mutedStreamIds)
+  const localStreamById = new Map(localStreams.map((stream) => [stream.id, stream]))
+  const localMembershipByStreamId = new Map(localMemberships.map((membership) => [membership.streamId, membership]))
+
+  if (fetchStartedAt !== undefined) {
+    for (const stream of localStreams) {
+      if (stream._cachedAt < fetchStartedAt) continue
+      if (successfulStreamIds.has(stream.id)) continue
+      streamsById.set(stream.id, toWorkspaceBootstrapStream(stream))
+    }
+
+    for (const membership of localMemberships) {
+      if (membership._cachedAt < fetchStartedAt) continue
+      if (successfulStreamIds.has(membership.streamId)) continue
+      membershipsByStreamId.set(membership.streamId, toWorkspaceBootstrapMembership(membership))
+    }
+
+    if (localUnreadState && localUnreadState._cachedAt >= fetchStartedAt) {
+      for (const [streamId, count] of Object.entries(localUnreadState.unreadCounts)) {
+        if (successfulStreamIds.has(streamId)) continue
+        unreadCounts[streamId] = count
+      }
+      for (const [streamId, count] of Object.entries(localUnreadState.mentionCounts)) {
+        if (successfulStreamIds.has(streamId)) continue
+        mentionCounts[streamId] = count
+      }
+      for (const [streamId, count] of Object.entries(localUnreadState.activityCounts)) {
+        if (successfulStreamIds.has(streamId)) continue
+        activityCounts[streamId] = count
+      }
+      for (const streamId of localUnreadState.mutedStreamIds) {
+        if (successfulStreamIds.has(streamId)) continue
+        mutedStreamIds.add(streamId)
+      }
+    }
+  }
+
+  for (const streamId of staleStreamIds) {
+    const localStream = localStreamById.get(streamId)
+    if (localStream) {
+      streamsById.set(streamId, toWorkspaceBootstrapStream(localStream))
+    }
+
+    const localMembership = localMembershipByStreamId.get(streamId)
+    if (localMembership) {
+      membershipsByStreamId.set(streamId, toWorkspaceBootstrapMembership(localMembership))
+    }
+
+    if (localUnreadState) {
+      unreadCounts[streamId] = localUnreadState.unreadCounts[streamId] ?? 0
+      mentionCounts[streamId] = localUnreadState.mentionCounts[streamId] ?? 0
+      activityCounts[streamId] = localUnreadState.activityCounts[streamId] ?? 0
+      if (localUnreadState.mutedStreamIds.includes(streamId)) {
+        mutedStreamIds.add(streamId)
+      } else {
+        mutedStreamIds.delete(streamId)
+      }
+    }
+  }
+
+  for (const [streamId, bootstrap] of successfulStreamBootstraps) {
+    const currentStream = streamsById.get(streamId)
+    const localStream = localStreamById.get(streamId)
+    streamsById.set(
+      streamId,
+      mergeSidebarStream(
+        currentStream ?? (localStream ? toWorkspaceBootstrapStream(localStream) : undefined),
+        bootstrap.stream
+      )
+    )
+
+    if (bootstrap.membership) {
+      membershipsByStreamId.set(streamId, bootstrap.membership)
+    } else {
+      membershipsByStreamId.delete(streamId)
+    }
+
+    unreadCounts[streamId] = bootstrap.unreadCount
+    mentionCounts[streamId] = bootstrap.mentionCount
+    activityCounts[streamId] = bootstrap.activityCount
+    setMutedState(mutedStreamIds, streamId, bootstrap.stream.type, bootstrap.membership?.notificationLevel)
+  }
+
+  for (const streamId of terminalStreamIds) {
+    streamsById.delete(streamId)
+    membershipsByStreamId.delete(streamId)
+    delete unreadCounts[streamId]
+    delete mentionCounts[streamId]
+    delete activityCounts[streamId]
+    mutedStreamIds.delete(streamId)
+  }
+
+  return {
+    ...workspaceBootstrap,
+    streams: Array.from(streamsById.values()),
+    streamMemberships: Array.from(membershipsByStreamId.values()),
+    unreadCounts,
+    mentionCounts,
+    activityCounts,
+    unreadActivityCount: sumActivityCounts(activityCounts),
+    mutedStreamIds: Array.from(mutedStreamIds),
+  }
 }
 
 // ============================================================================
@@ -1140,6 +1344,186 @@ export async function applyWorkspaceBootstrap(
       _cachedAt: now,
     },
   })
+}
+
+export async function applyReconnectBootstrapBatch(
+  workspaceId: string,
+  workspaceBootstrap: WorkspaceBootstrap,
+  streamBootstraps: Map<string, StreamBootstrap>,
+  staleStreamIds: Set<string>,
+  terminalStreamIds: Set<string>,
+  fetchStartedAt?: number
+): Promise<WorkspaceBootstrap> {
+  const now = Date.now()
+
+  const [localStreams, localMemberships, localUnreadState] = await Promise.all([
+    db.streams.where("workspaceId").equals(workspaceId).toArray(),
+    db.streamMemberships.where("workspaceId").equals(workspaceId).toArray(),
+    db.unreadState.get(workspaceId),
+  ])
+
+  const finalBootstrap = mergeReconnectWorkspaceBootstrap({
+    workspaceBootstrap,
+    successfulStreamBootstraps: streamBootstraps,
+    staleStreamIds,
+    terminalStreamIds,
+    localStreams,
+    localMemberships,
+    localUnreadState: localUnreadState ?? undefined,
+    fetchStartedAt,
+  })
+
+  const membershipByStream = new Map(finalBootstrap.streamMemberships.map((sm) => [sm.streamId, sm]))
+
+  await db.transaction(
+    "rw",
+    [
+      db.workspaces,
+      db.workspaceUsers,
+      db.streams,
+      db.streamMemberships,
+      db.dmPeers,
+      db.personas,
+      db.bots,
+      db.unreadState,
+      db.userPreferences,
+      db.workspaceMetadata,
+      db.events,
+      db.pendingMessages,
+    ],
+    async () => {
+      await Promise.all([
+        db.workspaces.put({ ...finalBootstrap.workspace, _cachedAt: now }),
+        db.workspaceUsers.bulkPut(finalBootstrap.users.map((user) => ({ ...user, _cachedAt: now }))),
+        db.streams.bulkPut(
+          finalBootstrap.streams.map((stream) => {
+            const membership = membershipByStream.get(stream.id)
+            return {
+              ...stream,
+              pinned: membership?.pinned,
+              notificationLevel: membership?.notificationLevel,
+              lastReadEventId: membership?.lastReadEventId,
+              _cachedAt: now,
+            }
+          })
+        ),
+        db.streamMemberships.bulkPut(
+          finalBootstrap.streamMemberships.map((membership) => ({
+            ...membership,
+            id: `${workspaceId}:${membership.streamId}`,
+            workspaceId,
+            _cachedAt: now,
+          }))
+        ),
+        db.dmPeers.bulkPut(
+          finalBootstrap.dmPeers.map((dmPeer) => ({
+            ...dmPeer,
+            id: `${workspaceId}:${dmPeer.streamId}`,
+            workspaceId,
+            _cachedAt: now,
+          }))
+        ),
+        db.personas.bulkPut(finalBootstrap.personas.map((persona) => ({ ...persona, workspaceId, _cachedAt: now }))),
+        db.bots.bulkPut(finalBootstrap.bots.map((bot) => ({ ...bot, workspaceId, _cachedAt: now }))),
+        db.unreadState.put({
+          id: workspaceId,
+          workspaceId,
+          unreadCounts: finalBootstrap.unreadCounts,
+          mentionCounts: finalBootstrap.mentionCounts,
+          activityCounts: finalBootstrap.activityCounts,
+          unreadActivityCount: finalBootstrap.unreadActivityCount,
+          mutedStreamIds: finalBootstrap.mutedStreamIds,
+          _cachedAt: now,
+        }),
+        db.workspaceMetadata.put({
+          id: workspaceId,
+          workspaceId,
+          emojis: finalBootstrap.emojis,
+          emojiWeights: finalBootstrap.emojiWeights,
+          commands: finalBootstrap.commands,
+          _cachedAt: now,
+        }),
+      ])
+
+      const existingUserPreferences = await db.userPreferences.get(workspaceId)
+      if (!existingUserPreferences || !fetchStartedAt || existingUserPreferences._cachedAt < fetchStartedAt) {
+        await db.userPreferences.put({
+          ...finalBootstrap.userPreferences,
+          id: workspaceId,
+          workspaceId,
+          _cachedAt: now,
+        })
+      }
+
+      for (const [streamId, bootstrap] of streamBootstraps) {
+        await applyStreamBootstrapInCurrentTransaction(workspaceId, streamId, bootstrap, now)
+      }
+
+      if (terminalStreamIds.size > 0) {
+        await Promise.all([
+          db.streams.bulkDelete(Array.from(terminalStreamIds)),
+          db.streamMemberships.bulkDelete(Array.from(terminalStreamIds, (streamId) => `${workspaceId}:${streamId}`)),
+        ])
+      }
+    }
+  )
+
+  if (fetchStartedAt !== undefined) {
+    await cleanupStaleEntities(workspaceId, finalBootstrap, fetchStartedAt)
+  }
+
+  seedWorkspaceCache(workspaceId, {
+    workspace: { ...finalBootstrap.workspace, _cachedAt: now },
+    users: finalBootstrap.users.map((user) => ({ ...user, _cachedAt: now })),
+    streams: finalBootstrap.streams.map((stream) => ({
+      ...stream,
+      pinned: membershipByStream.get(stream.id)?.pinned,
+      notificationLevel: membershipByStream.get(stream.id)?.notificationLevel,
+      lastReadEventId: membershipByStream.get(stream.id)?.lastReadEventId,
+      _cachedAt: now,
+    })),
+    memberships: finalBootstrap.streamMemberships.map((membership) => ({
+      ...membership,
+      id: `${workspaceId}:${membership.streamId}`,
+      workspaceId,
+      _cachedAt: now,
+    })),
+    dmPeers: finalBootstrap.dmPeers.map((dmPeer) => ({
+      ...dmPeer,
+      id: `${workspaceId}:${dmPeer.streamId}`,
+      workspaceId,
+      _cachedAt: now,
+    })),
+    personas: finalBootstrap.personas.map((persona) => ({ ...persona, workspaceId, _cachedAt: now })),
+    bots: finalBootstrap.bots.map((bot) => ({ ...bot, workspaceId, _cachedAt: now })),
+    unreadState: {
+      id: workspaceId,
+      workspaceId,
+      unreadCounts: finalBootstrap.unreadCounts,
+      mentionCounts: finalBootstrap.mentionCounts,
+      activityCounts: finalBootstrap.activityCounts,
+      unreadActivityCount: finalBootstrap.unreadActivityCount,
+      mutedStreamIds: finalBootstrap.mutedStreamIds,
+      _cachedAt: now,
+    },
+    userPreferences: {
+      ...finalBootstrap.userPreferences,
+      id: workspaceId,
+      workspaceId,
+      sendMode: finalBootstrap.userPreferences.messageSendMode,
+      _cachedAt: now,
+    },
+    metadata: {
+      id: workspaceId,
+      workspaceId,
+      emojis: finalBootstrap.emojis,
+      emojiWeights: finalBootstrap.emojiWeights,
+      commands: finalBootstrap.commands,
+      _cachedAt: now,
+    },
+  })
+
+  return finalBootstrap
 }
 
 async function cleanupStaleEntities(workspaceId: string, bootstrap: WorkspaceBootstrap, now: number): Promise<void> {

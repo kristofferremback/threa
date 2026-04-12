@@ -1,6 +1,10 @@
 import { createContext, useContext, useSyncExternalStore } from "react"
 
 export type SyncStatus = "idle" | "syncing" | "synced" | "stale" | "error"
+export interface SyncErrorRecord {
+  status: number | null
+  error: Error
+}
 
 type Listener = () => void
 
@@ -14,6 +18,12 @@ type Listener = () => void
  */
 export class SyncStatusStore {
   private statuses = new Map<string, SyncStatus>()
+  private errors = new Map<string, SyncErrorRecord>()
+  private cachedSnapshot: { statuses: ReadonlyMap<string, SyncStatus>; errors: ReadonlyMap<string, SyncErrorRecord> } =
+    {
+      statuses: new Map(),
+      errors: new Map(),
+    }
   private listeners = new Map<string, Set<Listener>>()
   private globalListeners = new Set<Listener>()
 
@@ -27,10 +37,33 @@ export class SyncStatusStore {
     this.notify(key)
   }
 
+  getError(key: string): SyncErrorRecord | null {
+    return this.errors.get(key) ?? null
+  }
+
+  setError(key: string, error: SyncErrorRecord | null): void {
+    const current = this.errors.get(key) ?? null
+    if (
+      current?.status === error?.status &&
+      current?.error?.message === error?.error.message &&
+      current?.error?.name === error?.error.name
+    ) {
+      return
+    }
+
+    if (error) {
+      this.errors.set(key, error)
+    } else {
+      this.errors.delete(key)
+    }
+    this.notify(key)
+  }
+
   setAllStale(): void {
     for (const key of this.statuses.keys()) {
       this.statuses.set(key, "stale")
     }
+    this.refreshSnapshot()
     // Notify all key-specific listeners
     for (const [, listeners] of this.listeners) {
       for (const listener of listeners) listener()
@@ -56,6 +89,10 @@ export class SyncStatusStore {
     return () => this.globalListeners.delete(listener)
   }
 
+  snapshot(): { statuses: ReadonlyMap<string, SyncStatus>; errors: ReadonlyMap<string, SyncErrorRecord> } {
+    return this.cachedSnapshot
+  }
+
   /** Check if any resource is currently syncing */
   isAnySyncing(): boolean {
     for (const status of this.statuses.values()) {
@@ -65,11 +102,19 @@ export class SyncStatusStore {
   }
 
   private notify(key: string): void {
+    this.refreshSnapshot()
     const listeners = this.listeners.get(key)
     if (listeners) {
       for (const listener of listeners) listener()
     }
     for (const listener of this.globalListeners) listener()
+  }
+
+  private refreshSnapshot(): void {
+    this.cachedSnapshot = {
+      statuses: new Map(this.statuses),
+      errors: new Map(this.errors),
+    }
   }
 }
 
@@ -90,6 +135,25 @@ export function useSyncStatus(key: string): SyncStatus {
   return useSyncExternalStore(
     (cb) => store.subscribe(key, cb),
     () => store.get(key)
+  )
+}
+
+export function useSyncError(key: string): SyncErrorRecord | null {
+  const store = useSyncStatusStore()
+  return useSyncExternalStore(
+    (cb) => store.subscribe(key, cb),
+    () => store.getError(key)
+  )
+}
+
+export function useSyncSnapshot(): {
+  statuses: ReadonlyMap<string, SyncStatus>
+  errors: ReadonlyMap<string, SyncErrorRecord>
+} {
+  const store = useSyncStatusStore()
+  return useSyncExternalStore(
+    (cb) => store.subscribeGlobal(cb),
+    () => store.snapshot()
   )
 }
 

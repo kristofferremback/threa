@@ -181,6 +181,30 @@ export const ActivityRepository = {
     return { mentionsByStream, totalByStream, total }
   },
 
+  async countUnreadForStream(
+    db: Querier,
+    userId: string,
+    workspaceId: string,
+    streamId: string
+  ): Promise<{ mentionCount: number; totalCount: number }> {
+    const result = await db.query<{ mention_count: string; total_count: string }>(sql`
+      SELECT
+        COUNT(*) FILTER (WHERE activity_type = 'mention')::text AS mention_count,
+        COUNT(*)::text AS total_count
+      FROM user_activity
+      WHERE user_id = ${userId}
+        AND workspace_id = ${workspaceId}
+        AND stream_id = ${streamId}
+        AND read_at IS NULL
+    `)
+
+    const row = result.rows[0]
+    return {
+      mentionCount: Number(row?.mention_count ?? 0),
+      totalCount: Number(row?.total_count ?? 0),
+    }
+  },
+
   async markAsRead(db: Querier, activityId: string, userId: string): Promise<void> {
     await db.query(sql`
       UPDATE user_activity

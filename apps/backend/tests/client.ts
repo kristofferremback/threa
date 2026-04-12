@@ -461,11 +461,23 @@ export interface BootstrapData {
   members: StreamMember[]
   membership: { streamId: string; memberId: string; pinned: boolean; notificationLevel: string | null } | null
   latestSequence: string
+  hasOlderEvents: boolean
+  syncMode: "append" | "replace"
+  unreadCount: number
+  mentionCount: number
+  activityCount: number
 }
 
-export async function getBootstrap(client: TestClient, workspaceId: string, streamId: string): Promise<BootstrapData> {
+export async function getBootstrap(
+  client: TestClient,
+  workspaceId: string,
+  streamId: string,
+  params?: { after?: string }
+): Promise<BootstrapData> {
+  const searchParams = new URLSearchParams()
+  if (params?.after) searchParams.set("after", params.after)
   const { status, data } = await client.get<{ data: BootstrapData }>(
-    `/api/workspaces/${workspaceId}/streams/${streamId}/bootstrap`
+    `/api/workspaces/${workspaceId}/streams/${streamId}/bootstrap${searchParams.toString() ? `?${searchParams}` : ""}`
   )
   if (status !== 200) {
     throw new Error(`Get bootstrap failed: ${JSON.stringify(data)}`)
@@ -496,6 +508,7 @@ export interface WorkspaceUser {
   workspaceId: string
   workosUserId: string
   email: string
+  slug: string
   name: string
   role: string
 }
@@ -593,7 +606,9 @@ export interface WorkspaceBootstrapData {
   personas: Persona[]
   emojis: EmojiEntry[]
   emojiWeights: Record<string, number>
+  unreadCounts: Record<string, number>
   mentionCounts: Record<string, number>
+  activityCounts: Record<string, number>
   unreadActivityCount: number
 }
 

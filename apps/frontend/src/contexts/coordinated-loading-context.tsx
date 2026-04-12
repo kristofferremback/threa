@@ -15,9 +15,14 @@ import {
   useWorkspaceUsers,
 } from "@/stores/workspace-store"
 import { hasSeededDraftCache, seedDraftCacheFromIdb } from "@/stores/draft-store"
-import { useSyncStatus } from "@/sync/sync-status"
+import { useSyncSnapshot, useSyncStatus } from "@/sync/sync-status"
 import { debugBootstrap, isBootstrapDebugEnabled } from "@/lib/bootstrap-debug"
-import { getQueryLoadState, isQueryLoadStateLoading, shouldSuppressBootstrapError } from "@/lib/query-load-state"
+import {
+  QUERY_LOAD_STATE,
+  getQueryLoadState,
+  isQueryLoadStateLoading,
+  shouldSuppressBootstrapError,
+} from "@/lib/query-load-state"
 import { StreamContentSkeleton } from "@/components/loading"
 import { ApiError } from "@/api/client"
 import { getAvatarUrl } from "@threa/types"
@@ -118,6 +123,11 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
   }, [workspaceId])
 
   const workspaceSyncStatus = useSyncStatus(`workspace:${workspaceId}`)
+  const syncSnapshot = useSyncSnapshot()
+  const isAnySyncing = useMemo(
+    () => Array.from(syncSnapshot.statuses.values()).some((status) => status === "syncing"),
+    [syncSnapshot]
+  )
   const { loadState: streamsLoadState, results } = useCoordinatedStreamQueries(workspaceId, streamIds)
   const serverStreamIds = useMemo(
     () => streamIds.filter((id) => !id.startsWith("draft_") && !id.startsWith("draft:")),
@@ -182,7 +192,7 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
   // (triggered by navigating to a new stream) should not re-trigger the
   // top-bar loading indicator. Individual stream loading is handled by
   // EventList's skeleton/loading state within the stream content area.
-  const isLoading = workspaceLoading || (!isReady && streamsLoading) || draftsLoading
+  const isLoading = workspaceLoading || (!isReady && streamsLoading) || draftsLoading || (isReady && isAnySyncing)
 
   if (isBootstrapDebugEnabled()) {
     debugBootstrap("Coordinated loading state", {
@@ -213,6 +223,7 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
       workspaceLoading,
       streamsLoading,
       draftsLoading,
+      isAnySyncing,
       isLoading,
       isReady,
       showSkeleton,
@@ -309,29 +320,45 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
     const map = new Map<string, { isLoading: boolean; error: Error | null }>()
 
     streamQueryStates.forEach((state) => {
-      if (state.streamId && state.result) {
-        const loadState = getQueryLoadState(state.result.status, state.result.fetchStatus)
-        map.set(state.streamId, {
-          isLoading: isQueryLoadStateLoading(loadState) && !state.result.isError,
-          error: state.suppressError ? null : (state.result.error ?? null),
-        })
-      }
+      const syncStatus = syncSnapshot.statuses.get(`stream:${state.streamId}`) ?? "idle"
+      const syncError = syncSnapshot.errors.get(`stream:${state.streamId}`) ?? null
+      const loadState = state.result
+        ? getQueryLoadState(state.result.status, state.result.fetchStatus)
+        : QUERY_LOAD_STATE.READY
+
+      if (!state.result && !syncError && syncStatus === "idle") return
+
+      map.set(state.streamId, {
+        isLoading:
+          !syncError &&
+          (syncStatus === "syncing" ||
+            (state.result ? isQueryLoadStateLoading(loadState) && !state.result.isError : false)),
+        error: syncError?.error ?? (state.suppressError ? null : (state.result?.error ?? null)),
+      })
     })
 
     return map
-  }, [streamQueryStates])
+  }, [streamQueryStates, syncSnapshot])
 
   // Extract errors for getStreamError
   // Filter out both draft scratchpads (draft_xxx) and draft thread panels (draft:xxx:xxx)
   const streamErrors = useMemo<StreamError[]>(() => {
     return streamQueryStates
       .map((state) => {
+        const syncError = syncSnapshot.errors.get(`stream:${state.streamId}`)
+        if (syncError) {
+          return {
+            streamId: state.streamId,
+            status: syncError.status ?? 500,
+            error: syncError.error,
+          }
+        }
         if (!state.result?.error || state.suppressError) return null
         const status = ApiError.isApiError(state.result.error) ? state.result.error.status : 500
         return { streamId: state.streamId, status, error: state.result.error }
       })
       .filter((e): e is StreamError => e !== null)
-  }, [streamQueryStates])
+  }, [streamQueryStates, syncSnapshot])
 
   const getStreamState = useMemo(
     () =>

@@ -1,4 +1,4 @@
-import { test, expect, type Locator, type Page, type Response } from "@playwright/test"
+import { test, expect, type Locator, type Page } from "@playwright/test"
 import { createChannel, expectApiOk, loginInNewContext, waitForWorkspaceProvisioned } from "./helpers"
 
 /**
@@ -28,35 +28,6 @@ test.describe("New Channel Socket Subscription", () => {
         message: `stream should render message "${message}"`,
       })
       .toBe(true)
-  }
-
-  async function waitForStreamBootstrapAfterAction(
-    page: Page,
-    workspaceId: string,
-    streamId: string,
-    action: () => Promise<void>
-  ): Promise<void> {
-    const bootstrapPath = `/api/workspaces/${workspaceId}/streams/${streamId}/bootstrap`
-    const bootstrapStatuses: number[] = []
-    const handleResponse = (response: Response) => {
-      if (response.url().includes(bootstrapPath)) {
-        bootstrapStatuses.push(response.status())
-      }
-    }
-
-    page.on("response", handleResponse)
-    try {
-      await action()
-      await expect
-        .poll(() => bootstrapStatuses.at(-1) ?? 0, {
-          timeout: 45000,
-          message: `stream bootstrap should refresh for ${streamId}`,
-        })
-        .toBeGreaterThanOrEqual(200)
-      expect(bootstrapStatuses.at(-1)).toBeLessThan(300)
-    } finally {
-      page.off("response", handleResponse)
-    }
   }
 
   test("should make remote channel messages visible without a full page refresh", async ({ browser }) => {
@@ -159,10 +130,11 @@ test.describe("New Channel Socket Subscription", () => {
       const channelLink = userA.page.getByRole("link", { name: `#${channelName}` })
       await waitForSidebarPreview(channelLink, testMessage)
 
-      // Click the channel to verify the new message is available
-      await waitForStreamBootstrapAfterAction(userA.page, workspaceId, streamId, async () => {
-        await channelLink.click()
-      })
+      // Click the channel and verify the new message is rendered.
+      // The SyncEngine subscribed to the room on stream:created, so User B's
+      // message is already in IDB via the socket handlers — no bootstrap
+      // refetch is required on navigation.
+      await channelLink.click()
       await expect(userA.page).toHaveURL(new RegExp(`/w/${workspaceId}/s/${streamId}`), { timeout: 10000 })
       await expect(userA.page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({
         timeout: 10000,

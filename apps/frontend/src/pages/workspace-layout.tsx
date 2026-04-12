@@ -1,4 +1,13 @@
-import { useState, useEffect, useCallback, useContext, useMemo, useRef, type ReactNode } from "react"
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useContext,
+  useMemo,
+  useRef,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react"
 import { Outlet, useParams, useNavigate, useSearchParams, useMatch, Navigate } from "react-router-dom"
 import { AppShell } from "@/components/layout/app-shell"
 import { Sidebar } from "@/components/layout/sidebar"
@@ -12,6 +21,7 @@ import {
   SocketProvider,
   useSocket,
   useSocketReconnectCount,
+  useSocketStatus,
   useWorkspaceService,
   useStreamService,
   useMessageService,
@@ -83,6 +93,21 @@ function WorkspaceKeyboardHandler({
   return <>{children}</>
 }
 
+function useOnlineStatus(): boolean {
+  return useSyncExternalStore(
+    (listener) => {
+      window.addEventListener("online", listener)
+      window.addEventListener("offline", listener)
+      return () => {
+        window.removeEventListener("online", listener)
+        window.removeEventListener("offline", listener)
+      }
+    },
+    () => navigator.onLine,
+    () => true
+  )
+}
+
 /**
  * Registers sidebar-related keyboard shortcuts. Must be rendered inside
  * SidebarProvider so it can access the sidebar context.
@@ -102,8 +127,17 @@ function SidebarKeyboardHandler() {
  * The engine owns bootstrap, reconnection, and all workspace-level socket
  * event handlers.
  */
-function WorkspaceSyncHandler({ workspaceId, children }: { workspaceId: string; children: ReactNode }) {
+function WorkspaceSyncHandler({
+  workspaceId,
+  visibleStreamIds,
+  children,
+}: {
+  workspaceId: string
+  visibleStreamIds: string[]
+  children: ReactNode
+}) {
   const socket = useSocket()
+  const socketStatus = useSocketStatus()
   const reconnectCount = useSocketReconnectCount()
   const queryClient = useQueryClient()
   const workspaceService = useWorkspaceService()
@@ -111,7 +145,9 @@ function WorkspaceSyncHandler({ workspaceId, children }: { workspaceId: string; 
   const messageService = useMessageService()
   const syncStatusStore = useContext(SyncStatusContext)
   const { user } = useAuth()
+  const isOnline = useOnlineStatus()
   const { streamId: currentStreamId } = useParams<{ streamId: string }>()
+  const wasOfflineRef = useRef(!navigator.onLine)
 
   // Construct SyncEngine once per workspace. Use ref to survive StrictMode
   // double-render — useMemo + destroy effect breaks because the cleanup
@@ -144,20 +180,42 @@ function WorkspaceSyncHandler({ workspaceId, children }: { workspaceId: string; 
   }, [syncEngine, currentStreamId])
 
   useEffect(() => {
+    syncEngine.setVisibleStreamIds(visibleStreamIds)
+  }, [syncEngine, visibleStreamIds])
+
+  useEffect(() => {
     syncEngine.setCurrentUser(user)
   }, [syncEngine, user])
 
-  // Wire SyncEngine to socket connect/disconnect/reconnect
+  // Wire SyncEngine to socket connect/disconnect/reconnect based on actual socket status.
   useEffect(() => {
-    console.log("[WorkspaceSyncHandler] effect fired", { hasSocket: !!socket, reconnectCount })
-    if (!socket) {
+    if (!socket || socketStatus !== "connected") {
       syncEngine.onDisconnect()
       return
     }
-    console.log("[WorkspaceSyncHandler] calling syncEngine.onConnect")
+
     void syncEngine.onConnect(socket)
-    return () => syncEngine.onDisconnect()
-  }, [socket, syncEngine, reconnectCount])
+  }, [socket, socketStatus, syncEngine, reconnectCount])
+
+  useEffect(() => {
+    if (!socket) {
+      wasOfflineRef.current = !isOnline
+      return
+    }
+
+    if (!isOnline) {
+      wasOfflineRef.current = true
+      syncEngine.onDisconnect()
+      return
+    }
+
+    const wasOffline = wasOfflineRef.current
+    wasOfflineRef.current = false
+
+    if (wasOffline) {
+      void syncEngine.refreshAfterConnectivityResume()
+    }
+  }, [isOnline, socket, syncEngine])
 
   // No destroy effect — StrictMode's effect cleanup cycle would destroy the
   // engine before the socket connect effect re-runs. The engine is destroyed
@@ -271,7 +329,7 @@ export function WorkspaceLayout() {
   return (
     <SyncStatusContext.Provider value={syncStatusStore}>
       <SocketProvider workspaceId={workspaceId}>
-        <WorkspaceSyncHandler workspaceId={workspaceId}>
+        <WorkspaceSyncHandler workspaceId={workspaceId} visibleStreamIds={streamIds}>
           <UnreadTabIndicator workspaceId={workspaceId} />
           <AppUpdateChecker />
           <MessageQueueHandler />
