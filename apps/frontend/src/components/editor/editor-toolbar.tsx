@@ -1,4 +1,4 @@
-import { useLayoutEffect, useEffect, useState, useCallback, useReducer, useRef } from "react"
+import { useLayoutEffect, useEffect, useState, useCallback, useReducer, useRef, useMemo } from "react"
 import type { Editor } from "@tiptap/react"
 import { useFloating, offset, flip, shift, autoUpdate } from "@floating-ui/react"
 import {
@@ -24,6 +24,8 @@ import { LinkEditor } from "./link-editor"
 import { indentSelection, dedentSelection, handleLinkToolbarAction, isSuggestionActive } from "./editor-behaviors"
 import { toggleMultilineBlock } from "./multiline-blocks"
 import { cn } from "@/lib/utils"
+import { usePreferences } from "@/contexts"
+import { getEffectiveEditorBindings, formatKeyBinding } from "@/lib/keyboard-shortcuts"
 
 interface EditorToolbarProps {
   editor: Editor | null
@@ -73,6 +75,18 @@ export function EditorToolbar({
   const floatingRootRef = useRef<HTMLDivElement | null>(null)
   const lastSelectionRectRef = useRef<DOMRect>(new DOMRect())
   const [linkEditorSnapshot, setLinkEditorSnapshot] = useState<LinkEditorSnapshot | null>(null)
+
+  // Dynamic shortcut hints from user preferences
+  const { preferences } = usePreferences()
+  const kb = preferences?.keyboardShortcuts ?? {}
+  const effectiveEditorBindings = useMemo(() => getEffectiveEditorBindings(kb), [kb])
+  const shortcutHint = useCallback(
+    (actionId: string): string | undefined => {
+      const binding = effectiveEditorBindings[actionId]
+      return binding ? formatKeyBinding(binding) : undefined
+    },
+    [effectiveEditorBindings]
+  )
 
   // Virtual reference: position the toolbar above the current text selection
   useLayoutEffect(() => {
@@ -182,7 +196,7 @@ export function EditorToolbar({
         onAction={() => editor.chain().focus().toggleBold().run()}
         icon={Bold}
         label="Bold"
-        shortcut="⌘B"
+        shortcut={shortcutHint("formatBold")}
         isActive={editor.isActive("bold")}
         roomy={isMobileInlineToolbar}
         showTooltip={!isMobileInlineToolbar}
@@ -192,7 +206,7 @@ export function EditorToolbar({
         onAction={() => editor.chain().focus().toggleItalic().run()}
         icon={Italic}
         label="Italic"
-        shortcut="⌘I"
+        shortcut={shortcutHint("formatItalic")}
         isActive={editor.isActive("italic")}
         roomy={isMobileInlineToolbar}
         showTooltip={!isMobileInlineToolbar}
@@ -202,7 +216,7 @@ export function EditorToolbar({
         onAction={() => editor.chain().focus().toggleStrike().run()}
         icon={Strikethrough}
         label="Strikethrough"
-        shortcut="⌘⇧S"
+        shortcut={shortcutHint("formatStrike")}
         isActive={editor.isActive("strike")}
         roomy={isMobileInlineToolbar}
         showTooltip={!isMobileInlineToolbar}
@@ -212,7 +226,7 @@ export function EditorToolbar({
         onAction={() => editor.chain().focus().toggleCode().run()}
         icon={Code}
         label="Inline code"
-        shortcut="⌘E"
+        shortcut={shortcutHint("formatCode")}
         isActive={editor.isActive("code")}
         roomy={isMobileInlineToolbar}
         showTooltip={!isMobileInlineToolbar}
@@ -260,7 +274,7 @@ export function EditorToolbar({
         onAction={() => toggleMultilineBlock(editor, "codeBlock")}
         icon={Braces}
         label="Code block"
-        shortcut="⌘⇧C"
+        shortcut={shortcutHint("formatCodeBlock")}
         isActive={editor.isActive("codeBlock")}
         roomy={isMobileInlineToolbar}
         showTooltip={!isMobileInlineToolbar}

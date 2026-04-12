@@ -29,6 +29,14 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
     global: true,
   },
   {
+    id: "searchInStream",
+    label: "Search in Stream",
+    description: "Search messages in the current stream",
+    defaultKey: "mod+f",
+    category: "navigation",
+    global: true,
+  },
+  {
     id: "openSearch",
     label: "Search",
     description: "Open search",
@@ -53,20 +61,48 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
     global: true,
   },
   {
-    id: "closeModal",
-    label: "Close",
-    description: "Close current modal or popover",
-    defaultKey: "escape",
-    category: "navigation",
-    global: true,
-  },
-  {
     id: "toggleSidebar",
     label: "Toggle Sidebar",
     description: "Show or hide the sidebar",
     defaultKey: "mod+§",
     category: "view",
     global: true,
+  },
+  // Editor formatting shortcuts (not global — only active when editor is focused)
+  {
+    id: "formatBold",
+    label: "Bold",
+    description: "Toggle bold formatting",
+    defaultKey: "mod+b",
+    category: "editing",
+  },
+  {
+    id: "formatItalic",
+    label: "Italic",
+    description: "Toggle italic formatting",
+    defaultKey: "mod+i",
+    category: "editing",
+  },
+  {
+    id: "formatStrike",
+    label: "Strikethrough",
+    description: "Toggle strikethrough formatting",
+    defaultKey: "mod+shift+s",
+    category: "editing",
+  },
+  {
+    id: "formatCode",
+    label: "Inline Code",
+    description: "Toggle inline code formatting",
+    defaultKey: "mod+e",
+    category: "editing",
+  },
+  {
+    id: "formatCodeBlock",
+    label: "Code Block",
+    description: "Toggle code block",
+    defaultKey: "mod+shift+c",
+    category: "editing",
   },
 ]
 
@@ -96,14 +132,15 @@ export function getShortcutsByCategory(): Record<ShortcutAction["category"], Sho
 
 /**
  * Get the effective key binding for an action, considering user customizations.
+ * Returns undefined if the shortcut is explicitly disabled ("none") or unregistered.
  */
 export function getEffectiveKeyBinding(
   actionId: string,
   customBindings: Record<string, string> = {}
 ): string | undefined {
-  if (customBindings[actionId]) {
-    return customBindings[actionId]
-  }
+  const custom = customBindings[actionId]
+  if (custom === "none") return undefined
+  if (custom) return custom
   return getShortcutAction(actionId)?.defaultKey
 }
 
@@ -115,7 +152,8 @@ export function detectConflicts(customBindings: Record<string, string> = {}): Ma
   const keyToActions = new Map<string, string[]>()
 
   for (const action of SHORTCUT_ACTIONS) {
-    const key = customBindings[action.id] || action.defaultKey
+    const key = getEffectiveKeyBinding(action.id, customBindings)
+    if (!key) continue
     const existing = keyToActions.get(key) || []
     keyToActions.set(key, [...existing, action.id])
   }
@@ -149,13 +187,41 @@ export function parseKeyBinding(key: string): {
   alt: boolean
 } {
   const parts = key.toLowerCase().split("+")
-  const actualKey = parts[parts.length - 1]
+  let mod = false
+  let shift = false
+  let alt = false
+  let keyStartIndex = 0
+
+  while (keyStartIndex < parts.length) {
+    const part = parts[keyStartIndex]
+    if (part === "mod") {
+      mod = true
+      keyStartIndex += 1
+      continue
+    }
+
+    if (part === "shift") {
+      shift = true
+      keyStartIndex += 1
+      continue
+    }
+
+    if (part === "alt") {
+      alt = true
+      keyStartIndex += 1
+      continue
+    }
+
+    break
+  }
+
+  const actualKey = parts.slice(keyStartIndex).join("+")
 
   return {
     key: actualKey,
-    mod: parts.includes("mod"),
-    shift: parts.includes("shift"),
-    alt: parts.includes("alt"),
+    mod,
+    shift,
+    alt,
   }
 }
 
@@ -186,24 +252,164 @@ export function matchesKeyBinding(event: KeyboardEvent, binding: string): boolea
  */
 export function formatKeyBinding(binding: string): string {
   const mac = isMac()
-  const parts = binding.split("+")
+  const parsed = parseKeyBinding(binding)
+  if (!parsed.key) {
+    return binding
+  }
 
-  const formatted = parts.map((part) => {
-    switch (part.toLowerCase()) {
-      case "mod":
-        return mac ? "⌘" : "Ctrl"
-      case "shift":
-        return mac ? "⇧" : "Shift"
-      case "alt":
-        return mac ? "⌥" : "Alt"
-      case "escape":
-        return mac ? "⎋" : "Esc"
-      case ",":
-        return ","
-      default:
-        return part.toUpperCase()
-    }
-  })
+  const formatted: string[] = []
+  if (parsed.mod) formatted.push(mac ? "⌘" : "Ctrl")
+  if (parsed.shift) formatted.push(mac ? "⇧" : "Shift")
+  if (parsed.alt) formatted.push(mac ? "⌥" : "Alt")
+
+  switch (parsed.key.toLowerCase()) {
+    case "escape":
+      formatted.push(mac ? "⎋" : "Esc")
+      break
+    case ",":
+      formatted.push(",")
+      break
+    case "+":
+      formatted.push("+")
+      break
+    default:
+      formatted.push(parsed.key.toUpperCase())
+      break
+  }
 
   return mac ? formatted.join("") : formatted.join("+")
+}
+
+/**
+ * Format a key binding as plain text for hover text and accessibility.
+ * Converts "mod+k" to "cmd+k" on Mac or "ctrl+k" elsewhere.
+ */
+export function formatKeyBindingText(binding: string): string {
+  const mac = isMac()
+  const parsed = parseKeyBinding(binding)
+  if (!parsed.key) {
+    return binding
+  }
+
+  const formatted: string[] = []
+  if (parsed.mod) formatted.push(mac ? "cmd" : "ctrl")
+  if (parsed.shift) formatted.push("shift")
+  if (parsed.alt) formatted.push(mac ? "opt" : "alt")
+
+  switch (parsed.key.toLowerCase()) {
+    case "escape":
+      formatted.push("escape")
+      break
+    case ",":
+      formatted.push(",")
+      break
+    case "+":
+      formatted.push("+")
+      break
+    default:
+      formatted.push(parsed.key.toLowerCase())
+      break
+  }
+
+  return formatted.join("+")
+}
+
+/** Keys that are only modifiers and should not be captured as standalone bindings. */
+const MODIFIER_KEYS = new Set(["Control", "Shift", "Alt", "Meta"])
+/**
+ * Keys reserved by the app and never bindable as custom shortcuts.
+ * Escape is hardcoded to cancel/close flows across the app (Radix Dialog, capture UI,
+ * local popovers), so we refuse to capture it as a binding for any action.
+ */
+const RESERVED_KEYS = new Set(["escape"])
+
+function isFunctionKey(key: string): boolean {
+  return /^f([1-9]|1[0-2])$/i.test(key)
+}
+
+export function isSafeShortcutBinding(binding: string): boolean {
+  const parsed = parseKeyBinding(binding)
+  if (!parsed.key) {
+    return false
+  }
+
+  if (RESERVED_KEYS.has(parsed.key.toLowerCase())) {
+    return false
+  }
+
+  if (parsed.mod || parsed.alt) {
+    return true
+  }
+
+  return isFunctionKey(parsed.key.toLowerCase())
+}
+
+/**
+ * Convert a KeyboardEvent to a normalized binding string (e.g. "mod+shift+f").
+ * Returns null for lone modifier presses or unsafe bare keys that would hijack normal typing.
+ */
+export function keyEventToBinding(event: KeyboardEvent): string | null {
+  if (MODIFIER_KEYS.has(event.key)) return null
+
+  const parts: string[] = []
+  if (event.metaKey || event.ctrlKey) parts.push("mod")
+  if (event.shiftKey) parts.push("shift")
+  if (event.altKey) parts.push("alt")
+  parts.push(event.key.toLowerCase())
+
+  const binding = parts.join("+")
+  return isSafeShortcutBinding(binding) ? binding : null
+}
+
+/**
+ * IDs of all editor formatting shortcut actions.
+ */
+export const EDITOR_SHORTCUT_IDS = [
+  "formatBold",
+  "formatItalic",
+  "formatStrike",
+  "formatCode",
+  "formatCodeBlock",
+] as const
+
+/**
+ * Compute effective editor formatting bindings, excluding any that conflict
+ * with a global app-level shortcut (app shortcuts always win).
+ */
+export function getEffectiveEditorBindings(customBindings: Record<string, string> = {}): Record<string, string> {
+  // Collect all global app-level binding values
+  const globalBindings = new Set<string>()
+  for (const action of SHORTCUT_ACTIONS) {
+    if (!action.global) continue
+    const binding = getEffectiveKeyBinding(action.id, customBindings)
+    if (binding) globalBindings.add(binding)
+  }
+
+  // Build editor bindings, excluding any claimed by a global shortcut
+  const result: Record<string, string> = {}
+  for (const id of EDITOR_SHORTCUT_IDS) {
+    const binding = getEffectiveKeyBinding(id, customBindings)
+    if (binding && isSafeShortcutBinding(binding) && !globalBindings.has(binding)) {
+      result[id] = binding
+    }
+  }
+  return result
+}
+
+export function resolveShortcutBindingUpdate(
+  customBindings: Record<string, string> = {},
+  actionId: string,
+  binding: string
+): Record<string, string> {
+  const nextBindings = { ...customBindings }
+  const testBindings = { ...customBindings, [actionId]: binding }
+  const conflicts = detectConflicts(testBindings)
+  const conflicting = conflicts.get(binding)?.filter((id) => id !== actionId) ?? []
+
+  for (const conflictId of conflicting) {
+    nextBindings[conflictId] = "none"
+  }
+
+  nextBindings[actionId] = binding
+  return nextBindings
 }

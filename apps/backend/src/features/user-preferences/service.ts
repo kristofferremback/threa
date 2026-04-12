@@ -132,6 +132,8 @@ export class UserPreferencesService {
     updates: UpdateUserPreferencesInput
   ): Promise<UserPreferences> {
     return withTransaction(this.pool, async (client) => {
+      const currentOverrides =
+        updates.keyboardShortcuts !== undefined ? await UserPreferencesRepository.findOverrides(client, userId) : null
       const pairs = flattenUpdates(updates)
 
       // Separate into overrides to set vs keys to delete (match default)
@@ -143,6 +145,18 @@ export class UserPreferencesService {
           toDelete.push(key)
         } else {
           toSet.push({ key, value })
+        }
+      }
+
+      if (currentOverrides) {
+        const nextShortcutKeys = new Set(
+          Object.keys(updates.keyboardShortcuts ?? {}).map((actionId) => `keyboardShortcuts.${actionId}`)
+        )
+
+        for (const { key } of currentOverrides) {
+          if (!key.startsWith("keyboardShortcuts.")) continue
+          if (nextShortcutKeys.has(key)) continue
+          toDelete.push(key)
         }
       }
 

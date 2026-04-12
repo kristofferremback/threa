@@ -267,24 +267,13 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
 
   const handleInputKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
-      // Ctrl+[ as vim-style Escape alternative (handled here since onEscapeKeyDown doesn't catch it)
-      if (e.ctrlKey && e.key === "[") {
-        e.preventDefault()
-        if (inputRequest) {
-          clearInputRequest()
-        } else {
-          handleClose()
-        }
-        return
-      }
-
       if (e.key === "Enter" && inputRequest) {
         e.preventDefault()
         inputRequest.onSubmit(inputValue)
         return
       }
     },
-    [inputRequest, inputValue, clearInputRequest, handleClose]
+    [inputRequest, inputValue]
   )
 
   const ModeIcon = inputRequest?.icon ?? MODE_ICONS[mode]
@@ -333,21 +322,6 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
         onKeyDown={(e) => {
           // If TipTap already handled this event (e.g., popover keyboard nav), don't interfere
           if (e.defaultPrevented) return
-
-          // Ctrl+[ as vim-style Escape alternative
-          if (e.ctrlKey && e.key === "[") {
-            e.preventDefault()
-            if (isSuggestionPopoverActiveRef.current) {
-              richInputRef.current?.closePopovers()
-            } else if (currentResult.isFilterSelectActive && currentResult.closeFilterSelect) {
-              currentResult.closeFilterSelect()
-            } else if (inputRequest) {
-              clearInputRequest()
-            } else {
-              handleClose()
-            }
-            return
-          }
 
           const isMod = e.metaKey || e.ctrlKey
           // Use ref for synchronous access (state updates are batched)

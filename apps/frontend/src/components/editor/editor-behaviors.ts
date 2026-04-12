@@ -5,12 +5,27 @@ import type { EditorState } from "@tiptap/pm/state"
 import type { EditorView } from "@tiptap/pm/view"
 import type { MessageSendMode } from "@threa/types"
 import { handleEnterTextBehavior, toggleMultilineBlock } from "./multiline-blocks"
+import { matchesKeyBinding } from "@/lib/keyboard-shortcuts"
 
 export interface EditorBehaviorsOptions {
   /** Ref to current send mode - using ref avoids stale closure in keyboard shortcuts */
   sendModeRef: { current: MessageSendMode }
   /** Ref to submit callback - using ref avoids stale closure in keyboard shortcuts */
   onSubmitRef: { current: () => void }
+  /** Ref to effective editor formatting bindings (app-format: "mod+b"), with app-level conflicts already excluded */
+  keyBindingsRef: { current: Record<string, string> }
+}
+
+// Tiptap's `.configure()` runs options through `mergeDeep`, which recursively
+// clones plain `{ current: ... }` objects. That would detach the caller's
+// React ref from the ref the extension reads inside its ProseMirror plugin,
+// so later mutations to `ref.current` would never propagate. Wrapping the
+// default in a prototype-less object makes `isPlainObject` return false for
+// the target, causing `mergeDeep` to use the caller's ref by reference.
+function createOptionRef<T>(initial: T): { current: T } {
+  const ref = Object.create(null) as { current: T }
+  ref.current = initial
+  return ref
 }
 
 export function indentSelection(editor: Editor): boolean {
@@ -682,13 +697,48 @@ export const EditorBehaviors = Extension.create<EditorBehaviorsOptions>({
 
   addOptions() {
     return {
-      sendModeRef: { current: "enter" as MessageSendMode },
-      onSubmitRef: { current: () => {} },
+      sendModeRef: createOptionRef<MessageSendMode>("enter"),
+      onSubmitRef: createOptionRef<() => void>(() => {}),
+      keyBindingsRef: createOptionRef<Record<string, string>>({}),
     }
   },
 
   addProseMirrorPlugins() {
+    const editor = this.editor
+    const keyBindingsRef = this.options.keyBindingsRef
+
+    const formattingPlugin = new Plugin({
+      props: {
+        handleKeyDown(_view: EditorView, event: KeyboardEvent) {
+          const bindings = keyBindingsRef.current
+          for (const [actionId, binding] of Object.entries(bindings)) {
+            if (!matchesKeyBinding(event, binding)) continue
+
+            switch (actionId) {
+              case "formatBold":
+                editor.chain().focus().toggleBold().run()
+                return true
+              case "formatItalic":
+                editor.chain().focus().toggleItalic().run()
+                return true
+              case "formatStrike":
+                editor.chain().focus().toggleStrike().run()
+                return true
+              case "formatCode":
+                editor.chain().focus().toggleCode().run()
+                return true
+              case "formatCodeBlock":
+                toggleMultilineBlock(editor, "codeBlock")
+                return true
+            }
+          }
+          return false
+        },
+      },
+    })
+
     return [
+      formattingPlugin,
       new Plugin({
         view(view) {
           const defaultView = view.dom.ownerDocument.defaultView
@@ -793,12 +843,6 @@ export const EditorBehaviors = Extension.create<EditorBehaviorsOptions>({
 
   addKeyboardShortcuts() {
     return {
-      // Formatting shortcuts
-      "Mod-b": () => this.editor.chain().focus().toggleBold().run(),
-      "Mod-i": () => this.editor.chain().focus().toggleItalic().run(),
-      "Mod-Shift-s": () => this.editor.chain().focus().toggleStrike().run(),
-      "Mod-e": () => this.editor.chain().focus().toggleCode().run(),
-      "Mod-Shift-c": () => toggleMultilineBlock(this.editor, "codeBlock"),
       ArrowLeft: () => {
         if (isSuggestionActive(this.editor)) {
           return false
