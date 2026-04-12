@@ -1,6 +1,6 @@
 # AI Model Reference
 
-**Last updated:** 2026-02-03
+**Last updated:** 2026-04-12
 
 This document provides a comprehensive reference for AI models including capabilities, pricing, and usage guidelines. Always verify against this file when working with AI integration.
 
@@ -132,6 +132,46 @@ All models use `provider:modelPath` format:
 
 ---
 
+### openrouter:openai/gpt-5.4-mini
+
+**Name:** GPT-5.4 Mini
+
+**Description:** High-capability small model from OpenAI's GPT-5.4 generation (March 2026). Significantly improves over GPT-5 Mini across coding, reasoning, multimodal understanding, and tool use while running 2x faster. Supports configurable reasoning effort levels. 400K context window.
+
+**Typical cost:** ~$0.75 per 1M input tokens, ~$4.50 per 1M output tokens
+
+**When to use:**
+
+- Complex structured output and abstractive writing
+- Agent workflows and coding assistants at scale
+- Tasks requiring high-quality reasoning in a cost-effective tier
+- Multi-turn conversations with tool use
+- Memo generation where quality justifies the cost over nano
+
+**Use instead of:** `gpt-5-mini` for improved quality across all tasks
+
+---
+
+### openrouter:openai/gpt-5.4-nano
+
+**Name:** GPT-5.4 Nano
+
+**Description:** Smallest, cheapest model in OpenAI's GPT-5.4 generation (March 2026). Optimized for low-latency, high-volume tasks. Outperforms GPT-5 Mini on benchmarks despite lower cost. Supports configurable reasoning effort levels. 400K context window.
+
+**Typical cost:** ~$0.20 per 1M input tokens, ~$1.25 per 1M output tokens
+
+**When to use:**
+
+- Classification, data extraction, and ranking (primary design target)
+- Memo classification (gem detection)
+- High-volume batch pipelines
+- Sub-agent tasks in multi-agent systems
+- Cost-sensitive workloads that still need good quality
+
+**Use instead of:** `gpt-5-mini`, `gpt-5-nano` for better quality at comparable or lower cost
+
+---
+
 ### openrouter:openai/gpt-oss-120b
 
 **Name:** GPT-OSS 120B
@@ -144,14 +184,11 @@ All models use `provider:modelPath` format:
 
 **When to use:**
 
-- Classification and extraction (MemoClassifier, Memorizer)
-- Research and context retrieval (Researcher agent)
-- High-volume reasoning tasks
-- Cost-sensitive workloads requiring good quality
-- Agentic workflows with tool use
-- Tasks where open-weight licensing matters
+- High-volume reasoning tasks where open-weight licensing matters
+- Cost-sensitive workloads where quality bar is low
+- Self-hosted inference on single H100
 
-**Use instead of:** `gpt-5-mini` for most structured output tasks - comparable quality at ~10x lower cost
+**Note:** Previously used for memo classification, memorization, and researcher agent. Replaced by `claude-haiku-4.5` (researcher), `gpt-5.4-nano` (memo classifier/memorizer) due to unreliable tail latency on OpenRouter's patchwork provider backing and insufficient quality for structured extraction.
 
 ---
 
@@ -187,8 +224,10 @@ All models use `provider:modelPath` format:
 
 **OpenAI Legacy:**
 
-- ❌ `openrouter:openai/gpt-3.5-turbo` → Use `openrouter:openai/gpt-5-nano` or `openrouter:openai/gpt-5-mini`
-- ❌ `openrouter:openai/gpt-4o` → Use `openrouter:openai/gpt-5` or `openrouter:openai/gpt-5-mini`
-- ❌ `openrouter:openai/gpt-4o-mini` → Use `openrouter:openai/gpt-5-nano` or `openrouter:openai/gpt-5-mini`
+- ❌ `openrouter:openai/gpt-3.5-turbo` → Use `openrouter:openai/gpt-5.4-nano`
+- ❌ `openrouter:openai/gpt-4o` → Use `openrouter:openai/gpt-5` or `openrouter:openai/gpt-5.4-mini`
+- ❌ `openrouter:openai/gpt-4o-mini` → Use `openrouter:openai/gpt-5.4-nano`
+- ❌ `openrouter:openai/gpt-5-mini` → Use `openrouter:openai/gpt-5.4-mini` or `openrouter:openai/gpt-5.4-nano`
+- ❌ `openrouter:openai/gpt-5-nano` → Use `openrouter:openai/gpt-5.4-nano`
 
 **Why deprecated:** These are superseded by newer model generations with improved capabilities and pricing.

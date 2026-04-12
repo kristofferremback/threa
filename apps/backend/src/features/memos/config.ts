@@ -16,20 +16,22 @@ import { formatDate } from "../../lib/temporal"
 /**
  * Model for memo classification (gem detection).
  *
- * Haiku 4.5 is the Anthropic cost-effective tier for structured output.
- * Chosen for fast, predictable latency and solid binary+enum classification.
+ * GPT-5.4 Nano is OpenAI's cheapest 5.4-generation model ($0.20/$1.25 per 1M tokens),
+ * explicitly designed for classification, data extraction, and ranking.
+ * Outperforms GPT-5 Mini on benchmarks despite lower cost.
  * Previously used gpt-oss-120b whose patchwork OpenRouter provider backing
  * caused 60-120s tail latency and low-quality gem decisions.
  */
-export const MEMO_CLASSIFIER_MODEL_ID = "openrouter:anthropic/claude-haiku-4.5"
+export const MEMO_CLASSIFIER_MODEL_ID = "openrouter:openai/gpt-5.4-nano"
 
 /**
  * Model for memo content generation (abstractive extraction).
  *
- * GPT-5 Mini balances quality and cost for the nuanced summarization,
- * pronoun resolution, and date anchoring the memorizer prompt requires.
+ * GPT-5.4 Nano provides strong structured output and extraction quality
+ * at a fraction of the cost of larger models. If memo abstract quality
+ * proves insufficient, upgrade to gpt-5.4-mini ($0.75/$4.50 per 1M tokens).
  */
-export const MEMO_MEMORIZER_MODEL_ID = "openrouter:openai/gpt-5-mini"
+export const MEMO_MEMORIZER_MODEL_ID = "openrouter:openai/gpt-5.4-nano"
 
 /**
  * Temperature settings for different operations.

@@ -16,11 +16,11 @@ describe("StaticConfigResolver", () => {
     expect(streamNamingConfig.temperature).toBe(0.3)
 
     const memoClassifierConfig = await resolver.resolve(COMPONENT_PATHS.MEMO_CLASSIFIER)
-    expect(memoClassifierConfig.modelId).toBe("openrouter:anthropic/claude-haiku-4.5")
+    expect(memoClassifierConfig.modelId).toBe("openrouter:openai/gpt-5.4-nano")
     expect(memoClassifierConfig.temperature).toBe(0.1)
 
     const memoMemorizerConfig = await resolver.resolve(COMPONENT_PATHS.MEMO_MEMORIZER)
-    expect(memoMemorizerConfig.modelId).toBe("openrouter:openai/gpt-5-mini")
+    expect(memoMemorizerConfig.modelId).toBe("openrouter:openai/gpt-5.4-nano")
     expect(memoMemorizerConfig.temperature).toBe(0.3)
 
     const companionConfig = await resolver.resolve(COMPONENT_PATHS.COMPANION_AGENT)
