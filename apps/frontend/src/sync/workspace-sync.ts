@@ -142,7 +142,6 @@ function withWorkspaceUsers(bootstrap: WorkspaceBootstrap, users: User[]): Works
 function toWorkspaceUser(user: WorkspaceUserPayload): User {
   return { ...user }
 }
-
 function toWorkspaceBootstrapStream(stream: CachedStream): WorkspaceBootstrap["streams"][number] {
   return {
     id: stream.id,
@@ -346,6 +345,11 @@ export function mergeReconnectWorkspaceBootstrap({
   }
 }
 
+function resolveDmPeerUserId(dmUserIds: [string, string] | undefined, currentUserId: string | null): string | null {
+  if (!currentUserId || !dmUserIds?.includes(currentUserId)) return null
+  return dmUserIds.find((userId) => userId !== currentUserId) ?? null
+}
+
 // ============================================================================
 // Register workspace-level socket handlers
 // ============================================================================
@@ -374,7 +378,10 @@ export function registerWorkspaceSocketHandlers(
     let shouldJoinStreamRoom = false
     let shouldCacheStream = payload.stream.visibility !== Visibilities.PRIVATE
     let shouldAddMembership = false
+    let shouldAddDmPeer = false
     let currentUserId: string | null = null
+    let dmPeerUserId: string | null = null
+    let cachedStream: Stream & { lastMessagePreview?: LastMessagePreview | null } = payload.stream
 
     // Add to workspace bootstrap cache (sidebar)
     const applied = updateBootstrapOrInvalidate(queryClient, workspaceId, (old) => {
@@ -387,27 +394,46 @@ export function registerWorkspaceSocketHandlers(
         payload.stream.type === StreamTypes.DM &&
         currentUserId !== null &&
         payload.dmUserIds?.includes(currentUserId) === true
+      dmPeerUserId = resolveDmPeerUserId(payload.dmUserIds, currentUserId)
+      const dmPeerDisplayName =
+        dmPeerUserId != null ? (getWorkspaceUsers(old).find((user) => user.id === dmPeerUserId)?.name ?? null) : null
+      cachedStream =
+        payload.stream.type === StreamTypes.DM && dmPeerDisplayName
+          ? { ...payload.stream, displayName: dmPeerDisplayName }
+          : payload.stream
       const hasMembership = old.streamMemberships.some((m: StreamMember) => m.streamId === payload.stream.id)
       shouldAddMembership = Boolean(currentUserId && !hasMembership && (isCreator || isDmParticipant))
+      shouldAddDmPeer = Boolean(
+        dmPeerUserId && !old.dmPeers.some((peer) => peer.streamId === payload.stream.id && peer.userId === dmPeerUserId)
+      )
       const isPrivate = payload.stream.visibility === Visibilities.PRIVATE
       const shouldAddStream =
         !streamExists &&
-        payload.stream.type !== StreamTypes.DM &&
-        // Private streams (scratchpads, private channels) — only add to sidebar for the creator.
-        // Other members are added via stream:member_added.
-        (!isPrivate || isCreator)
+        (payload.stream.type === StreamTypes.DM
+          ? isDmParticipant
+          : // Private streams (scratchpads, private channels) — only add to sidebar for the creator.
+            // Other members are added via stream:member_added.
+            !isPrivate || isCreator)
 
       // Ensure members are subscribed immediately for follow-up stream activity.
       shouldJoinStreamRoom = hasMembership || shouldAddMembership
-      shouldCacheStream = !isPrivate || isCreator
+      shouldCacheStream = payload.stream.type === StreamTypes.DM ? isDmParticipant : !isPrivate || isCreator
 
-      if (streamExists && !shouldAddMembership) return old
+      if (streamExists && !shouldAddMembership && !shouldAddDmPeer) return old
 
       return {
         ...old,
-        // DM payloads do not include viewer-resolved names. Avoid inserting
-        // placeholder "Direct message" entries and wait for bootstrap refetch.
-        streams: shouldAddStream ? [...old.streams, { ...payload.stream, lastMessagePreview: null }] : old.streams,
+        streams: shouldAddStream
+          ? [...old.streams, { ...cachedStream, lastMessagePreview: null }]
+          : old.streams.map((stream) =>
+              stream.id === payload.stream.id
+                ? {
+                    ...stream,
+                    ...cachedStream,
+                    displayName: cachedStream.displayName ?? stream.displayName,
+                  }
+                : stream
+            ),
         streamMemberships: shouldAddMembership
           ? [
               ...old.streamMemberships,
@@ -423,6 +449,10 @@ export function registerWorkspaceSocketHandlers(
               },
             ]
           : old.streamMemberships,
+        dmPeers:
+          shouldAddDmPeer && dmPeerUserId != null
+            ? [...old.dmPeers, { userId: dmPeerUserId, streamId: payload.stream.id }]
+            : old.dmPeers,
       }
     })
 
@@ -430,34 +460,42 @@ export function registerWorkspaceSocketHandlers(
       refs.subscribeStream(payload.stream.id)
     }
 
-    // Cache to IndexedDB — skip other users' scratchpads to avoid stale
-    // entries resurfacing on hydration if the event leaks during a deploy race.
-    if (shouldCacheStream) {
-      db.streams.put({ ...payload.stream, _cachedAt: Date.now() })
-    }
+    void db.transaction("rw", [db.streams, db.streamMemberships, db.dmPeers], async () => {
+      const now = Date.now()
 
-    // Persist membership to IDB so sidebar correctly filters public channels
-    if (shouldAddMembership && currentUserId) {
-      db.streamMemberships.put({
-        id: `${workspaceId}:${payload.stream.id}`,
-        workspaceId,
-        streamId: payload.stream.id,
-        memberId: currentUserId,
-        pinned: false,
-        pinnedAt: null,
-        notificationLevel: null,
-        lastReadEventId: null,
-        lastReadAt: null,
-        joinedAt: payload.stream.createdAt,
-        _cachedAt: Date.now(),
-      })
-    }
+      // Cache to IndexedDB — skip other users' scratchpads to avoid stale
+      // entries resurfacing on hydration if the event leaks during a deploy race.
+      if (shouldCacheStream) {
+        await db.streams.put({ ...cachedStream, _cachedAt: now })
+      }
 
-    // DM creation still requires bootstrap refetch for viewer-specific dmPeers and
-    // resolved display names in the sidebar.
-    if (payload.stream.type === StreamTypes.DM) {
-      void queryClient.refetchQueries({ queryKey: workspaceKeys.bootstrap(workspaceId), type: "active" })
-    }
+      // Persist membership to IDB so sidebar correctly filters public channels.
+      if (shouldAddMembership && currentUserId) {
+        await db.streamMemberships.put({
+          id: `${workspaceId}:${payload.stream.id}`,
+          workspaceId,
+          streamId: payload.stream.id,
+          memberId: currentUserId,
+          pinned: false,
+          pinnedAt: null,
+          notificationLevel: null,
+          lastReadEventId: null,
+          lastReadAt: null,
+          joinedAt: payload.stream.createdAt,
+          _cachedAt: now,
+        })
+      }
+
+      if (shouldAddDmPeer && dmPeerUserId != null) {
+        await db.dmPeers.put({
+          id: `${workspaceId}:${payload.stream.id}`,
+          workspaceId,
+          userId: dmPeerUserId,
+          streamId: payload.stream.id,
+          _cachedAt: now,
+        })
+      }
+    })
   }
 
   // Handle stream updated
