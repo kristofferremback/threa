@@ -16,7 +16,7 @@ import {
   BOUNDARY_EXTRACTION_SYSTEM_PROMPT,
 } from "../../features/conversations"
 import { STREAM_NAMING_MODEL_ID, STREAM_NAMING_TEMPERATURE } from "../../features/streams"
-import { MEMO_MODEL_ID, MEMO_TEMPERATURES } from "../../features/memos"
+import { MEMO_CLASSIFIER_MODEL_ID, MEMO_MEMORIZER_MODEL_ID, MEMO_TEMPERATURES } from "../../features/memos"
 import {
   WORKSPACE_AGENT_MODEL_ID,
   WORKSPACE_AGENT_TEMPERATURE,
@@ -50,12 +50,12 @@ function buildDefaultConfigs(): Map<string, ComponentConfig> {
   })
 
   configs.set(COMPONENT_PATHS.MEMO_CLASSIFIER, {
-    modelId: MEMO_MODEL_ID,
+    modelId: MEMO_CLASSIFIER_MODEL_ID,
     temperature: MEMO_TEMPERATURES.classification,
   })
 
   configs.set(COMPONENT_PATHS.MEMO_MEMORIZER, {
-    modelId: MEMO_MODEL_ID,
+    modelId: MEMO_MEMORIZER_MODEL_ID,
     temperature: MEMO_TEMPERATURES.memorization,
   })
 

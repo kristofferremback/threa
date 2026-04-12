@@ -17,9 +17,11 @@ import {
 } from "./config"
 import { memoRepair } from "./repair"
 
-/** Optional context for cost tracking */
+/** Optional context for cost tracking and author resolution */
 export interface ClassifierContext {
   workspaceId: string
+  /** Resolved author name (e.g., "Alice"). Falls back to ULID suffix if not provided. */
+  authorName?: string
 }
 
 /**
@@ -55,8 +57,9 @@ export class MemoClassifier {
   async classifyMessage(message: Message, context: ClassifierContext): Promise<MessageClassification> {
     const config = await this.configResolver.resolve(COMPONENT_PATHS.MEMO_CLASSIFIER)
 
+    const authorLabel = context.authorName ?? message.authorId.slice(-8)
     const prompt = CLASSIFIER_MESSAGE_PROMPT.replace("{{AUTHOR_TYPE}}", message.authorType)
-      .replace("{{AUTHOR_ID}}", message.authorId.slice(-8))
+      .replace("{{AUTHOR_ID}}", authorLabel)
       .replace("{{CONTENT}}", message.contentMarkdown)
 
     const { value } = await this.ai.generateObject({

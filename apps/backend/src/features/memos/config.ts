@@ -14,10 +14,24 @@ import { formatDate } from "../../lib/temporal"
 // ============================================================================
 
 /**
- * Default model for memo classification and generation.
- * Can be overridden via AI_MEMO_MODEL environment variable.
+ * Model for memo classification (gem detection).
+ *
+ * GPT-5.4 Nano is OpenAI's cheapest 5.4-generation model ($0.20/$1.25 per 1M tokens),
+ * explicitly designed for classification, data extraction, and ranking.
+ * Outperforms GPT-5 Mini on benchmarks despite lower cost.
+ * Previously used gpt-oss-120b whose patchwork OpenRouter provider backing
+ * caused 60-120s tail latency and low-quality gem decisions.
  */
-export const MEMO_MODEL_ID = "openrouter:openai/gpt-oss-120b"
+export const MEMO_CLASSIFIER_MODEL_ID = "openrouter:openai/gpt-5.4-nano"
+
+/**
+ * Model for memo content generation (abstractive extraction).
+ *
+ * GPT-5.4 Nano provides strong structured output and extraction quality
+ * at a fraction of the cost of larger models. If memo abstract quality
+ * proves insufficient, upgrade to gpt-5.4-mini ($0.75/$4.50 per 1M tokens).
+ */
+export const MEMO_MEMORIZER_MODEL_ID = "openrouter:openai/gpt-5.4-nano"
 
 /**
  * Temperature settings for different operations.
@@ -26,6 +40,12 @@ export const MEMO_TEMPERATURES = {
   classification: 0.1, // Low temperature for consistent classification
   memorization: 0.3, // Slightly higher for creative summarization
 } as const
+
+/**
+ * Minimum classifier confidence required to create a memo.
+ * Messages classified as gems with confidence below this threshold are skipped.
+ */
+export const MEMO_GEM_CONFIDENCE_FLOOR = 0.7
 
 // ============================================================================
 // Schemas
@@ -193,7 +213,7 @@ export const MEMORIZER_MESSAGE_PROMPT = `Create a memo for this standalone messa
 
 ## Message to Memorize
 ID: {{MESSAGE_ID}}
-From: {{AUTHOR_TYPE}}
+From: {{AUTHOR_TYPE}} ({{AUTHOR_NAME}})
 Content:
 {{CONTENT}}
 

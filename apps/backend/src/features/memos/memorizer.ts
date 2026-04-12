@@ -38,6 +38,8 @@ export interface MemorizerContext {
   workspaceId: string
   /** Author's timezone for date anchoring (IANA identifier, e.g., "America/New_York") */
   authorTimezone?: string
+  /** Resolved author name for message memos (e.g., "Alice") */
+  authorName?: string
 }
 
 export class Memorizer {
@@ -60,9 +62,11 @@ export class Memorizer {
       ? MEMORIZER_EXISTING_TAGS_TEMPLATE.replace("{{TAGS}}", context.existingTags.join(", "))
       : ""
 
+    const authorName = context.authorName ?? "Unknown"
     const prompt = MEMORIZER_MESSAGE_PROMPT.replace("{{MEMORY_CONTEXT}}", memoryContextText)
       .replace("{{MESSAGE_ID}}", message.id)
       .replace("{{AUTHOR_TYPE}}", message.authorType)
+      .replace("{{AUTHOR_NAME}}", authorName)
       .replace("{{CONTENT}}", message.contentMarkdown)
       .replace("{{EXISTING_TAGS_SECTION}}", existingTagsSection)
 
