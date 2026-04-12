@@ -175,14 +175,15 @@ function ShortcutRow({
       {isCapturing && conflictInfo && (
         <div className="flex items-center gap-2 ml-1 text-xs">
           <span className="text-destructive">
-            Conflicts with{" "}
+            Already used by{" "}
             {conflictInfo.conflictIds
               .map((id) => SHORTCUT_ACTIONS.find((a) => a.id === id)?.label)
               .filter(Boolean)
               .join(", ")}
+            . Override to move {formatKeyBinding(conflictInfo.binding)} here and clear it there.
           </span>
           <Button variant="outline" size="sm" className="h-5 px-2 text-xs" onClick={handleConfirmConflict}>
-            Override
+            Override existing shortcut
           </Button>
           <Button variant="ghost" size="sm" className="h-5 px-2 text-xs" onClick={onCancelCapture}>
             Cancel
@@ -192,7 +193,10 @@ function ShortcutRow({
 
       {isCapturing && !conflictInfo && (
         <div className="flex items-center gap-2 ml-1 text-xs">
-          <span className="text-muted-foreground">Press shortcut keys, or use the button below to bind Escape.</span>
+          <span className="text-muted-foreground">
+            Press shortcut keys. If they&apos;re already in use, you can override them here. Use the button below to
+            bind Escape.
+          </span>
           <Button variant="outline" size="sm" className="h-5 px-2 text-xs" onClick={handleUseEscape}>
             Use Escape
           </Button>

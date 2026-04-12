@@ -38,15 +38,34 @@ describe("KeyboardSettings", () => {
     await user.click(badge)
     fireEvent.keyDown(document, { key: "b", ctrlKey: true })
 
-    expect(screen.getByText(/Conflicts with Bold/i)).toBeInTheDocument()
+    expect(screen.getByText(/Already used by Bold/i)).toBeInTheDocument()
 
-    await user.click(screen.getByRole("button", { name: "Override" }))
+    await user.click(screen.getByRole("button", { name: "Override existing shortcut" }))
 
     expect(updatePreference).toHaveBeenCalledTimes(1)
     expect(updatePreference).toHaveBeenCalledWith("keyboardShortcuts", {
       formatBold: "none",
       toggleSidebar: "mod+b",
     })
+  })
+
+  it("explains that conflicting shortcuts can be overridden", async () => {
+    const user = userEvent.setup()
+    render(<KeyboardSettings />)
+
+    const row = screen.getByText("Toggle Sidebar").closest("[data-shortcut-row]")
+    expect(row).not.toBeNull()
+
+    const badge = within(row! as HTMLElement).getByRole("button")
+    await user.click(badge)
+
+    expect(screen.getByText(/you can override them here/i)).toBeInTheDocument()
+
+    fireEvent.keyDown(document, { key: "b", ctrlKey: true })
+
+    expect(screen.getByText(/override to move/i)).toBeInTheDocument()
+    expect(screen.getByText(/clear it there/i)).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Override existing shortcut" })).toBeInTheDocument()
   })
 
   it("ignores unsafe bare keys during capture", async () => {
@@ -86,9 +105,9 @@ describe("KeyboardSettings", () => {
     await user.click(badge)
     await user.click(screen.getByRole("button", { name: "Use Escape" }))
 
-    expect(screen.getByText(/Conflicts with Close/i)).toBeInTheDocument()
+    expect(screen.getByText(/Already used by Close/i)).toBeInTheDocument()
 
-    await user.click(screen.getByRole("button", { name: "Override" }))
+    await user.click(screen.getByRole("button", { name: "Override existing shortcut" }))
 
     expect(updatePreference).toHaveBeenCalledTimes(1)
     expect(updatePreference).toHaveBeenCalledWith("keyboardShortcuts", {
