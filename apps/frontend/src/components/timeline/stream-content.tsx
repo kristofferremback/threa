@@ -924,10 +924,8 @@ function VirtuosoMessageList({
     [renderCtx]
   )
 
-  // Key items by their stable identity (event ID / command ID / session ID)
-  // instead of Virtuoso's default index-based key. Otherwise, React reuses
-  // component instances across messages that happen to occupy the same slot,
-  // which leaks per-message state (e.g. link previews) onto adjacent messages.
+  // Key items by stable identity so React doesn't reuse component instances
+  // across messages and leak per-message state (e.g. link previews).
   const computeItemKey = useCallback((_index: number, item: TimelineItem) => getTimelineItemKey(item), [])
 
   // Stable scroller ref callback — wrapping in useCallback avoids Virtuoso

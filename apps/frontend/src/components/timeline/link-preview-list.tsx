@@ -1,4 +1,4 @@
-import { Component, useState, useCallback, useEffect, useMemo, useRef, type ReactNode } from "react"
+import { Component, useState, useCallback, useEffect, useMemo, type ReactNode } from "react"
 import { ChevronDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { linkPreviewsApi } from "@/api"
@@ -55,20 +55,6 @@ export function LinkPreviewList({
   const { preferences } = usePreferences()
 
   const defaultCollapsed = preferences?.linkPreviewDefault === "collapsed"
-
-  // Virtuoso keys items by index, so this component instance can be reused for
-  // a different message when the list re-renders. Reset all per-message state
-  // when messageId changes so previews from the previous message don't leak
-  // onto the new one (e.g. a stale preview appearing under a later message
-  // that contained no link).
-  const lastMessageIdRef = useRef(messageId)
-  if (lastMessageIdRef.current !== messageId) {
-    lastMessageIdRef.current = messageId
-    setPreviews(initialPreviews ?? [])
-    setDismissedIds(new Set())
-    setCollapsedIds(new Set())
-    setIsExpanded(false)
-  }
 
   // Sync previews from stream event payloads.
   // An explicit empty array (from an edited message that removed URLs or from

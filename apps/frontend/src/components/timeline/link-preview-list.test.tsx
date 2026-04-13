@@ -45,16 +45,4 @@ describe("LinkPreviewList", () => {
     expect(screen.getByText("Preview title")).toBeInTheDocument()
     expect(mockGetForMessage).not.toHaveBeenCalled()
   })
-
-  it("clears previews when the component instance is reused for a different message with no previews", () => {
-    // Simulates react-virtuoso reusing the same DOM slot (and thus the same
-    // component instance) for a different message: message A has a preview,
-    // then the same slot is reused for message B which has no link preview.
-    const { rerender } = render(<LinkPreviewList workspaceId="ws_123" messageId="msg_a" previews={[preview]} />)
-    expect(screen.getByText("Preview title")).toBeInTheDocument()
-
-    rerender(<LinkPreviewList workspaceId="ws_123" messageId="msg_b" previews={undefined} />)
-
-    expect(screen.queryByText("Preview title")).not.toBeInTheDocument()
-  })
 })
