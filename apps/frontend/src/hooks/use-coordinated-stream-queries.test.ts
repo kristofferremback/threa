@@ -4,10 +4,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { createElement, type ReactNode } from "react"
 import { useCoordinatedStreamQueries } from "./use-coordinated-stream-queries"
 import { QUERY_LOAD_STATE } from "@/lib/query-load-state"
+import { ApiError } from "@/api/client"
 
-const { mockBootstrap, mockJoinRoomBestEffort } = vi.hoisted(() => ({
+const { mockBootstrap, mockJoinRoomBestEffort, mockToCachedStreamBootstrap } = vi.hoisted(() => ({
   mockBootstrap: vi.fn(),
   mockJoinRoomBestEffort: vi.fn(),
+  mockToCachedStreamBootstrap: vi.fn((bootstrap: unknown) => bootstrap),
 }))
 
 vi.mock("@/contexts", () => ({
@@ -30,7 +32,7 @@ vi.mock("@/lib/socket-room", () => ({
 
 vi.mock("@/sync/stream-sync", () => ({
   applyStreamBootstrap: vi.fn(),
-  toCachedStreamBootstrap: (bootstrap: unknown) => bootstrap,
+  toCachedStreamBootstrap: mockToCachedStreamBootstrap,
 }))
 
 function createTestQueryClient() {
@@ -122,9 +124,12 @@ describe("useCoordinatedStreamQueries", () => {
 
   it("should return isError=true when any query fails", async () => {
     const queryClient = createTestQueryClient()
-    mockBootstrap
-      .mockResolvedValueOnce({ stream: { id: "stream_123" }, events: [], membership: null })
-      .mockRejectedValueOnce(new Error("Failed to load"))
+    mockBootstrap.mockImplementation(async (_workspaceId: string, streamId: string) => {
+      if (streamId === "stream_456") {
+        throw new ApiError(404, "STREAM_NOT_FOUND", "Stream not found")
+      }
+      return { stream: { id: streamId }, events: [], membership: null, syncMode: "replace" }
+    })
 
     const { result } = renderHook(() => useCoordinatedStreamQueries("workspace_1", ["stream_123", "stream_456"]), {
       wrapper: createWrapper(queryClient),
@@ -136,6 +141,52 @@ describe("useCoordinatedStreamQueries", () => {
 
     expect(result.current.loadState).toBe(QUERY_LOAD_STATE.READY)
     expect(result.current.errors).toHaveLength(1)
+  })
+
+  it("passes incrementWindowVersionOnReplace=true for syncMode=replace", async () => {
+    const queryClient = createTestQueryClient()
+    const bootstrap = {
+      stream: { id: "stream_123" },
+      events: [],
+      membership: null,
+      syncMode: "replace",
+    }
+    mockBootstrap.mockResolvedValue(bootstrap)
+
+    renderHook(() => useCoordinatedStreamQueries("workspace_1", ["stream_123"]), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    await waitFor(() => {
+      expect(mockToCachedStreamBootstrap).toHaveBeenCalled()
+    })
+
+    expect(mockToCachedStreamBootstrap).toHaveBeenCalledWith(bootstrap, undefined, {
+      incrementWindowVersionOnReplace: true,
+    })
+  })
+
+  it("passes incrementWindowVersionOnReplace=false for syncMode=append", async () => {
+    const queryClient = createTestQueryClient()
+    const bootstrap = {
+      stream: { id: "stream_123" },
+      events: [],
+      membership: null,
+      syncMode: "append",
+    }
+    mockBootstrap.mockResolvedValue(bootstrap)
+
+    renderHook(() => useCoordinatedStreamQueries("workspace_1", ["stream_123"]), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    await waitFor(() => {
+      expect(mockToCachedStreamBootstrap).toHaveBeenCalled()
+    })
+
+    expect(mockToCachedStreamBootstrap).toHaveBeenCalledWith(bootstrap, undefined, {
+      incrementWindowVersionOnReplace: false,
+    })
   })
 
   it("should return isLoading=false immediately when streamIds is empty", () => {

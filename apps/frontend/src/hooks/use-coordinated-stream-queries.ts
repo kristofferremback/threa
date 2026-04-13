@@ -9,6 +9,7 @@ import {
   isTerminalBootstrapError,
   type QueryLoadState,
 } from "@/lib/query-load-state"
+import { STREAM_BOOTSTRAP_QUERY_OPTIONS } from "@/lib/stream-bootstrap-query"
 import { joinRoomBestEffort } from "@/lib/socket-room"
 import { applyStreamBootstrap, toCachedStreamBootstrap, type CachedStreamBootstrap } from "@/sync/stream-sync"
 import { streamKeys } from "./use-streams"
@@ -81,23 +82,15 @@ export function useCoordinatedStreamQueries(workspaceId: string, streamIds: stri
 
               return toCachedStreamBootstrap(
                 bootstrap,
-                queryClient.getQueryData<CachedStreamBootstrap>(streamKeys.bootstrap(workspaceId, streamId))
+                queryClient.getQueryData<CachedStreamBootstrap>(streamKeys.bootstrap(workspaceId, streamId)),
+                { incrementWindowVersionOnReplace: bootstrap.syncMode === "replace" }
               )
             }
           : queryFnWithoutSocket,
-        // Don't enable queries that have already errored to prevent continuous refetch loops
+        // Terminal 403/404 errors disable the query to prevent loops; recoverable
+        // errors stay enabled and self-heal via STREAM_BOOTSTRAP_QUERY_OPTIONS.retry.
         enabled: !!workspaceId && !!socket && !erroredStreamIds.has(streamId),
-        staleTime: Infinity, // Never consider data stale
-        gcTime: Infinity, // Never garbage collect
-        // Prevent ALL automatic refetching
-        retry: false,
-        refetchOnMount: false,
-        refetchOnWindowFocus: false,
-        refetchOnReconnect: false,
-        // Disable structural sharing to avoid issues with the dynamic queries array.
-        // Since we create new query objects when the stream list changes, structural
-        // sharing can cause stale references. Worth the extra re-renders for correctness.
-        structuralSharing: false,
+        ...STREAM_BOOTSTRAP_QUERY_OPTIONS,
       })),
     [serverStreamIds, workspaceId, streamService, socket, erroredStreamIds, queryClient]
   )
