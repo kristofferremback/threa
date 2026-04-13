@@ -228,7 +228,7 @@ export function StreamPage() {
               <Search className="h-4 w-4" />
             </Button>
           )}
-          {isChannel && (
+          {(isChannel || isDm) && (
             <Button
               variant="ghost"
               size="icon"
@@ -274,8 +274,8 @@ export function StreamPage() {
     </div>
   )
 
-  // Conversation side panel - only shown for channels
-  const conversationPanel = isChannel && (
+  // Conversation side panel - shown for channels and DMs
+  const conversationPanel = (isChannel || isDm) && (
     <>
       {/* Backdrop */}
       <div
