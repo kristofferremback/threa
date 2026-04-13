@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useSocket, useStreamService } from "@/contexts"
 import { debugBootstrap } from "@/lib/bootstrap-debug"
 import { getQueryLoadState, isTerminalBootstrapError } from "@/lib/query-load-state"
+import { bootstrapRetry, bootstrapRetryDelay } from "./use-coordinated-stream-queries"
 import { db } from "@/db"
 import { joinRoomBestEffort } from "@/lib/socket-room"
 import { applyStreamBootstrap, toCachedStreamBootstrap, type CachedStreamBootstrap } from "@/sync/stream-sync"
@@ -98,18 +99,20 @@ export function useStreamBootstrap(workspaceId: string, streamId: string, option
 
       return toCachedStreamBootstrap(
         bootstrap,
-        queryClient.getQueryData<CachedStreamBootstrap>(streamKeys.bootstrap(workspaceId, streamId))
+        queryClient.getQueryData<CachedStreamBootstrap>(streamKeys.bootstrap(workspaceId, streamId)),
+        { incrementWindowVersionOnReplace: bootstrap.syncMode === "replace" }
       )
     },
     // Keep terminal auth/not-found errors disabled to avoid loops.
-    // Non-terminal errors can recover automatically on future attempts.
+    // Non-terminal errors can recover automatically via retry below.
     enabled: (options?.enabled ?? true) && !!workspaceId && !!streamId && !!socket && !hasTerminalError,
     // Match coordinated loading options to share cache correctly and prevent
     // multiple observers from conflicting. Coordinated loading handles initial
     // fetch, and socket events handle updates.
     staleTime: Infinity,
     gcTime: Infinity,
-    retry: false,
+    retry: bootstrapRetry,
+    retryDelay: bootstrapRetryDelay,
     refetchOnMount: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,

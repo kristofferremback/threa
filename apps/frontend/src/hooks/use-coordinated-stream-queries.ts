@@ -6,6 +6,7 @@ import {
   QUERY_LOAD_STATE,
   getQueryLoadState,
   isQueryLoadStateLoading,
+  isRecoverableBootstrapError,
   isTerminalBootstrapError,
   type QueryLoadState,
 } from "@/lib/query-load-state"
@@ -20,6 +21,31 @@ function isDraftId(id: string): boolean {
 
 async function queryFnWithoutSocket() {
   throw new Error("Socket not available for stream subscription")
+}
+
+/**
+ * Retry configuration for bootstrap queries.
+ *
+ * Transient errors (5xx, 429, network failures) must self-heal — otherwise a
+ * single failed fetch on navigation leaves the stream stuck empty until the
+ * user reloads (INV-53 intent is continuous availability). Terminal 403/404
+ * stays terminal to avoid loops on deleted or forbidden streams, and other
+ * non-recoverable client errors (e.g. 400) also skip retry so we surface the
+ * error immediately rather than hammering the server.
+ */
+const MAX_BOOTSTRAP_RETRIES = 2
+const BOOTSTRAP_RETRY_BASE_DELAY_MS = 500
+const BOOTSTRAP_RETRY_MAX_DELAY_MS = 4000
+
+// Accepts Error (not unknown) so TanStack Query keeps its default `TError = Error`
+// inference — typing as unknown widens the query's error type across consumers.
+export function bootstrapRetry(failureCount: number, error: Error): boolean {
+  if (!isRecoverableBootstrapError(error)) return false
+  return failureCount < MAX_BOOTSTRAP_RETRIES
+}
+
+export function bootstrapRetryDelay(attempt: number): number {
+  return Math.min(BOOTSTRAP_RETRY_BASE_DELAY_MS * 2 ** attempt, BOOTSTRAP_RETRY_MAX_DELAY_MS)
 }
 
 function aggregateQueryLoadState(states: QueryLoadState[]): QueryLoadState {
@@ -81,16 +107,21 @@ export function useCoordinatedStreamQueries(workspaceId: string, streamIds: stri
 
               return toCachedStreamBootstrap(
                 bootstrap,
-                queryClient.getQueryData<CachedStreamBootstrap>(streamKeys.bootstrap(workspaceId, streamId))
+                queryClient.getQueryData<CachedStreamBootstrap>(streamKeys.bootstrap(workspaceId, streamId)),
+                { incrementWindowVersionOnReplace: bootstrap.syncMode === "replace" }
               )
             }
           : queryFnWithoutSocket,
-        // Don't enable queries that have already errored to prevent continuous refetch loops
+        // Don't enable queries that have already errored with a terminal 403/404.
+        // Recoverable errors are handled by `retry` below, not by disabling.
         enabled: !!workspaceId && !!socket && !erroredStreamIds.has(streamId),
         staleTime: Infinity, // Never consider data stale
         gcTime: Infinity, // Never garbage collect
-        // Prevent ALL automatic refetching
-        retry: false,
+        // Retry transient errors (5xx, 429, network) so a single hiccup on
+        // navigation doesn't leave the stream stuck empty. Terminal and other
+        // non-recoverable errors are not retried.
+        retry: bootstrapRetry,
+        retryDelay: bootstrapRetryDelay,
         refetchOnMount: false,
         refetchOnWindowFocus: false,
         refetchOnReconnect: false,
