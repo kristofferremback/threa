@@ -7,6 +7,16 @@ interface UseLongPressOptions {
   onLongPress: () => void
   /** Disable the hook (e.g., on desktop) */
   enabled?: boolean
+  /**
+   * When true, skip the long-press timer if the touch starts inside an
+   * <a href> or an element marked data-native-context="true". Use on
+   * container-level long-press handlers (e.g. a message body) where
+   * child links should get the browser's native long-press menu rather
+   * than the app's drawer. Do not enable when the long-press handler is
+   * attached directly to the link itself (e.g. a sidebar stream row).
+   * Default: false.
+   */
+  deferToNativeLinks?: boolean
 }
 
 interface LongPressHandlers {
@@ -26,6 +36,7 @@ export function useLongPress({
   threshold = 500,
   onLongPress,
   enabled = true,
+  deferToNativeLinks = false,
 }: UseLongPressOptions): UseLongPressReturn {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const startPos = useRef<{ x: number; y: number } | null>(null)
@@ -48,19 +59,20 @@ export function useLongPress({
     setIsPressed(false)
   }, [])
 
-  // Let native browser gestures win on links and explicitly opted-in regions.
-  // An <a href> should get the browser's long-press menu (Open in Firefox,
-  // Copy link, etc.) instead of the app's long-press drawer. Regions with
-  // data-native-context="true" opt in the same way (e.g. link preview cards).
-  const shouldDeferToNative = (target: EventTarget | null): boolean => {
-    if (!(target instanceof Element)) return false
-    return target.closest('a[href], [data-native-context="true"]') !== null
-  }
-
   const onTouchStart = useCallback(
     (e: React.TouchEvent) => {
       if (!enabled) return
-      if (shouldDeferToNative(e.target)) return
+      // When deferToNativeLinks is on, let the browser's native gesture win
+      // on <a href> descendants and regions marked data-native-context="true"
+      // so long-press surfaces "Open in Firefox" / "Copy link" instead of
+      // the app's drawer.
+      if (
+        deferToNativeLinks &&
+        e.target instanceof Element &&
+        e.target.closest('a[href], [data-native-context="true"]') !== null
+      ) {
+        return
+      }
       firedRef.current = false
       const touch = e.touches[0]
       startPos.current = { x: touch.clientX, y: touch.clientY }
@@ -79,7 +91,7 @@ export function useLongPress({
         onLongPressRef.current()
       }, threshold)
     },
-    [enabled, threshold]
+    [enabled, threshold, deferToNativeLinks]
   )
 
   const onTouchEnd = useCallback(() => {
