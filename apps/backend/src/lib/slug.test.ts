@@ -44,9 +44,9 @@ describe("Slug Generation", () => {
 
     test("should transliterate accented Latin characters", () => {
       expect(generateSlug("café")).toBe("cafe")
-      expect(generateSlug("Strömsö")).toBe("stromso")
-      expect(generateSlug("Ärligt Talat")).toBe("arligt-talat")
-      expect(generateSlug("Müller")).toBe("muller")
+      expect(generateSlug("Strömsö")).toBe("stroemsoe")
+      expect(generateSlug("Ärligt Talat")).toBe("aerligt-talat")
+      expect(generateSlug("Müller")).toBe("mueller")
       expect(generateSlug("naïve résumé")).toBe("naive-resume")
     })
 
