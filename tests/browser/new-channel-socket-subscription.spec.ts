@@ -128,7 +128,9 @@ test.describe("New Channel Socket Subscription", () => {
       await userB.page.locator("[contenteditable='true']").click()
       await userB.page.keyboard.type(testMessage)
       await userB.page.getByRole("button", { name: "Send" }).click()
-      await expect(userB.page.getByRole("main").getByText(testMessage)).toBeVisible({ timeout: 10000 })
+      await expect(userB.page.getByRole("main").locator(".message-item").getByText(testMessage).first()).toBeVisible({
+        timeout: 10000,
+      })
 
       // ──── User A: Channel should remain accessible without refresh ────
 

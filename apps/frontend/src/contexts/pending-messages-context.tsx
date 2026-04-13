@@ -41,10 +41,12 @@ export function PendingMessagesProvider({ children }: PendingMessagesProviderPro
   const [editingIds, setEditingIds] = useState<Map<string, PreEditStatus>>(new Map())
   const queueNotifyRef = useRef<(() => void) | null>(null)
 
-  // Hydrate pending/failed/editing state from IDB on mount so it survives page reload.
-  // The _status field on CachedEvent is the durable source of truth.
-  // For editing messages we can't recover the pre-edit status from IDB, so we
-  // default to "pending" — on cancel the message will be re-queued immediately.
+  // Hydrate pending/failed state from IDB on mount so it survives page reload.
+  // Editing is intentionally NOT restored across reloads: if the app refreshes
+  // or hot-reloads while an unsent-message edit drawer is open, reopening that
+  // transient UI on startup hides the main composer again on mobile. Instead we
+  // normalize persisted "editing" rows back to their pre-edit queue status and
+  // let the user explicitly re-enter edit mode if needed.
   useEffect(() => {
     void (async () => {
       try {
@@ -54,9 +56,38 @@ export function PendingMessagesProvider({ children }: PendingMessagesProviderPro
         if (pending.length > 0) setPendingIds(new Set(pending as string[]))
         if (failed.length > 0) setFailedIds(new Set(failed as string[]))
         if (editing.length > 0) {
-          const map = new Map<string, PreEditStatus>()
-          for (const id of editing) map.set(id as string, "pending")
-          setEditingIds(map)
+          const restoredPendingIds = new Set<string>()
+          const restoredFailedIds = new Set<string>()
+
+          await db.transaction("rw", db.pendingMessages, db.events, async () => {
+            for (const rawId of editing) {
+              const id = rawId as string
+              const pendingMessage = await db.pendingMessages.get(id)
+              const preEditStatus = pendingMessage?.preEditStatus ?? "pending"
+
+              type UpdateFn = (key: string, changes: Record<string, unknown>) => Promise<number>
+              await (db.pendingMessages.update as unknown as UpdateFn)(id, {
+                status: undefined,
+                preEditStatus: undefined,
+              })
+              await db.events.update(id, { _status: preEditStatus })
+
+              if (preEditStatus === "failed") {
+                restoredFailedIds.add(id)
+              } else {
+                restoredPendingIds.add(id)
+              }
+            }
+          })
+
+          setPendingIds((prev) => new Set([...prev, ...restoredPendingIds]))
+          setFailedIds((prev) => new Set([...prev, ...restoredFailedIds]))
+          setEditingIds(new Map())
+          if (restoredPendingIds.size > 0) {
+            // Defer until after descendants mount so useMessageQueue has time
+            // to register its notify callback during the same startup commit.
+            setTimeout(() => queueNotifyRef.current?.(), 0)
+          }
         }
       } catch {
         // Best-effort — works in browser, may fail in test environment mocks
@@ -148,7 +179,7 @@ export function PendingMessagesProvider({ children }: PendingMessagesProviderPro
       const status: PreEditStatus = event?._status === "failed" ? "failed" : "pending"
 
       type UpdateFn = (key: string, changes: Record<string, unknown>) => Promise<number>
-      await (db.pendingMessages.update as unknown as UpdateFn)(id, { status: "editing" })
+      await (db.pendingMessages.update as unknown as UpdateFn)(id, { status: "editing", preEditStatus: status })
       await db.events.update(id, { _status: "editing" })
       return status
     })
@@ -179,6 +210,7 @@ export function PendingMessagesProvider({ children }: PendingMessagesProviderPro
           content: contentMarkdown,
           contentJson,
           status: undefined, // clear editing hold
+          preEditStatus: undefined,
           retryCount: 0,
           retryAfter: 0,
         })
@@ -220,7 +252,7 @@ export function PendingMessagesProvider({ children }: PendingMessagesProviderPro
         if (!existing) return false
 
         type UpdateFn = (key: string, changes: Record<string, unknown>) => Promise<number>
-        await (db.pendingMessages.update as unknown as UpdateFn)(id, { status: undefined })
+        await (db.pendingMessages.update as unknown as UpdateFn)(id, { status: undefined, preEditStatus: undefined })
         await db.events.update(id, { _status: preEditStatus })
         return true
       })
