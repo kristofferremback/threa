@@ -918,6 +918,10 @@ function VirtuosoMessageList({
     [renderCtx]
   )
 
+  // Key items by stable identity so React doesn't reuse component instances
+  // across messages and leak per-message state (e.g. link previews).
+  const computeItemKey = useCallback((_index: number, item: TimelineItem) => getTimelineItemKey(item), [])
+
   // Stable scroller ref callback — wrapping in useCallback avoids Virtuoso
   // calling the old callback with null and the new one with the element
   // on every render, which would disconnect/reconnect the ResizeObserver.
@@ -1008,6 +1012,7 @@ function VirtuosoMessageList({
       defaultItemHeight={120}
       skipAnimationFrameInResizeObserver
       itemContent={itemContent}
+      computeItemKey={computeItemKey}
       followOutput={followOutput}
       atBottomStateChange={wrappedHandleAtBottomChange}
       rangeChanged={wrappedHandleRangeChanged}
