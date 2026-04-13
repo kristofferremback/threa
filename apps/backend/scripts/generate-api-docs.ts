@@ -208,6 +208,8 @@ function buildSpec() {
     tags: [
       { name: "Streams", description: "List and inspect streams (channels, scratchpads, threads)" },
       { name: "Messages", description: "Read, send, update, and delete messages" },
+      { name: "Memos", description: "Search preserved workspace knowledge and inspect memo provenance" },
+      { name: "Attachments", description: "Search attachments, inspect extracted content, and fetch download URLs" },
       { name: "Users", description: "List workspace users" },
     ],
   }

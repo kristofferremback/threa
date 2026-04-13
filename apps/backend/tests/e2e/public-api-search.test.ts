@@ -158,6 +158,20 @@ describe("Public API v1 — Message Search", () => {
     })
   })
 
+  describe("Exact Search", () => {
+    test("should accept exact search and return literal matches", async () => {
+      const res = await publicApiRequest(
+        ctx.workspaceId,
+        { query: `message about ${ctx.keyword}`, exact: true },
+        ctx.botApiKey
+      )
+      expect(res.status).toBe(200)
+
+      const data = (await res.json()) as { data: Array<{ streamId: string; content: string }> }
+      expect(data.data.some((item) => item.streamId === ctx.publicChannelId)).toBe(true)
+    })
+  })
+
   describe("Filters", () => {
     test("should filter by stream type", async () => {
       const res = await publicApiRequest(ctx.workspaceId, { query: ctx.keyword, type: ["channel"] }, ctx.botApiKey)

@@ -6,7 +6,15 @@
  * but not here is a build error (caught by the pre-commit drift check).
  */
 import { z } from "zod"
-import { API_KEY_SCOPES, STREAM_TYPES, AUTHOR_TYPES } from "@threa/types"
+import {
+  API_KEY_SCOPES,
+  STREAM_TYPES,
+  AUTHOR_TYPES,
+  MEMO_TYPES,
+  KNOWLEDGE_TYPES,
+  PROCESSING_STATUSES,
+  EXTRACTION_CONTENT_TYPES,
+} from "@threa/types"
 import type { ApiKeyScope } from "@threa/types"
 import {
   publicSearchSchema,
@@ -16,6 +24,8 @@ import {
   updateMessageSchema,
   listMembersSchema,
   listUsersSchema,
+  searchMemosSchema,
+  searchAttachmentsSchema,
 } from "./schemas"
 
 // ---------------------------------------------------------------------------
@@ -85,6 +95,93 @@ const userSchema = z.object({
   role: z.string(),
 })
 
+const streamRefSchema = z.object({
+  id: z.string(),
+  type: z.string(),
+  name: z.string().nullable(),
+})
+
+const memoSchema = z.object({
+  id: z.string(),
+  workspaceId: z.string(),
+  memoType: z.enum(MEMO_TYPES),
+  sourceMessageId: z.string().nullable(),
+  sourceConversationId: z.string().nullable(),
+  title: z.string(),
+  abstract: z.string(),
+  keyPoints: z.array(z.string()),
+  sourceMessageIds: z.array(z.string()),
+  participantIds: z.array(z.string()),
+  knowledgeType: z.enum(KNOWLEDGE_TYPES),
+  tags: z.array(z.string()),
+  parentMemoId: z.string().nullable(),
+  status: z.string(),
+  version: z.number().int(),
+  revisionReason: z.string().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  archivedAt: z.string().datetime().nullable(),
+})
+
+const memoSearchResultSchema = z.object({
+  memo: memoSchema,
+  distance: z.number(),
+  sourceStream: streamRefSchema.nullable(),
+  rootStream: streamRefSchema.nullable(),
+})
+
+const memoSourceMessageSchema = z.object({
+  id: z.string(),
+  streamId: z.string(),
+  streamName: z.string(),
+  authorId: z.string(),
+  authorType: z.enum(AUTHOR_TYPES),
+  authorName: z.string(),
+  content: z.string(),
+  createdAt: z.string().datetime(),
+})
+
+const memoDetailSchema = memoSearchResultSchema.extend({
+  sourceMessages: z.array(memoSourceMessageSchema),
+})
+
+const attachmentExtractionSchema = z.object({
+  contentType: z.enum(EXTRACTION_CONTENT_TYPES),
+  summary: z.string(),
+  fullText: z.string().nullable(),
+  structuredData: z.unknown().nullable(),
+  pdfMetadata: z.unknown().nullable().optional(),
+  textMetadata: z.unknown().nullable().optional(),
+  wordMetadata: z.unknown().nullable().optional(),
+  excelMetadata: z.unknown().nullable().optional(),
+})
+
+const attachmentSearchResultSchema = z.object({
+  id: z.string(),
+  filename: z.string(),
+  mimeType: z.string(),
+  contentType: z.enum(EXTRACTION_CONTENT_TYPES).nullable(),
+  summary: z.string().nullable(),
+  streamId: z.string().optional(),
+  messageId: z.string().optional(),
+  createdAt: z.string().datetime(),
+})
+
+const attachmentDetailsSchema = z.object({
+  id: z.string(),
+  filename: z.string(),
+  mimeType: z.string(),
+  sizeBytes: z.number().int(),
+  processingStatus: z.enum(PROCESSING_STATUSES),
+  createdAt: z.string().datetime(),
+  extraction: attachmentExtractionSchema.nullable(),
+})
+
+const attachmentUrlSchema = z.object({
+  url: z.string().url(),
+  expiresIn: z.number().int(),
+})
+
 const errorSchema = z.object({
   error: z.string(),
   details: z.record(z.string(), z.array(z.string())).optional(),
@@ -134,6 +231,22 @@ const messageIdParam = {
   description: "Message ID (prefixed ULID)",
 }
 
+const memoIdParam = {
+  name: "memoId",
+  in: "path" as const,
+  required: true,
+  schema: { type: "string" as const },
+  description: "Memo ID (prefixed ULID)",
+}
+
+const attachmentIdParam = {
+  name: "attachmentId",
+  in: "path" as const,
+  required: true,
+  schema: { type: "string" as const },
+  description: "Attachment ID (prefixed ULID)",
+}
+
 // ---------------------------------------------------------------------------
 // Route definitions
 // ---------------------------------------------------------------------------
@@ -179,6 +292,68 @@ export const PUBLIC_API_ROUTES: PublicApiRoute[] = [
     requestSchema: publicSearchSchema,
     requestIn: "body",
     responseSchema: dataArrayEnvelope(searchResultSchema),
+  },
+  {
+    method: "post",
+    path: "/api/v1/workspaces/{workspaceId}/memos/search",
+    operationId: "searchMemos",
+    summary: "Search memos",
+    description: "Search preserved workspace memos with semantic, exact, or recent-first retrieval.",
+    tags: ["Memos"],
+    scopes: [API_KEY_SCOPES.MEMOS_READ],
+    parameters: [workspaceIdParam],
+    requestSchema: searchMemosSchema,
+    requestIn: "body",
+    responseSchema: dataArrayEnvelope(memoSearchResultSchema),
+  },
+  {
+    method: "get",
+    path: "/api/v1/workspaces/{workspaceId}/memos/{memoId}",
+    operationId: "getMemo",
+    summary: "Get a memo",
+    description: "Retrieve a memo together with source stream and source message provenance.",
+    tags: ["Memos"],
+    scopes: [API_KEY_SCOPES.MEMOS_READ],
+    parameters: [workspaceIdParam, memoIdParam],
+    responseSchema: dataEnvelope(memoDetailSchema),
+    canReturn404: true,
+  },
+  {
+    method: "post",
+    path: "/api/v1/workspaces/{workspaceId}/attachments/search",
+    operationId: "searchAttachments",
+    summary: "Search attachments",
+    description: "Search accessible attachments by filename or extracted content.",
+    tags: ["Attachments"],
+    scopes: [API_KEY_SCOPES.ATTACHMENTS_READ],
+    parameters: [workspaceIdParam],
+    requestSchema: searchAttachmentsSchema,
+    requestIn: "body",
+    responseSchema: dataArrayEnvelope(attachmentSearchResultSchema),
+  },
+  {
+    method: "get",
+    path: "/api/v1/workspaces/{workspaceId}/attachments/{attachmentId}",
+    operationId: "getAttachment",
+    summary: "Get an attachment",
+    description: "Retrieve attachment metadata and extracted content for an accessible attachment.",
+    tags: ["Attachments"],
+    scopes: [API_KEY_SCOPES.ATTACHMENTS_READ],
+    parameters: [workspaceIdParam, attachmentIdParam],
+    responseSchema: dataEnvelope(attachmentDetailsSchema),
+    canReturn404: true,
+  },
+  {
+    method: "get",
+    path: "/api/v1/workspaces/{workspaceId}/attachments/{attachmentId}/url",
+    operationId: "getAttachmentDownloadUrl",
+    summary: "Get an attachment download URL",
+    description: "Create a short-lived signed URL for an accessible attachment.",
+    tags: ["Attachments"],
+    scopes: [API_KEY_SCOPES.ATTACHMENTS_READ],
+    parameters: [workspaceIdParam, attachmentIdParam],
+    responseSchema: dataEnvelope(attachmentUrlSchema),
+    canReturn404: true,
   },
 
   // --- Streams ---
@@ -296,7 +471,19 @@ export const PUBLIC_API_ROUTES: PublicApiRoute[] = [
 ]
 
 // Export response schemas for tests and derived wire types for serializers
-export { streamSchema, messageSchema, searchResultSchema, memberSchema, userSchema, errorSchema }
+export {
+  streamSchema,
+  messageSchema,
+  searchResultSchema,
+  memberSchema,
+  userSchema,
+  memoSearchResultSchema,
+  memoDetailSchema,
+  attachmentSearchResultSchema,
+  attachmentDetailsSchema,
+  attachmentUrlSchema,
+  errorSchema,
+}
 
 // Wire types derived from schemas — serializers annotate their return types with these
 export type WireStream = z.infer<typeof streamSchema>
@@ -304,3 +491,8 @@ export type WireMessage = z.infer<typeof messageSchema>
 export type WireSearchResult = z.infer<typeof searchResultSchema>
 export type WireMember = z.infer<typeof memberSchema>
 export type WireUser = z.infer<typeof userSchema>
+export type WireMemoSearchResult = z.infer<typeof memoSearchResultSchema>
+export type WireMemoDetail = z.infer<typeof memoDetailSchema>
+export type WireAttachmentSearchResult = z.infer<typeof attachmentSearchResultSchema>
+export type WireAttachmentDetails = z.infer<typeof attachmentDetailsSchema>
+export type WireAttachmentUrl = z.infer<typeof attachmentUrlSchema>
