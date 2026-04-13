@@ -1,14 +1,5 @@
 import type { Components } from "react-markdown"
-import {
-  Suspense,
-  lazy,
-  Component,
-  Children,
-  isValidElement,
-  type ReactNode,
-  type MouseEvent,
-  type TouchEvent,
-} from "react"
+import { Suspense, lazy, Component, Children, isValidElement, type ReactNode, type MouseEvent } from "react"
 import { cn } from "@/lib/utils"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -170,17 +161,9 @@ function MarkdownLink({ href, children }: { href?: string; children: ReactNode }
     linkPreviewContext?.setHoveredLinkUrl(null)
   }
 
-  // Stop touch + contextmenu propagation so the message-level long-press
-  // does not intercept holds on links. This lets the native browser
-  // context menu appear (e.g. "Open in Firefox", "Copy link") instead of
-  // opening the message action drawer.
-  const stopTouchPropagation = (e: TouchEvent) => {
-    e.stopPropagation()
-  }
-  const stopContextMenuPropagation = (e: MouseEvent) => {
-    e.stopPropagation()
-  }
-
+  // The message-level long-press hook detects <a href> via shouldDeferToNative
+  // and skips its timer, so long-press here gets the native browser menu
+  // (e.g. "Open in Firefox", "Copy link") instead of the message drawer.
   return (
     <a
       href={href}
@@ -188,11 +171,7 @@ function MarkdownLink({ href, children }: { href?: string; children: ReactNode }
       rel="noopener noreferrer"
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
-      onTouchStart={stopTouchPropagation}
-      onTouchEnd={stopTouchPropagation}
-      onTouchMove={stopTouchPropagation}
-      onContextMenu={stopContextMenuPropagation}
-      className="text-primary underline underline-offset-4 hover:text-primary/80 [&_span]:[text-decoration:inherit] select-text [-webkit-touch-callout:default]"
+      className="text-primary underline underline-offset-4 hover:text-primary/80 [&_span]:[text-decoration:inherit]"
     >
       <ProcessedChildren>{children}</ProcessedChildren>
     </a>

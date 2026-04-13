@@ -48,9 +48,19 @@ export function useLongPress({
     setIsPressed(false)
   }, [])
 
+  // Let native browser gestures win on links and explicitly opted-in regions.
+  // An <a href> should get the browser's long-press menu (Open in Firefox,
+  // Copy link, etc.) instead of the app's long-press drawer. Regions with
+  // data-native-context="true" opt in the same way (e.g. link preview cards).
+  const shouldDeferToNative = (target: EventTarget | null): boolean => {
+    if (!(target instanceof Element)) return false
+    return target.closest('a[href], [data-native-context="true"]') !== null
+  }
+
   const onTouchStart = useCallback(
     (e: React.TouchEvent) => {
       if (!enabled) return
+      if (shouldDeferToNative(e.target)) return
       firedRef.current = false
       const touch = e.touches[0]
       startPos.current = { x: touch.clientX, y: touch.clientY }

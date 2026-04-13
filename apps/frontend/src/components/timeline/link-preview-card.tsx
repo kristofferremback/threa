@@ -86,17 +86,6 @@ export function LinkPreviewCard({
     [onToggleCollapse, preview.id]
   )
 
-  // Stop touch + contextmenu propagation on the outer <a> so the
-  // message-level long-press does not intercept holds on a preview.
-  // This lets the native browser context menu (e.g. "Open in Firefox",
-  // "Copy link") appear on mobile instead of the message action drawer.
-  const stopTouchPropagation = useCallback((e: React.TouchEvent) => {
-    e.stopPropagation()
-  }, [])
-  const stopContextMenuPropagation = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation()
-  }, [])
-
   // Image-type previews render as a thumbnail
   if (preview.contentType === "image") {
     return (
@@ -104,14 +93,9 @@ export function LinkPreviewCard({
         href={preview.url}
         target="_blank"
         rel="noopener noreferrer"
-        onTouchStart={stopTouchPropagation}
-        onTouchEnd={stopTouchPropagation}
-        onTouchMove={stopTouchPropagation}
-        onContextMenu={stopContextMenuPropagation}
         className={cn(
           "group/preview relative block overflow-hidden rounded-lg border bg-muted/30 transition-all max-w-xs",
           "hover:border-primary hover:shadow-sm",
-          "select-text [-webkit-touch-callout:default]",
           isHighlighted && "ring-2 ring-primary border-primary shadow-sm"
         )}
       >
@@ -158,9 +142,13 @@ export function LinkPreviewCard({
 
   const headerLabel = githubPreview ? githubPreview.repository.fullName : (preview.siteName ?? domain)
 
-  // Website, PDF, and GitHub previews render as a card
+  // Website, PDF, and GitHub previews render as a card.
+  // data-native-context tells the message-level long-press hook to skip
+  // its timer so long-pressing anywhere on the card gets the browser's
+  // native link menu (via the inner <a>) instead of the message drawer.
   return (
     <div
+      data-native-context="true"
       className={cn(
         "group/preview relative overflow-hidden rounded-lg border bg-card transition-all max-w-md",
         "hover:border-primary/50 hover:shadow-sm",
@@ -212,11 +200,7 @@ export function LinkPreviewCard({
           href={preview.url}
           target="_blank"
           rel="noopener noreferrer"
-          onTouchStart={stopTouchPropagation}
-          onTouchEnd={stopTouchPropagation}
-          onTouchMove={stopTouchPropagation}
-          onContextMenu={stopContextMenuPropagation}
-          className="block hover:bg-muted/20 transition-colors select-text [-webkit-touch-callout:default]"
+          className="block hover:bg-muted/20 transition-colors"
         >
           <GitHubContent preview={preview} imageError={imageError} onImageError={() => setImageError(true)} />
         </a>
