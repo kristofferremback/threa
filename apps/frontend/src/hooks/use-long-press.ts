@@ -56,6 +56,7 @@ export function useLongPress({
       timerRef.current = null
     }
     startPos.current = null
+    firedRef.current = false
     setIsPressed(false)
   }, [])
 
