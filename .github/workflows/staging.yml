@@ -72,6 +72,18 @@ jobs:
           PR_URL: ${{ github.event.pull_request.html_url }}
         run: |
           STAGING_URL="https://pr-${PR_NUMBER}-staging.threa.io"
+
+          # Skip if we've already posted a notification for this staging URL
+          SEARCH=$(curl -s -X POST \
+            "https://app.threa.io/api/v1/workspaces/ws_01KJDZZV5H57W3H2SJ11PA554B/messages/search" \
+            -H "Authorization: Bearer $THREA_BOT_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg q "$STAGING_URL" '{"query": $q, "streams": ["stream_01KP36GA56WZREGN6VTKREWRM9"], "semantic": false, "limit": 1}')") || true
+          if [[ "$(echo "$SEARCH" | jq -r 'if .data then (.data | length > 0) else false end' 2>/dev/null)" == "true" ]]; then
+            echo "Already notified for $STAGING_URL — skipping"
+            exit 0
+          fi
+
           MESSAGE=$(printf '🚀 **Staging deployed** — [%s](%s)\n\n%s' \
             "$PR_TITLE" "$PR_URL" "$STAGING_URL")
           PAYLOAD=$(jq -n --arg content "$MESSAGE" '{"content": $content}')
