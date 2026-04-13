@@ -376,8 +376,9 @@ function SentMessageEvent({
   }, [])
 
   // Restore focus to the zone's editor after exiting inline edit mode.
-  // The mobile "hide main composer" flag is owned by MessageEditForm via
-  // useInlineEditRegistration, so there is nothing to clear here.
+  // On mobile the stream composer is hidden purely via CSS while MessageEditForm
+  // keeps a `[data-inline-edit]` element mounted, so there is no extra flag to
+  // reset here.
   const stopEditing = useCallback(() => {
     const zone = containerRef.current?.closest<HTMLElement>("[data-editor-zone]") ?? null
     setIsEditing(false)

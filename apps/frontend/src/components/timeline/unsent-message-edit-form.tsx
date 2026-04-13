@@ -6,7 +6,6 @@ import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
 import { RichEditor, EditorToolbar, EditorActionBar, DocumentEditorModal } from "@/components/editor"
 import type { RichEditorHandle } from "@/components/editor"
 import { useIsMobile } from "@/hooks/use-mobile"
-import { useInlineEditRegistration } from "./inline-edit-context"
 import { usePendingMessages } from "@/contexts"
 import { serializeToMarkdown, parseMarkdown } from "@threa/prosemirror"
 import type { JSONContent } from "@threa/types"
@@ -30,7 +29,11 @@ export function UnsentMessageEditForm({
 }: UnsentMessageEditFormProps) {
   const { saveEditedMessage, cancelEditing, deleteMessage } = usePendingMessages()
   const isMobile = useIsMobile()
-  useInlineEditRegistration(isMobile)
+  // The mobile stream composer hides itself via a CSS `:has()` rule whenever a
+  // `[data-inline-edit]` element (rendered below) is present in the DOM — see
+  // apps/frontend/src/index.css. This keeps composer visibility purely
+  // DOM-derived instead of carrying a ref-counted React state that could leak
+  // across hydration races or virtualisation cycles.
 
   const [contentJson, setContentJson] = useState<JSONContent>(initialContentJson ?? EMPTY_DOC)
   const [isSaving, setIsSaving] = useState(false)

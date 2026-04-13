@@ -11,7 +11,6 @@ import { commandsApi } from "@/api"
 import { isCommand } from "@/lib/commands"
 import { serializeToMarkdown } from "@threa/prosemirror"
 import { useEditLastMessage } from "./edit-last-message-context"
-import { useInlineEdit } from "./inline-edit-context"
 import { useQuoteReply, type QuoteReplyData } from "./quote-reply-context"
 import { StreamTypes, type JSONContent } from "@threa/types"
 import type { MentionStreamContext } from "@/hooks/use-mentionables"
@@ -175,7 +174,6 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   const editLastCtx = useEditLastMessage()
   const triggerEditLast = editLastCtx?.triggerEditLast
   const scrollToMessage = editLastCtx?.scrollToMessage
-  const inlineEdit = useInlineEdit()
   const navigate = useNavigate()
   const { preferences } = usePreferences()
   const { stream, sendMessage } = useStreamOrDraft(workspaceId, streamId)
@@ -251,7 +249,6 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   const [expanded, setExpanded] = useState(false)
   const messageSendMode = preferences?.messageSendMode ?? "enter"
   const isMobile = useIsMobile()
-  const hideForInlineEdit = isMobile && !!inlineEdit?.isEditingInline
   const connectionState = useConnectionState()
   const isOffline = connectionState === "offline"
 
@@ -453,8 +450,13 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
           portalTargetRef.current
         )}
 
-      {/* Inline composer — hidden while expanded or during mobile inline editing */}
-      <div ref={selfRef} className={expanded || hideForInlineEdit ? "border-t hidden" : "border-t"}>
+      {/* Inline composer — hidden while expanded. Mobile inline editing is handled
+          via CSS: `body:has([data-inline-edit])` matches whenever a MessageEditForm or
+          UnsentMessageEditForm is mounted (including vaul drawer portals, which live
+          under document.body), so the composer is hidden purely from DOM presence.
+          This replaces a previous ref-counted React state mechanism that was prone to
+          leaks across hydration races and virtualization cycles. */}
+      <div ref={selfRef} data-message-composer-root className={expanded ? "border-t hidden" : "border-t"}>
         <div className="pt-3 px-3 pb-1 sm:pt-6 sm:px-6 sm:pb-1 mx-auto max-w-[800px] w-full min-w-0">
           {!expanded && <MessageComposer {...composerProps} autoFocus={autoFocus} onExpandClick={handleExpandClick} />}
           {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
