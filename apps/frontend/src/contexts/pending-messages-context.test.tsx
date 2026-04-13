@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { renderHook, act } from "@testing-library/react"
+import { renderHook, act, waitFor } from "@testing-library/react"
 import type { ReactNode } from "react"
 import { PendingMessagesProvider, usePendingMessages } from "./pending-messages-context"
 
@@ -10,6 +10,9 @@ const mockEventsGet = vi.fn()
 const mockEventsUpdate = vi.fn().mockResolvedValue(1)
 const mockEventsPut = vi.fn().mockResolvedValue(undefined)
 const mockEventsDelete = vi.fn().mockResolvedValue(undefined)
+let mockHydratedPendingIds: string[] = []
+let mockHydratedFailedIds: string[] = []
+let mockHydratedEditingIds: string[] = []
 
 vi.mock("@/db", () => ({
   db: {
@@ -23,6 +26,17 @@ vi.mock("@/db", () => ({
       update: (...args: unknown[]) => mockEventsUpdate(...args),
       put: (...args: unknown[]) => mockEventsPut(...args),
       delete: (...args: unknown[]) => mockEventsDelete(...args),
+      where: (field: string) => ({
+        equals: (value: string) => ({
+          primaryKeys: () => {
+            if (field !== "_status") return Promise.resolve([])
+            if (value === "pending") return Promise.resolve(mockHydratedPendingIds)
+            if (value === "failed") return Promise.resolve(mockHydratedFailedIds)
+            if (value === "editing") return Promise.resolve(mockHydratedEditingIds)
+            return Promise.resolve([])
+          },
+        }),
+      }),
     },
     // Dexie transaction — execute the callback immediately for tests
     transaction: (_mode: string, ..._tables: unknown[]) => {
@@ -39,6 +53,9 @@ function wrapper({ children }: { children: ReactNode }) {
 describe("PendingMessagesContext", () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockHydratedPendingIds = []
+    mockHydratedFailedIds = []
+    mockHydratedEditingIds = []
   })
 
   describe("retryMessage", () => {
@@ -93,7 +110,7 @@ describe("PendingMessagesContext", () => {
         await result.current.markEditing("temp_edit")
       })
 
-      expect(mockUpdate).toHaveBeenCalledWith("temp_edit", { status: "editing" })
+      expect(mockUpdate).toHaveBeenCalledWith("temp_edit", { status: "editing", preEditStatus: "pending" })
       expect(mockEventsUpdate).toHaveBeenCalledWith("temp_edit", { _status: "editing" })
       expect(result.current.getStatus("temp_edit")).toBe("editing")
     })
@@ -172,6 +189,80 @@ describe("PendingMessagesContext", () => {
     })
   })
 
+  describe("startup hydration", () => {
+    it("restores persisted editing messages to pending instead of reopening edit mode", async () => {
+      mockHydratedEditingIds = ["temp_restore_pending"]
+      mockGet.mockResolvedValue({
+        clientId: "temp_restore_pending",
+        status: "editing",
+        preEditStatus: "pending",
+      })
+
+      const { result } = renderHook(() => usePendingMessages(), { wrapper })
+
+      await waitFor(() => {
+        expect(mockUpdate).toHaveBeenCalledWith("temp_restore_pending", {
+          status: undefined,
+          preEditStatus: undefined,
+        })
+      })
+
+      expect(mockEventsUpdate).toHaveBeenCalledWith("temp_restore_pending", { _status: "pending" })
+      expect(result.current.getStatus("temp_restore_pending")).toBe("pending")
+    })
+
+    it("kicks the queue when startup hydration restores a pending message", async () => {
+      vi.useFakeTimers()
+      try {
+        mockHydratedEditingIds = ["temp_restore_notify"]
+        mockGet.mockResolvedValue({
+          clientId: "temp_restore_notify",
+          status: "editing",
+          preEditStatus: "pending",
+        })
+
+        const { result } = renderHook(() => usePendingMessages(), { wrapper })
+        const notifyQueue = vi.fn()
+        act(() => {
+          result.current.registerQueueNotify(notifyQueue)
+        })
+
+        await act(async () => {
+          await vi.runAllTimersAsync()
+        })
+
+        expect(mockUpdate).toHaveBeenCalledWith("temp_restore_notify", {
+          status: undefined,
+          preEditStatus: undefined,
+        })
+        expect(notifyQueue).toHaveBeenCalledTimes(1)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it("restores persisted editing messages to failed when they were editing a failed send", async () => {
+      mockHydratedEditingIds = ["temp_restore_failed"]
+      mockGet.mockResolvedValue({
+        clientId: "temp_restore_failed",
+        status: "editing",
+        preEditStatus: "failed",
+      })
+
+      const { result } = renderHook(() => usePendingMessages(), { wrapper })
+
+      await waitFor(() => {
+        expect(mockUpdate).toHaveBeenCalledWith("temp_restore_failed", {
+          status: undefined,
+          preEditStatus: undefined,
+        })
+      })
+
+      expect(mockEventsUpdate).toHaveBeenCalledWith("temp_restore_failed", { _status: "failed" })
+      expect(result.current.getStatus("temp_restore_failed")).toBe("failed")
+    })
+  })
+
   describe("saveEditedMessage", () => {
     it("should update content and return to pending status", async () => {
       mockGet.mockResolvedValue({ clientId: "temp_save", retryCount: 0, content: "old" })
@@ -201,6 +292,7 @@ describe("PendingMessagesContext", () => {
         "temp_save",
         expect.objectContaining({
           status: undefined,
+          preEditStatus: undefined,
           retryCount: 0,
           retryAfter: 0,
         })

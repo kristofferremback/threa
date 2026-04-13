@@ -168,6 +168,8 @@ export interface PendingMessage {
   retryAfter?: number
   /** When "editing", the queue skips this message so it isn't sent while the user edits it */
   status?: "editing"
+  /** Original queue state before entering editing mode; used to cancel stale edits on startup. */
+  preEditStatus?: "pending" | "failed"
   /** When set, the queue creates this stream before sending the message */
   streamCreation?: PendingStreamCreation
   /** The draft ID to clean up after successful stream creation + message send */
