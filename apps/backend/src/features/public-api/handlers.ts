@@ -391,7 +391,7 @@ export function createPublicApiHandlers({
 
     const sharingBlockReason = attachmentService.getSharingBlockReason(attachment)
     if (sharingBlockReason) {
-      throw new HttpError(sharingBlockReason, { status: 403, code: "FORBIDDEN" })
+      throw new HttpError("Attachment not found", { status: 404, code: "NOT_FOUND" })
     }
 
     return attachment
