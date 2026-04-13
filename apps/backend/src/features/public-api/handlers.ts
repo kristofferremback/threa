@@ -379,7 +379,7 @@ export function createPublicApiHandlers({
   }
 
   async function resolveAccessibleAttachment(req: Request, attachmentId: string): Promise<Attachment> {
-    const accessibleStreamIds = await getAccessibleStreamIds(req)
+    const accessibleStreamIds = await getAccessibleStreamIds(req, { archiveStatus: ["active", "archived"] })
     const attachment = await attachmentService.getAccessible(attachmentId, {
       workspaceId: req.workspaceId!,
       accessibleStreamIds,

@@ -33,7 +33,7 @@ export const searchMemosSchema = z.object({
   tags: z.array(z.string()).optional(),
   before: z.string().datetime().optional(),
   after: z.string().datetime().optional(),
-  limit: z.coerce.number().int().min(1).max(PUBLIC_MEMO_SEARCH_MAX_LIMIT).optional(),
+  limit: z.coerce.number().int().min(1).max(PUBLIC_MEMO_SEARCH_MAX_LIMIT).optional().default(20),
 })
 
 export const searchAttachmentsSchema = z.object({

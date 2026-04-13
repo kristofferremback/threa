@@ -185,12 +185,13 @@ describe("Public API v1 — Knowledge Retrieval", () => {
       storagePath: `tests/blocked-attachment-${testRunId}.bin`,
       safetyStatus: AttachmentSafetyStatuses.QUARANTINED,
     })
-    await AttachmentRepository.attachToMessage(
-      pool,
-      [blockedAttachmentId],
+    // Bypass attachToMessage (which only updates rows with safety_status = 'clean') so the
+    // quarantined attachment gets a real stream_id — exercises the actual safety filters.
+    await pool.query(`UPDATE attachments SET stream_id = $1, message_id = $2 WHERE id = $3`, [
+      publicChannel.id,
       blockedAttachmentMessage.id,
-      publicChannel.id
-    )
+      blockedAttachmentId,
+    ])
     await AttachmentExtractionRepository.insert(pool, {
       id: extractionId(),
       attachmentId: blockedAttachmentId,
