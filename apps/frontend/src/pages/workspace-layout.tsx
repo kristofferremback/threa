@@ -47,6 +47,7 @@ import {
   useMessageQueue,
   useUnreadTabIndicator,
 } from "@/hooks"
+import { usePageResume } from "@/hooks/use-page-resume"
 import { useAuth } from "@/auth"
 import { useWorkspaceStreams } from "@/stores/workspace-store"
 import { SyncEngine, SyncEngineContext } from "@/sync/sync-engine"
@@ -203,6 +204,14 @@ function WorkspaceSyncHandler({
       void syncEngine.refreshAfterConnectivityResume()
     }
   }, [isOnline, socket, syncEngine])
+
+  // Visibility-resume trigger: on phone/tab resume after long background,
+  // probe the socket and refresh state. navigator.onLine doesn't flap in that
+  // scenario and socket.io's native pingTimeout can take 20–25s to notice a
+  // zombie transport. The hook stores the callback in a ref, so no memoization needed.
+  usePageResume(() => {
+    void syncEngine.handlePageResume()
+  })
 
   // No destroy effect — StrictMode's effect cleanup cycle would destroy the
   // engine before the socket connect effect re-runs. The engine is destroyed
