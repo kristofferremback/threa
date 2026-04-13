@@ -64,6 +64,7 @@ jobs:
           BRANCH_NAME: ${{ github.head_ref }}
 
       - name: Notify Threa channel
+        continue-on-error: true
         env:
           THREA_BOT_API_KEY: ${{ secrets.THREA_BOT_API_KEY }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
