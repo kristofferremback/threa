@@ -83,7 +83,6 @@ export default defineConfig({
       manifest: false, // use existing public/manifest.json
       injectManifest: {
         globPatterns: ["**/*.{js,css,html,ico,png,svg}"],
-        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
       },
       devOptions: {
         enabled: true,

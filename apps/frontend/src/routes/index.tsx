@@ -1,21 +1,12 @@
 import { useEffect, useRef } from "react"
 import { createBrowserRouter, Navigate, useLocation, useParams } from "react-router-dom"
-import { LoginPage } from "@/pages/login"
-import { WorkspaceSelectPage } from "@/pages/workspace-select"
-import { WorkspaceLayout } from "@/pages/workspace-layout"
-import { StreamPage } from "@/pages/stream"
-import { DraftsPage } from "@/pages/drafts"
-import { ThreadsPage } from "@/pages/threads"
-import { ActivityPage } from "@/pages/activity"
-import { MemoryPage } from "@/pages/memory"
-import { AIUsageAdminPage } from "@/pages/ai-usage-admin"
-import { UserSetupPage } from "@/pages/user-setup"
-import { ShareTargetPage } from "@/pages/share-target"
-import { SharePickerPage } from "@/pages/share-picker"
 import { ErrorBoundary } from "@/components/error-boundary"
 import { useSidebar } from "@/contexts"
 import { useLastStream } from "@/hooks"
 
+// Route-level code splitting: each page lazy-loads its own chunk so heavy
+// dependencies (tiptap/prosemirror, recharts, limax/pinyin-pro, etc.) ride
+// with the pages that actually use them instead of bloating the main bundle.
 export const router = createBrowserRouter([
   {
     path: "/",
@@ -24,29 +15,29 @@ export const router = createBrowserRouter([
   },
   {
     path: "/login",
-    element: <LoginPage />,
+    lazy: async () => ({ Component: (await import("@/pages/login")).LoginPage }),
     errorElement: <ErrorBoundary />,
   },
   {
     path: "/workspaces",
-    element: <WorkspaceSelectPage />,
+    lazy: async () => ({ Component: (await import("@/pages/workspace-select")).WorkspaceSelectPage }),
     errorElement: <ErrorBoundary />,
   },
   {
     path: "/share",
-    element: <ShareTargetPage />,
+    lazy: async () => ({ Component: (await import("@/pages/share-target")).ShareTargetPage }),
     errorElement: <ErrorBoundary />,
   },
   {
     // Setup page lives outside WorkspaceLayout — it's a lightweight form that
     // doesn't need the full workspace bootstrap (socket, sidebar, etc.)
     path: "/w/:workspaceId/setup",
-    element: <UserSetupPage />,
+    lazy: async () => ({ Component: (await import("@/pages/user-setup")).UserSetupPage }),
     errorElement: <ErrorBoundary />,
   },
   {
     path: "/w/:workspaceId",
-    element: <WorkspaceLayout />,
+    lazy: async () => ({ Component: (await import("@/pages/workspace-layout")).WorkspaceLayout }),
     errorElement: <ErrorBoundary />,
     children: [
       {
@@ -55,19 +46,19 @@ export const router = createBrowserRouter([
       },
       {
         path: "drafts",
-        element: <DraftsPage />,
+        lazy: async () => ({ Component: (await import("@/pages/drafts")).DraftsPage }),
       },
       {
         path: "threads",
-        element: <ThreadsPage />,
+        lazy: async () => ({ Component: (await import("@/pages/threads")).ThreadsPage }),
       },
       {
         path: "activity",
-        element: <ActivityPage />,
+        lazy: async () => ({ Component: (await import("@/pages/activity")).ActivityPage }),
       },
       {
         path: "memory",
-        element: <MemoryPage />,
+        lazy: async () => ({ Component: (await import("@/pages/memory")).MemoryPage }),
       },
       {
         path: "memos/:memoId",
@@ -75,15 +66,15 @@ export const router = createBrowserRouter([
       },
       {
         path: "s/:streamId",
-        element: <StreamPage />,
+        lazy: async () => ({ Component: (await import("@/pages/stream")).StreamPage }),
       },
       {
         path: "share",
-        element: <SharePickerPage />,
+        lazy: async () => ({ Component: (await import("@/pages/share-picker")).SharePickerPage }),
       },
       {
         path: "admin/ai-usage",
-        element: <AIUsageAdminPage />,
+        lazy: async () => ({ Component: (await import("@/pages/ai-usage-admin")).AIUsageAdminPage }),
       },
     ],
   },
