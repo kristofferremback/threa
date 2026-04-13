@@ -7,6 +7,8 @@ export {
   updateMessageSchema,
   listMembersSchema,
   listUsersSchema,
+  searchMemosSchema,
+  searchAttachmentsSchema,
 } from "./schemas"
 export { BotRepository, type Bot } from "./bot-repository"
 export { BotApiKeyRepository, type BotApiKeyRow } from "./bot-api-key-repository"

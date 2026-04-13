@@ -96,7 +96,7 @@ export function requireApiKeyScope(...scopes: ApiKeyScope[]) {
     if (req.userApiKey) {
       for (const scope of scopes) {
         if (!req.userApiKey.scopes.has(scope)) {
-          next(new HttpError(`Missing required permission: ${scope}`, { status: 403, code: "FORBIDDEN" }))
+          next(new HttpError(`Missing required permission: ${scope}`, { status: 404, code: "NOT_FOUND" }))
           return
         }
       }
@@ -108,7 +108,7 @@ export function requireApiKeyScope(...scopes: ApiKeyScope[]) {
     if (req.botApiKey) {
       for (const scope of scopes) {
         if (!req.botApiKey.scopes.has(scope)) {
-          next(new HttpError(`Missing required permission: ${scope}`, { status: 403, code: "FORBIDDEN" }))
+          next(new HttpError(`Missing required permission: ${scope}`, { status: 404, code: "NOT_FOUND" }))
           return
         }
       }

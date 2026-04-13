@@ -1,7 +1,7 @@
 import { z } from "zod"
 import type { Request, Response } from "express"
 import type { Pool } from "pg"
-import type { SearchService } from "../search"
+import type { SearchFilters, SearchService } from "../search"
 import { serializeSearchResult, resolveUserAccessibleStreamIds } from "../search"
 import type { BotChannelService } from "../api-keys"
 import type { EventService } from "../messaging"
@@ -15,8 +15,17 @@ import {
 } from "../streams"
 import { UserRepository } from "../workspaces"
 import { PersonaRepository } from "../agents"
+import { type Memo, type MemoExplorerService, type MemoExplorerDetail, type MemoExplorerResult } from "../memos"
+import {
+  AttachmentExtractionRepository,
+  AttachmentRepository,
+  type Attachment,
+  type AttachmentExtraction,
+  type AttachmentWithExtraction,
+  type AttachmentService,
+} from "../attachments"
 import { BotRepository, type Bot } from "./bot-repository"
-import { AuthorTypes, sentViaApiKey, type AuthorType } from "@threa/types"
+import { AttachmentSafetyStatuses, AuthorTypes, sentViaApiKey, type AuthorType } from "@threa/types"
 import type { Bot as WireBot } from "@threa/types"
 import { HttpError } from "@threa/backend-common"
 import { normalizeMessage, toEmoji } from "../emoji"
@@ -25,7 +34,18 @@ import { botId } from "../../lib/id"
 import { withTransaction } from "../../db"
 import { OutboxRepository } from "../../lib/outbox"
 import { encodeCursor, decodeCursor } from "./cursor"
-import type { WireStream, WireMessage, WireSearchResult, WireUser, WireMember } from "./routes"
+import type {
+  WireStream,
+  WireMessage,
+  WireSearchResult,
+  WireUser,
+  WireMember,
+  WireMemoSearchResult,
+  WireMemoDetail,
+  WireAttachmentSearchResult,
+  WireAttachmentDetails,
+  WireAttachmentUrl,
+} from "./routes"
 import {
   publicSearchSchema,
   listStreamsSchema,
@@ -34,6 +54,8 @@ import {
   updateMessageSchema,
   listMembersSchema,
   listUsersSchema,
+  searchMemosSchema,
+  searchAttachmentsSchema,
 } from "./schemas"
 
 function serializeStream(stream: Stream, context?: DisplayNameContext): WireStream {
@@ -121,6 +143,90 @@ function serializeUser(user: {
   }
 }
 
+function normalizeMemoSearchMode(query: string, exact?: boolean): { query: string; exact: boolean } {
+  const trimmed = query.trim()
+
+  const isQuoted = trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')
+  const unquoted = isQuoted ? trimmed.slice(1, -1).trim() : trimmed
+
+  if (exact) {
+    return { query: unquoted, exact: unquoted.length > 0 }
+  }
+
+  if (!isQuoted) {
+    return { query: trimmed, exact: false }
+  }
+
+  return { query: unquoted, exact: unquoted.length > 0 }
+}
+
+function serializeMemo(memo: Memo) {
+  return {
+    ...memo,
+    createdAt: memo.createdAt.toISOString(),
+    updatedAt: memo.updatedAt.toISOString(),
+    archivedAt: memo.archivedAt?.toISOString() ?? null,
+  }
+}
+
+function serializeMemoSearchResult(result: MemoExplorerResult): WireMemoSearchResult {
+  return {
+    memo: serializeMemo(result.memo),
+    distance: result.distance,
+    sourceStream: result.sourceStream,
+    rootStream: result.rootStream,
+  }
+}
+
+function serializeMemoDetail(detail: MemoExplorerDetail): WireMemoDetail {
+  return {
+    ...serializeMemoSearchResult(detail),
+    sourceMessages: detail.sourceMessages.map((message) => ({
+      ...message,
+      createdAt: message.createdAt.toISOString(),
+    })),
+  }
+}
+
+function serializeAttachmentSearchResult(result: AttachmentWithExtraction): WireAttachmentSearchResult {
+  return {
+    id: result.id,
+    filename: result.filename,
+    mimeType: result.mimeType,
+    contentType: result.extraction?.contentType ?? null,
+    summary: result.extraction?.summary ?? null,
+    ...(result.streamId != null && { streamId: result.streamId }),
+    ...(result.messageId != null && { messageId: result.messageId }),
+    createdAt: result.createdAt.toISOString(),
+  }
+}
+
+function serializeAttachmentDetail(
+  attachment: Attachment,
+  extraction: AttachmentExtraction | null
+): WireAttachmentDetails {
+  return {
+    id: attachment.id,
+    filename: attachment.filename,
+    mimeType: attachment.mimeType,
+    sizeBytes: attachment.sizeBytes,
+    processingStatus: attachment.processingStatus,
+    createdAt: attachment.createdAt.toISOString(),
+    extraction: extraction
+      ? {
+          contentType: extraction.contentType,
+          summary: extraction.summary,
+          fullText: extraction.fullText,
+          structuredData: extraction.structuredData,
+          ...(extraction.pdfMetadata != null && { pdfMetadata: extraction.pdfMetadata }),
+          ...(extraction.textMetadata != null && { textMetadata: extraction.textMetadata }),
+          ...(extraction.wordMetadata != null && { wordMetadata: extraction.wordMetadata }),
+          ...(extraction.excelMetadata != null && { excelMetadata: extraction.excelMetadata }),
+        }
+      : null,
+  }
+}
+
 /**
  * Batch-fetch parent streams for threads that need display name context.
  * Only fetches when there are unnamed threads in the result set.
@@ -186,6 +292,8 @@ async function resolveAuthorDisplayNames(
 
 export interface PublicApiDeps {
   searchService: SearchService
+  memoExplorerService: MemoExplorerService
+  attachmentService: AttachmentService
   botChannelService: BotChannelService
   streamService: StreamService
   eventService: EventService
@@ -194,15 +302,17 @@ export interface PublicApiDeps {
 
 export function createPublicApiHandlers({
   searchService,
+  memoExplorerService,
+  attachmentService,
   botChannelService,
   streamService,
   eventService,
   pool,
 }: PublicApiDeps) {
   /** Resolve accessible stream IDs for the current key (user-scoped or bot) */
-  async function getAccessibleStreamIds(req: Request): Promise<string[]> {
+  async function getAccessibleStreamIds(req: Request, filters: SearchFilters = {}): Promise<string[]> {
     if (req.userApiKey) {
-      return resolveUserAccessibleStreamIds(pool, req.workspaceId!, req.user!.id, {})
+      return resolveUserAccessibleStreamIds(pool, req.workspaceId!, req.user!.id, filters)
     }
     if (req.botApiKey) {
       return botChannelService.getAccessibleStreamIdsForBot(req.workspaceId!, req.botApiKey.botId)
@@ -268,6 +378,18 @@ export function createPublicApiHandlers({
     throw new HttpError("No API key context", { status: 401, code: "UNAUTHORIZED" })
   }
 
+  async function resolveAccessibleAttachment(req: Request, attachmentId: string): Promise<Attachment> {
+    const accessibleStreamIds = await getAccessibleStreamIds(req, { archiveStatus: ["active", "archived"] })
+    const attachment = await attachmentService.getAccessible(attachmentId, {
+      workspaceId: req.workspaceId!,
+      accessibleStreamIds,
+    })
+    if (!attachment) {
+      throw new HttpError("Attachment not found", { status: 404, code: "NOT_FOUND" })
+    }
+    return attachment
+  }
+
   return {
     /**
      * Search messages via public API.
@@ -285,7 +407,7 @@ export function createPublicApiHandlers({
         })
       }
 
-      const { query, semantic, streams, from, type, before, after, limit } = result.data
+      const { query, semantic, exact, streams, from, type, before, after, limit } = result.data
 
       const accessibleStreamIds = await getAccessibleStreamIds(req)
 
@@ -305,6 +427,7 @@ export function createPublicApiHandlers({
           after: after ? new Date(after) : undefined,
         },
         limit,
+        exact,
         skipEmbedding: !semantic,
       })
 
@@ -319,6 +442,140 @@ export function createPublicApiHandlers({
       })
 
       res.json({ data: serialized })
+    },
+
+    /**
+     * Search memos via public API.
+     *
+     * POST /api/v1/workspaces/:workspaceId/memos/search
+     */
+    async searchMemos(req: Request, res: Response) {
+      const workspaceId = req.workspaceId!
+
+      const result = searchMemosSchema.safeParse(req.body)
+      if (!result.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: z.flattenError(result.error).fieldErrors,
+        })
+      }
+
+      const { query, exact, streams, memoType, knowledgeType, tags, before, after, limit } = result.data
+      const normalized = normalizeMemoSearchMode(query, exact)
+      const accessibleStreamIds = await getAccessibleStreamIds(req, {
+        archiveStatus: ["active", "archived"],
+      })
+
+      if (accessibleStreamIds.length === 0) {
+        return res.json({ data: [] })
+      }
+
+      const results = await memoExplorerService.search({
+        workspaceId,
+        permissions: { accessibleStreamIds },
+        query: normalized.query,
+        exact: normalized.exact,
+        filters: {
+          streamIds: streams,
+          memoTypes: memoType,
+          knowledgeTypes: knowledgeType,
+          tags,
+          before: before ? new Date(before) : undefined,
+          after: after ? new Date(after) : undefined,
+        },
+        limit,
+      })
+
+      res.json({ data: results.map(serializeMemoSearchResult) })
+    },
+
+    /**
+     * Get a memo via public API.
+     *
+     * GET /api/v1/workspaces/:workspaceId/memos/:memoId
+     */
+    async getMemo(req: Request, res: Response) {
+      const workspaceId = req.workspaceId!
+      const memoId = req.params.memoId
+      const accessibleStreamIds = await getAccessibleStreamIds(req, {
+        archiveStatus: ["active", "archived"],
+      })
+
+      const memo = await memoExplorerService.getById(workspaceId, memoId, { accessibleStreamIds })
+      if (!memo) {
+        throw new HttpError("Memo not found", { status: 404, code: "NOT_FOUND" })
+      }
+
+      res.json({ data: serializeMemoDetail(memo) })
+    },
+
+    /**
+     * Search attachments via public API.
+     *
+     * POST /api/v1/workspaces/:workspaceId/attachments/search
+     */
+    async searchAttachments(req: Request, res: Response) {
+      const workspaceId = req.workspaceId!
+
+      const result = searchAttachmentsSchema.safeParse(req.body)
+      if (!result.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: z.flattenError(result.error).fieldErrors,
+        })
+      }
+
+      const { query, streams, contentTypes, limit } = result.data
+      const accessibleStreamIds = await getAccessibleStreamIds(req)
+      if (accessibleStreamIds.length === 0) {
+        return res.json({ data: [] })
+      }
+
+      const filterStreamIds = streams?.length
+        ? streams.filter((streamId) => accessibleStreamIds.includes(streamId))
+        : accessibleStreamIds
+
+      if (filterStreamIds.length === 0) {
+        return res.json({ data: [] })
+      }
+
+      const attachments = await AttachmentRepository.searchWithExtractions(pool, {
+        workspaceId,
+        streamIds: filterStreamIds,
+        query,
+        contentTypes,
+        safetyStatuses: [AttachmentSafetyStatuses.CLEAN],
+        limit,
+      })
+
+      res.json({ data: attachments.map(serializeAttachmentSearchResult) })
+    },
+
+    /**
+     * Get an attachment via public API.
+     *
+     * GET /api/v1/workspaces/:workspaceId/attachments/:attachmentId
+     */
+    async getAttachment(req: Request, res: Response) {
+      const attachment = await resolveAccessibleAttachment(req, req.params.attachmentId)
+      const extraction = await AttachmentExtractionRepository.findByAttachmentId(pool, attachment.id)
+
+      res.json({ data: serializeAttachmentDetail(attachment, extraction) })
+    },
+
+    /**
+     * Get a signed attachment download URL via public API.
+     *
+     * GET /api/v1/workspaces/:workspaceId/attachments/:attachmentId/url
+     */
+    async getAttachmentDownloadUrl(req: Request, res: Response) {
+      const attachment = await resolveAccessibleAttachment(req, req.params.attachmentId)
+      const data: WireAttachmentUrl = {
+        url: await attachmentService.getDownloadUrl(attachment),
+        expiresIn: 900,
+      }
+
+      res.json({ data })
     },
 
     /**

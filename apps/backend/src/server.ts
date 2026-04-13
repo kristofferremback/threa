@@ -472,6 +472,7 @@ export async function startServer(): Promise<ServerInstance> {
     workspaceAgent,
     searchService,
     conversationSummaryService,
+    attachmentService,
     storage,
     modelRegistry,
     tavilyApiKey: config.ai.tavilyApiKey || undefined,

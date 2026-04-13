@@ -55,6 +55,7 @@ import {
   ConversationSummaryService,
   AgentSessionRepository,
 } from "../../../src/features/agents"
+import { AttachmentService, createMalwareScanner } from "../../../src/features/attachments"
 import { SearchService } from "../../../src/features/search"
 import { UserPreferencesService } from "../../../src/features/user-preferences"
 import { EmbeddingService } from "../../../src/features/memos"
@@ -333,7 +334,7 @@ async function runCompanionTask(input: CompanionInput, ctx: EvalContext): Promis
       return { id: threadId }
     }
 
-    // Stub storage — evals don't load attachments from S3
+    // Stub storage and attachment service — evals don't upload or load attachments from S3
     const stubStorage: StorageProvider = {
       getObjectSize: async () => 0,
       getSignedDownloadUrl: async () => "",
@@ -352,6 +353,11 @@ async function runCompanionTask(input: CompanionInput, ctx: EvalContext): Promis
       modelId: COMPANION_SUMMARY_MODEL_ID,
       temperature: COMPANION_SUMMARY_TEMPERATURE,
     })
+    const attachmentService = new AttachmentService(
+      ctx.pool,
+      stubStorage,
+      createMalwareScanner(stubStorage, { malwareScanEnabled: false })
+    )
     const personaAgent = new PersonaAgent({
       pool: ctx.pool,
       ai: ctx.ai,
@@ -361,6 +367,7 @@ async function runCompanionTask(input: CompanionInput, ctx: EvalContext): Promis
       workspaceAgent,
       searchService,
       conversationSummaryService,
+      attachmentService,
       storage: stubStorage,
       modelRegistry: createModelRegistry(),
       tavilyApiKey: ctx.credentials.tavilyApiKey,

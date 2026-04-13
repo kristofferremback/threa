@@ -7,7 +7,7 @@ import {
   type DiagramData,
 } from "@threa/types"
 import { logger } from "../../../lib/logger"
-import { AttachmentRepository, AttachmentExtractionRepository } from "../../attachments"
+import { AttachmentExtractionRepository } from "../../attachments"
 import { defineAgentTool, type AgentToolResult } from "../runtime"
 import type { WorkspaceToolDeps } from "./tool-deps"
 
@@ -33,7 +33,7 @@ export interface AttachmentDetails {
 }
 
 export function createGetAttachmentTool(deps: WorkspaceToolDeps) {
-  const { db, accessibleStreamIds } = deps
+  const { db, workspaceId, accessibleStreamIds, attachmentService } = deps
 
   return defineAgentTool({
     name: "get_attachment",
@@ -49,16 +49,11 @@ This provides text-based analysis results. Use load_attachment if you need to di
 
     execute: async (input): Promise<AgentToolResult> => {
       try {
-        const attachment = await AttachmentRepository.findById(db, input.attachmentId)
+        const attachment = await attachmentService.getAccessible(input.attachmentId, {
+          workspaceId,
+          accessibleStreamIds,
+        })
         if (!attachment) {
-          return {
-            output: JSON.stringify({
-              error: "Attachment not found or you don't have access to it",
-              attachmentId: input.attachmentId,
-            }),
-          }
-        }
-        if (!attachment.streamId || !accessibleStreamIds.includes(attachment.streamId)) {
           return {
             output: JSON.stringify({
               error: "Attachment not found or you don't have access to it",

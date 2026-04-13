@@ -6,19 +6,41 @@
  * handlers.ts and routes.ts.
  */
 import { z } from "zod"
-import { STREAM_TYPES } from "@threa/types"
+import { STREAM_TYPES, MEMO_TYPES, KNOWLEDGE_TYPES, EXTRACTION_CONTENT_TYPES } from "@threa/types"
 
 const PUBLIC_SEARCH_MAX_LIMIT = 50
+const PUBLIC_ATTACHMENT_SEARCH_MAX_LIMIT = 50
+const PUBLIC_MEMO_SEARCH_MAX_LIMIT = 100
 
 export const publicSearchSchema = z.object({
   query: z.string().min(1, "query is required"),
   semantic: z.boolean().optional().default(false),
+  exact: z.boolean().optional().default(false),
   streams: z.array(z.string()).optional(),
   from: z.string().optional(),
   type: z.array(z.enum(STREAM_TYPES)).optional(),
   before: z.string().datetime().optional(),
   after: z.string().datetime().optional(),
   limit: z.coerce.number().int().min(1).max(PUBLIC_SEARCH_MAX_LIMIT).optional().default(20),
+})
+
+export const searchMemosSchema = z.object({
+  query: z.string().optional().default(""),
+  exact: z.boolean().optional(),
+  streams: z.array(z.string()).optional(),
+  memoType: z.array(z.enum(MEMO_TYPES)).optional(),
+  knowledgeType: z.array(z.enum(KNOWLEDGE_TYPES)).optional(),
+  tags: z.array(z.string()).optional(),
+  before: z.string().datetime().optional(),
+  after: z.string().datetime().optional(),
+  limit: z.coerce.number().int().min(1).max(PUBLIC_MEMO_SEARCH_MAX_LIMIT).optional().default(20),
+})
+
+export const searchAttachmentsSchema = z.object({
+  query: z.string().min(1, "query is required"),
+  streams: z.array(z.string()).optional(),
+  contentTypes: z.array(z.enum(EXTRACTION_CONTENT_TYPES)).optional(),
+  limit: z.coerce.number().int().min(1).max(PUBLIC_ATTACHMENT_SEARCH_MAX_LIMIT).optional().default(20),
 })
 
 export const listStreamsSchema = z.object({

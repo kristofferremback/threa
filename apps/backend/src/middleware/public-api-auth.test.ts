@@ -267,7 +267,7 @@ describe("requireApiKeyScope", () => {
     expect(error).toBeUndefined()
   })
 
-  test("should return 403 when scope is missing from user key", () => {
+  test("should return 404 when scope is missing from user key", () => {
     const middleware = requireApiKeyScope(API_KEY_SCOPES.MESSAGES_SEARCH)
     const req = createReq()
     req.userApiKey = {
@@ -285,10 +285,10 @@ describe("requireApiKeyScope", () => {
     middleware(req, {} as Response, next)
 
     expect(error).not.toBeNull()
-    expect(error.status).toBe(403)
+    expect(error.status).toBe(404)
   })
 
-  test("should return 403 when scope is missing from bot key", () => {
+  test("should return 404 when scope is missing from bot key", () => {
     const middleware = requireApiKeyScope(API_KEY_SCOPES.MESSAGES_WRITE)
     const req = createReq()
     req.botApiKey = {
@@ -306,7 +306,7 @@ describe("requireApiKeyScope", () => {
     middleware(req, {} as Response, next)
 
     expect(error).not.toBeNull()
-    expect(error.status).toBe(403)
+    expect(error.status).toBe(404)
   })
 
   test("should return 401 when no key context on request", () => {

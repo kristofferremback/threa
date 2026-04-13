@@ -420,7 +420,15 @@ export function registerRoutes(app: Express, deps: Dependencies) {
 
   // Public API v1 — API key auth (workspace-scoped or user-scoped)
   const publicAuth = createPublicApiAuthMiddleware({ userApiKeyService, botApiKeyService, pool })
-  const publicApi = createPublicApiHandlers({ searchService, botChannelService, streamService, eventService, pool })
+  const publicApi = createPublicApiHandlers({
+    searchService,
+    memoExplorerService,
+    attachmentService,
+    botChannelService,
+    streamService,
+    eventService,
+    pool,
+  })
   const publicMiddleware = [rateLimits.publicApiWorkspace, rateLimits.publicApiKey, publicAuth] as const
 
   app.post(
@@ -428,6 +436,36 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     ...publicMiddleware,
     requireApiKeyScope(API_KEY_SCOPES.MESSAGES_SEARCH),
     publicApi.searchMessages
+  )
+  app.post(
+    "/api/v1/workspaces/:workspaceId/memos/search",
+    ...publicMiddleware,
+    requireApiKeyScope(API_KEY_SCOPES.MEMOS_READ),
+    publicApi.searchMemos
+  )
+  app.get(
+    "/api/v1/workspaces/:workspaceId/memos/:memoId",
+    ...publicMiddleware,
+    requireApiKeyScope(API_KEY_SCOPES.MEMOS_READ),
+    publicApi.getMemo
+  )
+  app.post(
+    "/api/v1/workspaces/:workspaceId/attachments/search",
+    ...publicMiddleware,
+    requireApiKeyScope(API_KEY_SCOPES.ATTACHMENTS_READ),
+    publicApi.searchAttachments
+  )
+  app.get(
+    "/api/v1/workspaces/:workspaceId/attachments/:attachmentId",
+    ...publicMiddleware,
+    requireApiKeyScope(API_KEY_SCOPES.ATTACHMENTS_READ),
+    publicApi.getAttachment
+  )
+  app.get(
+    "/api/v1/workspaces/:workspaceId/attachments/:attachmentId/url",
+    ...publicMiddleware,
+    requireApiKeyScope(API_KEY_SCOPES.ATTACHMENTS_READ),
+    publicApi.getAttachmentDownloadUrl
   )
 
   // Streams

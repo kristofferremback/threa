@@ -4,6 +4,8 @@ export const API_KEY_SCOPES = {
   MESSAGES_READ: "messages:read",
   MESSAGES_WRITE: "messages:write",
   USERS_READ: "users:read",
+  MEMOS_READ: "memos:read",
+  ATTACHMENTS_READ: "attachments:read",
 } as const
 
 export type ApiKeyScope = (typeof API_KEY_SCOPES)[keyof typeof API_KEY_SCOPES]
@@ -46,6 +48,16 @@ export const API_KEY_PERMISSIONS: ApiKeyPermission[] = [
     slug: API_KEY_SCOPES.USERS_READ,
     name: "Read users",
     description: "Grants access to list and search workspace users.",
+  },
+  {
+    slug: API_KEY_SCOPES.MEMOS_READ,
+    name: "Read memos",
+    description: "Grants access to search preserved workspace memos and inspect their provenance.",
+  },
+  {
+    slug: API_KEY_SCOPES.ATTACHMENTS_READ,
+    name: "Read attachments",
+    description: "Grants access to search accessible attachments, inspect extracted content, and fetch download URLs.",
   },
 ]
 

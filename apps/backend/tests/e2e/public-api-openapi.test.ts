@@ -9,7 +9,9 @@
  * Run with: bun test --preload ./tests/setup.ts tests/e2e/public-api-openapi.test.ts
  */
 
-import { describe, test, expect, beforeAll } from "bun:test"
+import { afterAll, beforeAll, describe, expect, test } from "bun:test"
+import { Pool } from "pg"
+import { AttachmentSafetyStatuses, ExtractionContentTypes, KnowledgeTypes, MemoTypes } from "@threa/types"
 import { TestClient, loginAs, createWorkspace, createChannel, sendMessage } from "../client"
 import {
   PUBLIC_API_ROUTES,
@@ -18,10 +20,18 @@ import {
   searchResultSchema,
   memberSchema,
   userSchema,
+  memoSearchResultSchema,
+  memoDetailSchema,
+  attachmentSearchResultSchema,
+  attachmentDetailsSchema,
+  attachmentUrlSchema,
 } from "../../src/features/public-api/routes"
+import { AttachmentExtractionRepository, AttachmentRepository } from "../../src/features/attachments"
+import { MemoRepository } from "../../src/features/memos"
+import { attachmentId, extractionId, memoId } from "../../src/lib/id"
 import { readFileSync } from "fs"
 import { resolve } from "path"
-import { z } from "zod"
+import { createTestPool } from "../integration/setup"
 
 const testRunId = Math.random().toString(36).substring(7)
 const testEmail = (name: string) => `${name}-openapi-${testRunId}@test.com`
@@ -31,6 +41,8 @@ interface TestContext {
   channelId: string
   messageId: string
   userId: string
+  memoId: string
+  attachmentId: string
   allScopesKey: string
   readOnlyKey: string
 }
@@ -47,13 +59,48 @@ function apiRequest(method: string, path: string, apiKey: string, body?: unknown
   })
 }
 
-async function setupTestWorkspace(): Promise<TestContext> {
+async function setupTestWorkspace(pool: Pool): Promise<TestContext> {
   const client = new TestClient()
-  const user = await loginAs(client, testEmail("setup"), `OpenAPIUser ${testRunId}`)
+  await loginAs(client, testEmail("setup"), `OpenAPIUser ${testRunId}`)
   const workspace = await createWorkspace(client, `OpenAPI WS ${testRunId}`)
 
   const channel = await createChannel(client, workspace.id, `oa-chan-${testRunId}`, "public")
   const msg = await sendMessage(client, workspace.id, channel.id, `OpenAPI test message ${testRunId}`)
+
+  const insertedMemoId = memoId()
+  await MemoRepository.insert(pool, {
+    id: insertedMemoId,
+    workspaceId: workspace.id,
+    memoType: MemoTypes.MESSAGE,
+    sourceMessageId: msg.id,
+    title: `OpenAPI memo ${testRunId}`,
+    abstract: `OpenAPI memo abstract ${testRunId}`,
+    sourceMessageIds: [msg.id],
+    participantIds: [msg.authorId],
+    knowledgeType: KnowledgeTypes.DECISION,
+  })
+
+  const attachmentMessage = await sendMessage(client, workspace.id, channel.id, `OpenAPI attachment ${testRunId}`)
+  const attachment = attachmentId()
+  await AttachmentRepository.insert(pool, {
+    id: attachment,
+    workspaceId: workspace.id,
+    uploadedBy: attachmentMessage.authorId,
+    filename: `openapi-attachment-${testRunId}.bin`,
+    mimeType: "application/octet-stream",
+    sizeBytes: 64,
+    storagePath: `tests/openapi-attachment-${testRunId}.bin`,
+    safetyStatus: AttachmentSafetyStatuses.CLEAN,
+  })
+  await AttachmentRepository.attachToMessage(pool, [attachment], attachmentMessage.id, channel.id)
+  await AttachmentExtractionRepository.insert(pool, {
+    id: extractionId(),
+    attachmentId: attachment,
+    workspaceId: workspace.id,
+    contentType: ExtractionContentTypes.DOCUMENT,
+    summary: `OpenAPI attachment summary ${testRunId}`,
+    fullText: `OpenAPI attachment full text ${testRunId}`,
+  })
 
   const { data: bootstrapData } = await client.get<{
     data: { users: Array<{ id: string }> }
@@ -68,7 +115,15 @@ async function setupTestWorkspace(): Promise<TestContext> {
 
   const allKeyRes = await client.post(`/api/workspaces/${workspace.id}/bots/${botId}/keys`, {
     name: "all-scopes",
-    scopes: ["streams:read", "messages:read", "messages:write", "users:read", "messages:search"],
+    scopes: [
+      "streams:read",
+      "messages:read",
+      "messages:write",
+      "users:read",
+      "messages:search",
+      "memos:read",
+      "attachments:read",
+    ],
   })
   const allScopesKey = (allKeyRes.data as { value: string }).value
 
@@ -83,6 +138,8 @@ async function setupTestWorkspace(): Promise<TestContext> {
     channelId: channel.id,
     messageId: msg.id,
     userId: bootstrapData.data.users[0].id,
+    memoId: insertedMemoId,
+    attachmentId: attachment,
     allScopesKey,
     readOnlyKey,
   }
@@ -90,9 +147,15 @@ async function setupTestWorkspace(): Promise<TestContext> {
 
 describe("Public API — OpenAPI Spec Validation", () => {
   let ctx: TestContext
+  let pool: Pool
 
   beforeAll(async () => {
-    ctx = await setupTestWorkspace()
+    pool = createTestPool()
+    ctx = await setupTestWorkspace(pool)
+  })
+
+  afterAll(async () => {
+    await pool.end()
   })
 
   test("openapi.json file exists and is valid JSON", () => {
@@ -260,6 +323,74 @@ describe("Public API — OpenAPI Spec Validation", () => {
       }
     })
 
+    test("POST /memos/search returns data matching memoSearchResultSchema", async () => {
+      const res = await apiRequest("POST", `/api/v1/workspaces/${ctx.workspaceId}/memos/search`, ctx.allScopesKey, {
+        query: "OpenAPI memo abstract",
+      })
+      expect(res.status).toBe(200)
+
+      const body = await res.json()
+      expect(body.data).toBeArray()
+
+      for (const item of body.data) {
+        const parsed = memoSearchResultSchema.safeParse(item)
+        expect(parsed.success).toBe(true)
+      }
+    })
+
+    test("GET /memos/:memoId returns data matching memoDetailSchema", async () => {
+      const res = await apiRequest("GET", `/api/v1/workspaces/${ctx.workspaceId}/memos/${ctx.memoId}`, ctx.allScopesKey)
+      expect(res.status).toBe(200)
+
+      const body = await res.json()
+      const parsed = memoDetailSchema.safeParse(body.data)
+      expect(parsed.success).toBe(true)
+    })
+
+    test("POST /attachments/search returns data matching attachmentSearchResultSchema", async () => {
+      const res = await apiRequest(
+        "POST",
+        `/api/v1/workspaces/${ctx.workspaceId}/attachments/search`,
+        ctx.allScopesKey,
+        { query: "openapi-attachment" }
+      )
+      expect(res.status).toBe(200)
+
+      const body = await res.json()
+      expect(body.data).toBeArray()
+
+      for (const item of body.data) {
+        const parsed = attachmentSearchResultSchema.safeParse(item)
+        expect(parsed.success).toBe(true)
+      }
+    })
+
+    test("GET /attachments/:attachmentId returns data matching attachmentDetailsSchema", async () => {
+      const res = await apiRequest(
+        "GET",
+        `/api/v1/workspaces/${ctx.workspaceId}/attachments/${ctx.attachmentId}`,
+        ctx.allScopesKey
+      )
+      expect(res.status).toBe(200)
+
+      const body = await res.json()
+      const parsed = attachmentDetailsSchema.safeParse(body.data)
+      expect(parsed.success).toBe(true)
+    })
+
+    test("GET /attachments/:attachmentId/url returns data matching attachmentUrlSchema", async () => {
+      const res = await apiRequest(
+        "GET",
+        `/api/v1/workspaces/${ctx.workspaceId}/attachments/${ctx.attachmentId}/url`,
+        ctx.allScopesKey
+      )
+      expect(res.status).toBe(200)
+
+      const body = await res.json()
+      const parsed = attachmentUrlSchema.safeParse(body.data)
+      expect(parsed.success).toBe(true)
+    })
+
     test("GET /users returns data matching userSchema", async () => {
       const res = await apiRequest("GET", `/api/v1/workspaces/${ctx.workspaceId}/users`, ctx.allScopesKey)
       expect(res.status).toBe(200)
@@ -281,14 +412,14 @@ describe("Public API — OpenAPI Spec Validation", () => {
       expect(res.status).toBe(401)
     })
 
-    test("403 for insufficient scope", async () => {
+    test("404 for insufficient scope", async () => {
       const res = await apiRequest(
         "POST",
         `/api/v1/workspaces/${ctx.workspaceId}/streams/${ctx.channelId}/messages`,
         ctx.readOnlyKey,
         { content: "should fail" }
       )
-      expect(res.status).toBe(403)
+      expect(res.status).toBe(404)
     })
 
     test("400 for invalid request body", async () => {

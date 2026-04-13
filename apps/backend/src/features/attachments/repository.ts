@@ -341,14 +341,16 @@ export const AttachmentRepository = {
       streamIds: string[]
       query: string
       contentTypes?: ExtractionContentType[]
+      safetyStatuses?: AttachmentSafetyStatus[]
       limit?: number
     }
   ): Promise<AttachmentWithExtraction[]> {
-    const { workspaceId, streamIds, query, contentTypes, limit = 20 } = opts
+    const { workspaceId, streamIds, query, contentTypes, safetyStatuses, limit = 20 } = opts
 
     if (streamIds.length === 0) return []
 
     const searchPattern = `%${query}%`
+    const hasSafetyStatusFilter = Boolean(safetyStatuses?.length)
 
     // Use separate queries to avoid nested sql template issues
     if (contentTypes?.length) {
@@ -365,6 +367,7 @@ export const AttachmentRepository = {
         LEFT JOIN attachment_extractions e ON e.attachment_id = a.id
         WHERE a.workspace_id = ${workspaceId}
           AND a.stream_id = ANY(${streamIds})
+          AND (${!hasSafetyStatusFilter} OR a.safety_status = ANY(${safetyStatuses ?? []}))
           AND (
             a.filename ILIKE ${searchPattern}
             OR e.summary ILIKE ${searchPattern}
@@ -390,6 +393,7 @@ export const AttachmentRepository = {
       LEFT JOIN attachment_extractions e ON e.attachment_id = a.id
       WHERE a.workspace_id = ${workspaceId}
         AND a.stream_id = ANY(${streamIds})
+        AND (${!hasSafetyStatusFilter} OR a.safety_status = ANY(${safetyStatuses ?? []}))
         AND (
           a.filename ILIKE ${searchPattern}
           OR e.summary ILIKE ${searchPattern}

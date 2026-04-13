@@ -158,6 +158,28 @@ export class AttachmentService {
     return AttachmentRepository.findById(this.pool, id)
   }
 
+  /**
+   * Fetch an attachment and enforce workspace, stream-access, and sharing-safety
+   * boundaries in one call. Returns null when any check fails so callers never
+   * need to replicate the access-control logic inline.
+   */
+  async getAccessible(
+    id: string,
+    { workspaceId, accessibleStreamIds }: { workspaceId: string; accessibleStreamIds: string[] }
+  ): Promise<Attachment | null> {
+    const attachment = await AttachmentRepository.findById(this.pool, id)
+    if (!attachment || attachment.workspaceId !== workspaceId || !attachment.streamId) {
+      return null
+    }
+    if (!accessibleStreamIds.includes(attachment.streamId)) {
+      return null
+    }
+    if (this.getSharingBlockReason(attachment)) {
+      return null
+    }
+    return attachment
+  }
+
   async getByIds(ids: string[]): Promise<Attachment[]> {
     return AttachmentRepository.findByIds(this.pool, ids)
   }
