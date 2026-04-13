@@ -145,16 +145,18 @@ function serializeUser(user: {
 
 function normalizeMemoSearchMode(query: string, exact?: boolean): { query: string; exact: boolean } {
   const trimmed = query.trim()
-  if (exact) {
-    return { query: trimmed, exact: trimmed.length > 0 }
-  }
 
   const isQuoted = trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')
+  const unquoted = isQuoted ? trimmed.slice(1, -1).trim() : trimmed
+
+  if (exact) {
+    return { query: unquoted, exact: unquoted.length > 0 }
+  }
+
   if (!isQuoted) {
     return { query: trimmed, exact: false }
   }
 
-  const unquoted = trimmed.slice(1, -1).trim()
   return { query: unquoted, exact: unquoted.length > 0 }
 }
 
