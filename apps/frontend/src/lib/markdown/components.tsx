@@ -192,7 +192,7 @@ function MarkdownLink({ href, children }: { href?: string; children: ReactNode }
       onTouchEnd={stopTouchPropagation}
       onTouchMove={stopTouchPropagation}
       onContextMenu={stopContextMenuPropagation}
-      className="text-primary underline underline-offset-4 hover:text-primary/80 [&_span]:[text-decoration:inherit]"
+      className="text-primary underline underline-offset-4 hover:text-primary/80 [&_span]:[text-decoration:inherit] select-text [-webkit-touch-callout:default]"
     >
       <ProcessedChildren>{children}</ProcessedChildren>
     </a>
