@@ -206,7 +206,11 @@ export async function waitForRealThreadPanel(page: Page): Promise<void> {
       .getByText(/Start a new thread/)
       .isVisible()
       .catch(() => false)
-    const isDraftPanel = /panel=draft:/.test(page.url())
+    // URLSearchParams.toString() encodes the `:` in "draft:streamId:msgId" as
+    // %3A, so read the decoded value via searchParams rather than matching the
+    // raw URL with a regex.
+    const panelId = new URL(page.url()).searchParams.get("panel")
+    const isDraftPanel = panelId?.startsWith("draft:") ?? false
     const hasSendButton = await sendButton.isVisible().catch(() => false)
 
     if (!hasDraftIntro && !isDraftPanel && hasSendButton) {
@@ -217,7 +221,9 @@ export async function waitForRealThreadPanel(page: Page): Promise<void> {
   }
 
   await expect(page.getByText(/Start a new thread/)).not.toBeVisible({ timeout: 5000 })
-  await expect(page).not.toHaveURL(/panel=draft:/, { timeout: 5000 })
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("panel")?.startsWith("draft:") ?? false, { timeout: 5000 })
+    .toBe(false)
   await expect(sendButton).toBeVisible({ timeout: 5000 })
 }
 
