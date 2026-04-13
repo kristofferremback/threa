@@ -6,6 +6,9 @@ const KEYBOARD_THRESHOLD = 100
 /** How long to poll visualViewport after focus changes to catch keyboard animation (ms) */
 const POLL_DURATION = 600
 
+/** CSS custom property AppShell reads to size the app to the visible viewport */
+const VIEWPORT_HEIGHT_VAR = "--viewport-height"
+
 /**
  * Tracks the on-screen keyboard state on mobile devices and pins
  * `--viewport-height` to the actual visible viewport height.
@@ -46,6 +49,10 @@ export function useVisualViewport(enabled: boolean): boolean {
 
     // Reset baseline on mount
     baseHeight.current = window.innerHeight
+    // Last value written to --viewport-height so we can skip redundant style
+    // writes during the rAF poll loop and avoid invalidating every consumer
+    // of the custom property on frames where nothing actually changed.
+    let lastWrittenHeight = Number.NaN
 
     const update = () => {
       const vvHeight = vv ? vv.height : window.innerHeight
@@ -69,7 +76,10 @@ export function useVisualViewport(enabled: boolean): boolean {
       // restores and leaves the app taller than the visible viewport until
       // something (keyboard, URL bar animation, orientation change) forces a
       // re-layout.
-      docEl.style.setProperty("--viewport-height", `${vvHeight}px`)
+      if (vvHeight !== lastWrittenHeight) {
+        docEl.style.setProperty(VIEWPORT_HEIGHT_VAR, `${vvHeight}px`)
+        lastWrittenHeight = vvHeight
+      }
 
       // Only update React state when the boolean actually changes
       setIsKeyboardOpen((prev) => (prev !== keyboardOpen ? keyboardOpen : prev))
@@ -99,15 +109,10 @@ export function useVisualViewport(enabled: boolean): boolean {
       rafId.current = requestAnimationFrame(update)
     }
 
-    // Start polling when an editable element receives focus (keyboard about to open)
-    const onFocusIn = (e: FocusEvent) => {
-      if (e.target instanceof HTMLElement && isEditable(e.target)) {
-        pollForDuration(POLL_DURATION)
-      }
-    }
-
-    // Poll when focus leaves an editable element (keyboard about to close)
-    const onFocusOut = (e: FocusEvent) => {
+    // Poll across focus transitions on editable elements — covers both keyboard
+    // opening (focusin) and closing (focusout), which can each animate for
+    // several frames without emitting discrete resize events.
+    const onEditableFocusChange = (e: FocusEvent) => {
       if (e.target instanceof HTMLElement && isEditable(e.target)) {
         pollForDuration(POLL_DURATION)
       }
@@ -131,8 +136,8 @@ export function useVisualViewport(enabled: boolean): boolean {
     }
     // Also listen to window resize (Firefox fires this when keyboard changes innerHeight)
     window.addEventListener("resize", update)
-    document.addEventListener("focusin", onFocusIn)
-    document.addEventListener("focusout", onFocusOut)
+    document.addEventListener("focusin", onEditableFocusChange)
+    document.addEventListener("focusout", onEditableFocusChange)
     window.addEventListener("pageshow", onPageShow)
 
     return () => {
@@ -142,10 +147,10 @@ export function useVisualViewport(enabled: boolean): boolean {
         vv.removeEventListener("scroll", onScroll)
       }
       window.removeEventListener("resize", update)
-      document.removeEventListener("focusin", onFocusIn)
-      document.removeEventListener("focusout", onFocusOut)
+      document.removeEventListener("focusin", onEditableFocusChange)
+      document.removeEventListener("focusout", onEditableFocusChange)
       window.removeEventListener("pageshow", onPageShow)
-      docEl.style.removeProperty("--viewport-height")
+      docEl.style.removeProperty(VIEWPORT_HEIGHT_VAR)
     }
   }, [enabled])
 
