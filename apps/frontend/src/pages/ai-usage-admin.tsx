@@ -39,15 +39,27 @@ export function AIUsageAdminPage() {
 
   const handleBudgetCommit = useCallback(() => {
     const value = parseFloat(localBudget)
-    if (!isNaN(value) && value >= 0 && value !== budget?.budget?.monthlyBudgetUsd) {
-      updateBudget.mutate({ monthlyBudgetUsd: value })
+    const serverValue = budget?.budget?.monthlyBudgetUsd
+    if (!isNaN(value) && value >= 0) {
+      if (value !== serverValue) {
+        updateBudget.mutate({ monthlyBudgetUsd: value })
+      }
+    } else if (serverValue !== undefined) {
+      // Invalid entry — revert the input so the display matches the server.
+      setLocalBudget(serverValue.toString())
     }
   }, [localBudget, budget?.budget?.monthlyBudgetUsd, updateBudget])
 
   const handleHardLimitCommit = useCallback(() => {
     const value = parseInt(localHardLimit, 10)
-    if (!isNaN(value) && value >= 100 && value <= 500 && value !== budget?.budget?.hardLimitPercent) {
-      updateBudget.mutate({ hardLimitPercent: value })
+    const serverValue = budget?.budget?.hardLimitPercent
+    if (!isNaN(value) && value >= 100 && value <= 500) {
+      if (value !== serverValue) {
+        updateBudget.mutate({ hardLimitPercent: value })
+      }
+    } else if (serverValue !== undefined) {
+      // Invalid entry — revert the input so the display matches the server.
+      setLocalHardLimit(serverValue.toString())
     }
   }, [localHardLimit, budget?.budget?.hardLimitPercent, updateBudget])
 
@@ -70,13 +82,19 @@ export function AIUsageAdminPage() {
     return usage.byUser.filter((u) => u.userId !== null).reduce((sum, u) => sum + u.totalCostUsd, 0)
   }, [usage?.byUser])
 
-  // Reflect the optimistic local budget in metrics so the hero chart responds
-  // immediately when the user edits the amount in-place.
+  // Reflect in-flight input values in metrics so the chart (budget line,
+  // hard-limit line, zone tints) responds immediately as the user edits.
   const optimisticBudget = useMemo(() => {
     const parsed = parseFloat(localBudget)
     if (!isNaN(parsed) && parsed >= 0) return parsed
     return budget?.budget?.monthlyBudgetUsd ?? 50
   }, [localBudget, budget?.budget?.monthlyBudgetUsd])
+
+  const optimisticHardLimitPercent = useMemo(() => {
+    const parsed = parseInt(localHardLimit, 10)
+    if (!isNaN(parsed) && parsed >= 100 && parsed <= 500) return parsed
+    return budget?.budget?.hardLimitPercent ?? 100
+  }, [localHardLimit, budget?.budget?.hardLimitPercent])
 
   const metrics = useMemo<BudgetMetrics>(
     () =>
@@ -87,7 +105,7 @@ export function AIUsageAdminPage() {
         periodStart: usage?.period.start ?? new Date().toISOString(),
         periodEnd: usage?.period.end ?? new Date().toISOString(),
         hardLimitEnabled: budget?.budget?.hardLimitEnabled ?? false,
-        hardLimitPercent: budget?.budget?.hardLimitPercent ?? 100,
+        hardLimitPercent: optimisticHardLimitPercent,
       }),
     [
       usage?.total.totalCostUsd,
@@ -95,7 +113,7 @@ export function AIUsageAdminPage() {
       usage?.period.end,
       optimisticBudget,
       budget?.budget?.hardLimitEnabled,
-      budget?.budget?.hardLimitPercent,
+      optimisticHardLimitPercent,
     ]
   )
 
