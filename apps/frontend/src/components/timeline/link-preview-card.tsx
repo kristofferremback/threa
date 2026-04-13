@@ -142,9 +142,13 @@ export function LinkPreviewCard({
 
   const headerLabel = githubPreview ? githubPreview.repository.fullName : (preview.siteName ?? domain)
 
-  // Website, PDF, and GitHub previews render as a card
+  // Website, PDF, and GitHub previews render as a card.
+  // data-native-context tells the message-level long-press hook to skip
+  // its timer so long-pressing anywhere on the card gets the browser's
+  // native link menu (via the inner <a>) instead of the message drawer.
   return (
     <div
+      data-native-context="true"
       className={cn(
         "group/preview relative overflow-hidden rounded-lg border bg-card transition-all max-w-md",
         "hover:border-primary/50 hover:shadow-sm",

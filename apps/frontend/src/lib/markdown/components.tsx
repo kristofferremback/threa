@@ -161,6 +161,10 @@ function MarkdownLink({ href, children }: { href?: string; children: ReactNode }
     linkPreviewContext?.setHoveredLinkUrl(null)
   }
 
+  // The message-level long-press hook skips its timer when the touch starts
+  // inside an <a href> (via deferToNativeLinks: true), so long-press here gets
+  // the native browser menu (e.g. "Open in Firefox", "Copy link") instead of
+  // the message drawer.
   return (
     <a
       href={href}

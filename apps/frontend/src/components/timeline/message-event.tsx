@@ -351,6 +351,7 @@ function SentMessageEvent({
   const longPress = useLongPress({
     onLongPress: openDrawer,
     enabled: isMobile && !isEditing,
+    deferToNativeLinks: true,
   })
 
   // Mobile: swipe left to quote reply
@@ -753,7 +754,7 @@ function PendingMessageEvent({
   const isMobile = useIsMobile()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const openDrawer = useCallback(() => setDrawerOpen(true), [])
-  const longPress = useLongPress({ onLongPress: openDrawer, enabled: isMobile })
+  const longPress = useLongPress({ onLongPress: openDrawer, enabled: isMobile, deferToNativeLinks: true })
 
   return (
     <>
@@ -829,7 +830,7 @@ function FailedMessageEvent({
   const isMobile = useIsMobile()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const openDrawer = useCallback(() => setDrawerOpen(true), [])
-  const longPress = useLongPress({ onLongPress: openDrawer, enabled: isMobile })
+  const longPress = useLongPress({ onLongPress: openDrawer, enabled: isMobile, deferToNativeLinks: true })
 
   return (
     <>
