@@ -373,6 +373,9 @@ export const SearchRepository = {
         m.content_markdown,
         m.author_id,
         m.author_type,
+        m.sequence,
+        m.reply_count,
+        m.edited_at,
         m.created_at,
         0 as rank
       FROM messages m
