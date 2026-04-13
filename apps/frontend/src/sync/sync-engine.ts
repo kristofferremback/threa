@@ -151,7 +151,7 @@ export class SyncEngine {
     // don't layer another probe on top of it.
     if (!this.socket.connected) return
 
-    const healthy = await pingSocket(this.socket, 3000)
+    const healthy = await pingSocket(this.socket)
     if (this.isDestroyed) return
 
     if (!healthy) {
