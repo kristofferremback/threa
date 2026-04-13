@@ -12,6 +12,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
 import { Area, AreaChart, CartesianGrid, ReferenceArea, ReferenceDot, ReferenceLine, XAxis, YAxis } from "recharts"
 import { useAIUsage, useAIBudget, useUpdateAIBudget } from "@/hooks"
+import { usePreferences } from "@/contexts"
 import { useWorkspaceUsers } from "@/stores/workspace-store"
 import type { UpdateAIBudgetInput, AIUsageByUser } from "@threa/types"
 import { cn } from "@/lib/utils"
@@ -25,8 +26,14 @@ function formatCurrency(value: number, maxFractionDigits = 2) {
   }).format(value)
 }
 
-function formatShortDate(d: Date) {
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" })
+const MS_PER_DAY = 86_400_000
+
+function formatShortDate(d: Date, timezone?: string) {
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: timezone,
+  })
 }
 
 type Status = "on_track" | "at_risk" | "over"
@@ -62,9 +69,8 @@ function computeMetrics(opts: {
   const periodEnd = new Date(opts.periodEnd)
   const now = new Date()
 
-  const msPerDay = 86400000
-  const daysTotal = Math.max(1, Math.round((periodEnd.getTime() - periodStart.getTime()) / msPerDay))
-  const daysElapsedRaw = (now.getTime() - periodStart.getTime()) / msPerDay
+  const daysTotal = Math.max(1, Math.round((periodEnd.getTime() - periodStart.getTime()) / MS_PER_DAY))
+  const daysElapsedRaw = (now.getTime() - periodStart.getTime()) / MS_PER_DAY
   const daysElapsed = Math.max(0.5, Math.min(daysTotal, daysElapsedRaw))
   const daysRemaining = Math.max(0, daysTotal - Math.floor(daysElapsed))
 
@@ -81,7 +87,7 @@ function computeMetrics(opts: {
   if (dailyAvg > 0 && projectedTotal > opts.budgetAmount && opts.totalCost < opts.budgetAmount) {
     const daysUntilBust = opts.budgetAmount / dailyAvg
     if (daysUntilBust > daysElapsed && daysUntilBust <= daysTotal) {
-      budgetBustDate = new Date(periodStart.getTime() + daysUntilBust * msPerDay)
+      budgetBustDate = new Date(periodStart.getTime() + daysUntilBust * MS_PER_DAY)
     }
   }
 
@@ -176,8 +182,6 @@ function Stat({
   )
 }
 
-const MS_PER_DAY = 86400000
-
 function ChartLegendItem({
   id,
   label,
@@ -225,6 +229,8 @@ function ChartLegendItem({
 function TrajectoryChart({ metrics }: { metrics: BudgetMetrics }) {
   const styles = statusStyles[metrics.status]
   const [focused, setFocused] = useState<string | null>(null)
+  const { preferences } = usePreferences()
+  const timezone = preferences?.timezone
 
   // Build the data series. Actual line runs [0, daysElapsed]; projected runs
   // [daysElapsed, daysTotal]. They share a transition point at today so the
@@ -335,7 +341,7 @@ function TrajectoryChart({ metrics }: { metrics: BudgetMetrics }) {
             ticks={xTicks}
             tickFormatter={(day: number) => {
               if (Math.abs(day - metrics.daysElapsed) < 0.01) return "Today"
-              return formatShortDate(dayToDate(day))
+              return formatShortDate(dayToDate(day), timezone)
             }}
             tickLine={false}
             axisLine={false}
@@ -451,7 +457,7 @@ function TrajectoryChart({ metrics }: { metrics: BudgetMetrics }) {
                   const dayNum = Math.max(1, Math.ceil(day))
                   return (
                     <span className="flex items-baseline gap-2">
-                      <span>{formatShortDate(date)}</span>
+                      <span>{formatShortDate(date, timezone)}</span>
                       <span className="text-[10px] text-muted-foreground">
                         day {dayNum} of {metrics.daysTotal}
                       </span>
@@ -483,6 +489,8 @@ function TrajectoryChart({ metrics }: { metrics: BudgetMetrics }) {
 
 function BudgetHealthHero({ metrics, isLoading }: { metrics: BudgetMetrics; isLoading: boolean }) {
   const styles = statusStyles[metrics.status]
+  const { preferences } = usePreferences()
+  const timezone = preferences?.timezone
 
   if (isLoading) {
     return (
@@ -510,7 +518,7 @@ function BudgetHealthHero({ metrics, isLoading }: { metrics: BudgetMetrics; isLo
             <p className="text-lg leading-snug sm:text-xl">{metrics.statusCopy}</p>
           </div>
           <p className="text-sm text-muted-foreground">
-            Cycle {formatShortDate(metrics.periodStart)} – {formatShortDate(metrics.periodEnd)} ·{" "}
+            Cycle {formatShortDate(metrics.periodStart, timezone)} – {formatShortDate(metrics.periodEnd, timezone)} ·{" "}
             {metrics.daysRemaining} days remaining
           </p>
         </div>
@@ -552,7 +560,7 @@ function BudgetHealthHero({ metrics, isLoading }: { metrics: BudgetMetrics; isLo
             value={<span className="tabular-nums">{metrics.daysRemaining}</span>}
             hint={
               metrics.budgetBustDate
-                ? `Budget exhausts ≈ ${formatShortDate(metrics.budgetBustDate)}`
+                ? `Budget exhausts ≈ ${formatShortDate(metrics.budgetBustDate, timezone)}`
                 : `of ${metrics.daysTotal} day cycle`
             }
           />
@@ -766,6 +774,8 @@ function BudgetControlsPanel({
   isLoading: boolean
 }) {
   const updateBudget = useUpdateAIBudget(workspaceId)
+  const { preferences } = usePreferences()
+  const timezone = preferences?.timezone
 
   const handleUpdate = useCallback(
     (updates: UpdateAIBudgetInput) => {
@@ -791,6 +801,7 @@ function BudgetControlsPanel({
   const resetDateStr = resetDate.toLocaleDateString("en-US", {
     month: "long",
     day: "numeric",
+    timeZone: timezone,
   })
 
   // Compute threshold states to annotate switches with current progress
