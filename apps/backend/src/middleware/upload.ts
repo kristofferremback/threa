@@ -5,7 +5,7 @@ import type { Request, RequestHandler } from "express"
 import type { S3Config } from "../lib/env"
 import { attachmentId } from "../lib/id"
 
-const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB
+const MAX_FILE_SIZE = 100 * 1024 * 1024 // 100MB
 
 // Extend Express.Multer.File to include multer-s3 properties
 declare global {
@@ -32,6 +32,8 @@ export interface UploadMiddlewareConfig {
   s3Config: S3Config
 }
 
+type MulterS3Client = NonNullable<Parameters<typeof multerS3>[0]>["s3"]
+
 /**
  * Creates an upload middleware that streams files directly to S3.
  * No temp files are written to disk - prevents DoS via disk exhaustion.
@@ -50,7 +52,9 @@ export function createUploadMiddleware({ s3Config }: UploadMiddlewareConfig): Re
   })
 
   const storage = multerS3({
-    s3: s3Client,
+    // Bun currently installs two compatible @aws-sdk/client-s3 versions through multer-s3 typings.
+    // Runtime behavior is correct; this narrows the mismatch to the integration boundary.
+    s3: s3Client as unknown as MulterS3Client,
     bucket: s3Config.bucket,
     contentType: multerS3.AUTO_CONTENT_TYPE,
     key: (req: Request, file: Express.Multer.File, cb) => {

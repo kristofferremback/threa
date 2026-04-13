@@ -42,4 +42,5 @@ export {
   userApiKeyId,
   botApiKeyId,
   botChannelAccessId,
+  videoTranscodeJobId,
 } from "@threa/backend-common"

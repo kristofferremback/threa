@@ -1177,6 +1177,62 @@ export function registerWorkspaceSocketHandlers(
     queryClient.invalidateQueries({ queryKey: ["activity", workspaceId] })
   }
 
+  // Handle attachment transcoded (video processing completed or failed)
+  const handleAttachmentTranscoded = async (payload: {
+    workspaceId: string
+    attachmentId: string
+    processingStatus: string
+    streamId?: string
+    messageId?: string
+  }) => {
+    if (payload.workspaceId !== workspaceId) return
+
+    // Update the message event in IDB if we have stream + message context
+    if (payload.streamId && payload.messageId) {
+      const updatePayload = (p: Record<string, unknown>) => {
+        if (!Array.isArray(p.attachments)) return p
+        const attachments = p.attachments as Array<Record<string, unknown>>
+        const updatedAttachments = attachments.map((a) =>
+          a.id === payload.attachmentId ? { ...a, processingStatus: payload.processingStatus } : a
+        )
+        return { ...p, attachments: updatedAttachments }
+      }
+
+      const events = await db.events
+        .where("[streamId+eventType]")
+        .equals([payload.streamId, "message_created"])
+        .filter((e) => (e.payload as { messageId?: string })?.messageId === payload.messageId)
+        .toArray()
+
+      if (events.length > 0) {
+        const event = events[0]
+        await db.events.update(event.id, {
+          payload: updatePayload(event.payload as Record<string, unknown>),
+          _cachedAt: Date.now(),
+        })
+      } else {
+        queryClient.invalidateQueries({
+          queryKey: streamKeys.bootstrap(workspaceId, payload.streamId),
+          type: "active",
+        })
+      }
+
+      queryClient.setQueryData<StreamBootstrap>(streamKeys.bootstrap(workspaceId, payload.streamId), (old) => {
+        if (!old) return old
+        return {
+          ...old,
+          events: old.events.map((event) => {
+            const eventPayload = event.payload as { messageId?: string } & Record<string, unknown>
+            if (event.eventType !== "message_created" || eventPayload.messageId !== payload.messageId) {
+              return event
+            }
+            return { ...event, payload: updatePayload(eventPayload) }
+          }),
+        }
+      })
+    }
+  }
+
   // Register all handlers
   socket.on("stream:created", handleStreamCreated)
   socket.on("stream:updated", handleStreamUpdated)
@@ -1195,6 +1251,7 @@ export function registerWorkspaceSocketHandlers(
   socket.on("bot:created", handleBotCreated)
   socket.on("bot:updated", handleBotUpdated)
   socket.on("activity:created", handleActivityCreated)
+  socket.on("attachment:transcoded", handleAttachmentTranscoded)
 
   return () => {
     abortController.abort()
@@ -1217,6 +1274,7 @@ export function registerWorkspaceSocketHandlers(
     socket.off("bot:created", handleBotCreated)
     socket.off("bot:updated", handleBotUpdated)
     socket.off("activity:created", handleActivityCreated)
+    socket.off("attachment:transcoded", handleAttachmentTranscoded)
   }
 }
 

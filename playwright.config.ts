@@ -66,6 +66,8 @@ const routerPort = getOrAllocatePort("PLAYWRIGHT_ROUTER_PORT")
 const frontendPort = getOrAllocatePort("PLAYWRIGHT_FRONTEND_PORT")
 const dbName = deriveTestDatabaseName()
 const cpDbName = `${dbName}_cp`
+const setupBrowserInfraCommand = "bun tests/browser/setup-infra.ts"
+const webServerTimeout = 60000
 
 // Only log once (when ports are first allocated)
 if (!process.env.PLAYWRIGHT_PORTS_LOGGED) {
@@ -110,10 +112,10 @@ export default defineConfig({
   // Ports are dynamically allocated to avoid conflicts with other worktrees
   webServer: [
     {
-      command: "bun run test:browser:backend",
+      command: `${setupBrowserInfraCommand} && bun run test:browser:backend`,
       url: `http://localhost:${backendPort}/readyz`,
       reuseExistingServer: !process.env.CI,
-      timeout: 30000,
+      timeout: webServerTimeout,
       env: {
         PORT: String(backendPort),
         DATABASE_URL: `postgresql://threa:threa@localhost:${DB_PORT}/${dbName}`,
@@ -142,10 +144,10 @@ export default defineConfig({
       },
     },
     {
-      command: "bun run test:browser:control-plane",
+      command: `${setupBrowserInfraCommand} && bun run test:browser:control-plane`,
       url: `http://localhost:${controlPlanePort}/readyz`,
       reuseExistingServer: !process.env.CI,
-      timeout: 30000,
+      timeout: webServerTimeout,
       env: {
         PORT: String(controlPlanePort),
         DATABASE_URL: `postgresql://threa:threa@localhost:${DB_PORT}/${cpDbName}`,
@@ -162,13 +164,13 @@ export default defineConfig({
       cwd: "./apps/workspace-router",
       url: `http://localhost:${routerPort}/readyz`,
       reuseExistingServer: !process.env.CI,
-      timeout: 30000,
+      timeout: webServerTimeout,
     },
     {
       command: "bun run test:browser:frontend",
       url: `http://localhost:${frontendPort}`,
       reuseExistingServer: !process.env.CI,
-      timeout: 30000,
+      timeout: webServerTimeout,
       env: {
         VITE_BACKEND_PORT: String(routerPort),
         VITE_PORT: String(frontendPort),

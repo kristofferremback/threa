@@ -58,7 +58,13 @@ import {
 } from "./features/conversations"
 import { UserPreferencesService } from "./features/user-preferences"
 import { createS3Storage } from "./lib/storage/s3-client"
-import { OutboxDispatcher, BroadcastHandler, OutboxRetentionWorker, type OutboxHandler } from "./lib/outbox"
+import {
+  OutboxDispatcher,
+  BroadcastHandler,
+  OutboxRetentionWorker,
+  OutboxRepository,
+  type OutboxHandler,
+} from "./lib/outbox"
 import {
   CompanionHandler,
   MentionInvokeHandler,
@@ -89,6 +95,8 @@ import {
   createTextProcessingWorker,
   createWordProcessingWorker,
   createExcelProcessingWorker,
+  createVideoTranscodeSubmitWorker,
+  createVideoTranscodeCheckWorker,
   ImageCaptionService,
   StubImageCaptionService,
   PdfProcessingService,
@@ -99,6 +107,10 @@ import {
   StubWordProcessingService,
   ExcelProcessingService,
   StubExcelProcessingService,
+  VideoTranscodingService,
+  StubVideoTranscodingService,
+  ThreaMediaConvertClient,
+  VideoTranscodeJobRepository,
   createMalwareScanner,
 } from "./features/attachments"
 import {
@@ -111,6 +123,8 @@ import {
   type TextProcessJobData,
   type WordProcessJobData,
   type ExcelProcessJobData,
+  type VideoTranscodeSubmitJobData,
+  type VideoTranscodeCheckJobData,
 } from "./lib/queue"
 import { ProcessingStatuses } from "@threa/types"
 import { AttachmentRepository } from "./features/attachments"
@@ -410,6 +424,7 @@ export async function startServer(): Promise<ServerInstance> {
     workosOrgService,
     userApiKeyService,
     botApiKeyService,
+    storage,
   })
 
   app.use(errorHandler)
@@ -616,6 +631,64 @@ export async function startServer(): Promise<ServerInstance> {
   }
   jobQueue.registerHandler(JobQueues.EXCEL_PROCESS, excelProcessingWorker, {
     hooks: { onDLQ: excelOnDLQ },
+    tier: QueueTiers.HEAVY,
+    fairness: QueueFairness.NONE,
+  })
+
+  // Video transcoding workers
+  const videoTranscodingService = config.mediaConvert.enabled
+    ? new VideoTranscodingService({
+        pool,
+        mediaConvertClient: new ThreaMediaConvertClient({
+          s3Config: config.s3,
+          mediaConvertConfig: config.mediaConvert,
+        }),
+        s3Config: config.s3,
+      })
+    : new StubVideoTranscodingService(pool)
+  const videoSubmitWorker = createVideoTranscodeSubmitWorker({ videoTranscodingService, jobQueue })
+  const videoCheckWorker = createVideoTranscodeCheckWorker({ videoTranscodingService, jobQueue })
+  const videoOnDLQ: OnDLQHook<VideoTranscodeSubmitJobData> = async (querier, job) => {
+    await AttachmentRepository.updateProcessingStatus(querier, job.data.attachmentId, ProcessingStatuses.FAILED)
+    const videoJob = await VideoTranscodeJobRepository.findByAttachmentId(querier, job.data.attachmentId)
+    if (videoJob) {
+      await VideoTranscodeJobRepository.updateFailed(querier, videoJob.id, "Moved to DLQ after exhausting retries")
+    }
+    const att = await AttachmentRepository.findById(querier, job.data.attachmentId)
+    await OutboxRepository.insert(querier, "attachment:transcoded", {
+      workspaceId: job.data.workspaceId,
+      ...(att?.streamId && { streamId: att.streamId }),
+      ...(att?.messageId && { messageId: att.messageId }),
+      attachmentId: job.data.attachmentId,
+      processingStatus: ProcessingStatuses.FAILED,
+    })
+  }
+  const videoCheckOnDLQ: OnDLQHook<VideoTranscodeCheckJobData> = async (querier, job) => {
+    await AttachmentRepository.updateProcessingStatus(querier, job.data.attachmentId, ProcessingStatuses.FAILED)
+    const videoJob = await VideoTranscodeJobRepository.findByAttachmentId(querier, job.data.attachmentId)
+    if (videoJob) {
+      await VideoTranscodeJobRepository.updateFailed(
+        querier,
+        videoJob.id,
+        "Check job moved to DLQ after exhausting retries"
+      )
+    }
+    const att = await AttachmentRepository.findById(querier, job.data.attachmentId)
+    await OutboxRepository.insert(querier, "attachment:transcoded", {
+      workspaceId: job.data.workspaceId,
+      ...(att?.streamId && { streamId: att.streamId }),
+      ...(att?.messageId && { messageId: att.messageId }),
+      attachmentId: job.data.attachmentId,
+      processingStatus: ProcessingStatuses.FAILED,
+    })
+  }
+  jobQueue.registerHandler(JobQueues.VIDEO_TRANSCODE_SUBMIT, videoSubmitWorker, {
+    hooks: { onDLQ: videoOnDLQ },
+    tier: QueueTiers.HEAVY,
+    fairness: QueueFairness.NONE,
+  })
+  jobQueue.registerHandler(JobQueues.VIDEO_TRANSCODE_CHECK, videoCheckWorker, {
+    hooks: { onDLQ: videoCheckOnDLQ },
     tier: QueueTiers.HEAVY,
     fairness: QueueFairness.NONE,
   })

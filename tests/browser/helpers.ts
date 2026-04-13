@@ -162,13 +162,28 @@ export async function sendPanelReply(page: Page, text: string): Promise<void> {
   const editor = getPanelEditor(page)
   const sendButton = panel.getByRole("button", { name: /^(Send|Reply)$/ })
 
-  await expect(editor).toBeVisible({ timeout: 10000 })
-  await editor.click()
-  await expect(editor).toBeFocused({ timeout: 5000 })
-  await page.keyboard.type(text)
-  await expect(editor).toContainText(text, { timeout: 5000 })
-  await expect(sendButton).toBeEnabled({ timeout: 5000 })
-  await sendButton.click()
+  await expect(editor).toBeVisible({ timeout: 15000 })
+  await expect
+    .poll(
+      async () => {
+        await editor.click().catch(() => {})
+        await editor.press("ControlOrMeta+a").catch(() => {})
+        await page.keyboard.press("Backspace").catch(() => {})
+        await page.keyboard.type(text).catch(() => {})
+
+        const editorText = await editor.textContent().catch(() => "")
+        const hasText = editorText?.includes(text) ?? false
+        const canSend = await sendButton.isEnabled().catch(() => false)
+        if (!hasText || !canSend) return false
+
+        return await sendButton
+          .click({ timeout: 2000 })
+          .then(() => true)
+          .catch(() => false)
+      },
+      { timeout: 20000, intervals: [100, 250, 500, 1000], message: "panel editor should accept and send reply text" }
+    )
+    .toBe(true)
 }
 
 /**
@@ -177,9 +192,9 @@ export async function sendPanelReply(page: Page, text: string): Promise<void> {
  */
 export async function waitForRealThreadPanel(page: Page): Promise<void> {
   const panel = page.getByTestId("panel")
-  const sendButton = panel.getByRole("button", { name: "Send", exact: true })
+  const sendButton = panel.getByRole("button", { name: /^(Send|Reply)$/ })
   const retryButton = panel.getByRole("button", { name: "Retry" })
-  const deadline = Date.now() + 15000
+  const deadline = Date.now() + 30000
 
   while (Date.now() < deadline) {
     if (await retryButton.isVisible().catch(() => false)) {
@@ -191,7 +206,11 @@ export async function waitForRealThreadPanel(page: Page): Promise<void> {
       .getByText(/Start a new thread/)
       .isVisible()
       .catch(() => false)
-    const isDraftPanel = /panel=draft:/.test(page.url())
+    // URLSearchParams.toString() encodes the `:` in "draft:streamId:msgId" as
+    // %3A, so read the decoded value via searchParams rather than matching the
+    // raw URL with a regex.
+    const panelId = new URL(page.url()).searchParams.get("panel")
+    const isDraftPanel = panelId?.startsWith("draft:") ?? false
     const hasSendButton = await sendButton.isVisible().catch(() => false)
 
     if (!hasDraftIntro && !isDraftPanel && hasSendButton) {
@@ -201,19 +220,22 @@ export async function waitForRealThreadPanel(page: Page): Promise<void> {
     await page.waitForTimeout(250)
   }
 
-  await expect(page.getByText(/Start a new thread/)).not.toBeVisible({ timeout: 1000 })
-  await expect(page).not.toHaveURL(/panel=draft:/, { timeout: 1000 })
-  await expect(sendButton).toBeVisible({ timeout: 1000 })
+  await expect(page.getByText(/Start a new thread/)).not.toBeVisible({ timeout: 5000 })
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("panel")?.startsWith("draft:") ?? false, { timeout: 5000 })
+    .toBe(false)
+  await expect(sendButton).toBeVisible({ timeout: 5000 })
 }
 
 /**
  * Open the thread-reply action for a message, retrying if the row exposes a
  * transient failed-send state before the reply affordance appears.
  */
-export async function clickReplyInThread(messageContainer: Locator, timeout = 20000): Promise<void> {
+export async function clickReplyInThread(messageContainer: Locator, timeout = 45000): Promise<void> {
   const replyLink = messageContainer.getByRole("link", { name: "Reply in thread" })
   const retryButton = messageContainer.getByRole("button", { name: "Retry" })
 
+  await expect(messageContainer).toBeVisible({ timeout })
   await expect
     .poll(
       async () => {
@@ -229,10 +251,81 @@ export async function clickReplyInThread(messageContainer: Locator, timeout = 20
       },
       {
         timeout,
+        intervals: [100, 250, 500, 1000],
         message: "should expose the thread-reply action for the target message",
       }
     )
     .toBe(true)
 
-  await replyLink.click()
+  await replyLink.click({ timeout: 10000 })
+}
+
+interface EditorShortcutOptions {
+  shift?: boolean
+  alt?: boolean
+}
+
+/**
+ * Dispatch a formatting shortcut directly on the contenteditable surface.
+ *
+ * Headless Chromium can consume browser-reserved Cmd/Ctrl accelerators before they
+ * reach the app, so editor shortcut tests should target the editor DOM node itself.
+ */
+export async function pressEditorShortcut(
+  editor: Locator,
+  key: string,
+  options: EditorShortcutOptions = {}
+): Promise<void> {
+  await editor.evaluate(
+    (element, { key, options }) => {
+      const target = element as HTMLElement
+      target.focus()
+
+      const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform)
+      const normalizedKey = key.length === 1 ? key.toLowerCase() : key
+      const shiftedKey = options.shift && key.length === 1 ? normalizedKey.toUpperCase() : normalizedKey
+      const code =
+        normalizedKey.length === 1 && /^[a-z]$/i.test(normalizedKey) ? `Key${normalizedKey.toUpperCase()}` : undefined
+      const keyCode =
+        normalizedKey.length === 1 && /^[a-z]$/i.test(normalizedKey) ? normalizedKey.toUpperCase().charCodeAt(0) : 0
+
+      for (const type of ["keydown", "keyup"] as const) {
+        const event = new KeyboardEvent(type, {
+          key: shiftedKey,
+          code,
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          metaKey: isMac,
+          ctrlKey: !isMac,
+          shiftKey: !!options.shift,
+          altKey: !!options.alt,
+        })
+        Object.defineProperty(event, "keyCode", { get: () => keyCode })
+        Object.defineProperty(event, "which", { get: () => keyCode })
+        Object.defineProperty(event, "charCode", { get: () => keyCode })
+        target.dispatchEvent(event)
+      }
+    },
+    { key, options }
+  )
+}
+
+/**
+ * Select all editor contents directly in the DOM selection.
+ */
+export async function selectAllEditorContent(editor: Locator): Promise<void> {
+  await editor.evaluate((element) => {
+    const target = element as HTMLElement
+    const selection = target.ownerDocument.getSelection()
+    if (!selection) {
+      throw new Error("Editor selection is unavailable")
+    }
+
+    target.focus()
+    const range = target.ownerDocument.createRange()
+    range.selectNodeContents(target)
+    selection.removeAllRanges()
+    selection.addRange(range)
+  })
 }

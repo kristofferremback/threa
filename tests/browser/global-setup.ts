@@ -105,6 +105,26 @@ function areTestContainersRunning(): boolean {
   return postgres !== null && minio !== null
 }
 
+async function waitForPostgresReady(container: string, timeoutMs = 120000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  let lastOutput = ""
+
+  while (Date.now() < deadline) {
+    const result = spawnSync("docker", ["exec", container, "pg_isready", "-U", "threa", "-d", "postgres"], {
+      encoding: "utf-8",
+    })
+
+    if (result.status === 0) {
+      return
+    }
+
+    lastOutput = `${result.stdout ?? ""}${result.stderr ?? ""}`.trim()
+    await new Promise((resolve) => setTimeout(resolve, 1000))
+  }
+
+  throw new Error(`Postgres test container did not become ready within ${timeoutMs}ms: ${lastOutput}`)
+}
+
 async function ensureTestDatabase(dbName: string, container: string): Promise<void> {
   try {
     // Check if database exists
@@ -182,6 +202,7 @@ export default async function globalSetup(): Promise<void> {
     const containers = getContainerNames()
     console.log(`Using postgres container: ${containers.postgres}`)
     console.log(`Using minio container: ${containers.minio}`)
+    await waitForPostgresReady(containers.postgres)
     await ensureTestDatabase(dbName, containers.postgres)
     await ensureTestDatabase(`${dbName}_cp`, containers.postgres)
     await ensureMinioBucket(containers.minio)

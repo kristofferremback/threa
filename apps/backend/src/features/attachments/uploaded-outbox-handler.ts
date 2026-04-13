@@ -9,6 +9,7 @@ import { isImageAttachment } from "./image-caption"
 import { isPdfAttachment } from "./pdf"
 import { isWordAttachment } from "./word"
 import { isExcelAttachment } from "./excel"
+import { isVideoAttachment } from "./video"
 
 export interface AttachmentUploadedHandlerConfig {
   batchSize?: number
@@ -136,6 +137,16 @@ export class AttachmentUploadedHandler implements OutboxHandler {
                 storagePath,
               })
               logger.info({ attachmentId, filename, mimeType }, "Excel processing job dispatched")
+              break
+
+            case isVideoAttachment(mimeType, filename):
+              await this.jobQueue.send(JobQueues.VIDEO_TRANSCODE_SUBMIT, {
+                attachmentId,
+                workspaceId,
+                filename,
+                storagePath,
+              })
+              logger.info({ attachmentId, filename, mimeType }, "Video transcode submit job dispatched")
               break
 
             default:

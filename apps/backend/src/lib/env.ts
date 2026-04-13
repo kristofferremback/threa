@@ -43,6 +43,15 @@ export interface GitHubAppConfig {
   integrationSecret: string
 }
 
+export interface MediaConvertConfig {
+  /** IAM role ARN that MediaConvert assumes to access S3 */
+  roleArn: string
+  /** MediaConvert API endpoint (discovered via DescribeEndpoints, cached at runtime) */
+  endpoint?: string
+  /** Whether video transcoding is enabled (false in dev/test by default) */
+  enabled: boolean
+}
+
 export interface Config {
   port: number
   databaseUrl: string
@@ -66,6 +75,7 @@ export interface Config {
   attachments: AttachmentSafetyConfig
   push: PushConfig
   github: GitHubAppConfig
+  mediaConvert: MediaConvertConfig
   /** Control-plane URL for inter-service communication (optional — only needed in multi-region) */
   controlPlaneUrl: string | null
   /** Shared secret for authenticating internal API calls from the control-plane */
@@ -161,6 +171,11 @@ export function loadConfig(): Config {
       privateKey: (process.env.GITHUB_APP_PRIVATE_KEY || "").replace(/\\n/g, "\n"),
       integrationSecret: process.env.WORKSPACE_INTEGRATIONS_SECRET || "",
     },
+    mediaConvert: {
+      roleArn: process.env.MEDIACONVERT_ROLE_ARN || "",
+      endpoint: process.env.MEDIACONVERT_ENDPOINT || undefined,
+      enabled: process.env.MEDIACONVERT_ENABLED === "true",
+    },
     controlPlaneUrl: process.env.CONTROL_PLANE_URL || null,
     internalApiKey: process.env.INTERNAL_API_KEY || null,
     region: process.env.REGION || null,
@@ -186,6 +201,13 @@ export function loadConfig(): Config {
     throw new Error(
       "GITHUB_APP_ID, GITHUB_APP_SLUG, GITHUB_APP_PRIVATE_KEY, and WORKSPACE_INTEGRATIONS_SECRET must all be set together"
     )
+  }
+
+  if (config.mediaConvert.enabled && !config.mediaConvert.roleArn) {
+    throw new Error("MEDIACONVERT_ROLE_ARN is required when MEDIACONVERT_ENABLED=true")
+  }
+  if (!config.mediaConvert.enabled && (config.mediaConvert.roleArn || config.mediaConvert.endpoint)) {
+    throw new Error("MEDIACONVERT_ENABLED=true is required when MediaConvert role ARN or endpoint is configured")
   }
 
   // Validate co-presence: REGION and INTERNAL_API_KEY are required when CONTROL_PLANE_URL is set (INV-11)

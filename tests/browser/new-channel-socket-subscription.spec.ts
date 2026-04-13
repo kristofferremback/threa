@@ -21,11 +21,15 @@ test.describe("New Channel Socket Subscription", () => {
   }
 
   async function waitForStreamMessage(page: Page, message: string): Promise<void> {
-    const messageItem = page.getByRole("main").locator(".message-item").filter({ hasText: message }).first()
+    await expect(page.getByRole("main").getByText(message, { exact: true }).first()).toBeVisible({ timeout: 45000 })
+  }
+
+  async function waitForStreamAccessible(page: Page, workspaceId: string, streamId: string): Promise<void> {
     await expect
-      .poll(async () => await messageItem.isVisible().catch(() => false), {
-        timeout: 30000,
-        message: `stream should render message "${message}"`,
+      .poll(async () => (await page.request.get(`/api/workspaces/${workspaceId}/streams/${streamId}/bootstrap`)).ok(), {
+        timeout: 15000,
+        intervals: [100, 250, 500, 1000],
+        message: `stream ${streamId} should be accessible`,
       })
       .toBe(true)
   }
@@ -81,7 +85,7 @@ test.describe("New Channel Socket Subscription", () => {
       })
 
       // Verify the channel link is visible in sidebar (Recent or expanded Everything Else)
-      const initialChannelLink = userA.page.getByRole("link", { name: `#${channelName}` })
+      const initialChannelLink = userA.page.locator(`a[href="/w/${workspaceId}/s/${streamId}"]`).first()
       const everythingElseToggle = userA.page.getByRole("button", { name: /everything else/i })
       if (!(await initialChannelLink.isVisible()) && (await everythingElseToggle.isVisible())) {
         await everythingElseToggle.click()
@@ -107,6 +111,7 @@ test.describe("New Channel Socket Subscription", () => {
       // Join the channel via dev endpoint
       const joinStreamRes = await userB.page.request.post(`/api/dev/workspaces/${workspaceId}/streams/${streamId}/join`)
       expect(joinStreamRes.ok()).toBeTruthy()
+      await waitForStreamAccessible(userB.page, workspaceId, streamId)
 
       // Navigate to the channel and send via UI to avoid API/session race edge-cases
       await userB.page.goto(`/w/${workspaceId}/s/${streamId}`)
@@ -127,7 +132,7 @@ test.describe("New Channel Socket Subscription", () => {
 
       // ──── User A: Channel should remain accessible without refresh ────
 
-      const channelLink = userA.page.getByRole("link", { name: `#${channelName}` })
+      const channelLink = userA.page.locator(`a[href="/w/${workspaceId}/s/${streamId}"]`).first()
       await waitForSidebarPreview(channelLink, testMessage)
 
       // Click the channel and verify the new message is rendered.
@@ -194,14 +199,17 @@ test.describe("New Channel Socket Subscription", () => {
 
       userB = await loginInNewContext(browser, userBEmail, userBName)
 
-      await userB.page.request.post(`/api/dev/workspaces/${workspaceId}/join`, {
+      const joinWorkspaceRes = await userB.page.request.post(`/api/dev/workspaces/${workspaceId}/join`, {
         data: { role: "user" },
       })
+      await expectApiOk(joinWorkspaceRes, "Join workspace for preview subscription test")
       await waitForWorkspaceProvisioned(userB.page, workspaceId)
       await userB.page.goto(`/w/${workspaceId}`)
       await userB.page.waitForURL(/\/w\//, { timeout: 10000 })
 
-      await userB.page.request.post(`/api/dev/workspaces/${workspaceId}/streams/${streamId}/join`)
+      const joinStreamRes = await userB.page.request.post(`/api/dev/workspaces/${workspaceId}/streams/${streamId}/join`)
+      await expectApiOk(joinStreamRes, "Join stream for preview subscription test")
+      await waitForStreamAccessible(userB.page, workspaceId, streamId)
 
       await userB.page.goto(`/w/${workspaceId}/s/${streamId}`)
       await expect(userB.page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({
@@ -217,13 +225,11 @@ test.describe("New Channel Socket Subscription", () => {
       await userB.page.locator("[contenteditable='true']").click()
       await userB.page.keyboard.type(previewMessage)
       await userB.page.getByRole("button", { name: "Send" }).click()
-      await expect(
-        userB.page.getByRole("main").locator(".message-item").filter({ hasText: previewMessage }).first()
-      ).toBeVisible({ timeout: 10000 })
+      await waitForStreamMessage(userB.page, previewMessage)
 
       // ──── User A: Channel should be reachable from sidebar without refresh ────
 
-      const channelLink = userA.page.getByRole("link", { name: `#${channelName}` })
+      const channelLink = userA.page.locator(`a[href="/w/${workspaceId}/s/${streamId}"]`).first()
 
       const everythingElseToggle = userA.page.getByRole("button", { name: /everything else/i })
       if (await everythingElseToggle.isVisible()) {
@@ -236,15 +242,18 @@ test.describe("New Channel Socket Subscription", () => {
       await expect(userA.page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({
         timeout: 10000,
       })
+      await waitForStreamMessage(userA.page, previewMessage)
 
       // Verify channel is fully navigable/interactive without refresh by sending from User A.
       const followUpMessage = `User A follow-up ${Date.now()}`
-      await userA.page.locator("[contenteditable='true']").click()
+      const userAEditor = userA.page.locator("[data-editor-zone='main'] [contenteditable='true']")
+      await userAEditor.click()
       await userA.page.keyboard.type(followUpMessage)
-      await userA.page.getByRole("button", { name: "Send" }).click()
-      await expect(
-        userA.page.getByRole("main").locator(".message-item").filter({ hasText: followUpMessage }).first()
-      ).toBeVisible({ timeout: 10000 })
+      await expect(userAEditor).toContainText(followUpMessage, { timeout: 10000 })
+      const userASendButton = userA.page.getByRole("button", { name: "Send" })
+      await expect(userASendButton).toBeEnabled({ timeout: 10000 })
+      await userASendButton.click()
+      await waitForStreamMessage(userA.page, followUpMessage)
     } finally {
       await userA.context.close()
       if (userB) {

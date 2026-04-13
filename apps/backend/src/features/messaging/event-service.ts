@@ -4,7 +4,7 @@ import { StreamEventRepository, StreamEvent } from "../streams"
 import { StreamRepository } from "../streams"
 import { StreamMemberRepository } from "../streams"
 import { MessageRepository, Message } from "./repository"
-import { AttachmentRepository } from "../attachments"
+import { AttachmentRepository, isVideoAttachment } from "../attachments"
 import { OutboxRepository } from "../../lib/outbox"
 import { StreamPersonaParticipantRepository } from "../agents"
 import { eventId, messageId, messageVersionId } from "../../lib/id"
@@ -26,6 +26,7 @@ export interface AttachmentSummary {
   filename: string
   mimeType: string
   sizeBytes: number
+  processingStatus?: string
 }
 
 export interface MessageCreatedPayload {
@@ -198,6 +199,7 @@ export class EventService {
           filename: a.filename,
           mimeType: a.mimeType,
           sizeBytes: a.sizeBytes,
+          ...(isVideoAttachment(a.mimeType, a.filename) && { processingStatus: a.processingStatus }),
         }))
       }
 
@@ -596,6 +598,23 @@ export class EventService {
     // reaction enrichment on bootstrap.
     const messagesMap = messageIds.length > 0 ? await this.getMessagesByIds(messageIds) : new Map<string, Message>()
 
+    // Event payloads snapshot attachment processingStatus at send time. Video
+    // transcoding completes asynchronously, so fresh-load bootstrap must overlay
+    // current processingStatus from the attachments projection; otherwise
+    // long-completed videos render as "Processing" after a page refresh.
+    const attachmentIds = messageCreatedEvents.flatMap((e) =>
+      ((e.payload as MessageCreatedPayload).attachments ?? [])
+        .filter((a) => a.processingStatus !== undefined)
+        .map((a) => a.id)
+    )
+    const attachmentStatusMap =
+      attachmentIds.length > 0
+        ? await withClient(this.pool, async (client) => {
+            const rows = await AttachmentRepository.findByIds(client, attachmentIds)
+            return new Map(rows.map((a) => [a.id, a.processingStatus as string]))
+          })
+        : new Map<string, string>()
+
     return events
       .filter((e) => e.eventType !== "message_edited" && e.eventType !== "message_deleted")
       .map((event) => {
@@ -621,6 +640,15 @@ export class EventService {
         }
         if (message?.sentVia) {
           enrichments.sentVia = message.sentVia
+        }
+
+        const refreshedAttachments = payload.attachments?.map((a) => {
+          if (a.processingStatus === undefined) return a
+          const current = attachmentStatusMap.get(a.id)
+          return current && current !== a.processingStatus ? { ...a, processingStatus: current } : a
+        })
+        if (refreshedAttachments && refreshedAttachments.some((a, i) => a !== payload.attachments![i])) {
+          enrichments.attachments = refreshedAttachments
         }
 
         if (Object.keys(enrichments).length === 0) return event

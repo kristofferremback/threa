@@ -14,3 +14,8 @@ output "iam_secret_access_key" {
   value       = aws_iam_access_key.backend.secret
   sensitive   = true
 }
+
+output "mediaconvert_role_arn" {
+  description = "IAM role ARN for MediaConvert to access S3"
+  value       = aws_iam_role.mediaconvert.arn
+}

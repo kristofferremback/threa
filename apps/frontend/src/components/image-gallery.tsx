@@ -2,26 +2,127 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
-import { X, Download, Copy, ChevronLeft, ChevronRight, PanelRightClose, PanelRightOpen, Loader2 } from "lucide-react"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import {
+  X,
+  Download,
+  Copy,
+  ChevronLeft,
+  ChevronRight,
+  PanelRightClose,
+  PanelRightOpen,
+  Loader2,
+  Play,
+} from "lucide-react"
 import { downloadImage, copyImage } from "@/lib/image-utils"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { cn } from "@/lib/utils"
+import { attachmentsApi } from "@/api"
+import { triggerDownload } from "@/lib/image-utils"
 
-export interface GalleryImage {
-  url: string
-  filename: string
-  attachmentId: string
-}
+export type GalleryItem =
+  | { type: "image"; url: string; filename: string; attachmentId: string }
+  | { type: "video"; url: string; thumbnailUrl: string; filename: string; attachmentId: string }
 
-interface ImageGalleryProps {
+interface MediaGalleryProps {
   isOpen: boolean
   onClose: () => void
-  images: GalleryImage[]
+  items: GalleryItem[]
   initialIndex: number
   workspaceId: string
+  /** Called when the user navigates to a different item. Used to sync the URL
+   *  permalink and trigger lazy URL fetching for the newly-current item. */
+  onItemChange?: (attachmentId: string) => void
 }
 
-export function ImageGallery({ isOpen, onClose, images, initialIndex, workspaceId }: ImageGalleryProps) {
+function GalleryVideo({ current }: { current: Extract<GalleryItem, { type: "video" }> }) {
+  const videoRef = useRef<HTMLVideoElement>(null)
+
+  // Focus the video on mount/URL-ready so keyboard controls (space to play,
+  // arrow keys for seek) work immediately. Without this the Dialog places
+  // initial focus on the first focusable child (download button), which
+  // steals space-bar toggling from the video.
+  useEffect(() => {
+    if (current.url) videoRef.current?.focus({ preventScroll: true })
+  }, [current.url, current.attachmentId])
+
+  return (
+    <video
+      ref={videoRef}
+      key={current.attachmentId}
+      src={current.url}
+      poster={current.thumbnailUrl || undefined}
+      controls
+      controlsList="nodownload"
+      tabIndex={-1}
+      className="max-w-full max-h-full object-contain select-none outline-none"
+    />
+  )
+}
+
+function GalleryMediaContent({ current }: { current: GalleryItem }) {
+  if (current.type === "video") {
+    if (!current.url)
+      return (
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-16 w-16 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center">
+            <Play className="h-7 w-7 text-white/60 ml-0.5" fill="currentColor" />
+          </div>
+          <Loader2 className="h-4 w-4 animate-spin text-white/40" />
+        </div>
+      )
+    return <GalleryVideo current={current} />
+  }
+  if (!current.url) return <Loader2 className="h-8 w-8 animate-spin text-white/50" />
+  return (
+    <img
+      src={current.url}
+      alt={current.filename}
+      className="max-w-full max-h-full object-contain select-none"
+      draggable={false}
+    />
+  )
+}
+
+function GalleryThumbnailContent({ item }: { item: GalleryItem }) {
+  if (item.type === "video") {
+    if (!item.thumbnailUrl) {
+      return (
+        <div className="w-full h-20 flex items-center justify-center bg-gradient-to-br from-white/10 to-white/5">
+          <div className="h-7 w-7 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center">
+            <Play className="h-3.5 w-3.5 text-white/60 ml-px" fill="currentColor" />
+          </div>
+        </div>
+      )
+    }
+    return (
+      <div className="relative">
+        <img
+          src={item.thumbnailUrl}
+          alt={item.filename}
+          className="w-full h-20 object-cover"
+          loading="lazy"
+          draggable={false}
+        />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <Play className="h-5 w-5 text-white drop-shadow-lg" fill="white" />
+        </div>
+      </div>
+    )
+  }
+  if (!item.url) {
+    return (
+      <div className="w-full h-20 flex items-center justify-center bg-white/5">
+        <Loader2 className="h-4 w-4 animate-spin text-white/40" />
+      </div>
+    )
+  }
+  return (
+    <img src={item.url} alt={item.filename} className="w-full h-20 object-cover" loading="lazy" draggable={false} />
+  )
+}
+
+export function MediaGallery({ isOpen, onClose, items, initialIndex, workspaceId, onItemChange }: MediaGalleryProps) {
   const [currentIndex, setCurrentIndex] = useState(initialIndex)
   const isMobile = useIsMobile()
   const [panelOpen, setPanelOpen] = useState(true)
@@ -45,25 +146,31 @@ export function ImageGallery({ isOpen, onClose, images, initialIndex, workspaceI
   // Only sync currentIndex when the gallery opens — not on every initialIndex
   // change, which can shift due to late-loading images growing galleryImages.
   const prevOpen = useRef(false)
+  const justOpened = useRef(false)
   useEffect(() => {
     if (isOpen && !prevOpen.current) {
       setCurrentIndex(initialIndex)
+      justOpened.current = true
     }
     prevOpen.current = isOpen
   }, [isOpen, initialIndex])
 
-  // Re-anchor currentIndex when the images array shifts underneath it
-  // (e.g. a late-loading image inserts before the currently-viewed one).
-  // Uses a ref for the viewed ID so the effect only fires when images changes.
+  // Re-anchor currentIndex when the items array shifts underneath it.
+  // Skip the first run after open — the sync-on-open effect already set the
+  // correct index and viewedIdRef still holds the stale pre-open value.
   const viewedIdRef = useRef<string | null>(null)
-  viewedIdRef.current = images[currentIndex]?.attachmentId ?? null
+  viewedIdRef.current = items[currentIndex]?.attachmentId ?? null
   useEffect(() => {
+    if (justOpened.current) {
+      justOpened.current = false
+      return
+    }
     if (!isOpen || !viewedIdRef.current) return
     setCurrentIndex((prev) => {
-      const corrected = images.findIndex((i) => i.attachmentId === viewedIdRef.current)
+      const corrected = items.findIndex((i) => i.attachmentId === viewedIdRef.current)
       return corrected !== -1 && corrected !== prev ? corrected : prev
     })
-  }, [images, isOpen])
+  }, [items, isOpen])
 
   // Scroll active thumbnail into view when index changes
   useEffect(() => {
@@ -71,27 +178,57 @@ export function ImageGallery({ isOpen, onClose, images, initialIndex, workspaceI
     el?.scrollIntoView({ block: "nearest", behavior: "smooth" })
   }, [currentIndex])
 
-  const current = images[currentIndex] ?? null
+  const current = items[currentIndex] ?? null
   const hasPrev = currentIndex > 0
-  const hasNext = currentIndex < images.length - 1
-  const isMultiple = images.length > 1
+  const hasNext = currentIndex < items.length - 1
+  const isMultiple = items.length > 1
 
   const goTo = useCallback(
     (index: number) => {
-      if (index >= 0 && index < images.length) setCurrentIndex(index)
+      if (index < 0 || index >= items.length) return
+      setCurrentIndex(index)
+      const next = items[index]
+      if (next) onItemChange?.(next.attachmentId)
     },
-    [images.length]
+    [items, onItemChange]
   )
 
   const goPrev = useCallback(() => goTo(currentIndex - 1), [goTo, currentIndex])
   const goNext = useCallback(() => goTo(currentIndex + 1), [goTo, currentIndex])
 
   const handleDownload = useCallback(() => {
-    if (current?.url) downloadImage(workspaceId, current.attachmentId, current.filename)
+    if (!current) return
+    downloadImage(workspaceId, current.attachmentId, current.filename)
+  }, [workspaceId, current])
+
+  const handleDownloadRaw = useCallback(async () => {
+    if (!current || current.type !== "video") return
+    try {
+      const url = await attachmentsApi.getDownloadUrl(workspaceId, current.attachmentId, {
+        download: true,
+        variant: "raw",
+      })
+      triggerDownload(url, current.filename)
+    } catch {
+      // Download failed silently
+    }
+  }, [workspaceId, current])
+
+  const handleDownloadProcessed = useCallback(async () => {
+    if (!current || current.type !== "video") return
+    try {
+      const url = await attachmentsApi.getDownloadUrl(workspaceId, current.attachmentId, {
+        download: true,
+        variant: "processed",
+      })
+      triggerDownload(url, current.filename.replace(/\.[^.]+$/, ".mp4"))
+    } catch {
+      // Download failed silently
+    }
   }, [workspaceId, current])
 
   const handleCopy = useCallback(() => {
-    if (current?.url) copyImage(current.url)
+    if (current?.type === "image" && current.url) copyImage(current.url)
   }, [current])
 
   // Keyboard navigation
@@ -138,7 +275,7 @@ export function ImageGallery({ isOpen, onClose, images, initialIndex, workspaceI
       if (!isSwiping.current) return
 
       if (swipeAxis.current === "x") {
-        // Horizontal: navigate between images
+        // Horizontal: navigate between items
         const atEdge = (dx > 0 && !hasPrev) || (dx < 0 && !hasNext)
         setSwipeOffset(atEdge ? dx * 0.3 : dx)
       } else {
@@ -214,11 +351,11 @@ export function ImageGallery({ isOpen, onClose, images, initialIndex, workspaceI
         >
           <DialogTitle className="sr-only">{current.filename}</DialogTitle>
           <DialogDescription className="sr-only">
-            Image {currentIndex + 1} of {images.length}
+            {current.type === "image" ? "Image" : "Video"} {currentIndex + 1} of {items.length}
           </DialogDescription>
 
           <div className="relative flex h-full overflow-hidden">
-            {/* Main image area — fixed to fill the container so arrows stay centred */}
+            {/* Main media area — fixed to fill the container so arrows stay centred */}
             <div
               className="relative flex-1 min-w-0 min-h-0 flex items-center justify-center"
               onMouseEnter={() => !isMobile && setShowArrows(true)}
@@ -236,27 +373,48 @@ export function ImageGallery({ isOpen, onClose, images, initialIndex, workspaceI
               <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
                 {isMultiple && (
                   <span className="text-xs text-white/70 mr-1 tabular-nums">
-                    {currentIndex + 1} / {images.length}
+                    {currentIndex + 1} / {items.length}
                   </span>
                 )}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-10 w-10 text-white hover:bg-white/20 rounded-full"
-                  onClick={handleDownload}
-                >
-                  <Download className="h-5 w-5" />
-                  <span className="sr-only">Download image</span>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-10 w-10 text-white hover:bg-white/20 rounded-full"
-                  onClick={handleCopy}
-                >
-                  <Copy className="h-5 w-5" />
-                  <span className="sr-only">Copy image</span>
-                </Button>
+                {current.type === "video" ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-10 w-10 text-white hover:bg-white/20 rounded-full"
+                      >
+                        <Download className="h-5 w-5" />
+                        <span className="sr-only">Download video</span>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="min-w-[160px]">
+                      <DropdownMenuItem onClick={handleDownloadProcessed}>Download processed</DropdownMenuItem>
+                      <DropdownMenuItem onClick={handleDownloadRaw}>Download original</DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-10 w-10 text-white hover:bg-white/20 rounded-full"
+                      onClick={handleDownload}
+                    >
+                      <Download className="h-5 w-5" />
+                      <span className="sr-only">Download image</span>
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-10 w-10 text-white hover:bg-white/20 rounded-full"
+                      onClick={handleCopy}
+                    >
+                      <Copy className="h-5 w-5" />
+                      <span className="sr-only">Copy image</span>
+                    </Button>
+                  </>
+                )}
                 {/* Desktop: toggle preview panel */}
                 {!isMobile && isMultiple && (
                   <Button
@@ -280,7 +438,7 @@ export function ImageGallery({ isOpen, onClose, images, initialIndex, workspaceI
                 </Button>
               </div>
 
-              {/* Image with mobile swipe offset — absolute fill so tall/wide images are contained */}
+              {/* Media content with mobile swipe offset */}
               <div
                 className="absolute inset-0 flex items-center justify-center p-10"
                 style={
@@ -291,22 +449,12 @@ export function ImageGallery({ isOpen, onClose, images, initialIndex, workspaceI
                             ? `translate(${swipeOffset}px, ${swipeOffsetY}px)`
                             : undefined,
                         opacity: swipeOffsetY > 0 ? Math.max(0.2, 1 - swipeOffsetY / 300) : 1,
-                        // Smooth snap-back when releasing; no transition while actively swiping
                         transition: isSwiping.current ? "none" : "transform 200ms ease-out, opacity 200ms ease-out",
                       }
                     : undefined
                 }
               >
-                {current.url ? (
-                  <img
-                    src={current.url}
-                    alt={current.filename}
-                    className="max-w-full max-h-full object-contain select-none"
-                    draggable={false}
-                  />
-                ) : (
-                  <Loader2 className="h-8 w-8 animate-spin text-white/50" />
-                )}
+                <GalleryMediaContent current={current} />
               </div>
 
               {/* Desktop: hover arrows */}
@@ -322,7 +470,7 @@ export function ImageGallery({ isOpen, onClose, images, initialIndex, workspaceI
                       showArrows ? "opacity-100" : "opacity-0"
                     )}
                     onClick={goPrev}
-                    aria-label="Previous image"
+                    aria-label="Previous"
                   >
                     <ChevronLeft className="h-6 w-6" />
                   </button>
@@ -336,7 +484,7 @@ export function ImageGallery({ isOpen, onClose, images, initialIndex, workspaceI
                       showArrows ? "opacity-100" : "opacity-0"
                     )}
                     onClick={goNext}
-                    aria-label="Next image"
+                    aria-label="Next"
                   >
                     <ChevronRight className="h-6 w-6" />
                   </button>
@@ -354,38 +502,26 @@ export function ImageGallery({ isOpen, onClose, images, initialIndex, workspaceI
               <div className="w-[140px] shrink-0 border-l border-white/10 bg-black/80 flex flex-col">
                 <ScrollArea className="flex-1">
                   <div className="flex flex-col gap-1.5 p-2">
-                    {images.map((img, i) => (
+                    {items.map((item, i) => (
                       <button
-                        key={img.attachmentId}
+                        key={item.attachmentId}
                         ref={(el) => {
                           if (el) thumbnailRefs.current.set(i, el)
                           else thumbnailRefs.current.delete(i)
                         }}
                         type="button"
                         className={cn(
-                          "relative rounded overflow-hidden border-2 transition-all",
+                          "relative w-full rounded overflow-hidden border-2 transition-all",
                           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
                           i === currentIndex
                             ? "border-white opacity-100"
                             : "border-transparent opacity-50 hover:opacity-80"
                         )}
                         onClick={() => goTo(i)}
-                        aria-label={`View ${img.filename}`}
+                        aria-label={`View ${item.filename}`}
                         aria-current={i === currentIndex ? "true" : undefined}
                       >
-                        {img.url ? (
-                          <img
-                            src={img.url}
-                            alt={img.filename}
-                            className="w-full h-20 object-cover"
-                            loading="lazy"
-                            draggable={false}
-                          />
-                        ) : (
-                          <div className="w-full h-20 flex items-center justify-center bg-white/5">
-                            <Loader2 className="h-4 w-4 animate-spin text-white/40" />
-                          </div>
-                        )}
+                        <GalleryThumbnailContent item={item} />
                       </button>
                     ))}
                   </div>

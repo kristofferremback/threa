@@ -15,7 +15,7 @@ describe("upload middleware", () => {
     expect(typeof handler).toBe("function")
   })
 
-  it("enforces the 50MB max file size", () => {
-    expect(MAX_FILE_SIZE).toBe(50 * 1024 * 1024)
+  it("enforces the 100MB max file size", () => {
+    expect(MAX_FILE_SIZE).toBe(100 * 1024 * 1024)
   })
 })

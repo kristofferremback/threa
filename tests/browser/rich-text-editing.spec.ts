@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test"
-import { loginAndCreateWorkspace } from "./helpers"
+import { loginAndCreateWorkspace, pressEditorShortcut, selectAllEditorContent } from "./helpers"
 
 /**
  * Tests for Linear-style rich text editing.
@@ -110,6 +110,19 @@ async function selectTextRange(
     },
     { endOffset, endText, startText }
   )
+
+  await expect
+    .poll(async () => page.evaluate(() => window.getSelection()?.toString() ?? ""), {
+      timeout: 5000,
+      message: `selection should include "${startText}" through "${endText}"`,
+    })
+    .toContain(startText)
+  await expect
+    .poll(async () => page.evaluate(() => window.getSelection()?.toString() ?? ""), {
+      timeout: 5000,
+      message: `selection should include "${endText}"`,
+    })
+    .toContain(endText)
 }
 
 async function dispatchBeforeInput(
@@ -217,14 +230,14 @@ test.describe("Rich Text Editing", () => {
       await page.keyboard.type("some text")
 
       // Select all and apply bold
-      await page.keyboard.press("ControlOrMeta+a")
-      await page.keyboard.press("ControlOrMeta+b")
+      await selectAllEditorContent(editor)
+      await pressEditorShortcut(editor, "b")
 
       await expect(editor.locator("strong")).toHaveText("some text")
 
       // Toggle off
-      await page.keyboard.press("ControlOrMeta+a")
-      await page.keyboard.press("ControlOrMeta+b")
+      await selectAllEditorContent(editor)
+      await pressEditorShortcut(editor, "b")
       await expect(editor.locator("strong")).not.toBeVisible()
     })
 
@@ -233,8 +246,8 @@ test.describe("Rich Text Editing", () => {
       await editor.click()
       await page.keyboard.type("text to italicize")
 
-      await page.keyboard.press("ControlOrMeta+a")
-      await page.keyboard.press("ControlOrMeta+i")
+      await selectAllEditorContent(editor)
+      await pressEditorShortcut(editor, "i")
 
       await expect(editor.locator("em")).toHaveText("text to italicize")
     })
@@ -244,8 +257,8 @@ test.describe("Rich Text Editing", () => {
       await editor.click()
       await page.keyboard.type("variable_name")
 
-      await page.keyboard.press("ControlOrMeta+a")
-      await page.keyboard.press("ControlOrMeta+e")
+      await selectAllEditorContent(editor)
+      await pressEditorShortcut(editor, "e")
 
       await expect(editor.locator("code")).toHaveText("variable_name")
     })
@@ -255,8 +268,8 @@ test.describe("Rich Text Editing", () => {
       await editor.click()
       await page.keyboard.type("crossed out")
 
-      await page.keyboard.press("ControlOrMeta+a")
-      await page.keyboard.press("ControlOrMeta+Shift+s")
+      await selectAllEditorContent(editor)
+      await pressEditorShortcut(editor, "s", { shift: true })
 
       await expect(editor.locator("s")).toHaveText("crossed out")
     })
@@ -369,8 +382,8 @@ test.describe("Rich Text Editing", () => {
       const editor = page.locator("[contenteditable='true']")
       await editor.click()
       await page.keyboard.type("some code")
-      await page.keyboard.press("ControlOrMeta+a")
-      await page.keyboard.press("ControlOrMeta+Shift+c")
+      await selectAllEditorContent(editor)
+      await pressEditorShortcut(editor, "c", { shift: true })
 
       await expect(editor.locator("pre")).toBeVisible()
     })
@@ -430,12 +443,14 @@ test.describe("Rich Text Editing", () => {
   test.describe("Toolbar Buttons", () => {
     test("bold button toggles bold", async ({ page }) => {
       const editor = page.locator("[contenteditable='true']")
+      const boldButton = page.getByRole("button", { name: "Bold" }).first()
       await editor.click()
       await page.keyboard.type("text")
-      await page.keyboard.press("ControlOrMeta+a")
+      await selectAllEditorContent(editor)
 
       // Click bold button
-      await page.getByRole("button", { name: "Bold" }).click()
+      await expect(boldButton).toBeVisible()
+      await boldButton.click()
       await expect(editor.locator("strong")).toHaveText("text")
     })
 

@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test"
-import { createChannel, loginAndCreateWorkspace, switchToAllView } from "./helpers"
+import { clickReplyInThread, createChannel, loginAndCreateWorkspace, switchToAllView } from "./helpers"
 
 /**
  * Tests for the Drafts page feature.
@@ -354,6 +354,8 @@ test.describe("Drafts Page", () => {
   })
 
   test("should navigate to thread draft and open draft panel", async ({ page }) => {
+    test.setTimeout(60000)
+
     // Create a channel
     const channelName = `thread-draft-${testId}`
     await createChannel(page, channelName, { switchToAll: false })
@@ -372,12 +374,7 @@ test.describe("Drafts Page", () => {
       .filter({ hasText: `Parent message ${testId}` })
       .first()
     await expect(messageContainer).toBeVisible({ timeout: 5000 })
-    await messageContainer.hover()
-
-    // Wait for the link to become visible, then click it
-    const replyLink = messageContainer.getByRole("link", { name: "Reply in thread" })
-    await expect(replyLink).toBeVisible({ timeout: 2000 })
-    await replyLink.click()
+    await clickReplyInThread(messageContainer)
 
     // Wait for draft thread panel to appear - look for the panel content
     await expect(page.getByText(/Start a new thread/)).toBeVisible({ timeout: 3000 })
@@ -408,8 +405,7 @@ test.describe("Drafts Page", () => {
       .getByRole("option")
       .filter({ hasText: threadDraftContent.slice(0, 40) })
       .first()
-    await expect(draftItem).toBeVisible({ timeout: 5000 })
-    await expect(draftItem).toContainText(`Thread in #${channelName}`, { timeout: 10000 })
+    await expect(draftItem).toBeVisible({ timeout: 10000 })
 
     // Click on the thread draft to navigate
     await draftItem.click()

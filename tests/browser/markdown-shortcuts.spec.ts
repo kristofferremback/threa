@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test"
-import { loginAndCreateWorkspace } from "./helpers"
+import { loginAndCreateWorkspace, pressEditorShortcut, selectAllEditorContent } from "./helpers"
 
 /**
  * Tests for formatting keyboard shortcuts.
@@ -33,13 +33,13 @@ test.describe("Formatting Shortcuts", () => {
       await page.keyboard.type("hello ")
 
       // Press Cmd+B to enter bold mode
-      await page.keyboard.press("ControlOrMeta+b")
+      await pressEditorShortcut(editor, "b")
 
       // Type inside bold
       await page.keyboard.type("bold")
 
       // Press Cmd+B again to exit bold mode
-      await page.keyboard.press("ControlOrMeta+b")
+      await pressEditorShortcut(editor, "b")
       await page.keyboard.type(" world")
 
       // Editor should show styled text with bold element
@@ -52,9 +52,9 @@ test.describe("Formatting Shortcuts", () => {
       await editor.click()
 
       await page.keyboard.type("hello ")
-      await page.keyboard.press("ControlOrMeta+i")
+      await pressEditorShortcut(editor, "i")
       await page.keyboard.type("italic")
-      await page.keyboard.press("ControlOrMeta+i")
+      await pressEditorShortcut(editor, "i")
       await page.keyboard.type(" world")
 
       await expect(editor.locator("em")).toContainText("italic")
@@ -66,9 +66,9 @@ test.describe("Formatting Shortcuts", () => {
       await editor.click()
 
       await page.keyboard.type("hello ")
-      await page.keyboard.press("ControlOrMeta+Shift+s")
+      await pressEditorShortcut(editor, "s", { shift: true })
       await page.keyboard.type("struck")
-      await page.keyboard.press("ControlOrMeta+Shift+s")
+      await pressEditorShortcut(editor, "s", { shift: true })
       await page.keyboard.type(" world")
 
       await expect(editor.locator("s")).toContainText("struck")
@@ -80,9 +80,9 @@ test.describe("Formatting Shortcuts", () => {
       await editor.click()
 
       await page.keyboard.type("run ")
-      await page.keyboard.press("ControlOrMeta+e")
+      await pressEditorShortcut(editor, "e")
       await page.keyboard.type("npm install")
-      await page.keyboard.press("ControlOrMeta+e")
+      await pressEditorShortcut(editor, "e")
       await page.keyboard.type(" to install")
 
       await expect(editor.locator("code")).toContainText("npm install")
@@ -93,7 +93,7 @@ test.describe("Formatting Shortcuts", () => {
       const editor = page.locator("[contenteditable='true']")
       await editor.click()
 
-      await page.keyboard.press("ControlOrMeta+Shift+c")
+      await pressEditorShortcut(editor, "c", { shift: true })
       await page.keyboard.type("const x = 1")
 
       // Should have a code block (pre element)
@@ -109,10 +109,10 @@ test.describe("Formatting Shortcuts", () => {
 
       // Type text and select all with Cmd+A
       await page.keyboard.type("world")
-      await page.keyboard.press("ControlOrMeta+a")
+      await selectAllEditorContent(editor)
 
       // Apply bold
-      await page.keyboard.press("ControlOrMeta+b")
+      await pressEditorShortcut(editor, "b")
 
       // Should wrap the selection in strong
       await expect(editor.locator("strong")).toContainText("world")
@@ -123,9 +123,9 @@ test.describe("Formatting Shortcuts", () => {
       await editor.click()
 
       await page.keyboard.type("italic")
-      await page.keyboard.press("ControlOrMeta+a")
+      await selectAllEditorContent(editor)
 
-      await page.keyboard.press("ControlOrMeta+i")
+      await pressEditorShortcut(editor, "i")
 
       await expect(editor.locator("em")).toContainText("italic")
     })
@@ -135,9 +135,9 @@ test.describe("Formatting Shortcuts", () => {
       await editor.click()
 
       await page.keyboard.type("text")
-      await page.keyboard.press("ControlOrMeta+a")
+      await selectAllEditorContent(editor)
 
-      await page.keyboard.press("ControlOrMeta+Shift+s")
+      await pressEditorShortcut(editor, "s", { shift: true })
 
       await expect(editor.locator("s")).toContainText("text")
     })
@@ -147,9 +147,9 @@ test.describe("Formatting Shortcuts", () => {
       await editor.click()
 
       await page.keyboard.type("myVar")
-      await page.keyboard.press("ControlOrMeta+a")
+      await selectAllEditorContent(editor)
 
-      await page.keyboard.press("ControlOrMeta+e")
+      await pressEditorShortcut(editor, "e")
 
       await expect(editor.locator("code")).toContainText("myVar")
     })
@@ -157,7 +157,7 @@ test.describe("Formatting Shortcuts", () => {
 
   test.describe("shortcuts work after sending message", () => {
     test("should work on fresh editor after send", async ({ page }) => {
-      const editor = page.locator("[contenteditable='true']")
+      const editor = page.locator("[data-editor-zone='main'] [contenteditable='true']")
       await editor.click()
 
       // Send a message first
@@ -167,9 +167,17 @@ test.describe("Formatting Shortcuts", () => {
       // Wait for message to appear
       await expect(page.locator("p").filter({ hasText: "First message" }).first()).toBeVisible({ timeout: 5000 })
 
+      // Wait for the composer to reset before exercising formatting again.
+      await expect
+        .poll(async () => ((await editor.textContent()) ?? "").trim(), {
+          timeout: 10000,
+          message: "editor should be cleared after sending a message",
+        })
+        .toBe("")
+
       // Now try the shortcut on the cleared editor
       await editor.click()
-      await page.keyboard.press("ControlOrMeta+b")
+      await pressEditorShortcut(editor, "b")
       await page.keyboard.type("bold text")
 
       await expect(editor.locator("strong")).toContainText("bold text")

@@ -37,6 +37,7 @@ import {
   useSidebar,
   TraceProvider,
   useTrace,
+  MediaGalleryProvider,
 } from "@/contexts"
 import {
   useKeyboardShortcuts,
@@ -325,30 +326,32 @@ export function WorkspaceLayout() {
                         <WorkspaceKeyboardHandler onOpenSwitcher={openSwitcher}>
                           <QuickSwitcherProvider openSwitcher={openSwitcher}>
                             <PanelProvider>
-                              <TraceProvider>
-                                <SidebarProvider>
-                                  <SidebarKeyboardHandler />
-                                  <CoordinatedLoadingGate>
-                                    <AppShell sidebar={<Sidebar workspaceId={workspaceId} />}>
-                                      <MainContentGate>
-                                        <Outlet />
-                                      </MainContentGate>
-                                    </AppShell>
-                                  </CoordinatedLoadingGate>
-                                </SidebarProvider>
-                                <QuickSwitcher
-                                  workspaceId={workspaceId}
-                                  open={switcherOpen}
-                                  onOpenChange={setSwitcherOpen}
-                                  initialMode={switcherMode}
-                                />
-                                <SettingsDialog />
-                                <WorkspaceSettingsDialog workspaceId={workspaceId} />
-                                <StreamSettingsDialog workspaceId={workspaceId} />
-                                <CreateChannelDialog workspaceId={workspaceId} />
-                                <TraceDialogContainer />
-                                <Toaster />
-                              </TraceProvider>
+                              <MediaGalleryProvider>
+                                <TraceProvider>
+                                  <SidebarProvider>
+                                    <SidebarKeyboardHandler />
+                                    <CoordinatedLoadingGate>
+                                      <AppShell sidebar={<Sidebar workspaceId={workspaceId} />}>
+                                        <MainContentGate>
+                                          <Outlet />
+                                        </MainContentGate>
+                                      </AppShell>
+                                    </CoordinatedLoadingGate>
+                                  </SidebarProvider>
+                                  <QuickSwitcher
+                                    workspaceId={workspaceId}
+                                    open={switcherOpen}
+                                    onOpenChange={setSwitcherOpen}
+                                    initialMode={switcherMode}
+                                  />
+                                  <SettingsDialog />
+                                  <WorkspaceSettingsDialog workspaceId={workspaceId} />
+                                  <StreamSettingsDialog workspaceId={workspaceId} />
+                                  <CreateChannelDialog workspaceId={workspaceId} />
+                                  <TraceDialogContainer />
+                                  <Toaster />
+                                </TraceProvider>
+                              </MediaGalleryProvider>
                             </PanelProvider>
                           </QuickSwitcherProvider>
                         </WorkspaceKeyboardHandler>

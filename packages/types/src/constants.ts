@@ -156,6 +156,17 @@ export const AttachmentSafetyStatuses = {
   QUARANTINED: "quarantined",
 } as const satisfies Record<string, AttachmentSafetyStatus>
 
+// Video transcode job status
+export const VIDEO_TRANSCODE_STATUSES = ["pending", "submitted", "completed", "failed"] as const
+export type VideoTranscodeStatus = (typeof VIDEO_TRANSCODE_STATUSES)[number]
+
+export const VideoTranscodeStatuses = {
+  PENDING: "pending",
+  SUBMITTED: "submitted",
+  COMPLETED: "completed",
+  FAILED: "failed",
+} as const satisfies Record<string, VideoTranscodeStatus>
+
 // Extraction content types (for image/document analysis)
 export const EXTRACTION_CONTENT_TYPES = [
   "chart",

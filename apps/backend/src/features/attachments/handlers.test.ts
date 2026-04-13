@@ -49,7 +49,7 @@ describe("attachment handlers safety gating", () => {
       isMember: mock(() => Promise.resolve(true)),
     } as any
 
-    const handlers = createAttachmentHandlers({ attachmentService, streamService })
+    const handlers = createAttachmentHandlers({ attachmentService, streamService, storage: {} as any, pool: {} as any })
     const res = createResponse()
 
     await handlers.upload(
@@ -85,7 +85,7 @@ describe("attachment handlers safety gating", () => {
       isMember: mock(() => Promise.resolve(true)),
     } as any
 
-    const handlers = createAttachmentHandlers({ attachmentService, streamService })
+    const handlers = createAttachmentHandlers({ attachmentService, streamService, storage: {} as any, pool: {} as any })
     const res = createResponse()
 
     await handlers.upload(
@@ -121,7 +121,7 @@ describe("attachment handlers safety gating", () => {
       isMember: mock(() => Promise.resolve(true)),
     } as any
 
-    const handlers = createAttachmentHandlers({ attachmentService, streamService })
+    const handlers = createAttachmentHandlers({ attachmentService, streamService, storage: {} as any, pool: {} as any })
     const res = createResponse()
 
     await handlers.getDownloadUrl(
@@ -150,7 +150,7 @@ describe("attachment handlers safety gating", () => {
       isMember: mock(() => Promise.resolve(true)),
     } as any
 
-    const handlers = createAttachmentHandlers({ attachmentService, streamService })
+    const handlers = createAttachmentHandlers({ attachmentService, streamService, storage: {} as any, pool: {} as any })
     const res = createResponse()
 
     await handlers.getDownloadUrl(
@@ -179,7 +179,7 @@ describe("attachment handlers safety gating", () => {
       isMember: mock(() => Promise.resolve(true)),
     } as any
 
-    const handlers = createAttachmentHandlers({ attachmentService, streamService })
+    const handlers = createAttachmentHandlers({ attachmentService, streamService, storage: {} as any, pool: {} as any })
     const res = createResponse()
 
     await handlers.getDownloadUrl(
