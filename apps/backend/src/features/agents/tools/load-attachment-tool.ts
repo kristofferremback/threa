@@ -1,7 +1,6 @@
 import { z } from "zod"
 import { AgentStepTypes } from "@threa/types"
 import { logger } from "../../../lib/logger"
-import { AttachmentRepository } from "../../attachments"
 import { defineAgentTool, type AgentToolResult } from "../runtime"
 import type { WorkspaceToolDeps } from "./tool-deps"
 
@@ -19,7 +18,7 @@ export interface LoadAttachmentResult {
 }
 
 export function createLoadAttachmentTool(deps: WorkspaceToolDeps) {
-  const { db, accessibleStreamIds, storage } = deps
+  const { workspaceId, accessibleStreamIds, attachmentService, storage } = deps
 
   return defineAgentTool({
     name: "load_attachment",
@@ -34,16 +33,11 @@ For text content from documents, prefer get_attachment which returns the extract
 
     execute: async (input): Promise<AgentToolResult> => {
       try {
-        const attachment = await AttachmentRepository.findById(db, input.attachmentId)
+        const attachment = await attachmentService.getAccessible(input.attachmentId, {
+          workspaceId,
+          accessibleStreamIds,
+        })
         if (!attachment) {
-          return {
-            output: JSON.stringify({
-              error: "Attachment not found, not accessible, or not an image",
-              attachmentId: input.attachmentId,
-            }),
-          }
-        }
-        if (!attachment.streamId || !accessibleStreamIds.includes(attachment.streamId)) {
           return {
             output: JSON.stringify({
               error: "Attachment not found, not accessible, or not an image",

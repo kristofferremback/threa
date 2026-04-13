@@ -54,7 +54,12 @@ import { UserPreferencesService } from "../../../src/features/user-preferences"
 import { EmbeddingService } from "../../../src/features/memos"
 import { StreamRepository, StreamMemberRepository } from "../../../src/features/streams"
 import { MessageRepository, EventService } from "../../../src/features/messaging"
-import { AttachmentRepository, AttachmentExtractionRepository } from "../../../src/features/attachments"
+import {
+  AttachmentRepository,
+  AttachmentExtractionRepository,
+  AttachmentService,
+  createMalwareScanner,
+} from "../../../src/features/attachments"
 import { createModelRegistry, type ModelRegistry } from "../../../src/lib/ai/model-registry"
 import type { StorageProvider } from "../../../src/lib/storage/s3-client"
 import type { Server } from "socket.io"
@@ -290,6 +295,11 @@ async function runVisionTask(input: MultimodalVisionInput, ctx: EvalContext): Pr
 
     // Mock storage provider that returns our test images
     const mockStorage = createMockStorage(mockImages)
+    const attachmentService = new AttachmentService(
+      ctx.pool,
+      mockStorage,
+      createMalwareScanner(mockStorage, { malwareScanEnabled: false })
+    )
 
     // Model registry for vision capability checks
     const modelRegistry = createModelRegistry()
@@ -368,6 +378,7 @@ async function runVisionTask(input: MultimodalVisionInput, ctx: EvalContext): Pr
       workspaceAgent,
       searchService,
       conversationSummaryService,
+      attachmentService,
       storage: mockStorage,
       modelRegistry,
       createMessage,

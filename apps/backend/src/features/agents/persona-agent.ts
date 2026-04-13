@@ -24,6 +24,7 @@ import type { SessionAbortRegistry } from "./session-abort-registry"
 import type { AI, CostContext } from "../../lib/ai/ai"
 import type { SearchService } from "../search"
 import type { ConversationSummaryService } from "./conversation-summary-service"
+import type { AttachmentService } from "../attachments"
 import type { StorageProvider } from "../../lib/storage/s3-client"
 import type { ModelRegistry } from "../../lib/ai/model-registry"
 import { WorkspaceAgent, type WorkspaceAgentResult } from "./researcher"
@@ -52,6 +53,7 @@ export interface PersonaAgentDeps {
   workspaceAgent: WorkspaceAgent
   searchService: SearchService
   conversationSummaryService: ConversationSummaryService
+  attachmentService: AttachmentService
   storage: StorageProvider
   modelRegistry: ModelRegistry
   tavilyApiKey?: string
@@ -126,6 +128,7 @@ export class PersonaAgent {
       workspaceAgent,
       searchService,
       conversationSummaryService,
+      attachmentService,
       storage,
       modelRegistry,
       tavilyApiKey,
@@ -337,6 +340,7 @@ export class PersonaAgent {
             accessibleStreamIds: [...agentContext.accessibleStreamIds],
             invokingUserId: agentContext.invokingUserId,
             searchService,
+            attachmentService,
             storage,
           }
         }

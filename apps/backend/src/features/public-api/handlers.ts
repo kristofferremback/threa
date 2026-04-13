@@ -379,21 +379,14 @@ export function createPublicApiHandlers({
   }
 
   async function resolveAccessibleAttachment(req: Request, attachmentId: string): Promise<Attachment> {
-    const attachment = await attachmentService.getById(attachmentId)
-    if (!attachment || attachment.workspaceId !== req.workspaceId! || !attachment.streamId) {
-      throw new HttpError("Attachment not found", { status: 404, code: "NOT_FOUND" })
-    }
-
     const accessibleStreamIds = await getAccessibleStreamIds(req)
-    if (!accessibleStreamIds.includes(attachment.streamId)) {
+    const attachment = await attachmentService.getAccessible(attachmentId, {
+      workspaceId: req.workspaceId!,
+      accessibleStreamIds,
+    })
+    if (!attachment) {
       throw new HttpError("Attachment not found", { status: 404, code: "NOT_FOUND" })
     }
-
-    const sharingBlockReason = attachmentService.getSharingBlockReason(attachment)
-    if (sharingBlockReason) {
-      throw new HttpError("Attachment not found", { status: 404, code: "NOT_FOUND" })
-    }
-
     return attachment
   }
 
