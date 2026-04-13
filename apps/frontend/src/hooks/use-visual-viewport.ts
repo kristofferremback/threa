@@ -7,11 +7,19 @@ const KEYBOARD_THRESHOLD = 100
 const POLL_DURATION = 600
 
 /**
- * Tracks the on-screen keyboard state on mobile devices.
+ * Tracks the on-screen keyboard state on mobile devices and pins
+ * `--viewport-height` to the actual visible viewport height.
  *
- * Sets a `--viewport-height` CSS custom property on `<html>` imperatively
- * (bypassing React state) for smooth height tracking. Falls back to `100dvh`
- * when the keyboard is closed.
+ * Why always write `--viewport-height` (not just when the keyboard is open)?
+ * Chrome on Android does not reliably recompute `dvh` after `location.reload`,
+ * pull-to-refresh, or a back-forward cache restore — the engine keeps the
+ * pre-reload "URL-bar hidden" value, so any element sized to `100dvh` renders
+ * taller than the visible area. The bottom of the app (composer) ends up
+ * below the fold until something forces a re-layout (opening the keyboard for
+ * search or the quick switcher, URL-bar animation, orientation change).
+ * Firefox Android handles `dvh` correctly, which is why the bug is Chrome-only.
+ * Sourcing the height from `visualViewport.height` bypasses the buggy `dvh`
+ * resolution entirely and gives layout a stable, authoritative value.
  *
  * Detection strategy (layered to handle browser differences):
  * 1. Primary: visualViewport.height < window.innerHeight (Chrome, Safari)
@@ -19,7 +27,9 @@ const POLL_DURATION = 600
  *    which resizes both viewports together when the keyboard opens)
  *
  * Also polls `visualViewport` during input focus transitions to catch
- * keyboard animation frames that may not emit discrete resize events.
+ * keyboard animation frames that may not emit discrete resize events, and
+ * re-measures on `pageshow` so BFCache restores do not linger in a stale
+ * viewport state.
  */
 export function useVisualViewport(enabled: boolean): boolean {
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false)
@@ -53,11 +63,13 @@ export function useVisualViewport(enabled: boolean): boolean {
         baseHeight.current = window.innerHeight
       }
 
-      if (keyboardOpen) {
-        docEl.style.setProperty("--viewport-height", `${vvHeight}px`)
-      } else {
-        docEl.style.removeProperty("--viewport-height")
-      }
+      // Always pin --viewport-height to a concrete pixel value. Relying on
+      // `100dvh` alone is unsafe on Chrome Android, which caches a stale
+      // "URL-bar hidden" value across reloads, pull-to-refresh, and BFCache
+      // restores and leaves the app taller than the visible viewport until
+      // something (keyboard, URL bar animation, orientation change) forces a
+      // re-layout.
+      docEl.style.setProperty("--viewport-height", `${vvHeight}px`)
 
       // Only update React state when the boolean actually changes
       setIsKeyboardOpen((prev) => (prev !== keyboardOpen ? keyboardOpen : prev))
@@ -101,6 +113,14 @@ export function useVisualViewport(enabled: boolean): boolean {
       }
     }
 
+    // Re-measure when the page is restored (BFCache restore, tab refocus).
+    // Chrome Android's dvh is routinely stale here and `resize` events may
+    // not fire, so poll briefly to catch the URL bar animation too.
+    const onPageShow = () => {
+      baseHeight.current = window.innerHeight
+      pollForDuration(POLL_DURATION)
+    }
+
     // Set initial state
     update()
 
@@ -113,6 +133,7 @@ export function useVisualViewport(enabled: boolean): boolean {
     window.addEventListener("resize", update)
     document.addEventListener("focusin", onFocusIn)
     document.addEventListener("focusout", onFocusOut)
+    window.addEventListener("pageshow", onPageShow)
 
     return () => {
       cancelAnimationFrame(rafId.current)
@@ -123,6 +144,7 @@ export function useVisualViewport(enabled: boolean): boolean {
       window.removeEventListener("resize", update)
       document.removeEventListener("focusin", onFocusIn)
       document.removeEventListener("focusout", onFocusOut)
+      window.removeEventListener("pageshow", onPageShow)
       docEl.style.removeProperty("--viewport-height")
     }
   }, [enabled])
