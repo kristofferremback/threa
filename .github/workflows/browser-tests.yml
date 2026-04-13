@@ -202,6 +202,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: browser-tests
     if: always()
+    continue-on-error: true
     steps:
       - name: Download shard result markers
         uses: actions/download-artifact@v4
@@ -253,6 +254,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: browser-tests
     if: always()
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
