@@ -40,10 +40,9 @@ jobs:
             *)         ICON="⚠️"; STATUS="$CONCLUSION" ;;
           esac
 
-          MESSAGE="$ICON **$WORKFLOW_NAME $STATUS** on \`main\`
-
-\`$SHORT_SHA\` — $FIRST_LINE
-by @$ACTOR · [View run]($RUN_URL)"
+          # Build message with printf to avoid multiline YAML indentation issues
+          MESSAGE=$(printf '%s **%s %s** on `main`\n\n`%s` — %s\nby @%s · [View run](%s)' \
+            "$ICON" "$WORKFLOW_NAME" "$STATUS" "$SHORT_SHA" "$FIRST_LINE" "$ACTOR" "$RUN_URL")
 
           PAYLOAD=$(jq -n --arg content "$MESSAGE" '{"content": $content}')
 
