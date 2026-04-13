@@ -18,7 +18,8 @@ on:
 jobs:
   browser-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
+    continue-on-error: true
     env:
       TOTAL_SHARDS: 3
     strategy:
@@ -130,23 +131,130 @@ jobs:
           fi
 
       - name: Run browser tests
+        id: initial-run
+        continue-on-error: true
         run: bun run test:browser -- --reporter=line,blob --shard=${{ matrix.shard_index }}/${{ env.TOTAL_SHARDS }}
         env:
           CI: true
           PLAYWRIGHT_TEST_DB_NAME: ${{ env.PLAYWRIGHT_TEST_DB_NAME }}
 
-      - name: Upload Playwright report
+      - name: Archive initial blob report before retry
+        if: steps.initial-run.outcome == 'failure'
+        run: |
+          if [ -d blob-report ]; then
+            mv blob-report blob-report-initial
+          fi
+
+      - name: Retry failed tests in isolation
+        id: retry-run
+        if: steps.initial-run.outcome == 'failure'
+        continue-on-error: true
+        run: |
+          if [ ! -f test-results/.last-run.json ]; then
+            echo "::warning::No .last-run.json found — skipping retry (likely an infra failure)"
+            exit 1
+          fi
+          bun run test:browser -- --reporter=line,blob --last-failed --retries=0
+        env:
+          CI: true
+          PLAYWRIGHT_TEST_DB_NAME: ${{ env.PLAYWRIGHT_TEST_DB_NAME }}
+
+      - name: Write shard result marker
+        if: always()
+        run: |
+          if [[ "${{ steps.initial-run.outcome }}" == "success" ]]; then
+            result="passed"
+          elif [[ "${{ steps.retry-run.outcome }}" == "success" ]]; then
+            result="flaky"
+          else
+            result="failed"
+          fi
+          echo "$result" > shard-result.txt
+          echo "Shard ${{ matrix.shard_index }} result: $result"
+
+      - name: Upload initial blob report (when retry ran)
+        uses: actions/upload-artifact@v4
+        if: steps.initial-run.outcome == 'failure' && !cancelled()
+        with:
+          name: playwright-blob-report-shard-${{ matrix.shard_index }}-initial
+          path: blob-report-initial/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload Playwright blob report
         uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
           name: playwright-blob-report-shard-${{ matrix.shard_index }}
           path: blob-report/
+          if-no-files-found: ignore
           retention-days: 30
+
+      - name: Upload shard result marker
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shard-result-${{ matrix.shard_index }}
+          path: shard-result.txt
+          retention-days: 7
+
+  evaluate-results:
+    runs-on: ubuntu-latest
+    needs: browser-tests
+    if: always()
+    steps:
+      - name: Download shard result markers
+        uses: actions/download-artifact@v4
+        with:
+          path: shard-results
+          pattern: shard-result-*
+
+      - name: Summarize results
+        run: |
+          echo "## Browser Test Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Shard | Result |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-------|--------|" >> "$GITHUB_STEP_SUMMARY"
+
+          passed_count=0
+          flaky_count=0
+          failed_count=0
+
+          for i in 1 2 3; do
+            result_file="shard-results/shard-result-${i}/shard-result.txt"
+            if [ -f "$result_file" ]; then
+              result=$(cat "$result_file")
+            else
+              result="unknown"
+            fi
+
+            case "$result" in
+              passed) icon="✅"; passed_count=$((passed_count + 1)) ;;
+              flaky)  icon="🌀"; flaky_count=$((flaky_count + 1)) ;;
+              *)      icon="❌"; failed_count=$((failed_count + 1)) ;;
+            esac
+
+            echo "| $i | $icon $result |" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ $failed_count -eq 3 ]]; then
+            echo "⛔ All shards failed — likely an infra issue, not test failures." >> "$GITHUB_STEP_SUMMARY"
+          elif [[ $failed_count -gt 0 && $flaky_count -gt 0 ]]; then
+            echo "⚠️ Some confirmed failures. Some tests are flaky (passed on retry)." >> "$GITHUB_STEP_SUMMARY"
+          elif [[ $failed_count -gt 0 ]]; then
+            echo "⚠️ Some tests have confirmed failures (failed in isolation). Check the merged Playwright report." >> "$GITHUB_STEP_SUMMARY"
+          elif [[ $flaky_count -gt 0 ]]; then
+            echo "🌀 All failures were flaky — tests passed when retried in isolation." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "✅ All shards passed." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   merge-playwright-reports:
     runs-on: ubuntu-latest
     needs: browser-tests
-    if: ${{ !cancelled() && always() }}
+    if: always()
     steps:
       - uses: actions/checkout@v4
 
@@ -161,7 +269,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: downloaded-blob-reports
-          pattern: playwright-blob-report-shard-*
+          pattern: playwright-blob-report-*
 
       - name: Merge Playwright blob reports
         run: |

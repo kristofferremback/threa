@@ -1,0 +1,54 @@
+name: Notify Threa
+
+on:
+  workflow_run:
+    workflows: [CI, Deploy Cloudflare]
+    types: [completed]
+    branches: [main]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Threa notification
+        env:
+          THREA_BOT_API_KEY: ${{ secrets.THREA_BOT_API_KEY }}
+          WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          COMMIT_MSG: ${{ github.event.workflow_run.head_commit.message }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          ACTOR: ${{ github.event.workflow_run.triggering_actor.login }}
+        run: |
+          # Exit early for conclusions we don't care about
+          case "$WORKFLOW_NAME/$CONCLUSION" in
+            "Deploy Cloudflare/success"|"Deploy Cloudflare/failure"|"Deploy Cloudflare/timed_out") ;;
+            "CI/failure"|"CI/timed_out") ;;
+            *)
+              echo "No notification needed ($WORKFLOW_NAME / $CONCLUSION)"
+              exit 0
+              ;;
+          esac
+
+          SHORT_SHA="${HEAD_SHA:0:7}"
+          FIRST_LINE="${COMMIT_MSG%%$'\n'*}"
+
+          case "$CONCLUSION" in
+            success)   ICON="✅"; STATUS="succeeded" ;;
+            failure)   ICON="❌"; STATUS="failed" ;;
+            timed_out) ICON="⏱"; STATUS="timed out" ;;
+            *)         ICON="⚠️"; STATUS="$CONCLUSION" ;;
+          esac
+
+          MESSAGE="$ICON **$WORKFLOW_NAME $STATUS** on \`main\`
+
+\`$SHORT_SHA\` — $FIRST_LINE
+by @$ACTOR · [View run]($RUN_URL)"
+
+          PAYLOAD=$(jq -n --arg content "$MESSAGE" '{"content": $content}')
+
+          curl -f --show-error -X POST \
+            "https://app.threa.io/api/v1/workspaces/ws_01KJDZZV5H57W3H2SJ11PA554B/streams/stream_01KP36GA56WZREGN6VTKREWRM9/messages" \
+            -H "Authorization: Bearer $THREA_BOT_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD"
