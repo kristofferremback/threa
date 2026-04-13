@@ -3,6 +3,7 @@ import type { Socket } from "socket.io-client"
 import type { QueryClient } from "@tanstack/react-query"
 import { db } from "@/db"
 import { joinRoomFireAndForget, joinRoomBestEffort } from "@/lib/socket-room"
+import { pingSocket } from "@/lib/socket-health"
 import { ApiError } from "@/api/client"
 import {
   applyReconnectBootstrapBatch,
@@ -135,6 +136,33 @@ export class SyncEngine {
   async refreshAfterConnectivityResume(): Promise<void> {
     if (this.isDestroyed || !this.socket || !this.hasEverConnected) return
     await this.runBootstrap(true)
+  }
+
+  /**
+   * Called when the page resumes from a long hidden period (e.g. phone
+   * unlocked after app-switch). Probes the socket for liveness; if the
+   * probe fails, forces a reconnect to short-circuit socket.io's 20–25s
+   * native zombie detection. If the probe succeeds, refreshes state since
+   * events may have been missed while the page was backgrounded.
+   */
+  async handlePageResume(): Promise<void> {
+    if (this.isDestroyed || !this.socket || !this.hasEverConnected) return
+    // If the transport is already down, socket.io is handling the reconnect;
+    // don't layer another probe on top of it.
+    if (!this.socket.connected) return
+
+    const healthy = await pingSocket(this.socket, 3000)
+    if (this.isDestroyed) return
+
+    if (!healthy) {
+      // Manual disconnect disables socket.io's auto-reconnect, so connect explicitly.
+      // onConnect(isReconnect=true) will drive the fresh bootstrap cycle.
+      this.socket.disconnect()
+      this.socket.connect()
+      return
+    }
+
+    await this.refreshAfterConnectivityResume()
   }
 
   /**

@@ -381,6 +381,13 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
       })
     })
 
+    // Liveness probe for client-initiated zombie-socket detection on resume.
+    // Distinct from socket.io's transport-level ping so we can ack synchronously
+    // without coupling to the native pingTimeout cycle.
+    socket.on("health:ping", (callback?: (result: { ok: true }) => void) => {
+      callback?.({ ok: true })
+    })
+
     socket.on("disconnect", () => {
       userSocketRegistry.unregister(workosUserId, socket)
 
