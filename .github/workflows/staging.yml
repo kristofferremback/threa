@@ -63,6 +63,24 @@ jobs:
           CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
           BRANCH_NAME: ${{ github.head_ref }}
 
+      - name: Notify Threa channel
+        continue-on-error: true
+        env:
+          THREA_BOT_API_KEY: ${{ secrets.THREA_BOT_API_KEY }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          STAGING_URL="https://pr-${PR_NUMBER}-staging.threa.io"
+          MESSAGE=$(printf '🚀 **Staging deployed** — [%s](%s)\n\n%s' \
+            "$PR_TITLE" "$PR_URL" "$STAGING_URL")
+          PAYLOAD=$(jq -n --arg content "$MESSAGE" '{"content": $content}')
+          curl -f --show-error -X POST \
+            "https://app.threa.io/api/v1/workspaces/ws_01KJDZZV5H57W3H2SJ11PA554B/streams/stream_01KP36GA56WZREGN6VTKREWRM9/messages" \
+            -H "Authorization: Bearer $THREA_BOT_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD"
+
       - name: Comment PR with staging URL
         uses: actions/github-script@v7
         with:
