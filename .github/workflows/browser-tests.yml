@@ -220,13 +220,11 @@ jobs:
           flaky_count=0
           failed_count=0
 
-          for i in 1 2 3; do
-            result_file="shard-results/shard-result-${i}/shard-result.txt"
-            if [ -f "$result_file" ]; then
-              result=$(cat "$result_file")
-            else
-              result="unknown"
-            fi
+          # Derive shards from downloaded artifact directories so this stays
+          # correct if TOTAL_SHARDS changes without touching evaluate-results.
+          for result_file in shard-results/shard-result-*/shard-result.txt; do
+            shard_num=$(basename "$(dirname "$result_file")" | sed 's/shard-result-//')
+            result=$(cat "$result_file")
 
             case "$result" in
               passed) icon="✅"; passed_count=$((passed_count + 1)) ;;
@@ -234,12 +232,12 @@ jobs:
               *)      icon="❌"; failed_count=$((failed_count + 1)) ;;
             esac
 
-            echo "| $i | $icon $result |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| $shard_num | $icon $result |" >> "$GITHUB_STEP_SUMMARY"
           done
 
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
-          if [[ $failed_count -eq 3 ]]; then
+          if [[ $passed_count -eq 0 && $flaky_count -eq 0 && $failed_count -gt 0 ]]; then
             echo "⛔ All shards failed — likely an infra issue, not test failures." >> "$GITHUB_STEP_SUMMARY"
           elif [[ $failed_count -gt 0 && $flaky_count -gt 0 ]]; then
             echo "⚠️ Some confirmed failures. Some tests are flaky (passed on retry)." >> "$GITHUB_STEP_SUMMARY"
