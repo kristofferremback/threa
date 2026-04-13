@@ -6,10 +6,10 @@ import {
   QUERY_LOAD_STATE,
   getQueryLoadState,
   isQueryLoadStateLoading,
-  isRecoverableBootstrapError,
   isTerminalBootstrapError,
   type QueryLoadState,
 } from "@/lib/query-load-state"
+import { STREAM_BOOTSTRAP_QUERY_OPTIONS } from "@/lib/stream-bootstrap-query"
 import { joinRoomBestEffort } from "@/lib/socket-room"
 import { applyStreamBootstrap, toCachedStreamBootstrap, type CachedStreamBootstrap } from "@/sync/stream-sync"
 import { streamKeys } from "./use-streams"
@@ -21,31 +21,6 @@ function isDraftId(id: string): boolean {
 
 async function queryFnWithoutSocket() {
   throw new Error("Socket not available for stream subscription")
-}
-
-/**
- * Retry configuration for bootstrap queries.
- *
- * Transient errors (5xx, 429, network failures) must self-heal — otherwise a
- * single failed fetch on navigation leaves the stream stuck empty until the
- * user reloads (INV-53 intent is continuous availability). Terminal 403/404
- * stays terminal to avoid loops on deleted or forbidden streams, and other
- * non-recoverable client errors (e.g. 400) also skip retry so we surface the
- * error immediately rather than hammering the server.
- */
-const MAX_BOOTSTRAP_RETRIES = 2
-const BOOTSTRAP_RETRY_BASE_DELAY_MS = 500
-const BOOTSTRAP_RETRY_MAX_DELAY_MS = 4000
-
-// Accepts Error (not unknown) so TanStack Query keeps its default `TError = Error`
-// inference — typing as unknown widens the query's error type across consumers.
-export function bootstrapRetry(failureCount: number, error: Error): boolean {
-  if (!isRecoverableBootstrapError(error)) return false
-  return failureCount < MAX_BOOTSTRAP_RETRIES
-}
-
-export function bootstrapRetryDelay(attempt: number): number {
-  return Math.min(BOOTSTRAP_RETRY_BASE_DELAY_MS * 2 ** attempt, BOOTSTRAP_RETRY_MAX_DELAY_MS)
 }
 
 function aggregateQueryLoadState(states: QueryLoadState[]): QueryLoadState {
@@ -112,23 +87,10 @@ export function useCoordinatedStreamQueries(workspaceId: string, streamIds: stri
               )
             }
           : queryFnWithoutSocket,
-        // Don't enable queries that have already errored with a terminal 403/404.
-        // Recoverable errors are handled by `retry` below, not by disabling.
+        // Terminal 403/404 errors disable the query to prevent loops; recoverable
+        // errors stay enabled and self-heal via STREAM_BOOTSTRAP_QUERY_OPTIONS.retry.
         enabled: !!workspaceId && !!socket && !erroredStreamIds.has(streamId),
-        staleTime: Infinity, // Never consider data stale
-        gcTime: Infinity, // Never garbage collect
-        // Retry transient errors (5xx, 429, network) so a single hiccup on
-        // navigation doesn't leave the stream stuck empty. Terminal and other
-        // non-recoverable errors are not retried.
-        retry: bootstrapRetry,
-        retryDelay: bootstrapRetryDelay,
-        refetchOnMount: false,
-        refetchOnWindowFocus: false,
-        refetchOnReconnect: false,
-        // Disable structural sharing to avoid issues with the dynamic queries array.
-        // Since we create new query objects when the stream list changes, structural
-        // sharing can cause stale references. Worth the extra re-renders for correctness.
-        structuralSharing: false,
+        ...STREAM_BOOTSTRAP_QUERY_OPTIONS,
       })),
     [serverStreamIds, workspaceId, streamService, socket, erroredStreamIds, queryClient]
   )

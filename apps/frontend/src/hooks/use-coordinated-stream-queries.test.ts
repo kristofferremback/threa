@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import { renderHook, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { createElement, type ReactNode } from "react"
-import { bootstrapRetry, bootstrapRetryDelay, useCoordinatedStreamQueries } from "./use-coordinated-stream-queries"
+import { useCoordinatedStreamQueries } from "./use-coordinated-stream-queries"
 import { QUERY_LOAD_STATE } from "@/lib/query-load-state"
 import { ApiError } from "@/api/client"
 
@@ -53,7 +53,6 @@ describe("useCoordinatedStreamQueries", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockJoinRoomBestEffort.mockResolvedValue(undefined)
-    mockToCachedStreamBootstrap.mockImplementation((bootstrap: unknown) => bootstrap)
   })
 
   it("should filter out draft IDs and not fetch them", async () => {
@@ -125,8 +124,6 @@ describe("useCoordinatedStreamQueries", () => {
 
   it("should return isError=true when any query fails", async () => {
     const queryClient = createTestQueryClient()
-    // Use a terminal (404) error so no retry runs — this test checks error
-    // surfacing, not retry semantics.
     mockBootstrap.mockImplementation(async (_workspaceId: string, streamId: string) => {
       if (streamId === "stream_456") {
         throw new ApiError(404, "STREAM_NOT_FOUND", "Stream not found")
@@ -237,39 +234,5 @@ describe("useCoordinatedStreamQueries", () => {
     expect(mockBootstrap).toHaveBeenCalledWith("workspace_1", "stream_123")
     expect(mockBootstrap).toHaveBeenCalledWith("workspace_1", "stream_abc")
     expect(mockBootstrap).not.toHaveBeenCalledWith("workspace_1", "draft:stream_456:msg_789")
-  })
-})
-
-describe("bootstrapRetry", () => {
-  it("retries recoverable errors up to MAX_BOOTSTRAP_RETRIES", () => {
-    const networkError = new Error("network down")
-    expect(bootstrapRetry(0, networkError)).toBe(true)
-    expect(bootstrapRetry(1, networkError)).toBe(true)
-    expect(bootstrapRetry(2, networkError)).toBe(false)
-  })
-
-  it("retries 429 and 5xx API errors", () => {
-    expect(bootstrapRetry(0, new ApiError(429, "RATE_LIMITED", "Slow"))).toBe(true)
-    expect(bootstrapRetry(0, new ApiError(500, "INTERNAL", "Boom"))).toBe(true)
-    expect(bootstrapRetry(0, new ApiError(503, "UNAVAILABLE", "Unavailable"))).toBe(true)
-  })
-
-  it("does not retry terminal 403/404 errors", () => {
-    expect(bootstrapRetry(0, new ApiError(403, "FORBIDDEN", "Forbidden"))).toBe(false)
-    expect(bootstrapRetry(0, new ApiError(404, "NOT_FOUND", "Not found"))).toBe(false)
-  })
-
-  it("does not retry non-recoverable 4xx errors", () => {
-    expect(bootstrapRetry(0, new ApiError(400, "BAD_REQUEST", "Bad request"))).toBe(false)
-    expect(bootstrapRetry(0, new ApiError(401, "UNAUTHORIZED", "Unauthorized"))).toBe(false)
-  })
-})
-
-describe("bootstrapRetryDelay", () => {
-  it("uses exponential backoff capped at the max delay", () => {
-    expect(bootstrapRetryDelay(0)).toBe(500)
-    expect(bootstrapRetryDelay(1)).toBe(1000)
-    expect(bootstrapRetryDelay(2)).toBe(2000)
-    expect(bootstrapRetryDelay(10)).toBe(4000)
   })
 })
