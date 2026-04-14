@@ -89,7 +89,6 @@ export default function CodeBlock({ language, children }: CodeBlockProps) {
     await db.codeBlockCollapse.put({
       id: collapseKey,
       messageId: messageContext.messageId,
-      blockIndex: 0,
       collapsed: next,
       updatedAt: Date.now(),
     })

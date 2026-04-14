@@ -139,7 +139,6 @@ describe("CodeBlock collapse behavior", () => {
       await db.codeBlockCollapse.put({
         id: key,
         messageId,
-        blockIndex: 0,
         collapsed: true,
         updatedAt: Date.now(),
       })

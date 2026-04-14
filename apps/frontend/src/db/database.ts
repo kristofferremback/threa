@@ -251,13 +251,13 @@ export interface CachedUserPreferences {
 /**
  * Persisted UI toggle state for a single code block inside a message.
  * Scoped per message so collapsed/expanded state survives reloads.
- * Key format: `${messageId}:${blockIndex}` — blockIndex is the 0-based
- * position of the fenced code block within the message's markdown.
+ * Key format: `${messageId}:${contentHash}` where contentHash is a fast
+ * deterministic digest of the block's language + content (see
+ * `hashCodeBlock` in `lib/markdown/code-block-context`).
  */
 export interface CachedCodeBlockCollapse {
   id: string
   messageId: string
-  blockIndex: number
   collapsed: boolean
   updatedAt: number
 }
