@@ -249,15 +249,17 @@ export interface CachedUserPreferences {
 }
 
 /**
- * Persisted UI toggle state for a single code block inside a message.
- * Scoped per message so collapsed/expanded state survives reloads.
- * Key format: `${messageId}:${contentHash}` where contentHash is a fast
- * deterministic digest of the block's language + content (see
- * `hashCodeBlock` in `lib/markdown/code-block-context`).
+ * Persisted UI toggle state for a single collapsible markdown block inside
+ * a message (code block, blockquote, or quote reply). Scoped per message so
+ * collapsed/expanded state survives reloads.
+ * Key format: `${messageId}:${kind}:${contentHash}` — see
+ * `composeBlockCollapseKey` in `lib/markdown/markdown-block-context`.
  */
-export interface CachedCodeBlockCollapse {
+export interface CachedMarkdownBlockCollapse {
   id: string
   messageId: string
+  /** Block kind — lets us clear collapse state scoped to a block type. */
+  kind: "code" | "blockquote" | "quote-reply"
   collapsed: boolean
   updatedAt: number
 }
@@ -289,7 +291,7 @@ class ThreaDatabase extends Dexie {
   userPreferences!: EntityTable<CachedUserPreferences, "id">
   workspaceMetadata!: EntityTable<CachedWorkspaceMetadata, "id">
   pendingOperations!: EntityTable<PendingOperation, "id">
-  codeBlockCollapse!: EntityTable<CachedCodeBlockCollapse, "id">
+  markdownBlockCollapse!: EntityTable<CachedMarkdownBlockCollapse, "id">
 
   constructor() {
     super("threa")
@@ -448,6 +450,40 @@ class ThreaDatabase extends Dexie {
       codeBlockCollapse: "id, messageId, updatedAt",
     })
 
+    // v22: Generalize the collapse table to cover any collapsible markdown
+    // block (code, blockquote, quote-reply). The key format gains a `kind`
+    // segment, and existing code-block rows are carried over.
+    this.version(22)
+      .stores({
+        markdownBlockCollapse: "id, messageId, kind, updatedAt",
+        codeBlockCollapse: null,
+      })
+      .upgrade(async (tx) => {
+        const oldRows = await tx.table("codeBlockCollapse").toArray()
+        const migrated = oldRows.flatMap((row) => {
+          // Old id was `${messageId}:${hash}`. ULIDs don't contain ':' so the
+          // first colon separates the two parts. Skip any row missing either
+          // segment rather than producing a corrupt key.
+          const id = typeof row.id === "string" ? row.id : ""
+          const separator = id.indexOf(":")
+          if (separator <= 0 || separator === id.length - 1) return []
+          const messageId = id.slice(0, separator)
+          const hash = id.slice(separator + 1)
+          return [
+            {
+              id: `${messageId}:code:${hash}`,
+              messageId,
+              kind: "code" as const,
+              collapsed: Boolean(row.collapsed),
+              updatedAt: typeof row.updatedAt === "number" ? row.updatedAt : Date.now(),
+            },
+          ]
+        })
+        if (migrated.length > 0) {
+          await tx.table("markdownBlockCollapse").bulkPut(migrated)
+        }
+      })
+
     this.workspaceUsers = this.table(WORKSPACE_USERS_STORE) as EntityTable<CachedWorkspaceUser, "id">
   }
 }
@@ -472,7 +508,7 @@ export async function clearAllCachedData(): Promise<void> {
       db.userPreferences.clear(),
       db.workspaceMetadata.clear(),
       db.pendingOperations.clear(),
-      db.codeBlockCollapse.clear(),
+      db.markdownBlockCollapse.clear(),
       // Note: we keep pendingMessages to retry sending after re-login
     ])
   } finally {

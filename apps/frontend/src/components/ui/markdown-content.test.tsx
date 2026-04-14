@@ -183,7 +183,7 @@ describe("MarkdownContent", () => {
       render(<MarkdownContent content="> This is a quote" />)
       const blockquote = screen.getByText("This is a quote").closest("blockquote")
       expect(blockquote).toBeInTheDocument()
-      expect(blockquote).toHaveClass("border-l-2", "border-primary/50", "italic")
+      expect(blockquote).toHaveClass("border-l-2", "border-primary/50")
     })
 
     it("should render nested blockquotes", () => {

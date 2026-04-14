@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event"
 import { DEFAULT_CODE_BLOCK_COLLAPSE_THRESHOLD } from "@threa/types"
 import { db } from "@/db"
 import CodeBlock from "./code-block"
-import { CodeBlockMessageProvider, hashCodeBlock } from "./code-block-context"
+import { MarkdownBlockProvider, hashMarkdownBlock, composeBlockCollapseKey } from "./markdown-block-context"
 
 // Shiki is heavy (loads WASM) and not relevant to collapse behavior.
 // Return a predictable HTML string synchronously.
@@ -17,9 +17,9 @@ let currentPrefs: { codeBlockCollapseThreshold?: number } | null = {
   codeBlockCollapseThreshold: DEFAULT_CODE_BLOCK_COLLAPSE_THRESHOLD,
 }
 
-vi.mock("@/contexts/preferences-context", () => ({
-  usePreferences: () => {
-    if (!currentPrefs) throw new Error("no preferences")
+vi.mock("@/contexts/preferences-context", () => {
+  const mockContext = () => {
+    if (!currentPrefs) return null
     return {
       preferences: currentPrefs,
       resolvedTheme: "light",
@@ -30,25 +30,33 @@ vi.mock("@/contexts/preferences-context", () => ({
       resetKeyboardShortcut: vi.fn(),
       resetAllKeyboardShortcuts: vi.fn(),
     }
-  },
-}))
+  }
+  return {
+    usePreferences: () => {
+      const value = mockContext()
+      if (!value) throw new Error("no preferences")
+      return value
+    },
+    usePreferencesOptional: () => mockContext(),
+  }
+})
 
 function renderCodeBlock(code: string, messageId = "msg_test", language = "typescript") {
   return render(
-    <CodeBlockMessageProvider messageId={messageId}>
+    <MarkdownBlockProvider messageId={messageId}>
       <CodeBlock language={language}>{code}</CodeBlock>
-    </CodeBlockMessageProvider>
+    </MarkdownBlockProvider>
   )
 }
 
 describe("CodeBlock collapse behavior", () => {
   beforeEach(async () => {
     currentPrefs = { codeBlockCollapseThreshold: DEFAULT_CODE_BLOCK_COLLAPSE_THRESHOLD }
-    await db.codeBlockCollapse.clear()
+    await db.markdownBlockCollapse.clear()
   })
 
   afterEach(async () => {
-    await db.codeBlockCollapse.clear()
+    await db.markdownBlockCollapse.clear()
   })
 
   it("renders short code blocks (≤ threshold) expanded by default", async () => {
@@ -133,9 +141,10 @@ describe("CodeBlock collapse behavior", () => {
     })
 
     // Persisted row reflects the expanded override.
-    const key = `${messageId}:${hashCodeBlock(code.trim(), "typescript")}`
-    const row = await db.codeBlockCollapse.get(key)
+    const key = composeBlockCollapseKey(messageId, "code", hashMarkdownBlock(code.trim(), "typescript"))
+    const row = await db.markdownBlockCollapse.get(key)
     expect(row?.collapsed).toBe(false)
+    expect(row?.kind).toBe("code")
   })
 
   it("toggles expanded → collapsed on click and persists the choice", async () => {
@@ -155,21 +164,22 @@ describe("CodeBlock collapse behavior", () => {
       expect(screen.getByText(/2 lines, click to expand/i)).toBeInTheDocument()
     })
 
-    const key = `${messageId}:${hashCodeBlock(code.trim(), "typescript")}`
-    const row = await db.codeBlockCollapse.get(key)
+    const key = composeBlockCollapseKey(messageId, "code", hashMarkdownBlock(code.trim(), "typescript"))
+    const row = await db.markdownBlockCollapse.get(key)
     expect(row?.collapsed).toBe(true)
   })
 
   it("restores collapsed state from IDB on subsequent renders", async () => {
     const code = "short block\ntwo lines"
     const messageId = "msg_persisted"
-    const key = `${messageId}:${hashCodeBlock(code.trim(), "typescript")}`
+    const key = composeBlockCollapseKey(messageId, "code", hashMarkdownBlock(code.trim(), "typescript"))
 
     // Pre-seed IDB with a user override (collapsed even though it's short).
     await act(async () => {
-      await db.codeBlockCollapse.put({
+      await db.markdownBlockCollapse.put({
         id: key,
         messageId,
+        kind: "code",
         collapsed: true,
         updatedAt: Date.now(),
       })

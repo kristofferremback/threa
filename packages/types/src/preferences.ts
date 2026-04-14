@@ -96,6 +96,13 @@ export const CODE_BLOCK_COLLAPSE_THRESHOLD_MIN = 0
 export const CODE_BLOCK_COLLAPSE_THRESHOLD_MAX = 500
 export const DEFAULT_CODE_BLOCK_COLLAPSE_THRESHOLD = 10
 
+// Blockquote collapse threshold - line count above which block quotes (and
+// quote-reply attributions) start collapsed. Same semantics as the code-block
+// threshold, but measured in rendered text lines of the quoted content.
+export const BLOCKQUOTE_COLLAPSE_THRESHOLD_MIN = 0
+export const BLOCKQUOTE_COLLAPSE_THRESHOLD_MAX = 500
+export const DEFAULT_BLOCKQUOTE_COLLAPSE_THRESHOLD = 6
+
 // Settings tab options (for URL-driven settings dialog)
 export const SETTINGS_TAB_OPTIONS = [
   "profile",
@@ -161,6 +168,7 @@ export interface UserPreferences {
   linkPreviewDefault: LinkPreviewDefault
   scratchpadCustomPrompt: string | null
   codeBlockCollapseThreshold: number
+  blockquoteCollapseThreshold: number
   keyboardShortcuts: KeyboardShortcuts
   accessibility: AccessibilityPreferences
   createdAt: string
@@ -183,6 +191,7 @@ export const DEFAULT_USER_PREFERENCES: Omit<UserPreferences, "workspaceId" | "us
   linkPreviewDefault: "open",
   scratchpadCustomPrompt: null,
   codeBlockCollapseThreshold: DEFAULT_CODE_BLOCK_COLLAPSE_THRESHOLD,
+  blockquoteCollapseThreshold: DEFAULT_BLOCKQUOTE_COLLAPSE_THRESHOLD,
   keyboardShortcuts: {},
   accessibility: DEFAULT_ACCESSIBILITY,
 }
@@ -207,6 +216,7 @@ export interface UpdateUserPreferencesInput {
   linkPreviewDefault?: LinkPreviewDefault
   scratchpadCustomPrompt?: string | null
   codeBlockCollapseThreshold?: number
+  blockquoteCollapseThreshold?: number
   keyboardShortcuts?: KeyboardShortcuts
   accessibility?: Partial<AccessibilityPreferences>
 }

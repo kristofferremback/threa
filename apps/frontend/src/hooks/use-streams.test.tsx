@@ -76,6 +76,7 @@ function makeWorkspaceBootstrap(): WorkspaceBootstrap {
       linkPreviewDefault: "open",
       scratchpadCustomPrompt: null,
       codeBlockCollapseThreshold: 10,
+      blockquoteCollapseThreshold: 6,
       accessibility: {
         fontSize: "medium",
         fontFamily: "system",
