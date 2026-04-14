@@ -64,7 +64,7 @@ export function WorkspaceSettingsDialog({ workspaceId }: WorkspaceSettingsDialog
     <ResponsiveDialog open={isOpen} onOpenChange={(open) => !open && close()}>
       <ResponsiveDialogContent
         desktopClassName="w-[min(96vw,980px)] max-w-none h-[min(720px,calc(100vh-2rem))] sm:flex flex-col overflow-hidden p-0 gap-0"
-        drawerClassName="flex flex-col gap-0"
+        drawerClassName="flex flex-col gap-0 !min-h-[60dvh]"
         hideCloseButton
       >
         <ResponsiveDialogHeader className="border-b px-4 py-4 sm:px-6 sm:py-5">

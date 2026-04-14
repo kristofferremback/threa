@@ -283,7 +283,7 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
       <ResponsiveDialogContent
         ref={dialogRef}
         desktopClassName="overflow-hidden p-0 gap-0 shadow-lg sm:!fixed sm:!top-[20%] sm:!translate-y-0 sm:max-w-[600px] sm:rounded-2xl sm:border"
-        drawerClassName="overflow-hidden p-0"
+        drawerClassName="overflow-hidden p-0 !min-h-[60dvh]"
         hideCloseButton
         onPointerDownOutside={(e) => {
           // Prevent closing when clicking on suggestion popover (rendered via portal)

@@ -44,7 +44,7 @@ export function SettingsDialog() {
     <ResponsiveDialog open={isOpen} onOpenChange={(open) => !open && closeSettings()}>
       <ResponsiveDialogContent
         desktopClassName="w-[min(96vw,980px)] max-w-none h-[min(720px,calc(100vh-2rem))] sm:flex flex-col overflow-hidden p-0 gap-0"
-        drawerClassName="flex flex-col gap-0"
+        drawerClassName="flex flex-col gap-0 !min-h-[60dvh]"
         hideCloseButton
         onEscapeKeyDown={(event) => {
           if (isShortcutCaptureActive) {

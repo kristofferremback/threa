@@ -173,16 +173,27 @@ DrawerContent.displayName = "DrawerContent"
  *    and `touch-pan-y` lock panning to the vertical axis — without them
  *    the implicit `overflow-x: auto` side-effect of `overflow-y: auto`
  *    absorbs horizontal touch intent and defeats momentum scrolling.
- *  - `data-vaul-no-drag` so touch scrolling inside the body doesn't get
- *    hijacked by vaul as a drag-to-close gesture.
+ *  - `data-vaul-no-drag` so vaul's `shouldDrag` bails when a gesture starts
+ *    inside the body. But that check runs inside `onDrag`, *after* vaul's
+ *    `onPress` has already called `setPointerCapture` on the drawer content.
+ *    Combined with vaul's injected `touch-action: none` on
+ *    `[data-vaul-drawer]`, the capture suppresses iOS fling/inertia on the
+ *    inner scroll container. Stopping pointerdown propagation in the capture
+ *    phase prevents vaul's `onPress` from running for touches that start
+ *    inside the scroll area, which restores native momentum scrolling
+ *    without affecting drag-to-close from the notch.
  *  - bottom padding with safe-area inset so the last item has breathing
  *    room above the home indicator instead of sitting flush with the edge.
  */
 const DrawerBody = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
-  ({ className, ...props }, ref) => (
+  ({ className, onPointerDownCapture, ...props }, ref) => (
     <div
       ref={ref}
       data-vaul-no-drag
+      onPointerDownCapture={(e) => {
+        e.stopPropagation()
+        onPointerDownCapture?.(e)
+      }}
       className={cn(
         "flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain touch-pan-y pb-[max(24px,env(safe-area-inset-bottom))]",
         className
