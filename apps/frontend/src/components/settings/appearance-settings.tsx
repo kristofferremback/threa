@@ -1,8 +1,18 @@
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
+import { Input } from "@/components/ui/input"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { usePreferences } from "@/contexts"
-import { THEME_OPTIONS, MESSAGE_DISPLAY_OPTIONS, type Theme, type MessageDisplay } from "@threa/types"
+import {
+  THEME_OPTIONS,
+  MESSAGE_DISPLAY_OPTIONS,
+  CODE_BLOCK_COLLAPSE_THRESHOLD_MIN,
+  CODE_BLOCK_COLLAPSE_THRESHOLD_MAX,
+  DEFAULT_CODE_BLOCK_COLLAPSE_THRESHOLD,
+  type Theme,
+  type MessageDisplay,
+} from "@threa/types"
 
 const THEME_LABELS: Record<Theme, string> = {
   light: "Light",
@@ -25,6 +35,28 @@ export function AppearanceSettings() {
 
   const theme = preferences?.theme ?? "system"
   const messageDisplay = preferences?.messageDisplay ?? "comfortable"
+  const codeBlockThreshold = preferences?.codeBlockCollapseThreshold ?? DEFAULT_CODE_BLOCK_COLLAPSE_THRESHOLD
+
+  // Local input state so users can type freely without each keystroke
+  // hitting the preferences mutation. We commit on blur / Enter only.
+  const [thresholdDraft, setThresholdDraft] = useState<string>(String(codeBlockThreshold))
+  useEffect(() => {
+    setThresholdDraft(String(codeBlockThreshold))
+  }, [codeBlockThreshold])
+
+  const commitThreshold = () => {
+    const parsed = Number.parseInt(thresholdDraft, 10)
+    if (!Number.isFinite(parsed)) {
+      setThresholdDraft(String(codeBlockThreshold))
+      return
+    }
+    const clamped = Math.min(CODE_BLOCK_COLLAPSE_THRESHOLD_MAX, Math.max(CODE_BLOCK_COLLAPSE_THRESHOLD_MIN, parsed))
+    if (clamped === codeBlockThreshold) {
+      setThresholdDraft(String(clamped))
+      return
+    }
+    void updatePreference("codeBlockCollapseThreshold", clamped)
+  }
 
   return (
     <div className="space-y-6">
@@ -77,6 +109,43 @@ export function AppearanceSettings() {
               </div>
             ))}
           </RadioGroup>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Code Blocks</CardTitle>
+          <CardDescription>Collapse long code blocks by default to keep messages scannable</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-start gap-4">
+            <div className="grid gap-1 flex-1">
+              <Label htmlFor="code-block-collapse-threshold" className="cursor-pointer">
+                Collapse threshold
+              </Label>
+              <p className="text-sm text-muted-foreground">
+                Code blocks with more than this many lines start collapsed. You can always click to expand or collapse
+                individual blocks.
+              </p>
+            </div>
+            <Input
+              id="code-block-collapse-threshold"
+              type="number"
+              inputMode="numeric"
+              min={CODE_BLOCK_COLLAPSE_THRESHOLD_MIN}
+              max={CODE_BLOCK_COLLAPSE_THRESHOLD_MAX}
+              value={thresholdDraft}
+              onChange={(event) => setThresholdDraft(event.target.value)}
+              onBlur={commitThreshold}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault()
+                  commitThreshold()
+                }
+              }}
+              className="w-24"
+            />
+          </div>
         </CardContent>
       </Card>
     </div>

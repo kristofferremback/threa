@@ -370,6 +370,10 @@ export {
   LINK_PREVIEW_DEFAULT_OPTIONS,
   type LinkPreviewDefault,
   LinkPreviewDefaults,
+  // Code block collapse threshold
+  CODE_BLOCK_COLLAPSE_THRESHOLD_MIN,
+  CODE_BLOCK_COLLAPSE_THRESHOLD_MAX,
+  DEFAULT_CODE_BLOCK_COLLAPSE_THRESHOLD,
   // Settings tabs
   SETTINGS_TAB_OPTIONS,
   SETTINGS_TABS,
