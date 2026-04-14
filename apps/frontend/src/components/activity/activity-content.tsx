@@ -12,6 +12,7 @@ interface ActivityContentProps {
   streamName: string
   activityType: string
   contentPreview: string
+  toEmoji?: (shortcode: string) => string | null
   createdAt: string
   isUnread: boolean
 }
@@ -21,11 +22,12 @@ export function ActivityContent({
   streamName,
   activityType,
   contentPreview,
+  toEmoji,
   createdAt,
   isUnread,
 }: ActivityContentProps) {
   const display = ACTIVITY_DISPLAY[activityType] ?? ACTIVITY_DISPLAY.message
-  const previewText = stripMarkdownToInline(contentPreview)
+  const previewText = stripMarkdownToInline(contentPreview, toEmoji)
 
   return (
     <div className="flex-1 min-w-0">

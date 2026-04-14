@@ -2,9 +2,14 @@
  * Strip markdown formatting and collapse newlines to spaces.
  * Use for single-line preview surfaces (sidebar, activity feed) where the
  * source text is markdown but the surface only shows a flattened snippet.
+ *
+ * Pass `toEmoji` (from `useWorkspaceEmoji`) to also resolve `:shortcode:`
+ * sequences into their emoji characters; unresolved shortcodes stay as text.
  */
-export function stripMarkdownToInline(md: string): string {
-  return stripMarkdown(md).replace(/\n+/g, " ")
+export function stripMarkdownToInline(md: string, toEmoji?: (shortcode: string) => string | null): string {
+  const stripped = stripMarkdown(md).replace(/\n+/g, " ")
+  if (!toEmoji) return stripped
+  return stripped.replace(/:([a-z0-9_+-]+):/g, (match, shortcode) => toEmoji(shortcode) ?? match)
 }
 
 /** Strip markdown formatting, returning plain text content. */

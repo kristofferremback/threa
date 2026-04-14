@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useActivityFeed, useMarkActivityRead, useMarkAllActivityRead, useActors } from "@/hooks"
+import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { useWorkspaceStreams } from "@/stores/workspace-store"
 import { useActivityCounts } from "@/hooks/use-activity-counts"
 import { getStreamName, streamFallbackLabel } from "@/lib/streams"
@@ -20,6 +21,7 @@ export function ActivityPage() {
   const markRead = useMarkActivityRead(workspaceId ?? "")
   const markAllRead = useMarkAllActivityRead(workspaceId ?? "")
   const { getActorName } = useActors(workspaceId ?? "")
+  const { toEmoji } = useWorkspaceEmoji(workspaceId ?? "")
   const idbStreams = useWorkspaceStreams(workspaceId ?? "")
   const { unreadActivityCount } = useActivityCounts(workspaceId ?? "")
 
@@ -78,6 +80,7 @@ export function ActivityPage() {
               actorName={getActorName(activity.actorId, activity.actorType as AuthorType)}
               streamName={resolveActivityStreamName(activity)}
               workspaceId={workspaceId}
+              toEmoji={toEmoji}
               onMarkAsRead={(id) => markRead.mutate(id)}
             />
           ))}

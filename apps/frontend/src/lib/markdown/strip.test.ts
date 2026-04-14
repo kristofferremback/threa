@@ -51,4 +51,18 @@ describe("stripMarkdownToInline", () => {
   it("strips markdown and collapses in one pass", () => {
     expect(stripMarkdownToInline("**hi**\n_world_")).toBe("hi world")
   })
+
+  it("resolves emoji shortcodes when a resolver is provided", () => {
+    const toEmoji = (shortcode: string) => (shortcode === "white_check_mark" ? "✅" : null)
+    expect(stripMarkdownToInline(":white_check_mark: **Deploy succeeded**", toEmoji)).toBe("✅ Deploy succeeded")
+  })
+
+  it("leaves unresolved shortcodes untouched", () => {
+    const toEmoji = (shortcode: string) => (shortcode === "rocket" ? "🚀" : null)
+    expect(stripMarkdownToInline(":rocket: launching :unknown_thing:", toEmoji)).toBe("🚀 launching :unknown_thing:")
+  })
+
+  it("does not touch shortcodes when no resolver is provided", () => {
+    expect(stripMarkdownToInline(":wave: hello")).toBe(":wave: hello")
+  })
 })

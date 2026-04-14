@@ -9,10 +9,18 @@ interface ActivityItemProps {
   actorName: string
   streamName: string
   workspaceId: string
+  toEmoji?: (shortcode: string) => string | null
   onMarkAsRead: (activityId: string) => void
 }
 
-export function ActivityItem({ activity, actorName, streamName, workspaceId, onMarkAsRead }: ActivityItemProps) {
+export function ActivityItem({
+  activity,
+  actorName,
+  streamName,
+  workspaceId,
+  toEmoji,
+  onMarkAsRead,
+}: ActivityItemProps) {
   const isUnread = !activity.readAt
   const contentPreview = (activity.context.contentPreview as string) ?? ""
 
@@ -33,6 +41,7 @@ export function ActivityItem({ activity, actorName, streamName, workspaceId, onM
         streamName={streamName}
         activityType={activity.activityType}
         contentPreview={contentPreview}
+        toEmoji={toEmoji}
         createdAt={activity.createdAt}
         isUnread={isUnread}
       />

@@ -56,4 +56,20 @@ describe("ActivityContent", () => {
 
     expect(container.querySelector("p")).toBeNull()
   })
+
+  it("resolves emoji shortcodes when a toEmoji resolver is supplied", () => {
+    const toEmoji = (shortcode: string) => ({ wave: "👋", white_check_mark: "✅" })[shortcode] ?? null
+    render(
+      <ActivityContent
+        {...baseProps}
+        contentPreview=":wave: hi! :white_check_mark: **Deploy succeeded**"
+        toEmoji={toEmoji}
+      />
+    )
+
+    const preview = screen.getByText(/Deploy succeeded/)
+    expect(preview.textContent).toContain("👋 hi! ✅ Deploy succeeded")
+    expect(preview.textContent).not.toContain(":wave:")
+    expect(preview.textContent).not.toContain(":white_check_mark:")
+  })
 })

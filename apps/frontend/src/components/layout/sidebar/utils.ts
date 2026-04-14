@@ -61,10 +61,17 @@ export function categorizeStream(stream: StreamWithPreview, unreadCount: number,
   return "other"
 }
 
-/** Truncate content for preview display. Accepts either JSONContent or plain markdown string. */
-export function truncateContent(content: JSONContent | string, maxLength: number = 50): string {
+/**
+ * Truncate content for preview display. Accepts either JSONContent or plain markdown string.
+ * Pass `toEmoji` to resolve `:shortcode:` sequences into emoji characters.
+ */
+export function truncateContent(
+  content: JSONContent | string,
+  maxLength: number = 50,
+  toEmoji?: (shortcode: string) => string | null
+): string {
   const markdown = typeof content === "string" ? content : serializeToMarkdown(content)
-  const stripped = stripMarkdownToInline(markdown)
+  const stripped = stripMarkdownToInline(markdown, toEmoji)
   return stripped.length > maxLength ? stripped.slice(0, maxLength) + "..." : stripped
 }
 

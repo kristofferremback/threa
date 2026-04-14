@@ -6,6 +6,7 @@ import { MentionIndicator } from "@/components/mention-indicator"
 import { RelativeTime } from "@/components/relative-time"
 import { getThreadRootContext } from "@/components/thread/breadcrumb-helpers"
 import { isDraftId, useActors } from "@/hooks"
+import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { useSidebar } from "@/contexts"
 import { useStreamSettings } from "@/components/stream-settings/use-stream-settings"
 import { cn } from "@/lib/utils"
@@ -94,6 +95,7 @@ export function StreamItemAvatar({ icon, className, avatarUrl, avatarAlt, badge 
 interface StreamItemPreviewProps {
   preview: StreamWithPreview["lastMessagePreview"]
   getActorName: (actorId: string | null, actorType: AuthorType | null) => string
+  toEmoji?: (shortcode: string) => string | null
   compact: boolean
   showPreviewOnHover: boolean
   isMobile: boolean
@@ -102,6 +104,7 @@ interface StreamItemPreviewProps {
 export function StreamItemPreview({
   preview,
   getActorName,
+  toEmoji,
   compact,
   showPreviewOnHover,
   isMobile,
@@ -120,7 +123,7 @@ export function StreamItemPreview({
       aria-hidden={hoverPreview ? "true" : undefined}
     >
       <span className="truncate flex-1">
-        {getActorName(preview.authorId, preview.authorType)}: {truncateContent(preview.content)}
+        {getActorName(preview.authorId, preview.authorType)}: {truncateContent(preview.content, 50, toEmoji)}
       </span>
       <RelativeTime date={preview.createdAt} className="flex-shrink-0" />
     </div>
@@ -156,6 +159,7 @@ export function StreamItem({
   scrollContainerRef,
 }: StreamItemProps) {
   const { getActorName, getActorAvatar } = useActors(workspaceId)
+  const { toEmoji } = useWorkspaceEmoji(workspaceId)
   const { openStreamSettings } = useStreamSettings()
   const { collapseOnMobile } = useSidebar()
   const itemRef = useRef<HTMLAnchorElement>(null)
@@ -235,7 +239,7 @@ export function StreamItem({
     drawerPreview = {
       streamName: name,
       authorName: getActorName(preview.authorId, preview.authorType),
-      content: truncateContent(preview.content, 140),
+      content: truncateContent(preview.content, 140, toEmoji),
       createdAt: preview.createdAt,
     }
   } else if (stream.type === StreamTypes.DM) {
@@ -322,6 +326,7 @@ export function StreamItem({
               <StreamItemPreview
                 preview={preview}
                 getActorName={getActorName}
+                toEmoji={toEmoji}
                 compact={compact}
                 showPreviewOnHover={showPreviewOnHover}
                 isMobile={isMobile}
