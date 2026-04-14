@@ -364,8 +364,6 @@ Some **bold** and *italic* text with \`code\`.
     it("should wrap long unbreakable strings inside the content column", () => {
       const { container } = render(<MarkdownContent content="test" />)
       const wrapper = container.querySelector(".markdown-content")
-      // break-words + min-w-0 so long URLs/paths/tokens wrap instead of
-      // pushing the flex message column wider than its parent.
       expect(wrapper).toHaveClass("break-words")
       expect(wrapper).toHaveClass("min-w-0")
     })
