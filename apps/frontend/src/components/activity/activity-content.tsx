@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils"
 import { RelativeTime } from "@/components/relative-time"
-import { stripMarkdown } from "@/lib/markdown"
+import { stripMarkdownToInline } from "@/lib/markdown"
 
 const ACTIVITY_DISPLAY: Record<string, { verb: string }> = {
   mention: { verb: "mentioned you in" },
@@ -25,7 +25,7 @@ export function ActivityContent({
   isUnread,
 }: ActivityContentProps) {
   const display = ACTIVITY_DISPLAY[activityType] ?? ACTIVITY_DISPLAY.message
-  const previewText = stripMarkdown(contentPreview).replace(/\n+/g, " ")
+  const previewText = stripMarkdownToInline(contentPreview)
 
   return (
     <div className="flex-1 min-w-0">

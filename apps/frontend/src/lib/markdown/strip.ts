@@ -1,3 +1,12 @@
+/**
+ * Strip markdown formatting and collapse newlines to spaces.
+ * Use for single-line preview surfaces (sidebar, activity feed) where the
+ * source text is markdown but the surface only shows a flattened snippet.
+ */
+export function stripMarkdownToInline(md: string): string {
+  return stripMarkdown(md).replace(/\n+/g, " ")
+}
+
 /** Strip markdown formatting, returning plain text content. */
 export function stripMarkdown(md: string): string {
   return (
