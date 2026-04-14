@@ -361,8 +361,11 @@ function ExpandedQuoteView({
         <div className="absolute left-0 right-0 bottom-0 h-px bg-gradient-to-r from-transparent via-border/70 to-transparent" />
       </div>
 
-      {/* Scrollable byline + content as a single actor-typed block */}
-      <div data-vaul-no-drag className="flex-1 min-h-0 overflow-y-auto">
+      {/* Scrollable byline + content as a single actor-typed block.
+          No `data-vaul-no-drag` needed: the Drawer root uses handleOnly, so
+          vaul only wires drag events to the notch handle — touches inside
+          this scroll container go straight to native iOS momentum scrolling. */}
+      <div className="flex-1 min-h-0 overflow-y-auto touch-pan-y">
         <div className={cn("relative", accentClass)}>
           {/* Decorative quote watermark */}
           <div aria-hidden="true" className={watermarkClass}>

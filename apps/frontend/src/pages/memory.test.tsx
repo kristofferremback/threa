@@ -395,12 +395,12 @@ describe("MemoryPage", () => {
   })
 
   // Regression guard for mobile memo drawer scroll. The drawer uses Vaul
-  // with snap points [0.8, 1] and DrawerContent bounds its inner wrapper to
-  // the visible portion of the viewport, so the content body (DrawerBody)
-  // must use `flex-1 min-h-0 overflow-y-auto` to actually claim space and
-  // scroll — otherwise tall memos get clipped and the user can't see
-  // Context/Provenance/Source sections. Also needs `data-vaul-no-drag` so
-  // Vaul doesn't intercept touch scrolls as drawer-close gestures.
+  // and DrawerContent bounds its inner wrapper to the visible viewport, so
+  // the content body (DrawerBody) must use `flex-1 min-h-0 overflow-y-auto`
+  // to actually claim space and scroll — otherwise tall memos get clipped
+  // and the user can't see Context/Provenance/Source sections. The drawer
+  // root uses `handleOnly`, which restricts vaul drag gestures to the notch
+  // and preserves native iOS momentum scrolling inside the body.
   describe("mobile drawer scroll", () => {
     it("renders the mobile detail drawer with a scrollable flex-1 body", () => {
       mockUseIsMobile.mockReturnValue(true)
@@ -443,7 +443,7 @@ describe("MemoryPage", () => {
       // so we're unambiguously inside the drawer body.
       const detailTitle = screen.getByRole("heading", { level: 2, name: "Launch decision" })
       let scrollContainer: HTMLElement | null = detailTitle.parentElement
-      while (scrollContainer && !scrollContainer.hasAttribute("data-vaul-no-drag")) {
+      while (scrollContainer && !scrollContainer.className.includes("overflow-y-auto")) {
         scrollContainer = scrollContainer.parentElement
       }
       expect(scrollContainer).not.toBeNull()

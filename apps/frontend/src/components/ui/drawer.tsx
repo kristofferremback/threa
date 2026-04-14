@@ -39,6 +39,7 @@ type DrawerRootProps = Omit<
 const Drawer = ({
   shouldScaleBackground = true,
   repositionInputs = false,
+  handleOnly = true,
   snapPoints,
   activeSnapPoint: controlledSnap,
   setActiveSnapPoint: setControlledSnap,
@@ -49,6 +50,13 @@ const Drawer = ({
   // handling which sets inline style.height on the drawer content. This conflicts
   // with our dvh units that already account for the virtual keyboard, causing
   // drawers to shrink to strange sizes after focus/blur cycles on mobile.
+  //
+  // handleOnly=true restricts drag gestures to the notch (DrawerPrimitive.Handle).
+  // Without this, vaul's Content onPointerDown calls setPointerCapture on the
+  // touched descendant, which suppresses iOS native momentum/inertia inside any
+  // scrollable child (e.g. DrawerBody). With handleOnly, the Content's onPointerDown
+  // returns early; scrollable descendants get clean touch events and native fling
+  // scrolling works. Drag-to-close still works by grabbing the notch.
   const [internalSnap, setInternalSnap] = React.useState<number | string | null>(snapPoints ? snapPoints[0] : null)
 
   const isControlled = controlledSnap !== undefined
@@ -73,6 +81,7 @@ const Drawer = ({
         <DrawerPrimitive.Root
           shouldScaleBackground={shouldScaleBackground}
           repositionInputs={repositionInputs}
+          handleOnly={handleOnly}
           snapPoints={snapPoints}
           activeSnapPoint={activeSnap}
           setActiveSnapPoint={setActiveSnap}
@@ -84,6 +93,7 @@ const Drawer = ({
         <DrawerPrimitive.Root
           shouldScaleBackground={shouldScaleBackground}
           repositionInputs={repositionInputs}
+          handleOnly={handleOnly}
           onOpenChange={handleOpenChange}
           {...props}
         />
@@ -150,7 +160,13 @@ const DrawerContent = React.forwardRef<
         )}
         {...props}
       >
-        <div className="mx-auto mt-4 h-2 w-[100px] shrink-0 rounded-full bg-muted" />
+        {/* `DrawerPrimitive.Handle` is the ONLY element vaul wires drag events
+            onto when the root has handleOnly=true. Using it (instead of a
+            decorative div) is what preserves native momentum scrolling in
+            DrawerBody — see the comment on `Drawer` above. The `!` overrides
+            are needed because vaul injects explicit dimensions/colors on
+            `[data-vaul-handle]` at runtime. */}
+        <DrawerPrimitive.Handle preventCycle className="mt-4 shrink-0 !h-2 !w-[100px] !bg-muted !opacity-100" />
         <div
           className="flex min-h-0 flex-1 flex-col"
           style={innerMaxHeight ? { maxHeight: innerMaxHeight } : undefined}
@@ -166,34 +182,25 @@ DrawerContent.displayName = "DrawerContent"
 // ── Body (scrollable region with safe-area bottom padding) ───────────────
 
 /**
- * Scrollable body for a drawer. Handles the three things every pull-up tab
- * needs and that were previously copy-pasted at every call site:
+ * Scrollable body for a drawer. Centralises what every pull-up tab needs:
  *  - `flex-1 min-h-0 overflow-y-auto` so it fills the remaining drawer
- *    height and actually scrolls when content overflows. `overflow-x-hidden`
- *    and `touch-pan-y` lock panning to the vertical axis — without them
- *    the implicit `overflow-x: auto` side-effect of `overflow-y: auto`
- *    absorbs horizontal touch intent and defeats momentum scrolling.
- *  - `data-vaul-no-drag` so vaul's `shouldDrag` bails when a gesture starts
- *    inside the body. But that check runs inside `onDrag`, *after* vaul's
- *    `onPress` has already called `setPointerCapture` on the drawer content.
- *    Combined with vaul's injected `touch-action: none` on
- *    `[data-vaul-drawer]`, the capture suppresses iOS fling/inertia on the
- *    inner scroll container. Stopping pointerdown propagation in the capture
- *    phase prevents vaul's `onPress` from running for touches that start
- *    inside the scroll area, which restores native momentum scrolling
- *    without affecting drag-to-close from the notch.
+ *    height and scrolls when content overflows. `overflow-x-hidden` and
+ *    `touch-pan-y` lock panning to the vertical axis — without them the
+ *    implicit `overflow-x: auto` side-effect of `overflow-y: auto` absorbs
+ *    horizontal touch intent. `touch-pan-y` also overrides vaul's injected
+ *    `[data-vaul-drawer]{touch-action:none}` for the scroll region so iOS
+ *    momentum/inertia scrolling works.
  *  - bottom padding with safe-area inset so the last item has breathing
  *    room above the home indicator instead of sitting flush with the edge.
+ *
+ * No `data-vaul-no-drag` needed: the root uses `handleOnly`, so vaul only
+ * wires drag events to the Handle component. Touches inside the body never
+ * trigger vaul's pointer capture, which is what allows native inertia.
  */
 const DrawerBody = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
-  ({ className, onPointerDownCapture, ...props }, ref) => (
+  ({ className, ...props }, ref) => (
     <div
       ref={ref}
-      data-vaul-no-drag
-      onPointerDownCapture={(e) => {
-        e.stopPropagation()
-        onPointerDownCapture?.(e)
-      }}
       className={cn(
         "flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain touch-pan-y pb-[max(24px,env(safe-area-inset-bottom))]",
         className
