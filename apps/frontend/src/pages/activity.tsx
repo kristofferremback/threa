@@ -132,7 +132,7 @@ export function ActivityPage() {
         </div>
       </header>
 
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1 [&>div>div]:!block [&>div>div]:!w-full">
         <main className="py-2">{content}</main>
       </ScrollArea>
     </div>
