@@ -1,6 +1,98 @@
 import { afterEach, describe, expect, mock, test } from "bun:test"
-import { createLinkPreviewWorker, parseHtmlMeta } from "./worker"
+import { createLinkPreviewWorker, decodeHtmlBytes, detectCharset, parseHtmlMeta } from "./worker"
 import { GitHubPreviewTypes } from "@threa/types"
+
+/** Encode a string as ISO-8859-1 (Latin-1) bytes. Each char with code ≤ 0xFF becomes one byte. */
+function latin1Bytes(input: string): Uint8Array {
+  const bytes = new Uint8Array(input.length)
+  for (let i = 0; i < input.length; i++) bytes[i] = input.charCodeAt(i) & 0xff
+  return bytes
+}
+
+describe("detectCharset", () => {
+  test("reads charset from HTTP Content-Type header", () => {
+    const bytes = latin1Bytes("<html><head></head></html>")
+    expect(detectCharset("text/html; charset=iso-8859-1", bytes)).toBe("iso-8859-1")
+    expect(detectCharset('text/html; charset="UTF-8"', bytes)).toBe("utf-8")
+    expect(detectCharset("text/html; charset=Windows-1252", bytes)).toBe("windows-1252")
+  })
+
+  test("falls back to <meta charset> in the document", () => {
+    const html = `<html><head><meta charset="utf-8"></head></html>`
+    expect(detectCharset("text/html", latin1Bytes(html))).toBe("utf-8")
+  })
+
+  test("falls back to <meta http-equiv='Content-Type'> in the document", () => {
+    const html = `<html><head><meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1"></head></html>`
+    expect(detectCharset("text/html", latin1Bytes(html))).toBe("iso-8859-1")
+  })
+
+  test("HTTP header takes priority over meta tag", () => {
+    const html = `<html><head><meta charset="iso-8859-1"></head></html>`
+    expect(detectCharset("text/html; charset=utf-8", latin1Bytes(html))).toBe("utf-8")
+  })
+
+  test("defaults to utf-8 when nothing is declared", () => {
+    const html = `<html><head></head></html>`
+    expect(detectCharset("text/html", latin1Bytes(html))).toBe("utf-8")
+    expect(detectCharset("", latin1Bytes(html))).toBe("utf-8")
+  })
+})
+
+describe("decodeHtmlBytes", () => {
+  test("decodes ISO-8859-1 bytes declared via HTTP header", () => {
+    // ä = 0xE4, å = 0xE5, ö = 0xF6 in ISO-8859-1
+    const bytes = latin1Bytes(`<html><head><title>Core Vitamins Man | Multivitamin för män</title></head></html>`)
+    const decoded = decodeHtmlBytes(bytes, "text/html; charset=iso-8859-1")
+    expect(decoded).toContain("för män")
+    expect(decoded).not.toContain("\uFFFD")
+  })
+
+  test("decodes ISO-8859-1 bytes declared via <meta http-equiv>", () => {
+    const bytes = latin1Bytes(
+      `<html><head>` +
+        `<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">` +
+        `<title>Bär och frukt</title>` +
+        `</head></html>`
+    )
+    const decoded = decodeHtmlBytes(bytes, "text/html")
+    expect(decoded).toContain("Bär och frukt")
+    expect(decoded).not.toContain("\uFFFD")
+  })
+
+  test("decodes UTF-8 bytes by default", () => {
+    const bytes = new TextEncoder().encode(`<html><head><title>Vitaminer för män</title></head></html>`)
+    const decoded = decodeHtmlBytes(bytes, "text/html; charset=utf-8")
+    expect(decoded).toContain("för män")
+  })
+
+  test("falls back to UTF-8 when the declared charset is unknown", () => {
+    const bytes = new TextEncoder().encode(`<html><head></head></html>`)
+    const decoded = decodeHtmlBytes(bytes, "text/html; charset=nonsense-label")
+    expect(decoded).toContain("<html>")
+  })
+
+  test("parseHtmlMeta reads Swedish OG tags after ISO-8859-1 decode", async () => {
+    // Mimics svensktkosttillskott.se: charset in <meta http-equiv>, og tags with Latin-1 chars.
+    const bytes = latin1Bytes(
+      `<html><head>` +
+        `<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">` +
+        `<meta property="og:title" content="Core Vitamins Man | Multivitamin för män">` +
+        `<meta property="og:description" content="I Core Vitamins Man får du bland annat vitamin C, zink och extrakt från frukt och bär.">` +
+        `<meta property="og:site_name" content="Svenskt Kosttillskott">` +
+        `</head></html>`
+    )
+    const html = decodeHtmlBytes(bytes, "text/html")
+    const result = await parseHtmlMeta(html, "https://www.svensktkosttillskott.se/core-vitamins-man")
+    expect(result.title).toBe("Core Vitamins Man | Multivitamin för män")
+    expect(result.description).toBe(
+      "I Core Vitamins Man får du bland annat vitamin C, zink och extrakt från frukt och bär."
+    )
+    expect(result.siteName).toBe("Svenskt Kosttillskott")
+    expect(result.title).not.toContain("\uFFFD")
+    expect(result.description).not.toContain("\uFFFD")
+  })
+})
 
 describe("parseHtmlMeta", () => {
   const baseUrl = "https://example.com/page"
