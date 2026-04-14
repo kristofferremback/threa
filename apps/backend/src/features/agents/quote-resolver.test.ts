@@ -41,6 +41,7 @@ function createMessage(overrides: Partial<Message> & { id: string }): Message {
     contentMarkdown: `body of ${overrides.id}`,
     replyCount: 0,
     reactions: {},
+    metadata: {},
     clientMessageId: null,
     sentVia: null,
     editedAt: null,

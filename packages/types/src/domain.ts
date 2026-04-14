@@ -191,6 +191,12 @@ export interface Message {
   replyCount: number
   sentVia: string | null
   reactions: Record<string, string[]>
+  /**
+   * Arbitrary key/value references attached by the sender (e.g. external system IDs).
+   * Keys under `threa.*` are reserved for system-generated metadata.
+   * Queried with AND-containment semantics via the public API.
+   */
+  metadata: Record<string, string>
   editedAt: string | null
   deletedAt: string | null
   createdAt: string

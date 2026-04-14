@@ -501,6 +501,12 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     requireApiKeyScope(API_KEY_SCOPES.MESSAGES_WRITE),
     publicApi.sendMessage
   )
+  app.post(
+    "/api/v1/workspaces/:workspaceId/messages/find-by-metadata",
+    ...publicMiddleware,
+    requireApiKeyScope(API_KEY_SCOPES.MESSAGES_READ),
+    publicApi.findMessagesByMetadata
+  )
   app.patch(
     "/api/v1/workspaces/:workspaceId/messages/:messageId",
     ...publicMiddleware,

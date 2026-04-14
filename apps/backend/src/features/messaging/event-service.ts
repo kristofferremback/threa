@@ -40,6 +40,8 @@ export interface MessageCreatedPayload {
   clientMessageId?: string
   /** Present when message was sent via an API key on behalf of a user */
   sentVia?: string
+  /** External references attached by the sender (string->string). Omitted when empty. */
+  metadata?: Record<string, string>
 }
 
 export interface MessageEditedPayload {
@@ -78,6 +80,8 @@ export interface CreateMessageParams {
   clientMessageId?: string
   /** Indicator for messages sent via API (e.g. "api" for user-scoped keys) */
   sentVia?: string
+  /** External references (string->string) attached to the message. Reserved prefix: `threa.*`. */
+  metadata?: Record<string, string>
 }
 
 export interface EditMessageParams {
@@ -203,6 +207,9 @@ export class EventService {
         }))
       }
 
+      // Non-empty metadata only — keep payloads and projections clean of `{}`.
+      const metadata = params.metadata && Object.keys(params.metadata).length > 0 ? params.metadata : undefined
+
       // 2. Append event (source of truth) - includes attachments and sources in payload
       const event = await StreamEventRepository.insert(client, {
         id: evtId,
@@ -217,6 +224,7 @@ export class EventService {
           ...(params.sessionId && { sessionId: params.sessionId }),
           ...(params.clientMessageId && { clientMessageId: params.clientMessageId }),
           ...(params.sentVia && { sentVia: params.sentVia }),
+          ...(metadata && { metadata }),
         } satisfies MessageCreatedPayload,
         actorId: params.authorId,
         actorType: params.authorType,
@@ -233,6 +241,7 @@ export class EventService {
         contentMarkdown: params.contentMarkdown,
         clientMessageId: params.clientMessageId,
         sentVia: params.sentVia,
+        metadata,
       })
 
       // Concurrent duplicate detected: ON CONFLICT DO NOTHING suppressed our INSERT,
@@ -571,6 +580,19 @@ export class EventService {
 
   async getMessagesByIds(messageIds: string[]): Promise<Map<string, Message>> {
     return withClient(this.pool, (client) => MessageRepository.findByIds(client, messageIds))
+  }
+
+  /**
+   * Find non-deleted messages matching a metadata filter (AND-containment),
+   * scoped to the caller's accessible streams. See {@link MessageRepository.findByMetadata}.
+   */
+  async findByMetadata(params: {
+    streamIds: string[]
+    filter: Record<string, string>
+    streamId?: string
+    limit?: number
+  }): Promise<Message[]> {
+    return MessageRepository.findByMetadata(this.pool, params)
   }
 
   async getLatestSequence(streamId: string): Promise<bigint | null> {

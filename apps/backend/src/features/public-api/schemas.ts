@@ -7,6 +7,7 @@
  */
 import { z } from "zod"
 import { STREAM_TYPES, MEMO_TYPES, KNOWLEDGE_TYPES, EXTRACTION_CONTENT_TYPES } from "@threa/types"
+import { messageMetadataSchema, messageMetadataFilterSchema } from "../messaging"
 
 const PUBLIC_SEARCH_MAX_LIMIT = 50
 const PUBLIC_ATTACHMENT_SEARCH_MAX_LIMIT = 50
@@ -66,10 +67,19 @@ export const listMessagesSchema = z
 export const sendMessageSchema = z.object({
   content: z.string().min(1, "content is required"),
   clientMessageId: z.string().max(128).optional(),
+  metadata: messageMetadataSchema.optional(),
 })
 
 export const updateMessageSchema = z.object({
   content: z.string().min(1, "content is required"),
+})
+
+export const findMessagesByMetadataSchema = z.object({
+  /** AND-containment filter: a message matches when its metadata contains every key/value pair. */
+  metadata: messageMetadataFilterSchema,
+  /** Optional — narrow the search to a single accessible stream. */
+  streamId: z.string().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional().default(20),
 })
 
 export const listMembersSchema = z.object({

@@ -20,6 +20,7 @@ export interface SearchResult {
   authorType: AuthorType
   sequence: bigint
   replyCount: number
+  metadata: Record<string, string>
   editedAt: Date | null
   createdAt: Date
   rank: number
@@ -33,6 +34,7 @@ interface SearchResultRow {
   author_type: string
   sequence: string
   reply_count: number
+  metadata: Record<string, string>
   edited_at: Date | null
   created_at: Date
   rank: number
@@ -47,6 +49,7 @@ function mapRowToSearchResult(row: SearchResultRow): SearchResult {
     authorType: row.author_type as AuthorType,
     sequence: BigInt(row.sequence),
     replyCount: row.reply_count,
+    metadata: row.metadata ?? {},
     editedAt: row.edited_at,
     createdAt: row.created_at,
     rank: row.rank,
@@ -202,6 +205,7 @@ export const SearchRepository = {
           m.author_type,
           m.sequence,
           m.reply_count,
+          m.metadata,
           m.edited_at,
           m.created_at,
           0 as rank
@@ -228,6 +232,7 @@ export const SearchRepository = {
         m.author_type,
         m.sequence,
         m.reply_count,
+        m.metadata,
         m.edited_at,
         m.created_at,
         ts_rank(m.search_vector, websearch_to_tsquery('english', ${query})) as rank
@@ -287,6 +292,7 @@ export const SearchRepository = {
           m.author_type,
           m.sequence,
           m.reply_count,
+          m.metadata,
           m.edited_at,
           m.created_at,
           ROW_NUMBER() OVER (ORDER BY ts_rank(m.search_vector, websearch_to_tsquery('english', ${query})) DESC) as rank
@@ -310,6 +316,7 @@ export const SearchRepository = {
           m.author_type,
           m.sequence,
           m.reply_count,
+          m.metadata,
           m.edited_at,
           m.created_at,
           ROW_NUMBER() OVER (ORDER BY m.embedding <=> ${embeddingLiteral}::vector) as rank
@@ -334,6 +341,7 @@ export const SearchRepository = {
           COALESCE(k.author_type, s.author_type) as author_type,
           COALESCE(k.sequence, s.sequence) as sequence,
           COALESCE(k.reply_count, s.reply_count) as reply_count,
+          COALESCE(k.metadata, s.metadata) as metadata,
           COALESCE(k.edited_at, s.edited_at) as edited_at,
           COALESCE(k.created_at, s.created_at) as created_at,
           COALESCE(${keywordWeight}::float / (${k}::float + k.rank), 0) +
@@ -375,6 +383,7 @@ export const SearchRepository = {
         m.author_type,
         m.sequence,
         m.reply_count,
+        m.metadata,
         m.edited_at,
         m.created_at,
         0 as rank

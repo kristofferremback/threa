@@ -26,6 +26,7 @@ import {
   listUsersSchema,
   searchMemosSchema,
   searchAttachmentsSchema,
+  findMessagesByMetadataSchema,
 } from "./schemas"
 
 // ---------------------------------------------------------------------------
@@ -60,6 +61,9 @@ const messageSchema = z.object({
   threadStreamId: z.string().optional(),
   clientMessageId: z.string().optional(),
   sentVia: z.string().optional().describe("Present when message was sent via API on behalf of a user"),
+  metadata: z
+    .record(z.string(), z.string())
+    .describe("External references attached by the sender. Always present; empty when unset."),
   editedAt: z.string().datetime().optional(),
   createdAt: z.string().datetime(),
 })
@@ -73,6 +77,9 @@ const searchResultSchema = z.object({
   authorType: z.enum(AUTHOR_TYPES),
   authorDisplayName: z.string().optional(),
   replyCount: z.number().int(),
+  metadata: z
+    .record(z.string(), z.string())
+    .describe("External references attached by the sender. Always present; empty when unset."),
   editedAt: z.string().datetime().optional(),
   createdAt: z.string().datetime(),
   rank: z.number(),
@@ -425,6 +432,21 @@ export const PUBLIC_API_ROUTES: PublicApiRoute[] = [
     requestIn: "body",
     responseSchema: dataEnvelope(messageSchema),
     successStatus: 201,
+  },
+  {
+    method: "post",
+    path: "/api/v1/workspaces/{workspaceId}/messages/find-by-metadata",
+    operationId: "findMessagesByMetadata",
+    summary: "Find messages by metadata",
+    description:
+      "Find non-deleted messages whose `metadata` contains all the given key/value pairs (AND-containment). " +
+      "Useful for dedup flows — e.g. 'has a message already been posted for this GitHub PR event?'.",
+    tags: ["Messages"],
+    scopes: [API_KEY_SCOPES.MESSAGES_READ],
+    parameters: [workspaceIdParam],
+    requestSchema: findMessagesByMetadataSchema,
+    requestIn: "body",
+    responseSchema: dataArrayEnvelope(messageSchema),
   },
   {
     method: "patch",

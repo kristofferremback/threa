@@ -268,6 +268,33 @@ describe("Public API — OpenAPI Spec Validation", () => {
       expect(parsed.success).toBe(true)
     })
 
+    test("POST /messages/find-by-metadata returns data matching messageSchema", async () => {
+      // Seed a message with metadata so the find has something to return.
+      const tag = `openapi-find-${testRunId}`
+      await apiRequest(
+        "POST",
+        `/api/v1/workspaces/${ctx.workspaceId}/streams/${ctx.channelId}/messages`,
+        ctx.allScopesKey,
+        { content: `OpenAPI find test ${testRunId}`, metadata: { "test.tag": tag } }
+      )
+
+      const res = await apiRequest(
+        "POST",
+        `/api/v1/workspaces/${ctx.workspaceId}/messages/find-by-metadata`,
+        ctx.allScopesKey,
+        { metadata: { "test.tag": tag } }
+      )
+      expect(res.status).toBe(200)
+
+      const body = await res.json()
+      expect(body.data).toBeArray()
+      expect(body.data.length).toBeGreaterThanOrEqual(1)
+      for (const item of body.data) {
+        const parsed = messageSchema.safeParse(item)
+        expect(parsed.success).toBe(true)
+      }
+    })
+
     test("PATCH /messages/:messageId returns data matching messageSchema", async () => {
       const sendRes = await apiRequest(
         "POST",

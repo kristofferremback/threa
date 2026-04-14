@@ -30,6 +30,8 @@ export function serializeSearchResult(result: SearchResult) {
     authorId: result.authorId,
     authorType: result.authorType,
     replyCount: result.replyCount,
+    // Always include metadata (empty object when unset) to match other message responses.
+    metadata: result.metadata ?? {},
     ...(result.editedAt != null && { editedAt: result.editedAt.toISOString() }),
     createdAt: result.createdAt.toISOString(),
     rank: result.rank,

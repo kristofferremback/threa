@@ -14,6 +14,7 @@ jobs:
         env:
           THREA_BOT_API_KEY: ${{ secrets.THREA_BOT_API_KEY }}
           WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
           CONCLUSION: ${{ github.event.workflow_run.conclusion }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           COMMIT_MSG: ${{ github.event.workflow_run.head_commit.message }}
@@ -44,7 +45,28 @@ jobs:
           MESSAGE=$(printf '%s **%s %s** on `main`\n\n`%s` — %s\nby @%s · [View run](%s)' \
             "$ICON" "$WORKFLOW_NAME" "$STATUS" "$SHORT_SHA" "$FIRST_LINE" "$ACTOR" "$RUN_URL")
 
-          PAYLOAD=$(jq -n --arg content "$MESSAGE" '{"content": $content}')
+          # clientMessageId dedupes on accidental workflow_run redelivery (race-safe via backend ON CONFLICT).
+          # metadata lets future tooling query "every CI failure for commit X" etc. (AND-containment).
+          PAYLOAD=$(jq -n \
+            --arg content "$MESSAGE" \
+            --arg clientMessageId "ghactions:${WORKFLOW_RUN_ID}:${CONCLUSION}" \
+            --arg workflow "$WORKFLOW_NAME" \
+            --arg run_id "$WORKFLOW_RUN_ID" \
+            --arg conclusion "$CONCLUSION" \
+            --arg sha "$HEAD_SHA" \
+            --arg actor "$ACTOR" \
+            '{
+              content: $content,
+              clientMessageId: $clientMessageId,
+              metadata: {
+                source: "github-actions",
+                "github.workflow.name": $workflow,
+                "github.workflow.run_id": $run_id,
+                "github.workflow.conclusion": $conclusion,
+                "github.commit.sha": $sha,
+                "github.actor": $actor
+              }
+            }')
 
           curl -f --show-error -X POST \
             "https://app.threa.io/api/v1/workspaces/ws_01KJDZZV5H57W3H2SJ11PA554B/streams/stream_01KP36GA56WZREGN6VTKREWRM9/messages" \

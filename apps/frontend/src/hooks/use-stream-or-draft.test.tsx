@@ -246,6 +246,7 @@ describe("useStreamOrDraft draft DM send", () => {
       replyCount: 0,
       sentVia: null,
       reactions: {},
+      metadata: {},
       editedAt: null,
       deletedAt: null,
       createdAt,

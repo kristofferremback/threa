@@ -14,6 +14,7 @@ interface MessageRow {
   reply_count: number
   client_message_id: string | null
   sent_via: string | null
+  metadata: Record<string, string>
   edited_at: Date | null
   deleted_at: Date | null
   created_at: Date
@@ -38,6 +39,8 @@ export interface Message {
   clientMessageId: string | null
   sentVia: string | null
   reactions: Record<string, string[]>
+  /** External references (e.g. GitHub PR id). Always present; `{}` when unset. */
+  metadata: Record<string, string>
   editedAt: Date | null
   deletedAt: Date | null
   createdAt: Date
@@ -53,6 +56,7 @@ export interface InsertMessageParams {
   contentMarkdown: string
   clientMessageId?: string
   sentVia?: string
+  metadata?: Record<string, string>
 }
 
 function mapRowToMessage(row: MessageRow, reactions: Record<string, string[]> = {}): Message {
@@ -68,6 +72,8 @@ function mapRowToMessage(row: MessageRow, reactions: Record<string, string[]> = 
     clientMessageId: row.client_message_id,
     sentVia: row.sent_via,
     reactions,
+    // JSONB comes back parsed; the column has NOT NULL DEFAULT '{}' so it's always an object.
+    metadata: row.metadata ?? {},
     editedAt: row.edited_at,
     deletedAt: row.deleted_at,
     createdAt: row.created_at,
@@ -109,6 +115,7 @@ function aggregateReactionsByMessage(rows: ReactionRow[]): Map<string, Record<st
 const SELECT_FIELDS = `
   id, stream_id, sequence, author_id, author_type,
   content_json, content_markdown, reply_count, client_message_id, sent_via,
+  metadata,
   edited_at, deleted_at, created_at
 `
 
@@ -259,6 +266,7 @@ export const MessageRepository = {
   async insert(db: Querier, params: InsertMessageParams): Promise<Message> {
     const clientMessageId = params.clientMessageId ?? null
     const sentVia = params.sentVia ?? null
+    const metadata = params.metadata ?? {}
 
     // Use ON CONFLICT DO NOTHING when a clientMessageId is provided so that
     // concurrent retries don't throw a unique-constraint error (INV-20).
@@ -267,7 +275,7 @@ export const MessageRepository = {
       : ""
 
     const result = await db.query<MessageRow>(sql`
-      INSERT INTO messages (id, stream_id, sequence, author_id, author_type, content_json, content_markdown, client_message_id, sent_via)
+      INSERT INTO messages (id, stream_id, sequence, author_id, author_type, content_json, content_markdown, client_message_id, sent_via, metadata)
       VALUES (
         ${params.id},
         ${params.streamId},
@@ -277,7 +285,8 @@ export const MessageRepository = {
         ${JSON.stringify(params.contentJson)},
         ${params.contentMarkdown},
         ${clientMessageId},
-        ${sentVia}
+        ${sentVia},
+        ${JSON.stringify(metadata)}
       )
       ${sql.raw(onConflict)}
       RETURNING ${sql.raw(SELECT_FIELDS)}
@@ -291,6 +300,60 @@ export const MessageRepository = {
     }
 
     return mapRowToMessage(result.rows[0])
+  },
+
+  /**
+   * Find non-deleted messages whose `metadata` JSONB contains all the given
+   * key/value pairs (AND-containment via the `@>` operator, backed by the
+   * `idx_messages_metadata_gin` index). Results are scoped to `streamIds` so
+   * callers can apply access control (INV-8). Ordered newest-first.
+   *
+   * Callers are responsible for passing a non-empty `filter` and at least one
+   * accessible stream id — this repo returns `[]` for either empty input.
+   */
+  async findByMetadata(
+    db: Querier,
+    params: {
+      streamIds: string[]
+      filter: Record<string, string>
+      streamId?: string
+      limit?: number
+    }
+  ): Promise<Message[]> {
+    if (params.streamIds.length === 0) return []
+    if (Object.keys(params.filter).length === 0) return []
+    const limit = params.limit ?? 20
+
+    // If a specific streamId is given, intersect with accessible streams. This
+    // pushes the access check into SQL so unauthorized streams never leak out
+    // even if the handler forgot to pre-check access.
+    let effectiveStreams: string[]
+    if (params.streamId) {
+      effectiveStreams = params.streamIds.includes(params.streamId) ? [params.streamId] : []
+    } else {
+      effectiveStreams = params.streamIds
+    }
+    if (effectiveStreams.length === 0) return []
+
+    const result = await db.query<MessageRow>(sql`
+      SELECT ${sql.raw(SELECT_FIELDS)} FROM messages
+      WHERE stream_id = ANY(${effectiveStreams})
+        AND deleted_at IS NULL
+        AND metadata @> ${JSON.stringify(params.filter)}::jsonb
+      ORDER BY created_at DESC, id DESC
+      LIMIT ${limit}
+    `)
+
+    if (result.rows.length === 0) return []
+
+    const messageIds = result.rows.map((r) => r.id)
+    const reactionsResult = await db.query<ReactionRow>(sql`
+      SELECT message_id, user_id, emoji FROM reactions
+      WHERE message_id = ANY(${messageIds})
+    `)
+    const reactionsByMessage = aggregateReactionsByMessage(reactionsResult.rows)
+
+    return result.rows.map((row) => mapRowToMessage(row, reactionsByMessage.get(row.id) ?? {}))
   },
 
   async updateContent(
@@ -399,6 +462,7 @@ export const MessageRepository = {
       SELECT
         m.id, m.stream_id, m.sequence, m.author_id, m.author_type,
         m.content_json, m.content_markdown, m.reply_count,
+        m.client_message_id, m.sent_via, m.metadata,
         m.edited_at, m.deleted_at, m.created_at,
         s.parent_message_id
       FROM messages m

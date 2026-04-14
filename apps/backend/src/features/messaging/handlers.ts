@@ -13,6 +13,7 @@ import { eventId, commandId as generateCommandId } from "../../lib/id"
 import { toShortcode, normalizeMessage, toEmoji } from "../emoji"
 import { parseMarkdown, serializeToMarkdown } from "@threa/prosemirror"
 import type { JSONContent } from "@threa/types"
+import { messageMetadataSchema } from "./metadata-schema"
 
 // Schema for JSON input to an existing stream (from rich clients)
 const createMessageJsonToStreamSchema = z.object({
@@ -24,6 +25,7 @@ const createMessageJsonToStreamSchema = z.object({
   contentMarkdown: z.string().optional(),
   attachmentIds: z.array(z.string()).optional(),
   clientMessageId: z.string().min(1).optional(),
+  metadata: messageMetadataSchema.optional(),
 })
 
 // Schema for markdown input to an existing stream (from AI/external)
@@ -32,6 +34,7 @@ const createMessageMarkdownToStreamSchema = z.object({
   content: z.string().min(1, "content is required"),
   attachmentIds: z.array(z.string()).optional(),
   clientMessageId: z.string().min(1).optional(),
+  metadata: messageMetadataSchema.optional(),
 })
 
 // Schema for JSON input to a DM target user (lazy stream creation on first message)
@@ -44,6 +47,7 @@ const createMessageJsonToDmSchema = z.object({
   contentMarkdown: z.string().optional(),
   attachmentIds: z.array(z.string()).optional(),
   clientMessageId: z.string().min(1).optional(),
+  metadata: messageMetadataSchema.optional(),
 })
 
 // Schema for markdown input to a DM target user (lazy stream creation on first message)
@@ -52,6 +56,7 @@ const createMessageMarkdownToDmSchema = z.object({
   content: z.string().min(1, "content is required"),
   attachmentIds: z.array(z.string()).optional(),
   clientMessageId: z.string().min(1).optional(),
+  metadata: messageMetadataSchema.optional(),
 })
 
 // Union schema - accepts either format
@@ -223,6 +228,7 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
         contentMarkdown,
         attachmentIds,
         clientMessageId: data.clientMessageId,
+        metadata: data.metadata,
       })
 
       res.status(201).json({ message: serializeMessage(message) })
