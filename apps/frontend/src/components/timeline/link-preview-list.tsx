@@ -107,6 +107,7 @@ export function LinkPreviewList({
               <MessageLinkPreviewCard
                 preview={preview}
                 workspaceId={workspaceId}
+                messageId={messageId}
                 onDismiss={handleDismiss}
                 hydrate={hydrateFromApi}
               />
@@ -126,6 +127,7 @@ export function LinkPreviewList({
           <PreviewRenderBoundary key={preview.id}>
             <LinkPreviewCard
               preview={preview}
+              messageId={messageId}
               isHighlighted={isHighlighted}
               isCollapsed={isCollapsed}
               onDismiss={handleDismiss}

@@ -5,11 +5,17 @@ import { Button } from "@/components/ui/button"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { MarkdownContent } from "@/components/ui/markdown-content"
 import { linkPreviewsApi } from "@/api"
+import { LinkPreviewBody } from "./link-preview-body"
 import type { LinkPreviewSummary, MessageLinkPreviewData } from "@threa/types"
 
 interface MessageLinkPreviewCardProps {
   preview: LinkPreviewSummary
   workspaceId: string
+  /**
+   * Scopes the per-preview "Show more" persistence key. Optional so tests and
+   * transient previews without a host message still render.
+   */
+  messageId?: string
   onDismiss?: (previewId: string) => void
   hydrate?: boolean
 }
@@ -17,6 +23,7 @@ interface MessageLinkPreviewCardProps {
 export function MessageLinkPreviewCard({
   preview,
   workspaceId,
+  messageId,
   onDismiss,
   hydrate = true,
 }: MessageLinkPreviewCardProps) {
@@ -81,36 +88,36 @@ export function MessageLinkPreviewCard({
   }
 
   const internalPath = getInternalMessagePath(preview.url)
-  const content = (
-    <>
+  const body = (
+    <div className="flex gap-2.5 px-3 py-2">
+      <AuthorAvatar avatarUrl={data.authorAvatarUrl} authorName={data.authorName} />
+      <div className="flex-1 min-w-0">
+        {data.authorName && <span className="text-xs font-medium text-foreground">{data.authorName}</span>}
+        {data.contentPreview && (
+          <div className="mt-0.5">
+            <MarkdownContent content={data.contentPreview} className="text-xs text-muted-foreground" />
+          </div>
+        )}
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="group/preview relative overflow-hidden rounded-lg border bg-card transition-all max-w-md hover:border-primary/50 hover:shadow-sm">
       <div className="flex items-center gap-2 px-3 py-1.5 border-b bg-muted/30">
         <MessageSquare className="h-4 w-4 text-primary shrink-0" />
         {data.streamName && <span className="text-xs text-muted-foreground truncate">#{data.streamName}</span>}
         <DismissButton previewId={preview.id} onDismiss={onDismiss} />
       </div>
-      <div className="flex gap-2.5 px-3 py-2">
-        <AuthorAvatar avatarUrl={data.authorAvatarUrl} authorName={data.authorName} />
-        <div className="flex-1 min-w-0">
-          {data.authorName && <span className="text-xs font-medium text-foreground">{data.authorName}</span>}
-          {data.contentPreview && (
-            <div className="line-clamp-3 mt-0.5">
-              <MarkdownContent content={data.contentPreview} className="text-xs text-muted-foreground" />
-            </div>
-          )}
-        </div>
-      </div>
-    </>
-  )
-
-  return (
-    <div className="group/preview relative overflow-hidden rounded-lg border bg-card transition-all max-w-md hover:border-primary/50 hover:shadow-sm">
-      {internalPath ? (
-        <Link to={internalPath} className="block">
-          {content}
-        </Link>
-      ) : (
-        content
-      )}
+      <LinkPreviewBody messageId={messageId} previewId={preview.id}>
+        {internalPath ? (
+          <Link to={internalPath} className="block hover:bg-muted/20 transition-colors">
+            {body}
+          </Link>
+        ) : (
+          body
+        )}
+      </LinkPreviewBody>
     </div>
   )
 }

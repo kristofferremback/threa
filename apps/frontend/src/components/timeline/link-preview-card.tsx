@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { MarkdownContent } from "@/components/ui/markdown-content"
 import { cn } from "@/lib/utils"
+import { LinkPreviewBody } from "./link-preview-body"
 import type {
   GitHubFilePreviewData,
   GitHubPrPreviewData,
@@ -32,6 +33,11 @@ import type {
 
 interface LinkPreviewCardProps {
   preview: LinkPreviewSummary
+  /**
+   * Scopes the per-preview "Show more" persistence key. Optional so tests and
+   * transient previews without a host message still render.
+   */
+  messageId?: string
   isHighlighted?: boolean
   isCollapsed?: boolean
   onDismiss?: (previewId: string) => void
@@ -59,6 +65,7 @@ function getDomain(url: string): string {
 
 export function LinkPreviewCard({
   preview,
+  messageId,
   isHighlighted,
   isCollapsed: isCollapsedProp,
   onDismiss,
@@ -194,16 +201,22 @@ export function LinkPreviewCard({
         </div>
       </div>
 
-      {/* Expandable content */}
+      {/* Expandable content — always clamped to a shared body height so a
+          message with mixed preview types (e.g. a PR + a diff) lines up.
+          Tall cards reveal a "Show more" affordance that persists per
+          (messageId, previewId) in IDB, mirroring the collapsible markdown
+          block pattern. */}
       {!isCollapsedProp && (
-        <a
-          href={preview.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="block hover:bg-muted/20 transition-colors"
-        >
-          <GitHubContent preview={preview} imageError={imageError} onImageError={() => setImageError(true)} />
-        </a>
+        <LinkPreviewBody messageId={messageId} previewId={preview.id}>
+          <a
+            href={preview.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block hover:bg-muted/20 transition-colors"
+          >
+            <GitHubContent preview={preview} imageError={imageError} onImageError={() => setImageError(true)} />
+          </a>
+        </LinkPreviewBody>
       )}
     </div>
   )
@@ -284,11 +297,15 @@ function GenericPreviewContent({
   imageError: boolean
   onImageError: () => void
 }) {
+  // Text intentionally flows at natural height — `LinkPreviewBody` clips the
+  // whole card to a shared ceiling and reveals a "Show more" toggle when
+  // overflow occurs. Pre-truncating with `line-clamp-*` hid overflow from
+  // `scrollHeight`, which suppressed the toggle and left blank space below.
   return (
     <div className="flex gap-3 p-3">
       <div className="flex-1 min-w-0">
-        {preview.title && <h4 className="text-sm font-medium text-foreground line-clamp-2 mb-0.5">{preview.title}</h4>}
-        {preview.description && <p className="text-xs text-muted-foreground line-clamp-2">{preview.description}</p>}
+        {preview.title && <h4 className="text-sm font-medium text-foreground mb-0.5">{preview.title}</h4>}
+        {preview.description && <p className="text-xs text-muted-foreground">{preview.description}</p>}
       </div>
       {preview.imageUrl && !imageError && (
         <img
@@ -316,7 +333,7 @@ function GitHubPrContent({ data }: { data: GitHubPrPreviewData }) {
       <div className="flex items-start gap-2">
         <ActorAvatar actor={data.author} className="mt-0.5" />
         <div className="min-w-0 flex-1">
-          <h4 className="text-sm font-medium text-foreground line-clamp-2">
+          <h4 className="text-sm font-medium text-foreground">
             {data.title}
             <span className="ml-1.5 font-normal text-muted-foreground">#{data.number}</span>
           </h4>
@@ -371,7 +388,7 @@ function GitHubIssueContent({ data }: { data: GitHubIssuePreviewData }) {
       <div className="flex items-start gap-2">
         <ActorAvatar actor={data.author} className="mt-0.5" />
         <div className="min-w-0 flex-1">
-          <h4 className="text-sm font-medium text-foreground line-clamp-2">
+          <h4 className="text-sm font-medium text-foreground">
             {data.title}
             <span className="ml-1.5 font-normal text-muted-foreground">#{data.number}</span>
           </h4>
@@ -437,7 +454,7 @@ function GitHubCommitContent({ data }: { data: GitHubCommitPreviewData }) {
       <div className="flex items-start gap-2">
         <ActorAvatar actor={data.author} className="mt-0.5" />
         <div className="min-w-0 flex-1">
-          <h4 className="text-sm font-medium text-foreground line-clamp-2">{firstLine}</h4>
+          <h4 className="text-sm font-medium text-foreground">{firstLine}</h4>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
             <code className="rounded bg-muted px-1 py-px font-mono text-[11px]">{data.shortSha}</code>
             <span>
@@ -506,7 +523,7 @@ function GitHubDiffContent({ data }: { data: GitHubDiffPreviewData }) {
     <div className="p-3">
       <div className="min-w-0">
         <h4 className="text-sm font-medium text-foreground line-clamp-1">{data.path}</h4>
-        <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">
+        <p className="mt-0.5 text-xs text-muted-foreground">
           PR #{data.pullRequest.number} · {data.pullRequest.title} · {capitalizeChangeType(data.changeType)}
           {data.language ? ` · ${data.language}` : ""}
           {formatDiffAnchor(data)}
@@ -581,7 +598,7 @@ function GitHubCommentContent({ data }: { data: GitHubCommentPreviewData }) {
             <div className="mt-1.5 overflow-hidden rounded-md border bg-muted/20 px-2.5 py-1.5">
               <MarkdownContent
                 content={data.body}
-                className="text-xs leading-relaxed text-foreground line-clamp-4 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+                className="text-xs leading-relaxed text-foreground [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
               />
             </div>
           )}
