@@ -395,7 +395,8 @@ describe("MemoryPage", () => {
   })
 
   // Regression guard for mobile memo drawer scroll. The drawer uses Vaul
-  // inside a flex-col DrawerContent with max-h-[85dvh], so the content body
+  // with snap points [0.8, 1] and DrawerContent bounds its inner wrapper to
+  // the visible portion of the viewport, so the content body (DrawerBody)
   // must use `flex-1 min-h-0 overflow-y-auto` to actually claim space and
   // scroll — otherwise tall memos get clipped and the user can't see
   // Context/Provenance/Source sections. Also needs `data-vaul-no-drag` so

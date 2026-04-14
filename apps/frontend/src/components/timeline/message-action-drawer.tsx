@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link } from "react-router-dom"
 import { ChevronLeft, Quote, SmilePlus } from "lucide-react"
-import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
+import { Drawer, DrawerBody, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
 import { Separator } from "@/components/ui/separator"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -31,6 +31,16 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
   const [expanded, setExpanded] = useState(false)
   const [selectedText, setSelectedText] = useState("")
   const contentRef = useRef<HTMLDivElement>(null)
+  // Snap points are controlled so tapping the preview can programmatically
+  // jump to full-screen for the quote-selection view, while still letting the
+  // user drag between 0.8 and 1 on the default action list.
+  const [activeSnap, setActiveSnap] = useState<number | string | null>(0.8)
+
+  // Keep snap in sync with expanded state (enter full-screen on expand,
+  // return to 80% on collapse).
+  useEffect(() => {
+    setActiveSnap(expanded ? 1 : 0.8)
+  }, [expanded])
 
   // Reset expanded state when drawer closes
   const handleOpenChange = useCallback(
@@ -150,8 +160,8 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
   if (!open && actions.length === 0) return null
 
   return (
-    <Drawer open={open} onOpenChange={handleOpenChange}>
-      <DrawerContent className={cn(expanded ? "h-[95dvh]" : "max-h-[85dvh]")}>
+    <Drawer open={open} onOpenChange={handleOpenChange} activeSnapPoint={activeSnap} setActiveSnapPoint={setActiveSnap}>
+      <DrawerContent>
         {/* Accessible title (visually hidden) */}
         <DrawerTitle className="sr-only">{expanded ? "Select text to quote" : "Message actions"}</DrawerTitle>
 
@@ -166,7 +176,7 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
             onQuote={handleQuoteSelected}
           />
         ) : (
-          <>
+          <DrawerBody className="px-0">
             {/* Message preview */}
             <div className="px-4 pt-1 pb-3">
               <div
@@ -231,8 +241,8 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
               </div>
             )}
 
-            {/* Action list */}
-            <div className="px-2 pb-[max(12px,env(safe-area-inset-bottom))]">
+            {/* Action list — DrawerBody owns scrolling + safe-area bottom padding */}
+            <div className="px-2">
               {actions.map((action) => {
                 // Flatten sub-actions into separate rows (no nested menus on mobile)
                 if (action.subActions && action.subActions.length > 0) {
@@ -292,7 +302,7 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
                 )
               })}
             </div>
-          </>
+          </DrawerBody>
         )}
       </DrawerContent>
     </Drawer>

@@ -26,7 +26,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { MarkdownContent } from "@/components/ui/markdown-content"
-import { Drawer, DrawerContent } from "@/components/ui/drawer"
+import { Drawer, DrawerBody, DrawerContent } from "@/components/ui/drawer"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { RelativeTime } from "@/components/relative-time"
@@ -770,21 +770,10 @@ export function MemoryPage() {
             if (!open) syncToUrl({ memo: null })
           }}
         >
-          <DrawerContent className="max-h-[85dvh]">
-            {/*
-              Scrollable content inside a Vaul drawer needs an explicit flex
-              scroll container: DrawerContent is a flex-col with max-h, so the
-              child must `flex-1 min-h-0 overflow-y-auto` to claim remaining
-              height and actually scroll. `data-vaul-no-drag` stops Vaul from
-              intercepting touch-drags as close gestures once the user is
-              inside the scrollable body. Radix ScrollArea doesn't fit here
-              because its Root has fixed overflow:hidden and no intrinsic
-              flex sizing — a plain div is the codebase convention (see
-              message-action-drawer.tsx).
-            */}
-            <div data-vaul-no-drag className="min-w-0 flex-1 min-h-0 overflow-y-auto p-4 pb-8">
+          <DrawerContent>
+            <DrawerBody className="min-w-0 p-4">
               <MemoDetailContent data={selectedMemoData} workspaceId={workspaceId} isLoading={selectedMemo.isLoading} />
-            </div>
+            </DrawerBody>
           </DrawerContent>
         </Drawer>
       )}

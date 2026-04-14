@@ -3,7 +3,7 @@ import { type LucideIcon, MoreHorizontal } from "lucide-react"
 import { Link } from "react-router-dom"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "@/components/ui/drawer"
+import { Drawer, DrawerBody, DrawerContent, DrawerDescription, DrawerTitle } from "@/components/ui/drawer"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -178,14 +178,14 @@ export function SidebarActionDrawer({
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange}>
-      <DrawerContent className="max-h-[85dvh]">
+      <DrawerContent>
         <DrawerTitle className="sr-only">{title}</DrawerTitle>
         <DrawerDescription className="sr-only">{description}</DrawerDescription>
 
         {resolvedHeader}
 
         {actions.length > 0 && (
-          <div className="px-2 pb-[max(12px,env(safe-area-inset-bottom))]">
+          <DrawerBody className="px-2">
             {actions.map((action) => (
               <SidebarActionDrawerEntry
                 key={action.id}
@@ -195,7 +195,7 @@ export function SidebarActionDrawer({
                 }}
               />
             ))}
-          </div>
+          </DrawerBody>
         )}
       </DrawerContent>
     </Drawer>

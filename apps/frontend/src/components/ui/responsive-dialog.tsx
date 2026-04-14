@@ -12,6 +12,7 @@ import {
 } from "./dialog"
 import {
   Drawer,
+  DrawerBody,
   DrawerClose,
   DrawerContent,
   DrawerDescription,
@@ -22,46 +23,25 @@ import {
 } from "./drawer"
 import { cn } from "@/lib/utils"
 
-// ── Constants ───────────────────────────────────────────────────────────
-
-/** Default snap points: 80% of screen, expandable to full screen */
-const DEFAULT_SNAP_POINTS = [0.8, 1] as const
-const DEFAULT_ACTIVE_SNAP = 0.8
-
 // ── Root ────────────────────────────────────────────────────────────────
 
 interface ResponsiveDialogProps {
   children: React.ReactNode
   open?: boolean
   onOpenChange?: (open: boolean) => void
-  /** Override snap points for mobile drawer. Set to `undefined` to disable snap points. */
-  snapPoints?: (number | string)[]
+  /**
+   * Override snap points for mobile drawer. Pass `null` to disable snap
+   * points. Defaults to `[0.8, 1]` (handled by the underlying Drawer).
+   */
+  snapPoints?: (number | string)[] | null
 }
 
 function ResponsiveDialog({ children, snapPoints, ...props }: ResponsiveDialogProps) {
   const isMobile = useIsMobile()
-  const resolvedSnaps = React.useMemo(() => snapPoints ?? [...DEFAULT_SNAP_POINTS], [snapPoints])
-  const [activeSnap, setActiveSnap] = React.useState<number | string | null>(DEFAULT_ACTIVE_SNAP)
-
-  // Reset snap point when drawer opens
-  const handleOpenChange = React.useCallback(
-    (open: boolean) => {
-      if (open) setActiveSnap(resolvedSnaps[0])
-      props.onOpenChange?.(open)
-    },
-    [props.onOpenChange, resolvedSnaps]
-  )
 
   if (isMobile) {
     return (
-      <Drawer
-        open={props.open}
-        onOpenChange={handleOpenChange}
-        snapPoints={resolvedSnaps}
-        activeSnapPoint={activeSnap}
-        setActiveSnapPoint={setActiveSnap}
-        fadeFromIndex={resolvedSnaps.length - 1}
-      >
+      <Drawer open={props.open} onOpenChange={props.onOpenChange} snapPoints={snapPoints}>
         {children}
       </Drawer>
     )
@@ -107,13 +87,9 @@ const ResponsiveDialogContent = React.forwardRef<HTMLDivElement, ResponsiveDialo
     const isMobile = useIsMobile()
 
     if (isMobile) {
-      // DrawerContent already renders its own Portal + Overlay internally.
-      // h-[100dvh] is required so vaul's transform-based snap point positioning
-      // works correctly — the drawer must be full viewport height so that
-      // translate3d(0, offset, 0) controls the visible portion (e.g. 80% at 0.8 snap).
-      // Without it, h-auto makes the drawer content-dependent and shorter than expected.
+      // DrawerContent owns h-[100dvh] and the snap-aware inner wrapper internally.
       return (
-        <DrawerContent ref={ref} className={cn("h-[100dvh]", drawerClassName, className)} {...props}>
+        <DrawerContent ref={ref} className={cn(drawerClassName, className)} {...props}>
           {children}
         </DrawerContent>
       )
@@ -190,6 +166,14 @@ ResponsiveDialogDescription.displayName = "ResponsiveDialogDescription"
 // ── Body (scrollable content area) ──────────────────────────────────────
 
 function ResponsiveDialogBody({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  const isMobile = useIsMobile()
+
+  if (isMobile) {
+    // DrawerBody handles the scroll wrapper + safe-area bottom padding so
+    // content is reachable at any snap point.
+    return <DrawerBody className={cn("px-4 sm:px-6", className)} {...props} />
+  }
+
   return <div className={cn("flex-1 overflow-y-auto px-4 sm:px-6", className)} {...props} />
 }
 ResponsiveDialogBody.displayName = "ResponsiveDialogBody"

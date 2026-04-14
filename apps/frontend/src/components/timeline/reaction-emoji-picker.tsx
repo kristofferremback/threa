@@ -573,10 +573,11 @@ export function ReactionEmojiPicker({
     return (
       <Drawer open={open} onOpenChange={handleOpenChange}>
         {!isControlled && <DrawerTrigger asChild>{triggerElement}</DrawerTrigger>}
-        <DrawerContent className="max-h-[85dvh]">
+        <DrawerContent>
           <DrawerTitle className="sr-only">Pick an emoji</DrawerTitle>
-          {gridContent}
-          <div className="pb-[max(8px,env(safe-area-inset-bottom))]" />
+          {/* Picker renders its own fixed-height virtualized grid, so we don't
+              wrap in DrawerBody. Bottom safe-area padding still applies. */}
+          <div className="flex flex-col min-h-0 flex-1 pb-[max(8px,env(safe-area-inset-bottom))]">{gridContent}</div>
         </DrawerContent>
       </Drawer>
     )

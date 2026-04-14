@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
-import { Drawer, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from "@/components/ui/drawer"
+import { Drawer, DrawerBody, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from "@/components/ui/drawer"
 import { useActors } from "@/hooks"
 import { useLongPress } from "@/hooks/use-long-press"
 import { useIsMobile } from "@/hooks/use-mobile"
@@ -160,21 +160,19 @@ export function ReactionPillDetails({ emoji, reactions, workspaceId, children }:
       </span>
       <Drawer open={drawerOpen} onOpenChange={setDrawerOpen}>
         <DrawerContent>
-          <div className="min-h-[50dvh] flex flex-col">
-            <DrawerHeader className="pb-2">
-              <DrawerTitle className="text-base">Reactions</DrawerTitle>
-              <DrawerDescription className="sr-only">People who reacted to this message</DrawerDescription>
-            </DrawerHeader>
-            <div className="pb-4 flex-1">
-              {/* key forces a fresh mount per open so selectedEmoji resets to this pill's emoji */}
-              <ReactionDetailsContent
-                key={drawerOpen ? emoji : "closed"}
-                reactions={reactions}
-                workspaceId={workspaceId}
-                defaultEmoji={emoji}
-              />
-            </div>
-          </div>
+          <DrawerHeader className="pb-2">
+            <DrawerTitle className="text-base">Reactions</DrawerTitle>
+            <DrawerDescription className="sr-only">People who reacted to this message</DrawerDescription>
+          </DrawerHeader>
+          <DrawerBody className="px-0">
+            {/* key forces a fresh mount per open so selectedEmoji resets to this pill's emoji */}
+            <ReactionDetailsContent
+              key={drawerOpen ? emoji : "closed"}
+              reactions={reactions}
+              workspaceId={workspaceId}
+              defaultEmoji={emoji}
+            />
+          </DrawerBody>
         </DrawerContent>
       </Drawer>
     </>

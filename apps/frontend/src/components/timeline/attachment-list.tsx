@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect, useMemo } from "react"
 import { Download, FileText, File, Loader2, Copy, Play } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
+import { Drawer, DrawerBody, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
 import { MediaGallery, type GalleryItem } from "@/components/image-gallery"
 import { attachmentsApi } from "@/api"
 import { cn } from "@/lib/utils"
@@ -78,31 +78,33 @@ function ImageActionDrawer({
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange}>
-      <DrawerContent className="max-h-[85dvh]">
+      <DrawerContent>
         <DrawerTitle className="sr-only">Image actions</DrawerTitle>
-        <div className="px-4 pt-1 pb-3">
-          <div className="rounded-xl bg-muted/60 px-3.5 py-2.5">
-            <p className="text-sm text-foreground/80 truncate">{filename}</p>
+        <DrawerBody className="px-0">
+          <div className="px-4 pt-1 pb-3">
+            <div className="rounded-xl bg-muted/60 px-3.5 py-2.5">
+              <p className="text-sm text-foreground/80 truncate">{filename}</p>
+            </div>
           </div>
-        </div>
-        <div className="px-2 pb-[max(12px,env(safe-area-inset-bottom))]">
-          <button
-            type="button"
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm active:bg-muted/80 transition-colors"
-            onClick={handleDownload}
-          >
-            <Download className="h-[18px] w-[18px] text-muted-foreground shrink-0" />
-            <span>Save image</span>
-          </button>
-          <button
-            type="button"
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm active:bg-muted/80 transition-colors"
-            onClick={handleCopy}
-          >
-            <Copy className="h-[18px] w-[18px] text-muted-foreground shrink-0" />
-            <span>Copy image</span>
-          </button>
-        </div>
+          <div className="px-2">
+            <button
+              type="button"
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm active:bg-muted/80 transition-colors"
+              onClick={handleDownload}
+            >
+              <Download className="h-[18px] w-[18px] text-muted-foreground shrink-0" />
+              <span>Save image</span>
+            </button>
+            <button
+              type="button"
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm active:bg-muted/80 transition-colors"
+              onClick={handleCopy}
+            >
+              <Copy className="h-[18px] w-[18px] text-muted-foreground shrink-0" />
+              <span>Copy image</span>
+            </button>
+          </div>
+        </DrawerBody>
       </DrawerContent>
     </Drawer>
   )

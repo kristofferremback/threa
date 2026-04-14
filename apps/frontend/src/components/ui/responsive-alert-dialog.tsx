@@ -49,11 +49,11 @@ const ResponsiveAlertDialogContent = React.forwardRef<
   const isMobile = useIsMobile()
 
   if (isMobile) {
-    // DrawerContent already renders its own Portal + Overlay internally
+    // DrawerContent owns h-[100dvh], snap-aware inner wrapper, and notch internally.
     return (
       <DrawerContent
         ref={ref}
-        className={cn("max-h-[85dvh]", className)}
+        className={className}
         {...(props as React.ComponentPropsWithoutRef<typeof DrawerContent>)}
       >
         {children}

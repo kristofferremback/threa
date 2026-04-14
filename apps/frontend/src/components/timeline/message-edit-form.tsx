@@ -55,9 +55,14 @@ export function MessageEditForm({
   const [formatOpen, setFormatOpen] = useState(false)
   const [mobileExpanded, setMobileExpanded] = useState(false)
   const [mobileLinkPopoverOpen, setMobileLinkPopoverOpen] = useState(false)
+  // Controlled snap: expand button jumps to full-screen (1), collapse returns
+  // to the default 80% resting state. Users can still drag between the two.
+  const [activeSnap, setActiveSnap] = useState<number | string | null>(0.8)
+  useEffect(() => {
+    setActiveSnap(mobileExpanded ? 1 : 0.8)
+  }, [mobileExpanded])
   const richEditorRef = useRef<RichEditorHandle>(null)
   const mobileActionBarRef = useRef<HTMLDivElement>(null)
-  const drawerContentRef = useRef<HTMLDivElement>(null)
   const [mobileToolbarEditor, setMobileToolbarEditor] = useState<Editor | null>(null)
   const instructionsId = useId()
 
@@ -193,11 +198,10 @@ export function MessageEditForm({
         onOpenChange={(open) => {
           if (!open) setTimeout(onCancel, 300)
         }}
+        activeSnapPoint={activeSnap}
+        setActiveSnapPoint={setActiveSnap}
       >
-        <DrawerContent
-          ref={drawerContentRef}
-          className={mobileExpanded ? "!h-[100dvh] rounded-t-none" : "max-h-[85dvh]"}
-        >
+        <DrawerContent className={mobileExpanded ? "rounded-t-none" : undefined}>
           <DrawerTitle className="sr-only">Edit message</DrawerTitle>
           <p id={instructionsId} className="sr-only">
             {screenReaderInstructions}
