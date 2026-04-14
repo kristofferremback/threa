@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { MarkdownContent } from "@/components/ui/markdown-content"
 import { cn } from "@/lib/utils"
+import { LinkPreviewBody } from "./link-preview-body"
 import type {
   GitHubFilePreviewData,
   GitHubPrPreviewData,
@@ -32,6 +33,11 @@ import type {
 
 interface LinkPreviewCardProps {
   preview: LinkPreviewSummary
+  /**
+   * Scopes the per-preview "Show more" persistence key. Optional so tests and
+   * transient previews without a host message still render.
+   */
+  messageId?: string
   isHighlighted?: boolean
   isCollapsed?: boolean
   onDismiss?: (previewId: string) => void
@@ -59,6 +65,7 @@ function getDomain(url: string): string {
 
 export function LinkPreviewCard({
   preview,
+  messageId,
   isHighlighted,
   isCollapsed: isCollapsedProp,
   onDismiss,
@@ -194,16 +201,22 @@ export function LinkPreviewCard({
         </div>
       </div>
 
-      {/* Expandable content */}
+      {/* Expandable content — always clamped to a shared body height so a
+          message with mixed preview types (e.g. a PR + a diff) lines up.
+          Tall cards reveal a "Show more" affordance that persists per
+          (messageId, previewId) in IDB, mirroring the collapsible markdown
+          block pattern. */}
       {!isCollapsedProp && (
-        <a
-          href={preview.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="block hover:bg-muted/20 transition-colors"
-        >
-          <GitHubContent preview={preview} imageError={imageError} onImageError={() => setImageError(true)} />
-        </a>
+        <LinkPreviewBody messageId={messageId} previewId={preview.id}>
+          <a
+            href={preview.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block hover:bg-muted/20 transition-colors"
+          >
+            <GitHubContent preview={preview} imageError={imageError} onImageError={() => setImageError(true)} />
+          </a>
+        </LinkPreviewBody>
       )}
     </div>
   )

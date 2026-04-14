@@ -264,6 +264,22 @@ export interface CachedMarkdownBlockCollapse {
   updatedAt: number
 }
 
+/**
+ * Persisted per-user "Show more" state for a single link preview card.
+ * By default every card clamps its body to a fixed height so mixed-content
+ * messages line up; when a preview's natural content overflows the clamp,
+ * users can expand it. That expanded/collapsed choice is persisted here so
+ * it survives reloads without bleeding across messages.
+ * Key format: `${messageId}:${previewId}`.
+ */
+export interface CachedLinkPreviewCollapse {
+  id: string
+  messageId: string
+  previewId: string
+  expanded: boolean
+  updatedAt: number
+}
+
 export interface CachedWorkspaceMetadata {
   id: string // workspaceId
   workspaceId: string
@@ -292,6 +308,7 @@ class ThreaDatabase extends Dexie {
   workspaceMetadata!: EntityTable<CachedWorkspaceMetadata, "id">
   pendingOperations!: EntityTable<PendingOperation, "id">
   markdownBlockCollapse!: EntityTable<CachedMarkdownBlockCollapse, "id">
+  linkPreviewCollapse!: EntityTable<CachedLinkPreviewCollapse, "id">
 
   constructor() {
     super("threa")
@@ -484,6 +501,13 @@ class ThreaDatabase extends Dexie {
         }
       })
 
+    // v23: Add linkPreviewCollapse table for persisted per-preview expand state.
+    // Every card clamps its body to a fixed height by default; users expand
+    // tall ones (e.g. GitHub diffs, long READMEs) and that choice persists.
+    this.version(23).stores({
+      linkPreviewCollapse: "id, messageId, updatedAt",
+    })
+
     this.workspaceUsers = this.table(WORKSPACE_USERS_STORE) as EntityTable<CachedWorkspaceUser, "id">
   }
 }
@@ -509,6 +533,7 @@ export async function clearAllCachedData(): Promise<void> {
       db.workspaceMetadata.clear(),
       db.pendingOperations.clear(),
       db.markdownBlockCollapse.clear(),
+      db.linkPreviewCollapse.clear(),
       // Note: we keep pendingMessages to retry sending after re-login
     ])
   } finally {
