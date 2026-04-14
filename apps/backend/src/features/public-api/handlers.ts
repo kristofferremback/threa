@@ -5,7 +5,6 @@ import type { SearchFilters, SearchService } from "../search"
 import { serializeSearchResult, resolveUserAccessibleStreamIds } from "../search"
 import type { BotChannelService } from "../api-keys"
 import type { EventService } from "../messaging"
-import { MessageRepository } from "../messaging"
 import {
   StreamRepository,
   StreamMemberRepository,
@@ -794,7 +793,7 @@ export function createPublicApiHandlers({
         return res.json({ data: [] })
       }
 
-      const messages = await MessageRepository.findByMetadata(pool, {
+      const messages = await eventService.findByMetadata({
         streamIds: accessibleStreamIds,
         filter: metadata,
         streamId,

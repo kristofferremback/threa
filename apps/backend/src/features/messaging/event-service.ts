@@ -582,6 +582,19 @@ export class EventService {
     return withClient(this.pool, (client) => MessageRepository.findByIds(client, messageIds))
   }
 
+  /**
+   * Find non-deleted messages matching a metadata filter (AND-containment),
+   * scoped to the caller's accessible streams. See {@link MessageRepository.findByMetadata}.
+   */
+  async findByMetadata(params: {
+    streamIds: string[]
+    filter: Record<string, string>
+    streamId?: string
+    limit?: number
+  }): Promise<Message[]> {
+    return MessageRepository.findByMetadata(this.pool, params)
+  }
+
   async getLatestSequence(streamId: string): Promise<bigint | null> {
     return StreamEventRepository.getLatestSequence(this.pool, streamId)
   }
