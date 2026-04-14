@@ -208,7 +208,7 @@ export default function CodeBlock({ language, children }: CodeBlockProps) {
   if (!html) {
     return (
       <div
-        className="group my-2 rounded-md overflow-hidden border border-border bg-muted/50"
+        className="group my-2 rounded-md overflow-hidden border border-border bg-muted/50 select-text [-webkit-touch-callout:default]"
         data-native-context="true"
       >
         {header}
@@ -223,7 +223,10 @@ export default function CodeBlock({ language, children }: CodeBlockProps) {
   }
 
   return (
-    <div className="group my-2 rounded-md overflow-hidden border border-border bg-muted/50" data-native-context="true">
+    <div
+      className="group my-2 rounded-md overflow-hidden border border-border bg-muted/50 select-text [-webkit-touch-callout:default]"
+      data-native-context="true"
+    >
       {header}
       <div
         className={cn(
