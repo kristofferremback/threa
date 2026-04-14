@@ -63,13 +63,44 @@ describe("CodeBlock collapse behavior", () => {
     expect(screen.queryByText(/click to expand/i)).not.toBeInTheDocument()
   })
 
-  it("renders long code blocks (> threshold) collapsed by default with line count", () => {
+  it("renders long code blocks (> threshold) collapsed by default with a 3-line preview and total line count", async () => {
     const code = Array.from({ length: 25 }, (_, i) => `line ${i + 1}`).join("\n")
     renderCodeBlock(code)
 
+    // Header advertises the total count + expand affordance.
     expect(screen.getByText(/25 lines, click to expand/i)).toBeInTheDocument()
-    // Shiki-rendered content is hidden while collapsed.
-    expect(document.querySelector("pre.shiki")).not.toBeInTheDocument()
+
+    // Preview shows the first 3 lines — not the full block.
+    const highlighted = await waitFor(() => {
+      const el = document.querySelector("pre.shiki")
+      expect(el).toBeInTheDocument()
+      return el!
+    })
+    expect(highlighted.textContent).toContain("line 1")
+    expect(highlighted.textContent).toContain("line 2")
+    expect(highlighted.textContent).toContain("line 3")
+    expect(highlighted.textContent).not.toContain("line 4")
+    expect(highlighted.textContent).not.toContain("line 25")
+  })
+
+  it("expanding a collapsed block reveals the full content", async () => {
+    const user = userEvent.setup()
+    const code = Array.from({ length: 8 }, (_, i) => `line ${i + 1}`).join("\n")
+    currentPrefs = { codeBlockCollapseThreshold: 3 }
+    renderCodeBlock(code, "msg_expand_full")
+
+    // Initially collapsed with preview.
+    await waitFor(() => {
+      const el = document.querySelector("pre.shiki")
+      expect(el?.textContent).not.toContain("line 8")
+    })
+
+    await user.click(screen.getByRole("button", { name: /expand 8 lines/i }))
+
+    await waitFor(() => {
+      const el = document.querySelector("pre.shiki")
+      expect(el?.textContent).toContain("line 8")
+    })
   })
 
   it("uses the user's threshold override when one is set", () => {

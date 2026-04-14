@@ -55,6 +55,9 @@ function countLines(text: string): number {
   return count
 }
 
+/** Number of leading lines shown as a preview when a block is collapsed. */
+const PREVIEW_LINE_COUNT = 3
+
 export default function CodeBlock({ language, children }: CodeBlockProps) {
   const [html, setHtml] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
@@ -67,6 +70,7 @@ export default function CodeBlock({ language, children }: CodeBlockProps) {
   const trimmedCode = useMemo(() => children.trim(), [children])
   const lineCount = useMemo(() => countLines(trimmedCode), [trimmedCode])
   const defaultCollapsed = lineCount > threshold
+  const hasTruncatedPreview = lineCount > PREVIEW_LINE_COUNT
 
   const collapseKey = useMemo(() => {
     if (!messageContext) return null
@@ -81,6 +85,15 @@ export default function CodeBlock({ language, children }: CodeBlockProps) {
   }, [collapseKey])
 
   const collapsed = persistedOverride ?? defaultCollapsed
+
+  // Collapsed view shows the first PREVIEW_LINE_COUNT lines so readers get a
+  // taste of the block without the full bulk. If the block is already short,
+  // previewing "all" lines is just showing the block.
+  const displayCode = useMemo(() => {
+    if (!collapsed || !hasTruncatedPreview) return trimmedCode
+    const lines = trimmedCode.split("\n")
+    return lines.slice(0, PREVIEW_LINE_COUNT).join("\n")
+  }, [collapsed, hasTruncatedPreview, trimmedCode])
 
   const handleToggle = useCallback(async () => {
     if (!collapseKey || !messageContext) return
@@ -109,11 +122,9 @@ export default function CodeBlock({ language, children }: CodeBlockProps) {
   )
 
   useEffect(() => {
-    // Skip expensive highlighting while collapsed.
-    if (collapsed) return
     let cancelled = false
 
-    codeToHtml(trimmedCode, {
+    codeToHtml(displayCode, {
       lang: language,
       themes: {
         light: "github-light",
@@ -136,18 +147,13 @@ export default function CodeBlock({ language, children }: CodeBlockProps) {
     return () => {
       cancelled = true
     }
-  }, [trimmedCode, language, collapsed])
+  }, [displayCode, language])
 
   const canToggle = Boolean(collapseKey)
   const toggleLabel = collapsed ? `Expand ${lineCount} line${lineCount === 1 ? "" : "s"}` : "Collapse code block"
 
   const header = (
-    <div
-      className={cn(
-        "flex items-center gap-1.5 px-2.5 py-1 bg-muted/50",
-        collapsed ? "border-b border-transparent" : "border-b border-border"
-      )}
-    >
+    <div className="flex items-center gap-1.5 px-2.5 py-1 bg-muted/50 border-b border-border">
       <button
         type="button"
         onClick={handleToggle}
@@ -193,16 +199,21 @@ export default function CodeBlock({ language, children }: CodeBlockProps) {
     </div>
   )
 
-  if (collapsed) {
-    return <div className="group my-2 rounded-md overflow-hidden border border-border bg-muted/50">{header}</div>
-  }
+  // When collapsed + truncated, clicking anywhere in the preview body also
+  // expands the block. Non-truncated collapsed blocks (lineCount ≤ 3) show
+  // the same content as expanded, so the body click target is unnecessary.
+  const bodyTogglesExpand = collapsed && canToggle && hasTruncatedPreview
+  const bodyClickHandler = bodyTogglesExpand ? handleToggle : undefined
 
   if (!html) {
     return (
       <div className="group my-2 rounded-md overflow-hidden border border-border bg-muted/50">
         {header}
-        <pre className="px-2.5 py-2 overflow-x-auto">
-          <code className="text-xs font-mono leading-snug">{children}</code>
+        <pre
+          className={cn("px-2.5 py-2 overflow-x-auto", bodyTogglesExpand && "cursor-pointer")}
+          onClick={bodyClickHandler}
+        >
+          <code className="text-xs font-mono leading-snug">{displayCode}</code>
         </pre>
       </div>
     )
@@ -212,7 +223,11 @@ export default function CodeBlock({ language, children }: CodeBlockProps) {
     <div className="group my-2 rounded-md overflow-hidden border border-border bg-muted/50">
       {header}
       <div
-        className="[&>pre]:px-2.5 [&>pre]:py-2 [&>pre]:text-xs [&>pre]:leading-snug [&>pre]:overflow-x-auto [&>pre]:bg-transparent [&>pre]:m-0"
+        className={cn(
+          "[&>pre]:px-2.5 [&>pre]:py-2 [&>pre]:text-xs [&>pre]:leading-snug [&>pre]:overflow-x-auto [&>pre]:bg-transparent [&>pre]:m-0",
+          bodyTogglesExpand && "cursor-pointer"
+        )}
+        onClick={bodyClickHandler}
         // Safe: Shiki generates this HTML internally from the code string - no user HTML passthrough
         dangerouslySetInnerHTML={{ __html: html }}
       />
