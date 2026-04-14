@@ -11,7 +11,10 @@ export function stripMarkdown(md: string): string {
       .replace(/^#{1,6}\s+/gm, "")
       // Remove bold/italic
       .replace(/\*{1,3}([^*]+)\*{1,3}/g, "$1")
-      .replace(/_{1,3}([^_]+)_{1,3}/g, "$1")
+      // Underscores only act as emphasis when not adjacent to word characters
+      // (CommonMark intra-word underscores rule). Without this guard, identifiers
+      // like `:white_check_mark:` get mangled into `:whitecheckmark:`.
+      .replace(/(^|[^A-Za-z0-9_])_{1,3}([^_\n]+?)_{1,3}(?![A-Za-z0-9_])/g, "$1$2")
       // Remove inline code
       .replace(/`([^`]+)`/g, "$1")
       // Remove images (before links — images use ![])

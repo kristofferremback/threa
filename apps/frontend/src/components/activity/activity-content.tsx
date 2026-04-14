@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils"
 import { RelativeTime } from "@/components/relative-time"
+import { stripMarkdown } from "@/lib/markdown"
 
 const ACTIVITY_DISPLAY: Record<string, { verb: string }> = {
   mention: { verb: "mentioned you in" },
@@ -24,6 +25,7 @@ export function ActivityContent({
   isUnread,
 }: ActivityContentProps) {
   const display = ACTIVITY_DISPLAY[activityType] ?? ACTIVITY_DISPLAY.message
+  const previewText = stripMarkdown(contentPreview).replace(/\n+/g, " ")
 
   return (
     <div className="flex-1 min-w-0">
@@ -33,9 +35,7 @@ export function ActivityContent({
         <span className="font-medium truncate">{streamName}</span>
       </div>
 
-      {contentPreview && (
-        <p className="mt-0.5 text-xs text-muted-foreground truncate">&ldquo;{contentPreview}&rdquo;</p>
-      )}
+      {previewText && <p className="mt-0.5 text-xs text-muted-foreground truncate">&ldquo;{previewText}&rdquo;</p>}
 
       <RelativeTime date={createdAt} className="text-xs text-muted-foreground/60 mt-1 block" />
     </div>
