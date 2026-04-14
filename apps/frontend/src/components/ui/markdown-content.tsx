@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils"
 import { markdownComponents } from "@/lib/markdown/components"
 import { MentionProvider, type MentionType } from "@/lib/markdown/mention-context"
 import { AttachmentProvider } from "@/lib/markdown/attachment-context"
-import { CodeBlockMessageProvider } from "@/lib/markdown/code-block-context"
+import { MarkdownBlockProvider } from "@/lib/markdown/markdown-block-context"
 import type { Mentionable } from "@/components/editor/triggers/types"
 
 export { AttachmentProvider }
@@ -14,9 +14,10 @@ interface MarkdownContentProps {
   content: string
   className?: string
   /**
-   * When provided, code blocks persist their collapse state per message
-   * (keyed by messageId + block content hash) and honor the user's
-   * `codeBlockCollapseThreshold` preference.
+   * When provided, collapsible markdown blocks (code blocks, blockquotes,
+   * quote replies) persist their collapse state per message (keyed by
+   * messageId + block kind + content hash) and honor the user's collapse
+   * threshold preferences.
    */
   messageId?: string
 }
@@ -56,7 +57,7 @@ export const MarkdownContent = memo(function MarkdownContent({ content, classNam
     </div>
   )
   if (messageId) {
-    return <CodeBlockMessageProvider messageId={messageId}>{body}</CodeBlockMessageProvider>
+    return <MarkdownBlockProvider messageId={messageId}>{body}</MarkdownBlockProvider>
   }
   return body
 })

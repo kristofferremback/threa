@@ -10,6 +10,9 @@ import {
   CODE_BLOCK_COLLAPSE_THRESHOLD_MIN,
   CODE_BLOCK_COLLAPSE_THRESHOLD_MAX,
   DEFAULT_CODE_BLOCK_COLLAPSE_THRESHOLD,
+  BLOCKQUOTE_COLLAPSE_THRESHOLD_MIN,
+  BLOCKQUOTE_COLLAPSE_THRESHOLD_MAX,
+  DEFAULT_BLOCKQUOTE_COLLAPSE_THRESHOLD,
   type Theme,
   type MessageDisplay,
 } from "@threa/types"
@@ -36,26 +39,46 @@ export function AppearanceSettings() {
   const theme = preferences?.theme ?? "system"
   const messageDisplay = preferences?.messageDisplay ?? "comfortable"
   const codeBlockThreshold = preferences?.codeBlockCollapseThreshold ?? DEFAULT_CODE_BLOCK_COLLAPSE_THRESHOLD
+  const blockquoteThreshold = preferences?.blockquoteCollapseThreshold ?? DEFAULT_BLOCKQUOTE_COLLAPSE_THRESHOLD
 
   // Local input state so users can type freely without each keystroke
   // hitting the preferences mutation. We commit on blur / Enter only.
-  const [thresholdDraft, setThresholdDraft] = useState<string>(String(codeBlockThreshold))
+  const [codeThresholdDraft, setCodeThresholdDraft] = useState<string>(String(codeBlockThreshold))
   useEffect(() => {
-    setThresholdDraft(String(codeBlockThreshold))
+    setCodeThresholdDraft(String(codeBlockThreshold))
   }, [codeBlockThreshold])
 
-  const commitThreshold = () => {
-    const parsed = Number.parseInt(thresholdDraft, 10)
+  const [blockquoteThresholdDraft, setBlockquoteThresholdDraft] = useState<string>(String(blockquoteThreshold))
+  useEffect(() => {
+    setBlockquoteThresholdDraft(String(blockquoteThreshold))
+  }, [blockquoteThreshold])
+
+  const commitCodeThreshold = () => {
+    const parsed = Number.parseInt(codeThresholdDraft, 10)
     if (!Number.isFinite(parsed)) {
-      setThresholdDraft(String(codeBlockThreshold))
+      setCodeThresholdDraft(String(codeBlockThreshold))
       return
     }
     const clamped = Math.min(CODE_BLOCK_COLLAPSE_THRESHOLD_MAX, Math.max(CODE_BLOCK_COLLAPSE_THRESHOLD_MIN, parsed))
     if (clamped === codeBlockThreshold) {
-      setThresholdDraft(String(clamped))
+      setCodeThresholdDraft(String(clamped))
       return
     }
     void updatePreference("codeBlockCollapseThreshold", clamped)
+  }
+
+  const commitBlockquoteThreshold = () => {
+    const parsed = Number.parseInt(blockquoteThresholdDraft, 10)
+    if (!Number.isFinite(parsed)) {
+      setBlockquoteThresholdDraft(String(blockquoteThreshold))
+      return
+    }
+    const clamped = Math.min(BLOCKQUOTE_COLLAPSE_THRESHOLD_MAX, Math.max(BLOCKQUOTE_COLLAPSE_THRESHOLD_MIN, parsed))
+    if (clamped === blockquoteThreshold) {
+      setBlockquoteThresholdDraft(String(clamped))
+      return
+    }
+    void updatePreference("blockquoteCollapseThreshold", clamped)
   }
 
   return (
@@ -134,13 +157,52 @@ export function AppearanceSettings() {
               inputMode="numeric"
               min={CODE_BLOCK_COLLAPSE_THRESHOLD_MIN}
               max={CODE_BLOCK_COLLAPSE_THRESHOLD_MAX}
-              value={thresholdDraft}
-              onChange={(event) => setThresholdDraft(event.target.value)}
-              onBlur={commitThreshold}
+              value={codeThresholdDraft}
+              onChange={(event) => setCodeThresholdDraft(event.target.value)}
+              onBlur={commitCodeThreshold}
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
                   event.preventDefault()
-                  commitThreshold()
+                  commitCodeThreshold()
+                }
+              }}
+              className="w-24"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Block Quotes</CardTitle>
+          <CardDescription>
+            Collapse long quotes and quote replies by default to keep messages scannable
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-start gap-4">
+            <div className="grid gap-1 flex-1">
+              <Label htmlFor="blockquote-collapse-threshold" className="cursor-pointer">
+                Collapse threshold
+              </Label>
+              <p className="text-sm text-muted-foreground">
+                Block quotes and quote replies with more than this many lines start collapsed. You can always click to
+                expand or collapse individual quotes.
+              </p>
+            </div>
+            <Input
+              id="blockquote-collapse-threshold"
+              type="number"
+              inputMode="numeric"
+              min={BLOCKQUOTE_COLLAPSE_THRESHOLD_MIN}
+              max={BLOCKQUOTE_COLLAPSE_THRESHOLD_MAX}
+              value={blockquoteThresholdDraft}
+              onChange={(event) => setBlockquoteThresholdDraft(event.target.value)}
+              onBlur={commitBlockquoteThreshold}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault()
+                  commitBlockquoteThreshold()
                 }
               }}
               className="w-24"

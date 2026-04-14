@@ -1,12 +1,15 @@
-import type { ReactNode } from "react"
-import { Quote } from "lucide-react"
+import { useMemo, type ReactNode } from "react"
+import { Quote, ChevronDown, ChevronRight } from "lucide-react"
 import { Link, useParams } from "react-router-dom"
+import { DEFAULT_BLOCKQUOTE_COLLAPSE_THRESHOLD, type AuthorType } from "@threa/types"
 import { useActors } from "@/hooks"
 import { useUserProfile } from "@/components/user-profile"
 import { PersonaAvatar } from "@/components/persona-avatar"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { cn } from "@/lib/utils"
-import type { AuthorType } from "@threa/types"
+import { usePreferences } from "@/contexts/preferences-context"
+import { useBlockCollapse } from "./use-block-collapse"
+import { extractBlockText, estimateBlockLines } from "./extract-block-text"
 
 interface QuoteReplyBlockProps {
   authorName: string
@@ -17,10 +20,20 @@ interface QuoteReplyBlockProps {
   children: ReactNode
 }
 
+function usePreferencesOptional() {
+  try {
+    return usePreferences()
+  } catch {
+    return null
+  }
+}
+
 /**
  * Renders a quote-reply block in message display.
  * Clicking the block navigates to the quoted message (INV-40: navigation uses links).
  * Clicking the author name opens the user profile modal.
+ * Long quotes start collapsed; the chevron toggles between a summary and the
+ * full quote body.
  */
 export function QuoteReplyBlock({
   authorName,
@@ -32,9 +45,36 @@ export function QuoteReplyBlock({
 }: QuoteReplyBlockProps) {
   const { workspaceId } = useParams<{ workspaceId: string }>()
 
+  const quotedText = useMemo(() => extractBlockText(children), [children])
+  const lineCount = useMemo(() => estimateBlockLines(quotedText), [quotedText])
+
+  const preferencesContext = usePreferencesOptional()
+  const threshold =
+    preferencesContext?.preferences?.blockquoteCollapseThreshold ?? DEFAULT_BLOCKQUOTE_COLLAPSE_THRESHOLD
+  const defaultCollapsed = lineCount > threshold
+
+  const { collapsed, canToggle, toggle } = useBlockCollapse({
+    // Quote replies are anchored by the quoted (streamId, messageId) pair, so
+    // two quote-replies to the same message in a single container collapse
+    // together — which is what users expect.
+    kind: "quote-reply",
+    hashNamespace: `${streamId}/${messageId}`,
+    content: quotedText,
+    defaultCollapsed,
+  })
+
   if (!workspaceId) return null
 
   const url = `/w/${workspaceId}/s/${streamId}?m=${messageId}`
+
+  const handleToggle = (e: React.MouseEvent) => {
+    // The wrapper is a <Link>; stop propagation so toggling doesn't navigate.
+    e.preventDefault()
+    e.stopPropagation()
+    toggle()
+  }
+
+  const collapseLabel = collapsed ? `Expand ${lineCount} line${lineCount === 1 ? "" : "s"}` : "Collapse quote reply"
 
   return (
     <Link
@@ -43,13 +83,39 @@ export function QuoteReplyBlock({
     >
       <Quote className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
       <div className="min-w-0 flex-1">
-        <QuoteAuthor
-          workspaceId={workspaceId}
-          authorName={authorName}
-          authorId={authorId}
-          actorType={actorType as AuthorType}
-        />
-        <div className="mt-0.5 text-muted-foreground [&_p]:mb-0">{children}</div>
+        <div className="flex items-center gap-1.5">
+          <QuoteAuthor
+            workspaceId={workspaceId}
+            authorName={authorName}
+            authorId={authorId}
+            actorType={actorType as AuthorType}
+          />
+          {canToggle && (
+            <button
+              type="button"
+              onClick={handleToggle}
+              aria-expanded={!collapsed}
+              aria-label={collapseLabel}
+              title={collapseLabel}
+              className="ml-auto flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-primary/10 hover:text-foreground"
+            >
+              {collapsed ? (
+                <ChevronRight className="h-3 w-3" aria-hidden="true" />
+              ) : (
+                <ChevronDown className="h-3 w-3" aria-hidden="true" />
+              )}
+            </button>
+          )}
+        </div>
+        {collapsed ? (
+          <div className={cn("mt-0.5 truncate text-xs text-muted-foreground/80 italic")}>
+            {lineCount > 0
+              ? `${lineCount} line${lineCount === 1 ? "" : "s"} — click chevron to expand`
+              : "Quoted message"}
+          </div>
+        ) : (
+          <div className="mt-0.5 text-muted-foreground [&_p]:mb-0">{children}</div>
+        )}
       </div>
     </Link>
   )

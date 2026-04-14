@@ -7,6 +7,7 @@ import { ProcessedChildren } from "./mention-renderer"
 import { useAttachmentContext } from "./attachment-context"
 import { useLinkPreviewContext } from "./link-preview-context"
 import { QuoteReplyBlock } from "./quote-reply-block"
+import { BlockquoteBlock } from "./blockquote-block"
 
 const CodeBlock = lazy(() => import("./code-block"))
 
@@ -308,11 +309,7 @@ export const markdownComponents: Components = {
         </QuoteReplyBlock>
       )
     }
-    return (
-      <blockquote className="border-l-2 border-primary/50 pl-4 my-2 text-muted-foreground italic">
-        {children}
-      </blockquote>
-    )
+    return <BlockquoteBlock>{children}</BlockquoteBlock>
   },
 
   // Lists

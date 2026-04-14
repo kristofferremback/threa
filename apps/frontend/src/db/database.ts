@@ -249,15 +249,17 @@ export interface CachedUserPreferences {
 }
 
 /**
- * Persisted UI toggle state for a single code block inside a message.
- * Scoped per message so collapsed/expanded state survives reloads.
- * Key format: `${messageId}:${contentHash}` where contentHash is a fast
- * deterministic digest of the block's language + content (see
- * `hashCodeBlock` in `lib/markdown/code-block-context`).
+ * Persisted UI toggle state for a single collapsible markdown block inside
+ * a message (code block, blockquote, or quote reply). Scoped per message so
+ * collapsed/expanded state survives reloads.
+ * Key format: `${messageId}:${kind}:${contentHash}` — see
+ * `composeBlockCollapseKey` in `lib/markdown/markdown-block-context`.
  */
-export interface CachedCodeBlockCollapse {
+export interface CachedMarkdownBlockCollapse {
   id: string
   messageId: string
+  /** Block kind — lets us clear collapse state scoped to a block type. */
+  kind: "code" | "blockquote" | "quote-reply"
   collapsed: boolean
   updatedAt: number
 }
@@ -289,7 +291,7 @@ class ThreaDatabase extends Dexie {
   userPreferences!: EntityTable<CachedUserPreferences, "id">
   workspaceMetadata!: EntityTable<CachedWorkspaceMetadata, "id">
   pendingOperations!: EntityTable<PendingOperation, "id">
-  codeBlockCollapse!: EntityTable<CachedCodeBlockCollapse, "id">
+  markdownBlockCollapse!: EntityTable<CachedMarkdownBlockCollapse, "id">
 
   constructor() {
     super("threa")
@@ -448,6 +450,27 @@ class ThreaDatabase extends Dexie {
       codeBlockCollapse: "id, messageId, updatedAt",
     })
 
+    // v22: Generalize the collapse table to cover any collapsible markdown
+    // block (code, blockquote, quote-reply). Rename the store and migrate
+    // existing rows in place with `kind: "code"` and a kind-prefixed id.
+    this.version(22)
+      .stores({
+        markdownBlockCollapse: "id, messageId, kind, updatedAt",
+        codeBlockCollapse: null,
+      })
+      .upgrade(async (tx) => {
+        const oldRows = await tx.table("codeBlockCollapse").toArray()
+        if (oldRows.length === 0) return
+        const migrated = oldRows.map((row) => ({
+          id: `${row.messageId}:code:${String(row.id).slice(String(row.messageId).length + 1)}`,
+          messageId: row.messageId,
+          kind: "code" as const,
+          collapsed: row.collapsed,
+          updatedAt: row.updatedAt,
+        }))
+        await tx.table("markdownBlockCollapse").bulkAdd(migrated)
+      })
+
     this.workspaceUsers = this.table(WORKSPACE_USERS_STORE) as EntityTable<CachedWorkspaceUser, "id">
   }
 }
@@ -472,7 +495,7 @@ export async function clearAllCachedData(): Promise<void> {
       db.userPreferences.clear(),
       db.workspaceMetadata.clear(),
       db.pendingOperations.clear(),
-      db.codeBlockCollapse.clear(),
+      db.markdownBlockCollapse.clear(),
       // Note: we keep pendingMessages to retry sending after re-login
     ])
   } finally {

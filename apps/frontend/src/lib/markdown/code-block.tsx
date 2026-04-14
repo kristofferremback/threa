@@ -1,12 +1,10 @@
-import { useEffect, useState, useCallback, useMemo } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { codeToHtml } from "shiki"
-import { useLiveQuery } from "dexie-react-hooks"
 import { Copy, Check, ChevronDown, ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { db } from "@/db"
 import { DEFAULT_CODE_BLOCK_COLLAPSE_THRESHOLD } from "@threa/types"
 import { usePreferences } from "@/contexts/preferences-context"
-import { useCodeBlockMessageContext, hashCodeBlock } from "./code-block-context"
+import { useBlockCollapse } from "./use-block-collapse"
 
 interface CodeBlockProps {
   language: string
@@ -62,7 +60,6 @@ export default function CodeBlock({ language, children }: CodeBlockProps) {
   const [html, setHtml] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
-  const messageContext = useCodeBlockMessageContext()
   // Preferences context may not exist in all rendering contexts (e.g. tests).
   const preferencesContext = usePreferencesOptional()
   const threshold = preferencesContext?.preferences?.codeBlockCollapseThreshold ?? DEFAULT_CODE_BLOCK_COLLAPSE_THRESHOLD
@@ -72,19 +69,12 @@ export default function CodeBlock({ language, children }: CodeBlockProps) {
   const defaultCollapsed = lineCount > threshold
   const hasTruncatedPreview = lineCount > PREVIEW_LINE_COUNT
 
-  const collapseKey = useMemo(() => {
-    if (!messageContext) return null
-    return `${messageContext.messageId}:${hashCodeBlock(trimmedCode, language)}`
-  }, [messageContext, trimmedCode, language])
-
-  // Live-read the persisted collapse override (if any). undefined = no override.
-  const persistedOverride = useLiveQuery(async () => {
-    if (!collapseKey) return undefined
-    const row = await db.codeBlockCollapse.get(collapseKey)
-    return row?.collapsed
-  }, [collapseKey])
-
-  const collapsed = persistedOverride ?? defaultCollapsed
+  const { collapsed, canToggle, toggle } = useBlockCollapse({
+    kind: "code",
+    hashNamespace: language,
+    content: trimmedCode,
+    defaultCollapsed,
+  })
 
   // Collapsed view shows the first PREVIEW_LINE_COUNT lines so readers get a
   // taste of the block without the full bulk. If the block is already short,
@@ -94,18 +84,6 @@ export default function CodeBlock({ language, children }: CodeBlockProps) {
     const lines = trimmedCode.split("\n")
     return lines.slice(0, PREVIEW_LINE_COUNT).join("\n")
   }, [collapsed, hasTruncatedPreview, trimmedCode])
-
-  const handleToggle = useCallback(async () => {
-    if (!collapseKey || !messageContext) return
-    const next = !collapsed
-    // Persisted row always wins over threshold default once a user acts.
-    await db.codeBlockCollapse.put({
-      id: collapseKey,
-      messageId: messageContext.messageId,
-      collapsed: next,
-      updatedAt: Date.now(),
-    })
-  }, [collapseKey, messageContext, collapsed])
 
   const handleCopy = useCallback(
     async (event: React.MouseEvent) => {
@@ -149,14 +127,13 @@ export default function CodeBlock({ language, children }: CodeBlockProps) {
     }
   }, [displayCode, language])
 
-  const canToggle = Boolean(collapseKey)
   const toggleLabel = collapsed ? `Expand ${lineCount} line${lineCount === 1 ? "" : "s"}` : "Collapse code block"
 
   const header = (
     <div className="flex items-center gap-1.5 px-2.5 py-1 bg-muted/50 border-b border-border">
       <button
         type="button"
-        onClick={handleToggle}
+        onClick={toggle}
         disabled={!canToggle}
         aria-expanded={!collapsed}
         aria-label={toggleLabel}
@@ -203,7 +180,7 @@ export default function CodeBlock({ language, children }: CodeBlockProps) {
   // expands the block. Non-truncated collapsed blocks (lineCount ≤ 3) show
   // the same content as expanded, so the body click target is unnecessary.
   const bodyTogglesExpand = collapsed && canToggle && hasTruncatedPreview
-  const bodyClickHandler = bodyTogglesExpand ? handleToggle : undefined
+  const bodyClickHandler = bodyTogglesExpand ? toggle : undefined
 
   if (!html) {
     return (
