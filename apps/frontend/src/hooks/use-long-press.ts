@@ -9,12 +9,13 @@ interface UseLongPressOptions {
   enabled?: boolean
   /**
    * When true, skip the long-press timer if the touch starts inside an
-   * <a href> or an element marked data-native-context="true". Use on
-   * container-level long-press handlers (e.g. a message body) where
-   * child links should get the browser's native long-press menu rather
-   * than the app's drawer. Do not enable when the long-press handler is
-   * attached directly to the link itself (e.g. a sidebar stream row).
-   * Default: false.
+   * <a href> or an element marked data-native-context="true" (e.g. code
+   * blocks). Use on container-level long-press handlers (e.g. a message
+   * body) where child links / code blocks should get the browser's native
+   * long-press menu — "Open in Firefox" / "Copy link" for links, native
+   * text selection for code — rather than the app's message drawer. Do
+   * not enable when the long-press handler is attached directly to the
+   * link itself (e.g. a sidebar stream row). Default: false.
    */
   deferToNativeLinks?: boolean
 }
@@ -65,8 +66,9 @@ export function useLongPress({
       if (!enabled) return
       // When deferToNativeLinks is on, let the browser's native gesture win
       // on <a href> descendants and regions marked data-native-context="true"
-      // so long-press surfaces "Open in Firefox" / "Copy link" instead of
-      // the app's drawer.
+      // (e.g. code blocks) so long-press surfaces "Open in Firefox" / "Copy
+      // link" for links, or native text selection for code, instead of the
+      // app's drawer.
       if (
         deferToNativeLinks &&
         e.target instanceof Element &&
@@ -131,7 +133,12 @@ export function useLongPress({
   )
 
   // Cancel pending timer on unmount to avoid firing on stale closures.
-  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current) }, [])
+  useEffect(
+    () => () => {
+      if (timerRef.current) clearTimeout(timerRef.current)
+    },
+    []
+  )
 
   return {
     handlers: { onTouchStart, onTouchEnd, onTouchMove, onContextMenu },

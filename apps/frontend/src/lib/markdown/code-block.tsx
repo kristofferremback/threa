@@ -207,7 +207,10 @@ export default function CodeBlock({ language, children }: CodeBlockProps) {
 
   if (!html) {
     return (
-      <div className="group my-2 rounded-md overflow-hidden border border-border bg-muted/50">
+      <div
+        className="group my-2 rounded-md overflow-hidden border border-border bg-muted/50"
+        data-native-context="true"
+      >
         {header}
         <pre
           className={cn("px-2.5 py-2 overflow-x-auto", bodyTogglesExpand && "cursor-pointer")}
@@ -220,7 +223,7 @@ export default function CodeBlock({ language, children }: CodeBlockProps) {
   }
 
   return (
-    <div className="group my-2 rounded-md overflow-hidden border border-border bg-muted/50">
+    <div className="group my-2 rounded-md overflow-hidden border border-border bg-muted/50" data-native-context="true">
       {header}
       <div
         className={cn(

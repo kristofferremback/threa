@@ -182,6 +182,11 @@ describe("CodeBlock collapse behavior", () => {
     })
   })
 
+  it('marks the wrapper with data-native-context="true" so mobile long-press defers to native text selection', () => {
+    renderCodeBlock("const x = 1\nconst y = 2")
+    expect(document.querySelector('[data-native-context="true"]')).toBeInTheDocument()
+  })
+
   it("scopes collapse state per messageId", async () => {
     const user = userEvent.setup()
     const code = Array.from({ length: 15 }, (_, i) => `line ${i + 1}`).join("\n")
