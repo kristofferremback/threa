@@ -11,6 +11,8 @@ import {
   FONT_FAMILY_OPTIONS,
   MESSAGE_SEND_MODE_OPTIONS,
   LINK_PREVIEW_DEFAULT_OPTIONS,
+  CODE_BLOCK_COLLAPSE_THRESHOLD_MIN,
+  CODE_BLOCK_COLLAPSE_THRESHOLD_MAX,
 } from "@threa/types"
 
 const updatePreferencesSchema = z.object({
@@ -25,6 +27,12 @@ const updatePreferencesSchema = z.object({
   messageSendMode: z.enum(MESSAGE_SEND_MODE_OPTIONS).optional(),
   linkPreviewDefault: z.enum(LINK_PREVIEW_DEFAULT_OPTIONS).optional(),
   scratchpadCustomPrompt: z.string().max(8000).nullable().optional(),
+  codeBlockCollapseThreshold: z
+    .number()
+    .int()
+    .min(CODE_BLOCK_COLLAPSE_THRESHOLD_MIN)
+    .max(CODE_BLOCK_COLLAPSE_THRESHOLD_MAX)
+    .optional(),
   keyboardShortcuts: z.record(z.string(), z.string()).optional(),
   accessibility: z
     .object({

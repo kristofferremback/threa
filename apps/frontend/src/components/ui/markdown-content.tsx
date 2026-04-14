@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils"
 import { markdownComponents } from "@/lib/markdown/components"
 import { MentionProvider, type MentionType } from "@/lib/markdown/mention-context"
 import { AttachmentProvider } from "@/lib/markdown/attachment-context"
+import { CodeBlockMessageProvider } from "@/lib/markdown/code-block-context"
 import type { Mentionable } from "@/components/editor/triggers/types"
 
 export { AttachmentProvider }
@@ -12,6 +13,12 @@ export { AttachmentProvider }
 interface MarkdownContentProps {
   content: string
   className?: string
+  /**
+   * When provided, code blocks persist their collapse state per message
+   * (keyed by messageId + block content hash) and honor the user's
+   * `codeBlockCollapseThreshold` preference.
+   */
+  messageId?: string
 }
 
 /**
@@ -40,14 +47,18 @@ function urlTransform(url: string): string {
  * Basic markdown renderer without mention context.
  * Uses fallback mention styling (all mentions styled as users).
  */
-export const MarkdownContent = memo(function MarkdownContent({ content, className }: MarkdownContentProps) {
-  return (
+export const MarkdownContent = memo(function MarkdownContent({ content, className, messageId }: MarkdownContentProps) {
+  const body = (
     <div className={cn("markdown-content", className)}>
       <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents} urlTransform={urlTransform}>
         {content}
       </Markdown>
     </div>
   )
+  if (messageId) {
+    return <CodeBlockMessageProvider messageId={messageId}>{body}</CodeBlockMessageProvider>
+  }
+  return body
 })
 
 interface MarkdownWithMentionsProps {

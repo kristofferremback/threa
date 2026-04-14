@@ -89,6 +89,13 @@ export const MessageSendModes = {
   CMD_ENTER: "cmdEnter",
 } as const satisfies Record<string, MessageSendMode>
 
+// Code block collapse threshold - line count above which blocks start collapsed.
+// Blocks with fewer lines render expanded by default. A user can always toggle
+// an individual block; this preference only controls the initial state.
+export const CODE_BLOCK_COLLAPSE_THRESHOLD_MIN = 0
+export const CODE_BLOCK_COLLAPSE_THRESHOLD_MAX = 500
+export const DEFAULT_CODE_BLOCK_COLLAPSE_THRESHOLD = 10
+
 // Settings tab options (for URL-driven settings dialog)
 export const SETTINGS_TAB_OPTIONS = [
   "profile",
@@ -153,6 +160,7 @@ export interface UserPreferences {
   messageSendMode: MessageSendMode
   linkPreviewDefault: LinkPreviewDefault
   scratchpadCustomPrompt: string | null
+  codeBlockCollapseThreshold: number
   keyboardShortcuts: KeyboardShortcuts
   accessibility: AccessibilityPreferences
   createdAt: string
@@ -174,6 +182,7 @@ export const DEFAULT_USER_PREFERENCES: Omit<UserPreferences, "workspaceId" | "us
   messageSendMode: "enter",
   linkPreviewDefault: "open",
   scratchpadCustomPrompt: null,
+  codeBlockCollapseThreshold: DEFAULT_CODE_BLOCK_COLLAPSE_THRESHOLD,
   keyboardShortcuts: {},
   accessibility: DEFAULT_ACCESSIBILITY,
 }
@@ -197,6 +206,7 @@ export interface UpdateUserPreferencesInput {
   messageSendMode?: MessageSendMode
   linkPreviewDefault?: LinkPreviewDefault
   scratchpadCustomPrompt?: string | null
+  codeBlockCollapseThreshold?: number
   keyboardShortcuts?: KeyboardShortcuts
   accessibility?: Partial<AccessibilityPreferences>
 }

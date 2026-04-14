@@ -83,6 +83,7 @@ function flattenUpdates(updates: UpdateUserPreferencesInput): Array<{ key: strin
     "sidebarCollapsed",
     "messageSendMode",
     "scratchpadCustomPrompt",
+    "codeBlockCollapseThreshold",
   ] as const
 
   for (const key of simpleKeys) {

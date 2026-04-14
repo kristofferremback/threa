@@ -274,7 +274,11 @@ function MessageLayout({
           {children ?? (
             <LinkPreviewProvider>
               <AttachmentProvider workspaceId={workspaceId} attachments={payload.attachments ?? []}>
-                <MarkdownContent content={payload.contentMarkdown} className="text-sm leading-relaxed" />
+                <MarkdownContent
+                  content={payload.contentMarkdown}
+                  messageId={payload.messageId}
+                  className="text-sm leading-relaxed"
+                />
                 {payload.attachments && payload.attachments.length > 0 && (
                   <AttachmentList
                     attachments={payload.attachments}

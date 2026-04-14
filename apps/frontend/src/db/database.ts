@@ -248,6 +248,20 @@ export interface CachedUserPreferences {
   _cachedAt: number
 }
 
+/**
+ * Persisted UI toggle state for a single code block inside a message.
+ * Scoped per message so collapsed/expanded state survives reloads.
+ * Key format: `${messageId}:${contentHash}` where contentHash is a fast
+ * deterministic digest of the block's language + content (see
+ * `hashCodeBlock` in `lib/markdown/code-block-context`).
+ */
+export interface CachedCodeBlockCollapse {
+  id: string
+  messageId: string
+  collapsed: boolean
+  updatedAt: number
+}
+
 export interface CachedWorkspaceMetadata {
   id: string // workspaceId
   workspaceId: string
@@ -275,6 +289,7 @@ class ThreaDatabase extends Dexie {
   userPreferences!: EntityTable<CachedUserPreferences, "id">
   workspaceMetadata!: EntityTable<CachedWorkspaceMetadata, "id">
   pendingOperations!: EntityTable<PendingOperation, "id">
+  codeBlockCollapse!: EntityTable<CachedCodeBlockCollapse, "id">
 
   constructor() {
     super("threa")
@@ -426,6 +441,13 @@ class ThreaDatabase extends Dexie {
       })
       .upgrade((tx) => tx.table("events").clear())
 
+    // v21: Add codeBlockCollapse table for per-message, per-code-block collapse
+    // toggle state. Indexed by messageId so we can bulk-clear a message's
+    // state when it is deleted.
+    this.version(21).stores({
+      codeBlockCollapse: "id, messageId, updatedAt",
+    })
+
     this.workspaceUsers = this.table(WORKSPACE_USERS_STORE) as EntityTable<CachedWorkspaceUser, "id">
   }
 }
@@ -450,6 +472,7 @@ export async function clearAllCachedData(): Promise<void> {
       db.userPreferences.clear(),
       db.workspaceMetadata.clear(),
       db.pendingOperations.clear(),
+      db.codeBlockCollapse.clear(),
       // Note: we keep pendingMessages to retry sending after re-login
     ])
   } finally {

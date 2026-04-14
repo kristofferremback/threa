@@ -76,6 +76,7 @@ function makeBootstrap(): WorkspaceBootstrap {
       sidebarCollapsed: false,
       linkPreviewDefault: "open",
       scratchpadCustomPrompt: null,
+      codeBlockCollapseThreshold: 10,
       accessibility: {
         fontSize: "medium",
         fontFamily: "system",
