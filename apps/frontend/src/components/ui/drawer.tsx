@@ -162,11 +162,11 @@ const DrawerContent = React.forwardRef<
         )}
         {...props}
       >
-        {/* Notch / drag handle — always pull-down-to-close affordance */}
         <div className="mx-auto mt-4 h-2 w-[100px] shrink-0 rounded-full bg-muted" />
-        {/* Inner wrapper: bounded to the visible portion of the viewport so
-            scrollable descendants can reach the bottom of their content at
-            the current snap. */}
+        {/* Inner wrapper is bounded to the visible portion of the viewport so
+            scrollable descendants can reach the bottom of their content at the
+            current snap — without this, content below ~80vh is unreachable at
+            the default snap because the wrapper extends past the visible area. */}
         <div
           className="flex min-h-0 flex-1 flex-col"
           style={innerMaxHeight ? { maxHeight: innerMaxHeight } : undefined}

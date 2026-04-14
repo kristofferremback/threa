@@ -42,14 +42,15 @@ export function UnsentMessageEditForm({
 
   // Mobile drawer state
   const [formatOpen, setFormatOpen] = useState(false)
-  const [mobileExpanded, setMobileExpanded] = useState(false)
   const [mobileLinkPopoverOpen, setMobileLinkPopoverOpen] = useState(false)
-  // Controlled snap: expand button jumps to full-screen (1), collapse returns
-  // to the default 80% resting state. Users can still drag between the two.
+  // Controlled snap point — `mobileExpanded` is derived from this so that
+  // user drag and the explicit expand button share one source of truth. The
+  // expand button toggles between 0.8 (default resting height) and 1 (full).
   const [activeSnap, setActiveSnap] = useState<number | string | null>(0.8)
-  useEffect(() => {
-    setActiveSnap(mobileExpanded ? 1 : 0.8)
-  }, [mobileExpanded])
+  const mobileExpanded = activeSnap === 1
+  const setMobileExpanded = useCallback((expanded: boolean) => {
+    setActiveSnap(expanded ? 1 : 0.8)
+  }, [])
   const richEditorRef = useRef<RichEditorHandle>(null)
   const mobileActionBarRef = useRef<HTMLDivElement>(null)
   const [mobileToolbarEditor, setMobileToolbarEditor] = useState<Editor | null>(null)
