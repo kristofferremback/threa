@@ -154,28 +154,39 @@ async function fetchGenericMetadata(url: string): Promise<UpdateLinkPreviewParam
       return { status: "completed", contentType: detectContentType(url), expiresAt: hoursFromNow(24) }
     }
 
-    // Read HTML up to MAX_HTML_BYTES (some sites like YouTube put meta tags far into the response)
+    // Read HTML up to MAX_HTML_BYTES (some sites like YouTube put meta tags far into the response).
+    // We collect raw bytes and defer decoding so we can honor the page's declared charset
+    // (HTTP Content-Type header first, then <meta charset>/<meta http-equiv>). Not all HTML is UTF-8
+    // — Swedish/European sites commonly serve ISO-8859-1 / Windows-1252.
     const reader = response.body?.getReader()
     if (!reader) return { status: "failed", expiresAt: minutesFromNow(1) }
 
-    let html = ""
-    const decoder = new TextDecoder()
+    const chunks: Uint8Array[] = []
     let totalBytes = 0
+    // Rolling ASCII view of the tail of what we've received, used only to detect </head>
+    // so we can stop reading early. Latin-1 is byte-faithful for the ASCII characters in the
+    // sentinel, independent of the page's true encoding.
+    let asciiTail = ""
+    const HEAD_CLOSE = "</head>"
+    const TAIL_WINDOW = 4096
 
     try {
       while (totalBytes < MAX_HTML_BYTES) {
         const { done, value } = await reader.read()
         if (done) break
-        html += decoder.decode(value, { stream: true })
+        chunks.push(value)
         totalBytes += value.byteLength
-        // Stop once we have </head> — no need to parse body
-        if (html.includes("</head>")) break
+
+        asciiTail += new TextDecoder("latin1").decode(value)
+        if (asciiTail.length > TAIL_WINDOW) asciiTail = asciiTail.slice(-TAIL_WINDOW)
+        if (asciiTail.toLowerCase().includes(HEAD_CLOSE)) break
       }
     } finally {
       reader.cancel()
     }
 
-    html += decoder.decode() // flush any buffered multi-byte characters
+    const bytes = concatChunks(chunks, totalBytes)
+    const html = decodeHtmlBytes(bytes, contentTypeHeader)
     return await parseHtmlMeta(html, url)
   } catch (err) {
     log.warn({ err, url }, "Failed to fetch link preview metadata")
@@ -273,6 +284,54 @@ function decode(value: string | undefined): string | null {
     .replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'")
     .replace(/&nbsp;/g, "\u00A0")
+}
+
+/**
+ * Detect the character encoding of an HTML byte stream.
+ *
+ * Priority (mirrors the HTML Standard's encoding sniffing algorithm in spirit, simplified):
+ *   1. `charset` parameter on the HTTP `Content-Type` response header.
+ *   2. `<meta charset>` or `<meta http-equiv="Content-Type" content="…; charset=…">` in the first
+ *      few KB of the document. These declarations are by definition ASCII-safe, so we can
+ *      sniff them without knowing the final encoding yet.
+ *   3. Fall back to UTF-8.
+ */
+export function detectCharset(contentTypeHeader: string, bytes: Uint8Array): string {
+  const headerMatch = contentTypeHeader.match(/charset\s*=\s*"?([^";\s]+)"?/i)
+  if (headerMatch?.[1]) return headerMatch[1].toLowerCase()
+
+  const sampleLen = Math.min(bytes.byteLength, 4096)
+  const sample = new TextDecoder("latin1").decode(bytes.subarray(0, sampleLen))
+
+  // Matches both `<meta charset="…">` and `<meta http-equiv="Content-Type" content="…; charset=…">`.
+  // The charset token can appear as a standalone attribute or nested inside the `content` value.
+  const metaMatch = sample.match(/<meta\b[^>]*?charset\s*=\s*["']?([^"'>\s;/]+)/i)
+  if (metaMatch?.[1]) return metaMatch[1].toLowerCase()
+
+  return "utf-8"
+}
+
+/**
+ * Decode raw HTML bytes using the charset declared by the server or the document itself.
+ * Falls back to UTF-8 when the label is unknown to `TextDecoder`.
+ */
+export function decodeHtmlBytes(bytes: Uint8Array, contentTypeHeader: string): string {
+  const charset = detectCharset(contentTypeHeader, bytes)
+  try {
+    return new TextDecoder(charset).decode(bytes)
+  } catch {
+    return new TextDecoder("utf-8").decode(bytes)
+  }
+}
+
+function concatChunks(chunks: Uint8Array[], totalBytes: number): Uint8Array {
+  const out = new Uint8Array(totalBytes)
+  let offset = 0
+  for (const chunk of chunks) {
+    out.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return out
 }
 
 function resolveUrl(relative: string, base: string): string {
