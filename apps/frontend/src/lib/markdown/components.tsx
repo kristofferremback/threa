@@ -146,7 +146,7 @@ function MarkdownLink({ href, children }: { href?: string; children: ReactNode }
         onClick={handleClick}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
-        className="text-primary underline underline-offset-4 hover:text-primary/80 [&_span]:[text-decoration:inherit] cursor-pointer"
+        className="break-all text-primary underline underline-offset-4 hover:text-primary/80 [&_span]:[text-decoration:inherit] cursor-pointer"
       >
         <ProcessedChildren>{children}</ProcessedChildren>
       </button>
@@ -167,13 +167,15 @@ function MarkdownLink({ href, children }: { href?: string; children: ReactNode }
   // the native browser menu (e.g. "Open in Firefox", "Copy link") instead of
   // the message drawer.
   return (
+    // break-all so long URLs wrap inside the message column instead of
+    // forcing horizontal overflow (URLs rarely contain whitespace).
     <a
       href={href}
       target="_blank"
       rel="noopener noreferrer"
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
-      className="text-primary underline underline-offset-4 hover:text-primary/80 [&_span]:[text-decoration:inherit]"
+      className="break-all text-primary underline underline-offset-4 hover:text-primary/80 [&_span]:[text-decoration:inherit]"
     >
       <ProcessedChildren>{children}</ProcessedChildren>
     </a>
@@ -265,8 +267,9 @@ export const markdownComponents: Components = {
       )
     }
 
-    // Inline code
-    return <code className="bg-muted px-1.5 py-0.5 rounded text-sm font-mono">{children}</code>
+    // Inline code — break-all so long identifiers, paths, or tokens inside
+    // backticks wrap inside the message column instead of overflowing.
+    return <code className="bg-muted px-1.5 py-0.5 rounded text-sm font-mono break-all">{children}</code>
   },
 
   // Code blocks wrapper - let code component handle rendering
@@ -361,7 +364,7 @@ export const markdownComponents: Components = {
       href={src}
       target="_blank"
       rel="noopener noreferrer"
-      className="text-primary underline underline-offset-4 hover:text-primary/80"
+      className="break-all text-primary underline underline-offset-4 hover:text-primary/80"
     >
       {alt || src}
     </a>

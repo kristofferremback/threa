@@ -360,6 +360,31 @@ Some **bold** and *italic* text with \`code\`.
     })
   })
 
+  describe("overflow handling", () => {
+    it("should wrap long unbreakable strings inside the content column", () => {
+      const { container } = render(<MarkdownContent content="test" />)
+      const wrapper = container.querySelector(".markdown-content")
+      expect(wrapper).toHaveClass("break-words")
+      expect(wrapper).toHaveClass("min-w-0")
+    })
+
+    it("should break long autolinked URLs at arbitrary points", () => {
+      const longUrl = "https://example.com/" + "averyverylongsegment".repeat(20)
+      render(<MarkdownContent content={longUrl} />)
+      const link = screen.getByRole("link")
+      // break-all allows breaking unbreakable URL text mid-token.
+      expect(link).toHaveClass("break-all")
+    })
+
+    it("should break long inline code at arbitrary points", () => {
+      const longToken = "a".repeat(200)
+      render(<MarkdownContent content={"Use `" + longToken + "` here"} />)
+      const code = screen.getByText(longToken)
+      expect(code.tagName).toBe("CODE")
+      expect(code).toHaveClass("break-all")
+    })
+  })
+
   describe("memoization", () => {
     it("should be memoized to prevent unnecessary re-renders", () => {
       const { rerender } = render(<MarkdownContent content="test" />)
