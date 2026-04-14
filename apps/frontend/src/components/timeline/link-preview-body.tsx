@@ -4,16 +4,16 @@ import { cn } from "@/lib/utils"
 import { useLinkPreviewCollapse } from "@/hooks/use-link-preview-collapse"
 
 /**
- * Shared fixed body height for every card-style link preview. GitHub diffs,
- * long file snippets, and chatty PR/issue/comment bodies are clipped to this
- * height by default so a message with multiple previews lines up neatly;
- * users can expand individual cards with the "Show more" affordance.
+ * Shared cap on every card-style link preview's body height. Tall content
+ * (GitHub diffs, long READMEs, chatty PR/issue/comment bodies) clips to this
+ * ceiling so it can't dominate a message; short content keeps its natural
+ * height so cards never render awkward trailing whitespace.
  *
  * Expressed in pixels because overflow detection compares `scrollHeight`
  * against this value. Keep in sync with `BODY_HEIGHT_CLASS`.
  */
 export const LINK_PREVIEW_BODY_HEIGHT_PX = 128
-const BODY_HEIGHT_CLASS = "h-32"
+const BODY_HEIGHT_CLASS = "max-h-32"
 
 interface LinkPreviewBodyProps {
   children: ReactNode
