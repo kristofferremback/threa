@@ -3,22 +3,7 @@
 import * as React from "react"
 import { Drawer as DrawerPrimitive } from "vaul"
 
-import { clamp } from "@/lib/math-utils"
 import { cn } from "@/lib/utils"
-
-// ── Adaptive sizing bounds ───────────────────────────────────────────────
-
-/**
- * Adaptive pull-ups open just tall enough to show their content, clamped
- * between 40% and 85% of the viewport so they never feel cramped or take
- * over the whole screen by default. Users can always drag up to full
- * screen (the second snap point). Callers opt out by passing explicit
- * `snapPoints` (e.g. `[0.8, 1]`) or `snapPoints={null}` to disable snaps
- * entirely.
- */
-const ADAPTIVE_MIN_VH = 0.4
-const ADAPTIVE_MAX_VH = 0.85
-const ADAPTIVE_FALLBACK_SNAP = `${Math.round(ADAPTIVE_MIN_VH * 100)}dvh`
 
 /**
  * Height of the notch row rendered at the top of every drawer
@@ -26,50 +11,14 @@ const ADAPTIVE_FALLBACK_SNAP = `${Math.round(ADAPTIVE_MIN_VH * 100)}dvh`
  * scrollable body aligns exactly with the visible bottom edge.
  */
 const NOTCH_HEIGHT_REM = 1.5
-const REM_PX = 16
-const NOTCH_PX = NOTCH_HEIGHT_REM * REM_PX
 
 /**
- * Prefer the `--viewport-height` CSS custom property pinned by
- * `useVisualViewport` — on Chrome Android `window.innerHeight`/`dvh` stays
- * stale after BFCache, pull-to-refresh, etc. Falls back to `innerHeight`
- * when the var isn't set (e.g. tests, server render, desktop).
+ * Exposes the active snap point to `DrawerContent` so it can bound its
+ * inner scroll wrapper to the visible portion of the viewport. Null in
+ * non-snap mode — DrawerContent sizes itself with CSS (min/max-height) and
+ * vaul slides it up naturally.
  */
-function getViewportHeight(): number {
-  if (typeof window === "undefined") return 800
-  const raw = getComputedStyle(document.documentElement).getPropertyValue("--viewport-height")
-  const parsed = Number.parseFloat(raw)
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : window.innerHeight
-}
-
-function clampToAdaptiveRange(pixels: number): number {
-  const vh = getViewportHeight()
-  return Math.round(clamp(pixels, vh * ADAPTIVE_MIN_VH, vh * ADAPTIVE_MAX_VH))
-}
-
-// ── Snap context ─────────────────────────────────────────────────────────
-
-/**
- * Exposes the active snap point to descendants so `DrawerContent` can bound
- * its inner wrapper to only the visible portion of the viewport, and lets
- * the wrapper report its measured content height back up to the root so
- * the first snap can be sized adaptively.
- */
-interface DrawerSnapContextValue {
-  activeSnap: number | string | null
-  isAdaptive: boolean
-  /**
-   * Called by `DrawerContent` with the natural content height in pixels
-   * (notch excluded). No-op when the caller passed explicit snap points.
-   */
-  reportContentHeight: (pixels: number) => void
-}
-
-const DrawerSnapContext = React.createContext<DrawerSnapContextValue>({
-  activeSnap: null,
-  isAdaptive: false,
-  reportContentHeight: () => {},
-})
+const DrawerSnapContext = React.createContext<number | string | null>(null)
 
 // ── Root ─────────────────────────────────────────────────────────────────
 
@@ -78,11 +27,11 @@ type DrawerRootProps = Omit<
   "snapPoints" | "fadeFromIndex" | "activeSnapPoint" | "setActiveSnapPoint"
 > & {
   /**
-   * Explicit snap points. Omit (undefined) for adaptive sizing clamped to
-   * `[40dvh, 85dvh]` based on measured content. Pass an explicit array to
-   * override (e.g. `[0.8, 1]`). Pass `null` to disable snaps entirely.
+   * Snap points for drag-to-expand behaviour (e.g. `[0.8, 1]`). Omit for
+   * an adaptive drawer that sizes to its content between 40dvh and 85dvh
+   * via CSS — vaul slides it up from below with no snap-point machinery.
    */
-  snapPoints?: (number | string)[] | null
+  snapPoints?: (number | string)[]
   activeSnapPoint?: number | string | null
   setActiveSnapPoint?: (snapPoint: number | string | null) => void
 }
@@ -100,70 +49,34 @@ const Drawer = ({
   // handling which sets inline style.height on the drawer content. This conflicts
   // with our dvh units that already account for the virtual keyboard, causing
   // drawers to shrink to strange sizes after focus/blur cycles on mobile.
-  const isAdaptive = snapPoints === undefined
-  const [adaptiveSnap, setAdaptiveSnap] = React.useState<string>(ADAPTIVE_FALLBACK_SNAP)
-
-  const resolvedSnaps = React.useMemo<(number | string)[] | undefined>(() => {
-    if (snapPoints === null) return undefined
-    if (!isAdaptive) return snapPoints
-    return [adaptiveSnap, 1]
-  }, [snapPoints, isAdaptive, adaptiveSnap])
-
-  const [internalSnap, setInternalSnap] = React.useState<number | string | null>(
-    resolvedSnaps ? resolvedSnaps[0] : null
-  )
-
-  // When the adaptive first snap updates (after content measurement), keep
-  // internalSnap aligned unless the user has already dragged to full screen.
-  React.useEffect(() => {
-    if (!isAdaptive) return
-    setInternalSnap((prev) => (prev === 1 ? prev : adaptiveSnap))
-  }, [isAdaptive, adaptiveSnap])
+  const [internalSnap, setInternalSnap] = React.useState<number | string | null>(snapPoints ? snapPoints[0] : null)
 
   const isControlled = controlledSnap !== undefined
   const activeSnap = isControlled ? controlledSnap : internalSnap
   const setActiveSnap = isControlled && setControlledSnap ? setControlledSnap : setInternalSnap
 
-  const reportContentHeight = React.useCallback(
-    (pixels: number) => {
-      if (!isAdaptive) return
-      // Visible drawer = content + notch. Clamp the total so the drawer
-      // never exceeds 85vh or falls below 40vh, then feed it back as the
-      // first snap point. ResizeObserver guarantees this settles into a
-      // fixed point even as `max-height` mutates the wrapper size.
-      const next = `${clampToAdaptiveRange(pixels + NOTCH_PX)}px`
-      setAdaptiveSnap((prev) => (prev === next ? prev : next))
-    },
-    [isAdaptive]
-  )
-
   const handleOpenChange = React.useCallback(
     (open: boolean) => {
       // Reset to first snap point whenever the drawer opens so reopening a
       // previously-expanded drawer doesn't show stale state.
-      if (open && resolvedSnaps && !isControlled) {
-        setInternalSnap(resolvedSnaps[0])
+      if (open && snapPoints && !isControlled) {
+        setInternalSnap(snapPoints[0])
       }
       onOpenChange?.(open)
     },
-    [onOpenChange, resolvedSnaps, isControlled]
-  )
-
-  const snapContext = React.useMemo<DrawerSnapContextValue>(
-    () => ({ activeSnap, isAdaptive, reportContentHeight }),
-    [activeSnap, isAdaptive, reportContentHeight]
+    [onOpenChange, snapPoints, isControlled]
   )
 
   return (
-    <DrawerSnapContext.Provider value={snapContext}>
-      {resolvedSnaps ? (
+    <DrawerSnapContext.Provider value={activeSnap}>
+      {snapPoints ? (
         <DrawerPrimitive.Root
           shouldScaleBackground={shouldScaleBackground}
           repositionInputs={repositionInputs}
-          snapPoints={resolvedSnaps}
+          snapPoints={snapPoints}
           activeSnapPoint={activeSnap}
           setActiveSnapPoint={setActiveSnap}
-          fadeFromIndex={resolvedSnaps.length - 1}
+          fadeFromIndex={snapPoints.length - 1}
           onOpenChange={handleOpenChange}
           {...props}
         />
@@ -209,7 +122,6 @@ function getSnapMaxHeight(activeSnap: number | string | null): string | undefine
     if (activeSnap >= 1) return undefined
     return `calc(100dvh * ${activeSnap} - ${NOTCH_HEIGHT_REM}rem)`
   }
-  // String snap points (e.g. "400px") — subtract notch height directly.
   return `calc(${activeSnap} - ${NOTCH_HEIGHT_REM}rem)`
 }
 
@@ -217,41 +129,9 @@ const DrawerContent = React.forwardRef<
   React.ElementRef<typeof DrawerPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DrawerPrimitive.Content>
 >(({ className, children, ...props }, ref) => {
-  const { activeSnap, isAdaptive, reportContentHeight } = React.useContext(DrawerSnapContext)
+  const activeSnap = React.useContext(DrawerSnapContext)
+  const isSnapped = activeSnap != null
   const innerMaxHeight = getSnapMaxHeight(activeSnap)
-  const innerRef = React.useRef<HTMLDivElement>(null)
-
-  // In adaptive mode, watch the wrapper's natural content height and report
-  // it up so the root can size the first snap point to match. With
-  // `height: fit-content` the wrapper's scrollHeight reflects the natural
-  // content height (content extent, unclipped by max-height), which lets
-  // the root settle to a snap point that visually matches the content.
-  // ResizeObserver also fires when viewport resizes propagate to the
-  // element's layout, so a separate window `resize` listener isn't needed.
-  React.useLayoutEffect(() => {
-    if (!isAdaptive) return
-    const el = innerRef.current
-    if (!el) return
-    const ro = new ResizeObserver(() => reportContentHeight(el.scrollHeight))
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [isAdaptive, reportContentHeight])
-
-  // Adaptive mode: `fit-content` + min/max bounds the wrapper to content
-  // natural height, clamped. The root's snap point matches these bounds so
-  // the drawer visually sizes to content without empty space below the
-  // wrapper (except when content is below the 40vh floor — expected).
-  // Fixed mode: flex-1 fills the drawer at the configured snap height.
-  let wrapperStyle: React.CSSProperties | undefined
-  if (isAdaptive) {
-    wrapperStyle = {
-      maxHeight: innerMaxHeight,
-      minHeight: `calc(${Math.round(ADAPTIVE_MIN_VH * 100)}dvh - ${NOTCH_HEIGHT_REM}rem)`,
-      height: "fit-content",
-    }
-  } else if (innerMaxHeight) {
-    wrapperStyle = { maxHeight: innerMaxHeight }
-  }
 
   return (
     <DrawerPortal>
@@ -259,19 +139,21 @@ const DrawerContent = React.forwardRef<
       <DrawerPrimitive.Content
         ref={ref}
         className={cn(
-          // h-[100dvh] is required so vaul's transform-based snap point positioning
-          // works correctly — the drawer must be full viewport height so that
-          // translate3d(0, offset, 0) controls the visible portion.
-          "fixed inset-x-0 bottom-0 z-50 flex h-[100dvh] flex-col rounded-t-[10px] border bg-background",
+          "fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-[10px] border bg-background",
+          // Snapped: h-[100dvh] is required so vaul's transform-based snap positioning
+          // controls the visible portion. The inner wrapper's max-height is bounded to
+          // the current snap so content stays reachable by scrolling at partial snaps.
+          // Unsnapped: content-fit between 40dvh and 85dvh. Vaul slides the drawer up
+          // from below and it sits at its natural size within those bounds.
+          isSnapped ? "h-[100dvh]" : "min-h-[40dvh] max-h-[85dvh]",
           className
         )}
         {...props}
       >
         <div className="mx-auto mt-4 h-2 w-[100px] shrink-0 rounded-full bg-muted" />
         <div
-          ref={innerRef}
-          className={cn("flex min-h-0 flex-col", isAdaptive ? undefined : "flex-1")}
-          style={wrapperStyle}
+          className="flex min-h-0 flex-1 flex-col"
+          style={innerMaxHeight ? { maxHeight: innerMaxHeight } : undefined}
         >
           {children}
         </div>

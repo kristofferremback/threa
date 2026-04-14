@@ -30,10 +30,11 @@ interface ResponsiveDialogProps {
   open?: boolean
   onOpenChange?: (open: boolean) => void
   /**
-   * Override snap points for mobile drawer. Pass `null` to disable snap
-   * points. Defaults to `[0.8, 1]` (handled by the underlying Drawer).
+   * Override snap points for the mobile drawer (e.g. `[0.8, 1]` for
+   * drag-to-expand). Omit for an adaptive drawer that sizes to content
+   * between 40dvh and 85dvh.
    */
-  snapPoints?: (number | string)[] | null
+  snapPoints?: (number | string)[]
 }
 
 function ResponsiveDialog({ children, snapPoints, ...props }: ResponsiveDialogProps) {
