@@ -24,6 +24,9 @@ function createHandler() {
   const activityService = {
     processMessageMentions: mock(async () => []),
     processMessageNotifications: mock(async () => []),
+    processSelfMessageActivity: mock(async () => null),
+    processReactionAdded: mock(async () => []),
+    processReactionRemoved: mock(async () => []),
     listFeed: mock(async () => []),
     getUnreadCounts: mock(async () => ({ mentionsByStream: new Map(), totalByStream: new Map(), total: 0 })),
     markAsRead: mock(async () => {}),
@@ -143,10 +146,9 @@ describe("ActivityFeedHandler", () => {
     expect(activityService.processMessageMentions).not.toHaveBeenCalled()
   })
 
-  it("should skip non-message:created events", async () => {
+  it("should not treat unrelated events as messages", async () => {
     spyOn(OutboxRepository, "fetchAfterId").mockResolvedValue([
       { id: 1n, eventType: "stream:created", payload: {}, createdAt: new Date() },
-      { id: 2n, eventType: "reaction:added", payload: {}, createdAt: new Date() },
     ] as any)
 
     const { handler, activityService } = createHandler()
@@ -155,6 +157,66 @@ describe("ActivityFeedHandler", () => {
     await new Promise((r) => setTimeout(r, 300))
 
     expect(activityService.processMessageMentions).not.toHaveBeenCalled()
+    expect(activityService.processReactionAdded).not.toHaveBeenCalled()
+  })
+
+  it("should route reaction:added events to processReactionAdded", async () => {
+    spyOn(OutboxRepository, "fetchAfterId").mockResolvedValue([
+      {
+        id: 1n,
+        eventType: "reaction:added",
+        payload: {
+          workspaceId: "ws_test",
+          streamId: "stream_test",
+          messageId: "msg_test",
+          emoji: ":eyes:",
+          userId: "usr_reactor",
+        },
+        createdAt: new Date(),
+      },
+    ] as any)
+
+    const { handler, activityService } = createHandler()
+    handler.handle()
+
+    await new Promise((r) => setTimeout(r, 300))
+
+    expect(activityService.processReactionAdded).toHaveBeenCalledWith({
+      workspaceId: "ws_test",
+      streamId: "stream_test",
+      messageId: "msg_test",
+      emoji: ":eyes:",
+      actorId: "usr_reactor",
+    })
+  })
+
+  it("should route reaction:removed events to processReactionRemoved", async () => {
+    spyOn(OutboxRepository, "fetchAfterId").mockResolvedValue([
+      {
+        id: 1n,
+        eventType: "reaction:removed",
+        payload: {
+          workspaceId: "ws_test",
+          streamId: "stream_test",
+          messageId: "msg_test",
+          emoji: ":eyes:",
+          userId: "usr_reactor",
+        },
+        createdAt: new Date(),
+      },
+    ] as any)
+
+    const { handler, activityService } = createHandler()
+    handler.handle()
+
+    await new Promise((r) => setTimeout(r, 300))
+
+    expect(activityService.processReactionRemoved).toHaveBeenCalledWith({
+      workspaceId: "ws_test",
+      messageId: "msg_test",
+      actorId: "usr_reactor",
+      emoji: ":eyes:",
+    })
   })
 
   it("should publish activity:created outbox events for each created activity", async () => {
@@ -170,6 +232,8 @@ describe("ActivityFeedHandler", () => {
       context: { contentPreview: "hey @alice" },
       readAt: null,
       createdAt: new Date("2025-01-01T00:00:00Z"),
+      isSelf: false,
+      emoji: null,
     }
 
     const event = makeMessageCreatedEvent(1n)
@@ -201,6 +265,7 @@ describe("ActivityFeedHandler", () => {
         actorType: "user",
         context: { contentPreview: "hey @alice" },
         createdAt: "2025-01-01T00:00:00.000Z",
+        isSelf: false,
       },
     })
   })
@@ -216,6 +281,9 @@ describe("ActivityFeedHandler", () => {
     const activityService = {
       processMessageMentions: mock(async () => []),
       processMessageNotifications: mock(async () => []),
+      processSelfMessageActivity: mock(async () => null),
+      processReactionAdded: mock(async () => []),
+      processReactionRemoved: mock(async () => []),
     } as unknown as ActivityService
     const handler = new ActivityFeedHandler({} as any, activityService)
     handler.handle()
@@ -239,6 +307,8 @@ describe("ActivityFeedHandler", () => {
       context: { contentPreview: "hey @bob" },
       readAt: null,
       createdAt: new Date("2025-01-01T00:00:00Z"),
+      isSelf: false,
+      emoji: null,
     }
 
     const event = makeMessageCreatedEvent(1n, {
@@ -271,6 +341,7 @@ describe("ActivityFeedHandler", () => {
         actorType: "user",
         context: { contentPreview: "hey @bob" },
         createdAt: "2025-01-01T00:00:00.000Z",
+        isSelf: false,
       },
     }
     expect(insertSpy).toHaveBeenCalledWith({}, "activity:created", want)
@@ -291,6 +362,9 @@ describe("ActivityFeedHandler", () => {
     const activityService = {
       processMessageMentions: mock(async () => []),
       processMessageNotifications: mock(async () => []),
+      processSelfMessageActivity: mock(async () => null),
+      processReactionAdded: mock(async () => []),
+      processReactionRemoved: mock(async () => []),
     } as unknown as ActivityService
     const handler = new ActivityFeedHandler({} as any, activityService)
     handler.handle()

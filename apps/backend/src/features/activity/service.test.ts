@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it, mock, spyOn } from "bun:test"
-import { AuthorTypes, CompanionModes, NotificationLevels, StreamTypes, Visibilities } from "@threa/types"
+import { ActivityTypes, AuthorTypes, CompanionModes, NotificationLevels, StreamTypes, Visibilities } from "@threa/types"
 import { ActivityService } from "./service"
 import { ActivityRepository } from "./repository"
 import { UserRepository } from "../workspaces"
 import { StreamRepository, StreamMemberRepository, resolveNotificationLevelsForStream } from "../streams"
 import { PersonaRepository } from "../agents"
 import { BotRepository } from "../public-api"
+import { MessageRepository } from "../messaging"
 import * as dbModule from "../../db"
 import type { Stream } from "../streams"
 import type { Activity } from "./repository"
@@ -53,6 +54,8 @@ function fakeActivity(context: Record<string, unknown>): Activity[] {
       context,
       readAt: null,
       createdAt: new Date(),
+      isSelf: false,
+      emoji: null,
     },
   ]
 }
@@ -275,5 +278,255 @@ describe("ActivityService author name resolution", () => {
     })
 
     expect(capturedContext?.authorName).toBeNull()
+  })
+})
+
+describe("ActivityService.processSelfMessageActivity", () => {
+  afterEach(() => {
+    mock.restore()
+  })
+
+  it("returns null for non-user actors (bots/personas/system)", async () => {
+    const service = setupService()
+
+    const result = await service.processSelfMessageActivity({
+      workspaceId: WORKSPACE_ID,
+      streamId: STREAM_ID,
+      messageId: MESSAGE_ID,
+      actorId: "bot_x",
+      actorType: AuthorTypes.BOT,
+      contentMarkdown: "hello",
+    })
+
+    expect(result).toBeNull()
+  })
+
+  it("inserts a self-row with isSelf=true for user messages", async () => {
+    const service = setupService()
+    const stream = fakeStream()
+
+    spyOn(StreamRepository, "findById").mockResolvedValue(stream)
+    spyOn(UserRepository, "findById").mockResolvedValue({ id: USER_ID, name: "Alice" } as any)
+
+    let capturedParams: any
+    spyOn(ActivityRepository, "insertBatch").mockImplementation(async (_db: any, params: any) => {
+      capturedParams = params
+      return [
+        {
+          ...fakeActivity(params.context)[0],
+          userId: USER_ID,
+          isSelf: true,
+        },
+      ]
+    })
+
+    const result = await service.processSelfMessageActivity({
+      workspaceId: WORKSPACE_ID,
+      streamId: STREAM_ID,
+      messageId: MESSAGE_ID,
+      actorId: USER_ID,
+      actorType: AuthorTypes.USER,
+      contentMarkdown: "look at me",
+    })
+
+    expect(result?.isSelf).toBe(true)
+    expect(capturedParams.isSelf).toBe(true)
+    expect(capturedParams.activityType).toBe(ActivityTypes.MESSAGE)
+    expect(capturedParams.userIds).toEqual([USER_ID])
+  })
+})
+
+describe("ActivityService.processReactionAdded", () => {
+  afterEach(() => {
+    mock.restore()
+  })
+
+  const MESSAGE_AUTHOR_ID = "usr_author"
+  const REACTOR_ID = "usr_reactor"
+
+  function fakeMessage(overrides: Partial<any> = {}) {
+    return {
+      id: MESSAGE_ID,
+      streamId: STREAM_ID,
+      authorId: MESSAGE_AUTHOR_ID,
+      authorType: AuthorTypes.USER,
+      contentMarkdown: "the original message",
+      contentJson: {},
+      sequence: 1n,
+      createdAt: new Date(),
+      deletedAt: null,
+      reactions: {},
+      ...overrides,
+    }
+  }
+
+  it("creates a notification row for the message author and a self-row for the reactor", async () => {
+    const service = setupService()
+    const stream = fakeStream({ type: StreamTypes.CHANNEL, visibility: Visibilities.PUBLIC })
+
+    spyOn(MessageRepository, "findById").mockResolvedValue(fakeMessage() as any)
+    spyOn(StreamRepository, "findById").mockResolvedValue(stream)
+    spyOn(UserRepository, "findById").mockResolvedValue({ id: REACTOR_ID, name: "Bob" } as any)
+    spyOn(StreamMemberRepository, "findByStreamAndMember").mockResolvedValue({
+      memberId: MESSAGE_AUTHOR_ID,
+    } as any)
+    const resolveModule = await import("../streams")
+    spyOn(resolveModule, "resolveNotificationLevelsForStream").mockResolvedValue([
+      { memberId: MESSAGE_AUTHOR_ID, effectiveLevel: NotificationLevels.ACTIVITY },
+    ] as any)
+
+    const calls: any[] = []
+    spyOn(ActivityRepository, "insertBatch").mockImplementation(async (_db: any, params: any) => {
+      calls.push(params)
+      return params.userIds.map((uid: string) => ({
+        ...fakeActivity(params.context)[0],
+        userId: uid,
+        isSelf: params.isSelf ?? false,
+        emoji: params.emoji ?? null,
+        activityType: params.activityType,
+      }))
+    })
+
+    const activities = await service.processReactionAdded({
+      workspaceId: WORKSPACE_ID,
+      streamId: STREAM_ID,
+      messageId: MESSAGE_ID,
+      emoji: ":eyes:",
+      actorId: REACTOR_ID,
+    })
+
+    expect(activities.length).toBe(2)
+    expect(calls).toHaveLength(2)
+
+    const authorCall = calls.find((c) => c.userIds[0] === MESSAGE_AUTHOR_ID)
+    expect(authorCall).toBeDefined()
+    expect(authorCall.activityType).toBe(ActivityTypes.REACTION)
+    expect(authorCall.isSelf).toBeFalsy()
+    expect(authorCall.emoji).toBe(":eyes:")
+
+    const selfCall = calls.find((c) => c.userIds[0] === REACTOR_ID)
+    expect(selfCall).toBeDefined()
+    expect(selfCall.isSelf).toBe(true)
+    expect(selfCall.emoji).toBe(":eyes:")
+  })
+
+  it("does not notify the author when the reactor is the author — just creates a self-row", async () => {
+    const service = setupService()
+    const stream = fakeStream({ type: StreamTypes.CHANNEL, visibility: Visibilities.PUBLIC })
+
+    spyOn(MessageRepository, "findById").mockResolvedValue(fakeMessage({ authorId: REACTOR_ID }) as any)
+    spyOn(StreamRepository, "findById").mockResolvedValue(stream)
+    spyOn(UserRepository, "findById").mockResolvedValue({ id: REACTOR_ID, name: "Bob" } as any)
+
+    const calls: any[] = []
+    spyOn(ActivityRepository, "insertBatch").mockImplementation(async (_db: any, params: any) => {
+      calls.push(params)
+      return params.userIds.map((uid: string) => ({
+        ...fakeActivity(params.context)[0],
+        userId: uid,
+        isSelf: params.isSelf ?? false,
+      }))
+    })
+
+    await service.processReactionAdded({
+      workspaceId: WORKSPACE_ID,
+      streamId: STREAM_ID,
+      messageId: MESSAGE_ID,
+      emoji: "✅",
+      actorId: REACTOR_ID,
+    })
+
+    // Only the self-row gets inserted; the "author" path is skipped because
+    // the reactor is also the author.
+    expect(calls).toHaveLength(1)
+    expect(calls[0].isSelf).toBe(true)
+    expect(calls[0].userIds).toEqual([REACTOR_ID])
+  })
+
+  it("skips author notification when author has muted the stream", async () => {
+    const service = setupService()
+    const stream = fakeStream({ type: StreamTypes.CHANNEL, visibility: Visibilities.PUBLIC })
+
+    spyOn(MessageRepository, "findById").mockResolvedValue(fakeMessage() as any)
+    spyOn(StreamRepository, "findById").mockResolvedValue(stream)
+    spyOn(UserRepository, "findById").mockResolvedValue({ id: REACTOR_ID, name: "Bob" } as any)
+    spyOn(StreamMemberRepository, "findByStreamAndMember").mockResolvedValue({
+      memberId: MESSAGE_AUTHOR_ID,
+    } as any)
+    const resolveModule = await import("../streams")
+    spyOn(resolveModule, "resolveNotificationLevelsForStream").mockResolvedValue([
+      { memberId: MESSAGE_AUTHOR_ID, effectiveLevel: NotificationLevels.MUTED },
+    ] as any)
+
+    const calls: any[] = []
+    spyOn(ActivityRepository, "insertBatch").mockImplementation(async (_db: any, params: any) => {
+      calls.push(params)
+      return params.userIds.map((uid: string) => ({
+        ...fakeActivity(params.context)[0],
+        userId: uid,
+        isSelf: params.isSelf ?? false,
+      }))
+    })
+
+    await service.processReactionAdded({
+      workspaceId: WORKSPACE_ID,
+      streamId: STREAM_ID,
+      messageId: MESSAGE_ID,
+      emoji: "👀",
+      actorId: REACTOR_ID,
+    })
+
+    // MUTED → no author notification. Self-row still created.
+    expect(calls).toHaveLength(1)
+    expect(calls[0].isSelf).toBe(true)
+  })
+
+  it("skips author notification when author is a bot (not a workspace user)", async () => {
+    const service = setupService()
+    const stream = fakeStream({ type: StreamTypes.CHANNEL, visibility: Visibilities.PUBLIC })
+
+    spyOn(MessageRepository, "findById").mockResolvedValue(
+      fakeMessage({ authorId: "bot_helper", authorType: AuthorTypes.BOT }) as any
+    )
+    spyOn(StreamRepository, "findById").mockResolvedValue(stream)
+    spyOn(UserRepository, "findById").mockResolvedValue({ id: REACTOR_ID, name: "Bob" } as any)
+
+    const calls: any[] = []
+    spyOn(ActivityRepository, "insertBatch").mockImplementation(async (_db: any, params: any) => {
+      calls.push(params)
+      return params.userIds.map((uid: string) => ({
+        ...fakeActivity(params.context)[0],
+        userId: uid,
+        isSelf: params.isSelf ?? false,
+      }))
+    })
+
+    await service.processReactionAdded({
+      workspaceId: WORKSPACE_ID,
+      streamId: STREAM_ID,
+      messageId: MESSAGE_ID,
+      emoji: "🚀",
+      actorId: REACTOR_ID,
+    })
+
+    // Bot authors don't get notified (no Activity UI). Self-row still created.
+    expect(calls).toHaveLength(1)
+    expect(calls[0].isSelf).toBe(true)
+  })
+
+  it("returns empty when the message no longer exists", async () => {
+    const service = setupService()
+
+    spyOn(MessageRepository, "findById").mockResolvedValue(null)
+
+    const activities = await service.processReactionAdded({
+      workspaceId: WORKSPACE_ID,
+      streamId: STREAM_ID,
+      messageId: MESSAGE_ID,
+      emoji: ":eyes:",
+      actorId: REACTOR_ID,
+    })
+
+    expect(activities).toEqual([])
   })
 })

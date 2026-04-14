@@ -246,6 +246,14 @@ export interface Activity {
   context: Record<string, unknown>
   readAt: string | null
   createdAt: string
+  /**
+   * True when this row represents the user's own action (e.g. a message they
+   * sent or a reaction they added). Self rows appear in the feed but must not
+   * inflate unread counts or trigger push notifications.
+   */
+  isSelf: boolean
+  /** Populated for reaction activities; null otherwise. */
+  emoji: string | null
 }
 
 /** Socket event payload for activity:created */
@@ -261,6 +269,7 @@ export interface ActivityCreatedPayload {
     actorType: string
     context: Record<string, unknown>
     createdAt: string
+    isSelf: boolean
   }
 }
 

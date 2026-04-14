@@ -1135,43 +1135,47 @@ export function registerWorkspaceSocketHandlers(
     db.bots.put({ ...payload.bot, _cachedAt: Date.now() })
   }
 
-  // Handle activity created (mentions and notification-level activities)
+  // Handle activity created (mentions, notification-level activities, reactions, self rows)
   const handleActivityCreated = (payload: ActivityCreatedPayload) => {
     if (payload.workspaceId !== workspaceId) return
 
-    const { streamId, activityType } = payload.activity
+    const { streamId, activityType, isSelf } = payload.activity
 
-    updateBootstrapOrInvalidate(queryClient, workspaceId, (old) => ({
-      ...old,
-      mentionCounts:
-        activityType === "mention"
-          ? { ...old.mentionCounts, [streamId]: (old.mentionCounts[streamId] ?? 0) + 1 }
-          : old.mentionCounts,
-      activityCounts: {
-        ...old.activityCounts,
-        [streamId]: (old.activityCounts[streamId] ?? 0) + 1,
-      },
-      unreadActivityCount: (old.unreadActivityCount ?? 0) + 1,
-    }))
-
-    // Update IDB unread state
-    db.transaction("rw", [db.unreadState], async () => {
-      const state = await db.unreadState.get(workspaceId)
-      if (!state) return
-      await db.unreadState.put({
-        ...state,
+    // Self rows (the user's own message or reaction) show in the feed but must
+    // not inflate unread counts. The backend inserts them already read.
+    if (!isSelf) {
+      updateBootstrapOrInvalidate(queryClient, workspaceId, (old) => ({
+        ...old,
         mentionCounts:
           activityType === "mention"
-            ? { ...state.mentionCounts, [streamId]: (state.mentionCounts[streamId] ?? 0) + 1 }
-            : state.mentionCounts,
+            ? { ...old.mentionCounts, [streamId]: (old.mentionCounts[streamId] ?? 0) + 1 }
+            : old.mentionCounts,
         activityCounts: {
-          ...state.activityCounts,
-          [streamId]: (state.activityCounts[streamId] ?? 0) + 1,
+          ...old.activityCounts,
+          [streamId]: (old.activityCounts[streamId] ?? 0) + 1,
         },
-        unreadActivityCount: state.unreadActivityCount + 1,
-        _cachedAt: Date.now(),
+        unreadActivityCount: (old.unreadActivityCount ?? 0) + 1,
+      }))
+
+      // Update IDB unread state
+      db.transaction("rw", [db.unreadState], async () => {
+        const state = await db.unreadState.get(workspaceId)
+        if (!state) return
+        await db.unreadState.put({
+          ...state,
+          mentionCounts:
+            activityType === "mention"
+              ? { ...state.mentionCounts, [streamId]: (state.mentionCounts[streamId] ?? 0) + 1 }
+              : state.mentionCounts,
+          activityCounts: {
+            ...state.activityCounts,
+            [streamId]: (state.activityCounts[streamId] ?? 0) + 1,
+          },
+          unreadActivityCount: state.unreadActivityCount + 1,
+          _cachedAt: Date.now(),
+        })
       })
-    })
+    }
 
     // Invalidate activity feed so it refetches when the page is mounted
     queryClient.invalidateQueries({ queryKey: ["activity", workspaceId] })

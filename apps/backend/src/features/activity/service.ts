@@ -4,7 +4,15 @@ import { UserRepository } from "../workspaces"
 import { StreamRepository, StreamMemberRepository, resolveNotificationLevelsForStream, type Stream } from "../streams"
 import { extractMentionSlugs, PersonaRepository } from "../agents"
 import { BotRepository } from "../public-api"
-import { Visibilities, NotificationLevels, StreamTypes, AuthorTypes, isBroadcastSlug } from "@threa/types"
+import { MessageRepository } from "../messaging"
+import {
+  Visibilities,
+  NotificationLevels,
+  StreamTypes,
+  AuthorTypes,
+  ActivityTypes,
+  isBroadcastSlug,
+} from "@threa/types"
 import { withClient } from "../../db"
 import { logger } from "../../lib/logger"
 
@@ -90,13 +98,56 @@ export class ActivityService {
       return ActivityRepository.insertBatch(client, {
         workspaceId,
         userIds: [...userIds],
-        activityType: "mention",
+        activityType: ActivityTypes.MENTION,
         streamId,
         messageId,
         actorId,
         actorType,
         context: { contentPreview, authorName, ...streamContext },
       })
+    })
+  }
+
+  /**
+   * Create a self-activity row for the actor's own message, if the actor is a
+   * workspace user. Self rows are inserted already read so the user sees their
+   * own activity in the feed without inflating unread counts or triggering push.
+   */
+  async processSelfMessageActivity(params: {
+    workspaceId: string
+    streamId: string
+    messageId: string
+    actorId: string
+    actorType: string
+    contentMarkdown: string
+  }): Promise<Activity | null> {
+    const { workspaceId, streamId, messageId, actorId, actorType, contentMarkdown } = params
+
+    // Only user actors see their own activity — bots and personas don't have an Activity UI.
+    if (actorType !== AuthorTypes.USER) return null
+
+    return withClient(this.pool, async (client) => {
+      const stream = await StreamRepository.findById(client, streamId)
+      if (!stream || stream.workspaceId !== workspaceId) return null
+
+      const rootStream = stream.rootStreamId ? await StreamRepository.findById(client, stream.rootStreamId) : null
+      const streamContext = resolveStreamContext(stream, rootStream)
+      const contentPreview = contentMarkdown.slice(0, 200)
+      const authorName = await this.resolveAuthorName(client, workspaceId, actorId, actorType)
+
+      const rows = await ActivityRepository.insertBatch(client, {
+        workspaceId,
+        userIds: [actorId],
+        activityType: ActivityTypes.MESSAGE,
+        streamId,
+        messageId,
+        actorId,
+        actorType,
+        context: { contentPreview, authorName, ...streamContext },
+        isSelf: true,
+      })
+
+      return rows[0] ?? null
     })
   }
 
@@ -193,7 +244,7 @@ export class ActivityService {
       return ActivityRepository.insertBatch(client, {
         workspaceId,
         userIds: eligibleUserIds,
-        activityType: "message",
+        activityType: ActivityTypes.MESSAGE,
         streamId,
         messageId,
         actorId,
@@ -201,6 +252,112 @@ export class ActivityService {
         context: { contentPreview, authorName, ...streamContext },
       })
     })
+  }
+
+  /**
+   * Create a "reaction" activity for the author of the reacted-to message.
+   * Semantics mirror Slack/Discord: reactions notify the original author only,
+   * not every stream watcher. Notifications respect the author's per-stream
+   * notification level (ACTIVITY/EVERYTHING for channels, non-MUTED for direct).
+   *
+   * Also creates a self-row for the reactor so they can see their own reactions
+   * in the Mine feed.
+   *
+   * Returns both rows so the outbox handler can publish activity:created events.
+   */
+  async processReactionAdded(params: {
+    workspaceId: string
+    streamId: string
+    messageId: string
+    emoji: string
+    actorId: string
+  }): Promise<Activity[]> {
+    const { workspaceId, streamId, messageId, emoji, actorId } = params
+
+    return withClient(this.pool, async (client) => {
+      const message = await MessageRepository.findById(client, messageId)
+      if (!message) return []
+
+      const stream = await StreamRepository.findById(client, streamId)
+      if (!stream || stream.workspaceId !== workspaceId) return []
+
+      const rootStream = stream.rootStreamId ? await StreamRepository.findById(client, stream.rootStreamId) : null
+      const streamContext = resolveStreamContext(stream, rootStream)
+      const contentPreview = (message.contentMarkdown ?? "").slice(0, 200)
+      const actorName = await this.resolveAuthorName(client, workspaceId, actorId, AuthorTypes.USER)
+
+      const context = {
+        contentPreview,
+        authorName: actorName,
+        emoji,
+        ...streamContext,
+      }
+
+      const activities: Activity[] = []
+
+      // 1. Notify the message author — only for workspace users, and only if
+      // they're not the reactor. Resolve via their actual stream membership so
+      // explicit per-stream levels and ancestor inheritance are honored.
+      if (message.authorType === AuthorTypes.USER && message.authorId && message.authorId !== actorId) {
+        const authorMember = await StreamMemberRepository.findByStreamAndMember(client, streamId, message.authorId)
+        if (authorMember) {
+          const isDirectStream = stream.type === StreamTypes.DM || stream.type === StreamTypes.SCRATCHPAD
+          const resolved = await resolveNotificationLevelsForStream(client, stream, [authorMember])
+          const level = resolved[0]?.effectiveLevel
+          const shouldNotify =
+            level !== undefined &&
+            (isDirectStream
+              ? level !== NotificationLevels.MUTED
+              : level === NotificationLevels.ACTIVITY || level === NotificationLevels.EVERYTHING)
+
+          if (shouldNotify) {
+            const authorRows = await ActivityRepository.insertBatch(client, {
+              workspaceId,
+              userIds: [message.authorId],
+              activityType: ActivityTypes.REACTION,
+              streamId,
+              messageId,
+              actorId,
+              actorType: AuthorTypes.USER,
+              context,
+              emoji,
+            })
+            activities.push(...authorRows)
+          }
+        }
+      }
+
+      // 2. Self-row for the reactor (always, for the Mine feed)
+      const selfRows = await ActivityRepository.insertBatch(client, {
+        workspaceId,
+        userIds: [actorId],
+        activityType: ActivityTypes.REACTION,
+        streamId,
+        messageId,
+        actorId,
+        actorType: AuthorTypes.USER,
+        context,
+        isSelf: true,
+        emoji,
+      })
+      activities.push(...selfRows)
+
+      return activities
+    })
+  }
+
+  /**
+   * Remove the reaction activity rows that `processReactionAdded` created for
+   * this exact (message, actor, emoji) triple. Other reactions from the same
+   * actor on the same message are left intact.
+   */
+  async processReactionRemoved(params: {
+    workspaceId: string
+    messageId: string
+    actorId: string
+    emoji: string
+  }): Promise<Activity[]> {
+    return ActivityRepository.deleteReactionForEmoji(this.pool, params)
   }
 
   /**
@@ -252,7 +409,7 @@ export class ActivityService {
   async listFeed(
     userId: string,
     workspaceId: string,
-    opts?: { limit?: number; cursor?: string; unreadOnly?: boolean }
+    opts?: { limit?: number; cursor?: string; unreadOnly?: boolean; mineOnly?: boolean }
   ) {
     return ActivityRepository.listByUser(this.pool, userId, workspaceId, opts)
   }

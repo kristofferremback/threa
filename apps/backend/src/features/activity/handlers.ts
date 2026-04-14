@@ -15,11 +15,13 @@ export function createActivityHandlers({ activityService }: Dependencies) {
       const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(rawLimit, 1), 100) : 50
       const cursor = typeof req.query.cursor === "string" ? req.query.cursor : undefined
       const unreadOnly = req.query.unreadOnly === "true"
+      const mineOnly = req.query.mineOnly === "true"
 
       const activities = await activityService.listFeed(userId, workspaceId, {
         limit,
         cursor,
         unreadOnly,
+        mineOnly,
       })
 
       res.json({ activities })

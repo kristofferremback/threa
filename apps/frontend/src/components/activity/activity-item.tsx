@@ -21,7 +21,11 @@ export function ActivityItem({
   toEmoji,
   onMarkAsRead,
 }: ActivityItemProps) {
-  const isUnread = !activity.readAt
+  // Self rows are inserted already read by the backend, so the unread dot is
+  // never shown for them regardless of the `readAt` value. Give them a muted
+  // background so they're visually distinct from things others did.
+  const isSelf = activity.isSelf
+  const isUnread = !isSelf && !activity.readAt
   const contentPreview = (activity.context.contentPreview as string) ?? ""
 
   return (
@@ -32,7 +36,9 @@ export function ActivityItem({
       }}
       className={cn(
         "group flex items-start gap-3 rounded-lg px-4 py-3 transition-colors",
-        isUnread ? "bg-primary/5 hover:bg-primary/10" : "hover:bg-muted/50"
+        isUnread && "bg-primary/5 hover:bg-primary/10",
+        !isUnread && !isSelf && "hover:bg-muted/50",
+        isSelf && "opacity-75 hover:bg-muted/40 hover:opacity-100"
       )}
     >
       <UnreadDot isUnread={isUnread} />
@@ -41,9 +47,11 @@ export function ActivityItem({
         streamName={streamName}
         activityType={activity.activityType}
         contentPreview={contentPreview}
+        emoji={activity.emoji}
         toEmoji={toEmoji}
         createdAt={activity.createdAt}
         isUnread={isUnread}
+        isSelf={isSelf}
       />
     </Link>
   )
