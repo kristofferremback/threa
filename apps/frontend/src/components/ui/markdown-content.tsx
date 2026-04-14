@@ -50,7 +50,10 @@ function urlTransform(url: string): string {
  */
 export const MarkdownContent = memo(function MarkdownContent({ content, className, messageId }: MarkdownContentProps) {
   const body = (
-    <div className={cn("markdown-content", className)}>
+    // min-w-0 + break-words: prevent long URLs, paths, and tokens from
+    // overflowing the flex message-content column. overflow-wrap inherits,
+    // so links, inline code, and mention chips pick it up automatically.
+    <div className={cn("markdown-content min-w-0 break-words", className)}>
       <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents} urlTransform={urlTransform}>
         {content}
       </Markdown>
