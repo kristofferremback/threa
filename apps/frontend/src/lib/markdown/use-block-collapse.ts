@@ -9,37 +9,33 @@ import {
 } from "./markdown-block-context"
 
 export interface BlockCollapseState {
-  /** True when the block should render in its collapsed form. */
   collapsed: boolean
-  /** True when the user has a provider mounted so we can persist toggles. */
+  /** True when a MarkdownBlockProvider is mounted so toggles can be persisted. */
   canToggle: boolean
-  /** Flip the collapsed state and persist it to IDB. No-op when `canToggle` is false. */
   toggle: () => void
 }
 
 interface UseBlockCollapseOptions {
-  /** Kind of markdown block — determines the IDB key namespace. */
   kind: MarkdownBlockKind
   /**
-   * Stable, content-derived string used to identify this specific block
-   * within a message. Code blocks pass `language`, blockquotes can pass
-   * the kind literal, quote replies pass the quoted messageId.
+   * Distinguishes otherwise-identical content within a single kind
+   * (code uses `language`, quote-replies use `${streamId}/${messageId}`).
+   * Defaults to `kind` when a block type has no secondary axis.
    */
-  hashNamespace: string
-  /** The block's content used to compute a stable per-block hash. */
+  hashNamespace?: string
   content: string
-  /** Whether the block should start collapsed when no persisted override exists. */
+  /** Starting collapse state when no persisted user override exists. */
   defaultCollapsed: boolean
 }
 
 /**
- * Shared collapse-state hook for markdown block components.
- * Persists toggles per `(messageId, kind, contentHash)` in IDB so user
- * choices survive reloads without leaking between messages.
+ * Shared collapse-state hook for collapsible markdown blocks. Persists
+ * toggles per `(messageId, kind, contentHash)` in IDB so choices survive
+ * reloads without leaking between messages.
  */
 export function useBlockCollapse({
   kind,
-  hashNamespace,
+  hashNamespace = kind,
   content,
   defaultCollapsed,
 }: UseBlockCollapseOptions): BlockCollapseState {
@@ -60,13 +56,11 @@ export function useBlockCollapse({
 
   const toggle = useCallback(() => {
     if (!collapseKey || !messageContext) return
-    const next = !collapsed
-    // Persisted row always wins over threshold default once a user acts.
     void db.markdownBlockCollapse.put({
       id: collapseKey,
       messageId: messageContext.messageId,
       kind,
-      collapsed: next,
+      collapsed: !collapsed,
       updatedAt: Date.now(),
     })
   }, [collapseKey, messageContext, collapsed, kind])

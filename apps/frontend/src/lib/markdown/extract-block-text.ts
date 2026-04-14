@@ -1,9 +1,5 @@
 import { Fragment, isValidElement, type ReactNode } from "react"
 
-/**
- * Flatten an inline ReactNode subtree to a plain text string.
- * Used as the "leaf" reader for per-paragraph extraction.
- */
 function flattenInline(children: ReactNode): string {
   if (children === null || children === undefined || typeof children === "boolean") return ""
   if (typeof children === "string") return children
@@ -11,21 +7,15 @@ function flattenInline(children: ReactNode): string {
   if (Array.isArray(children)) return children.map(flattenInline).join("")
   if (isValidElement(children)) {
     const props = children.props as Record<string, unknown>
-    if (children.type === Fragment) {
-      return flattenInline(props.children as ReactNode)
-    }
     return flattenInline(props.children as ReactNode)
   }
   return ""
 }
 
 /**
- * Extract plain text from a ReactNode subtree, joining top-level block children
- * (paragraphs, lists, …) with newlines so each contributes at least one "line"
- * to line-count estimates. React fragments are transparently unwrapped so
- * fragment-wrapped inputs and react-markdown arrays both work.
- *
- * Used by collapsible blockquotes and quote replies to measure quoted content.
+ * Join top-level block children with newlines so each contributes at least
+ * one "line" to line-count estimates. Fragments are transparently unwrapped
+ * so fragment-wrapped inputs and react-markdown arrays both work.
  */
 export function extractBlockText(children: ReactNode): string {
   const parts: string[] = []
@@ -44,12 +34,11 @@ export function extractBlockText(children: ReactNode): string {
       return
     }
     if (isValidElement(node)) {
+      const props = node.props as Record<string, unknown>
       if (node.type === Fragment) {
-        const props = node.props as Record<string, unknown>
         visit(props.children as ReactNode)
         return
       }
-      const props = node.props as Record<string, unknown>
       parts.push(flattenInline(props.children as ReactNode))
     }
   }
@@ -64,8 +53,7 @@ export function extractBlockText(children: ReactNode): string {
 const APPROX_CHARS_PER_LINE = 80
 
 /**
- * Estimate how many visual lines a quoted block will occupy.
- * Counts explicit paragraph breaks plus wrapping for long single lines.
+ * Counts explicit paragraph breaks plus a wrap estimate for long single lines.
  * Not pixel-perfect — good enough to decide whether a quote is "long".
  */
 export function estimateBlockLines(text: string): number {
@@ -80,14 +68,8 @@ export function estimateBlockLines(text: string): number {
   return Math.max(1, total)
 }
 
-/** Number of leading visual lines shown as a preview for a collapsed quote. */
 export const QUOTE_PREVIEW_LINE_COUNT = 2
 
-/**
- * Pick a short leading preview of a quoted block for the collapsed view.
- * Truncates to `QUOTE_PREVIEW_LINE_COUNT` wrapped lines, appending an ellipsis
- * when the content exceeds that window.
- */
 export function takeQuotePreview(text: string): string {
   const segments = text.split("\n").filter((segment) => segment.trim().length > 0)
   const picked = segments.slice(0, QUOTE_PREVIEW_LINE_COUNT).join(" ")

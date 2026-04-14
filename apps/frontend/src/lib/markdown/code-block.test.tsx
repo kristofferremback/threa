@@ -17,9 +17,9 @@ let currentPrefs: { codeBlockCollapseThreshold?: number } | null = {
   codeBlockCollapseThreshold: DEFAULT_CODE_BLOCK_COLLAPSE_THRESHOLD,
 }
 
-vi.mock("@/contexts/preferences-context", () => ({
-  usePreferences: () => {
-    if (!currentPrefs) throw new Error("no preferences")
+vi.mock("@/contexts/preferences-context", () => {
+  const mockContext = () => {
+    if (!currentPrefs) return null
     return {
       preferences: currentPrefs,
       resolvedTheme: "light",
@@ -30,8 +30,16 @@ vi.mock("@/contexts/preferences-context", () => ({
       resetKeyboardShortcut: vi.fn(),
       resetAllKeyboardShortcuts: vi.fn(),
     }
-  },
-}))
+  }
+  return {
+    usePreferences: () => {
+      const value = mockContext()
+      if (!value) throw new Error("no preferences")
+      return value
+    },
+    usePreferencesOptional: () => mockContext(),
+  }
+})
 
 function renderCodeBlock(code: string, messageId = "msg_test", language = "typescript") {
   return render(

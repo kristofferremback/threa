@@ -26,7 +26,7 @@ export {
 export { PendingMessagesProvider, usePendingMessages } from "./pending-messages-context"
 export { PanelProvider, usePanel, isDraftPanel, parseDraftPanel, createDraftPanelId } from "./panel-context"
 export { QuickSwitcherProvider, useQuickSwitcher } from "./quick-switcher-context"
-export { PreferencesProvider, usePreferences, useResolvedTheme } from "./preferences-context"
+export { PreferencesProvider, usePreferences, usePreferencesOptional, useResolvedTheme } from "./preferences-context"
 export { SettingsProvider, useSettings } from "./settings-context"
 export {
   CoordinatedLoadingProvider,

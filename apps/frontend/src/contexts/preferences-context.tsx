@@ -225,6 +225,16 @@ export function usePreferences(): PreferencesContextValue {
 }
 
 /**
+ * Same as `usePreferences`, but returns `null` when no provider is mounted.
+ * Used by components that can render in both workspace and standalone
+ * contexts (markdown previews, tests) without forcing every caller to
+ * bundle the provider.
+ */
+export function usePreferencesOptional(): PreferencesContextValue | null {
+  return useContext(PreferencesContext)
+}
+
+/**
  * Hook to get the current theme (for components that need to know the resolved theme)
  */
 export function useResolvedTheme(): "light" | "dark" {

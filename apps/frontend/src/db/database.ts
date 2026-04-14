@@ -451,8 +451,8 @@ class ThreaDatabase extends Dexie {
     })
 
     // v22: Generalize the collapse table to cover any collapsible markdown
-    // block (code, blockquote, quote-reply). Rename the store and migrate
-    // existing rows in place with `kind: "code"` and a kind-prefixed id.
+    // block (code, blockquote, quote-reply). The key format gains a `kind`
+    // segment, and existing code-block rows are carried over.
     this.version(22)
       .stores({
         markdownBlockCollapse: "id, messageId, kind, updatedAt",
@@ -460,15 +460,28 @@ class ThreaDatabase extends Dexie {
       })
       .upgrade(async (tx) => {
         const oldRows = await tx.table("codeBlockCollapse").toArray()
-        if (oldRows.length === 0) return
-        const migrated = oldRows.map((row) => ({
-          id: `${row.messageId}:code:${String(row.id).slice(String(row.messageId).length + 1)}`,
-          messageId: row.messageId,
-          kind: "code" as const,
-          collapsed: row.collapsed,
-          updatedAt: row.updatedAt,
-        }))
-        await tx.table("markdownBlockCollapse").bulkAdd(migrated)
+        const migrated = oldRows.flatMap((row) => {
+          // Old id was `${messageId}:${hash}`. ULIDs don't contain ':' so the
+          // first colon separates the two parts. Skip any row missing either
+          // segment rather than producing a corrupt key.
+          const id = typeof row.id === "string" ? row.id : ""
+          const separator = id.indexOf(":")
+          if (separator <= 0 || separator === id.length - 1) return []
+          const messageId = id.slice(0, separator)
+          const hash = id.slice(separator + 1)
+          return [
+            {
+              id: `${messageId}:code:${hash}`,
+              messageId,
+              kind: "code" as const,
+              collapsed: Boolean(row.collapsed),
+              updatedAt: typeof row.updatedAt === "number" ? row.updatedAt : Date.now(),
+            },
+          ]
+        })
+        if (migrated.length > 0) {
+          await tx.table("markdownBlockCollapse").bulkPut(migrated)
+        }
       })
 
     this.workspaceUsers = this.table(WORKSPACE_USERS_STORE) as EntityTable<CachedWorkspaceUser, "id">

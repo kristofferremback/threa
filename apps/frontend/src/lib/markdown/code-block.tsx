@@ -3,7 +3,7 @@ import { codeToHtml } from "shiki"
 import { Copy, Check, ChevronDown, ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DEFAULT_CODE_BLOCK_COLLAPSE_THRESHOLD } from "@threa/types"
-import { usePreferences } from "@/contexts/preferences-context"
+import { usePreferencesOptional } from "@/contexts/preferences-context"
 import { useBlockCollapse } from "./use-block-collapse"
 
 interface CodeBlockProps {
@@ -216,16 +216,4 @@ export default function CodeBlock({ language, children }: CodeBlockProps) {
       />
     </div>
   )
-}
-
-/**
- * Safe accessor for preferences — returns null when no provider is present
- * (e.g. markdown previews rendered in tests or outside workspace context).
- */
-function usePreferencesOptional() {
-  try {
-    return usePreferences()
-  } catch {
-    return null
-  }
 }

@@ -2,7 +2,7 @@ import { useMemo, type ReactNode } from "react"
 import { ChevronDown, ChevronRight } from "lucide-react"
 import { DEFAULT_BLOCKQUOTE_COLLAPSE_THRESHOLD } from "@threa/types"
 import { cn } from "@/lib/utils"
-import { usePreferences } from "@/contexts/preferences-context"
+import { usePreferencesOptional } from "@/contexts/preferences-context"
 import { useBlockCollapse } from "./use-block-collapse"
 import { extractBlockText, estimateBlockLines, takeQuotePreview, QUOTE_PREVIEW_LINE_COUNT } from "./extract-block-text"
 
@@ -10,25 +10,6 @@ interface BlockquoteBlockProps {
   children: ReactNode
 }
 
-/**
- * Safe preferences accessor — mirrors CodeBlock so renderers without a
- * workspace/preferences provider (tests, standalone previews) fall back
- * to defaults instead of throwing.
- */
-function usePreferencesOptional() {
-  try {
-    return usePreferences()
-  } catch {
-    return null
-  }
-}
-
-/**
- * Collapsible blockquote. Long quotes start collapsed (per the user's
- * `blockquoteCollapseThreshold` preference) with a short plain-text preview;
- * clicking the header toggles between the full rendered blockquote and the
- * preview. Short quotes render expanded and are still manually collapsible.
- */
 export function BlockquoteBlock({ children }: BlockquoteBlockProps) {
   const text = useMemo(() => extractBlockText(children), [children])
   const lineCount = useMemo(() => estimateBlockLines(text), [text])
@@ -41,43 +22,40 @@ export function BlockquoteBlock({ children }: BlockquoteBlockProps) {
 
   const { collapsed, canToggle, toggle } = useBlockCollapse({
     kind: "blockquote",
-    hashNamespace: "blockquote",
     content: text,
     defaultCollapsed,
   })
 
-  const previewText = useMemo(
-    () => (collapsed && hasTruncatedPreview ? takeQuotePreview(text) : ""),
-    [collapsed, hasTruncatedPreview, text]
-  )
+  // Rendered outside a message context (standalone previews, tests with no
+  // provider): fall back to the plain bordered blockquote. Nothing to persist
+  // to, and the collapse chrome would be dead UI.
+  if (!canToggle) {
+    return (
+      <blockquote className="my-2 border-l-2 border-primary/50 pl-4 text-muted-foreground italic">
+        {children}
+      </blockquote>
+    )
+  }
 
+  const previewText = collapsed && hasTruncatedPreview ? takeQuotePreview(text) : ""
   const toggleLabel = collapsed ? `Expand ${lineCount} line${lineCount === 1 ? "" : "s"}` : "Collapse block quote"
-
-  // Collapsed + truncated: clicking the preview body also expands.
-  const bodyTogglesExpand = collapsed && canToggle && hasTruncatedPreview
+  const bodyTogglesExpand = collapsed && hasTruncatedPreview
 
   return (
     <blockquote className="my-2 rounded-r-md border-l-2 border-primary/50 bg-muted/20">
       <button
         type="button"
         onClick={toggle}
-        disabled={!canToggle}
         aria-expanded={!collapsed}
         aria-label={toggleLabel}
         title={toggleLabel}
-        className={cn(
-          "flex w-full items-center gap-1 px-3 py-1 text-left",
-          "text-[11px] font-medium text-muted-foreground",
-          canToggle ? "hover:text-foreground cursor-pointer" : "cursor-default",
-          "disabled:cursor-default"
-        )}
+        className="flex w-full cursor-pointer items-center gap-1 px-3 py-1 text-left text-[11px] font-medium text-muted-foreground hover:text-foreground"
       >
-        {canToggle &&
-          (collapsed ? (
-            <ChevronRight className="h-3 w-3 shrink-0" aria-hidden="true" />
-          ) : (
-            <ChevronDown className="h-3 w-3 shrink-0" aria-hidden="true" />
-          ))}
+        {collapsed ? (
+          <ChevronRight className="h-3 w-3 shrink-0" aria-hidden="true" />
+        ) : (
+          <ChevronDown className="h-3 w-3 shrink-0" aria-hidden="true" />
+        )}
         <span className="shrink-0">Quote</span>
         {collapsed && (
           <span className="text-muted-foreground/80 font-normal shrink-0">

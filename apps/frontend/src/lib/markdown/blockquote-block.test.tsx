@@ -11,9 +11,9 @@ let currentPrefs: { blockquoteCollapseThreshold?: number } | null = {
   blockquoteCollapseThreshold: DEFAULT_BLOCKQUOTE_COLLAPSE_THRESHOLD,
 }
 
-vi.mock("@/contexts/preferences-context", () => ({
-  usePreferences: () => {
-    if (!currentPrefs) throw new Error("no preferences")
+vi.mock("@/contexts/preferences-context", () => {
+  const mockContext = () => {
+    if (!currentPrefs) return null
     return {
       preferences: currentPrefs,
       resolvedTheme: "light",
@@ -24,8 +24,16 @@ vi.mock("@/contexts/preferences-context", () => ({
       resetKeyboardShortcut: vi.fn(),
       resetAllKeyboardShortcuts: vi.fn(),
     }
-  },
-}))
+  }
+  return {
+    usePreferences: () => {
+      const value = mockContext()
+      if (!value) throw new Error("no preferences")
+      return value
+    },
+    usePreferencesOptional: () => mockContext(),
+  }
+})
 
 function renderBlockquote(children: React.ReactNode, messageId = "msg_quote") {
   return render(

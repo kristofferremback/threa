@@ -7,7 +7,7 @@ import { useUserProfile } from "@/components/user-profile"
 import { PersonaAvatar } from "@/components/persona-avatar"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { cn } from "@/lib/utils"
-import { usePreferences } from "@/contexts/preferences-context"
+import { usePreferencesOptional } from "@/contexts/preferences-context"
 import { useBlockCollapse } from "./use-block-collapse"
 import { extractBlockText, estimateBlockLines } from "./extract-block-text"
 
@@ -20,20 +20,11 @@ interface QuoteReplyBlockProps {
   children: ReactNode
 }
 
-function usePreferencesOptional() {
-  try {
-    return usePreferences()
-  } catch {
-    return null
-  }
-}
-
 /**
  * Renders a quote-reply block in message display.
- * Clicking the block navigates to the quoted message (INV-40: navigation uses links).
- * Clicking the author name opens the user profile modal.
- * Long quotes start collapsed; the chevron toggles between a summary and the
- * full quote body.
+ * Clicking the quoted text navigates to the source message; the chevron
+ * toggles a summary / full-quote view. INV-40: the outer wrapper is a plain
+ * container so author and toggle buttons aren't nested inside the Link.
  */
 export function QuoteReplyBlock({
   authorName,
@@ -67,20 +58,10 @@ export function QuoteReplyBlock({
 
   const url = `/w/${workspaceId}/s/${streamId}?m=${messageId}`
 
-  const handleToggle = (e: React.MouseEvent) => {
-    // The wrapper is a <Link>; stop propagation so toggling doesn't navigate.
-    e.preventDefault()
-    e.stopPropagation()
-    toggle()
-  }
-
   const collapseLabel = collapsed ? `Expand ${lineCount} line${lineCount === 1 ? "" : "s"}` : "Collapse quote reply"
 
   return (
-    <Link
-      to={url}
-      className="my-2 flex items-start gap-2 rounded-md border border-border/50 bg-muted/30 px-3 py-2 text-sm no-underline transition-colors hover:bg-muted/50"
-    >
+    <div className="my-2 flex items-start gap-2 rounded-md border border-border/50 bg-muted/30 px-3 py-2 text-sm">
       <Quote className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
@@ -93,7 +74,7 @@ export function QuoteReplyBlock({
           {canToggle && (
             <button
               type="button"
-              onClick={handleToggle}
+              onClick={toggle}
               aria-expanded={!collapsed}
               aria-label={collapseLabel}
               title={collapseLabel}
@@ -107,17 +88,22 @@ export function QuoteReplyBlock({
             </button>
           )}
         </div>
-        {collapsed ? (
-          <div className={cn("mt-0.5 truncate text-xs text-muted-foreground/80 italic")}>
-            {lineCount > 0
-              ? `${lineCount} line${lineCount === 1 ? "" : "s"} — click chevron to expand`
-              : "Quoted message"}
-          </div>
-        ) : (
-          <div className="mt-0.5 text-muted-foreground [&_p]:mb-0">{children}</div>
-        )}
+        <Link
+          to={url}
+          className="mt-0.5 block text-muted-foreground no-underline transition-colors hover:text-foreground"
+        >
+          {collapsed ? (
+            <div className="truncate text-xs italic text-muted-foreground/80">
+              {lineCount > 0
+                ? `${lineCount} line${lineCount === 1 ? "" : "s"} — click chevron to expand`
+                : "Quoted message"}
+            </div>
+          ) : (
+            <div className="[&_p]:mb-0">{children}</div>
+          )}
+        </Link>
       </div>
-    </Link>
+    </div>
   )
 }
 
@@ -140,10 +126,8 @@ function QuoteAuthor({
   const isSystem = actorType === "system"
   const isUser = actorType === "user"
 
-  const handleAuthorClick = (e: React.MouseEvent) => {
+  const handleAuthorClick = () => {
     if (isUser && authorId) {
-      e.preventDefault()
-      e.stopPropagation()
       openUserProfile(authorId)
     }
   }
