@@ -73,20 +73,29 @@ jobs:
         run: |
           STAGING_URL="https://pr-${PR_NUMBER}-staging.threa.io"
 
-          # Skip if we've already posted a notification for this staging URL
-          SEARCH=$(curl -s -X POST \
-            "https://app.threa.io/api/v1/workspaces/ws_01KJDZZV5H57W3H2SJ11PA554B/messages/search" \
-            -H "Authorization: Bearer $THREA_BOT_API_KEY" \
-            -H "Content-Type: application/json" \
-            -d "$(jq -n --arg q "$STAGING_URL" '{"query": $q, "streams": ["stream_01KP36GA56WZREGN6VTKREWRM9"], "semantic": false, "limit": 1}')") || true
-          if [[ "$(echo "$SEARCH" | jq -r 'if .data then (.data | length > 0) else false end' 2>/dev/null)" == "true" ]]; then
-            echo "Already notified for $STAGING_URL — skipping"
-            exit 0
-          fi
-
           MESSAGE=$(printf '🚀 **Staging deployed** — [%s](%s)\n\n%s' \
             "$PR_TITLE" "$PR_URL" "$STAGING_URL")
-          PAYLOAD=$(jq -n --arg content "$MESSAGE" '{"content": $content}')
+
+          # clientMessageId (per-PR) dedupes across repeated synchronize events so
+          # redeploys to the same PR return the existing message instead of spamming
+          # the channel. metadata lets the teardown step locate this exact message
+          # via /messages/find-by-metadata.
+          PAYLOAD=$(jq -n \
+            --arg content "$MESSAGE" \
+            --arg clientMessageId "staging-deploy:pr-${PR_NUMBER}" \
+            --arg pr "$PR_NUMBER" \
+            --arg url "$STAGING_URL" \
+            '{
+              content: $content,
+              clientMessageId: $clientMessageId,
+              metadata: {
+                source: "github-actions",
+                "github.staging.event": "deployed",
+                "github.staging.pr_number": $pr,
+                "github.staging.url": $url
+              }
+            }')
+
           curl -f --show-error -X POST \
             "https://app.threa.io/api/v1/workspaces/ws_01KJDZZV5H57W3H2SJ11PA554B/streams/stream_01KP36GA56WZREGN6VTKREWRM9/messages" \
             -H "Authorization: Bearer $THREA_BOT_API_KEY" \
@@ -171,3 +180,43 @@ jobs:
           STAGING_INTERNAL_API_KEY: ${{ secrets.STAGING_INTERNAL_API_KEY }}
           STAGING_CONTROL_PLANE_URL: ${{ secrets.STAGING_CONTROL_PLANE_URL }}
           CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+
+      - name: Update Threa deploy message
+        continue-on-error: true
+        env:
+          THREA_BOT_API_KEY: ${{ secrets.THREA_BOT_API_KEY }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          STAGING_URL="https://pr-${PR_NUMBER}-staging.threa.io"
+
+          # Locate the deploy message via metadata (AND-containment on source + PR number).
+          # Graceful no-op if not found — e.g. PR was deployed before this workflow version landed,
+          # or the deploy notify step was skipped.
+          FIND=$(curl -s -X POST \
+            "https://app.threa.io/api/v1/workspaces/ws_01KJDZZV5H57W3H2SJ11PA554B/messages/find-by-metadata" \
+            -H "Authorization: Bearer $THREA_BOT_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg pr "$PR_NUMBER" '{
+              metadata: {
+                source: "github-actions",
+                "github.staging.event": "deployed",
+                "github.staging.pr_number": $pr
+              },
+              limit: 1
+            }')") || true
+
+          MESSAGE_ID=$(echo "$FIND" | jq -r '.data[0].id // empty' 2>/dev/null)
+          if [[ -z "$MESSAGE_ID" ]]; then
+            echo "No deploy message found for PR #${PR_NUMBER} — skipping update"
+            exit 0
+          fi
+
+          UPDATED=$(printf '🧹 **Staging torn down** — [%s](%s)\n\n~~%s~~ (environment removed)' \
+            "$PR_TITLE" "$PR_URL" "$STAGING_URL")
+          curl -f --show-error -X PATCH \
+            "https://app.threa.io/api/v1/workspaces/ws_01KJDZZV5H57W3H2SJ11PA554B/messages/${MESSAGE_ID}" \
+            -H "Authorization: Bearer $THREA_BOT_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg content "$UPDATED" '{content: $content}')"
