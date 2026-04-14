@@ -213,3 +213,86 @@ describe("EventService.editMessage version capture", () => {
     )
   })
 })
+
+describe("EventService.createMessage metadata propagation", () => {
+  const baseParams = {
+    workspaceId: "ws_1",
+    streamId: "stream_1",
+    authorId: "usr_1",
+    authorType: "user" as const,
+    contentJson: { type: "doc", content: [] },
+    contentMarkdown: "hello",
+  }
+
+  beforeEach(() => {
+    spyOn(db, "withTransaction").mockImplementation(((_db: unknown, callback: (client: any) => Promise<unknown>) =>
+      callback({})) as any)
+    spyOn(StreamRepository, "findById").mockResolvedValue({ id: "stream_1", type: "scratchpad" } as any)
+    spyOn(AttachmentRepository, "findByIds").mockResolvedValue([])
+    spyOn(AttachmentRepository, "attachToMessage").mockResolvedValue(0)
+    spyOn(StreamMemberRepository, "isMember").mockResolvedValue(true)
+    spyOn(StreamMemberRepository, "update").mockResolvedValue(undefined as any)
+    spyOn(StreamEventRepository, "insert").mockImplementation((async (_client: any, params: any) => ({
+      id: "evt_1",
+      streamId: params.streamId,
+      sequence: 1n,
+      eventType: params.eventType,
+      payload: params.payload,
+      actorId: params.actorId,
+      actorType: params.actorType,
+      createdAt: new Date(),
+    })) as any)
+    spyOn(MessageRepository, "insert").mockImplementation((async (_client: any, params: any) => ({
+      id: params.id,
+      streamId: params.streamId,
+      sequence: params.sequence,
+      authorId: params.authorId,
+      authorType: params.authorType,
+      contentJson: params.contentJson,
+      contentMarkdown: params.contentMarkdown,
+      replyCount: 0,
+      clientMessageId: params.clientMessageId ?? null,
+      sentVia: params.sentVia ?? null,
+      reactions: {},
+      metadata: params.metadata ?? {},
+      editedAt: null,
+      deletedAt: null,
+      createdAt: new Date(),
+    })) as any)
+    spyOn(MessageRepository, "findById").mockResolvedValue(null)
+    spyOn(OutboxRepository, "insert").mockResolvedValue(undefined as any)
+    spyOn(messagesTotal, "inc").mockImplementation(() => undefined)
+  })
+
+  afterEach(() => {
+    mock.restore()
+  })
+
+  it("propagates non-empty metadata to the event payload and the projection", async () => {
+    const service = new EventService({} as any)
+    const metadata = { "github.pr.id": "42", "github.event": "review_requested" }
+
+    await service.createMessage({ ...baseParams, metadata })
+
+    expect(StreamEventRepository.insert).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        eventType: "message_created",
+        payload: expect.objectContaining({ metadata }),
+      })
+    )
+    expect(MessageRepository.insert).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ metadata }))
+  })
+
+  it("omits metadata from the event payload and projection when unset or empty", async () => {
+    const service = new EventService({} as any)
+
+    await service.createMessage({ ...baseParams, metadata: {} })
+
+    const eventPayload = (StreamEventRepository.insert as any).mock.calls[0][1].payload
+    expect(eventPayload).not.toHaveProperty("metadata")
+
+    const insertParams = (MessageRepository.insert as any).mock.calls[0][1]
+    expect(insertParams.metadata).toBeUndefined()
+  })
+})

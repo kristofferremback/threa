@@ -5,6 +5,7 @@ import type { SearchFilters, SearchService } from "../search"
 import { serializeSearchResult, resolveUserAccessibleStreamIds } from "../search"
 import type { BotChannelService } from "../api-keys"
 import type { EventService } from "../messaging"
+import { MessageRepository } from "../messaging"
 import {
   StreamRepository,
   StreamMemberRepository,
@@ -56,6 +57,7 @@ import {
   listUsersSchema,
   searchMemosSchema,
   searchAttachmentsSchema,
+  findMessagesByMetadataSchema,
 } from "./schemas"
 
 function serializeStream(stream: Stream, context?: DisplayNameContext): WireStream {
@@ -88,6 +90,7 @@ function serializeMessage(
     replyCount: number
     clientMessageId?: string | null
     sentVia?: string | null
+    metadata?: Record<string, string>
     editedAt: Date | null
     createdAt: Date
   },
@@ -105,6 +108,8 @@ function serializeMessage(
     ...(opts?.threadStreamId != null && { threadStreamId: opts.threadStreamId }),
     ...(message.clientMessageId != null && { clientMessageId: message.clientMessageId }),
     ...(message.sentVia != null && { sentVia: message.sentVia }),
+    // Always return metadata (possibly empty) so consumers can rely on the shape.
+    metadata: message.metadata ?? {},
     ...(message.editedAt != null && { editedAt: message.editedAt.toISOString() }),
     createdAt: message.createdAt.toISOString(),
   }
@@ -764,6 +769,50 @@ export function createPublicApiHandlers({
     },
 
     /**
+     * Find messages by metadata (AND-containment).
+     *
+     * Scoped to streams accessible to this API key. Intended for dedup flows —
+     * e.g. "has a message already been posted for this GitHub PR event?".
+     *
+     * POST /api/v1/workspaces/:workspaceId/messages/find-by-metadata
+     */
+    async findMessagesByMetadata(req: Request, res: Response) {
+      const workspaceId = req.workspaceId!
+
+      const result = findMessagesByMetadataSchema.safeParse(req.body)
+      if (!result.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: z.flattenError(result.error).fieldErrors,
+        })
+      }
+
+      const { metadata, streamId, limit } = result.data
+
+      const accessibleStreamIds = await getAccessibleStreamIds(req)
+      if (accessibleStreamIds.length === 0) {
+        return res.json({ data: [] })
+      }
+
+      const messages = await MessageRepository.findByMetadata(pool, {
+        streamIds: accessibleStreamIds,
+        filter: metadata,
+        streamId,
+        limit,
+      })
+
+      if (messages.length === 0) {
+        return res.json({ data: [] })
+      }
+
+      const authorNames = await resolveAuthorDisplayNames(pool, workspaceId, messages)
+
+      res.json({
+        data: messages.map((m) => serializeMessage(m, { authorDisplayName: authorNames.get(m.authorId) ?? null })),
+      })
+    },
+
+    /**
      * Send a message. User-scoped keys send as the user (with sentVia indicator);
      * workspace-scoped keys send as a bot entity.
      *
@@ -781,7 +830,7 @@ export function createPublicApiHandlers({
         })
       }
 
-      const { content, clientMessageId } = result.data
+      const { content, clientMessageId, metadata } = result.data
 
       // Verify stream access
       await assertStreamAccessible(req, streamId)
@@ -803,6 +852,7 @@ export function createPublicApiHandlers({
           contentMarkdown,
           clientMessageId,
           sentVia: sentViaApiKey(req.userApiKey.id),
+          metadata,
         })
 
         res.status(201).json({ data: serializeMessage(message, { authorDisplayName: user.name }) })
@@ -824,6 +874,7 @@ export function createPublicApiHandlers({
           contentJson,
           contentMarkdown,
           clientMessageId,
+          metadata,
         })
 
         res.status(201).json({ data: serializeMessage(message, { authorDisplayName: bot.name }) })

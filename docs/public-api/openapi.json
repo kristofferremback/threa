@@ -1110,6 +1110,12 @@
                             "description": "Present when message was sent via API on behalf of a user",
                             "type": "string"
                           },
+                          "metadata": {
+                            "type": "object",
+                            "propertyNames": { "type": "string" },
+                            "additionalProperties": { "type": "string" },
+                            "description": "External references attached by the sender. Always present; empty when unset."
+                          },
                           "editedAt": { "type": "string", "format": "date-time" },
                           "createdAt": { "type": "string", "format": "date-time" }
                         },
@@ -1121,6 +1127,7 @@
                           "authorType",
                           "content",
                           "replyCount",
+                          "metadata",
                           "createdAt"
                         ],
                         "additionalProperties": false
@@ -1190,7 +1197,17 @@
                 "type": "object",
                 "properties": {
                   "content": { "type": "string", "minLength": 1 },
-                  "clientMessageId": { "type": "string", "maxLength": 128 }
+                  "clientMessageId": { "type": "string", "maxLength": 128 },
+                  "metadata": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^[a-zA-Z0-9_.\\-:]+$"
+                    },
+                    "additionalProperties": { "type": "string", "maxLength": 256 }
+                  }
                 },
                 "required": ["content"],
                 "additionalProperties": false
@@ -1224,6 +1241,12 @@
                           "description": "Present when message was sent via API on behalf of a user",
                           "type": "string"
                         },
+                        "metadata": {
+                          "type": "object",
+                          "propertyNames": { "type": "string" },
+                          "additionalProperties": { "type": "string" },
+                          "description": "External references attached by the sender. Always present; empty when unset."
+                        },
                         "editedAt": { "type": "string", "format": "date-time" },
                         "createdAt": { "type": "string", "format": "date-time" }
                       },
@@ -1235,9 +1258,141 @@
                         "authorType",
                         "content",
                         "replyCount",
+                        "metadata",
                         "createdAt"
                       ],
                       "additionalProperties": false
+                    }
+                  },
+                  "required": ["data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "object",
+                  "properties": {
+                    "error": { "type": "string" },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": { "type": "string" },
+                      "additionalProperties": { "type": "array", "items": { "type": "string" } }
+                    }
+                  },
+                  "required": ["error"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": { "description": "Missing or invalid API key" },
+          "403": { "description": "Insufficient permissions or stream not accessible" }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/messages/find-by-metadata": {
+      "post": {
+        "operationId": "findMessagesByMetadata",
+        "summary": "Find messages by metadata",
+        "tags": ["Messages"],
+        "description": "Find non-deleted messages whose `metadata` contains all the given key/value pairs (AND-containment). Useful for dedup flows — e.g. 'has a message already been posted for this GitHub PR event?'.",
+        "security": [{ "apiKey": ["messages:read"] }],
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "Workspace ID (prefixed ULID)"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "metadata": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^[a-zA-Z0-9_.\\-:]+$"
+                    },
+                    "additionalProperties": { "type": "string", "maxLength": 256 }
+                  },
+                  "streamId": { "type": "string", "minLength": 1 },
+                  "limit": { "default": 20, "type": "integer", "minimum": 1, "maximum": 100 }
+                },
+                "required": ["metadata", "limit"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": { "type": "string" },
+                          "streamId": { "type": "string" },
+                          "sequence": { "type": "string", "description": "Numeric sequence as string" },
+                          "authorId": { "type": "string" },
+                          "authorType": { "type": "string", "enum": ["user", "persona", "system", "bot"] },
+                          "authorDisplayName": { "type": "string" },
+                          "content": { "type": "string" },
+                          "replyCount": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "threadStreamId": { "type": "string" },
+                          "clientMessageId": { "type": "string" },
+                          "sentVia": {
+                            "description": "Present when message was sent via API on behalf of a user",
+                            "type": "string"
+                          },
+                          "metadata": {
+                            "type": "object",
+                            "propertyNames": { "type": "string" },
+                            "additionalProperties": { "type": "string" },
+                            "description": "External references attached by the sender. Always present; empty when unset."
+                          },
+                          "editedAt": { "type": "string", "format": "date-time" },
+                          "createdAt": { "type": "string", "format": "date-time" }
+                        },
+                        "required": [
+                          "id",
+                          "streamId",
+                          "sequence",
+                          "authorId",
+                          "authorType",
+                          "content",
+                          "replyCount",
+                          "metadata",
+                          "createdAt"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": ["data"],
@@ -1335,6 +1490,12 @@
                           "description": "Present when message was sent via API on behalf of a user",
                           "type": "string"
                         },
+                        "metadata": {
+                          "type": "object",
+                          "propertyNames": { "type": "string" },
+                          "additionalProperties": { "type": "string" },
+                          "description": "External references attached by the sender. Always present; empty when unset."
+                        },
                         "editedAt": { "type": "string", "format": "date-time" },
                         "createdAt": { "type": "string", "format": "date-time" }
                       },
@@ -1346,6 +1507,7 @@
                         "authorType",
                         "content",
                         "replyCount",
+                        "metadata",
                         "createdAt"
                       ],
                       "additionalProperties": false

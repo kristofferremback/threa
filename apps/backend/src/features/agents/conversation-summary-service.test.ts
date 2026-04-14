@@ -16,6 +16,7 @@ function makeMessage(sequence: bigint, content: string): Message {
     contentMarkdown: content,
     replyCount: 0,
     reactions: {},
+    metadata: {},
     clientMessageId: null,
     sentVia: null,
     editedAt: null,

@@ -23,6 +23,7 @@ function createMessage(overrides: Partial<Message> = {}): Message {
     contentMarkdown,
     replyCount: 0,
     reactions: {},
+    metadata: {},
     clientMessageId: null,
     sentVia: null,
     editedAt: null,

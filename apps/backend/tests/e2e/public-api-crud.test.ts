@@ -346,6 +346,152 @@ describe("Public API v1 — CRUD Endpoints", () => {
       )
       expect(res.status).toBe(400)
     })
+
+    test("should round-trip user-supplied metadata and return it on list", async () => {
+      const metadata = {
+        source: "github",
+        "github.pr.id": `md-${testRunId}`,
+        "github.event": "review_requested",
+      }
+
+      const sendRes = await apiPost(
+        `/api/v1/workspaces/${ctx.workspaceId}/streams/${ctx.publicChannelId}/messages`,
+        { content: `Metadata message ${testRunId}`, metadata },
+        ctx.messagesWriteKey
+      )
+      expect(sendRes.status).toBe(201)
+
+      const sendBody = (await sendRes.json()) as { data: { id: string; metadata: Record<string, string> } }
+      expect(sendBody.data.metadata).toEqual(metadata)
+
+      const listRes = await apiGet(
+        `/api/v1/workspaces/${ctx.workspaceId}/streams/${ctx.publicChannelId}/messages`,
+        ctx.messagesReadKey
+      )
+      const listBody = (await listRes.json()) as {
+        data: Array<{ id: string; metadata: Record<string, string> }>
+      }
+      const echoed = listBody.data.find((m) => m.id === sendBody.data.id)
+      expect(echoed).toBeDefined()
+      expect(echoed!.metadata).toEqual(metadata)
+    })
+
+    test("should always return metadata field (empty object when unset)", async () => {
+      const res = await apiPost(
+        `/api/v1/workspaces/${ctx.workspaceId}/streams/${ctx.publicChannelId}/messages`,
+        { content: `No metadata ${testRunId}` },
+        ctx.messagesWriteKey
+      )
+      expect(res.status).toBe(201)
+      const body = (await res.json()) as { data: { metadata: Record<string, string> } }
+      expect(body.data.metadata).toEqual({})
+    })
+
+    test("should reject reserved threa.* metadata keys", async () => {
+      const res = await apiPost(
+        `/api/v1/workspaces/${ctx.workspaceId}/streams/${ctx.publicChannelId}/messages`,
+        { content: "spoof attempt", metadata: { "threa.source": "github" } },
+        ctx.messagesWriteKey
+      )
+      expect(res.status).toBe(400)
+    })
+
+    test("should reject metadata values that exceed the per-value limit", async () => {
+      const huge = "x".repeat(300)
+      const res = await apiPost(
+        `/api/v1/workspaces/${ctx.workspaceId}/streams/${ctx.publicChannelId}/messages`,
+        { content: "oversize", metadata: { k: huge } },
+        ctx.messagesWriteKey
+      )
+      expect(res.status).toBe(400)
+    })
+  })
+
+  describe("Find Messages by Metadata", () => {
+    const runTag = `find-${testRunId}`
+    let postedId: string
+
+    test("should find a message with AND-matching metadata", async () => {
+      const metadata = {
+        source: "github",
+        "github.pr.id": runTag,
+        "github.event": "opened",
+      }
+      const sendRes = await apiPost(
+        `/api/v1/workspaces/${ctx.workspaceId}/streams/${ctx.publicChannelId}/messages`,
+        { content: `Find me ${runTag}`, metadata },
+        ctx.messagesWriteKey
+      )
+      expect(sendRes.status).toBe(201)
+      postedId = ((await sendRes.json()) as { data: { id: string } }).data.id
+
+      const findRes = await apiPost(
+        `/api/v1/workspaces/${ctx.workspaceId}/messages/find-by-metadata`,
+        { metadata: { "github.pr.id": runTag, "github.event": "opened" } },
+        ctx.messagesReadKey
+      )
+      expect(findRes.status).toBe(200)
+      const body = (await findRes.json()) as {
+        data: Array<{ id: string; metadata: Record<string, string> }>
+      }
+      expect(body.data.some((m) => m.id === postedId)).toBe(true)
+      for (const m of body.data) {
+        expect(m.metadata["github.pr.id"]).toBe(runTag)
+        expect(m.metadata["github.event"]).toBe("opened")
+      }
+    })
+
+    test("should return empty when one of the AND keys does not match", async () => {
+      const findRes = await apiPost(
+        `/api/v1/workspaces/${ctx.workspaceId}/messages/find-by-metadata`,
+        { metadata: { "github.pr.id": runTag, "github.event": "closed" } },
+        ctx.messagesReadKey
+      )
+      expect(findRes.status).toBe(200)
+      const body = (await findRes.json()) as { data: Array<{ id: string }> }
+      expect(body.data.find((m) => m.id === postedId)).toBeUndefined()
+    })
+
+    test("should honor streamId filter", async () => {
+      const findRes = await apiPost(
+        `/api/v1/workspaces/${ctx.workspaceId}/messages/find-by-metadata`,
+        { metadata: { "github.pr.id": runTag }, streamId: ctx.publicChannelId },
+        ctx.messagesReadKey
+      )
+      expect(findRes.status).toBe(200)
+      const body = (await findRes.json()) as { data: Array<{ streamId: string }> }
+      expect(body.data.length).toBeGreaterThanOrEqual(1)
+      for (const m of body.data) expect(m.streamId).toBe(ctx.publicChannelId)
+    })
+
+    test("should not return messages from inaccessible streams via streamId filter", async () => {
+      const findRes = await apiPost(
+        `/api/v1/workspaces/${ctx.workspaceId}/messages/find-by-metadata`,
+        { metadata: { "github.pr.id": runTag }, streamId: ctx.privateChannelId },
+        ctx.messagesReadKey
+      )
+      expect(findRes.status).toBe(200)
+      const body = (await findRes.json()) as { data: unknown[] }
+      expect(body.data).toEqual([])
+    })
+
+    test("should return 400 for empty metadata filter", async () => {
+      const findRes = await apiPost(
+        `/api/v1/workspaces/${ctx.workspaceId}/messages/find-by-metadata`,
+        { metadata: {} },
+        ctx.messagesReadKey
+      )
+      expect(findRes.status).toBe(400)
+    })
+
+    test("should return 404 without messages:read scope", async () => {
+      const findRes = await apiPost(
+        `/api/v1/workspaces/${ctx.workspaceId}/messages/find-by-metadata`,
+        { metadata: { "github.pr.id": runTag } },
+        ctx.messagesWriteKey
+      )
+      expect(findRes.status).toBe(404)
+    })
   })
 
   describe("Update Message", () => {

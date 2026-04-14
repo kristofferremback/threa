@@ -66,6 +66,7 @@ function toMessage(evalMsg: EvalMessage, streamId: string, sequence: number = 1)
     contentMarkdown: evalMsg.contentMarkdown,
     replyCount: 0,
     reactions: {},
+    metadata: {},
     clientMessageId: null,
     sentVia: null,
     editedAt: null,

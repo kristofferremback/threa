@@ -85,6 +85,8 @@ export interface CreateMessageInputJson {
   attachmentIds?: string[]
   /** Client-generated idempotency key to prevent duplicate sends on retry */
   clientMessageId?: string
+  /** External references as a flat string->string map. Keys under `threa.*` are reserved. */
+  metadata?: Record<string, string>
 }
 
 export interface CreateDmMessageInputJson {
@@ -96,6 +98,8 @@ export interface CreateDmMessageInputJson {
   attachmentIds?: string[]
   /** Client-generated idempotency key to prevent duplicate sends on retry */
   clientMessageId?: string
+  /** External references as a flat string->string map. Keys under `threa.*` are reserved. */
+  metadata?: Record<string, string>
 }
 
 /**
@@ -108,6 +112,8 @@ export interface CreateMessageInputMarkdown {
   attachmentIds?: string[]
   /** Client-generated idempotency key to prevent duplicate sends on retry */
   clientMessageId?: string
+  /** External references as a flat string->string map. Keys under `threa.*` are reserved. */
+  metadata?: Record<string, string>
 }
 
 export interface CreateDmMessageInputMarkdown {
@@ -117,6 +123,8 @@ export interface CreateDmMessageInputMarkdown {
   attachmentIds?: string[]
   /** Client-generated idempotency key to prevent duplicate sends on retry */
   clientMessageId?: string
+  /** External references as a flat string->string map. Keys under `threa.*` are reserved. */
+  metadata?: Record<string, string>
 }
 
 /**
