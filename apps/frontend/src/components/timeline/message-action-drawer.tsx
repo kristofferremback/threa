@@ -31,16 +31,6 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
   const [expanded, setExpanded] = useState(false)
   const [selectedText, setSelectedText] = useState("")
   const contentRef = useRef<HTMLDivElement>(null)
-  // Snap points are controlled so tapping the preview can programmatically
-  // jump to full-screen for the quote-selection view, while still letting the
-  // user drag between 0.8 and 1 on the default action list.
-  const [activeSnap, setActiveSnap] = useState<number | string | null>(0.8)
-
-  // Keep snap in sync with expanded state (enter full-screen on expand,
-  // return to 80% on collapse).
-  useEffect(() => {
-    setActiveSnap(expanded ? 1 : 0.8)
-  }, [expanded])
 
   // Reset expanded state when drawer closes
   const handleOpenChange = useCallback(
@@ -160,14 +150,11 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
   if (!open && actions.length === 0) return null
 
   return (
-    <Drawer
-      open={open}
-      onOpenChange={handleOpenChange}
-      snapPoints={[0.8, 1]}
-      activeSnapPoint={activeSnap}
-      setActiveSnapPoint={setActiveSnap}
-    >
-      <DrawerContent>
+    <Drawer open={open} onOpenChange={handleOpenChange}>
+      {/* Default: DrawerContent is content-fit between 40dvh and 85dvh.
+          Expanded (quote-selection view): override to full viewport height so
+          the message body has room to scroll and be selected. */}
+      <DrawerContent className={expanded ? "!min-h-[100dvh] !max-h-[100dvh]" : undefined}>
         {/* Accessible title (visually hidden) */}
         <DrawerTitle className="sr-only">{expanded ? "Select text to quote" : "Message actions"}</DrawerTitle>
 
