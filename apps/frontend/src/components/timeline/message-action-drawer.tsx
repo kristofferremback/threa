@@ -160,7 +160,13 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
   if (!open && actions.length === 0) return null
 
   return (
-    <Drawer open={open} onOpenChange={handleOpenChange} activeSnapPoint={activeSnap} setActiveSnapPoint={setActiveSnap}>
+    <Drawer
+      open={open}
+      onOpenChange={handleOpenChange}
+      snapPoints={[0.8, 1]}
+      activeSnapPoint={activeSnap}
+      setActiveSnapPoint={setActiveSnap}
+    >
       <DrawerContent>
         {/* Accessible title (visually hidden) */}
         <DrawerTitle className="sr-only">{expanded ? "Select text to quote" : "Message actions"}</DrawerTitle>

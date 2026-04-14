@@ -187,6 +187,7 @@ export function UnsentMessageEditForm({
         onOpenChange={(open) => {
           if (!open) setTimeout(() => void handleCancel(), 300)
         }}
+        snapPoints={[0.8, 1]}
         activeSnapPoint={activeSnap}
         setActiveSnapPoint={setActiveSnap}
       >

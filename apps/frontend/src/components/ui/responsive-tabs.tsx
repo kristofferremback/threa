@@ -30,8 +30,10 @@ export function ResponsiveTabs<T extends string>({
 
   return (
     <>
-      {/* Mobile: Shadcn Select dropdown */}
-      <div className="sm:hidden">
+      {/* Mobile: Shadcn Select dropdown. The 1-unit padding gives the
+          focus ring breathing room so it isn't clipped by the parent's
+          `overflow-hidden` (e.g. the settings-dialog panels container). */}
+      <div className="p-1 sm:hidden">
         <Select value={value} onValueChange={(v) => onValueChange(v as T)}>
           <SelectTrigger className="h-9 text-sm">
             <SelectValue />

@@ -199,6 +199,7 @@ export function MessageEditForm({
         onOpenChange={(open) => {
           if (!open) setTimeout(onCancel, 300)
         }}
+        snapPoints={[0.8, 1]}
         activeSnapPoint={activeSnap}
         setActiveSnapPoint={setActiveSnap}
       >
