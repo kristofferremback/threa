@@ -3,6 +3,7 @@
 import * as React from "react"
 import { Drawer as DrawerPrimitive } from "vaul"
 
+import { clamp } from "@/lib/math-utils"
 import { cn } from "@/lib/utils"
 
 // ── Adaptive sizing bounds ───────────────────────────────────────────────
@@ -28,11 +29,22 @@ const NOTCH_HEIGHT_REM = 1.5
 const REM_PX = 16
 const NOTCH_PX = NOTCH_HEIGHT_REM * REM_PX
 
+/**
+ * Prefer the `--viewport-height` CSS custom property pinned by
+ * `useVisualViewport` — on Chrome Android `window.innerHeight`/`dvh` stays
+ * stale after BFCache, pull-to-refresh, etc. Falls back to `innerHeight`
+ * when the var isn't set (e.g. tests, server render, desktop).
+ */
+function getViewportHeight(): number {
+  if (typeof window === "undefined") return 800
+  const raw = getComputedStyle(document.documentElement).getPropertyValue("--viewport-height")
+  const parsed = Number.parseFloat(raw)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : window.innerHeight
+}
+
 function clampToAdaptiveRange(pixels: number): number {
-  const vh = typeof window === "undefined" ? 800 : window.innerHeight
-  const min = vh * ADAPTIVE_MIN_VH
-  const max = vh * ADAPTIVE_MAX_VH
-  return Math.round(Math.max(min, Math.min(max, pixels)))
+  const vh = getViewportHeight()
+  return Math.round(clamp(pixels, vh * ADAPTIVE_MIN_VH, vh * ADAPTIVE_MAX_VH))
 }
 
 // ── Snap context ─────────────────────────────────────────────────────────
@@ -214,19 +226,15 @@ const DrawerContent = React.forwardRef<
   // `height: fit-content` the wrapper's scrollHeight reflects the natural
   // content height (content extent, unclipped by max-height), which lets
   // the root settle to a snap point that visually matches the content.
+  // ResizeObserver also fires when viewport resizes propagate to the
+  // element's layout, so a separate window `resize` listener isn't needed.
   React.useLayoutEffect(() => {
     if (!isAdaptive) return
     const el = innerRef.current
     if (!el) return
-    const measure = () => reportContentHeight(el.scrollHeight)
-    measure()
-    const ro = new ResizeObserver(measure)
+    const ro = new ResizeObserver(() => reportContentHeight(el.scrollHeight))
     ro.observe(el)
-    window.addEventListener("resize", measure)
-    return () => {
-      ro.disconnect()
-      window.removeEventListener("resize", measure)
-    }
+    return () => ro.disconnect()
   }, [isAdaptive, reportContentHeight])
 
   // Adaptive mode: `fit-content` + min/max bounds the wrapper to content
