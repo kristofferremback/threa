@@ -37,7 +37,7 @@ export function ActivityContent({
         <span className="font-medium truncate">{streamName}</span>
       </div>
 
-      {previewText && <p className="mt-0.5 text-xs text-muted-foreground truncate">&ldquo;{previewText}&rdquo;</p>}
+      {previewText && <p className="mt-0.5 text-xs text-muted-foreground truncate">{previewText}</p>}
 
       <RelativeTime date={createdAt} className="text-xs text-muted-foreground/60 mt-1 block" />
     </div>

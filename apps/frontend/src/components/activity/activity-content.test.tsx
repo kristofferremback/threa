@@ -57,6 +57,13 @@ describe("ActivityContent", () => {
     expect(container.querySelector("p")).toBeNull()
   })
 
+  it("renders the preview without surrounding quotation marks", () => {
+    render(<ActivityContent {...baseProps} contentPreview="Welcome back! What's up?" />)
+
+    const preview = screen.getByText(/Welcome back/)
+    expect(preview.textContent).toBe("Welcome back! What's up?")
+  })
+
   it("resolves emoji shortcodes when a toEmoji resolver is supplied", () => {
     const toEmoji = (shortcode: string) => ({ wave: "👋", white_check_mark: "✅" })[shortcode] ?? null
     render(
