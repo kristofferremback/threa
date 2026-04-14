@@ -77,6 +77,12 @@
                             "minimum": -9007199254740991,
                             "maximum": 9007199254740991
                           },
+                          "metadata": {
+                            "type": "object",
+                            "propertyNames": { "type": "string" },
+                            "additionalProperties": { "type": "string" },
+                            "description": "External references attached by the sender. Always present; empty when unset."
+                          },
                           "editedAt": { "type": "string", "format": "date-time" },
                           "createdAt": { "type": "string", "format": "date-time" },
                           "rank": { "type": "number" }
@@ -89,6 +95,7 @@
                           "authorId",
                           "authorType",
                           "replyCount",
+                          "metadata",
                           "createdAt",
                           "rank"
                         ],

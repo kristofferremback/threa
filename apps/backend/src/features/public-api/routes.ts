@@ -77,6 +77,9 @@ const searchResultSchema = z.object({
   authorType: z.enum(AUTHOR_TYPES),
   authorDisplayName: z.string().optional(),
   replyCount: z.number().int(),
+  metadata: z
+    .record(z.string(), z.string())
+    .describe("External references attached by the sender. Always present; empty when unset."),
   editedAt: z.string().datetime().optional(),
   createdAt: z.string().datetime(),
   rank: z.number(),
