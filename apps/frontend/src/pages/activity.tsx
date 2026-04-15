@@ -14,14 +14,14 @@ import { ActivityEmpty } from "@/components/activity/activity-empty"
 import { ActivitySkeleton } from "@/components/activity/activity-skeleton"
 import type { AuthorType, Activity } from "@threa/types"
 
-type ActivityFilter = "all" | "unread" | "mine"
+type ActivityFilter = "all" | "unread" | "me"
 
 export function ActivityPage() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const [filter, setFilter] = useState<ActivityFilter>("all")
   const { data: activities, isLoading } = useActivityFeed(workspaceId ?? "", {
     unreadOnly: filter === "unread",
-    mineOnly: filter === "mine",
+    mineOnly: filter === "me",
   })
   const markRead = useMarkActivityRead(workspaceId ?? "")
   const markAllRead = useMarkAllActivityRead(workspaceId ?? "")
@@ -119,8 +119,8 @@ export function ActivityPage() {
               <TabsTrigger value="unread" className="text-xs px-2.5 py-1">
                 Unread
               </TabsTrigger>
-              <TabsTrigger value="mine" className="text-xs px-2.5 py-1">
-                Mine
+              <TabsTrigger value="me" className="text-xs px-2.5 py-1">
+                Me
               </TabsTrigger>
             </TabsList>
           </Tabs>

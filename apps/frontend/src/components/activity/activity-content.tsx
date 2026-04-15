@@ -9,7 +9,7 @@ const ACTIVITY_DISPLAY: Record<string, { verb: string }> = {
 }
 
 const SELF_ACTIVITY_DISPLAY: Record<string, { verb: string }> = {
-  // Self-rows use first-person verbs so the Mine feed reads naturally.
+  // Self-rows use first-person verbs so the Me feed reads naturally.
   mention: { verb: "You mentioned someone in" },
   message: { verb: "You posted in" },
   reaction: { verb: "You reacted to a message in" },

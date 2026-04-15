@@ -261,7 +261,7 @@ export class ActivityService {
    * notification level (ACTIVITY/EVERYTHING for channels, non-MUTED for direct).
    *
    * Also creates a self-row for the reactor so they can see their own reactions
-   * in the Mine feed.
+   * in the Me feed.
    *
    * Returns both rows so the outbox handler can publish activity:created events.
    */
@@ -327,7 +327,7 @@ export class ActivityService {
         }
       }
 
-      // 2. Self-row for the reactor (always, for the Mine feed)
+      // 2. Self-row for the reactor (always, for the Me feed)
       const selfRows = await ActivityRepository.insertBatch(client, {
         workspaceId,
         userIds: [actorId],

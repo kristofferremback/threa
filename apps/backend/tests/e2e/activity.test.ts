@@ -155,7 +155,7 @@ describe("Activity Feed E2E", () => {
       await new Promise((r) => setTimeout(r, 1500))
 
       // Owner should have no MENTION activity from self-mention. A self "message"
-      // row exists so the owner can find their own message in the Mine feed —
+      // row exists so the owner can find their own message in the Me feed —
       // that's expected and tested separately.
       const activities = await getActivity(ownerClient, workspaceId)
       const selfMention = activities.find(

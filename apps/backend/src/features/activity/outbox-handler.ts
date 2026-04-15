@@ -23,7 +23,7 @@ const DEFAULT_CONFIG = {
  * Builds the activity feed from message + reaction events.
  *
  * For message:created, it creates mention rows, thread-activity rows, and a
- * self row for the author (so they see their own messages in the Mine feed).
+ * self row for the author (so they see their own messages in the Me feed).
  *
  * For reaction:added, it creates a notification row for the message author
  * (thread-activity tier, common-case semantics: only the author is pinged,
@@ -154,7 +154,7 @@ export class ActivityFeedHandler implements OutboxHandler {
     })
 
     // Self-row for the message author so they can find their own messages in
-    // the Mine feed. Inserted already read — no unread, no push.
+    // the Me feed. Inserted already read — no unread, no push.
     const selfActivity = await this.activityService.processSelfMessageActivity(common)
 
     const all: Activity[] = [...mentionActivities, ...notificationActivities]
