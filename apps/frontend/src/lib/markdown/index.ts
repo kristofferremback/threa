@@ -1,2 +1,2 @@
 export { MarkdownContent } from "@/components/ui/markdown-content"
-export { stripMarkdown } from "./strip"
+export { stripMarkdown, stripMarkdownToInline } from "./strip"

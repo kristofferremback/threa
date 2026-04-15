@@ -3,6 +3,7 @@ import { Archive, FileEdit, Settings } from "lucide-react"
 import { Link, useNavigate } from "react-router-dom"
 import { MentionIndicator } from "@/components/mention-indicator"
 import { isDraftId, useActors, useArchiveStream, useDraftScratchpads } from "@/hooks"
+import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { useSidebar } from "@/contexts"
 import { useStreamSettings } from "@/components/stream-settings/use-stream-settings"
 import { cn } from "@/lib/utils"
@@ -46,6 +47,7 @@ export function ScratchpadItem({
   const archiveStream = useArchiveStream(workspaceId)
   const { deleteDraft } = useDraftScratchpads(workspaceId)
   const { getActorName } = useActors(workspaceId)
+  const { toEmoji } = useWorkspaceEmoji(workspaceId)
   const { collapseOnMobile } = useSidebar()
   const { openStreamSettings } = useStreamSettings()
   const itemRef = useRef<HTMLAnchorElement>(null)
@@ -100,7 +102,7 @@ export function ScratchpadItem({
       ? {
           streamName: isDraft ? `${name} (draft)` : name,
           authorName: getActorName(preview.authorId, preview.authorType),
-          content: truncateContent(preview.content, 140),
+          content: truncateContent(preview.content, 140, toEmoji),
           createdAt: preview.createdAt,
         }
       : null
@@ -152,6 +154,7 @@ export function ScratchpadItem({
               <StreamItemPreview
                 preview={preview}
                 getActorName={getActorName}
+                toEmoji={toEmoji}
                 compact={compact}
                 showPreviewOnHover={showPreviewOnHover}
                 isMobile={isMobile}

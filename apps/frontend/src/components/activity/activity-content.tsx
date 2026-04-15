@@ -1,9 +1,26 @@
 import { cn } from "@/lib/utils"
 import { RelativeTime } from "@/components/relative-time"
+import { stripMarkdownToInline } from "@/lib/markdown"
 
 const ACTIVITY_DISPLAY: Record<string, { verb: string }> = {
   mention: { verb: "mentioned you in" },
   message: { verb: "posted in" },
+}
+
+interface ActivityPreviewProps {
+  contentPreview: string
+  toEmoji?: (shortcode: string) => string | null
+}
+
+/**
+ * Single-line preview of the message that triggered the activity.
+ * Strips markdown, collapses newlines, optionally resolves emoji shortcodes,
+ * and renders nothing when there's no displayable content.
+ */
+export function ActivityPreview({ contentPreview, toEmoji }: ActivityPreviewProps) {
+  const previewText = stripMarkdownToInline(contentPreview, toEmoji)
+  if (!previewText) return null
+  return <p className="mt-0.5 text-xs text-muted-foreground truncate">{previewText}</p>
 }
 
 interface ActivityContentProps {
@@ -11,6 +28,7 @@ interface ActivityContentProps {
   streamName: string
   activityType: string
   contentPreview: string
+  toEmoji?: (shortcode: string) => string | null
   createdAt: string
   isUnread: boolean
 }
@@ -20,6 +38,7 @@ export function ActivityContent({
   streamName,
   activityType,
   contentPreview,
+  toEmoji,
   createdAt,
   isUnread,
 }: ActivityContentProps) {
@@ -33,9 +52,7 @@ export function ActivityContent({
         <span className="font-medium truncate">{streamName}</span>
       </div>
 
-      {contentPreview && (
-        <p className="mt-0.5 text-xs text-muted-foreground truncate">&ldquo;{contentPreview}&rdquo;</p>
-      )}
+      <ActivityPreview contentPreview={contentPreview} toEmoji={toEmoji} />
 
       <RelativeTime date={createdAt} className="text-xs text-muted-foreground/60 mt-1 block" />
     </div>
