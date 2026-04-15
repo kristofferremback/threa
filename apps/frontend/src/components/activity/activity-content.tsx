@@ -7,6 +7,22 @@ const ACTIVITY_DISPLAY: Record<string, { verb: string }> = {
   message: { verb: "posted in" },
 }
 
+interface ActivityPreviewProps {
+  contentPreview: string
+  toEmoji?: (shortcode: string) => string | null
+}
+
+/**
+ * Single-line preview of the message that triggered the activity.
+ * Strips markdown, collapses newlines, optionally resolves emoji shortcodes,
+ * and renders nothing when there's no displayable content.
+ */
+export function ActivityPreview({ contentPreview, toEmoji }: ActivityPreviewProps) {
+  const previewText = stripMarkdownToInline(contentPreview, toEmoji)
+  if (!previewText) return null
+  return <p className="mt-0.5 text-xs text-muted-foreground truncate">{previewText}</p>
+}
+
 interface ActivityContentProps {
   actorName: string
   streamName: string
@@ -27,7 +43,6 @@ export function ActivityContent({
   isUnread,
 }: ActivityContentProps) {
   const display = ACTIVITY_DISPLAY[activityType] ?? ACTIVITY_DISPLAY.message
-  const previewText = stripMarkdownToInline(contentPreview, toEmoji)
 
   return (
     <div className="flex-1 min-w-0">
@@ -37,7 +52,7 @@ export function ActivityContent({
         <span className="font-medium truncate">{streamName}</span>
       </div>
 
-      {previewText && <p className="mt-0.5 text-xs text-muted-foreground truncate">{previewText}</p>}
+      <ActivityPreview contentPreview={contentPreview} toEmoji={toEmoji} />
 
       <RelativeTime date={createdAt} className="text-xs text-muted-foreground/60 mt-1 block" />
     </div>

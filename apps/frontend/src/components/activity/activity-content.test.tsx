@@ -1,26 +1,10 @@
-import { describe, it, expect, vi } from "vitest"
+import { describe, it, expect } from "vitest"
 import { render, screen } from "@/test"
-import { ActivityContent } from "./activity-content"
+import { ActivityPreview } from "./activity-content"
 
-vi.mock("@/components/relative-time", () => ({
-  RelativeTime: ({ date, className }: { date: string; className?: string }) => (
-    <time className={className}>{date}</time>
-  ),
-}))
-
-const baseProps = {
-  actorName: "Github bot",
-  streamName: "#gh-notifications",
-  activityType: "message",
-  createdAt: "2026-04-14T22:00:00Z",
-  isUnread: false,
-}
-
-describe("ActivityContent", () => {
+describe("ActivityPreview", () => {
   it("strips markdown formatting from the preview text", () => {
-    render(
-      <ActivityContent {...baseProps} contentPreview=":white_check_mark: **Deploy Cloudflare succeeded** on `main`" />
-    )
+    render(<ActivityPreview contentPreview=":white_check_mark: **Deploy Cloudflare succeeded** on `main`" />)
 
     const preview = screen.getByText(/Deploy Cloudflare succeeded/)
     expect(preview.textContent).toContain(":white_check_mark: Deploy Cloudflare succeeded on main")
@@ -29,7 +13,7 @@ describe("ActivityContent", () => {
   })
 
   it("collapses newlines so the preview stays on a single line", () => {
-    render(<ActivityContent {...baseProps} contentPreview={"line one\n\nline two"} />)
+    render(<ActivityPreview contentPreview={"line one\n\nline two"} />)
 
     const preview = screen.getByText(/line one/)
     expect(preview.textContent).toContain("line one line two")
@@ -38,10 +22,7 @@ describe("ActivityContent", () => {
 
   it("keeps link text but drops markdown link syntax", () => {
     render(
-      <ActivityContent
-        {...baseProps}
-        contentPreview=":rocket: **Staging deployed** — [feat(messaging): metadata](https://example.com/pr/367)"
-      />
+      <ActivityPreview contentPreview=":rocket: **Staging deployed** — [feat(messaging): metadata](https://example.com/pr/367)" />
     )
 
     const preview = screen.getByText(/Staging deployed/)
@@ -51,14 +32,14 @@ describe("ActivityContent", () => {
     expect(preview.textContent).not.toContain("](")
   })
 
-  it("hides the preview paragraph when the input is empty", () => {
-    const { container } = render(<ActivityContent {...baseProps} contentPreview="" />)
+  it("renders nothing when the input is empty", () => {
+    const { container } = render(<ActivityPreview contentPreview="" />)
 
-    expect(container.querySelector("p")).toBeNull()
+    expect(container.firstChild).toBeNull()
   })
 
   it("renders the preview without surrounding quotation marks", () => {
-    render(<ActivityContent {...baseProps} contentPreview="Welcome back! What's up?" />)
+    render(<ActivityPreview contentPreview="Welcome back! What's up?" />)
 
     const preview = screen.getByText(/Welcome back/)
     expect(preview.textContent).toBe("Welcome back! What's up?")
@@ -66,13 +47,7 @@ describe("ActivityContent", () => {
 
   it("resolves emoji shortcodes when a toEmoji resolver is supplied", () => {
     const toEmoji = (shortcode: string) => ({ wave: "👋", white_check_mark: "✅" })[shortcode] ?? null
-    render(
-      <ActivityContent
-        {...baseProps}
-        contentPreview=":wave: hi! :white_check_mark: **Deploy succeeded**"
-        toEmoji={toEmoji}
-      />
-    )
+    render(<ActivityPreview contentPreview=":wave: hi! :white_check_mark: **Deploy succeeded**" toEmoji={toEmoji} />)
 
     const preview = screen.getByText(/Deploy succeeded/)
     expect(preview.textContent).toContain("👋 hi! ✅ Deploy succeeded")
