@@ -302,7 +302,7 @@ function GenericPreviewContent({
   // overflow occurs. Pre-truncating with `line-clamp-*` hid overflow from
   // `scrollHeight`, which suppressed the toggle and left blank space below.
   return (
-    <div className="flex gap-3 p-3">
+    <div className="flex gap-4 p-3">
       <div className="flex-1 min-w-0">
         {preview.title && <h4 className="text-sm font-medium text-foreground mb-0.5">{preview.title}</h4>}
         {preview.description && <p className="text-xs text-muted-foreground">{preview.description}</p>}
