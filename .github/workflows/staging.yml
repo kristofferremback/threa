@@ -97,7 +97,7 @@ jobs:
             }')
 
           curl -f --show-error -X POST \
-            "https://app.threa.io/api/v1/workspaces/ws_01KJDZZV5H57W3H2SJ11PA554B/streams/stream_01KP36GA56WZREGN6VTKREWRM9/messages" \
+            "https://app.threa.io/api/v1/workspaces/ws_01KJDZZV5H57W3H2SJ11PA554B/streams/stream_01KP81PS9AR7Z1WAQ47V3SA2TT/messages" \
             -H "Authorization: Bearer $THREA_BOT_API_KEY" \
             -H "Content-Type: application/json" \
             -d "$PAYLOAD"
