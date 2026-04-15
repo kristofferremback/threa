@@ -103,12 +103,13 @@ export const NOTIFICATION_CONFIG: Record<StreamType, NotificationConfig> = {
 }
 
 // Activity types
-export const ACTIVITY_TYPES = ["mention", "message"] as const
+export const ACTIVITY_TYPES = ["mention", "message", "reaction"] as const
 export type ActivityType = (typeof ACTIVITY_TYPES)[number]
 
 export const ActivityTypes = {
   MENTION: "mention",
   MESSAGE: "message",
+  REACTION: "reaction",
 } as const satisfies Record<string, ActivityType>
 
 // Invitation statuses

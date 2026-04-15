@@ -1,6 +1,7 @@
 import type { Querier } from "../../db"
 import { sql } from "../../db"
 import { activityId } from "../../lib/id"
+import { ActivityTypes } from "@threa/types"
 
 interface ActivityRow {
   id: string
@@ -14,6 +15,8 @@ interface ActivityRow {
   context: Record<string, unknown>
   read_at: Date | null
   created_at: Date
+  is_self: boolean
+  emoji: string | null
 }
 
 export interface Activity {
@@ -28,6 +31,8 @@ export interface Activity {
   context: Record<string, unknown>
   readAt: Date | null
   createdAt: Date
+  isSelf: boolean
+  emoji: string | null
 }
 
 export interface InsertActivityParams {
@@ -39,6 +44,9 @@ export interface InsertActivityParams {
   actorId: string
   actorType: string
   context?: Record<string, unknown>
+  isSelf?: boolean
+  /** Required when activityType === "reaction"; NULL for all other types. */
+  emoji?: string | null
 }
 
 export interface InsertActivityBatchParams {
@@ -50,7 +58,18 @@ export interface InsertActivityBatchParams {
   actorId: string
   actorType: string
   context?: Record<string, unknown>
+  /**
+   * Mark these rows as the user's own activity. Self rows are inserted already
+   * read so they show in the feed without inflating unread counts.
+   */
+  isSelf?: boolean
+  /** Required when activityType === "reaction"; NULL for all other types. */
+  emoji?: string | null
 }
+
+/** Column list for user_activity; single source of truth for SELECT lists */
+const USER_ACTIVITY_COLUMNS =
+  "id, workspace_id, user_id, activity_type, stream_id, message_id, actor_id, actor_type, context, read_at, created_at, is_self, emoji"
 
 function mapRowToActivity(row: ActivityRow): Activity {
   return {
@@ -65,14 +84,42 @@ function mapRowToActivity(row: ActivityRow): Activity {
     context: row.context,
     readAt: row.read_at,
     createdAt: row.created_at,
+    isSelf: row.is_self,
+    emoji: row.emoji,
   }
+}
+
+/**
+ * Pick the ON CONFLICT target for the given activity type. Reactions dedup by
+ * (user, message, actor, emoji); other types dedup by (user, message, type, actor).
+ * Both are partial unique indexes — the WHERE clause is required so Postgres
+ * can match the conflict target to the correct index.
+ */
+function conflictClauseFor(activityType: string) {
+  if (activityType === ActivityTypes.REACTION) {
+    return sql.raw(
+      "ON CONFLICT (user_id, message_id, actor_id, emoji) WHERE activity_type = 'reaction' DO UPDATE SET id = user_activity.id"
+    )
+  }
+  return sql.raw(
+    "ON CONFLICT (user_id, message_id, activity_type, actor_id) WHERE activity_type <> 'reaction' DO UPDATE SET id = user_activity.id"
+  )
 }
 
 export const ActivityRepository = {
   async insert(db: Querier, params: InsertActivityParams): Promise<Activity | null> {
     const id = activityId()
+    const isSelf = params.isSelf ?? false
+    // Self rows are inserted already read so they show in the feed without
+    // inflating unread counts. Using a JS Date keeps the call tree consistent
+    // with other repo methods that round-trip timestamps through parameters.
+    const readAt = isSelf ? new Date() : null
+    const emoji = params.emoji ?? null
     const result = await db.query<ActivityRow>(sql`
-      INSERT INTO user_activity (id, workspace_id, user_id, activity_type, stream_id, message_id, actor_id, actor_type, context)
+      INSERT INTO user_activity (
+        id, workspace_id, user_id, activity_type, stream_id, message_id,
+        actor_id, actor_type, context, is_self, read_at, emoji
+      )
       VALUES (
         ${id},
         ${params.workspaceId},
@@ -82,11 +129,13 @@ export const ActivityRepository = {
         ${params.messageId},
         ${params.actorId},
         ${params.actorType},
-        ${JSON.stringify(params.context ?? {})}
+        ${JSON.stringify(params.context ?? {})},
+        ${isSelf},
+        ${readAt},
+        ${emoji}
       )
-      ON CONFLICT (user_id, message_id, activity_type, actor_id)
-      DO UPDATE SET id = user_activity.id
-      RETURNING id, workspace_id, user_id, activity_type, stream_id, message_id, actor_id, actor_type, context, read_at, created_at
+      ${conflictClauseFor(params.activityType)}
+      RETURNING ${sql.raw(USER_ACTIVITY_COLUMNS)}
     `)
     return result.rows[0] ? mapRowToActivity(result.rows[0]) : null
   },
@@ -94,16 +143,28 @@ export const ActivityRepository = {
   /**
    * Batch insert activities for multiple users sharing the same message context.
    * Single UNNEST query replaces N sequential inserts. ON CONFLICT deduplicates.
+   *
+   * When `isSelf` is true, rows are inserted already read (read_at = NOW()) so
+   * the user's own activity shows in the feed without inflating unread counts.
    */
   async insertBatch(db: Querier, params: InsertActivityBatchParams): Promise<Activity[]> {
     if (params.userIds.length === 0) return []
 
     const ids = params.userIds.map(() => activityId())
     const contextJson = JSON.stringify(params.context ?? {})
+    const isSelf = params.isSelf ?? false
+    const readAt = isSelf ? new Date() : null
+    const emoji = params.emoji ?? null
 
     const result = await db.query<ActivityRow>(sql`
-      INSERT INTO user_activity (id, workspace_id, user_id, activity_type, stream_id, message_id, actor_id, actor_type, context)
-      SELECT * FROM UNNEST(
+      INSERT INTO user_activity (
+        id, workspace_id, user_id, activity_type, stream_id, message_id,
+        actor_id, actor_type, context, is_self, read_at, emoji
+      )
+      SELECT
+        id, workspace_id, user_id, activity_type, stream_id, message_id,
+        actor_id, actor_type, context, ${isSelf}, ${readAt}, ${emoji}
+      FROM UNNEST(
         ${ids}::text[],
         ${params.userIds.map(() => params.workspaceId)}::text[],
         ${params.userIds}::text[],
@@ -113,10 +174,9 @@ export const ActivityRepository = {
         ${params.userIds.map(() => params.actorId)}::text[],
         ${params.userIds.map(() => params.actorType)}::text[],
         ${params.userIds.map(() => contextJson)}::jsonb[]
-      )
-      ON CONFLICT (user_id, message_id, activity_type, actor_id)
-      DO UPDATE SET id = user_activity.id
-      RETURNING id, workspace_id, user_id, activity_type, stream_id, message_id, actor_id, actor_type, context, read_at, created_at
+      ) AS t(id, workspace_id, user_id, activity_type, stream_id, message_id, actor_id, actor_type, context)
+      ${conflictClauseFor(params.activityType)}
+      RETURNING ${sql.raw(USER_ACTIVITY_COLUMNS)}
     `)
     return result.rows.map(mapRowToActivity)
   },
@@ -125,19 +185,21 @@ export const ActivityRepository = {
     db: Querier,
     userId: string,
     workspaceId: string,
-    opts?: { limit?: number; cursor?: string; unreadOnly?: boolean }
+    opts?: { limit?: number; cursor?: string; unreadOnly?: boolean; mineOnly?: boolean }
   ): Promise<Activity[]> {
     const limit = opts?.limit ?? 50
     const hasCursor = opts?.cursor !== undefined
     const cursor = opts?.cursor ?? ""
     const unreadOnly = opts?.unreadOnly ?? false
+    const mineOnly = opts?.mineOnly ?? false
 
     const result = await db.query<ActivityRow>(sql`
-      SELECT id, workspace_id, user_id, activity_type, stream_id, message_id, actor_id, actor_type, context, read_at, created_at
+      SELECT ${sql.raw(USER_ACTIVITY_COLUMNS)}
       FROM user_activity
       WHERE user_id = ${userId}
         AND workspace_id = ${workspaceId}
         AND (${!unreadOnly} OR read_at IS NULL)
+        AND (${!mineOnly} OR is_self = TRUE)
         AND (${!hasCursor} OR created_at < (
           SELECT created_at FROM user_activity
           WHERE id = ${cursor} AND user_id = ${userId} AND workspace_id = ${workspaceId}
@@ -151,6 +213,9 @@ export const ActivityRepository = {
   /**
    * Single-scan aggregation: per-stream mention counts, per-stream total counts,
    * and workspace-wide total — all from one GROUP BY with FILTER.
+   *
+   * Self rows are excluded because they're inserted already read; this keeps
+   * the filter explicit and defensive against any future change to that invariant.
    */
   async countUnreadGrouped(
     db: Querier,
@@ -166,6 +231,7 @@ export const ActivityRepository = {
       WHERE user_id = ${userId}
         AND workspace_id = ${workspaceId}
         AND read_at IS NULL
+        AND is_self = FALSE
       GROUP BY stream_id
     `)
     const mentionsByStream = new Map<string, number>()
@@ -196,6 +262,7 @@ export const ActivityRepository = {
         AND workspace_id = ${workspaceId}
         AND stream_id = ${streamId}
         AND read_at IS NULL
+        AND is_self = FALSE
     `)
 
     const row = result.rows[0]
@@ -235,5 +302,28 @@ export const ActivityRepository = {
         AND read_at IS NULL
     `)
     return result.rowCount ?? 0
+  },
+
+  /**
+   * Delete the reaction activity row for a specific (message, actor, emoji).
+   * Removes exactly what `processReactionAdded` would have created for that
+   * emoji — the author's notification row and the reactor's self row are
+   * scoped by user_id so both are deleted together here.
+   * Returns deleted rows so the caller can emit compensating socket events.
+   */
+  async deleteReactionForEmoji(
+    db: Querier,
+    params: { workspaceId: string; messageId: string; actorId: string; emoji: string }
+  ): Promise<Activity[]> {
+    const result = await db.query<ActivityRow>(sql`
+      DELETE FROM user_activity
+      WHERE workspace_id = ${params.workspaceId}
+        AND message_id = ${params.messageId}
+        AND activity_type = 'reaction'
+        AND actor_id = ${params.actorId}
+        AND emoji = ${params.emoji}
+      RETURNING ${sql.raw(USER_ACTIVITY_COLUMNS)}
+    `)
+    return result.rows.map(mapRowToActivity)
   },
 }

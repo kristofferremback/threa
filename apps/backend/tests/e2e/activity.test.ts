@@ -32,6 +32,8 @@ interface ActivityItem {
   context: Record<string, unknown>
   readAt: string | null
   createdAt: string
+  isSelf: boolean
+  emoji: string | null
 }
 
 async function getActivity(
@@ -140,7 +142,7 @@ describe("Activity Feed E2E", () => {
       expect(mention!.context.contentPreview).toBeDefined()
     })
 
-    test("should not create activity for self-mentions", async () => {
+    test("should not create a mention activity when a user mentions themselves", async () => {
       // Get owner's slug
       const bootstrap = await getWorkspaceBootstrap(ownerClient, workspaceId)
       const ownerUser = bootstrap.users.find((m) => m.id === ownerUserId)
@@ -152,10 +154,35 @@ describe("Activity Feed E2E", () => {
       // Wait a bit to ensure processing has time to complete
       await new Promise((r) => setTimeout(r, 1500))
 
-      // Owner should have no activity from self-mention
+      // Owner should have no MENTION activity from self-mention. A self "message"
+      // row exists so the owner can find their own message in the Me feed —
+      // that's expected and tested separately.
       const activities = await getActivity(ownerClient, workspaceId)
-      const selfMention = activities.find((a) => a.actorId === ownerUserId && a.userId === ownerUserId)
+      const selfMention = activities.find(
+        (a) => a.activityType === "mention" && a.actorId === ownerUserId && a.userId === ownerUserId
+      )
       expect(selfMention).toBeUndefined()
+    })
+
+    test("creates a self-message activity that does not count as unread", async () => {
+      await sendMessage(ownerClient, workspaceId, channelId, `Just a routine update from me`)
+
+      // Wait for processing
+      await waitForActivity(ownerClient, workspaceId, {
+        minCount: 1,
+      })
+
+      const all = await getActivity(ownerClient, workspaceId)
+      const selfMessage = all.find(
+        (a) => a.activityType === "message" && a.actorId === ownerUserId && a.userId === ownerUserId && a.isSelf
+      )
+      expect(selfMessage).toBeDefined()
+      expect(selfMessage!.readAt).not.toBeNull()
+
+      // Self rows must not appear in the unread filter
+      const unread = await getActivity(ownerClient, workspaceId, { unreadOnly: true })
+      const selfInUnread = unread.find((a) => a.isSelf)
+      expect(selfInUnread).toBeUndefined()
     })
 
     test("should not create activity for mentions of non-members", async () => {

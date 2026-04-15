@@ -14,13 +14,18 @@ import { ActivityEmpty } from "@/components/activity/activity-empty"
 import { ActivitySkeleton } from "@/components/activity/activity-skeleton"
 import type { AuthorType, Activity } from "@threa/types"
 
+type ActivityFilter = "all" | "unread" | "me"
+
 export function ActivityPage() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
-  const [unreadOnly, setUnreadOnly] = useState(false)
-  const { data: activities, isLoading } = useActivityFeed(workspaceId ?? "", { unreadOnly })
+  const [filter, setFilter] = useState<ActivityFilter>("all")
+  const { data: activities, isLoading } = useActivityFeed(workspaceId ?? "", {
+    unreadOnly: filter === "unread",
+    mineOnly: filter === "me",
+  })
   const markRead = useMarkActivityRead(workspaceId ?? "")
   const markAllRead = useMarkAllActivityRead(workspaceId ?? "")
-  const { getActorName } = useActors(workspaceId ?? "")
+  const { getActorName, getActorAvatar } = useActors(workspaceId ?? "")
   const { toEmoji } = useWorkspaceEmoji(workspaceId ?? "")
   const idbStreams = useWorkspaceStreams(workspaceId ?? "")
   const { unreadActivityCount } = useActivityCounts(workspaceId ?? "")
@@ -69,7 +74,7 @@ export function ActivityPage() {
   let content = <ActivitySkeleton />
   if (!isLoading) {
     if (!activities?.length) {
-      content = <ActivityEmpty isFiltered={unreadOnly} />
+      content = <ActivityEmpty isFiltered={filter !== "all"} />
     } else {
       content = (
         <div className="flex flex-col gap-0.5">
@@ -78,6 +83,7 @@ export function ActivityPage() {
               key={activity.id}
               activity={activity}
               actorName={getActorName(activity.actorId, activity.actorType as AuthorType)}
+              actorAvatar={getActorAvatar(activity.actorId, activity.actorType as AuthorType)}
               streamName={resolveActivityStreamName(activity)}
               workspaceId={workspaceId}
               toEmoji={toEmoji}
@@ -105,13 +111,16 @@ export function ActivityPage() {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          <Tabs value={unreadOnly ? "unread" : "all"} onValueChange={(v) => setUnreadOnly(v === "unread")}>
+          <Tabs value={filter} onValueChange={(v) => setFilter(v as ActivityFilter)}>
             <TabsList className="h-8">
               <TabsTrigger value="all" className="text-xs px-2.5 py-1">
                 All
               </TabsTrigger>
               <TabsTrigger value="unread" className="text-xs px-2.5 py-1">
                 Unread
+              </TabsTrigger>
+              <TabsTrigger value="me" className="text-xs px-2.5 py-1">
+                Me
               </TabsTrigger>
             </TabsList>
           </Tabs>

@@ -1,11 +1,12 @@
 import type { Pool } from "pg"
-import { OutboxRepository } from "../../lib/outbox"
+import { OutboxRepository, type ReactionOutboxPayload } from "../../lib/outbox"
 import { parseMessagePayload } from "../../lib/outbox"
 import { AuthorTypes } from "@threa/types"
 import { logger } from "../../lib/logger"
 import { CursorLock, ensureListenerFromLatest, DebounceWithMaxWait, type ProcessResult } from "@threa/backend-common"
 import type { OutboxHandler } from "../../lib/outbox"
 import type { ActivityService } from "./service"
+import type { Activity } from "./repository"
 import { withTransaction } from "../../db"
 
 const DEFAULT_CONFIG = {
@@ -19,8 +20,21 @@ const DEFAULT_CONFIG = {
 }
 
 /**
- * Processes message:created events to detect @mentions and create activity items.
- * For each created activity, publishes an activity:created outbox event for real-time delivery.
+ * Builds the activity feed from message + reaction events.
+ *
+ * For message:created, it creates mention rows, thread-activity rows, and a
+ * self row for the author (so they see their own messages in the Me feed).
+ *
+ * For reaction:added, it creates a notification row for the message author
+ * (thread-activity tier, common-case semantics: only the author is pinged,
+ * not every stream watcher) and a self row for the reactor.
+ *
+ * For reaction:removed, it deletes the rows created by the matching add.
+ *
+ * Every created/removed activity is echoed as an activity:created outbox
+ * event so connected clients update live. Self rows carry `isSelf: true`
+ * in that payload so downstream consumers (push service, frontend unread
+ * counters) skip them.
  */
 export class ActivityFeedHandler implements OutboxHandler {
   readonly listenerId = "activity-feed"
@@ -74,81 +88,16 @@ export class ActivityFeedHandler implements OutboxHandler {
 
       try {
         for (const event of events) {
-          if (event.eventType !== "message:created") {
-            seen.push(event.id)
-            continue
-          }
-
-          const payload = parseMessagePayload(event.payload)
-          if (!payload) {
-            logger.debug({ eventId: event.id.toString() }, "ActivityFeedHandler: malformed event, skipping")
-            seen.push(event.id)
-            continue
-          }
-
-          const { streamId, workspaceId, event: messageEvent } = payload
-
-          // Skip system-authored messages (join/leave notices etc.) — no meaningful
-          // content for mention detection or notification-level activity. Member and
-          // persona messages both get processed: agents can @mention people and their
-          // messages should surface in the activity feed based on notification levels.
-          if (messageEvent.actorType === AuthorTypes.SYSTEM) {
-            seen.push(event.id)
-            continue
-          }
-
-          if (!messageEvent.actorId) {
-            seen.push(event.id)
-            continue
-          }
-
-          // Sequential: mentions first, then notification-level activities.
-          // A mentioned user gets a "mention" activity (more specific) instead of both
-          // "mention" + "message". The dedup index allows both types per message, so we
-          // exclude mentioned users explicitly rather than relying on the DB constraint.
-          const mentionActivities = await this.activityService.processMessageMentions({
-            workspaceId,
-            streamId,
-            messageId: messageEvent.payload.messageId,
-            actorId: messageEvent.actorId,
-            actorType: messageEvent.actorType,
-            contentMarkdown: messageEvent.payload.contentMarkdown,
-          })
-          const mentionedUserIds = new Set(mentionActivities.map((a) => a.userId))
-
-          // 2. Notification-level activities, excluding already-mentioned users
-          const notificationActivities = await this.activityService.processMessageNotifications({
-            workspaceId,
-            streamId,
-            messageId: messageEvent.payload.messageId,
-            actorId: messageEvent.actorId,
-            actorType: messageEvent.actorType,
-            contentMarkdown: messageEvent.payload.contentMarkdown,
-            excludeUserIds: mentionedUserIds,
-          })
-
-          const activities = [...mentionActivities, ...notificationActivities]
-
-          // Publish all activity:created outbox events in a single transaction
-          if (activities.length > 0) {
-            await withTransaction(this.db, async (client) => {
-              for (const activity of activities) {
-                await OutboxRepository.insert(client, "activity:created", {
-                  workspaceId,
-                  targetUserId: activity.userId,
-                  activity: {
-                    id: activity.id,
-                    activityType: activity.activityType,
-                    streamId: activity.streamId,
-                    messageId: activity.messageId,
-                    actorId: activity.actorId,
-                    actorType: activity.actorType,
-                    context: activity.context,
-                    createdAt: activity.createdAt.toISOString(),
-                  },
-                })
-              }
-            })
+          if (event.eventType === "message:created") {
+            const activities = await this.processMessageCreated(event)
+            await this.publishActivityCreated(activities)
+          } else if (event.eventType === "reaction:added") {
+            const activities = await this.processReactionAdded(event)
+            await this.publishActivityCreated(activities)
+          } else if (event.eventType === "reaction:removed") {
+            // Removed rows don't currently emit a compensating event —
+            // frontend subscribers detect stale entries on next fetch.
+            await this.processReactionRemoved(event)
           }
 
           seen.push(event.id)
@@ -163,6 +112,124 @@ export class ActivityFeedHandler implements OutboxHandler {
         }
 
         return { status: "error", error }
+      }
+    })
+  }
+
+  private async processMessageCreated(event: { id: bigint; payload: unknown }): Promise<Activity[]> {
+    const payload = parseMessagePayload(event.payload)
+    if (!payload) {
+      logger.debug({ eventId: event.id.toString() }, "ActivityFeedHandler: malformed message event, skipping")
+      return []
+    }
+
+    const { streamId, workspaceId, event: messageEvent } = payload
+
+    // Skip system-authored messages (join/leave notices etc.) — no meaningful
+    // content for mention detection or notification-level activity. Member and
+    // persona messages both get processed: agents can @mention people and their
+    // messages should surface in the activity feed based on notification levels.
+    if (messageEvent.actorType === AuthorTypes.SYSTEM) return []
+    if (!messageEvent.actorId) return []
+
+    const common = {
+      workspaceId,
+      streamId,
+      messageId: messageEvent.payload.messageId,
+      actorId: messageEvent.actorId,
+      actorType: messageEvent.actorType,
+      contentMarkdown: messageEvent.payload.contentMarkdown,
+    }
+
+    // Sequential: mentions first, then notification-level activities.
+    // A mentioned user gets a "mention" activity (more specific) instead of both
+    // "mention" + "message". The dedup index allows both types per message, so we
+    // exclude mentioned users explicitly rather than relying on the DB constraint.
+    const mentionActivities = await this.activityService.processMessageMentions(common)
+    const mentionedUserIds = new Set(mentionActivities.map((a) => a.userId))
+
+    const notificationActivities = await this.activityService.processMessageNotifications({
+      ...common,
+      excludeUserIds: mentionedUserIds,
+    })
+
+    // Self-row for the message author so they can find their own messages in
+    // the Me feed. Inserted already read — no unread, no push.
+    const selfActivity = await this.activityService.processSelfMessageActivity(common)
+
+    const all: Activity[] = [...mentionActivities, ...notificationActivities]
+    if (selfActivity) all.push(selfActivity)
+    return all
+  }
+
+  private async processReactionAdded(event: { id: bigint; payload: unknown }): Promise<Activity[]> {
+    const payload = event.payload as ReactionOutboxPayload
+    if (
+      !payload ||
+      typeof payload.workspaceId !== "string" ||
+      typeof payload.streamId !== "string" ||
+      typeof payload.messageId !== "string" ||
+      typeof payload.userId !== "string" ||
+      typeof payload.emoji !== "string"
+    ) {
+      logger.debug({ eventId: event.id.toString() }, "ActivityFeedHandler: malformed reaction:added event, skipping")
+      return []
+    }
+
+    return this.activityService.processReactionAdded({
+      workspaceId: payload.workspaceId,
+      streamId: payload.streamId,
+      messageId: payload.messageId,
+      emoji: payload.emoji,
+      actorId: payload.userId,
+    })
+  }
+
+  private async processReactionRemoved(event: { id: bigint; payload: unknown }): Promise<void> {
+    const payload = event.payload as ReactionOutboxPayload
+    if (
+      !payload ||
+      typeof payload.workspaceId !== "string" ||
+      typeof payload.messageId !== "string" ||
+      typeof payload.userId !== "string" ||
+      typeof payload.emoji !== "string"
+    ) {
+      logger.debug({ eventId: event.id.toString() }, "ActivityFeedHandler: malformed reaction:removed event, skipping")
+      return
+    }
+
+    await this.activityService.processReactionRemoved({
+      workspaceId: payload.workspaceId,
+      messageId: payload.messageId,
+      actorId: payload.userId,
+      emoji: payload.emoji,
+    })
+  }
+
+  /**
+   * Publish an activity:created outbox event for each activity row. Grouped in
+   * one transaction per call to keep outbox writes batched.
+   */
+  private async publishActivityCreated(activities: Activity[]): Promise<void> {
+    if (activities.length === 0) return
+
+    await withTransaction(this.db, async (client) => {
+      for (const activity of activities) {
+        await OutboxRepository.insert(client, "activity:created", {
+          workspaceId: activity.workspaceId,
+          targetUserId: activity.userId,
+          activity: {
+            id: activity.id,
+            activityType: activity.activityType,
+            streamId: activity.streamId,
+            messageId: activity.messageId,
+            actorId: activity.actorId,
+            actorType: activity.actorType,
+            context: activity.context,
+            createdAt: activity.createdAt.toISOString(),
+            isSelf: activity.isSelf,
+          },
+        })
       }
     })
   }

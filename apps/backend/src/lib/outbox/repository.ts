@@ -319,6 +319,12 @@ export interface ActivityCreatedOutboxPayload extends WorkspaceScopedPayload {
     actorType: string
     context: Record<string, unknown>
     createdAt: string
+    /**
+     * Self rows represent the target user's own action. The push service must
+     * not deliver notifications for these; the frontend must not increment
+     * unread counts either.
+     */
+    isSelf: boolean
   }
 }
 

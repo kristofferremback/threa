@@ -7,16 +7,18 @@ import type { Activity, WorkspaceBootstrap } from "@threa/types"
 export const activityKeys = {
   all: ["activity"] as const,
   list: (workspaceId: string) => ["activity", workspaceId] as const,
-  listFiltered: (workspaceId: string, unreadOnly: boolean) => ["activity", workspaceId, { unreadOnly }] as const,
+  listFiltered: (workspaceId: string, filters: { unreadOnly: boolean; mineOnly: boolean }) =>
+    ["activity", workspaceId, filters] as const,
 }
 
-export function useActivityFeed(workspaceId: string, opts?: { unreadOnly?: boolean }) {
+export function useActivityFeed(workspaceId: string, opts?: { unreadOnly?: boolean; mineOnly?: boolean }) {
   const activityService = useActivityService()
   const unreadOnly = opts?.unreadOnly ?? false
+  const mineOnly = opts?.mineOnly ?? false
 
   return useQuery({
-    queryKey: activityKeys.listFiltered(workspaceId, unreadOnly),
-    queryFn: () => activityService.list(workspaceId, { limit: 50, unreadOnly }),
+    queryKey: activityKeys.listFiltered(workspaceId, { unreadOnly, mineOnly }),
+    queryFn: () => activityService.list(workspaceId, { limit: 50, unreadOnly, mineOnly }),
     // Subscribe-then-bootstrap pattern:
     // staleTime: Infinity prevents auto-refetch; socket events invalidate when needed.
     // refetchOnMount: true triggers refetch when data is stale (after invalidation).

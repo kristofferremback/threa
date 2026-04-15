@@ -443,6 +443,7 @@ describe("Push Notifications", () => {
           actorType: "user",
           context: { contentPreview: "Hello", streamName: "general" },
           createdAt: new Date().toISOString(),
+          isSelf: false,
         },
         ...overrides,
       }
