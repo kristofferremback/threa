@@ -1,5 +1,9 @@
 import tsParser from "@typescript-eslint/parser"
-import threaPlugin, { dotenvRestrictedImportPattern, testRestrictedProperties } from "../../eslint/threa-plugin.js"
+import threaPlugin, {
+  dotenvRestrictedImportPattern,
+  testRestrictedProperties,
+  viMockRestrictedSyntax,
+} from "../../eslint/threa-plugin.js"
 
 /**
  * ESLint configuration for Threa frontend.
@@ -8,7 +12,8 @@ import threaPlugin, { dotenvRestrictedImportPattern, testRestrictedProperties } 
  * - Runtime: do not import dotenv (Bun loads .env automatically)
  * - INV-15: components/pages do not reach into persistence directly
  * - INV-18: do not define components inside other components
- * - INV-26 / INV-48: no skipped/todo tests and no mock.module()
+ * - INV-26 / INV-48: no skipped/todo tests and no mock.module(); vi.mock warns
+ *   until existing usage is migrated to scoped spyOn patterns
  * - INV-47: no nested ternaries
  * - Frontend Patterns: no direct queryClient.getQueryData() reads during render
  *
@@ -66,6 +71,7 @@ export default [
     files: ["src/**/*.{test,spec}.{ts,tsx}", "src/test/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-properties": ["error", ...testRestrictedProperties],
+      "no-restricted-syntax": ["warn", viMockRestrictedSyntax],
     },
   },
 ]

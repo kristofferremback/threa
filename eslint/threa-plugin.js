@@ -244,6 +244,14 @@ export const testRestrictedProperties = [
   },
 ]
 
+// INV-48: vi.mock is the Vitest equivalent of Bun's mock.module — both hoist
+// module-level replacements globally. Ramping up via a warning first; the plan
+// is to migrate existing call sites and promote this to an error in a follow-up.
+export const viMockRestrictedSyntax = {
+  selector: "CallExpression[callee.type='MemberExpression'][callee.object.name='vi'][callee.property.name='mock']",
+  message: "Avoid vi.mock(); prefer scoped spyOn patterns (INV-48). Will be promoted to error after migration.",
+}
+
 const threaPlugin = {
   rules: {
     "no-nested-component-definitions": noNestedComponentDefinitionsRule,
