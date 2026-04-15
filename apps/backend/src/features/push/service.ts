@@ -212,7 +212,10 @@ export class PushService {
 
   /**
    * For "mentions" mode: push if activityType is "mention", or if the message
-   * is from a DM or scratchpad (direct communication channels).
+   * or reaction is from a DM or scratchpad (direct communication channels).
+   *
+   * Reactions follow the same semantics as messages (thread-activity tier,
+   * not mention tier) — they push in direct channels, not in general channels.
    */
   private async shouldPushForMentionsMode(
     workspaceId: string,
@@ -223,7 +226,7 @@ export class PushService {
       return true
     }
 
-    if (activityType === ActivityTypes.MESSAGE) {
+    if (activityType === ActivityTypes.MESSAGE || activityType === ActivityTypes.REACTION) {
       const streamType = await this.lookups.getStreamType(workspaceId, streamId)
       if (streamType === StreamTypes.DM || streamType === StreamTypes.SCRATCHPAD) {
         return true
