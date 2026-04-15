@@ -25,7 +25,7 @@ export function ActivityPage() {
   })
   const markRead = useMarkActivityRead(workspaceId ?? "")
   const markAllRead = useMarkAllActivityRead(workspaceId ?? "")
-  const { getActorName } = useActors(workspaceId ?? "")
+  const { getActorName, getActorAvatar } = useActors(workspaceId ?? "")
   const { toEmoji } = useWorkspaceEmoji(workspaceId ?? "")
   const idbStreams = useWorkspaceStreams(workspaceId ?? "")
   const { unreadActivityCount } = useActivityCounts(workspaceId ?? "")
@@ -83,6 +83,7 @@ export function ActivityPage() {
               key={activity.id}
               activity={activity}
               actorName={getActorName(activity.actorId, activity.actorType as AuthorType)}
+              actorAvatar={getActorAvatar(activity.actorId, activity.actorType as AuthorType)}
               streamName={resolveActivityStreamName(activity)}
               workspaceId={workspaceId}
               toEmoji={toEmoji}
