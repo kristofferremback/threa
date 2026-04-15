@@ -8,7 +8,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ \"$CLAUDE_CODE_REMOTE\" = \"true\" ] && { cp -n .env.claude-code-web .env; docker compose up -d --wait 2>/dev/null; bun install; }; exit 0",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" = \"true\" ] && { cp -n .env.claude-code-web .env; docker compose up -d --wait 2>/dev/null; rm -rf node_modules; bun install; }; exit 0",
             "timeout": 180
           }
         ]
