@@ -1,5 +1,5 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react"
-import { workspacesApi, streamsApi, messagesApi, conversationsApi, activityApi } from "@/api"
+import { workspacesApi, streamsApi, messagesApi, conversationsApi, activityApi, savedApi } from "@/api"
 
 // Service interfaces - components depend on these, not implementations
 export interface WorkspaceService {
@@ -54,12 +54,20 @@ export interface ActivityService {
   markAllAsRead: typeof activityApi.markAllAsRead
 }
 
+export interface SavedService {
+  list: typeof savedApi.list
+  create: typeof savedApi.create
+  update: typeof savedApi.update
+  delete: typeof savedApi.delete
+}
+
 export interface Services {
   workspaces: WorkspaceService
   streams: StreamService
   messages: MessageService
   conversations: ConversationService
   activity: ActivityService
+  saved: SavedService
 }
 
 const ServicesContext = createContext<Services | null>(null)
@@ -78,6 +86,7 @@ export function ServicesProvider({ children, services: overrides }: ServicesProv
       messages: overrides?.messages ?? messagesApi,
       conversations: overrides?.conversations ?? conversationsApi,
       activity: overrides?.activity ?? activityApi,
+      saved: overrides?.saved ?? savedApi,
     }),
     [overrides]
   )
@@ -112,4 +121,8 @@ export function useConversationService(): ConversationService {
 
 export function useActivityService(): ActivityService {
   return useServices().activity
+}
+
+export function useSavedService(): SavedService {
+  return useServices().saved
 }

@@ -3,7 +3,14 @@ import { toast } from "sonner"
 import { RefreshCw } from "lucide-react"
 import { useLocation, useNavigate, useParams } from "react-router-dom"
 import { useAuth } from "@/auth"
-import { useActivityCounts, useAllDrafts, createDmDraftId, useDraftScratchpads, useUnreadCounts } from "@/hooks"
+import {
+  useActivityCounts,
+  useAllDrafts,
+  createDmDraftId,
+  useDraftScratchpads,
+  useLiveSavedCount,
+  useUnreadCounts,
+} from "@/hooks"
 import { useSyncStatus } from "@/sync/sync-status"
 import { useSyncEngine } from "@/sync/sync-engine"
 import {
@@ -66,7 +73,9 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   const currentUser = workspaceUsers.find((u) => u.workosUserId === user?.id) ?? null
 
   const draftCount = allDrafts.length
+  const savedCount = useLiveSavedCount(workspaceId)
   const isDraftsPage = splat === "drafts" || window.location.pathname.endsWith("/drafts")
+  const isSavedPage = splat === "saved" || window.location.pathname.endsWith("/saved")
   const isActivityPage = splat === "activity" || window.location.pathname.endsWith("/activity")
   const isMemoryPage = splat === "memory" || location.pathname.endsWith("/memory")
 
@@ -353,6 +362,8 @@ export function Sidebar({ workspaceId }: SidebarProps) {
           workspaceId={workspaceId}
           isDraftsPage={isDraftsPage}
           draftCount={draftCount}
+          isSavedPage={isSavedPage}
+          savedCount={savedCount}
           isActivityPage={isActivityPage}
           isMemoryPage={isMemoryPage}
           unreadActivityCount={unreadActivityCount}

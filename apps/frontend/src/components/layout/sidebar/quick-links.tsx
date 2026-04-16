@@ -1,4 +1,4 @@
-import { Bell, Brain, FileEdit, MessageSquareText } from "lucide-react"
+import { Bell, Bookmark, Brain, FileEdit, MessageSquareText } from "lucide-react"
 import { Link } from "react-router-dom"
 import { UnreadBadge } from "@/components/unread-badge"
 import { useSidebar } from "@/contexts"
@@ -8,6 +8,8 @@ interface SidebarQuickLinksProps {
   workspaceId: string
   isDraftsPage: boolean
   draftCount: number
+  isSavedPage: boolean
+  savedCount: number
   isActivityPage: boolean
   isMemoryPage: boolean
   unreadActivityCount: number
@@ -17,6 +19,8 @@ export function SidebarQuickLinks({
   workspaceId,
   isDraftsPage,
   draftCount,
+  isSavedPage,
+  savedCount,
   isActivityPage,
   isMemoryPage,
   unreadActivityCount,
@@ -37,6 +41,19 @@ export function SidebarQuickLinks({
         <FileEdit className="h-4 w-4" />
         Drafts
         {draftCount > 0 && <span className="ml-auto text-xs text-muted-foreground">({draftCount})</span>}
+      </Link>
+      <Link
+        to={`/w/${workspaceId}/saved`}
+        onClick={collapseOnMobile}
+        className={cn(
+          "flex items-center gap-2.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
+          isSavedPage ? "bg-primary/10" : "hover:bg-muted/50",
+          !isSavedPage && savedCount === 0 && "text-muted-foreground"
+        )}
+      >
+        <Bookmark className="h-4 w-4" />
+        Saved
+        {savedCount > 0 && <span className="ml-auto text-xs text-muted-foreground">({savedCount})</span>}
       </Link>
       <Link
         to={`/w/${workspaceId}/threads`}

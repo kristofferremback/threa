@@ -280,6 +280,43 @@ export interface CachedLinkPreviewCollapse {
   updatedAt: number
 }
 
+/**
+ * Cached saved-message row. Mirrors `SavedMessageView` on the wire — absolute
+ * timestamps are ISO strings (same as the API payload) so socket handlers
+ * can write straight through without re-serialising. `message` is the live
+ * snapshot from the last sync; the service always resolves content live
+ * server-side, so stale content here means the record was cached before
+ * the latest edit — visible state is corrected on the next list fetch or
+ * socket event.
+ */
+export interface CachedSavedMessage {
+  id: string
+  workspaceId: string
+  userId: string
+  messageId: string
+  streamId: string
+  status: string
+  remindAt: string | null
+  reminderSentAt: string | null
+  savedAt: string
+  statusChangedAt: string
+  message: {
+    authorId: string
+    authorType: string
+    contentJson: unknown
+    contentMarkdown: string
+    createdAt: string
+    editedAt: string | null
+    streamName: string | null
+  } | null
+  unavailableReason: "deleted" | "access_lost" | null
+  /** Sort key — ms timestamp parsed from savedAt. Duplicated so Dexie can index. */
+  _savedAtMs: number
+  /** Sort key — ms timestamp parsed from statusChangedAt. */
+  _statusChangedAtMs: number
+  _cachedAt: number
+}
+
 export interface CachedWorkspaceMetadata {
   id: string // workspaceId
   workspaceId: string
@@ -309,6 +346,7 @@ class ThreaDatabase extends Dexie {
   pendingOperations!: EntityTable<PendingOperation, "id">
   markdownBlockCollapse!: EntityTable<CachedMarkdownBlockCollapse, "id">
   linkPreviewCollapse!: EntityTable<CachedLinkPreviewCollapse, "id">
+  savedMessages!: EntityTable<CachedSavedMessage, "id">
 
   constructor() {
     super("threa")
@@ -508,6 +546,15 @@ class ThreaDatabase extends Dexie {
       linkPreviewCollapse: "id, messageId, updatedAt",
     })
 
+    // v24: Saved messages cache — first-page offline rendering and optimistic
+    // UI. Indexed by (workspaceId, status) so each tab paginates its own
+    // partial index; the numeric `_savedAtMs` / `_statusChangedAtMs` mirrors
+    // drive sorting since Dexie can't sort on ISO strings efficiently.
+    this.version(24).stores({
+      savedMessages:
+        "id, workspaceId, messageId, status, [workspaceId+status+_savedAtMs], [workspaceId+status+_statusChangedAtMs], _cachedAt",
+    })
+
     this.workspaceUsers = this.table(WORKSPACE_USERS_STORE) as EntityTable<CachedWorkspaceUser, "id">
   }
 }
@@ -534,6 +581,7 @@ export async function clearAllCachedData(): Promise<void> {
       db.pendingOperations.clear(),
       db.markdownBlockCollapse.clear(),
       db.linkPreviewCollapse.clear(),
+      db.savedMessages.clear(),
       // Note: we keep pendingMessages to retry sending after re-login
     ])
   } finally {
