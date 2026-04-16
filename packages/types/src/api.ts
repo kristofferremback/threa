@@ -4,7 +4,7 @@
  * These types define the contracts between frontend and backend.
  */
 
-import type { StreamType, Visibility, CompanionMode } from "./constants"
+import type { StreamType, Visibility, CompanionMode, SavedStatus, AuthorType } from "./constants"
 import type { JSONContent } from "./prosemirror"
 import type {
   Stream,
@@ -428,3 +428,67 @@ export interface UpdateAIBudgetInput {
  * Implementations: frontend `getDeviceKey` (use-push-notifications.ts), backend `deriveDeviceKey` (socket.ts).
  */
 export const DEVICE_KEY_LENGTH = 16
+
+// ============================================================================
+// Saved Messages API
+// ============================================================================
+
+/**
+ * Wire shape for a saved-message row. Absolute timestamps are ISO strings; the
+ * live-resolved message snapshot is null when the underlying message has been
+ * deleted or the owner has lost access to the stream.
+ */
+export interface SavedMessageView {
+  id: string
+  workspaceId: string
+  userId: string
+  messageId: string
+  streamId: string
+  status: SavedStatus
+  remindAt: string | null
+  reminderSentAt: string | null
+  savedAt: string
+  statusChangedAt: string
+  message: SavedMessageSnapshot | null
+  unavailableReason: "deleted" | "access_lost" | null
+}
+
+export interface SavedMessageSnapshot {
+  authorId: string
+  authorType: AuthorType
+  contentJson: JSONContent
+  contentMarkdown: string
+  createdAt: string
+  editedAt: string | null
+  streamName: string | null
+}
+
+export interface SaveMessageInput {
+  messageId: string
+  remindAt?: string | null
+}
+
+export interface UpdateSavedMessageInput {
+  status?: SavedStatus
+  remindAt?: string | null
+}
+
+export interface SavedMessageListResponse {
+  saved: SavedMessageView[]
+  nextCursor: string | null
+}
+
+/** Wire payload broadcast on `saved:upserted` socket events. */
+export interface SavedUpsertedPayload {
+  workspaceId: string
+  targetUserId: string
+  saved: SavedMessageView
+}
+
+/** Wire payload broadcast on `saved:deleted` socket events. */
+export interface SavedDeletedPayload {
+  workspaceId: string
+  targetUserId: string
+  savedId: string
+  messageId: string
+}

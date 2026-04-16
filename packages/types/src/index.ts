@@ -266,6 +266,14 @@ export type {
   // Activity
   Activity,
   ActivityCreatedPayload,
+  // Saved messages
+  SavedMessageView,
+  SavedMessageSnapshot,
+  SaveMessageInput,
+  UpdateSavedMessageInput,
+  SavedMessageListResponse,
+  SavedUpsertedPayload,
+  SavedDeletedPayload,
   // Emojis
   EmojiEntry,
   // Commands

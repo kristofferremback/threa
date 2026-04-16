@@ -83,6 +83,7 @@ import {
 import { EmojiUsageHandler } from "./features/emoji"
 import { SystemMessageService, SystemMessageOutboxHandler } from "./features/system-messages"
 import { ActivityService, ActivityFeedHandler } from "./features/activity"
+import { SavedMessagesService } from "./features/saved-messages"
 import { PushService, PushNotificationHandler, createPushSessionCleanup } from "./features/push"
 import { AttachmentUploadedHandler } from "./features/attachments"
 import { AICostService, AIBudgetService } from "./features/ai-usage"
@@ -346,6 +347,7 @@ export async function startServer(): Promise<ServerInstance> {
   const createThread = (params: Parameters<typeof streamService.createThread>[0]) => streamService.createThread(params)
 
   const activityService = new ActivityService({ pool })
+  const savedMessagesService = new SavedMessagesService({ pool })
   // PushService runs on pools.realtime so push delivery (outbox hot path) has
   // reserved DB capacity isolated from background workers. Subscription CRUD
   // endpoints also use this pool — low volume, plenty of headroom.
@@ -409,6 +411,7 @@ export async function startServer(): Promise<ServerInstance> {
     userPreferencesService,
     invitationService,
     activityService,
+    savedMessagesService,
     pushService,
     s3Config: config.s3,
     commandRegistry,

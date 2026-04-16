@@ -20,6 +20,7 @@ import { createUserPreferencesHandlers } from "./features/user-preferences"
 import { createAIUsageHandlers } from "./features/ai-usage"
 import { createInvitationHandlers } from "./features/invitations"
 import { createActivityHandlers } from "./features/activity"
+import { createSavedMessagesHandlers } from "./features/saved-messages"
 import { createPushHandlers } from "./features/push"
 import { createDebugHandlers } from "./handlers/debug-handlers"
 import { createInternalHandlers } from "./handlers/internal-handlers"
@@ -47,6 +48,7 @@ import type { MemoExplorerService } from "./features/memos"
 import type { ConversationService } from "./features/conversations"
 import type { InvitationService } from "./features/invitations"
 import type { ActivityService } from "./features/activity"
+import type { SavedMessagesService } from "./features/saved-messages"
 import type { PushService } from "./features/push"
 import type { S3Config } from "./lib/env"
 import type { StorageProvider } from "./lib/storage/s3-client"
@@ -75,6 +77,7 @@ interface Dependencies {
   userPreferencesService: UserPreferencesService
   invitationService: InvitationService
   activityService: ActivityService
+  savedMessagesService: SavedMessagesService
   pushService: PushService
   s3Config: S3Config
   commandRegistry: CommandRegistry
@@ -108,6 +111,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     userPreferencesService,
     invitationService,
     activityService,
+    savedMessagesService,
     pushService,
     s3Config,
     commandRegistry,
@@ -161,6 +165,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const debug = createDebugHandlers({ pool, poolMonitor })
   const invitation = createInvitationHandlers({ invitationService })
   const activity = createActivityHandlers({ activityService })
+  const savedMessages = createSavedMessagesHandlers({ savedMessagesService })
   const agentSession = createAgentSessionHandlers({ pool })
   const linkPreview = createLinkPreviewHandlers({ linkPreviewService })
   const workspaceIntegration = createWorkspaceIntegrationHandlers({
@@ -306,6 +311,12 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/workspaces/:workspaceId/activity", ...authed, activity.list)
   app.post("/api/workspaces/:workspaceId/activity/read", ...authed, activity.markAllAsRead)
   app.post("/api/workspaces/:workspaceId/activity/:id/read", ...authed, activity.markOneAsRead)
+
+  // Saved messages
+  app.get("/api/workspaces/:workspaceId/saved", ...authed, savedMessages.list)
+  app.post("/api/workspaces/:workspaceId/saved", ...authed, savedMessages.create)
+  app.patch("/api/workspaces/:workspaceId/saved/:savedId", ...authed, savedMessages.update)
+  app.delete("/api/workspaces/:workspaceId/saved/:savedId", ...authed, savedMessages.delete)
 
   // Push notifications
   const push = createPushHandlers({ pushService })

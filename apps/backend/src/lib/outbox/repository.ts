@@ -3,7 +3,13 @@ import type { Stream } from "../../features/streams"
 import type { StreamEvent } from "../../features/streams"
 import type { User } from "../../features/workspaces"
 import type { ConversationWithStaleness } from "../../features/conversations"
-import type { Memo as WireMemo, UserPreferences, LastMessagePreview, Bot as WireBot } from "@threa/types"
+import type {
+  Memo as WireMemo,
+  UserPreferences,
+  LastMessagePreview,
+  Bot as WireBot,
+  SavedMessageView,
+} from "@threa/types"
 
 /**
  * Outbox event types and their payloads.
@@ -48,6 +54,8 @@ export type OutboxEventType =
   | "invitation:accepted"
   | "invitation:revoked"
   | "activity:created"
+  | "saved:upserted"
+  | "saved:deleted"
   | "bot:created"
   | "bot:updated"
   | "link_preview:ready"
@@ -328,6 +336,17 @@ export interface ActivityCreatedOutboxPayload extends WorkspaceScopedPayload {
   }
 }
 
+export interface SavedUpsertedOutboxPayload extends WorkspaceScopedPayload {
+  targetUserId: string
+  saved: SavedMessageView
+}
+
+export interface SavedDeletedOutboxPayload extends WorkspaceScopedPayload {
+  targetUserId: string
+  savedId: string
+  messageId: string
+}
+
 // Bot event payloads
 export interface BotCreatedOutboxPayload extends WorkspaceScopedPayload {
   bot: WireBot
@@ -400,6 +419,8 @@ export interface OutboxEventPayloadMap {
   "invitation:accepted": InvitationAcceptedOutboxPayload
   "invitation:revoked": InvitationRevokedOutboxPayload
   "activity:created": ActivityCreatedOutboxPayload
+  "saved:upserted": SavedUpsertedOutboxPayload
+  "saved:deleted": SavedDeletedOutboxPayload
   "bot:created": BotCreatedOutboxPayload
   "bot:updated": BotUpdatedOutboxPayload
   "link_preview:ready": LinkPreviewReadyOutboxPayload
@@ -493,9 +514,9 @@ export function isAuthorScopedEvent(event: OutboxEvent): event is OutboxEvent<Au
 }
 
 /** Events that are scoped to a specific target user (delivered to that user's sockets) */
-export type UserScopedEventType = "activity:created"
+export type UserScopedEventType = "activity:created" | "saved:upserted" | "saved:deleted"
 
-const USER_SCOPED_EVENTS: UserScopedEventType[] = ["activity:created"]
+const USER_SCOPED_EVENTS: UserScopedEventType[] = ["activity:created", "saved:upserted", "saved:deleted"]
 
 /**
  * Type guard to check if an event is user-scoped (delivered to a specific target user).
