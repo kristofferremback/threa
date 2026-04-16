@@ -1,5 +1,17 @@
 import type { ComponentType } from "react"
-import { Sparkles, MessageSquareReply, Quote, Copy, FileText, Type, Pencil, Trash2, History, Link2 } from "lucide-react"
+import {
+  Sparkles,
+  MessageSquareReply,
+  Quote,
+  Copy,
+  FileText,
+  Type,
+  Pencil,
+  Trash2,
+  History,
+  Link2,
+  Bookmark,
+} from "lucide-react"
 import { toast } from "sonner"
 import { stripMarkdown } from "@/lib/markdown"
 
@@ -45,6 +57,10 @@ export interface MessageActionContext {
   onQuoteReply?: () => void
   /** Callback to insert a partial quote reply with a user-selected snippet */
   onQuoteReplyWithSnippet?: (snippet: string) => void
+  /** Callback to save or unsave the message */
+  onToggleSave?: () => void
+  /** Whether the message is currently saved by the viewer */
+  isSaved?: boolean
 }
 
 /** A variant within a sub-menu (e.g. "Copy as Markdown" vs "Copy as Plain text"). */
@@ -103,6 +119,15 @@ export const messageActions: MessageAction[] = [
     icon: Quote,
     when: (ctx) => !!ctx.onQuoteReply,
     action: (ctx) => ctx.onQuoteReply?.(),
+  },
+  {
+    id: "save-message",
+    // Icon and label flip based on current save state so the menu reads as
+    // the toggle it is — "Save for later" becomes "Unsave" once saved.
+    label: "Save for later",
+    icon: Bookmark,
+    when: (ctx) => !!ctx.onToggleSave,
+    action: (ctx) => ctx.onToggleSave?.(),
   },
   {
     id: "edit-message",

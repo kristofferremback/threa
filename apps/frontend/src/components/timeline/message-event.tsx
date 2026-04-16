@@ -35,6 +35,8 @@ import { AttachmentList } from "./attachment-list"
 import { LinkPreviewList } from "./link-preview-list"
 import { LinkPreviewProvider, useLinkPreviewContext } from "@/lib/markdown/link-preview-context"
 import { MessageContextMenu } from "./message-context-menu"
+import { SaveMessageButton } from "./save-message-button"
+import { useSavedForMessage, useSaveMessage, useDeleteSaved } from "@/hooks/use-saved"
 import { MessageActionDrawer } from "./message-action-drawer"
 import { ThreadIndicator } from "./thread-indicator"
 import { DeleteMessageDialog } from "./delete-message-dialog"
@@ -499,6 +501,23 @@ function SentMessageEvent({
     }
   }
 
+  const savedForMessage = useSavedForMessage(workspaceId, payload.messageId)
+  const saveMessageMutation = useSaveMessage(workspaceId)
+  const unsaveMessageMutation = useDeleteSaved(workspaceId)
+  const isSaved = !!savedForMessage && savedForMessage.status === "saved"
+
+  const handleToggleSave = useCallback(() => {
+    if (!savedForMessage) {
+      saveMessageMutation.mutate({ messageId: payload.messageId })
+      return
+    }
+    if (savedForMessage.status !== "saved") {
+      saveMessageMutation.mutate({ messageId: payload.messageId })
+      return
+    }
+    unsaveMessageMutation.mutate(savedForMessage.id)
+  }, [savedForMessage, saveMessageMutation, unsaveMessageMutation, payload.messageId])
+
   // Shared action context for both desktop dropdown and mobile drawer
   const actionContext = useMemo(
     () => ({
@@ -526,6 +545,8 @@ function SentMessageEvent({
       onReact: handleAddReaction,
       onOpenFullPicker: () => setMobilePickerOpen(true),
       reactions: payload.reactions,
+      isSaved,
+      onToggleSave: handleToggleSave,
       onQuoteReply: quoteReplyCtx
         ? () =>
             quoteReplyCtx.triggerQuoteReply({
@@ -571,6 +592,8 @@ function SentMessageEvent({
       handleAddReaction,
       quoteReplyCtx,
       actorName,
+      isSaved,
+      handleToggleSave,
     ]
   )
 
@@ -606,6 +629,7 @@ function SentMessageEvent({
               onSelect={handleAddReaction}
               activeShortcodes={activeReactionShortcodes}
             />
+            <SaveMessageButton workspaceId={workspaceId} messageId={payload.messageId} />
             {actionContext.onQuoteReply && (
               <Tooltip>
                 <TooltipTrigger asChild>
