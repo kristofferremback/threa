@@ -112,6 +112,16 @@ export const ActivityTypes = {
   REACTION: "reaction",
 } as const satisfies Record<string, ActivityType>
 
+// Saved message statuses
+export const SAVED_STATUSES = ["saved", "done", "archived"] as const
+export type SavedStatus = (typeof SAVED_STATUSES)[number]
+
+export const SavedStatuses = {
+  SAVED: "saved",
+  DONE: "done",
+  ARCHIVED: "archived",
+} as const satisfies Record<string, SavedStatus>
+
 // Invitation statuses
 export const INVITATION_STATUSES = ["pending", "accepted", "expired", "revoked"] as const
 export type InvitationStatus = (typeof INVITATION_STATUSES)[number]
