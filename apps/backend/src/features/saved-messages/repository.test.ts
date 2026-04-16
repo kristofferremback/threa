@@ -252,21 +252,24 @@ describe("SavedMessagesRepository.markReminderSent", () => {
 
   it("is idempotent via `reminder_sent_at IS NULL` guard and saved-status predicate", async () => {
     const captured: Captured = { text: null, values: null }
-    const db = createQuerier(captured, [], 1)
+    const sentRow = { ...SAVED_ROW, reminder_sent_at: NOW }
+    const db = createQuerier(captured, [sentRow], 1)
 
-    const ok = await SavedMessagesRepository.markReminderSent(db, "saved_01", new Date())
+    const result = await SavedMessagesRepository.markReminderSent(db, "saved_01", NOW)
 
-    expect(ok).toBe(true)
+    expect(result).not.toBeNull()
+    expect(result?.reminderSentAt).toEqual(NOW)
     expect(captured.text).toContain("WHERE id = $")
     expect(captured.text).toContain("AND reminder_sent_at IS NULL")
     expect(captured.text).toContain("AND status = $")
+    expect(captured.text).toContain("RETURNING")
     expect(captured.values).toContain(SavedStatuses.SAVED)
   })
 
-  it("returns false when the row was already sent or not in saved status", async () => {
+  it("returns null when the row was already sent or not in saved status", async () => {
     const db = createQuerier({ text: null, values: null }, [], 0)
-    const ok = await SavedMessagesRepository.markReminderSent(db, "saved_01", new Date())
-    expect(ok).toBe(false)
+    const result = await SavedMessagesRepository.markReminderSent(db, "saved_01", NOW)
+    expect(result).toBeNull()
   })
 })
 

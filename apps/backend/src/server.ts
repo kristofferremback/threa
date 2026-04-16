@@ -83,7 +83,7 @@ import {
 import { EmojiUsageHandler } from "./features/emoji"
 import { SystemMessageService, SystemMessageOutboxHandler } from "./features/system-messages"
 import { ActivityService, ActivityFeedHandler } from "./features/activity"
-import { SavedMessagesService } from "./features/saved-messages"
+import { SavedMessagesService, createSavedReminderWorker } from "./features/saved-messages"
 import { PushService, PushNotificationHandler, createPushSessionCleanup } from "./features/push"
 import { AttachmentUploadedHandler } from "./features/attachments"
 import { AICostService, AIBudgetService } from "./features/ai-usage"
@@ -710,6 +710,13 @@ export async function startServer(): Promise<ServerInstance> {
   // Link preview worker — fast HTTP fetch, not LLM-bound
   const linkPreviewWorker = createLinkPreviewWorker({ linkPreviewService, workspaceIntegrationService })
   jobQueue.registerHandler(JobQueues.LINK_PREVIEW_EXTRACT, linkPreviewWorker, {
+    tier: QueueTiers.LIGHT,
+    fairness: QueueFairness.NONE,
+  })
+
+  // Saved message reminder worker — delegates to service, no long I/O
+  const savedReminderWorker = createSavedReminderWorker({ savedMessagesService })
+  jobQueue.registerHandler(JobQueues.SAVED_REMINDER_FIRE, savedReminderWorker, {
     tier: QueueTiers.LIGHT,
     fairness: QueueFairness.NONE,
   })

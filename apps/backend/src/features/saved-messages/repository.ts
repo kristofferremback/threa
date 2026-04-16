@@ -300,19 +300,21 @@ export const SavedMessagesRepository = {
   /**
    * Idempotent reminder-sent marker used by the worker. The
    * `reminder_sent_at IS NULL` predicate ensures at-most-once fire even if the
-   * queue re-delivers a claimed message. Returns true if the row transitioned;
-   * false if it was already sent, already not in saved status, or missing.
+   * queue re-delivers a claimed message. Returns the updated row so callers
+   * can build outbox payloads without a second SELECT; null when the update
+   * was a no-op (already sent, not in saved status, or missing).
    */
-  async markReminderSent(db: Querier, savedId: string, sentAt: Date): Promise<boolean> {
-    const result = await db.query(sql`
+  async markReminderSent(db: Querier, savedId: string, sentAt: Date): Promise<SavedMessage | null> {
+    const result = await db.query<SavedMessageRow>(sql`
       UPDATE saved_messages SET
         reminder_sent_at = ${sentAt},
         updated_at = NOW()
       WHERE id = ${savedId}
         AND reminder_sent_at IS NULL
         AND status = ${SavedStatuses.SAVED}
+      RETURNING ${sql.raw(SAVED_MESSAGE_COLUMNS)}
     `)
-    return (result.rowCount ?? 0) > 0
+    return result.rows[0] ? mapRow(result.rows[0]) : null
   },
 
   async delete(db: Querier, workspaceId: string, userId: string, savedId: string): Promise<boolean> {

@@ -7,3 +7,5 @@ export type { SaveParams, UpdateStatusParams, UpdateReminderParams, ListParams }
 export { createSavedMessagesHandlers } from "./handlers"
 
 export { resolveSavedView } from "./view"
+
+export { createSavedReminderWorker } from "./worker"

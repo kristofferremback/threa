@@ -11,6 +11,10 @@ import "../workspaces"
 import { OutboxRepository } from "../../lib/outbox"
 import { StreamRepository, StreamMemberRepository } from "../streams"
 import { MessageRepository } from "../messaging"
+import { reminderQueueId } from "../../lib/id"
+import { JobQueues, QueueRepository, type SavedReminderFireJobData } from "../../lib/queue"
+import { isUniqueViolation } from "@threa/backend-common"
+import { logger } from "../../lib/logger"
 import { SavedMessagesRepository, type SavedMessage } from "./repository"
 import { resolveSavedView } from "./view"
 
@@ -97,10 +101,20 @@ export class SavedMessagesService {
         remindAt: clampedRemindAt,
       })
 
-      // Phase 3 will: tombstone `upsert.previousReminderQueueMessageId` and
-      // enqueue a fresh queue row when `clampedRemindAt` is set.
+      // Tombstone the previous queue row (if any) and enqueue a fresh one when
+      // a reminder was requested. Both operations run inside the same tx as
+      // the row write, so a rolled-back save can't leave a dangling reminder.
+      if (upsert.previousReminderQueueMessageId) {
+        await QueueRepository.tombstoneById(client, upsert.previousReminderQueueMessageId)
+      }
+      const finalRow = clampedRemindAt
+        ? await enqueueReminder(client, {
+            saved: upsert.saved,
+            remindAt: clampedRemindAt,
+          })
+        : upsert.saved
 
-      const [view] = await resolveSavedView(client, params.userId, [upsert.saved])
+      const [view] = await resolveSavedView(client, params.userId, [finalRow])
 
       await OutboxRepository.insert(client, "saved:upserted", {
         workspaceId: params.workspaceId,
@@ -114,6 +128,11 @@ export class SavedMessagesService {
 
   async updateStatus(params: UpdateStatusParams): Promise<SavedMessageView> {
     return withTransaction(this.pool, async (client) => {
+      const existing = await SavedMessagesRepository.findById(client, params.workspaceId, params.userId, params.savedId)
+      if (!existing) {
+        throw new HttpError("Saved item not found", { status: 404, code: "SAVED_NOT_FOUND" })
+      }
+
       const updated = await SavedMessagesRepository.updateStatus(
         client,
         params.workspaceId,
@@ -125,8 +144,12 @@ export class SavedMessagesService {
         throw new HttpError("Saved item not found", { status: 404, code: "SAVED_NOT_FOUND" })
       }
 
-      // Phase 3: if transitioning away from 'saved' and a queue row is pending,
-      // tombstone it so the reminder never fires.
+      // Any pending reminder is invalidated by a status change away from
+      // 'saved'. The worker also checks status before firing, so even if the
+      // tombstone lost a race with a claim, the reminder would no-op.
+      if (params.status !== SavedStatuses.SAVED && existing.reminderQueueMessageId) {
+        await QueueRepository.tombstoneById(client, existing.reminderQueueMessageId)
+      }
 
       const [view] = await resolveSavedView(client, params.userId, [updated])
 
@@ -155,8 +178,11 @@ export class SavedMessagesService {
         })
       }
 
-      // Phase 3: tombstone existing.reminderQueueMessageId then enqueue a new
-      // queue row. For now we just update the row.
+      // Tombstone any existing queue row and enqueue a new one. Running both
+      // inside the tx keeps the saved row and its scheduled reminder in sync.
+      if (existing.reminderQueueMessageId) {
+        await QueueRepository.tombstoneById(client, existing.reminderQueueMessageId)
+      }
       const updated = await SavedMessagesRepository.updateReminder(
         client,
         params.workspaceId,
@@ -168,7 +194,11 @@ export class SavedMessagesService {
         throw new HttpError("Saved item not found", { status: 404, code: "SAVED_NOT_FOUND" })
       }
 
-      const [view] = await resolveSavedView(client, params.userId, [updated])
+      const finalRow = clampedRemindAt
+        ? await enqueueReminder(client, { saved: updated, remindAt: clampedRemindAt })
+        : updated
+
+      const [view] = await resolveSavedView(client, params.userId, [finalRow])
 
       await OutboxRepository.insert(client, "saved:upserted", {
         workspaceId: params.workspaceId,
@@ -187,8 +217,11 @@ export class SavedMessagesService {
         throw new HttpError("Saved item not found", { status: 404, code: "SAVED_NOT_FOUND" })
       }
 
-      // Phase 3: tombstone existing.reminderQueueMessageId so a pending
-      // reminder never fires on a deleted saved row.
+      // A pending reminder on a deleted saved row must not fire. Tombstone it
+      // in the same tx as the DELETE.
+      if (existing.reminderQueueMessageId) {
+        await QueueRepository.tombstoneById(client, existing.reminderQueueMessageId)
+      }
 
       const deleted = await SavedMessagesRepository.delete(client, params.workspaceId, params.userId, params.savedId)
       if (!deleted) return
@@ -199,6 +232,43 @@ export class SavedMessagesService {
         savedId: params.savedId,
         messageId: existing.messageId,
       })
+    })
+  }
+
+  /**
+   * Worker entry point. Guards:
+   *   - row exists
+   *   - row is still in `saved` status (done/archived tombstoning may have
+   *     lost a race with queue claim)
+   *   - `reminder_sent_at` is still null (another worker instance may have
+   *     already fired)
+   *
+   * Emits `saved_reminder:fired` in the same tx as the update so the outbox
+   * payload reflects committed state.
+   */
+  async markReminderFired(params: { savedId: string }): Promise<{ fired: boolean }> {
+    return withTransaction(this.pool, async (client) => {
+      const row = await SavedMessagesRepository.findByIdUnscoped(client, params.savedId)
+      if (!row || row.status !== SavedStatuses.SAVED || row.reminderSentAt !== null) {
+        return { fired: false }
+      }
+
+      const now = new Date()
+      const updated = await SavedMessagesRepository.markReminderSent(client, params.savedId, now)
+      if (!updated) return { fired: false }
+
+      const [view] = await resolveSavedView(client, row.userId, [updated])
+
+      await OutboxRepository.insert(client, "saved_reminder:fired", {
+        workspaceId: row.workspaceId,
+        targetUserId: row.userId,
+        savedId: row.id,
+        messageId: row.messageId,
+        streamId: row.streamId,
+        saved: view!,
+      })
+
+      return { fired: true }
     })
   }
 
@@ -225,6 +295,52 @@ export class SavedMessagesService {
   }): Promise<SavedMessage | null> {
     return SavedMessagesRepository.findByMessageId(this.pool, params.workspaceId, params.userId, params.messageId)
   }
+}
+
+/**
+ * Enqueue a reminder fire job inside the current transaction and update the
+ * saved row's `reminder_queue_message_id` pointer. The queue insert is
+ * idempotent on message id collisions (which should not happen here since we
+ * mint a fresh `remq_<ulid>` each time).
+ */
+async function enqueueReminder(
+  client: import("pg").PoolClient,
+  params: { saved: SavedMessage; remindAt: Date }
+): Promise<SavedMessage> {
+  const queueMessageId = reminderQueueId()
+  const now = new Date()
+  const payload: SavedReminderFireJobData = {
+    workspaceId: params.saved.workspaceId,
+    userId: params.saved.userId,
+    savedMessageId: params.saved.id,
+  }
+
+  try {
+    await QueueRepository.insert(client, {
+      id: queueMessageId,
+      queueName: JobQueues.SAVED_REMINDER_FIRE,
+      workspaceId: params.saved.workspaceId,
+      payload,
+      processAfter: params.remindAt,
+      insertedAt: now,
+    })
+  } catch (err) {
+    if (isUniqueViolation(err, "queue_messages_pkey")) {
+      // Ultra-rare ULID collision — log and keep going with the existing row.
+      logger.warn({ queueMessageId }, "Saved reminder queue id collision")
+    } else {
+      throw err
+    }
+  }
+
+  const updated = await SavedMessagesRepository.updateReminder(
+    client,
+    params.saved.workspaceId,
+    params.saved.userId,
+    params.saved.id,
+    { remindAt: params.remindAt, queueMessageId }
+  )
+  return updated ?? params.saved
 }
 
 function clampRemindAt(remindAt: Date | null): Date | null {

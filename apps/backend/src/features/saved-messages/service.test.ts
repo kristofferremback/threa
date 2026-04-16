@@ -7,6 +7,7 @@ import { SavedMessagesRepository } from "./repository"
 import { StreamRepository, StreamMemberRepository } from "../streams"
 import { MessageRepository } from "../messaging"
 import { OutboxRepository } from "../../lib/outbox"
+import { QueueRepository } from "../../lib/queue"
 import * as dbModule from "../../db"
 import * as viewModule from "./view"
 import type { Stream } from "../streams"
@@ -19,7 +20,9 @@ const MESSAGE_ID = "msg_1"
 const STREAM_ID = "stream_1"
 const SAVED_ID = "saved_01"
 const NOW = new Date("2026-04-16T12:00:00.000Z")
-const FUTURE = new Date("2026-04-16T13:00:00.000Z")
+// `FUTURE` must be in the test runtime's real future so clampRemindAt doesn't
+// rewrite it to `Date.now()`; dates in 2099 comfortably outlive any clock.
+const FUTURE = new Date("2099-01-01T00:00:00.000Z")
 
 function fakeStream(overrides: Partial<Stream> = {}): Stream {
   return {
@@ -150,7 +153,9 @@ describe("SavedMessagesService.save", () => {
       capturedRemindAt = params.remindAt
       return { saved: fakeSaved({ remindAt: params.remindAt }), inserted: true, previousReminderQueueMessageId: null }
     })
+    spyOn(SavedMessagesRepository, "updateReminder").mockResolvedValue(fakeSaved())
     spyOn(OutboxRepository, "insert").mockResolvedValue({} as any)
+    spyOn(QueueRepository, "insert").mockResolvedValue({} as any)
 
     const past = new Date(Date.now() - 60_000)
     await service.save({ workspaceId: WORKSPACE_ID, userId: USER_ID, messageId: MESSAGE_ID, remindAt: past })
@@ -191,7 +196,7 @@ describe("SavedMessagesService.updateStatus", () => {
 
   it("throws 404 when the row does not exist", async () => {
     const service = setupService()
-    spyOn(SavedMessagesRepository, "updateStatus").mockResolvedValue(null)
+    spyOn(SavedMessagesRepository, "findById").mockResolvedValue(null)
 
     await expect(
       service.updateStatus({
@@ -205,6 +210,7 @@ describe("SavedMessagesService.updateStatus", () => {
 
   it("emits saved:upserted after a successful status change", async () => {
     const service = setupService()
+    spyOn(SavedMessagesRepository, "findById").mockResolvedValue(fakeSaved())
     spyOn(SavedMessagesRepository, "updateStatus").mockResolvedValue(
       fakeSaved({ status: SavedStatuses.DONE, statusChangedAt: FUTURE })
     )
@@ -254,6 +260,8 @@ describe("SavedMessagesService.updateReminder", () => {
       }
     )
     spyOn(OutboxRepository, "insert").mockResolvedValue({} as any)
+    spyOn(QueueRepository, "insert").mockResolvedValue({} as any)
+    spyOn(QueueRepository, "tombstoneById").mockResolvedValue(true)
 
     const past = new Date(Date.now() - 60_000)
     await service.updateReminder({ workspaceId: WORKSPACE_ID, userId: USER_ID, savedId: SAVED_ID, remindAt: past })
@@ -288,6 +296,154 @@ describe("SavedMessagesService.delete", () => {
     await expect(
       service.delete({ workspaceId: WORKSPACE_ID, userId: USER_ID, savedId: SAVED_ID })
     ).rejects.toMatchObject({ status: 404 })
+  })
+})
+
+describe("SavedMessagesService reminder queue integration", () => {
+  afterEach(() => mock.restore())
+
+  it("save with remindAt tombstones the previous queue row and enqueues a fresh one", async () => {
+    const service = setupService()
+    spyOn(MessageRepository, "findById").mockResolvedValue(fakeMessage())
+    spyOn(StreamRepository, "findById").mockResolvedValue(fakeStream())
+    spyOn(SavedMessagesRepository, "upsert").mockResolvedValue({
+      saved: fakeSaved({ remindAt: FUTURE }),
+      inserted: false,
+      previousReminderQueueMessageId: "remq_old",
+    })
+    spyOn(SavedMessagesRepository, "updateReminder").mockResolvedValue(fakeSaved({ remindAt: FUTURE }))
+    spyOn(OutboxRepository, "insert").mockResolvedValue({} as any)
+
+    const tombstoneSpy = spyOn(QueueRepository, "tombstoneById").mockResolvedValue(true)
+    const insertSpy = spyOn(QueueRepository, "insert").mockResolvedValue({} as any)
+
+    await service.save({ workspaceId: WORKSPACE_ID, userId: USER_ID, messageId: MESSAGE_ID, remindAt: FUTURE })
+
+    expect(tombstoneSpy).toHaveBeenCalledWith(expect.anything(), "remq_old")
+    expect(insertSpy).toHaveBeenCalledTimes(1)
+    const [, insertParams] = insertSpy.mock.calls[0]!
+    expect(insertParams).toMatchObject({ queueName: "saved.reminder_fire" })
+    expect(insertParams.processAfter).toEqual(FUTURE)
+  })
+
+  it("save without remindAt does not enqueue a reminder", async () => {
+    const service = setupService()
+    spyOn(MessageRepository, "findById").mockResolvedValue(fakeMessage())
+    spyOn(StreamRepository, "findById").mockResolvedValue(fakeStream())
+    spyOn(SavedMessagesRepository, "upsert").mockResolvedValue({
+      saved: fakeSaved(),
+      inserted: true,
+      previousReminderQueueMessageId: null,
+    })
+    spyOn(OutboxRepository, "insert").mockResolvedValue({} as any)
+
+    const insertSpy = spyOn(QueueRepository, "insert").mockResolvedValue({} as any)
+    const tombstoneSpy = spyOn(QueueRepository, "tombstoneById").mockResolvedValue(true)
+
+    await service.save({ workspaceId: WORKSPACE_ID, userId: USER_ID, messageId: MESSAGE_ID, remindAt: null })
+
+    expect(insertSpy).not.toHaveBeenCalled()
+    expect(tombstoneSpy).not.toHaveBeenCalled()
+  })
+
+  it("markDone tombstones a pending reminder when one exists", async () => {
+    const service = setupService()
+    spyOn(SavedMessagesRepository, "findById").mockResolvedValue(fakeSaved({ reminderQueueMessageId: "remq_pending" }))
+    spyOn(SavedMessagesRepository, "updateStatus").mockResolvedValue(
+      fakeSaved({ status: SavedStatuses.DONE, statusChangedAt: FUTURE })
+    )
+    spyOn(OutboxRepository, "insert").mockResolvedValue({} as any)
+    const tombstoneSpy = spyOn(QueueRepository, "tombstoneById").mockResolvedValue(true)
+
+    await service.updateStatus({
+      workspaceId: WORKSPACE_ID,
+      userId: USER_ID,
+      savedId: SAVED_ID,
+      status: SavedStatuses.DONE,
+    })
+
+    expect(tombstoneSpy).toHaveBeenCalledWith(expect.anything(), "remq_pending")
+  })
+
+  it("delete tombstones a pending reminder before removing the row", async () => {
+    const service = setupService()
+    spyOn(SavedMessagesRepository, "findById").mockResolvedValue(fakeSaved({ reminderQueueMessageId: "remq_pending" }))
+    spyOn(SavedMessagesRepository, "delete").mockResolvedValue(true)
+    spyOn(OutboxRepository, "insert").mockResolvedValue({} as any)
+    const tombstoneSpy = spyOn(QueueRepository, "tombstoneById").mockResolvedValue(true)
+
+    await service.delete({ workspaceId: WORKSPACE_ID, userId: USER_ID, savedId: SAVED_ID })
+
+    expect(tombstoneSpy).toHaveBeenCalledWith(expect.anything(), "remq_pending")
+  })
+})
+
+describe("SavedMessagesService.markReminderFired", () => {
+  afterEach(() => mock.restore())
+
+  it("no-ops when the row is missing", async () => {
+    const service = setupService()
+    spyOn(SavedMessagesRepository, "findByIdUnscoped").mockResolvedValue(null)
+    const outboxSpy = spyOn(OutboxRepository, "insert").mockResolvedValue({} as any)
+
+    const result = await service.markReminderFired({ savedId: SAVED_ID })
+
+    expect(result.fired).toBe(false)
+    expect(outboxSpy).not.toHaveBeenCalled()
+  })
+
+  it("no-ops when status is no longer 'saved'", async () => {
+    const service = setupService()
+    spyOn(SavedMessagesRepository, "findByIdUnscoped").mockResolvedValue(fakeSaved({ status: SavedStatuses.DONE }))
+    const outboxSpy = spyOn(OutboxRepository, "insert").mockResolvedValue({} as any)
+
+    const result = await service.markReminderFired({ savedId: SAVED_ID })
+
+    expect(result.fired).toBe(false)
+    expect(outboxSpy).not.toHaveBeenCalled()
+  })
+
+  it("no-ops when reminder already sent", async () => {
+    const service = setupService()
+    spyOn(SavedMessagesRepository, "findByIdUnscoped").mockResolvedValue(fakeSaved({ reminderSentAt: NOW }))
+    const outboxSpy = spyOn(OutboxRepository, "insert").mockResolvedValue({} as any)
+
+    const result = await service.markReminderFired({ savedId: SAVED_ID })
+
+    expect(result.fired).toBe(false)
+    expect(outboxSpy).not.toHaveBeenCalled()
+  })
+
+  it("emits saved_reminder:fired when the row is still pending", async () => {
+    const service = setupService()
+    spyOn(SavedMessagesRepository, "findByIdUnscoped").mockResolvedValue(fakeSaved())
+    spyOn(SavedMessagesRepository, "markReminderSent").mockResolvedValue(fakeSaved({ reminderSentAt: NOW }))
+    const outboxSpy = spyOn(OutboxRepository, "insert").mockResolvedValue({} as any)
+
+    const result = await service.markReminderFired({ savedId: SAVED_ID })
+
+    expect(result.fired).toBe(true)
+    expect(outboxSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      "saved_reminder:fired",
+      expect.objectContaining({
+        savedId: SAVED_ID,
+        messageId: MESSAGE_ID,
+        streamId: STREAM_ID,
+      })
+    )
+  })
+
+  it("no-ops when markReminderSent returns null (race with another worker)", async () => {
+    const service = setupService()
+    spyOn(SavedMessagesRepository, "findByIdUnscoped").mockResolvedValue(fakeSaved())
+    spyOn(SavedMessagesRepository, "markReminderSent").mockResolvedValue(null)
+    const outboxSpy = spyOn(OutboxRepository, "insert").mockResolvedValue({} as any)
+
+    const result = await service.markReminderFired({ savedId: SAVED_ID })
+
+    expect(result.fired).toBe(false)
+    expect(outboxSpy).not.toHaveBeenCalled()
   })
 })
 

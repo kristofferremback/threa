@@ -274,6 +274,7 @@ export type {
   SavedMessageListResponse,
   SavedUpsertedPayload,
   SavedDeletedPayload,
+  SavedReminderFiredPayload,
   // Emojis
   EmojiEntry,
   // Commands

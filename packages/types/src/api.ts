@@ -492,3 +492,13 @@ export interface SavedDeletedPayload {
   savedId: string
   messageId: string
 }
+
+/** Wire payload broadcast on `saved_reminder:fired` socket events. */
+export interface SavedReminderFiredPayload {
+  workspaceId: string
+  targetUserId: string
+  savedId: string
+  messageId: string
+  streamId: string
+  saved: SavedMessageView
+}

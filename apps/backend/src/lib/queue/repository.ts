@@ -297,6 +297,35 @@ export const QueueRepository = {
   },
 
   /**
+   * Cancel a pending queue message by marking it completed. Used when the
+   * upstream domain entity no longer needs the job (e.g. a saved message
+   * marked done — the pending reminder should not fire).
+   *
+   * Skips rows that are actively claimed by a worker so we don't clobber the
+   * worker's own completion path (which matches on claimed_by). When the
+   * worker's handler runs, it is expected to re-check domain state and
+   * no-op if the entity no longer warrants the job — then complete normally
+   * with its claim intact.
+   *
+   * Returns true if a row was tombstoned, false if it was missing, already
+   * completed, or in flight.
+   */
+  async tombstoneById(db: Querier, messageId: string): Promise<boolean> {
+    const result = await db.query(
+      sql`
+        UPDATE queue_messages
+        SET
+          completed_at = NOW(),
+          process_after = NULL
+        WHERE id = ${messageId}
+          AND completed_at IS NULL
+          AND claimed_by IS NULL
+      `
+    )
+    return (result.rowCount ?? 0) > 0
+  },
+
+  /**
    * Record failure and set retry backoff.
    * Increments failed_count, sets process_after for retry.
    * Does NOT move to DLQ.
