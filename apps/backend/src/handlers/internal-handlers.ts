@@ -3,7 +3,6 @@ import { z } from "zod"
 import { HttpError } from "../lib/errors"
 import type { WorkspaceService } from "../features/workspaces"
 import type { InvitationService } from "../features/invitations"
-import type { PlatformAdminService } from "../features/platform-admins"
 
 const createWorkspaceSchema = z.object({
   id: z.string().min(1),
@@ -26,11 +25,10 @@ const acceptInvitationSchema = z.object({
 interface InternalHandlersDeps {
   workspaceService: WorkspaceService
   invitationService: InvitationService
-  platformAdminService: PlatformAdminService
 }
 
 export function createInternalHandlers(deps: InternalHandlersDeps) {
-  const { workspaceService, invitationService, platformAdminService } = deps
+  const { workspaceService, invitationService } = deps
 
   return {
     /**
@@ -44,21 +42,7 @@ export function createInternalHandlers(deps: InternalHandlersDeps) {
         throw new HttpError("Invalid request body", { status: 400, code: "VALIDATION_ERROR" })
       }
 
-      const { id, name, slug, ownerWorkosUserId, ownerEmail, ownerName, isPlatformAdmin } = result.data
-
-      const workspace = await workspaceService.createWorkspaceFromControlPlane({
-        id,
-        name,
-        slug,
-        ownerWorkosUserId,
-        ownerEmail,
-        ownerName,
-      })
-
-      if (isPlatformAdmin) {
-        await platformAdminService.set(ownerWorkosUserId, true)
-      }
-
+      const workspace = await workspaceService.createWorkspaceFromControlPlane(result.data)
       res.status(201).json({ workspace })
     },
 
@@ -78,17 +62,13 @@ export function createInternalHandlers(deps: InternalHandlersDeps) {
       }
 
       const { isPlatformAdmin, ...identity } = result.data
-      const workspaceId = await invitationService.acceptInvitation(invitationId, identity)
+      const workspaceId = await invitationService.acceptInvitation(invitationId, identity, { isPlatformAdmin })
 
       if (!workspaceId) {
         throw new HttpError("Invitation not found or already processed", {
           status: 404,
           code: "INVITATION_NOT_FOUND",
         })
-      }
-
-      if (isPlatformAdmin) {
-        await platformAdminService.set(identity.workosUserId, true)
       }
 
       res.status(200).json({ workspaceId })

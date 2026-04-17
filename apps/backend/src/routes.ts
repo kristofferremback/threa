@@ -178,7 +178,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   // Internal API — control-plane → regional backend, protected by shared secret
   if (internalApiKey) {
     const internalAuth = createInternalAuthMiddleware(internalApiKey)
-    const internal = createInternalHandlers({ workspaceService, invitationService, platformAdminService })
+    const internal = createInternalHandlers({ workspaceService, invitationService })
     const platformAdmin = createPlatformAdminHandlers({ platformAdminService })
 
     app.post("/internal/workspaces", internalAuth, internal.createWorkspace)

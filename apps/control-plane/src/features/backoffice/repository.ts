@@ -54,4 +54,21 @@ export const PlatformRoleRepository = {
       [userIds, roles]
     )
   },
+
+  /**
+   * List `(workosUserId, region)` pairs for every platform admin who has a
+   * workspace in each region. Joins into `workspace_memberships` and
+   * `workspace_registry`; an admin with no workspaces yields no rows. Used
+   * by the boot-time reconcile sweep to fan out to regions.
+   */
+  async listAdminRegionPairs(db: Querier): Promise<Array<{ workosUserId: string; region: string }>> {
+    const result = await db.query<{ workos_user_id: string; region: string }>(
+      `SELECT DISTINCT pr.workos_user_id, wr.region
+       FROM platform_roles pr
+       JOIN workspace_memberships wm ON wm.workos_user_id = pr.workos_user_id
+       JOIN workspace_registry wr ON wr.id = wm.workspace_id
+       WHERE pr.role = 'admin'`
+    )
+    return result.rows.map((row) => ({ workosUserId: row.workos_user_id, region: row.region }))
+  },
 }

@@ -3,12 +3,20 @@ import { describe, expect, it, beforeEach, vi } from "vitest"
 import { render, screen, userEvent } from "@/test"
 import { SidebarFooter } from "./sidebar-footer"
 
-const { logout, openSettings, collapseOnMobile, setSearchParams, isMobile } = vi.hoisted(() => ({
+const { logout, openSettings, collapseOnMobile, setSearchParams, isMobile, authUser } = vi.hoisted(() => ({
   logout: vi.fn(),
   openSettings: vi.fn(),
   collapseOnMobile: vi.fn(),
   setSearchParams: vi.fn(),
   isMobile: { value: true },
+  authUser: {
+    value: { id: "workos_user_1", email: "kris@example.com", name: "Kris", isPlatformAdmin: false } as {
+      id: string
+      email: string
+      name: string
+      isPlatformAdmin: boolean
+    } | null,
+  },
 }))
 
 vi.mock("react-router-dom", () => ({
@@ -32,6 +40,7 @@ vi.mock("react-router-dom", () => ({
 
 vi.mock("@/auth", () => ({
   useAuth: () => ({
+    user: authUser.value,
     logout,
   }),
 }))
@@ -74,6 +83,7 @@ describe("SidebarFooter", () => {
     collapseOnMobile.mockReset()
     setSearchParams.mockReset()
     isMobile.value = true
+    authUser.value = { id: "workos_user_1", email: "kris@example.com", name: "Kris", isPlatformAdmin: false }
   })
 
   it("opens the mobile account drawer on tap and exposes the same actions", async () => {
@@ -146,5 +156,74 @@ describe("SidebarFooter", () => {
     await user.click(screen.getByText("Settings"))
 
     expect(openSettings).toHaveBeenCalledWith("appearance")
+  })
+
+  it("renders an external Control Panel link for platform admins", async () => {
+    authUser.value = { id: "workos_user_1", email: "kris@example.com", name: "Kris", isPlatformAdmin: true }
+    const user = userEvent.setup()
+
+    render(
+      <SidebarFooter
+        workspaceId="workspace_1"
+        currentUser={{
+          id: "user_1",
+          workspaceId: "workspace_1",
+          workosUserId: "workos_user_1",
+          email: "kris@example.com",
+          role: "user",
+          slug: "kris",
+          name: "Kris",
+          description: null,
+          avatarUrl: null,
+          timezone: "Europe/Stockholm",
+          locale: "en-SE",
+          pronouns: null,
+          phone: null,
+          githubUsername: null,
+          setupCompleted: true,
+          joinedAt: "2026-03-03T10:00:00Z",
+        }}
+      />
+    )
+
+    await user.click(screen.getByRole("button", { name: /kris/i }))
+
+    const link = screen.getByRole("link", { name: "Control Panel" })
+    expect(link).toHaveAttribute("target", "_blank")
+    expect(link).toHaveAttribute("rel", "noopener noreferrer")
+    expect(link.getAttribute("href")).toMatch(/\/admin\.threa\.io$|^https?:\/\//)
+  })
+
+  it("hides the Control Panel link for non-admins", async () => {
+    authUser.value = { id: "workos_user_1", email: "kris@example.com", name: "Kris", isPlatformAdmin: false }
+    const user = userEvent.setup()
+
+    render(
+      <SidebarFooter
+        workspaceId="workspace_1"
+        currentUser={{
+          id: "user_1",
+          workspaceId: "workspace_1",
+          workosUserId: "workos_user_1",
+          email: "kris@example.com",
+          role: "user",
+          slug: "kris",
+          name: "Kris",
+          description: null,
+          avatarUrl: null,
+          timezone: "Europe/Stockholm",
+          locale: "en-SE",
+          pronouns: null,
+          phone: null,
+          githubUsername: null,
+          setupCompleted: true,
+          joinedAt: "2026-03-03T10:00:00Z",
+        }}
+      />
+    )
+
+    await user.click(screen.getByRole("button", { name: /kris/i }))
+
+    expect(screen.queryByRole("link", { name: "Control Panel" })).not.toBeInTheDocument()
   })
 })

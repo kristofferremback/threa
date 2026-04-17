@@ -1,5 +1,6 @@
 import type { Pool } from "pg"
 import { logger } from "@threa/backend-common"
+import { PlatformRoleRepository } from "./repository"
 import type { RegionalClient } from "../../lib/regional-client"
 
 /**
@@ -23,24 +24,18 @@ import type { RegionalClient } from "../../lib/regional-client"
  * can't stall health checks.
  */
 export async function reconcilePlatformAdminsAcrossRegions(pool: Pool, regionalClient: RegionalClient): Promise<void> {
-  const result = await pool.query<{ workos_user_id: string; region: string }>(
-    `SELECT DISTINCT pr.workos_user_id, wr.region
-     FROM platform_roles pr
-     JOIN workspace_memberships wm ON wm.workos_user_id = pr.workos_user_id
-     JOIN workspace_registry wr ON wr.id = wm.workspace_id
-     WHERE pr.role = 'admin'`
-  )
+  const pairs = await PlatformRoleRepository.listAdminRegionPairs(pool)
 
-  if (result.rows.length === 0) {
+  if (pairs.length === 0) {
     logger.info("Platform-admin reconcile: no admin/region pairs to sync")
     return
   }
 
   const settled = await Promise.allSettled(
-    result.rows.map((row) =>
-      regionalClient.setPlatformAdmin(row.region, row.workos_user_id, true).then(
-        () => ({ ok: true as const, row }),
-        (err: unknown) => ({ ok: false as const, row, err })
+    pairs.map((pair) =>
+      regionalClient.setPlatformAdmin(pair.region, pair.workosUserId, true).then(
+        () => ({ ok: true as const, pair }),
+        (err: unknown) => ({ ok: false as const, pair, err })
       )
     )
   )
@@ -48,19 +43,17 @@ export async function reconcilePlatformAdminsAcrossRegions(pool: Pool, regionalC
   let succeeded = 0
   let failed = 0
   for (const outcome of settled) {
-    // allSettled with the inner catch means every promise resolves; the outer
-    // fulfilled value carries our ok flag.
     if (outcome.status !== "fulfilled") continue
     if (outcome.value.ok) {
       succeeded++
     } else {
       failed++
       logger.warn(
-        { err: outcome.value.err, region: outcome.value.row.region, workosUserId: outcome.value.row.workos_user_id },
+        { err: outcome.value.err, region: outcome.value.pair.region, workosUserId: outcome.value.pair.workosUserId },
         "Platform-admin reconcile: regional push failed; will retry next boot"
       )
     }
   }
 
-  logger.info({ succeeded, failed, total: result.rows.length }, "Platform-admin reconcile complete")
+  logger.info({ succeeded, failed, total: pairs.length }, "Platform-admin reconcile complete")
 }
