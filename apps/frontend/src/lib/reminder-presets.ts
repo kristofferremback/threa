@@ -5,21 +5,21 @@
  * the browser's.
  */
 
-export interface ReminderPreset {
-  label: string
-  /** Positive: minutes from now. Negative sentinels pick calendar presets:
-   *    -1 = tomorrow 09:00 in the user's timezone
-   *    -2 = next Monday 09:00 in the user's timezone
-   */
-  minutes: number
-}
+/**
+ * Tagged union so "duration" presets (minutes from now) and "calendar" presets
+ * (next Monday at 9am) don't share a field. Adding a new calendar kind is a
+ * new tag, not a new magic number.
+ */
+export type ReminderPreset =
+  | { label: string; kind: "duration"; minutes: number }
+  | { label: string; kind: "calendar"; calendar: "tomorrow-9am" | "next-monday-9am" }
 
 export const REMINDER_PRESETS: ReminderPreset[] = [
-  { label: "In 15 minutes", minutes: 15 },
-  { label: "In 1 hour", minutes: 60 },
-  { label: "In 3 hours", minutes: 180 },
-  { label: "Tomorrow 9am", minutes: -1 },
-  { label: "Next Monday 9am", minutes: -2 },
+  { label: "In 15 minutes", kind: "duration", minutes: 15 },
+  { label: "In 1 hour", kind: "duration", minutes: 60 },
+  { label: "In 3 hours", kind: "duration", minutes: 180 },
+  { label: "Tomorrow 9am", kind: "calendar", calendar: "tomorrow-9am" },
+  { label: "Next Monday 9am", kind: "calendar", calendar: "next-monday-9am" },
 ]
 
 /** Resolve calendar parts (y/m/d + weekday index) as the user's timezone sees them. */
@@ -69,17 +69,25 @@ function buildZonedDate(timezone: string, y: number, m: number, d: number, hours
   return candidate
 }
 
-export function computeRemindAt(preset: ReminderPreset, now: Date, timezone: string): Date {
-  if (preset.minutes >= 0) {
-    return new Date(now.getTime() + preset.minutes * 60_000)
-  }
+function nextMondayAt9(now: Date, timezone: string): Date {
   const today = calendarInZone(now, timezone)
-  if (preset.minutes === -1) {
-    const tomorrow = calendarInZone(new Date(now.getTime() + 24 * 60 * 60_000), timezone)
-    return buildZonedDate(timezone, tomorrow.y, tomorrow.m, tomorrow.d, 9, 0)
-  }
-  // Next Monday — skip today if already Monday.
+  // Always skip to the next Monday — if today is Monday, jump a full week so
+  // "Next Monday 9am" never resolves to earlier today.
   const daysUntilMonday = today.weekday === 1 ? 7 : (1 - today.weekday + 7) % 7 || 7
   const target = calendarInZone(new Date(now.getTime() + daysUntilMonday * 24 * 60 * 60_000), timezone)
   return buildZonedDate(timezone, target.y, target.m, target.d, 9, 0)
+}
+
+function tomorrowAt9(now: Date, timezone: string): Date {
+  const tomorrow = calendarInZone(new Date(now.getTime() + 24 * 60 * 60_000), timezone)
+  return buildZonedDate(timezone, tomorrow.y, tomorrow.m, tomorrow.d, 9, 0)
+}
+
+export function computeRemindAt(preset: ReminderPreset, now: Date, timezone: string): Date {
+  switch (preset.kind) {
+    case "duration":
+      return new Date(now.getTime() + preset.minutes * 60_000)
+    case "calendar":
+      return preset.calendar === "tomorrow-9am" ? tomorrowAt9(now, timezone) : nextMondayAt9(now, timezone)
+  }
 }

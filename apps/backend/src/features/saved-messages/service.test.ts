@@ -261,7 +261,7 @@ describe("SavedMessagesService.updateReminder", () => {
     )
     spyOn(OutboxRepository, "insert").mockResolvedValue({} as any)
     spyOn(QueueRepository, "insert").mockResolvedValue({} as any)
-    spyOn(QueueRepository, "tombstoneById").mockResolvedValue(true)
+    spyOn(QueueRepository, "cancelById").mockResolvedValue(true)
 
     const past = new Date(Date.now() - 60_000)
     await service.updateReminder({ workspaceId: WORKSPACE_ID, userId: USER_ID, savedId: SAVED_ID, remindAt: past })
@@ -302,7 +302,7 @@ describe("SavedMessagesService.delete", () => {
 describe("SavedMessagesService reminder queue integration", () => {
   afterEach(() => mock.restore())
 
-  it("save with remindAt tombstones the previous queue row and enqueues a fresh one", async () => {
+  it("save with remindAt cancels the previous queue row and enqueues a fresh one", async () => {
     const service = setupService()
     spyOn(MessageRepository, "findById").mockResolvedValue(fakeMessage())
     spyOn(StreamRepository, "findById").mockResolvedValue(fakeStream())
@@ -314,12 +314,12 @@ describe("SavedMessagesService reminder queue integration", () => {
     spyOn(SavedMessagesRepository, "updateReminder").mockResolvedValue(fakeSaved({ remindAt: FUTURE }))
     spyOn(OutboxRepository, "insert").mockResolvedValue({} as any)
 
-    const tombstoneSpy = spyOn(QueueRepository, "tombstoneById").mockResolvedValue(true)
+    const cancelSpy = spyOn(QueueRepository, "cancelById").mockResolvedValue(true)
     const insertSpy = spyOn(QueueRepository, "insert").mockResolvedValue({} as any)
 
     await service.save({ workspaceId: WORKSPACE_ID, userId: USER_ID, messageId: MESSAGE_ID, remindAt: FUTURE })
 
-    expect(tombstoneSpy).toHaveBeenCalledWith(expect.anything(), "remq_old")
+    expect(cancelSpy).toHaveBeenCalledWith(expect.anything(), "remq_old")
     expect(insertSpy).toHaveBeenCalledTimes(1)
     const [, insertParams] = insertSpy.mock.calls[0]!
     expect(insertParams).toMatchObject({ queueName: "saved.reminder_fire" })
@@ -338,22 +338,22 @@ describe("SavedMessagesService reminder queue integration", () => {
     spyOn(OutboxRepository, "insert").mockResolvedValue({} as any)
 
     const insertSpy = spyOn(QueueRepository, "insert").mockResolvedValue({} as any)
-    const tombstoneSpy = spyOn(QueueRepository, "tombstoneById").mockResolvedValue(true)
+    const cancelSpy = spyOn(QueueRepository, "cancelById").mockResolvedValue(true)
 
     await service.save({ workspaceId: WORKSPACE_ID, userId: USER_ID, messageId: MESSAGE_ID, remindAt: null })
 
     expect(insertSpy).not.toHaveBeenCalled()
-    expect(tombstoneSpy).not.toHaveBeenCalled()
+    expect(cancelSpy).not.toHaveBeenCalled()
   })
 
-  it("markDone tombstones a pending reminder when one exists", async () => {
+  it("markDone cancels a pending reminder when one exists", async () => {
     const service = setupService()
     spyOn(SavedMessagesRepository, "findById").mockResolvedValue(fakeSaved({ reminderQueueMessageId: "remq_pending" }))
     spyOn(SavedMessagesRepository, "updateStatus").mockResolvedValue(
       fakeSaved({ status: SavedStatuses.DONE, statusChangedAt: FUTURE })
     )
     spyOn(OutboxRepository, "insert").mockResolvedValue({} as any)
-    const tombstoneSpy = spyOn(QueueRepository, "tombstoneById").mockResolvedValue(true)
+    const cancelSpy = spyOn(QueueRepository, "cancelById").mockResolvedValue(true)
 
     await service.updateStatus({
       workspaceId: WORKSPACE_ID,
@@ -362,19 +362,19 @@ describe("SavedMessagesService reminder queue integration", () => {
       status: SavedStatuses.DONE,
     })
 
-    expect(tombstoneSpy).toHaveBeenCalledWith(expect.anything(), "remq_pending")
+    expect(cancelSpy).toHaveBeenCalledWith(expect.anything(), "remq_pending")
   })
 
-  it("delete tombstones a pending reminder before removing the row", async () => {
+  it("delete cancels a pending reminder before removing the row", async () => {
     const service = setupService()
     spyOn(SavedMessagesRepository, "findById").mockResolvedValue(fakeSaved({ reminderQueueMessageId: "remq_pending" }))
     spyOn(SavedMessagesRepository, "delete").mockResolvedValue(true)
     spyOn(OutboxRepository, "insert").mockResolvedValue({} as any)
-    const tombstoneSpy = spyOn(QueueRepository, "tombstoneById").mockResolvedValue(true)
+    const cancelSpy = spyOn(QueueRepository, "cancelById").mockResolvedValue(true)
 
     await service.delete({ workspaceId: WORKSPACE_ID, userId: USER_ID, savedId: SAVED_ID })
 
-    expect(tombstoneSpy).toHaveBeenCalledWith(expect.anything(), "remq_pending")
+    expect(cancelSpy).toHaveBeenCalledWith(expect.anything(), "remq_pending")
   })
 })
 

@@ -49,7 +49,7 @@ export interface SavedUpsertResult {
   inserted: boolean
   /**
    * Previous reminder queue message id if the upsert overwrote an existing
-   * pending reminder. Callers use this to tombstone the old queue row.
+   * pending reminder. Callers use this to cancel the old queue row.
    * Null when there was no previous queue row.
    */
   previousReminderQueueMessageId: string | null
@@ -90,12 +90,12 @@ export const SavedMessagesRepository = {
    *   - clears reminder_sent_at so a new reminder can fire
    *   - if previous status was done/archived, bumps saved_at and status_changed_at to NOW()
    *     so the row surfaces at the top of the Saved tab
-   *   - clears reminder_queue_message_id so the service tombstones the old queue row
+   *   - clears reminder_queue_message_id so the service cancels the old queue row
    *
    * The `old` CTE captures the pre-update reminder_queue_message_id because
    * RETURNING on INSERT ... ON CONFLICT DO UPDATE reads post-update values,
    * and the UPDATE clause nulls that column. Without the CTE, the caller would
-   * never see the previous queue id and could not tombstone the stale reminder.
+   * never see the previous queue id and could not cancel the stale reminder.
    */
   async upsert(db: Querier, params: UpsertSavedParams): Promise<SavedUpsertResult> {
     const id = savedMessageId()

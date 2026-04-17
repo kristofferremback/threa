@@ -7,7 +7,7 @@
 -- distinct UI intent: done = "I completed this", archived = "I won't do this".
 --
 -- Reminders are delivered via the existing queue_messages pipeline. The
--- reminder_queue_message_id pointer lets us tombstone a pending reminder when
+-- reminder_queue_message_id pointer lets us cancel a pending reminder when
 -- the user clears remind_at, marks done/archived, or changes remind_at.
 --
 -- reminder_sent_at is the idempotency flag for the delivery worker: the UPDATE

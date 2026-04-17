@@ -17,6 +17,7 @@ interface QueueMessageRow {
   last_error: string | null
   dlq_at: Date | null
   completed_at: Date | null
+  cancelled_at: Date | null
 }
 
 // Domain type (camelCase)
@@ -35,6 +36,7 @@ export interface QueueMessage {
   lastError: string | null
   dlqAt: Date | null
   completedAt: Date | null
+  cancelledAt: Date | null
 }
 
 // Insert params
@@ -98,6 +100,7 @@ export interface UnDlqParams {
 export interface DeleteOldMessagesParams {
   completedBeforeDate: Date
   dlqBeforeDate: Date
+  cancelledBeforeDate: Date
 }
 
 // Mapper
@@ -117,6 +120,7 @@ function mapRowToMessage(row: QueueMessageRow): QueueMessage {
     lastError: row.last_error,
     dlqAt: row.dlq_at,
     completedAt: row.completed_at,
+    cancelledAt: row.cancelled_at,
   }
 }
 
@@ -125,7 +129,7 @@ const SELECT_FIELDS = sql.raw(`
   process_after, inserted_at,
   claimed_at, claimed_by, claimed_until, claimed_count,
   failed_count, last_error,
-  dlq_at, completed_at
+  dlq_at, completed_at, cancelled_at
 `)
 
 export const QueueRepository = {
@@ -181,7 +185,7 @@ export const QueueRepository = {
         process_after, inserted_at,
         claimed_at, claimed_by, claimed_until, claimed_count,
         failed_count, last_error,
-        dlq_at, completed_at`,
+        dlq_at, completed_at, cancelled_at`,
       values
     )
 
@@ -206,6 +210,7 @@ export const QueueRepository = {
             AND process_after <= ${params.now}
             AND (claimed_until IS NULL OR claimed_until < ${params.now})
             AND completed_at IS NULL
+            AND cancelled_at IS NULL
             AND dlq_at IS NULL
           ORDER BY process_after ASC
           LIMIT ${params.limit}
@@ -233,7 +238,8 @@ export const QueueRepository = {
           queue_messages.failed_count,
           queue_messages.last_error,
           queue_messages.dlq_at,
-          queue_messages.completed_at
+          queue_messages.completed_at,
+          queue_messages.cancelled_at
       `
     )
 
@@ -265,6 +271,7 @@ export const QueueRepository = {
         WHERE id = ANY(${params.messageIds})
           AND claimed_by = ${params.claimedBy}
           AND completed_at IS NULL
+          AND cancelled_at IS NULL
           AND dlq_at IS NULL
       `
     )
@@ -297,9 +304,9 @@ export const QueueRepository = {
   },
 
   /**
-   * Cancel a pending queue message by marking it completed. Used when the
-   * upstream domain entity no longer needs the job (e.g. a saved message
-   * marked done — the pending reminder should not fire).
+   * Cancel a pending queue message. Used when the upstream domain entity no
+   * longer needs the job (e.g. a saved message marked done — the pending
+   * reminder should not fire).
    *
    * Skips rows that are actively claimed by a worker so we don't clobber the
    * worker's own completion path (which matches on claimed_by). When the
@@ -307,18 +314,19 @@ export const QueueRepository = {
    * no-op if the entity no longer warrants the job — then complete normally
    * with its claim intact.
    *
-   * Returns true if a row was tombstoned, false if it was missing, already
-   * completed, or in flight.
+   * Returns true if a row was cancelled, false if it was missing, already
+   * completed/cancelled, or in flight.
    */
-  async tombstoneById(db: Querier, messageId: string): Promise<boolean> {
+  async cancelById(db: Querier, messageId: string): Promise<boolean> {
     const result = await db.query(
       sql`
         UPDATE queue_messages
         SET
-          completed_at = NOW(),
+          cancelled_at = NOW(),
           process_after = NULL
         WHERE id = ${messageId}
           AND completed_at IS NULL
+          AND cancelled_at IS NULL
           AND claimed_by IS NULL
       `
     )
@@ -408,17 +416,26 @@ export const QueueRepository = {
   /**
    * Delete old messages for retention.
    * - Completed messages older than completedBeforeDate
+   * - Cancelled messages older than cancelledBeforeDate
    * - DLQ messages older than dlqBeforeDate
    */
   async deleteOldMessages(
     db: Querier,
     params: DeleteOldMessagesParams
-  ): Promise<{ completedDeleted: number; dlqDeleted: number }> {
+  ): Promise<{ completedDeleted: number; cancelledDeleted: number; dlqDeleted: number }> {
     const completedResult = await db.query(
       sql`
         DELETE FROM queue_messages
         WHERE completed_at IS NOT NULL
           AND completed_at < ${params.completedBeforeDate}
+      `
+    )
+
+    const cancelledResult = await db.query(
+      sql`
+        DELETE FROM queue_messages
+        WHERE cancelled_at IS NOT NULL
+          AND cancelled_at < ${params.cancelledBeforeDate}
       `
     )
 
@@ -432,6 +449,7 @@ export const QueueRepository = {
 
     return {
       completedDeleted: completedResult.rowCount ?? 0,
+      cancelledDeleted: cancelledResult.rowCount ?? 0,
       dlqDeleted: dlqResult.rowCount ?? 0,
     }
   },

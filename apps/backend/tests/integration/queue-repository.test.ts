@@ -1331,6 +1331,7 @@ describe("QueueRepository", () => {
         const result = await QueueRepository.deleteOldMessages(client, {
           completedBeforeDate: new Date(now.getTime() - 24 * 60 * 60 * 1000), // 1 day ago
           dlqBeforeDate: new Date(now.getTime() - 24 * 60 * 60 * 1000),
+          cancelledBeforeDate: new Date(now.getTime() - 24 * 60 * 60 * 1000),
         })
 
         expect(result.completedDeleted).toBe(1)
@@ -1381,6 +1382,7 @@ describe("QueueRepository", () => {
         const result = await QueueRepository.deleteOldMessages(client, {
           completedBeforeDate: now,
           dlqBeforeDate: new Date(now.getTime() - 24 * 60 * 60 * 1000), // 1 day ago
+          cancelledBeforeDate: now,
         })
 
         expect(result.dlqDeleted).toBe(1)

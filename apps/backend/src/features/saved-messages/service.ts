@@ -51,11 +51,7 @@ export interface ListParams {
   cursor?: string
 }
 
-/**
- * Service for saved-message lifecycle. Reminder queue integration lands in
- * phase 3 — for now the service only records `remind_at` on the row; the
- * queue enqueue + tombstone side effects are stubs that will be filled in.
- */
+/** Service for saved-message lifecycle: upserts, status transitions, reminder enqueue/cancel. */
 export class SavedMessagesService {
   private readonly pool: Pool
 
@@ -105,7 +101,7 @@ export class SavedMessagesService {
       // a reminder was requested. Both operations run inside the same tx as
       // the row write, so a rolled-back save can't leave a dangling reminder.
       if (upsert.previousReminderQueueMessageId) {
-        await QueueRepository.tombstoneById(client, upsert.previousReminderQueueMessageId)
+        await QueueRepository.cancelById(client, upsert.previousReminderQueueMessageId)
       }
       const finalRow = clampedRemindAt
         ? await enqueueReminder(client, {
@@ -146,9 +142,9 @@ export class SavedMessagesService {
 
       // Any pending reminder is invalidated by a status change away from
       // 'saved'. The worker also checks status before firing, so even if the
-      // tombstone lost a race with a claim, the reminder would no-op.
+      // cancel lost a race with a claim, the reminder would no-op.
       if (params.status !== SavedStatuses.SAVED && existing.reminderQueueMessageId) {
-        await QueueRepository.tombstoneById(client, existing.reminderQueueMessageId)
+        await QueueRepository.cancelById(client, existing.reminderQueueMessageId)
       }
 
       const [view] = await resolveSavedView(client, params.userId, [updated])
@@ -181,7 +177,7 @@ export class SavedMessagesService {
       // Tombstone any existing queue row and enqueue a new one. Running both
       // inside the tx keeps the saved row and its scheduled reminder in sync.
       if (existing.reminderQueueMessageId) {
-        await QueueRepository.tombstoneById(client, existing.reminderQueueMessageId)
+        await QueueRepository.cancelById(client, existing.reminderQueueMessageId)
       }
       const updated = await SavedMessagesRepository.updateReminder(
         client,
@@ -220,7 +216,7 @@ export class SavedMessagesService {
       // A pending reminder on a deleted saved row must not fire. Tombstone it
       // in the same tx as the DELETE.
       if (existing.reminderQueueMessageId) {
-        await QueueRepository.tombstoneById(client, existing.reminderQueueMessageId)
+        await QueueRepository.cancelById(client, existing.reminderQueueMessageId)
       }
 
       const deleted = await SavedMessagesRepository.delete(client, params.workspaceId, params.userId, params.savedId)
@@ -303,7 +299,7 @@ export class SavedMessagesService {
  * rare) ULID collision, re-mint and retry a handful of times — the previous
  * "swallow and continue" branch was unsafe because it left the saved row
  * pointing at a queue row that belonged to a *different* job, so a later
- * tombstone would cancel the wrong work.
+ * cancel would cancel the wrong work.
  */
 const MAX_QUEUE_ID_RETRIES = 5
 
