@@ -3,14 +3,18 @@ import { logger } from "@threa/backend-common"
 import type { RegionalClient } from "../../lib/regional-client"
 
 /**
- * At control-plane boot, push every platform admin's flag to every region
- * they have a workspace in. Self-heals regional drift (e.g. a region that was
- * down when a role was granted) and, on first deploy after the migration,
- * backfills regional `platform_admins` for every existing admin.
+ * At control-plane boot, push `isPlatformAdmin=true` to every region each
+ * platform admin has a workspace in. On first deploy after the migration this
+ * backfills regional `platform_admins`; on subsequent boots it resurrects rows
+ * in regions that were down when a grant happened.
  *
- * Idempotent: regional `PlatformAdminRepository.grant` uses ON CONFLICT DO
- * NOTHING, so re-running on every boot is safe. Best-effort per region: if a
- * region is unreachable we log and move on — the next boot will retry.
+ * Grant-only: revocations are not fanned out here because control-plane has
+ * no historical record of where a now-non-admin user used to be known. When
+ * revoke fan-out lands, it must push `false` to every region the user is in.
+ *
+ * Per-region pushes run concurrently; individual failures are logged, next
+ * boot retries. Meant to be invoked after `server.listen` so a slow region
+ * can't stall health checks.
  */
 export async function reconcilePlatformAdminsAcrossRegions(pool: Pool, regionalClient: RegionalClient): Promise<void> {
   const result = await pool.query<{ workos_user_id: string; region: string }>(
@@ -26,16 +30,27 @@ export async function reconcilePlatformAdminsAcrossRegions(pool: Pool, regionalC
     return
   }
 
+  const settled = await Promise.allSettled(
+    result.rows.map((row) =>
+      regionalClient.setPlatformAdmin(row.region, row.workos_user_id, true).then(
+        () => ({ ok: true as const, row }),
+        (err: unknown) => ({ ok: false as const, row, err })
+      )
+    )
+  )
+
   let succeeded = 0
   let failed = 0
-  for (const row of result.rows) {
-    try {
-      await regionalClient.setPlatformAdmin(row.region, row.workos_user_id, true)
+  for (const outcome of settled) {
+    // allSettled with the inner catch means every promise resolves; the outer
+    // fulfilled value carries our ok flag.
+    if (outcome.status !== "fulfilled") continue
+    if (outcome.value.ok) {
       succeeded++
-    } catch (err) {
+    } else {
       failed++
       logger.warn(
-        { err, region: row.region, workosUserId: row.workos_user_id },
+        { err: outcome.value.err, region: outcome.value.row.region, workosUserId: outcome.value.row.workos_user_id },
         "Platform-admin reconcile: regional push failed; will retry next boot"
       )
     }

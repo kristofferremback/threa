@@ -3,6 +3,8 @@ import type { RegionConfig } from "../config"
 
 const REGIONAL_REQUEST_TIMEOUT_MS = 15_000
 
+type Jsonable = Record<string, unknown>
+
 export class RegionalClient {
   constructor(
     private regions: Record<string, RegionConfig>,
@@ -17,6 +19,47 @@ export class RegionalClient {
     return config.internalUrl
   }
 
+  /**
+   * Shared wiring for every internal POST/PUT to a regional backend:
+   * shared-secret header, configured timeout, consistent error logging. The
+   * `operation` string appears in log entries and thrown messages so on-call
+   * can trace which call path hit the failure.
+   */
+  private async internalRequest(params: {
+    region: string
+    method: "POST" | "PUT"
+    path: string
+    body: Jsonable
+    operation: string
+    extraLogContext?: Record<string, unknown>
+  }): Promise<Response> {
+    const url = `${this.getRegionUrl(params.region)}${params.path}`
+    const baseLog = { region: params.region, url, ...params.extraLogContext }
+    let res: Response
+    try {
+      res = await fetch(url, {
+        method: params.method,
+        headers: {
+          "Content-Type": "application/json",
+          [INTERNAL_API_KEY_HEADER]: this.internalApiKey,
+        },
+        body: JSON.stringify(params.body),
+        signal: AbortSignal.timeout(REGIONAL_REQUEST_TIMEOUT_MS),
+      })
+    } catch (err) {
+      logger.error({ err, ...baseLog }, `Regional ${params.operation} request failed`)
+      throw err
+    }
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => "")
+      logger.error({ ...baseLog, status: res.status, body }, `Regional ${params.operation} failed`)
+      throw new Error(`Regional backend returned ${res.status}: ${body}`)
+    }
+
+    return res
+  }
+
   async createWorkspace(
     region: string,
     data: {
@@ -29,29 +72,13 @@ export class RegionalClient {
       isPlatformAdmin?: boolean
     }
   ): Promise<{ workspace: unknown }> {
-    const url = `${this.getRegionUrl(region)}/internal/workspaces`
-    let res: Response
-    try {
-      res = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          [INTERNAL_API_KEY_HEADER]: this.internalApiKey,
-        },
-        body: JSON.stringify(data),
-        signal: AbortSignal.timeout(REGIONAL_REQUEST_TIMEOUT_MS),
-      })
-    } catch (err) {
-      logger.error({ err, region, url }, "Regional workspace creation request failed")
-      throw err
-    }
-
-    if (!res.ok) {
-      const body = await res.text().catch(() => "")
-      logger.error({ region, status: res.status, body }, "Regional workspace creation failed")
-      throw new Error(`Regional backend returned ${res.status}: ${body}`)
-    }
-
+    const res = await this.internalRequest({
+      region,
+      method: "POST",
+      path: "/internal/workspaces",
+      body: data,
+      operation: "workspace creation",
+    })
     return res.json()
   }
 
@@ -60,29 +87,14 @@ export class RegionalClient {
     invitationId: string,
     data: { workosUserId: string; email: string; name: string; isPlatformAdmin?: boolean }
   ): Promise<{ workspaceId: string }> {
-    const url = `${this.getRegionUrl(region)}/internal/invitations/${invitationId}/accept`
-    let res: Response
-    try {
-      res = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          [INTERNAL_API_KEY_HEADER]: this.internalApiKey,
-        },
-        body: JSON.stringify(data),
-        signal: AbortSignal.timeout(REGIONAL_REQUEST_TIMEOUT_MS),
-      })
-    } catch (err) {
-      logger.error({ err, region, url, invitationId }, "Regional invitation acceptance request failed")
-      throw err
-    }
-
-    if (!res.ok) {
-      const body = await res.text().catch(() => "")
-      logger.error({ region, invitationId, status: res.status, body }, "Regional invitation acceptance failed")
-      throw new Error(`Regional backend returned ${res.status}: ${body}`)
-    }
-
+    const res = await this.internalRequest({
+      region,
+      method: "POST",
+      path: `/internal/invitations/${invitationId}/accept`,
+      body: data,
+      operation: "invitation acceptance",
+      extraLogContext: { invitationId },
+    })
     return res.json()
   }
 
@@ -93,27 +105,13 @@ export class RegionalClient {
    * call per session.
    */
   async setPlatformAdmin(region: string, workosUserId: string, isAdmin: boolean): Promise<void> {
-    const url = `${this.getRegionUrl(region)}/internal/platform-admins/${encodeURIComponent(workosUserId)}`
-    let res: Response
-    try {
-      res = await fetch(url, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          [INTERNAL_API_KEY_HEADER]: this.internalApiKey,
-        },
-        body: JSON.stringify({ isAdmin }),
-        signal: AbortSignal.timeout(REGIONAL_REQUEST_TIMEOUT_MS),
-      })
-    } catch (err) {
-      logger.error({ err, region, url, workosUserId }, "Regional setPlatformAdmin request failed")
-      throw err
-    }
-
-    if (!res.ok) {
-      const body = await res.text().catch(() => "")
-      logger.error({ region, workosUserId, status: res.status, body }, "Regional setPlatformAdmin failed")
-      throw new Error(`Regional backend returned ${res.status}: ${body}`)
-    }
+    await this.internalRequest({
+      region,
+      method: "PUT",
+      path: `/internal/platform-admins/${encodeURIComponent(workosUserId)}`,
+      body: { isAdmin },
+      operation: "setPlatformAdmin",
+      extraLogContext: { workosUserId },
+    })
   }
 }

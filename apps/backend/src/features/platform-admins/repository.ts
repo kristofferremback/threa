@@ -9,10 +9,6 @@ export const PlatformAdminRepository = {
     return result.rows.length > 0
   },
 
-  /**
-   * Idempotent grant. Called by control-plane pushes and by the boot-time
-   * reconcile sweep. No-op if the user is already a platform admin.
-   */
   async grant(db: Querier, workosUserId: string): Promise<void> {
     await db.query(sql`
       INSERT INTO platform_admins (workos_user_id)

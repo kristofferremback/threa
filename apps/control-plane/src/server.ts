@@ -74,9 +74,6 @@ export async function startServer(): Promise<ControlPlaneInstance> {
     workosEnvironmentId: config.workosEnvironmentId,
   })
   await seedPlatformAdmins(pool, config.platformAdminWorkosUserIds)
-  // Fan out platform-admin flags to every region each admin has a workspace
-  // in. Best-effort — per-region failures are logged, next boot retries.
-  await reconcilePlatformAdminsAcrossRegions(pool, regionalClient)
 
   // Outbox — single handler for all control-plane events (no sharding needed)
   const cursorLock = new CursorLock({
@@ -154,6 +151,12 @@ export async function startServer(): Promise<ControlPlaneInstance> {
       logger.info({ port: config.port }, "Control plane started")
       resolve()
     })
+  })
+
+  // Fire-and-forget after the server is accepting traffic — a slow or
+  // unreachable region must not block readiness probes.
+  void reconcilePlatformAdminsAcrossRegions(pool, regionalClient).catch((err) => {
+    logger.error({ err }, "Platform-admin reconcile sweep failed")
   })
 
   const stop = async () => {

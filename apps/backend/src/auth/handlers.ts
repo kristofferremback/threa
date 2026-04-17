@@ -1,14 +1,13 @@
 import type { Request, Response } from "express"
-import type { Pool } from "pg"
 import { displayNameFromWorkos } from "@threa/backend-common"
 import { HttpError } from "../lib/errors"
-import { PlatformAdminRepository } from "../features/platform-admins"
+import type { PlatformAdminService } from "../features/platform-admins"
 
 interface AuthHandlersDeps {
-  pool: Pool
+  platformAdminService: PlatformAdminService
 }
 
-export function createAuthHandlers({ pool }: AuthHandlersDeps) {
+export function createAuthHandlers({ platformAdminService }: AuthHandlersDeps) {
   return {
     async me(req: Request, res: Response) {
       const authUser = req.authUser
@@ -17,7 +16,7 @@ export function createAuthHandlers({ pool }: AuthHandlersDeps) {
       }
 
       const name = displayNameFromWorkos(authUser)
-      const isPlatformAdmin = await PlatformAdminRepository.isPlatformAdmin(pool, authUser.id)
+      const isPlatformAdmin = await platformAdminService.isPlatformAdmin(authUser.id)
       res.json({
         id: authUser.id,
         email: authUser.email,

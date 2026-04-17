@@ -1,10 +1,9 @@
 import type { Request, Response } from "express"
-import type { Pool } from "pg"
 import { z } from "zod"
 import { HttpError } from "../lib/errors"
 import type { WorkspaceService } from "../features/workspaces"
 import type { InvitationService } from "../features/invitations"
-import { PlatformAdminRepository } from "../features/platform-admins"
+import type { PlatformAdminService } from "../features/platform-admins"
 
 const createWorkspaceSchema = z.object({
   id: z.string().min(1),
@@ -13,12 +12,7 @@ const createWorkspaceSchema = z.object({
   ownerWorkosUserId: z.string().min(1),
   ownerEmail: z.string().email(),
   ownerName: z.string().min(1),
-  /**
-   * When true, the owner is a platform admin on the control plane. The
-   * regional backend mirrors this into `platform_admins` so /api/auth/me can
-   * report it without a cross-service call. Defaults to false for
-   * back-compat with older control-plane versions.
-   */
+  // Optional for back-compat with pre-mirror control planes.
   isPlatformAdmin: z.boolean().optional(),
 })
 
@@ -30,13 +24,13 @@ const acceptInvitationSchema = z.object({
 })
 
 interface InternalHandlersDeps {
-  pool: Pool
   workspaceService: WorkspaceService
   invitationService: InvitationService
+  platformAdminService: PlatformAdminService
 }
 
 export function createInternalHandlers(deps: InternalHandlersDeps) {
-  const { pool, workspaceService, invitationService } = deps
+  const { workspaceService, invitationService, platformAdminService } = deps
 
   return {
     /**
@@ -62,7 +56,7 @@ export function createInternalHandlers(deps: InternalHandlersDeps) {
       })
 
       if (isPlatformAdmin) {
-        await PlatformAdminRepository.grant(pool, ownerWorkosUserId)
+        await platformAdminService.set(ownerWorkosUserId, true)
       }
 
       res.status(201).json({ workspace })
@@ -94,7 +88,7 @@ export function createInternalHandlers(deps: InternalHandlersDeps) {
       }
 
       if (isPlatformAdmin) {
-        await PlatformAdminRepository.grant(pool, identity.workosUserId)
+        await platformAdminService.set(identity.workosUserId, true)
       }
 
       res.status(200).json({ workspaceId })
