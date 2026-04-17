@@ -14,6 +14,25 @@ type SidebarOpenState = "open" | "collapsed"
 
 type ViewMode = "smart" | "all"
 
+/**
+ * Tri-state visibility for a collapsible sidebar section (quick-links group,
+ * smart/all stream sections):
+ * - open: show all items (fully expanded)
+ * - auto: show only items with a signal (unread/mention/count); nothing shown if none signal
+ * - collapsed: show only the header; a dot indicates something is signaling
+ */
+type CollapseState = "open" | "auto" | "collapsed"
+
+const COLLAPSE_CYCLE: Record<CollapseState, CollapseState> = {
+  open: "auto",
+  auto: "collapsed",
+  collapsed: "open",
+}
+
+function isCollapseState(value: unknown): value is CollapseState {
+  return value === "open" || value === "auto" || value === "collapsed"
+}
+
 /** Urgency block for position-matched collapsed strip */
 interface UrgencyBlock {
   /** Position as fraction of total list height (0 to 1) */
@@ -31,7 +50,8 @@ interface SidebarPersistedState {
   openState: SidebarOpenState
   width: number
   viewMode: ViewMode
-  collapsedSections: string[]
+  /** Per-section tri-state. Absent keys fall back to per-section defaults at the callsite. */
+  sectionStates: Record<string, CollapseState>
 }
 
 const MIN_SIDEBAR_WIDTH = 200
@@ -43,7 +63,10 @@ const DEFAULT_PERSISTED_STATE: SidebarPersistedState = {
   openState: "open",
   width: DEFAULT_SIDEBAR_WIDTH,
   viewMode: "smart",
-  collapsedSections: ["other"],
+  sectionStates: {
+    "quick-links": "auto",
+    other: "collapsed",
+  },
 }
 
 interface SidebarContextValue {
@@ -53,8 +76,10 @@ interface SidebarContextValue {
   width: number
   /** Current view mode (smart/all) */
   viewMode: ViewMode
-  /** Currently collapsed sections */
-  collapsedSections: string[]
+  /** Tri-state collapse state per section key. Use `getSectionState` for reads with defaults. */
+  sectionStates: Record<string, CollapseState>
+  /** Read a section's state, falling back to the provided default (default: "open"). */
+  getSectionState: (section: string, defaultState?: CollapseState) => CollapseState
   /** Whether viewport is mobile-sized */
   isMobile: boolean
   /** Whether sidebar is currently being hovered (for hover margin behavior) */
@@ -87,8 +112,13 @@ interface SidebarContextValue {
   setWidth: (width: number) => void
   /** Set view mode */
   setViewMode: (mode: ViewMode) => void
-  /** Toggle a section's collapsed state */
-  toggleSectionCollapsed: (section: string) => void
+  /**
+   * Cycle a section through open → auto → collapsed → open.
+   * If no state has been stored yet, cycles from `defaultState` (default: "open").
+   */
+  cycleSectionState: (section: string, defaultState?: CollapseState) => void
+  /** Force a section to a specific state (e.g. "open") without cycling. */
+  setSectionState: (section: string, state: CollapseState) => void
   /** Set urgency block for a stream item (opacity is added automatically) */
   setUrgencyBlock: (streamId: string, block: Omit<UrgencyBlock, "opacity"> | null) => void
   /** Set sidebar height */
@@ -107,11 +137,43 @@ interface SidebarProviderProps {
   children: ReactNode
 }
 
+/** Shape of legacy persisted state (pre-sectionStates migration). */
+interface LegacyPersistedShape {
+  collapsedSections?: unknown
+  quickLinksState?: unknown
+}
+
+function readSectionStates(
+  parsed: Partial<SidebarPersistedState> & LegacyPersistedShape
+): Record<string, CollapseState> {
+  const next: Record<string, CollapseState> = {}
+
+  if (parsed.sectionStates && typeof parsed.sectionStates === "object") {
+    for (const [key, value] of Object.entries(parsed.sectionStates)) {
+      if (isCollapseState(value)) next[key] = value
+    }
+  }
+
+  // Migrate legacy `collapsedSections: string[]` — each entry becomes "collapsed"
+  if (Array.isArray(parsed.collapsedSections)) {
+    for (const key of parsed.collapsedSections) {
+      if (typeof key === "string" && !(key in next)) next[key] = "collapsed"
+    }
+  }
+
+  // Migrate legacy `quickLinksState` if present and the new key isn't set
+  if (isCollapseState(parsed.quickLinksState) && !("quick-links" in next)) {
+    next["quick-links"] = parsed.quickLinksState
+  }
+
+  return Object.keys(next).length > 0 ? next : DEFAULT_PERSISTED_STATE.sectionStates
+}
+
 function getStoredState(): SidebarPersistedState {
   try {
     const stored = localStorage.getItem(SIDEBAR_STATE_KEY)
     if (stored) {
-      const parsed = JSON.parse(stored) as Partial<SidebarPersistedState>
+      const parsed = JSON.parse(stored) as Partial<SidebarPersistedState> & LegacyPersistedShape
       return {
         openState: parsed.openState === "collapsed" ? "collapsed" : "open",
         width:
@@ -119,9 +181,7 @@ function getStoredState(): SidebarPersistedState {
             ? parsed.width
             : DEFAULT_PERSISTED_STATE.width,
         viewMode: parsed.viewMode === "all" ? "all" : "smart",
-        collapsedSections: Array.isArray(parsed.collapsedSections)
-          ? parsed.collapsedSections
-          : DEFAULT_PERSISTED_STATE.collapsedSections,
+        sectionStates: readSectionStates(parsed),
       }
     }
   } catch {
@@ -324,15 +384,34 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
     [updatePersistedState]
   )
 
-  // Section collapse state
-  const toggleSectionCollapsed = useCallback((section: string) => {
+  const getSectionState = useCallback(
+    (section: string, defaultState: CollapseState = "open"): CollapseState => {
+      return persistedState.sectionStates[section] ?? defaultState
+    },
+    [persistedState.sectionStates]
+  )
+
+  const cycleSectionState = useCallback((section: string, defaultState: CollapseState = "open") => {
     setPersistedState((current) => {
-      const isCollapsed = current.collapsedSections.includes(section)
+      const fromState = current.sectionStates[section] ?? defaultState
       const next = {
         ...current,
-        collapsedSections: isCollapsed
-          ? current.collapsedSections.filter((s) => s !== section)
-          : [...current.collapsedSections, section],
+        sectionStates: {
+          ...current.sectionStates,
+          [section]: COLLAPSE_CYCLE[fromState],
+        },
+      }
+      storeState(next)
+      return next
+    })
+  }, [])
+
+  const setSectionState = useCallback((section: string, state: CollapseState) => {
+    setPersistedState((current) => {
+      if (current.sectionStates[section] === state) return current
+      const next = {
+        ...current,
+        sectionStates: { ...current.sectionStates, [section]: state },
       }
       storeState(next)
       return next
@@ -397,7 +476,8 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
         state,
         width: persistedState.width,
         viewMode: persistedState.viewMode,
-        collapsedSections: persistedState.collapsedSections,
+        sectionStates: persistedState.sectionStates,
+        getSectionState,
         isMobile,
         isHovering,
         isResizing,
@@ -414,7 +494,8 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
         stopResizing,
         setWidth,
         setViewMode,
-        toggleSectionCollapsed,
+        cycleSectionState,
+        setSectionState,
         setUrgencyBlock,
         setSidebarHeight,
         setScrollContainerOffset,
@@ -434,4 +515,4 @@ export function useSidebar() {
   return context
 }
 
-export type { ViewMode, UrgencyBlock }
+export type { ViewMode, UrgencyBlock, CollapseState }

@@ -1,5 +1,6 @@
-import { ChevronRight, Plus } from "lucide-react"
+import { Plus } from "lucide-react"
 import type { ReactNode, RefObject } from "react"
+import type { CollapseState } from "@/contexts"
 import { cn } from "@/lib/utils"
 import { SMART_SECTIONS } from "./config"
 import { StreamItem } from "./stream-item"
@@ -8,29 +9,61 @@ import type { SectionKey, StreamItemData } from "./types"
 interface SectionHeaderProps {
   label: string
   icon?: string
-  /** Whether the section is currently collapsed */
-  isCollapsed?: boolean
-  /** Toggle callback - if provided, section becomes collapsible */
-  onToggle?: () => void
+  /** Current collapse state. If omitted, header renders as static (non-clickable). */
+  state?: CollapseState
+  /** Cycle callback. If omitted, header renders as static. */
+  onCycle?: () => void
+  /**
+   * Whether any item in this section is signaling (unread/mention/count).
+   * Used to show a dot on the header in `collapsed` state.
+   */
+  anySignal?: boolean
   /** Add button callback - shows plus icon on hover */
   onAdd?: () => void
   /** Tooltip for add button */
   addTooltip?: string
 }
 
-/** Section header with consistent styling across all views */
-function SectionHeader({ label, icon, isCollapsed, onToggle, onAdd, addTooltip }: SectionHeaderProps) {
-  const isCollapsible = !!onToggle
+const STATE_TO_FILLED: Record<CollapseState, number> = {
+  open: 3,
+  auto: 2,
+  collapsed: 1,
+}
+
+const STATE_TITLE: Record<CollapseState, string> = {
+  open: "Hide quiet items",
+  auto: "Collapse section",
+  collapsed: "Expand section",
+}
+
+/** Section header with stepper-dot state indicator. Consistent across all sidebar sections. */
+export function SectionHeader({
+  label,
+  icon,
+  state,
+  onCycle,
+  anySignal = false,
+  onAdd,
+  addTooltip,
+}: SectionHeaderProps) {
+  const isInteractive = !!onCycle && !!state
+  const filled = state ? STATE_TO_FILLED[state] : 0
+  const headerTitle = state ? STATE_TITLE[state] : undefined
 
   const headingContent = (
-    <div className="flex items-center gap-1.5">
-      {isCollapsible && (
-        <ChevronRight
-          className={cn(
-            "h-3.5 w-3.5 text-muted-foreground transition-transform duration-200",
-            !isCollapsed && "rotate-90"
-          )}
-        />
+    <div className="flex items-center gap-2">
+      {isInteractive && (
+        <div className="flex items-center gap-0.5" aria-hidden>
+          {[0, 1, 2].map((i) => (
+            <span
+              key={i}
+              className={cn(
+                "h-1.5 w-1.5 rounded-full transition-colors duration-150",
+                i < filled ? "bg-muted-foreground" : "bg-muted-foreground/20"
+              )}
+            />
+          ))}
+        </div>
       )}
       <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground m-0">
         {icon && `${icon} `}
@@ -41,6 +74,9 @@ function SectionHeader({ label, icon, isCollapsed, onToggle, onAdd, addTooltip }
 
   const rightContent = (
     <div className="flex items-center gap-1">
+      {state === "collapsed" && anySignal && (
+        <span aria-label="Unread activity" className="h-2 w-2 rounded-full bg-primary" />
+      )}
       {onAdd && (
         <button
           onClick={(e) => {
@@ -56,20 +92,23 @@ function SectionHeader({ label, icon, isCollapsed, onToggle, onAdd, addTooltip }
     </div>
   )
 
-  if (isCollapsible) {
+  if (isInteractive) {
     return (
       <div
         role="button"
         tabIndex={0}
-        onClick={onToggle}
+        aria-label={headerTitle}
+        aria-expanded={state !== "collapsed"}
+        title={headerTitle}
+        onClick={onCycle}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault()
-            onToggle()
+            onCycle()
           }
         }}
         className={cn(
-          "group/section w-full flex items-center justify-between px-3 py-2 rounded-md cursor-pointer",
+          "group/section w-full flex items-center justify-between px-3 py-2 rounded-md cursor-pointer select-none [-webkit-touch-callout:none]",
           "hover:bg-muted/50 transition-colors"
         )}
       >
@@ -80,7 +119,7 @@ function SectionHeader({ label, icon, isCollapsed, onToggle, onAdd, addTooltip }
   }
 
   return (
-    <div className="group/section px-3 py-2 flex items-center justify-between">
+    <div className="group/section px-3 py-2 flex items-center justify-between select-none [-webkit-touch-callout:none]">
       {headingContent}
       {rightContent}
     </div>
@@ -96,9 +135,13 @@ interface StreamSectionProps {
   activeStreamId?: string
   getUnreadCount: (streamId: string) => number
   getMentionCount: (streamId: string) => number
-  isCollapsed?: boolean
-  onToggle?: () => void
+  state?: CollapseState
+  onCycle?: () => void
+  /** Called when the "N more streams" hint button is clicked. Defaults to onCycle if unset. */
+  onExpand?: () => void
   showCollapsedHint?: boolean
+  /** When true, `auto` mode behaves like `open` (useful for sections like Pinned where filtering by signal defeats the point). */
+  alwaysShowAll?: boolean
   action?: ReactNode
   /** Show compact view (title only, no preview) */
   compact?: boolean
@@ -112,6 +155,14 @@ interface StreamSectionProps {
   addTooltip?: string
 }
 
+function hasStreamSignal(
+  stream: StreamItemData,
+  getUnreadCount: (streamId: string) => number,
+  getMentionCount: (streamId: string) => number
+) {
+  return getUnreadCount(stream.id) > 0 || getMentionCount(stream.id) > 0
+}
+
 /** Stream section that composes SectionHeader + items + optional action */
 export function StreamSection({
   label,
@@ -122,9 +173,11 @@ export function StreamSection({
   activeStreamId,
   getUnreadCount,
   getMentionCount,
-  isCollapsed = false,
-  onToggle,
+  state = "open",
+  onCycle,
+  onExpand,
   showCollapsedHint = false,
+  alwaysShowAll = false,
   action,
   compact = false,
   showPreviewOnHover = false,
@@ -132,21 +185,35 @@ export function StreamSection({
   onAdd,
   addTooltip,
 }: StreamSectionProps) {
+  const anySignal = items.some((stream) => hasStreamSignal(stream, getUnreadCount, getMentionCount))
+  const filterByAuto = state === "auto" && !alwaysShowAll
+
+  let visibleItems: StreamItemData[]
+  if (state === "collapsed") {
+    visibleItems = []
+  } else if (filterByAuto) {
+    visibleItems = items.filter((stream) => hasStreamSignal(stream, getUnreadCount, getMentionCount))
+  } else {
+    visibleItems = items
+  }
+
+  const isCollapsed = state === "collapsed"
+
   return (
     <div className="mb-4">
       <SectionHeader
         label={label}
         icon={icon}
-        isCollapsed={isCollapsed}
-        onToggle={onToggle}
+        state={state}
+        onCycle={onCycle}
+        anySignal={anySignal}
         onAdd={onAdd}
         addTooltip={addTooltip}
       />
 
-      {/* Section items */}
-      {!isCollapsed && (
+      {visibleItems.length > 0 && (
         <div className="mt-1 flex flex-col gap-0.5">
-          {items.map((stream) => (
+          {visibleItems.map((stream) => (
             <StreamItem
               key={stream.id}
               workspaceId={workspaceId}
@@ -163,11 +230,12 @@ export function StreamSection({
         </div>
       )}
 
-      {/* Collapsed hint for "Everything Else" style sections */}
-      {showCollapsedHint && isCollapsed && items.length > 0 && (
+      {/* "Nothing shown here, N streams hidden" hint — fires when the section is
+          collapsed, or in auto mode with no signaling streams to surface. */}
+      {showCollapsedHint && items.length > 0 && visibleItems.length === 0 && (
         <button
           type="button"
-          onClick={onToggle}
+          onClick={onExpand ?? onCycle}
           className="mx-3 mt-1 px-3 py-2 w-[calc(100%-1.5rem)] rounded-md bg-muted/30 border border-dashed border-border/50 cursor-pointer hover:bg-muted/50 transition-colors text-center"
         >
           <span className="text-xs text-muted-foreground">
@@ -177,7 +245,6 @@ export function StreamSection({
         </button>
       )}
 
-      {/* Optional action (like "+ New Scratchpad" button) */}
       {!isCollapsed && action}
     </div>
   )
@@ -191,8 +258,9 @@ interface SmartSectionProps {
   activeStreamId?: string
   getUnreadCount: (streamId: string) => number
   getMentionCount: (streamId: string) => number
-  isCollapsed?: boolean
-  onToggle?: () => void
+  state?: CollapseState
+  onCycle?: () => void
+  onExpand?: () => void
   /** Reference to scroll container for position tracking */
   scrollContainerRef?: RefObject<HTMLDivElement | null>
 }
@@ -206,13 +274,13 @@ export function SmartSection({
   activeStreamId,
   getUnreadCount,
   getMentionCount,
-  isCollapsed = false,
-  onToggle,
+  state = "open",
+  onCycle,
+  onExpand,
   scrollContainerRef,
 }: SmartSectionProps) {
   const config = SMART_SECTIONS[section]
 
-  // Hide empty sections
   if (items.length === 0) return null
 
   return (
@@ -225,9 +293,11 @@ export function SmartSection({
       activeStreamId={activeStreamId}
       getUnreadCount={getUnreadCount}
       getMentionCount={getMentionCount}
-      isCollapsed={isCollapsed}
-      onToggle={onToggle}
+      state={state}
+      onCycle={onCycle}
+      onExpand={onExpand}
       showCollapsedHint={config.showCollapsedHint}
+      alwaysShowAll={config.alwaysShowAll}
       compact={config.compact}
       showPreviewOnHover={config.showPreviewOnHover}
       scrollContainerRef={scrollContainerRef}

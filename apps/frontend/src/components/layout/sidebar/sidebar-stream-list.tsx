@@ -1,4 +1,5 @@
 import type { RefObject } from "react"
+import type { CollapseState } from "@/contexts"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
 import { SmartSection, StreamSection } from "./sections"
@@ -25,8 +26,9 @@ interface SidebarStreamListProps {
   }
   getUnreadCount: (streamId: string) => number
   getMentionCount: (streamId: string) => number
-  isSectionCollapsed: (section: string) => boolean
-  onToggleSectionCollapsed: (section: string) => void
+  getSectionState: (section: string, defaultState?: CollapseState) => CollapseState
+  cycleSectionState: (section: string, defaultState?: CollapseState) => void
+  setSectionState: (section: string, state: CollapseState) => void
   onCreateScratchpad: () => void | Promise<void>
   onCreateChannel: () => void | Promise<void>
   scrollContainerRef: RefObject<HTMLDivElement | null>
@@ -44,8 +46,9 @@ export function SidebarStreamList({
   streamsByType,
   getUnreadCount,
   getMentionCount,
-  isSectionCollapsed,
-  onToggleSectionCollapsed,
+  getSectionState,
+  cycleSectionState,
+  setSectionState,
   onCreateScratchpad,
   onCreateChannel,
   scrollContainerRef,
@@ -77,8 +80,8 @@ export function SidebarStreamList({
           activeStreamId={activeStreamId}
           getUnreadCount={getUnreadCount}
           getMentionCount={getMentionCount}
-          isCollapsed={isSectionCollapsed("important")}
-          onToggle={() => onToggleSectionCollapsed("important")}
+          state={getSectionState("important")}
+          onCycle={() => cycleSectionState("important")}
           scrollContainerRef={scrollContainerRef}
         />
         <SmartSection
@@ -89,8 +92,8 @@ export function SidebarStreamList({
           activeStreamId={activeStreamId}
           getUnreadCount={getUnreadCount}
           getMentionCount={getMentionCount}
-          isCollapsed={isSectionCollapsed("recent")}
-          onToggle={() => onToggleSectionCollapsed("recent")}
+          state={getSectionState("recent")}
+          onCycle={() => cycleSectionState("recent")}
           scrollContainerRef={scrollContainerRef}
         />
         <SmartSection
@@ -101,8 +104,8 @@ export function SidebarStreamList({
           activeStreamId={activeStreamId}
           getUnreadCount={getUnreadCount}
           getMentionCount={getMentionCount}
-          isCollapsed={isSectionCollapsed("pinned")}
-          onToggle={() => onToggleSectionCollapsed("pinned")}
+          state={getSectionState("pinned")}
+          onCycle={() => cycleSectionState("pinned")}
           scrollContainerRef={scrollContainerRef}
         />
         <SmartSection
@@ -113,8 +116,9 @@ export function SidebarStreamList({
           activeStreamId={activeStreamId}
           getUnreadCount={getUnreadCount}
           getMentionCount={getMentionCount}
-          isCollapsed={isSectionCollapsed("other")}
-          onToggle={() => onToggleSectionCollapsed("other")}
+          state={getSectionState("other", "collapsed")}
+          onCycle={() => cycleSectionState("other", "collapsed")}
+          onExpand={() => setSectionState("other", "open")}
           scrollContainerRef={scrollContainerRef}
         />
       </>
@@ -130,8 +134,8 @@ export function SidebarStreamList({
           activeStreamId={activeStreamId}
           getUnreadCount={getUnreadCount}
           getMentionCount={getMentionCount}
-          isCollapsed={isSectionCollapsed("scratchpads")}
-          onToggle={() => onToggleSectionCollapsed("scratchpads")}
+          state={getSectionState("scratchpads")}
+          onCycle={() => cycleSectionState("scratchpads")}
           scrollContainerRef={scrollContainerRef}
           onAdd={() => void onCreateScratchpad()}
           addTooltip="+ New Scratchpad"
@@ -147,8 +151,8 @@ export function SidebarStreamList({
           activeStreamId={activeStreamId}
           getUnreadCount={getUnreadCount}
           getMentionCount={getMentionCount}
-          isCollapsed={isSectionCollapsed("channels")}
-          onToggle={() => onToggleSectionCollapsed("channels")}
+          state={getSectionState("channels")}
+          onCycle={() => cycleSectionState("channels")}
           scrollContainerRef={scrollContainerRef}
           onAdd={() => void onCreateChannel()}
           addTooltip="+ New Channel"
@@ -165,8 +169,8 @@ export function SidebarStreamList({
             activeStreamId={activeStreamId}
             getUnreadCount={getUnreadCount}
             getMentionCount={getMentionCount}
-            isCollapsed={isSectionCollapsed("dms")}
-            onToggle={() => onToggleSectionCollapsed("dms")}
+            state={getSectionState("dms")}
+            onCycle={() => cycleSectionState("dms")}
             scrollContainerRef={scrollContainerRef}
             compact
             showPreviewOnHover

@@ -39,6 +39,6 @@ export {
   type CoordinatedPhase,
   type StreamState,
 } from "./coordinated-loading-context"
-export { SidebarProvider, useSidebar, type ViewMode, type UrgencyBlock } from "./sidebar-context"
+export { SidebarProvider, useSidebar, type ViewMode, type UrgencyBlock, type CollapseState } from "./sidebar-context"
 export { TraceProvider, useTrace } from "./trace-context"
 export { MediaGalleryProvider, useMediaGallery } from "./media-gallery-context"
