@@ -1,9 +1,8 @@
-import { useState } from "react"
-import { Bell, BellOff, Calendar as CalendarIcon } from "lucide-react"
+import { useMemo, useState } from "react"
+import { Bell, BellOff, Calendar as CalendarIcon, ChevronLeft } from "lucide-react"
 import { toast } from "sonner"
 import type { SavedMessageView } from "@threa/types"
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { usePreferences } from "@/contexts"
@@ -21,26 +20,37 @@ interface ReminderPickerSheetProps {
 }
 
 /**
- * Mobile bottom-sheet for picking a reminder time. Presets apply immediately
- * and close the sheet; "Pick a time…" opens a secondary dialog with a native
- * datetime picker so iOS/Android can show their platform controls.
+ * Mobile bottom-sheet for picking a reminder time. "Pick a time…" swaps the
+ * preset list for an inline datetime picker so the action row stays near the
+ * bottom of the screen — no thumb-jump to a centered dialog.
  */
 export function ReminderPickerSheet({ open, onOpenChange, workspaceId, messageId, saved }: ReminderPickerSheetProps) {
   const { preferences } = usePreferences()
   const timezone = preferences?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
   const saveMutation = useSaveMessage(workspaceId)
   const updateMutation = useUpdateSaved(workspaceId)
-  const [customOpen, setCustomOpen] = useState(false)
+  const [mode, setMode] = useState<"presets" | "custom">("presets")
   const [customDateTime, setCustomDateTime] = useState("")
 
-  const setReminder = (date: Date | null, dismissAfter = true) => {
+  // `datetime-local` wants `YYYY-MM-DDTHH:mm` in *local* time. Build it from
+  // the current instant rounded up to the next minute so the min matches the
+  // clamp the server applies.
+  const minLocal = useMemo(() => toLocalInput(new Date(Date.now() + 60_000)), [open, mode])
+
+  const resetAndClose = () => {
+    setMode("presets")
+    setCustomDateTime("")
+    onOpenChange(false)
+  }
+
+  const setReminder = (date: Date | null) => {
     if (!saved) {
       saveMutation.mutate(
         { messageId, remindAt: date?.toISOString() ?? null },
         {
           onSuccess: () => {
             toast.success(date ? "Reminder set" : "Saved")
-            if (dismissAfter) onOpenChange(false)
+            resetAndClose()
           },
           onError: () => toast.error("Could not save"),
         }
@@ -52,7 +62,7 @@ export function ReminderPickerSheet({ open, onOpenChange, workspaceId, messageId
       {
         onSuccess: () => {
           toast.success(date ? "Reminder set" : "Reminder cleared")
-          if (dismissAfter) onOpenChange(false)
+          resetAndClose()
         },
         onError: () => toast.error("Could not update reminder"),
       }
@@ -67,22 +77,42 @@ export function ReminderPickerSheet({ open, onOpenChange, workspaceId, messageId
       return
     }
     setReminder(parsed)
-    setCustomOpen(false)
-    setCustomDateTime("")
+  }
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      // Reset mode when drawer closes so the next open starts on the preset list.
+      setMode("presets")
+      setCustomDateTime("")
+    }
+    onOpenChange(nextOpen)
   }
 
   return (
-    <>
-      <Drawer open={open} onOpenChange={onOpenChange}>
-        <DrawerContent className="max-h-[85vh]">
-          <div className="flex flex-col px-4 pt-4 pb-safe">
-            <div className="flex items-center justify-between mb-3">
-              <DrawerTitle className="text-base">{saved ? "Reminder" : "Save & remind"}</DrawerTitle>
-              {saved && (
-                <ReminderBadge remindAt={saved.remindAt} reminderSentAt={saved.reminderSentAt} className="text-xs" />
+    <Drawer open={open} onOpenChange={handleOpenChange}>
+      <DrawerContent className="max-h-[85vh]">
+        <div className="flex flex-col px-4 pt-4 pb-safe">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              {mode === "custom" && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 -ml-2"
+                  onClick={() => setMode("presets")}
+                  aria-label="Back to presets"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
               )}
+              <DrawerTitle className="text-base">{resolveTitle(mode, saved)}</DrawerTitle>
             </div>
+            {saved && mode === "presets" && (
+              <ReminderBadge remindAt={saved.remindAt} reminderSentAt={saved.reminderSentAt} className="text-xs" />
+            )}
+          </div>
 
+          {mode === "presets" ? (
             <div className="flex flex-col gap-1">
               {REMINDER_PRESETS.map((preset) => (
                 <SheetMenuButton
@@ -93,7 +123,7 @@ export function ReminderPickerSheet({ open, onOpenChange, workspaceId, messageId
                   {preset.label}
                 </SheetMenuButton>
               ))}
-              <SheetMenuButton onClick={() => setCustomOpen(true)}>
+              <SheetMenuButton onClick={() => setMode("custom")}>
                 <CalendarIcon className="h-4 w-4 text-muted-foreground" />
                 Pick a time…
               </SheetMenuButton>
@@ -104,34 +134,45 @@ export function ReminderPickerSheet({ open, onOpenChange, workspaceId, messageId
                 </SheetMenuButton>
               )}
             </div>
-          </div>
-        </DrawerContent>
-      </Drawer>
-
-      <Dialog open={customOpen} onOpenChange={setCustomOpen}>
-        <DialogContent className="max-w-xs">
-          <DialogHeader>
-            <DialogTitle>Pick a reminder time</DialogTitle>
-          </DialogHeader>
-          <input
-            type="datetime-local"
-            value={customDateTime}
-            onChange={(e) => setCustomDateTime(e.target.value)}
-            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-            autoFocus
-          />
-          <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setCustomOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleCustom} disabled={!customDateTime}>
-              Set reminder
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </>
+          ) : (
+            // Keep the input + Set button grouped at the bottom of the sheet so
+            // the tap target is close to the thumb that just opened the drawer.
+            <div className="flex flex-col gap-3">
+              <input
+                type="datetime-local"
+                value={customDateTime}
+                min={minLocal}
+                onChange={(e) => setCustomDateTime(e.target.value)}
+                className="w-full rounded-md border bg-background px-3 py-3 text-base"
+                autoFocus
+              />
+              <Button
+                className="w-full h-11"
+                onClick={handleCustom}
+                disabled={!customDateTime || saveMutation.isPending || updateMutation.isPending}
+              >
+                Set reminder
+              </Button>
+            </div>
+          )}
+        </div>
+      </DrawerContent>
+    </Drawer>
   )
+}
+
+function resolveTitle(mode: "presets" | "custom", saved: SavedMessageView | null): string {
+  if (mode === "custom") return "Pick a reminder time"
+  return saved ? "Reminder" : "Save & remind"
+}
+
+/**
+ * Format a Date as `YYYY-MM-DDTHH:mm` in local time — the shape
+ * `<input type="datetime-local">` expects for its `min`/`value`.
+ */
+function toLocalInput(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0")
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
 interface SheetMenuButtonProps {

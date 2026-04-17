@@ -6,6 +6,7 @@ const ACTIVITY_DISPLAY: Record<string, { verb: string }> = {
   mention: { verb: "mentioned you in" },
   message: { verb: "posted in" },
   reaction: { verb: "reacted to a message in" },
+  saved_reminder: { verb: "has a reminder for a message in" },
 }
 
 const SELF_ACTIVITY_DISPLAY: Record<string, { verb: string }> = {
@@ -13,6 +14,7 @@ const SELF_ACTIVITY_DISPLAY: Record<string, { verb: string }> = {
   mention: { verb: "You mentioned someone in" },
   message: { verb: "You posted in" },
   reaction: { verb: "You reacted to a message in" },
+  saved_reminder: { verb: "has a reminder for a message in" },
 }
 
 interface ActivityPreviewProps {

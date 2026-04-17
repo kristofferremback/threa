@@ -361,6 +361,37 @@ export class ActivityService {
   }
 
   /**
+   * Create an activity row when a saved-message reminder fires. The payload
+   * already carries a resolved `SavedMessageView` so we can build the context
+   * without additional DB lookups. actor is "system" — matches push semantics
+   * and keeps the (user, message, type, actor) dedup stable.
+   */
+  async processSavedReminderFired(params: {
+    workspaceId: string
+    userId: string
+    streamId: string
+    messageId: string
+    contentPreview: string | null
+    streamName: string | null
+  }): Promise<Activity[]> {
+    const context: Record<string, unknown> = {
+      contentPreview: params.contentPreview ?? "",
+      streamName: params.streamName,
+    }
+    const row = await ActivityRepository.insert(this.pool, {
+      workspaceId: params.workspaceId,
+      userId: params.userId,
+      activityType: ActivityTypes.SAVED_REMINDER,
+      streamId: params.streamId,
+      messageId: params.messageId,
+      actorId: "system",
+      actorType: AuthorTypes.SYSTEM,
+      context,
+    })
+    return row ? [row] : []
+  }
+
+  /**
    * Batch-check which user IDs have access to a stream.
    * Public streams: all pass. Private: single batch membership query.
    */
