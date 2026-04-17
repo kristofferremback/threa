@@ -15,7 +15,8 @@ import { Toaster } from "@/components/ui/sonner"
 import { MentionableMarkdownWrapper, type MentionableMarkdownWrapperProps } from "@/components/ui/markdown-content"
 import type { MentionType } from "@/lib/markdown/mention-context"
 import { UserProfileProvider, useUserProfile } from "@/components/user-profile"
-import { WorkspaceEmojiProvider, WorkspaceCommandListProvider } from "@/components/workspace-emoji"
+import { WorkspaceEmojiProvider } from "@/components/workspace-emoji"
+import { WorkspaceCommandListProvider } from "@/components/workspace-command-list"
 import { ChannelLinkProvider } from "@/lib/markdown/channel-link-context"
 import {
   SocketProvider,
