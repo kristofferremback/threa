@@ -33,6 +33,9 @@ function toCached(view: SavedMessageView): CachedSavedMessage {
     unavailableReason: view.unavailableReason,
     _savedAtMs: Date.parse(view.savedAt),
     _statusChangedAtMs: Date.parse(view.statusChangedAt),
+    // 0 sentinel for "no reminder fired" so the index has a canonical
+    // value instead of null/undefined (Dexie skips undefined in ranges).
+    _reminderFiredAtMs: view.reminderSentAt ? Date.parse(view.reminderSentAt) : 0,
     _cachedAt: Date.now(),
   }
 }
@@ -226,18 +229,17 @@ export type { SavedMessageListResponse }
 /**
  * Live count of saved items with a fired-but-unacknowledged reminder. Used by
  * the sidebar badge — having saved things isn't itself noisy, but a fired
- * reminder is the signal worth surfacing. Filtered in-memory since Dexie
- * can't index on "reminderSentAt is not null"; the index still narrows to
- * (workspace, status="saved") so we only scan a small page.
+ * reminder is the signal worth surfacing. Range-query on the
+ * `[workspaceId+status+_reminderFiredAtMs]` compound index, between 1 and
+ * +Infinity, so Dexie counts the fired rows without materialising objects.
  */
 export function useLiveSavedCount(workspaceId: string): number {
   const count = useLiveQuery(async () => {
     if (!workspaceId) return 0
-    const rows = await db.savedMessages
-      .where("[workspaceId+status+_savedAtMs]")
-      .between([workspaceId, "saved", -Infinity], [workspaceId, "saved", Infinity], true, true)
-      .toArray()
-    return rows.filter((row) => row.reminderSentAt !== null).length
+    return db.savedMessages
+      .where("[workspaceId+status+_reminderFiredAtMs]")
+      .between([workspaceId, "saved", 1], [workspaceId, "saved", Infinity], true, true)
+      .count()
   }, [workspaceId])
   return count ?? 0
 }

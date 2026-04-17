@@ -1,5 +1,5 @@
-import { useState, useMemo } from "react"
-import { useParams, Link } from "react-router-dom"
+import { useMemo } from "react"
+import { Navigate, useNavigate, useParams, Link } from "react-router-dom"
 import { Bell, ArrowLeft, Check } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -16,23 +16,57 @@ import type { AuthorType, Activity } from "@threa/types"
 
 type ActivityFilter = "all" | "unread" | "me"
 
+const VALID_FILTERS = new Set<string>(["all", "unread", "me"])
+
+/**
+ * Route is `/w/:workspaceId/activity/:filter?` — bare `/activity` renders the
+ * default "all" filter, `/activity/unread` and `/activity/me` render the other
+ * two. Refreshes, back/forward, and shared links all land on the same view
+ * (INV-59). Unknown filter segments redirect to the default.
+ */
 export function ActivityPage() {
-  const { workspaceId } = useParams<{ workspaceId: string }>()
-  const [filter, setFilter] = useState<ActivityFilter>("all")
-  const { data: activities, isLoading } = useActivityFeed(workspaceId ?? "", {
+  const { workspaceId, filter: filterParam } = useParams<{ workspaceId: string; filter?: string }>()
+
+  if (!workspaceId) return null
+
+  if (filterParam === "all") {
+    return <Navigate to={`/w/${workspaceId}/activity`} replace />
+  }
+  if (filterParam !== undefined && !VALID_FILTERS.has(filterParam)) {
+    return <Navigate to={`/w/${workspaceId}/activity`} replace />
+  }
+
+  const filter: ActivityFilter = (filterParam as ActivityFilter | undefined) ?? "all"
+
+  return <ActivityPageInner workspaceId={workspaceId} filter={filter} />
+}
+
+interface InnerProps {
+  workspaceId: string
+  filter: ActivityFilter
+}
+
+function ActivityPageInner({ workspaceId, filter }: InnerProps) {
+  const navigate = useNavigate()
+  const { data: activities, isLoading } = useActivityFeed(workspaceId, {
     unreadOnly: filter === "unread",
     mineOnly: filter === "me",
   })
-  const markRead = useMarkActivityRead(workspaceId ?? "")
-  const markAllRead = useMarkAllActivityRead(workspaceId ?? "")
-  const { getActorName, getActorAvatar } = useActors(workspaceId ?? "")
-  const { toEmoji } = useWorkspaceEmoji(workspaceId ?? "")
-  const idbStreams = useWorkspaceStreams(workspaceId ?? "")
-  const { unreadActivityCount } = useActivityCounts(workspaceId ?? "")
+  const markRead = useMarkActivityRead(workspaceId)
+  const markAllRead = useMarkAllActivityRead(workspaceId)
+  const { getActorName, getActorAvatar } = useActors(workspaceId)
+  const { toEmoji } = useWorkspaceEmoji(workspaceId)
+  const idbStreams = useWorkspaceStreams(workspaceId)
+  const { unreadActivityCount } = useActivityCounts(workspaceId)
 
   const streamById = useMemo(() => {
     return new Map(idbStreams.map((s) => [s.id, s]))
   }, [idbStreams])
+
+  const handleFilterChange = (next: ActivityFilter) => {
+    const path = next === "all" ? `/w/${workspaceId}/activity` : `/w/${workspaceId}/activity/${next}`
+    navigate(path)
+  }
 
   function resolveActivityStreamName(activity: Activity): string {
     const stream = streamById.get(activity.streamId)
@@ -68,8 +102,6 @@ export function ActivityPage() {
     if (ctx.streamName && ctx.streamName !== "Untitled") return ctx.streamName
     return streamFallbackLabel("thread", "activity")
   }
-
-  if (!workspaceId) return null
 
   let content = <ActivitySkeleton />
   if (!isLoading) {
@@ -111,7 +143,7 @@ export function ActivityPage() {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          <Tabs value={filter} onValueChange={(v) => setFilter(v as ActivityFilter)}>
+          <Tabs value={filter} onValueChange={(v) => handleFilterChange(v as ActivityFilter)}>
             <TabsList className="h-8">
               <TabsTrigger value="all" className="text-xs px-2.5 py-1">
                 All

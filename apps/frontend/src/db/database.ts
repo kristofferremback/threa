@@ -314,6 +314,12 @@ export interface CachedSavedMessage {
   _savedAtMs: number
   /** Sort key — ms timestamp parsed from statusChangedAt. */
   _statusChangedAtMs: number
+  /**
+   * 0 when no reminder has fired; otherwise ms timestamp of reminderSentAt.
+   * Lets the sidebar badge count fired reminders via an index-backed range
+   * query instead of a full-table filter.
+   */
+  _reminderFiredAtMs: number
   _cachedAt: number
 }
 
@@ -554,6 +560,24 @@ class ThreaDatabase extends Dexie {
       savedMessages:
         "id, workspaceId, messageId, status, [workspaceId+status+_savedAtMs], [workspaceId+status+_statusChangedAtMs], _cachedAt",
     })
+
+    // v25: Add `_reminderFiredAtMs` + compound index so the sidebar badge
+    // can count fired reminders via a range query instead of a full scan.
+    this.version(25)
+      .stores({
+        savedMessages:
+          "id, workspaceId, messageId, status, [workspaceId+status+_savedAtMs], [workspaceId+status+_statusChangedAtMs], [workspaceId+status+_reminderFiredAtMs], _cachedAt",
+      })
+      .upgrade(async (tx) => {
+        // Populate the new field for rows cached before v25 so the count
+        // isn't silently 0 until the next list fetch rehydrates them.
+        await tx
+          .table("savedMessages")
+          .toCollection()
+          .modify((row: { reminderSentAt: string | null; _reminderFiredAtMs?: number }) => {
+            row._reminderFiredAtMs = row.reminderSentAt ? Date.parse(row.reminderSentAt) : 0
+          })
+      })
 
     this.workspaceUsers = this.table(WORKSPACE_USERS_STORE) as EntityTable<CachedWorkspaceUser, "id">
   }

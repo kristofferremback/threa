@@ -41,6 +41,13 @@ export interface InsertActivityParams {
   activityType: string
   streamId: string
   messageId: string
+  /**
+   * Usually a user/persona/bot/system id. For `saved_reminder` activities
+   * this is the saved row's ULID so the partial unique index
+   * (user_id, message_id, activity_type, actor_id) mints a fresh row per
+   * save-then-remind lifecycle instead of silently upserting. See
+   * ActivityService.processSavedReminderFired.
+   */
   actorId: string
   actorType: string
   context?: Record<string, unknown>

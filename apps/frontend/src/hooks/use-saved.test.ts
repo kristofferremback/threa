@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import type { SavedMessageView } from "@threa/types"
 import { db } from "@/db"
-import { replaceSavedPage } from "./use-saved"
+import { persistSavedRows, replaceSavedPage } from "./use-saved"
 
 const WORKSPACE_ID = "ws_test"
 
@@ -46,6 +46,7 @@ describe("replaceSavedPage", () => {
       unavailableReason: null,
       _savedAtMs: Date.now() - 60_000,
       _statusChangedAtMs: Date.now() - 60_000,
+      _reminderFiredAtMs: 0,
       _cachedAt: fetchStartedAt - 1_000,
     })
 
@@ -73,6 +74,7 @@ describe("replaceSavedPage", () => {
       unavailableReason: null,
       _savedAtMs: Date.now(),
       _statusChangedAtMs: Date.now(),
+      _reminderFiredAtMs: 0,
       _cachedAt: fetchStartedAt + 10,
     })
 
@@ -100,6 +102,7 @@ describe("replaceSavedPage", () => {
       unavailableReason: null,
       _savedAtMs: Date.now(),
       _statusChangedAtMs: Date.now(),
+      _reminderFiredAtMs: 0,
       _cachedAt: fetchStartedAt - 1_000,
     })
 
@@ -132,6 +135,7 @@ describe("replaceSavedPage", () => {
       unavailableReason: null,
       _savedAtMs: Date.now(),
       _statusChangedAtMs: Date.now(),
+      _reminderFiredAtMs: 0,
       _cachedAt: fetchStartedAt - 1_000,
     })
 
@@ -139,5 +143,50 @@ describe("replaceSavedPage", () => {
 
     const remaining = await db.savedMessages.toArray()
     expect(remaining.map((r) => r.id)).toEqual(["saved_done"])
+  })
+})
+
+describe("persistSavedRows -> _reminderFiredAtMs", () => {
+  beforeEach(async () => {
+    await db.savedMessages.clear()
+  })
+
+  it("derives the index field from reminderSentAt", async () => {
+    const firedAt = "2026-04-17T09:00:00.000Z"
+    await persistSavedRows(WORKSPACE_ID, [
+      makeView({ id: "saved_pending", messageId: "msg_pending", remindAt: "2030-01-01T00:00:00.000Z" }),
+      makeView({
+        id: "saved_fired",
+        messageId: "msg_fired",
+        remindAt: firedAt,
+        reminderSentAt: firedAt,
+      }),
+    ])
+
+    const rows = await db.savedMessages.toArray()
+    const byId = new Map(rows.map((r) => [r.id, r]))
+    expect(byId.get("saved_pending")?._reminderFiredAtMs).toBe(0)
+    expect(byId.get("saved_fired")?._reminderFiredAtMs).toBe(Date.parse(firedAt))
+  })
+
+  it("index-backed count returns only rows with fired reminders", async () => {
+    const firedAt = "2026-04-17T09:00:00.000Z"
+    await persistSavedRows(WORKSPACE_ID, [
+      makeView({ id: "saved_a", messageId: "msg_a" }),
+      makeView({ id: "saved_b", messageId: "msg_b", remindAt: "2030-01-01T00:00:00.000Z" }),
+      makeView({
+        id: "saved_c",
+        messageId: "msg_c",
+        remindAt: firedAt,
+        reminderSentAt: firedAt,
+      }),
+    ])
+
+    const count = await db.savedMessages
+      .where("[workspaceId+status+_reminderFiredAtMs]")
+      .between([WORKSPACE_ID, "saved", 1], [WORKSPACE_ID, "saved", Infinity], true, true)
+      .count()
+
+    expect(count).toBe(1)
   })
 })
