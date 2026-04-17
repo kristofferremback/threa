@@ -11,6 +11,7 @@ import {
   History,
   Link2,
   Bookmark,
+  BookmarkX,
   Bell,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -124,12 +125,20 @@ export const messageActions: MessageAction[] = [
     action: (ctx) => ctx.onQuoteReply?.(),
   },
   {
+    // Split into two rows (save / unsave) so the menu entry always matches
+    // the action that will fire — a single "Save for later" row on an
+    // already-saved message was misleading and silently unsaved things.
     id: "save-message",
-    // Icon and label flip based on current save state so the menu reads as
-    // the toggle it is — "Save for later" becomes "Unsave" once saved.
     label: "Save for later",
     icon: Bookmark,
-    when: (ctx) => !!ctx.onToggleSave,
+    when: (ctx) => !!ctx.onToggleSave && !ctx.isSaved,
+    action: (ctx) => ctx.onToggleSave?.(),
+  },
+  {
+    id: "unsave-message",
+    label: "Remove from Saved",
+    icon: BookmarkX,
+    when: (ctx) => !!ctx.onToggleSave && !!ctx.isSaved,
     action: (ctx) => ctx.onToggleSave?.(),
   },
   {
