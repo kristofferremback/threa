@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
+import type { ReactNode } from "react"
 import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MessageInput, materializePendingAttachmentReferences } from "./message-input"
@@ -142,10 +143,13 @@ vi.mock("@/hooks", () => ({
     clearAttachments: mockClearAttachments,
     isLoaded: mockComposerState.isLoaded,
   }),
+  useComposerHeightPublish: () => {},
 }))
 
 // Mock MessageComposer
 vi.mock("@/components/composer", () => ({
+  FloatingComposerShell: ({ children, hidden }: { children: ReactNode; hidden?: boolean }) =>
+    hidden ? null : <div>{children}</div>,
   MessageComposer: ({
     onSubmit,
     canSubmit,

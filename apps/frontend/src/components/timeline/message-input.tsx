@@ -1,12 +1,12 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react"
 import { createPortal } from "react-dom"
 import { useNavigate } from "react-router-dom"
-import { useDraftComposer, getDraftMessageKey, useStreamOrDraft } from "@/hooks"
+import { useDraftComposer, getDraftMessageKey, useStreamOrDraft, useComposerHeightPublish } from "@/hooks"
 import { useWorkspaceStreams } from "@/stores/workspace-store"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { usePreferences } from "@/contexts"
 import { useConnectionState } from "@/components/layout/connection-status"
-import { MessageComposer } from "@/components/composer"
+import { FloatingComposerShell, MessageComposer } from "@/components/composer"
 import { commandsApi } from "@/api"
 import { hasCommandNode } from "@/lib/commands"
 import { serializeToMarkdown } from "@threa/prosemirror"
@@ -281,6 +281,12 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   }, [])
   const handleCollapse = useCallback(() => setExpanded(false), [])
 
+  // Publish the floating composer's measured height so the scroll area can
+  // reserve matching space (Virtuoso Footer, plain-scroll padding-bottom).
+  // Disabled while the expanded overlay is open so the scroll area can use its
+  // full height behind the overlay.
+  useComposerHeightPublish(selfRef, { active: !expanded })
+
   // Escape to close — only when focus is inside this expanded editor
   useEffect(() => {
     if (!expanded) return
@@ -456,12 +462,10 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
           under document.body), so the composer is hidden purely from DOM presence.
           This replaces a previous ref-counted React state mechanism that was prone to
           leaks across hydration races and virtualization cycles. */}
-      <div ref={selfRef} data-message-composer-root className={expanded ? "border-t hidden" : "border-t"}>
-        <div className="pt-3 px-3 pb-1 sm:pt-6 sm:px-6 sm:pb-1 mx-auto max-w-[800px] w-full min-w-0">
-          {!expanded && <MessageComposer {...composerProps} autoFocus={autoFocus} onExpandClick={handleExpandClick} />}
-          {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
-        </div>
-      </div>
+      <FloatingComposerShell ref={selfRef} hidden={expanded} data-message-composer-root>
+        {!expanded && <MessageComposer {...composerProps} autoFocus={autoFocus} onExpandClick={handleExpandClick} />}
+        {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
+      </FloatingComposerShell>
     </>
   )
 }

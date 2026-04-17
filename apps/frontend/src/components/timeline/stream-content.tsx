@@ -603,13 +603,16 @@ export function StreamContent({
     <EditLastMessageContext.Provider value={editLastMessageCtxWithScroll}>
       <QuoteReplyProvider>
         <TextSelectionQuote streamId={streamId} />
-        <div className="flex h-full flex-col">
-          <div className="relative flex-1 overflow-hidden">
+        <div className="relative h-full">
+          <div className="absolute inset-0 overflow-hidden">
             {isSearchOpen && (
               <StreamSearchBar search={streamSearch} onClose={handleSearchClose} onNavigate={handleSearchNavigate} />
             )}
             {isDraft && (
-              <div className="h-full overflow-y-auto overflow-x-hidden overscroll-y-contain">
+              <div
+                className="h-full overflow-y-auto overflow-x-hidden overscroll-y-contain"
+                style={{ paddingBottom: "var(--composer-height, 0px)" }}
+              >
                 {hasDraftPendingEvents ? (
                   <EventList
                     timelineItems={draftTimelineItems}
@@ -676,10 +679,15 @@ export function StreamContent({
                   aria-hidden={!isFetchingNewer}
                   className={cn(
                     "pointer-events-none absolute left-1/2 -translate-x-1/2 z-20 rounded-full bg-background/90 px-3 py-1 shadow-sm border text-xs text-muted-foreground transition-opacity",
-                    // Sit above the Jump to latest button (bottom-4 + button height) when visible
-                    isJumpMode || isScrolledFarFromBottom ? "bottom-16" : "bottom-2",
                     isFetchingNewer ? "opacity-100" : "opacity-0"
                   )}
+                  style={{
+                    // Sit above the Jump to latest button (when visible) which itself sits above the floating composer.
+                    bottom:
+                      isJumpMode || isScrolledFarFromBottom
+                        ? "calc(var(--composer-height, 0px) + 3.5rem)"
+                        : "calc(var(--composer-height, 0px) + 0.5rem)",
+                  }}
                 >
                   Loading newer messages...
                 </div>
@@ -689,6 +697,7 @@ export function StreamContent({
               <div
                 ref={plainScrollRef}
                 className={cn("h-full overflow-y-auto overflow-x-hidden overscroll-y-contain", isSearchOpen && "pt-11")}
+                style={{ paddingBottom: "var(--composer-height, 0px)" }}
                 data-suppress-pull-refresh="true"
                 onScroll={plainHandleScroll}
               >
@@ -724,23 +733,34 @@ export function StreamContent({
                 )}
               </div>
             )}
-            {/* Jump to latest button — shown when scrolled far from bottom or in jump mode */}
-            {(isJumpMode || isScrolledFarFromBottom) && (
-              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10">
-                <Button variant="secondary" size="sm" className="shadow-lg gap-1.5" onClick={handleJumpToLatest}>
-                  <ArrowDown className="h-3.5 w-3.5" />
-                  Jump to latest
-                </Button>
-              </div>
-            )}
           </div>
+          {/* Jump to latest button — shown when scrolled far from bottom or in jump mode.
+              Positioned above the floating composer pill. */}
+          {(isJumpMode || isScrolledFarFromBottom) && (
+            <div
+              className="pointer-events-none absolute left-1/2 -translate-x-1/2 z-10"
+              style={{ bottom: "calc(var(--composer-height, 0px) + 0.5rem)" }}
+            >
+              <Button
+                variant="secondary"
+                size="sm"
+                className="pointer-events-auto shadow-lg gap-1.5"
+                onClick={handleJumpToLatest}
+              >
+                <ArrowDown className="h-3.5 w-3.5" />
+                Jump to latest
+              </Button>
+            </div>
+          )}
           {membershipResolved && !isMember && isPublicChannel && (
-            <JoinChannelBar
-              workspaceId={workspaceId}
-              streamId={streamId}
-              channelName={stream?.slug ?? stream?.displayName ?? ""}
-              onJoined={handleJoined}
-            />
+            <div className="absolute inset-x-0 z-10" style={{ bottom: "var(--composer-height, 0px)" }}>
+              <JoinChannelBar
+                workspaceId={workspaceId}
+                streamId={streamId}
+                channelName={stream?.slug ?? stream?.displayName ?? ""}
+                onJoined={handleJoined}
+              />
+            </div>
           )}
           {(isMember || !isPublicChannel || !membershipResolved) && (
             <MessageInput
@@ -1020,6 +1040,14 @@ function VirtuosoMessageList({
       endReached={handleEndReached}
       atBottomThreshold={30}
       increaseViewportBy={{ top: 600, bottom: 600 }}
+      components={virtuosoComponents}
     />
   )
 }
+
+// Spacer reserving room for the floating composer pill, so the most recent
+// message sits visually offset above the pill at rest and `atBottom` accounts
+// for the composer's height (Virtuoso treats Footer as content).
+const ComposerFooterSpacer = () => <div aria-hidden style={{ height: "var(--composer-height, 0px)" }} />
+
+const virtuosoComponents = { Footer: ComposerFooterSpacer }

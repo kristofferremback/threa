@@ -16,6 +16,7 @@ import {
   getDraftMessageKey,
   useThreadAncestors,
   useQueueDraftMessage,
+  useComposerHeightPublish,
 } from "@/hooks"
 import { useCoordinatedLoading, usePanel, isDraftPanel, parseDraftPanel, useSidebar } from "@/contexts"
 import { useUser } from "@/auth"
@@ -32,7 +33,7 @@ import {
 } from "@/components/timeline"
 import { StreamErrorBoundary } from "@/components/stream-error-boundary"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
-import { MessageComposer } from "@/components/composer"
+import { FloatingComposerShell, MessageComposer } from "@/components/composer"
 import { ThreadParentMessage } from "./thread-parent-message"
 import { ThreadHeader } from "./thread-header"
 import { ResponsiveBreadcrumbs } from "./responsive-breadcrumbs"
@@ -148,6 +149,11 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
   const setDraftPortalTarget = useCallback((el: HTMLElement | null) => {
     draftPortalTargetRef.current = el
   }, [])
+
+  // Measured height of the draft composer pill; consumed by the scroll area
+  // below it (padding-bottom) so messages sit offset above the floating pill.
+  const draftComposerRef = useRef<HTMLDivElement>(null)
+  useComposerHeightPublish(draftComposerRef, { active: !draftExpanded })
 
   // Reset expand state when panel changes
   useEffect(() => {
@@ -358,7 +364,10 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
                 </div>,
                 draftPortalTargetRef.current
               )}
-            <div className={draftExpanded ? "flex-1 overflow-y-auto hidden" : "flex-1 overflow-y-auto"}>
+            <div
+              className={draftExpanded ? "flex-1 overflow-y-auto hidden" : "flex-1 overflow-y-auto"}
+              style={{ paddingBottom: "var(--composer-height, 0px)" }}
+            >
               {parentMessage && (
                 <ThreadParentMessage
                   event={parentMessage}
@@ -390,33 +399,31 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
                 </Empty>
               )}
             </div>
-            <div className={draftExpanded ? "border-t hidden" : "border-t"}>
-              <div className="pt-3 px-3 pb-1 sm:pt-6 sm:px-6 sm:pb-1 mx-auto max-w-[800px] w-full min-w-0">
-                {!draftExpanded && (
-                  <MessageComposer
-                    content={composer.content}
-                    onContentChange={composer.handleContentChange}
-                    pendingAttachments={composer.pendingAttachments}
-                    onRemoveAttachment={composer.handleRemoveAttachment}
-                    fileInputRef={composer.fileInputRef}
-                    onFileSelect={composer.handleFileSelect}
-                    onFileUpload={composer.uploadFile}
-                    imageCount={composer.imageCount}
-                    onSubmit={handleSubmit}
-                    canSubmit={composer.canSend}
-                    isSubmitting={composer.isSending}
-                    hasFailed={composer.hasFailed}
-                    submitLabel="Reply"
-                    submittingLabel="Creating..."
-                    placeholder="Write your reply..."
-                    autoFocus={!isMobile}
-                    scopeId={panelId}
-                    onExpandClick={handleDraftExpand}
-                    streamContext={draftStreamContext}
-                  />
-                )}
-              </div>
-            </div>
+            <FloatingComposerShell ref={draftComposerRef} hidden={draftExpanded}>
+              {!draftExpanded && (
+                <MessageComposer
+                  content={composer.content}
+                  onContentChange={composer.handleContentChange}
+                  pendingAttachments={composer.pendingAttachments}
+                  onRemoveAttachment={composer.handleRemoveAttachment}
+                  fileInputRef={composer.fileInputRef}
+                  onFileSelect={composer.handleFileSelect}
+                  onFileUpload={composer.uploadFile}
+                  imageCount={composer.imageCount}
+                  onSubmit={handleSubmit}
+                  canSubmit={composer.canSend}
+                  isSubmitting={composer.isSending}
+                  hasFailed={composer.hasFailed}
+                  submitLabel="Reply"
+                  submittingLabel="Creating..."
+                  placeholder="Write your reply..."
+                  autoFocus={!isMobile}
+                  scopeId={panelId}
+                  onExpandClick={handleDraftExpand}
+                  streamContext={draftStreamContext}
+                />
+              )}
+            </FloatingComposerShell>
           </>
         ) : (
           // Regular stream UI
