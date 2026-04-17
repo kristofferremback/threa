@@ -8,7 +8,7 @@ import { usePreferences } from "@/contexts"
 import { useConnectionState } from "@/components/layout/connection-status"
 import { MessageComposer } from "@/components/composer"
 import { commandsApi } from "@/api"
-import { isCommand } from "@/lib/commands"
+import { hasCommandNode } from "@/lib/commands"
 import { serializeToMarkdown } from "@threa/prosemirror"
 import { useEditLastMessage } from "./edit-last-message-context"
 import { useQuoteReply, type QuoteReplyData } from "./quote-reply-context"
@@ -313,11 +313,11 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
       const liveContent = editorContent ?? composer.content
       const normalizedContent = materializePendingAttachmentReferences(liveContent, pendingAttachments)
 
-      // Serialize content to markdown to check for commands
-      const contentMarkdown = serializeToMarkdown(normalizedContent)
+      // Dispatch as a command only when the editor produced a slashCommand node.
+      // Plain text starting with "/" (e.g. "/s") should send as a regular message.
+      if (hasCommandNode(normalizedContent)) {
+        const commandMarkdown = serializeToMarkdown(normalizedContent).trim()
 
-      // Detect slash commands and dispatch them instead of sending as messages
-      if (isCommand(contentMarkdown.trim())) {
         // Clear input immediately for responsiveness
         const emptyDoc: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
         composer.setContent(emptyDoc)
@@ -326,7 +326,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
 
         try {
           const result = await commandsApi.dispatch(workspaceId, {
-            command: contentMarkdown.trim(),
+            command: commandMarkdown,
             streamId,
           })
 
